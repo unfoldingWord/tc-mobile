@@ -153,16 +153,15 @@ export function remoteRefForOrigin(origin) {
  *   https://<user>@github.com/unfoldingWord/tc-mobile[.git][/]  (https w/ userinfo)
  *   git@github.com:unfoldingWord/tc-mobile[.git]                (scp-like ssh)
  *   git@ssh.github.com:unfoldingWord/tc-mobile[.git]            (SSH-over-443 alias host)
- *   git@github.com-<suffix>:unfoldingWord/tc-mobile[.git]
- *     (a suffix-style ~/.ssh/config `Host` alias, e.g. `git@github.com-uw:...`,
- *     common when juggling multiple GitHub identities — #443 item 1; the same
- *     suffix is accepted on `ssh.github.com`)
  *   ssh://git@github.com/unfoldingWord/tc-mobile[.git]          (explicit ssh:// URL)
  *   ssh://git@ssh.github.com/unfoldingWord/tc-mobile[.git]      (explicit ssh:// via the
  *     SSH-over-443 alias host — #443 item 1)
- * Every form checks the host. An alias that does not embed the real hostname
- * (a bare `Host gh`) cannot be resolved from the URL text, so it fails closed:
- * such a checkout passes `--sha=` and `--version=` explicitly. An arbitrary
+ * Every form checks the host. A `~/.ssh/config` `Host` alias fails closed,
+ * including a suffix-style one such as `git@github.com-uw:...`: the URL text
+ * says nothing about where the alias resolves, so `github.com-uw` and
+ * `github.com-evil` look alike to this function (Frank r2 P2 on #751, which
+ * dropped the suffix form #443 item 1 had added). A checkout whose origin is
+ * an alias passes `--sha=` and `--version=` explicitly. An arbitrary
  * scp host (`git@gitlab.com:unfoldingWord/tc-mobile`) is rejected even when
  * its owner/repo matches — a mirror is not the canonical remote.
  *
@@ -196,12 +195,9 @@ export function isCanonicalOrigin(remoteUrl) {
   );
   const sshUrlMatch =
     /^ssh:\/\/git@(?:ssh\.)?github\.com\/([^/]+\/[^/]+)$/.exec(trimmed);
-  // scp-like `git@<host>:owner/repo`: `<host>` is `github.com` or
-  // `ssh.github.com`, optionally with one `-<suffix>` Host-alias tail.
-  const scpMatch =
-    /^git@(?:ssh\.)?github\.com(?:-[A-Za-z0-9_-]+)?:([^/]+\/[^/]+)$/.exec(
-      trimmed
-    );
+  // scp-like `git@<host>:owner/repo`: `<host>` is exactly `github.com` or
+  // `ssh.github.com`. No Host-alias suffix: see the docblock.
+  const scpMatch = /^git@(?:ssh\.)?github\.com:([^/]+\/[^/]+)$/.exec(trimmed);
   const repo = httpsMatch?.[1] ?? sshUrlMatch?.[1] ?? scpMatch?.[1];
   return repo?.toLowerCase() === CANONICAL_REPO.toLowerCase();
 }

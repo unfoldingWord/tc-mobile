@@ -673,28 +673,18 @@ describe("isCanonicalOrigin", () => {
   // #443 item 1 (George round-4 P3 on #436): four more legitimate,
   // git-accepted origin shapes the function above still rejected.
 
-  it("accepts a local SSH config Host alias (scp-like)", () => {
-    // e.g. a `~/.ssh/config` block juggling multiple GitHub identities:
-    //   Host github.com-uw
-    //     HostName github.com
-    //     User git
-    expect(
-      isCanonicalOrigin("git@github.com-uw:unfoldingWord/tc-mobile.git")
-    ).toBe(true);
-  });
-
-  it("accepts a local SSH config Host alias without a trailing .git", () => {
-    expect(isCanonicalOrigin("git@github.com-uw:unfoldingWord/tc-mobile")).toBe(
-      true
-    );
-  });
-
-  it("rejects a fork's URL via a Host alias", () => {
-    // The gate is tested in both states: an unchecked host segment must not
-    // widen the owner/repo check a Host alias still has to pass.
-    expect(
-      isCanonicalOrigin("git@github.com-uw:sethstoll3/tc-mobile.git")
-    ).toBe(false);
+  // Frank r2 P2 on #751: a suffix-style `~/.ssh/config` Host alias is
+  // rejected, because the URL text cannot show where it resolves. A benign
+  // `-uw` and a hostile `-evil` are the same string shape, so the gate
+  // treats them alike and fails closed on both.
+  it.each([
+    "git@github.com-uw:unfoldingWord/tc-mobile.git",
+    "git@github.com-uw:unfoldingWord/tc-mobile",
+    "git@github.com-evil:unfoldingWord/tc-mobile.git",
+    "git@ssh.github.com-uw:unfoldingWord/tc-mobile.git",
+    "git@github.com-uw:sethstoll3/tc-mobile.git",
+  ])("rejects a suffix-style Host alias: %s", (url) => {
+    expect(isCanonicalOrigin(url)).toBe(false);
   });
 
   it.each([
