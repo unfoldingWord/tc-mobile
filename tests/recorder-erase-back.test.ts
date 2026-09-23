@@ -3,7 +3,10 @@ import { act, createElement, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
-import { useEraseSegment } from "@/hooks/use-erase-segment";
+import {
+  useEraseSegment,
+  type UseEraseSegment,
+} from "@/hooks/use-erase-segment";
 import { strings } from "@/components/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
@@ -51,6 +54,9 @@ vi.mock("@/components/live-scope", () => ({ LiveScope: () => null }));
 vi.mock("@/components/vu-meter", () => ({ VuMeter: () => null }));
 let root: Root;
 let container: HTMLDivElement;
+// The one shared instance the Host mounts, so a test can act as the OTHER
+// screen holding its guard (#160, L-12).
+let shared: UseEraseSegment;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
@@ -119,6 +125,7 @@ async function setup() {
   // about is the synchronous in-flight guard, which is the hook's own.
   function Host() {
     const erase = useEraseSegment();
+    shared = erase;
     return createElement(Recorder, {
       ref,
       segmentId: "segment" as SegmentId,
@@ -182,4 +189,43 @@ it("dismisses a waiting confirm, then permits ordinary idle Back", async () => {
     expect(await s.ref.current!.requestClose()).toBe(true);
   });
   expect(s.onExit).toHaveBeenCalledOnce();
+});
+it("keeps its own erase-failed Notice when a retry is refused as busy", async () => {
+  // George, #660: the flag was cleared before `erase()` answered, so a retry
+  // refused because the OTHER caller holds the one shared guard blanked the
+  // failure this sheet had really seen, though no erase of its own ran.
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  storage.clear.mockRejectedValueOnce(new Error("no space"));
+  await setup();
+  await act(async () => button(strings.eraseConfirm).click());
+  const notice = () =>
+    [...document.querySelectorAll(".notice")].some(
+      (el) => el.textContent === strings.eraseFailed
+    );
+  expect(notice()).toBe(true);
+
+  await act(async () => button(strings.recorderMenuOpen).click());
+  await act(async () => button(strings.eraseSegment).click());
+  let release!: () => void;
+  storage.clear.mockImplementationOnce(
+    () => new Promise<void>((resolve) => (release = resolve))
+  );
+  let held!: Promise<string>;
+  await act(async () => {
+    // The other caller takes the guard, and this sheet's retry lands in the
+    // same turn — before a render can pass `erasing` down to the confirm,
+    // which is the only window in which the hook itself answers "busy".
+    held = shared.erase("other" as SegmentId);
+    button(strings.eraseConfirm).click();
+  });
+  // The retry never reached the store: one failure, one held erase.
+  expect(storage.clear).toHaveBeenCalledTimes(2);
+  expect(storage.clear).toHaveBeenLastCalledWith("other");
+  expect(notice()).toBe(true);
+
+  await act(async () => {
+    release();
+    await held;
+  });
+  consoleError.mockRestore();
 });
