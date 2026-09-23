@@ -670,9 +670,6 @@ describe("isCanonicalOrigin", () => {
     ).toBe(false);
   });
 
-  // #443 item 1 (George round-4 P3 on #436): four more legitimate,
-  // git-accepted origin shapes the function above still rejected.
-
   // Frank r2 P2 on #751: a suffix-style `~/.ssh/config` Host alias is
   // rejected, because the URL text cannot show where it resolves. A benign
   // `-uw` and a hostile `-evil` are the same string shape, so the gate
