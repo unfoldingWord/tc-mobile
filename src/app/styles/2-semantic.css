@@ -56,6 +56,14 @@
     --s-live-ink: #ffffff;
     --s-warn: var(--p-warn-500);
 
+    /* The next required action (#604). One guidance colour for the whole
+       chain, and the same value in both themes: the accent is not saying
+       anything about the surface it sits on, it is saying "here next", and a
+       mark that changed colour with the theme would be a second thing to
+       learn. It clears the non-text floor on every surface it is drawn on in
+       both themes — `tests/contrast.test.ts` scores each one. */
+    --s-guide: var(--p-blue-500);
+
     --s-focus: var(--p-amber-500);
     --s-scrim: rgba(6, 9, 13, 0.92);
   }
@@ -96,6 +104,9 @@
     --s-live: var(--p-red-600);
     --s-live-ink: #ffffff;
     --s-warn: #a35f14;
+
+    /* Unchanged from the dark theme — see its comment. */
+    --s-guide: var(--p-blue-500);
 
     --s-focus: var(--p-amber-600);
     --s-scrim: rgba(255, 255, 255, 0.94);

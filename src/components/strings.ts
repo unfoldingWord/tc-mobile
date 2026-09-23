@@ -429,6 +429,10 @@ export const strings = {
   vuMeterLabel: "Recording level",
   vuMeterUnavailable: "Level meter unavailable on this device",
   eraseSegment: "Erase recording",
+  // The record bar's bin (#592): the same erase and the same confirm as the
+  // menu row above, named for what the translator is doing — starting the
+  // segment over — because the sheet stays open, ready for the next take.
+  rerecord: "Erase and record again",
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
   eraseConfirmTitle: "Erase this recording?",
   eraseConfirm: "Erase",

@@ -67,6 +67,18 @@ export function FailureLogPanel({
   // the only record of what went wrong, there is no undo, and the bin sits
   // directly under the Share the thumb has just been using.
   const [confirmingClear, setConfirmingClear] = useState(false);
+  // The trigger this panel's own confirm returns focus to on close (#468).
+  // `EraseConfirm` is portalled to `<body>`, stacked OVER the still-open Menu
+  // rather than replacing it, so `Menu`'s own open-edge focus grab
+  // (`menu.tsx`, keyed on `[open]` alone) never re-runs when this confirm
+  // comes down — the menu never toggled `open`. Nothing here goes `inert`
+  // either: unlike the recorder/books-screen confirms that close their menu
+  // first and restore through `useFocusRestore`, this dialog and its trigger
+  // share one un-inert scope the whole time, so a plain ref suffices — no
+  // capture-at-tap timing hazard, and no inert-lifted effect to wait for.
+  // `Control` forwards its ref to the underlying `<button>` for exactly this
+  // (control.tsx's own docblock).
+  const clearButtonRef = useRef<HTMLButtonElement | null>(null);
   const [clearing, setClearing] = useState(false);
   const [clearError, setClearError] = useState<"restart" | null>(null);
   // The live half of `clearing`, for the confirm's `Layer.busy()` (#452 PR3,
@@ -75,25 +87,32 @@ export function FailureLogPanel({
   // rendered one, driving `EraseConfirm`'s own `busy`.
   const clearingRef = useRef(false);
 
+  // Cancel / Escape / scrim / a system Back (via the layer's `dismiss()`
+  // below): every path that takes the confirm down without confirming, one
+  // function so none of them can forget the focus hand-off.
+  //
+  // Focus lands back on Clear, imperatively, rather than waiting for a render
+  // and an effect: nothing here is `inert`, so there is no lifted-`inert`
+  // moment to wait for, and calling `.focus()` synchronously — the same
+  // instant the caller's own handler runs — leaves nothing observable in
+  // between where focus is on neither control (George R10b P2, #468).
+  // Without this, focus fell to `document` on every one of these paths, and
+  // the next Tab reached the menu header's Close before the panel — Close
+  // unmounts the whole menu, discarding an armed share.
+  const closeClearConfirm = useCallback(() => {
+    setConfirmingClear(false);
+    onClearConfirmClose();
+    clearButtonRef.current?.focus();
+  }, [onClearConfirmClose]);
+
   // Open the Clear confirm AND register it, in the one handler (invariant 6).
   const openClearConfirm = useCallback(() => {
     setConfirmingClear(true);
     onClearConfirmOpen({
       busy: () => clearingRef.current,
-      dismiss: () => {
-        setConfirmingClear(false);
-        onClearConfirmClose();
-      },
+      dismiss: closeClearConfirm,
     });
-  }, [onClearConfirmOpen, onClearConfirmClose]);
-
-  // Cancel / Escape / scrim. `EraseConfirm` already refuses these while `busy`,
-  // and the layer's own `busy()` refuses Back on the same ref, so this never
-  // runs mid-clear from either direction.
-  const closeClearConfirm = useCallback(() => {
-    setConfirmingClear(false);
-    onClearConfirmClose();
-  }, [onClearConfirmClose]);
+  }, [onClearConfirmOpen, closeClearConfirm]);
   // `clearFailureLog` directly, not through a hook that also LOADS the entries
   // (George #6, round 1). The panel renders no entry, so reading every stack
   // into React state to render a count would defeat the reason `countFailures`
@@ -161,16 +180,17 @@ export function FailureLogPanel({
         ) {
           setClearError("restart");
         }
-        setConfirmingClear(false);
-        // The confirm comes down on a failed clear, so its layer does too.
-        onClearConfirmClose();
+        // The confirm comes down on a failed clear, so its layer does too —
+        // and the same focus hand-off a cancel gets (#468), through the one
+        // shared close path rather than a second copy of it.
+        closeClearConfirm();
         // A retryable clear failure leaves the panel and log intact. Its
         // report goes through the funnel; no extra copy is needed here.
         // A terminal open refusal instead shows the restart notice above and
         // skips the funnel write, which the unavailable database cannot store.
       }
     );
-  }, [onClearConfirmClose, onDone]);
+  }, [closeClearConfirm, onDone]);
 
   const errorText =
     share.error === "nothing"
@@ -231,6 +251,7 @@ export function FailureLogPanel({
           action is never the first thing under the thumb, and it is never the
           menu's open-edge focus target while Share is enabled. */}
       <Control
+        ref={clearButtonRef}
         icon="trash"
         label={strings.clearFailureLog}
         variant="quiet"

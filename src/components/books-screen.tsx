@@ -10,6 +10,7 @@ import {
 import { Control } from "./control";
 import { EMPTY_STATE_NODE, focusTargetAfterDelete } from "./delete-focus";
 import { EmptyState } from "./empty-state";
+import { guidedStep } from "./guided-step";
 import { EraseConfirm } from "./erase-confirm";
 import { FailureLogPanel } from "./failure-log-panel";
 import { Icon } from "./icon";
@@ -1198,6 +1199,22 @@ export function BooksScreen({
   // (George R4 P2-2 / Frank R4 P2).
   const noticeText = deleteFailed ? strings.deleteBookFailed : error;
 
+  // The guided chain's answer for this screen (#604): one accent on the next
+  // required action, and nothing once the first book has been worked in. Read
+  // here and compared by `kind` at each call site, so the controls below
+  // cannot disagree about which of them is the step. The header + is
+  // deliberately absent from the chain — the only state that would guide it is
+  // an empty shelf, and the shelf hides it there in favour of the invite's own
+  // CTA (above).
+  const guide = guidedStep({
+    screen: "books",
+    loaded,
+    naming: newBookSeed !== null,
+    namingChapter: newChapter !== null,
+    books,
+    expandedBooks: expanded,
+  });
+
   // The encoder's own health (#166). Module state, not hook state — every
   // encode in the app runs through `mp3-codec`'s single lane, from the sweep
   // App starts at launch to a Share on another screen — so it is read through
@@ -1308,13 +1325,19 @@ export function BooksScreen({
           load/delete/loading slot above, which stays exclusive and acute-first)
           extends to both rather than making one dominant CSS-flag over the
           other: each is `&&`-rendered on its own, and BOTH may show stacked.
-          Neither collides with the slot above — both need a completed,
-          non-loading read, which is exactly when `noticeText` is falsy and
-          `loading` is false; there is no gate keying on that here because
-          `storage` and `encoderLine` are themselves already `null` until then
-          (`useStoragePersistence` requires `hasContent`, i.e. a loaded shelf;
-          `encoderHealth()` has nothing to report before a book exists to
-          encode from).
+
+          Neither is gated by the slot above, and neither waits for it to go
+          quiet: `storage` and `encoderLine` render as soon as THEIR OWN
+          readiness condition is met — `useStoragePersistence` resolves once
+          `hasContent` (a loaded shelf with at least one book) is true;
+          `encoderHealth()` is independent module state that has nothing to
+          report until an encode has actually failed. Neither reads
+          `noticeText` or `loading`. A delete failure is the case that shows
+          the split: once the shelf has already loaded, `hasContent` stays
+          true, so `storage` keeps rendering underneath a `deleteFailed`
+          notice in the slot above rather than waiting on it to clear (#406
+          item 1 — the prior wording here tied this to `noticeText`/`loading`
+          being settled, which is not how either gate works).
 
           Order: storage first, encoder second. Storage's risk is total and
           unrecoverable (browser eviction, no restore path) where encoder's
@@ -1348,6 +1371,7 @@ export function BooksScreen({
               teach={strings.booksEmptyTeach}
               ctaLabel={strings.newBook}
               ctaIcon="plus"
+              guided={guide?.kind === "new-book"}
               onCta={onNewBook}
             />
           </div>
@@ -1362,6 +1386,15 @@ export function BooksScreen({
                 onNewChapter={() => onNewChapter(book.bookId)}
                 onOpenShareMenu={() => onOpenShareMenu(book.bookId)}
                 onOpenChapter={onOpenChapter}
+                guidedAddChapter={
+                  guide?.kind === "add-chapter" && guide.bookId === book.bookId
+                }
+                guidedToggle={
+                  guide?.kind === "expand-book" && guide.bookId === book.bookId
+                }
+                guidedChapterId={
+                  guide?.kind === "open-chapter" ? guide.chapterId : null
+                }
                 setNode={setNode}
               />
             ))}
@@ -1438,6 +1471,7 @@ export function BooksScreen({
           onSave={(name) => void onConfirmNewBook(name)}
           onCancel={onCancelNewBook}
           busy={creatingBookBusy}
+          guided={guide?.kind === "create-book"}
         />
         {/* THIS dialog's own failure channel — never the shared `error`, which
             also carries a failed addChapter or rename and would announce one
@@ -1468,6 +1502,7 @@ export function BooksScreen({
           onSave={(name) => void onConfirmNewChapter(name)}
           onCancel={onCancelNewChapter}
           busy={creatingChapterBusy}
+          guided={guide?.kind === "create-chapter"}
         />
       </Menu>
 
@@ -1610,6 +1645,15 @@ interface BookItemProps {
   onNewChapter: () => void;
   onOpenShareMenu: () => void;
   onOpenChapter: (chapterId: ChapterId) => void;
+  /** This book's `+` is the guided step (#604). */
+  guidedAddChapter: boolean;
+  /**
+   * This book's expand toggle is the guided step (#604) — the chapter row the
+   * chain wants is inside a list this book has closed.
+   */
+  guidedToggle: boolean;
+  /** The chapter row that is the guided step, if it is one of this book's. */
+  guidedChapterId: ChapterId | null;
   setNode: (id: string, el: HTMLElement | null) => void;
 }
 
@@ -1620,6 +1664,9 @@ function BookItem({
   onNewChapter,
   onOpenShareMenu,
   onOpenChapter,
+  guidedAddChapter,
+  guidedToggle,
+  guidedChapterId,
   setNode,
 }: BookItemProps) {
   const listId = `chapters-${book.bookId}`;
@@ -1636,7 +1683,12 @@ function BookItem({
             book.chapters.length,
             expanded
           )}
-          className="flex min-w-0 flex-1 items-center gap-[10px] border-0 bg-transparent py-[10px] text-left"
+          // The toggle carries the guide class itself, like the chapter row —
+          // it is a plain button, not a `Control`.
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-[10px] border-0 bg-transparent py-[10px] text-left",
+            guidedToggle && "is-guided"
+          )}
         >
           <span className="text-ink-muted flex-none">
             <Icon
@@ -1650,6 +1702,7 @@ function BookItem({
           icon="plus"
           label={strings.addChapter(book.name)}
           variant="quiet"
+          guided={guidedAddChapter}
           onClick={onNewChapter}
         />
         {/* Overflow ⋮ after the + distinguishes this object menu from the
@@ -1672,6 +1725,7 @@ function BookItem({
               key={chapter.chapterId}
               chapter={chapter}
               onOpen={() => onOpenChapter(chapter.chapterId)}
+              guided={chapter.chapterId === guidedChapterId}
               setNode={setNode}
             />
           ))}
@@ -1684,10 +1738,12 @@ function BookItem({
 interface ChapterItemProps {
   chapter: ChapterRow;
   onOpen: () => void;
+  /** This row is the guided step (#604). */
+  guided: boolean;
   setNode: (id: string, el: HTMLElement | null) => void;
 }
 
-function ChapterItem({ chapter, onOpen, setNode }: ChapterItemProps) {
+function ChapterItem({ chapter, onOpen, guided, setNode }: ChapterItemProps) {
   const { number, name, finishedCount, totalCount } = chapter;
   // The passage label the facilitator set (#264), else "Chapter {number}".
   const heading = strings.chapterHeading(name, number);
@@ -1701,7 +1757,13 @@ function ChapterItem({ chapter, onOpen, setNode }: ChapterItemProps) {
         type="button"
         onClick={onOpen}
         aria-label={strings.openChapter(heading)}
-        className="flex w-full items-center justify-between gap-[10px] border-0 bg-transparent py-[10px] pr-[6px] pl-[30px] text-left"
+        // The row is a plain button rather than a `Control`, so it carries the
+        // guide class itself; the ring is drawn inside its own box, which is
+        // what keeps it out of the scroll container's clip (3-components.css).
+        className={cn(
+          "flex w-full items-center justify-between gap-[10px] border-0 bg-transparent py-[10px] pr-[6px] pl-[30px] text-left",
+          guided && "is-guided"
+        )}
       >
         <span className="text-ink min-w-0 truncate">{heading}</span>
         {hasCounter && (

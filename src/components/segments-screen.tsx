@@ -10,6 +10,7 @@ import {
 
 import { Control } from "./control";
 import { EmptyState } from "./empty-state";
+import { guidedStep } from "./guided-step";
 import { EraseConfirm } from "./erase-confirm";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
@@ -672,6 +673,10 @@ export const SegmentsScreen = forwardRef<
   // See books-screen: hide the header create + while the invite's own primary
   // CTA is up, so there is one create action, announced once.
   const showEmpty = !staleTarget && loaded && rows.length === 0;
+  // The guided chain's answer for this screen (#604). The append `+` in the
+  // header is hidden while the invite is up, so the CTA below is the only
+  // control this step can mean.
+  const guide = guidedStep({ screen: "segments", loaded, segments: rows });
 
   // Share (B7) speaks inside its own menu, not the screen Notice: the two-gesture
   // flow keeps the ≡ menu open across prepare → ready → send, so the panel is
@@ -813,6 +818,7 @@ export const SegmentsScreen = forwardRef<
             teach={strings.segmentsEmptyTeach}
             ctaLabel={strings.addSegment}
             ctaIcon="plus"
+            guided={guide?.kind === "add-segment"}
             onCta={() => void onAppend()}
           />
         ) : (
@@ -831,6 +837,10 @@ export const SegmentsScreen = forwardRef<
                   }
                   onSetFinished={(finished) =>
                     onSetFinished(row.segmentId, finished)
+                  }
+                  guided={
+                    guide?.kind === "open-segment" &&
+                    guide.segmentId === row.segmentId
                   }
                   onErase={() => armErase(row.segmentId)}
                   onRename={(label) => renameSegment(row.segmentId, label)}
