@@ -232,9 +232,7 @@
      the whole write (#383). The spin is scoped to the glyph itself, not the
      button, so the control's box size never moves (#164, #351) — the caller's
      icon swap (`control-affordance.ts`, e.g. the retry glyph) does the shape
-     half, this does the motion half. One of the app's three `@keyframes`
-     animations, with `rec-pulse` below and the menu drawer's slide (#621) —
-     all reduced-motion-guarded. */
+     half, this does the motion half. Reduced-motion-guarded below. */
   .control[aria-busy="true"] svg {
     animation: control-spin 900ms linear infinite;
   }
@@ -456,8 +454,7 @@
 
 @layer components {
   /* A recording that looks identical to a stopped one is how a take gets
-     lost, so this earns one of the app's three animations (see
-     `control-spin` above for the other two). */
+     lost, so this earns an animation. */
   .rec-dot {
     animation: rec-pulse 1.6s var(--p-ease) infinite;
   }
