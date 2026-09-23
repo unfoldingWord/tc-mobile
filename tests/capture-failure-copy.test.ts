@@ -51,9 +51,18 @@ function sourcesUnder(rel: string): string[] {
  * tells a facilitator to expect, "so the runbook and the app can now only
  * drift through a red test" — which was false: nothing here reads that file,
  * and editing both this table and the mapper stays green (George R1 finding
- * 3). The claim is deleted rather than made mechanical, because the runbook
- * paraphrases rather than quotes and a `readFileSync` of it would pin a
- * sentence it does not contain.
+ * 3).
+ *
+ * Deleted rather than made mechanical, and the runbook was read to settle
+ * which (George R2 finding 1, which could not check it from the diff). Its
+ * §5 prose PARAPHRASES two of the three — "no sound was recorded or … the
+ * recording could not be decoded" — so a `readFileSync` could not pin them.
+ * The third, "Could not finish this recording.", does appear there verbatim,
+ * but inside a `<!-- source: … -->` maintainer annotation about which
+ * failures reach the durable log, not in anything a facilitator reads. A gate
+ * tying this table to a sentence inside a comment about the failure log would
+ * go red on an edit to that log's routing, which is not what it would claim
+ * to be guarding.
  */
 const EXPECTED: Record<CaptureFailure, string> = {
   silence: "No sound was recorded. Try again.",

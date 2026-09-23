@@ -472,10 +472,9 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     // engine failed), not "silence" (which reads as the translator's own).
     // Since #169 the sentences live in `components/strings.ts` and the hook
     // emits only the code, so this now pins the CODE the exit picks; the
-    // words it maps to are pinned in `tests/capture-failure-copy.test.ts`,
-    // which is also where the sentence the facilitator runbook names is
-    // written down. `flushThrew` is declared in stop()'s body before the
-    // try, so the flag is per invocation.
+    // words it maps to are pinned in `tests/capture-failure-copy.test.ts`.
+    // `flushThrew` is declared in stop()'s body before the try, so the flag
+    // is per invocation.
     const hits = code.match(/"recorder-stop-flush"/g) ?? [];
     expect(hits).toHaveLength(1);
     expect(stopBody).toMatch(/\blet\s+flushThrew\s*=\s*false\s*;/);

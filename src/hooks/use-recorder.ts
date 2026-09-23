@@ -945,7 +945,7 @@ export function useRecorder(): UseRecorder {
         samples: null,
         // An empty seal after the flush arm threw is the engine's failure,
         // not the translator's silence — the same code `stopRecording`'s
-        // backstop uses, whose sentence the facilitator runbook names.
+        // backstop uses.
         error: current ? (flushThrew ? "unfinished" : "silence") : null,
         blob: null, // nothing was captured — no bytes to keep
       };

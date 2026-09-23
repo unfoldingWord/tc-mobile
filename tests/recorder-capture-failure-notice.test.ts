@@ -189,9 +189,26 @@ async function setup() {
  */
 const NO_CODE_ON_SCREEN = ["silence", "undecodable", "unfinished"];
 
-/** Neither the raw code nor an empty Notice, whichever way a wrap went missing. */
+/**
+ * Neither the raw code nor an empty Notice, whichever way a wrap went missing.
+ *
+ * Scoped to the `.notice` nodes rather than read off `document.body` (George R2
+ * finding 2). A whole-document substring hunt for "silence" / "undecodable" /
+ * "unfinished" is the right pin today and a trap tomorrow: a later label that
+ * legitimately contains one of those words would fail all three cases at once,
+ * and the natural repair is to delete the assertion — the #529 shape, in the
+ * direction AGENTS.md warns about. A Notice is also where a missing wrap would
+ * actually paint the code, so scoping makes the positive half stronger too: it
+ * now proves the sentence reached a Notice, not merely that it is somewhere on
+ * the page.
+ */
 function expectWorded(sentence: string) {
-  const text = document.body.textContent ?? "";
+  const notices = [...document.querySelectorAll(".notice")];
+  // Floor: an empty list would make the negative assertions below pass by
+  // looping over nothing, which is how this case would go quiet if the Notice
+  // stopped rendering at all.
+  expect(notices.length).toBeGreaterThan(0);
+  const text = notices.map((node) => node.textContent ?? "").join(" ");
   expect(text).toContain(sentence);
   for (const code of NO_CODE_ON_SCREEN) expect(text).not.toContain(code);
 }
