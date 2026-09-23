@@ -41,6 +41,9 @@ let shared: UseEraseSegment;
 const row: SegmentRow = {
   segmentId: "segment" as SegmentId,
   ordinal: 1,
+  // No facilitator label (#591); the row reads as its ordinal alone, which is
+  // all this suite's Erase gate cares about.
+  label: null,
   hasClip: true,
   finished: false,
   clipId: null,
