@@ -1112,11 +1112,20 @@ export function BooksScreen({
   // which is what would make R4 P2-3 safely fixable — is #363, its own change to
   // its own unchanged code.
   const onArmDelete = useCallback(() => {
-    // No `shareOverlayOwnsScreen` guard here any more (#491): Delete sits
-    // inside the panel's `inert` subtree (see `<Menu>`'s own `inert` prop
-    // below), so it is unreachable by click, keyboard or AT activation for
-    // the whole time the guard used to check — the primitive covers it now,
-    // not a per-handler check.
+    // #491 removed the per-handler `shareOverlayOwnsScreen` guard here in
+    // favour of `<Menu>`'s own `inert` prop below: with `inert` doing its job,
+    // Delete is unreachable by click, keyboard or AT activation for the whole
+    // time this guard used to check.
+    //
+    // #517 item 1 (George r3 P3 on #508) put it back, as defense in depth: if
+    // `inert` is ever bypassed (a WebView bug, an unsupported `inert`
+    // implementation), `onCloseShareMenu()` two lines below already no-ops
+    // while the overlay owns the screen, but nothing stopped `setDeleteTargetId`
+    // from still running — `EraseConfirm` would then paint under the share
+    // glyph at the same z-index (`3-components.css`). This has not been
+    // observed on a device; it is a second, redundant check behind the
+    // primitive, not evidence the primitive is insufficient.
+    if (shareOverlayOwnsScreen(bookShare.progress)) return;
     const bookId = shareMenuBookId;
     // Registered BEFORE the menu's own layer is unregistered, so the floor's
     // layer stack goes 1 → 2 → 1 and never passes through empty (#452 PR3).
@@ -1142,7 +1151,7 @@ export function BooksScreen({
     // time it detects the vanish, `books` has already moved on without it.
     armedShelf.current = books.map((b) => b.bookId);
     setDeleteTargetId(bookId);
-  }, [books, layers, onCloseShareMenu, shareMenuBookId]);
+  }, [books, bookShare.progress, layers, onCloseShareMenu, shareMenuBookId]);
   const onConfirmDelete = useCallback(() => {
     if (deleteTargetId === null) return;
     // The shelf order as it is right now, captured while the row is still on
