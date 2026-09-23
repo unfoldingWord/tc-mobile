@@ -371,8 +371,11 @@ export const strings = {
       : "This recording could not be saved.",
 
   /**
-   * The safety line under Retry, shown on EVERY failed save — never an
-   * instruction to leave the app.
+   * The safety line under Retry for a save whose work is still held — the
+   * default, and what `recoverySafetyLine` gives a `quota` or an `unknown`
+   * failure. Never an instruction to leave the app. `downgrade` and `stale`
+   * get the two lines below instead; why the warning is NOT gated on `quota`
+   * is with the chooser, in `recovery-copy.ts`.
    *
    * Worded for what is actually RAM-only. Under Model A the working buffer
    * being saved also carries any in-session cut/paste edits, and `discardSave`

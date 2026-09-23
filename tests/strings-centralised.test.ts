@@ -57,10 +57,12 @@ const SENTENCE_MIN = 12;
  * which catches a brand-new one too. `recovery-copy.ts` held fourteen of its
  * own until #169 moved them into `strings.ts`.
  *
- * Their own discriminators (`"quota"`, `"cutAudio"`, `"chapter"`) are words
- * rather than sentences, and `SENTENCE_MIN` is what keeps them out of the net —
- * pinned below, since without it this gate would demand a union be "moved into
- * a table".
+ * Their own discriminators (`"quota"`, `"cutAudio"`, `"chapter"`) stay out of
+ * the net because `heldSentences` wants BOTH a space and `SENTENCE_MIN`
+ * characters; without that, this gate would demand a union be "moved into a
+ * table". The two clauses are pinned separately below, because the union
+ * fixture is excluded by the SPACE alone and would pass at any value of the
+ * constant — so a second pair brackets the threshold itself.
  */
 const COPY_MAPPERS = [
   "components/encoder-notice.ts",
@@ -278,10 +280,22 @@ describe("the copy mappers choose words without holding them", () => {
 
   it("does not read a discriminator as a sentence", () => {
     // The legitimate state this gate has to stay green on: these modules are
-    // built out of string unions, and every one of them is a word.
+    // built out of string unions, and every one of them is a word. What
+    // excludes these three is the SPACE clause — none of them has one.
     expect(
       heldSentences('type S = "cutAudio" | "chapter" | "downgrade";')
     ).toEqual([]);
+  });
+
+  it("holds the sentence threshold itself, not only the space rule", () => {
+    // The fixture above would pass with SENTENCE_MIN at 0 or at 100, so on its
+    // own it pins nothing about the constant the docblock names (George,
+    // `319d5936f`). These two bracket it: eleven characters WITH a space is
+    // out, twelve is in.
+    expect(heldSentences('const a = "Go home now";')).toEqual([]);
+    expect(heldSentences('const a = "Go home now.";')).toEqual([
+      "Go home now.",
+    ]);
   });
 
   it("reads a sentence put back into one of them", () => {
