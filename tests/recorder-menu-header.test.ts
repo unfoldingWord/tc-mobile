@@ -15,7 +15,7 @@ import { one, render as renderStatic } from "./render";
  * #621: the recorder's overflow drawer (Edit / Mark finished / Erase) opens
  * from a ≡ and keeps it — no painted "More" heading, and the dismiss control
  * wears the same `menu` glyph the opener does, in the same top-right corner,
- * instead of a left-pointing chevron on a drawer that slides back to the right.
+ * instead of a left-pointing chevron on a drawer that docks on the right.
  * The rule is #608's, and `Menu`'s `hamburger` prop is how a caller opts in;
  * what this file pins is that the RECORDER's call site passes it. The header
  * itself is proved in `menu-hamburger-header.test.ts`.
@@ -116,13 +116,9 @@ async function openMenu(): Promise<Element> {
     playBuffer: vi.fn(),
     stopBuffer: vi.fn(),
     readPlaybackPosition: () => null,
-    audioNeedsGesture: () => false,
     startRecording: vi.fn(),
-    pauseRecording: vi.fn(),
-    resumeRecording: vi.fn(),
     stopRecording: vi.fn(),
     retryDecode: vi.fn(),
-    previewCapture: vi.fn(),
     leave: vi.fn(),
     primeAudioContext: vi.fn(),
     readLevel: () => 0,

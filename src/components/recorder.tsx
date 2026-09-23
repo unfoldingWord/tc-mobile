@@ -3483,9 +3483,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // after #608 set the rule on the global menu): the ≡ that opens this
           // drawer stays a ≡ inside it, top-right, and is what dismisses it —
           // no "More" heading, and no chevron, because a chevron pointing LEFT
-          // reads as "move left" on a drawer that slides back to the RIGHT.
-          // #589's pick on how the three ≡ menus should differ still stands
-          // for the other two; this one has its answer.
+          // reads as "move left" on a drawer that docks on the RIGHT.
+          // The book, chapter and segment menus open from a ⋮ since #589 and
+          // keep the chevron; this drawer opens from a ≡.
           hamburger
         >
           {mode === "record" ? (

@@ -565,21 +565,18 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
    * controls carried one round at a time (George r1 P2 #2 for Rename/Delete;
    * Frank at `ec2a148`, still open going into this round, for Share/Send,
    * which had never been guarded at all). Red-first: with `<Menu>`'s own
-   * `inert={inert || exiting || undefined}` deleted from `menu.tsx`, the first
+   * `inert={inert || undefined}` deleted from `menu.tsx`, the first
    * assertion below fails to even find it (`expected -1 to be greater
    * than -1`); with either screen's own `inert={shareOverlayOwnsScreen(...)}`
    * prop deleted from its `<Menu>` call, the corresponding wiring assertion
    * fails the same way.
    */
-  it("menu.tsx: `inert` covers the header (Close) AND every child as ONE subtree, positioned inside the aria-modal panel but around neither `liveRegion` (mutation: delete `inert={inert || exiting || undefined}` and this test dies)", () => {
+  it("menu.tsx: `inert` covers the header (Close) AND every child as ONE subtree, positioned inside the aria-modal panel but around neither `liveRegion` (mutation: delete `inert={inert || undefined}` and this test dies)", () => {
     const source = read("src/components/menu.tsx");
     const panelAt = source.indexOf('className="menu-panel"');
     expect(panelAt).toBeGreaterThan(-1);
     const liveRegionAt = source.indexOf("{liveRegion}", panelAt);
-    const wrapperAt = source.indexOf(
-      "inert={inert || exiting || undefined}",
-      panelAt
-    );
+    const wrapperAt = source.indexOf("inert={inert || undefined}", panelAt);
     const headerAt = source.indexOf("ref={headerRef}", panelAt);
     // The dismiss control is anchored by its accessible name, not its glyph:
     // the glyph is conditional since #608 (≡ on the global menu, a chevron

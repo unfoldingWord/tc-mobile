@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
@@ -24,26 +24,6 @@ import { strings } from "./strings";
  */
 const FOCUSABLE =
   'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-/**
- * Every `Menu` currently in its exit motion, by the callback that ends the
- * motion early (#621, fix class C1 on PR 656).
- *
- * A dismissed drawer stays mounted while it slides out, and Books alone
- * renders three `Menu`s — so a tap that closes one and opens another inside
- * that window (Create book, then a row's ≡) would otherwise leave two drawers
- * on screen at once. The rule is one drawer whenever any drawer is open, and
- * it has two halves because the two events can land in either order: the
- * opening instance ends every other instance's exit on its open edge, and an
- * instance dismissed while a sibling is ALREADY open skips its exit entirely
- * (Create book resolves its write and closes the dialog after the new row —
- * and its ≡ — is already on the shelf, so the row menu can be open first).
- * No locator that finds a menu by role or class, and no assistive technology,
- * sees two. Module-scoped because the instances share no parent — each caller
- * mounts its own `<Menu>`.
- */
-const openMenus = new Set<symbol>();
-const exitingMenus = new Set<() => void>();
 
 interface MenuProps {
   open: boolean;
@@ -167,101 +147,6 @@ export function Menu({
     onCloseRef.current = onClose;
   });
 
-  // Mounted for one exit motion after `open` drops (#621): the drawer slides
-  // back off the right edge it came in from instead of vanishing on the frame
-  // it is dismissed. Adjusted during render — the pattern React documents for
-  // deriving state from a changed input, and the one this repo's ESLint leaves
-  // open (`setState` inside an effect is refused as a cascading render;
-  // `recorder.tsx`'s `prevDenied` is the precedent). Reopening mid-exit is
-  // just `open` changing again, so it cancels the exit by the same line.
-  const [self] = useState(() => Symbol("menu"));
-  const [prevOpen, setPrevOpen] = useState(open);
-  const [exiting, setExiting] = useState(false);
-  // Which open this is. `children` are keyed on it, so every open edge
-  // remounts them — the contract the callers already rely on ("`Menu` unmounts
-  // its children when closed", `books-screen.tsx`, which is how an untouched
-  // New Book field sends "" and a cancelled half-typed name never comes back).
-  // Staying mounted through the exit would otherwise carry that state into a
-  // reopen that lands inside the motion (George r1 P1 on PR 656).
-  const [generation, setGeneration] = useState(0);
-  if (open !== prevOpen) {
-    setPrevOpen(open);
-    if (open) setGeneration((g) => g + 1);
-    // No exit motion when a SIBLING drawer is already open (`openMenus`
-    // above; this instance is still counted there until its own effect
-    // cleans up, hence the `!== self`): decided HERE, in the same render that
-    // sees `open` drop, so no commit ever holds two drawers — an effect would
-    // let one frame through, and a locator's strict check lands in exactly
-    // that frame.
-    const siblingOpen = [...openMenus].some((id) => id !== self);
-    setExiting(!open && !siblingOpen);
-  }
-
-  // Unmount when the exit motion settles — and what "settles" means is the
-  // stylesheet's call, not this file's. The scrim and the panel are each asked
-  // for their OWN animations (the scrim's fade and the panel's slide,
-  // `.menu-scrim[data-closing]` / `.menu-scrim[data-closing] .menu-panel` in
-  // `3-components.css`), and their `finished` promises end the exit
-  // together. Under `prefers-reduced-motion` the stylesheet sets
-  // `animation: none`, the list is empty, and the drawer is gone on the next
-  // microtask: reduced motion is honoured by this same path, not a second
-  // one, and no duration is written here, so the `--p-dur-*` token stays the
-  // only clock. jsdom has no Web Animations API; the optional call gives it
-  // the same "nothing to wait for" answer. `finished` REJECTS when an
-  // animation is cancelled mid-run (its element restyled or removed), which
-  // `allSettled` treats as done too — so nothing here can strand a closed
-  // drawer on screen.
-  //
-  // The motion also ends EARLY when a sibling `Menu` opens mid-exit: `finish`
-  // stays registered in `exitingMenus` for as long as this instance is
-  // exiting, and the sibling's open edge calls it (below). Both paths end in
-  // the same `setExiting(false)`, so there is one unmount, not two. (The
-  // other order — a sibling ALREADY open when this one is dismissed — never
-  // starts the motion at all; see the render adjustment above.)
-  //
-  // LAYOUT effects, both of them, on purpose: a `setState` from a layout
-  // effect re-renders synchronously, inside the same commit and before the
-  // browser paints, so the sibling's open edge removes this drawer in the
-  // very task that opened the sibling. From a passive effect the removal
-  // landed one frame later, and that frame is where a locator's strict check
-  // found two drawers (PR 656 CI; measured at ~9 ms in a Chromium probe).
-  const scrimRef = useRef<HTMLDivElement | null>(null);
-  useLayoutEffect(() => {
-    if (!exiting) return;
-    const finish = () => setExiting(false);
-    exitingMenus.add(finish);
-    // The drawer's OWN motion — the scrim's fade and the panel's slide, the
-    // two rules the stylesheet keys on `[data-closing]` — never the subtree.
-    // A child may animate forever (the Confirm control's `aria-busy` spin,
-    // which New Book leaves on after a successful create): waiting on it
-    // held the dialog mounted indefinitely, and the next one-tap create sent
-    // the previous name (George r1 P1 on PR 656).
-    const own = (el: Element | null) => el?.getAnimations?.() ?? [];
-    const running = [...own(scrimRef.current), ...own(panelRef.current)];
-    let cancelled = false;
-    void Promise.allSettled(running.map((a) => a.finished)).then(() => {
-      if (!cancelled) finish();
-    });
-    return () => {
-      cancelled = true;
-      exitingMenus.delete(finish);
-    };
-  }, [exiting]);
-
-  // While open, this instance is counted in `openMenus`, and its open edge
-  // ends every other drawer's exit at once (#621 C1). Its own `finish` is
-  // never in the set here: reopening mid-exit clears `exiting` in the render
-  // adjustment above, and that effect's cleanup has already removed it by the
-  // time this one runs.
-  useLayoutEffect(() => {
-    if (!open) return;
-    openMenus.add(self);
-    for (const finish of exitingMenus) finish();
-    return () => {
-      openMenus.delete(self);
-    };
-  }, [open, self]);
-
   // Land focus inside the panel ONCE on the open edge — first ENABLED control,
   // never a disabled one (focusing it is a no-op that strands the user behind
   // the scrim — Frank R-B6) — and not again on every parent render.
@@ -326,7 +211,12 @@ export function Menu({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
-  if (!open && !exiting) return null;
+  // Gone on the render `open` drops, with no exit motion. Every caller drops
+  // its own layer, Back ownership and overlay flags in `onClose`, and some
+  // replace the drawer in that same render, so a drawer kept mounted to slide
+  // out broke four callers (#621, pick B on PR 656). A slide-out needs the
+  // callers to wait for it first; that is option A there, not a change here.
+  if (!open) return null;
 
   // Portalled to <body>, out of the caller's subtree. A caller that goes `inert`
   // to hide its own background from AT (the Segments list does this while a
@@ -335,35 +225,16 @@ export function Menu({
   // the DOM parent never mattered for layout. (Frank/George R-B6.)
   return createPortal(
     <div
-      ref={scrimRef}
       className="menu-scrim"
-      // On the way out the drawer is paint only (#621): the exit is something
-      // to see, never something to tap or hear. `data-closing` is what the
-      // stylesheet keys the motion on. The scrim itself stays a HIT TARGET
-      // while it is still painted — it is the full-screen shield, and the
-      // callers lift their own background `inert` the moment `open` drops, so
-      // an `inert` scrim would let the second tap of a double-tap through to
-      // Play or Record underneath for the whole motion (George r1 P2 on PR
-      // 656). Reach and the accessibility tree are cut on the panel instead.
-      data-closing={exiting || undefined}
-      // A tap on the scrim, but not on the panel, closes — while it is open.
-      // A tap on an exiting scrim is absorbed: the close already happened.
+      // A tap on the scrim, but not on the panel, closes.
       onClick={(e) => {
-        if (e.target === e.currentTarget && !exiting) onClose();
+        if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
         ref={panelRef}
         role="dialog"
-        // While exiting, the panel is paint and nothing else: hidden from the
-        // accessibility tree and no longer modal the instant it is dismissed,
-        // so a role query — Playwright's or a screen reader's — finds only the
-        // drawer that is actually open (#621 C1). `inert` on the scrim above
-        // did not do that on its own: a role query still resolved the inert
-        // panel, which is the fact PR 656's CI failures established.
-        // `aria-hidden` is the ARIA-defined "not there", which both honour.
-        aria-hidden={exiting || undefined}
-        aria-modal={exiting ? undefined : "true"}
+        aria-modal="true"
         aria-label={title}
         className="menu-panel"
       >
@@ -371,15 +242,8 @@ export function Menu({
         {/* `display: contents` (Tailwind `contents`): this node carries
             `inert` without owning a box of its own, so the header and
             `children` stay direct flex items of `.menu-panel` above —
-            `inert` changes reachability, never layout. It is also inert for
-            the whole exit — nothing in a departing drawer is tappable or
-            focusable — and keyed on the open generation, so every open edge
-            mounts fresh children (see `generation`). */}
-        <div
-          key={generation}
-          className="contents"
-          inert={inert || exiting || undefined}
-        >
+            `inert` changes reachability, never layout. */}
+        <div className="contents" inert={inert || undefined}>
           {/* `justify-end` when the title is dropped keeps the one remaining
               child — the dismiss control — in the top-right corner, where the
               ≡ that opened this panel was; `justify-between` alone would slide

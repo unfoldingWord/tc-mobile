@@ -520,9 +520,9 @@
        explicitly, or a recorder menu paints behind the inert sheet — unreachable
        by touch (George R-B6). */
     z-index: 80;
-    /* The panel sits a full width past the right edge at both ends of its
-       slide (below); clip it there rather than let any engine grow a
-       horizontal scroll range for it. */
+    /* The panel starts its slide (below) a full width past the right edge;
+       clip it there rather than let any engine grow a horizontal scroll
+       range for it. */
     overflow: hidden;
     animation: menu-scrim-in var(--p-dur-base) var(--p-ease);
   }
@@ -553,30 +553,13 @@
     -webkit-touch-callout: none;
     animation: menu-panel-in var(--p-dur-base) var(--p-ease);
   }
-  /* The drawer's motion (#621): in from the right edge it docks on, and back
-     out the same way on dismiss. A panel that arrives from the right and then
-     vanishes in place — or is dismissed by a chevron pointing LEFT — reads as
-     navigation, not as a drawer closing (#589's tester took it for Back).
-     `menu.tsx` keeps the drawer mounted under `[data-closing]` until whatever
-     is animating here has finished (`getAnimations`), so the duration and the
-     easing are written once, in this file's primitives, and nowhere in JS.
-     The reduced-motion `animation: none` below is ALSO what makes the dismiss
-     instant there: nothing animating, nothing to wait for. `forwards` holds
-     the last frame so the drawer cannot flash back into place between the
-     motion ending and React unmounting it. */
-  .menu-scrim[data-closing] {
-    animation: menu-scrim-out var(--p-dur-base) var(--p-ease) forwards;
-  }
-  .menu-scrim[data-closing] .menu-panel {
-    animation: menu-panel-out var(--p-dur-base) var(--p-ease) forwards;
-  }
+  /* The drawer's motion (#621): it slides in from the right edge it docks on,
+     and the scrim fades in behind it. There is no slide back out: `menu.tsx`
+     unmounts a dismissed drawer on the render its `open` drops, because every
+     caller holds that contract (pick B on PR 656). The duration and easing
+     are this file's primitives, and nothing in JS times the motion. */
   @keyframes menu-scrim-in {
     from {
-      opacity: 0;
-    }
-  }
-  @keyframes menu-scrim-out {
-    to {
       opacity: 0;
     }
   }
@@ -585,19 +568,9 @@
       transform: translateX(100%);
     }
   }
-  @keyframes menu-panel-out {
-    to {
-      transform: translateX(100%);
-    }
-  }
-  /* The exit selectors are listed on their own: they outrank the base rules,
-     so `.menu-scrim, .menu-panel` alone would silence the entrance and leave
-     the exit sliding. */
   @media (prefers-reduced-motion: reduce) {
     .menu-scrim,
-    .menu-panel,
-    .menu-scrim[data-closing],
-    .menu-scrim[data-closing] .menu-panel {
+    .menu-panel {
       animation: none;
     }
   }
