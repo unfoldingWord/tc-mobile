@@ -20,6 +20,7 @@
  * import upward (AGENTS.md's onion rule) and the sentences those layers return
  * have the same counts in them.
  */
+import { SHIPPED_LOCALE } from "./locale";
 
 /**
  * CLDR's plural categories — the keys a forms table may carry.
@@ -53,16 +54,6 @@ type PluralForms = {
 };
 
 /**
- * The UI's one locale today.
- *
- * `index.html`'s `<html lang>` and the manifest's `lang` still say "en"
- * separately — wiring all three to one source is the rest of #169 and is not
- * this module's to do. This default is the plural half of that: one place the
- * rule comes from, not six.
- */
-const DEFAULT_LOCALE = "en";
-
-/**
  * `Intl.PluralRules` construction is not free and these labels render on every
  * list row, so keep one per locale. The map is keyed by the locale string as
  * passed; there is one entry in practice.
@@ -72,7 +63,13 @@ const rules = new Map<string, Intl.PluralRules>();
 function rulesFor(locale: string): Intl.PluralRules {
   const cached = rules.get(locale);
   if (cached) return cached;
-  const made = new Intl.PluralRules(locale);
+  // `cardinal` is the default, and relying on a default is how a reader ends
+  // up having to know it. These are counts of things ("3 chapters"), never
+  // positions ("the 3rd chapter"), and the two select differently — English
+  // ordinals use `one`/`two`/`few`/`other` where its cardinals use only
+  // `one`/`other`. Saying which makes the day someone wants an ordinal phrase
+  // visible at the construction instead of inferred (#713, George r1 Low 2).
+  const made = new Intl.PluralRules(locale, { type: "cardinal" });
   rules.set(locale, made);
   return made;
 }
@@ -90,13 +87,28 @@ function rulesFor(locale: string): Intl.PluralRules {
  *
  * Every `{n}` is replaced, not just the first: a form is free to name the count
  * twice.
+ *
+ * `locale` defaults to `SHIPPED_LOCALE.tag` — the build's one locale, the same
+ * value `<html lang>` and the manifest are written from (`lib/locale.ts`, #697)
+ * — rather than to a `"en"` of its own. An independent default would have been
+ * a second source of truth the moment the first one moved, which is the exact
+ * note QA and George both left on #673 while #697 was still in flight.
  */
 export function plural(
   n: number,
   forms: PluralForms,
-  locale: string = DEFAULT_LOCALE
+  locale: string = SHIPPED_LOCALE.tag
 ): string {
   const category = rulesFor(locale).select(n) as PluralCategory;
   const form = forms[category] ?? forms.other;
-  return form.replaceAll("{n}", String(n));
+  // A FUNCTION replacer, not a string one. `replaceAll` reads `$&`, `` $` ``,
+  // `$'`, `$$` and `$n` in a STRING replacement as substitution patterns. A
+  // `number` through `String()` can only be digits, `-`, `.`, `e`, `+`, `NaN`
+  // or `Infinity`, so none of them is reachable today and nothing here is a
+  // live defect — which is also why no test covers this line, and saying so is
+  // more honest than a case that could never have been observed red. The
+  // function form makes the patterns inert for whatever the count becomes
+  // later: a grouped or locale-formatted number, or a second placeholder
+  // carrying something a translator typed (#713, George r1 Low 1).
+  return form.replaceAll("{n}", () => String(n));
 }

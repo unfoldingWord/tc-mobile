@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { plural } from "@/lib/plural";
@@ -74,6 +77,47 @@ describe("plural", () => {
   it("leaves a form with no {n} in it alone", () => {
     expect(plural(1, { one: "No chapters yet", other: "{n} chapters" })).toBe(
       "No chapters yet"
+    );
+  });
+});
+
+/**
+ * The shipped locale is stated once, in `lib/locale.ts` (#697), and `plural`
+ * takes its default from there rather than carrying an `"en"` of its own.
+ *
+ * Read as source with comments stripped, not by calling `plural`: a call can
+ * only show that the default BEHAVES like English today, which an independent
+ * `"en"` literal would satisfy just as well — the defect is a second place to
+ * edit, and only the source shows that. Comments are stripped because this
+ * module's prose has to be free to discuss the tag it must not hard-code, and
+ * AGENTS.md records both directions of that trap: a whole-file regex that
+ * false-hits on the prose banning what it searches for, and the repair of
+ * weakening the pattern until it can no longer catch a real leak.
+ */
+describe("plural's default locale", () => {
+  const source = readFileSync(
+    path.resolve(import.meta.dirname, "../src/lib/plural.ts"),
+    "utf8"
+  );
+  const code = source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+
+  it("reads the shipped locale instead of naming a language itself", () => {
+    expect(code).toMatch(/SHIPPED_LOCALE\.tag/);
+    expect(code).toContain('from "./locale"');
+  });
+
+  it("hard-codes no language tag of its own", () => {
+    // Guards the comment-stripping too: if it ever stops working, the
+    // docblocks above (which name "en" in prose, legitimately) reappear here
+    // and this fails loudly rather than the case silently passing on nothing.
+    expect(code).not.toMatch(/["'][a-z]{2}(-[A-Za-z]+)*["']/);
+  });
+
+  it("still renders English, because that is what the build ships", () => {
+    expect(plural(1, { one: "{n} chapter", other: "{n} chapters" })).toBe(
+      "1 chapter"
     );
   });
 });
