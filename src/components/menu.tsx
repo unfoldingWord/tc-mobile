@@ -46,12 +46,12 @@ interface MenuProps {
    * the same `menu` glyph as the control that opened it, in the same top-right
    * corner, and the panel shows no visible title — one control, one glyph, one
    * place, and the glyph is the label. Off (the default) the header is a title
-   * beside a back chevron, which every other menu — a per-row ≡, the
-   * recorder's, the New Book dialog — deliberately keeps: #589 owns their
-   * affordances, and this prop must not pre-empt that pick. What a screen
-   * reader hears does not change either way: `title` still names the dialog
-   * and `closeLabel` still names the control ("Close menu" dismisses, as
-   * before), which is also what the e2e specs locate the menu by.
+   * beside a back chevron, which every other menu keeps — the book, chapter
+   * and segment menus (opened from a ⋮ since #589), the recorder's, and the
+   * New Book dialog. What a screen reader hears does not change either way:
+   * `title` still names the dialog and `closeLabel` still names the control
+   * ("Close menu" dismisses, as before), which is also what the e2e specs
+   * locate the menu by.
    */
   hamburger?: boolean;
   /**
