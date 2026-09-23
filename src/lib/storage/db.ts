@@ -135,15 +135,24 @@ type LegacyBook = Omit<Book, "number" | "name"> & {
  * Deliberately its own literal rather than a reverse of `strings.bookName`.
  * This reads rows written by OLD builds, and what those builds wrote is fixed
  * history — a later rewording of the live placeholder must not change how a
- * phone that has been in a drawer since v7 is read. `padStart(3, "0")` is why
- * three digits is the floor and more are allowed; a parsed 0 is not a book
- * number.
+ * phone that has been in a drawer since v7 is read.
+ *
+ * Recognition is an exact ROUND TRIP through the old writer's own
+ * `padStart(3, "0")`, not "three or more digits" (QA P2 on #701). The two are
+ * not the same set: the writer rendered "Book 001" and "Book 1000", but never
+ * "Book 0001". Accepting the overpadded form erases a name a facilitator typed
+ * AND relabels their row — "Book 0001" would come back reading "Book 001", a
+ * book they never named. Anything the writer could not have produced is a name,
+ * and a name is never touched. `Number.isSafeInteger` is the same rule one step
+ * further out: past 2^53 the digits and the number stop agreeing, so the round
+ * trip is the thing that catches it rather than a length cap nobody can justify.
  */
 function legacyPlaceholderNumber(name: string | null): number | null {
-  const digits = /^Book (\d{3,})$/.exec(name ?? "")?.[1];
+  const digits = /^Book (\d+)$/.exec(name ?? "")?.[1];
   if (digits === undefined) return null;
   const n = Number(digits);
-  return Number.isInteger(n) && n >= 1 ? n : null;
+  if (!Number.isSafeInteger(n) || n < 1) return null;
+  return String(n).padStart(3, "0") === digits ? n : null;
 }
 
 type ClipMetaV3 = Pick<

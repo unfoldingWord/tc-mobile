@@ -662,17 +662,57 @@ describe("the v8 book-number backfill (#169)", () => {
     });
   });
 
-  it("treats an unpadded look-alike as a name, not a placeholder", async () => {
-    // "Book 1" is not a string any build has ever rendered — `padStart(3, "0")`
-    // has always been in the placeholder — so it is a name a facilitator typed
-    // and it is kept, not silently converted into a number.
+  it("keeps every name the old writer could not have produced (QA P2 on #701)", async () => {
+    // The recognition has to be an exact round trip through the legacy
+    // `padStart(3, "0")`, not "three or more digits". The writer rendered
+    // "Book 001" and "Book 1000"; it never rendered "Book 1", never
+    // "Book 0001", and never a number too large to be exact. Each of those is
+    // therefore a name a facilitator typed, and erasing it would both lose
+    // their word and relabel the row — "Book 0001" would come back as
+    // "Book 001", a book they never named.
     const v7 = await openLegacyV7();
-    await v7.put("books", legacyBook("b", "Book 1", 10));
+    await v7.put("books", legacyBook("underpadded", "Book 1", 10));
+    await v7.put("books", legacyBook("overpadded", "Book 0001", 20));
+    await v7.put("books", legacyBook("huge", "Book 900719925474099100", 30));
     v7.close();
 
-    expect(await (await getDb()).get("books", "b" as never)).toMatchObject({
-      number: 1,
-      name: "Book 1",
+    const v8 = await getDb();
+    for (const id of ["underpadded", "overpadded", "huge"]) {
+      const row = await v8.get("books", id as never);
+      expect(row?.name, id).toBe(
+        {
+          underpadded: "Book 1",
+          overpadded: "Book 0001",
+          huge: "Book 900719925474099100",
+        }[id]
+      );
+    }
+    // …and each still got a slot of its own, none of them claimed by a name.
+    const slots = await Promise.all(
+      ["underpadded", "overpadded", "huge"].map(
+        async (id) => (await v8.get("books", id as never))?.number
+      )
+    );
+    expect([...slots].sort()).toEqual([1, 2, 3]);
+  });
+
+  it("recognises the two shapes the old writer DID render", async () => {
+    // The positive half of the case above: three digits for 1..999, and the
+    // natural width past that. Without both, the backfill would leave a real
+    // placeholder carrying English.
+    const v7 = await openLegacyV7();
+    await v7.put("books", legacyBook("small", "Book 007", 10));
+    await v7.put("books", legacyBook("big", "Book 1000", 20));
+    v7.close();
+
+    const v8 = await getDb();
+    expect(await v8.get("books", "small" as never)).toMatchObject({
+      number: 7,
+      name: null,
+    });
+    expect(await v8.get("books", "big" as never)).toMatchObject({
+      number: 1000,
+      name: null,
     });
   });
 

@@ -899,6 +899,21 @@ export function BooksScreen({
   const onSaveBookName = useCallback(
     (name: string) => {
       if (!shareMenuBookId) return;
+      // An UNTOUCHED field on an unnamed book sends blank, not the placeholder
+      // it was seeded with (#169, QA P2 on #701). The seed is the rendered
+      // default — "Book 001" — so that a small fix is an edit rather than a
+      // retype, but forwarding it verbatim would store this locale's wording as
+      // a name and freeze the book in English on the first Rename anybody
+      // opens, undoing the one thing the stored number exists to prevent.
+      //
+      // Keyed on the book being unnamed, and on the value still being exactly
+      // what was rendered. A book the facilitator called "Mark" keeps "Mark",
+      // and typing "Book 002" onto it by hand is a deliberate act stored as a
+      // name — the same rule `createBook` follows for a supplied name, and what
+      // keeps this from guessing at anybody's words.
+      const untouchedDefault =
+        shareMenuBook?.name === null &&
+        name.trim() === strings.bookName(shareMenuBook.number);
       // Capture the session this rename belongs to. IDB can settle after the
       // user has closed the menu, reopened another book's menu, or armed a share
       // — all of which advance the token — so close ONLY if we are still the
@@ -909,7 +924,7 @@ export function BooksScreen({
       // what makes the menu layer's `busy()` honest for a system Back landing
       // in the same task as this tap (invariant 4).
       setSavingName(true);
-      void renameBook(shareMenuBookId, name)
+      void renameBook(shareMenuBookId, untouchedDefault ? "" : name)
         .then((book) => {
           if (book && bookMenuSession.current === session) onCloseShareMenu();
         })
@@ -920,7 +935,13 @@ export function BooksScreen({
           if (bookMenuSession.current === session) setSavingName(false);
         });
     },
-    [renameBook, setSavingName, shareMenuBookId, onCloseShareMenu]
+    [
+      renameBook,
+      setSavingName,
+      shareMenuBook,
+      shareMenuBookId,
+      onCloseShareMenu,
+    ]
   );
   // Abandon the rename (Cancel, Escape) and return to the action list. Bumps
   // the session and clears `savingBookName` like every other exit from this
