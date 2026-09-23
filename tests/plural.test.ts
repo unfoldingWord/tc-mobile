@@ -115,9 +115,16 @@ describe("plural's default locale", () => {
     expect(code).not.toMatch(/["'][a-z]{2}(-[A-Za-z]+)*["']/);
   });
 
-  it("still renders English, because that is what the build ships", () => {
-    expect(plural(1, { one: "{n} chapter", other: "{n} chapters" })).toBe(
-      "1 chapter"
-    );
+  it("selects by English rules at a count where other languages disagree", () => {
+    const forms = { one: "{n} chapter", other: "{n} chapters" };
+    expect(plural(1, forms)).toBe("1 chapter");
+    // 21 is the discriminator, and the reason n=1 alone was not one (George
+    // r2 Low 1). English cardinal selects `other` at 21; Russian and Polish
+    // select `one`. A default of `ru` passes the line above AND renders
+    // "21 chapter" from the English `one` form — so a case that stopped at 1
+    // asserted only that SOME locale maps 1 to `one`, which every locale here
+    // does. The source scans above are the structural pin; this is the
+    // behavioural one, and it now discriminates.
+    expect(plural(21, forms)).toBe("21 chapters");
   });
 });
