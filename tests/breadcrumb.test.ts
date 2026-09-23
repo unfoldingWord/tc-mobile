@@ -87,6 +87,28 @@ describe("the trail is built in one place", () => {
     const segment = strings.recorderBreadcrumb("Ruth", "Chapter 1", 2);
     expect(segment.startsWith(chapter)).toBe(true);
   });
+
+  it("passes a part containing the separator through, on both screens alike", () => {
+    // Names are free text (#264/#314), so a facilitator can type the separator
+    // into one. The trail does NOT escape or strip it: the parts go through as
+    // typed, and a reader of "Ruth > Mark > Luke" cannot tell which `>` is the
+    // trail's. That is a deliberate no-op rather than an oversight — silently
+    // rewriting a name the facilitator chose is the worse of the two, and the
+    // ambiguity is already reachable through the BOOK name, which has been
+    // free text and joined into this trail on both screens all along.
+    //
+    // What this pins is the half that IS this change's business: the two
+    // screens agree on the awkward input as well as the ordinary one, so the
+    // recorder cannot start rendering a typed name differently from the
+    // Segments header one tap up. Escaping either side would kill it.
+    const heading = strings.chapterHeading("Mark > Luke", 3);
+    const chapter = strings.chapterBreadcrumb("Ruth", heading);
+    const segment = strings.recorderBreadcrumb("Ruth", heading, 2);
+
+    expect(chapter).toBe("Ruth > Mark > Luke");
+    expect(segment).toBe("Ruth > Mark > Luke > 2");
+    expect(segment.startsWith(chapter)).toBe(true);
+  });
 });
 
 describe("the default chapter name is written once", () => {
