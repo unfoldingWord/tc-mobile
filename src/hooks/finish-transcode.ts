@@ -62,10 +62,40 @@ let requestedDuringRun = false;
  * Not a blocklist — a deprioritisation. The owed list is sorted by durable
  * stall count; this same-page set moves stalled ids behind its healthy tail.
  * A stall ends the RUN (#290), so poison clips near the head would otherwise
- * starve healthy segments. Poison clips are still retried after recovery (#404):
- * they can therefore consume another encoder timeout before later Share work.
+ * starve healthy segments. A clip is still retried after it stalls — at most
+ * until {@link PAGE_STALL_LIMIT} holds it out for the rest of the page.
  */
 const stalledSegmentIds = new Set<SegmentId>();
+
+type OwedClipId = Awaited<
+  ReturnType<typeof listPcmFinishedSegments>
+>[number]["clipId"];
+
+/**
+ * How many times one clip may stall the encoder in this page before the sweep
+ * stops asking it to (#682).
+ *
+ * Two, because the first stall cannot say whose fault it was: the worker may
+ * have been wedged for a reason that has nothing to do with the clip, and the
+ * recovery sweep (#404) exists to transcode that clip once the encoder works
+ * again. Every stall tears the worker down and builds a fresh one
+ * (`encodeInWorker`), and the recovery sweep only runs after an encode has just
+ * produced bytes — so a SECOND stall is the same clip wedging a different,
+ * demonstrably working worker. That is the clip, and retrying it again only
+ * spends another silence deadline holding the one encoder lane, in front of
+ * whatever Share the translator taps next.
+ *
+ * Held out is not given up on. The PCM is never touched, the segment keeps
+ * drawing and playing from it, and the next page load retries it — last, by its
+ * durable stall count (`listPcmFinishedSegments`). What the bound caps is the
+ * cost one poison clip can put in front of foreground work: one timeout at
+ * launch, one after the first recovery, then none for the rest of the page.
+ *
+ * Keyed by CLIP, not segment: a segment re-recorded under a new clip has new
+ * audio, which has not stalled anything yet.
+ */
+const PAGE_STALL_LIMIT = 2;
+const pageStallCounts = new Map<OwedClipId, number>();
 
 /**
  * Stop sweeping, for the life of this page. One-way (George R5 P2-3).
@@ -107,7 +137,9 @@ let requestedDuringPause = false;
  * behind the healthy ones; when it is the ONLY clip owed, it is retried
  * straight away. That is the intended trade — the encoder has just been
  * demonstrated to work — and not the #290 case, which is about going back at a
- * stall with nothing having changed.
+ * stall with nothing having changed. It is a trade made once per clip:
+ * {@link PAGE_STALL_LIMIT} holds out a clip that stalls again on the repaired
+ * encoder, so later Shares do not each pay for it (#682).
  */
 let lastEncoderHealth = encoderHealth();
 subscribeToEncoderHealth((health) => {
@@ -302,6 +334,7 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
       return null;
     }
     if (segmentId === skip) continue;
+    if ((pageStallCounts.get(clipId) ?? 0) >= PAGE_STALL_LIMIT) continue;
     try {
       // Inside the encoder lane from the LOAD onward, not just the encode: the
       // PCM is read only once the lane is ours, so a share holding the lane
@@ -353,6 +386,7 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
       // otherwise starve every other finished segment (George R1 P2-2, R2 P2).
       if (cause instanceof EncoderStalledError) {
         stalledSegmentIds.add(segmentId);
+        pageStallCounts.set(clipId, (pageStallCounts.get(clipId) ?? 0) + 1);
         try {
           await recordTranscodeStall(clipId);
         } catch (accountingCause) {
