@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 type ErrorEventish = { error?: Error; message?: string };
+type MessageEventish = { data: unknown };
 
 /** A `Worker` stand-in that can emit progress, done or error and be terminated. */
 class FakeWorker {
@@ -25,10 +26,12 @@ class FakeWorker {
   static terminateThrows = false;
   /** When set, `postMessage()` throws synchronously (a detached buffer, say). */
   static postMessageThrows = false;
-  onmessage: ((event: { data: unknown }) => void) | null = null;
+  onmessage: ((event: MessageEventish) => void) | null = null;
   onerror: ((event: ErrorEventish) => void) | null = null;
   terminated = false;
+  posted: unknown[] = [];
   private errorListeners: ((event: ErrorEventish) => void)[] = [];
+  private messageListeners: ((event: MessageEventish) => void)[] = [];
 
   constructor(
     public url: string | URL,
@@ -36,27 +39,42 @@ class FakeWorker {
   ) {
     FakeWorker.instances.push(this);
   }
-  addEventListener(type: string, fn: (event: ErrorEventish) => void): void {
-    if (type === "error") this.errorListeners.push(fn);
+  addEventListener(type: string, fn: (event: never) => void): void {
+    if (type === "error")
+      this.errorListeners.push(fn as (event: ErrorEventish) => void);
+    if (type === "message")
+      this.messageListeners.push(fn as (event: MessageEventish) => void);
   }
-  removeEventListener(type: string, fn: (event: ErrorEventish) => void): void {
+  removeEventListener(type: string, fn: (event: never) => void): void {
     if (type === "error")
       this.errorListeners = this.errorListeners.filter((f) => f !== fn);
+    if (type === "message")
+      this.messageListeners = this.messageListeners.filter((f) => f !== fn);
   }
-  postMessage(): void {
+  postMessage(message: unknown): void {
     if (FakeWorker.postMessageThrows) throw new Error("postMessage blew up");
+    this.posted.push(message);
   }
   terminate(): void {
     this.terminated = true;
     if (FakeWorker.terminateThrows) throw new Error("terminate blew up");
   }
 
+  private deliver(data: unknown): void {
+    const event = { data };
+    for (const fn of [...this.messageListeners]) fn(event);
+    this.onmessage?.(event);
+  }
+
+  emitReady(): void {
+    this.deliver({ kind: "ready" });
+  }
   /** A liveness heartbeat: resets the client's silence window, no result. */
   emitProgress(fraction: number): void {
-    this.onmessage?.({ data: { kind: "progress", fraction } });
+    this.deliver({ kind: "progress", fraction });
   }
   emitDone(mp3: ArrayBuffer): void {
-    this.onmessage?.({ data: { kind: "done", mp3 } });
+    this.deliver({ kind: "done", mp3 });
   }
 }
 
@@ -97,8 +115,10 @@ const nth = (n: number): FakeWorker => {
 
 type Codec = typeof import("@/hooks/mp3-codec");
 let withEncoder: Codec["withEncoder"];
+let warmEncoder: Codec["warmEncoder"];
 let EncoderStalledError: Codec["EncoderStalledError"];
 let TIMEOUT: number;
+let READY_TIMEOUT: number;
 
 const encode = (samples: Int16Array) =>
   withEncoder(undefined, (codec) => codec.encodeMp3(samples));
@@ -112,14 +132,127 @@ beforeEach(async () => {
   globalThis.Worker = FakeWorker as unknown as typeof Worker;
   const mod = await import("@/hooks/mp3-codec");
   withEncoder = mod.withEncoder;
+  warmEncoder = mod.warmEncoder;
   EncoderStalledError = mod.EncoderStalledError;
   TIMEOUT = mod.ENCODER_SILENCE_TIMEOUT_MS;
+  READY_TIMEOUT = mod.ENCODER_READY_TIMEOUT_MS;
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.useRealTimers();
   delete (globalThis as { Worker?: unknown }).Worker;
   delete (globalThis as { document?: unknown }).document;
+});
+
+it("delivers messages to retained listeners before the per-job handler", () => {
+  const worker = new FakeWorker("worker.js");
+  const calls: string[] = [];
+  const retained = () => calls.push("durable");
+  const removed = () => calls.push("removed");
+  worker.addEventListener("message", retained);
+  worker.addEventListener("message", removed);
+  worker.removeEventListener("message", removed);
+  worker.onmessage = () => calls.push("job");
+  worker.emitReady();
+  worker.emitProgress(0.5);
+  worker.emitDone(new ArrayBuffer(1));
+  expect(calls).toEqual(["durable", "job", "durable", "job", "durable", "job"]);
+});
+
+describe("snapshot readiness before the silence deadline", () => {
+  const snapshotUrl = "blob:encoder-deadline-snapshot";
+
+  async function rebuildFromSnapshot() {
+    vi.stubEnv("PROD", true);
+    const fetchChunk = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => "/* worker snapshot */",
+    });
+    vi.stubGlobal("fetch", fetchChunk);
+    vi.spyOn(URL, "createObjectURL").mockReturnValue(snapshotUrl);
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    warmEncoder();
+    await microtasks();
+    await microtasks();
+    expect(fetchChunk).toHaveBeenCalledOnce();
+    expect(URL.createObjectURL).toHaveBeenCalledOnce();
+
+    const controller = new AbortController();
+    const first = withEncoder(controller.signal, (codec) =>
+      codec.encodeMp3(Int16Array.of(1))
+    );
+    const rejection = expect(first).rejects.toBeInstanceOf(DOMException);
+    await microtasks();
+    expect(nth(0).posted).toHaveLength(1);
+    controller.abort();
+    await rejection;
+    expect(nth(1).url).toBe(snapshotUrl);
+    return nth(1);
+  }
+
+  it("starts the encode deadline after the snapshot answers ready", async () => {
+    const worker = await rebuildFromSnapshot();
+    const controller = new AbortController();
+    const pending = withEncoder(controller.signal, (codec) =>
+      codec.encodeMp3(Int16Array.of(2))
+    );
+    // Keep an assertion failure from leaving an unobserved pending job behind.
+    void pending.catch(() => {});
+    try {
+      await microtasks();
+      expect(worker.posted).toEqual([]);
+      worker.emitReady();
+      await microtasks();
+      expect(
+        worker.posted,
+        "Snapshot ready must release the handshake before testing encode silence"
+      ).toHaveLength(1);
+      expect(worker.onmessage).toBeTypeOf("function");
+      worker.emitProgress(0.5);
+      const rejection =
+        expect(pending).rejects.toBeInstanceOf(EncoderStalledError);
+      await vi.advanceTimersByTimeAsync(TIMEOUT);
+      await rejection;
+      expect(worker.terminated).toBe(true);
+      expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+    } finally {
+      controller.abort();
+      await pending.catch(() => {});
+    }
+  });
+
+  it("withholds PCM without ready and falls back within the fake-clock budget", async () => {
+    const worker = await rebuildFromSnapshot();
+    const controller = new AbortController();
+    const pending = withEncoder(controller.signal, (codec) =>
+      codec.encodeMp3(Int16Array.of(3))
+    );
+    void pending.catch(() => {});
+    try {
+      await microtasks();
+      expect(worker.posted).toEqual([]);
+      await vi.advanceTimersByTimeAsync(READY_TIMEOUT);
+      expect(worker.terminated).toBe(false);
+      expect(worker.posted).toEqual([]);
+      await vi.advanceTimersByTimeAsync(READY_TIMEOUT);
+      expect(worker.terminated).toBe(true);
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith(snapshotUrl);
+      const fallback = nth(2);
+      expect(fallback.url).toEqual(nth(0).url);
+      expect(
+        fallback.posted,
+        "Withheld ready must reach chunk fallback within two handshake windows"
+      ).toHaveLength(1);
+      fallback.emitDone(new Uint8Array([3]).buffer);
+      await expect(pending).resolves.toEqual(new Uint8Array([3]));
+    } finally {
+      controller.abort();
+      await pending.catch(() => {});
+    }
+  });
 });
 
 describe("the encode silence deadline (#166)", () => {

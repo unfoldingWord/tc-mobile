@@ -241,6 +241,12 @@ test.describe("the theme survives navigation when persistence fails (#457 QA P2)
     const addChapter = page.getByRole("button", { name: /^Add chapter to / });
     await expect(addChapter).toBeVisible();
     await addChapter.click();
+    // Add chapter opens a naming prompt now (#609); Confirm alone accepts the
+    // pre-filled "Chapter N" and is what actually writes the chapter.
+    await page
+      .getByRole("dialog", { name: "Name your new chapter" })
+      .getByRole("button", { name: "Create chapter" })
+      .click();
     // Wait for the row itself, not a fixed delay: it appears once the write
     // lands.
     const openChapter = page.getByRole("button", { name: /^Open Chapter/ });

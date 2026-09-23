@@ -40,7 +40,6 @@ export type PlaySource = "whole" | "line" | "selection" | null;
 export interface RecorderToolbarProps {
   mode: "record" | "edit";
   recording: boolean;
-  paused: boolean;
   busy: boolean;
   isClosing: boolean;
   /** A segment is loaded. */
@@ -60,7 +59,8 @@ export interface RecorderToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   /** The zoom as DRAWN — a swapped whole-clip view overrides the stored one. */
-  displayedZoom: number;
+  /** The real zoom level; `displayedZoom` retired with the preview (#614). */
+  zoom: number;
   /** The stage says its window controls cannot act right now. */
   windowControlsInert: boolean;
   onRecordButton: () => void;
@@ -77,7 +77,6 @@ export interface RecorderToolbarProps {
 export function RecorderToolbar({
   mode,
   recording,
-  paused,
   busy,
   isClosing,
   hasView,
@@ -90,7 +89,7 @@ export function RecorderToolbar({
   editToolbarHint,
   canUndo,
   canRedo,
-  displayedZoom,
+  zoom,
   windowControlsInert,
   onRecordButton,
   onPlayButton,
@@ -109,10 +108,12 @@ export function RecorderToolbar({
     // Both modes reserve the same right-hand slot for the toggle.
     <div className="recorder-toolbar pair grid items-center px-[16px]">
       <Control
-        icon={recording ? "pause" : "record"}
-        label={
-          recording ? strings.pause : paused ? strings.resume : strings.record
-        }
+        // The square, not the pause bars: this tap ENDS the take and commits
+        // it (#614). A pause glyph over a control that finalizes is the wrong
+        // promise to the one reader who cannot check the label — the
+        // translator who does not read.
+        icon={recording ? "stop" : "record"}
+        label={recording ? strings.stop : strings.record}
         variant="record"
         // This is a gate on the INSERTION OFFSET, not button
         // chrome, so the rule is enumerated in `recordDisabled`
@@ -122,28 +123,27 @@ export function RecorderToolbar({
         //
         // - a buffer sounding at idle — under the scrolling view
         //   (#415) the drawn line marks the SOUNDING sample while
-        //   `panState` is still the pre-play value, and under a
-        //   whole-clip preview it marks nothing in the working
-        //   buffer at all. Either way a take would splice where the
-        //   translator cannot see. (This used to be explained as a
-        //   swapped whole-clip view lying about the line; since
-        //   #415 the line is honest during playback and it is the
-        //   stored pan that is stale. The gate is the same either
-        //   way — do not "correct" it into an enable.)
+        //   `panState` is still the pre-play value, so a take would
+        //   splice where the translator cannot see. (This used to be
+        //   explained as a swapped whole-clip view lying about the
+        //   line; since #415 the line is honest during playback and
+        //   it is the stored pan that is stale. The gate is the same
+        //   either way — do not "correct" it into an enable.)
         // - a finger mid-pan (#317): the touch that pauses playback
         //   lifts the sounding term while the drag is still moving
         //   the pan, so a second finger here would lock the offset
         //   to a position that then slides away from it.
-        // - PAUSED is the exception: this button is Resume, its
-        //   offset was locked at the original Record tap (F9), and
-        //   resuming stops a sounding preview and continues the
-        //   take, so it must stay live (George R3 #4).
+        //
+        // PAUSED used to be an exception to the first of those — the
+        // button was Resume, its offset locked at the original Record
+        // tap (F9), so it stayed live over a sounding preview (George
+        // R3 #4). #614 ended the paused take, so the exception is
+        // gone rather than loosened.
         disabled={recordDisabled({
           busy,
           isClosing,
           hasView,
           playingBuffer,
-          paused,
           dragging,
         })}
         onClick={onRecordButton}
@@ -227,29 +227,20 @@ export function RecorderToolbar({
         // both, and the first external tester read it the other way
         // round and asked whether the icons were reversed.
         //
-        // Both read `displayedZoom`, not `zoom` (#284, George R7),
-        // and what that buys has NARROWED since #417 (George R4
-        // P3). `wholeView` is `render === "whole"`, which
-        // `stageView` now answers for a prepared preview only — a
-        // sounding buffer scrolls at the real zoom, which is #417's
-        // whole point, so during playback `displayedZoom` IS
-        // `zoom`. The one window that claim was false in was the
-        // CLOSE window (#396): a leftover paused-take preview can
-        // outlive the edit gate while `close()` is committing, put
-        // `wholeView` up with a SILENT buffer (so `windowControls-
-        // Inert` is false), and stand this control up drawing the
-        // whole chrome over a handler that flips the real `zoom`.
-        // `!idleEditable` on `disabled` below is what kills that
-        // — in the windows the control can fire, `wholeView` is
-        // false, so the two values the chrome could name are the
-        // two that are equal.
-        icon={displayedZoom === ZOOM_WHOLE ? "zoom-in" : "zoom-out"}
+        // These read `zoom` directly. They used to read a
+        // `displayedZoom` that substituted the whole-clip level
+        // while `render === "whole"` (#284, George R7), because
+        // that render drew clip fractions 0..1 whatever `zoom`
+        // said. #417 had already narrowed it to the paused-take
+        // preview alone (a sounding buffer scrolls at the real
+        // zoom — that is #417's whole point), and #614 retires the
+        // preview, so `render` can no longer be `"whole"` at all
+        // and the substitution has no state left to correct for.
+        icon={zoom === ZOOM_WHOLE ? "zoom-in" : "zoom-out"}
         label={
-          displayedZoom === ZOOM_WHOLE
-            ? strings.zoomAtWhole
-            : strings.zoomAtQuarter
+          zoom === ZOOM_WHOLE ? strings.zoomAtWhole : strings.zoomAtQuarter
         }
-        pressed={displayedZoom === ZOOM_QUARTER}
+        pressed={zoom === ZOOM_QUARTER}
         variant="quiet"
         size={24}
         // A window control: it rebuilds the window under a line that
