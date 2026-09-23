@@ -169,12 +169,17 @@ compiles under `tsconfig.lib.json` with the rest of the layer.
 fixed sentence in the table may appear again in `app/`, `components/` or
 `hooks/`. `lib/`'s own `Error` messages are deliberately outside that check —
 they are for whoever reads the failure log, not for the screen, and that test's
-docblock names the one pair where the two wordings overlap on purpose. What
-#169 still asks for beyond this is a `strings[locale]` dimension, a plural rule
-that is not English's two forms, sentences that are not assembled from
-translated fragments, book names stored as numbers rather than written into
-IndexedDB as English data, and `lang`/`dir` driven by the locale — none of which
-is done.
+docblock names the one pair where the two wordings overlap on purpose. The
+second check is the stronger one and the reason a base merge cannot quietly
+undo this: every fixed sentence in `app/` and `hooks/` must be one the table
+holds, so a brand-new literal fails as loudly as a re-typed one.
+
+`lib/locale.ts` is the other half of #169 that has landed — one entry behind
+`<html lang>`, `dir` and the manifest language, so a second locale is an entry
+there rather than an edit in three files. What #169 still asks for beyond these
+two is a `strings[locale]` dimension, a plural rule that is not English's two
+forms, sentences that are not assembled from translated fragments, and book
+names stored as numbers rather than written into IndexedDB as English data.
 
 ## Testing
 
