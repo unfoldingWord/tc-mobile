@@ -82,6 +82,13 @@ interface SegmentRowProps {
    * now would open on stale audio. Play stays live.
    */
   busy?: boolean;
+  /**
+   * This row's Record is the next required action in the guided chain (#604) —
+   * the hop between "Add segment" and the recorder, which is the only door to
+   * it. Only ever true on a row with no audio, which is the only state that
+   * renders a Record at all; `guided-step.ts` owns that rule.
+   */
+  guided?: boolean;
 }
 
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
@@ -122,6 +129,7 @@ export function SegmentRow({
   onMenuOpen,
   onMenuClose,
   busy = false,
+  guided = false,
 }: SegmentRowProps) {
   const state = segmentRowState(row);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -428,6 +436,9 @@ export function SegmentRow({
           size={20}
           className="flex-none"
           disabled={busy}
+          // Never on a control held inert by a landing save: the ring would
+          // be pointing at a tap the row is refusing.
+          guided={guided && !busy}
           onClick={onOpenRecorder}
         />
       )}

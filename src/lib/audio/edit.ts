@@ -190,15 +190,8 @@ export function silence(frames: number): Int16Array {
  * `frames`, pad a shorter one with silence, return the same buffer when the
  * length already matches.
  *
- * Exists for MP3 decodes (B8). A decoded finished segment is not sample-exact —
- * LAME pads the head and tail of the stream (~1.1k samples), and whether the
- * decoder trims that back out depends on whether it honours the LAME info tag
- * (Chromium did not, in the B8 browser run: 133,632 frames back for 132,300).
- * The clip's `frameCount` is the length the translator recorded, and every
- * consumer of a decode — export, playback, the recorder's edit buffer — fits to
- * it here, so the phone's decoder cannot move a segment's duration, and an
- * edit → Finished → edit cycle cannot grow the audio by a padding each time
- * (round-1 Frank F1 / George G3).
+ * A decoded MP3 can contain encoder padding. After alignment, fitting to the
+ * stored frame count preserves the segment's duration across decode/edit cycles.
  */
 export function fitToFrames(samples: Int16Array, frames: number): Int16Array {
   if (!Number.isInteger(frames) || frames < 0) {
