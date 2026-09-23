@@ -937,8 +937,17 @@
        that collapsed with its child would recentre the group, jumping the
        canvas on every cut. `--c-control-sm` is what `.control--quiet` — the
        scissors — is sized by, read as the token rather than repeated as 40px
-       (the #362 40-to-44 question above is exactly that kind of change). */
-    min-height: var(--c-control-sm);
+       (the #362 40-to-44 question above is exactly that kind of change).
+
+       The `padding-top` is INSIDE this reservation and has to be added to it:
+       under border-box, `min-height` includes padding, so reserving the bare
+       40px control box left the empty row 6px shorter than the mounted one
+       and slid the centred canvas 3px on every cut — reserving the height and
+       still jumping, which is the failure this whole rule exists to prevent.
+       `.recorder-paste`'s `--c-recorder-paste-row` has always been the control
+       box PLUS `--p-space-2` for the same reason; this is that contract, with
+       this row's own control size. */
+    min-height: calc(var(--c-control-sm) + var(--p-space-2));
     /* `flex-shrink: 0` (George R7 P2-1, round 8): this row's `min-height:
        auto` (unset, and it is not `overflow: hidden`) already gives it an
        automatic minimum size equal to its own content, so it could not

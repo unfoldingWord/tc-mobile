@@ -175,5 +175,11 @@ describe("the Cut row reserves its height (#613)", () => {
     // `.control--quiet` (the scissors) is sized by, and #362 is an open
     // question about changing it.
     expect(minHeight?.[2]).toMatch(/var\(--c-control-sm\)/);
+    // ...and the row's own padding, which border-box counts INSIDE
+    // `min-height`. Reserving the bare control box passed this assertion
+    // while the canvas still moved 3px (jag3773 P3 on #671), which is why
+    // the real gate is the canvas-bounds comparison in
+    // `e2e/recorder-selection.spec.ts` and this only pins the declaration.
+    expect(minHeight?.[2]).toMatch(/var\(--p-space-2\)/);
   });
 });

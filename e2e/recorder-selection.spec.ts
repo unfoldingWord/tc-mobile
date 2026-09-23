@@ -169,6 +169,8 @@ test.describe("edit mode toggle", () => {
       // the paste target — it does not reseed a new span the way undo, redo
       // and paste do. Cutting twice in a row is therefore two taps plus a
       // touch on the waveform, and this is the state in between.
+      const canvasBounds = async () =>
+        (await page.locator(".recorder-canvas").boundingBox())!;
       const expectCollapsedOntoTheLine = async () => {
         await expect(startHandle).toHaveCount(0);
         await expect(endHandle).toHaveCount(0);
@@ -192,6 +194,14 @@ test.describe("edit mode toggle", () => {
         return expectUsableFrame();
       };
 
+      // #613 review (jag3773 P3): the Cut row must reserve the WHOLE of what
+      // the mounted button occupies — its 40px box AND the row's own 6px
+      // padding-top — or the centred stage column recentres when the scissors
+      // leaves and the canvas slides by half the deficit. Asserting the
+      // reserved `min-height` token is not enough: that assertion passed while
+      // the canvas still moved 3px. Compare the geometry itself.
+      const canvasBeforeCut = await canvasBounds();
+
       const originalLength = await expectUsableFrame();
       if (width === 390) {
         await page
@@ -205,7 +215,9 @@ test.describe("edit mode toggle", () => {
         .getByRole("button", { name: "Cut the selection", exact: true })
         .click();
       await expectCollapsedOntoTheLine();
+      expect(await canvasBounds()).toEqual(canvasBeforeCut);
       const firstCutLength = await reopenFrameFromTheWaveform();
+      expect(await canvasBounds()).toEqual(canvasBeforeCut);
       expect(firstCutLength).toBeLessThan(originalLength);
       await page
         .getByRole("button", { name: "Cut the selection", exact: true })
