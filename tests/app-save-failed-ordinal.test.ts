@@ -10,11 +10,15 @@ import type { ChapterId, SegmentId } from "@/types/domain";
  * #710: the recovery screen must name the segment the HELD TAKE belongs to,
  * not the segment the recorder sheet was last opened on.
  *
- * The two come apart during a first save attempt: `attempts: 0` keeps
- * `SaveFailed` down, so the ordinary tree is up and a second segment can be
- * opened before the first save settles. This mounts the real `App` and the real
+ * App itself does not keep the two together. During a first save attempt,
+ * `attempts: 0` keeps `SaveFailed` down, so App's ordinary tree is up and
+ * would let a second segment open before the first save settles. The real
+ * Recorder awaits `saveRecording` before it calls `onExit`, and no exit path
+ * found so far reaches that overlap, so this is a defensive App-level
+ * invariant, not a reproduced race. The test creates the overlap by calling
+ * the Recorder's props directly. It mounts the real `App` and the real
  * `useSaveTake` over a store write the test controls, with every screen and
- * browser-boundary hook replaced at its module seam, and walks that sequence.
+ * browser-boundary hook replaced at its module seam.
  */
 
 const seam = vi.hoisted(() => {
