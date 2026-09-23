@@ -48,19 +48,38 @@ const CSS = readFileSync(
 
 const TONES: NoticeTone[] = ["alert", "busy", "info"];
 
-/** The declarations of one rule, by selector text, from layer 3. */
+/** Exact, standalone rules only; comments cannot supply a selector or value. */
 function ruleBody(selector: string): string | null {
-  const at = CSS.indexOf(selector + " {");
-  if (at === -1) return null;
-  const open = at + selector.length + 2;
-  const close = CSS.indexOf("}", open);
-  return close === -1 ? null : CSS.slice(open, close);
+  const css = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const rules = [
+    ...css.matchAll(new RegExp(`^\\s*${escaped}\\s*\\{([^{}]*)\\}`, "gm")),
+  ];
+  expect(rules.length, `ambiguous rule: ${selector}`).toBeLessThanOrEqual(1);
+  const declarations = rules.at(0)?.[1];
+  if (declarations === undefined) return null;
+  const body = declarations.trim();
+  expect(body, `empty rule: ${selector}`).not.toBe("");
+  return body;
+}
+
+function requiredRule(selector: string): string {
+  const body = ruleBody(selector);
+  if (body === null) throw new Error(`missing rule: ${selector}`);
+  return body;
+}
+
+function toneOverride(tone: NoticeTone): string {
+  const selector = `.notice[data-tone="${tone}"]`;
+  if (tone !== "info") return requiredRule(selector);
+  // Info intentionally uses the base box; its glyph has a separate rule.
+  expect(ruleBody(selector), "info must keep the base edge and ink").toBeNull();
+  return "";
 }
 
 describe("the .notice rule honours the tone table (#164 L-14)", () => {
   it("has a base rule at all, which is the thing inline styles made impossible", () => {
-    const base = ruleBody(".notice");
-    expect(base, "no .notice rule in 3-components.css").toBeTruthy();
+    const base = requiredRule(".notice");
     // The box the component used to paint on itself.
     expect(base).toMatch(/background:\s*var\(--s-surface\)/);
     expect(base).toMatch(/border:\s*1px solid var\(--s-edge\)/);
@@ -93,23 +112,34 @@ describe("the .notice rule honours the tone table (#164 L-14)", () => {
       // who cannot read, the colour is the second half of what tells the three
       // marks apart (George G3). That claim only means something if the
       // stylesheet actually paints it.
-      const body = ruleBody(`.notice[data-tone="${tone}"] .notice-glyph`);
-      expect(body, `no glyph rule for data-tone="${tone}"`).toBeTruthy();
+      const body = requiredRule(`.notice[data-tone="${tone}"] .notice-glyph`);
       expect(body).toMatch(
         new RegExp(`color:\\s*${spec.glyph.replace(/[()]/g, "\\$&")}`)
       );
     });
 
     it(`${tone}: \`failure\` decides the live edge, and only for a failure`, () => {
-      const body = ruleBody(`.notice[data-tone="${tone}"]`) ?? "";
-      const paintsLiveEdge = /border-color:\s*var\(--s-live\)/.test(body);
-      expect(paintsLiveEdge).toBe(spec.failure);
+      expect(requiredRule(".notice")).toMatch(
+        /(?:^|;)\s*border:\s*1px solid var\(--s-edge\)\s*;/
+      );
+      const body = toneOverride(tone);
+      if (spec.failure) {
+        expect(body).toMatch(/(?:^|;)\s*border-color:\s*var\(--s-live\)\s*;/);
+      } else {
+        expect(body).not.toMatch(/(?:^|;)\s*border(?:-[\w-]+)?:/);
+      }
     });
 
     it(`${tone}: \`muted\` decides the muted ink, and only for a wait`, () => {
-      const body = ruleBody(`.notice[data-tone="${tone}"]`) ?? "";
-      const paintsMutedInk = /(^|[^-])color:\s*var\(--s-ink-muted\)/.test(body);
-      expect(paintsMutedInk).toBe(spec.muted);
+      expect(requiredRule(".notice")).toMatch(
+        /(?:^|;)\s*color:\s*var\(--s-ink\)\s*;/
+      );
+      const body = toneOverride(tone);
+      if (spec.muted) {
+        expect(body).toMatch(/(?:^|;)\s*color:\s*var\(--s-ink-muted\)\s*;/);
+      } else {
+        expect(body).not.toMatch(/(?:^|;)\s*color:/);
+      }
     });
   }
 });

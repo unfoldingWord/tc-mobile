@@ -9,9 +9,9 @@
  *
  *     [ 1105 samples of priming ][ the recording ][ 0..1151 samples of padding ]
  *
- * and lamejs writes NO Xing/LAME info tag (checked against its output, PR #136
- * round 2), so no decoder can trim the priming by tag. Some decoders trim the
- * 529 on their own; a decoder given a tag by a different encoder trims both.
+ * and lamejs writes no Xing/LAME info tag, so no decoder can trim the priming
+ * by tag. Some decoders trim the 529 on their own; a decoder given a tag by a
+ * different encoder trims both.
  *
  * The round-1 fit kept the FIRST `frameCount` samples — which, on a decoder that
  * returns every granule, is 1105 samples of silence followed by the recording
@@ -21,8 +21,7 @@
  * it works out the head offset from evidence — the stream's own granule count
  * and the decode's length — instead of assuming which end the excess is on.
  *
- * Pure: no decoder, no DOM. The decoder behaviour it models was measured in
- * Chromium (`decodeAudioData`); the PR body carries the impulse round-trip.
+ * Pure: no decoder, no DOM.
  */
 
 import { fitToFrames } from "./edit";
