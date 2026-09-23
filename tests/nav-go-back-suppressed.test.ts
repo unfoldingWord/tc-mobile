@@ -16,10 +16,9 @@ import { describe, expect, it } from "vitest";
  * `history.back()` calls before the first lands is the coalescing hazard #493
  * closed for the tracked issuers; this is the same rule for the untracked one.
  *
- * Same shape as `nav-commit-close-rearm.test.ts`, for the same reason: the
- * Vitest suite has no renderer (AGENTS.md: no jsdom), so `useNavStack`'s
- * callbacks cannot be driven; the gate reads the hook's CODE, comments
- * stripped, and isolates `goBack`'s body so a match elsewhere in the file
+ * Like `nav-commit-close-rearm.test.ts`, this gate reads the hook's CODE
+ * rather than driving `useNavStack`'s callbacks. It strips comments and
+ * isolates `goBack`'s body so a match elsewhere in the file
  * cannot satisfy it. Mutation that must go red: delete the `suppressPop`
  * check, or move it after `beginBack`.
  */
