@@ -5,6 +5,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import pkg from "./package.json" with { type: "json" };
+import { SHIPPED_LOCALE, withLocaleAttributes } from "./src/lib/locale";
 
 // The exact commit a build came from, for the footer stamp (with the version).
 // git works in the Cloudflare Workers build (it clones the repo) and in local
@@ -61,6 +62,24 @@ function versionJsonPlugin(): Plugin {
   };
 }
 
+// `<html lang>`/`dir` from the one locale rather than from a literal in the
+// document (#169). `index.html` ships the same two values statically so the
+// file a human opens is not misleading, and `tests/locale.test.ts` pins the
+// two together — but this hook is what actually decides them, in dev and in
+// `build` alike, so the dev server and `dist/` cannot disagree. The transform
+// itself is `lib/locale.ts`, DOM-free and unit-tested; this is only the seam
+// that hands it the document. `order: "pre"` so it runs on the authored
+// markup, before VitePWA injects the manifest link and the SW registration.
+function localeHtmlPlugin(): Plugin {
+  return {
+    name: "locale-html",
+    transformIndexHtml: {
+      order: "pre",
+      handler: (html) => withLocaleAttributes(html, SHIPPED_LOCALE),
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => ({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
@@ -84,6 +103,7 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     versionJsonPlugin(),
+    localeHtmlPlugin(),
     VitePWA({
       registerType: "autoUpdate",
       // `dev-dist` lets us verify offline behaviour in `vite dev` instead of
@@ -142,7 +162,12 @@ export default defineConfig(({ mode }) => ({
         short_name: "tC Mobile",
         description:
           "Offline audio notebook and editor for oral Bible translation",
-        lang: "en",
+        // Same locale the document is labelled with, not a second copy of it
+        // (#169). `dir` was absent entirely: a manifest with no direction
+        // leaves the install prompt and the app-list entry laid out
+        // left-to-right whatever language their text is in.
+        lang: SHIPPED_LOCALE.tag,
+        dir: SHIPPED_LOCALE.dir,
         start_url: "/",
         scope: "/",
         display: "standalone",
