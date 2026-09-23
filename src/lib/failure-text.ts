@@ -40,8 +40,13 @@ export function boundText(text: string): string {
  * A thrown value as the bare message a caller can put on screen or on a report.
  *
  * The expression this replaces — `cause instanceof Error ? cause.message :
- * String(cause)` — was written out twelve times across six hooks, and once more
- * behind a private `messageOf` in `mp3-codec.ts` (#160, L-15).
+ * String(cause)` — was written out inline across the hooks, and once more
+ * behind a private `messageOf` in `mp3-codec.ts` (#160, L-15). How many is
+ * deliberately not stated here: a census in prose cannot be re-checked and
+ * goes stale the first time someone adds a hook, and the number in this
+ * docblock's first draft was simply wrong (Frank on `25c336fd5`).
+ * `tests/failure-text.test.ts` pins it as an assertion instead — the
+ * expression survives in exactly one file, this one.
  *
  * Deliberately NOT {@link describeCause}, and the difference is the reason both
  * exist. `describeCause` renders for the durable log: it prefixes the error's

@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -98,16 +101,6 @@ describe("describeCause", () => {
 });
 
 /**
- * The `cause` chain (George R4 P2-2).
- *
- * `finish-transcode.ts` wraps every sweep and segment failure as
- * `new Error("Transcoding finished segment <id> failed; its PCM is kept",
- * { cause })` so `context` can stay a short, stable site key. It is the only
- * high-volume production reporter this log receives, and before this the row
- * that named the segment was the row that had lost the reason — browsers do not
- * fold the chain into `error.stack`, that concatenation is Node's.
- */
-/**
  * The other renderer (#160, L-15). What these pin is not "it formats nicely"
  * but the two boundaries that make it a SEPARATE function from `describeCause`
  * rather than a duplicate of it: the Error branch is real (a message, not
@@ -154,6 +147,16 @@ describe("errorMessage", () => {
   });
 });
 
+/**
+ * The `cause` chain (George R4 P2-2).
+ *
+ * `finish-transcode.ts` wraps every sweep and segment failure as
+ * `new Error("Transcoding finished segment <id> failed; its PCM is kept",
+ * { cause })` so `context` can stay a short, stable site key. It is the only
+ * high-volume production reporter this log receives, and before this the row
+ * that named the segment was the row that had lost the reason — browsers do not
+ * fold the chain into `error.stack`, that concatenation is Node's.
+ */
 describe("describeCause and the cause chain", () => {
   it("keeps the reason a wrapper was built to carry", () => {
     class EncoderStalledError extends Error {
@@ -316,5 +319,104 @@ describe("formatFailureLog", () => {
     const text = formatFailureLog([], "0.1.13");
     expect(text).toContain("entries: 0");
     expect(text).toContain("(no failures recorded)");
+  });
+});
+
+/**
+ * The census this replaces, as an assertion instead of a sentence.
+ *
+ * `failure-text.ts`'s docblock used to COUNT the copies it consolidated, and
+ * the number was wrong — eleven inline across five files, not twelve across
+ * six (Frank on `25c336fd5`). A count in prose cannot be re-checked and goes
+ * stale the first time someone adds a hook, which is why AGENTS.md puts counts
+ * in an assertion. This one fails when a copy comes back; the sentence could
+ * only ever be re-read.
+ *
+ * COMMENTS ARE STRIPPED FIRST. `failure-text.ts`'s docblock quotes the very
+ * expression this searches for, while explaining what it replaced, and a
+ * whole-file regex is how `touch-policy.test.ts` came to match its own
+ * justification — the trap AGENTS.md records, where the natural repair is to
+ * weaken the pattern until it can no longer catch a real leak.
+ *
+ * Stated precisely, because a mutation contradicted the easy version: deleting
+ * the strip does NOT turn this suite red today. That docblock quote happens to
+ * wrap across two lines, so the ` * ` between `.message :` and `String(` keeps
+ * the pattern from spanning it. The protection is real but currently
+ * accidental in that one file, which is not something to rely on — a reflowed
+ * comment or a one-line one would restore the false hit. So the stripper is
+ * covered directly, below, instead of being credited with a save it did not
+ * make.
+ */
+describe("errorMessage — the copies, counted by assertion", () => {
+  const INLINE_COPY = /instanceof\s+Error\s*\?[^;]*?\.message\s*:\s*String\(/;
+
+  /** Block and line comments out, so prose about the pattern cannot match. */
+  function code(source: string): string {
+    return source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+  }
+
+  function walk(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const full = join(dir, e.name);
+      if (e.isDirectory()) return walk(full);
+      return /\.tsx?$/.test(e.name) ? [full] : [];
+    });
+  }
+
+  const files = walk("src");
+
+  it("strips comments, so prose quoting the expression cannot match", () => {
+    // The stripper's own both-states check, against a synthetic file rather
+    // than a real one: a one-line comment carrying the expression must not
+    // register, and the identical line as CODE must.
+    // BOTH comment forms, because they are two separate replaces and each
+    // needs its own killer: with only the `//` case here, dropping the block
+    // strip left the suite green.
+    const asLine = `// cause instanceof Error ? cause.message : String(cause)`;
+    const asBlock = `/* cause instanceof Error ? cause.message : String(cause) */`;
+    const asCode = `const m = cause instanceof Error ? cause.message : String(cause);`;
+    for (const prose of [asLine, asBlock]) {
+      expect(INLINE_COPY.test(prose)).toBe(true); // unstripped: a false hit
+      expect(INLINE_COPY.test(code(prose))).toBe(false); // stripped: gone
+    }
+    expect(INLINE_COPY.test(code(asCode))).toBe(true); // real code still caught
+  });
+
+  it("reads a tree at all — a walk that matches nothing is a silent pass", () => {
+    expect(files.length).toBeGreaterThan(50);
+  });
+
+  it("finds the expression in exactly one file — the one that exports it", () => {
+    // Deliberately NOT "nowhere but an exempted path". The first run of this
+    // gate failed on `failure-text.ts` itself, which is correct: the
+    // expression still exists once, as this module's implementation. Naming
+    // that file as an exception would have left the gate unable to notice if
+    // the implementation were deleted. Pinning the SET says both halves at
+    // once — the canonical one is present, and it is the only one.
+    const carriers = files.filter((f) =>
+      INLINE_COPY.test(code(readFileSync(f, "utf8")))
+    );
+    expect(carriers).toEqual([join("src", "lib", "failure-text.ts")]);
+  });
+
+  it("carries it exactly once even there", () => {
+    // A second copy inside that same file would satisfy the set above.
+    const source = code(readFileSync("src/lib/failure-text.ts", "utf8"));
+    expect(source.match(new RegExp(INLINE_COPY, "g")) ?? []).toHaveLength(1);
+  });
+
+  it("does NOT catch stale-target.ts, which differs on purpose", () => {
+    // The legitimate state this gate must stay green on. `stale-target.ts`
+    // returns `string | null`, not `String(cause)`: it feeds an equality test
+    // against a known message, so a non-Error must render as `null`. A pattern
+    // broad enough to flag it would force an exemption by name, and an
+    // exemption by name is how a gate stops catching anything.
+    const source = code(
+      readFileSync("src/lib/storage/stale-target.ts", "utf8")
+    );
+    expect(source).toMatch(/instanceof Error \? cause\.message : null/);
+    expect(INLINE_COPY.test(source)).toBe(false);
   });
 });
