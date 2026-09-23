@@ -47,7 +47,6 @@ import {
   eraseRowReason,
   heldTakeIsBusy,
   markRowReason,
-  rowHint,
 } from "./menu-row-state";
 import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
