@@ -3,6 +3,13 @@ import { Capacitor, type PluginListenerHandle } from "@capacitor/core";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 import {
+  historyWriteDecision,
+  outstandingConsume,
+  replayDecision,
+  type HistoryWrite,
+  type HistoryWriteDecision,
+} from "@/lib/nav/history-latch";
+import {
   floorArmedOnResume,
   floorEntryForLayerChange,
   rearmAfterLayerBack,
@@ -52,7 +59,7 @@ import { reportFailure } from "./report-failure";
  * reachable from a headless spec at all — its exact end state stays a device
  * item (see the commit-close case below).
  *
- * What the adapter owns (six refs):
+ * What the adapter owns (its refs):
  *   - `navIndex` / `nextIndex` — the monotonic depth stamp (invariant 9). Both
  *     seed from `resumeNavIndex` on mount (Amendment B): a reload mid-stack
  *     ADOPTS the entry already there rather than rewriting it to 0.
@@ -84,6 +91,11 @@ import { reportFailure } from "./report-failure";
  *     commit-close case). `commitCloseRecorder`'s own raw `history.back()` is a
  *     THIRD raw issuer OUTSIDE `TravelGuardState`, suppressed rather than
  *     arbitrated; it is never fed to `beginBack`.
+ *   - `deferredWrites` — the history writes (`enterScreen`, the floor arm)
+ *     requested while one of the Backs above had not yet landed (#435). No
+ *     write is issued under a pending traversal; `lib/nav/history-latch.ts`
+ *     decides whether it is written, deferred to the landing, or refused, and
+ *     every landing replays what was deferred.
  *
  * Amendment C is a centrally-owned cleanup effect (dep array `[screen,
  * recovering, databasePanel]`, primitives only — invariant 6) that clears the
@@ -370,6 +382,9 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   const transitionInFlight = useRef(false);
   // "This popstate is one WE caused — do not route it" (kept from develop).
   const suppressPop = useRef(false);
+  // History writes waiting for an outstanding Back to land (#435), in request
+  // order. Replayed by the `popstate` handler at the end of every landing.
+  const deferredWrites = useRef<HistoryWrite[]>([]);
 
   // Latest-ref the state-half callbacks (menu.tsx onCloseRef pattern) so the
   // returned commands can be identity-stable — recorder.tsx:2213 rebuilds its
@@ -465,6 +480,65 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     navIndex.current = index;
   }, []);
 
+  /**
+   * Amendment G's arm, re-derived from the state at the moment it is written
+   * rather than at the moment it was asked for: a deferred arm (#435) replays
+   * after a landing that may already have dismissed the overlay it was for, or
+   * armed the entry itself.
+   */
+  const armFloor = useCallback(() => {
+    const action = floorEntryForLayerChange({
+      atFloor: atFloor.current,
+      armed: floorArmed.current,
+      open: layerStack.current.length,
+    });
+    if (action === "arm") {
+      floorArmed.current = true;
+      pushHistoryEntry();
+    }
+  }, [pushHistoryEntry]);
+
+  // The "consume outstanding" latch (#435, `lib/nav/history-latch.ts`). Every
+  // history write a UI command makes goes through here; the re-arms inside the
+  // `popstate` handler do not, because they run at a landing after the travel
+  // guard is settled and with `suppressPop` false (a suppressed landing returns
+  // before it routes), which is when nothing is outstanding.
+  const decideWrite = useCallback(
+    (write: HistoryWrite): HistoryWriteDecision =>
+      historyWriteDecision(
+        write,
+        outstandingConsume(suppressPop.current, travelGuard.current)
+      ),
+    []
+  );
+  const performWrite = useCallback(
+    (write: HistoryWrite, decision: HistoryWriteDecision) => {
+      if (decision === "defer") {
+        deferredWrites.current = [...deferredWrites.current, write];
+        return;
+      }
+      if (decision !== "write") return;
+      if (write === "enter-screen") enterScreen();
+      else armFloor();
+    },
+    [enterScreen, armFloor]
+  );
+  // Called at the end of every landing. Each write is re-decided, never
+  // refused (`replayDecision`), so one whose landing issued another Back of
+  // its own waits for that one as well.
+  const replayDeferredWrites = useCallback(() => {
+    const queued = deferredWrites.current;
+    deferredWrites.current = [];
+    for (const write of queued) {
+      performWrite(
+        write,
+        replayDecision(
+          outstandingConsume(suppressPop.current, travelGuard.current)
+        )
+      );
+    }
+  }, [performWrite]);
+
   // Amendment B (reload/bootstrap safety) — declared BEFORE the popstate effect
   // so it runs first on mount. Instead of `develop`'s unconditional
   // `replaceState({index:0})` + reset, ADOPT an app-shaped entry already on the
@@ -550,22 +624,29 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
 
   const openChapter = useCallback(
     (id: ChapterId) => {
-      // State half then the protective push (Books → Segments). The push is a
-      // synchronous window.history call and the state half only enqueues React
-      // state, so their relative order is not observable — the entry is on the
-      // stack before this gesture returns either way.
+      // The latch is asked FIRST (#435): a refusal means a routed Back is
+      // outstanding and owns the next screen, so neither half runs. Otherwise
+      // the state half, then the protective push (Books → Segments) or its
+      // deferral. The push is a synchronous window.history call and the state
+      // half only enqueues React state, so their relative order is not
+      // observable — when nothing is outstanding, the entry is on the stack
+      // before this gesture returns either way.
+      const decision = decideWrite("enter-screen");
+      if (decision === "refuse") return;
       onOpenChapterRef.current(id);
-      enterScreen();
+      performWrite("enter-screen", decision);
     },
-    [enterScreen]
+    [decideWrite, performWrite]
   );
 
   const openRecorder = useCallback(
     (segmentId: SegmentId, ordinal: number) => {
+      const decision = decideWrite("enter-screen");
+      if (decision === "refuse") return;
       onOpenRecorderRef.current(segmentId, ordinal);
-      enterScreen();
+      performWrite("enter-screen", decision);
     },
-    [enterScreen]
+    [decideWrite, performWrite]
   );
 
   const pushLayer = useCallback(
@@ -575,17 +656,20 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
       // here and never handed back by a traversal. `floorEntryForLayerChange`
       // has the whole argument for why there is no release — two review
       // findings in two places, both of them about one existing.
+      //
+      // The layer is registered whatever the latch says — the overlay opened
+      // in this same click handler — so only the arm can wait (#435). The
+      // latch never refuses `"arm-floor"`.
       const action = floorEntryForLayerChange({
         atFloor: atFloor.current,
         armed: floorArmed.current,
         open: layerStack.current.length,
       });
       if (action === "arm") {
-        floorArmed.current = true;
-        pushHistoryEntry();
+        performWrite("arm-floor", decideWrite("arm-floor"));
       }
     },
-    [pushHistoryEntry]
+    [decideWrite, performWrite]
   );
 
   const popLayer = useCallback((id: string) => {
@@ -646,7 +730,7 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // previous render's, closing over the previous render's trap flags. Every
   // value the handler reads is now a ref written in the layout effect above.
   useEffect(() => {
-    const onPopState = (event: PopStateEvent) => {
+    const land = (event: PopStateEvent) => {
       // Settle the guard at the top of EVERY landing, issuer-blind — the exact
       // spot develop clears `backRequested`, before the suppressPop early
       // return. `settleOutstanding`, NOT a per-issuer settle: always clearing
@@ -862,6 +946,14 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
         }
       }
     };
+    // Every landing — suppressed or routed, whichever branch returned — ends
+    // by replaying the writes deferred behind it (#435). After the routing,
+    // not before: a routed landing may dismiss the overlay a deferred floor
+    // arm was for, and the replay re-derives the arm from what is left.
+    const onPopState = (event: PopStateEvent) => {
+      land(event);
+      replayDeferredWrites();
+    };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
     // `screen`, `recovering`, `databasePanel` and `onLeaveToBooks` are GONE
@@ -872,12 +964,13 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     // landing between a trap's commit and this effect re-running was routed by
     // the previous render's listener, with `databasePanel` still `false`.
     //
-    // The two that remain are `useCallback([])` and so never change identity:
-    // this handler subscribes ONCE for the hook's life. That is the property
-    // to preserve — a new dependency here would silently reintroduce the
-    // re-subscribe window, so a new value belongs in the layout effect above,
-    // not in this array.
-  }, [pushHistoryEntry, popLayer]);
+    // The three that remain never change identity: `pushHistoryEntry` and
+    // `popLayer` are `useCallback([])`, and `replayDeferredWrites` is built
+    // only from callbacks that are (#435). This handler subscribes ONCE for
+    // the hook's life. That is the property to preserve — a dependency that
+    // can change identity would silently reintroduce the re-subscribe window,
+    // so a new value belongs in the layout effect above, not in this array.
+  }, [pushHistoryEntry, popLayer, replayDeferredWrites]);
 
   // The shell's leg of the same model (#374): a hardware Back arrives as the
   // App plugin's `backButton` event, not as a `popstate`. Registered only
