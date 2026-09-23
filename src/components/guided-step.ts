@@ -162,7 +162,7 @@ function booksStep(
  */
 export function guidedRecordShown(input: {
   readonly step: GuidedStep | null;
-  /** The recorder is not idle — requesting, recording, paused or processing. */
+  /** The recorder is not idle — requesting, recording or processing. */
   readonly takeInFlight: boolean;
   /** The sheet is committing and leaving. */
   readonly isClosing: boolean;

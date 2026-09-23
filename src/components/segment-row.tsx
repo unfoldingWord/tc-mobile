@@ -353,8 +353,7 @@ export function SegmentRow({
             className="flex-none"
             disabled={busy}
             // Never on a control held inert by a landing save: the ring would
-            // be pointing at a tap the row is refusing (same rule the
-            // recorder's Record follows).
+            // be pointing at a tap the row is refusing.
             guided={guided && !busy}
             onClick={onOpenRecorder}
           />

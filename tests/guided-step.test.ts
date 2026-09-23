@@ -239,11 +239,7 @@ describe("the recorder's link in the chain (#604)", () => {
   });
 
   it("steps 7 and 8: a segment with no audio guides Record, and keeps it there through the take", () => {
-    // One input covers both steps because a take is spliced into the working
-    // buffer only on close (Model A, commit-on-close — the `Recorder`
-    // component docblock, "a take is committed when the sheet closes (F8)"),
-    // so `hasAudio` is still false while the take is
-    // in flight and the ring does not blink out the moment Record is tapped.
+    // Before the first take is decoded and spliced, hasAudio remains false.
     expect(guidedStep(recorder(true, false))).toEqual({ kind: "record" });
   });
 

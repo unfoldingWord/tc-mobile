@@ -413,6 +413,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // tap would start a capture that the closing `leave()` then discards (a take
     // lost with no recovery screen).
     const [isClosing, setIsClosing] = useState(false);
+    // Stop commits without leaving record mode; its guide survives the seal.
+    // Read only alongside isClosing, and set at every commit entry.
+    const [stoppingInPlace, setStoppingInPlace] = useState(false);
     /**
      * Whether THIS close began with an active capture (recording, or a #59
      * `processing` freeze) — as opposed to an edit-only or Finished-only
@@ -1198,6 +1201,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         if (closing.current) return;
         closing.current = true;
         setIsClosing(true);
+        setStoppingInPlace(after === "stay");
         // Abandon a drag still in flight, here at the START rather than when
         // the write lands (George pass C P1). The guards above freeze a drag
         // for the duration of the commit; they cannot decide what it means
@@ -1921,6 +1925,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       }
       closing.current = true;
       setIsClosing(true);
+      setStoppingInPlace(false);
       // Silence buffer playback now, not at the eventual unmount `leave()`: the
       // async commit below can run a save while a long buffer keeps sounding, and
       // Play goes `disabled` on `isClosing` so nothing on screen can stop it
@@ -2353,6 +2358,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       recoverDestination.current = "close";
       closing.current = true;
       setIsClosing(true);
+      setStoppingInPlace(false);
       // The comment above is literal: this runs the SAME no-capture tail as an
       // edit-only close. The capture that produced `heldTake` already stopped
       // (and failed to decode) before this ran; `heldTake` clearing to `null`
@@ -2449,7 +2455,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       isClosing,
       hasView: view !== null,
       playingBuffer: audio.playingBuffer,
-      paused,
       dragging,
     });
     // The guided chain's answer inside the recorder (#604). `hasAudio` is the
@@ -2468,7 +2473,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const guidedRecord = guidedRecordShown({
       step: guide,
       takeInFlight: state !== "idle",
-      isClosing,
+      isClosing: isClosing && !stoppingInPlace,
       recordInert,
     });
     const editReason = editRowReason({
@@ -3301,47 +3306,50 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               {mode === "record" ? (
                 // Both modes reserve the same right-hand slot for the toggle.
                 <div className="recorder-toolbar pair grid items-center px-[16px]">
-                  <Control
-                    // The square, not the pause bars: this tap ENDS the take and
-                    // commits it (#614). A pause glyph over a control that
-                    // finalizes is the wrong promise to the one reader who
-                    // cannot check the label — the translator who does not read.
-                    icon={recording ? "stop" : "record"}
-                    label={recording ? strings.stop : strings.record}
-                    variant="record"
-                    // This is a gate on the INSERTION OFFSET, not button
-                    // chrome, so the rule is enumerated in `recordDisabled`
-                    // and tested in both directions rather than inlined here
-                    // (George R1 P2 #3). Two states it must catch, and the one
-                    // it must not:
-                    //
-                    // - a buffer sounding at idle — under the scrolling view
-                    //   (#415) the drawn line marks the SOUNDING sample while
-                    //   `panState` is still the pre-play value, so a take would
-                    //   splice where the translator cannot see. (This used to be
-                    //   explained as a swapped whole-clip view lying about the
-                    //   line; since #415 the line is honest during playback and
-                    //   it is the stored pan that is stale. The gate is the same
-                    //   either way — do not "correct" it into an enable.)
-                    // - a finger mid-pan (#317): the touch that pauses playback
-                    //   lifts the sounding term while the drag is still moving
-                    //   the pan, so a second finger here would lock the offset
-                    //   to a position that then slides away from it.
-                    //
-                    // PAUSED used to be an exception to the first of those — the
-                    // button was Resume, its offset locked at the original Record
-                    // tap (F9), so it stayed live over a sounding preview (George
-                    // R3 #4). #614 ended the paused take, so the exception is
-                    // gone rather than loosened.
-                    disabled={recordInert}
-                    // The last link in the guided chain (#604): the ring sits
-                    // on Record until this segment has audio, which — because a
-                    // take splices only on close — means it stays through the
-                    // whole take, the permission wait and the seal included.
-                    // `guidedRecordShown` above owns the whole rule.
-                    guided={guidedRecord}
-                    onClick={onRecordButton}
-                  />
+                  <span
+                    className={cn("record-guide", guidedRecord && "is-guided")}
+                  >
+                    <Control
+                      // The square, not the pause bars: this tap ENDS the take and
+                      // commits it (#614). A pause glyph over a control that
+                      // finalizes is the wrong promise to the one reader who
+                      // cannot check the label — the translator who does not read.
+                      icon={recording ? "stop" : "record"}
+                      label={recording ? strings.stop : strings.record}
+                      variant="record"
+                      // This is a gate on the INSERTION OFFSET, not button
+                      // chrome, so the rule is enumerated in `recordDisabled`
+                      // and tested in both directions rather than inlined here
+                      // (George R1 P2 #3). Two states it must catch, and the one
+                      // it must not:
+                      //
+                      // - a buffer sounding at idle — under the scrolling view
+                      //   (#415) the drawn line marks the SOUNDING sample while
+                      //   `panState` is still the pre-play value, so a take would
+                      //   splice where the translator cannot see. (This used to be
+                      //   explained as a swapped whole-clip view lying about the
+                      //   line; since #415 the line is honest during playback and
+                      //   it is the stored pan that is stale. The gate is the same
+                      //   either way — do not "correct" it into an enable.)
+                      // - a finger mid-pan (#317): the touch that pauses playback
+                      //   lifts the sounding term while the drag is still moving
+                      //   the pan, so a second finger here would lock the offset
+                      //   to a position that then slides away from it.
+                      //
+                      // PAUSED used to be an exception to the first of those — the
+                      // button was Resume, its offset locked at the original Record
+                      // tap (F9), so it stayed live over a sounding preview (George
+                      // R3 #4). #614 ended the paused take, so the exception is
+                      // gone rather than loosened.
+                      disabled={recordInert}
+                      // The last link in the guided chain (#604): the ring sits
+                      // on Record until this segment has audio, which — because a
+                      // take splices after Stop — means it stays through the
+                      // whole take, the permission wait and the seal included.
+                      // `guidedRecordShown` above owns the whole rule.
+                      onClick={onRecordButton}
+                    />
+                  </span>
                   <Control
                     icon={audio.playingBuffer ? "pause" : "play"}
                     // The name comes from `playPlan.source`, the same map the

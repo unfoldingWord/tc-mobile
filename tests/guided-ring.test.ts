@@ -66,7 +66,11 @@ describe("the guide accent is one colour, reached through layer 2 (#604)", () =>
   });
 
   it("draws the ring from the role and nothing lower", () => {
-    for (const selector of [".is-guided", ".control--record.is-guided"]) {
+    for (const selector of [
+      ".is-guided",
+      ".control--record.is-guided",
+      ".record-guide.is-guided",
+    ]) {
       const block = ruleBlock(components, selector);
       const declarations = [...block.matchAll(/([a-z-]+):\s*([^;]+);/g)];
       // Vacuity floor: a slice that caught a comment instead of a rule has no
@@ -96,6 +100,18 @@ describe("the guide accent is one colour, reached through layer 2 (#604)", () =>
     expect(components.indexOf("[inert] .is-guided")).toBeGreaterThan(
       components.indexOf(".control--record.is-guided")
     );
+  });
+
+  it("paints the recorder guide outside the disabled button", () => {
+    expect(ruleBlock(components, ".record-guide.is-guided")).toMatch(
+      /box-shadow:\s*0/
+    );
+    const source = read("src/components/recorder.tsx");
+    expect(source).toContain(
+      'className={cn("record-guide", guidedRecord && "is-guided")}'
+    );
+    expect(source).not.toContain("guided={guidedRecord}");
+    expect(source).toContain("isClosing: isClosing && !stoppingInPlace");
   });
 
   it("keeps the record ring OUTSIDE the red, and every other ring inside", () => {
@@ -159,7 +175,9 @@ describe("every step of the chain reaches a control (#604)", () => {
     it(`${path.basename(file)} asks the resolver and marks its own steps`, () => {
       const source = read(file);
       expect(source, "does not call guidedStep").toMatch(/guidedStep\(/);
-      expect(source, "marks no control").toMatch(/guided=\{/);
+      expect(source, "marks no control").toMatch(
+        /guided=\{|guidedRecord && "is-guided"/
+      );
       for (const kind of kinds) {
         if (kind === "record") {
           expect(source).toMatch(/guidedRecordShown\(/);
@@ -268,7 +286,7 @@ describe("the mark reaches the control it is given to (#604)", () => {
   });
 
   it("NameEdit drops the mark while the create is in flight", () => {
-    // Same rule the recorder's Record and the row's Record follow: a control
+    // A control
     // that is swallowing activations is not a control anyone should be pointed
     // at. `busy` keeps Confirm focusable and on screen (#137), so without this
     // the ring would sit on a button that answers nothing for the length of

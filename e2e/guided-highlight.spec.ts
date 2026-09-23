@@ -12,12 +12,10 @@ import { expect, test, type Page } from "@playwright/test";
  * #171 was: a complete, correct block that nothing could select. So this drives
  * the shipped `dist/` build and reads computed styles.
  *
- * WHAT IT DOES NOT PROVE. It never records — there is no microphone here — so
- * the ring STAYING on Record through a take (#604's step 8) is not observed;
- * `tests/guided-step.test.ts` pins that from the input the recorder feeds in,
- * and the on-device half is still owed (#245). Nothing here says the ring is
- * legible on a phone in daylight, or that its weight is right: that is a
- * judgement a person makes looking at a screen.
+ * The capture cases use a synthetic Chromium microphone and held permission /
+ * decode promises. They inspect requesting and processing paint, not an OS
+ * permission dialog or a physical microphone. Phone legibility and daylight
+ * contrast still require on-device observation.
  */
 
 /**
@@ -33,7 +31,11 @@ function rings(page: Page): Promise<{ label: string; shadow: string }[]> {
   return page.locator(".is-guided").evaluateAll((els) =>
     els
       .map((el) => ({
-        label: el.getAttribute("aria-label") ?? el.textContent?.trim() ?? "",
+        label:
+          el.getAttribute("aria-label") ??
+          el.querySelector("button")?.getAttribute("aria-label") ??
+          el.textContent?.trim() ??
+          "",
         shadow: getComputedStyle(el).boxShadow,
       }))
       .filter((r) => r.shadow !== "none")
@@ -59,7 +61,7 @@ test("the ring moves through the chain and marks exactly one control at a time",
   // Step 1 — an empty shelf. The header + is hidden here, so the invite's own
   // CTA is the only create control on the screen.
   await expect(page.getByRole("button", { name: "New book" })).toBeVisible();
-  expect(await guided(page)).toEqual(["New book"]);
+  await expect.poll(() => guided(page)).toEqual(["New book"]);
   // The cascade half: the rule reached the element, in the accent, inside the
   // control's own box.
   expect(await ringOf(page)).toContain("rgb(46, 125, 246)");
@@ -71,7 +73,7 @@ test("the ring moves through the chain and marks exactly one control at a time",
   await expect(
     page.getByRole("dialog", { name: "Name your new book" })
   ).toBeVisible();
-  expect(await guided(page)).toEqual(["Create book"]);
+  await expect.poll(() => guided(page)).toEqual(["Create book"]);
 
   // Step 3 — the book exists and is empty: its Add chapter. And the two header
   // controls the issue names must NOT be wearing the accent now.
@@ -79,11 +81,13 @@ test("the ring moves through the chain and marks exactly one control at a time",
   await expect(
     page.getByRole("button", { name: /^Add chapter to/ })
   ).toBeVisible();
-  expect(await guided(page)).toEqual([
-    await page
-      .getByRole("button", { name: /^Add chapter to/ })
-      .getAttribute("aria-label"),
-  ]);
+  await expect
+    .poll(() => guided(page))
+    .toEqual([
+      await page
+        .getByRole("button", { name: /^Add chapter to/ })
+        .getAttribute("aria-label"),
+    ]);
   await expect(page.getByRole("button", { name: "New book" })).not.toHaveClass(
     /is-guided/
   );
@@ -93,17 +97,20 @@ test("the ring moves through the chain and marks exactly one control at a time",
 
   // Step 4 — a chapter exists: the row that opens it.
   await page.getByRole("button", { name: /^Add chapter to/ }).click();
+  await page
+    .getByRole("button", { name: "Create chapter", exact: true })
+    .click();
   await expect(
     page.getByRole("button", { name: "Open Chapter 1" })
   ).toBeVisible();
-  expect(await guided(page)).toEqual(["Open Chapter 1"]);
+  await expect.poll(() => guided(page)).toEqual(["Open Chapter 1"]);
 
   // Steps 5 and 6 — an empty chapter: Add segment.
   await page.getByRole("button", { name: "Open Chapter 1" }).click();
   await expect(
     page.getByRole("button", { name: "Back to books" })
   ).toBeVisible();
-  expect(await guided(page)).toEqual(["Add segment"]);
+  await expect.poll(() => guided(page)).toEqual(["Add segment"]);
 
   // The hop the issue's list skips: a segment exists with nothing recorded into
   // it, and the row's own red Record is the only door to the recorder. Drawn
@@ -113,7 +120,7 @@ test("the ring moves through the chain and marks exactly one control at a time",
   await expect(
     page.getByRole("button", { name: "Record segment 1" })
   ).toBeVisible();
-  expect(await guided(page)).toEqual(["Record segment 1"]);
+  await expect.poll(() => guided(page)).toEqual(["Record segment 1"]);
   expect(await ringOf(page)).toContain("rgb(46, 125, 246)");
   expect(await ringOf(page)).not.toContain("inset");
 
@@ -122,7 +129,7 @@ test("the ring moves through the chain and marks exactly one control at a time",
   await expect(
     page.getByRole("button", { name: "Close recorder" })
   ).toBeVisible();
-  expect(await guided(page)).toEqual(["Record"]);
+  await expect.poll(() => guided(page)).toEqual(["Record"]);
   expect(await ringOf(page)).toContain("rgb(46, 125, 246)");
   expect(await ringOf(page)).not.toContain("inset");
 });
@@ -140,6 +147,9 @@ test("the shelf stops once its book has been worked in, and the mark is on the r
   await page.getByRole("button", { name: "New book" }).click();
   await page.getByRole("button", { name: "Create book" }).click();
   await page.getByRole("button", { name: /^Add chapter to/ }).click();
+  await page
+    .getByRole("button", { name: "Create chapter", exact: true })
+    .click();
   await page.getByRole("button", { name: "Open Chapter 1" }).click();
   await page.getByRole("button", { name: "Add segment" }).click();
   await expect(
@@ -148,7 +158,7 @@ test("the shelf stops once its book has been worked in, and the mark is on the r
 
   // A chapter with a segment and no audio in it marks the row's Record, and
   // nothing else — one mark, not a list of them.
-  expect(await guided(page)).toEqual(["Record segment 1"]);
+  await expect.poll(() => guided(page)).toEqual(["Record segment 1"]);
 
   // Back on the shelf, nothing is marked — including the row that was guided
   // one step ago. The shelf comes back collapsed (its expanded set is screen
@@ -157,14 +167,14 @@ test("the shelf stops once its book has been worked in, and the mark is on the r
   // that is absent.
   await page.getByRole("button", { name: "Back to books" }).click();
   await expect(page.getByRole("button", { name: "New book" })).toBeVisible();
-  expect(await guided(page)).toEqual([]);
+  await expect.poll(() => guided(page)).toEqual([]);
   await page
     .getByRole("button", { name: /^Book .*, 1 chapter, collapsed$/ })
     .click();
   await expect(
     page.getByRole("button", { name: "Open Chapter 1" })
   ).toBeVisible();
-  expect(await guided(page)).toEqual([]);
+  await expect.poll(() => guided(page)).toEqual([]);
 });
 
 test("a collapsed book is guided OPEN, because the row the chain wants is not rendered", async ({
@@ -179,6 +189,9 @@ test("a collapsed book is guided OPEN, because the row the chain wants is not re
   await page.getByRole("button", { name: "New book" }).click();
   await page.getByRole("button", { name: "Create book" }).click();
   await page.getByRole("button", { name: /^Add chapter to/ }).click();
+  await page
+    .getByRole("button", { name: "Create chapter", exact: true })
+    .click();
   await page.getByRole("button", { name: "Open Chapter 1" }).click();
   await expect(
     page.getByRole("button", { name: "Back to books" })
@@ -191,23 +204,187 @@ test("a collapsed book is guided OPEN, because the row the chain wants is not re
   await expect(
     page.getByRole("button", { name: "Open Chapter 1" })
   ).toHaveCount(0);
-  expect(await guided(page)).toEqual([await toggle.getAttribute("aria-label")]);
+  await expect
+    .poll(() => guided(page))
+    .toEqual([await toggle.getAttribute("aria-label")]);
 
   // One tap later the list is open and the accent has moved on to the row.
   await toggle.click();
   await expect(
     page.getByRole("button", { name: "Open Chapter 1" })
   ).toBeVisible();
-  expect(await guided(page)).toEqual(["Open Chapter 1"]);
+  await expect.poll(() => guided(page)).toEqual(["Open Chapter 1"]);
 
   // A reload is the same branch, reached the other way.
   await page.reload();
   await expect(
     page.getByRole("button", { name: /, 1 chapter, collapsed$/ })
   ).toBeVisible();
-  expect(await guided(page)).toEqual([
-    await page
-      .getByRole("button", { name: /, 1 chapter, collapsed$/ })
-      .getAttribute("aria-label"),
-  ]);
+  await expect
+    .poll(() => guided(page))
+    .toEqual([
+      await page
+        .getByRole("button", { name: /, 1 chapter, collapsed$/ })
+        .getAttribute("aria-label"),
+    ]);
+});
+
+// Real capture with a synthetic microphone; only the permission and decode
+// promises are held to make the requesting/processing paint inspectable.
+test.use({
+  permissions: ["microphone"],
+  launchOptions: {
+    executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH,
+    args: [
+      "--use-fake-device-for-media-stream",
+      "--use-fake-ui-for-media-stream",
+    ],
+  },
+});
+test.describe("disabled recorder guide", () => {
+  for (const { theme, leave } of ["dark", "light"].flatMap((theme) =>
+    [false, true].map((leave) => ({ theme, leave }))
+  )) {
+    test(`disabled guide during requesting and ${leave ? "Close" : "Stop"} (${theme})`, async ({
+      page,
+    }) => {
+      await page.addInitScript(() => {
+        let releaseMic!: () => void;
+        let releaseDecode!: () => void;
+        const micGate = new Promise<void>((resolve) => {
+          releaseMic = resolve;
+        });
+        const decodeGate = new Promise<void>((resolve) => {
+          releaseDecode = resolve;
+        });
+        Object.assign(window, {
+          releaseGuideMic: releaseMic,
+          releaseGuideDecode: releaseDecode,
+        });
+        const getUserMedia = navigator.mediaDevices.getUserMedia.bind(
+          navigator.mediaDevices
+        );
+        navigator.mediaDevices.getUserMedia = async (constraints) => {
+          await micGate;
+          return getUserMedia(constraints);
+        };
+        const decode = AudioContext.prototype.decodeAudioData;
+        AudioContext.prototype.decodeAudioData = function (
+          bytes,
+          success,
+          failure
+        ) {
+          return decode
+            .call(this, bytes, success, failure)
+            .then(async (buffer) => {
+              Object.assign(window, { guideDecodeWaiting: true });
+              await decodeGate;
+              return buffer;
+            });
+        };
+      });
+      await page.goto("/");
+      await page.evaluate((value) => {
+        document.documentElement.dataset.theme = value;
+      }, theme);
+      await page.getByRole("button", { name: "New book" }).click();
+      await page.getByRole("button", { name: "Create book" }).click();
+      await page.getByRole("button", { name: /^Add chapter to/ }).click();
+      await page
+        .getByRole("button", { name: "Create chapter", exact: true })
+        .click();
+      await page.getByRole("button", { name: "Open Chapter 1" }).click();
+      await page.getByRole("button", { name: "Add segment" }).click();
+      await page.getByRole("button", { name: "Record segment 1" }).click();
+      const button = page.locator(".record-guide > button");
+      const host = page.locator(".record-guide");
+      await expect(button).toBeEnabled();
+      await button.evaluate((el) => {
+        el.dataset.identity = "original";
+      });
+      await page.keyboard.press("Tab");
+      await button.focus();
+      await expect(button).toHaveCSS("outline-offset", "8px");
+      const before = await button.boundingBox();
+      await button.click();
+
+      const expectUndimmedRing = async () => {
+        await expect(button).toBeDisabled();
+        await expect(host).toHaveClass(/is-guided/);
+        await expect(button).toHaveAttribute("data-identity", "original");
+        await expect(button).toHaveCSS("opacity", "0.55");
+        await expect(button).toHaveCSS("filter", "saturate(0.12)");
+        await expect(host).toHaveCSS("opacity", "1");
+        await expect(host).toHaveCSS("filter", "none");
+        const paint = await host.evaluate((el) => {
+          const shadow = getComputedStyle(el).boxShadow;
+          const floor = getComputedStyle(
+            el.closest(".recorder-sheet")!
+          ).backgroundColor;
+          const ancestors = [];
+          for (
+            let parent = el.parentElement;
+            parent;
+            parent = parent.parentElement
+          ) {
+            const style = getComputedStyle(parent);
+            ancestors.push({ opacity: style.opacity, filter: style.filter });
+          }
+          return { shadow, floor, ancestors };
+        });
+        expect(paint.shadow).toContain("rgb(46, 125, 246)");
+        expect(
+          paint.ancestors.every((s) => s.opacity === "1" && s.filter === "none")
+        ).toBe(true);
+        const luminance = (rgb: string) => {
+          const values = rgb
+            .match(/[\d.]+/g)!
+            .slice(0, 3)
+            .map(Number)
+            .map((v) => {
+              const c = v / 255;
+              return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+            });
+          return (
+            values[0]! * 0.2126 + values[1]! * 0.7152 + values[2]! * 0.0722
+          );
+        };
+        const a = luminance(paint.shadow);
+        const b = luminance(paint.floor);
+        expect(
+          (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+        ).toBeGreaterThanOrEqual(3);
+        expect(await button.boundingBox()).toEqual(before);
+        expect(await host.boundingBox()).toEqual(before);
+        expect(await rings(page)).toHaveLength(1);
+      };
+      await expectUndimmedRing();
+      await page.evaluate("window.releaseGuideMic()");
+      await expect(
+        page.getByRole("button", { name: "Stop recording", exact: true })
+      ).toBeVisible();
+      await page.waitForTimeout(500);
+      await page
+        .getByRole("button", {
+          name: leave ? "Close recorder" : "Stop recording",
+          exact: true,
+        })
+        .click();
+      await page.waitForFunction("window.guideDecodeWaiting === true");
+      if (leave) {
+        await expect(host).not.toHaveClass(/is-guided/);
+        await expect.poll(() => guided(page)).toEqual([]);
+      } else {
+        await expectUndimmedRing();
+      }
+      await page.evaluate("window.releaseGuideDecode()");
+      if (leave) {
+        await expect(page.locator(".recorder-sheet")).toHaveCount(0);
+      } else {
+        await expect(button).toBeEnabled();
+        await expect(host).not.toHaveClass(/is-guided/);
+        await expect(button).toHaveAttribute("data-identity", "original");
+      }
+    });
+  }
 });

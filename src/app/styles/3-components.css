@@ -313,7 +313,14 @@
      two touch. Pushed out by the unlayered exception in globals.css, so a
      keyboard user sees blue, a gap, then amber — and the two move together if
      either token changes. */
-  .control--record.is-guided {
+  /* The permanent recorder wrapper keeps its shadow outside the disabled
+     button's opacity/filter group and preserves the button's DOM identity. */
+  .record-guide {
+    display: inline-flex;
+    border-radius: var(--p-radius-full);
+  }
+  .control--record.is-guided,
+  .record-guide.is-guided {
     box-shadow: 0 0 0 var(--c-guide-ring) var(--s-guide);
   }
   /* A control nobody can tap is nobody's next action. The screens keep
@@ -1017,7 +1024,8 @@
     gap: var(--c-gap-parts);
     height: calc(var(--c-control-xl) + var(--p-space-3));
   }
-  .recorder-toolbar.pair > .control {
+  .recorder-toolbar.pair > .control,
+  .recorder-toolbar.pair > .record-guide {
     justify-self: center;
   }
   /* The record hero at xl (68px), scoped to the pair so the global 52px record

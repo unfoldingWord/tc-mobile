@@ -81,6 +81,7 @@ body {
 
 /* Separate the outset guide from keyboard focus. This must remain unlayered
    to override the global focus offset above. */
-.control--record.is-guided:focus-visible {
+.control--record.is-guided:focus-visible,
+.record-guide.is-guided > .control:focus-visible {
   outline-offset: calc(var(--c-focus-offset) + var(--c-guide-ring) + 2px);
 }
