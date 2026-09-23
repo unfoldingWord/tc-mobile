@@ -992,7 +992,11 @@ export function BooksScreen({
   const bookShareHasGap =
     bookShare.missing > 0 || bookShare.partialSegments > 0;
   const bookShareGapText = shareGapText(
-    { missing: bookShare.missing, partial: bookShare.partialSegments },
+    {
+      missing: bookShare.missing,
+      partial: bookShare.partialSegments,
+      partialChapters: bookShare.partialChapters,
+    },
     "book"
   );
   // ── Delete a book (#337) ──────────────────────────────────────────────────

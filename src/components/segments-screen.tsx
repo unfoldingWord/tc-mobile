@@ -967,7 +967,7 @@ export const SegmentsScreen = forwardRef<
               unconfirmedLabel={strings.shareChapterUnconfirmed}
               hasGap={share.missing > 0}
               gapText={shareGapText(
-                { missing: share.missing, partial: 0 },
+                { missing: share.missing, partial: 0, partialChapters: 0 },
                 "chapter"
               )}
               onPrepare={onPrepareShare}
