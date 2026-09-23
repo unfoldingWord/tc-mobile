@@ -60,9 +60,9 @@ const SENTENCE_MIN = 12;
  * Their own discriminators (`"quota"`, `"cutAudio"`, `"chapter"`) stay out of
  * the net because `heldSentences` wants BOTH a space and `SENTENCE_MIN`
  * characters; without that, this gate would demand a union be "moved into a
- * table". The two clauses are pinned separately below, because the union
- * fixture is excluded by the SPACE alone and would pass at any value of the
- * constant — so a second pair brackets the threshold itself.
+ * table". Each of the two conditions has a case of its own below — see their
+ * names for which is which, rather than a sentence here that has twice now
+ * described the coverage wrongly.
  */
 const COPY_MAPPERS = [
   "components/encoder-notice.ts",
@@ -345,11 +345,27 @@ describe("the copy mappers choose words without holding them", () => {
 
   it("does not read a discriminator as a sentence", () => {
     // The legitimate state this gate has to stay green on: these modules are
-    // built out of string unions, and every one of them is a word. What
-    // excludes these three is the SPACE clause — none of them has one.
+    // built out of string unions, and every one of them is a word. These three
+    // are excluded by LENGTH — 8, 7 and 9 characters, all under SENTENCE_MIN —
+    // which is why the space clause needs the case below rather than this one
+    // (George, `9a5f097da`).
     expect(
       heldSentences('type S = "cutAudio" | "chapter" | "downgrade";')
     ).toEqual([]);
+  });
+
+  it("holds the space rule, not only the length", () => {
+    // A long literal with no space in it is not copy, and this repo is full of
+    // them: every `report-failure` reason code runs past SENTENCE_MIN without
+    // a space ("recorder-start-resume-timeout" is 29). Import specifiers are
+    // the same shape, which is the ONLY reason dropping this clause currently
+    // reddens anything — the three tree assertions above catch it through
+    // `"@/hooks/save-failure"` and friends, incidentally rather than on
+    // purpose. A mapper that imported nothing long would leave the clause
+    // unpinned; this case does it deliberately.
+    expect(heldSentences('report("recorder-start-resume-timeout");')).toEqual(
+      []
+    );
   });
 
   it("holds the sentence threshold itself, not only the space rule", () => {
