@@ -29,8 +29,8 @@ import type { SegmentId } from "@/types/domain";
  * its double-tap guard (both `useRef`/`useState`) are NOT exercised here; they
  * are review + on-device surface. What IS node-testable is `performErase`: the
  * call it makes to the real store, the outcome that leaves, the success/failure
- * result it returns, and the `onErased` fire. That is what these cover, against
- * fake-indexeddb through the real store helpers.
+ * result it returns. That is what these cover, against fake-indexeddb through
+ * the real store helpers.
  *
  * `performErase` wraps `clearSegmentTake`, whose own atomicity/ref-counting is
  * proved in `tests/storage.test.ts`; this file asserts the hook-owned contract
@@ -74,11 +74,9 @@ describe("performErase", () => {
     expect(before?.status).toBe("draft");
     expect(await getClipMeta(clipId)).toBeDefined();
 
-    const onErased = vi.fn();
-    const result = await performErase(segmentId, onErased);
+    const result = await performErase(segmentId);
 
     expect(result).toEqual({ ok: true });
-    expect(onErased).toHaveBeenCalledTimes(1);
 
     const after = await getSegment(segmentId);
     expect(after?.activeTakeId).toBeNull(); // G4: audio gone, row kept
@@ -92,64 +90,26 @@ describe("performErase", () => {
     const { segmentId } = await recordedSegment();
     await performErase(segmentId); // now not-started
 
-    const onErased = vi.fn();
-    const result = await performErase(segmentId, onErased);
+    const result = await performErase(segmentId);
 
     expect(result).toEqual({ ok: true });
-    expect(onErased).toHaveBeenCalledTimes(1);
     const after = await getSegment(segmentId);
     expect(after?.activeTakeId).toBeNull();
     expect(after?.status).toBe("not-started");
   });
 
-  it("keeps a committed delete a success even when onErased throws", async () => {
-    // The delete is irreversible once clearSegmentTake commits, so a failing
-    // notification (a reload that threw, say) must NOT report the erase as
-    // failed and invite a retry against an already-cleared segment (Frank R-B6).
-    const { segmentId, clipId } = await recordedSegment();
-    const onErased = vi.fn(() => {
-      throw new Error("reload failed");
-    });
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
-    const reports: FailureReport[] = [];
-    const stopSink = subscribeToFailures((r) => reports.push(r));
-
-    const result = await performErase(segmentId, onErased);
-
-    // The throwing callback does not turn a committed deletion into a failure.
-    expect(result).toEqual({ ok: true });
-    expect(onErased).toHaveBeenCalledTimes(1);
-    // And the audio really is gone — the store op ran to completion.
-    const after = await getSegment(segmentId);
-    expect(after?.activeTakeId).toBeNull();
-    expect(await getClipMeta(clipId)).toBeUndefined();
-    // The notification failure is logged, never swallowed.
-    expect(consoleError).toHaveBeenCalled();
-    consoleError.mockRestore();
-
-    // The store op itself committed — this is the notification-failure site
-    // (`"Post-erase notification failed"`), not the store-failure one #456
-    // routes. Only the latter reports to the funnel.
-    expect(reports).toEqual([]);
-    stopSink();
-  });
-
-  it("catches a store rejection, surfaces the reason, and does not fire onErased", async () => {
+  it("catches a store rejection and surfaces the reason", async () => {
     // A segment id with no row: `clearSegmentTake` throws "No such segment: …".
     // This is the failure path the hook maps to `error` and a `false` return.
     const bogus = newClipId() as unknown as SegmentId;
-    const onErased = vi.fn();
     const consoleError = vi
       .spyOn(console, "error")
       .mockImplementation(() => {});
 
-    const result = await performErase(bogus, onErased);
+    const result = await performErase(bogus);
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("No such segment");
-    expect(onErased).not.toHaveBeenCalled();
     // Never swallowed silently: this site's own message, plus `reportFailure`'s
     // own internal `console.error` (#456) — the same "kept beside it, not
     // replaced" doubling `recorder-stop-backstop` (#480) already carries.

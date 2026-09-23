@@ -3,7 +3,12 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { loadRecorderSegmentView } from "@/hooks/use-recorder-segment";
-import { addChapter, addSegment, createBook } from "@/lib/storage/books";
+import {
+  addChapter,
+  addSegment,
+  createBook,
+  renameSegment,
+} from "@/lib/storage/books";
 import { addTake, setSegmentFinished } from "@/lib/storage/takes";
 import { newClipId, putClip } from "@/lib/storage/clips";
 import { commitTranscode } from "@/lib/storage/transcode";
@@ -69,6 +74,17 @@ describe("loadRecorderSegmentView", () => {
     expect(view.bookName).toBe("Ruth");
     expect(view.chapterNumber).toBe(1);
     expect(view.ordinal).toBe(1);
+    expect(view.segmentLabel).toBeNull();
+  });
+
+  it("carries the segment's label for the breadcrumb (#591)", async () => {
+    const segmentId = await freshSegment();
+    await renameSegment(segmentId, "verses 3–4");
+
+    const view = await loadRecorderSegmentView(segmentId);
+
+    expect(view.ordinal).toBe(1);
+    expect(view.segmentLabel).toBe("verses 3–4");
   });
 
   it("opens a PCM segment over its samples, with peaks and the length domain", async () => {

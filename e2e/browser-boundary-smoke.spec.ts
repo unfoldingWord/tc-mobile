@@ -74,6 +74,8 @@ declare global {
         fittedHeadRms: number;
         fittedTailRms: number;
         sourceRms: number;
+        alignmentLag: number;
+        alignmentCorrelation: number;
       }>;
       encodeWithHeartbeat: (frameCount: number) => Promise<{
         frameCount: number;
@@ -161,16 +163,14 @@ test.describe("worker MP3 encode round-trip + decodeAudioData (#251 assertions 2
     // The emitted length is whole granules of a real stream's frame headers.
     expect(result.emittedFrameCount % MP3_GRANULE).toBe(0);
 
-    // And the alignment must land on the RECORDING, not on the priming or the
-    // padding. The harness feeds a 440 Hz tone at amplitude 8000, so every
-    // window of the recording has an RMS near 8000/√2; the decoder's ~1105
-    // samples of priming, and the encoder's tail padding, are silence. A head
-    // skip that is too small leaves priming at the front, one that is too
-    // large runs off the end into padding — either way one of these two windows
-    // reads ~0 while a fitted-length check stays green. Bounds are loose (half
-    // to 1.5x the source's own RMS over the same window) because a 64 kbps
-    // lossy round-trip is not sample-exact; the failure being caught is
-    // silence, which is an order of magnitude away, not a few percent.
+    // The nonstationary chirp distinguishes an offset from a whole cycle.
+    // Correlation tolerates lossy gain changes; the lag bound permits only
+    // two samples of timing error, not the millisecond shifts RMS misses.
+    expect(result.alignmentCorrelation).toBeGreaterThan(0.95);
+    expect(Math.abs(result.alignmentLag)).toBeLessThanOrEqual(2);
+
+    // Retain the boundary-energy check for priming silence or tail padding.
+    // The chirp has constant amplitude, so both ends have comparable RMS.
     expect(result.sourceRms).toBeGreaterThan(1_000);
     expect(result.fittedHeadRms).toBeGreaterThan(result.sourceRms * 0.5);
     expect(result.fittedHeadRms).toBeLessThan(result.sourceRms * 1.5);

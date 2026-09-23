@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   deleteClip,
@@ -23,8 +23,10 @@ import {
   isStaleBookFailure,
   listBooks,
   nextBookName,
+  nextChapterNumber,
   renameBook,
   renameChapter,
+  renameSegment,
   resolveChapterClipIds,
 } from "@/lib/storage/books";
 import {
@@ -227,6 +229,9 @@ describe("book tree", () => {
       expect(s.status).toBe("not-started");
       expect(s.activeTakeId).toBeNull();
       expect(s.reference).toBeNull();
+      // Unlabelled by default: the row shows the ordinal alone (#591).
+      expect(s.label).toBeNull();
+      expect((await getSegment(s.id))?.label).toBeNull();
     }
   });
 
@@ -661,6 +666,83 @@ describe("book auto-naming (#314, #360)", () => {
 });
 
 /**
+ * Naming a chapter at creation (#609) — the chapter parallel to #314.
+ *
+ * Add Chapter now prompts, pre-filled with "Chapter N" for the ordinal the new
+ * chapter is about to get, so a one-tap Confirm still adds a chapter and a
+ * facilitator who wants "Mark 6" types it once instead of hunting for Rename.
+ *
+ * The two halves this pins:
+ *
+ *   - `nextChapterNumber` is the ONE derivation of that ordinal, called both
+ *     inside `addChapter`'s write transaction and by the screen over the
+ *     chapters it has already loaded — the same "one pure function both go
+ *     through" shape `nextBookName` holds for books. Unlike `nextBookName` it
+ *     is `max + 1`, NOT the first unused: a chapter's `number` is its export
+ *     position, not a label, so filling a hole would reorder the concatenation
+ *     a Share Chapter/Book produces.
+ *   - `addChapter`'s `name` normalises exactly as `renameChapter` does: trimmed
+ *     when typed, `null` when blank. `null` is also what an untouched default
+ *     stores, because the screen sends "" rather than the "Chapter N" string it
+ *     rendered — so the row keeps displaying the ordinal the transaction
+ *     derived, and a one-tap create changes nothing on disk.
+ */
+describe("chapter naming at creation (#609)", () => {
+  it("numbers the first chapter 1 and counts up from the highest", () => {
+    expect(nextChapterNumber([])).toBe(1);
+    expect(nextChapterNumber([1, 2])).toBe(3);
+  });
+
+  it("extends past the highest rather than filling a hole (max + 1, not first unused)", () => {
+    // Deliberately NOT `nextBookName`'s rule. `number` is the export ordinal:
+    // a new chapter placed at 2 would land in the middle of the concatenation.
+    expect(nextChapterNumber([1, 3])).toBe(4);
+    expect(nextChapterNumber([5])).toBe(6);
+  });
+
+  it("seeds the field with the number the write transaction then derives", async () => {
+    // The screen pre-fills from the chapters it has loaded; `addChapter`
+    // derives the same ordinal inside its own transaction. Same function, same
+    // numbers, same answer — which is why a bare Confirm adds the chapter the
+    // field offered, whenever the loaded shelf still matches disk. When it does
+    // not, the write's number wins and the row shows it, because a one-tap
+    // create stores no label to contradict it.
+    const book = await createBook("b");
+    const first = await addChapter(book.id);
+    const second = await addChapter(book.id);
+    const displayed = nextChapterNumber([first.number, second.number]);
+    expect(displayed).toBe(3);
+    expect((await addChapter(book.id)).number).toBe(displayed);
+  });
+
+  it("stores a typed name, trimmed, like renameChapter does", async () => {
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id, undefined, "  Mark 6  ");
+    expect(chapter.name).toBe("Mark 6");
+    expect((await getChapter(chapter.id))?.name).toBe("Mark 6");
+  });
+
+  it("stores null for a blank, whitespace-only, or omitted name", async () => {
+    const book = await createBook("b");
+    // Blank is what an untouched "Chapter N" default confirms as, and what an
+    // emptied field sends: both keep the row on the ordinal display.
+    expect((await addChapter(book.id, undefined, "")).name).toBeNull();
+    expect((await addChapter(book.id, undefined, "  \t\n ")).name).toBeNull();
+    // The no-name call sites (every other suite, and the store's own default)
+    // are unchanged.
+    expect((await addChapter(book.id)).name).toBeNull();
+  });
+
+  it("does not let a name displace the ordinal", async () => {
+    // The name is a label OVER `number`, exactly as `renameChapter` leaves it.
+    const book = await createBook("b");
+    const first = await addChapter(book.id, undefined, "Mark 6");
+    const second = await addChapter(book.id, undefined, "Mark 7");
+    expect([first.number, second.number]).toEqual([1, 2]);
+  });
+});
+
+/**
  * Renaming a book and a chapter in place (#264, the Nairobi manual workflow).
  *
  * A facilitator names a book for the passage ("Mark") and a chapter for the
@@ -763,6 +845,65 @@ describe("rename book and chapter", () => {
   it("rejects renaming an unknown chapter", async () => {
     await expect(renameChapter("nope" as never, "Mark 6")).rejects.toThrow(
       /No such chapter/
+    );
+  });
+});
+
+describe("rename segment (#591)", () => {
+  it("labels a segment in place, trimmed", async () => {
+    const { segmentId } = await oneSegment();
+    const renamed = await renameSegment(segmentId, "  verses 3–4  ");
+    expect(renamed.label).toBe("verses 3–4");
+    expect((await getSegment(segmentId))?.label).toBe("verses 3–4");
+  });
+
+  it("clears the label back to null on a blank rename, like a chapter", async () => {
+    const { segmentId } = await oneSegment();
+    await renameSegment(segmentId, "verses 3–4");
+    const cleared = await renameSegment(segmentId, "   ");
+    expect(cleared.label).toBeNull();
+    expect((await getSegment(segmentId))?.label).toBeNull();
+  });
+
+  it("changes the label and nothing else: ordinal, order, status and audio stay", async () => {
+    const book = await createBook("Mark");
+    const chapter = await addChapter(book.id);
+    await addSegment(chapter.id);
+    const second = await addSegment(chapter.id);
+    const clipId = await storedClip();
+    await addTake(second.id, clipId, 100);
+    await setSegmentFinished(second.id, true);
+    const before = await getSegment(second.id);
+    const chapterBefore = await getChapter(chapter.id);
+
+    await renameSegment(second.id, "verses 3–4");
+
+    expect(await getSegment(second.id)).toEqual({
+      ...before,
+      label: "verses 3–4",
+    });
+    expect(await getChapter(chapter.id)).toEqual(chapterBefore);
+    const audio = await loadSegmentClip(second.id);
+    expect(audio.kind).toBe("resolved");
+  });
+
+  it("renaming to the current label writes nothing", async () => {
+    const { segmentId } = await oneSegment();
+    await renameSegment(segmentId, "verses 3–4");
+    // Counted at the IndexedDB boundary: a re-put of the same row would leave
+    // the stored value unchanged, so only the call itself can show it happened.
+    const put = vi.spyOn(IDBObjectStore.prototype, "put");
+    try {
+      await renameSegment(segmentId, " verses 3–4 ");
+      expect(put).not.toHaveBeenCalled();
+    } finally {
+      put.mockRestore();
+    }
+  });
+
+  it("rejects renaming an unknown segment", async () => {
+    await expect(renameSegment("nope" as never, "verses 1")).rejects.toThrow(
+      /No such segment/
     );
   });
 });
