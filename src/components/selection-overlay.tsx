@@ -49,8 +49,8 @@ interface SelectionOverlayProps {
  *
  * Each edge is two elements: a stem drawn on the sample, and a finger-sized hit
  * box that carries the slider role and is kept inside the clipping canvas
- * (`hitLeft`). A drag maps the pointer's own x to a sample, never the box's
- * position, so the inset does not by itself move the edge.
+ * (`hitLeft`). A drag keeps the pointer's grab offset from the stem, so the
+ * inset does not by itself move the edge.
  *
  * The body is pointer-transparent; only the two handles take pointer events, so
  * the frame never eats a tap meant for a control. Panning stays available on the
@@ -70,6 +70,10 @@ export function SelectionOverlay({
   // the two handles do not overwrite one shared "which edge" and swap targets
   // mid-drag (the multitouch class of #61, George R2).
   const dragging = useRef<Map<number, "start" | "end">>(new Map());
+  // Where each pointer landed relative to its edge's stem, in px. A clamped
+  // box sits up to its full width off its stem (#707), so a drag keeps this
+  // offset instead of snapping the edge to the finger on the first move.
+  const grabOffset = useRef<Map<number, number>>(new Map());
   // The authoritative range DURING a drag. Each move rebuilds from this ref, not
   // the render closure, so two edges moved in one frame compose instead of the
   // last write clobbering the other's edge (George R3). It is snapshotted from
@@ -91,7 +95,12 @@ export function SelectionOverlay({
       if (!host) return;
       const rect = host.getBoundingClientRect();
       if (rect.width === 0) return;
-      const sample = viewportXToSample(clientX - rect.left, rect.width, win);
+      const offset = grabOffset.current.get(pointerId) ?? 0;
+      const sample = viewportXToSample(
+        clientX - rect.left - offset,
+        rect.width,
+        win
+      );
       const next =
         edge === "start"
           ? { start: sample, end: liveRange.current.end }
@@ -121,15 +130,22 @@ export function SelectionOverlay({
         // ref to a stale committed value (George R3).
         if (dragging.current.size === 0) liveRange.current = selection;
         dragging.current.set(e.pointerId, edge);
+        const rect = hostRef.current?.getBoundingClientRect();
+        const w = rect?.width ?? 0;
+        const stemX = w > 0 ? sampleToViewportX(valueNow, w, win) : 0;
+        const offset = rect && w > 0 ? e.clientX - rect.left - stemX : 0;
+        grabOffset.current.set(e.pointerId, offset);
         e.currentTarget.setPointerCapture(e.pointerId);
       }}
       onPointerMove={(e) => moveEdge(e.pointerId, e.clientX)}
       onPointerUp={(e) => {
         dragging.current.delete(e.pointerId);
+        grabOffset.current.delete(e.pointerId);
         e.currentTarget.releasePointerCapture(e.pointerId);
       }}
       onPointerCancel={(e) => {
         dragging.current.delete(e.pointerId);
+        grabOffset.current.delete(e.pointerId);
       }}
       onKeyDown={(e) => {
         // Nudge one bucket per arrow press, so the frame is operable without a

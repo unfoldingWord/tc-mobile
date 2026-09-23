@@ -129,6 +129,21 @@ test.describe("handle targets after a zoom fit", () => {
           Math.abs(stem!.x + stem!.width / 2 - stageX)
         ).toBeLessThanOrEqual(2);
       }
+      // A grab on the inner side of the clamped start box, then a 2px move,
+      // moves the edge by about 2px, not to the finger (George R1 #1).
+      const valueOf = async (h: typeof startHandle) =>
+        Number(await h.getAttribute("aria-valuenow"));
+      const s0 = await valueOf(startHandle);
+      const perPx = ((await valueOf(endHandle)) - s0) / stage!.width;
+      const hb = (await startHandle.boundingBox())!;
+      const y = hb.y + hb.height / 2;
+      await page.mouse.move(hb.x + hb.width - 2, y);
+      await page.mouse.down();
+      await page.mouse.move(hb.x + hb.width, y);
+      await page.mouse.up();
+      expect(Math.abs((await valueOf(startHandle)) - s0)).toBeLessThanOrEqual(
+        4 * perPx
+      );
     });
   }
 });
