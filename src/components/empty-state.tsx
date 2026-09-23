@@ -23,6 +23,14 @@ interface EmptyStateProps {
   ctaLabel: string;
   ctaIcon: IconName;
   onCta: () => void;
+  /**
+   * The CTA is the next required action in the guided chain (#604). Both
+   * callers are steps in it — the empty shelf's New book and the empty
+   * chapter's Add segment — and on both screens the header's create control is
+   * hidden while the invite is up, so there is no second control this could be
+   * confused with.
+   */
+  guided?: boolean;
 }
 
 /**
@@ -36,6 +44,7 @@ export function EmptyState({
   ctaLabel,
   ctaIcon,
   onCta,
+  guided,
 }: EmptyStateProps) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-[14px] px-[24px] text-center">
@@ -46,6 +55,7 @@ export function EmptyState({
         label={ctaLabel}
         variant="primary"
         size={28}
+        guided={guided}
         onClick={onCta}
       />
     </div>

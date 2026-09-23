@@ -68,6 +68,14 @@
  * orders future owed clips by the count, so poison clips near the head of a
  * stable IndexedDB walk cannot starve healthy clips after a reload. The PCM is
  * still kept; this is scheduling metadata only.
+ *
+ * ── v8 (#591): segment labels — append-only ──
+ *
+ * `Segment` gained an optional `label` ("verses 3–4"), the segment twin of v5's
+ * chapter name. The v8 step stamps `label: null` on every pre-existing segment
+ * row, so a reader never meets `undefined`. Additive like v5: no store dropped,
+ * no other field touched, and the takes and clips behind a segment are never
+ * read.
  */
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
@@ -87,7 +95,7 @@ import type { ClipMeta } from "@/types/audio";
 import type { StoredFailure } from "@/types/failure";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 
 /**
  * The v3 shape of a `clipMeta` row, before the B8 fields existed. Only the v4
@@ -549,6 +557,22 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
             cursor = await cursor.continue();
           }
         }
+
+        // v8 (#591): stamp every pre-existing segment with `label: null`. The
+        // same shape as v5 above, for the same reasons: only the missing field
+        // is added, and keying on it being ABSENT leaves a row a newer build
+        // already labelled alone.
+        if (oldVersion < 8) {
+          const store = tx.objectStore("segments");
+          let cursor = await store.openCursor();
+          while (cursor) {
+            const legacy = cursor.value as Segment & { label?: string | null };
+            if (legacy.label === undefined) {
+              await cursor.update({ ...legacy, label: null });
+            }
+            cursor = await cursor.continue();
+          }
+        }
       },
       blocked() {
         if (settled) return;
@@ -736,32 +760,54 @@ export function getDb(): Promise<IDBPDatabase<TcMobileDb>> {
 }
 
 /**
+ * How long {@link closeDb} waits for an open still in flight before it stops
+ * waiting. The same order as the recorder's resume bound
+ * (`hooks/use-recorder.ts`): long enough that an ordinary open, upgrade
+ * included, finishes inside it; short enough that a person on a control is not
+ * left wondering whether it heard them.
+ */
+const CLOSE_TIMEOUT_MS = 1_000;
+
+/**
  * Close the connection and drop the cached handle.
  *
  * Closing matters: an open connection blocks `indexedDB.deleteDatabase`
  * indefinitely, so clearing the cached promise alone is not enough to let a
  * test (or a future "delete all data" action) actually remove the database.
  *
- * An open that is still in flight is awaited first. An IndexedDB open request
- * cannot be cancelled, so the alternative is to return while a connection is
- * still on its way and leave it open with nothing holding it. The cost is that
- * this waits as long as that open does: an open blocked by another copy of the
- * app settles only once that copy closes.
+ * An open that is still in flight is waited for, because an IndexedDB open
+ * request cannot be cancelled: returning at once would leave the connection it
+ * eventually receives open with nothing holding it. An open blocked by another
+ * copy of the app settles only once that copy closes, so the wait is BOUNDED
+ * (#438): after `timeoutMs` this resolves `"abandoned"` instead of `"closed"`.
+ *
+ * Abandoning stops the WAITING, never the closing. The close stays chained on
+ * the open it gave up on and runs the moment that open delivers, so the bound
+ * changes when this returns, not what it closes or when. That is the whole of
+ * the data-loss argument: `close()` never aborts a transaction (a connection
+ * closes only after every transaction made on it has finished), and the set of
+ * connections closed, and the moment each is closed, are what they were before
+ * the bound existed.
+ *
+ * `"abandoned"` means the database may still be held — by the other copy, and
+ * by this open until that copy lets go — so a `deleteDatabase` straight after
+ * it queues behind that open rather than running. A caller must not present
+ * `"abandoned"` as done.
  *
  * It closes exactly what existed when it was called — the cached handle and the
  * open already in flight, both snapshotted before that wait. A `getDb()` during
  * the wait installs a connection of its own, and closing THAT would hand the app
  * a dead handle it has no reason to expect.
  *
- * **Nothing in `src/` calls this: the only callers are tests.** Keep it that
- * way until the wait above is bounded. Wiring it to a product control — the
- * "delete all data" this function was written for — puts an unbounded wait
- * behind a button: another copy of the app holding the upgrade blocked would
- * leave the person on a control that never returns, with no way to say why.
- * Bounding it (timeout, then abandon the connection and report) is follow-up
- * work on #221, not something to add here unasked (jag3773, QA on #236).
+ * **Nothing in `src/` calls this: the only callers are tests.** A product
+ * caller — the "delete all data" this function was written for — lives in
+ * `hooks/` and must report `"abandoned"` through `hooks/report-failure.ts`:
+ * this layer cannot import the funnel (the onion rule), so the outcome is
+ * returned for that caller to report rather than reported here.
  */
-export async function closeDb(): Promise<void> {
+export async function closeDb(
+  timeoutMs: number = CLOSE_TIMEOUT_MS
+): Promise<"closed" | "abandoned"> {
   closeGeneration += 1;
   // Back to a build that has not given anything up. There is no product caller
   // (see above), and a test that tore the connection down only to find every
@@ -785,12 +831,27 @@ export async function closeDb(): Promise<void> {
 
   // A failed open is the caller's to see through `getDb()`, not this
   // function's: closeDb closes what exists and reports nothing.
-  const connections = await Promise.all([
+  //
+  // Chained rather than awaited inline: this is what closes the connections,
+  // and it runs to the end whether or not the bound below gives up on it.
+  const closed = Promise.all([
     cached?.catch(() => null) ?? null,
     opening?.catch(() => null) ?? null,
-  ]);
-  // The two are the same connection on the ordinary path (the cached handle IS
-  // this open's), and two different ones after a blocked open. `close()` is
-  // idempotent, so closing both needs no bookkeeping to tell those apart.
-  for (const db of connections) db?.close();
+  ]).then((connections): "closed" => {
+    // The two are the same connection on the ordinary path (the cached handle
+    // IS this open's), and two different ones after a blocked open. `close()`
+    // is idempotent, so closing both needs no bookkeeping to tell those apart.
+    for (const db of connections) db?.close();
+    return "closed";
+  });
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bound = new Promise<"abandoned">((resolve) => {
+    timer = setTimeout(() => resolve("abandoned"), timeoutMs);
+  });
+  try {
+    return await Promise.race([closed, bound]);
+  } finally {
+    clearTimeout(timer);
+  }
 }

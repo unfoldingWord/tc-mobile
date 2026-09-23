@@ -8,9 +8,9 @@ import {
 } from "react";
 
 import { Control } from "./control";
-import { shareControlAffordance } from "./control-affordance";
 import { EMPTY_STATE_NODE, focusTargetAfterDelete } from "./delete-focus";
 import { EmptyState } from "./empty-state";
+import { guidedStep } from "./guided-step";
 import { EraseConfirm } from "./erase-confirm";
 import { FailureLogPanel } from "./failure-log-panel";
 import { Icon } from "./icon";
@@ -18,18 +18,13 @@ import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { encoderNotice } from "./encoder-notice";
-import {
-  shareErrorText,
-  shareGapText,
-  shareProgressText,
-} from "./share-error-copy";
-import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
+import { shareGapText, shareProgressText } from "./share-error-copy";
+import { ShareMenuSection } from "./share-menu-section";
 import { ShareProgress } from "./share-progress";
 import { strings } from "./strings";
 import { useFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
-import { readSharePlatform } from "@/hooks/share-target";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
@@ -981,12 +976,9 @@ export function BooksScreen({
     });
   }, [bookShare.progress, focusRestore]);
   // Share speaks inside its own menu, not the shelf: the two-gesture flow keeps
-  // the menu open across prepare → ready → send. Map its error code to copy here.
-  const bookShareErrorText = shareErrorText(bookShare.error, "book");
-  const sharePartial = shareOutcomeGlyph("partial");
-  // Mark and tone for the error line, from the same table (#178); `undefined`
-  // for `encoder` and for no error, which is `Notice`'s own default.
-  const bookShareErrorMark = shareErrorGlyph(bookShare.error);
+  // the menu open across prepare → ready → send. The control's glyph, the gap
+  // mark and the error mark all live in `ShareMenuSection` now (#160, L-15) —
+  // the Segments menu derived the identical three.
   // The book-grain gap Notice (#116): `missing` (whole chapters left out) and
   // `partialSegments` (segments missing inside chapters that DID ship) are two
   // different counts that can both be non-zero for the same book. One Notice,
@@ -1003,16 +995,6 @@ export function BooksScreen({
     { missing: bookShare.missing, partial: bookShare.partialSegments },
     "book"
   );
-  // The Share Control's glyph/variant/busy across idle → preparing → ready
-  // (#354) — the same table Share Chapter and NameEdit's Confirm use, so
-  // "busy" and "ready" never borrow each other's mark or Confirm's. Its idle
-  // mark is the platform's own (#490), read from the Capacitor runtime.
-  const bookShareAffordance = shareControlAffordance(
-    bookShare.status,
-    readSharePlatform(),
-    bookShare.sendUnconfirmed
-  );
-
   // ── Delete a book (#337) ──────────────────────────────────────────────────
   // The book the confirm names, resolved from the shelf each render. `open`
   // and `inert` below key off `deleteTargetId` alone, not this — a book that
@@ -1217,6 +1199,22 @@ export function BooksScreen({
   // (George R4 P2-2 / Frank R4 P2).
   const noticeText = deleteFailed ? strings.deleteBookFailed : error;
 
+  // The guided chain's answer for this screen (#604): one accent on the next
+  // required action, and nothing once the first book has been worked in. Read
+  // here and compared by `kind` at each call site, so the controls below
+  // cannot disagree about which of them is the step. The header + is
+  // deliberately absent from the chain — the only state that would guide it is
+  // an empty shelf, and the shelf hides it there in favour of the invite's own
+  // CTA (above).
+  const guide = guidedStep({
+    screen: "books",
+    loaded,
+    naming: newBookSeed !== null,
+    namingChapter: newChapter !== null,
+    books,
+    expandedBooks: expanded,
+  });
+
   // The encoder's own health (#166). Module state, not hook state — every
   // encode in the app runs through `mp3-codec`'s single lane, from the sweep
   // App starts at launch to a Share on another screen — so it is read through
@@ -1367,6 +1365,7 @@ export function BooksScreen({
               teach={strings.booksEmptyTeach}
               ctaLabel={strings.newBook}
               ctaIcon="plus"
+              guided={guide?.kind === "new-book"}
               onCta={onNewBook}
             />
           </div>
@@ -1381,6 +1380,15 @@ export function BooksScreen({
                 onNewChapter={() => onNewChapter(book.bookId)}
                 onOpenShareMenu={() => onOpenShareMenu(book.bookId)}
                 onOpenChapter={onOpenChapter}
+                guidedAddChapter={
+                  guide?.kind === "add-chapter" && guide.bookId === book.bookId
+                }
+                guidedToggle={
+                  guide?.kind === "expand-book" && guide.bookId === book.bookId
+                }
+                guidedChapterId={
+                  guide?.kind === "open-chapter" ? guide.chapterId : null
+                }
                 setNode={setNode}
               />
             ))}
@@ -1413,9 +1421,10 @@ export function BooksScreen({
           `state-in-place` rule this repo prefers over a message. */}
       {/* `hamburger`: the ≡ in the header above stays a ≡ inside the open
           panel too — same glyph, same corner, and no visible "Menu" title
-          (#608, the requirements owner's navigation rule). This is the ONE
-          panel with a hamburger close control. The book, chapter and segment
-          menus open from ⋮ (#589); the recorder opener still uses ≡. */}
+          (#608, the requirements owner's navigation rule). The recorder's
+          drawer opts into the same `hamburger` control for the same reason
+          (#621); the book, chapter and segment menus open from ⋮ (#589) and
+          keep the chevron. */}
       <Menu open={menuOpen} onClose={closeGlobalMenu} hamburger>
         {failureCount > 0 && (
           <FailureLogPanel
@@ -1456,6 +1465,7 @@ export function BooksScreen({
           onSave={(name) => void onConfirmNewBook(name)}
           onCancel={onCancelNewBook}
           busy={creatingBookBusy}
+          guided={guide?.kind === "create-book"}
         />
         {/* THIS dialog's own failure channel — never the shared `error`, which
             also carries a failed addChapter or rename and would announce one
@@ -1486,6 +1496,7 @@ export function BooksScreen({
           onSave={(name) => void onConfirmNewChapter(name)}
           onCancel={onCancelNewChapter}
           busy={creatingChapterBusy}
+          guided={guide?.kind === "create-chapter"}
         />
       </Menu>
 
@@ -1566,62 +1577,20 @@ export function BooksScreen({
               // check.
               onClick={() => setRenamingBook(true)}
             />
-            {bookShare.status === "ready" ? (
-              <Control
-                ref={shareControlRef}
-                icon={bookShareAffordance.icon}
-                label={strings.shareSend}
-                variant={bookShareAffordance.variant}
-                className={bookShareAffordance.className}
-                autoFocus
-                onClick={onSendBookShare}
-              />
-            ) : (
-              // `busy` (not disabled) while preparing: the control must stay
-              // enabled/focusable — a re-tap is already a no-op via the hook's
-              // `preparingRef`, and disabling it would drop this control out of
-              // Menu's `FOCUSABLE` set, breaking the Tab trap (George R-B7) —
-              // and now also paints and reads that wait (#354; see
-              // `control-affordance.ts`).
-              <Control
-                ref={shareControlRef}
-                icon={bookShareAffordance.icon}
-                label={
-                  bookShare.status === "preparing"
-                    ? strings.shareBookPreparing
-                    : bookShare.sendUnconfirmed
-                      ? strings.shareBookUnconfirmed
-                      : strings.shareBook
-                }
-                variant={bookShareAffordance.variant}
-                busy={bookShareAffordance.busy}
-                onClick={onPrepareBookShare}
-              />
-            )}
-            {bookShare.status === "preparing" && (
-              <Notice tone="busy">{strings.shareBookPreparing}</Notice>
-            )}
-            {bookShare.status === "ready" && bookShareHasGap && (
-              // A heads-up once the zip is armed, not a wait (#112). Covers
-              // both whole chapters left out AND segments missing inside
-              // chapters that shipped (#116) — see `bookShareGapText` above.
-              // Its own mark since #178, so "some of the book went" does not
-              // wear the same glyph as an unrelated standing condition.
-              <Notice tone={sharePartial.tone} icon={sharePartial.icon}>
-                {bookShareGapText}
-              </Notice>
-            )}
-            {bookShareErrorText && (
-              // See the Segments menu: `nothing` and `failed` share the
-              // `alert` tone (#147), so the mark carries the difference (#178);
-              // the tone rides from the same table (George R3 P3).
-              <Notice
-                tone={bookShareErrorMark?.tone}
-                icon={bookShareErrorMark?.icon}
-              >
-                {bookShareErrorText}
-              </Notice>
-            )}
+            <ShareMenuSection
+              status={bookShare.status}
+              sendUnconfirmed={bookShare.sendUnconfirmed}
+              error={bookShare.error}
+              scope="book"
+              controlRef={shareControlRef}
+              idleLabel={strings.shareBook}
+              preparingLabel={strings.shareBookPreparing}
+              unconfirmedLabel={strings.shareBookUnconfirmed}
+              hasGap={bookShareHasGap}
+              gapText={bookShareGapText}
+              onPrepare={onPrepareBookShare}
+              onSend={onSendBookShare}
+            />
             {/* Destructive, so it sits last — the same place Delete holds in the
                 Segments row menu (#80). It arms the shared two-tap confirm; it
                 never deletes on this tap. */}
@@ -1670,6 +1639,15 @@ interface BookItemProps {
   onNewChapter: () => void;
   onOpenShareMenu: () => void;
   onOpenChapter: (chapterId: ChapterId) => void;
+  /** This book's `+` is the guided step (#604). */
+  guidedAddChapter: boolean;
+  /**
+   * This book's expand toggle is the guided step (#604) — the chapter row the
+   * chain wants is inside a list this book has closed.
+   */
+  guidedToggle: boolean;
+  /** The chapter row that is the guided step, if it is one of this book's. */
+  guidedChapterId: ChapterId | null;
   setNode: (id: string, el: HTMLElement | null) => void;
 }
 
@@ -1680,6 +1658,9 @@ function BookItem({
   onNewChapter,
   onOpenShareMenu,
   onOpenChapter,
+  guidedAddChapter,
+  guidedToggle,
+  guidedChapterId,
   setNode,
 }: BookItemProps) {
   const listId = `chapters-${book.bookId}`;
@@ -1696,7 +1677,12 @@ function BookItem({
             book.chapters.length,
             expanded
           )}
-          className="flex min-w-0 flex-1 items-center gap-[10px] border-0 bg-transparent py-[10px] text-left"
+          // The toggle carries the guide class itself, like the chapter row —
+          // it is a plain button, not a `Control`.
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-[10px] border-0 bg-transparent py-[10px] text-left",
+            guidedToggle && "is-guided"
+          )}
         >
           <span className="text-ink-muted flex-none">
             <Icon
@@ -1710,6 +1696,7 @@ function BookItem({
           icon="plus"
           label={strings.addChapter(book.name)}
           variant="quiet"
+          guided={guidedAddChapter}
           onClick={onNewChapter}
         />
         {/* Overflow ⋮ after the + distinguishes this object menu from the
@@ -1732,6 +1719,7 @@ function BookItem({
               key={chapter.chapterId}
               chapter={chapter}
               onOpen={() => onOpenChapter(chapter.chapterId)}
+              guided={chapter.chapterId === guidedChapterId}
               setNode={setNode}
             />
           ))}
@@ -1744,10 +1732,12 @@ function BookItem({
 interface ChapterItemProps {
   chapter: ChapterRow;
   onOpen: () => void;
+  /** This row is the guided step (#604). */
+  guided: boolean;
   setNode: (id: string, el: HTMLElement | null) => void;
 }
 
-function ChapterItem({ chapter, onOpen, setNode }: ChapterItemProps) {
+function ChapterItem({ chapter, onOpen, guided, setNode }: ChapterItemProps) {
   const { number, name, finishedCount, totalCount } = chapter;
   // The passage label the facilitator set (#264), else "Chapter {number}".
   const heading = strings.chapterHeading(name, number);
@@ -1761,7 +1751,13 @@ function ChapterItem({ chapter, onOpen, setNode }: ChapterItemProps) {
         type="button"
         onClick={onOpen}
         aria-label={strings.openChapter(heading)}
-        className="flex w-full items-center justify-between gap-[10px] border-0 bg-transparent py-[10px] pr-[6px] pl-[30px] text-left"
+        // The row is a plain button rather than a `Control`, so it carries the
+        // guide class itself; the ring is drawn inside its own box, which is
+        // what keeps it out of the scroll container's clip (3-components.css).
+        className={cn(
+          "flex w-full items-center justify-between gap-[10px] border-0 bg-transparent py-[10px] pr-[6px] pl-[30px] text-left",
+          guided && "is-guided"
+        )}
       >
         <span className="text-ink min-w-0 truncate">{heading}</span>
         {hasCounter && (
