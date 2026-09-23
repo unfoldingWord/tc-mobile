@@ -49,6 +49,13 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 ## 3. During the training
 
 - **Recording and editing work offline.** No signal is needed at any point.
+- **Starting a segment over.** A translator who wants to say the whole
+  segment again does not need to edit it: in the recorder, the **bin** at the
+  left end of the bottom bar erases the recording. A small panel asks once
+  more (the bin there confirms, the back arrow cancels). The recorder stays
+  open with the segment empty, ready for Record. The bin is greyed while
+  recording and when the segment has nothing saved yet. There is no undo for
+  an erase. <!-- source: src/components/recorder.tsx onRerecord / onConfirmErase (#592), src/components/erase-confirm.tsx; not device-verified -->
 - **Sharing a chapter** produces one MP3 file. **Sharing a book** produces a
   zip file of all its chapters. Both go out through the phone's normal share
   sheet (the same menu you'd use to share a photo). <!-- source: AGENTS.md "Known open items" #5, and docs/decisions/0009-transcode-on-finished.md -->
