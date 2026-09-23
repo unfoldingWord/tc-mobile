@@ -232,7 +232,8 @@
      the whole write (#383). The spin is scoped to the glyph itself, not the
      button, so the control's box size never moves (#164, #351) — the caller's
      icon swap (`control-affordance.ts`, e.g. the retry glyph) does the shape
-     half, this does the motion half. Reduced-motion-guarded below. */
+     half, this does the motion half. The second `@keyframes` animation in the
+     app, alongside `rec-pulse` below — both reduced-motion-guarded. */
   .control[aria-busy="true"] svg {
     animation: control-spin 900ms linear infinite;
   }
@@ -454,7 +455,7 @@
 
 @layer components {
   /* A recording that looks identical to a stopped one is how a take gets
-     lost, so this earns an animation. */
+     lost, so this is one of only two animations in the app. */
   .rec-dot {
     animation: rec-pulse 1.6s var(--p-ease) infinite;
   }
@@ -517,16 +518,6 @@
        explicitly, or a recorder menu paints behind the inert sheet — unreachable
        by touch (George R-B6). */
     z-index: 80;
-    /* The drawer starts its slide (below) a full width past the right edge.
-       `clip` cuts it off there without making the scrim a scroll container,
-       so focus landing mid-slide has nothing to scroll (George r3 P2 on PR
-       656). Both axes: `overflow-x: clip` beside a `hidden` y would compute
-       back to `hidden`. `hidden` first is the fallback where `clip` does not
-       parse (Safari before 16; the iOS target is 15.0), and there the
-       open-edge focus's `preventScroll` is what keeps the scrim still. */
-    overflow: hidden;
-    overflow: clip;
-    animation: menu-scrim-in var(--p-dur-base) var(--p-ease);
   }
   .menu-panel {
     width: min(320px, 84vw);
@@ -553,39 +544,6 @@
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
-  }
-  /* The slide lives on this wrapper, never on the `overflow-y: auto` panel
-     inside it: a transformed scroll container is the combination the
-     entrance must not create. */
-  .menu-drawer {
-    height: 100%;
-    animation: menu-panel-in var(--p-dur-base) var(--p-ease);
-  }
-  /* The drawer's motion (#621): it slides in from the right edge it docks on,
-     and the scrim's dimming fades in behind it. The fade is the scrim's
-     BACKGROUND from transparent to its `--s-scrim` role, never its opacity:
-     the portalled scrim is the parent of the panel and the full-screen hit
-     target, so fading its opacity made the panel translucent and left an
-     invisible scrim catching taps (George r3 P2 on PR 656). There is no slide
-     back out: `menu.tsx` unmounts a dismissed drawer on the render its `open`
-     drops, because every caller holds that contract (pick B on PR 656). The
-     duration and easing are this file's primitives, and nothing in JS times
-     the motion. */
-  @keyframes menu-scrim-in {
-    from {
-      background-color: transparent;
-    }
-  }
-  @keyframes menu-panel-in {
-    from {
-      transform: translateX(100%);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .menu-scrim,
-    .menu-drawer {
-      animation: none;
-    }
   }
 
   /* --- inline name edit (#264) ------------------------------------------- */

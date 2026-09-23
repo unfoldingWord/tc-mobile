@@ -8,23 +8,22 @@ import { Menu } from "@/components/menu";
 import { render } from "./render";
 
 /**
- * #621, the dev lead's pick B on PR 656: a dismissed drawer is gone on the
- * same render in which `open` becomes false.
+ * #621 on PR 656: a dismissed drawer is gone on the same render in which
+ * `open` becomes false, and the drawer does not animate at all.
  *
  * That is the contract every caller of `Menu` is written against — each one
  * drops its own layer, its Back ownership and its "overlay up" flags in
  * `onClose`, and some replace the drawer with another surface in that same
- * render. A drawer kept mounted through an exit motion broke it four times in
- * four callers (the park comment on PR 656), so the slide-OUT is retired and
- * only the slide-IN remains.
+ * render. A drawer kept mounted through an exit motion broke it in four
+ * callers, and an animated entrance produced the same class on the way in, so
+ * both halves of the motion were retired (the review triage on PR 656; the
+ * motion is tracked on #706).
  *
- * The dismiss case stands in a running animation for the stylesheet's: jsdom
- * has no Web Animations API, so without one a drawer that waited on its motion
- * would still vanish on the next microtask and this test could not tell the
- * two apart. With a motion that never finishes, a waiting drawer stays on
- * screen and the assertion fails.
- *
- * The slide-IN's stylesheet assertions live in `menu-entrance.test.ts`.
+ * The dismiss case stubs a running animation that never finishes. `menu.tsx`
+ * no longer asks for animations, so today the stub changes nothing; it is kept
+ * so that a future drawer which waits on its own motion before unmounting
+ * fails here. jsdom has no Web Animations API, so without the stub such a
+ * drawer would still vanish on the next microtask and pass.
  *
  * Client root inside a private jsdom window, as `menu-hamburger-header.test.ts`
  * does: `Menu` portals to `document.body` and binds in effects, which the

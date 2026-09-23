@@ -174,11 +174,7 @@ export function Menu({
       actionable.find((el) => !headerRef.current?.contains(el)) ??
       focusables.find((el) => !headerRef.current?.contains(el)) ??
       focusables[0];
-    // `preventScroll`: this runs while the drawer is still sliding in from
-    // off the right edge, and a plain `focus()` may scroll an ancestor to
-    // bring the target into view, leaving the drawer offset after the slide
-    // ends (George r3 P2 on PR 656).
-    target?.focus({ preventScroll: true });
+    target?.focus();
   }, [open]);
 
   // The focus trap + Escape, bound once per open; reads `onClose` via the ref.
@@ -205,10 +201,10 @@ export function Menu({
       if (!first || !last) return;
       if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
-        last.focus({ preventScroll: true });
+        last.focus();
       } else if (!e.shiftKey && document.activeElement === last) {
         e.preventDefault();
-        first.focus({ preventScroll: true });
+        first.focus();
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -218,8 +214,8 @@ export function Menu({
   // Gone on the render `open` drops, with no exit motion. Every caller drops
   // its own layer, Back ownership and overlay flags in `onClose`, and some
   // replace the drawer in that same render, so a drawer kept mounted to slide
-  // out broke four callers (#621, pick B on PR 656). A slide-out needs the
-  // callers to wait for it first; that is option A there, not a change here.
+  // out broke four callers (#621, PR 656). Any drawer motion, in or out,
+  // needs a contract with the callers first; that is #706, not a change here.
   if (!open) return null;
 
   // Portalled to <body>, out of the caller's subtree. A caller that goes `inert`
@@ -235,43 +231,39 @@ export function Menu({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      {/* `.menu-drawer` carries the slide-in and nothing else, so the
-          `transform` never sits on the scrolling `.menu-panel` inside it. */}
-      <div className="menu-drawer">
-        <div
-          ref={panelRef}
-          role="dialog"
-          aria-modal="true"
-          aria-label={title}
-          className="menu-panel"
-        >
-          {liveRegion}
-          {/* `display: contents` (Tailwind `contents`): this node carries
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="menu-panel"
+      >
+        {liveRegion}
+        {/* `display: contents` (Tailwind `contents`): this node carries
             `inert` without owning a box of its own, so the header and
             `children` stay direct flex items of `.menu-panel` above —
             `inert` changes reachability, never layout. */}
-          <div className="contents" inert={inert || undefined}>
-            {/* `justify-end` when the title is dropped keeps the one remaining
+        <div className="contents" inert={inert || undefined}>
+          {/* `justify-end` when the title is dropped keeps the one remaining
               child — the dismiss control — in the top-right corner, where the
               ≡ that opened this panel was; `justify-between` alone would slide
               it to the left edge as the header's only flex item. */}
-            <div
-              ref={headerRef}
-              className={cn(
-                "flex items-center",
-                hamburger ? "justify-end" : "justify-between"
-              )}
-            >
-              {!hamburger && <span className="t-title">{title}</span>}
-              <Control
-                icon={hamburger ? "menu" : "back"}
-                label={closeLabel}
-                variant="quiet"
-                onClick={onClose}
-              />
-            </div>
-            {children}
+          <div
+            ref={headerRef}
+            className={cn(
+              "flex items-center",
+              hamburger ? "justify-end" : "justify-between"
+            )}
+          >
+            {!hamburger && <span className="t-title">{title}</span>}
+            <Control
+              icon={hamburger ? "menu" : "back"}
+              label={closeLabel}
+              variant="quiet"
+              onClick={onClose}
+            />
           </div>
+          {children}
         </div>
       </div>
     </div>,
