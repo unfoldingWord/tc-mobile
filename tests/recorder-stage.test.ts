@@ -8,7 +8,7 @@ import {
   liftOutcome,
   liveScopeShown,
   panAfterCommit,
-  panAfterCutRest,
+  panAfterCutCollapse,
   panAfterDragMove,
   panAfterInsert,
   panAfterRedo,
@@ -541,6 +541,9 @@ describe("liftOutcome", () => {
       dragging: false,
       resume: true,
       keepOwed: false,
+      // The stage is clear but SOUNDING: a frame seeded here would draw a
+      // band over the resumed tail (#613, Frank R1 P2).
+      reopenFrame: false,
     });
   });
 
@@ -553,6 +556,8 @@ describe("liftOutcome", () => {
       dragging: true,
       resume: false,
       keepOwed: true,
+      // A finger is still down: the gesture has not ended, so no frame.
+      reopenFrame: false,
     });
   });
 
@@ -561,7 +566,12 @@ describe("liftOutcome", () => {
     // goes clear, which is when the owed resume is finally due.
     expect(
       liftOutcome({ ...base, wasOwner: false, contactsRemaining: 0 })
-    ).toEqual({ dragging: false, resume: true, keepOwed: false });
+    ).toEqual({
+      dragging: false,
+      resume: true,
+      keepOwed: false,
+      reopenFrame: false,
+    });
   });
 
   it("ignores a non-owner's lift while the owner is still dragging", () => {
@@ -573,22 +583,31 @@ describe("liftOutcome", () => {
         ownerActive: true,
         contactsRemaining: 1,
       })
-    ).toEqual({ dragging: true, resume: false, keepOwed: true });
+    ).toEqual({
+      dragging: true,
+      resume: false,
+      keepOwed: true,
+      reopenFrame: false,
+    });
   });
 
   it("drops a debt it refuses for any reason other than a finger", () => {
     // The line at the very end, and a take that started mid-gesture: both are
     // final answers, not deferrals. Leaving the flag set would fire the resume
     // on some later, unrelated lift.
+    // Both leave the stage clear and silent, so both DO seed a frame again:
+    // the refusal is about the resume, not about the gesture having ended.
     expect(liftOutcome({ ...base, pan: LEN })).toEqual({
       dragging: false,
       resume: false,
       keepOwed: false,
+      reopenFrame: true,
     });
     expect(liftOutcome({ ...base, takeActive: true })).toEqual({
       dragging: false,
       resume: false,
       keepOwed: false,
+      reopenFrame: true,
     });
   });
 
@@ -597,6 +616,8 @@ describe("liftOutcome", () => {
       dragging: false,
       resume: false,
       keepOwed: false,
+      // The ordinary #613 gesture: pan, lift, pick a new span.
+      reopenFrame: true,
     });
   });
 });
@@ -1191,18 +1212,23 @@ describe("#442 — drag to the end, then Paste grows the buffer", () => {
 });
 
 /**
- * #473: `onCut`'s writer, run through the rest rule — the one numeric
- * `panState` writer #442 did not touch.
+ * #473 + #613: `onCut`'s writer — the cut point, run through the rest rule.
+ *
+ * The rest rule is #473's, unchanged and still the reason this is not a bare
+ * `range.start`. What #613 changed is WHICH position goes through it: the old
+ * `panAfterCutRest(pan, …)` kept the centerline on the same audio, and the
+ * line after a cut is now the paste target instead, so the pan the caller had
+ * is no longer an input at all. Every #473 case below is kept and re-asked of
+ * the new rule; the one that changes answer is called out where it does.
  */
-describe("panAfterCutRest", () => {
-  it("rests, not the number newLength, when a cut to the end starts exactly on the pan", () => {
-    // The issue's own repro: drag the line into the tail, select from there
-    // to the end, Cut. The pan sits at the cut's own `start`, so
-    // `panAfterCut` alone clamps it to `removed.start` — which, for a cut
-    // reaching the old end, IS the new length exactly (#473's finding).
+describe("panAfterCutCollapse", () => {
+  it("rests, not the number newLength, when the cut ran to the end", () => {
+    // #473's own repro: drag the line into the tail, select from there to the
+    // end, Cut. The cut point IS the new length exactly, which is the case
+    // the rest rule exists for — under either rule.
     const preCutLength = 10_000;
     const removed = { start: 8_000, end: 10_000 };
-    expect(panAfterCutRest(8_000, removed, preCutLength)).toBeNull();
+    expect(panAfterCutCollapse(removed, preCutLength)).toBeNull();
   });
 
   it("composes with a later Paste the way #442's drag fix does", () => {
@@ -1211,7 +1237,7 @@ describe("panAfterCutRest", () => {
     // end, not the length as it stood mid-cut.
     const preCutLength = 10_000;
     const removed = { start: 8_000, end: 10_000 };
-    const rested = panAfterCutRest(8_000, removed, preCutLength);
+    const rested = panAfterCutCollapse(removed, preCutLength);
     const grownLength = 14_000; // a Paste after the cut
     const pan = effectivePan({
       mode: "record",
@@ -1223,11 +1249,18 @@ describe("panAfterCutRest", () => {
     expect(pan).toBe(grownLength);
   });
 
-  it("leaves a pan entirely before the removed span untouched", () => {
-    // Nothing about the rest rule should disturb the ordinary case #416/#317
-    // already cover: a cut entirely after the pan.
-    expect(panAfterCutRest(2_000, { start: 8_000, end: 10_000 }, 10_000)).toBe(
-      2_000
+  it("MOVES a line that was entirely before the removed span — the #613 rule change", () => {
+    // The one #473 case whose answer changes: `panAfterCutRest(2_000, …)`
+    // left the line at 2_000, on the audio it had been on. The paste target
+    // is the cut, so the line goes to 8_000 — and 8_000 is the post-cut end
+    // here, so the rest rule answers with the rest.
+    expect(
+      panAfterCutCollapse({ start: 8_000, end: 10_000 }, 10_000)
+    ).toBeNull();
+    // The same shape with a cut that does NOT reach the end: a real interior
+    // cut point, kept as an absolute sample.
+    expect(panAfterCutCollapse({ start: 5_000, end: 6_000 }, 10_000)).toBe(
+      5_000
     );
   });
 
@@ -1235,15 +1268,12 @@ describe("panAfterCutRest", () => {
     // Selection edges are floats. The buffer edit (`cut`/`sliceRange` in
     // `lib/audio/edit.ts`) truncates `8_000.4` to `8_000` via
     // `Int16Array.slice`, removing exactly 2_000 samples and landing the
-    // real post-cut length on `8_000` — the same "cut to the end starts
-    // exactly on the pan" shape as the integer-boundary case above, but
-    // through the truncating boundary instead of an already-integer one.
-    // A pan AT 8_000 must rest, not come back as the live number `8_000`
-    // that a raw float removed-length of `1_999.6` (`10_000 - 8_000.4`)
-    // would leave behind.
+    // real post-cut length on `8_000` — so the cut point must rest, not come
+    // back as the live number `8_000` that a raw float removed-length of
+    // `1_999.6` (`10_000 - 8_000.4`) would leave behind.
     const preCutLength = 10_000;
     const removed = { start: 8_000.4, end: 10_000 };
-    expect(panAfterCutRest(8_000, removed, preCutLength)).toBeNull();
+    expect(panAfterCutCollapse(removed, preCutLength)).toBeNull();
   });
 });
 
@@ -1351,8 +1381,9 @@ describe("panAfterUndo / panAfterRedo", () => {
   });
 
   it("redoing maps forward the same way the live writers do", () => {
-    // Redoing the same cut reproduces `panAfterCutRest`'s own forward
-    // mapping (minus the rest clamp, which `panAfterRedo` also applies).
+    // Redoing a cut maps a pan forward through `panAfterCut`, the mapping
+    // the live writer used before #613 collapsed the line onto the cut point
+    // (minus the rest clamp, which `panAfterRedo` also applies).
     const preRedoLength = 10_000; // the buffer as it stands before the redo
     expect(panAfterRedo(2_000, cutAtEnd, preRedoLength)).toBe(2_000); // before the cut
     expect(panAfterRedo(9_500, cutAtEnd, preRedoLength)).toBeNull(); // inside/after -> rests
@@ -1401,7 +1432,7 @@ describe("panAfterUndo / panAfterRedo", () => {
   });
 
   it("panAfterRedo rests at the buffer edit's TRUNCATED post-cut length (#473 round-2 Frank P2)", () => {
-    // Same shape as the panAfterCutRest fractional-boundary case: a cut to
+    // Same shape as panAfterCutCollapse's fractional-boundary case: a cut to
     // the end with a fractional start truncates to removing exactly 2_000
     // samples, so the real post-redo length is 8_000 and a pan AT the
     // cut's truncated start (8_000) must rest — not come back as the live
@@ -1425,8 +1456,9 @@ describe("panAfterUndo / panAfterRedo", () => {
  * `lib/audio/edit.ts`) but left the POSITION terms reading the raw
  * fractional cut bounds — `panAfterUndo`'s re-insertion point
  * (`panAfterInsert`'s `at`, read from `Math.min(range.start, range.end)`) and
- * `panAfterRedo`'s `panAfterCut(pan, redoneOp.range)` call. `panAfterCutRest`
- * shares the identical shape (`panAfterCut(pan, removed)` on the raw range),
+ * `panAfterRedo`'s `panAfterCut(pan, redoneOp.range)` call. The live cut writer
+ * (`panAfterCutRest` then, {@link panAfterCutCollapse} since #613) shares the
+ * same raw-range exposure,
  * though Frank r3 named only the undo/redo call sites — the class-level fix
  * routes every cut-range read in this file through `wholeSampleRange` at
  * entry, so a fractional cut's effect on the pan matches a cut of its
@@ -1451,14 +1483,15 @@ describe("#473 round 3 — a fractional cut's POSITION terms match its truncated
     ["after the cut", 9_000.6],
   ];
 
-  it.each(positions)(
-    "panAfterCutRest: %s (pan %s) matches a cut of the truncated bounds",
-    (_label, pan) => {
-      expect(panAfterCutRest(pan, fractionalRange, preLength)).toBe(
-        panAfterCutRest(pan, truncatedRange, preLength)
-      );
-    }
-  );
+  it("panAfterCutCollapse: a fractional cut lands on the same point as a cut of the truncated bounds", () => {
+    // No longer parameterised by the pan — #613 dropped that input (the line
+    // goes to the cut point, wherever it was) — but the truncation property
+    // it was written for is the same one, and it is still the class-level
+    // fix rather than Frank r3's two named call sites.
+    expect(panAfterCutCollapse(fractionalRange, preLength)).toBe(
+      panAfterCutCollapse(truncatedRange, preLength)
+    );
+  });
 
   it.each(positions)(
     "panAfterUndo: %s (pan %s) — undoing a fractional cut matches undoing the truncated one",
@@ -1482,8 +1515,10 @@ describe("#473 round 3 — a fractional cut's POSITION terms match its truncated
     expect(panAfterRedo(9_000.6, fractionalOp, preLength)).toBe(5_000.6);
   });
 
-  it("panAfterCutRest: the same live-cut pan also lands on 5_000.6 — the sibling the class-level fix covers beyond Frank r3's named lines", () => {
-    expect(panAfterCutRest(9_000.6, fractionalRange, preLength)).toBe(5_000.6);
+  it("panAfterCutCollapse: the live cut lands on the truncated start, 4_000 — the sibling the class-level fix covers beyond Frank r3's named lines", () => {
+    // The raw fractional start (4_000.4) would put the record/paste offset a
+    // fraction of a sample off the buffer the cut actually produced.
+    expect(panAfterCutCollapse(fractionalRange, preLength)).toBe(4_000);
   });
 
   it("panAfterUndo: a pan in the truncation gap crosses the reinsertion boundary the raw `lo` comparison put it on the wrong side of", () => {

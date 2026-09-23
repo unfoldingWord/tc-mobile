@@ -505,6 +505,86 @@ android` and Gradle to request diagnostics. Unset it (or set `false`) for
 Gradle rejects assets synced with a different diagnostic mode. No
 `package.json` version edit or alternate signing key is needed.
 
+**Inspecting a diagnostic APK with `chrome://inspect`.** This is how
+`Share.share`'s settle is read on a tester's phone (#593, #336). You need a
+computer with desktop Chrome and a USB data cable. Install the diagnostic APK
+over the tester's existing app the §5 step 4 way. **Do not uninstall first.**
+
+1. **Turn on USB debugging on the phone.** Open Settings → About phone and tap
+   **Build number** seven times. On Samsung it is under About phone → Software
+   information. Then turn on Settings → Developer options → **USB debugging**.
+2. **Connect the phone by USB.** Accept the phone's _Allow USB debugging?_
+   prompt for this computer.
+3. **Attach.** On the computer, open `chrome://inspect#devices` in Chrome and
+   leave **Discover USB devices** ticked. Open **tC Mobile Diagnostic** on the
+   phone. Its WebView shows under the phone's name with the package
+   `org.unfoldingword.tcmobile`. Click **inspect**. If the phone appears
+   with no WebView under it, bring the app to the front first. If it still
+   does not appear, check that Settings → Apps shows a version ending in
+   `-diagnostic`. An ordinary APK cannot be inspected.
+4. **Record the environment.** Paste this in the DevTools Console and keep the
+   output (the user agent carries the WebView version #593 is missing):
+
+   ```js
+   ({
+     ua: navigator.userAgent,
+     share: typeof navigator.share,
+     canShare: typeof navigator.canShare,
+   });
+   ```
+
+5. **Wrap the bridge before tapping anything.** `@capacitor/core` looks up
+   `Capacitor.nativePromise` each time a plugin method is called, so wrapping
+   it in the Console catches the app's own `Share.share` call and its settle.
+   The wrapper logs the plugin and method names, the option keys, a file
+   count and the settle time. It never logs option values, settled values or
+   error bodies: Share's `files` URIs carry the device path and the chapter
+   file name, and `Filesystem.writeFile`/`appendFile` carry the audio as
+   base64.
+
+   ```js
+   const tcNative = Capacitor.nativePromise.bind(Capacitor);
+   Capacitor.nativePromise = (plugin, method, options) => {
+     const t0 = performance.now();
+     const call = tcNative(plugin, method, options);
+     if (plugin === "Share" || plugin === "Filesystem") {
+       const tag = `${plugin}.${method}`;
+       const ms = () => Math.round(performance.now() - t0);
+       console.log("[call]", tag, {
+         keys:
+           options && typeof options === "object" ? Object.keys(options) : [],
+         files: Array.isArray(options?.files) ? options.files.length : 0,
+       });
+       call.then(
+         () => console.log("[resolve]", tag, ms(), "ms"),
+         (error) => console.log("[reject]", tag, ms(), "ms", error?.name)
+       );
+     }
+     return call;
+   };
+   ```
+
+   Paste it once per page load. A reload or a relaunch removes it, and then
+   you paste it again.
+
+6. **Reproduce.** Tap Share Chapter (≡ on a chapter row → Share → Share now).
+   Then, separately, send the failure log from the Books ≡ control. Each time,
+   write down whether the Android chooser appeared, what you tapped, and
+   whether the phone left the app, even briefly (a notification, a call, the
+   Home button). Leaving the app matters because the Android Share plugin
+   resolves a cancelled chooser as a success once the activity has stopped
+   (`src/hooks/share-target.ts`, `resolveProvesDelivery`).
+7. **Report.** Paste the Console lines from `[call] Share.share` through its
+   `[resolve]` or `[reject]`, plus the step 4 object and your notes from step
+   6, as a comment on #593. #593 is public: paste only those redacted lines,
+   never an expanded object from elsewhere in the Console. Put the output in
+   the issue, not in a file in this repo. If Share is tapped and no `[call] Share.share` line appears,
+   the wrapper did not catch the call. Say that in the comment rather than
+   reading the silence as "Share was never called."
+
+When the session is over, turn off USB debugging. Then put the tester back on
+an ordinary build with a newer version code, as above.
+
 **`versionCode`** is the run's unix timestamp — unique and strictly increasing
 with no external round-trip. Android refuses a `versionCode` downgrade, so
 every build that reaches a tester must carry a higher code than the last. A

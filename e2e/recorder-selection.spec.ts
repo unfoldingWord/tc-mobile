@@ -263,6 +263,43 @@ test.describe("edit mode toggle", () => {
         ).toBeEnabled();
         return Number(await endHandle.getAttribute("aria-valuemax"));
       };
+      // #613: a cut COLLAPSES the frame onto the centerline, which is then
+      // the paste target — it does not reseed a new span the way undo, redo
+      // and paste do. Cutting twice in a row is therefore two taps plus a
+      // touch on the waveform, and this is the state in between.
+      const canvasBounds = async () =>
+        (await page.locator(".recorder-canvas").boundingBox())!;
+      const expectCollapsedOntoTheLine = async () => {
+        await expect(startHandle).toHaveCount(0);
+        await expect(endHandle).toHaveCount(0);
+        // The scissors leaves with the frame — mounted only while there is a
+        // span to cut — and the red line it was over comes back.
+        await expect(
+          page.getByRole("button", { name: "Cut the selection", exact: true })
+        ).toHaveCount(0);
+        await expect(page.getByTestId("centerline-overlay")).toHaveCount(1);
+        // Still in edit mode: the collapse is a state inside it, not an exit.
+        await expect(toggle).toHaveAttribute("aria-pressed", "true");
+        // ...and the line is offering the paste the issue says it marks.
+        await expect(
+          page.getByRole("button", { name: "Paste at the line", exact: true })
+        ).toBeVisible();
+      };
+      // Touching the waveform is what asks for a span again without leaving
+      // edit mode (`onPointerUp` → `reopenFrame`).
+      const reopenFrameFromTheWaveform = async () => {
+        await page.locator(".recorder-canvas").click();
+        return expectUsableFrame();
+      };
+
+      // #613 review (jag3773 P3): the Cut row must reserve the WHOLE of what
+      // the mounted button occupies — its 40px box AND the row's own 6px
+      // padding-top — or the centred stage column recentres when the scissors
+      // leaves and the canvas slides by half the deficit. Asserting the
+      // reserved `min-height` token is not enough: that assertion passed while
+      // the canvas still moved 3px. Compare the geometry itself.
+      const canvasBeforeCut = await canvasBounds();
+
       const originalLength = await expectUsableFrame();
       if (width === 390) {
         await page
@@ -275,12 +312,16 @@ test.describe("edit mode toggle", () => {
       await page
         .getByRole("button", { name: "Cut the selection", exact: true })
         .click();
-      const firstCutLength = await expectUsableFrame();
+      await expectCollapsedOntoTheLine();
+      expect(await canvasBounds()).toEqual(canvasBeforeCut);
+      const firstCutLength = await reopenFrameFromTheWaveform();
+      expect(await canvasBounds()).toEqual(canvasBeforeCut);
       expect(firstCutLength).toBeLessThan(originalLength);
       await page
         .getByRole("button", { name: "Cut the selection", exact: true })
         .click();
-      const secondCutLength = await expectUsableFrame();
+      await expectCollapsedOntoTheLine();
+      const secondCutLength = await reopenFrameFromTheWaveform();
       expect(secondCutLength).toBeLessThan(firstCutLength);
       await page.getByRole("button", { name: "Undo", exact: true }).click();
       expect(await expectUsableFrame()).toBe(firstCutLength);
