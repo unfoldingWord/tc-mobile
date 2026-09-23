@@ -5,21 +5,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * mid-take (#76): returning from an iOS backgrounding or an OS interruption can
  * leave the shared `AudioContext` `"suspended"`/`"interrupted"`, so the tap reads
  * zeros a translator sees as a dead mic even though capture is fine. On a return
- * to a `"visible"` document while recording it resumes the context; the manual
- * `resume()` gesture owns the paused edge, so this covers only the background →
- * foreground return with capture still live.
+ * to a `"visible"` document while recording it resumes the context, covering
+ * the background → foreground return with capture still live.
  *
- * It is a module function rather than an inline effect body precisely so it can
- * be proved here: `vitest.config.ts` is `environment: "node"` and this repo has
- * no jsdom and no testing-library, so the `useRecorder` effect cannot be mounted
- * — but the decision and the listener wiring can be exercised directly, the same
- * "extract the seam, mutate the guard" approach as `audio-context-resume.test.ts`
- * and `level-tap-availability.test.ts`.
- *
- * The mutations these cases must fail on (Frank R1 P2 — the effect otherwise has
- * NO test): inverting the `recording` guard (arm while idle), inverting the
- * `visibilityState !== "visible"` guard (resume while hidden), or dropping the
- * `removeEventListener` cleanup.
+ * These cases call the module function directly with a fake document and a
+ * mocked audio-context resume. They exercise the recording/visibility guards
+ * and listener cleanup, without mounting the `useRecorder` effect or testing
+ * background capture and audio-context recovery on a device.
  */
 
 const { resumeAudioContext } = vi.hoisted(() => ({

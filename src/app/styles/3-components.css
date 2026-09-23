@@ -1047,9 +1047,12 @@
     gap: var(--c-gap-items);
     padding-bottom: var(--p-space-3);
   }
-  /* The toggle keeps its right-hand slot and vertical centre across modes. */
+  /* The toggle keeps its right-hand slot and vertical centre across modes. The
+     bin (#592) takes a matching control-width slot at the LEFT end, so Record
+     and Play keep the two shared middle columns and the toggle's column is
+     still the last `--c-control-md` of the bar, as in the edit spread. */
   .recorder-toolbar.pair {
-    grid-template-columns: 1fr 1fr var(--c-control-md);
+    grid-template-columns: var(--c-control-md) 1fr 1fr var(--c-control-md);
     gap: var(--c-gap-parts);
     height: calc(var(--c-control-xl) + var(--p-space-3));
   }

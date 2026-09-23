@@ -111,7 +111,7 @@ type RecorderTakeState = "idle" | "requesting" | "recording" | "processing";
  * This used to take a single `capturing`/`takeActive` boolean the caller
  * computed itself (#373). Narrowing that caller-side expression to
  * `recording || paused` let this go false the instant Back was tapped on a
- * paused first-take preview, while the very same preview stayed on stage —
+ * first-take preview, while the very same preview stayed on stage —
  * the jump this flag exists to prevent (George R3 #2) — and nothing made a
  * caller that dropped `isClosing` fail to type-check: `tests/display-gain.test.ts`
  * could pin the CONTRACT for a given boolean, but nothing observed what
