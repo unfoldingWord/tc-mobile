@@ -32,6 +32,16 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    outside the Play Store. Wording and settings vary by phone and language.
    If downloading or installing stops, record the message and the step where
    it stopped; do not guess which extra settings to change.
+
+   **A developer tester reported needing to change several phone settings
+   before the download and install would proceed**, on a plain Android
+   phone. He did not list which settings, so treat this as a heads-up, not a
+   checklist: if a phone's language is not English, the two install warnings
+   (the download warning and "Allow from this source") may not match any
+   English wording you know — recognize them by which button leads to
+   installing, not by the words on it. <!-- source: gh issue #248, tester
+   report 2026-09-22 (contributing developer, source: tester) -->
+
 2. **Allow the microphone when asked.** The first time someone taps record,
    the phone will ask for microphone access. Tap **Allow**. Without it,
    recording will not work at all.
@@ -45,10 +55,43 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    same "allow it, or check your device settings" message it would for an
    actual block. Retry first — if the question does not come back, use the
    Settings path in step 3. <!-- source: src/lib/audio/mic-refusal.ts — a dismissed prompt and an unreadable permission state both map to the same indeterminate message; a confirmed device-level block gets its own distinct message (#203, closed) -->
+5. **Show them the two menu buttons before they need them.** Everything in
+   this app is opened by a picture, never a word, and there are exactly two
+   pictures that open a menu:
+   - **⋮** (three dots in a column) — on a book, a chapter, or a segment. It
+     opens that one item's own actions: rename it, delete it, mark a segment
+     finished, and so on.
+   - **≡** (three stacked lines) — only in the top corner of the Books screen
+     (settings and the problem report) and inside the recorder (the drawer
+     with Edit, Mark finished, and Erase). It never opens an item's own
+     actions.
+
+   Point this out once, early: a participant who has only ever seen one of
+   the two glyphs will otherwise tap the wrong one and conclude nothing is
+   there. <!-- source: src/components/menu.tsx (hamburger prop docblock); src/components/books-screen.tsx (bookMenuOpen icon="more"); src/components/segments-screen.tsx (chapterMenuOpen icon="more"); src/components/segment-row.tsx (segmentMenu icon="more"); gh PR #683 (Part of #589), decided by the dev lead 2026-09-23: "please use kebab on objects and hamburger menu for global" (https://github.com/unfoldingWord/tc-mobile/pull/683#issuecomment-5787553352) -->
 
 ## 3. During the training
 
 - **Recording and editing work offline.** No signal is needed at any point.
+- **Tapping the square ends and saves a recording in one step.** There is no
+  in-between "paused" state anymore — the moment the square is tapped, that
+  recording is saved into the segment and the waveform shifts to show it, so
+  a participant who stops mid-sentence and looks away has not lost anything.
+  Tapping Record again continues from where the waveform now sits. <!-- source: src/components/recorder.tsx (Recorder docblock, "A take ends when the tap that stops it lands (#614, Option A)"; commitTake); gh PR #681 -->
+- **The `[ ]` control opens and closes editing.** One tap opens editing with
+  a span already selected, starting at the point currently playing and
+  reaching forward; tap `[ ]` again to leave editing and go back to
+  Record/Play. There is no separate "select, then edit" step. <!-- source: src/components/recorder.tsx (Recorder docblock, RECORD/EDIT modes); gh PR #705 (Closes #557, #554) -->
+- **Rename a segment from its own `⋮` menu.** This is how a participant
+  labels a segment with what it actually is (for example, the verse range)
+  instead of leaving it as a number. A rejected rename leaves the old name in
+  place and says so; try again. <!-- source: src/components/segment-row.tsx (renameSegment control); gh PR #675 (feat(segments): rename a segment from its row menu, #591) -->
+- **A new chapter asks for a name before it is created**, already filled in
+  with "Chapter N" — accept that or type a real name (for example, a book
+  and chapter reference), then confirm. <!-- source: src/components/books-screen.tsx (onNewChapter, NewBookDialog-style prompt, #609); gh PR #637 -->
+- **The recorder's own `≡` (its overflow drawer) opens and closes instantly** —
+  it does not slide in or out, so do not expect an animation as a sign it
+  worked; if the drawer's contents are on screen, it is open. <!-- source: src/components/menu.tsx (hamburger prop docblock, "opens and closes in place"); gh PR #656 (Fixes #621) -->
 - **Sharing a chapter** produces one MP3 file. **Sharing a book** produces a
   zip file of all its chapters. Both go out through the phone's normal share
   sheet (the same menu you'd use to share a photo). <!-- source: AGENTS.md "Known open items" #5, and docs/decisions/0009-transcode-on-finished.md -->
@@ -98,19 +141,23 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
      the app to erase it; sharing can be tried again. Native share changes
      still need acceptance on the training phones. <!-- source: src/hooks/share-flow.ts; issues #336 and #245 -->
 
-## 4. Known limits (as of 2026-09-22)
+## 4. Known limits (as of 2026-09-23)
 
-- **Do not switch apps or lock the phone while a recording is running.** If
-  the app is sent to the background mid-take (a call, a notification tap,
-  the Home gesture), the take in progress may be lost. Before switching apps,
-  tap the recorder's Back arrow ("Close recorder") and wait for the saved
-  recording to appear in the segment list. Pause alone does not save. If a
-  save or recovery screen appears, keep the app open and resolve it before
-  leaving. <!-- source: src/components/recorder.tsx close(), src/hooks/use-save-take.ts; https://github.com/unfoldingWord/tc-mobile/issues/58#issuecomment-5770432574 (accepted for training; #471 and #484 are post-training follow-ups) -->
+- **Finish recording — tap the square — before switching apps or locking the
+  phone.** Once it is tapped, the recording is already saved (§3), so this is
+  usually enough on its own. What it does not cover is a genuine
+  interruption while the square still shows recording is live: an incoming
+  call, a notification tap, the Home gesture. The app is designed to save
+  what was captured up to that point automatically, but this has only been
+  confirmed on an iPhone; no Android pass has reached it yet. Until it has,
+  treat any such interruption on Android as a possible loss: after it,
+  before recording again, check the segment list for the recording you
+  expect to be there, and if a save or recovery screen appears instead, keep
+  the app open and resolve it before doing anything else. <!-- source: src/components/recorder.tsx close(); AGENTS.md Testing ("Second on-device run: 2026-08-25 ... incoming call mid-take ... saved the partial take" on iPhone Safari; "no Android pass has reached interruption or background capture (#245)"); https://github.com/unfoldingWord/tc-mobile/issues/58#issuecomment-5770432574 (accepted for training; #471 and #484 are post-training follow-ups) -->
 - **Use a practice book.** Create it with New book and give it a recognizable
-  name. To remove it later, open that book's menu, choose Delete, and confirm
-  only after checking the book. Deleting a book removes its recordings.
-  <!-- source: src/components/books-screen.tsx (NewBookDialog and book deletion confirmation) -->
+  name. To remove it later, open that book's **⋮** menu, choose Delete, and
+  confirm only after checking the book. Deleting a book removes its
+  recordings. <!-- source: src/components/books-screen.tsx (NewBookDialog, bookMenuOpen icon="more", deleteBook control and confirmation) -->
 - **You can listen to the selected audio while editing.** Use Play the
   selection to hear the selected span before changing it. This plays that
   span, not a preview of how the recording will sound after removing it.
@@ -191,11 +238,13 @@ work, not something this build does. <!-- source: src/hooks/report-failure.ts:41
    the **share** icon and the **bin** icon. <!-- source: src/components/failure-log-panel.tsx (icon-only Controls; the two Notices carry the only text) -->
 3. Tap the **share** icon once — it prepares the report — then tap it again
    when it turns into the highlighted share button. The report goes out as a
-   small **text file**, through the phone's normal share sheet. Which apps that
-   sheet offers has not been checked on a real phone yet, so try whatever is
-   there — if it offers saving the file or attaching it to an email, that is
-   the preferred route when available. Send it to your maintainer contact.
-   Two taps is deliberate, and it is the same two taps as sharing a recording. <!-- source: src/hooks/use-failure-log-share.ts (two-gesture share); on the installed app the share goes through src/hooks/share-target.ts:338 `Share.share({ files })` — a file, never plain text; which apps the sheet then lists, and whether it offers save/email at all, is device behaviour and is not device-verified (gh PR #440, George round 6 P2-2; Frank round 10 P2-2) -->
+   small **text file**, through the phone's normal share sheet — **if it
+   opens; see below for what to do on Android if it does not.** Which apps
+   that sheet offers has not been checked on a real phone yet, so try
+   whatever is there — if it offers saving the file or attaching it to an
+   email, that is the preferred route when available. Send it to your
+   maintainer contact. Two taps is deliberate, and it is the same two taps as
+   sharing a recording. <!-- source: src/hooks/use-failure-log-share.ts (two-gesture share); on the installed app the share goes through src/hooks/share-target.ts:338 `Share.share({ files })` — a file, never plain text; which apps the sheet then lists, and whether it offers save/email at all, is device behaviour and is not device-verified (gh PR #440, George round 6 P2-2; Frank round 10 P2-2) -->
 4. Tap the **bin** icon afterwards if you want the mark to go quiet again. It
    empties only this problem record — nothing anyone recorded is touched. <!-- source: src/lib/storage/failures.ts clearFailures (clears only the `failures` store) -->
 
@@ -207,8 +256,25 @@ also takes over the whole screen and blocks the way back to **≡**, so this is
 its own door to the same report. <!-- source: src/components/send-log-control.tsx (SendLogControl, shared by both screens since #456); src/components/error-boundary.tsx (rendered after the primary Restart); src/components/save-failed.tsx (rendered after the primary Retry/Restart, hidden while a save attempt is in flight); DatabasePanel does NOT carry this control — #456 calls that a design call -->
 
 Two things to know honestly: the mark appears on the Books screen only, so you
-will see it when you go back there; <!-- source: src/components/books-screen.tsx; gh issue #205 round-1 G7, accepted as product intent --> and sending has not yet been tried on a
-real phone's share sheet, so tell us if it does not open. <!-- source: gh PR for #205, "not device-verified" -->
+will see it when you go back there; <!-- source: src/components/books-screen.tsx; gh issue #205 round-1 G7, accepted as product intent --> and on the **installed Android app**, three
+testers' devices have shown the phone's share sheet not opening at all when
+sharing a recording, with the control still ending on a mark that can read as
+success — the same underlying route the problem report's send also uses. <!--
+source: gh issue #593, three Android device reports 2026-09-16 through
+2026-09-22 (Galaxy A36, Galaxy S26, one earlier device), none showing a share
+sheet; gh issue #593 comment 2026-09-22 ("the failure log's send takes the
+same native route as Share Chapter"), stated there as inference from reading
+the code, not yet confirmed on the log specifically --> **If you tap the
+share icon twice for a problem report and no share sheet appears, do not keep
+retrying and do not assume it went anywhere.** Fall back to writing it down
+by hand instead — see ["Write down what the app cannot
+know"](#write-down-what-the-app-cannot-know) below — phone model, Android
+version, the build stamp, what was tapped, and what was on screen — and pass
+that along at the end of the day the way you would for anything else. <!-- source: gh issue #593 -->
+
+Sending a problem report has not otherwise been tried on a real phone's
+share sheet, so also tell us if it opens but the wrong thing happens. <!--
+source: gh PR for #205, "not device-verified" -->
 
 On the **save-failed** screen, background conversion of finished recordings
 pauses while you recover or send the report. It resumes when that screen
