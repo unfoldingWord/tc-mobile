@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { encoderNotice } from "@/components/encoder-notice";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/i18n/strings";
 
 /**
  * What the Books shelf says when the encoder has stopped working (#166).

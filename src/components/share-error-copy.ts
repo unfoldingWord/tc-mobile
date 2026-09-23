@@ -10,7 +10,7 @@
  * pin the JSX.
  */
 
-import { strings } from "./strings";
+import { strings } from "@/lib/i18n/strings";
 import type { ShareError } from "@/hooks/share-flow";
 import type { ShareProgress } from "@/hooks/share-progress";
 

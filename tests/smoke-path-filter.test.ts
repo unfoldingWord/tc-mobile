@@ -76,7 +76,7 @@ describe("the browser-smoke path filter (#457 QA P2)", () => {
     "src/lib/theme.ts",
     "src/hooks/use-theme.ts",
     "src/components/books-screen.tsx",
-    "src/components/strings.ts",
+    "src/lib/i18n/en.ts",
     "src/app/styles/2-semantic.css",
     "index.html",
     // The four the enumerated filter skipped (the QA finding).

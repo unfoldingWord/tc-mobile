@@ -6,7 +6,7 @@ import { Recorder, type RecorderHandle } from "@/components/recorder";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import type { SegmentId } from "@/types/domain";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/i18n/strings";
 
 const boundary = vi.hoisted(() => ({
   setFinished: vi.fn().mockResolvedValue(undefined),

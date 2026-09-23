@@ -99,8 +99,9 @@ describe("reportUnlessStale", () => {
   });
 });
 
-const card = (id: string, name = id): BookCard => ({
+const card = (id: string, name: string | null = id): BookCard => ({
   bookId: id as BookId,
+  number: 1,
   name,
   chapters: [],
 });
@@ -165,6 +166,7 @@ const chapterCard = (
   chapters: BookCard["chapters"] = []
 ): BookCard => ({
   bookId: bookId_,
+  number: 1,
   name: `Book ${bookId_}`,
   chapters,
 });
@@ -180,6 +182,7 @@ const chapter = (overrides: Partial<Chapter> = {}): Chapter => ({
 
 const book = (overrides: Partial<Book> = {}): Book => ({
   id: chapterBookId("b-1"),
+  number: 1,
   name: "Mark",
   languageCode: null,
   chapterIds: [],

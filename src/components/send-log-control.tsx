@@ -5,7 +5,7 @@ import { readSharePlatform } from "@/hooks/share-target";
 import { Control } from "./control";
 import { shareControlGlyph } from "./control-affordance";
 import { Notice } from "./notice";
-import { strings } from "./strings";
+import { strings } from "@/lib/i18n/strings";
 
 /**
  * Send the durable failure log from a full-screen recovery surface (#456).

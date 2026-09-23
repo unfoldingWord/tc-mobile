@@ -1,5 +1,10 @@
 <!doctype html>
-<html lang="en">
+<!-- The ACTIVE LOCALE's pair, not English by assumption — a screen reader picks
+     its voice from `lang`, and this app's accessible names are its whole text
+     layer. What the document carries until `installDocumentLocale()` runs;
+     `tests/document-locale.test.ts` pins it to `LOCALE_META[DEFAULT_LOCALE]`
+     (`src/lib/i18n/locale.ts`) so the shell cannot drift (#169). -->
+<html lang="en" dir="ltr">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />

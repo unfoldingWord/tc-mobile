@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/i18n/strings";
 
 /**
  * #400 (George, PR #398 round 1 P3) — `shareBookPartial(n)` pluralized

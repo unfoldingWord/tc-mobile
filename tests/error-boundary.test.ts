@@ -7,7 +7,7 @@ import {
   subscribeToFailures,
   type FailureReport,
 } from "@/hooks/report-failure";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/i18n/strings";
 
 /**
  * What this can and cannot prove.

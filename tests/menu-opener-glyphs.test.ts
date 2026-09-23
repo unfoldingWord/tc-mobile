@@ -8,7 +8,7 @@ import { BooksScreen } from "@/components/books-screen";
 import { Icon, type IconName } from "@/components/icon";
 import { SegmentRow } from "@/components/segment-row";
 import { SegmentsScreen } from "@/components/segments-screen";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/i18n/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { BookId, ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { BookCard, SegmentRow as Row } from "@/types/view";
@@ -75,6 +75,7 @@ vi.mock("@/hooks/use-erase-segment", () => ({
 
 const book: BookCard = {
   bookId: "book" as BookId,
+  number: 1,
   name: "Genesis",
   chapters: [],
 };
@@ -176,7 +177,11 @@ describe("which glyph opens which menu (#589)", () => {
     expect(global).toBe(glyph("menu"));
     expect(global).not.toBe(glyph("more"));
 
-    expectKebab(strings.bookMenuOpen(book.name));
+    // The row's opener is labelled with the RESOLVED heading (#169) — the
+    // facilitator's name here, the rendered default for a book without one.
+    expectKebab(
+      strings.bookMenuOpen(strings.bookHeading(book.name, book.number))
+    );
   });
 
   it("gives the Segments header's chapter menu ⋮", async () => {

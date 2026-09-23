@@ -25,7 +25,7 @@ import {
 } from "./share-error-copy";
 import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
 import { ShareProgress } from "./share-progress";
-import { strings } from "./strings";
+import { strings } from "@/lib/i18n/strings";
 import { useFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
@@ -899,6 +899,21 @@ export function BooksScreen({
   const onSaveBookName = useCallback(
     (name: string) => {
       if (!shareMenuBookId) return;
+      // An UNTOUCHED field on an unnamed book sends blank, not the placeholder
+      // it was seeded with (#169, QA P2 on #701). The seed is the rendered
+      // default — "Book 001" — so that a small fix is an edit rather than a
+      // retype, but forwarding it verbatim would store this locale's wording as
+      // a name and freeze the book in English on the first Rename anybody
+      // opens, undoing the one thing the stored number exists to prevent.
+      //
+      // Keyed on the book being unnamed, and on the value still being exactly
+      // what was rendered. A book the facilitator called "Mark" keeps "Mark",
+      // and typing "Book 002" onto it by hand is a deliberate act stored as a
+      // name — the same rule `createBook` follows for a supplied name, and what
+      // keeps this from guessing at anybody's words.
+      const untouchedDefault =
+        shareMenuBook?.name === null &&
+        name.trim() === strings.bookName(shareMenuBook.number);
       // Capture the session this rename belongs to. IDB can settle after the
       // user has closed the menu, reopened another book's menu, or armed a share
       // — all of which advance the token — so close ONLY if we are still the
@@ -909,7 +924,7 @@ export function BooksScreen({
       // what makes the menu layer's `busy()` honest for a system Back landing
       // in the same task as this tap (invariant 4).
       setSavingName(true);
-      void renameBook(shareMenuBookId, name)
+      void renameBook(shareMenuBookId, untouchedDefault ? "" : name)
         .then((book) => {
           if (book && bookMenuSession.current === session) onCloseShareMenu();
         })
@@ -920,7 +935,13 @@ export function BooksScreen({
           if (bookMenuSession.current === session) setSavingName(false);
         });
     },
-    [renameBook, setSavingName, shareMenuBookId, onCloseShareMenu]
+    [
+      renameBook,
+      setSavingName,
+      shareMenuBook,
+      shareMenuBookId,
+      onCloseShareMenu,
+    ]
   );
   // Abandon the rename (Cancel, Escape) and return to the action list. Bumps
   // the session and clears `savingBookName` like every other exit from this
@@ -948,14 +969,18 @@ export function BooksScreen({
   const onPrepareBookShare = useCallback(() => {
     if (!shareMenuBook) return;
     focusRestore.capture();
+    const bookHeading = strings.bookHeading(
+      shareMenuBook.name,
+      shareMenuBook.number
+    );
     // Arming a share ends the current rename-close session: a rename resolving
     // after this must not close the menu and drop the encode we are preparing.
     bookMenuSession.current += 1;
     setSavingName(false);
     void bookShare.prepare(
       shareMenuBook.bookId,
-      strings.shareBookFilename(shareMenuBook.name),
-      (n) => strings.shareFilename(shareMenuBook.name, n)
+      strings.shareBookFilename(bookHeading),
+      (n) => strings.shareFilename(bookHeading, n)
     );
   }, [focusRestore, bookShare, setSavingName, shareMenuBook]);
   // Tap 2 — hand the armed zip to the OS share sheet. Close the menu once the
@@ -1524,9 +1549,14 @@ export function BooksScreen({
         {renamingBook && shareMenuBook ? (
           <>
             {/* Rename the book in place (#264). The store seeds the field with
-                the current name so a small fix is an edit, not a retype. */}
+                the current name so a small fix is an edit, not a retype — the
+                rendered default when the book has no name of its own, which is
+                also what the New Book field offers (#169). */}
             <NameEdit
-              initialValue={shareMenuBook.name}
+              initialValue={strings.bookHeading(
+                shareMenuBook.name,
+                shareMenuBook.number
+              )}
               fieldLabel={strings.bookNameField}
               onSave={onSaveBookName}
               onCancel={onCancelRenameBook}
@@ -1640,7 +1670,11 @@ export function BooksScreen({
           tap cancel, and both are no-ops once the delete is in flight. */}
       <EraseConfirm
         open={deleteTargetId !== null}
-        title={strings.deleteBookConfirmTitle(deleteTarget?.name ?? "")}
+        title={strings.deleteBookConfirmTitle(
+          deleteTarget
+            ? strings.bookHeading(deleteTarget.name, deleteTarget.number)
+            : ""
+        )}
         confirmLabel={strings.deleteBookConfirm}
         cancelLabel={strings.eraseCancel}
         busy={deleting}
@@ -1683,6 +1717,10 @@ function BookItem({
   setNode,
 }: BookItemProps) {
   const listId = `chapters-${book.bookId}`;
+  // The facilitator's own name, or the default rendered from the row's number
+  // (#169) — resolved once, so the visible title, the row's spoken name and
+  // both controls' labels can never name the book differently.
+  const heading = strings.bookHeading(book.name, book.number);
   return (
     <li ref={(el) => setNode(book.bookId, el)}>
       <div className="border-edge flex items-center gap-[8px] border-b px-[4px]">
@@ -1691,11 +1729,7 @@ function BookItem({
           onClick={onToggle}
           aria-expanded={expanded}
           aria-controls={listId}
-          aria-label={strings.bookRow(
-            book.name,
-            book.chapters.length,
-            expanded
-          )}
+          aria-label={strings.bookRow(heading, book.chapters.length, expanded)}
           className="flex min-w-0 flex-1 items-center gap-[10px] border-0 bg-transparent py-[10px] text-left"
         >
           <span className="text-ink-muted flex-none">
@@ -1704,11 +1738,11 @@ function BookItem({
               size={20}
             />
           </span>
-          <span className="t-title text-ink min-w-0 truncate">{book.name}</span>
+          <span className="t-title text-ink min-w-0 truncate">{heading}</span>
         </button>
         <Control
           icon="plus"
-          label={strings.addChapter(book.name)}
+          label={strings.addChapter(heading)}
           variant="quiet"
           onClick={onNewChapter}
         />
@@ -1719,7 +1753,7 @@ function BookItem({
             read/visual order: expand, add, manage. */}
         <Control
           icon="more"
-          label={strings.bookMenuOpen(book.name)}
+          label={strings.bookMenuOpen(heading)}
           variant="quiet"
           onClick={onOpenShareMenu}
         />

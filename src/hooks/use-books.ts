@@ -9,9 +9,10 @@ import {
   getChapter,
   isStaleBookFailure,
   listBooks,
-  nextBookName,
+  nextBookNumber,
   renameBook as renameBookInStore,
 } from "@/lib/storage/books";
+import { strings } from "@/lib/i18n/strings";
 import { reportFailure } from "./report-failure";
 import type { Book, BookId, Chapter } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
@@ -48,6 +49,7 @@ async function loadBookCard(book: Book): Promise<BookCard> {
   );
   return {
     bookId: book.id,
+    number: book.number,
     name: book.name,
     chapters: chapters.filter((c): c is ChapterRow => c !== null),
   };
@@ -471,10 +473,11 @@ export function useBooks() {
    * shelf by a render: the optimistic insert below moves both in one commit, and
    * a second `+` immediately after a create offers the NEXT name rather than the
    * one just taken (George R2 P2-1). Same pure function the store's own fallback
-   * uses, over the same names, so the field shows what a blank confirm writes.
+   * uses, over the same rows, so the field shows what a blank confirm writes —
+   * `nextBookNumber` picks the digit and the catalog renders it (#169).
    */
   const newBookPlaceholder = useMemo(
-    () => nextBookName(books.map((b) => b.name)),
+    () => strings.bookName(nextBookNumber(books)),
     [books]
   );
 
@@ -518,7 +521,12 @@ export function useBooks() {
         // NEWER patch lands before it resolves — the optimistic insert above
         // is never at risk, only ever reconciled or superseded.
         setBooks((prev) => [
-          { bookId: book.id, name: book.name, chapters: [] },
+          {
+            bookId: book.id,
+            number: book.number,
+            name: book.name,
+            chapters: [],
+          },
           ...prev,
         ]);
         reload();
