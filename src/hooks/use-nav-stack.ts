@@ -3,9 +3,11 @@ import { Capacitor, type PluginListenerHandle } from "@capacitor/core";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 import {
+  deferWrite,
   historyWriteDecision,
   outstandingConsume,
   replayDecision,
+  type DeferredWrite,
   type HistoryWrite,
   type HistoryWriteDecision,
 } from "@/lib/nav/history-latch";
@@ -383,8 +385,9 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // "This popstate is one WE caused — do not route it" (kept from develop).
   const suppressPop = useRef(false);
   // History writes waiting for an outstanding Back to land (#435), in request
-  // order. Replayed by the `popstate` handler at the end of every landing.
-  const deferredWrites = useRef<HistoryWrite[]>([]);
+  // order, once per screen entry (`deferWrite`). Replayed by the `popstate`
+  // handler at the end of every landing.
+  const deferredWrites = useRef<DeferredWrite[]>([]);
 
   // Latest-ref the state-half callbacks (menu.tsx onCloseRef pattern) so the
   // returned commands can be identity-stable — recorder.tsx:2213 rebuilds its
@@ -512,14 +515,14 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     []
   );
   const performWrite = useCallback(
-    (write: HistoryWrite, decision: HistoryWriteDecision) => {
+    (write: DeferredWrite, decision: HistoryWriteDecision) => {
       if (decision === "defer") {
-        deferredWrites.current = [...deferredWrites.current, write];
+        deferredWrites.current = deferWrite(deferredWrites.current, write);
         return;
       }
       if (decision !== "write") return;
-      if (write === "enter-screen") enterScreen();
-      else armFloor();
+      if (write === "arm-floor") armFloor();
+      else enterScreen();
     },
     [enterScreen, armFloor]
   );
@@ -634,7 +637,7 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
       const decision = decideWrite("enter-screen");
       if (decision === "refuse") return;
       onOpenChapterRef.current(id);
-      performWrite("enter-screen", decision);
+      performWrite("enter-segments", decision);
     },
     [decideWrite, performWrite]
   );
@@ -644,7 +647,7 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
       const decision = decideWrite("enter-screen");
       if (decision === "refuse") return;
       onOpenRecorderRef.current(segmentId, ordinal);
-      performWrite("enter-screen", decision);
+      performWrite("enter-recorder", decision);
     },
     [decideWrite, performWrite]
   );

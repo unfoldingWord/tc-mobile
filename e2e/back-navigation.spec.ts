@@ -831,12 +831,16 @@ test("(n) a Record tap made before a pending Back to books lands issues no histo
     document
       .querySelector<HTMLButtonElement>('[aria-label="Back to books"]')
       ?.click();
-    document
-      .querySelector<HTMLButtonElement>('[aria-label="Record segment 1"]')
-      ?.click();
+    // Logged, so a control already gone after the Back click cannot pass as
+    // the latch having refused the push (George round 1).
+    const record = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Record segment 1"]'
+    );
+    log.push(record ? "tap" : "no-control");
+    record?.click();
     return log;
   });
-  expect(calls).toEqual(["back"]);
+  expect(calls).toEqual(["back", "tap"]);
 
   await expect(newBookCta(page)).toBeVisible();
   await expect(
@@ -935,4 +939,69 @@ test("(o) a Record tap made before a Forward's cancel lands is deferred to that 
   ).toBeVisible();
   await page.goBack();
   await expect(newBookCta(page)).toBeVisible();
+});
+
+/**
+ * (o) with TWO Record taps in the absorbed window (Frank round 1). Both defer
+ * the recorder's entry, and the recorder is one screen, so the replay writes
+ * one entry for it. The walk back is the witness a surplus entry cannot pass:
+ * Recorder, then Segments, then Books must end on the root entry. Like (o),
+ * the test makes this overlap itself.
+ */
+test("(p) two Record taps made before a Forward's cancel lands write one entry for the one recorder, and the walk back ends on the root entry (#435)", async ({
+  page,
+}) => {
+  await seedToRecorder(page);
+  await page.goBack();
+  await expect(
+    page.getByRole("button", { name: "Record segment 1" })
+  ).toBeVisible();
+
+  await page.evaluate(() => {
+    const log: string[] = [];
+    (window as unknown as { __log435: string[] }).__log435 = log;
+    const history = window.history;
+    const back = history.back.bind(history);
+    const push = history.pushState.bind(history);
+    history.back = () => {
+      log.push("back");
+      back();
+    };
+    history.pushState = (...args: Parameters<History["pushState"]>) => {
+      log.push("push");
+      push(...args);
+    };
+    let tapped = false;
+    window.addEventListener("popstate", () => {
+      log.push("pop");
+      if (tapped) return;
+      tapped = true;
+      const record = document.querySelector<HTMLButtonElement>(
+        '[aria-label="Record segment 1"]'
+      );
+      log.push(record ? "tap" : "no-control");
+      record?.click();
+      record?.click();
+      log.push("tapped");
+    });
+  });
+  await page.goForward();
+  await expect(
+    page.getByRole("button", { name: "Close recorder" })
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as unknown as { __log435: string[] }).__log435
+      )
+    )
+    .toEqual(["back", "pop", "tap", "tapped", "push", "pop"]);
+
+  await page.goBack();
+  await expect(
+    page.getByRole("button", { name: "Back to books" })
+  ).toBeVisible();
+  await page.goBack();
+  await expect(newBookCta(page)).toBeVisible();
+  expect(await navIndex(page)).toBe(0);
 });

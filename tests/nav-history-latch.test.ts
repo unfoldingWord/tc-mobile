@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  deferWrite,
   historyWriteDecision,
   outstandingConsume,
   replayDecision,
@@ -95,4 +96,30 @@ describe("replayDecision — a deferred write at a landing", () => {
       expect(replayDecision(outstanding)).toBe("defer");
     }
   );
+});
+
+describe("deferWrite — the queue a landing replays", () => {
+  it("a repeat of the same screen entry is held once — two taps, one screen, one entry", () => {
+    expect(deferWrite(["enter-recorder"], "enter-recorder")).toEqual([
+      "enter-recorder",
+    ]);
+    expect(deferWrite(["enter-segments"], "enter-segments")).toEqual([
+      "enter-segments",
+    ]);
+  });
+
+  it("a different screen keeps its own entry, in request order", () => {
+    expect(deferWrite(["enter-segments"], "enter-recorder")).toEqual([
+      "enter-segments",
+      "enter-recorder",
+    ]);
+    expect(deferWrite([], "arm-floor")).toEqual(["arm-floor"]);
+  });
+
+  it("returns a new array and leaves the queue it was given alone", () => {
+    const queue = ["arm-floor"] as const;
+    const next = deferWrite(queue, "arm-floor");
+    expect(next).not.toBe(queue);
+    expect(queue).toEqual(["arm-floor"]);
+  });
 });

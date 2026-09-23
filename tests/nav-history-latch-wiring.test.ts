@@ -62,6 +62,9 @@ describe.each([
   ["openRecorder", "onOpenRecorderRef.current("],
 ])("%s asks the latch before either half runs (#435)", (name, stateHalf) => {
   const body = bodyAfter(`const ${name} = useCallback(`);
+  // Keyed by its own screen, so a repeat of this command coalesces in the
+  // deferred queue and the other command's entry does not (`deferWrite`).
+  const key = name === "openChapter" ? "enter-segments" : "enter-recorder";
 
   it("isolates a real body — non-empty, and it is the one that runs the state half", () => {
     expect(body.length).toBeGreaterThan(40);
@@ -77,7 +80,7 @@ describe.each([
     const state = body.indexOf(stateHalf);
     const write = index(
       body,
-      /performWrite\(\s*"enter-screen"\s*,\s*decision\s*\)/
+      new RegExp(`performWrite\\(\\s*"${key}"\\s*,\\s*decision\\s*\\)`)
     );
     expect(decide).toBeLessThan(refuse);
     expect(refuse).toBeLessThan(state);
@@ -104,10 +107,20 @@ describe("pushLayer arms the floor through the latch (#435)", () => {
     );
     expect(body).not.toMatch(/pushHistoryEntry\s*\(/);
     expect(body).not.toMatch(/window\.history\./);
+    // Set at write time by armFloor, never at request time: flipped here, a
+    // deferred arm would re-derive to a no-op and never push (George round 1).
+    expect(body).not.toMatch(/floorArmed\.current\s*=/);
   });
 });
 
 describe("the latch's own plumbing", () => {
+  it("performWrite queues a deferral through deferWrite, which coalesces repeats", () => {
+    const performBody = bodyAfter("const performWrite = useCallback(");
+    expect(performBody).toMatch(
+      /deferredWrites\.current\s*=\s*deferWrite\(\s*deferredWrites\.current\s*,\s*write\s*\)/
+    );
+  });
+
   it("performWrite is the only caller of enterScreen() and armFloor()", () => {
     const performBody = bodyAfter("const performWrite = useCallback(");
     expect(code.match(/\benterScreen\(\)/g) ?? []).toHaveLength(1);

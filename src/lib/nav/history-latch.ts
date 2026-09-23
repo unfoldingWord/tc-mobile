@@ -110,3 +110,23 @@ export function replayDecision(
 ): Exclude<HistoryWriteDecision, "refuse"> {
   return outstanding === "none" ? "write" : "defer";
 }
+
+/**
+ * A write held for a landing, keyed by the screen entry it protects rather
+ * than by the kind of write, so the queue can tell a repeat from a new screen.
+ */
+export type DeferredWrite = "enter-segments" | "enter-recorder" | "arm-floor";
+
+/**
+ * Queue a deferred write, once per key. Two Record taps (or two chapter taps)
+ * in one absorbed window move the screen stack to ONE screen, so they must
+ * replay ONE entry for it, not one per tap. A different key is a different
+ * screen (Segments, then the Recorder above it) and keeps its own entry. A
+ * repeated `"arm-floor"` re-derives to nothing at replay anyway.
+ */
+export function deferWrite(
+  queue: readonly DeferredWrite[],
+  write: DeferredWrite
+): DeferredWrite[] {
+  return queue.includes(write) ? [...queue] : [...queue, write];
+}
