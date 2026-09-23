@@ -60,15 +60,13 @@ beforeEach(async () => {
 });
 
 describe("loadRecorderSegmentView", () => {
-  it("opens an unrecorded segment as record-only: no clip, no peaks", async () => {
+  it("opens an unrecorded segment as record-only: no clip, no samples", async () => {
     const segmentId = await freshSegment();
 
     const view = await loadRecorderSegmentView(segmentId);
 
     expect(view.hasClip).toBe(false);
     expect(view.samples).toBeNull();
-    expect(view.peaks).toBeNull();
-    expect(view.lengthSamples).toBe(0);
     expect(view.finished).toBe(false);
     // The breadcrumb the sheet header shows.
     expect(view.bookName).toBe("Ruth");
@@ -76,7 +74,7 @@ describe("loadRecorderSegmentView", () => {
     expect(view.ordinal).toBe(1);
   });
 
-  it("opens a PCM segment over its samples, with peaks and the length domain", async () => {
+  it("opens a PCM segment over its samples, byte for byte", async () => {
     const segmentId = await freshSegment();
     const clipId = newClipId();
     const pcm = samples(500);
@@ -86,11 +84,10 @@ describe("loadRecorderSegmentView", () => {
     const view = await loadRecorderSegmentView(segmentId);
 
     expect(view.hasClip).toBe(true);
-    // The stored PCM is handed through untouched — no decode/align on this path.
+    // The stored PCM is handed through untouched — no decode/align on this
+    // path, and no peaks pass: the sheet draws `editor.peaks` over the working
+    // buffer, so peaks computed here would only be redrawn over (L-9, #160).
     expect(view.samples).toEqual(pcm);
-    expect(view.lengthSamples).toBe(pcm.length);
-    // Peaks are computed for the waveform (a fixed bucket count, so non-null).
-    expect(view.peaks).not.toBeNull();
     expect(view.finished).toBe(false);
   });
 

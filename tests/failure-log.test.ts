@@ -27,9 +27,10 @@ import {
   appendFailure,
   clearFailures,
   countFailures,
+  FAILURE_LOG_LIMIT,
   readFailures,
 } from "@/lib/storage/failures";
-import { FAILURE_LOG_LIMIT, type StoredFailure } from "@/types/failure";
+import type { StoredFailure } from "@/types/failure";
 import { clearAllStores } from "./support";
 
 /**

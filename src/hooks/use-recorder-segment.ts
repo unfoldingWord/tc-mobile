@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from "react";
 import { decodeMp3ToCanonical, resumeAudioContext } from "./audio-io";
 import { requestTranscodeSweep } from "./finish-transcode";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
-import { computePeaks } from "@/lib/audio/peaks";
 import {
   getBook,
   getChapter,
@@ -13,10 +12,6 @@ import {
 } from "@/lib/storage/books";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import type { SegmentId } from "@/types/domain";
-import type { Peaks } from "@/types/audio";
-
-/** Peaks resolution for the recorder waveform — coarser than a row is wrong. */
-const PEAK_BUCKETS = 400;
 
 export interface RecorderSegmentView {
   readonly bookName: string;
@@ -25,10 +20,6 @@ export interface RecorderSegmentView {
   readonly finished: boolean;
   /** Playable audio is present (F3: resolved, not merely a take pointer). */
   readonly hasClip: boolean;
-  readonly peaks: Peaks | null;
-  /** Length of the existing clip in samples — the pan/zoom domain and the */
-  /** append offset. Zero on an empty segment. */
-  readonly lengthSamples: number;
   /**
    * The existing clip's samples, loaded here at mount, or null on an empty
    * segment. Held so the insert/append merge on close is synchronous: the save
@@ -41,8 +32,14 @@ export interface RecorderSegmentView {
 
 /**
  * Load one segment into a recorder view, or throw: its breadcrumb, its finished
- * flag, and — if it has playable audio — the peaks and sample length the
- * pan/zoom view is drawn over.
+ * flag, and — if it has playable audio — the samples the editing session is
+ * seeded from.
+ *
+ * It does NOT compute peaks. The sheet draws `editor.peaks`, which
+ * `useSegmentEditor` derives from the working buffer, and a working buffer
+ * diverges from this one the moment anything is recorded or cut — so peaks
+ * computed here could only ever be redrawn over, never read (L-9, #160). The
+ * pan/zoom domain is `editor.workingLength` for the same reason.
  *
  * The React-free core of {@link useRecorderSegment}, extracted so the walk, the
  * decode alignment and the empty/PCM branches are covered in Node against
@@ -93,8 +90,6 @@ export async function loadRecorderSegmentView(
     ordinal: segment.index,
     finished: isFinished(segment.status),
     hasClip: samples !== null,
-    peaks: samples ? computePeaks(samples, PEAK_BUCKETS) : null,
-    lengthSamples: samples?.length ?? 0,
     samples,
   };
 }
