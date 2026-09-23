@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, type Mock, vi } from "vitest";
 
 import { attachNativeBack, type NativeBackPlugin } from "@/hooks/use-nav-stack";
 import type { Layer } from "@/lib/nav/layer-stack";
@@ -92,8 +92,8 @@ async function flush(): Promise<void> {
   await Promise.resolve();
 }
 
-function layer(): Layer & { dismiss: ReturnType<typeof vi.fn> } {
-  return { id: "menu", busy: () => false, dismiss: vi.fn() };
+function layer(): Layer & { dismiss: Mock<() => void> } {
+  return { id: "menu", busy: () => false, dismiss: vi.fn<() => void>() };
 }
 
 /** `popAction` for a Back at `screen` with `stack` open and no trap up. */

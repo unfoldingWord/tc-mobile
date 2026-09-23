@@ -56,6 +56,7 @@ async function seedFinishedPcmSegments(count: number): Promise<void> {
       chapterId: chid("ch1"),
       index: i + 1,
       reference: null,
+      label: null,
       activeTakeId: takeId,
       status: "affirmed",
     });

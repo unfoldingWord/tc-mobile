@@ -3,27 +3,8 @@ import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
 import { Control } from "./control";
+import { FOCUSABLE, wrapTab } from "./focus-trap";
 import { strings } from "./strings";
-
-/**
- * Focusable controls inside the panel — NATIVELY disabled ones excluded on
- * purpose; `aria-disabled` ones deliberately kept.
- *
- * A natively disabled button can never be `document.activeElement`, so it must
- * be skipped for BOTH the initial focus (landing on it focuses nothing,
- * stranding the user behind the scrim) and the Tab-wrap boundary (a disabled
- * `last` never turns the wrap). The recorder menu's Erase is disabled at
- * idle/no-clip while Edit stays live (it commits then edits a live/paused
- * take, #134), which is exactly when a single shared selector matters. Mirrors
- * EraseConfirm.
- *
- * A row carrying a hint (#135) is `aria-disabled` instead, and so MATCHES this
- * selector by design: it is focusable, announces its reason, and holds its place
- * in the Tab order. Only the open-edge landing filters those out — see the
- * `actionable` list below, which is the other half of this rule.
- */
-const FOCUSABLE =
-  'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 interface MenuProps {
   open: boolean;
@@ -45,13 +26,16 @@ interface MenuProps {
    * Opened by a ≡ that stays a ≡ (#608). The header's dismiss control wears
    * the same `menu` glyph as the control that opened it, in the same top-right
    * corner, and the panel shows no visible title — one control, one glyph, one
-   * place, and the glyph is the label. Off (the default) the header is a title
-   * beside a back chevron, which every other menu — a per-row ≡, the
-   * recorder's, the New Book dialog — deliberately keeps: #589 owns their
-   * affordances, and this prop must not pre-empt that pick. What a screen
-   * reader hears does not change either way: `title` still names the dialog
-   * and `closeLabel` still names the control ("Close menu" dismisses, as
-   * before), which is also what the e2e specs locate the menu by.
+   * place, and the glyph is the label. The recorder's overflow drawer wears
+   * it too (#621, the requirements owner's call on that panel): its "More"
+   * heading said nothing the ≡ did not, and a left-pointing chevron reads as
+   * "move left" on a drawer that docks on the RIGHT. Off (the default) the
+   * header is a title beside a back chevron, which every other menu keeps —
+   * the book, chapter and segment menus (opened from a ⋮ since #589) and the
+   * New Book dialog. What a screen reader hears does not change either way:
+   * `title` still names the dialog and `closeLabel` still names the control
+   * ("Close menu" dismisses, as before), which is also what the e2e specs
+   * locate the menu by.
    */
   hamburger?: boolean;
   /**
@@ -192,22 +176,17 @@ export function Menu({
       if (e.key !== "Tab" || !panel) return;
       // Keep Tab inside the panel: with nothing behind it reachable, focus
       // wrapping is what makes the scrim a real boundary and not just paint.
-      const focusable = panel.querySelectorAll<HTMLElement>(FOCUSABLE);
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (!first || !last) return;
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
+      wrapTab(panel, e);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
+  // Gone on the render `open` drops, with no exit motion. Every caller drops
+  // its own layer, Back ownership and overlay flags in `onClose`, and some
+  // replace the drawer in that same render, so a drawer kept mounted to slide
+  // out broke four callers (#621, PR 656). Any drawer motion, in or out,
+  // needs a contract with the callers first; that is #706, not a change here.
   if (!open) return null;
 
   // Portalled to <body>, out of the caller's subtree. A caller that goes `inert`
