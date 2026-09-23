@@ -1,5 +1,10 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 
+import {
+  CANVAS_FALLBACK_LIVE,
+  CANVAS_FALLBACK_VOICE,
+  withCanvasFallback,
+} from "./canvas-fallback-colors";
 import { useLiveTheme } from "@/hooks/use-theme";
 import { captureWindow } from "@/lib/audio/viewport";
 import { cn } from "@/lib/utils";
@@ -144,8 +149,17 @@ export function LiveScope({
     const win = captureWindow(headFraction);
     const span = win.endFraction - win.startFraction;
     const styles = getComputedStyle(canvas);
-    const stroke = styles.getPropertyValue("--s-voice").trim() || "#e6a444";
-    const live = styles.getPropertyValue("--s-live").trim() || "#d84a4a";
+    // Falls back to the unthemed dark-only hexes in `canvas-fallback-colors.ts`
+    // (#506 item 1) only if the token read comes back empty — a token failing
+    // to resolve, not the normal path.
+    const stroke = withCanvasFallback(
+      styles.getPropertyValue("--s-voice"),
+      CANVAS_FALLBACK_VOICE
+    );
+    const live = withCanvasFallback(
+      styles.getPropertyValue("--s-live"),
+      CANVAS_FALLBACK_LIVE
+    );
 
     // Paint one scope at the canvas's CURRENT css size. Sizing the backing store
     // only on an actual change is the #102 cost avoidance; doing it here (not
