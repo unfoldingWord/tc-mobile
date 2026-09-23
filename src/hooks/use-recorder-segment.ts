@@ -21,6 +21,13 @@ const PEAK_BUCKETS = 400;
 export interface RecorderSegmentView {
   readonly bookName: string;
   readonly chapterNumber: number;
+  /**
+   * The facilitator's passage label for this chapter (#264), or `null` when
+   * nobody has renamed it. Carried alongside the number rather than instead of
+   * it: the header resolves the two through `strings.chapterHeading`, which is
+   * the one place that decides what an unnamed chapter is called (#169).
+   */
+  readonly chapterName: string | null;
   readonly ordinal: number;
   readonly finished: boolean;
   /** Playable audio is present (F3: resolved, not merely a take pointer). */
@@ -90,6 +97,7 @@ export async function loadRecorderSegmentView(
   return {
     bookName: book?.name ?? "",
     chapterNumber: chapter?.number ?? 0,
+    chapterName: chapter?.name ?? null,
     ordinal: segment.index,
     finished: isFinished(segment.status),
     hasClip: samples !== null,
