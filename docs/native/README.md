@@ -50,6 +50,10 @@ The two platforms have very different fastest routes:
   # → android/app/build/outputs/apk/debug/app-debug.apk
   ```
 
+  To inspect this local debug build through `chrome://inspect`, set
+  `TC_ANDROID_DIAGNOSTIC=true` for both the sync and Gradle commands
+  ([diagnostic builds](#5a-android--apk-via-ci-automated-no-mac-step)).
+
   Install that APK **only on a developer's own device — one that will never
   receive a §5a release build** — and follow the sideload steps in
   [§5](#5-android--apk-sideload) step 4 (enable _Install unknown apps_, open the
@@ -117,8 +121,10 @@ morning.
 | `@capacitor/{core,ios,android}` | runtime + platform deps (`dependencies`) | package.json    |
 | `@capacitor/cli`                | the `cap` CLI (`devDependencies`)        | package.json    |
 
-**Capacitor version:** 8.5.1 (pinned exact). **appId:** `org.unfoldingword.tcmobile`.
-**appName / home-screen label:** `tC Mobile` (matches the PWA `short_name`).
+**Capacitor version:** pinned exactly in `package.json`. **appId:** `org.unfoldingword.tcmobile`.
+**appName / ordinary home-screen label:** `tC Mobile` (matches the PWA `short_name`).
+Android [diagnostic builds](#5a-android--apk-via-ci-automated-no-mac-step)
+use the label `tC Mobile Diagnostic`.
 
 The native projects **are committed** — the mainstream Capacitor practice —
 so that signing config, `Info.plist`, entitlements, icons, and any native
@@ -481,6 +487,24 @@ never runs on push/PR.
 `app-release.apk` as a workflow artifact (14-day retention). The APK is signed
 with the release keystore decoded from `ANDROID_KEYSTORE_BASE64`.
 
+**Diagnostic APKs (#593).** Leave the `diagnostic` dispatch input off for
+training builds. Turn it on only for a USB inspection session: it enables
+WebView inspection in `chrome://inspect`, appends `-diagnostic` to Android's
+version name, labels the launcher/activity **tC Mobile Diagnostic**, and names
+the artifact `android-apk-diagnostic-<sha>`. The web footer still shows the
+package version and build SHA. It remains an `assembleRelease` APK with the
+same application ID, release signer, signing approval and timestamp version
+code, so it can update the installed tester app without uninstalling. It is
+not a separate app and it uses the same recordings. Return to an ordinary
+build with a newer version code after the inspection; do not uninstall.
+
+For local builds, set `TC_ANDROID_DIAGNOSTIC=true` for both `npx cap sync
+android` and Gradle to request diagnostics. Unset it (or set `false`) for
+**both** commands to return to normal. Ordinary sync writes an explicit
+`webContentsDebuggingEnabled: false`, including on local debug builds.
+Gradle rejects assets synced with a different diagnostic mode. No
+`package.json` version edit or alternate signing key is needed.
+
 **`versionCode`** is the run's unix timestamp — unique and strictly increasing
 with no external round-trip. Android refuses a `versionCode` downgrade, so
 every build that reaches a tester must carry a higher code than the last. A
@@ -522,7 +546,10 @@ Use this template for the manually published release body and its tester-chat
 copy. It covers all three channels even though the attached asset is an APK.
 Fill the placeholders from the actual distributed builds; mark a channel as
 pending if it is not yet available. A green upload job is not evidence of
-on-device acceptance.
+on-device acceptance. **Never attach a `-diagnostic` build.** The diagnostic
+APKs above are for a maintainer's own USB inspection session — same signer,
+different label — and are not tester builds (#709); confirm the asset is an
+ordinary `app-release.apk` before publishing.
 
 ```markdown
 This is the shared tC Mobile v<VERSION> tester announcement for Android,
@@ -543,7 +570,15 @@ necessary, share any recordings you need to keep first: uninstall deletes them.
 **With every report:** Include the app build, steps, expected result and what
 happened. Android: phone model, Android version and Android System WebView
 version. iPhone: model and iOS version. Browser: device, OS, browser/version,
-and whether opened in a tab or installed to the home screen.
+and whether opened in a tab or installed to the home screen. We log every
+report by your role (tester, facilitator, developer), never by your name.
+
+**If something breaks:** On the Books screen, tap **≡** — a red mark means a
+problem was recorded. Tap it, then tap the share icon once to prepare the
+report and once more to send it: two taps, the same gesture as sharing a
+recording. It goes out as a small text file through your phone's own share
+sheet. If no share sheet opens, tell us that directly rather than retrying —
+that is itself a report, and may be the same failure already tracked in #593.
 
 **Changes:** <Symptom, affected platforms and evidence limits for each change>.
 
@@ -629,7 +664,7 @@ time, never read from `package.json`.
   default is `1`, and once any CI APK is on a phone a `1` is a downgrade that
   Android refuses (§5 step 3).
 
-  Settings → Apps on the phone now shows the same version number as the `v…`
+  On ordinary builds, Settings → Apps shows the same version number as the `v…`
   half of the in-app build stamp (`src/components/build-stamp.tsx`), instead
   of a permanent `"1.0"`. That is **not** the same thing the facilitator
   runbook asks testers to report: `docs/training/facilitator-runbook.md` §5
@@ -637,7 +672,9 @@ time, never read from `package.json`.
   Settings alone cannot distinguish two builds that share a `package.json`
   version (for example, two CI dispatches of the same `staging` ref, or an
   `allow_any_ref` build off `develop`). Point testers at the stamp; Settings
-  is a fallback only when the app will not open at all.
+  is a fallback only when the app will not open at all. Android
+  [diagnostic builds](#5a-android--apk-via-ci-automated-no-mac-step) append
+  `-diagnostic` to the Settings version; the web footer retains the package version.
 
 ---
 

@@ -6,6 +6,7 @@ import {
   resumeAudioContext,
   type PlaybackHandle,
 } from "./audio-io";
+import type { ProbeSource } from "./audio-probe";
 import { reportFailure } from "./report-failure";
 import {
   useRecorder,
@@ -310,10 +311,12 @@ export function useAudioSession(): UseAudioSession {
       samples: Int16Array,
       token: number,
       offsetSeconds: number,
+      source: ProbeSource,
       onEnded: () => void
     ): Promise<void> => {
       const handle = await playSamples(samples, {
         offsetSeconds,
+        source,
         isStillCurrent: () => session.isCurrent(token),
         onEnded: () => {
           if (!session.isCurrent(token)) return;
@@ -389,7 +392,9 @@ export function useAudioSession(): UseAudioSession {
                 );
           if (!session.isCurrent(token)) return;
 
-          await startPlayback(samples, token, offsetSeconds, () => {
+          const source =
+            audio.clip.encoding === "pcm" ? "stored-pcm" : "stored-mp3";
+          await startPlayback(samples, token, offsetSeconds, source, () => {
             session.release(token);
             setPlaying(null, true);
           });
@@ -460,7 +465,7 @@ export function useAudioSession(): UseAudioSession {
 
       void (async () => {
         try {
-          await startPlayback(samples, token, offsetSeconds, () => {
+          await startPlayback(samples, token, offsetSeconds, "working", () => {
             // The clip RAN OUT — `startPlayback` only calls this from a source
             // that was not stopped by hand (`audio-io.ts` guards it with its
             // `stopped` flag) and only while this claim still owns the floor.

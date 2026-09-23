@@ -81,6 +81,7 @@ const book: BookCard = {
 const recorded: Row = {
   segmentId: "segment" as SegmentId,
   ordinal: 1,
+  label: null,
   hasClip: true,
   finished: false,
   clipId: "clip" as ClipId,
@@ -208,6 +209,7 @@ describe("which glyph opens which menu (#589)", () => {
         onOpenRecorder: vi.fn(),
         onSetFinished: vi.fn(),
         onErase: vi.fn(),
+        onRename: vi.fn(),
         onMenuOpen: vi.fn(),
         onMenuClose: vi.fn(),
       })

@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 
+import { errorMessage } from "@/lib/failure-text";
 import { clearSegmentTake } from "@/lib/storage/books";
 import { reportFailure } from "./report-failure";
 import type { SegmentId } from "@/types/domain";
@@ -24,18 +25,18 @@ import type { SegmentId } from "@/types/domain";
  * against the real store (the onion's reason for existing): the hook below is a
  * thin state wrapper over it, not a second copy of the logic. A failure is
  * caught and reported as a reason string — never swallowed, never a rejected
- * promise a tap handler drops — and `onErased` fires only on success, so a
- * caller reloads or closes only when the row has actually changed.
+ * promise a tap handler drops.
+ *
+ * It took an `onErased` callback until #160 (L-12) and no caller ever passed
+ * one — both screens learn the row changed by their own route, the recorder by
+ * closing dirty and the list by acting on the result of its own `erase` call.
+ * Four tests kept the parameter looking alive, which is knip's blind spot #1
+ * at parameter granularity: a thing only a test reaches still reads as used.
+ * It went with them.
  */
 export async function performErase(
-  segmentId: SegmentId,
-  onErased?: () => void
+  segmentId: SegmentId
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  // Only the STORE op is fallible-and-reportable. Once `clearSegmentTake`
-  // commits, the audio is irreversibly gone, so the result is success no matter
-  // what the notification does — a throwing `onErased` (a reload that failed,
-  // say) must NOT report "could not erase" and invite a retry against a segment
-  // that is already cleared (Frank R-B6). So `onErased` runs outside this guard.
   try {
     await clearSegmentTake(segmentId);
   } catch (cause) {
@@ -44,15 +45,8 @@ export async function performErase(
     reportFailure(cause, "erase-segment");
     return {
       ok: false,
-      error: cause instanceof Error ? cause.message : String(cause),
+      error: errorMessage(cause),
     };
-  }
-  // The delete has committed. A notification failure is logged, never folded
-  // back into the erase result.
-  try {
-    onErased?.();
-  } catch (cause) {
-    console.error("Post-erase notification failed", cause);
   }
   return { ok: true };
 }
@@ -98,10 +92,7 @@ export interface UseEraseSegment {
  * Segments-row overflow menu — call this hook, so the erase is one
  * implementation behind one confirm.
  */
-export function useEraseSegment(
-  options: { onErased?: () => void } = {}
-): UseEraseSegment {
-  const { onErased } = options;
+export function useEraseSegment(): UseEraseSegment {
   const [erasing, setErasing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
@@ -125,7 +116,7 @@ export function useEraseSegment(
       setErasing(true);
       setError(null);
       try {
-        const result = await performErase(segmentId, onErased);
+        const result = await performErase(segmentId);
         if (!result.ok) setError(result.error);
         return result.ok ? "ok" : "failed";
       } finally {
@@ -135,7 +126,7 @@ export function useEraseSegment(
         setErasing(false);
       }
     },
-    [onErased]
+    []
   );
 
   return { erase, erasing, isErasing, error };

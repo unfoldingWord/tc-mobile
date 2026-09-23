@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { errorMessage } from "@/lib/failure-text";
 import {
   addChapter as addChapterToBook,
   chapterProgress,
@@ -391,7 +392,7 @@ export function useBooks() {
       return;
     }
     setFailure({
-      message: cause instanceof Error ? cause.message : String(cause),
+      message: errorMessage(cause),
       fromDelete,
     });
   }, []);
@@ -442,7 +443,7 @@ export function useBooks() {
         // so it is outside what eslint-plugin-react-hooks analyses at all.
         // This hoist stays inside the hook and only changes what the nested
         // closure references.)
-        const message = cause instanceof Error ? cause.message : String(cause);
+        const message = errorMessage(cause);
         setFailure((prev) =>
           prev?.fromDelete ? prev : { message, fromDelete: false }
         );
@@ -526,7 +527,7 @@ export function useBooks() {
       } catch (cause) {
         return {
           ok: false,
-          message: cause instanceof Error ? cause.message : String(cause),
+          message: errorMessage(cause),
         };
       }
     },
@@ -577,11 +578,23 @@ export function useBooks() {
         // until that read landed (George, PR #344 round 10 P2-1); patching
         // first is exactly what `deleteBook`'s own success path already does,
         // below. A genuinely reported failure needs no extra reload or
-        // patch; the book is still live and nothing about it changed.
+        // patch — the book is still live and nothing about it changed — but
+        // it DOES need to invalidate a load already in flight (#666, George
+        // round 1 on #637). `report()` sets the Notice synchronously, but a
+        // load an earlier `reload()` started (e.g. `createBook`'s, on a large
+        // shelf) can still be running; if it resolves afterward, its success
+        // path (`setFailure((prev) => (prev?.fromDelete ? prev : null))`
+        // above) would clear the Notice this report just set, even though
+        // the failure is still unaddressed. Bumping the generation — not
+        // calling `reload()`, which would also trigger a needless extra read
+        // of a book that has not changed — marks that load stale so its
+        // resolution is a no-op.
         const { swallowed } = await reportUnlessStale(cause, bookId, report);
         if (swallowed) {
           setBooks((prev) => dropBookCard(prev, bookId));
           reload();
+        } else {
+          loadGen.current += 1;
         }
         return null;
       } finally {
