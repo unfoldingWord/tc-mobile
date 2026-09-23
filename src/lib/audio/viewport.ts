@@ -268,8 +268,7 @@ export function panForZoom(
 
   // ONE clamp, on every path. The intermediates above are deliberately left
   // raw: with `lo`/`hi` already inside the clip, clamping each of them would add
-  // branches no input can reach — which mutation testing shows to be untestable
-  // rather than safe. There is no empty-segment guard either, for the same
+  // branches no input can reach. There is no empty-segment guard either, for the same
   // reason: at `length` 0 every term above is already 0 and this returns 0,
   // matching `viewportWindow`, which likewise carries no divide-by-zero guard.
   return clampPan(
