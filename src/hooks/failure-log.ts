@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 
 import { boundText, describeCause } from "@/lib/failure-text";
+import { isTerminalOpenRefusal } from "@/lib/storage/db";
 import {
   appendFailure,
   clearFailures,
@@ -482,40 +483,30 @@ async function writeEntry(entry: StoredFailure): Promise<void> {
 }
 
 /**
- * Empty the log, ordered against the appends, then tell the watchers.
- *
- * On the shared lane (C1 above), so a clear cannot overtake an append that is
- * still in flight and leave the person with a row they thought they discarded.
- *
- * REJECTS to the caller, and reports on the way past. Both halves matter and
- * neither is redundant (Frank #2 ≡ George #4, round 1): the rejection is how the
- * panel knows not to report the log as discarded, and the report is the only
- * evidence a maintainer will ever get, since nothing below here — neither
- * `clearFailures` nor `getDb` — says anything of its own. Without it a clear
- * that failed produced no UI change AND no trace, which is the "errors have a
- * channel" bar failing in the one module that exists to satisfy it.
- *
- * **Through the funnel, not to the console** (Frank, takeover round 9). Round 1
- * settled for `console.error` here on the argument that a row about a failed
- * clear is noise in the log it failed to clear. That trade reads differently now
- * that the share path reports its own failures: the console is not a channel on
- * a phone in a village — AGENTS.md says so in as many words — and this was the
- * last path in the feature that had only one. The row is not noise, it is the
- * answer to "why is this log still here after I discarded it", and it goes out
- * with the next report.
- *
- * It cannot recurse. The append this queues is behind the failed clear on the
- * same lane, and if it fails too `writeEntry` swallows it: a failure of the log's
- * own write is the one place this module does not report. What would recurse is
- * reporting from inside `writeEntry`, which is exactly what that function's
- * docblock refuses to do.
+ * Clear the durable log on the same lane as appends. A failed clear rethrows
+ * so the caller can keep the log and show the appropriate recovery control.
+ * Retryable failures go through reportFailure, queued behind this attempt;
+ * writeEntry does not report its own append failures, so this cannot recurse.
+ * Terminal open refusals cannot persist another row: keep console evidence
+ * instead and let the caller offer restart rather than a futile retry.
  */
 export function clearFailureLog(): Promise<void> {
   return enqueue(async () => {
     try {
       await clearFailures();
     } catch (clearFailure) {
-      reportFailure(clearFailure, "failure-log-clear");
+      if (
+        !isTerminalOpenRefusal(
+          (clearFailure as { name?: string } | null)?.name ?? null
+        )
+      ) {
+        reportFailure(clearFailure, "failure-log-clear");
+      } else {
+        console.error(
+          "[failure-log-clear] Terminal database refusal",
+          clearFailure
+        );
+      }
       throw clearFailure;
     }
     markLogCleared();
