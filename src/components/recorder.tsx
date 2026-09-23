@@ -1205,7 +1205,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // a second finger leaving mid-drag has not ended the gesture. This is
         // what keeps a second cut reachable without leaving edit mode — the
         // collapsed line survives until the waveform is touched again.
-        if (wasOwner) reopenFrame();
+        // Not on a lift that RESUMES playback (#671 Frank R1 P2): the resume
+        // sounds the tail from the line, and a span seeded on the same lift
+        // would draw an in-place audition of audio that is not what sounds.
+        // The frame stays collapsed; the next touch at rest reopens it.
+        if (wasOwner && !outcome.resume) reopenFrame();
       },
       [length, soundRange, takeActive, reopenFrame]
     );

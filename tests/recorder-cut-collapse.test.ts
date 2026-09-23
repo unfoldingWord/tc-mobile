@@ -67,7 +67,7 @@ describe("panAfterCutCollapse — the line lands on the cut point (#613)", () =>
     );
   });
 
-  it("never answers a negative or out-of-buffer sample", () => {
+  it("a whole-buffer cut rests, and a cut from sample 0 lands on 0", () => {
     expect(panAfterCutCollapse({ start: 0, end: 10_000 }, 10_000)).toBeNull();
     expect(panAfterCutCollapse({ start: 0, end: 1 }, 10_000)).toBe(0);
   });
@@ -92,11 +92,15 @@ describe("selectionReseed — when the render-time frame is re-opened (#613)", (
     expect(selectionReseed({ ...base, collapsedByCut: true })).toBe("clear");
   });
 
-  it("still clears the entry latch and the zoom fit while collapsed", () => {
+  it("recorder.tsx runs the entry-latch and zoom-fit clears outside the seed arm", () => {
     // "clear", not "none": the stale zoom fit must still go, or the paste
     // marker stays hidden (`zoomPan === null` gates it) on the very state
-    // this change exists to make paste-ready.
-    expect(selectionReseed({ ...base, collapsedByCut: true })).not.toBe("none");
+    // this change exists to make paste-ready. The enum answer is pinned
+    // above; this pins the wiring — both resets follow the CLOSE of the
+    // `reseed === "seed"` arm, inside `reseed !== "none"`.
+    expect(recorder).toMatch(
+      /if \(reseed !== "none"\) \{\s*if \(reseed === "seed"\) \{[\s\S]*?editor\.openSelection\(\{[\s\S]*?\}\);\s*\}\s*if \(selectionEntry\) setSelectionEntry\(null\);\s*if \(zoomPan !== null\) setZoomPan\(null\);\s*\}/
+    );
   });
 
   it("is inert in record mode, with a frame already open, or before the committed buffer arrives", () => {
@@ -138,6 +142,22 @@ describe("recorder.tsx wires the collapse (#613)", () => {
     const block = recorder.slice(at, recorder.indexOf("</div>", at));
     expect(block).toMatch(/editor\.selectionActive &&/);
     expect(block).toMatch(/label=\{strings\.cut\}/);
+  });
+
+  it("a lift that resumes playback leaves the frame collapsed (#671 Frank R1 P2)", () => {
+    // After a cut, Play sounds the tail from the line (no span: `scroll`), a
+    // touch interrupts it, and the lift resumes `soundRange(from, length)`.
+    // Reopening the frame on that same lift seeded a ±15% span, and
+    // `stageView` then drew an in-place audition of that span while the
+    // TAIL was what sounded. Only a lift that does not resume may reopen.
+    const at = recorder.indexOf("const onPointerUp = useCallback(");
+    expect(at, "no onPointerUp in recorder.tsx").toBeGreaterThan(-1);
+    const end = recorder.indexOf("[length, soundRange", at);
+    expect(end).toBeGreaterThan(at);
+    const body = recorder.slice(at, end);
+    expect(body).toMatch(/if \(outcome\.resume\) soundRange\(from, length\)/);
+    expect(body).toMatch(/if \(wasOwner && !outcome\.resume\) reopenFrame\(\)/);
+    expect(body).not.toMatch(/if \(wasOwner\) reopenFrame\(\)/);
   });
 
   it("everything that should bring the frame back clears the latch", () => {
