@@ -58,6 +58,9 @@
     --p-red-100: #f8d6d2;
     --p-red-950: #3a1512;
 
+    /* --- Blue: the next required action, and nothing else ------------------- */
+    --p-blue-500: #2e7df6;
+
     /* --- Warning: storage pressure ----------------------------------------- */
     --p-warn-500: #d98b3a;
     --p-warn-950: #3a2810;

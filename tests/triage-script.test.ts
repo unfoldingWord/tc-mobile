@@ -113,12 +113,8 @@ None.
  * absolute and point at the REAL repository, so an inherited env makes the
  * `git init` below initialise a throwaway directory and then have every
  * subsequent git call operate on tc-mobile itself — `rev-parse HEAD` returns
- * the real HEAD, the fixture repo is never actually used, and five of the six
- * cases below fail with paths that do not exist.
- *
- * Found by `git push`: this file passed standalone and failed under pre-push,
- * which is the difference between testing a script and testing it where it
- * actually runs.
+ * the real HEAD and the fixture repository is not used. Remove those variables
+ * so each fixture's git commands stay inside its temporary repository.
  */
 function gitFreeEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };

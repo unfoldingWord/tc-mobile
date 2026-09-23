@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
  * long as `dragging` is true, and Cut does not clear `dragging`,
  * `ownerRef`, or `panAtDragStart` when it fires. Undo and Redo carry a
  * `dragging` term for exactly this reason — rematerialising
- * `working` (or, for Cut, shifting `panState` through `panAfterCutRest`)
+ * `working` (or, for Cut, writing `panState` through `panAfterCutCollapse`)
  * under a finger that is still moving is the #317 class. They carried it as a
  * literal `heldByDrag(dragging, …)` wrap until #91 moved them onto
  * `undoReason`/`redoReason`, so that a disabled history control can also say

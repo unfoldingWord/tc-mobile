@@ -7,19 +7,9 @@ import { describe, expect, it } from "vitest";
  * structural gate on it, not a behavioural test — same shape and same reason
  * as `tests/recorder-stop-release-guards.test.ts`.
  *
- * WHY A TEXTUAL GATE AND NOT A BEHAVIOURAL TEST. `deleteBook` is a
- * `useCallback` inside `useBooks()`, entangled with `setBooks`, `reload` and
- * `report` — hook-owned React state this Node-only suite (no jsdom, no
- * renderer) cannot exercise, exactly as `tests/use-books.test.ts`'s own
- * docblock already says of `report`'s `setFailure` wiring ("review +
- * on-device surface, as with `use-erase-segment.test.ts`"). Extracting
- * `deleteBook`'s fallible core into a plain function the way `performErase`
- * and `performSaveTake` are would touch a hook this file's own comments
- * document as having survived multiple rounds of race-condition fixes
- * (George R1/R3/R4/R7, the `loadGen` generation guard, the
- * delete-failure-outranks-a-healthy-reload rule) for a change this PR's scope
- * does not otherwise need — so the call site is pinned by source text
- * instead, the same trade `#474`'s guards made in `use-recorder.ts`.
+ * `deleteBook` is a `useCallback` inside `useBooks()`. The static render
+ * harness does not drive its hook callbacks or effects, so this test reads
+ * the call site without extracting the hook's fallible core.
  *
  * WHAT IT PROVES, EXACTLY: that `deleteBook`'s `catch (cause)` block calls
  * both `console.error` (kept, unchanged) and
@@ -35,8 +25,8 @@ describe('deleteBook reports its catch to the funnel under "book-delete" (#456)'
    * Comments stripped for the same reason `recorder-stop-release-guards`
    * strips them: the guard's own prose mentions `reportFailure` and
    * `console.error`, and a naive match would score documentation rather than
-   * code. `use-books.ts` contains no `//` or `/*` inside a string literal
-   * (grep-checked at this head), so the strip cannot misfire on one.
+   * code. This simple strip does not distinguish comments from comment-like
+   * text inside string literals.
    */
   const stripComments = (text: string) =>
     text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
@@ -90,24 +80,8 @@ describe('deleteBook reports its catch to the funnel under "book-delete" (#456)'
    * the call sits inside a nested function, not directly in `text`'s own
    * top-level flow.
    *
-   * This replaces a single non-greedy regex
-   * (`[^}]*(?:=>|function)[^}]*cause[^}]*reportFailure\(...\)`), which
-   * could never match: `[^}]*` cannot cross the `}` that closes a
-   * single-statement closure body right after the call, and the only
-   * `cause` token available to satisfy the regex's own `cause` requirement
-   * was the one already consumed inside `reportFailure(cause, ...)` itself,
-   * leaving no second `cause` for the earlier `[^}]*cause[^}]*` to match —
-   * so the negative assertion passed on every input, including a
-   * `setTimeout(() => { reportFailure(cause, "book-delete"); }, 0)` mutation
-   * (verified: it stayed green against that mutation before this fix).
-   *
-   * The brace-less-arrow check exists because a first pass at this fix
-   * (brace-depth tracking alone) was itself verified to miss
-   * `Promise.resolve().then(() => reportFailure(cause, "book-delete"))` — no
-   * `{` is ever opened for an expression-bodied arrow, so there was nothing
-   * on the closure stack to find, and eslint (checked directly, with a
-   * render-time canary ref write added to `useBooks()`) confirmed the
-   * react-hooks/refs bail-out fires for that shape too.
+   * Expression-bodied arrows open no brace, so brace-depth tracking alone
+   * cannot detect them. The separate arrow-expression check covers that shape.
    */
   function isInsideClosure(text: string, callIndex: number): boolean {
     const closureStack: boolean[] = [];
