@@ -191,15 +191,15 @@ interface StageView {
    *   — under a swapped view that reads as "the middle of the clip" rather
    *   than the pan window's own sample (it is unmounted, not merely disabled,
    *   so the false IMPLICATION goes too);
-   * - **Select**: seeds its span from `win.centerlineSample` ± the visible
-   *   width — a position that, while sounding, no longer matches what the
-   *   (visible except for a loaded edit-mode span, #316/#418) line marks once
-   *   the view has swapped to the whole clip, so it would highlight the
-   *   insert point rather than the audio being heard. Inert in both
-   *   directions: closing a frame mid-audition would also flip the view out
-   *   from under the sound.
-   *
    * OUT, deliberately — each stays live, and why:
+   *
+   * - **the edit toggle** (#557): it used to be a separate Select control in
+   *   this list, seeding a span around a centerline that could be stale while
+   *   a buffer sounded. There is no separate Select now — the frame opens on
+   *   entering edit mode and closes on leaving it — and both directions stop
+   *   playback first (`onEnterEdit`, `onExitEdit` in `recorder.tsx`). The
+   *   seed (`seedSelection`, #554) is measured from the insertion pan, not
+   *   from this window;
    *
    * - **the stage pan** (`onPointerDown`/`onPointerMove`): the oldest member of
    *   this class until the requirements owner reversed it for this one gesture
@@ -1007,8 +1007,8 @@ export const CENTER_FRACTION = 0.5;
  * - the #418 exception to #316's "always visible": a selection span loaded
  *   in edit mode has no playback role for the line — with a span picked,
  *   the audition sounds only the selection (#284), and the line is only the
- *   audition's start point when nothing is picked. Drawn inside the span it
- *   does not describe, it is clutter rather than a cue, so it hides for
+ *   audition's start point when nothing is picked. It is clutter rather
+ *   than a cue, so it hides for
  *   that one sub-state and nothing else — record, play, and edit mode with no
  *   span picked all keep it, per the table in #418.
  *
