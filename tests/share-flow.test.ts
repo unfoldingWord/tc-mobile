@@ -154,6 +154,22 @@ describe("resolveSendOutcome", () => {
  * changed here.
  */
 describe("the wiring around sentGap and the reset guard (this lane's own review round)", () => {
+  it("an abort during stage arms nothing — the stale run discards and returns before handoff.arm (#365 residual)", () => {
+    const flow = read("src/hooks/share-flow.ts");
+    const stageAt = flow.indexOf(
+      'const staged =\n          route === "native"'
+    );
+    expect(stageAt).toBeGreaterThan(-1);
+    const staleAt = flow.indexOf("if (!current()) {", stageAt);
+    const armAt = flow.indexOf("handoff.arm({", stageAt);
+    expect(staleAt).toBeGreaterThan(stageAt);
+    expect(armAt).toBeGreaterThan(staleAt);
+    const staleBlock = flow.slice(stageAt, armAt);
+    expect(staleBlock).toMatch(
+      /if \(staged !== null\) void nativeShare\.discard\(staged\);\s*return;/
+    );
+  });
+
   const flow = read("src/hooks/share-flow.ts");
 
   it("prepare() arms the gap counts alongside the File, not just in useState", () => {
