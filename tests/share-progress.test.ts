@@ -693,27 +693,38 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
 
   /**
    * The two guards George r1 P2 #2 added (Rename's `onClick`, books'
-   * `onArmDelete`) are REMOVED in this round, not just left in place beside
+   * `onArmDelete`) were REMOVED in that round, not just left in place beside
    * `inert` — a per-handler check that can silently drift out of sync with
    * the primitive is worse than no check at all (it looks like coverage
    * without proving it). Both controls are inside the SAME `inert` subtree
-   * pinned above, so removing the guard does not reopen George r1 P2 #2.
+   * pinned above, so removing the guard did not reopen George r1 P2 #2.
+   *
+   * `onArmDelete`'s guard is BACK, though (#517 item 1, George r3 P3 on
+   * #508) — not because that reasoning was wrong, but as defense in depth
+   * for the specific case `inert` itself does not hold: unlike Rename
+   * (entering an in-menu edit mode), an unguarded `onArmDelete` still runs
+   * `setDeleteTargetId` even when the immediately-preceding
+   * `onCloseShareMenu()` call refuses to close, arming a destructive confirm
+   * that would paint under the share glyph at the same z-index. Rename's own
+   * guard stays removed — this is a scoped reversal of one case, not the
+   * whole round.
    */
   it("segments-screen.tsx: Rename's onClick carries no shareOverlayOwnsScreen guard of its own any more", () => {
     const source = read("src/components/segments-screen.tsx");
     expect(source).toMatch(/onClick=\{\(\) => setRenamingChapter\(true\)\}/);
   });
 
-  it("books-screen.tsx: Rename's onClick and onArmDelete carry no shareOverlayOwnsScreen guard of their own any more", () => {
+  it("books-screen.tsx: Rename's onClick carries no shareOverlayOwnsScreen guard of its own any more", () => {
     const source = read("src/components/books-screen.tsx");
     expect(source).toMatch(/onClick=\{\(\) => setRenamingBook\(true\)\}/);
+  });
+
+  it("books-screen.tsx: onArmDelete carries its own shareOverlayOwnsScreen guard again, as defense in depth (#517 item 1)", () => {
+    const source = read("src/components/books-screen.tsx");
     const armAt = source.indexOf("const onArmDelete = useCallback(() => {");
     expect(armAt).toBeGreaterThan(-1);
     const armBody = source.slice(armAt, source.indexOf("}, [", armAt));
-    // Checks for the GUARD CALL specifically, not a bare substring match —
-    // the surrounding comment names `shareOverlayOwnsScreen` on purpose, to
-    // say a guard call is no longer there.
-    expect(armBody).not.toMatch(
+    expect(armBody).toMatch(
       /if \(shareOverlayOwnsScreen\(bookShare\.progress\)\) return;/
     );
   });
