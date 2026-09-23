@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Icon, type IconName } from "@/components/icon";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
 
