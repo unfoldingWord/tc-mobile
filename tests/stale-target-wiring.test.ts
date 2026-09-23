@@ -44,6 +44,7 @@ const addSegment = vi.fn();
 const row: SegmentRow = {
   segmentId: "segment" as SegmentId,
   ordinal: 1,
+  label: null,
   hasClip: false,
   finished: false,
   clipId: null,

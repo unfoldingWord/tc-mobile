@@ -46,6 +46,7 @@ function segment(): Segment {
     chapterId: "ch" as ChapterId,
     index: 1,
     reference: null,
+    label: null,
     activeTakeId: "take" as TakeId,
     status: "affirmed",
   };
