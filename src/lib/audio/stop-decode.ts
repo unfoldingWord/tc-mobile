@@ -24,9 +24,17 @@ export type StopDecodeOutcome =
  * say — a superseded stop, whose UI belongs to a newer recording.
  *
  * The two DECODE members of {@link CaptureFailure}, narrowed from it rather
- * than spelled again, so this stays a strict subset by construction: renaming a
- * member there fails the compiler here instead of leaving a second spelling
- * behind. `"unfinished"` is deliberately outside it — nothing about a decode
+ * than spelled again, so this stays a strict subset by construction.
+ *
+ * Where a rename actually fails, precisely, because the line below still
+ * spells the two members and so cannot itself go red (George R1 finding 3):
+ * renaming `"silence"` in `CaptureFailure` makes this `Extract` quietly
+ * evaluate to `"undecodable"` alone, and the compiler then rejects
+ * `classifyStopDecode`'s `error: "silence"` return. The guarantee is real —
+ * a rename cannot leave a stale second spelling alive — but it is enforced at
+ * the assignment, not here.
+ *
+ * `"unfinished"` is deliberately outside the subset — nothing about a decode
  * can produce it; it is what `stop()`'s own exits report when the engine never
  * handed the capture over.
  *

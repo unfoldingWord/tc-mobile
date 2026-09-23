@@ -46,10 +46,14 @@ function sourcesUnder(rel: string): string[] {
  * added without this table failing to compile — the compile-time half of the
  * exhaustiveness `captureFailureText`'s `never` default enforces at the switch.
  *
- * These exact words are also what `docs/training/facilitator-runbook.md` §5
- * tells a facilitator to expect, which is why they are pinned in an assertion
- * rather than described in prose: the runbook and the app can now only drift
- * through a red test.
+ * It pins the app against itself and nothing else. An earlier draft of this
+ * docblock said these words are what `docs/training/facilitator-runbook.md`
+ * tells a facilitator to expect, "so the runbook and the app can now only
+ * drift through a red test" — which was false: nothing here reads that file,
+ * and editing both this table and the mapper stays green (George R1 finding
+ * 3). The claim is deleted rather than made mechanical, because the runbook
+ * paraphrases rather than quotes and a `readFileSync` of it would pin a
+ * sentence it does not contain.
  */
 const EXPECTED: Record<CaptureFailure, string> = {
   silence: "No sound was recorded. Try again.",
@@ -67,7 +71,12 @@ describe("captureFailureText", () => {
     expect(CODES.length).toBe(3);
   });
 
-  it.each(CODES)("words %s from the table, not from a literal", (code) => {
+  it.each(CODES)("words %s as the sentence written down above", (code) => {
+    // Named for what it establishes. It was "words %s from the table, not from
+    // a literal", which it cannot see: an inlined sentence and a table read
+    // return the same string (George R1 finding 3, the same overclaim this
+    // lane had already caught once). Where the words COME FROM is the
+    // source-shape case below.
     expect(captureFailureText(code)).toBe(EXPECTED[code]);
   });
 
