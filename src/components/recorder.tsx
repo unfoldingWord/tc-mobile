@@ -71,6 +71,7 @@ import {
   effectivePan,
   panForZoom,
   playbackStrip,
+  seedSelection,
   viewportWindow,
 } from "@/lib/audio/viewport";
 import { overlayBlocksClose, overlayDismissal } from "@/lib/nav/navigation";
@@ -547,11 +548,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           zoom,
           CENTER_FRACTION
         );
-        const half = seedWindow.visibleSamples * 0.15;
-        editor.openSelection({
-          start: seedWindow.centerlineSample - half,
-          end: seedWindow.centerlineSample + half,
-        });
+        // The span STARTS at the line (#554) and slides left only as far as
+        // the end of the buffer forces. The rule is geometry, so it lives in
+        // `lib/audio/viewport` with the rest of the window math and is tested
+        // there.
+        editor.openSelection(
+          seedSelection(
+            length,
+            seedWindow.centerlineSample,
+            seedWindow.visibleSamples
+          )
+        );
       }
       if (selectionEntry) setSelectionEntry(null);
       if (zoomPan !== null) setZoomPan(null);
@@ -2849,12 +2856,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // Resolved here, the same way the Segments header resolves
                     // it, so a renamed chapter (#264) reads the same on both
                     // screens. Passing the number let this trail spell the
-                    // default name itself and ignore the label (#169).
+                    // default name itself and ignore the label (#169). The
+                    // segment's own label rides alongside and is resolved by
+                    // `segmentHeading` inside the entry (#591).
                     strings.chapterHeading(
                       view.chapterName,
                       view.chapterNumber
                     ),
-                    view.ordinal
+                    view.ordinal,
+                    view.segmentLabel
                   )
                 : ""}
             </span>
@@ -3484,7 +3494,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         <Menu
           open={menuShown}
           onClose={() => setMenuOpen(false)}
+          // Still the drawer's name for a screen reader; never painted (#621).
           title={strings.recorderMenuTitle}
+          // `hamburger` (#621, the requirements owner's call on this panel,
+          // after #608 set the rule on the global menu): the ≡ that opens this
+          // drawer stays a ≡ inside it, top-right, and is what dismisses it —
+          // no "More" heading, and no chevron, because a chevron pointing LEFT
+          // reads as "move left" on a drawer that docks on the RIGHT.
+          // The book, chapter and segment menus open from a ⋮ since #589 and
+          // keep the chevron; this drawer opens from a ≡.
+          hamburger
         >
           {mode === "record" ? (
             <>

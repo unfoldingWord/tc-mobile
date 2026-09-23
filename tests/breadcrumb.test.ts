@@ -53,6 +53,20 @@ const stripComments = (text: string): string =>
 const source = (rel: string): string =>
   stripComments(readFileSync(path.join(ROOT, rel), "utf8"));
 
+/**
+ * The same source with every run of whitespace collapsed to one space.
+ *
+ * For the one assertion below that reads a WINDOW of characters after a call.
+ * Stripping a comment leaves its indentation behind as blank lines, so a
+ * character window over the stripped text measures how much prose sat inside
+ * the call rather than how much code — and it goes red when a comment grows,
+ * which is not what it claims to catch. It did exactly that once here. The
+ * tempting repair is a bigger number, which weakens the guard until it can no
+ * longer tell an argument from a distant neighbour; collapsing first makes the
+ * window mean what it says.
+ */
+const compactSource = (rel: string): string => source(rel).replace(/\s+/g, " ");
+
 describe("the trail is built in one place", () => {
   it("joins a book and a chapter heading", () => {
     expect(strings.chapterBreadcrumb("Ruth", "Chapter 1")).toBe(
@@ -68,14 +82,20 @@ describe("the trail is built in one place", () => {
       strings.recorderBreadcrumb(
         "Ruth",
         strings.chapterHeading("The Lost Sheep", 3),
-        2
+        2,
+        null
       )
     ).toBe("Ruth > The Lost Sheep > 2");
   });
 
   it("falls back to the default chapter name when nothing was typed", () => {
     expect(
-      strings.recorderBreadcrumb("Ruth", strings.chapterHeading(null, 3), 2)
+      strings.recorderBreadcrumb(
+        "Ruth",
+        strings.chapterHeading(null, 3),
+        2,
+        null
+      )
     ).toBe(`Ruth > ${strings.chapterName(3)} > 2`);
   });
 
@@ -84,7 +104,7 @@ describe("the trail is built in one place", () => {
     // segment appended, and nothing about the order or the separator is
     // decided twice.
     const chapter = strings.chapterBreadcrumb("Ruth", "Chapter 1");
-    const segment = strings.recorderBreadcrumb("Ruth", "Chapter 1", 2);
+    const segment = strings.recorderBreadcrumb("Ruth", "Chapter 1", 2, null);
     expect(segment.startsWith(chapter)).toBe(true);
   });
 
@@ -103,7 +123,7 @@ describe("the trail is built in one place", () => {
     // Segments header one tap up. Escaping either side would kill it.
     const heading = strings.chapterHeading("Mark > Luke", 3);
     const chapter = strings.chapterBreadcrumb("Ruth", heading);
-    const segment = strings.recorderBreadcrumb("Ruth", heading, 2);
+    const segment = strings.recorderBreadcrumb("Ruth", heading, 2, null);
 
     expect(chapter).toBe("Ruth > Mark > Luke");
     expect(segment).toBe("Ruth > Mark > Luke > 2");
@@ -137,11 +157,16 @@ describe("both screens read the table", () => {
   });
 
   it("the recorder header resolves the heading before it builds the trail", () => {
-    const sheet = source("src/components/recorder.tsx");
+    const sheet = compactSource("src/components/recorder.tsx");
     expect(sheet.length, "no recorder to read").toBeGreaterThan(1000);
     const call = sheet.slice(sheet.indexOf("strings.recorderBreadcrumb("));
     expect(call.length, "recorderBreadcrumb is not called").toBeGreaterThan(0);
+    // Inside this call's own arguments, not merely somewhere later in the file.
     expect(call.slice(0, 200)).toContain("strings.chapterHeading(");
+    // The segment half stays the entry's business (#591): the caller hands it
+    // the raw label and `segmentHeading` inside the table resolves it, exactly
+    // as `chapterHeading` resolves the chapter half out here.
+    expect(call.slice(0, 200)).toContain("view.segmentLabel");
   });
 });
 
