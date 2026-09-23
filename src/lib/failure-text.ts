@@ -61,9 +61,25 @@ export function boundText(text: string): string {
  * "No such chapter: …" would be mistaken for the store's own failure. Folding
  * that one into this would be a behaviour change in a predicate, not a
  * deduplication, so it stays where it is.
+ *
+ * Never throws (#721). Every caller here is a `catch` block, so if this
+ * conversion itself threw, a handled failure would become an unhandled one
+ * inside the code meant to report it. `instanceof` can throw on a revoked
+ * `Proxy`; `cause.message` can throw on a getter that does, even on a real
+ * `Error`; and `String(cause)` can throw on a hostile `toString`, a throwing
+ * `Symbol.toPrimitive`, or a null-prototype object with neither. `Symbol` and
+ * `BigInt` are NOT among these — `String()` does not throw on either, only
+ * implicit conversion does — so they still render their own text rather than
+ * the fallback. For an ordinary `Error` or a string, nothing here changes:
+ * the guarded expression is the same one as before, and only its unreachable
+ * failure path is new.
  */
 export function errorMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
+  try {
+    return cause instanceof Error ? cause.message : String(cause);
+  } catch {
+    return `[unstringifiable ${typeof cause}]`;
+  }
 }
 
 /**
