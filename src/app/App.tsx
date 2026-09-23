@@ -229,9 +229,9 @@ export function App() {
     [leave, primeAudioContext]
   );
 
-  // ── The finished flag's one reconciliation point (#160, L-10) ────────────
+  // ── The finished flag's LAST reconciliation point (#160, L-10) ───────────
   //
-  // Recorded here because this `reload()` is the whole of it, and the next
+  // Recorded here because this `reload()` is the catch-all, and the next
   // person to make the recorder non-modal has to find this first.
   //
   //   THREE writer paths, all landing in `lib/storage/books.ts`:
@@ -240,14 +240,28 @@ export function App() {
   //     - `clearSegmentTake`, which returns an erased segment to "not-started";
   //     - `setSegmentFinished`, the explicit toggle.
   //
-  //   THREE in-memory mirrors, none of which observes the others:
-  //     - `SegmentRow.finished`        (hooks/use-chapter-segments.ts)
+  //   TWO in-memory mirrors, neither of which observes the other or the store:
+  //     - `SegmentRow.finished`          (hooks/use-chapter-segments.ts)
   //     - `RecorderSegmentView.finished` (hooks/use-recorder-segment.ts)
-  //     - the sheet's `displayedFinished`, which is `finishedIntent` over
-  //       `pendingDemote` over the view's flag (components/recorder.tsx)
   //
-  // Nothing subscribes to the store. The mirrors are reconciled by exactly one
-  // event: this `reload()`, when the sheet closes having changed something.
+  //   The sheet's `displayedFinished` is NOT a third mirror. It is
+  //   `finishedIntent` over `pendingDemote` over the view's flag
+  //   (components/recorder.tsx), recomputed every render — so it cannot go
+  //   stale against the mirror it is derived from, only against the store, and
+  //   only because that mirror has.
+  //
+  // Nothing subscribes to the store, so each mirror is repaired by an explicit
+  // reload. THREE of them exist, and this one is the last, not the only:
+  //     - a landed save reloads the LIST at once — `useSaveTake`'s `onSaved`,
+  //       wired above, because the row reads as unrecorded until it does;
+  //     - an in-sheet commit reloads the SHEET's own view (`reloadView()` in
+  //       components/recorder.tsx);
+  //     - this `reload()`, when the sheet closes having changed something.
+  //
+  // The third is not redundant, and that is the part worth keeping: the
+  // explicit toggle is DEFERRED to close (see `setFinished` in
+  // hooks/use-recorder-segment.ts), so a segment marked finished without a new
+  // take reaches the list through this call and no other.
   //
   // It is correct today for one reason — the sheet is MODAL. While it is open
   // the screens behind it are `inert` (the wrapper below), so the list's mirror

@@ -226,12 +226,12 @@ export function useChapterSegments(chapterId: ChapterId) {
     }
   }, [chapterId]);
 
-  // One of the three mirrors of the stored finished flag (#160, L-10 — the
-  // writers, the mirrors and the single reconciliation point are recorded at
+  // One of the two mirrors of the stored finished flag (#160, L-10 — the
+  // writers, the mirrors and all three reconciliation points are recorded at
   // `recorderClosedState` in `app/App.tsx`). This one patches in place after a
   // LANDED write, so it never diverges from the store on its own; what makes
-  // it stale is a write from the sheet, and what fixes it is the `reload()` on
-  // close.
+  // it stale is a write from the sheet, and what fixes it is a `reload()` —
+  // immediately on a landed save, or on dirty close for a deferred toggle.
   const setFinished = useCallback(
     async (segmentId: SegmentId, finished: boolean): Promise<void> => {
       // The store rejects marking a never-recorded segment finished; the row
