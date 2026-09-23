@@ -45,9 +45,12 @@ interface MenuProps {
    * Opened by a ≡ that stays a ≡ (#608). The header's dismiss control wears
    * the same `menu` glyph as the control that opened it, in the same top-right
    * corner, and the panel shows no visible title — one control, one glyph, one
-   * place, and the glyph is the label. Off (the default) the header is a title
-   * beside a back chevron, which every other menu keeps — the book, chapter
-   * and segment menus (opened from a ⋮ since #589), the recorder's, and the
+   * place, and the glyph is the label. The recorder's overflow drawer wears
+   * it too (#621, the requirements owner's call on that panel): its "More"
+   * heading said nothing the ≡ did not, and a left-pointing chevron reads as
+   * "move left" on a drawer that docks on the RIGHT. Off (the default) the
+   * header is a title beside a back chevron, which every other menu keeps —
+   * the book, chapter and segment menus (opened from a ⋮ since #589) and the
    * New Book dialog. What a screen reader hears does not change either way:
    * `title` still names the dialog and `closeLabel` still names the control
    * ("Close menu" dismisses, as before), which is also what the e2e specs
@@ -208,6 +211,11 @@ export function Menu({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
+  // Gone on the render `open` drops, with no exit motion. Every caller drops
+  // its own layer, Back ownership and overlay flags in `onClose`, and some
+  // replace the drawer in that same render, so a drawer kept mounted to slide
+  // out broke four callers (#621, PR 656). Any drawer motion, in or out,
+  // needs a contract with the callers first; that is #706, not a change here.
   if (!open) return null;
 
   // Portalled to <body>, out of the caller's subtree. A caller that goes `inert`
