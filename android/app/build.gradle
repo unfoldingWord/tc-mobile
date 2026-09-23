@@ -115,6 +115,7 @@ try {
 // A direct Gradle build must not relabel assets left by a diagnostic cap sync.
 // The prerequisite runs for debug and release and is never up-to-date cached.
 tasks.register('checkDiagnosticAssets') {
+    outputs.upToDateWhen { false }
     doLast {
         def syncedConfig = file('src/main/assets/capacitor.config.json')
         if (!syncedConfig.isFile()) {

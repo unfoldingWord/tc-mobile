@@ -63,6 +63,16 @@ it("connects the opt-in to both sync and release build without changing signing"
   expect(build.match(/TC_ANDROID_DIAGNOSTIC:/g)).toHaveLength(1);
   expect(build).toContain("      - name: Sync dist/ into the Android project");
   expect(build).toContain("      - name: Build the release APK");
+  const nativeGate = build.indexOf(
+    "        run: node scripts/test-android-diagnostic.mjs"
+  );
+  expect(nativeGate).toBeGreaterThan(
+    build.indexOf("      - name: Sync dist/ into the Android project")
+  );
+  expect(nativeGate).toBeLessThan(
+    build.indexOf("      - name: Write the signing keystore")
+  );
+
   expect(workflow).toContain(
     "node scripts/check-android-diagnostic.mjs android/app/src/main/assets/capacitor.config.json"
   );

@@ -50,6 +50,10 @@ The two platforms have very different fastest routes:
   # → android/app/build/outputs/apk/debug/app-debug.apk
   ```
 
+  To inspect this local debug build through `chrome://inspect`, set
+  `TC_ANDROID_DIAGNOSTIC=true` for both the sync and Gradle commands
+  ([diagnostic builds](#5a-android--apk-via-ci-automated-no-mac-step)).
+
   Install that APK **only on a developer's own device — one that will never
   receive a §5a release build** — and follow the sideload steps in
   [§5](#5-android--apk-sideload) step 4 (enable _Install unknown apps_, open the
@@ -117,8 +121,10 @@ morning.
 | `@capacitor/{core,ios,android}` | runtime + platform deps (`dependencies`) | package.json    |
 | `@capacitor/cli`                | the `cap` CLI (`devDependencies`)        | package.json    |
 
-**Capacitor version:** 8.5.1 (pinned exact). **appId:** `org.unfoldingword.tcmobile`.
-**appName / home-screen label:** `tC Mobile` (matches the PWA `short_name`).
+**Capacitor version:** pinned exactly in `package.json`. **appId:** `org.unfoldingword.tcmobile`.
+**appName / ordinary home-screen label:** `tC Mobile` (matches the PWA `short_name`).
+Android [diagnostic builds](#5a-android--apk-via-ci-automated-no-mac-step)
+use the label `tC Mobile Diagnostic`.
 
 The native projects **are committed** — the mainstream Capacitor practice —
 so that signing config, `Info.plist`, entitlements, icons, and any native
@@ -647,7 +653,7 @@ time, never read from `package.json`.
   default is `1`, and once any CI APK is on a phone a `1` is a downgrade that
   Android refuses (§5 step 3).
 
-  Settings → Apps on the phone now shows the same version number as the `v…`
+  On ordinary builds, Settings → Apps shows the same version number as the `v…`
   half of the in-app build stamp (`src/components/build-stamp.tsx`), instead
   of a permanent `"1.0"`. That is **not** the same thing the facilitator
   runbook asks testers to report: `docs/training/facilitator-runbook.md` §5
@@ -655,7 +661,9 @@ time, never read from `package.json`.
   Settings alone cannot distinguish two builds that share a `package.json`
   version (for example, two CI dispatches of the same `staging` ref, or an
   `allow_any_ref` build off `develop`). Point testers at the stamp; Settings
-  is a fallback only when the app will not open at all.
+  is a fallback only when the app will not open at all. Android
+  [diagnostic builds](#5a-android--apk-via-ci-automated-no-mac-step) append
+  `-diagnostic` to the Settings version; the web footer retains the package version.
 
 ---
 
