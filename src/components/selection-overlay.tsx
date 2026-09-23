@@ -8,6 +8,23 @@ import type { SampleRange } from "@/types/audio";
 const pct = (sample: number, win: WaveformViewport): number =>
   sampleToViewportX(sample, 100, win);
 
+/**
+ * A handle hit box's `left`, given its stem at `x` percent (#707).
+ *
+ * `.recorder-canvas` clips, and a zoom fit can put an edge exactly on the stage
+ * edge, where a box centred on its stem would lose half its target. While the
+ * stem is on screen the box is clamped to half its own width inside either
+ * edge; the stem stays on the sample. Off screen the box goes with its stem,
+ * so the bare canvas at the stage edges still takes a pan. `--c-selection-hit`
+ * is the box width, declared on `.selection-handle` itself. The tolerance is
+ * for float rounding at an edge the fit placed exactly; it is not meant to
+ * catch a stem that is genuinely just off screen.
+ */
+const hitLeft = (x: number): string =>
+  x >= -1e-9 && x <= 100 + 1e-9
+    ? `clamp(calc(var(--c-selection-hit) / 2), ${x}%, calc(100% - var(--c-selection-hit) / 2))`
+    : `${x}%`;
+
 interface SelectionOverlayProps {
   /** The viewport the waveform is drawn under — the sample↔x mapping. */
   readonly win: WaveformViewport;
@@ -29,6 +46,11 @@ interface SelectionOverlayProps {
  * as fractions of the viewport width (CSS percentages), so no measured pixel
  * width is needed to render; a drag reads the live width once, at the event, to
  * turn a pointer x back into a sample (the same conversion the pan uses).
+ *
+ * Each edge is two elements: a stem drawn on the sample, and a finger-sized hit
+ * box that carries the slider role and is kept inside the clipping canvas
+ * (`hitLeft`). A drag maps the pointer's own x to a sample, never the box's
+ * position, so the inset does not by itself move the edge.
  *
  * The body is pointer-transparent; only the two handles take pointer events, so
  * the frame never eats a tap meant for a control. Panning stays available on the
@@ -89,7 +111,7 @@ export function SelectionOverlay({
       aria-valuenow={Math.round(valueNow)}
       tabIndex={0}
       className="selection-handle"
-      style={{ left: `${pct(valueNow, win)}%` }}
+      style={{ left: hitLeft(pct(valueNow, win)) }}
       onPointerDown={(e) => {
         // Stop the pan on the canvas beneath from also arming on this grab: only
         // a drag on the bare canvas pans; a handle adjusts its edge (George R2).
@@ -131,6 +153,18 @@ export function SelectionOverlay({
       <div
         className="selection-band"
         style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+      />
+      <div
+        className="selection-stem"
+        data-edge="start"
+        aria-hidden="true"
+        style={{ left: `${pct(selection.start, win)}%` }}
+      />
+      <div
+        className="selection-stem"
+        data-edge="end"
+        aria-hidden="true"
+        style={{ left: `${pct(selection.end, win)}%` }}
       />
       {handle("start", startLabel, selection.start)}
       {handle("end", endLabel, selection.end)}

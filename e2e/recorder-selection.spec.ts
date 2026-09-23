@@ -63,6 +63,76 @@ test.use({
   },
 });
 
+// #707: the first zoom-in from the seed fits the span to the quarter window
+// edge to edge, and `.recorder-canvas` clips. Each handle's whole hit box must
+// lie inside the canvas, while its stem stays on the stage edge.
+test.describe("handle targets after a zoom fit", () => {
+  for (const width of [320, 390]) {
+    test(`both handle boxes lie inside the canvas after the first zoom (${width}px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 740 });
+      await page.goto("/");
+      await page.getByRole("button", { name: "New book" }).click();
+      await page.getByRole("button", { name: "Create book" }).click();
+      await page.getByRole("button", { name: /^Add chapter to/ }).click();
+      await page.getByRole("button", { name: "Create chapter" }).click();
+      await page.getByRole("button", { name: "Open Chapter 1" }).click();
+      await page.getByRole("button", { name: "Add segment" }).click();
+      await page.getByRole("button", { name: "Record segment 1" }).click();
+      await page.getByRole("button", { name: "Record", exact: true }).click();
+      await page.waitForTimeout(1200);
+      await page
+        .getByRole("button", { name: "Stop recording", exact: true })
+        .click();
+      await expect(
+        page.getByRole("button", { name: "Record", exact: true })
+      ).toBeVisible();
+      await page
+        .locator(".recorder-toolbar")
+        .getByRole("button", { name: "Edit recording", exact: true })
+        .click();
+      const startHandle = page.getByLabel("Selection start", { exact: true });
+      const endHandle = page.getByLabel("Selection end", { exact: true });
+      await expect(startHandle).toBeVisible();
+      await page
+        .getByRole("button", {
+          name: "Zoomed to the whole segment. Zoom in to a quarter.",
+          exact: true,
+        })
+        .click();
+      await expect(
+        page.getByRole("button", {
+          name: "Zoomed to the whole segment. Zoom in to a quarter.",
+          exact: true,
+        })
+      ).toHaveCount(0);
+      const stage = await page.locator(".recorder-canvas").boundingBox();
+      expect(stage).not.toBeNull();
+      for (const [edge, handle, stageX] of [
+        ["start", startHandle, stage!.x],
+        ["end", endHandle, stage!.x + stage!.width],
+      ] as const) {
+        const box = await handle.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.width).toBeGreaterThanOrEqual(24);
+        expect(box!.x).toBeGreaterThanOrEqual(stage!.x - 0.5);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(
+          stage!.x + stage!.width + 0.5
+        );
+        // The fit is what this case is about: the stem sits on the stage edge.
+        const stem = await page
+          .locator(`.selection-stem[data-edge="${edge}"]`)
+          .boundingBox();
+        expect(stem).not.toBeNull();
+        expect(
+          Math.abs(stem!.x + stem!.width / 2 - stageX)
+        ).toBeLessThanOrEqual(2);
+      }
+    });
+  }
+});
+
 test.describe("edit mode toggle", () => {
   for (const width of [320, 390]) {
     test(`one tap commits a take and opens the frame at a stable slot (${width}px)`, async ({
