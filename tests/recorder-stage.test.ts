@@ -541,6 +541,9 @@ describe("liftOutcome", () => {
       dragging: false,
       resume: true,
       keepOwed: false,
+      // The stage is clear but SOUNDING: a frame seeded here would draw a
+      // band over the resumed tail (#613, Frank R1 P2).
+      reopenFrame: false,
     });
   });
 
@@ -553,6 +556,8 @@ describe("liftOutcome", () => {
       dragging: true,
       resume: false,
       keepOwed: true,
+      // A finger is still down: the gesture has not ended, so no frame.
+      reopenFrame: false,
     });
   });
 
@@ -561,7 +566,12 @@ describe("liftOutcome", () => {
     // goes clear, which is when the owed resume is finally due.
     expect(
       liftOutcome({ ...base, wasOwner: false, contactsRemaining: 0 })
-    ).toEqual({ dragging: false, resume: true, keepOwed: false });
+    ).toEqual({
+      dragging: false,
+      resume: true,
+      keepOwed: false,
+      reopenFrame: false,
+    });
   });
 
   it("ignores a non-owner's lift while the owner is still dragging", () => {
@@ -573,22 +583,31 @@ describe("liftOutcome", () => {
         ownerActive: true,
         contactsRemaining: 1,
       })
-    ).toEqual({ dragging: true, resume: false, keepOwed: true });
+    ).toEqual({
+      dragging: true,
+      resume: false,
+      keepOwed: true,
+      reopenFrame: false,
+    });
   });
 
   it("drops a debt it refuses for any reason other than a finger", () => {
     // The line at the very end, and a take that started mid-gesture: both are
     // final answers, not deferrals. Leaving the flag set would fire the resume
     // on some later, unrelated lift.
+    // Both leave the stage clear and silent, so both DO seed a frame again:
+    // the refusal is about the resume, not about the gesture having ended.
     expect(liftOutcome({ ...base, pan: LEN })).toEqual({
       dragging: false,
       resume: false,
       keepOwed: false,
+      reopenFrame: true,
     });
     expect(liftOutcome({ ...base, takeActive: true })).toEqual({
       dragging: false,
       resume: false,
       keepOwed: false,
+      reopenFrame: true,
     });
   });
 
@@ -597,6 +616,8 @@ describe("liftOutcome", () => {
       dragging: false,
       resume: false,
       keepOwed: false,
+      // The ordinary #613 gesture: pan, lift, pick a new span.
+      reopenFrame: true,
     });
   });
 });

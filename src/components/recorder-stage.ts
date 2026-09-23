@@ -677,6 +677,18 @@ export function resumesOnLift(input: {
  * A refusal for any reason other than a finger — the line at the very end, a
  * take that started mid-gesture — is final, and the debt is dropped: leaving
  * the flag set would fire a resume on some later, unrelated lift.
+ *
+ * `reopenFrame` is the fourth answer (#613, Frank R1 P2). A lift that leaves
+ * the stage at rest is what asks for a selection frame again after a cut
+ * collapsed it — but NOT a lift that also resumes playback: `onPointerUp`
+ * resumes `soundRange(from, length)`, the TAIL from the line, while a seeded
+ * frame would make {@link stageView} read `playingBuffer && selectionActive`
+ * as an in-place audition and draw a band over a span that is not what is
+ * sounding. While the tail plays, the collapsed line is the honest display;
+ * the next touch seeds a frame. Like `dragging` and `resume` it is about
+ * FINGERS, not about which pointer owned the drag — gating it on `wasOwner`
+ * leaves the frame collapsed for good when the owner lifts first and a
+ * second contact lifts last.
  */
 export function liftOutcome(input: {
   /** This pointer owned the drag. */
@@ -696,12 +708,19 @@ export function liftOutcome(input: {
   readonly dragging: boolean;
   readonly resume: boolean;
   readonly keepOwed: boolean;
+  /** The stage is at rest and silent, so a collapsed frame may be seeded again. */
+  readonly reopenFrame: boolean;
 } {
   const held = input.ownerActive || input.contactsRemaining > 0;
   // A non-owner's lift matters for one reason only: it may be the moment the
   // stage goes clear. While the owner is still dragging it changes nothing.
   if (!input.wasOwner && input.ownerActive)
-    return { dragging: true, resume: false, keepOwed: input.interrupted };
+    return {
+      dragging: true,
+      resume: false,
+      keepOwed: input.interrupted,
+      reopenFrame: false,
+    };
   const resume = resumesOnLift({
     interrupted: input.interrupted,
     pan: input.pan,
@@ -713,6 +732,7 @@ export function liftOutcome(input: {
     dragging: held,
     resume,
     keepOwed: input.interrupted && !resume && input.contactsRemaining > 0,
+    reopenFrame: !held && !resume,
   };
 }
 

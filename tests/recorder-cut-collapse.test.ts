@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  liftOutcome,
   panAfterCutCollapse,
   selectionReseed,
 } from "@/components/recorder-stage";
@@ -67,7 +68,26 @@ describe("panAfterCutCollapse — the line lands on the cut point (#613)", () =>
     );
   });
 
-  it("never answers a negative or out-of-buffer sample", () => {
+  it("clamps a range that reaches outside the buffer (George R1 Low-1)", () => {
+    // The title this replaces claimed a clamp its inputs never exercised —
+    // both were in range, so a missing clamp would not have failed it. These
+    // are the out-of-range cases: `wholeSampleRange` orders and truncates,
+    // then `panOrRest` clamps into [0, length].
+    // A negative start clamps to the head.
+    expect(panAfterCutCollapse({ start: -500, end: 2_000 }, 10_000)).toBe(0);
+    // A cut whose end runs past the buffer: the removed length is measured
+    // from the truncated range, so the post-cut length can go negative and
+    // the answer must still be the rest rather than a negative sample.
+    expect(
+      panAfterCutCollapse({ start: 9_000, end: 12_000 }, 10_000)
+    ).toBeNull();
+    // Reversed edges are ordered before either question is asked.
+    expect(panAfterCutCollapse({ start: 6_000, end: 2_000 }, 10_000)).toBe(
+      2_000
+    );
+  });
+
+  it("cutting the whole buffer rests, and a one-sample cut at the head stays at 0", () => {
     expect(panAfterCutCollapse({ start: 0, end: 10_000 }, 10_000)).toBeNull();
     expect(panAfterCutCollapse({ start: 0, end: 1 }, 10_000)).toBe(0);
   });
@@ -92,11 +112,31 @@ describe("selectionReseed — when the render-time frame is re-opened (#613)", (
     expect(selectionReseed({ ...base, collapsedByCut: true })).toBe("clear");
   });
 
-  it("still clears the entry latch and the zoom fit while collapsed", () => {
-    // "clear", not "none": the stale zoom fit must still go, or the paste
-    // marker stays hidden (`zoomPan === null` gates it) on the very state
-    // this change exists to make paste-ready.
-    expect(selectionReseed({ ...base, collapsedByCut: true })).not.toBe("none");
+  it("recorder.tsx runs the entry-latch and zoom resets OUTSIDE the seed arm (George R1 Q1)", () => {
+    // The assertion this replaces read `!== "none"` on a value the test above
+    // already pins to "clear", so it could not fail on its own — and it never
+    // read `recorder.tsx`, where the claim actually lives. The claim: a cut
+    // made while zoomed must still drop `zoomPan`, or the paste marker stays
+    // hidden (it is gated on `zoomPan === null`) on the very state this
+    // change exists to make paste-ready. That requires the resets to sit in
+    // the `reseed !== "none"` block and NOT inside `if (reseed === "seed")`.
+    const at = recorder.indexOf("const reseed = selectionReseed({");
+    expect(at).toBeGreaterThan(-1);
+    const block = recorder.slice(at, at + 1_400);
+    expect(block).toMatch(/if \(reseed === "seed"\)/);
+    // Read by INDENTATION, which Prettier fixes, rather than by hunting the
+    // seed arm's closing brace: a first attempt searched for `"      }"` and
+    // matched the eight-space `});` of `openSelection` instead, so the
+    // comparison held in both states — the same vacuous shape this test is
+    // replacing. Inside the arm these two lines would be indented eight.
+    expect(block).toMatch(
+      /\n {6}if \(selectionEntry\) setSelectionEntry\(null\);/
+    );
+    expect(block).toMatch(/\n {6}if \(zoomPan !== null\) setZoomPan\(null\);/);
+    expect(
+      block,
+      "the resets are inside the seed arm, so a cut made while zoomed hides Paste"
+    ).not.toMatch(/\n {8}if \(zoomPan !== null\) setZoomPan\(null\);/);
   });
 
   it("is inert in record mode, with a frame already open, or before the committed buffer arrives", () => {
@@ -181,5 +221,63 @@ describe("the Cut row reserves its height (#613)", () => {
     // the real gate is the canvas-bounds comparison in
     // `e2e/recorder-selection.spec.ts` and this only pins the declaration.
     expect(minHeight?.[2]).toMatch(/var\(--p-space-2\)/);
+  });
+});
+
+describe("a lift that resumes playback does not seed a frame (#613, Frank R1 P2)", () => {
+  const lift = {
+    wasOwner: true,
+    ownerActive: false,
+    contactsRemaining: 0,
+    interrupted: false,
+    pan: 5_000,
+    length: 10_000,
+    takeActive: false,
+  };
+
+  it("reopens the frame on an ordinary lift — the #613 gesture", () => {
+    expect(liftOutcome(lift)).toMatchObject({
+      resume: false,
+      reopenFrame: true,
+    });
+  });
+
+  it("does NOT reopen it when the same lift resumes an interrupted playback", () => {
+    // The kill: `onPointerUp` resumes `soundRange(from, length)` — the TAIL —
+    // and, with the frame seeded in the same commit, `stageView` reads
+    // `playingBuffer && selectionActive` as an in-place audition and draws a
+    // band over a span that is not what is sounding. The collapsed line is the
+    // honest display while the tail plays; the next touch seeds a frame.
+    const resumed = liftOutcome({ ...lift, interrupted: true });
+    expect(resumed.resume).toBe(true);
+    expect(resumed.reopenFrame).toBe(false);
+  });
+
+  it("does not reopen it while a finger is still on the stage", () => {
+    // The gesture has not ended, so a band would be drawn under the finger.
+    expect(liftOutcome({ ...lift, contactsRemaining: 1 }).reopenFrame).toBe(
+      false
+    );
+    expect(
+      liftOutcome({ ...lift, wasOwner: false, ownerActive: true }).reopenFrame
+    ).toBe(false);
+  });
+
+  it("reopens it on the LAST contact's lift even when that pointer never owned the drag", () => {
+    // `dragging` and `resume` are about fingers, not about which pointer owned
+    // the gesture (`liftOutcome`'s own docblock). Gating the reseed on
+    // `wasOwner` — what the first draft of this PR did — left the frame
+    // collapsed forever when the owner lifted first and a second finger last.
+    expect(
+      liftOutcome({ ...lift, wasOwner: false, ownerActive: false }).reopenFrame
+    ).toBe(true);
+  });
+
+  it("recorder.tsx reads the rule from the outcome, not from `wasOwner`", () => {
+    const at = recorder.indexOf("const onPointerUp = useCallback(");
+    expect(at).toBeGreaterThan(-1);
+    const body = recorder.slice(at, recorder.indexOf("}, [", at));
+    expect(body).toMatch(/if \(outcome\.reopenFrame\) reopenFrame\(\)/);
+    expect(body).not.toMatch(/if \(wasOwner\) reopenFrame\(\)/);
   });
 });

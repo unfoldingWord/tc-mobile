@@ -1201,11 +1201,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         resumeAfterDragRef.current = outcome.keepOwed;
         if (outcome.resume) soundRange(from, length);
         // The stage has come to rest somewhere the translator chose, so a
-        // frame may be seeded there again (#613). On the owner's lift only:
-        // a second finger leaving mid-drag has not ended the gesture. This is
-        // what keeps a second cut reachable without leaving edit mode — the
-        // collapsed line survives until the waveform is touched again.
-        if (wasOwner) reopenFrame();
+        // frame may be seeded there again (#613) — which keeps a second cut
+        // reachable without leaving edit mode. `liftOutcome` owns the rule:
+        // the stage must be clear of fingers AND silent, because a lift that
+        // resumes playback sounds the tail and a band drawn over it would
+        // claim an in-place audition of a span that is not sounding (Frank
+        // R1 P2). Its docblock carries the reasoning.
+        if (outcome.reopenFrame) reopenFrame();
       },
       [length, soundRange, takeActive, reopenFrame]
     );
