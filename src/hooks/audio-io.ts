@@ -12,10 +12,17 @@ import {
   CANONICAL_SAMPLE_RATE,
   canonicalFrameCount,
   floatToInt16,
+  INT16_MAX,
   int16ToFloatInto,
 } from "@/lib/audio/format";
+import { measureLevel } from "@/lib/audio/level";
 import { meterReadable, rmsLevel } from "@/lib/audio/meter";
 
+import {
+  audioProbeEnabled,
+  type ProbeSource,
+  recordAudioProbe,
+} from "./audio-probe";
 import { reportFailure } from "./report-failure";
 
 /**
@@ -469,10 +476,61 @@ export function createLevelTap(stream: MediaStream): LevelTap {
  * interchangeable — concatenating an iPhone's aac take with an Android's opus
  * take is a buffer join, not a codec problem.
  */
-export async function decodeToCanonical(blob: Blob): Promise<Int16Array> {
+export async function decodeToCanonical(
+  blob: Blob,
+  probeSource: ProbeSource = "capture"
+): Promise<Int16Array> {
   const arrayBuffer = await blob.arrayBuffer();
   const decoded = await getAudioContext().decodeAudioData(arrayBuffer);
+  if (audioProbeEnabled()) probeDecode(decoded, probeSource);
   return toCanonical(decoded);
+}
+
+/**
+ * The capture track's settings fields that bear on level, for the opt-in probe
+ * (#555's `channelCount` question). Device and group ids are left out: they
+ * identify hardware and say nothing about level.
+ */
+const PROBED_TRACK_SETTINGS = [
+  "channelCount",
+  "sampleRate",
+  "sampleSize",
+  "autoGainControl",
+  "echoCancellation",
+  "noiseSuppression",
+  "latency",
+] as const;
+
+/** Record what the device granted for a capture stream, when the probe is on. */
+export function probeCaptureTrack(stream: MediaStream): void {
+  if (!audioProbeEnabled()) return;
+  const tracks = stream.getAudioTracks();
+  const granted = tracks[0]?.getSettings() as
+    Record<string, unknown> | undefined;
+  const settings: Record<string, unknown> = { audioTracks: tracks.length };
+  for (const key of PROBED_TRACK_SETTINGS) settings[key] = granted?.[key];
+  recordAudioProbe({ stage: "capture-track", settings });
+}
+
+/**
+ * Every channel the decoder returned, measured separately and BEFORE the
+ * canonical downmix — the reading that shows a two-channel capture with a dead
+ * second channel, which the downmix would otherwise fold into a quiet mono
+ * take with no trace of why (#555).
+ */
+function probeDecode(decoded: AudioBuffer, source: ProbeSource): void {
+  const perChannel = [];
+  for (let c = 0; c < decoded.numberOfChannels; c++) {
+    perChannel.push(measureLevel(decoded.getChannelData(c), 1));
+  }
+  recordAudioProbe({
+    stage: "decode",
+    source,
+    channels: decoded.numberOfChannels,
+    sampleRate: decoded.sampleRate,
+    frames: decoded.length,
+    perChannel,
+  });
 }
 
 /**
@@ -492,7 +550,10 @@ export async function decodeToCanonical(blob: Blob): Promise<Int16Array> {
 export async function decodeMp3ToCanonical(
   mp3: Uint8Array<ArrayBuffer>
 ): Promise<Int16Array> {
-  return decodeToCanonical(new Blob([mp3], { type: "audio/mpeg" }));
+  return decodeToCanonical(
+    new Blob([mp3], { type: "audio/mpeg" }),
+    "stored-mp3"
+  );
 }
 
 async function toCanonical(buffer: AudioBuffer): Promise<Int16Array> {
@@ -641,6 +702,11 @@ export async function playSamples(
      * in the shared sink (#104, George R1).
      */
     isStillCurrent: () => boolean;
+    /**
+     * Which path produced `samples`, for the opt-in level probe only
+     * (`hooks/audio-probe.ts`). Changes nothing about what is played.
+     */
+    source?: ProbeSource;
   }
 ): Promise<PlaybackHandle> {
   // SINGLE EXIT for the #469 resume-bound row (dev lead pick, option A on the
@@ -749,6 +815,21 @@ export async function playSamples(
       0,
       Math.min(options.offsetSeconds ?? 0, buffer.duration)
     );
+    // Measured here, past both supersession bails and both fail-closed gates:
+    // a reading exists only for a buffer that is about to sound.
+    if (audioProbeEnabled()) {
+      recordAudioProbe({
+        stage: "play",
+        source: options.source ?? "unlabelled",
+        level: measureLevel(samples, INT16_MAX),
+        viewOffset: samples.byteOffset / Int16Array.BYTES_PER_ELEMENT,
+        backingFrames: samples.buffer.byteLength / Int16Array.BYTES_PER_ELEMENT,
+        offsetSeconds: offset,
+        contextState: ctx.state,
+        contextRate: ctx.sampleRate,
+        destinationChannels: ctx.destination.channelCount,
+      });
+    }
     const startedAt = ctx.currentTime;
     let stopped = false;
 
