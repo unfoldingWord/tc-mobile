@@ -163,8 +163,8 @@ describe("errorMessage", () => {
    * #721: every caller of `errorMessage` is a `catch` block, so if the
    * conversion itself throws, a handled failure becomes an unhandled one —
    * inside the code meant to report it. This table is the hazards George's
-   * note named, corrected against what actually throws on Node 22 (the issue
-   * body): a hostile `toString`, a null-prototype object, an `Error` whose own
+   * note named, as the issue body corrected them: a hostile `toString`, a
+   * null-prototype object, an `Error` whose own
    * `message` getter throws, and a revoked `Proxy` (where even `instanceof`
    * throws) all must be survived with a stable fallback string. `Symbol` and
    * `BigInt` are deliberately included as the NON-hazard cases — `String()`
