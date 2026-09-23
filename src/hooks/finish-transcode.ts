@@ -51,8 +51,8 @@ import {
   listPcmFinishedSegments,
   recordTranscodeStall,
 } from "@/lib/storage/transcode";
+import { ROW_PEAK_BUCKETS } from "@/lib/view/segment-rows";
 import type { SegmentId } from "@/types/domain";
-import { ROW_PEAK_BUCKETS } from "@/types/view";
 
 let running: Promise<void> | null = null;
 let requestedDuringRun = false;

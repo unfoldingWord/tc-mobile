@@ -30,8 +30,8 @@ import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useScreenLayers } from "@/hooks/use-screen-layers";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { overlayDismissal } from "@/lib/nav/navigation";
+import { firstNotFinished } from "@/lib/view/segment-rows";
 import type { ChapterId, SegmentId } from "@/types/domain";
-import { firstNotFinished } from "@/types/view";
 
 /**
  * Every overlay this screen can put over the chapter, as a system-Back layer
@@ -680,10 +680,11 @@ export const SegmentsScreen = forwardRef<
 
   // Share (B7) speaks inside its own menu, not the screen Notice: the two-gesture
   // flow keeps the ≡ menu open across prepare → ready → send, so the panel is
-  // what the translator is looking at. Its error code is mapped to copy here and
-  // rendered in the menu below. The Share control's own glyph, the gap mark
-  // and the error mark all moved into `ShareMenuSection` with the rows they
-  // paint (#160, L-15) — Books derived the identical three.
+  // what the translator is looking at. Its error code is mapped to copy by
+  // `shareErrorText` inside `ShareMenuSection` (#670) and rendered in the menu
+  // below. The Share control's own glyph, the gap mark and the error mark all
+  // moved into `ShareMenuSection` with the rows they paint (#160, L-15) —
+  // Books derived the identical three.
 
   const nodes = useRef(new Map<SegmentId, HTMLElement>());
   const didInitialScroll = useRef(false);
