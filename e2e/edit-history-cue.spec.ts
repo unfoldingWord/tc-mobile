@@ -14,16 +14,16 @@ import { expect, test, type Page } from "@playwright/test";
  *     `canUndo`/`canRedo` only read the log's cursor, so the sentence went
  *     false after an undo. `tests/edit-control-state.test.ts` bans that tense in
  *     the string table; what it cannot do is drive a real edit stack. This walks
- *     the three positions — empty, after a cut, after an undo, back at the tip —
+ *     four positions — empty, after a cut, after an undo, back at the tip —
  *     and reads the accessible name the browser actually computes at each.
  *  2. **The hinted wrapper does not disturb the grid.** `Control` wraps a
  *     hint-capable control in `.control-hinted`, which makes the SPAN the grid
  *     item rather than the button. The PR body argued from the stylesheet that
  *     `inline-grid; width: fit-content` keeps the same box in the same column;
  *     an argument is not an observation, and the QA review on #703 asked for
- *     exactly this check at 320px. Here the real cascade answers: every control
- *     in the edit toolbar is measured with both arrows badged and again with the
- *     badge gone, and nothing may move.
+ *     exactly this check at 320px. Here the real cascade answers: each hinted
+ *     wrapper is measured against the button inside it, within one render, and
+ *     neither its position nor its size may differ.
  *
  * 320px because that is the narrowest width this repo supports and the one
  * where a 2px badge overflow into a 4px gap would show first.
@@ -123,12 +123,11 @@ test.describe("edit-toolbar history cue (#91)", () => {
     // ── The layout claim, observed rather than argued. ──
     //
     // Asserted WITHIN one render, not by comparing two states of the same
-    // build: a wrapper rule that displaces every hinted control equally moves
-    // both snapshots equally, so a before/after comparison goes green on
-    // exactly the breakage it was written to catch. (Observed — a first draft
-    // of this file compared badged against unbadged and survived
-    // `.control-hinted` being rewritten to `display:block; width:100%;
-    // padding-left:10px`.)
+    // build: a wrapper rule that displaces every hinted control moves both
+    // snapshots by the same amount, so a before/after comparison cannot see
+    // the very breakage it would be written to catch. The evidence for that,
+    // and the mutation it was established with, is on the PR:
+    // https://github.com/unfoldingWord/tc-mobile/pull/703#issuecomment-5795672669
     //
     // So each hinted wrapper is measured against the button inside it. That is
     // the PR's actual claim — `inline-grid; width: fit-content` leaves the same
