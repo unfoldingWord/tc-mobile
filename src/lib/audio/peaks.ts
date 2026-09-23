@@ -58,19 +58,3 @@ export function computePeaks(samples: Int16Array, bucketCount: number): Peaks {
 
   return { min, max, samplesPerBucket };
 }
-
-/**
- * Waveform resolution of the recorder's full-width waveform, in min/max
- * buckets.
- *
- * Shared by the editing session (`useSegmentEditor`, which draws the working
- * buffer) and the paused-take preview (`recorder.tsx`, #101), because the
- * preview swaps in over the same stage: at two different bucket counts the
- * waveform would visibly re-quantise at the swap, which reads as the audio
- * having changed. The two used to be separate `400`s whose comments promised
- * each other they matched — a promise nothing checked.
- *
- * Distinct from `ROW_PEAK_BUCKETS` (120), which is a Segments row: a row is a
- * glance, this is the surface a translator cuts on.
- */
-export const EDITOR_PEAK_BUCKETS = 400;

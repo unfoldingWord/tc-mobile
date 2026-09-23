@@ -17,6 +17,8 @@ export interface RecorderSegmentView {
   readonly bookName: string;
   readonly chapterNumber: number;
   readonly ordinal: number;
+  /** The facilitator's label, shown after the ordinal (#591); null ⇒ none. */
+  readonly segmentLabel: string | null;
   readonly finished: boolean;
   /** Playable audio is present (F3: resolved, not merely a take pointer). */
   readonly hasClip: boolean;
@@ -91,6 +93,7 @@ export async function loadRecorderSegmentView(
     bookName: book?.name ?? "",
     chapterNumber: chapter?.number ?? 0,
     ordinal: segment.index,
+    segmentLabel: segment.label,
     finished: isFinished(segment.status),
     hasClip: samples !== null,
     samples,

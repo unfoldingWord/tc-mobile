@@ -627,16 +627,16 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
       "share",
       "onPrepareShare",
       "onSendShare",
-      "onClick={onPrepareShare}",
-      "onClick={onSendShare}",
+      "onPrepare={onPrepareShare}",
+      "onSend={onSendShare}",
     ],
     [
       "src/components/books-screen.tsx",
       "bookShare",
       "onPrepareBookShare",
       "onSendBookShare",
-      "onClick={onPrepareBookShare}",
-      "onClick={onSendBookShare}",
+      "onPrepare={onPrepareBookShare}",
+      "onSend={onSendBookShare}",
     ],
   ] as const) {
     const name = screen.split("/").pop();
@@ -671,6 +671,25 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
       expect(sendUseAt).toBeLessThan(menuCloseAt);
     });
   }
+
+  /**
+   * The ternary's own half of the #96/#97 contract, asserted ONCE now that
+   * both menus render the same rows (#160, L-15).
+   *
+   * This got stronger in the move rather than weaker: it used to be the same
+   * property checked separately in two files that had to stay in step by
+   * hand. A `fallback` ref must be attached to EVERY branch, so it survives
+   * the ternary remounting the originally captured trigger out from under it
+   * — "Share chapter"/"Share book" swapping for "Share now" before the
+   * overlay has shown anything.
+   */
+  it("share-menu-section.tsx: the controlRef is attached to every branch of the Share/Send ternary", () => {
+    const source = read("src/components/share-menu-section.tsx");
+    const occurrences = source.split("ref={controlRef}").length - 1;
+    // Exactly two: the "ready" (Share now) branch and the "not ready"
+    // (Share chapter/book, including preparing) branch.
+    expect(occurrences).toBe(2);
+  });
 
   /**
    * The two guards George r1 P2 #2 added (Rename's `onClick`, books'
@@ -911,16 +930,17 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
       );
     });
 
-    it(`${name}: the ${controlRefName} is attached to every branch of the Share/Send ternary`, () => {
+    it(`${name}: declares the ${controlRefName} and hands it to the shared Share rows`, () => {
+      // The ternary itself moved into `ShareMenuSection` (#160, L-15), so this
+      // half is now "the screen owns the ref and passes it in" — the next case
+      // is "the section attaches it to BOTH branches", once, for both screens.
       const source = read(screen);
-      const refDeclAt = source.indexOf(
-        `const ${controlRefName} = useRef<HTMLButtonElement | null>(null);`
-      );
-      expect(refDeclAt).toBeGreaterThan(-1);
-      const occurrences = source.split(`ref={${controlRefName}}`).length - 1;
-      // Exactly two: the "ready" (Share now) branch and the "not ready"
-      // (Share chapter/book, including preparing) branch of the ternary.
-      expect(occurrences).toBe(2);
+      expect(
+        source.indexOf(
+          `const ${controlRefName} = useRef<HTMLButtonElement | null>(null);`
+        )
+      ).toBeGreaterThan(-1);
+      expect(source).toContain(`controlRef={${controlRefName}}`);
     });
   }
 
@@ -941,55 +961,63 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
   });
 
   /**
-   * George r2 P2-2 (#491): the screens must actually READ `sendUnconfirmed`
-   * and feed it to `shareControlAffordance` and the idle label — the state
-   * this field exists to carry is invisible unless both wire it through.
+   * George r2 P2-2 (#491): `sendUnconfirmed` must actually be READ and fed to
+   * `shareControlAffordance` and the idle label — the state this field exists
+   * to carry is invisible unless both wire it through.
+   *
+   * Split in two since #160's L-15 moved the rows into `ShareMenuSection`: the
+   * screens hand the flag and their own copy in, and the section does the
+   * wiring. The section half is asserted ONCE for both menus, which is the
+   * improvement — it was the same property checked separately in two files.
    */
-  for (const [screen, hook, affordanceVar, unconfirmedString] of [
-    [
-      "src/components/segments-screen.tsx",
-      "share",
-      "shareAffordance",
-      "shareChapterUnconfirmed",
-    ],
-    [
-      "src/components/books-screen.tsx",
-      "bookShare",
-      "bookShareAffordance",
-      "shareBookUnconfirmed",
-    ],
+  for (const [screen, hook, unconfirmedString] of [
+    ["src/components/segments-screen.tsx", "share", "shareChapterUnconfirmed"],
+    ["src/components/books-screen.tsx", "bookShare", "shareBookUnconfirmed"],
   ] as const) {
     const name = screen.split("/").pop();
 
-    it(`${name}: passes ${hook}.sendUnconfirmed as shareControlAffordance's third argument`, () => {
+    it(`${name}: hands ${hook}.sendUnconfirmed and its own unconfirmed copy to the Share rows`, () => {
       const source = read(screen);
-      const at = source.indexOf(
-        `const ${affordanceVar} = shareControlAffordance(`
-      );
-      expect(at).toBeGreaterThan(-1);
-      const callEnd = source.indexOf(");", at);
-      const call = source.slice(at, callEnd);
-      expect(call).toMatch(new RegExp(`${hook}\\.sendUnconfirmed`));
-    });
-
-    it(`${name}: the idle Share control's label switches to the unconfirmed string when ${hook}.sendUnconfirmed is true, never disabling the control`, () => {
-      const source = read(screen);
-      const labelAt = source.indexOf(`strings.${unconfirmedString}`);
-      expect(labelAt).toBeGreaterThan(-1);
-      const ternaryStart = source.lastIndexOf("label={", labelAt);
-      const ternaryEnd = source.indexOf(
-        "}",
-        source.indexOf(unconfirmedString, labelAt) + 40
-      );
-      const ternary = source.slice(ternaryStart, ternaryEnd);
-      expect(ternary).toMatch(new RegExp(`${hook}\\.sendUnconfirmed`));
-      // Not disabled — a second Share must remain genuinely possible (the
-      // brief's own constraint), never gated behind `disabled`.
-      const controlStart = source.lastIndexOf("<Control", labelAt);
-      const controlEnd = source.indexOf("/>", labelAt);
-      expect(source.slice(controlStart, controlEnd)).not.toMatch(/disabled/);
+      const at = source.indexOf("<ShareMenuSection");
+      expect(at, "no <ShareMenuSection> in this screen").toBeGreaterThan(-1);
+      const tag = source.slice(at, source.indexOf("/>", at));
+      expect(tag).toContain(`sendUnconfirmed={${hook}.sendUnconfirmed}`);
+      expect(tag).toContain(`unconfirmedLabel={strings.${unconfirmedString}}`);
     });
   }
+
+  it("share-menu-section.tsx: feeds sendUnconfirmed to shareControlAffordance as its third argument", () => {
+    const source = read("src/components/share-menu-section.tsx");
+    const at = source.indexOf("shareControlAffordance(");
+    expect(at).toBeGreaterThan(-1);
+    const call = source.slice(at, source.indexOf(");", at));
+    expect(call).toMatch(/sendUnconfirmed/);
+  });
+
+  it("share-menu-section.tsx: the idle label switches on sendUnconfirmed, and that control is never disabled", () => {
+    const source = read("src/components/share-menu-section.tsx");
+    // Isolate the NOT-ready branch by its own handler, then walk back to its
+    // opening tag — `lastIndexOf` from the handler, so the ready branch's
+    // `<Control>` above it can never be the one measured.
+    const prepareAt = source.indexOf("onClick={onPrepare}");
+    expect(prepareAt).toBeGreaterThan(-1);
+    const controlStart = source.lastIndexOf("<Control", prepareAt);
+    const control = source.slice(controlStart, prepareAt);
+
+    // The label is a three-way: preparing, then unconfirmed, then idle.
+    expect(control).toMatch(/label=\{/);
+    expect(control).toMatch(/preparingLabel/);
+    expect(control).toMatch(/sendUnconfirmed/);
+    expect(control).toMatch(/unconfirmedLabel/);
+    expect(control).toMatch(/idleLabel/);
+
+    // Not disabled — a second Share must remain genuinely possible (the
+    // brief's own constraint), never gated behind `disabled`. `busy` is what
+    // paints and reads the wait instead (#354), and it also keeps the control
+    // inside Menu's FOCUSABLE set so the Tab trap holds (George R-B7).
+    expect(control).not.toMatch(/\bdisabled\b/);
+    expect(control).toMatch(/busy=\{affordance\.busy\}/);
+  });
 
   /**
    * Frank at `9832a8b` P2: the ref-sync effect that feeds the capture-phase

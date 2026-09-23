@@ -19,8 +19,24 @@ import {
   type EditLog,
   type EditOp,
 } from "@/lib/audio/edit-log";
-import { computePeaks, EDITOR_PEAK_BUCKETS } from "@/lib/audio/peaks";
+import { computePeaks } from "@/lib/audio/peaks";
 import type { Peaks, SampleRange } from "@/types/audio";
+
+/**
+ * Waveform resolution of the recorder's full-width stage, in min/max buckets.
+ *
+ * Local, and staying local: this is the only place that draws at this
+ * resolution. It used to be one of three identical `400`s whose comments
+ * promised each other they matched — `useRecorderSegment` computed a second
+ * set nothing read (removed here, #160 L-9), and `recorder.tsx` a third for
+ * the paused-take preview, which #614 retired with the preview itself. With
+ * one caller left, a shared export in `lib/audio/peaks.ts` would be a name
+ * with nothing to keep in step.
+ *
+ * Distinct from `ROW_PEAK_BUCKETS` (120), a Segments row: a row is a glance,
+ * this is the surface a translator cuts on.
+ */
+const PEAK_BUCKETS = 400;
 
 const EMPTY = new Int16Array(0);
 
@@ -131,8 +147,7 @@ export function useSegmentEditor(
   const { working, log } = hist;
 
   const peaks = useMemo(
-    () =>
-      working.length > 0 ? computePeaks(working, EDITOR_PEAK_BUCKETS) : null,
+    () => (working.length > 0 ? computePeaks(working, PEAK_BUCKETS) : null),
     [working]
   );
 

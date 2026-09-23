@@ -8,6 +8,7 @@ import {
   addSegment,
   addTake,
   createBook,
+  renameSegment,
   setSegmentFinished,
 } from "@/lib/storage/books";
 import { newClipId, putClip } from "@/lib/storage/clips";
@@ -72,6 +73,17 @@ describe("loadRecorderSegmentView", () => {
     expect(view.bookName).toBe("Ruth");
     expect(view.chapterNumber).toBe(1);
     expect(view.ordinal).toBe(1);
+    expect(view.segmentLabel).toBeNull();
+  });
+
+  it("carries the segment's label for the breadcrumb (#591)", async () => {
+    const segmentId = await freshSegment();
+    await renameSegment(segmentId, "verses 3–4");
+
+    const view = await loadRecorderSegmentView(segmentId);
+
+    expect(view.ordinal).toBe(1);
+    expect(view.segmentLabel).toBe("verses 3–4");
   });
 
   it("opens a PCM segment over its samples, handed through untouched", async () => {
