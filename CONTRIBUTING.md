@@ -27,7 +27,11 @@ the tree wins, and the disagreement is worth an issue.
 ## Setup and commands
 
 Node **22.12+**, except the 23.x line (`engines` in `package.json`; a
-render-test dependency's own engine range excludes 23.x, #577).
+render-test dependency's own engine range excludes 23.x, #577). `ruby` (with
+RubyGems for `Gem::Version`) must also be on `PATH` for `npm test` / `npm run
+verify` — `tests/ios-workflow-gates.test.ts` execs it on every local platform,
+not only on the Mac setup in
+[`docs/native/README.md` §3](docs/native/README.md#3-one-time-mac-prerequisites).
 
 ```bash
 npm ci
