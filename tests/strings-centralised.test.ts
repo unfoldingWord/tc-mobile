@@ -73,8 +73,17 @@ const SENTENCE_MIN = 12;
  *
  * The CONTRACT is unchanged, and still narrower than "every sentence on screen":
  * a `StringLiteral` or a hole-free template yields its text, a template WITH
- * holes yields nothing (its text is in fragments and can never equal a whole
- * sentence), and JSX text is not a literal and is still not seen.
+ * holes yields nothing, and JSX text is not a literal and is still not seen.
+ *
+ * A holed template yields nothing because whole-literal equality is what keeps
+ * `lib/storage/db.ts` off this gate: its `DatabaseBlockedError` message merely
+ * OPENS with `strings.dbBlocked` and then says something else, and enrolling
+ * `TemplateHead` fragments would recreate exactly that false hit. The residual
+ * is real and is named rather than argued away — a fragment CAN equal a whole
+ * sentence, as in `` `Could not play this recording.${detail}` ``, so a
+ * duplicate spelled that way is not seen (George, #600 round 3). Nothing in the
+ * tree is spelled that way today. If one appears, the answer is that call site,
+ * not a looser scanner.
  */
 export function stringLiterals(
   source: string,
@@ -287,7 +296,13 @@ describe("centralised copy is not also inline", () => {
           file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
         )) {
           const key = byText.get(literal);
-          if (key) offenders.push(`${file}: ${name}.${key}`);
+          // The words as well as the key: both `saveFailedLabel` branches
+          // report as `strings.saveFailedLabel()`, so the key alone leaves a
+          // later failure with nothing to debug from (George, #600 round 3).
+          if (key)
+            offenders.push(
+              `${file}: ${name}.${key} = ${JSON.stringify(literal)}`
+            );
         }
       }
       expect(offenders).toEqual([]);
