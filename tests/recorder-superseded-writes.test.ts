@@ -93,6 +93,7 @@ async function setup() {
       playingId: null,
       playingBuffer: false,
       playbackElapsedMs: 0,
+      playbackRanOut: false,
       recorderState: "idle",
       elapsedMs: 0,
       supported: true,
@@ -103,16 +104,12 @@ async function setup() {
       playBuffer: vi.fn(),
       stopBuffer: vi.fn(),
       readPlaybackPosition: () => null,
-      audioNeedsGesture: () => false,
       startRecording: vi.fn(),
-      pauseRecording: vi.fn(),
-      resumeRecording: vi.fn(),
       stopRecording: vi.fn(async () => {
         audio.recorderState = "idle";
         return { samples: null, blob: null, error: null };
       }),
       retryDecode: vi.fn(),
-      previewCapture: vi.fn(),
       leave: vi.fn(),
       primeAudioContext: vi.fn(),
       readLevel: () => 0,
@@ -179,7 +176,7 @@ it.each(["edit", "clear", "finished"])(
         workingLength: working.length,
       };
     }
-    s.audio.recorderState = "paused";
+    s.audio.recorderState = "recording";
     await s.render();
     await s.click(strings.enterEdit);
     expect(s.audio.stopRecording).toHaveBeenCalledOnce();
@@ -206,7 +203,7 @@ it("still saves an ordinary idle edit", async () => {
 
 it("commits a fresh capture after supersession and restores later idle writes", async () => {
   const s = await setup();
-  s.audio.recorderState = "paused";
+  s.audio.recorderState = "recording";
   await s.render();
   await s.click(strings.enterEdit);
   await s.render();
@@ -215,7 +212,7 @@ it("commits a fresh capture after supersession and restores later idle writes", 
     s.audio.recorderState = "idle";
     return { samples: fresh, blob: null, error: null };
   });
-  s.audio.recorderState = "paused";
+  s.audio.recorderState = "recording";
   await s.render();
   await s.click(strings.enterEdit);
   expect(s.saveRecording).toHaveBeenCalledWith(
@@ -236,7 +233,7 @@ it("commits a fresh capture after supersession and restores later idle writes", 
 it("does not release withheld edits for a subsequent empty capture", async () => {
   const s = await setup();
   boundary.editor = { ...boundary.editor, hasEdits: true };
-  s.audio.recorderState = "paused";
+  s.audio.recorderState = "recording";
   await s.render();
   await s.click(strings.enterEdit);
   s.audio.stopRecording = vi.fn(async () => {
@@ -247,7 +244,7 @@ it("does not release withheld edits for a subsequent empty capture", async () =>
       error: "No sound was recorded. Try again.",
     };
   });
-  s.audio.recorderState = "paused";
+  s.audio.recorderState = "recording";
   await s.render();
   await s.click(strings.enterEdit);
   await s.render();
@@ -263,14 +260,14 @@ it.each(["discard", "retry"])(
   async (action) => {
     const s = await setup();
     boundary.editor = { ...boundary.editor, hasEdits: true };
-    s.audio.recorderState = "paused";
+    s.audio.recorderState = "recording";
     await s.render();
     await s.click(strings.enterEdit);
     s.audio.stopRecording = vi.fn(async () => {
       s.audio.recorderState = "idle";
       return { samples: null, blob: new Blob(["kept"]), error: null };
     });
-    s.audio.recorderState = "paused";
+    s.audio.recorderState = "recording";
     await s.render();
     await s.click(strings.enterEdit);
     await s.render();

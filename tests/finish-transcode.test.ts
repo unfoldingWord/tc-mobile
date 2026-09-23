@@ -79,6 +79,7 @@ function metaFor(id: ClipId, encoding: "pcm" | "mp3", frames: number) {
     encoding,
     generation: encoding === "mp3" ? 1 : 0,
     byteLength: frames * 2,
+    transcodeStallCount: 0,
     peaks: null,
   } as const;
 }

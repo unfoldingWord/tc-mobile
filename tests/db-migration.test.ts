@@ -12,7 +12,7 @@ const DB_NAME = "tc-mobile";
 // The version `getDb` opens. Like DB_NAME, kept in sync with db.ts by hand —
 // a migration test necessarily knows the ladder it is climbing. Asserted rather
 // than assumed, so a bump that forgets to add its own case fails here first.
-const APP_VERSION = 6;
+const APP_VERSION = 7;
 
 /**
  * Delete the database outright so each test starts from a true fresh install.
@@ -120,6 +120,31 @@ async function openLegacyV5() {
       takes.createIndex("segmentId", "segmentId");
       db.createObjectStore("clipMeta", { keyPath: "id" });
       db.createObjectStore("clipData");
+    },
+  });
+}
+
+/**
+ * Stand up the v6 schema — v5 plus #205's `failures` store. This is what every
+ * device that has run a build since v0.1.14 holds, so a v6 → v7 open is the
+ * upgrade the next promotion actually performs in the field. It is also the
+ * only path on which v7's backfill runs ALONE: `oldVersion` 6 skips the v3
+ * recreate, the v6 create and the v4 clip stamp, leaving v7's cursor as the
+ * whole of the upgrade.
+ */
+async function openLegacyV6() {
+  return openDB(DB_NAME, 6, {
+    upgrade(db) {
+      db.createObjectStore("books", { keyPath: "id" });
+      const chapters = db.createObjectStore("chapters", { keyPath: "id" });
+      chapters.createIndex("bookId", "bookId");
+      const segments = db.createObjectStore("segments", { keyPath: "id" });
+      segments.createIndex("chapterId", "chapterId");
+      const takes = db.createObjectStore("takes", { keyPath: "id" });
+      takes.createIndex("segmentId", "segmentId");
+      db.createObjectStore("clipMeta", { keyPath: "id" });
+      db.createObjectStore("clipData");
+      db.createObjectStore("failures", { autoIncrement: true });
     },
   });
 }
@@ -264,7 +289,7 @@ describe("v5 → v6 failure log (append-only, a new store)", () => {
 describe("no structure change after the upgrade has yielded (George #2, R1)", () => {
   /**
    * A `versionchange` transaction stays alive across awaited IDB requests, and
-   * the v4/v5 backfills depend on that. A STRUCTURE change after the handler has
+   * the backfills depend on that. A STRUCTURE change after the handler has
    * yielded is a different thing: some WebKit versions refuse it with
    * `InvalidStateError` and abort the whole upgrade, which would leave `getDb()`
    * rejecting and nothing able to record. `fake-indexeddb` permits it, so the
@@ -306,10 +331,10 @@ describe("no structure change after the upgrade has yielded (George #2, R1)", ()
   }
 
   it("opens on a FRESH install under an engine that refuses a late create", async () => {
-    // oldVersion 0 runs the v3 recreate and then BOTH backfills, each of which
+    // oldVersion 0 runs the v3 recreate and then every backfill, each of which
     // opens a cursor unconditionally even over an empty store — so this is the
-    // path where a v6 create placed after them sits behind two awaits, on every
-    // new phone.
+    // path where a v6 create placed after them sits behind those awaits, on
+    // every new phone.
     const restore = refuseStructureChangeAfterYield();
     try {
       const db = await getDb();
@@ -321,10 +346,11 @@ describe("no structure change after the upgrade has yielded (George #2, R1)", ()
   });
 
   it("opens on a v3 UPGRADE carrying rows, under the same refusal", async () => {
-    // The other entry that actually yields. A v5 → v6 upgrade runs ONLY the v6
-    // block — no backfill, so no cursor and no await — and would pass this
-    // whatever the order. A v3 device is the real case: both backfills run, over
-    // NON-EMPTY stores, so the upgrade genuinely yields before it finishes.
+    // The other entry that actually yields with the create still ahead of it.
+    // An upgrade that starts at or above the newest create runs backfills only,
+    // so it would pass this whatever the order. A v3 device is the real case:
+    // every backfill runs, over NON-EMPTY stores, so the upgrade genuinely
+    // yields — after the v6 create, which is what the ordering is about.
     const v3 = await openLegacyV3();
     await v3.put("chapters", {
       id: "ch1",
@@ -401,6 +427,7 @@ describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
       generation: 0,
       byteLength: 20,
       peaks: null,
+      transcodeStallCount: 0,
     });
   });
 
@@ -427,6 +454,52 @@ describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
     expect(meta?.encoding).toBe("mp3");
     expect(meta?.generation).toBe(2);
     expect(meta?.byteLength).toBe(5);
+    expect(meta?.transcodeStallCount).toBe(0);
+  });
+});
+
+describe("the v7 transcode-stall count backfill", () => {
+  const fieldlessMeta = (id: string) => ({
+    id,
+    sampleRate: 44100,
+    frameCount: 10,
+    durationMs: 1,
+    createdAt: 7,
+    encoding: "pcm" as const,
+    generation: 0,
+    byteLength: 20,
+    peaks: null,
+  });
+
+  // The path every shipped device takes, and the only one where v7's cursor is
+  // the entire upgrade — a v5 start runs the v6 create first and would pass
+  // whatever v7 did with an already-open store.
+  it("stamps a v6 device's clip metadata, leaving the failure log alone", async () => {
+    const v6 = await openLegacyV6();
+    await v6.put("clipMeta", fieldlessMeta("c1"));
+    await v6.add("failures", { context: "save-take", at: 1 } as never);
+    v6.close();
+
+    const v7 = await getDb();
+    expect(v7.version).toBe(APP_VERSION);
+    expect((await v7.get("clipMeta", "c1" as never))?.transcodeStallCount).toBe(
+      0
+    );
+    // Append-only: the upgrade touches clip metadata and nothing else.
+    expect(await v7.count("failures")).toBe(1);
+  });
+
+  it("stamps a v5 device's clip metadata, which gains `failures` in the same open", async () => {
+    const v5 = await openLegacyV5();
+    await v5.put("clipMeta", fieldlessMeta("c1"));
+    v5.close();
+
+    const v7 = await getDb();
+    expect(v7.version).toBe(APP_VERSION);
+    expect((await v7.get("clipMeta", "c1" as never))?.transcodeStallCount).toBe(
+      0
+    );
+    expect(Array.from(v7.objectStoreNames)).toContain("failures");
   });
 });
 
