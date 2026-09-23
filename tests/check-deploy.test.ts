@@ -697,6 +697,16 @@ describe("isCanonicalOrigin", () => {
     ).toBe(false);
   });
 
+  it.each([
+    "git@gitlab.com:unfoldingWord/tc-mobile.git",
+    "git@evil.example:unfoldingWord/tc-mobile.git",
+    "git@github.com.evil.example:unfoldingWord/tc-mobile.git",
+    "git@localhost:unfoldingWord/tc-mobile",
+    "git@gh:unfoldingWord/tc-mobile.git",
+  ])("rejects a non-GitHub scp host with the canonical path: %s", (url) => {
+    expect(isCanonicalOrigin(url)).toBe(false);
+  });
+
   it("accepts an explicit ssh:// URL via the ssh.github.com alias host", () => {
     expect(
       isCanonicalOrigin("ssh://git@ssh.github.com/unfoldingWord/tc-mobile.git")

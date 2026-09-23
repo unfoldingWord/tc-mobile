@@ -153,21 +153,18 @@ export function remoteRefForOrigin(origin) {
  *   https://<user>@github.com/unfoldingWord/tc-mobile[.git][/]  (https w/ userinfo)
  *   git@github.com:unfoldingWord/tc-mobile[.git]                (scp-like ssh)
  *   git@ssh.github.com:unfoldingWord/tc-mobile[.git]            (SSH-over-443 alias host)
- *   git@<any-ssh-config-Host-alias>:unfoldingWord/tc-mobile[.git]
- *     (a local ~/.ssh/config `Host` alias, e.g. `git@github.com-uw:...`, common
- *     when juggling multiple GitHub identities — #443 item 1)
+ *   git@github.com-<suffix>:unfoldingWord/tc-mobile[.git]
+ *     (a suffix-style ~/.ssh/config `Host` alias, e.g. `git@github.com-uw:...`,
+ *     common when juggling multiple GitHub identities — #443 item 1; the same
+ *     suffix is accepted on `ssh.github.com`)
  *   ssh://git@github.com/unfoldingWord/tc-mobile[.git]          (explicit ssh:// URL)
  *   ssh://git@ssh.github.com/unfoldingWord/tc-mobile[.git]      (explicit ssh:// via the
  *     SSH-over-443 alias host — #443 item 1)
- * The scp-like form's host segment is intentionally *not* checked against a
- * fixed allowlist: an SSH `Host` alias can be any string the local
- * `~/.ssh/config` maps to github.com, and there is no way to resolve that
- * mapping from the URL text alone (#443 item 1). That trades host
- * verification for owner/repo verification in this one form only — a fork
- * or an unrepointed pre-transfer clone is still caught there, because its
- * `owner/repo` segment won't match `CANONICAL_REPO` (see the fork-rejection
- * tests below). The `https://` and `ssh://` forms still check the literal
- * `github.com`/`ssh.github.com` host.
+ * Every form checks the host. An alias that does not embed the real hostname
+ * (a bare `Host gh`) cannot be resolved from the URL text, so it fails closed:
+ * such a checkout passes `--sha=` and `--version=` explicitly. An arbitrary
+ * scp host (`git@gitlab.com:unfoldingWord/tc-mobile`) is rejected even when
+ * its owner/repo matches — a mirror is not the canonical remote.
  *
  * The first release of this function missed the `ssh://` and
  * `ssh.github.com` forms — a checkout cloned or repointed with either
@@ -180,7 +177,7 @@ export function remoteRefForOrigin(origin) {
  * fixed this docblock, which previously claimed the opposite — that
  * `--sha=`/`--version=` "skips the fetch but not this check"). Anything
  * else — a fork's URL, an unrepointed pre-transfer remote, `http://`, a
- * non-GitHub host on the `https://`/`ssh://` forms, a malformed string,
+ * non-GitHub host on any form, a malformed string,
  * `undefined` — returns `false`. Pure and exported for tests.
  */
 export function isCanonicalOrigin(remoteUrl) {
@@ -199,10 +196,12 @@ export function isCanonicalOrigin(remoteUrl) {
   );
   const sshUrlMatch =
     /^ssh:\/\/git@(?:ssh\.)?github\.com\/([^/]+\/[^/]+)$/.exec(trimmed);
-  // Any scp-like `git@<host>:owner/repo` — `<host>` is unchecked (see
-  // docblock above): it may be `github.com`, `ssh.github.com`, or an
-  // arbitrary local `Host` alias for either.
-  const scpMatch = /^git@[^:/]+:([^/]+\/[^/]+)$/.exec(trimmed);
+  // scp-like `git@<host>:owner/repo`: `<host>` is `github.com` or
+  // `ssh.github.com`, optionally with one `-<suffix>` Host-alias tail.
+  const scpMatch =
+    /^git@(?:ssh\.)?github\.com(?:-[A-Za-z0-9_-]+)?:([^/]+\/[^/]+)$/.exec(
+      trimmed
+    );
   const repo = httpsMatch?.[1] ?? sshUrlMatch?.[1] ?? scpMatch?.[1];
   return repo?.toLowerCase() === CANONICAL_REPO.toLowerCase();
 }
