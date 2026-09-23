@@ -4,6 +4,7 @@ import { decodeMp3ToCanonical, resumeAudioContext } from "./audio-io";
 import { requestTranscodeSweep } from "./finish-transcode";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
 import { computePeaks } from "@/lib/audio/peaks";
+import { errorMessage } from "@/lib/failure-text";
 import {
   getBook,
   getChapter,
@@ -31,6 +32,15 @@ export interface RecorderSegmentView {
   readonly ordinal: number;
   /** The facilitator's label, shown after the ordinal (#591); null ⇒ none. */
   readonly segmentLabel: string | null;
+  /**
+   * The stored flag as loaded at open, and patched again by this hook's own
+   * `setFinished` once that write lands — NOT a snapshot. What it never sees
+   * is a write from anywhere else; it is one of three mirrors, and none of
+   * them observes the others (#160, L-10; the seam is recorded at
+   * `recorderClosedState` in `app/App.tsx`). The sheet does not render this
+   * directly: `displayedFinished` puts the translator's un-committed intent
+   * over it.
+   */
   readonly finished: boolean;
   /** Playable audio is present (F3: resolved, not merely a take pointer). */
   readonly hasClip: boolean;
@@ -161,7 +171,7 @@ export function useRecorderSegment(segmentId: SegmentId) {
         // decoder string.
         console.error("Could not open the segment for recording", cause);
         setView(null);
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(errorMessage(cause));
       } finally {
         if (!cancelled) setRetrying(false);
       }
@@ -213,7 +223,7 @@ export function useRecorderSegment(segmentId: SegmentId) {
       // panel, the cause reaches the log sink (not translator-facing).
       console.error("Could not reload the segment after a commit", cause);
       setView(null);
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorMessage(cause));
       return null;
     }
   }, [segmentId]);
