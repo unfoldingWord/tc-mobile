@@ -80,7 +80,10 @@ export interface CaptureOutcome<TBytes = unknown> {
    * classifier, so `StopDecodeError` was NOT the set of stop errors and this
    * docblock had to warn that a `lib/` change treating it as one was wrong.
    * Now every producer picks a member of one union, `StopDecodeError` narrows
-   * from it by construction, and the compiler names a fourth member's readers.
+   * from it by construction. This file's own readers carry a fourth member
+   * unchanged, deliberately — choosing its sentence is `captureFailureText`'s
+   * job, and that `never` default is what refuses to compile until someone
+   * does.
    * `!== null` here and the component's former truthiness test agree on every
    * value that can actually arrive.
    */

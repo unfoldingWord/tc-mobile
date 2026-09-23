@@ -16,8 +16,15 @@
  * union is therefore NOT the closed set of stop errors — a `lib/` change or
  * test that treats it as one is wrong", because two of the three producers
  * bypassed the classifier and wrote their sentence inline. The three are now
- * the three members below, and a fourth cannot arrive without the compiler
- * naming every reader.
+ * the three members below, and a fourth cannot reach a screen wordless:
+ * `captureFailureText`'s `never` default rejects it, and so does the
+ * `Record<CaptureFailure, string>` in its test.
+ *
+ * Only those two. Readers that merely CARRY the value — `classifyCapture`,
+ * `planClose` — compile unchanged against a fourth member, which is the point
+ * rather than a gap: they were never the ones choosing a sentence. An earlier
+ * draft of this docblock said the compiler "names every reader", which is
+ * false and was caught on review; what it names is the two that must choose.
  *
  * Pure and DOM-free, like every other classifier here: the words live in
  * `components/strings.ts` and are chosen by `components/capture-failure-copy.ts`.
