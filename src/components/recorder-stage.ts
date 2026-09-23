@@ -684,8 +684,14 @@ export function resumesOnLift(input: {
  * resumes `soundRange(from, length)`, the TAIL from the line, while a seeded
  * frame would make {@link stageView} read `playingBuffer && selectionActive`
  * as an in-place audition and draw a band over a span that is not what is
- * sounding. While the tail plays, the collapsed line is the honest display;
- * the next touch seeds a frame. Like `dragging` and `resume` it is about
+ * sounding. While the tail plays, the collapsed line is the honest display.
+ *
+ * It does NOT come back on "the next touch": a touch landing while the tail
+ * is still sounding interrupts it, and that lift resumes, so this stays false
+ * for as long as the playback lasts. The frame returns on the first lift that
+ * does not resume — once the tail has run out there is nothing to interrupt,
+ * or {@link resumesOnLift} refuses for one of its own reasons. Like
+ * `dragging` and `resume` it is about
  * FINGERS, not about which pointer owned the drag — gating it on `wasOwner`
  * leaves the frame collapsed for good when the owner lifts first and a
  * second contact lifts last.

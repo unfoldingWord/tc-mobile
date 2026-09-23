@@ -3267,8 +3267,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       nothing to cut, and after a cut the scissors leaves rather
                       than sitting dimmed over the line that now marks the paste
                       target. The ROW stays mounted either way and reserves the
-                      control's height (`.recorder-cut`'s `min-height`,
-                      3-components.css) — `.recorder-stage` is a centred column,
+                      control's box AND this row's own `padding-top`, which
+                      border-box counts inside the same `min-height`
+                      (`.recorder-cut`, 3-components.css — do not simplify that
+                      `calc` back to the bare control token: reserving 40px
+                      against a 46px mounted row is what moved the canvas 3px) — `.recorder-stage` is a centred column,
                       so a row that collapsed with its child would recentre the
                       group and jump the canvas, which is the same lesson
                       `.recorder-paste` was taught in #414.

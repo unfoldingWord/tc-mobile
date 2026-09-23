@@ -280,7 +280,9 @@ describe("a lift that resumes playback does not seed a frame (#613, Frank R1 P2)
     // and, with the frame seeded in the same commit, `stageView` reads
     // `playingBuffer && selectionActive` as an in-place audition and draws a
     // band over a span that is not what is sounding. The collapsed line is the
-    // honest display while the tail plays; the next touch seeds a frame.
+    // honest display while the tail plays. A touch during the play interrupts
+    // it and that lift resumes, so the frame returns on the first lift that
+    // does NOT resume, not on "the next touch".
     const resumed = liftOutcome({ ...lift, interrupted: true });
     expect(resumed.resume).toBe(true);
     expect(resumed.reopenFrame).toBe(false);
