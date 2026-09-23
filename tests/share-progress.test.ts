@@ -847,7 +847,11 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
   it("share-progress.tsx no longer captures/restores the trigger itself — that moved to the screens (George r2 P2-1)", () => {
     const modal = read("src/components/share-progress.tsx");
     expect(modal).not.toMatch(/returnFocusRef/);
-    const at = modal.indexOf("useEffect(() => {\n    if (visible)");
+    // `useLayoutEffect`, not `useEffect`, as of #517 item 4 (George r3 P3 on
+    // #508) — see `tests/share-progress-overlay-layout-effects.test.ts` for
+    // why. This locator only needs the CURRENT hook spelling to find the
+    // effect; that file is what pins the spelling itself.
+    const at = modal.indexOf("useLayoutEffect(() => {\n    if (visible)");
     expect(at).toBeGreaterThan(-1);
     const effectEnd = modal.indexOf("}, [visible]);", at);
     const body = modal.slice(at, effectEnd);
@@ -1045,7 +1049,11 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
    */
   it("share-progress.tsx syncs busyRef/onCancelRef/onDismissRef in a LAYOUT effect, not a passive one (Frank 9832a8b P2)", () => {
     const modal = read("src/components/share-progress.tsx");
-    expect(modal).toMatch(/import \{ useEffect, useLayoutEffect, useRef \}/);
+    // No bare `useEffect` any more, as of #517 item 4 (George r3 P3 on
+    // #508): the focus grab and the Escape/Tab capture listener, this
+    // component's other two effects, are also `useLayoutEffect` now — see
+    // `tests/share-progress-overlay-layout-effects.test.ts`.
+    expect(modal).toMatch(/import \{ useLayoutEffect, useRef \}/);
     const at = modal.indexOf("const busyRef = useRef(busy);");
     expect(at).toBeGreaterThan(-1);
     const effectAt = modal.indexOf("useLayoutEffect(() => {", at);
