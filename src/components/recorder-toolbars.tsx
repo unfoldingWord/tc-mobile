@@ -1,3 +1,5 @@
+import type { RefObject } from "react";
+
 import { Control } from "./control";
 import { heldByDrag, ZOOM_QUARTER, ZOOM_WHOLE } from "./recorder-stage";
 import { strings } from "./strings";
@@ -39,6 +41,18 @@ export type PlaySource = "whole" | "line" | "selection" | null;
 export interface RecorderToolbarProps {
   mode: "record" | "edit";
   recording: boolean;
+  /**
+   * The two record-bar buttons the sheet's focus-restore effect reads (#592):
+   * when the bin's own erase empties the segment, focus moves off the bin and
+   * onto Record. Forwarded rather than owned here, because the effect that
+   * compares them lives in the sheet.
+   */
+  recordRef: RefObject<HTMLButtonElement | null>;
+  rerecordRef: RefObject<HTMLButtonElement | null>;
+  /** The bin's gate — `eraseReason !== null`, answered by the sheet. */
+  rerecordDisabled: boolean;
+  /** Its reason, in the shape the ≡ row's hint uses. */
+  rerecordHint: RowHint | null;
   /** Record's own gate, answered by the sheet — see the module docblock. */
   recordInert: boolean;
   /** Whether the #604 guide ring is drawn on Record right now. */
@@ -73,11 +87,16 @@ export interface RecorderToolbarProps {
   onRedo: () => void;
   openMenu: () => void;
   onExitEdit: () => void;
+  onRerecord: () => void;
 }
 
 export function RecorderToolbar({
   mode,
   recording,
+  recordRef,
+  rerecordRef,
+  rerecordDisabled,
+  rerecordHint,
   recordInert,
   guidedRecord,
   isClosing,
@@ -94,6 +113,7 @@ export function RecorderToolbar({
   zoom,
   windowControlsInert,
   onRecordButton,
+  onRerecord,
   onPlayButton,
   onEnterEdit,
   onAuditionButton,
@@ -109,8 +129,27 @@ export function RecorderToolbar({
   return mode === "record" ? (
     // Both modes reserve the same right-hand slot for the toggle.
     <div className="recorder-toolbar pair grid items-center px-[16px]">
+      <Control
+        ref={rerecordRef}
+        // Wipe and record again (#592), on the bar so a translator who
+        // re-records whole passages sees it without opening a menu. The bin,
+        // because it is the one "throw away" glyph ADR 0010's check already
+        // puts in front of translators; the confirm it opens wears the same
+        // bin. Left end, away from the hero Record, so the destructive control
+        // is not the one under a thumb reaching to record; the confirm is the
+        // second tap either way. Always drawn, so the bar does not re-lay out
+        // when a first take lands: greyed, with its reason, where there is
+        // nothing to erase.
+        icon="trash"
+        label={strings.rerecord}
+        variant="default"
+        disabled={rerecordDisabled}
+        hint={rerecordHint}
+        onClick={onRerecord}
+      />
       <span className={cn("record-guide", guidedRecord && "is-guided")}>
         <Control
+          ref={recordRef}
           // The square, not the pause bars: this tap ENDS the take and commits
           // it (#614). A pause glyph over a control that finalizes is the wrong
           // promise to the one reader who cannot check the label — the

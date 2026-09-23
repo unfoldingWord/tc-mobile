@@ -73,6 +73,13 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 ## 3. During the training
 
 - **Recording and editing work offline.** No signal is needed at any point.
+- **Starting a segment over.** A translator who wants to say the whole
+  segment again does not need to edit it: in the recorder, the **bin** at the
+  left end of the bottom bar erases the recording. A small panel asks once
+  more (the bin there confirms, the back arrow cancels). The recorder stays
+  open with the segment empty, ready for Record. The bin is greyed while
+  recording and when the segment has nothing saved yet. There is no undo for
+  an erase. <!-- source: src/components/recorder.tsx onRerecord / onConfirmErase (#592), src/components/erase-confirm.tsx; not device-verified -->
 - **Tapping the square ends and saves a recording in one step.** There is no
   in-between "paused" state anymore — the moment the square is tapped, that
   recording is saved into the segment and the waveform shifts to show it —

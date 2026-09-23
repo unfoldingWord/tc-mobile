@@ -1325,13 +1325,19 @@ export function BooksScreen({
           load/delete/loading slot above, which stays exclusive and acute-first)
           extends to both rather than making one dominant CSS-flag over the
           other: each is `&&`-rendered on its own, and BOTH may show stacked.
-          Neither collides with the slot above — both need a completed,
-          non-loading read, which is exactly when `noticeText` is falsy and
-          `loading` is false; there is no gate keying on that here because
-          `storage` and `encoderLine` are themselves already `null` until then
-          (`useStoragePersistence` requires `hasContent`, i.e. a loaded shelf;
-          `encoderHealth()` has nothing to report before a book exists to
-          encode from).
+
+          Neither is gated by the slot above, and neither waits for it to go
+          quiet: `storage` and `encoderLine` render as soon as THEIR OWN
+          readiness condition is met — `useStoragePersistence` resolves once
+          `hasContent` (a loaded shelf with at least one book) is true;
+          `encoderHealth()` is independent module state that has nothing to
+          report until an encode has actually failed. Neither reads
+          `noticeText` or `loading`. A delete failure is the case that shows
+          the split: once the shelf has already loaded, `hasContent` stays
+          true, so `storage` keeps rendering underneath a `deleteFailed`
+          notice in the slot above rather than waiting on it to clear (#406
+          item 1 — the prior wording here tied this to `noticeText`/`loading`
+          being settled, which is not how either gate works).
 
           Order: storage first, encoder second. Storage's risk is total and
           unrecoverable (browser eviction, no restore path) where encoder's
