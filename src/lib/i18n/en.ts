@@ -1,14 +1,32 @@
 /**
- * Every visible and accessible string these screens show, in one flat table.
+ * The English catalog: every visible and accessible string the app shows.
  *
  * On a screen built for people who may not read, the `aria-label` is not a
  * courtesy — it is the entire text layer a screen reader speaks and the only
- * place a future spoken-prompt layer can attach. Routing every string through
- * one record keeps that layer attachable and keeps wording out of the markup,
- * where it would otherwise be edited in a dozen places. This is a table, not a
- * provider: parameterised labels are small pure functions, nothing more.
+ * place a future spoken-prompt layer can attach (#91). Routing every string
+ * through one record keeps that layer attachable and keeps wording out of the
+ * markup, where it would otherwise be edited in a dozen places. This is a
+ * table, not a provider: parameterised labels are small pure functions,
+ * nothing more.
+ *
+ * It lives in `lib/` rather than beside the components it mostly serves
+ * because `hooks/` shows strings too — a refused microphone, an undecodable
+ * take — and the onion rule forbids a hook importing from `components/`. Those
+ * sentences used to be typed inline in the hooks with a comment saying exactly
+ * that, which is the drift #169 is about: one surface in the table, one
+ * outside it, and no way for a translator to find the second.
+ *
+ * `en` is a catalog, not THE catalog. `strings.ts` is what resolves one for
+ * the active locale, and `plural` is how a counted phrase picks its form —
+ * so a second language is this file copied and edited, not code changed.
  */
 import { filenameSafe } from "@/lib/utils";
+
+import { plural, type PluralForms } from "./plural";
+
+/** Every counted phrase in this catalog is counted by English rules. */
+const enPlural = (count: number, forms: PluralForms): string =>
+  plural("en", count, forms);
 
 /**
  * The verb every "did not make it into what's being shared" sentence uses.
@@ -25,7 +43,7 @@ function couldNotBeIncluded(subject: string): string {
   return `${subject} could not be included.`;
 }
 
-export const strings = {
+export const en = {
   // ── Books screen (B2) ────────────────────────────────────────────────────
   newBook: "New book",
   menuOpen: "Open menu",
@@ -56,12 +74,27 @@ export const strings = {
   loadingBooks: "Loading your books.",
   tryAgain: "Try again",
   bookRow: (name: string, chapters: number, expanded: boolean): string =>
-    `${name}, ${chapters} ${chapters === 1 ? "chapter" : "chapters"}, ${
-      expanded ? "expanded" : "collapsed"
-    }`,
+    `${name}, ${enPlural(chapters, {
+      one: "{n} chapter",
+      other: "{n} chapters",
+    })}, ${expanded ? "expanded" : "collapsed"}`,
   addChapter: (bookName: string): string => `Add chapter to ${bookName}`,
   openChapter: (heading: string): string => `Open ${heading}`,
   chapterName: (n: number): string => `Chapter ${n}`,
+  /**
+   * A book's default display name — the "Book NNN" a shelf row shows until the
+   * facilitator renames it.
+   *
+   * It is RENDERED, never stored (#169). Until this lane the string itself was
+   * written into IndexedDB at create time (`lib/storage/books.ts`), which froze
+   * every book a translator had already made into English: a locale switch
+   * could repaint the whole interface and leave the shelf reading "Book 001".
+   * The row now carries its `number` and this turns it into words, exactly as
+   * `chapterName` has always done for chapters.
+   *
+   * Three digits, so the shelf sorts and reads evenly past nine.
+   */
+  bookName: (n: number): string => `Book ${String(n).padStart(3, "0")}`,
   /**
    * The chapter's display heading: the facilitator's passage label when set
    * (#264), otherwise the default "Chapter {number}". One place both the Books
@@ -69,6 +102,14 @@ export const strings = {
    */
   chapterHeading: (name: string | null, n: number): string =>
     name ?? `Chapter ${n}`,
+  /**
+   * The book's display heading: the facilitator's own name when set (#264),
+   * otherwise the rendered default. The book twin of `chapterHeading`, and for
+   * the same reason — one place resolves the name, so the shelf row, the
+   * breadcrumb, the delete confirm and the share filename never diverge.
+   */
+  bookHeading: (name: string | null, n: number): string =>
+    name ?? en.bookName(n),
 
   // ── Naming (#264 rename, #314 New Book, #609 Add chapter) ────────────────
   // One naming field serves all three flows, so these strings are shared: the
@@ -153,11 +194,18 @@ export const strings = {
   useLightTheme: "Switch to the light screen, for bright sunlight",
   useDarkTheme: "Switch to the dark screen, for low light",
   closeRecorder: "Close recorder",
+  /**
+   * The recorder's "where am I" trail. One whole template rather than
+   * `chapterName` glued between two separators (#169): the chapter word, the
+   * separator and the order of the three parts are all things a translation
+   * decides together, and a catalog that only owns the middle word cannot
+   * change any of them.
+   */
   recorderBreadcrumb: (
     book: string,
     chapter: number,
     segment: number
-  ): string => `${book} > ${strings.chapterName(chapter)} > ${segment}`,
+  ): string => `${book} > Chapter ${chapter} > ${segment}`,
   record: "Record",
   // The second tap on the record control ENDS the take and commits it in place
   // (#614). It was "Pause"/"Resume" while a take could be suspended and
@@ -403,7 +451,9 @@ export const strings = {
   // resolve — never-recorded, but also a dangling take or a half-missing clip —
   // so "no recording yet" would misdescribe a hole the translator never left.
   shareMissing: (n: number): string =>
-    couldNotBeIncluded(n === 1 ? "1 segment" : `${n} segments`),
+    couldNotBeIncluded(
+      enPlural(n, { one: "{n} segment", other: "{n} segments" })
+    ),
   // The book name is free text since #264, so sanitise it into the filename —
   // a `/` in "Mark/Luke" would otherwise split a zip entry into a folder (G3).
   // The chapter is an ordinal, always safe.
@@ -424,7 +474,9 @@ export const strings = {
   // `missing` counts whole chapters left out of the zip — a chapter with no
   // resolvable audio at all.
   shareBookMissing: (n: number): string =>
-    couldNotBeIncluded(n === 1 ? "1 chapter" : `${n} chapters`),
+    couldNotBeIncluded(
+      enPlural(n, { one: "{n} chapter", other: "{n} chapters" })
+    ),
   // A chapter that IS included can still be partial — one or more of its own
   // segments had no resolvable audio (`exportChapterMp3`'s own `missing`,
   // rolled up across every included chapter, #116). Distinct from
@@ -442,7 +494,7 @@ export const strings = {
   // round 2 (#423) named the byte-for-byte duplicate as drift-prone — a later
   // edit to one could tighten the segment-grain phrasing and forget the
   // other, and only `shareBookPartial` was pinned. One wording, one function.
-  shareBookPartial: (n: number): string => strings.shareMissing(n),
+  shareBookPartial: (n: number): string => en.shareMissing(n),
   // Both gaps can occur in the same book (a whole chapter missing AND a
   // segment missing from one that shipped). The screen surfaces ONE Notice for
   // the book grain, so this combines rather than stacking two.
@@ -492,13 +544,12 @@ export const strings = {
   // audio" is the uncounted locator: it names the scope `book.ts` guarantees
   // without pluralizing "chapter" off `n`, which would reintroduce #400/#423.
   shareBookMissingAndPartial: (chapters: number, segments: number): string =>
-    `${strings.shareBookMissing(chapters)} ${
-      segments === 1
-        ? couldNotBeIncluded("1 segment of an included chapter")
-        : couldNotBeIncluded(
-            `${segments} additional segments of included audio`
-          )
-    }`,
+    `${en.shareBookMissing(chapters)} ${couldNotBeIncluded(
+      enPlural(segments, {
+        one: "{n} segment of an included chapter",
+        other: "{n} additional segments of included audio",
+      })
+    )}`,
   // The encoder went silent mid-share and was restarted (#166). Chapter and book
   // alike: the cause is the phone, not what was being shared. Try again is still
   // the first thing to do — the encoder was restarted — and the restart hint is
@@ -601,11 +652,17 @@ export const strings = {
   // a facilitator sending something to a maintainer, and the noun has to name
   // the thing they are sending, not the file format it happens to be.
   failuresMarker: (n: number): string =>
-    n === 1 ? "1 problem recorded" : `${n} problems recorded`,
+    enPlural(n, {
+      one: "{n} problem recorded",
+      other: "{n} problems recorded",
+    }),
   // Replaces the plain "Open menu" name while the log is non-empty, so the one
   // control that leads to the report announces that it does.
   menuOpenWithFailures: (n: number): string =>
-    `Open menu. ${n === 1 ? "1 problem recorded" : `${n} problems recorded`}.`,
+    enPlural(n, {
+      one: "Open menu. {n} problem recorded.",
+      other: "Open menu. {n} problems recorded.",
+    }),
   // Said in the menu, above the two actions. Deliberately not "the app
   // crashed": most entries are a single failed write the translator never saw,
   // and alarming a person about work that is still on the phone is its own harm.
@@ -630,4 +687,124 @@ export const strings = {
   // which is where the thumb already is.
   clearFailureLogConfirmTitle: "Clear the problem report?",
   clearFailureLogConfirm: "Clear",
+
+  // ── Recording could not start or finish (moved out of hooks/, #169) ──────
+  // These sentences were typed inline in `hooks/use-recorder.ts` and
+  // `hooks/use-audio-session.ts`, with a comment on each block saying they were
+  // there only because a hook cannot import from `components/`. That reason is
+  // gone — the table is in `lib/` now — and with it the split that left a third
+  // of the app's failure copy where nobody localising would look.
+  //
+  // The classifiers themselves stay UI-free: `classifyMicRefusal` and
+  // `classifyStopDecode` return a CASE, the hook picks the sentence. What moved
+  // is the sentence, not the decision.
+  captureSilence: "No sound was recorded. Try again.",
+  captureUndecodable: "Recording could not be decoded on this device.",
+  // The five refusals (#203). Each names what the translator — or the
+  // facilitator beside them — can actually do about it, and where.
+  micNoDevice: "No microphone was found on this device.",
+  micSiteBlocked:
+    "Recording is blocked for this app. Allow the microphone in your browser's site settings, then try again.",
+  micOsBlocked:
+    "Your device is not letting the app use the microphone. Check microphone access in your device settings, then try again.",
+  micPrompt:
+    "Microphone access is needed to record. Allow it when asked — or if you already allowed it, check your device settings.",
+  micOther: "Could not start recording.",
+  // No MediaRecorder at all — the one refusal that is about the browser rather
+  // than about permission, so it offers nothing to retry.
+  recordUnsupported: "This device cannot record audio.",
+  // The take was captured but the stop path threw. Distinct from
+  // `captureSilence`: there WAS sound, and this is the only line that says the
+  // finish is what failed.
+  recordStopFailed: "Could not finish this recording.",
+  // Playback of a stored take failed — a decode that would not run, or a take
+  // whose clip no longer resolves. One sentence for both, because from where
+  // the translator sits they are the same event: the tap made no sound.
+  playbackFailed: "Could not play this recording.",
+
+  // ── The save-failure screen (#38, moved out of save-failed.tsx, #169) ────
+  // The screen that stands between a failed save and losing the recording. Its
+  // words were the largest block left outside this table.
+  //
+  // Each line exists twice — once for a fresh recording, once for an edit of a
+  // stored one — because the two lose different things: discarding a failed
+  // edit-save drops the edited buffer while the recording already on disk
+  // survives, so the record path's "delete this recording for good" would be a
+  // lie about an edit. Whole sentences rather than one sentence with the
+  // subject slotted in: which word changes, and where it sits, is a thing a
+  // translation decides.
+  saveFailedDialogRecording: "This recording is not saved",
+  saveFailedDialogChanges: "Your changes are not saved",
+  // The in-flight title, while a retry is running. Not `recorderSaving`: that
+  // one is the recorder sheet's commit window and carries its ellipsis; this is
+  // a screen heading.
+  saveInFlight: "Saving",
+  saveRetry: "Try saving again",
+  // What is being held, and where. The four cases are the two subjects times
+  // "do we know which segment it belongs to".
+  saveHeldRecording: "Your recording is still here.",
+  saveHeldChanges: "Your edited recording is still here.",
+  saveHeldRecordingInSegment: (n: number): string =>
+    `Your recording of segment ${n} is still here.`,
+  saveHeldChangesInSegment: (n: number): string =>
+    `Your edited recording of segment ${n} is still here.`,
+  // The two-tap discard. Same shape as `takeRecoverDiscard` and deliberately
+  // not the same key: that panel discards a take that never decoded, this one
+  // discards a take that never saved, and a rewording of either must not move
+  // the other silently.
+  saveDiscardRecording: "Delete this recording",
+  saveDiscardRecordingArmed: "Tap again to delete this recording for good",
+  saveDiscardRecordingHint: "Tap again to delete it.",
+  saveDiscardChanges: "Discard these changes",
+  saveDiscardChangesArmed: "Tap again to discard these changes",
+  saveDiscardChangesHint: "Tap again to discard them.",
+
+  // ── Recovery copy (moved out of components/recovery-copy.ts, #169) ───────
+  // `recovery-copy.ts` keeps the DECISIONS — which failure this is, whether the
+  // clipboard's cut phrase has to be named too — and reads every word from
+  // here. Its docblocks carry the reasoning behind each line; this is the line.
+  recoveryQuotaTitle: "No room left on this phone.",
+  recoveryDowngradeTitleRecording:
+    "This recording needs the new version of the app.",
+  recoveryDowngradeTitleChanges:
+    "Your changes need the new version of the app.",
+  recoveryStaleTitleRecording:
+    "This book is gone. This recording cannot be saved.",
+  recoveryStaleTitleChanges: "This book is gone. Your changes cannot be saved.",
+  recoveryUnknownTitleRecording: "This recording could not be saved.",
+  recoveryUnknownTitleChanges: "Your changes could not be saved.",
+  recoveryDowngradeSafetyRecording:
+    "This copy of the app cannot save it. Restart to get the new version.",
+  recoveryDowngradeSafetyChanges:
+    "This copy of the app cannot save them. Restart to get the new version.",
+  recoveryStaleSafetyRecording:
+    "This book was deleted in another copy of the app. Delete this recording to leave.",
+  recoveryStaleSafetyChanges:
+    "This book was deleted in another copy of the app. Discard is the only exit.",
+  recoverySafetyRecording:
+    "This screen has the only copy of your unsaved work. Don't close the app.",
+  recoverySafetyChanges:
+    "This screen has the only copy of your changes. Don't close the app.",
+  // The faint count under an `unknown` failure that has failed more than once.
+  recoveryAttemptsCount: (n: number): string => `Attempts: ${n}`,
+  // What a restart destroys, named. Five phrases rather than three plus a glued
+  // clause, so a translation can decline or reorder the pair (#169).
+  lossRecording: "this recording",
+  lossChanges: "these changes",
+  lossCutAudio: "the audio you cut",
+  lossRecordingAndCutAudio: "this recording and the audio you cut",
+  lossChangesAndCutAudio: "these changes and the audio you cut",
+  // The unarmed restart label. Same words as `appReload`, deliberately its own
+  // key: that one is the crash screen's only control, this one sits beside a
+  // Discard on a screen holding the only copy of a recording, and the two
+  // screens must be able to say different things later.
+  restartIdle: "Restart the app",
+  // The armed label and the line under it. `loss` is one of the five phrases
+  // above; `plural` is English grammatical agreement with that phrase, which a
+  // catalog whose verbs do not agree simply ignores. The ternary lives HERE, in
+  // the English catalog, rather than in the composer that has no language.
+  restartArmedLabel: (loss: string): string =>
+    `Tap again to restart and lose ${loss}`,
+  restartConsequenceLine: (loss: string, plural: boolean): string =>
+    `Tap again and ${loss} ${plural ? "are" : "is"} gone.`,
 } as const;

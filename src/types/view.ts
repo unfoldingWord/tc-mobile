@@ -29,7 +29,14 @@ export interface ChapterRow {
 
 export interface BookCard {
   readonly bookId: BookId;
-  readonly name: string;
+  /** `Book.number` — the digit the default label is rendered from (#169). */
+  readonly number: number;
+  /**
+   * The facilitator's own name, or `null` ⇒ the shelf shows the rendered
+   * default "Book NNN". The same shape as `ChapterRow.name` above and resolved
+   * the same way, through `strings.bookHeading`.
+   */
+  readonly name: string | null;
   readonly chapters: readonly ChapterRow[];
 }
 

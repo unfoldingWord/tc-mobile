@@ -15,9 +15,16 @@
  * instruction to risk the OS discarding the PWA and taking the only copy with it.
  * The lines below never do that: they name the condition and that this screen
  * holds the only copy, and leave the acting to the Retry/Discard controls.
+ *
+ * The WORDS moved to the string table in #169; what stays here is the choosing.
+ * That split is the point: this module knows which failure it is looking at and
+ * whether the clipboard's cut phrase has to be named too, and the catalog knows
+ * how English says it. Neither half can be localised without the other being
+ * left alone.
  */
 
 import type { SaveFailureKind } from "@/hooks/save-failure";
+import { strings } from "@/lib/i18n/strings";
 
 /**
  * The headline. `quota` is the same either way — the phone is full whether the
@@ -28,7 +35,7 @@ export function recoveryTitle(
   kind: SaveFailureKind,
   editOnly: boolean
 ): string {
-  if (kind === "quota") return "No room left on this phone.";
+  if (kind === "quota") return strings.recoveryQuotaTitle;
   // Named as the condition it is, not as a failure that might go the other way
   // next time: another copy of the app has moved the data past this build, so
   // every further attempt from here fails the same way. The line says what is
@@ -36,17 +43,17 @@ export function recoveryTitle(
   // that is true (George R1 P2-1).
   if (kind === "downgrade") {
     return editOnly
-      ? "Your changes need the new version of the app."
-      : "This recording needs the new version of the app.";
+      ? strings.recoveryDowngradeTitleChanges
+      : strings.recoveryDowngradeTitleRecording;
   }
   if (kind === "stale") {
     return editOnly
-      ? "This book is gone. Your changes cannot be saved."
-      : "This book is gone. This recording cannot be saved.";
+      ? strings.recoveryStaleTitleChanges
+      : strings.recoveryStaleTitleRecording;
   }
   return editOnly
-    ? "Your changes could not be saved."
-    : "This recording could not be saved.";
+    ? strings.recoveryUnknownTitleChanges
+    : strings.recoveryUnknownTitleRecording;
 }
 
 /**
@@ -84,17 +91,17 @@ export function recoverySafetyLine(
   // product question tracked on #441, not one to settle in a copy string.
   if (kind === "downgrade") {
     return editOnly
-      ? "This copy of the app cannot save them. Restart to get the new version."
-      : "This copy of the app cannot save it. Restart to get the new version.";
+      ? strings.recoveryDowngradeSafetyChanges
+      : strings.recoveryDowngradeSafetyRecording;
   }
   if (kind === "stale") {
     return editOnly
-      ? "This book was deleted in another copy of the app. Discard is the only exit."
-      : "This book was deleted in another copy of the app. Delete this recording to leave.";
+      ? strings.recoveryStaleSafetyChanges
+      : strings.recoveryStaleSafetyRecording;
   }
   return editOnly
-    ? "This screen has the only copy of your changes. Don't close the app."
-    : "This screen has the only copy of your unsaved work. Don't close the app.";
+    ? strings.recoverySafetyChanges
+    : strings.recoverySafetyRecording;
 }
 
 /**
@@ -119,23 +126,28 @@ export function recoverySafetyLine(
  * audio first — is the product question on #441; this is the minimum that keeps
  * the tap honest.
  *
- * `alsoCutAudio` is the second thing one tap can destroy at once, and it is why
- * this is composed rather than enumerated (George R5 P2). `SaveFailed` outranks
- * `DatabasePanel` while a take is held, so on the terminal `downgrade` screen the
- * restart is reached with a cut phrase in the clipboard that the reload drops
- * too — and the panel that would have named it cannot mount. Enumerating that
- * would have taken a three-value `subject` to six cases and made the next axis
- * twelve; the loss phrase is built instead, so a third thing to lose costs one
- * clause rather than doubling the table. The full strings live in
- * `tests/recovery-copy.test.ts`, which is where to grep for them.
+ * `alsoCutAudio` is the second thing one tap can destroy at once. `SaveFailed`
+ * outranks `DatabasePanel` while a take is held, so on the terminal `downgrade`
+ * screen the restart is reached with a cut phrase in the clipboard that the
+ * reload drops too — and the panel that would have named it cannot mount.
+ *
+ * The CASES stay composed here — `lossPhrase` decides which of them applies, so
+ * a third thing to lose costs one branch rather than doubling a table of
+ * screens (George R5 P2). What #169 moved is the other half: each case's words
+ * are now one whole phrase in the catalog rather than a base noun with " and
+ * the audio you cut" appended, because gluing that clause onto a translated
+ * noun assumes English's conjunction, order and lack of agreement. Five phrases
+ * for five cases; the next axis adds its cases, not a multiplication of them.
+ * The full strings live in `tests/recovery-copy.test.ts`, which is where to
+ * grep for them.
  */
 export function restartLabel(
   subject: RestartSubject,
   armed: boolean,
   alsoCutAudio = false
 ): string {
-  if (!armed) return "Restart the app";
-  return `Tap again to restart and lose ${lossPhrase(subject, alsoCutAudio)}`;
+  if (!armed) return strings.restartIdle;
+  return strings.restartArmedLabel(lossPhrase(subject, alsoCutAudio));
 }
 
 /**
@@ -153,7 +165,7 @@ export function restartConsequence(
   const phrase = lossPhrase(subject, alsoCutAudio);
   const plural =
     subject === "changes" || carriesCutAudio(subject, alsoCutAudio);
-  return `Tap again and ${phrase} ${plural ? "are" : "is"} gone.`;
+  return strings.restartConsequenceLine(phrase, plural);
 }
 
 /** What the restart destroys, named. */
@@ -173,15 +185,14 @@ function carriesCutAudio(
 }
 
 function lossPhrase(subject: RestartSubject, alsoCutAudio: boolean): string {
-  const base =
-    subject === "changes"
-      ? "these changes"
-      : subject === "cutAudio"
-        ? "the audio you cut"
-        : "this recording";
-  return carriesCutAudio(subject, alsoCutAudio)
-    ? `${base} and the audio you cut`
-    : base;
+  const withCutAudio = carriesCutAudio(subject, alsoCutAudio);
+  if (subject === "changes") {
+    return withCutAudio ? strings.lossChangesAndCutAudio : strings.lossChanges;
+  }
+  if (subject === "cutAudio") return strings.lossCutAudio;
+  return withCutAudio
+    ? strings.lossRecordingAndCutAudio
+    : strings.lossRecording;
 }
 
 /**
@@ -200,5 +211,5 @@ export function recoveryAttempts(
   attempts: number
 ): string | null {
   if (kind === "quota" || kind === "downgrade" || kind === "stale") return null;
-  return attempts > 1 ? `Attempts: ${attempts}` : null;
+  return attempts > 1 ? strings.recoveryAttemptsCount(attempts) : null;
 }

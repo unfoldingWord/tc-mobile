@@ -14,7 +14,7 @@
  */
 
 import type { IconName } from "./icon";
-import { strings } from "./strings";
+import { strings } from "@/lib/i18n/strings";
 
 /**
  * The reasons, most actionable first. `"uncommitted-take"` marks a take in

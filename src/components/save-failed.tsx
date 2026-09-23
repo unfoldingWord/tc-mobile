@@ -11,7 +11,7 @@ import {
   restartLabel,
 } from "./recovery-copy";
 import { SendLogControl } from "./send-log-control";
-import { strings } from "./strings";
+import { strings } from "@/lib/i18n/strings";
 import { flushFailureLog } from "@/hooks/failure-log";
 import {
   pauseTranscodeSweep,
@@ -131,25 +131,36 @@ export function SaveFailed({
   // The held work: a fresh recording, or the edited buffer of one. Every visible
   // line names it correctly, because on the edit path the previously stored
   // recording is untouched — discarding drops only the edit.
-  const subject = editOnly ? "edited recording" : "recording";
+  //
+  // Four whole sentences rather than one with the subject slotted in (#169).
+  // The subject used to be built here — `Your ${editOnly ? "edited recording"
+  // : "recording"} is still here.` — which is a translated fragment glued into
+  // a translated sentence: a language that inflects the verb for it, or puts
+  // the segment number first, has no way in.
   const stillHere =
     ordinal === null
-      ? `Your ${subject} is still here.`
-      : `Your ${subject} of segment ${ordinal} is still here.`;
+      ? editOnly
+        ? strings.saveHeldChanges
+        : strings.saveHeldRecording
+      : editOnly
+        ? strings.saveHeldChangesInSegment(ordinal)
+        : strings.saveHeldRecordingInSegment(ordinal);
   const discardLabel = armed
     ? editOnly
-      ? "Tap again to discard these changes"
-      : "Tap again to delete this recording for good"
+      ? strings.saveDiscardChangesArmed
+      : strings.saveDiscardRecordingArmed
     : editOnly
-      ? "Discard these changes"
-      : "Delete this recording";
+      ? strings.saveDiscardChanges
+      : strings.saveDiscardRecording;
 
   return (
     <div
       role="alertdialog"
       aria-modal="true"
       aria-label={
-        editOnly ? "Your changes are not saved" : "This recording is not saved"
+        editOnly
+          ? strings.saveFailedDialogChanges
+          : strings.saveFailedDialogRecording
       }
       className="flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
     >
@@ -158,7 +169,9 @@ export function SaveFailed({
       </span>
 
       <p className="t-title text-ink">
-        {saving ? "Saving" : recoveryTitle(kind ?? "unknown", editOnly)}
+        {saving
+          ? strings.saveInFlight
+          : recoveryTitle(kind ?? "unknown", editOnly)}
       </p>
 
       <p className="text-ink-muted text-[13px]">{stillHere}</p>
@@ -177,7 +190,7 @@ export function SaveFailed({
                         restartArmed,
                         holdsCutAudio
                       )
-                  : "Try saving again"
+                  : strings.saveRetry
               }
               variant="primary"
               size={30}
@@ -257,8 +270,8 @@ export function SaveFailed({
             {armed && (
               <p className="text-live text-[12px]">
                 {editOnly
-                  ? "Tap again to discard them."
-                  : "Tap again to delete it."}
+                  ? strings.saveDiscardChangesHint
+                  : strings.saveDiscardRecordingHint}
               </p>
             )}
           </div>

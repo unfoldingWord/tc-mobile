@@ -59,11 +59,28 @@ export interface SegmentRef {
 export interface Book {
   readonly id: BookId;
   /**
-   * User-facing. Auto-named "Book NNN" on create (B2), renamed in place by the
-   * facilitator for the passage being translated — "Mark" (#264). Always
-   * non-empty: a rename to blank keeps the current name.
+   * 1-based, unique on the shelf: the FIRST number not already taken when the
+   * book was created, so deleting a book frees its slot rather than leaving a
+   * gap that the next create duplicates (#360).
+   *
+   * The shelf's default display name is RENDERED from this — `strings.bookName`
+   * turns 1 into "Book 001". Before #169 that sentence was written into this
+   * row instead, which froze every book a translator had already made into
+   * English: a second UI catalog could repaint the whole interface and leave
+   * the shelf reading "Book 001". The digit is data; the word is copy.
    */
-  readonly name: string;
+  readonly number: number;
+  /**
+   * The facilitator's own name for the book — "Mark" (#264) — or `null` for a
+   * book still under its rendered default.
+   *
+   * `null` is the create-time default and a rename to blank returns to it,
+   * exactly as `Chapter.name` behaves and for the same reason: a book that has
+   * a default cannot be left nameless by clearing the label, so clearing is
+   * safe and is the only way back to a name that follows the interface's
+   * language.
+   */
+  readonly name: string | null;
   /** BCP-47 tag of the language being recorded, when known. */
   readonly languageCode: string | null;
   readonly chapterIds: readonly ChapterId[];

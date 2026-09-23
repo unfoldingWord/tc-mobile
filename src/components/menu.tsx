@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
 import { Control } from "./control";
-import { strings } from "./strings";
+import { strings } from "@/lib/i18n/strings";
 
 /**
  * Focusable controls inside the panel — NATIVELY disabled ones excluded on

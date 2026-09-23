@@ -4,6 +4,7 @@ import { decodeMp3ToCanonical, resumeAudioContext } from "./audio-io";
 import { requestTranscodeSweep } from "./finish-transcode";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
 import { computePeaks } from "@/lib/audio/peaks";
+import { strings } from "@/lib/i18n/strings";
 import {
   getBook,
   getChapter,
@@ -88,7 +89,11 @@ export async function loadRecorderSegmentView(
             clip.meta.frameCount
           );
   return {
-    bookName: book?.name ?? "",
+    // The facilitator's own name, or the default rendered from the book's
+    // number (#169) — never the raw `name`, which is `null` for a book still
+    // under its default and would leave the breadcrumb and the share filename
+    // with a blank where the book goes.
+    bookName: book ? strings.bookHeading(book.name, book.number) : "",
     chapterNumber: chapter?.number ?? 0,
     ordinal: segment.index,
     finished: isFinished(segment.status),

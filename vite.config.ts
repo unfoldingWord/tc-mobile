@@ -142,7 +142,13 @@ export default defineConfig(({ mode }) => ({
         short_name: "tC Mobile",
         description:
           "Offline audio notebook and editor for oral Bible translation",
+        // The installed app's language and direction. Pinned to
+        // `LOCALE_META[DEFAULT_LOCALE]` by `tests/document-locale.test.ts`
+        // alongside `index.html`'s pair — a manifest is read at install time
+        // and cannot follow a runtime change, so the one thing it must not do
+        // is disagree with the catalog the app ships (#169).
         lang: "en",
+        dir: "ltr",
         start_url: "/",
         scope: "/",
         display: "standalone",

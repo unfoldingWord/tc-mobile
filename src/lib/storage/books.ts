@@ -17,6 +17,11 @@ import type { IDBPDatabase } from "idb";
 import { buildClipMeta } from "./clips";
 import { getDb, type TcMobileDb } from "./db";
 import { resolveSegmentAudio } from "./segment-audio";
+// The store reads one display string, and only one: `nextBookNumber` has to
+// know which rendered defaults a hand-typed name has already taken, or the
+// delete confirm can end up unable to say which of two identical rows it means
+// (#360, and see that function). Same layer, so no boundary is crossed.
+import { strings } from "@/lib/i18n/strings";
 import type {
   Book,
   BookId,
@@ -75,15 +80,15 @@ export function isFinished(status: RecordingStatus): boolean {
 // ── Books ──────────────────────────────────────────────────────────────────
 
 /**
- * The placeholder name for a new book: the FIRST "Book NNN" not already on the
- * shelf, three-digit padded ("Book 001", "Book 002" …).
+ * The number a new book takes: the FIRST 1-based number not already on the
+ * shelf, and not already spelled out by a book the facilitator named by hand.
  *
- * Pure, and the single definition of the placeholder — both callers go through
- * it, so the name the New Book field is pre-filled with (the Books screen, off
- * the shelf it has already loaded) and the name a blank confirm actually writes
+ * Pure, and the single definition of the slot — both callers go through it, so
+ * the name the New Book field is pre-filled with (the Books screen, off the
+ * shelf it has already loaded) and the number a blank confirm actually writes
  * ({@link createBook}) cannot drift (#314). The pre-fill is DISPLAY only: an
- * untouched field is confirmed as `""`, so the name that lands is always the one
- * derived inside the write transaction below, never the rendered string.
+ * untouched field is confirmed as `""`, so the number that lands is always the
+ * one derived inside the write transaction below, never the rendered string.
  *
  * **First unused, not `count + 1`** (#360). The count-based namer this replaces
  * assumed books are only ever added. Once a book can be deleted, deleting
@@ -94,43 +99,62 @@ export function isFinished(status: RecordingStatus): boolean {
  * book it is about to destroy — on a screen built for people who may not read,
  * where discarding practice books is the normal training workflow.
  *
- * Matching is exact on the stored name. A facilitator's own name ("Mark")
- * occupies no slot, and "Book 1" is not a string this ever writes, so neither
- * blocks "Book 001". The loop is bounded by the number of names + 1: with N
- * names, at most N of the first N + 1 candidates can be taken.
+ * It counts NUMBERS since #169 — the digit is what the row stores now, and the
+ * words are rendered from it — but it still reads the stored names too, for
+ * exactly the #360 reason above. A facilitator may type "Book 002" as a name;
+ * that name occupies no numeric slot, and if the numeric slot 2 were then handed
+ * to a new book the shelf would show the same words twice and the delete dialog
+ * would again be unable to say which row it means. Matching is exact on the
+ * rendered default, so "Mark" blocks nothing and "Book 2" — a string this never
+ * renders — blocks nothing either.
+ *
+ * The loop is bounded by the number of rows + 1: with N rows, at most N of the
+ * first N + 1 candidates can be taken, by either kind of claim.
  */
-export function nextBookName(existingNames: Iterable<string>): string {
-  const taken = new Set(existingNames);
+export function nextBookNumber(
+  existing: Iterable<Pick<Book, "number" | "name">>
+): number {
+  const numbers = new Set<number>();
+  const names = new Set<string>();
+  for (const book of existing) {
+    numbers.add(book.number);
+    if (book.name !== null) names.add(book.name);
+  }
   for (let n = 1; ; n++) {
-    const candidate = `Book ${String(n).padStart(3, "0")}`;
-    if (!taken.has(candidate)) return candidate;
+    if (!numbers.has(n) && !names.has(strings.bookName(n))) return n;
   }
 }
 
 /**
- * Create a book, named by the translator (#314) or by the placeholder.
+ * Create a book, named by the translator (#314) or left under its rendered
+ * default.
  *
  * The name is trimmed, exactly as {@link renameBook} trims it — one validation
  * rule for the one naming field, wherever it is shown. A blank or
- * whitespace-only name is not an error: it falls back to the "Book NNN"
- * placeholder, which is what preserves the one-tap New Book the corner `+` used
- * to be.
+ * whitespace-only name is not an error: it stores `null`, and the shelf renders
+ * "Book NNN" from the row's number, which is what preserves the one-tap New
+ * Book the corner `+` used to be.
  *
- * The fallback is derived INSIDE the one readwrite transaction that writes the
+ * The number is derived INSIDE the one readwrite transaction that writes the
  * row, never from a screen's render state: two rapid blank confirms both reading
- * an empty shelf from the same render would both persist "Book 001". IndexedDB
+ * an empty shelf from the same render would both persist number 1. IndexedDB
  * serialises overlapping readwrite transactions, so deriving and putting in one
- * transaction gives the second confirm the first's write — "Book 001", then
- * "Book 002". That race-safety is the property `createNextBook` held before
- * #314 split naming off from creating, and it is preserved here rather than
- * moved to the caller.
+ * transaction gives the second confirm the first's write — 1, then 2. That
+ * race-safety is the property `createNextBook` held before #314 split naming off
+ * from creating, and it is preserved here rather than moved to the caller.
+ *
+ * The shelf read is unconditional now, where it used to be skipped for a typed
+ * name: every book has a number, so there is always something to derive. The
+ * `getAll` is the expensive half of this transaction and it is the price of the
+ * digit — a shelf is tens of small rows, and the alternative is a monotonic
+ * counter that reintroduces the #360 gap.
  *
  * A supplied name is never made unique: a facilitator may deliberately have two
  * books called "Mark", and {@link renameBook} has always allowed it. That is
  * also why the New Book dialog sends `""` rather than the placeholder string it
- * displayed when the field is untouched — a supplied "Book 001" would bypass the
- * derivation below, and two documents open on the same shelf would both write it
- * (George R1 P2-3).
+ * displayed when the field is untouched — a supplied "Book 001" would be stored
+ * as a hand-typed name and freeze that book's label in English, which is the
+ * thing #169 moved the digit out of the row to prevent.
  */
 export async function createBook(
   name: string,
@@ -140,15 +164,10 @@ export async function createBook(
   const db = await getDb();
   const tx = db.transaction("books", "readwrite");
   const trimmed = name.trim();
-  // Read the shelf only when the name is actually blank — a typed name needs no
-  // placeholder, and `getAll` is the expensive half of this transaction.
-  const resolvedName =
-    trimmed === ""
-      ? nextBookName((await tx.store.getAll()).map((b) => b.name))
-      : trimmed;
   const book: Book = {
     id: uuid() as BookId,
-    name: resolvedName,
+    number: nextBookNumber(await tx.store.getAll()),
+    name: trimmed === "" ? null : trimmed,
     languageCode,
     chapterIds: [],
     createdAt: now,
@@ -198,8 +217,12 @@ export async function renameBook(
   if (!book) throw new Error(`No such book: ${id}`);
 
   const trimmed = name.trim();
-  // Blank keeps the current name — the invariant that a book is always named.
-  const nextName = trimmed === "" ? book.name : trimmed;
+  // Blank CLEARS back to the rendered "Book NNN" default (#169), the way a
+  // chapter rename already clears back to "Chapter N". Before the number was
+  // stored there was no default to fall back to, so a blank rename had to be
+  // refused to keep a book from ending up nameless; now clearing is both safe
+  // and the only way back to a label that follows the interface's language.
+  const nextName = trimmed === "" ? null : trimmed;
   if (nextName === book.name) {
     await tx.done; // idempotent no-op: no write, no recency bump.
     return book;
@@ -417,10 +440,10 @@ async function deleteBookInTx(tx: DeleteBookTx, bookId: BookId): Promise<void> {
  * its own write transaction, and the Books screen calls it over the chapters it
  * has already loaded to pre-fill the Add-chapter prompt (#609). One function,
  * so the "Chapter N" the field offers and the `number` the write derives cannot
- * drift, the way {@link nextBookName} already ties the New Book field to
+ * drift, the way {@link nextBookNumber} already ties the New Book field to
  * {@link createBook}.
  *
- * **`max + 1`, deliberately NOT {@link nextBookName}'s first-unused rule.** A
+ * **`max + 1`, deliberately NOT {@link nextBookNumber}'s first-unused rule.** A
  * book's placeholder is a label and reusing a freed one is the point (#360); a
  * chapter's `number` is its position in the export concatenation, so filling a
  * hole left by a removed chapter would drop the new recording into the middle

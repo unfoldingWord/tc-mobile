@@ -13,7 +13,7 @@ import { Control } from "./control";
 import { Icon } from "./icon";
 import { Notice } from "./notice";
 import { SendLogControl } from "./send-log-control";
-import { strings } from "./strings";
+import { strings } from "@/lib/i18n/strings";
 
 interface ErrorBoundaryProps {
   children: ReactNode;

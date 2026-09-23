@@ -37,7 +37,7 @@ import {
   stageView,
 } from "./recorder-stage";
 import { SelectionOverlay } from "./selection-overlay";
-import { strings } from "./strings";
+import { strings } from "@/lib/i18n/strings";
 import { LiveScope } from "./live-scope";
 import {
   editRowReason,

@@ -12,7 +12,7 @@ const DB_NAME = "tc-mobile";
 // The version `getDb` opens. Like DB_NAME, kept in sync with db.ts by hand —
 // a migration test necessarily knows the ladder it is climbing. Asserted rather
 // than assumed, so a bump that forgets to add its own case fails here first.
-const APP_VERSION = 7;
+const APP_VERSION = 8;
 
 /**
  * Delete the database outright so each test starts from a true fresh install.
@@ -147,6 +147,45 @@ async function openLegacyV6() {
       db.createObjectStore("failures", { autoIncrement: true });
     },
   });
+}
+
+/**
+ * Stand up the v7 schema — v6 plus the transcode-stall field, which lives on
+ * `clipMeta` rows rather than in the schema, so the store list is v6's. This is
+ * what every device shipped since v0.2.x holds when #169's v8 opens it, and the
+ * only path on which v8's backfill runs ALONE.
+ */
+async function openLegacyV7() {
+  return openDB(DB_NAME, 7, {
+    upgrade(db) {
+      db.createObjectStore("books", { keyPath: "id" });
+      const chapters = db.createObjectStore("chapters", { keyPath: "id" });
+      chapters.createIndex("bookId", "bookId");
+      const segments = db.createObjectStore("segments", { keyPath: "id" });
+      segments.createIndex("chapterId", "chapterId");
+      const takes = db.createObjectStore("takes", { keyPath: "id" });
+      takes.createIndex("segmentId", "segmentId");
+      db.createObjectStore("clipMeta", { keyPath: "id" });
+      db.createObjectStore("clipData");
+      db.createObjectStore("failures", { autoIncrement: true });
+    },
+  });
+}
+
+/** A v7 `books` row: always named, never numbered. */
+function legacyBook(
+  id: string,
+  name: string,
+  createdAt = 0
+): Record<string, unknown> {
+  return {
+    id,
+    name,
+    languageCode: null,
+    chapterIds: [],
+    createdAt,
+    updatedAt: createdAt,
+  };
 }
 
 beforeEach(wipe);
@@ -410,8 +449,14 @@ describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
     expect(v4.version).toBe(APP_VERSION);
 
     // Nothing was dropped: the append-only discipline ADR 0008 promised from v3
-    // onward. A v3 device's recordings come through.
-    expect((await v4.get("books", "b1" as never))?.name).toBe("Book 001");
+    // onward. A v3 device's recordings come through. The book row itself has
+    // been through the v8 step on the way up — its placeholder name is now the
+    // `number` it always meant, which the v8 cases below pin in full.
+    expect(await v4.get("books", "b1" as never)).toMatchObject({
+      id: "b1",
+      number: 1,
+      name: null,
+    });
     const data = await v4.get("clipData", "c1" as never);
     expect(Array.from(new Int16Array(data!))).toEqual(Array.from(pcm));
 
@@ -560,5 +605,146 @@ describe("v2 → v3 destructive recreate", () => {
     // endorsement of data loss as a pattern; append-only resumes from v3.
     expect(await v3.getAll("clipMeta")).toEqual([]);
     expect(await v3.count("takes")).toBe(0);
+  });
+});
+
+/**
+ * The v8 book-number backfill (#169).
+ *
+ * v7 and earlier wrote the shelf's default label — "Book 001" — into the row.
+ * That is the piece of English this lane took out of the database: the row now
+ * carries the digit and the catalog renders the words, so a second UI language
+ * repaints the shelf instead of leaving it in English. Every book already on a
+ * translator's phone has to come across, which is what this pins.
+ *
+ * The rule, from `db.ts`'s header: a name that is exactly a rendered default
+ * becomes that number with the name cleared; anything else keeps its name and
+ * takes the first number no placeholder claimed, in `createdAt` order.
+ */
+describe("the v8 book-number backfill (#169)", () => {
+  it("turns each placeholder name into the number it always meant", async () => {
+    const v7 = await openLegacyV7();
+    // Deliberately out of order and with a hole at 2: the digits come from the
+    // NAMES, so nothing here may be renumbered into 1, 2, 3.
+    await v7.put("books", legacyBook("b3", "Book 003", 30));
+    await v7.put("books", legacyBook("b1", "Book 001", 10));
+    v7.close();
+
+    const v8 = await getDb();
+    expect(v8.version).toBe(APP_VERSION);
+    expect(await v8.get("books", "b1" as never)).toMatchObject({
+      number: 1,
+      name: null,
+    });
+    expect(await v8.get("books", "b3" as never)).toMatchObject({
+      number: 3,
+      name: null,
+    });
+  });
+
+  it("keeps a facilitator's own name and gives it the first free number", async () => {
+    const v7 = await openLegacyV7();
+    await v7.put("books", legacyBook("placeholder", "Book 001", 10));
+    await v7.put("books", legacyBook("mark", "Mark", 20));
+    await v7.put("books", legacyBook("luke", "Luke", 30));
+    v7.close();
+
+    const v8 = await getDb();
+    // 1 is taken by the placeholder, so the named books get 2 and 3 — in
+    // `createdAt` order, not in IndexedDB's uuid-shaped key order.
+    expect(await v8.get("books", "mark" as never)).toMatchObject({
+      number: 2,
+      name: "Mark",
+    });
+    expect(await v8.get("books", "luke" as never)).toMatchObject({
+      number: 3,
+      name: "Luke",
+    });
+  });
+
+  it("treats an unpadded look-alike as a name, not a placeholder", async () => {
+    // "Book 1" is not a string any build has ever rendered — `padStart(3, "0")`
+    // has always been in the placeholder — so it is a name a facilitator typed
+    // and it is kept, not silently converted into a number.
+    const v7 = await openLegacyV7();
+    await v7.put("books", legacyBook("b", "Book 1", 10));
+    v7.close();
+
+    expect(await (await getDb()).get("books", "b" as never)).toMatchObject({
+      number: 1,
+      name: "Book 1",
+    });
+  });
+
+  it("does not hand the same number to a hand-typed duplicate of a placeholder", async () => {
+    // Two rows both reading "Book 001" — one the placeholder, one typed. The
+    // older keeps the claim; the younger keeps its NAME (never discarded on a
+    // guess) and is renumbered out of the way, so no two rows end up displaying
+    // the same words, which is the #360 property the delete confirm depends on.
+    const v7 = await openLegacyV7();
+    await v7.put("books", legacyBook("older", "Book 001", 10));
+    await v7.put("books", legacyBook("younger", "Book 001", 20));
+    v7.close();
+
+    const v8 = await getDb();
+    const older = await v8.get("books", "older" as never);
+    const younger = await v8.get("books", "younger" as never);
+    expect(older).toMatchObject({ number: 1, name: null });
+    expect(younger).toMatchObject({ name: "Book 001" });
+    expect(younger?.number).not.toBe(older?.number);
+  });
+
+  it("leaves a row that already carries a number alone", async () => {
+    // Keys on the field being ABSENT, like every backfill before it: a row
+    // written by a newer build before an older one reopened the database is not
+    // re-derived from whatever its name happens to say.
+    const v7 = await openLegacyV7();
+    await v7.put("books", {
+      ...legacyBook("b", "Book 001", 10),
+      number: 42,
+      name: "Mark",
+    });
+    v7.close();
+
+    expect(await (await getDb()).get("books", "b" as never)).toMatchObject({
+      number: 42,
+      name: "Mark",
+    });
+  });
+
+  it("touches nothing else on the row, or on any other store", async () => {
+    const v7 = await openLegacyV7();
+    await v7.put("books", {
+      ...legacyBook("b1", "Book 001", 1234),
+      languageCode: "xx-test",
+      chapterIds: ["ch1"],
+      updatedAt: 5678,
+    });
+    await v7.put("chapters", {
+      id: "ch1",
+      bookId: "b1",
+      number: 1,
+      name: null,
+      segmentIds: [],
+    });
+    v7.close();
+
+    const v8 = await getDb();
+    expect(await v8.get("books", "b1" as never)).toEqual({
+      id: "b1",
+      number: 1,
+      name: null,
+      languageCode: "xx-test",
+      chapterIds: ["ch1"],
+      createdAt: 1234,
+      updatedAt: 5678,
+    });
+    expect(await v8.get("chapters", "ch1" as never)).toEqual({
+      id: "ch1",
+      bookId: "b1",
+      number: 1,
+      name: null,
+      segmentIds: [],
+    });
   });
 });

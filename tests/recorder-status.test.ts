@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
 import { RecorderStatus } from "@/components/recorder-status";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/i18n/strings";
 import type { RecorderState } from "@/hooks/use-recorder";
 
 import { one, render } from "./render";

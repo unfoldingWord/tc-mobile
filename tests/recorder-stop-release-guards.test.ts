@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { strings } from "@/lib/i18n/strings";
+
 /**
  * Three release-on-throw properties in `use-recorder.ts` (#59, PR #474,
  * #485):
@@ -473,6 +475,11 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     // names that sentence as written down), not "No sound was recorded"
     // (which reads as the translator's silence). `flushThrew` is declared
     // in stop()'s body before the try, so the flag is per invocation.
+    //
+    // Both halves are pinned since #169 moved the two sentences into the
+    // string table: the source text picks the right KEY, and the table gives
+    // that key the right WORDS. Reading only the source would leave the two
+    // sentences free to swap places inside `en.ts` with this still green.
     const hits = code.match(/"recorder-stop-flush"/g) ?? [];
     expect(hits).toHaveLength(1);
     expect(stopBody).toMatch(/\blet\s+flushThrew\s*=\s*false\s*;/);
@@ -481,8 +488,10 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     );
     const afterElse = stopBody.slice(elseBraceClose + 1);
     expect(afterElse).toMatch(
-      /blob\.size\s*===\s*0[\s\S]*?flushThrew\s*\?\s*"Could not finish this recording\."\s*:\s*"No sound was recorded\. Try again\."/
+      /blob\.size\s*===\s*0[\s\S]*?flushThrew\s*\?\s*strings\.recordStopFailed\s*:\s*strings\.captureSilence/
     );
+    expect(strings.recordStopFailed).toBe("Could not finish this recording.");
+    expect(strings.captureSilence).toBe("No sound was recorded. Try again.");
   });
 
   it("every exit of the tail returns React state to idle when current — the property #485 finding 1 is named for (panel r2 P2)", () => {

@@ -9,6 +9,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { ErrorBoundary } from "@/components/error-boundary";
+import { installDocumentLocale } from "@/hooks/document-locale";
 import { installStoredTheme } from "@/hooks/use-theme";
 import { App } from "./App";
 import "./globals.css";
@@ -19,6 +20,11 @@ import "./globals.css";
 // leaves — the stylesheet has already painted its dark default by the time any
 // module body runs, and closing that last gap means an inline script.
 installStoredTheme();
+
+// Beside the theme install and before the first paint, for the same reason
+// (#169): `<html lang>`/`dir` are what a screen reader picks its voice from,
+// and on this product the accessible name is the whole text layer.
+installDocumentLocale();
 
 const container = document.getElementById("root");
 if (!container) throw new Error("Missing #root element");

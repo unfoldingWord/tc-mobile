@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 
 import { Control } from "./control";
 import { confirmControlAffordance } from "./control-affordance";
-import { strings } from "./strings";
+import { strings } from "@/lib/i18n/strings";
 
 interface NameEditProps {
   /** The name to seed the field with — the current name, the default a new book
@@ -60,10 +60,11 @@ interface NameEditProps {
  * This field never validates and never disables its own commit: it passes the
  * raw value straight through, and what a blank one MEANS belongs to the caller's
  * store, which is the only place that knows. The four are deliberately
- * different — `renameBook` keeps the current name, `renameChapter` clears the
- * label back to the "Chapter N" default, `createBook` falls back to the
- * "Book NNN" placeholder, `addChapter` stores no label at all — so do not read
- * any one of them as this component's contract (George R1 P3-5).
+ * different — `renameBook` and `renameChapter` both clear the label back to the
+ * rendered default ("Book NNN", "Chapter N"), `createBook` stores no name and
+ * lets that default be rendered from the book's number (#169), `addChapter`
+ * stores no label at all — so do not read any one of them as this component's
+ * contract (George R1 P3-5).
  */
 export function NameEdit({
   initialValue,

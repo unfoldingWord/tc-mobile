@@ -18,7 +18,7 @@
  * `processing-status.ts` makes for the #59 interruption.
  */
 
-import { strings } from "./strings";
+import { strings } from "@/lib/i18n/strings";
 import type { NoticeTone } from "./notice-tone";
 import type { EncoderHealth } from "@/hooks/mp3-codec";
 

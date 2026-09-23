@@ -76,6 +76,21 @@ describe("loadRecorderSegmentView", () => {
     expect(view.ordinal).toBe(1);
   });
 
+  it("puts the RENDERED default in the breadcrumb for a book with no name of its own (#169)", async () => {
+    // A book created with a blank name stores `name: null` and carries its
+    // number instead, so the breadcrumb has to resolve the heading rather than
+    // read the row. Reading the row gives `null`, and the `?? ""` around it
+    // gives a breadcrumb that opens with an empty slot — which typechecks, and
+    // which no other case here would have caught.
+    const book = await createBook("");
+    const chapter = await addChapter(book.id);
+    const segment = await addSegment(chapter.id);
+
+    const view = await loadRecorderSegmentView(segment.id);
+
+    expect(view.bookName).toBe("Book 001");
+  });
+
   it("opens a PCM segment over its samples, with peaks and the length domain", async () => {
     const segmentId = await freshSegment();
     const clipId = newClipId();

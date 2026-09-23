@@ -8,7 +8,7 @@ import {
   shareGapText,
   shareProgressText,
 } from "@/components/share-error-copy";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/i18n/strings";
 import { EncoderFailedError, EncoderStalledError } from "@/hooks/mp3-codec";
 import { subscribeToFailures } from "@/hooks/report-failure";
 import {

@@ -68,6 +68,31 @@
  * orders future owed clips by the count, so poison clips near the head of a
  * stable IndexedDB walk cannot starve healthy clips after a reload. The PCM is
  * still kept; this is scheduling metadata only.
+ *
+ * ── v8 (#169): a book's number, and its name allowed to be absent ─────────
+ *
+ * `Book` gained `number` and its `name` became `string | null`. The shelf's
+ * default label — "Book 001" — used to be WRITTEN into the row at create time,
+ * which froze every book already on a translator's phone into English: a second
+ * UI catalog could repaint the whole interface and leave the shelf reading
+ * "Book 001". The digit is now the data and the words are rendered from it.
+ *
+ * Additive, and a rewrite of one field on one store rather than a recreate: no
+ * store is dropped, no audio is touched, and a v7 device's recordings come
+ * through intact. The step is a two-pass backfill because the numbers have to
+ * come out unique and stable, and the only evidence of what a row's number was
+ * is the name it is carrying:
+ *
+ *   1. Every row whose name is exactly a rendered default ("Book 007") KEEPS
+ *      that digit as its `number` and has its `name` cleared to `null` — it was
+ *      never a facilitator's name, it was the placeholder, and clearing it is
+ *      what lets a later catalog render it in its own language.
+ *   2. Every other row keeps its name and is given the first number no pass-1
+ *      row claimed, in `createdAt` order so the assignment is deterministic
+ *      rather than dependent on IndexedDB's key iteration.
+ *
+ * A build that predates v8 cannot read these rows, which is the ordinary
+ * downgrade case `DatabaseDowngradeError` already covers.
  */
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
@@ -87,13 +112,40 @@ import type { ClipMeta } from "@/types/audio";
 import type { StoredFailure } from "@/types/failure";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 
 /**
  * The v3 shape of a `clipMeta` row, before the B8 fields existed. Only the v4
  * backfill reads it; the typed store below already speaks the v4 shape, so the
  * rows are read back through this narrower type to be stamped.
  */
+/**
+ * A `books` row as builds before v8 wrote it: always named, never numbered.
+ * Only the v8 backfill reads it; the typed store already speaks the v8 shape.
+ */
+type LegacyBook = Omit<Book, "number" | "name"> & {
+  number?: number;
+  name: string | null;
+};
+
+/**
+ * The digit inside a placeholder name a build before v8 wrote, or `null` for a
+ * name a facilitator chose.
+ *
+ * Deliberately its own literal rather than a reverse of `strings.bookName`.
+ * This reads rows written by OLD builds, and what those builds wrote is fixed
+ * history — a later rewording of the live placeholder must not change how a
+ * phone that has been in a drawer since v7 is read. `padStart(3, "0")` is why
+ * three digits is the floor and more are allowed; a parsed 0 is not a book
+ * number.
+ */
+function legacyPlaceholderNumber(name: string | null): number | null {
+  const digits = /^Book (\d{3,})$/.exec(name ?? "")?.[1];
+  if (digits === undefined) return null;
+  const n = Number(digits);
+  return Number.isInteger(n) && n >= 1 ? n : null;
+}
+
 type ClipMetaV3 = Pick<
   ClipMeta,
   "id" | "sampleRate" | "frameCount" | "durationMs" | "createdAt"
@@ -547,6 +599,51 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
               await cursor.update({ ...legacy, name: null });
             }
             cursor = await cursor.continue();
+          }
+        }
+
+        // v8 (#169): give every pre-existing book a `number`, and clear the
+        // rendered placeholder out of `name`. See this file's header for why.
+        //
+        // `getAll` rather than a cursor walk, because this is the one backfill
+        // whose decision for a row depends on the OTHER rows: pass 2 must not
+        // hand out a number pass 1 already claimed, and it cannot know that
+        // until every row has been looked at. A shelf is tens of small rows
+        // with no audio on them.
+        if (oldVersion < 8) {
+          const store = tx.objectStore("books");
+          const rows = (await store.getAll()) as LegacyBook[];
+          const pending = rows.filter((row) => row.number === undefined);
+          // `createdAt` order, so the numbers handed out in pass 2 are the same
+          // on every device that holds the same shelf — IndexedDB's own key
+          // order is by UUID, which is to say arbitrary.
+          pending.sort((a, b) => a.createdAt - b.createdAt);
+
+          const claimed = new Set<number>();
+          const keptNumber = new Map<LegacyBook, number>();
+          for (const row of pending) {
+            const n = legacyPlaceholderNumber(row.name);
+            // A typed duplicate of a placeholder ("Book 001" entered by hand
+            // beside the real one) loses the claim to whichever row is older
+            // and is renumbered by pass 2 with its name kept — the safe way
+            // round: a name a facilitator may have typed is never discarded on
+            // a guess.
+            if (n !== null && !claimed.has(n)) {
+              claimed.add(n);
+              keptNumber.set(row, n);
+            }
+          }
+
+          let next = 1;
+          for (const row of pending) {
+            const kept = keptNumber.get(row);
+            if (kept !== undefined) {
+              await store.put({ ...row, number: kept, name: null });
+              continue;
+            }
+            while (claimed.has(next)) next++;
+            claimed.add(next);
+            await store.put({ ...row, number: next, name: row.name ?? null });
           }
         }
       },
