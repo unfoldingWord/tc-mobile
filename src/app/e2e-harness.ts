@@ -32,7 +32,8 @@ import {
 } from "@/hooks/mp3-codec";
 import { decodeToCanonical } from "@/hooks/audio-io";
 import { getDb, type TcMobileDb } from "@/lib/storage/db";
-import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import { CANONICAL_SAMPLE_RATE, INT16_MAX } from "@/lib/audio/format";
+import { measureLevel } from "@/lib/audio/level";
 import {
   fitMp3Decode,
   mp3GranuleCount,
@@ -90,11 +91,7 @@ function syntheticPcm(frameCount: number): Int16Array {
 
 /** Root-mean-square of `count` samples starting at `from`. Silence reads ~0. */
 function rms(samples: Int16Array, from: number, count: number): number {
-  const end = Math.min(samples.length, from + count);
-  if (end <= from) return 0;
-  let sum = 0;
-  for (let i = from; i < end; i++) sum += samples[i]! * samples[i]!;
-  return Math.sqrt(sum / (end - from));
+  return measureLevel(samples.subarray(from, from + count), INT16_MAX).rms;
 }
 
 /** Find the chirp's position independently of the MP3 delay calculation. */
