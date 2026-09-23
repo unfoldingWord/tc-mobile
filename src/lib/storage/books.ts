@@ -8,10 +8,12 @@
  *
  * The take writes and the finished flag are NOT here: `addTake`, `saveTake`,
  * `clearSegmentTake`, `setSegmentFinished` and `isFinished` are in `takes.ts`
- * (#160, L-16), which keeps every write that sets a `RecordingStatus` and the
- * read the view layer calls in one place. This module owns the tree — the
- * books, chapters and segments, their order, and the export resolution over
- * them — and reaches into takes for exactly one thing, `chapterProgress`'s
+ * (#160, L-16), which keeps every take-lifecycle status transition and the
+ * read the view layer calls in one place. `addSegment` below is the one
+ * `RecordingStatus` write that stays here: the initial `"not-started"` belongs
+ * to creating a segment, not to a take. This module owns the tree — the books,
+ * chapters and segments, their order, and the export resolution over them —
+ * and reaches into takes for exactly one thing, `chapterProgress`'s
  * `isFinished`.
  */
 

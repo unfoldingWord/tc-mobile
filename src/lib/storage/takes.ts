@@ -10,12 +10,19 @@
  *
  * The finished flag comes with them, and that is the point of the seam rather
  * than an accident of where the lines fell: the binary "finished" UI is one
- * edge over the 5-value `RecordingStatus` enum, and every write that sets a
- * status (`writeTakeInTx`, `clearSegmentTake`, `setSegmentFinished`) and the
- * read the view layer calls (`isFinished`) are now in ONE module. They could
- * not drift before because they shared a file; they cannot drift now because
- * they share the smaller one, and `FINISHED_STATUS`/`UNFINISHED_STATUS` stay
- * module-local so nothing outside can write a raw status.
+ * edge over the 5-value `RecordingStatus` enum, and every write that moves a
+ * segment ALONG the take lifecycle (`writeTakeInTx`, `clearSegmentTake`,
+ * `setSegmentFinished`) together with the read the view layer calls
+ * (`isFinished`) are now in ONE module. They could not drift before because
+ * they shared a file; they cannot drift now because they share the smaller one.
+ *
+ * Not every `RecordingStatus` write in the tree, and the difference is worth
+ * naming: `addSegment` writes the initial `"not-started"` in `books.ts`, with
+ * the segment it is creating, because that is the tree's own write and not a
+ * take transition. The two module-local anchors here,
+ * `FINISHED_STATUS`/`UNFINISHED_STATUS`, keep the finished EDGE in one place;
+ * they do not make a raw status unwritable, and the literal `"not-started"` in
+ * `clearSegmentTake` and `setSegmentFinished` below is the proof.
  *
  * Depends on `books.ts` for nothing — it reaches the stores through the
  * transaction directly — so the dependency runs one way, `books → takes`, and
