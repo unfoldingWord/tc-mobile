@@ -966,19 +966,43 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
    * wiring. The section half is asserted ONCE for both menus, which is the
    * improvement — it was the same property checked separately in two files.
    */
-  for (const [screen, hook, unconfirmedString] of [
-    ["src/components/segments-screen.tsx", "share", "shareChapterUnconfirmed"],
-    ["src/components/books-screen.tsx", "bookShare", "shareBookUnconfirmed"],
+  for (const [screen, hook, unconfirmedString, scopeValue, hasGapExpr] of [
+    [
+      "src/components/segments-screen.tsx",
+      "share",
+      "shareChapterUnconfirmed",
+      "chapter",
+      "share.missing > 0",
+    ],
+    [
+      "src/components/books-screen.tsx",
+      "bookShare",
+      "shareBookUnconfirmed",
+      "book",
+      "bookShareHasGap",
+    ],
   ] as const) {
     const name = screen.split("/").pop();
 
     it(`${name}: hands ${hook}.sendUnconfirmed and its own unconfirmed copy to the Share rows`, () => {
       const source = read(screen);
-      const at = source.indexOf("<ShareMenuSection");
+      // End-of-tag boundary (#720): a bare `indexOf("<ShareMenuSection")`
+      // also matches a hypothetical `<ShareMenuSectionXX`, the same prefix
+      // hole `share-outcome-glyph.test.ts` closed for its own copy of this
+      // tag search during #670 — this file was the second site of the same
+      // class, left behind when the first was fixed.
+      const at = source.search(/<ShareMenuSection[\s/>]/);
       expect(at, "no <ShareMenuSection> in this screen").toBeGreaterThan(-1);
       const tag = source.slice(at, source.indexOf("/>", at));
       expect(tag).toContain(`sendUnconfirmed={${hook}.sendUnconfirmed}`);
       expect(tag).toContain(`unconfirmedLabel={strings.${unconfirmedString}}`);
+      // The two props that actually differ between Books and Segments
+      // (#720 item 2): nothing pinned either before, so a call site could
+      // swap scope="book" for scope="chapter" — changing the share-error
+      // copy a translator reads — and every assertion above would stay
+      // green.
+      expect(tag).toContain(`scope="${scopeValue}"`);
+      expect(tag).toContain(`hasGap={${hasGapExpr}}`);
     });
   }
 
@@ -994,11 +1018,17 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
     const source = read("src/components/share-menu-section.tsx");
     // Isolate the NOT-ready branch by its own handler, then walk back to its
     // opening tag — `lastIndexOf` from the handler, so the ready branch's
-    // `<Control>` above it can never be the one measured.
+    // `<Control>` above it can never be the one measured. The window runs to
+    // the tag's own closing `/>` (#720), not just up to the handler: ending
+    // at `prepareAt` left anything placed AFTER `onClick={onPrepare}` — a
+    // `disabled`, or a dropped `busy` moved past it — outside the span this
+    // test claims to cover.
     const prepareAt = source.indexOf("onClick={onPrepare}");
     expect(prepareAt).toBeGreaterThan(-1);
     const controlStart = source.lastIndexOf("<Control", prepareAt);
-    const control = source.slice(controlStart, prepareAt);
+    const controlEnd = source.indexOf("/>", prepareAt);
+    expect(controlEnd).toBeGreaterThan(prepareAt);
+    const control = source.slice(controlStart, controlEnd);
 
     // The label is a three-way: preparing, then unconfirmed, then idle.
     expect(control).toMatch(/label=\{/);
