@@ -75,6 +75,27 @@ describe("the history gates are the shipped gates (#317, #91)", () => {
     ).toBe("held-by-drag");
   });
 
+  // …and outranks an EMPTY one, which is the cell that actually discriminates
+  // (George, twice). With `canUndo: true` above, a `!canUndo` check moved ahead
+  // of `dragging` returns `"held-by-drag"` anyway, so that case passes under
+  // either ordering and pins nothing. This is the usual pan: a fresh session,
+  // undone to the start, or Redo sitting at the tip.
+  //
+  // It is also the ordering #317 rests on. A reason that carries a cue makes
+  // `Control` render `aria-disabled` INSTEAD of the native `disabled`
+  // attribute, so swapping these lines takes the drag lock off the hard route
+  // — verified by rendering that cell under the swap. Activation stays blocked
+  // either way by `Control`'s `onClick` guard, so what is lost is the hard
+  // lock and its absence from the tab order, not click-safety.
+  it("a finger on the stage outranks an EMPTY history — the #317 ordering", () => {
+    expect(
+      undoReason({ dragging: true, idleEditable: true, canUndo: false })
+    ).toBe("held-by-drag");
+    expect(
+      redoReason({ dragging: true, idleEditable: true, canRedo: false })
+    ).toBe("held-by-drag");
+  });
+
   it("a committing sheet outranks an empty history", () => {
     expect(
       undoReason({ dragging: false, idleEditable: false, canUndo: false })
