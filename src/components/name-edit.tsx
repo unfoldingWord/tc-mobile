@@ -43,6 +43,13 @@ interface NameEditProps {
    * write, on either caller.
    */
   busy?: boolean;
+  /**
+   * The commit control is the next required action in the guided chain (#604).
+   * Only New Book passes it: the field arrives pre-filled with the placeholder
+   * (#314), so Confirm alone completes the create and the typing is the
+   * optional part. The rename call sites are not steps in the chain.
+   */
+  guided?: boolean;
 }
 
 /**
@@ -73,6 +80,7 @@ export function NameEdit({
   onSave,
   onCancel,
   busy = false,
+  guided,
 }: NameEditProps) {
   const [value, setValue] = useState(initialValue);
   const selectedInitialValue = useRef(false);
@@ -161,6 +169,11 @@ export function NameEdit({
         label={busy ? strings.savingName : saveLabel}
         variant="default"
         busy={affordance.busy}
+        // Not while the write is in flight: a busy Control stays on screen and
+        // focusable but swallows activations (`control.tsx`), so a ring on it
+        // would be pointing at a tap that does nothing. The recorder's Record
+        // keeps its guide through the take's transient busy states instead.
+        guided={guided && !busy}
         onClick={() => onSave(value)}
       />
     </form>

@@ -87,6 +87,7 @@ const heldTake = (over: {
 }): PendingTake =>
   startSave(null, {
     segmentId: over.segmentId,
+    ordinal: null,
     clipId: over.clipId,
     existing: over.existing ?? new Int16Array(0),
     recorded: over.recorded ?? samples(10),

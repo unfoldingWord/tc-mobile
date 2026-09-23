@@ -8,15 +8,12 @@ import { describe, expect, it } from "vitest";
  * and only the second was ever read (by the recovery screen). The first is
  * gone; this pins which one went, and why the other could not.
  *
- * The two are NOT interchangeable, which is the trap in "keep one": the
- * `recorder` slot is cleared the instant the sheet closes, and the recovery
- * screen exists precisely for the case where a save FAILED and the sheet
- * closed. Reading the ordinal off `recorder` would render `SaveFailed` with
- * no segment number on it, so the slot that survives is the one with the
- * longer lifetime. That asymmetry is invisible in the type system and has no
- * runtime home either — `App` cannot be rendered here (AGENTS.md: the #197
- * harness is one component, no effects) — so it is read as source text, the
- * same split `tests/recorder-cut-drag-gate.test.ts` and
+ * The recovery screen no longer reads this slot at all (#710): the sheet's
+ * saves stamp the take with it, and `SaveFailed` reads the number off the held
+ * take. The runtime half of that is `tests/app-save-failed-ordinal.test.ts`,
+ * which mounts `App`; this file keeps the source-shape pins on which slot holds
+ * the ordinal and who writes it, the same split
+ * `tests/recorder-cut-drag-gate.test.ts` and
  * `tests/nav-commit-close-race-guards.test.ts` use.
  *
  * Comments are stripped before ANY match. This file's subject is a pair of
@@ -45,7 +42,7 @@ const stateDeclaration = (name: string) => {
   return decl;
 };
 
-describe("App holds ONE ordinal, and it is the recovery screen's (#160 L-11)", () => {
+describe("App holds ONE ordinal, and the sheet's saves stamp it on the take (#160 L-11, #710)", () => {
   it("the recorder slot carries the segment id and nothing else", () => {
     const decl = stateDeclaration("setRecorder");
     expect(decl).toMatch(/useState<SegmentId \| null>\(null\)/);
@@ -68,18 +65,18 @@ describe("App holds ONE ordinal, and it is the recovery screen's (#160 L-11)", (
     );
   });
 
-  it("the surviving ordinal is the one the recovery screen reads", () => {
-    // The other direction of the collapse — dropping `recordingOrdinal` and
-    // reading `recorder.ordinal` — would compile, and would lose the segment
-    // number on exactly the screen that names it.
-    expect(app).toMatch(/ordinal=\{recordingOrdinal\}/);
+  it("the recovery screen reads the held take's number, not the open-time slot", () => {
+    // #710: `ordinal={recordingOrdinal}` named whichever segment was opened
+    // LAST, which a second open during a first in-flight save moves off the
+    // held take's segment.
+    expect(app).toMatch(/ordinal=\{recovery\.ordinal\}/);
+    expect(app).not.toMatch(/ordinal=\{recordingOrdinal\}/);
     expect(app).not.toMatch(/recorder\??\.ordinal/);
   });
 
   it("closing the sheet does not take the ordinal with it", () => {
-    // The lifetime difference that makes two slots correct. Every site that
-    // clears `recorder` is checked for a paired clear of the ordinal; a save
-    // that failed runs one of them before `SaveFailed` ever renders.
+    // Every site that clears `recorder` is checked for a paired clear of the
+    // ordinal: the slot is written by the open and overwritten by the next.
     const clears = [...app.matchAll(/setRecorder\(null\)/g)];
     expect(clears.length).toBeGreaterThanOrEqual(3);
     for (const clear of clears) {
