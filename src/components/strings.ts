@@ -315,8 +315,12 @@ export const strings = {
   undo: "Undo",
   redo: "Redo",
   // The recorder drawer's dialog name for a screen reader — never painted
-  // (#621, the rule #608 set for `menuTitle`): it opens from a ≡ that stays a
-  // ≡, so the glyph is its only visible label.
+  // there (#621, the rule #608 set for `menuTitle`): the recorder drawer
+  // opens from a ≡ that stays a ≡, so the glyph is its only visible label.
+  // This string is shared with the per-row segment menu (`segment-row.tsx`),
+  // which does not pass `hamburger` and still paints it as that menu's
+  // visible heading — #589 owns that menu's affordances and has not
+  // retitled it, so treat "never painted" as scoped to the recorder only.
   recorderMenuTitle: "More",
   recorderMenuOpen: "More actions",
   selectionStartHandle: "Selection start",
@@ -338,17 +342,20 @@ export const strings = {
   // those two controls
   // actually carry (`menuClose`, `closeRecorder`). An earlier draft said "tap
   // Back", which matches NO control in the product: a screen-reader user hunting
-  // for "Back" finds nothing, and the one live chevron dismisses the menu
+  // for "Back" finds nothing, and the one live control dismisses the menu
   // (George, round 2). If `closeRecorder` is ever renamed, these move with it.
   // This one names the controls by name ONLY and does not describe their
   // glyphs the way the body notices do (#620): it is spoken
   // inside the ≡ menu, where the recorder header — and so "Close recorder" —
-  // is `inert` and the one live back chevron on screen is the menu's own
-  // dismiss. Describing the save control by its looks here would point at the
-  // dismiss, the exact collision the round-1 `back` badge had
-  // (`menu-row-state.ts`, `rowHint`'s docblock); #648 round 1 (George P2)
-  // caught the words repeating it. `tests/menu-row-state.test.ts` pins this
-  // half: the hint never describes a glyph.
+  // is `inert` and the one live control on screen is the menu's own dismiss,
+  // which since #621 wears the ≡ glyph (this menu opts into `hamburger`,
+  // `recorder.tsx`), not a back chevron. Describing the save control by its
+  // looks here would still point at the dismiss, the exact collision the
+  // round-1 `back` badge had (`menu-row-state.ts`, `rowHint`'s docblock);
+  // #648 round 1 (George P2) caught the words repeating it.
+  // `tests/menu-row-state.test.ts` pins this half: the hint never describes a
+  // glyph, and separately pins that this menu's own dismiss is the one that
+  // opts into `hamburger`.
   blockedByTake:
     'Use "Close menu", then "Close recorder", to save the recording.',
   // The `requesting` race: Record tapped, ≡ opened before `getUserMedia`
@@ -365,6 +372,10 @@ export const strings = {
   vuMeterLabel: "Recording level",
   vuMeterUnavailable: "Level meter unavailable on this device",
   eraseSegment: "Erase recording",
+  // The record bar's bin (#592): the same erase and the same confirm as the
+  // menu row above, named for what the translator is doing — starting the
+  // segment over — because the sheet stays open, ready for the next take.
+  rerecord: "Erase and record again",
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
   eraseConfirmTitle: "Erase this recording?",
   eraseConfirm: "Erase",
@@ -500,36 +511,29 @@ export const strings = {
   // choice). The fix keeps the chapter-scope disambiguation but uses the
   // table's own verb, "could not be included".
   //
-  // `segments > 1` cannot name a chapter's scope — `partialSegments` sums
-  // across an unknown number of shipped chapters, and this string does not
-  // track how many of them are distinct, so naming "a chapter" or
-  // pluralizing "chapters" off it would reintroduce the #400/#423 bug. George
-  // round 2 caught that falling back to `shareBookPartial` verbatim just
-  // re-concatenates two identically-shaped "could not be included" sentences
-  // — the exact ambiguity the n===1 clause exists to prevent. "additional"
-  // blocks that double-count reading.
-  //
-  // George round 3 then caught that "additional" alone still drops the
-  // producer invariant: `partialSegments` only ever comes from chapters that
-  // DID make it into the zip (`book.ts:105-107,130-148`), and the n===1
-  // clause says so ("of an included chapter") while the n>1 clause did not.
-  // Concrete failure: one chapter partial (two never-recorded segments,
-  // still ships) plus a second chapter never recorded at all — `missing ===
-  // 1`, `partialSegments === 2` (`tests/book-export.test.ts:238-254` pins
-  // the partial-chapter half of that shape). "2 additional segments could
-  // not be included" does not say those two segments sit in a chapter that
-  // shipped, so a translator could read both facts as about the one omitted
-  // chapter and never look at the one that actually has holes. "of included
-  // audio" is the uncounted locator: it names the scope `book.ts` guarantees
-  // without pluralizing "chapter" off `n`, which would reintroduce #400/#423.
-  shareBookMissingAndPartial: (chapters: number, segments: number): string =>
-    `${strings.shareBookMissing(chapters)} ${
-      segments === 1
-        ? couldNotBeIncluded("1 segment of an included chapter")
-        : couldNotBeIncluded(
-            `${segments} additional segments of included audio`
-          )
-    }`,
+  // `segments > 1` names the chapter scope from `partialChapters` — how many
+  // DISTINCT included chapters hold those segments, counted by the producer
+  // (`exportBookZip`, #446) — never from `segments`. `segments` is a SUM, so
+  // pluralizing or counting "chapter" off it is the #400/#423 bug: one
+  // chapter with two gaps and two chapters with one gap each both reach
+  // here as `segments === 2`. With the producer's count in hand, one chapter
+  // reads "of an included chapter" (the n===1 clause's own locator) and
+  // several read "of N included chapters", so a facilitator helping a
+  // translator knows how many chapters to go back to. "included" keeps the
+  // locator George #423 round 3 required: the segments sit in chapters that
+  // are in the zip, not in the one(s) the first sentence says were not.
+  shareBookMissingAndPartial: (
+    chapters: number,
+    segments: number,
+    partialChapters: number
+  ): string =>
+    `${strings.shareBookMissing(chapters)} ${couldNotBeIncluded(
+      `${segments === 1 ? "1 segment" : `${segments} segments`} of ${
+        partialChapters > 1
+          ? `${partialChapters} included chapters`
+          : "an included chapter"
+      }`
+    )}`,
   // The encoder went silent mid-share and was restarted (#166). Chapter and book
   // alike: the cause is the phone, not what was being shared. Try again is still
   // the first thing to do — the encoder was restarted — and the restart hint is

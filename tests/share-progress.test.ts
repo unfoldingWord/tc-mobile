@@ -172,7 +172,7 @@ describe("the partial outcome carries its gap (P1, this lane's own review round)
   // not show the plain `sent` tick — see `share-progress.ts`'s header on
   // `ShareSettled` for why. This pins the gap surviving both the immediate
   // and the held-then-released paths, and that `sent` never carries one.
-  const gap: ShareGap = { missing: 2, partial: 0 };
+  const gap: ShareGap = { missing: 2, partial: 0, partialChapters: 0 };
 
   it("a settle after MIN_BUSY_MS shows partial AT ONCE, with its gap attached", () => {
     const at = T0 + MIN_BUSY_MS + 5_000;
@@ -254,13 +254,14 @@ describe("a send tap landing during prepare's own completed hold (P2, this lane'
     const held = settle(sendBusy, "sent", T0 + 20 + 5, {
       missing: 0,
       partial: 0,
+      partialChapters: 0,
     });
     expect(held).toMatchObject({ phase: "busy", pending: { settled: "sent" } });
     expect(tick(held, T0 + 20 + MIN_BUSY_MS)).toEqual({
       phase: "outcome",
       settled: "sent",
       since: T0 + 20 + MIN_BUSY_MS,
-      gap: { missing: 0, partial: 0 },
+      gap: { missing: 0, partial: 0, partialChapters: 0 },
     });
   });
 
@@ -772,13 +773,9 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
    * inside the `aria-modal` panel, and carry the busy-phase text
    * (`shareProgressText`'s `"busy"` case: `sharePreparing`/
    * `shareBookPreparing` for prepare-work, `shareHandingOver` for
-   * send-work) — not just the outcome text. Before the fix, `liveRegion`
-   * was gated on `phase === "outcome"` alone, so this assertion is false on
-   * that source (verified red: `git stash` of just the two screen files,
-   * this test run against the stashed-out fix, observed failing) and true
-   * once `shareOverlayOwnsScreen` (`phase !== "hidden"`) replaces it.
-   * Mutation: reverting the guard back to `phase === "outcome"` kills this
-   * test (verified).
+   * send-work) — not just the outcome text. `shareOverlayOwnsScreen`
+   * (`phase !== "hidden"`) must keep the live region present during both
+   * busy and outcome phases.
    */
   for (const [screen, hook, scope] of [
     ["src/components/segments-screen.tsx", "share", "chapter"],

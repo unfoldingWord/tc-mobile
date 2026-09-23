@@ -286,6 +286,9 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
   const saveRecording = useCallback(
     (
       segmentId: SegmentId,
+      // The segment's display number, carried on the take so the recovery
+      // screen names the segment the audio belongs to (#710).
+      ordinal: number | null,
       existing: Int16Array,
       recorded: Int16Array,
       insertionOffset: number,
@@ -296,6 +299,7 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
     ): Promise<boolean> => {
       const take = startSave(pending, {
         segmentId,
+        ordinal,
         // Minted here, not per attempt: IndexedDB `put` is an upsert, so a
         // retry with the same id overwrites the bytes a failed attempt may
         // already have written instead of spending the space twice.
@@ -349,6 +353,7 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
   const saveEditedSegment = useCallback(
     (
       segmentId: SegmentId,
+      ordinal: number | null,
       buffer: Int16Array,
       finished: boolean
     ): Promise<boolean> => {
@@ -357,7 +362,15 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
           onSavedRef.current?.()
         );
       }
-      return saveRecording(segmentId, buffer, NO_SAMPLES, 0, finished, true);
+      return saveRecording(
+        segmentId,
+        ordinal,
+        buffer,
+        NO_SAMPLES,
+        0,
+        finished,
+        true
+      );
     },
     [saveRecording]
   );

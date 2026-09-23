@@ -5,9 +5,8 @@ import { expect, test } from "@playwright/test";
  * build.
  *
  * The Node suite covers the store's ring, the sink's serialisation, and the
- * text rendering. Four things it structurally cannot cover, because this repo
- * has no renderer in Vitest (`environment: "node"`, no jsdom — a dependency
- * this project has declined before), all of them the point of the feature:
+ * text rendering. The static render harness does not drive effects, browser
+ * events, reloads, or focus. This suite covers:
  *
  *   1. A real `unhandledrejection` reaching the real funnel — the Node suite
  *      calls `reportFailure` directly.
@@ -52,8 +51,7 @@ function menuControl(page: import("@playwright/test").Page) {
  * already in the button's accessible name, and a screen reader should hear it
  * once), so no accessibility query can reach it and the accessible-name
  * assertions elsewhere in this file say nothing about whether the glyph is
- * painted. That gap is real — a marker rendered unconditionally passed every
- * other case in this file.
+ * painted. The quiet-phone case must also reject an unconditional marker.
  */
 function marker(page: import("@playwright/test").Page) {
   return page.locator("header .control-hint");
@@ -62,26 +60,10 @@ function marker(page: import("@playwright/test").Page) {
 /**
  * Every case starts from an empty log, and that is **asserted, not arranged**.
  *
- * There used to be a reset helper here. George's round-1 finding had two halves:
- * the first version of it used `deleteDatabase` and resolved on `onblocked`,
- * exactly the shape AGENTS.md bans (the app already holds a connection after
- * `goto("/")`, so the delete blocks, the handler reports success, and the
- * database is still there with the previous case's rows). That half was
- * confirmed and fixed. The LEAK half never reproduced: with the reset removed
- * entirely every case still passed, and a probe that deliberately left a row
- * behind read `0` rows in the next case, because Playwright gives each test a
- * fresh browser context and that isolates the origin's IndexedDB.
- *
- * So the corrected helper was kept as belt-and-braces — and a helper that
- * provably does nothing is the sprawl AGENTS.md forbids, not insurance. **It is
- * deleted** (DRI, 2026-09-17); the measurement is recorded on the PR.
- *
- * What carries the weight against a false pass is below, and always did.
- * `useFailureCount` starts at `0` and reads IndexedDB in an effect, so a case
- * that merely found "no marker" could be seeing the pre-effect state. Waiting
- * for the control to SETTLE on its quiet name is what distinguishes "read the
- * empty log" from "has not read yet" — and it fails loudly if a case ever does
- * start dirty, where the old reset passed quietly.
+ * Playwright gives each test a fresh browser context and isolated IndexedDB.
+ * `useFailureCount` starts at `0` and reads IndexedDB in an effect, so finding
+ * no marker alone could observe the pre-effect state. The setup also waits
+ * for the control's quiet accessible name before checking marker absence.
  */
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
@@ -452,13 +434,8 @@ test("a SPENT retry ladder is revived by the shelf's Try again", async ({
   //
   // **This case waits the ladder out in real time, and that is deliberate.**
   // `MAX_COUNT_RETRIES` × `RETRY_BACKOFF_MS` is 1+2+4+8+16 s, so the give-up
-  // happens ~31 s after the first failed read. Clamping `setTimeout` from an
-  // init script was tried first and is not worth what it costs: it patches a
-  // browser primitive out from under the code under test, and the first draft of
-  // this case passed with the fix reverted because the clamp silently did not
-  // take. Forty seconds once per CI run buys a case that asserts the shipped
-  // timings on the shipped build, with nothing about the browser faked except
-  // the database refusal itself.
+  // happens ~31 s after the first failed read. Waiting for the real ladder
+  // preserves the shipped timings instead of patching the browser's timers.
   test.setTimeout(90_000);
 
   await forceFailure(page);
@@ -483,8 +460,8 @@ test("a SPENT retry ladder is revived by the shelf's Try again", async ({
     // difference between a test and a test-shaped thing. The shelf's own failed
     // read reports a failure, which the sink queues; once the database comes
     // back that write lands and `notifyWatchers` refreshes the count — bringing
-    // the marker in with the ladder still spent and the fix reverted. The first
-    // draft of this case passed exactly that way. Reads (`countFailures` is
+    // the marker in with the ladder still spent and the fix reverted.
+    // Reads (`countFailures` is
     // `readonly`) are untouched, so the only thing left that can paint the
     // marker is the read path this case exists for.
     const realTransaction = IDBDatabase.prototype.transaction;

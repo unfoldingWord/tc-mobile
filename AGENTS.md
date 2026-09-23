@@ -42,17 +42,17 @@ loader); do not read every description here as the target.
 
 ## Tech stack
 
-|         |                                                                            |
-| ------- | -------------------------------------------------------------------------- |
-| Runtime | Node 22.12+ (knip's floor)                                                 |
-| Build   | Vite 8, `@vitejs/plugin-react`                                             |
-| UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons                            |
-| PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)                               |
-| Storage | IndexedDB via `idb` 8                                                      |
-| Audio   | Web Audio + MediaRecorder; `@breezystack/lamejs` for MP3 (in a Web Worker) |
-| Tests   | Vitest 5, `fake-indexeddb`                                                 |
-| Lint    | ESLint 9 flat config, `typescript-eslint` 8, Prettier 3                    |
-| Deploy  | Cloudflare Workers static assets, Wrangler 4                               |
+|         |                                                                                                                                     |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime | Node `^22.12.0 \|\| >=24.0.0` (22.12 is knip's floor; Node 23.x is unsupported — jsdom 27's own engine range excludes it too, #577) |
+| Build   | Vite 8, `@vitejs/plugin-react`                                                                                                      |
+| UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons                                                                                     |
+| PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)                                                                                        |
+| Storage | IndexedDB via `idb` 8                                                                                                               |
+| Audio   | Web Audio + MediaRecorder; `@breezystack/lamejs` for MP3 (in a Web Worker)                                                          |
+| Tests   | Vitest 5, `fake-indexeddb`                                                                                                          |
+| Lint    | ESLint 9 flat config, `typescript-eslint` 8, Prettier 3                                                                             |
+| Deploy  | Cloudflare Workers static assets, Wrangler 4                                                                                        |
 
 ## Commands
 
@@ -104,11 +104,13 @@ linter reads CSS, so it is a convention that is read, not enforced.
 No _linter_ reads CSS — there is no stylelint, and knip's project globs are
 `ts`/`tsx`/`mjs` only — but the test suite does. **Treat the list below as
 examples, not as a set this file keeps current: `grep -rln "\.css\"" tests` is
-the source of truth.** That grep returns eight files today and over-matches by
-exactly one — `tests/smoke-path-filter.test.ts` lists stylesheet _paths_ as
-fixtures for a CI path filter and never reads their contents. The other seven:
-`tests/touch-policy.test.ts`, `tests/notice-bridge.test.ts` and
-`tests/share-progress.test.ts` all read `3-components.css`;
+the source of truth.** It over-matches by one —
+`tests/smoke-path-filter.test.ts` lists stylesheet _paths_ as fixtures for a CI
+path filter and never reads their contents. Among the readers:
+`tests/touch-policy.test.ts`, `tests/notice-bridge.test.ts`,
+`tests/share-progress.test.ts` and `tests/guided-ring.test.ts` all read
+`3-components.css` — the last two by SLICING a rule block out of it, which is
+the trap the paragraph below is about;
 `tests/contrast.test.ts` and `tests/theme.test.ts` read layers 1 and 2
 (theme.test.ts pins a `--p-cool-950` hex);
 `tests/style-bridge.test.ts` reads `globals.css` and `2-semantic.css`; and
