@@ -179,6 +179,13 @@ export async function getBook(id: BookId): Promise<Book | undefined> {
  * `updatedAt`, so a re-run is a true no-op that never reshuffles the shelf.
  * Any real rename bumps `updatedAt` — labelling a book is activity, and
  * `listBooks` sorts by it, so the book just named floats to the top.
+ *
+ * Concurrent renames deliberately use transaction-creation-order last-write-wins
+ * (#394). The read and write stay in one readwrite transaction. The same-tab
+ * calls in `tests/rename-ordering.test.ts` share `getDb()` and leave the later
+ * call's label stored. Across tabs, connection readiness can change transaction
+ * creation order after `await getDb()`: we do not promise typing-time ordering
+ * or reject competing edits from another copy.
  */
 export async function renameBook(
   id: BookId,
@@ -403,13 +410,47 @@ async function deleteBookInTx(tx: DeleteBookTx, bookId: BookId): Promise<void> {
 // ── Chapters ─────────────────────────────────────────────────────────────
 
 /**
- * Add a chapter to a book. `number` defaults to the next ordinal (max existing
- * in this book + 1), computed inside the one transaction that also writes the
- * chapter and bumps the book — never a read-tx-then-write-tx seam.
+ * The ordinal a new chapter gets: one past the highest already in the book, and
+ * 1 for an empty one.
+ *
+ * Pure, and the single definition of that number — `addChapter` calls it inside
+ * its own write transaction, and the Books screen calls it over the chapters it
+ * has already loaded to pre-fill the Add-chapter prompt (#609). One function,
+ * so the "Chapter N" the field offers and the `number` the write derives cannot
+ * drift, the way {@link nextBookName} already ties the New Book field to
+ * {@link createBook}.
+ *
+ * **`max + 1`, deliberately NOT {@link nextBookName}'s first-unused rule.** A
+ * book's placeholder is a label and reusing a freed one is the point (#360); a
+ * chapter's `number` is its position in the export concatenation, so filling a
+ * hole left by a removed chapter would drop the new recording into the middle
+ * of the book rather than at the end.
+ */
+export function nextChapterNumber(existingNumbers: Iterable<number>): number {
+  let max = 0;
+  for (const n of existingNumbers) if (n > max) max = n;
+  return max + 1;
+}
+
+/**
+ * Add a chapter to a book. `number` defaults to the next ordinal
+ * ({@link nextChapterNumber}), computed inside the one transaction that also
+ * writes the chapter and bumps the book — never a read-tx-then-write-tx seam.
+ *
+ * `name` is the label the translator typed at the Add-chapter prompt (#609),
+ * normalised exactly as {@link renameChapter} normalises a rename: trimmed, and
+ * `null` when blank or whitespace-only. `null` is also what an untouched prompt
+ * writes, because the screen sends `""` rather than the "Chapter N" string it
+ * displayed — so a one-tap create stores nothing new and the row goes on
+ * showing the ordinal this transaction derived, which is the right number even
+ * when another copy of the app moved it after the prompt rendered. Unlike
+ * `createBook`'s blank fallback there is nothing to derive here and so no race
+ * to be safe from: the default is an absence, not a name.
  */
 export async function addChapter(
   bookId: BookId,
-  number?: number
+  number?: number,
+  name = ""
 ): Promise<Chapter> {
   const db = await getDb();
   const tx = db.transaction(["books", "chapters"], "readwrite");
@@ -421,21 +462,20 @@ export async function addChapter(
     const existing = await Promise.all(
       book.chapterIds.map((id) => tx.objectStore("chapters").get(id))
     );
-    const maxNumber = existing.reduce(
-      (max, chapter) =>
-        chapter && chapter.number > max ? chapter.number : max,
-      0
+    resolvedNumber = nextChapterNumber(
+      existing.flatMap((chapter) => (chapter ? [chapter.number] : []))
     );
-    resolvedNumber = maxNumber + 1;
   }
 
+  const trimmed = name.trim();
   const chapter: Chapter = {
     id: uuid() as ChapterId,
     bookId,
     number: resolvedNumber,
-    // Unnamed by default — the display falls back to "Chapter {number}" until
-    // the facilitator renames it for the passage (#264).
-    name: null,
+    // Blank stays unnamed, and the display falls back to "Chapter {number}"
+    // until the facilitator names it — at this prompt (#609) or later through
+    // Rename (#264).
+    name: trimmed === "" ? null : trimmed,
     segmentIds: [],
   };
   await tx.objectStore("chapters").put(chapter);
@@ -468,6 +508,12 @@ export async function getChapter(id: ChapterId): Promise<Chapter | undefined> {
  * `updatedAt`, so the book floats up the shelf exactly as `addChapter`,
  * `renameBook`, and recording do (G4). The no-op path skips the bump, so a
  * re-run never reshuffles the shelf.
+ *
+ * Concurrent renames use the same transaction-order last-write-wins policy as
+ * {@link renameBook} (#394). The scope overlaps `renameBook` on `books`, so a
+ * chapter rename preserves a competing book rename while updating its timestamp.
+ * A parent-book deletion either removes the renamed chapter afterward or makes
+ * this transaction fail with `No such chapter`, depending on transaction order.
  */
 export async function renameChapter(
   id: ChapterId,
@@ -539,6 +585,9 @@ export async function addSegment(chapterId: ChapterId): Promise<Segment> {
     chapterId,
     index: chapter.segmentIds.length + 1,
     reference: null,
+    // Unlabelled by default — the row shows the ordinal alone until the
+    // facilitator labels it for its verses (#591).
+    label: null,
     activeTakeId: null,
     status: "not-started",
   };
@@ -549,6 +598,43 @@ export async function addSegment(chapterId: ChapterId): Promise<Segment> {
   });
   await tx.done;
   return segment;
+}
+
+/**
+ * Label a segment in place (#591 — "verses 3–4", so a facilitator can tell
+ * which verses a segment holds without playing it).
+ *
+ * The chapter-name rules, deliberately ({@link renameChapter}): get-then-put in
+ * ONE readwrite transaction, the label trimmed, a blank/whitespace-only rename
+ * CLEARS it back to `null` (a segment has a default — its ordinal), and a
+ * rename to the current label writes nothing. Only `label` changes: the
+ * ordinal, the chapter's order, the take pointer and the status are the audio's
+ * identity and progress, and a label is neither.
+ *
+ * Unlike a chapter rename it does not bump the book's `updatedAt`: the store is
+ * `segments` alone, matching `addSegment` and `setSegmentFinished`, the other
+ * segment edits that leave the shelf order where it was.
+ */
+export async function renameSegment(
+  id: SegmentId,
+  label: string
+): Promise<Segment> {
+  const db = await getDb();
+  const tx = db.transaction("segments", "readwrite");
+  const segment = await tx.store.get(id);
+  if (!segment) throw new Error(`No such segment: ${id}`);
+
+  const trimmed = label.trim();
+  const nextLabel = trimmed === "" ? null : trimmed;
+  if (nextLabel === segment.label) {
+    await tx.done; // idempotent no-op: no write.
+    return segment;
+  }
+
+  const updated: Segment = { ...segment, label: nextLabel };
+  await tx.store.put(updated);
+  await tx.done;
+  return updated;
 }
 
 export async function getSegment(id: SegmentId): Promise<Segment | undefined> {

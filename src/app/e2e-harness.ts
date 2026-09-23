@@ -32,7 +32,8 @@ import {
 } from "@/hooks/mp3-codec";
 import { decodeToCanonical } from "@/hooks/audio-io";
 import { getDb, type TcMobileDb } from "@/lib/storage/db";
-import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import { CANONICAL_SAMPLE_RATE, INT16_MAX } from "@/lib/audio/format";
+import { measureLevel } from "@/lib/audio/level";
 import {
   fitMp3Decode,
   mp3GranuleCount,
@@ -70,6 +71,10 @@ export interface EncodeDecodeResult {
   readonly fittedTailRms: number;
   /** RMS of the same window of the PCM fed in — the scale to compare against. */
   readonly sourceRms: number;
+  /** Best matching offset of the decoded chirp relative to its source. */
+  readonly alignmentLag: number;
+  /** Normalized correlation at that offset; gain changes do not affect it. */
+  readonly alignmentCorrelation: number;
 }
 
 /** A synthetic tone, not silence — a real encoder path, not an all-zero edge case. */
@@ -86,37 +91,56 @@ function syntheticPcm(frameCount: number): Int16Array {
 
 /** Root-mean-square of `count` samples starting at `from`. Silence reads ~0. */
 function rms(samples: Int16Array, from: number, count: number): number {
-  const end = Math.min(samples.length, from + count);
-  if (end <= from) return 0;
-  let sum = 0;
-  for (let i = from; i < end; i++) sum += samples[i]! * samples[i]!;
-  return Math.sqrt(sum / (end - from));
+  return measureLevel(samples.subarray(from, from + count), INT16_MAX).rms;
+}
+
+/** Find the chirp's position independently of the MP3 delay calculation. */
+function measureAlignment(source: Int16Array, fitted: Int16Array) {
+  // Stay clear of MP3 boundary transients, with one fixed source window for
+  // every candidate lag. The chirp changes frequency so a cycle cannot alias
+  // a genuine alignment, as it could with a stationary tone.
+  const count = 16_384;
+  const from = Math.floor((source.length - count) / 2);
+  let sourceEnergy = 0;
+  for (let i = from; i < from + count; i++) sourceEnergy += source[i]! ** 2;
+  let alignmentLag = 0;
+  let alignmentCorrelation = -1;
+  for (let lag = -MP3_TOTAL_DELAY; lag <= MP3_TOTAL_DELAY; lag++) {
+    let dot = 0;
+    let fittedEnergy = 0;
+    for (let i = from; i < from + count; i++) {
+      const value = fitted[i + lag]!;
+      dot += source[i]! * value;
+      fittedEnergy += value ** 2;
+    }
+    const correlation = dot / Math.sqrt(sourceEnergy * fittedEnergy);
+    if (correlation > alignmentCorrelation) {
+      alignmentLag = lag;
+      alignmentCorrelation = correlation;
+    }
+  }
+  return { alignmentLag, alignmentCorrelation };
 }
 
 /**
- * Encode `frameCount` synthetic samples through the REAL worker round-trip
- * (`withEncoder` → the shared `mp3.worker.ts`), then decode the resulting MP3
- * through the REAL `decodeAudioData` boundary and align it with `fitMp3Decode`
- * — the same two steps every Share and every Finished transcode perform.
- *
- * Reports the RAW decode length and the fitted decode's head/tail energy, not
- * just the fitted length: `fitToFrames` returns exactly `frames` whatever
- * `fitMp3Decode` chose for its head skip, so a fitted-length check alone is
- * true by construction and proves nothing about the alignment. The raw length
- * says which decoder branch this browser landed in, and the head/tail RMS says
- * the chosen skip actually landed on the recording — a skip that is too small
- * leaves the decoder's ~1105 samples of priming SILENCE at the head, and one
- * that is too large runs off the end of the recording into the tail padding.
+ * Encode a chirp through the real worker, decode through decodeAudioData, and
+ * measure alignment against the source as well as head/tail energy. Fitted
+ * length alone cannot detect a wrong skip because fitToFrames enforces it.
  */
 async function encodeAndDecode(
   frameCount: number
 ): Promise<EncodeDecodeResult> {
-  const samples = syntheticPcm(frameCount);
+  const samples = new Int16Array(frameCount);
+  const duration = frameCount / CANONICAL_SAMPLE_RATE;
+  for (let i = 0; i < frameCount; i++) {
+    const time = i / CANONICAL_SAMPLE_RATE;
+    const phase =
+      2 * Math.PI * (300 * time + (2_700 * time * time) / (2 * duration));
+    samples[i] = Math.round(8_000 * Math.sin(phase));
+  }
+  // encodeMp3 transfers and detaches samples; retain an independent reference.
+  const source = samples.slice();
   const window = MP3_TOTAL_DELAY;
-  // BEFORE the encode: `encodeMp3` TRANSFERS the PCM's ArrayBuffer to the
-  // worker (`hooks/mp3-codec.ts`), which detaches it here — a read of
-  // `samples` afterwards sees a zero-length array, and this reference RMS
-  // would silently be 0. Found by this assertion failing on its first run.
   const sourceRms = rms(samples, 0, window);
   const mp3 = await withEncoder(undefined, (codec) => codec.encodeMp3(samples));
   const decoded = await withEncoder(undefined, (codec) => codec.decodeMp3(mp3));
@@ -132,6 +156,7 @@ async function encodeAndDecode(
     fittedHeadRms: rms(fitted, 0, window),
     fittedTailRms: rms(fitted, Math.max(0, fitted.length - window), window),
     sourceRms,
+    ...measureAlignment(source, fitted),
   };
 }
 

@@ -66,7 +66,9 @@ export function SendLogControl() {
       ? strings.shareFailureLogNothing
       : share.error === "failed"
         ? strings.shareFailureLogFailed
-        : null;
+        : share.error === "restart"
+          ? strings.shareFailureLogRestart
+          : null;
 
   // The platform's own mark (#490), not a hardcoded tray — `control-affordance
   // .ts`'s own header names this control as one of the three that must share

@@ -1,3 +1,5 @@
+import { App } from "@capacitor/app";
+import { Capacitor, type PluginListenerHandle } from "@capacitor/core";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 import {
@@ -13,6 +15,7 @@ import {
   popAction,
   resumeNavIndex,
   screenFor,
+  type PopAction,
 } from "@/lib/nav/navigation";
 import {
   beginBack,
@@ -22,20 +25,22 @@ import {
 } from "@/lib/nav/travel-guard";
 import type { ChapterId, SegmentId } from "@/types/domain";
 
+import { reportFailure } from "./report-failure";
+
 /**
  * The history adapter for the pivot's system-Back model (#452 PR2,
  * docs/design/back-navigation.md "PR split" item 2). It is the ONE file that
- * touches `window.history` / `window.popstate` — the pure decisions it composes
+ * touches `window.history` / `window.popstate` — and, inside the Capacitor
+ * shell, the native Back button (`attachNativeBack`, #374) — the pure
+ * decisions it composes
  * (`popAction`, `navDirection`, `screenFor`, `resumeNavIndex`, `beginBack` /
  * `settleOutstanding`, `routeBackToLayer` via `popAction`) all live, tested, in
  * `src/lib/nav`. Extracting App.tsx's inline refs/effects here is what lets the
  * onion keep the routing logic Node-testable while the browser wiring stays in
- * one reviewable place. The Vitest suite has no renderer (AGENTS.md: no jsdom),
- * so it covers only the pure decisions this composes; the DOM paths themselves
- * — `popstate` routing, the reload adopt, the sheet-close-and-land, and the
- * double-Back guard — are exercised in real Chromium by
- * `e2e/back-navigation.spec.ts` (Playwright, against the shipped `dist/`
- * build) and remain an on-device item for iOS Safari and Android WebView. Two
+ * one reviewable place. The static render harness does not drive this hook's
+ * effects or browser history. `e2e/back-navigation.spec.ts` targets the DOM
+ * paths against the shipped `dist/` build in Chromium; it does not establish
+ * behavior on iOS Safari or Android WebView. Two
  * things that spec does NOT reach, and which stay device items: the recorder's
  * commit path ITSELF (`requestClose` → re-arm push → `transitionInFlight` →
  * the consuming back()) is not observably distinct from a bare sheet-close in
@@ -51,11 +56,10 @@ import type { ChapterId, SegmentId } from "@/types/domain";
  *     ADOPTS the entry already there rather than rewriting it to 0.
  *   - `layerStack` — the screen-scoped overlay stack (invariant 1/3).
  *   - `floorArmed` / `atFloor` — Amendment G (#452 PR3). Books pushes no entry
- *     of its own, so before PR3 a Back with a Books overlay open was a document
- *     navigation with NO `popstate` — measured, see
- *     `e2e/back-navigation.spec.ts`'s PR3 header — and the layer stack was
- *     never consulted. While (and only while) the floor screen has any layer
- *     open, the adapter holds ONE protective entry, so that Back becomes a
+ *     of its own, so a Back without a protective entry can leave the document
+ *     without an in-app `popstate`; the layer stack cannot intercept that.
+ *     While the floor screen has an open layer, the adapter holds ONE
+ *     protective entry so that Back becomes a
  *     `popstate` the stack can absorb. The pure decisions are
  *     `floorEntryForLayerChange` / `rearmAfterLayerBack` (`lib/nav/layer-stack.ts`).
  *   - `travelGuard` — the any-outstanding guard (Amendment A). `goBack` and the
@@ -100,6 +104,202 @@ import type { ChapterId, SegmentId } from "@/types/domain";
  */
 interface RecorderCloseHandle {
   requestClose: () => Promise<boolean>;
+}
+
+/**
+ * The slice of `@capacitor/app` the shell's Back leg needs (#374), as an
+ * injected boundary so the dispatch is testable in plain Node
+ * (`tests/native-back.test.ts`) — the same split `share-target.ts` makes for
+ * the Share plugin. `App` satisfies it structurally.
+ */
+export interface NativeBackPlugin {
+  addListener(
+    eventName: "backButton",
+    listener: (event: { canGoBack: boolean }) => void
+  ): Promise<PluginListenerHandle>;
+  exitApp(): Promise<void>;
+  /** Android only — iOS resolves this with `unimplemented`, so it is gated. */
+  toggleBackButtonHandler(options: { enabled: boolean }): Promise<void>;
+}
+
+export interface NativeBackRoute {
+  /** What a Back would do right now — `popAction` over the adapter's live refs. */
+  decide(): PopAction;
+  /** The one in-app Back path (`goBack`). */
+  goBack(): void;
+}
+
+/**
+ * The most recent `attachNativeBack` call's id, so attaches are ordered and a
+ * draining listener can tell a newer one from itself (#674). Module scope
+ * because the successor is a separate call — a remount — with nothing else
+ * shared between the two.
+ */
+let latestNativeBackAttach = 0;
+
+/**
+ * The newest attach whose own ENABLE has resolved while it was still live —
+ * the first point a successor can be shown to take a press. Beginning an
+ * attach proves nothing: `addListener`'s handle resolves once the call is
+ * posted, not once the plugin thread has registered it, and a successor whose
+ * `addListener` rejected, or that detached before its handle, never takes one.
+ * Its enable is posted after its `addListener`, so (inference, from the plugin
+ * thread running calls in order; not observed on a device) the enable
+ * resolving follows the registration.
+ */
+let operationalNativeBackAttach = 0;
+
+/**
+ * Route a hardware Back inside the Capacitor shell (#374, design Amendment F).
+ *
+ * In a browser, system Back IS a history pop: the `popstate` handler below
+ * sees it and routes it. Inside the shell nothing pops on its own —
+ * `@capacitor/android` 8.5.2's bridge carries no Back handling at all, and
+ * `@capacitor/app`'s `AppPlugin` hands the press to whoever listens for
+ * `backButton` — so a Back with a Books menu open left the app instead of
+ * closing the menu. This is the shell's leg of the same model, and it adds no
+ * routing of its own: it asks the SAME `popAction` the `popstate` handler
+ * consults, and then does one of three things —
+ *
+ *   - the WebView has an entry to pop → `goBack()`, whatever the route said.
+ *     The press becomes the `popstate` the handler already routes (layer
+ *     dismissal, re-arms, the recorder's commit-close), through the same travel
+ *     guard the on-screen Back uses. That includes the routes the handler
+ *     settles SILENTLY — the floor entry left standing by an overlay closed
+ *     with its own control (Amendment G, #535), and the deeper index a reload
+ *     adopts above the shelf — where `popAction` says `"exit-app"` but the
+ *     recorded contract is that this press stays: only the one that lands on
+ *     physical depth 0 leaves. `popAction` cannot tell those from a bare shelf;
+ *     `canGoBack` can, so it is read first.
+ *   - nothing to pop, and the route says `"exit-app"` → `exitApp()`. The shelf
+ *     with nothing open and nothing beneath it is the one place Back leaves.
+ *   - nothing to pop, anything else → hold. Only a global trap on the bare
+ *     shelf reaches here (`popAction` returns the trap before it ever reads the
+ *     screen), and a `history.back()` there would be a no-op by spec: no
+ *     `popstate`, so `goBack`'s guard would never settle and every later Back
+ *     would be refused for the session (#494 item 2's shape). The way out of a
+ *     trap is the modal's own control, which is what the trap means.
+ *
+ * `canGoBack` is the WebView's own answer to "will `history.back()` do
+ * anything", read from the event the plugin delivers, rather than re-derived
+ * here from `floorArmed` — one source of truth for the physical stack.
+ *
+ * The plugin's Android `OnBackPressedCallback` is enabled only while this
+ * listener is registered. It ships DISABLED (`capacitor.config.ts`,
+ * `disableBackButtonHandler`), because an enabled callback with no listener
+ * consumes a root Back and does nothing — the crash screen, which unmounts
+ * this hook, would lose Back as its exit, and so would the window before the
+ * first paint's effects. `toggleAndroidHandler` flips it on once the plugin
+ * has the listener (not before: a press in between would reach the plugin's
+ * no-listener branch), and off again on detach so the press falls through to
+ * the activity default. iOS has no such callback and reports the method as
+ * unimplemented, so the toggle is gated on the platform, not attempted.
+ *
+ * Every plugin promise has a channel: a rejection anywhere here would
+ * otherwise be an unhandled rejection with no context, so each is routed to
+ * `reportFailure` under its own name. A rejected `remove()` is also the one
+ * failure that leaves state behind — the callback stays registered — so the
+ * listener checks its own phase and does nothing once the detach completes.
+ *
+ * Returns the detach. The plugin resolves its listener handle asynchronously,
+ * so a detach that runs first marks the handle for removal the moment it lands.
+ *
+ * The disable is a bridge round trip (#674), and until it is applied the
+ * Android callback is still enabled, so a Back in that window still reaches
+ * this listener. Going inert there would swallow the press; routing it in-app
+ * would too, because the detach runs as the hook unmounts — the crash screen
+ * is the reachable case — and the `popstate` router goes with it. So the
+ * detach has two steps. While the disable is in flight the listener is
+ * DRAINING: a press gets what it would get a moment later from the activity
+ * default once the disable lands, which is leaving (`exitApp()`), whatever
+ * the WebView could pop. Only after the disable has settled — resolved or
+ * rejected, since a refused disable is reported and there is nothing further
+ * to wait for — does the listener go inert and the remove get posted. The
+ * remove therefore still follows the disable, as #634 round 3 relied on.
+ * Draining exists only where the window does: on Android, after the enable
+ * was posted (that is, once the handle resolved). Earlier, or off Android,
+ * the callback is not enabled and the detach is inert at once.
+ *
+ * A draining press leaves unless a newer attach is OPERATIONAL
+ * (`operationalNativeBackAttach`). `exitApp()` beside a successor that takes
+ * the same press would finish the activity under a running app — the variant
+ * #634 round 3 rejected — so then the draining listener is inert instead. A
+ * successor that has merely begun cannot take the press yet, so going inert
+ * beside it would swallow the press again (#674).
+ */
+export function attachNativeBack(
+  plugin: NativeBackPlugin,
+  route: NativeBackRoute,
+  toggleAndroidHandler = false
+): () => void {
+  const attach = ++latestNativeBackAttach;
+  let phase: "live" | "draining" | "detached" = "live";
+  let handle: PluginListenerHandle | undefined;
+  const setHandler = (enabled: boolean): Promise<void> => {
+    if (!toggleAndroidHandler) return Promise.resolve();
+    return plugin
+      .toggleBackButtonHandler({ enabled })
+      .catch((cause: unknown) => reportFailure(cause, "native-back-handler"));
+  };
+  const exitApp = (): void => {
+    plugin
+      .exitApp()
+      .catch((cause: unknown) => reportFailure(cause, "native-back-exit"));
+  };
+  const release = (): void => {
+    phase = "detached";
+    handle
+      ?.remove()
+      .catch((cause: unknown) => reportFailure(cause, "native-back-remove"));
+  };
+  plugin
+    .addListener("backButton", ({ canGoBack }) => {
+      // Inert once detached, whatever the plugin did with `remove()`: a
+      // removal that rejected leaves this callback registered, and the next
+      // mount registers a second one — one press must not route twice.
+      if (phase === "detached") return;
+      if (phase === "draining") {
+        if (operationalNativeBackAttach <= attach) exitApp();
+        return;
+      }
+      const action = route.decide();
+      if (canGoBack) {
+        route.goBack();
+        return;
+      }
+      if (action === "exit-app") exitApp();
+    })
+    .then((resolved) => {
+      if (phase !== "live") {
+        resolved
+          .remove()
+          .catch((cause: unknown) =>
+            reportFailure(cause, "native-back-remove")
+          );
+        return;
+      }
+      handle = resolved;
+      if (!toggleAndroidHandler) return;
+      plugin.toggleBackButtonHandler({ enabled: true }).then(
+        () => {
+          if (phase === "live" && attach > operationalNativeBackAttach) {
+            operationalNativeBackAttach = attach;
+          }
+        },
+        (cause: unknown) => reportFailure(cause, "native-back-handler")
+      );
+    })
+    .catch((cause: unknown) => reportFailure(cause, "native-back-listener"));
+  return () => {
+    const disabling = setHandler(false);
+    if (!toggleAndroidHandler || handle === undefined) {
+      release();
+      return;
+    }
+    phase = "draining";
+    // `finally`: release even if the report threw; the throw stays visible.
+    void disabling.finally(release);
+  };
 }
 
 export interface UseNavStackParams {
@@ -313,6 +513,17 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     // the same commit-window protection as the system gesture. `beginBack` is
     // the pure form of the old `backRequested` double-tap latch: on refusal
     // (a back() already outstanding) do NOTHING — no history.back(), no push.
+    //
+    // A SUPPRESSED traversal is outstanding too, and `beginBack` cannot see
+    // it: the raw issuers outside the guard (`commitCloseRecorder`,
+    // `trap-forward`'s cancel) set `suppressPop` and call `history.back()`
+    // themselves, and the header Back is disabled for exactly that window
+    // (`recorder.tsx`) so it could never land here. The hardware Back (#374)
+    // can — the plugin posts it from the Android UI thread, not behind the
+    // pending `popstate` task — and a second `history.back()` before the
+    // first lands is the coalescing hazard `travel-guard.ts` exists to rule
+    // out (#493). That press is already the Back in flight; issue nothing.
+    if (suppressPop.current) return;
     const begun = beginBack(travelGuard.current, "go-back");
     if (!begun.ok) return;
     travelGuard.current = begun.next;
@@ -665,6 +876,32 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     // re-subscribe window, so a new value belongs in the layout effect above,
     // not in this array.
   }, [pushHistoryEntry, popLayer]);
+
+  // The shell's leg of the same model (#374): a hardware Back arrives as the
+  // App plugin's `backButton` event, not as a `popstate`. Registered only
+  // inside the Capacitor shell — in a browser the gesture is already a history
+  // pop and this would be a second listener for the same press. `decide` reads
+  // the same layout-written refs the popstate handler does, and only those;
+  // `goBack` is `useCallback([])`, so this subscribes once for the hook's life.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    return attachNativeBack(
+      App,
+      {
+        decide: () =>
+          popAction(
+            "back",
+            screenRef.current,
+            transitionInFlight.current,
+            recoveringRef.current,
+            databasePanelRef.current,
+            layerStack.current
+          ),
+        goBack,
+      },
+      Capacitor.getPlatform() === "android"
+    );
+  }, [goBack]);
 
   return {
     pushLayer,

@@ -316,7 +316,7 @@ describe("the native share session", () => {
   });
 
   it("stops a cancelled write before the sheet, and takes the partial with it", async () => {
-    // George R5 P2. The staging write is the slow half — a book zip in 768 KB
+    // George R5 P2. The staging write is the slow half — a book zip in 384 KiB
     // chunks — and it now runs on tap 1, where closing the menu is a normal
     // thing to do. `reset()` aborts; nothing may reach the OS after that, and
     // the half-written file must not be left behind.
@@ -380,7 +380,7 @@ describe("the native share session", () => {
   });
 
   it("does not write a chunk when the cancel lands while that chunk is being read", async () => {
-    // Frank R6 P2. Reading and base64-encoding 768 KB is itself an await, so
+    // Frank R6 P2. Reading and base64-encoding a chunk is itself an await, so
     // checking the signal only BEFORE the read left a window in which a cancel
     // still bought one native write — the expensive half, on the slow device the
     // cancel exists for.
@@ -462,13 +462,11 @@ describe("the native share session", () => {
     // Reading the whole thing into one base64 string would pull it into the JS
     // heap at ~1.33x — so the file goes over the bridge a slice at a time, and
     // the bytes that land must still be exactly the bytes we had.
-    const size = SHARE_CHUNK_BYTES * 2 + 17;
+    const size = 2 * 1024 * 1024 + 17;
     const source = new Uint8Array(size);
-    // An LCG, NOT `(i * 31 + 7) % 256`. That fixture repeats every 256 bytes and
-    // `SHARE_CHUNK_BYTES` is a multiple of 256, so every chunk held identical
-    // bytes and a mutant that read chunk 0 three times passed this test. Caught
-    // by mutation, which is the only thing that could have caught it — the
-    // assertion was right and the data was lying to it.
+    // An LCG avoids a 256-byte repeating fixture: SHARE_CHUNK_BYTES is a
+    // multiple of 256, so such a fixture cannot distinguish repeated chunks
+    // from the intended sequence.
     let state = 0x2545f491;
     for (let i = 0; i < size; i += 1) {
       state = (state * 1103515245 + 12345) & 0x7fffffff;
@@ -481,10 +479,13 @@ describe("the native share session", () => {
     const writes = calls.filter(
       (call) => call.op === "write" || call.op === "append"
     );
-    expect(writes).toHaveLength(3);
+    expect(writes).toHaveLength(Math.ceil(size / SHARE_CHUNK_BYTES));
     expect(writes[0]?.op).toBe("write");
     expect(writes.slice(1).every((call) => call.op === "append")).toBe(true);
     for (const call of writes) {
+      // Bound the actual encoded payload, leaving room for the native envelope.
+      expect(call.data?.length).toBeGreaterThan(0);
+      expect(call.data?.length).toBeLessThanOrEqual(512 * 1024);
       expect(atob(call.data ?? "").length).toBeLessThanOrEqual(
         SHARE_CHUNK_BYTES
       );

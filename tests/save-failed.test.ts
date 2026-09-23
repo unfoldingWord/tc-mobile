@@ -64,4 +64,16 @@ describe("SaveFailed — the Send-log control (#456)", () => {
     // swaps Retry for Restart — so Send must not render here either.
     expect(html).not.toContain(`aria-label="${strings.shareFailureLog}"`);
   });
+
+  it("does not invite Retry for a stale deleted target (#378)", () => {
+    const html = renderToStaticMarkup(
+      createElement(SaveFailed, { ...props, kind: "stale" })
+    );
+
+    expect(html).toContain("This book is gone");
+    expect(html).not.toContain('aria-label="Try saving again"');
+    expect(html).not.toContain("Restart the app");
+    expect(html).toContain(`aria-label="${strings.shareFailureLog}"`);
+    expect(html).toContain("control--primary");
+  });
 });

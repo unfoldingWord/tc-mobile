@@ -191,32 +191,25 @@ export function rowHint(reason: RowReason | null): RowHint | null {
 }
 
 /**
- * The record-mode bottom-bar Edit control's hint (#315 round 1, George P2-1)
- * — the SAME `editRowReason` gate as the ≡ row's `enterEdit`, but not always
- * the same WORDS.
+ * The same reason, worn by a control on the record BAR rather than in the ≡
+ * menu — the toolbar Edit (#315) and the bin (#592).
  *
- * `rowHint("uncommitted-take")` is `strings.blockedByTake`: "Use \"Close
- * menu\", then \"Close recorder\", to save the recording." That sentence
- * describes the ≡ overlay's own dismiss sequence, and it is true only for a
- * row that sits INSIDE that overlay, disabled while the overlay itself blocks
- * the way out. The toolbar control is not inside any overlay — it fires
- * during a normal Back-tapped close (`committing: isClosing`) or a #59
- * `processing` freeze, while the sheet's own Saving/Interrupted `Notice`
- * (`recorderStatusKind`) is already on screen explaining the exact same wait.
- * Naming "Close menu" there points at a menu that is not open, over a control
- * that was never in one.
+ * Two differences from {@link rowHint}, both because the bar is not the menu:
  *
- * So on the toolbar, `"uncommitted-take"` returns null: a plain (native)
- * disable, because the Notice already carries the reason and a second,
- * differently-worded alert badge would be a second explanation of the same
- * wait rather than a correction of a wrong one. Every other reason is
- * surface-agnostic and carries through to `rowHint` unchanged — `"starting"`
- * (`micStarting`) and `"no-audio"` (`nothingRecorded`) name no control and
- * are true wherever they fire.
+ * - No badge. The bar's controls sit in the translator's hand all session, and
+ *   an `alert` mark on an empty segment's Edit or bin would read as something
+ *   gone wrong on the first screen of every new segment. The reason stays in
+ *   the accessible name, and the control goes `aria-disabled`, so keyboard and
+ *   switch users still reach it.
+ * - No words for `"uncommitted-take"`. `blockedByTake` sends the translator to
+ *   "Close menu", then "Close recorder" — a menu the bar is not in, and during
+ *   a take the bar's own Stop, beside it, is the way out. The control is
+ *   plainly off (natively disabled) instead.
  */
-export function toolbarEditHint(reason: RowReason | null): RowHint | null {
+export function barHint(reason: RowReason | null): { label: string } | null {
   if (reason === "uncommitted-take") return null;
-  return rowHint(reason);
+  const hint = rowHint(reason);
+  return hint === null ? null : { label: hint.label };
 }
 
 /**

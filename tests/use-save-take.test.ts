@@ -47,9 +47,6 @@ import type { ClipId, SegmentId } from "@/types/domain";
  * Node — so what these tests assert about it is whether it is ASKED for, which
  * is the decision (D3: only a Finished commit, only after it lands).
  *
- * Written against mutations, not by inspection. Each guard was broken in turn
- * and confirmed to fail a test here — see the PR body for which test died for
- * which mutation.
  */
 
 const samples = (length: number, value = 1000): Int16Array =>
@@ -90,6 +87,7 @@ const heldTake = (over: {
 }): PendingTake =>
   startSave(null, {
     segmentId: over.segmentId,
+    ordinal: null,
     clipId: over.clipId,
     existing: over.existing ?? new Int16Array(0),
     recorded: over.recorded ?? samples(10),
@@ -303,9 +301,12 @@ describe("performSaveTake — a commit that fails", () => {
   /** A segment id with no row: `saveTake` throws "No such segment: …". */
   const bogusSegment = () => newClipId() as unknown as SegmentId;
 
-  it("keeps the recording held for retry rather than dropping it", async () => {
+  it("keeps the recording held on a stale target rather than dropping it", async () => {
     // THE regression this file exists for. A `finally` that empties the slot,
     // or a rethrow that unwinds past it, loses the only copy of field audio.
+    // Since #378 this exact store error is not retryable — the segment row is
+    // gone — but the recovery screen still has to own the samples until the
+    // translator confirms Discard.
     const clipId = newClipId();
     const recorded = samples(10, 4242);
     const take = heldTake({ segmentId: bogusSegment(), clipId, recorded });
@@ -326,7 +327,7 @@ describe("performSaveTake — a commit that fails", () => {
     const held = s.held();
     expect(held).not.toBeNull();
     expect(held?.state).toBe("failed");
-    expect(held?.kind).toBe("unknown");
+    expect(held?.kind).toBe("stale");
     expect(held?.attempts).toBe(1);
     // The samples are carried through untouched — the recipe a retry re-runs.
     expect(held?.recorded).toBe(recorded);

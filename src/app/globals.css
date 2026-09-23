@@ -18,16 +18,9 @@
  * declares last, so it wins on purpose rather than by outranking the cascade.
  *
  * Every role stays listed even though only some carry a current use.
- * Measured, not assumed: Tailwind emits a utility only where the source uses
- * one, so `grep '\.bg-surface' dist/assets/*.css` finds nothing and the unused
- * aliases cost zero shipped bytes. They are the bridge's vocabulary, not dead
- * code — a partial bridge would just mean the next person editing this file
- * before they can write `bg-surface`.
- *
- * What IS invisible here is an alias pointing at a role layer 2 no longer
- * defines: it would resolve to nothing, paint nothing, and fail no check,
- * because AGENTS.md records that nothing in this repo reads CSS at all.
- * `tests/style-bridge.test.ts` is that check.
+ * Tailwind emits utilities for source usage; these aliases provide the bridge's
+ * vocabulary without requiring a bridge edit for each newly used role.
+ * `tests/style-bridge.test.ts` checks that aliases resolve to defined roles.
  */
 @theme inline {
   --color-floor: var(--s-floor);
@@ -73,4 +66,22 @@ body {
 :focus-visible {
   outline: var(--c-focus-ring);
   outline-offset: var(--c-focus-offset);
+}
+
+/* Keep the paste marker's ring inside the recorder stage's clipping edge, and
+   the selection handles' rings inside the canvas they sit flush against.
+   These exceptions are unlayered like the global rule so their inward offset
+   takes precedence; a copy inside `@layer components` never wins against an
+   unlayered declaration, whatever its specificity (#448, #635).
+   `tests/focus-offset-cascade.test.ts` pins both halves. */
+.paste-marker:focus-visible,
+.selection-handle:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Separate the outset guide from keyboard focus. This must remain unlayered
+   to override the global focus offset above. */
+.control--record.is-guided:focus-visible,
+.record-guide.is-guided > .control:focus-visible {
+  outline-offset: calc(var(--c-focus-offset) + var(--c-guide-ring) + 2px);
 }

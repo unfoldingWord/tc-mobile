@@ -89,6 +89,7 @@ async function setup() {
     playingId: null,
     playingBuffer: false,
     playbackElapsedMs: 0,
+    playbackRanOut: false,
     recorderState: "idle",
     elapsedMs: 0,
     supported: true,
@@ -99,13 +100,9 @@ async function setup() {
     playBuffer: vi.fn(),
     stopBuffer: vi.fn(),
     readPlaybackPosition: () => null,
-    audioNeedsGesture: () => false,
     startRecording: vi.fn(),
-    pauseRecording: vi.fn(),
-    resumeRecording: vi.fn(),
     stopRecording: vi.fn(),
     retryDecode: vi.fn(),
-    previewCapture: vi.fn(),
     leave: vi.fn(),
     primeAudioContext: vi.fn(),
     readLevel: () => 0,
@@ -162,7 +159,15 @@ it("keeps the confirm when Back arrives in the same turn as erase, before a rend
   expect(s.saveRecording).not.toHaveBeenCalled();
   expect(s.saveEditedSegment).not.toHaveBeenCalled();
   await act(async () => complete());
-  expect(s.onExit).toHaveBeenCalledExactlyOnceWith(true);
+  // The erase's own completion is what takes the confirm down — and since
+  // #592 it leaves the sheet open over the emptied segment rather than
+  // exiting (`tests/recorder-rerecord.test.ts` owns that post-condition).
+  expect(
+    document.querySelector(`[aria-label="${strings.eraseConfirmTitle}"]`)
+  ).toBeNull();
+  expect(s.onExit).not.toHaveBeenCalled();
+  expect(s.saveRecording).not.toHaveBeenCalled();
+  expect(s.saveEditedSegment).not.toHaveBeenCalled();
 });
 it("dismisses a waiting confirm, then permits ordinary idle Back", async () => {
   const s = await setup();
