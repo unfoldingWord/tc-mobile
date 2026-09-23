@@ -89,7 +89,7 @@ export default defineConfig({
       // by the production minifier or by Tailwind's layer ordering would pass
       // there (#171).
       testMatch:
-        /(service-worker-precache|theme-toggle|recorder-selection)\.spec\.ts$/,
+        /(service-worker-precache|theme-toggle|recorder-selection|segment-rename)\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
     },
     {
@@ -113,6 +113,15 @@ export default defineConfig({
       // observes.
       name: "chromium-back-navigation",
       testMatch: /back-navigation\.spec\.ts$/,
+      use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
+    },
+    {
+      // The guided highlight (#604). Against `dist/` for the reason the theme
+      // spec gives: the claim is that a stylesheet rule REACHES the element in
+      // the build people install, and the harness build's cascade is not that
+      // one. Capture cases use synthetic Chromium media, not a physical mic.
+      name: "chromium-guided-highlight",
+      testMatch: /guided-highlight\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
     },
   ],

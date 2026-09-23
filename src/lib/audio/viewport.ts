@@ -268,8 +268,7 @@ export function panForZoom(
 
   // ONE clamp, on every path. The intermediates above are deliberately left
   // raw: with `lo`/`hi` already inside the clip, clamping each of them would add
-  // branches no input can reach — which mutation testing shows to be untestable
-  // rather than safe. There is no empty-segment guard either, for the same
+  // branches no input can reach. There is no empty-segment guard either, for the same
   // reason: at `length` 0 every term above is already 0 and this returns 0,
   // matching `viewportWindow`, which likewise carries no divide-by-zero guard.
   return clampPan(
@@ -277,6 +276,69 @@ export function panForZoom(
       ? panAtStartEdge
       : Math.max(panAtEndEdge, Math.min(pan, panAtStartEdge))
   );
+}
+
+/**
+ * How much of the visible window the edit toggle seeds a span across (#554).
+ *
+ * A quarter, because that is the widest seed the quarter-zoom window can hold
+ * (#567). Edit mode opens at whole zoom, so this is a quarter of the clip, and
+ * a zoom to a quarter shows exactly that much. A seed any wider takes
+ * `panForZoom`'s wider-than-the-window branch, which pins the span's START and
+ * leaves its END handle off the right of the stage. At the append rest (every
+ * fresh open) that end is where the translator was parked. The composing test
+ * in `tests/audio-viewport.test.ts` ("fits the quarter-zoom window when zoomed
+ * from the append rest") pins this bound; the fix lives here rather than in
+ * `panForZoom` because that branch also serves spans a user dragged wider than
+ * the window mid-clip, which #567 leaves alone.
+ *
+ * Because the seed slides back off the end instead of overrunning, the whole
+ * quarter is delivered even at the append rest, where the centred seed this
+ * replaces had its overrun clamped away.
+ *
+ * Module-private: the seed has exactly one reader.
+ */
+const SEED_SPAN_FRACTION = 0.25;
+
+/**
+ * The span the selection frame opens with (#554).
+ *
+ * The seed used to be centred on the centerline, so the playhead sat in the
+ * MIDDLE of the span it had just created. The requirements owner's report: the
+ * line marks where the translator is, and a span they are about to cut or
+ * audition runs from there FORWARD — which is also the record/paste mental
+ * model (the line is where the next thing begins) and makes the first handle
+ * drag, extending the right edge, the common case.
+ *
+ * So the left edge is the playhead, and the span slides left only as far as
+ * the end of the buffer forces (tail rule C, the dev lead's pick:
+ * https://github.com/unfoldingWord/tc-mobile/pull/560#issuecomment-5794543851).
+ * That last clause is not an edge case: the append rest puts
+ * `centerlineSample === length` on every fresh open. Anchoring there and
+ * letting the right edge run past the end would leave `openSelection`'s
+ * per-endpoint clamp holding `{length, length}`, which `spansWholeSample` reads
+ * as nothing selected: Cut and Play would open dead. Sliding keeps the width,
+ * so the two handles never land on top of each other and the frame is
+ * grabbable wherever it opens. The cost, stated plainly: within the last
+ * span-width of the buffer the playhead is inside the span rather than on its
+ * left edge, because there is not a full span of audio to its right.
+ *
+ * No clamps, and the `min` is the only branch, because `visibleSamples` is
+ * `length / zoom` at `zoom >= 1`: the span is at most `0.25 * length`, so
+ * `length - span` is never negative and `start` is never below 0, while
+ * `start <= length - span` puts `end` at or inside `length`. A `Math.max(0,…)`
+ * would be a branch no input can reach — what `panForZoom`'s own note calls
+ * untestable rather than safe. At `length` 0 every term is 0 and this returns
+ * `{0, 0}`, matching `viewportWindow`'s lack of a divide-by-zero guard.
+ */
+export function seedSelection(
+  length: number,
+  centerlineSample: number,
+  visibleSamples: number
+): SampleRange {
+  const span = SEED_SPAN_FRACTION * visibleSamples;
+  const start = Math.min(centerlineSample, length - span);
+  return { start, end: start + span };
 }
 
 /**

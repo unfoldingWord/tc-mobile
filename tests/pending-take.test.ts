@@ -4,6 +4,7 @@ import {
   discardSave,
   failSave,
   holdsUnsavedAudio,
+  ordinalForTake,
   panelWouldLoseAudio,
   retrySave,
   startSave,
@@ -14,10 +15,7 @@ import type { ClipId, SegmentId } from "@/types/domain";
 
 /**
  * The transitions that stand between a failed write and permanently lost field
- * audio. Each test below names the regression it exists to catch. None of them
- * could be written while this logic lived inside `useObsChapter`: `vitest`
- * runs in the Node environment here and the project has no renderer, so a
- * regression in any of these transitions used to ship with the suite green.
+ * audio. Each test below names the regression it exists to catch.
  *
  * What is NOT covered here: everything the hook does with the results. The
  * `saveTake` write (clip + take in one transaction), the `deleteClip` of the
@@ -48,6 +46,7 @@ function held(
   const recorded = pcm();
   const take = startSave(null, {
     segmentId: SEGMENT,
+    ordinal: 3,
     clipId: CLIP,
     existing: new Int16Array(0),
     recorded,
@@ -81,6 +80,7 @@ describe("startSave", () => {
     const { take } = held();
     const second = startSave(take, {
       segmentId: "seg-2" as SegmentId,
+      ordinal: 5,
       clipId: "clip-2" as ClipId,
       existing: new Int16Array(0),
       recorded: pcm(),
@@ -327,6 +327,7 @@ describe("a take that is saved on the second attempt", () => {
     const recorded = pcm();
     const started = startSave(null, {
       segmentId: SEGMENT,
+      ordinal: 3,
       clipId: CLIP,
       existing: new Int16Array(0),
       recorded,
@@ -364,5 +365,33 @@ describe("a take that is saved on the second attempt", () => {
     expect(failed?.editOnly).toBe(true);
     const retried = retrySave(failed);
     expect(retried?.editOnly).toBe(true);
+  });
+
+  it("carries the segment's number through fail and retry (#710)", () => {
+    // The recovery screen names the held take by this number, and it only
+    // mounts once an attempt has failed, so the number has to be the one
+    // captured with the take, through every transition after it.
+    const { take } = held();
+    expect(take.ordinal).toBe(3);
+    const failed = failSave(take, CLIP, "unknown");
+    expect(failed?.ordinal).toBe(3);
+    const retried = retrySave(failed);
+    expect(retried?.ordinal).toBe(3);
+  });
+});
+
+describe("ordinalForTake (#710)", () => {
+  const OPEN = "seg-open" as SegmentId;
+
+  it("names a take for the open segment by the open segment's number", () => {
+    expect(ordinalForTake({ segmentId: OPEN, ordinal: 4 }, OPEN)).toBe(4);
+  });
+
+  it("gives no number to a take for any other segment", () => {
+    // The sheet is keyed on its segment and saves its own, so this is not a
+    // path that runs today; what it pins is that a disagreement reads as "your
+    // recording", never as another segment's number.
+    expect(ordinalForTake({ segmentId: OPEN, ordinal: 4 }, SEGMENT)).toBeNull();
+    expect(ordinalForTake({ segmentId: null, ordinal: 4 }, SEGMENT)).toBeNull();
   });
 });

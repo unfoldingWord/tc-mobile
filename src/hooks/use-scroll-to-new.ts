@@ -28,6 +28,24 @@ export interface ScrollToNew<Id> {
    */
   armFocus: (id: Id | null) => void;
   /**
+   * The row's registered element, or `null` when no row is registered under
+   * that id — because it is not on screen, or not committed yet.
+   *
+   * For the one landing this hook does NOT arm: a node that is itself the
+   * focus target (a registered empty state, which carries its own
+   * `tabIndex={-1}`) rather than a row with a control inside it.
+   */
+  nodeFor: (id: Id) => HTMLElement | null;
+  /**
+   * The control inside a row that takes a hand-off — the same `focusSelector`
+   * {@link reveal} uses, so a caller that focuses a row NOW lands where an
+   * armed reveal would have, without repeating the selector.
+   *
+   * Returns the element rather than focusing it, because one caller stashes it
+   * for a later return-focus rather than focusing it here.
+   */
+  controlIn: (id: Id) => HTMLElement | null;
+  /**
    * Scroll a row into view now, without arming anything. For a landing that is
    * decided from the list itself rather than from a create — Segments' first
    * load, which lands on the first not-finished row (F5).
@@ -103,9 +121,17 @@ export function useScrollToNew<Id>(focusSelector: string): ScrollToNew<Id> {
     pending.current = { ...pending.current, focus: id };
   }, []);
 
+  const nodeFor = useCallback((id: Id) => nodes.current.get(id) ?? null, []);
+
   const scrollTo = useCallback((id: Id) => {
     nodes.current.get(id)?.scrollIntoView({ block: "nearest" });
   }, []);
+
+  const controlIn = useCallback(
+    (id: Id) =>
+      nodes.current.get(id)?.querySelector<HTMLElement>(focusSelector) ?? null,
+    [focusSelector]
+  );
 
   const reveal = useCallback(
     (focusHeld = false) => {
@@ -126,7 +152,15 @@ export function useScrollToNew<Id>(focusSelector: string): ScrollToNew<Id> {
   // and a fresh object per render would re-run that effect on every tick of a
   // live take. The same reason `useFocusRestore` memoises its pair.
   return useMemo(
-    () => ({ setNode, armScroll, armFocus, scrollTo, reveal }),
-    [setNode, armScroll, armFocus, scrollTo, reveal]
+    () => ({
+      setNode,
+      armScroll,
+      armFocus,
+      nodeFor,
+      controlIn,
+      scrollTo,
+      reveal,
+    }),
+    [setNode, armScroll, armFocus, nodeFor, controlIn, scrollTo, reveal]
   );
 }

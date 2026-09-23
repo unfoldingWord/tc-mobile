@@ -45,12 +45,12 @@ loader); do not read every description here as the target.
 |         |                                                                            |
 | ------- | -------------------------------------------------------------------------- |
 | Runtime | Node 22.12+ (knip's floor)                                                 |
-| Build   | Vite 7, `@vitejs/plugin-react`                                             |
+| Build   | Vite 8, `@vitejs/plugin-react`                                             |
 | UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons                            |
 | PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)                               |
 | Storage | IndexedDB via `idb` 8                                                      |
 | Audio   | Web Audio + MediaRecorder; `@breezystack/lamejs` for MP3 (in a Web Worker) |
-| Tests   | Vitest 3, `fake-indexeddb`                                                 |
+| Tests   | Vitest 5, `fake-indexeddb`                                                 |
 | Lint    | ESLint 9 flat config, `typescript-eslint` 8, Prettier 3                    |
 | Deploy  | Cloudflare Workers static assets, Wrangler 4                               |
 
@@ -104,11 +104,13 @@ linter reads CSS, so it is a convention that is read, not enforced.
 No _linter_ reads CSS — there is no stylelint, and knip's project globs are
 `ts`/`tsx`/`mjs` only — but the test suite does. **Treat the list below as
 examples, not as a set this file keeps current: `grep -rln "\.css\"" tests` is
-the source of truth.** That grep returns eight files today and over-matches by
-exactly one — `tests/smoke-path-filter.test.ts` lists stylesheet _paths_ as
-fixtures for a CI path filter and never reads their contents. The other seven:
-`tests/touch-policy.test.ts`, `tests/notice-bridge.test.ts` and
-`tests/share-progress.test.ts` all read `3-components.css`;
+the source of truth.** It over-matches by one —
+`tests/smoke-path-filter.test.ts` lists stylesheet _paths_ as fixtures for a CI
+path filter and never reads their contents. Among the readers:
+`tests/touch-policy.test.ts`, `tests/notice-bridge.test.ts`,
+`tests/share-progress.test.ts` and `tests/guided-ring.test.ts` all read
+`3-components.css` — the last two by SLICING a rule block out of it, which is
+the trap the paragraph below is about;
 `tests/contrast.test.ts` and `tests/theme.test.ts` read layers 1 and 2
 (theme.test.ts pins a `--p-cool-950` hex);
 `tests/style-bridge.test.ts` reads `globals.css` and `2-semantic.css`; and
@@ -329,7 +331,9 @@ never reaches the backstop below), `stopRecording`'s commit-path backstop
 (`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), a failed
 save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
-(`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), playback's own
+(`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
+segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591),
+playback's own
 resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
 `"playback-resume"`, and the fail-closed gate that still finds the context
 unusable after the resume await — `"playback-resume-timeout"` when the
@@ -340,17 +344,14 @@ carries the same `SendLogControl` the crash screen does (#456, moved into
 its own module, `components/send-log-control.tsx`, so both screens share one
 implementation) — `DatabasePanel` still does not: #456 itself calls that a
 design call, since an unreachable database cannot read its own log either,
-and that is different work from wiring the funnel. **`SaveFailed`'s Send
-control also sits on a still-live app** (unlike `ErrorBoundary`'s, which runs
-after `quiesceTranscodeSweep()` — `components/error-boundary.tsx`): the
-module-scoped transcode sweep (`hooks/finish-transcode.ts`) keeps writing
-while `SaveFailed` is up, and a live failing sweep can churn the armed share
-and prune the 50-row ring before the tap that was supposed to send it lands.
-The crash screen's quiesce is one-way, on purpose, because its only exit is a
-reload; `SaveFailed`'s primary exit is Retry on the _same_ page, so copying
-that one-way quiesce would silently skip the post-retry sweep a successful
-Finished retry still owes (D3). Left as a known hole rather than a silent
-one — see #514 (George R1 P2-2 on #509).
+and that is different work from wiring the funnel. **`SaveFailed` pauses the
+module-scoped transcode sweep while mounted** (#514), then resumes it on
+unmount. Requests made during the pause are held in `requestedDuringPause`,
+so a successful Finished retry still gets its conversion after recovery.
+This pause is reversible; the crash screen's `quiesceTranscodeSweep()` remains
+one-way because that screen exits through reload. An encoder turn already
+in flight can still finish and write one failure entry before the pause takes
+effect; pausing is not cancellation of that turn.
 What still ends at `console.error` and is therefore **never written down** is
 mic/record-start and the `use-audio-session.ts` catch sites that wrap
 `playSamples` (a failed decode, a dangling clip with nothing to play) — the

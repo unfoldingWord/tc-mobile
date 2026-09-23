@@ -1,19 +1,12 @@
 /**
  * The one unsaved recording, as pure transitions over `PendingTake | null`.
  *
- * Everything here used to live inline in `useObsChapter`, where it could not be
- * tested: this project has no renderer (`vitest.config.ts` sets
- * `environment: "node"`, and there is no jsdom or testing-library in
- * `package.json`), so nothing can drive a React hook. That mattered more here
- * than anywhere else in the app, because each of these transitions is a way to
- * lose audio that a translator cannot record again — a `finally` on the failure
- * path, a retry that mints a second `clipId`, a discard that leaves the bytes
- * behind on a phone that has just run out of room.
+ * Each transition protects audio that a translator cannot record again: a
+ * failure must retain the samples, a retry must reuse the `clipId`, and a
+ * discard must report the orphan clip for deletion.
  *
- * So the transitions were lifted out, by the same move already used for
- * `lib/audio/session.ts` and `hooks/save-failure.ts`: pure, DOM-free, React-
- * free, and covered in plain Node — see `tests/pending-take.test.ts`. The hook
- * keeps only the parts that are genuinely effects: the IndexedDB writes, the
+ * The transitions are pure, DOM-free and React-free; see
+ * `tests/pending-take.test.ts`. The hook owns the IndexedDB writes, the
  * `useState` slot, and the orphan delete.
  *
  * Two conventions run through the module:
@@ -62,6 +55,16 @@ export type SaveFailureKind = "quota" | "downgrade" | "stale" | "unknown";
 export interface PendingTake {
   /** Captured when the recording stopped, never re-derived from what is on screen. */
   readonly segmentId: SegmentId;
+  /**
+   * The segment's display number, for the recovery screen to name this take
+   * by (#710). Captured in the same call as `segmentId` and carried with it, so
+   * the number and the audio cannot come apart: the screen used to read an
+   * App-level slot written on every recorder OPEN, and a second segment opened
+   * while this take's first attempt was still in flight relabelled it. `null`
+   * when the caller could not name the segment; the screen then says "your
+   * recording" with no number rather than a wrong one.
+   */
+  readonly ordinal: number | null;
   /** Minted once per recording, so a retry overwrites rather than duplicates. */
   readonly clipId: ClipId;
   /** Existing segment audio the recording splices into (empty on a first take). */
@@ -94,6 +97,8 @@ export interface PendingTake {
 /** What a caller has to supply to open the slot: the audio recipe and where it belongs. */
 export interface NewTake {
   readonly segmentId: SegmentId;
+  /** The segment's display number, or `null` (see `PendingTake`). */
+  readonly ordinal: number | null;
   readonly clipId: ClipId;
   readonly existing: Int16Array;
   readonly recorded: Int16Array;
@@ -119,6 +124,7 @@ export function startSave(
   if (current) return current;
   return {
     segmentId: take.segmentId,
+    ordinal: take.ordinal,
     clipId: take.clipId,
     existing: take.existing,
     recorded: take.recorded,
@@ -129,6 +135,24 @@ export function startSave(
     kind: null,
     attempts: 0,
   };
+}
+
+/**
+ * The display number a take saved from the recorder sheet is labelled with.
+ *
+ * The sheet's ordinal, but only when the take is for the segment the sheet is
+ * open on (#710). The recorder is keyed on its segment and always saves its
+ * own, so the two agree on every path that exists today; the check is what
+ * makes a disagreement come out as no number instead of another segment's.
+ */
+export function ordinalForTake(
+  sheet: {
+    readonly segmentId: SegmentId | null;
+    readonly ordinal: number | null;
+  },
+  segmentId: SegmentId
+): number | null {
+  return sheet.segmentId === segmentId ? sheet.ordinal : null;
 }
 
 /**
@@ -204,10 +228,8 @@ export function discardSave(current: PendingTake | null): {
  * deliberate and one-directional — refusing costs a person time, yielding costs
  * a translator audio that cannot be recorded again.
  *
- * Here rather than inline in `App` because it is a rule about held audio, not
- * about rendering, and because this repo has no renderer: inline in a component
- * it could only ever be review surface, and the one arm that was missing
- * (the clipboard) is exactly the kind of omission a test catches.
+ * Here rather than inline in `App` because it is a rule about held audio,
+ * not about rendering.
  *
  * The three arms:
  *

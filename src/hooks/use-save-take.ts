@@ -240,8 +240,7 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
   const savingRef = useRef(false);
   // The latest `onSaved`, read from the commit closure without making `commit`
   // depend on a callback identity the caller re-creates each render. Kept
-  // current in an effect, not written during render (`react-hooks/refs`) — the
-  // same latest-ref shape `recorderStateRef` uses in `use-audio-session.ts`. The
+  // current in an effect, not written during render (`react-hooks/refs`). The
   // `useRef` initialiser already holds the first render's callback, and effects
   // flush before the next tap, so no commit can read a stale one.
   const onSavedRef = useRef(onSaved);
@@ -287,6 +286,9 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
   const saveRecording = useCallback(
     (
       segmentId: SegmentId,
+      // The segment's display number, carried on the take so the recovery
+      // screen names the segment the audio belongs to (#710).
+      ordinal: number | null,
       existing: Int16Array,
       recorded: Int16Array,
       insertionOffset: number,
@@ -297,6 +299,7 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
     ): Promise<boolean> => {
       const take = startSave(pending, {
         segmentId,
+        ordinal,
         // Minted here, not per attempt: IndexedDB `put` is an upsert, so a
         // retry with the same id overwrites the bytes a failed attempt may
         // already have written instead of spending the space twice.
@@ -350,6 +353,7 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
   const saveEditedSegment = useCallback(
     (
       segmentId: SegmentId,
+      ordinal: number | null,
       buffer: Int16Array,
       finished: boolean
     ): Promise<boolean> => {
@@ -358,7 +362,15 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
           onSavedRef.current?.()
         );
       }
-      return saveRecording(segmentId, buffer, NO_SAMPLES, 0, finished, true);
+      return saveRecording(
+        segmentId,
+        ordinal,
+        buffer,
+        NO_SAMPLES,
+        0,
+        finished,
+        true
+      );
     },
     [saveRecording]
   );

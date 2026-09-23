@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { JSDOM } from "jsdom";
@@ -26,6 +27,15 @@ import { one, render as renderStatic } from "./render";
  * named `strings.menuClose`, which is what `e2e/back-navigation.spec.ts`,
  * `e2e/theme-toggle.spec.ts` and `e2e/failure-log.spec.ts` locate the menu by.
  * Only the visible header changes, and only when the caller says so.
+ *
+ * The first test below (#643) is a different kind of check from the three
+ * that render `Menu` directly: it reads `src/components/books-screen.tsx` as
+ * source and asserts the Books call site itself passes `hamburger` on its
+ * global-menu `<Menu>`. Without it, deleting the prop at that call site alone
+ * regressed #608 while every rendered-`Menu` test here stayed green, because
+ * none of them read the Books source (see #643's tracking issue for the
+ * scenario). It is a source-wiring contract, not a rendered assertion, and it
+ * has the narrow-scan caveat noted at its `matchAll` call below.
  */
 
 let dom: JSDOM;
@@ -77,6 +87,35 @@ function dismissControl(panel: Element): HTMLButtonElement {
 }
 
 describe("the global menu's header (#608)", () => {
+  it("opts the Books global menu into the hamburger header (#643)", () => {
+    const books = readFileSync(
+      new URL("../src/components/books-screen.tsx", import.meta.url),
+      "utf8"
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    // Check the caller as well as Menu's rendered opt-in behavior below.
+    // Count matches so a missing or duplicated global menu cannot pass.
+    //
+    // `[^>]*` stops at this tag's first `>`, including one that only closes a
+    // nested JSX expression or arrow-function prop before the tag itself
+    // ends (e.g. `open={f((x) => x > 0)}`). That would truncate the match and
+    // could false-red on a legitimate wiring; it would not silently accept a
+    // missing `hamburger`, which is the failure this test exists to catch. No
+    // general JSX/TSX parser is intended here (#643).
+    const globalMenus = [...books.matchAll(/<Menu\b[^>]*>/g)].filter(([tag]) =>
+      /\bopen\s*=\s*\{\s*menuOpen\s*\}/.test(tag)
+    );
+    expect(globalMenus).toHaveLength(1);
+    // Bare `hamburger` and the equivalent explicit `hamburger={true}` both
+    // wire the prop on; either spelling must pass (#643). The optional group
+    // requires the literal `true` — `hamburger={false}` and `hamburger={x}`
+    // still fail, which is the actual regression this test guards against.
+    expect(globalMenus.at(0)?.[0]).toMatch(
+      /\shamburger(?:\s*=\s*\{\s*true\s*\})?(?=\s|>)/
+    );
+  });
+
   it("keeps the ≡ glyph top-right with no visible title, and still closes as 'Close menu'", async () => {
     const panel = await mount({ hamburger: true });
 

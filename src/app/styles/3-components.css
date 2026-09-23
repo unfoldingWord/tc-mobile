@@ -76,7 +76,6 @@
     --c-gap-parts: var(--p-space-2);
     --c-gap-items: var(--p-space-4);
     --c-gap-blocks: var(--p-space-6);
-    --c-gap-sections: var(--p-space-8);
 
     /* Touch targets never go below 44px — with one standing exception, named
        here rather than left as a claim the tokens contradict (George R5 P3):
@@ -104,8 +103,6 @@
        read one source rather than repeating the numbers (Frank, round 1). */
     --c-hint-size: 18px;
     --c-hint-radius: var(--p-radius-full);
-    --c-tile-sm: 48px;
-    --c-tile-lg: 56px;
 
     /* The notice line (#164 L-14) and the screen breadcrumb (#164 R-10), the
        two parts this file gained in #457. Their geometry is named here, not
@@ -123,6 +120,11 @@
 
     --c-focus-ring: 2px solid var(--s-focus);
     --c-focus-offset: 3px;
+    /* The guide ring (#604), one step heavier than the focus ring. Named here
+       so the two marks cannot drift into the same weight — a keyboard user has
+       to be able to tell "focused" from "next step" when both are on the same
+       control. */
+    --c-guide-ring: 3px;
 
     /* The waveform stroke. Defaults to the voice accent; a finished row remaps
        it to done (green) and the canvas reads it back — no prop drilling, and
@@ -275,6 +277,66 @@
   .control--primary {
     width: var(--c-control-xl);
     height: var(--c-control-xl);
+  }
+  /* THE GUIDE RING (#604) — "this is the next required action".
+     Which control wears it is decided once, in `guided-step.ts`; this is the
+     only place it is drawn. Deliberately not scoped to `.control`: the same
+     class marks the chapter row, which is a plain button.
+
+     Drawn INSIDE the element's own box, and that half is not a taste call. A
+     guided chapter row is exactly as wide as the shelf's scrolling container,
+     which clips anything painted outside it — so an outward ring on a row
+     would lose both of its vertical strokes and read as two stray lines.
+     Inside the box there is nothing to clip it, and the ring follows whatever
+     radius the element already has: a circle on a tile, a rectangle on a row.
+
+     It also has to stay tellable apart from focus-visible, which a keyboard
+     user can have on this same control at this same moment. They differ in
+     hue (guide against focus), in weight, and in place — focus is an outline
+     3px outside the box, this is 3px inside it, so the two read as concentric
+     rings rather than as one thick one. */
+  .is-guided {
+    box-shadow: inset 0 0 0 var(--c-guide-ring) var(--s-guide);
+  }
+  /* The one exception, for a measured reason. The guide accent against the
+     live red is well under the non-text floor in both themes, which
+     `tests/contrast.test.ts` asserts, so a ring drawn inside the record button
+     is a ring a low-vision user simply does not get; on the sheet's floor
+     around it, the same accent clears that floor. The record button is also
+     the one guided control with room outside it. If the accent ever changes,
+     that assertion is where this exception is re-argued.
+
+     The rule above says inset and outset read as concentric rings with the
+     focus outline. Here the ring is on the same side as focus, so that
+     separation has to be MADE rather than inherited: at the base offset the
+     guide covers 0-3px outside the box and the outline starts at 3px, and the
+     two touch. Pushed out by the unlayered exception in globals.css, so a
+     keyboard user sees blue, a gap, then amber — and the two move together if
+     either token changes. */
+  /* The permanent recorder wrapper keeps its shadow outside the disabled
+     button's opacity/filter group and preserves the button's DOM identity. */
+  .record-guide {
+    display: inline-flex;
+    border-radius: var(--p-radius-full);
+  }
+  .control--record.is-guided,
+  .record-guide.is-guided {
+    box-shadow: 0 0 0 var(--c-guide-ring) var(--s-guide);
+  }
+  /* A control nobody can tap is nobody's next action. The screens keep
+     rendering behind a scrim — the Segments list stays mounted and inert under
+     the recorder sheet, and each screen goes inert behind its own menus — so
+     the mark the screen last painted is still in the DOM while something else
+     owns the surface. Without this, two rings show at once, one of them
+     through a scrim, which is the "never lingers" rule broken by composition
+     rather than by the resolver — something only the composed tree shows, so
+     the browser walk is where it is caught and a unit test cannot be.
+
+     Last of the four, so it beats the record exception at equal specificity;
+     `box-shadow: none` kills both spellings of the ring. */
+  [inert] .is-guided,
+  .is-guided[inert] {
+    box-shadow: none;
   }
   /* The disabled-row reason badge (#135). The wrapper is a sibling shell around
      the button so the badge escapes the inert control's opacity — the mark must
@@ -856,22 +918,32 @@
     background: color-mix(in srgb, var(--s-voice) 20%, transparent);
     border-inline: 2px solid var(--s-voice);
   }
+  /* Each edge is a thin stem on the sample plus a finger-sized hit box. While
+     the stem is on screen the component clamps the box's `left` to half its
+     width inside the canvas (#707), reading that width from
+     `--c-selection-hit` declared here, so a zoom-fitted edge keeps its whole
+     target. The stem is never clamped: it marks the sample. The box's inward
+     focus offset lives beside the unlayered default in globals.css, like
+     `.paste-marker`'s: a layered copy here never won (#635). */
   .selection-handle {
+    --c-selection-hit: 24px;
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 24px;
+    width: var(--c-selection-hit);
     transform: translateX(-50%);
     pointer-events: auto;
     cursor: ew-resize;
     touch-action: none;
-    /* A thin bar centred in a wide, finger-sized target. */
-    background: linear-gradient(var(--s-voice), var(--s-voice)) center / 3px
-      100% no-repeat;
   }
-  .selection-handle:focus-visible {
-    outline: 2px solid var(--s-focus);
-    outline-offset: -2px;
+  .selection-stem {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    transform: translateX(-50%);
+    pointer-events: none;
+    background: var(--s-voice);
   }
   /* The paste row sits above the canvas — a normal flex item, not an overlay —
      so the circular drop icon never covers the waveform band it used to hide
@@ -920,7 +992,7 @@
     color: var(--s-voice);
     background: var(--s-raised);
     border: 1px solid var(--s-voice);
-    border-radius: 999px;
+    border-radius: var(--p-radius-full);
     cursor: pointer;
     pointer-events: auto;
     transition:
@@ -936,6 +1008,23 @@
   .recorder-cut {
     padding-top: var(--p-space-2);
     color: var(--s-voice);
+    /* The scissors is mounted only while a selection frame is open (#613), so
+       this row reserves its box the way `.recorder-paste` reserves the paste
+       marker's (#414 R3 P3): `.recorder-stage` is a centred column and a row
+       that collapsed with its child would recentre the group, jumping the
+       canvas on every cut. `--c-control-sm` is what `.control--quiet` — the
+       scissors — is sized by, read as the token rather than repeated as 40px
+       (the #362 40-to-44 question above is exactly that kind of change).
+
+       The `padding-top` is INSIDE this reservation and has to be added to it:
+       under border-box, `min-height` includes padding, so reserving the bare
+       40px control box left the empty row 6px shorter than the mounted one
+       and slid the centred canvas 3px on every cut — reserving the height and
+       still jumping, which is the failure this whole rule exists to prevent.
+       `.recorder-paste`'s `--c-recorder-paste-row` has always been the control
+       box PLUS `--p-space-2` for the same reason; this is that contract, with
+       this row's own control size. */
+    min-height: calc(var(--c-control-sm) + var(--p-space-2));
     /* `flex-shrink: 0` (George R7 P2-1, round 8): this row's `min-height:
        auto` (unset, and it is not `overflow: hidden`) already gives it an
        automatic minimum size equal to its own content, so it could not
@@ -958,13 +1047,17 @@
     gap: var(--c-gap-items);
     padding-bottom: var(--p-space-3);
   }
-  /* The toggle keeps its right-hand slot and vertical centre across modes. */
+  /* The toggle keeps its right-hand slot and vertical centre across modes. The
+     bin (#592) takes a matching control-width slot at the LEFT end, so Record
+     and Play keep the two shared middle columns and the toggle's column is
+     still the last `--c-control-md` of the bar, as in the edit spread. */
   .recorder-toolbar.pair {
-    grid-template-columns: 1fr 1fr var(--c-control-md);
+    grid-template-columns: var(--c-control-md) 1fr 1fr var(--c-control-md);
     gap: var(--c-gap-parts);
     height: calc(var(--c-control-xl) + var(--p-space-3));
   }
-  .recorder-toolbar.pair > .control {
+  .recorder-toolbar.pair > .control,
+  .recorder-toolbar.pair > .record-guide {
     justify-self: center;
   }
   /* The record hero at xl (68px), scoped to the pair so the global 52px record
@@ -1132,13 +1225,18 @@
     border-radius: var(--p-radius-full);
   }
 
-  /* --- the record button's footprint on an empty row (#82) --------------- */
-  /* An empty row has no trailing menu; this inert spacer reserves the menu's
-     width so the record button lands on the same axis as a recorded row's play
-     button, and the flex-1 waveform gets identical width in both. */
-  .row-menu-spacer {
-    width: var(--c-control-sm);
-    flex: none;
+  /* --- the ordinal and its label (#591) ---------------------------------- */
+  /* A label is free text up to 80 characters, so the left zone is capped and
+     the heading truncates: the waveform keeps its share of the row, and the
+     ordinal, which leads the heading, is never the part cut off. */
+  .row-open {
+    max-width: 45%;
+  }
+  .row-heading {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* #82: inside a row the record button matches the play button's 44px box, so

@@ -50,6 +50,7 @@ function segment(): Segment {
     chapterId: "ch" as ChapterId,
     index: 1,
     reference: null,
+    label: null,
     activeTakeId: "take" as TakeId,
     status: "affirmed",
   };
@@ -67,6 +68,7 @@ function pcmClip(id: ClipId, samples: Int16Array): Clip {
       encoding: "pcm",
       generation: 0,
       byteLength: samples.length * 2,
+      transcodeStallCount: 0,
       peaks: null,
     },
     samples,
