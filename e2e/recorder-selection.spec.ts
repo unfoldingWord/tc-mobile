@@ -383,3 +383,91 @@ test.describe("edit mode toggle", () => {
     });
   }
 });
+
+// #659 (a Claude review of #638): at 0%/100% a handle's hit box sits flush
+// against `.recorder-canvas`'s clipped edge (the #707 clamp), so whether its
+// keyboard focus ring clips there too is not something a source read of
+// `outline-offset: -2px` can answer — CSS resolves the ring's rendered
+// bounds from the box's live geometry plus the offset and width, not from
+// the declaration's sign alone. This reads all three from the shipped build
+// and derives the ring's own edges, rather than trusting that a negative
+// offset is automatically safe.
+test.describe("selection handle focus ring at 0%/100% (#659)", () => {
+  for (const width of [320, 390]) {
+    test(`the focus ring never renders past the canvas edge (${width}px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 740 });
+      await page.goto("/");
+      await page.getByRole("button", { name: "New book" }).click();
+      await page.getByRole("button", { name: "Create book" }).click();
+      await page.getByRole("button", { name: /^Add chapter to/ }).click();
+      await page.getByRole("button", { name: "Create chapter" }).click();
+      await page.getByRole("button", { name: "Open Chapter 1" }).click();
+      await page.getByRole("button", { name: "Add segment" }).click();
+      await page.getByRole("button", { name: "Record segment 1" }).click();
+      await page.getByRole("button", { name: "Record", exact: true }).click();
+      await page.waitForTimeout(1200);
+      await page
+        .getByRole("button", { name: "Stop recording", exact: true })
+        .click();
+      await page
+        .locator(".recorder-toolbar")
+        .getByRole("button", { name: "Edit recording", exact: true })
+        .click();
+      await page
+        .getByRole("button", {
+          name: "Zoomed to the whole segment. Zoom in to a quarter.",
+          exact: true,
+        })
+        .click();
+      const stage = await page.locator(".recorder-canvas").boundingBox();
+      expect(stage).not.toBeNull();
+
+      for (const label of ["Selection start", "Selection end"] as const) {
+        const handle = page.getByLabel(label, { exact: true });
+        await expect(handle).toBeVisible();
+        // A real Tab, not `.focus()`: `:focus-visible` is a heuristic over
+        // input history, and a script-driven focus does not satisfy it, so a
+        // programmatic focus would silently skip the very rule under test.
+        await page.evaluate(() => document.body.focus());
+        let tabs = 0;
+        while (tabs < 30) {
+          await page.keyboard.press("Tab");
+          if (await handle.evaluate((el) => el === document.activeElement)) {
+            break;
+          }
+          tabs++;
+        }
+        await expect(handle).toBeFocused();
+        expect(
+          await handle.evaluate((el) => el.matches(":focus-visible"))
+        ).toBe(true);
+        const box = await handle.boundingBox();
+        expect(box).not.toBeNull();
+        const { outlineWidth, outlineOffset } = await handle.evaluate((el) => {
+          const cs = getComputedStyle(el);
+          return {
+            outlineWidth: parseFloat(cs.outlineWidth),
+            outlineOffset: parseFloat(cs.outlineOffset),
+          };
+        });
+        // CSS Outline: the ring is drawn `outline-width` further from the
+        // border edge than `outline-offset` places it — outward for a
+        // positive offset, and inward (toward, then past, the edge) for a
+        // negative one. This is the rendered ring's outer bound on each
+        // side, derived rather than assumed.
+        const ringLeft = box!.x - outlineOffset - outlineWidth;
+        const ringRight = box!.x + box!.width + outlineOffset + outlineWidth;
+        expect(
+          ringLeft,
+          `${label} ring's left edge vs the canvas`
+        ).toBeGreaterThanOrEqual(stage!.x - 0.5);
+        expect(
+          ringRight,
+          `${label} ring's right edge vs the canvas`
+        ).toBeLessThanOrEqual(stage!.x + stage!.width + 0.5);
+      }
+    });
+  }
+});

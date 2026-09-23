@@ -17,7 +17,8 @@ import { describe, expect, it } from "vitest";
  *
  * Source text, not a computed style: there is no renderer in this suite. The
  * shipped build's computed value was read in Chromium for each fix, and the
- * PR bodies for #622 and #635 hold those runs.
+ * PR bodies for #622 and #638 hold those runs (#638 is the PR that carries
+ * the recorded run for #635; #635 is the issue, not the PR, #659).
  *
  * Comments are stripped before matching. `3-components.css`'s header names
  * selectors and values in prose, and a raw regex over the whole file matches
