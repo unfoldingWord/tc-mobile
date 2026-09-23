@@ -13,6 +13,7 @@ let mounted: boolean;
 const recorded: Row = {
   segmentId: "segment" as SegmentId,
   ordinal: 1,
+  label: null,
   hasClip: true,
   finished: false,
   clipId: "clip" as ClipId,
@@ -60,6 +61,7 @@ async function render(row: Row, close = onMenuClose) {
         onOpenRecorder: vi.fn(),
         onSetFinished: vi.fn(),
         onErase: vi.fn(),
+        onRename: vi.fn(),
         onMenuOpen,
         onMenuClose: close,
       })
