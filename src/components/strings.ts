@@ -296,8 +296,11 @@ export const strings = {
   // Each way out follows from the state itself (make an edit; undo one), so
   // there is nothing to point at — and pointing is where cue copy has gone
   // wrong here before (`menu-row-state.ts`'s `rowHint`, and #648 round 1).
-  nothingToUndo: "No edits to undo yet.",
-  nothingUndone: "Nothing has been undone.",
+  // They state where the history cursor is, never what has happened: an edit
+  // undone back to the start, or an undo redone to the tip, reaches the same
+  // cursor as a fresh session (`lib/audio/edit-log.ts`, George R1 on #703).
+  nothingToUndo: "Nothing to undo.",
+  nothingUndone: "Nothing to redo.",
   recorderMenuTitle: "More",
   recorderMenuOpen: "More actions",
   selectionStartHandle: "Selection start",

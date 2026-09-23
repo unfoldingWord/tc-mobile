@@ -64,7 +64,7 @@ describe("the history gates are the shipped gates (#317, #91)", () => {
   // three terms, because a disjunction does not care which disjunct answered.
   // Which reason wins decides what the translator is told, so it is pinned
   // separately — and it is not arbitrary: a finger on the stage blocks the
-  // control whatever the history holds, so saying "no edits to undo yet" to
+  // control whatever the history holds, so saying "nothing to undo" to
   // someone mid-pan with a full history would be false.
   it("a finger on the stage outranks a full history", () => {
     expect(
@@ -123,6 +123,17 @@ describe("the cue (#91, #135)", () => {
   // cue would leave the pair exactly as ambiguous as no cue at all.
   it("gives the two arrows different words", () => {
     expect(strings.nothingToUndo).not.toBe(strings.nothingUndone);
+  });
+
+  // `canUndo`/`canRedo` read the log's CURSOR (`lib/audio/edit-log.ts`), not
+  // the session's past: an edit undone back to the start leaves `canUndo`
+  // false, and an undo redone to the tip leaves `canRedo` false. So the words
+  // may state only where the cursor is, never what has or has not happened
+  // (George R1 on #703: "No edits to undo yet." was false after an undo).
+  it("neither cue claims a history the cursor cannot know", () => {
+    for (const copy of [strings.nothingToUndo, strings.nothingUndone]) {
+      expect(copy.toLowerCase()).not.toMatch(/\byet\b|\b(has|have) been\b/);
+    }
   });
 
   it("stays silent on the two transient reasons, and on a live control", () => {
