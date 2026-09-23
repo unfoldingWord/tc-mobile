@@ -41,7 +41,14 @@ import { messages } from "../src/lib/messages";
 
 const SRC = join(import.meta.dirname, "..", "src");
 
-/** The two modules a table's own sentences are allowed to appear in. */
+/**
+ * The two table files the source walk must reach — a floor on `sourceFiles()`,
+ * nothing more. It is NOT an exemption list: each table is skipped only in its
+ * own file (`file === owner` below), so the same sentence written as a literal
+ * in both tables is still flagged, in both directions. An earlier draft did
+ * exempt both files from both scans, which is the silent cross-layer split this
+ * gate exists to prevent (George, #600 rounds 1 and 4).
+ */
 const TABLES = ["components/strings.ts", "lib/messages.ts"];
 
 /** Under this length, or with no space in it, a value is a word, not a sentence. */
@@ -195,8 +202,10 @@ describe("stringLiterals", () => {
     const found = stringLiterals(
       'const t = `Your ${kind} recording`;\nconst u = "after";'
     );
-    expect(found).not.toContain("Your  recording");
-    expect(found).toContain("after");
+    // `toEqual`, not `not.toContain` plus `toContain`: those two pass even if
+    // the scanner emits the head and tail as separate strings, which is the
+    // thing this case is named for (George, #600 round 4).
+    expect(found).toEqual(["after"]);
   });
 
   it("does not read a URL inside a string as a comment opener", () => {
