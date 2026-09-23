@@ -222,8 +222,7 @@ export function App() {
   // ── The finished flag's one reconciliation point (#160, L-10) ────────────
   //
   // Recorded here because this `reload()` is the whole of it, and the next
-  // person to make the recorder non-modal has to find this first. Verified at
-  // this head rather than restated from the issue:
+  // person to make the recorder non-modal has to find this first.
   //
   //   THREE writer paths, all landing in `lib/storage/books.ts`:
   //     - a take commit — `writeTakeInTx` stamps the status atomically with the
@@ -242,7 +241,9 @@ export function App() {
   //
   // It is correct today for one reason — the sheet is MODAL. While it is open
   // the screens behind it are `inert` (the wrapper below), so the list's mirror
-  // cannot be read or acted on during the window in which it is stale; and the
+  // cannot be focused or activated during the window in which it is stale --
+  // it is still PAINTED, which is why this is a modality argument and not a
+  // visibility one; and the
   // list's own toggle patches its row in place only after a landed write, so it
   // never diverges from the store on its own.
   //
