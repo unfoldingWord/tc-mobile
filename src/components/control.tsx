@@ -74,6 +74,21 @@ interface ControlProps {
    * to carry the state by itself.
    */
   pressed?: boolean;
+  /**
+   * This control is the next required action in the guided chain (#604), and
+   * wears the guide ring while it is.
+   *
+   * Purely visual, and deliberately so: the ring says "here next" to someone
+   * who may not read, and the accessible name already says what the control
+   * does. Announcing a second "this is the next step" on every guided control
+   * would put the guide in the way of an AT user who is navigating the screen
+   * their own way — the same reason the disabled-row badge is `aria-hidden`.
+   *
+   * Which control this is at any moment is `guided-step.ts`'s answer, never a
+   * local condition: a call site that decides for itself is how two rings end
+   * up on screen at once.
+   */
+  guided?: boolean;
 }
 
 const VARIANT_CLASS: Record<ControlVariant, string> = {
@@ -107,6 +122,7 @@ export const Control = forwardRef<HTMLButtonElement, ControlProps>(
       busy,
       hint,
       pressed,
+      guided,
     },
     ref
   ) {
@@ -143,6 +159,7 @@ export const Control = forwardRef<HTMLButtonElement, ControlProps>(
           "control",
           VARIANT_CLASS[variant],
           pressed ? "is-on" : undefined,
+          guided ? "is-guided" : undefined,
           className
         )}
       >
