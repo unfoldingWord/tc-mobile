@@ -13,9 +13,15 @@ import type { SegmentId } from "@/types/domain";
  * `clearSegmentTake`, which already deletes the take and its clip atomically,
  * reference-counts the clip, and returns the segment to "not-started" with
  * `activeTakeId` null (G4: the audio goes, the row stays). This hook adds no
- * store logic; it wraps that op with the small amount of state the two menus
- * need — a double-tap guard and a caught, surfaced error — and stays
- * presentation-free. The confirm dialog and the copy live in `components/`.
+ * store logic; it wraps that op with the one piece of state the two menus
+ * genuinely share — an in-flight guard, readable both as `erasing` for render
+ * and as `isErasing()` for the synchronous check a Back handler needs — and
+ * stays presentation-free. The confirm dialog and the copy live in
+ * `components/`.
+ *
+ * It deliberately carries no error; each screen holds its own failure flag,
+ * from the result of the call it made. The reasoning is on `useEraseSegment`
+ * below, and is the point of the one-instance lift (#160, L-12).
  */
 
 /**
