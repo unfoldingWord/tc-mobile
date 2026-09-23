@@ -119,12 +119,20 @@ describe("plural's default locale", () => {
     const forms = { one: "{n} chapter", other: "{n} chapters" };
     expect(plural(1, forms)).toBe("1 chapter");
     // 21 is the discriminator, and the reason n=1 alone was not one (George
-    // r2 Low 1). English cardinal selects `other` at 21; Russian and Polish
-    // select `one`. A default of `ru` passes the line above AND renders
-    // "21 chapter" from the English `one` form — so a case that stopped at 1
-    // asserted only that SOME locale maps 1 to `one`, which every locale here
-    // does. The source scans above are the structural pin; this is the
-    // behavioural one, and it now discriminates.
+    // r2 Low 1). English cardinal selects `other` at 21; RUSSIAN selects
+    // `one` there, as it does at 31 and 101. So a `ru` default passes the
+    // n=1 line above and still renders "21 chapter" from the English `one`
+    // form, which is what this line catches — where a case stopping at 1
+    // asserted only that SOME locale maps 1 to `one`, which they all do.
+    //
+    // It does NOT catch every wrong default, and naming which is the point
+    // (George r3). Polish at 21 is `many`, not `one` — the same rule line 37
+    // states — so a `pl` default misses this two-key table, falls back to
+    // `other`, and returns "21 chapters" untouched. An earlier version of
+    // this comment claimed Polish selects `one` at 21, contradicting line 37
+    // and overstating what the assertion proves. The source scans above are
+    // what pin the tag itself; this line pins behaviour for the family of
+    // defaults a scan alone would not reveal.
     expect(plural(21, forms)).toBe("21 chapters");
   });
 });
