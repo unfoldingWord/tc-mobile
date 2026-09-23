@@ -43,8 +43,22 @@ async function openEditMode(page: Page): Promise<void> {
   await expect(
     page.getByRole("button", { name: "Stop recording", exact: true })
   ).toBeVisible();
-  // Long enough that the committed buffer carries a selectable span to cut.
-  await page.waitForTimeout(1500);
+  // Wait on the recorder's OWN elapsed clock, not a blind sleep (George round 4).
+  // A fixed `waitForTimeout` is the only thing standing between this spec and an
+  // uncuttable take: if the fake device ever yields a shorter buffer the test
+  // fails for a reason that looks like the feature, and the obvious repair is to
+  // lengthen the sleep. The timer is the signal the sheet already paints.
+  await expect
+    .poll(
+      async () =>
+        Number(
+          ((await page.locator(".t-timer").textContent()) ?? "0:00").split(
+            ":"
+          )[1]
+        ),
+      { timeout: 10_000 }
+    )
+    .toBeGreaterThanOrEqual(2);
   await page
     .getByRole("button", { name: "Stop recording", exact: true })
     .click();
@@ -103,9 +117,53 @@ test.describe("edit-toolbar history cue (#91)", () => {
     await expect(redoByName()).toHaveAttribute("aria-disabled", "true");
     await expect(undoByName()).toHaveAccessibleName("Undo. Nothing to undo.");
     await expect(redoByName()).toHaveAccessibleName("Redo. Nothing to redo.");
+    // …and NOT natively disabled (George round 4). `aria-disabled` alone does
+    // not carry the claim this cue rests on: Playwright computes an accessible
+    // name on a natively disabled button too, so asserting the name and the
+    // aria attribute would both pass on a control Tab skips entirely — which is
+    // the exact failure #135 round 2 found and `Control` exists to avoid.
+    for (const arrow of [undoByName(), redoByName()]) {
+      expect(await arrow.evaluate((el) => el.hasAttribute("disabled"))).toBe(
+        false
+      );
+    }
     // The sighted half of the cue: #135 round 2 found the words alone were
     // invisible to the very tester who reported the defect.
     expect(await toolbar.locator(".control-hint").count()).toBe(2);
+
+    // ── George round 4: the badge's OWN box, which nothing here measured. ──
+    //
+    // This file's header claims a 2px overflow into a 4px gap would show at
+    // 320px. It would not have: `.control-hint` is `position: absolute` at
+    // `right: -2px; bottom: -2px`, so it paints OUTSIDE its wrapper, and
+    // `getBoundingClientRect` on the wrapper or the button does not include
+    // overflow. Every assertion below this point could pass while the badge
+    // painted over the neighbouring control. Measured rather than dropped,
+    // because the claim is worth keeping if it is true.
+    // The neighbour is found from the OWNING WRAPPER's right edge, never from
+    // the badge's own left. Anchoring on the badge is what made the first
+    // version of this check unfalsifiable: a badge overflowing far enough moves
+    // its own `left` PAST the control it is painting over, so the "next"
+    // control resolves to the one after that and the gap comes back positive.
+    // It passed a mutation that shoved the badge 30px into its neighbour.
+    const badgeGaps = await toolbar.evaluate((tb) => {
+      const controls = [...tb.querySelectorAll("button")].map((b) =>
+        b.getBoundingClientRect()
+      );
+      return [...tb.querySelectorAll(".control-hint")].map((hint) => {
+        const owner = hint.closest(".control-hinted")!.getBoundingClientRect();
+        const next = controls
+          .filter((c) => c.left >= owner.right)
+          .sort((a, b) => a.left - b.left)[0];
+        return next
+          ? next.left - hint.getBoundingClientRect().right
+          : Number.POSITIVE_INFINITY;
+      });
+    });
+    expect(badgeGaps).toHaveLength(2);
+    for (const [i, gap] of badgeGaps.entries()) {
+      expect(gap, `badge ${i} paints into the next control`).toBeGreaterThan(0);
+    }
 
     const badged = await toolbarBoxes(page);
     expect(badged.length).toBeGreaterThanOrEqual(5);
