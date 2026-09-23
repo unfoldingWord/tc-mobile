@@ -47,9 +47,12 @@ function couldNotBeIncluded(subject: string): string {
  * needs a different function here rather than a different ternary at each call
  * site (#169).
  *
- * `shareBookMissingAndPartial` keeps a `segments === 1` branch of its own and is
- * not a call site for this: its two arms are different SENTENCES, not two forms
- * of one noun, and its own comment says why each is worded as it is.
+ * `shareBookMissingAndPartial` uses this for its segment count and NOT for its
+ * `partialChapters` branch, which is not a plural: that branch's singular arm is
+ * "an included chapter" rather than "1 included chapter", because naming the
+ * count of a single chapter tells a facilitator nothing they cannot see. Two
+ * arms that are different sentences are not two forms of one noun, and this
+ * helper is only for the latter.
  */
 function counted(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
@@ -606,7 +609,7 @@ export const strings = {
     partialChapters: number
   ): string =>
     `${strings.shareBookMissing(chapters)} ${couldNotBeIncluded(
-      `${segments === 1 ? "1 segment" : `${segments} segments`} of ${
+      `${counted(segments, "segment", "segments")} of ${
         partialChapters > 1
           ? `${partialChapters} included chapters`
           : "an included chapter"
