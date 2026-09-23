@@ -627,7 +627,10 @@ export const SegmentsScreen = forwardRef<
       // pause control — the same R-B6 hole. `stopBuffer`, not `leave()`: a
       // recording in progress is never ours to cancel from a list erase (#103).
       else if (audio.playingBuffer) audio.stopBuffer();
-      setEraseFailed(false);
+      // Clear only when this call will acquire the guard — the hook's "busy"
+      // check reads the same ref in this same turn, so a refusal (the other
+      // screen holding the one shared guard) leaves an earlier failure shown.
+      if (!erase.isErasing()) setEraseFailed(false);
       const result = await erase.erase(eraseTarget);
       // On success patch that ONE row to never-recorded in place — NOT reload(),
       // which deadens every transport while it re-walks the chapter's PCM
