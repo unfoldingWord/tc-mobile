@@ -164,16 +164,21 @@ interface Failure {
 /**
  * Fold a freshly added chapter into its book's card, in the same turn as the
  * write — patched immediately, the same contract `createBook`'s optimistic
- * insert and `useChapterSegments.addSegment` both follow, so the control's
- * own repeated activations (fast taps, a held Enter's key-repeat) see the row
- * that landed instead of an empty card that reads as "nothing happened"
- * (George R3/R4 P2): without the patch, the row stayed empty until
+ * insert and `useChapterSegments.addSegment` both follow, so a repeated confirm
+ * sees the row that landed instead of an empty card that reads as "nothing
+ * happened" (George R3/R4 P2): without the patch, the row stayed empty until
  * `loadBookCards` finished, and on this tree there is no way to delete the
- * extra chapter a second tap writes. The caller (`addChapter`) still
- * `reload()`s after patching — see its own comment (George R7 P2) — for the
- * two-copy shelf-reconciliation `reportUnlessStale` is built around;
- * `isLoadCurrent` (below) is what stops that reload's own read from landing
- * on top of a newer patch.
+ * extra chapter a second confirm writes.
+ *
+ * The repeat that reaches this is a deliberate one — reopen the prompt from the
+ * row's `+` and confirm again before the reload lands (#609). The key-repeat
+ * half is gone with the prompt: a held Enter through Confirm now lands on the
+ * new chapter row, not on a control that writes.
+ *
+ * The caller (`addChapter`) still `reload()`s after patching — see its own
+ * comment (George R7 P2) — for the two-copy shelf-reconciliation
+ * `reportUnlessStale` is built around; `isLoadCurrent` (below) is what stops
+ * that reload's own read from landing on top of a newer patch.
  *
  * The patched card also moves to the FRONT of the shelf. `addChapterToBook`
  * bumps the book's `updatedAt` in the same write (`lib/storage/books.ts`,
@@ -536,16 +541,22 @@ export function useBooks() {
   const addingChapterFor = useRef<Set<BookId>>(new Set());
 
   const addChapter = useCallback(
-    async (bookId: BookId): Promise<Chapter | null> => {
+    async (bookId: BookId, name: string): Promise<Chapter | null> => {
       if (!canStartAddChapter(addingChapterFor.current, bookId)) return null;
       addingChapterFor.current.add(bookId);
       try {
-        const chapter = await addChapterToBook(bookId);
+        // `name` is what the Add-chapter prompt confirmed (#609) — "" for an
+        // untouched "Chapter N" default, which the store writes as no label at
+        // all. Required rather than defaulted, so a call site that forgets to
+        // forward the field is a `tsc` error and not a silently unnamed
+        // chapter. `undefined` for the ordinal: only the export suites pin an
+        // explicit `number`, and the default (max + 1, derived in the write's
+        // own transaction) is what the product path wants.
+        const chapter = await addChapterToBook(bookId, undefined, name);
         report(null); // a successful write clears the slot — see `createBook`
         // Patch the row on THIS book's card in the same turn as the write —
         // see `patchNewChapter` — so the control's own repeated activations
-        // (fast taps, a held Enter's key-repeat landing here after a New Book
-        // success) see the row that landed instead of an empty card that
+        // after a reopened prompt see the row that landed instead of a card that
         // reads as "nothing happened" (George R3/R4 P2). `reload()` still
         // follows — see `createBook`'s matching comment (George R7 P2): the
         // patch is what the control sees immediately, `reload()` is what
@@ -574,10 +585,8 @@ export function useBooks() {
         }
         return null;
       } finally {
-        // Released unconditionally, success or failure: unlike `creatingBook`
-        // there is no dialog to reopen and no reset to reach the next attempt
-        // through — the Add-chapter control stays mounted and reachable, so
-        // "released when this attempt is done" is the whole contract.
+        // This per-book write latch releases when the attempt settles. The
+        // screen's separate prompt latch stays held until a new prompt opens.
         addingChapterFor.current.delete(bookId);
       }
     },
