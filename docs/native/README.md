@@ -546,7 +546,10 @@ Use this template for the manually published release body and its tester-chat
 copy. It covers all three channels even though the attached asset is an APK.
 Fill the placeholders from the actual distributed builds; mark a channel as
 pending if it is not yet available. A green upload job is not evidence of
-on-device acceptance.
+on-device acceptance. **Never attach a `-diagnostic` build.** The diagnostic
+APKs above are for a maintainer's own USB inspection session — same signer,
+different label — and are not tester builds (#709); confirm the asset is an
+ordinary `app-release.apk` before publishing.
 
 ```markdown
 This is the shared tC Mobile v<VERSION> tester announcement for Android,
@@ -567,7 +570,15 @@ necessary, share any recordings you need to keep first: uninstall deletes them.
 **With every report:** Include the app build, steps, expected result and what
 happened. Android: phone model, Android version and Android System WebView
 version. iPhone: model and iOS version. Browser: device, OS, browser/version,
-and whether opened in a tab or installed to the home screen.
+and whether opened in a tab or installed to the home screen. We log every
+report by your role (tester, facilitator, developer), never by your name.
+
+**If something breaks:** On the Books screen, tap **≡** — a red mark means a
+problem was recorded. Tap it, then tap the share icon once to prepare the
+report and once more to send it: two taps, the same gesture as sharing a
+recording. It goes out as a small text file through your phone's own share
+sheet. If no share sheet opens, tell us that directly rather than retrying —
+that is itself a report, and may be the same failure already tracked in #593.
 
 **Changes:** <Symptom, affected platforms and evidence limits for each change>.
 
