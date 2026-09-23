@@ -551,7 +551,8 @@ over the tester's existing app the §5 step 4 way. **Do not uninstall first.**
        const tag = `${plugin}.${method}`;
        const ms = () => Math.round(performance.now() - t0);
        console.log("[call]", tag, {
-         keys: options && typeof options === "object" ? Object.keys(options) : [],
+         keys:
+           options && typeof options === "object" ? Object.keys(options) : [],
          files: Array.isArray(options?.files) ? options.files.length : 0,
        });
        call.then(
