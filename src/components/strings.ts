@@ -34,13 +34,19 @@ function couldNotBeIncluded(subject: string): string {
  * question, and the markup copy was a visible string living outside this table
  * at all (#169).
  *
- * Joining parts is the ONE composition this table does, and it is safe to do
- * because the parts are not translated fragments of a sentence: each is a whole
- * name (a book, a chapter heading) or a number, and a language that reads
- * right-to-left reorders the trail by direction rather than by reworded glue.
- * A sentence assembled from clauses is what #169 rules out, and it stays ruled
+ * Joining parts is the ONE composition this table does, and what makes it
+ * allowed under #169 is that the parts are not translated fragments of a
+ * sentence: each is a whole name (a book, a chapter heading) or a number. A
+ * sentence assembled from clauses is what #169 rules out, and it stays ruled
  * out — `shareBookMissingAndPartial` writes each of its arms as a whole
  * sentence for exactly that reason.
+ *
+ * NOTHING HERE HANDLES RIGHT-TO-LEFT, and an earlier draft of this docblock
+ * implied otherwise (George, #698). `>` is not a mirrored glyph, no locale in
+ * this repo reads right-to-left yet, and no test asserts a direction — so a
+ * separator hard-coded here is a fact about the shipped English UI, not a
+ * property that survives translation. Whoever lands `strings[locale]` owns
+ * that question; this function is not evidence it is answered.
  */
 function trail(...parts: readonly string[]): string {
   return parts.join(" > ");
