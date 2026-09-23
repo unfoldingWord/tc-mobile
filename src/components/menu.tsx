@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
@@ -123,8 +123,25 @@ export function Menu({
   // yanking a keyboard user off the entry they were on (George R-B6, the same
   // defect EraseConfirm already fixed). A ref keeps the handler current without
   // that churn, so the effect binds once per open.
+  // `useLayoutEffect`, not `useEffect` (#517 item 2, George r3 P3 on #508):
+  // #491 made this ref load-bearing for a share overlay's menu — while the
+  // overlay owns the screen, `onCloseChapterMenu`/`onCloseShareMenu` (read
+  // through this ref by the Escape handler below) must see the LIVE
+  // `shareOverlayOwnsScreen(progress)` and refuse to close, mirroring the
+  // `busyRef`/`onCancelRef`/`onDismissRef` fix `share-progress.tsx` already
+  // carries for the identical shape (Frank at `9832a8b` P2, #491). A passive
+  // effect is scheduled to run in a macrotask after the browser paints, so a
+  // keydown queued in that same window — a fast Escape right after the
+  // overlay opens or closes in the same commit that changed what `onClose`
+  // would do — can fire against a STALE ref. `share-progress.tsx`'s own
+  // capture-phase Escape listener is expected to swallow the keydown before
+  // this one sees it, so this is the second-failure window (that listener
+  // not yet bound, and a stale `onCloseRef` at once) rather than an observed
+  // defect. A layout effect runs synchronously right after the DOM
+  // mutation, before paint or any queued event, so the ref is current by the
+  // time anything could react to what just rendered.
   const onCloseRef = useRef(onClose);
-  useEffect(() => {
+  useLayoutEffect(() => {
     onCloseRef.current = onClose;
   });
 
