@@ -1,32 +1,17 @@
 import { useCallback } from "react";
 
 import { withEncoder } from "./mp3-codec";
-import {
-  type ShareError,
-  type ShareOutcome,
-  type ShareStatus,
-  useShareFlow,
-} from "./share-flow";
-import type { ShareProgress } from "./share-progress";
+import { type ShareSurface, useShareFlow } from "./share-flow";
 import { exportBookZip } from "@/lib/export/book";
 import type { BookId } from "@/types/domain";
 
-export interface UseBookShare {
-  readonly status: ShareStatus;
-  readonly error: ShareError | null;
-  /** See {@link UseShareFlow.sendUnconfirmed}. */
-  readonly sendUnconfirmed: boolean;
-  /**
-   * Chapters with no resolvable audio, left out of the zip prepared by tap 1.
-   * Zero until a prepare succeeds. Surfaced so a book with empty chapters does
-   * not export "as if whole" without saying so.
-   */
-  readonly missing: number;
+export interface UseBookShare extends ShareSurface {
   /**
    * Segments missing INSIDE chapters that DID make it into the zip — the
    * roll-up of each included chapter's own gap (#116). Zero until a prepare
-   * succeeds. Distinct from `missing` above, which counts whole chapters left
-   * out entirely; a book can carry both at once.
+   * succeeds. Distinct from {@link ShareSurface.missing}, which here counts
+   * whole chapters left out entirely; a book can carry both at once, which is
+   * why this one is Share Book's alone and not on the shared surface.
    */
   readonly partialSegments: number;
   /**
@@ -40,20 +25,6 @@ export interface UseBookShare {
     zipFilename: string,
     nameChapter: (chapterNumber: number) => string
   ) => Promise<void>;
-  /** Tap 2: hand the stashed File to the OS share sheet. See {@link useShareFlow}. */
-  send: () => Promise<ShareOutcome>;
-  /** Drop any prepared file and return to idle (menu close, unmount). */
-  reset: () => void;
-  /** The modal timeline over the flow (#491). See {@link UseShareFlow.progress}. */
-  readonly progress: ShareProgress;
-  /**
-   * The ref-backed read of {@link progress} a `Layer.busy()` must use (#452
-   * PR3). See {@link UseShareFlow.ownsScreen} for why the rendered `progress`
-   * above cannot serve that purpose.
-   */
-  readonly ownsScreen: () => boolean;
-  /** End an outcome flash early (a tap on it). */
-  dismissProgress: () => void;
 }
 
 /**

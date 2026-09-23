@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   deleteClip,
@@ -29,6 +29,7 @@ import {
   nextChapterNumber,
   renameBook,
   renameChapter,
+  renameSegment,
   resolveChapterClipIds,
   saveTake,
   setSegmentFinished,
@@ -226,6 +227,9 @@ describe("book tree", () => {
       expect(s.status).toBe("not-started");
       expect(s.activeTakeId).toBeNull();
       expect(s.reference).toBeNull();
+      // Unlabelled by default: the row shows the ordinal alone (#591).
+      expect(s.label).toBeNull();
+      expect((await getSegment(s.id))?.label).toBeNull();
     }
   });
 
@@ -839,6 +843,65 @@ describe("rename book and chapter", () => {
   it("rejects renaming an unknown chapter", async () => {
     await expect(renameChapter("nope" as never, "Mark 6")).rejects.toThrow(
       /No such chapter/
+    );
+  });
+});
+
+describe("rename segment (#591)", () => {
+  it("labels a segment in place, trimmed", async () => {
+    const { segmentId } = await oneSegment();
+    const renamed = await renameSegment(segmentId, "  verses 3–4  ");
+    expect(renamed.label).toBe("verses 3–4");
+    expect((await getSegment(segmentId))?.label).toBe("verses 3–4");
+  });
+
+  it("clears the label back to null on a blank rename, like a chapter", async () => {
+    const { segmentId } = await oneSegment();
+    await renameSegment(segmentId, "verses 3–4");
+    const cleared = await renameSegment(segmentId, "   ");
+    expect(cleared.label).toBeNull();
+    expect((await getSegment(segmentId))?.label).toBeNull();
+  });
+
+  it("changes the label and nothing else: ordinal, order, status and audio stay", async () => {
+    const book = await createBook("Mark");
+    const chapter = await addChapter(book.id);
+    await addSegment(chapter.id);
+    const second = await addSegment(chapter.id);
+    const clipId = await storedClip();
+    await addTake(second.id, clipId, 100);
+    await setSegmentFinished(second.id, true);
+    const before = await getSegment(second.id);
+    const chapterBefore = await getChapter(chapter.id);
+
+    await renameSegment(second.id, "verses 3–4");
+
+    expect(await getSegment(second.id)).toEqual({
+      ...before,
+      label: "verses 3–4",
+    });
+    expect(await getChapter(chapter.id)).toEqual(chapterBefore);
+    const audio = await loadSegmentClip(second.id);
+    expect(audio.kind).toBe("resolved");
+  });
+
+  it("renaming to the current label writes nothing", async () => {
+    const { segmentId } = await oneSegment();
+    await renameSegment(segmentId, "verses 3–4");
+    // Counted at the IndexedDB boundary: a re-put of the same row would leave
+    // the stored value unchanged, so only the call itself can show it happened.
+    const put = vi.spyOn(IDBObjectStore.prototype, "put");
+    try {
+      await renameSegment(segmentId, " verses 3–4 ");
+      expect(put).not.toHaveBeenCalled();
+    } finally {
+      put.mockRestore();
+    }
+  });
+
+  it("rejects renaming an unknown segment", async () => {
+    await expect(renameSegment("nope" as never, "verses 1")).rejects.toThrow(
+      /No such segment/
     );
   });
 });
