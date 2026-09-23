@@ -163,23 +163,65 @@ describe("displayGain", () => {
 
   it("suppresses the fit for exactly one of the four recorder states", () => {
     // The whole of the split, in both states of both inputs. The row that
-    // earned this table is the last one: a punch-in IS capturing, and gating on
-    // that alone un-fits the committed clip the translator is aiming at
-    // (George R2 P2).
+    // earned this table is the last one: a punch-in HAS A TAKE ACTIVE, and
+    // gating on that alone un-fits the committed clip the translator is
+    // aiming at (George R2 P2).
     const table: ReadonlyArray<[boolean, boolean, boolean]> = [
-      // capturing, hasCommittedAudio, suppress the fit
+      // takeActive, hasCommittedAudio, suppress the fit
       [false, false, false], // idle, never recorded — the dotted rule
       [false, true, false], // idle with a take — fitted, the #358 fix
       [true, false, true], // FIRST take in flight — absolute, like the scope
       [true, true, false], // punch-in over committed audio — stays fitted
     ];
-    for (const [capturing, hasCommittedAudio, expected] of table) {
+    for (const [takeActive, hasCommittedAudio, expected] of table) {
       expect([
-        capturing,
+        takeActive,
         hasCommittedAudio,
-        isFirstTakeInFlight(capturing, hasCommittedAudio),
-      ]).toEqual([capturing, hasCommittedAudio, expected]);
+        isFirstTakeInFlight(takeActive, hasCommittedAudio),
+      ]).toEqual([takeActive, hasCommittedAudio, expected]);
     }
+  });
+
+  it("gives the wrong answer for the #366 R3 #2 moment if the caller passes capturing-shaped input instead of takeActive's own definition (#373)", () => {
+    // #373: `isFirstTakeInFlight`'s first parameter used to be named
+    // `capturing`, which invites a caller to pass a bare recording/capture
+    // predicate. The exact moment that breaks: Back is tapped on a paused
+    // first-take preview. `stop()` has already flipped `state` to "idle", but
+    // `isClosing` is still true for the stop→decode→save wait — the preview
+    // stays on stage throughout.
+    //
+    // Modelled with recorder.tsx's own inputs, not an opaque boolean pair, so
+    // a future caller who narrows the argument this way is caught by the
+    // VALUE, not only by the parameter's name (a rename alone changes nothing
+    // observable — booleans do not carry their argument names at the call
+    // site).
+    //
+    // Premise check against the tree at this head: `RecorderState` is now
+    // `"idle" | "requesting" | "recording" | "processing"` (`use-recorder.ts`)
+    // — there is no separate `paused` state to OR in, so the #366-era
+    // `recording || paused` collapses to `recording` alone. The shape of the
+    // bug is unchanged: a state-only predicate that drops `isClosing`.
+    type RecorderState = "idle" | "requesting" | "recording" | "processing";
+    // Widened via the cast, not narrowed to the literal "idle": `state` here
+    // stands in for a runtime value, and a literal-typed const would make the
+    // `state === "recording"` comparison below a compile error rather than
+    // the always-false runtime check it must be to model the bug.
+    const state = "idle" as RecorderState;
+    const isClosing = true;
+    const hasCommittedAudio = false; // first take — nothing committed yet
+
+    // recorder.tsx's own definition of the parameter this function requires:
+    // `const takeActive = state !== "idle" || isClosing;`
+    const takeActive = state !== "idle" || isClosing;
+    expect(isFirstTakeInFlight(takeActive, hasCommittedAudio)).toBe(true);
+
+    // The capturing-shaped value the old parameter name invited — a bare
+    // capture predicate that drops isClosing — gives the OPPOSITE, wrong
+    // answer for the identical moment: the fit would wrongly re-engage
+    // mid-close and a quiet mic would look healthy for one frame, #358's own
+    // complaint reintroduced.
+    const capturingShaped = state === "recording";
+    expect(isFirstTakeInFlight(capturingShaped, hasCommittedAudio)).toBe(false);
   });
 
   it("keeps committed audio fitted while a punch-in records over it", () => {
