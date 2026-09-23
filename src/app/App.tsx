@@ -272,7 +272,7 @@ export function App() {
   // Recorded here because this `reload()` is the whole of it, and the next
   // person to make the recorder non-modal has to find this first.
   //
-  //   THREE writer paths, all landing in `lib/storage/books.ts`:
+  //   THREE writer paths, all landing in `lib/storage/takes.ts`:
   //     - a take commit — `writeTakeInTx` stamps the status atomically with the
   //       take, so `addTake`/`saveTake` set it on every recording;
   //     - `clearSegmentTake`, which returns an erased segment to "not-started";
