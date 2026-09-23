@@ -14,7 +14,8 @@ import { describe, expect, it } from "vitest";
  * says nothing about a layer growing runtime code of its own, so
  * `src/types/view.ts` had accumulated a constant and two functions
  * (`ROW_PEAK_BUCKETS`, `segmentRowState`, `firstNotFinished` — audit finding
- * L-17, #160) and every check in `npm run verify` stayed green.
+ * L-17, #160), and `src/types/failure.ts` a third, with no check in the tree
+ * reading for any of them.
  *
  * This is the `types/` analogue of `tests/lib-boundary.test.ts`: the same
  * shape, for the ring one step further in. The property it pins is
