@@ -23,7 +23,8 @@ def releaseSigningReady = keystorePath && storePass && keyAliasVal && keyPass
 // to remember, unlike versionCode (which stays a CI timestamp — see
 // docs/native/README.md #6).
 def packageJson = new groovy.json.JsonSlurper().parse(file('../../package.json'))
-def appVersionName = packageJson.version as String
+def diagnosticBuild = System.getenv("TC_ANDROID_DIAGNOSTIC") == "true"
+def appVersionName = (packageJson.version as String) + (diagnosticBuild ? "-diagnostic" : "")
 
 android {
     namespace = "org.unfoldingword.tcmobile"
@@ -36,6 +37,7 @@ android {
         // number; local builds default to 1 (debug/dev only, never shipped).
         versionCode project.hasProperty('versionCode') ? project.versionCode.toInteger() : 1
         versionName appVersionName
+        manifestPlaceholders = [tcAppLabel: diagnosticBuild ? "tC Mobile Diagnostic" : "tC Mobile"]
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -109,3 +111,19 @@ try {
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
 }
+
+// A direct Gradle build must not relabel assets left by a diagnostic cap sync.
+// The prerequisite runs for debug and release and is never up-to-date cached.
+tasks.register('checkDiagnosticAssets') {
+    doLast {
+        def syncedConfig = file('src/main/assets/capacitor.config.json')
+        if (!syncedConfig.isFile()) {
+            throw new GradleException('Run cap sync android before building the APK')
+        }
+        def config = new groovy.json.JsonSlurper().parse(syncedConfig)
+        if (config.android?.webContentsDebuggingEnabled != diagnosticBuild) {
+            throw new GradleException('Android diagnostic mode differs from synced assets; run cap sync android with the same TC_ANDROID_DIAGNOSTIC value')
+        }
+    }
+}
+tasks.named('preBuild').configure { dependsOn('checkDiagnosticAssets') }

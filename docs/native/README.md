@@ -481,6 +481,24 @@ never runs on push/PR.
 `app-release.apk` as a workflow artifact (14-day retention). The APK is signed
 with the release keystore decoded from `ANDROID_KEYSTORE_BASE64`.
 
+**Diagnostic APKs (#593).** Leave the `diagnostic` dispatch input off for
+training builds. Turn it on only for a USB inspection session: it enables
+WebView inspection in `chrome://inspect`, appends `-diagnostic` to Android's
+version name, labels the launcher/activity **tC Mobile Diagnostic**, and names
+the artifact `android-apk-diagnostic-<sha>`. The web footer still shows the
+package version and build SHA. It remains an `assembleRelease` APK with the
+same application ID, release signer, signing approval and timestamp version
+code, so it can update the installed tester app without uninstalling. It is
+not a separate app and it uses the same recordings. Return to an ordinary
+build with a newer version code after the inspection; do not uninstall.
+
+For local builds, set `TC_ANDROID_DIAGNOSTIC=true` for both `npx cap sync
+android` and Gradle to request diagnostics. Unset it (or set `false`) for
+**both** commands to return to normal. Ordinary sync writes an explicit
+`webContentsDebuggingEnabled: false`, including on local debug builds.
+Gradle rejects assets synced with a different diagnostic mode. No
+`package.json` version edit or alternate signing key is needed.
+
 **`versionCode`** is the run's unix timestamp — unique and strictly increasing
 with no external round-trip. Android refuses a `versionCode` downgrade, so
 every build that reaches a tester must carry a higher code than the last. A

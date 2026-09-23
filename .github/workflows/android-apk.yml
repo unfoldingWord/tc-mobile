@@ -20,6 +20,10 @@ name: Android APK
 on:
   workflow_dispatch:
     inputs:
+      diagnostic:
+        description: "Enable USB WebView inspection in a clearly labelled diagnostic APK. Not a training build."
+        type: boolean
+        default: false
       allow_any_ref:
         description: "Build a ref other than staging/main (a feature-branch experiment). Tester builds should come from staging or main."
         type: boolean
@@ -69,6 +73,8 @@ jobs:
 
   build:
     name: Build release APK
+    env:
+      TC_ANDROID_DIAGNOSTIC: ${{ inputs.diagnostic }}
     needs: preflight
     # The signing secrets are ENVIRONMENT secrets, not repository secrets, and
     # the environment has required reviewers. A dispatch pauses here until an
@@ -147,7 +153,9 @@ jobs:
         run: npm run build
 
       - name: Sync dist/ into the Android project
-        run: npx cap sync android
+        run: |
+          npx cap sync android
+          node scripts/check-android-diagnostic.mjs android/app/src/main/assets/capacitor.config.json
 
       # Mirrors the iOS lane's bundle guard. This is the first path that puts
       # dist/ on testers' devices, and workflow_dispatch can build a ref that
@@ -228,7 +236,7 @@ jobs:
       # layer; the test -f above is the first).
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: android-apk-${{ github.sha }}
+          name: android-apk-${{ inputs.diagnostic && 'diagnostic-' || '' }}${{ github.sha }}
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
