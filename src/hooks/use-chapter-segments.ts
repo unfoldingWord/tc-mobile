@@ -94,7 +94,13 @@ async function loadSegmentRow(segment: Segment): Promise<SegmentRow> {
 
 /** The breadcrumb + rows a chapter needs, loaded together. */
 interface ChapterView {
-  readonly bookName: string;
+  /** The book's own name, or null ⇒ render the placeholder from `bookNumber`. */
+  readonly bookName: string | null;
+  /**
+   * The book's placeholder slot, or null when the book row is gone from under
+   * this chapter — the breadcrumb then names nothing (#169, `bookHeading`).
+   */
+  readonly bookNumber: number | null;
   readonly chapterNumber: number;
   /** The facilitator's passage label, or null ⇒ show "Chapter {number}" (#264). */
   readonly chapterName: string | null;
@@ -116,7 +122,8 @@ async function loadChapterView(chapterId: ChapterId): Promise<ChapterView> {
     rows.push(await loadSegmentRow(segment));
   }
   return {
-    bookName: book?.name ?? "",
+    bookName: book?.name ?? null,
+    bookNumber: book?.number ?? null,
     chapterNumber: chapter.number,
     chapterName: chapter.name,
     rows,
@@ -134,7 +141,8 @@ async function loadChapterView(chapterId: ChapterId): Promise<ChapterView> {
  * audio, so neither should pay for a chapter of peak recomputation.
  */
 export function useChapterSegments(chapterId: ChapterId) {
-  const [bookName, setBookName] = useState("");
+  const [bookName, setBookName] = useState<string | null>(null);
+  const [bookNumber, setBookNumber] = useState<number | null>(null);
   const [chapterNumber, setChapterNumber] = useState(0);
   const [chapterName, setChapterName] = useState<string | null>(null);
   const [rows, setRows] = useState<SegmentRow[]>([]);
@@ -155,6 +163,7 @@ export function useChapterSegments(chapterId: ChapterId) {
         const view = await loadChapterView(chapterId);
         if (cancelled) return;
         setBookName(view.bookName);
+        setBookNumber(view.bookNumber);
         setChapterNumber(view.chapterNumber);
         setChapterName(view.chapterName);
         setRows(view.rows);
@@ -301,6 +310,7 @@ export function useChapterSegments(chapterId: ChapterId) {
 
   return {
     bookName,
+    bookNumber,
     chapterNumber,
     chapterName,
     rows,

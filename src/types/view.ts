@@ -29,7 +29,10 @@ export interface ChapterRow {
 
 export interface BookCard {
   readonly bookId: BookId;
-  readonly name: string;
+  /** The facilitator's name, or null ⇒ render the placeholder from `number`. */
+  readonly name: string | null;
+  /** The placeholder slot, shown only while `name` is null (#169). */
+  readonly number: number;
   readonly chapters: readonly ChapterRow[];
 }
 

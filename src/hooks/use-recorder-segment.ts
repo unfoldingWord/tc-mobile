@@ -19,7 +19,10 @@ import type { Peaks } from "@/types/audio";
 const PEAK_BUCKETS = 400;
 
 export interface RecorderSegmentView {
-  readonly bookName: string;
+  /** The book's own name, or null ⇒ render the placeholder from `bookNumber`. */
+  readonly bookName: string | null;
+  /** The book's placeholder slot, or null when the book row is gone (#169). */
+  readonly bookNumber: number | null;
   readonly chapterNumber: number;
   readonly ordinal: number;
   readonly finished: boolean;
@@ -88,7 +91,8 @@ export async function loadRecorderSegmentView(
             clip.meta.frameCount
           );
   return {
-    bookName: book?.name ?? "",
+    bookName: book?.name ?? null,
+    bookNumber: book?.number ?? null,
     chapterNumber: chapter?.number ?? 0,
     ordinal: segment.index,
     finished: isFinished(segment.status),

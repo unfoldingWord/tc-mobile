@@ -61,6 +61,22 @@ export const strings = {
     }`,
   addChapter: (bookName: string): string => `Add chapter to ${bookName}`,
   openChapter: (heading: string): string => `Open ${heading}`,
+  /**
+   * The book's display heading: the facilitator's own name when set (#264),
+   * otherwise the placeholder rendered from the slot the store gave it (#169).
+   * The chapter's rule below, one level up the tree — and for the same reason:
+   * the placeholder is copy, so it is rendered here and never persisted, which
+   * is what lets a second UI language rename the books already on a phone.
+   *
+   * Three digits, zero-padded, so a shelf of practice books sorts and scans as
+   * a column rather than ragged text. Above 999 the number simply grows.
+   *
+   * `number` is nullable for the one caller that may have no book at all: a
+   * breadcrumb whose book was deleted under it says nothing rather than naming
+   * a phantom "Book 000" (`use-chapter-segments.ts`, `use-recorder-segment.ts`).
+   */
+  bookHeading: (name: string | null, number: number | null): string =>
+    name ?? (number === null ? "" : `Book ${String(number).padStart(3, "0")}`),
   chapterName: (n: number): string => `Chapter ${n}`,
   /**
    * The chapter's display heading: the facilitator's passage label when set

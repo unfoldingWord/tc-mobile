@@ -75,15 +75,16 @@ export function isFinished(status: RecordingStatus): boolean {
 // ── Books ──────────────────────────────────────────────────────────────────
 
 /**
- * The placeholder name for a new book: the FIRST "Book NNN" not already on the
- * shelf, three-digit padded ("Book 001", "Book 002" …).
+ * The placeholder SLOT for a new book: the first one no unnamed book on the
+ * shelf is already showing. 1-based, and rendered as "Book 001" by the string
+ * table, never here (#169).
  *
- * Pure, and the single definition of the placeholder — both callers go through
- * it, so the name the New Book field is pre-filled with (the Books screen, off
- * the shelf it has already loaded) and the name a blank confirm actually writes
+ * Pure, and the single definition of the slot — both callers go through it, so
+ * the placeholder the New Book field is pre-filled with (the Books screen, off
+ * the shelf it has already loaded) and the slot a blank confirm actually writes
  * ({@link createBook}) cannot drift (#314). The pre-fill is DISPLAY only: an
- * untouched field is confirmed as `""`, so the name that lands is always the one
- * derived inside the write transaction below, never the rendered string.
+ * untouched field is confirmed as `""`, so the row that lands is always derived
+ * inside the write transaction below, never from the rendered string.
  *
  * **First unused, not `count + 1`** (#360). The count-based namer this replaces
  * assumed books are only ever added. Once a book can be deleted, deleting
@@ -94,16 +95,28 @@ export function isFinished(status: RecordingStatus): boolean {
  * book it is about to destroy — on a screen built for people who may not read,
  * where discarding practice books is the normal training workflow.
  *
- * Matching is exact on the stored name. A facilitator's own name ("Mark")
- * occupies no slot, and "Book 1" is not a string this ever writes, so neither
- * blocks "Book 001". The loop is bounded by the number of names + 1: with N
- * names, at most N of the first N + 1 candidates can be taken.
+ * **Only UNNAMED books hold a slot against this** — that is what makes the rule
+ * survive translation. Before #169 the placeholder was matched as a stored
+ * string, so a facilitator who typed the literal "Book 003" reserved slot 3 and
+ * a book renamed away from it released one. Now the comparison is over slots,
+ * which no UI language changes: a typed name occupies nothing (as "Mark" never
+ * did), and a renamed book releases the slot it is no longer showing. The one
+ * narrowing is a facilitator who types this locale's placeholder wording by
+ * hand — two rows can then read alike, exactly as two "Mark"s already can, and
+ * unlike the #360 case it takes a deliberate retype to reach.
+ *
+ * The loop is bounded by the number of books + 1: with N books, at most N of
+ * the first N + 1 slots can be taken.
  */
-export function nextBookName(existingNames: Iterable<string>): string {
-  const taken = new Set(existingNames);
+export function nextBookNumber(
+  books: Iterable<Pick<Book, "name" | "number">>
+): number {
+  const taken = new Set<number>();
+  for (const book of books) {
+    if (book.name === null) taken.add(book.number);
+  }
   for (let n = 1; ; n++) {
-    const candidate = `Book ${String(n).padStart(3, "0")}`;
-    if (!taken.has(candidate)) return candidate;
+    if (!taken.has(n)) return n;
   }
 }
 
@@ -112,18 +125,24 @@ export function nextBookName(existingNames: Iterable<string>): string {
  *
  * The name is trimmed, exactly as {@link renameBook} trims it — one validation
  * rule for the one naming field, wherever it is shown. A blank or
- * whitespace-only name is not an error: it falls back to the "Book NNN"
- * placeholder, which is what preserves the one-tap New Book the corner `+` used
- * to be.
+ * whitespace-only name is not an error: the book is simply stored UNNAMED and
+ * shows its placeholder, which is what preserves the one-tap New Book the
+ * corner `+` used to be. Nothing writes the placeholder's words to disk (#169).
  *
- * The fallback is derived INSIDE the one readwrite transaction that writes the
+ * The slot is derived INSIDE the one readwrite transaction that writes the
  * row, never from a screen's render state: two rapid blank confirms both reading
- * an empty shelf from the same render would both persist "Book 001". IndexedDB
+ * an empty shelf from the same render would both persist slot 1. IndexedDB
  * serialises overlapping readwrite transactions, so deriving and putting in one
- * transaction gives the second confirm the first's write — "Book 001", then
- * "Book 002". That race-safety is the property `createNextBook` held before
- * #314 split naming off from creating, and it is preserved here rather than
- * moved to the caller.
+ * transaction gives the second confirm the first's write — slot 1, then slot 2.
+ * That race-safety is the property `createNextBook` held before #314 split
+ * naming off from creating, and it is preserved here rather than moved to the
+ * caller.
+ *
+ * The shelf read is now UNCONDITIONAL, where the string-named version skipped
+ * it whenever a name was typed. Every row carries a slot, so the field means
+ * one thing on every book rather than holding a placeholder value on the ones
+ * born named; and the read is a `getAll` over a metadata-only store (no clip
+ * bytes live here) at the frequency a person taps Create.
  *
  * A supplied name is never made unique: a facilitator may deliberately have two
  * books called "Mark", and {@link renameBook} has always allowed it. That is
@@ -140,15 +159,10 @@ export async function createBook(
   const db = await getDb();
   const tx = db.transaction("books", "readwrite");
   const trimmed = name.trim();
-  // Read the shelf only when the name is actually blank — a typed name needs no
-  // placeholder, and `getAll` is the expensive half of this transaction.
-  const resolvedName =
-    trimmed === ""
-      ? nextBookName((await tx.store.getAll()).map((b) => b.name))
-      : trimmed;
   const book: Book = {
     id: uuid() as BookId,
-    name: resolvedName,
+    name: trimmed === "" ? null : trimmed,
+    number: nextBookNumber(await tx.store.getAll()),
     languageCode,
     chapterIds: [],
     createdAt: now,
@@ -174,8 +188,10 @@ export async function getBook(id: BookId): Promise<Book | undefined> {
  *
  * Get-then-put in ONE readwrite transaction — the idempotency bar, never a
  * read-tx-then-write-tx seam. The new name is trimmed; a blank/whitespace-only
- * rename is refused (a book must always have a non-empty name) and keeps the
- * current one. Renaming to the current name writes nothing and does NOT bump
+ * rename is refused and keeps the current value, so a book that has never been
+ * named stays unnamed and goes on showing its placeholder rather than acquiring
+ * that placeholder's words as a real name (#169). Renaming to the current name
+ * — `null` included — writes nothing and does NOT bump
  * `updatedAt`, so a re-run is a true no-op that never reshuffles the shelf.
  * Any real rename bumps `updatedAt` — labelling a book is activity, and
  * `listBooks` sorts by it, so the book just named floats to the top.
@@ -198,7 +214,9 @@ export async function renameBook(
   if (!book) throw new Error(`No such book: ${id}`);
 
   const trimmed = name.trim();
-  // Blank keeps the current name — the invariant that a book is always named.
+  // Blank keeps the current value — a named book keeps its name, and an
+  // unnamed one stays unnamed (#169). The invariant is that a book is always
+  // LABELLED: by the facilitator's name, or by the placeholder its slot renders.
   const nextName = trimmed === "" ? book.name : trimmed;
   if (nextName === book.name) {
     await tx.done; // idempotent no-op: no write, no recency bump.

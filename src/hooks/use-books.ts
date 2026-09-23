@@ -9,7 +9,7 @@ import {
   getChapter,
   isStaleBookFailure,
   listBooks,
-  nextBookName,
+  nextBookNumber,
   renameBook as renameBookInStore,
 } from "@/lib/storage/books";
 import { reportFailure } from "./report-failure";
@@ -49,6 +49,7 @@ async function loadBookCard(book: Book): Promise<BookCard> {
   return {
     bookId: book.id,
     name: book.name,
+    number: book.number,
     chapters: chapters.filter((c): c is ChapterRow => c !== null),
   };
 }
@@ -318,7 +319,8 @@ type CreateBookOutcome =
  * nullable book, because a failed create has to speak INSIDE the New Book dialog
  * (the screen's Notice sits behind its scrim) and must not be confused with
  * whatever last wrote the shared channel (#314; Frank R1 P3, George R1 P2-2).
- * `newBookPlaceholder` is the name that dialog pre-fills its field with.
+ * `newBookNumber` is the placeholder slot that dialog pre-fills its field
+ * with, rendered into words by the screen.
  */
 export function useBooks() {
   const [books, setBooks] = useState<BookCard[]>([]);
@@ -464,25 +466,24 @@ export function useBooks() {
   }, []);
 
   /**
-   * The name a blank New Book confirm would be given, for the dialog to pre-fill
-   * its field with (#314).
+   * The placeholder SLOT a blank New Book confirm would be given, for the
+   * dialog to pre-fill its field with (#314). The screen renders the words
+   * (`strings.bookHeading`); this layer never holds copy (#169).
    *
    * Derived from `books` rather than held as its own state, so it cannot lag the
    * shelf by a render: the optimistic insert below moves both in one commit, and
-   * a second `+` immediately after a create offers the NEXT name rather than the
+   * a second `+` immediately after a create offers the NEXT slot rather than the
    * one just taken (George R2 P2-1). Same pure function the store's own fallback
-   * uses, over the same names, so the field shows what a blank confirm writes.
+   * uses, over the same shelf, so the field shows what a blank confirm writes.
    */
-  const newBookPlaceholder = useMemo(
-    () => nextBookName(books.map((b) => b.name)),
-    [books]
-  );
+  const newBookNumber = useMemo(() => nextBookNumber(books), [books]);
 
   const createBook = useCallback(
     async (name: string): Promise<CreateBookOutcome> => {
-      // The name comes from the New Book field (#314). A blank one falls back to
-      // the "Book NNN" placeholder — derived on disk inside the write's own
-      // transaction, so it is race-safe and never a render-time snapshot.
+      // The name comes from the New Book field (#314). A blank one leaves the
+      // book unnamed on its placeholder slot — derived on disk inside the
+      // write's own transaction, so it is race-safe and never a render-time
+      // snapshot, and the words stay the screen's to render (#169).
       //
       // The reason is RETURNED rather than pushed onto the shared `error`: this
       // failure has to appear inside the New Book dialog, and that dialog must
@@ -518,7 +519,12 @@ export function useBooks() {
         // NEWER patch lands before it resolves — the optimistic insert above
         // is never at risk, only ever reconciled or superseded.
         setBooks((prev) => [
-          { bookId: book.id, name: book.name, chapters: [] },
+          {
+            bookId: book.id,
+            name: book.name,
+            number: book.number,
+            chapters: [],
+          },
           ...prev,
         ]);
         reload();
@@ -689,7 +695,7 @@ export function useBooks() {
 
   return {
     books,
-    newBookPlaceholder,
+    newBookNumber,
     loading,
     loaded,
     // Derived from the one failure slot, so the message and its delete label

@@ -76,6 +76,7 @@ vi.mock("@/hooks/use-erase-segment", () => ({
 const book: BookCard = {
   bookId: "book" as BookId,
   name: "Genesis",
+  number: 1,
   chapters: [],
 };
 const recorded: Row = {
@@ -176,7 +177,9 @@ describe("which glyph opens which menu (#589)", () => {
     expect(global).toBe(glyph("menu"));
     expect(global).not.toBe(glyph("more"));
 
-    expectKebab(strings.bookMenuOpen(book.name));
+    expectKebab(
+      strings.bookMenuOpen(strings.bookHeading(book.name, book.number))
+    );
   });
 
   it("gives the Segments header's chapter menu ⋮", async () => {
