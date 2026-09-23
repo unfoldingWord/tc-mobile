@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -102,11 +103,124 @@ describe("resolveDistGate — the wiring that makes a failed gate reach vitest",
 // with its opening paren.
 const GATED_FILES = ["dist-css.test.ts", "precache-manifest.test.ts"];
 
-function withoutComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^[ \t]*\/\/.*$/gm, "");
+// #789: a regex pair (`/\*[\s\S]*?\*\//`, `^[ \t]*\/\/.*$`) does not know
+// strings exist. Both gated files build glob-shaped strings containing a
+// literal `/*` (`"dist/assets/*.css"`), and the old regex would match from
+// THAT `/*` to the next real `*/` anywhere later in the file — swallowing
+// every real line in between, including `const GATE = resolveDistGate(`
+// itself, as if it were one giant comment. That direction fails CLOSED (an
+// assertion that looks for something goes red for the wrong reason). The
+// same gap fails OPEN in the other direction: a forbidden `distGateDecision(`
+// call sitting in that same swallowed span would be hidden from
+// `not.toMatch`, so a regression there could pass silently. Below walks the
+// real syntax tree instead (`ts.createSourceFile` — already a dependency;
+// `tests/types-erasable.test.ts`'s `runtimeEmit` and PR #786's
+// `readsObsImagery` are the existing precedent for this house shape). A
+// string literal is a `StringLiteral`/`NoSubstitutionTemplateLiteral` node
+// to the real parser, never a comment opener, and a `//`/`/* */` comment is
+// trivia the walk visits explicitly rather than a text pattern — so neither
+// direction of the gap above is reachable here.
+function commentRanges(
+  source: string,
+  fileName: string
+): Array<{ pos: number; end: number }> {
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    false
+  );
+  const ranges: Array<{ pos: number; end: number }> = [];
+
+  // A comment is always the leading trivia of the token that follows it —
+  // there is no other place one can live in JS/TS grammar — so visiting
+  // every node's full start (which includes its own leading trivia) finds
+  // every comment attached to real code. `ts.forEachChild` on a `SourceFile`
+  // visits its `endOfFileToken` as a child too, so a comment with nothing
+  // after it — the last thing in the file — is still reached, through the
+  // same recursion, with no separate call needed for that case.
+  const collectAt = (pos: number) => {
+    for (const range of ts.getLeadingCommentRanges(source, pos) ?? []) {
+      ranges.push({ pos: range.pos, end: range.end });
+    }
+  };
+  const visit = (node: ts.Node) => {
+    collectAt(node.getFullStart());
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+
+  return ranges;
 }
+
+function withoutComments(source: string, fileName = "source.ts"): string {
+  const ranges = [...commentRanges(source, fileName)].sort(
+    (a, b) => a.pos - b.pos
+  );
+  let result = "";
+  let cursor = 0;
+  for (const { pos, end } of ranges) {
+    if (pos < cursor) continue; // a duplicate range from a shared full-start
+    result += source.slice(cursor, pos);
+    cursor = Math.max(cursor, end);
+  }
+  result += source.slice(cursor);
+  return result;
+}
+
+// Both states, on synthetic sources — the shape `tests/types-erasable.test.ts`
+// uses for `runtimeEmit`: pin the helper directly, red first, rather than
+// only through the two real files below, which show today's tree is clean
+// but say nothing about whether the helper itself is sound.
+describe("withoutComments (#789 — AST-aware, not regex-based)", () => {
+  it("does not let a string's literal /* hide a later real code line up to a real comment's close", () => {
+    // Observed red on the pre-#789 regex helper: this found 0 matches
+    // instead of 1 — the glob string's `/*` opened a "comment" that the
+    // regex closed at the real `/* ... */` below, swallowing the GATE line
+    // between them.
+    const source = [
+      'const glob = "assets/*.css";',
+      'const GATE = resolveDistGate(true, "dist/sw.js");',
+      "/* a real trailing comment, not attached to anything after it */",
+    ].join("\n");
+    const matches = [
+      ...withoutComments(source).matchAll(/^const GATE = resolveDistGate\(/gm),
+    ];
+    expect(matches.length).toBe(1);
+  });
+
+  it("still catches a forbidden call placed between a string's /* and a later real comment's close", () => {
+    // Observed red on the pre-#789 regex helper: `distGateDecision(` was
+    // swallowed along with the fake "comment" span, so a regression
+    // reintroducing it there would have passed `not.toMatch` silently.
+    const source = [
+      'const glob = "assets/*.css";',
+      "const bad = distGateDecision(true, true);",
+      "/* trailing */",
+    ].join("\n");
+    expect(withoutComments(source)).toMatch(/distGateDecision\(/);
+  });
+
+  it("strips a real block comment in the middle of a file, and does not count what it says", () => {
+    const source = [
+      'const glob = "assets/*.css";',
+      'const GATE = resolveDistGate(true, "dist/sw.js");',
+      "/* mentions distGateDecision( but is only a comment, not code */",
+      "const after = true;",
+    ].join("\n");
+    const stripped = withoutComments(source);
+    expect(stripped).not.toContain("mentions distGateDecision(");
+    expect(stripped).not.toMatch(/distGateDecision\(/);
+  });
+
+  it("strips a real line comment at the very end of the file, with nothing after it", () => {
+    const source = [
+      'const GATE = resolveDistGate(true, "dist/sw.js");',
+      "// do not call distGateDecision( directly, use resolveDistGate instead",
+    ].join("\n");
+    expect(withoutComments(source)).not.toMatch(/distGateDecision\(/);
+  });
+});
 
 /** Every `describe.skipIf(<arg>)(` argument in a source, comments removed. */
 function skipConditions(source: string): string[] {
