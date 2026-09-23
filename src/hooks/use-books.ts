@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { errorMessage } from "@/lib/failure-text";
 import {
   addChapter as addChapterToBook,
   chapterProgress,
@@ -391,7 +392,7 @@ export function useBooks() {
       return;
     }
     setFailure({
-      message: cause instanceof Error ? cause.message : String(cause),
+      message: errorMessage(cause),
       fromDelete,
     });
   }, []);
@@ -442,7 +443,7 @@ export function useBooks() {
         // so it is outside what eslint-plugin-react-hooks analyses at all.
         // This hoist stays inside the hook and only changes what the nested
         // closure references.)
-        const message = cause instanceof Error ? cause.message : String(cause);
+        const message = errorMessage(cause);
         setFailure((prev) =>
           prev?.fromDelete ? prev : { message, fromDelete: false }
         );
@@ -526,7 +527,7 @@ export function useBooks() {
       } catch (cause) {
         return {
           ok: false,
-          message: cause instanceof Error ? cause.message : String(cause),
+          message: errorMessage(cause),
         };
       }
     },

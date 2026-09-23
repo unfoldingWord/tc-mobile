@@ -1,46 +1,21 @@
 import { useCallback } from "react";
 
 import { withEncoder } from "./mp3-codec";
-import {
-  type ShareError,
-  type ShareOutcome,
-  type ShareStatus,
-  useShareFlow,
-} from "./share-flow";
-import type { ShareProgress } from "./share-progress";
+import { type ShareSurface, useShareFlow } from "./share-flow";
 import { exportChapterMp3 } from "@/lib/export/chapter";
 import type { ChapterId } from "@/types/domain";
 
-export interface UseChapterShare {
-  readonly status: ShareStatus;
-  readonly error: ShareError | null;
-  /** See {@link UseShareFlow.sendUnconfirmed}. */
-  readonly sendUnconfirmed: boolean;
-  /**
-   * Segments with no resolvable audio, left out of the file prepared by tap 1.
-   * Zero until a prepare succeeds. Surfaced so a chapter with gaps does not
-   * export "as if whole" without saying so.
-   */
-  readonly missing: number;
+export interface UseChapterShare extends ShareSurface {
   /**
    * Tap 1: encode the chapter to one MP3 and stash the File for the send gesture.
    * Never rejects — a reason surfaces through `error`.
+   *
+   * The only member not on {@link ShareSurface}, which is the point: what a
+   * share hook DIFFERS in is what it takes to build the file. `missing` here
+   * counts segments with no resolvable audio, left out of that file — so a
+   * chapter with gaps does not export "as if whole" without saying so.
    */
   prepare: (chapterId: ChapterId, filename: string) => Promise<void>;
-  /** Tap 2: hand the stashed File to the OS share sheet. See {@link useShareFlow}. */
-  send: () => Promise<ShareOutcome>;
-  /** Drop any prepared file and return to idle (menu close, unmount). */
-  reset: () => void;
-  /** The modal timeline over the flow (#491). See {@link UseShareFlow.progress}. */
-  readonly progress: ShareProgress;
-  /**
-   * The ref-backed read of {@link progress} a `Layer.busy()` must use (#452
-   * PR4, mirroring PR3's `useBookShare`). See {@link UseShareFlow.ownsScreen}
-   * for why the rendered `progress` above cannot serve that purpose.
-   */
-  readonly ownsScreen: () => boolean;
-  /** End an outcome flash early (a tap on it). */
-  dismissProgress: () => void;
 }
 
 /**
