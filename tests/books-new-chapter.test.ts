@@ -107,6 +107,7 @@ vi.mock("@/hooks/use-book-share", () => ({
     sendUnconfirmed: false,
     missing: 0,
     partialSegments: 0,
+    partialChapters: 0,
     progress: { phase: "hidden" },
     prepare: vi.fn(),
     send: vi.fn(),

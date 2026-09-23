@@ -86,11 +86,17 @@ describe("strings.shareBookPartial", () => {
  * one omitted chapter and never look at the one that has holes. Fixed with
  * an uncounted locator, "of included audio", that cannot pluralize "chapter"
  * off `n` — mirroring the n===1 clause's own disambiguation without naming a
- * count nothing here tracks.
+ * count nothing here tracked.
+ *
+ * #446 then gave the producer that count: `exportBookZip` reports
+ * `partialChapters`, the distinct included chapters holding the gaps, and
+ * the clause names it ("of an included chapter" / "of N included chapters").
+ * "additional" is dropped with the hedge: the counted locator already keeps
+ * the second sentence from reading as a restatement of the first.
  */
 describe("strings.shareBookMissingAndPartial", () => {
   it("scopes the n===1 partial segment to an included chapter, in cause-neutral wording", () => {
-    expect(strings.shareBookMissingAndPartial(1, 1)).toBe(
+    expect(strings.shareBookMissingAndPartial(1, 1, 1)).toBe(
       "1 chapter could not be included. 1 segment of an included chapter could not be included."
     );
   });
@@ -99,27 +105,67 @@ describe("strings.shareBookMissingAndPartial", () => {
     // "shipped" reads as past-tense send while the share menu is only `ready`
     // (Share now hasn't been tapped); "left out" implies a deliberate omit,
     // against `shareMissing`'s cause-neutrality contract (George R2 P2).
-    expect(strings.shareBookMissingAndPartial(1, 1)).not.toMatch(/shipped/i);
-    expect(strings.shareBookMissingAndPartial(1, 1)).not.toMatch(/left out/i);
-    expect(strings.shareBookMissingAndPartial(1, 2)).not.toMatch(/shipped/i);
-    expect(strings.shareBookMissingAndPartial(1, 2)).not.toMatch(/left out/i);
+    for (const [c, s, p] of [
+      [1, 1, 1],
+      [1, 2, 1],
+      [1, 2, 2],
+    ] as const) {
+      const text = strings.shareBookMissingAndPartial(c, s, p);
+      expect(text).not.toMatch(/shipped/i);
+      expect(text).not.toMatch(/left out/i);
+    }
   });
 
-  it("scopes the n>1 partial segments to included audio, without naming a chapter count (George R3 P2)", () => {
-    expect(strings.shareBookMissingAndPartial(1, 2)).toBe(
-      "1 chapter could not be included. 2 additional segments of included audio could not be included."
+  /**
+   * #446 — the `n > 1` clause names the chapters that hold the gaps from the
+   * producer's own `partialChapters` count. Before it existed the clause
+   * hedged with "of included audio", because `(chapters, segments)` alone
+   * cannot say whether two gaps sit in one chapter or two.
+   */
+  it("names ONE included chapter when every gap sits in one, whatever the segment count (#446)", () => {
+    expect(strings.shareBookMissingAndPartial(1, 2, 1)).toBe(
+      "1 chapter could not be included. 2 segments of an included chapter could not be included."
     );
-    expect(strings.shareBookMissingAndPartial(2, 3)).toBe(
-      "2 chapters could not be included. 3 additional segments of included audio could not be included."
+    expect(strings.shareBookMissingAndPartial(2, 5, 1)).toBe(
+      "2 chapters could not be included. 5 segments of an included chapter could not be included."
     );
   });
 
-  it("never pluralizes 'chapter' as a count of partial chapters (regression guard, #400/#423)", () => {
-    // "additional segments of included audio" must not become "additional
-    // segments of N chapters" — that would reintroduce the #400 bug in the
-    // n>1 combined clause specifically.
-    expect(strings.shareBookMissingAndPartial(1, 2)).not.toMatch(
-      /\d+ chapters? of/i
+  it("names how many included chapters hold the gaps when there are several (#446)", () => {
+    expect(strings.shareBookMissingAndPartial(1, 2, 2)).toBe(
+      "1 chapter could not be included. 2 segments of 2 included chapters could not be included."
+    );
+    expect(strings.shareBookMissingAndPartial(2, 5, 3)).toBe(
+      "2 chapters could not be included. 5 segments of 3 included chapters could not be included."
+    );
+  });
+
+  it("counts chapters off partialChapters, never off the segment sum (regression guard, #400/#423)", () => {
+    // The #400 bug pluralized "chapter" off `segments`. The second clause is
+    // asserted directly: its chapter wording must follow `partialChapters`
+    // and ignore `segments`, including the bare-plural form "of included
+    // chapters" that the old `/\d+ chapters? of/` guard could not see.
+    const second = (c: number, s: number, p: number) =>
+      strings
+        .shareBookMissingAndPartial(c, s, p)
+        .slice(strings.shareBookMissing(c).length + 1);
+    expect(second(1, 3, 1)).not.toMatch(/chapters/i);
+    expect(second(1, 3, 1)).toMatch(/of an included chapter /);
+    expect(second(1, 3, 2)).toMatch(/of 2 included chapters /);
+    expect(second(1, 3, 2)).not.toMatch(/\b3 included/);
+  });
+});
+
+/**
+ * #446 (folded in from George #423 round 4): the empty shelf's teaching line
+ * shows on a first launch and on an origin that emptied its shelf after
+ * `persist()` was granted, so it must stay vocabulary-only — no durability
+ * claim (#406 item 3 removed "unless space runs low").
+ */
+describe("strings.booksEmptyTeach", () => {
+  it("makes no durability or offline claim", () => {
+    expect(strings.booksEmptyTeach).not.toMatch(
+      /stay|phone|offline|space runs low/i
     );
   });
 });

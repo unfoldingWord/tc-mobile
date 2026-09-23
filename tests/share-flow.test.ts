@@ -90,28 +90,44 @@ describe("classifyShareError", () => {
  */
 describe("sentGap", () => {
   it("no gap when both counts are zero", () => {
-    expect(sentGap({ missing: 0, partial: 0 })).toBeUndefined();
+    expect(
+      sentGap({ missing: 0, partial: 0, partialChapters: 0 })
+    ).toBeUndefined();
   });
 
   it("a gap from `missing` alone (a chapter's own left-out segments, or a book's whole missing chapters)", () => {
-    expect(sentGap({ missing: 1, partial: 0 })).toEqual({
+    expect(sentGap({ missing: 1, partial: 0, partialChapters: 0 })).toEqual({
       missing: 1,
       partial: 0,
+      partialChapters: 0,
     });
   });
 
   it("a gap from `partial` alone (segments missing inside a book chapter that DID ship)", () => {
-    expect(sentGap({ missing: 0, partial: 2 })).toEqual({
+    expect(sentGap({ missing: 0, partial: 2, partialChapters: 1 })).toEqual({
       missing: 0,
       partial: 2,
+      partialChapters: 1,
     });
   });
 
   it("a gap from both at once — a book can carry both", () => {
-    expect(sentGap({ missing: 1, partial: 2 })).toEqual({
+    expect(sentGap({ missing: 1, partial: 2, partialChapters: 2 })).toEqual({
       missing: 1,
       partial: 2,
+      partialChapters: 2,
     });
+  });
+
+  it("carries the distinct-chapter count through unchanged, so the outcome copy can name it (#446)", () => {
+    // Same `missing`/`partial` pair, different `partialChapters`: the gap the
+    // modal shows must keep them apart, or its copy falls back to guessing.
+    expect(
+      sentGap({ missing: 1, partial: 2, partialChapters: 1 })?.partialChapters
+    ).toBe(1);
+    expect(
+      sentGap({ missing: 1, partial: 2, partialChapters: 2 })?.partialChapters
+    ).toBe(2);
   });
 });
 
@@ -130,16 +146,16 @@ describe("resolveSendOutcome", () => {
   });
 
   it("a proven send with a gap settles partial", () => {
-    expect(resolveSendOutcome(true, { missing: 1, partial: 0 })).toBe(
-      "partial"
-    );
+    expect(
+      resolveSendOutcome(true, { missing: 1, partial: 0, partialChapters: 0 })
+    ).toBe("partial");
   });
 
   it("an UNPROVEN send settles unproven regardless of any gap — delivery itself is what's in question", () => {
     expect(resolveSendOutcome(false, undefined)).toBe("unproven");
-    expect(resolveSendOutcome(false, { missing: 2, partial: 1 })).toBe(
-      "unproven"
-    );
+    expect(
+      resolveSendOutcome(false, { missing: 2, partial: 1, partialChapters: 1 })
+    ).toBe("unproven");
   });
 });
 
@@ -174,7 +190,7 @@ describe("the wiring around sentGap and the reset guard (this lane's own review 
 
   it("prepare() arms the gap counts alongside the File, not just in useState", () => {
     expect(flow).toMatch(
-      /handoff\.arm\(\{\s*file,\s*staged,\s*missing:\s*prepared\.missing,\s*partial:\s*prepared\.partial \?\? 0,?\s*\}\)/
+      /handoff\.arm\(\{\s*file,\s*staged,\s*missing:\s*prepared\.missing,\s*partial:\s*prepared\.partial \?\? 0,\s*partialChapters:\s*prepared\.partialChapters \?\? 0,?\s*\}\)/
     );
   });
 

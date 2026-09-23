@@ -37,12 +37,10 @@ import { reportFailure } from "./report-failure";
  * `settleOutstanding`, `routeBackToLayer` via `popAction`) all live, tested, in
  * `src/lib/nav`. Extracting App.tsx's inline refs/effects here is what lets the
  * onion keep the routing logic Node-testable while the browser wiring stays in
- * one reviewable place. The Vitest suite has no renderer (AGENTS.md: no jsdom),
- * so it covers only the pure decisions this composes; the DOM paths themselves
- * — `popstate` routing, the reload adopt, the sheet-close-and-land, and the
- * double-Back guard — are exercised in real Chromium by
- * `e2e/back-navigation.spec.ts` (Playwright, against the shipped `dist/`
- * build) and remain an on-device item for iOS Safari and Android WebView. Two
+ * one reviewable place. The static render harness does not drive this hook's
+ * effects or browser history. `e2e/back-navigation.spec.ts` targets the DOM
+ * paths against the shipped `dist/` build in Chromium; it does not establish
+ * behavior on iOS Safari or Android WebView. Two
  * things that spec does NOT reach, and which stay device items: the recorder's
  * commit path ITSELF (`requestClose` → re-arm push → `transitionInFlight` →
  * the consuming back()) is not observably distinct from a bare sheet-close in

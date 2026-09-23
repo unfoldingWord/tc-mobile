@@ -116,15 +116,9 @@ export function routeBackToLayer(stack: LayerStack): RouteBackToLayerResult {
  * FALSE for depth 0. Books is the floor: it pushes nothing, which is what
  * makes a Back there `"exit-app"`.
  *
- * The consequence for the layer stack was MEASURED on the pre-PR3 build, not
- * inferred (`e2e/back-navigation.spec.ts`'s PR3 header records the reading):
- * on Books with an overlay open, `history.state` was the app's own
- * `{tc:true,index:0}` with no entry of the app's BELOW it, and a Back
- * navigated the document straight to `about:blank` — **no `popstate` fired at
- * all**. `routeBackToLayer` is reached only FROM the `popstate` handler, so at
- * the floor it could never be reached: registering Books' overlays as `Layer`s
- * would have been inert, and #374 would have stayed open. That is the whole
- * reason this decision exists.
+ * Without a protective entry, Back at the floor can leave the document
+ * instead of reaching the popstate handler. Registering an overlay as a
+ * Layer alone cannot route that Back through `routeBackToLayer`.
  *
  * So: when the floor screen's first overlay opens, the adapter arms ONE entry.
  * One per SCREEN, never one per overlay — two or five deep makes no
