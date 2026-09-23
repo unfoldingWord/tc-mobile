@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { spansWholeSample } from "@/lib/audio/edit";
 import {
   effectivePan,
   panAfterCut,
@@ -7,6 +8,7 @@ import {
   playbackStrip,
   playbackStripOffset,
   sampleToViewportX,
+  seedSelection,
   viewportWindow,
   viewportXToSample,
 } from "@/lib/audio/viewport";
@@ -453,6 +455,101 @@ describe("panForZoom", () => {
   it("is safe on an empty segment", () => {
     expect(panForZoom(0, 0, 4, CF, { start: 0, end: 0 })).toBe(0);
     expect(panForZoom(0, 50, 1, CF, null)).toBe(0);
+  });
+});
+
+/**
+ * The seed span the edit toggle opens with (#554, tail rule C).
+ *
+ * The requirements owner's report: the frame used to open CENTERED on the
+ * playhead, so the line sat inside the span it had just created. A span a
+ * translator is about to cut or audition runs from the line FORWARD, which is
+ * also the record/paste mental model — the line is where the next thing
+ * begins.
+ *
+ * Two properties carry the whole rule, and the cases below are chosen to pin
+ * them rather than to enumerate coordinates: the left edge is AT the playhead
+ * wherever there is room to the right, and the span never leaves the buffer —
+ * it slides back off the end instead (rule C). At the append rest
+ * (`pan === length`, the state every fresh open of the sheet starts in) that
+ * is the difference between a usable span and an empty one.
+ */
+describe("seedSelection", () => {
+  const LENGTH = 1000;
+  // Whole zoom: the viewport spans the clip, so the seed is 30% of it.
+  const WHOLE_SPAN = 300;
+
+  it("puts the left edge AT the playhead when there is room to the right", () => {
+    // The #554 assertion itself. The centred rule put the span at `{250, 550}`
+    // around 400, which is what the report is about.
+    expect(seedSelection(LENGTH, 400, LENGTH)).toEqual({
+      start: 400,
+      end: 700,
+    });
+  });
+
+  it("anchors at the very start of the clip", () => {
+    expect(seedSelection(LENGTH, 0, LENGTH)).toEqual({ start: 0, end: 300 });
+  });
+
+  it("anchors at the last playhead position that still fits a full span", () => {
+    // 700 = length - span: the boundary between "left edge at the playhead"
+    // and the slid tail below. Both rules must agree here, or the seed would
+    // jump as the playhead crossed it.
+    expect(seedSelection(LENGTH, 700, LENGTH)).toEqual({
+      start: 700,
+      end: 1000,
+    });
+  });
+
+  it("at the append rest the seed is the last span of the buffer, not empty", () => {
+    // A rule that anchored the left edge here and let the right run past the
+    // end would be clamped to `{1000, 1000}` by `openSelection`, which
+    // `spansWholeSample` calls "nothing selected": Cut and Play would open
+    // dead. The span slides left instead and stays full width.
+    const seed = seedSelection(LENGTH, LENGTH, LENGTH);
+    expect(seed).toEqual({ start: 700, end: 1000 });
+    expect(spansWholeSample(seed)).toBe(true);
+  });
+
+  it("slides left through the tail rather than narrowing to a hairline", () => {
+    // Anywhere in the last span-width the playhead sits INSIDE the span — there
+    // is not a full span of audio to its right — but the width is constant, so
+    // the two handles never land on top of each other.
+    const seed = seedSelection(LENGTH, 900, LENGTH);
+    expect(seed).toEqual({ start: 700, end: 1000 });
+    expect(seed.end - seed.start).toBe(WHOLE_SPAN);
+  });
+
+  it("is a fraction of the VISIBLE window, not of the clip", () => {
+    // Quarter zoom: 250 visible, so a 75-sample seed.
+    expect(seedSelection(LENGTH, 100, 250)).toEqual({ start: 100, end: 175 });
+    // And the same tail slide, measured against the buffer rather than the view.
+    expect(seedSelection(LENGTH, LENGTH, 250)).toEqual({
+      start: 925,
+      end: 1000,
+    });
+  });
+
+  it("is total on an empty buffer", () => {
+    // Unreachable in the app — the seed is only taken when there is audio —
+    // but the function has no guard, so pin that it degenerates rather than
+    // producing NaN.
+    expect(seedSelection(0, 0, 0)).toEqual({ start: 0, end: 0 });
+  });
+
+  it("never runs past either end of the buffer, at either zoom", () => {
+    // The invariant, so a later edit cannot reintroduce an overrun that
+    // `openSelection`'s per-endpoint clamp would silently truncate.
+    for (const zoom of [1, 4]) {
+      const visible = LENGTH / zoom;
+      for (let c = 0; c <= LENGTH; c += 25) {
+        const seed = seedSelection(LENGTH, c, visible);
+        expect(seed.start).toBeGreaterThanOrEqual(0);
+        expect(seed.end).toBeLessThanOrEqual(LENGTH);
+        expect(seed.end - seed.start).toBeCloseTo(0.3 * visible);
+      }
+    }
   });
 });
 

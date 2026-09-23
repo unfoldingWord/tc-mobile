@@ -280,6 +280,67 @@ export function panForZoom(
 }
 
 /**
+ * How much of the visible window the edit toggle seeds a span across (#554).
+ *
+ * The centred seed this replaces spelled it as two halves of 0.15 around the
+ * centerline, so the NOMINAL width is the same 0.3 — but the DELIVERED width
+ * is not, and the difference lands on the commonest path. At the append rest
+ * (`centerlineSample === length`, the state every fresh open of the sheet
+ * starts in) the centred seed ran past the end of the buffer and
+ * `openSelection`'s per-endpoint clamp truncated it, so only 0.15 of the
+ * visible window was actually selected. This seed slides back off the end
+ * instead of overrunning, so the same first tap delivers the full 0.3. Away
+ * from the tail, where a full span of audio lies to the right of the
+ * centerline, the delivered width was 0.3 and still is. The wider default is a
+ * deliberate, accepted behaviour change: the DRI's decision is recorded at
+ * https://github.com/unfoldingWord/tc-mobile/pull/560#issuecomment-5767057659.
+ *
+ * Module-private: the seed has exactly one reader.
+ */
+const SEED_SPAN_FRACTION = 0.3;
+
+/**
+ * The span the selection frame opens with (#554).
+ *
+ * The seed used to be centred on the centerline, so the playhead sat in the
+ * MIDDLE of the span it had just created. The requirements owner's report: the
+ * line marks where the translator is, and a span they are about to cut or
+ * audition runs from there FORWARD — which is also the record/paste mental
+ * model (the line is where the next thing begins) and makes the first handle
+ * drag, extending the right edge, the common case.
+ *
+ * So the left edge is the playhead, and the span slides left only as far as
+ * the end of the buffer forces (tail rule C, the dev lead's pick:
+ * https://github.com/unfoldingWord/tc-mobile/pull/560#issuecomment-5794543851).
+ * That last clause is not an edge case: the append rest puts
+ * `centerlineSample === length` on every fresh open. Anchoring there and
+ * letting the right edge run past the end would leave `openSelection`'s
+ * per-endpoint clamp holding `{length, length}`, which `spansWholeSample` reads
+ * as nothing selected: Cut and Play would open dead. Sliding keeps the width,
+ * so the two handles never land on top of each other and the frame is
+ * grabbable wherever it opens. The cost, stated plainly: within the last
+ * span-width of the buffer the playhead is inside the span rather than on its
+ * left edge, because there is not a full span of audio to its right.
+ *
+ * No clamps, and the `min` is the only branch, because `visibleSamples` is
+ * `length / zoom` at `zoom >= 1`: the span is at most `0.3 * length`, so
+ * `length - span` is never negative and `start` is never below 0, while
+ * `start <= length - span` puts `end` at or inside `length`. A `Math.max(0,…)`
+ * would be a branch no input can reach — what `panForZoom`'s own note calls
+ * untestable rather than safe. At `length` 0 every term is 0 and this returns
+ * `{0, 0}`, matching `viewportWindow`'s lack of a divide-by-zero guard.
+ */
+export function seedSelection(
+  length: number,
+  centerlineSample: number,
+  visibleSamples: number
+): SampleRange {
+  const span = SEED_SPAN_FRACTION * visibleSamples;
+  const start = Math.min(centerlineSample, length - span);
+  return { start, end: start + span };
+}
+
+/**
  * The view window for the live capture scope: the ring's clip-fractions [0,1]
  * mapped onto screen [0, headFraction], so the newest column sits toward the
  * head and history runs left, with the head's right left blank.
