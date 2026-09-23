@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -6,7 +8,6 @@ import {
   heldTakeIsBusy,
   markRowReason,
   rowHint,
-  toolbarEditHint,
 } from "@/components/menu-row-state";
 import { strings } from "@/components/strings";
 
@@ -175,18 +176,47 @@ describe("rowHint — which reasons carry a cue", () => {
   // two chevrons are "Close menu" and "Close recorder" — so a screen-reader user
   // hunting for it found nothing (George, round 2). Every string that NAMES the
   // control is checked directly, so a rename of the control fails the suite
-  // instead of silently orphaning the words. `recorderInterrupted` was the gap:
-  // it names "Close recorder" too but the scan below (which only bans "tap Back")
-  // could not catch a rename that orphaned it, so a rename would have left it
-  // green with dead words (George, #154 confirming round → #196).
+  // instead of silently orphaning the words.
+  //
+  // The list was three. `previewUnavailable` and `recorderInterrupted` were the
+  // other two, and #614 deleted both with the states they described — an
+  // undecodable paused take, and a frozen take waiting to be saved by hand —
+  // taking the companion #620 test ("body notices describe the control the way
+  // a sighted user sees it") with them: it had exactly those two subjects and
+  // no third. `blockedByTake` is the one string left that names a control, and
+  // it names it BY NAME ONLY, for the reason the next test pins.
   it("hint copy names controls that actually exist", () => {
-    for (const copy of [
-      strings.blockedByTake,
-      strings.previewUnavailable,
-      strings.recorderInterrupted,
-    ]) {
-      expect(copy).toContain(`"${strings.closeRecorder}"`);
-    }
+    expect(strings.blockedByTake).toContain(`"${strings.closeRecorder}"`);
+  });
+
+  // The ≡-menu hint must NOT describe the save control by its looks. It is only
+  // ever spoken inside the recorder's ≡ menu, and while that menu is up the
+  // recorder header — the control it names — is `inert` (`recorder.tsx`'s
+  // `overlayUp` gate), so the one live back chevron on screen is the menu's own
+  // dismiss, "Close menu". Inside that overlay "the back arrow at the top"
+  // names the dismiss, and a translator who tapped it would close the menu and
+  // save nothing — the same collision the round-1 `back` badge had (`rowHint`'s
+  // docblock); #648 round 1 (George P2) caught the words repeating it. The
+  // dismiss glyph is read from `menu.tsx` the same way the header's is read
+  // above, so the ban's premise is pinned rather than assumed: if the menu's
+  // dismiss stops being a back chevron, this fails and the ban is re-decided
+  // instead of silently outliving its reason.
+  it("the ≡-menu hint names both controls by name only, never by glyph (#620, #648 R1)", () => {
+    const menuSource = readFileSync(
+      new URL("../src/components/menu.tsx", import.meta.url),
+      "utf8"
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    const dismiss =
+      /icon=\{hamburger \? "menu" : "([\w-]+)"\}\s*label=\{closeLabel\}/.exec(
+        menuSource
+      );
+    expect(dismiss?.[1]).toBe("back");
+
+    expect(strings.blockedByTake).not.toMatch(/back arrow/i);
+    expect(strings.blockedByTake).toContain(`"${strings.menuClose}"`);
+    expect(strings.blockedByTake).toContain(`"${strings.closeRecorder}"`);
   });
 
   // The "Back" ban is a PRODUCT-WIDE rule, so it is enforced over the whole
@@ -253,31 +283,6 @@ describe("rowHint — which reasons carry a cue", () => {
 
   it("an enabled row has no hint", () => {
     expect(rowHint(null)).toBeNull();
-  });
-});
-
-describe("toolbarEditHint — the bottom-bar Edit control's own copy (#315 round 1, George P2-1)", () => {
-  // The failure this pins: the toolbar control fires `"uncommitted-take"`
-  // during a normal Back-tapped close or a #59 processing freeze, with no ≡
-  // menu open at all — so `rowHint`'s "Use \"Close menu\", then..." copy would
-  // name a menu that does not exist on this surface, over a control that was
-  // never inside one.
-  it("omits the hint for an uncommitted take — the toolbar is not inside the ≡ menu", () => {
-    expect(toolbarEditHint("uncommitted-take")).toBeNull();
-  });
-
-  // Every other reason is surface-agnostic: it names no control, so it reads
-  // the same whether the row lives in the menu or on the toolbar.
-  it("carries every other reason through unchanged", () => {
-    expect(toolbarEditHint("starting")).toEqual(rowHint("starting"));
-    expect(toolbarEditHint("no-audio")).toEqual(rowHint("no-audio"));
-    expect(toolbarEditHint("denied")).toEqual(rowHint("denied"));
-    expect(toolbarEditHint("no-segment")).toEqual(rowHint("no-segment"));
-    expect(toolbarEditHint(null)).toEqual(rowHint(null));
-  });
-
-  it("an enabled control has no hint", () => {
-    expect(toolbarEditHint(null)).toBeNull();
   });
 });
 

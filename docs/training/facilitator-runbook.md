@@ -131,16 +131,20 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 
 ### If a recording will not save
 
-Keep the app open. **Try saving again** retries the work already held in
+Keep the app open. When offered, **Try saving again** retries the work held in
 memory; do not record it again first. If it fails again, keep the screen open
 and ask the facilitator for help. The small share icon sends a problem report,
 **not the unsaved recording**. Do not restart or leave the app expecting that
 report to preserve the audio. <!-- source: src/components/save-failed.tsx; src/hooks/use-save-take.ts -->
 
-Discard asks for confirmation and abandons the pending work. For an edit,
-the previously saved recording remains; a new unsaved recording is lost.
+Discard asks for confirmation and abandons the pending work. After an ordinary
+save failure, discarding an edit leaves the previously saved recording intact;
+a new unsaved recording is lost. If another open copy of the app deleted the
+book, its saved recordings are gone too. The save screen then offers confirmed
+Discard instead of Try saving again: it cannot save into the deleted book or
+restore it. The problem report contains no audio.
 A screen offering Restart instead of Try saving again cannot retry the save;
-restarting abandons the work held in memory. <!-- source: src/components/save-failed.tsx (discard and downgrade paths) -->
+restarting abandons the work held in memory. <!-- source: src/components/save-failed.tsx (discard, stale and downgrade paths); src/lib/storage/books.ts (deleteBook, saveTake) -->
 
 ### The flip side of "nothing leaves the phone"
 
@@ -205,15 +209,11 @@ Two things to know honestly: the mark appears on the Books screen only, so you
 will see it when you go back there; <!-- source: src/components/books-screen.tsx; gh issue #205 round-1 G7, accepted as product intent --> and sending has not yet been tried on a
 real phone's share sheet, so tell us if it does not open. <!-- source: gh PR for #205, "not device-verified" -->
 
-A third thing, specifically about the **save-failed** screen's share icon: the
-app keeps converting already-finished recordings to a smaller file in the
-background, and that work does not pause just because the save-failed screen
-is up. If that background work is itself failing at the same time as your
-save, it can overwrite the report you just armed before your second tap sends
-it — so on that screen only, a share that will not "stick" (turns quiet again
-on its own, or needs more than two taps) is a known limit, not something you
-did wrong. Retry the save first; if the save then succeeds, the background
-work settles and the share behaves normally again. <!-- source: src/hooks/finish-transcode.ts (module-scoped transcode sweep, no pause on SaveFailed mount); src/components/error-boundary.tsx quiesceTranscodeSweep() (the crash screen's screen-only fix, not available here because its quiesce is one-way and this screen's exit is Retry on the same page); AGENTS.md "Errors have a channel before they have copy" (SaveFailed paragraph); George R1 P2-2 on #509 -->
+On the **save-failed** screen, background conversion of finished recordings
+pauses while you recover or send the report. It resumes when that screen
+closes, including work requested during the pause. A conversion already in
+flight can still finish and add one report entry, so the pause does not mean
+the report is frozen instantly. <!-- source: src/components/save-failed.tsx pauseTranscodeSweep/resumeTranscodeSweep effect; src/hooks/finish-transcode.ts requestedDuringPause and in-flight withEncoder turn -->
 
 ### Write down what the app cannot know
 

@@ -3,30 +3,25 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 /**
- * Edit-mode Zoom must not fire during the leftover-preview `isClosing`
- * window (#396, George P3 on PR #345's rebase round).
+ * Edit-mode Zoom must not fire during the committing `isClosing` window
+ * (#396, George P3 on PR #345's rebase round).
  *
- * `displayedZoom = wholeView ? ZOOM_WHOLE : zoom` exists to make the
- * control's CHROME name the window actually drawn — while a paused-take
- * preview is up, the canvas is swapped for the whole buffer even though the
- * stored `zoom` says quarter. That is harmless when the control cannot be
- * tapped: during playback `stage.windowControlsInert` covers it. The hole
- * was the close window. Entering edit mode from a paused take after a
- * Pause+Play preview keeps the preview object; on Back, `close()` sets
- * `isClosing`, `previewShown` picks the leftover preview back up, `wholeView`
- * goes true, `stage.windowControlsInert` (the buffer is silent) goes false —
- * and Zoom stands enabled, drawing the "whole" chrome, while `onToggleZoom`
- * still reads and writes the REAL `zoom`. A tap there flips the stored zoom
- * with no visible change, and if the save then fails and the sheet reopens,
- * the editor comes back in the flipped mode — state the chrome never showed
- * and the translator never asked for.
+ * The defect that put the guard there: a `displayedZoom` substituted the
+ * whole-clip level whenever a paused-take preview was on the stage, so the
+ * control's CHROME could name a window the handler did not act on. On Back,
+ * `close()` set `isClosing`, the leftover preview came back up, and
+ * `stage.windowControlsInert` (the buffer was silent) went false — Zoom stood
+ * enabled drawing the "whole" chrome while `onToggleZoom` read and wrote the
+ * REAL `zoom`. A tap flipped the stored zoom with no visible change, and a
+ * failed save reopened the editor in the flipped mode.
  *
- * George's minimal fix, and the one taken: add `!idleEditable` to the Zoom
- * control's `disabled`, matching the guard Select, Undo, Redo, Cut and the
- * audition all already carry. `idleEditable` is false exactly while the
- * sheet is committing (the `isClosing` window the preview can outlive), so
- * the chrome/handler split — chrome claiming the whole view while the
- * handler flips the real zoom — can no longer be acted on.
+ * #614 removed BOTH halves of that particular split — the paused take, and
+ * with it the preview and `displayedZoom` itself. The guard stays and this
+ * test with it, because the guard is not about the preview: `!idleEditable` is
+ * false for the whole of ANY commit, so a window control cannot be tapped
+ * while the buffer under it is being replaced. Reverting the prop to
+ * `stage.windowControlsInert` alone re-opens that window for every commit,
+ * which is strictly more than the one this was filed for.
  *
  * Source-shape, the reason `tests/recorder-cut-drag-gate.test.ts` documents:
  * `recorder.tsx` mounts the audio hook graph, there is no DOM runner for it,
@@ -46,11 +41,11 @@ describe("Zoom's disabled gate covers the leftover-preview close window (#396)",
     // `disabled={...}` that follows — the same idiom the Cut-gate test
     // above documents.
     const iconIdx = recorder.indexOf(
-      'icon={displayedZoom === ZOOM_WHOLE ? "zoom-in" : "zoom-out"}'
+      'icon={zoom === ZOOM_WHOLE ? "zoom-in" : "zoom-out"}'
     );
     expect(
       iconIdx,
-      "no Control carrying the displayedZoom icon pair in recorder.tsx"
+      "no Control carrying the zoom icon pair in recorder.tsx"
     ).toBeGreaterThan(-1);
     const match = /disabled=\{([^}]*)\}/.exec(recorder.slice(iconIdx));
     if (!match) {

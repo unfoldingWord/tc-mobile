@@ -67,3 +67,14 @@ body {
   outline: var(--c-focus-ring);
   outline-offset: var(--c-focus-offset);
 }
+
+/* Keep the paste marker's ring inside the recorder stage's clipping edge, and
+   the selection handles' rings inside the canvas they sit flush against.
+   These exceptions are unlayered like the global rule so their inward offset
+   takes precedence; a copy inside `@layer components` never wins against an
+   unlayered declaration, whatever its specificity (#448, #635).
+   `tests/focus-offset-cascade.test.ts` pins both halves. */
+.paste-marker:focus-visible,
+.selection-handle:focus-visible {
+  outline-offset: -2px;
+}

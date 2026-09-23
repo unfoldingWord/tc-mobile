@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
+import { cn } from "@/lib/utils";
 import { Control } from "./control";
 import { strings } from "./strings";
 
@@ -40,6 +41,19 @@ interface MenuProps {
    * otherwise be told a naming dialog closes a menu (George R2 P3-4).
    */
   closeLabel?: string;
+  /**
+   * Opened by a ≡ that stays a ≡ (#608). The header's dismiss control wears
+   * the same `menu` glyph as the control that opened it, in the same top-right
+   * corner, and the panel shows no visible title — one control, one glyph, one
+   * place, and the glyph is the label. Off (the default) the header is a title
+   * beside a back chevron, which every other menu keeps — the book, chapter
+   * and segment menus (opened from a ⋮ since #589), the recorder's, and the
+   * New Book dialog. What a screen reader hears does not change either way:
+   * `title` still names the dialog and `closeLabel` still names the control
+   * ("Close menu" dismisses, as before), which is also what the e2e specs
+   * locate the menu by.
+   */
+  hamburger?: boolean;
   /**
    * When true, the header AND every child — Close included — go `inert`:
    * unfocusable, unclickable, and excluded from the accessibility tree as
@@ -108,6 +122,7 @@ export function Menu({
   onClose,
   title = strings.menuTitle,
   closeLabel = strings.menuClose,
+  hamburger = false,
   inert,
   liveRegion,
   children,
@@ -221,10 +236,20 @@ export function Menu({
             `children` stay direct flex items of `.menu-panel` above —
             `inert` changes reachability, never layout. */}
         <div className="contents" inert={inert || undefined}>
-          <div ref={headerRef} className="flex items-center justify-between">
-            <span className="t-title">{title}</span>
+          {/* `justify-end` when the title is dropped keeps the one remaining
+              child — the dismiss control — in the top-right corner, where the
+              ≡ that opened this panel was; `justify-between` alone would slide
+              it to the left edge as the header's only flex item. */}
+          <div
+            ref={headerRef}
+            className={cn(
+              "flex items-center",
+              hamburger ? "justify-end" : "justify-between"
+            )}
+          >
+            {!hamburger && <span className="t-title">{title}</span>}
             <Control
-              icon="back"
+              icon={hamburger ? "menu" : "back"}
               label={closeLabel}
               variant="quiet"
               onClick={onClose}
