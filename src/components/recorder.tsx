@@ -42,6 +42,7 @@ import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
 import { LiveScope } from "./live-scope";
 import {
+  barHint,
   editRowReason,
   eraseRowReason,
   heldTakeIsBusy,
@@ -150,8 +151,9 @@ interface RecorderProps {
    * system gesture travel the one popstate path — which is what gives the
    * on-screen Back the same commit-window protection App re-arms for the system
    * one (Frank R1 F1). App answers the resulting popstate by invoking
-   * `requestClose()`, so the commit still runs; erase is the one exit that
-   * bypasses this and calls `onExit` directly (it must not re-commit).
+   * `requestClose()`, so the commit still runs; erase's exits are the ones
+   * that bypass this and call `onExit` directly (they must not re-commit) —
+   * since #592 only its failure arms, as a successful erase stays open.
    */
   onRequestBack: () => void;
 }
@@ -196,8 +198,9 @@ export interface RecorderHandle {
  * line (an append at the F7 rest, an insert mid-clip).
  *
  * The sheet is two modes (#89). RECORD mode is the hero Record + Play + Edit
- * trio (#315) with the menu opener in the header; the finished toggle lives in
- * that menu. EDIT mode — entered deliberately, from either the record menu's
+ * trio (#315), with the erase-and-record-again bin at the bar's left end
+ * (#592) and the menu opener in the header; the finished toggle lives in that
+ * menu. EDIT mode — entered deliberately, from either the record menu's
  * "Edit recording" row or the toolbar Edit control (#315), both firing
  * `onEnterEdit` — has Play, Zoom, Undo, Redo and Menu beside the stable
  * pressed Edit toggle
@@ -260,7 +263,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
 
     const [menuOpen, setMenuOpen] = useState(false);
     // The sheet is two modes over one segment (#89): a record mode (the hero
-    // Record + Play + Edit trio, #315) and an edit mode (the waveform-editing
+    // Record + Play + Edit trio, #315, and the #592 bin) and an edit mode (the waveform-editing
     // toolbar). The sheet always opens in record; App keys it on `segmentId` so
     // it remounts per open, so `"record"` is the open state with no reset
     // effect needed. Edit is entered deliberately — the record menu's row or
@@ -300,6 +303,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const reopenFrame = useCallback(() => setCutCollapsed(false), []);
     const stageRef = useRef<HTMLDivElement | null>(null);
     const sheetRef = useRef<HTMLDivElement | null>(null);
+    // The record bar's Record and bin (#592), for the one focus hand-off
+    // between them after a wipe — see the overlay restore effect.
+    const recordRef = useRef<HTMLButtonElement | null>(null);
+    const rerecordRef = useRef<HTMLButtonElement | null>(null);
     const dragStartX = useRef(0);
     const panAtDragStart = useRef(0);
     const [dragging, setDragging] = useState(false);
@@ -1787,27 +1794,67 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
 
     // Erase Segment (D-ERASE-OP / D-TWO-ENTRIES): the same hook the Segments-row
     // overflow uses. It clears the stored take and returns the segment to
-    // never-recorded, then this sheet closes dirty so App reloads the list. Only
-    // offered on a segment that has stored audio — a first, uncommitted recording
-    // in this session has nothing on disk to erase.
+    // never-recorded. Only offered on a segment that has stored audio — a first,
+    // uncommitted recording in this session has nothing on disk to erase.
+    //
+    // The sheet STAYS open after it (#592), in record mode over the now-empty
+    // segment, ready for the next take — the wipe-and-record-again a narrative
+    // translator asked for, without a trip back to the chapter. It used to close
+    // dirty to Segments. The ≡ rows and the bar's bin all confirm through here,
+    // so there is one erase and one post-condition, whichever was tapped.
     const erase = useEraseSegment();
     const isErasing = erase.isErasing;
     const onConfirmErase = useCallback(() => {
       // Stop any buffer playback before the delete: EraseConfirm latches its
       // in-flight guard synchronously and the sheet is inert, so Play — the only
       // stop control — is unreachable across the whole IDB write (George R5).
-      // Reaching the confirm already goes through `openMenu`, which stops it; this
-      // is the belt to that suspenders, and matches the Segments list's leave().
+      // Reaching the confirm already goes through `openMenu` or `onRerecord`,
+      // which both stop it; this is the belt to those suspenders, and matches
+      // the Segments list's leave().
       stopPlayback();
       void (async () => {
         const result = await erase.erase(segmentId);
-        // "ok": success unmounts this sheet; the working buffer and any pending
-        // edits go with it, which is the point. "failed": keep the sheet, drop the
-        // confirm, show the notice. "busy": a double-tap's refused second call —
-        // ignore it, the first call still owns the dialog (else the confirm would
-        // vanish mid-erase, exposing Back and its save path over the delete).
-        if (result === "ok") onExit(true);
-        else if (result === "failed") {
+        // "ok": the stored take is gone; rebuild the sheet over the empty
+        // segment (below). "failed": keep the sheet, drop the confirm, show the
+        // notice. "busy": a double-tap's refused second call — ignore it, the
+        // first call still owns the dialog (else the confirm would vanish
+        // mid-erase, exposing Back and its save path over the delete).
+        if (result === "ok") {
+          // The list behind has changed, whatever happens next.
+          dirty.current = true;
+          // Hold the sheet through the re-read, with the same "a commit is in
+          // flight" latch `commitTake` holds across ITS reload. Until `view`
+          // is the empty segment, `editor.working` is still the erased audio:
+          // a Back that dismissed the confirm here would un-inert Record over
+          // it, and a take spliced into that buffer would write the erased
+          // recording back. The latch makes `close()` refuse, disables Record
+          // (`recordDisabled` reads `isClosing`) and keeps the confirm busy.
+          // Taken synchronously in the same continuation the erase resolved
+          // in, so no event can land between the two.
+          closing.current = true;
+          setIsClosing(true);
+          const next = await reloadView();
+          closing.current = false;
+          setIsClosing(false);
+          if (!next) {
+            // The erase landed but the re-read threw. Leave for Segments, as
+            // `commitTake` does on the same miss: the row there shows the
+            // truth, and nothing here should be recorded over a failed load.
+            onExit(true);
+            return;
+          }
+          // Record mode, whole zoom, no frame — `onExitEdit`'s reset, which is
+          // a no-op beyond `setMode` when the bin (record mode) was the entry.
+          onExitEdit();
+          // The F7 rest over an empty segment: a new take starts at 0.
+          setPanState(null);
+          // A Finished mark made before the wipe was about the audio that is
+          // gone; it must not ride the next take (the same reset `commitTake`
+          // does, and "Re-record should drop to draft until finished is
+          // manually chosen again", requirements owner 2026-09-09).
+          setFinishedIntent(null);
+          setConfirmOpen(false);
+        } else if (result === "failed") {
           // A failed erase leaves the take on disk, so this is not a loss — but
           // it goes through the same `clearSegmentTake`, so once the database is
           // unreachable it fails identically every time, and the confirm's
@@ -1818,7 +1865,25 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           else setConfirmOpen(false);
         }
       })();
-    }, [erase, segmentId, onExit, stopPlayback, databaseUnreachable]);
+    }, [
+      erase,
+      segmentId,
+      onExit,
+      stopPlayback,
+      databaseUnreachable,
+      reloadView,
+      onExitEdit,
+    ]);
+
+    // The record bar's bin (#592): straight to the SAME confirm the ≡ row opens,
+    // with no menu in between. Focus is captured here, in the gesture, for the
+    // reason `openMenu` gives; the restore effect below lands it on Record once
+    // the erase has emptied the segment.
+    const onRerecord = useCallback(() => {
+      focusRestore.capture();
+      stopPlayback();
+      setConfirmOpen(true);
+    }, [focusRestore, stopPlayback]);
 
     /**
      * Reopen the sheet at idle with the reason in place, rather than exiting on
@@ -1985,9 +2050,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (overlayBlocksClose(menuOpen, confirmOpen, erasing)) {
         // Dismiss the overlay the Back landed on — but NOT the erase-confirm while
         // its delete is in flight (Frank R4-1): clearing `confirmOpen` mid-erase
-        // un-inerts the sheet, exposing Record, whose new capture the erase's
-        // `onExit` then discards. Let the erase's own completion tear the confirm
-        // down. The sheet's gate is now `overlayUp && !takeActive` (#75), not
+        // un-inerts the sheet, exposing Record, whose new capture would land in
+        // a buffer the erase is emptying (it used to be the erase's `onExit`
+        // that discarded it; since #592 the sheet stays and the take would be
+        // spliced over the erased audio). Let the erase's own completion tear
+        // the confirm down — which, after a successful erase, waits out the
+        // re-read too (`closing` is held across it, and this function refuses
+        // above while it is). The sheet's gate is now `overlayUp && !takeActive` (#75), not
         // `confirmOpen` alone — but `overlayUp` folds in `erase.erasing`, and an
         // erase is only ever reachable at idle, so R4-1 still holds exactly.
         const dismiss = overlayDismissal(menuOpen, confirmOpen, erasing);
@@ -2655,12 +2724,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // Keep the blocked reason reachable to keyboard and switch users without
     // painting an alert badge for an empty segment or a starting microphone.
     // The commit Notice already explains uncommitted-take; its menu-specific
-    // "Close menu" hint does not describe this toolbar.
-    const editHint = rowHint(editReason);
-    const editToolbarHint =
-      editReason === "uncommitted-take" || editHint === null
-        ? null
-        : { label: editHint.label };
+    // "Close menu" hint does not describe this toolbar. `barHint` is that rule,
+    // shared with the bin beside it (#592).
+    const editToolbarHint = barHint(editReason);
+    // The bar's bin (#592) wears the SAME gate as the ≡ menu's Erase rows —
+    // `eraseReason`, one derivation — so the two entries to the one erase can
+    // never disagree about when erasing is allowed. No `menuShown` clause, unlike
+    // Edit above: the sheet body is reachable under the menu only during a take
+    // (`inert={(overlayUp && !takeActive) || undefined}`), and a take is exactly
+    // when `eraseReason` already refuses.
+    const rerecordHint = barHint(eraseReason);
 
     // A full-body panel owns the sheet body — the permission panel, the
     // load-error panel or the held-take recovery (#165) — and has `autoFocus`ed
@@ -2735,7 +2808,32 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // never to Back or the pill.
         fallback: menuLandmark(),
       });
-    }, [overlayUp, isClosing, panelOwnsFocus, focusRestore, menuLandmark]);
+      // …except when that landing is the bar's bin and the bin has just gone
+      // inert: the erase it started has emptied the segment (#592). The next act
+      // is to record, so a keyboard or switch user is handed Record rather than
+      // left on a control whose name now says there is nothing to erase. Only
+      // ever from the bin, and only onto a live Record — never a fallback of the
+      // restore's own, whose landmark rule (`use-focus-restore.ts`) this keeps:
+      // Record starts a take, it neither saves, deletes nor leaves.
+      const bin = rerecordRef.current;
+      const record = recordRef.current;
+      if (
+        bin !== null &&
+        record !== null &&
+        document.activeElement === bin &&
+        eraseReason !== null &&
+        !record.disabled
+      ) {
+        record.focus();
+      }
+    }, [
+      overlayUp,
+      isClosing,
+      panelOwnsFocus,
+      focusRestore,
+      menuLandmark,
+      eraseReason,
+    ]);
 
     // The OTHER half of `panelOwnsFocus` (#199). The effect above suppresses
     // itself while a full-body panel is up, because each panel `autoFocus`es
@@ -2857,16 +2955,24 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           named dismiss, and it is right there. The ≡ goes inert with it: it is
           in the header, and re-opening an already-open menu is a no-op.
 
-          What is exempt is therefore exactly Record/Pause and Play — plus one
-          MORE sheet-body control since #315, the toolbar Edit button, which
-          this exemption would otherwise ALSO expose (it sits beside Play with
-          no `inert` of its own) but which disables itself instead — see the
-          last bullet below. The exemption is a scoping, not a hole, because of
+          What is exempt is therefore exactly Record/Pause and Play — plus two
+          MORE sheet-body controls, the toolbar Edit button (#315) and the bin
+          (#592), which this exemption would otherwise ALSO expose (they sit
+          beside Record and Play with no `inert` of their own) but which disable
+          themselves instead — see the Edit bullet below; the bin is off for
+          the whole of a take through `eraseReason`, the same gate as the ≡
+          menu's Erase rows. The exemption is a scoping, not a hole, because of
           what `takeActive` implies here:
 
-          - `overlayUp && takeActive` can only be the ≡ menu in RECORD mode. The
-            edit-mode opener is `disabled` on `isClosing`, and the Erase row
-            (the only door to the confirm) is `disabled` on `takeActive`.
+          - `overlayUp && takeActive` can only be the ≡ menu in RECORD mode —
+            or the erase confirm through its post-erase re-read (#592), where
+            `onConfirmErase` holds `isClosing` over an idle recorder: nothing
+            is capturing, the confirm's scrim covers the sheet, and every
+            control the exemption exposes is off on `isClosing` (Record via
+            `recordDisabled`, Play via `playDisabled`, Edit via `editReason`,
+            the bin via `eraseReason`). The edit-mode opener is `disabled` on `isClosing`, and
+            both doors to the confirm, the Erase rows and the bar's bin, are
+            `disabled` on `takeActive`.
           - A take cannot START under an overlay: the confirm and the menu are
             only reachable at idle or mid-take, and at idle this gate is still
             inert, so Record is unreachable and `takeActive` cannot flip true.
@@ -2963,7 +3069,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             </span>
             {mode === "record" ? (
               // The menu opener lives in the header in record mode (the toolbar
-              // is the Record + Play + Edit trio, #315). Same gate the old
+              // is the bin + Record + Play + Edit, #315/#592). Same gate the old
               // toolbar opener used — reachable mid-take (Edit commits-then-edits
               // a live take, #134), blocked only through the close window.
               <Control
@@ -3397,10 +3503,30 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               {mode === "record" ? (
                 // Both modes reserve the same right-hand slot for the toggle.
                 <div className="recorder-toolbar pair grid items-center px-[16px]">
+                  <Control
+                    ref={rerecordRef}
+                    // Wipe and record again (#592), on the bar so a translator
+                    // who re-records whole passages sees it without opening a
+                    // menu. The bin, because it is the one "throw away" glyph
+                    // ADR 0010's check already puts in front of translators;
+                    // the confirm it opens wears the same bin. Left end, away
+                    // from the hero Record, so the destructive control is not
+                    // the one under a thumb reaching to record; the confirm is
+                    // the second tap either way. Always drawn, so the bar does
+                    // not re-lay out when a first take lands: greyed, with its
+                    // reason, where there is nothing to erase.
+                    icon="trash"
+                    label={strings.rerecord}
+                    variant="default"
+                    disabled={eraseReason !== null}
+                    hint={rerecordHint}
+                    onClick={onRerecord}
+                  />
                   <span
                     className={cn("record-guide", guidedRecord && "is-guided")}
                   >
                     <Control
+                      ref={recordRef}
                       // The square, not the pause bars: this tap ENDS the take and
                       // commits it (#614). A pause glyph over a control that
                       // finalizes is the wrong promise to the one reader who
@@ -3719,7 +3845,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           title={strings.eraseConfirmTitle}
           confirmLabel={strings.eraseConfirm}
           cancelLabel={strings.eraseCancel}
-          busy={erase.erasing}
+          // Busy through the post-erase re-read too (#592): `isClosing` is the
+          // latch `onConfirmErase` holds across it, and a confirm is otherwise
+          // only reachable at idle, where `isClosing` is false.
+          busy={erase.erasing || isClosing}
           onConfirm={onConfirmErase}
           onCancel={() => setConfirmOpen(false)}
         />
