@@ -122,6 +122,21 @@ export interface EditControlHint {
  *   on the stage, and the control is live again on lift. A badge that appears
  *   and clears on every pan is not state-in-place, it is flicker — and it
  *   would fire on the gesture least likely to be a reach for Undo.
+ *
+ *   **A pan therefore REMOVES an explanation that was already on screen, and
+ *   that is accepted** (George round 3 asked for this sentence by name). On a
+ *   fresh edit session both arrows read "Nothing to undo." / "Nothing to redo.";
+ *   the first scrub clears both cues until pointer-up, then restores them.
+ *   Scrubbing is the gesture edit mode exists for, so the blink is frequent.
+ *
+ *   **Do not repair it by attaching a hint while `dragging` is true.** A
+ *   non-null hint moves `Control` from the native `disabled` attribute onto
+ *   `aria-disabled` (`control.tsx`), and the #317 finger lock has to stay a
+ *   HARD disable — `tests/control-render.test.ts` pins that cell precisely so
+ *   this cannot be softened by accident. The cue is worth less than the lock.
+ *   If the blink is ever judged worth fixing, the fix is to teach `Control` to
+ *   paint a badge on a natively disabled button, which is `Control`'s contract
+ *   and not this module's.
  * - `"sheet-busy"` is, in edit mode, `isClosing` and essentially nothing else:
  *   `idleEditable` is `view !== null && state === "idle" && !isClosing`, a
  *   null `view` puts `LoadErrorPanel` over the body so no toolbar is rendered,
