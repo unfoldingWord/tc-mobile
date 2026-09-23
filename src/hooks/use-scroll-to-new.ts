@@ -142,15 +142,18 @@ export function useScrollToNew<Id>(focusSelector: string): ScrollToNew<Id> {
     (focusHeld = false) => {
       const plan = planReveal(pending.current, focusHeld);
       pending.current = plan.rest;
-      if (plan.scroll !== null)
-        nodes.current.get(plan.scroll)?.scrollIntoView({ block: "nearest" });
-      if (plan.focus !== null)
-        nodes.current
-          .get(plan.focus)
-          ?.querySelector<HTMLElement>(focusSelector)
-          ?.focus();
+      // Through the two accessors above, not a second hand-written
+      // `scrollIntoView` and `querySelector(focusSelector)`. Resolving the
+      // selector in two places inside this file would leave one copy of
+      // exactly the duplication this hook exists to remove from the screens —
+      // and it is the copy a later `controlIn` change would silently skip.
+      if (plan.scroll !== null) scrollTo(plan.scroll);
+      if (plan.focus !== null) controlIn(plan.focus)?.focus();
     },
-    [focusSelector]
+    // Both are stable (`scrollTo` has no deps, `controlIn` keys on the same
+    // `focusSelector` this used to read directly), so `reveal`'s own identity
+    // is as stable as before — which the memo below depends on.
+    [controlIn, scrollTo]
   );
 
   // Stable identity: consumers put this object in an effect's dependency list,
