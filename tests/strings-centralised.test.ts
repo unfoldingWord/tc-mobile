@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import { strings } from "../src/components/strings";
@@ -47,7 +48,7 @@ const TABLES = ["components/strings.ts", "lib/messages.ts"];
 const SENTENCE_MIN = 12;
 
 /**
- * The text of every string literal in `source`, comments skipped.
+ * The text of every string literal in `source`, using TypeScript's own parser.
  *
  * A whole-file search cannot be trusted here, and AGENTS.md records the trap in
  * both directions: `touch-policy.test.ts` false-hits on the very prose that BANS
@@ -55,80 +56,47 @@ const SENTENCE_MIN = 12;
  * comment instead of the rule it names. The docblocks in `use-recorder.ts` quote
  * "Could not finish this recording." to explain which exit chooses it —
  * accurately, and they should keep doing so. Reading literals rather than raw
- * text makes that immunity structural instead of a pattern to keep tuning.
+ * text is what makes that immunity structural.
  *
- * A template literal with holes yields nothing: its text is in fragments, so it
- * can never equal a whole sentence. A hole-free one yields its text. Division
- * and regex literals are not distinguished from a comment opener — outside a
- * literal, `/` only starts one when the next character is `/` or `*`, which no
- * regex in this tree begins with.
+ * This WAS a hand lexer, and it was wrong in two ways that both reviewers found
+ * independently (#600 round 1). George: the template-hole skipper counted braces
+ * and was not string-aware. Frank: every quote was read as a string opener even
+ * inside a REGEX, so `src/lib/utils.ts`'s `/[/\\:*?"<>|\p{Cc}]/gu` knocked the
+ * scan out of alignment and a table sentence duplicated later in that same file
+ * went undetected — confirmed by his acceptance mutation before this rewrite,
+ * and pinned by `finds a duplicate after a regex literal` below.
  *
- * KNOWN HOLE, written down rather than special-cased (George round 1, #600):
- * the hole skipper counts braces and is NOT string-aware, so a `}` inside a
- * string inside a `${ … }` closes the hole early, and the rest of that template
- * is then read as code — which can swallow a later literal. Nothing in the tree
- * exercises it today. The fix is not a fourth special case in a hand lexer: if
- * this bites, replace `stringLiterals` with a real tokenizer.
+ * Four lexical constructs had to be modelled by hand — comments, quoted strings
+ * with escapes, template holes, regex literals — and two were wrong. So the
+ * fifth is not another point fix: `ts.createSourceFile` already knows all of
+ * them, and TypeScript is already a devDependency this suite compiles with.
+ *
+ * The CONTRACT is unchanged, and still narrower than "every sentence on screen":
+ * a `StringLiteral` or a hole-free template yields its text, a template WITH
+ * holes yields nothing (its text is in fragments and can never equal a whole
+ * sentence), and JSX text is not a literal and is still not seen.
  */
-export function stringLiterals(source: string): string[] {
+export function stringLiterals(
+  source: string,
+  // `.tsx` must parse as TSX; a `.ts` file must not, or `<T>(x: T) => …` reads
+  // as an unclosed JSX element. Callers pass the kind that matches the source.
+  kind: ts.ScriptKind = ts.ScriptKind.TS
+): string[] {
+  const file = ts.createSourceFile(
+    `probe${kind === ts.ScriptKind.TSX ? ".tsx" : ".ts"}`,
+    source,
+    ts.ScriptTarget.Latest,
+    false,
+    kind
+  );
   const found: string[] = [];
-  let i = 0;
-
-  while (i < source.length) {
-    const c = source[i];
-    const next = source[i + 1];
-
-    if (c === "/" && next === "/") {
-      while (i < source.length && source[i] !== "\n") i += 1;
-      continue;
+  const visit = (node: ts.Node): void => {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+      found.push(node.text);
     }
-    if (c === "/" && next === "*") {
-      i += 2;
-      while (
-        i < source.length &&
-        !(source[i] === "*" && source[i + 1] === "/")
-      ) {
-        i += 1;
-      }
-      i += 2;
-      continue;
-    }
-    if (c === '"' || c === "'" || c === "`") {
-      const quote = c;
-      let text = "";
-      let holed = false;
-      i += 1;
-      while (i < source.length && source[i] !== quote) {
-        if (source[i] === "\\") {
-          // Only the escapes copy actually uses; anything else keeps its
-          // literal character, which is enough for an equality test.
-          const escaped = source[i + 1] ?? "";
-          text += escaped === "n" ? "\n" : escaped === "t" ? "\t" : escaped;
-          i += 2;
-          continue;
-        }
-        if (quote === "`" && source[i] === "$" && source[i + 1] === "{") {
-          holed = true;
-          // Skip the hole, brace-counting so a nested object or template in it
-          // does not end the scan early.
-          let depth = 1;
-          i += 2;
-          while (i < source.length && depth > 0) {
-            if (source[i] === "{") depth += 1;
-            else if (source[i] === "}") depth -= 1;
-            i += 1;
-          }
-          continue;
-        }
-        text += source[i];
-        i += 1;
-      }
-      i += 1;
-      if (!holed) found.push(text);
-      continue;
-    }
-    i += 1;
-  }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(file, visit);
   return found;
 }
 
@@ -230,6 +198,39 @@ describe("stringLiterals", () => {
     expect(found).toEqual(["https://example.test/x", "kept"]);
   });
 
+  it("finds a duplicate after a regex literal (Frank round 1, #600)", () => {
+    // The hand lexer read the `"` inside this character class as a string
+    // opener and never recovered. This is `src/lib/utils.ts`'s real regex.
+    const found = stringLiterals(
+      'const x = s.replace(/[/\\\\:*?"<>|\\p{Cc}]/gu, " ");\n' +
+        'const probe = "Could not finish this recording.";'
+    );
+    expect(found).toContain("Could not finish this recording.");
+  });
+
+  it("is not derailed by a string containing a brace inside a template hole (George round 1, #600)", () => {
+    // The hand skipper counted braces and was not string-aware, so the `}` in
+    // the hole's string closed the hole early and ate what followed.
+    const found = stringLiterals(
+      'const t = `a ${ f("}") } b`;\nconst after = "Could not play this recording.";'
+    );
+    expect(found).toContain("Could not play this recording.");
+  });
+
+  it("keeps generics in a .ts source and JSX in a .tsx one", () => {
+    // The two script kinds are not interchangeable: `<T>(x: T) => …` in a .ts
+    // file reads as an unclosed JSX element under the TSX parser.
+    expect(
+      stringLiterals('const f = <T,>(x: T) => "a sentence for you";')
+    ).toContain("a sentence for you");
+    expect(
+      stringLiterals(
+        'const el = <p title="a sentence for you">hi</p>;',
+        ts.ScriptKind.TSX
+      )
+    ).toContain("a sentence for you");
+  });
+
   it("reports a LONGER literal that merely starts with a sentence as its own text", () => {
     // Why whole-literal equality: `db.ts`'s Error message opens with
     // `strings.dbBlocked` and then says something else. It is not that copy.
@@ -282,7 +283,8 @@ describe("centralised copy is not also inline", () => {
       for (const file of files) {
         if (file === owner) continue;
         for (const literal of stringLiterals(
-          readFileSync(join(SRC, file), "utf8")
+          readFileSync(join(SRC, file), "utf8"),
+          file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
         )) {
           const key = byText.get(literal);
           if (key) offenders.push(`${file}: ${name}.${key}`);
