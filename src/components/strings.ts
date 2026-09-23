@@ -315,8 +315,12 @@ export const strings = {
   undo: "Undo",
   redo: "Redo",
   // The recorder drawer's dialog name for a screen reader — never painted
-  // (#621, the rule #608 set for `menuTitle`): it opens from a ≡ that stays a
-  // ≡, so the glyph is its only visible label.
+  // there (#621, the rule #608 set for `menuTitle`): the recorder drawer
+  // opens from a ≡ that stays a ≡, so the glyph is its only visible label.
+  // This string is shared with the per-row segment menu (`segment-row.tsx`),
+  // which does not pass `hamburger` and still paints it as that menu's
+  // visible heading — #589 owns that menu's affordances and has not
+  // retitled it, so treat "never painted" as scoped to the recorder only.
   recorderMenuTitle: "More",
   recorderMenuOpen: "More actions",
   selectionStartHandle: "Selection start",
@@ -338,17 +342,20 @@ export const strings = {
   // those two controls
   // actually carry (`menuClose`, `closeRecorder`). An earlier draft said "tap
   // Back", which matches NO control in the product: a screen-reader user hunting
-  // for "Back" finds nothing, and the one live chevron dismisses the menu
+  // for "Back" finds nothing, and the one live control dismisses the menu
   // (George, round 2). If `closeRecorder` is ever renamed, these move with it.
   // This one names the controls by name ONLY and does not describe their
   // glyphs the way the body notices do (#620): it is spoken
   // inside the ≡ menu, where the recorder header — and so "Close recorder" —
-  // is `inert` and the one live back chevron on screen is the menu's own
-  // dismiss. Describing the save control by its looks here would point at the
-  // dismiss, the exact collision the round-1 `back` badge had
-  // (`menu-row-state.ts`, `rowHint`'s docblock); #648 round 1 (George P2)
-  // caught the words repeating it. `tests/menu-row-state.test.ts` pins this
-  // half: the hint never describes a glyph.
+  // is `inert` and the one live control on screen is the menu's own dismiss,
+  // which since #621 wears the ≡ glyph (this menu opts into `hamburger`,
+  // `recorder.tsx`), not a back chevron. Describing the save control by its
+  // looks here would still point at the dismiss, the exact collision the
+  // round-1 `back` badge had (`menu-row-state.ts`, `rowHint`'s docblock);
+  // #648 round 1 (George P2) caught the words repeating it.
+  // `tests/menu-row-state.test.ts` pins this half: the hint never describes a
+  // glyph, and separately pins that this menu's own dismiss is the one that
+  // opts into `hamburger`.
   blockedByTake:
     'Use "Close menu", then "Close recorder", to save the recording.',
   // The `requesting` race: Record tapped, ≡ opened before `getUserMedia`
@@ -365,6 +372,10 @@ export const strings = {
   vuMeterLabel: "Recording level",
   vuMeterUnavailable: "Level meter unavailable on this device",
   eraseSegment: "Erase recording",
+  // The record bar's bin (#592): the same erase and the same confirm as the
+  // menu row above, named for what the translator is doing — starting the
+  // segment over — because the sheet stays open, ready for the next take.
+  rerecord: "Erase and record again",
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
   eraseConfirmTitle: "Erase this recording?",
   eraseConfirm: "Erase",

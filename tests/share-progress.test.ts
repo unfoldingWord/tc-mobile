@@ -773,13 +773,9 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
    * inside the `aria-modal` panel, and carry the busy-phase text
    * (`shareProgressText`'s `"busy"` case: `sharePreparing`/
    * `shareBookPreparing` for prepare-work, `shareHandingOver` for
-   * send-work) — not just the outcome text. Before the fix, `liveRegion`
-   * was gated on `phase === "outcome"` alone, so this assertion is false on
-   * that source (verified red: `git stash` of just the two screen files,
-   * this test run against the stashed-out fix, observed failing) and true
-   * once `shareOverlayOwnsScreen` (`phase !== "hidden"`) replaces it.
-   * Mutation: reverting the guard back to `phase === "outcome"` kills this
-   * test (verified).
+   * send-work) — not just the outcome text. `shareOverlayOwnsScreen`
+   * (`phase !== "hidden"`) must keep the live region present during both
+   * busy and outcome phases.
    */
   for (const [screen, hook, scope] of [
     ["src/components/segments-screen.tsx", "share", "chapter"],
