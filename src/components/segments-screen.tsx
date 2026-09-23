@@ -9,7 +9,6 @@ import {
 } from "react";
 
 import { Control } from "./control";
-import { shareControlAffordance } from "./control-affordance";
 import { EmptyState } from "./empty-state";
 import { EraseConfirm } from "./erase-confirm";
 import { Menu } from "./menu";
@@ -17,16 +16,11 @@ import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
 import { segmentsListInert } from "./segments-inert";
-import {
-  shareErrorText as shareErrorCopy,
-  shareGapText,
-  shareProgressText,
-} from "./share-error-copy";
-import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
+import { shareGapText, shareProgressText } from "./share-error-copy";
+import { ShareMenuSection } from "./share-menu-section";
 import { ShareProgress } from "./share-progress";
 import { strings } from "./strings";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
-import { readSharePlatform } from "@/hooks/share-target";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
@@ -682,22 +676,9 @@ export const SegmentsScreen = forwardRef<
   // Share (B7) speaks inside its own menu, not the screen Notice: the two-gesture
   // flow keeps the ≡ menu open across prepare → ready → send, so the panel is
   // what the translator is looking at. Its error code is mapped to copy here and
-  // rendered in the menu below.
-  // The Share Control's glyph/variant/busy across idle → preparing → ready
-  // (#354) — the same table Share Book and NameEdit's Confirm use. Its idle
-  // mark is the platform's own (#490): read from the Capacitor runtime each
-  // render — a constant, cheap read — never from the user agent.
-  const shareAffordance = shareControlAffordance(
-    share.status,
-    readSharePlatform(),
-    share.sendUnconfirmed
-  );
-  const shareErrorText = shareErrorCopy(share.error, "chapter");
-  // Hoisted: the same mark for a chapter and a book, from one table.
-  const sharePartial = shareOutcomeGlyph("partial");
-  // Mark and tone for the error line, from the same table (#178); `undefined`
-  // for `encoder` and for no error, which is `Notice`'s own default.
-  const shareErrorMark = shareErrorGlyph(share.error);
+  // rendered in the menu below. The Share control's own glyph, the gap mark
+  // and the error mark all moved into `ShareMenuSection` with the rows they
+  // paint (#160, L-15) — Books derived the identical three.
 
   const nodes = useRef(new Map<SegmentId, HTMLElement>());
   const didInitialScroll = useRef(false);
@@ -965,66 +946,23 @@ export const SegmentsScreen = forwardRef<
                 armed it becomes a primary "Share now" that hands the File to the
                 sheet in a fresh activation (tap 2). autoFocus moves focus onto it
                 as it appears, since the Menu only lands focus on its open edge. */}
-            {share.status === "ready" ? (
-              <Control
-                ref={shareControlRef}
-                icon={shareAffordance.icon}
-                label={strings.shareSend}
-                variant={shareAffordance.variant}
-                className={shareAffordance.className}
-                autoFocus
-                onClick={onSendShare}
-              />
-            ) : (
-              // Stays enabled while `preparing`: a re-tap is already a no-op via
-              // the hook's `preparingRef`, and disabling it would drop this
-              // control out of Menu's `FOCUSABLE` set (which excludes
-              // `[disabled]`), breaking the Tab trap and letting focus escape the
-              // portal (George R-B7). `busy` (not disabled) is what now paints
-              // and reads that wait state (#354; `control-affordance.ts`).
-              <Control
-                ref={shareControlRef}
-                icon={shareAffordance.icon}
-                label={
-                  share.status === "preparing"
-                    ? strings.sharePreparing
-                    : share.sendUnconfirmed
-                      ? strings.shareChapterUnconfirmed
-                      : strings.shareChapter
-                }
-                variant={shareAffordance.variant}
-                busy={shareAffordance.busy}
-                onClick={onPrepareShare}
-              />
-            )}
-            {/* Feedback rides inside the panel because the flow keeps the menu
-                open: the busy state while encoding, a gap warning once armed
-                (`info`, not `busy` — the chapter is ready, this is a heads-up
-                about what it lacks, #112), and any error code mapped above. */}
-            {share.status === "preparing" && (
-              <Notice tone="busy">{strings.sharePreparing}</Notice>
-            )}
-            {share.status === "ready" && share.missing > 0 && (
-              // Its own mark, not `info`'s generic ring-and-i (#178): that
-              // glyph also carries storage durability (#214/#406), so share
-              // would otherwise share a shape with an unrelated condition.
-              <Notice tone={sharePartial.tone} icon={sharePartial.icon}>
-                {shareGapText(
-                  { missing: share.missing, partial: 0 },
-                  "chapter"
-                )}
-              </Notice>
-            )}
-            {shareErrorText && (
-              // `nothing` and `failed` both wear the `alert` tone — that split
-              // is #147's open question — so the mark is the only thing
-              // separating "record a segment first" from "try again" (#178).
-              // The tone comes from the same table as the mark, so a #147
-              // re-tone reaches this line without a second edit (George R3 P3).
-              <Notice tone={shareErrorMark?.tone} icon={shareErrorMark?.icon}>
-                {shareErrorText}
-              </Notice>
-            )}
+            <ShareMenuSection
+              status={share.status}
+              sendUnconfirmed={share.sendUnconfirmed}
+              error={share.error}
+              scope="chapter"
+              controlRef={shareControlRef}
+              idleLabel={strings.shareChapter}
+              preparingLabel={strings.sharePreparing}
+              unconfirmedLabel={strings.shareChapterUnconfirmed}
+              hasGap={share.missing > 0}
+              gapText={shareGapText(
+                { missing: share.missing, partial: 0 },
+                "chapter"
+              )}
+              onPrepare={onPrepareShare}
+              onSend={onSendShare}
+            />
           </>
         )}
       </Menu>
