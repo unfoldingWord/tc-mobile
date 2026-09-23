@@ -239,19 +239,19 @@ export type ClosePlan<TBytes = unknown> =
  * there and not here fails typecheck at that call rather than silently reading
  * as "no capture in play".
  */
-type CaptureState =
-  "idle" | "requesting" | "recording" | "paused" | "processing";
+type CaptureState = "idle" | "requesting" | "recording" | "processing";
 
 /**
  * Whether closing from this state has to stop a capture first.
  *
  * `processing` counts: a #59 mic interruption freezes a real take there, and
- * its audio is owed a stop. `requesting` does not — the permission prompt is
- * still up and there is no recorder yet, so treating it as a take would swallow
- * an edit-only close behind a stop that returns nothing.
+ * its audio is owed a stop — a close can still land in that window before the
+ * sheet's own in-place commit (#614) has taken it. `requesting` does not — the
+ * permission prompt is still up and there is no recorder yet, so treating it as
+ * a take would swallow an edit-only close behind a stop that returns nothing.
  */
 export function attemptsCapture(state: CaptureState): boolean {
-  return state === "recording" || state === "paused" || state === "processing";
+  return state === "recording" || state === "processing";
 }
 
 /**

@@ -68,13 +68,13 @@ interface MenuProps {
    * place, and the glyph is the label. The recorder's overflow drawer wears
    * it too (#621, the requirements owner's call on that panel): its "More"
    * heading said nothing the ≡ did not, and a left-pointing chevron reads as
-   * "move left" on a drawer that slides back to the RIGHT (see the exit motion
-   * below). Off (the default) the header is a title beside a back chevron,
-   * which the per-row ≡ menus and the New Book dialog deliberately keep: #589
-   * owns their affordances, and this prop must not pre-empt that pick. What a
-   * screen reader hears does not change either way: `title` still names the
-   * dialog and `closeLabel` still names the control ("Close menu" dismisses,
-   * as before), which is also what the e2e specs locate the menu by.
+   * "move left" on a drawer that docks on the RIGHT. Off (the default) the
+   * header is a title beside a back chevron, which every other menu keeps —
+   * the book, chapter and segment menus (opened from a ⋮ since #589) and the
+   * New Book dialog. What a screen reader hears does not change either way:
+   * `title` still names the dialog and `closeLabel` still names the control
+   * ("Close menu" dismisses, as before), which is also what the e2e specs
+   * locate the menu by.
    */
   hamburger?: boolean;
   /**
