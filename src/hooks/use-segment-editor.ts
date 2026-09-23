@@ -272,11 +272,8 @@ export function useSegmentEditor(
   // being (re-)applied — so the recorder can map the centerline through its
   // inverse (#449) rather than dropping it unconditionally, through the
   // shared `opUndone`/`opRedone` pair (`lib/audio/edit-log.ts`, #512 George
-  // R1 P2-2) rather than an inline index read — no test mounts this hook
-  // directly today (a jsdom hook-mount harness exists elsewhere in this
-  // repo, `tests/use-audio-session-supersession.test.ts`, #735/#739, but
-  // nothing applies it here yet, #549), so the "which op did this step pass
-  // over" choice is pulled out to where it IS tested, in plain Node. Read
+  // R1 P2-2) rather than an inline index read, so the "which op did this
+  // step pass over" choice lives where a plain Node test reaches it. Read
   // BEFORE `applyLog` runs (the cursor this closes over is the pre-step
   // one); `null` when there was nothing to step to, or when `applyLog`'s
   // guard reports the rematerialise failed, mirroring `cut()`'s own

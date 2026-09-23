@@ -4,14 +4,11 @@ import { describe, expect, it } from "vitest";
 
 /**
  * `useSegmentEditor` is a hook this file exercises only as source text, not
- * mounted: nothing here invokes its returned `undo`/`redo` directly. A
- * jsdom hook-mount harness now exists elsewhere in this repo
- * (`tests/use-audio-session-supersession.test.ts`, #735/#739) that could
- * reach them directly, but nothing applies it to `useSegmentEditor` yet
- * (#549). This stays a source-shape gate, the same comment-stripping-free,
- * indexOf-isolated idiom `tests/nav-commit-close-race-guards.test.ts` and
+ * mounted: nothing here invokes its returned `undo`/`redo` directly. It is
+ * a source-shape gate, in the same comment-stripping-free, indexOf-isolated
+ * idiom `tests/nav-commit-close-race-guards.test.ts` and
  * `tests/recorder-resume-race.test.ts`'s "the wiring, not just the helper"
- * section use for the same reason.
+ * section use.
  */
 const source = readFileSync(
   new URL("../src/hooks/use-segment-editor.ts", import.meta.url),
