@@ -79,8 +79,11 @@ export interface UsePausedPreview {
  * epoch has moved on drops its result silently: writing `preview` or calling
  * `playBuffer` then would sound stale audio into a live take (Frank + George
  * R1), or leave a preview holding the floor a recording has since claimed. It
- * is checked at every await boundary, including after the synchronous splice,
- * which is not instant on a long take.
+ * is checked at every await boundary, and only there. A fourth check used to
+ * sit after the splice, on the grounds that it "is not instant on a long
+ * take" — but `buildPreview` is pure and synchronous, so nothing can run
+ * between the capture resolving and the result landing. That line could not
+ * be killed by any mutation because it could not fire; it is gone.
  *
  * ── The synchronous guard ──
  *
@@ -167,9 +170,6 @@ export function usePausedPreview(audio: PreviewAudio): UsePausedPreview {
             insertAt,
             PREVIEW_PEAK_BUCKETS
           );
-          // Re-check after the synchronous splice and peaks, which are not
-          // instant on a long take: a transport tap can land in that window too.
-          if (gen !== genRef.current) return;
           setPreview(prepared);
           setPreviewState("none");
           // Auto-play only if the context is audible NOW. This runs after the
