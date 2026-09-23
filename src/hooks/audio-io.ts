@@ -483,7 +483,7 @@ export async function decodeToCanonical(blob: Blob): Promise<Int16Array> {
  * injected function rather than doing it.
  *
  * NOT the clip as recorded: the decode carries the encoder's priming at its
- * head (1105 samples on a decoder that trims nothing — measured in Chromium)
+ * head (1105 samples on a decoder that trims nothing)
  * and granule padding at its tail. EVERY consumer must pass the result through
  * `fitMp3Decode` (`lib/audio/mp3-align.ts`) with the clip's bytes and
  * `frameCount` — the chapter export, playback and the recorder's edit buffer

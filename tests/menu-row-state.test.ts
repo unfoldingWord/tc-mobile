@@ -176,55 +176,17 @@ describe("rowHint — which reasons carry a cue", () => {
   // two chevrons are "Close menu" and "Close recorder" — so a screen-reader user
   // hunting for it found nothing (George, round 2). Every string that NAMES the
   // control is checked directly, so a rename of the control fails the suite
-  // instead of silently orphaning the words. `recorderInterrupted` was the gap:
-  // it names "Close recorder" too but the scan below (which only bans "tap Back")
-  // could not catch a rename that orphaned it, so a rename would have left it
-  // green with dead words (George, #154 confirming round → #196).
-  it("hint copy names controls that actually exist", () => {
-    for (const copy of [
-      strings.blockedByTake,
-      strings.previewUnavailable,
-      strings.recorderInterrupted,
-    ]) {
-      expect(copy).toContain(`"${strings.closeRecorder}"`);
-    }
-  });
-
-  // The test above proves the SPOKEN half: "Close recorder" is a name AT can
-  // find. It says nothing about the SEEN half, and that is the gap #620 fell
-  // through: `closeRecorder` is the accessible name of an icon-only `Control`,
-  // so nothing on screen is labelled "Close recorder", and a sighted tester
-  // reading 'Use "Close recorder" to save it' found no such control (Android,
-  // v0.2.9). So the two cues that render in the sheet BODY — where the header
-  // chevron is the one on screen — name the control BOTH ways: how it looks
-  // ("the back arrow at the top") and how it is spoken, so a reader and a
-  // screen-reader user each get a match. "back arrow" is tied to the glyph the
-  // header control actually renders, read from the source the way
-  // `tests/nav-commit-close-race-guards.test.ts` isolates the same control
-  // (`recorder.tsx` mounts the audio hook graph, so no test renders it): if
-  // that `icon` ever changes, these words are stale and this fails.
+  // instead of silently orphaning the words.
   //
-  // `blockedByTake` is deliberately NOT in this list — the next test says why.
-  it("body notices also describe the control the way a sighted user sees it (#620)", () => {
-    const recorderSource = readFileSync(
-      new URL("../src/components/recorder.tsx", import.meta.url),
-      "utf8"
-    )
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/\/\/.*$/gm, "");
-    const glyph = /icon="([\w-]+)"\s*label=\{strings\.closeRecorder\}/.exec(
-      recorderSource
-    );
-    expect(glyph?.[1]).toBe("back");
-
-    for (const copy of [
-      strings.previewUnavailable,
-      strings.recorderInterrupted,
-    ]) {
-      expect(copy).toContain(
-        `the back arrow at the top ("${strings.closeRecorder}")`
-      );
-    }
+  // The list was three. `previewUnavailable` and `recorderInterrupted` were the
+  // other two, and #614 deleted both with the states they described — an
+  // undecodable paused take, and a frozen take waiting to be saved by hand —
+  // taking the companion #620 test ("body notices describe the control the way
+  // a sighted user sees it") with them: it had exactly those two subjects and
+  // no third. `blockedByTake` is the one string left that names a control, and
+  // it names it BY NAME ONLY, for the reason the next test pins.
+  it("hint copy names controls that actually exist", () => {
+    expect(strings.blockedByTake).toContain(`"${strings.closeRecorder}"`);
   });
 
   // The ≡-menu hint must NOT describe the save control by its looks. It is only
