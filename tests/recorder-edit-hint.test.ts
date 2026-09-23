@@ -7,6 +7,19 @@ import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
 
+/**
+ * The erase surface `App` now owns and passes down (#160, L-12). Resting: this
+ * suite never erases, and a stub that answers "no erase in flight" is what the
+ * screen's Back and confirm gates read. Written here rather than mocked at the
+ * module, because the screen takes it as a PROP now — a module mock would
+ * intercept nothing.
+ */
+const erase = {
+  erase: vi.fn(async () => "ok" as const),
+  erasing: false,
+  isErasing: () => false,
+};
+
 const view = {
   bookName: "Book",
   chapterNumber: 1,
@@ -92,6 +105,7 @@ async function setup(recorderState: UseAudioSession["recorderState"]) {
         clipboard: null,
         onClipboardChange: vi.fn(),
         databaseUnreachable: false,
+        erase,
         onExit,
         onRequestBack: () => {
           void ref.current?.requestClose();
