@@ -75,9 +75,8 @@ const TEACH_ID = "app-failed-teach";
  * screen built for non-readers to suggest it. The row is already lost in that
  * state and no amount of holding retrieves it, so Restart reloads: that is the
  * pre-#440 behaviour, and reloading is also what picks up the newer build this
- * copy stepped aside for. **The three other surfaces that still offer a retry
- * after a yield — this screen's Send, and the panel's Send and Clear — are #455
- * and are deliberately not swept here.**
+ * copy stepped aside for. The Send and failure-log panel controls also surface
+ * terminal refusals as restart-only (#455).
  *
  * **There is still deliberately no timeout** (George R4 P2-3, decided by the DRI
  * on 2026-09-17: `busy` yes, timeout no, and unchanged by this round). The

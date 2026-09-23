@@ -28,12 +28,15 @@ function statusFor(state: RecorderState, isClosing: boolean) {
 }
 
 describe("the recorder's commit-window status", () => {
-  it("renders the #59 interrupted take as `info` — a heads-up, not a wait", () => {
+  it("renders a frozen #59 take as `busy` too — it is on its way to disk", () => {
+    // Before #614 this branch was `info` and told the translator to tap Back.
+    // The interruption now ends the take and the sheet commits it in place, so
+    // there is one status and one tone: the wait.
     const container = statusFor("processing", false);
     const notice = one(container, ".notice");
 
-    expect(notice.getAttribute("data-tone")).toBe("info");
-    expect(notice.textContent).toContain(strings.recorderInterrupted);
+    expect(notice.getAttribute("data-tone")).toBe("busy");
+    expect(notice.textContent).toContain(strings.recorderSaving);
   });
 
   it("renders the commit window as `busy`", () => {
@@ -44,9 +47,10 @@ describe("the recorder's commit-window status", () => {
     expect(notice.textContent).toContain(strings.recorderSaving);
   });
 
-  it("lets the close window win over the `processing` nested inside it", () => {
-    // `use-recorder` flips state back to `idle` mid-`close()`, so both inputs
-    // can be true at once; a committing take is "saving", never "interrupted".
+  it("says the same thing for the `processing` nested inside a commit", () => {
+    // `use-recorder` flips state back to `idle` mid-commit, so both inputs can
+    // be true at once. They no longer choose between two answers, but the
+    // branch must still reach one.
     const notice = one(statusFor("processing", true), ".notice");
 
     expect(notice.getAttribute("data-tone")).toBe("busy");
