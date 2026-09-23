@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { messages } from "@/lib/messages";
+
 /**
  * Three release-on-throw properties in `use-recorder.ts` (#59, PR #474,
  * #485):
@@ -472,10 +474,17 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     // `messages.recordStopFailed` — "Could not finish this recording.", the
     // engine having failed, and the sentence the facilitator runbook names —
     // not `messages.recordSilent`, which reads as the translator's silence.
-    // The two are matched by KEY since #169 moved them into `lib/messages.ts`;
-    // the words themselves are pinned there, and `strings-centralised.test.ts`
-    // is what stops either being written out here again. `flushThrew` is
-    // declared in stop()'s body before the try, so the flag is per invocation.
+    // The two are matched by KEY since #169 moved them into `lib/messages.ts`.
+    // A key match alone is NOT the guarantee this case is named for: swapping
+    // the two VALUES in `messages` would leave the branch order pinned and the
+    // words inverted, which is #485's failure mode exactly — telling a
+    // translator they were silent when the engine failed. An earlier draft of
+    // this comment said the words were "pinned" in `lib/messages.ts`; they are
+    // written there, which is not the same claim (George round 1 on #600). The
+    // two assertions below are the pin. `flushThrew` is declared in stop()'s
+    // body before the try, so the flag is per invocation.
+    expect(messages.recordStopFailed).toBe("Could not finish this recording.");
+    expect(messages.recordSilent).toBe("No sound was recorded. Try again.");
     const hits = code.match(/"recorder-stop-flush"/g) ?? [];
     expect(hits).toHaveLength(1);
     expect(stopBody).toMatch(/\blet\s+flushThrew\s*=\s*false\s*;/);

@@ -14,6 +14,10 @@ const config: CapacitorConfig = {
   appId: "org.unfoldingword.tcmobile",
   appName: "tC Mobile",
   webDir: "dist",
+  android: {
+    // Explicit false also clears a previous diagnostic sync.
+    webContentsDebuggingEnabled: process.env.TC_ANDROID_DIAGNOSTIC === "true",
+  },
   plugins: {
     App: {
       // `@capacitor/app`'s Android `OnBackPressedCallback` starts DISABLED, and

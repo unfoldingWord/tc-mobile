@@ -50,6 +50,11 @@ export interface SegmentRow {
   /** = `Segment.index`, the wordless identifier and the export position. */
   readonly ordinal: number;
   /**
+   * = `Segment.label` (#591): the facilitator's label, shown after the ordinal
+   * through `strings.segmentHeading`, or `null` ⇒ the ordinal alone.
+   */
+  readonly label: string | null;
+  /**
    * Playable audio is present — derived from
    * `resolveSegmentAudio(...).kind === "resolved"`, NOT from
    * `activeTakeId !== null`. This folds the dangling/undecodable cases into

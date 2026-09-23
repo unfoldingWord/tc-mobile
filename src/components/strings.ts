@@ -122,10 +122,12 @@ export const strings = {
   // and the Add-chapter prompt a book row's + opens.
   renameBook: "Rename book",
   renameChapter: "Rename chapter",
+  renameSegment: "Rename segment",
   // The inline text field's accessible name (the whole text layer of the input)
   // and its placeholder.
   bookNameField: "Book name",
   chapterNameField: "Chapter name",
+  segmentNameField: "Segment name",
   // The check control that commits the typed name on a RENAME.
   saveName: "Save name",
   // The New Book dialog's heading, and so its accessible name (#314). It says
@@ -174,12 +176,33 @@ export const strings = {
   playSegment: (n: number): string => `Play segment ${n}`,
   pauseSegment: (n: number): string => `Pause segment ${n}`,
   recordSegment: (n: number): string => `Record segment ${n}`,
-  editSegment: (n: number): string => `Edit segment ${n}`,
-  editSegmentFinished: (n: number): string => `Edit segment ${n}, finished`,
-  openSegment: (n: number): string => `Open segment ${n}`,
+  // These three are the row's open control's accessible name, which REPLACES
+  // its visible text, so they carry the same heading the row paints — label
+  // included (#591, WCAG 2.5.3). Unlabelled, the heading is the bare ordinal.
+  editSegment: (n: number, label: string | null): string =>
+    `Edit segment ${strings.segmentHeading(n, label)}`,
+  editSegmentFinished: (n: number, label: string | null): string =>
+    `Edit segment ${strings.segmentHeading(n, label)}, finished`,
+  openSegment: (n: number, label: string | null): string =>
+    `Open segment ${strings.segmentHeading(n, label)}`,
   scrubSegment: (n: number): string => `Position in segment ${n}`,
   markFinished: (n: number): string => `Mark segment ${n} finished`,
   markUnfinished: (n: number): string => `Mark segment ${n} not finished`,
+  /**
+   * The segment's display heading (#591): the ordinal, then the facilitator's
+   * label when set — "3 · verses 3–4". The ordinal always stays, because it is
+   * the one handle a translator who cannot read the label still has. One place
+   * both the Segments row and the recorder breadcrumb resolve it.
+   */
+  segmentHeading: (n: number, label: string | null): string =>
+    // `== null`, not `=== null`: a row whose upgrade stamp was skipped reads
+    // back with no `label` key at all, and must paint the ordinal alone rather
+    // than "3 · undefined".
+    label == null ? `${n}` : `${n} · ${label}`,
+  // A segment rename that did not land. Shown inside the row's menu, where the
+  // field stays up for another try — the screen's own Notice is behind the
+  // scrim. Plain words, never the store's exception text (#172).
+  renameSegmentFailed: "The name was not saved. Try again.",
 
   // ── Recorder sheet (B4) ──────────────────────────────────────────────────
   // The recorder sheet's own accessible name (#198). It matched no name at all
@@ -202,8 +225,13 @@ export const strings = {
   recorderBreadcrumb: (
     book: string,
     chapter: number,
-    segment: number
-  ): string => `${book} > ${strings.chapterName(chapter)} > ${segment}`,
+    segment: number,
+    segmentLabel: string | null
+  ): string =>
+    `${book} > ${strings.chapterName(chapter)} > ${strings.segmentHeading(
+      segment,
+      segmentLabel
+    )}`,
   record: "Record",
   // The second tap on the record control ENDS the take and commits it in place
   // (#614). It was "Pause"/"Resume" while a take could be suspended and
@@ -295,8 +323,13 @@ export const strings = {
   // ── Discarding held work (#165 recovery panel, #38 SaveFailed) ───────────
   // The two-tap discard. Both screens that offer it are a dead end otherwise —
   // the recovery panel when the decode never succeeds, `SaveFailed` when the
-  // translator will not retry — and both destroy the only copy, so a stray tap
-  // never deletes. ONE set of keys, not one per screen: the two screens carried
+  // translator will not retry — and on the RECORD path both destroy the only
+  // copy, so a stray tap never deletes. Not on the edit path: a failed
+  // edit-save leaves the stored recording on disk, which is why the
+  // `discardChanges*` siblings below exist at all, and why this sentence says
+  // "record path" rather than "both" (George round 1 on #600 — the earlier
+  // wording was the very lie those siblings were added to stop). ONE set of
+  // keys, not one per screen: the two screens carried
   // byte-identical copies of these three sentences until #169, and the comment
   // that noted they were "the same armed second-tap shape" was the only thing
   // keeping a wording edit to either from silently diverging them.
@@ -478,6 +511,9 @@ export const strings = {
   paste: "Paste at the line",
   undo: "Undo",
   redo: "Redo",
+  // The recorder drawer's dialog name for a screen reader — never painted
+  // (#621, the rule #608 set for `menuTitle`): it opens from a ≡ that stays a
+  // ≡, so the glyph is its only visible label.
   recorderMenuTitle: "More",
   recorderMenuOpen: "More actions",
   selectionStartHandle: "Selection start",

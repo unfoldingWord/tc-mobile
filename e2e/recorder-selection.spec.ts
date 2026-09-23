@@ -120,6 +120,19 @@ test.describe("edit mode toggle", () => {
           .getAttribute("aria-valuenow")
       );
       expect(selectedEnd).toBeGreaterThan(selectedStart);
+      // The forward seed (#554, tail rule C). The take just committed leaves
+      // the line at the end of the audio, at whole zoom, so the span is the
+      // last quarter of the buffer: its right edge at the end, its left edge
+      // slid back by the span. A centred seed would open at 85%.
+      const selectedMax = Number(
+        await page
+          .getByLabel("Selection end", { exact: true })
+          .getAttribute("aria-valuemax")
+      );
+      expect(selectedEnd).toBe(selectedMax);
+      expect(
+        Math.abs(selectedStart - Math.round(selectedMax * 0.75))
+      ).toBeLessThanOrEqual(1);
       await expect(page.getByTestId("centerline-overlay")).toHaveCount(0);
       const after = await toggle.boundingBox();
       expect(after).not.toBeNull();
