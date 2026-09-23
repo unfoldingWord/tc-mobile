@@ -45,12 +45,12 @@ loader); do not read every description here as the target.
 |         |                                                                            |
 | ------- | -------------------------------------------------------------------------- |
 | Runtime | Node 22.12+ (knip's floor)                                                 |
-| Build   | Vite 7, `@vitejs/plugin-react`                                             |
+| Build   | Vite 8, `@vitejs/plugin-react`                                             |
 | UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons                            |
 | PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)                               |
 | Storage | IndexedDB via `idb` 8                                                      |
 | Audio   | Web Audio + MediaRecorder; `@breezystack/lamejs` for MP3 (in a Web Worker) |
-| Tests   | Vitest 3, `fake-indexeddb`                                                 |
+| Tests   | Vitest 5, `fake-indexeddb`                                                 |
 | Lint    | ESLint 9 flat config, `typescript-eslint` 8, Prettier 3                    |
 | Deploy  | Cloudflare Workers static assets, Wrangler 4                               |
 
@@ -331,7 +331,9 @@ never reaches the backstop below), `stopRecording`'s commit-path backstop
 (`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), a failed
 save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
-(`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), playback's own
+(`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
+segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591),
+playback's own
 resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
 `"playback-resume"`, and the fail-closed gate that still finds the context
 unusable after the resume await — `"playback-resume-timeout"` when the

@@ -243,6 +243,7 @@ describe("the mark reaches the control it is given to (#604)", () => {
     const row: SegmentRowModel = {
       segmentId: "segment-1" as SegmentRowModel["segmentId"],
       ordinal: 1,
+      label: null,
       hasClip: false,
       finished: false,
       clipId: null,
@@ -259,6 +260,7 @@ describe("the mark reaches the control it is given to (#604)", () => {
           onOpenRecorder: () => {},
           onSetFinished: () => {},
           onErase: () => {},
+          onRename: () => Promise.resolve(true),
           guided,
         })
       );

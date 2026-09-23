@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+
+import { wrapTab } from "./focus-trap";
 import { createPortal } from "react-dom";
 
 import { Control } from "./control";
@@ -138,19 +140,7 @@ export function EraseConfirm({
       // Keep Tab inside the panel; with the scrim covering everything behind,
       // wrapping is what makes it a real boundary. Cancel stays enabled while
       // busy (see below), so the trap is never empty and Tab cannot escape.
-      const focusable = panel.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      );
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (!first || !last) return;
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
+      wrapTab(panel, e);
     };
     // CAPTURE, not bubble. This dialog can be stacked over an open `Menu` (the
     // failure log's Clear, George R2 P3-3), and `menu.tsx` binds its own window

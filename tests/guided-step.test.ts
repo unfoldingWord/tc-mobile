@@ -35,6 +35,7 @@ const chapter = (n: number, totalCount = 0): ChapterRow => ({
 const segment = (n: number, hasClip = false): SegmentRow => ({
   segmentId: `segment-${n}` as SegmentRow["segmentId"],
   ordinal: n,
+  label: null,
   hasClip,
   finished: false,
   clipId: null,
