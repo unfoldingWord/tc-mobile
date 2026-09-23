@@ -63,8 +63,8 @@ const SENTENCE_MIN = 12;
  * and was not string-aware. Frank: every quote was read as a string opener even
  * inside a REGEX, so `src/lib/utils.ts`'s `/[/\\:*?"<>|\p{Cc}]/gu` knocked the
  * scan out of alignment and a table sentence duplicated later in that same file
- * went undetected — confirmed by his acceptance mutation before this rewrite,
- * and pinned by `finds a duplicate after a regex literal` below.
+ * went undetected. `finds a duplicate after a regex literal` below is the
+ * standing pin for that case, and is where a regression shows up.
  *
  * Four lexical constructs had to be modelled by hand — comments, quoted strings
  * with escapes, template holes, regex literals — and two were wrong. So the
@@ -128,15 +128,14 @@ function sourceFiles(dir = SRC, prefix = ""): string[] {
  * A plain string value is the easy half. The hard half is the parameterised
  * entries: `sentences()` cannot see them, and this PR's own `saveFailedLabel` —
  * whose two branches are each a whole literal — slipped past the gate entirely
- * until George round 1 named it (re-inlining either sentence in
- * `save-failed.tsx` left the suite green, confirmed by mutation first).
+ * until George round 1 named it. `reads the parameterised keys, not just the
+ * plain ones` below is the standing pin for that.
  *
  * The fix reads the function's own source with the same scanner, rather than
  * keeping a hand list of which keys to enumerate. A hand list rots, and worse,
  * it taxes every contributor who adds a parameterised key: the first draft of
- * this fix classified each key by hand and went red on `segmentHeading` the
- * moment develop added one, which is a gate punishing work it has no business
- * judging. The shape rule has neither problem and is the honest test anyway —
+ * this fix classified each key by hand, so any key nobody had classified failed
+ * the gate — which is a gate punishing work it has no business judging. The shape rule has neither problem and is the honest test anyway —
  * what the gate protects against is a sentence being PASTED BACK, so the set it
  * must hold is exactly the bare literals the source spells out.
  *
