@@ -17,6 +17,9 @@ async function seedOneSegment(page: Page) {
   // Confirm alone accepts the pre-filled placeholder name.
   await page.getByRole("button", { name: "Create book" }).click();
   await page.getByRole("button", { name: /^Add chapter to/ }).click();
+  await page
+    .getByRole("button", { name: "Create chapter", exact: true })
+    .click();
   await page.getByRole("button", { name: "Open Chapter 1" }).click();
   await page.getByRole("button", { name: "Add segment" }).click();
   await expect(rowHeading(page)).toHaveText("1");

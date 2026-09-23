@@ -69,10 +69,10 @@
  * stable IndexedDB walk cannot starve healthy clips after a reload. The PCM is
  * still kept; this is scheduling metadata only.
  *
- * ── v7 (#591): segment labels — append-only ──
+ * ── v8 (#591): segment labels — append-only ──
  *
  * `Segment` gained an optional `label` ("verses 3–4"), the segment twin of v5's
- * chapter name. The v7 step stamps `label: null` on every pre-existing segment
+ * chapter name. The v8 step stamps `label: null` on every pre-existing segment
  * row, so a reader never meets `undefined`. Additive like v5: no store dropped,
  * no other field touched, and the takes and clips behind a segment are never
  * read.
@@ -95,7 +95,7 @@ import type { ClipMeta } from "@/types/audio";
 import type { StoredFailure } from "@/types/failure";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 
 /**
  * The v3 shape of a `clipMeta` row, before the B8 fields existed. Only the v4
@@ -558,11 +558,11 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           }
         }
 
-        // v7 (#591): stamp every pre-existing segment with `label: null`. The
+        // v8 (#591): stamp every pre-existing segment with `label: null`. The
         // same shape as v5 above, for the same reasons: only the missing field
         // is added, and keying on it being ABSENT leaves a row a newer build
         // already labelled alone.
-        if (oldVersion < 7) {
+        if (oldVersion < 8) {
           const store = tx.objectStore("segments");
           let cursor = await store.openCursor();
           while (cursor) {
