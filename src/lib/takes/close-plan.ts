@@ -38,6 +38,8 @@
  * audio and break the #59 / #165 contract.
  */
 
+import type { CaptureFailure } from "@/lib/audio/capture-failure";
+
 /**
  * What a stopped capture yielded.
  *
@@ -64,21 +66,25 @@ export interface CaptureOutcome<TBytes = unknown> {
    */
   readonly bytes: TBytes | null;
   /**
-   * A translator-facing reason when `samples` is null and it is worth saying.
-   * Null when there is nothing to say — a superseded stop, whose UI belongs to
-   * a newer recording. Never the empty string. Three producers write it, and
-   * each writes either null or a whole sentence: `use-recorder.ts`'s
-   * `stopDecodeMessage` for the two decode exits of `stop()`; `stop()`'s
-   * empty-seal exit directly ("No sound was recorded. Try again.", or after
-   * the flush executor threw, "Could not finish this recording." — #485,
-   * George R1 P3 on #500); and `stopRecording`'s backstop in
-   * `use-audio-session.ts`, which returns that same "could not finish"
-   * sentence directly. `stopDecodeMessage`'s union is therefore NOT the
-   * closed set of stop errors — a `lib/` change or test that treats it as
-   * one is wrong. `!== null` here and the component's former truthiness test
-   * agree on every value that can actually arrive.
+   * Why `samples` is null, when it is worth saying — a {@link CaptureFailure}
+   * code. Null when there is nothing to say: a superseded stop, whose UI
+   * belongs to a newer recording.
+   *
+   * A CLOSED set, and only since #169 moved the wording up to the screen.
+   * Three producers write this field, and each used to mint its own sentence:
+   * `use-recorder.ts`'s decode exits via `classifyStopDecode`; `stop()`'s
+   * empty-seal exit directly (silence, or after the flush executor threw,
+   * "could not finish" — #485, George R1 P3 on #500); and `stopRecording`'s
+   * backstop in `use-audio-session.ts`, which typed that same "could not
+   * finish" sentence out a second time. Only the first went through a
+   * classifier, so `StopDecodeError` was NOT the set of stop errors and this
+   * docblock had to warn that a `lib/` change treating it as one was wrong.
+   * Now every producer picks a member of one union, `StopDecodeError` narrows
+   * from it by construction, and the compiler names a fourth member's readers.
+   * `!== null` here and the component's former truthiness test agree on every
+   * value that can actually arrive.
    */
-  readonly error: string | null;
+  readonly error: CaptureFailure | null;
 }
 
 /**
@@ -107,7 +113,7 @@ export type CaptureVerdict<TBytes = unknown> =
    */
   | { readonly kind: "hold"; readonly bytes: TBytes }
   /** No audio and nothing kept, but something worth saying — an empty capture. */
-  | { readonly kind: "notice"; readonly error: string }
+  | { readonly kind: "notice"; readonly error: CaptureFailure }
   /**
    * Nothing at all: a `leave()`/pagehide bumped the generation mid-flush, so a
    * newer owner speaks for the screen and this stop has no UI of its own.
@@ -227,7 +233,7 @@ export type ClosePlan<TBytes = unknown> =
    * Do not exit: the capture yielded no audio and said why, so the sheet stays
    * open with the reason in place. Closing here would lose a take silently.
    */
-  | { readonly action: "stay"; readonly error: string }
+  | { readonly action: "stay"; readonly error: CaptureFailure }
   | TailPlan;
 
 /**

@@ -12,6 +12,8 @@
  * the superseded-throw test dies — that is the mutation this file exists to fail.
  */
 
+import type { CaptureFailure } from "./capture-failure";
+
 /** What the decode produced: usable samples, silence (zero samples), or a throw. */
 export type StopDecodeOutcome =
   | { readonly decoded: true; readonly sampleCount: number }
@@ -19,10 +21,25 @@ export type StopDecodeOutcome =
 
 /**
  * Why `stop()` has no usable samples to show, or null when there is nothing to
- * say — a superseded stop, whose UI belongs to a newer recording. The hook maps
- * these to the translator-facing strings; the classes stay UI-free here.
+ * say — a superseded stop, whose UI belongs to a newer recording.
+ *
+ * The two DECODE members of {@link CaptureFailure}, narrowed from it rather
+ * than spelled again, so this stays a strict subset by construction: renaming a
+ * member there fails the compiler here instead of leaving a second spelling
+ * behind. `"unfinished"` is deliberately outside it — nothing about a decode
+ * can produce it; it is what `stop()`'s own exits report when the engine never
+ * handed the capture over.
+ *
+ * Local since #169: it was exported for `use-recorder.ts`'s `stopDecodeMessage`,
+ * which turned it into a sentence. That function is gone — the hook passes
+ * `verdict.error` straight into `StopResult.error`, where the wider
+ * {@link CaptureFailure} accepts it — so nothing outside this file names the
+ * subset any more, and knip fails an export nothing uses.
  */
-export type StopDecodeError = "silence" | "undecodable" | null;
+type StopDecodeError = Extract<
+  CaptureFailure,
+  "silence" | "undecodable"
+> | null;
 
 export interface StopDecodeVerdict {
   /** Return the decoded samples to the caller (a usable, non-empty decode). */

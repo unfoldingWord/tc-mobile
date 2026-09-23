@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 
+import { captureFailureText } from "./capture-failure-copy";
 import { CenterlineOverlay } from "./centerline-overlay";
 import { Control } from "./control";
 import { shareControlGlyph } from "./control-affordance";
@@ -1337,7 +1338,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             supersededCapture.current = true;
           }
           if (verdict.kind === "notice") {
-            setStopError(verdict.error);
+            setStopError(captureFailureText(verdict.error));
           }
           closing.current = false;
           setIsClosing(false);
@@ -2036,7 +2037,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             // permission panel). A toolbar Notice (not the permission panel — this
             // is not a permission miss), and re-enable so Back or Record works. Do
             // NOT onExit.
-            stayOpen(plan.error);
+            stayOpen(captureFailureText(plan.error));
             return false;
           // Persist any pending edit and Finished flag, then exit — the shared
           // no-capture tail (`leaveHeldTake` runs the SAME one, George R4-G1 root).
@@ -2191,7 +2192,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // trapping (the concern G5 raised, now met without dropping the take).
           setHeldRetrying(false);
           heldRetryingRef.current = false;
-          setHeldRetryError(result.error);
+          setHeldRetryError(captureFailureText(result.error));
         } catch (cause: unknown) {
           // saveRecording is contracted never to reject; this is the last net so a
           // thrown save cannot strand the panel busy with the take still held. A
