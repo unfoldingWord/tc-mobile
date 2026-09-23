@@ -669,6 +669,63 @@ describe("isCanonicalOrigin", () => {
       isCanonicalOrigin("https://some-user@github.com/sethstoll3/tc-mobile.git")
     ).toBe(false);
   });
+
+  // #443 item 1 (George round-4 P3 on #436): four more legitimate,
+  // git-accepted origin shapes the function above still rejected.
+
+  it("accepts a local SSH config Host alias (scp-like)", () => {
+    // e.g. a `~/.ssh/config` block juggling multiple GitHub identities:
+    //   Host github.com-uw
+    //     HostName github.com
+    //     User git
+    expect(
+      isCanonicalOrigin("git@github.com-uw:unfoldingWord/tc-mobile.git")
+    ).toBe(true);
+  });
+
+  it("accepts a local SSH config Host alias without a trailing .git", () => {
+    expect(isCanonicalOrigin("git@github.com-uw:unfoldingWord/tc-mobile")).toBe(
+      true
+    );
+  });
+
+  it("rejects a fork's URL via a Host alias", () => {
+    // The gate is tested in both states: an unchecked host segment must not
+    // widen the owner/repo check a Host alias still has to pass.
+    expect(
+      isCanonicalOrigin("git@github.com-uw:sethstoll3/tc-mobile.git")
+    ).toBe(false);
+  });
+
+  it("accepts an explicit ssh:// URL via the ssh.github.com alias host", () => {
+    expect(
+      isCanonicalOrigin("ssh://git@ssh.github.com/unfoldingWord/tc-mobile.git")
+    ).toBe(true);
+  });
+
+  it("rejects a fork's URL via ssh://ssh.github.com", () => {
+    expect(
+      isCanonicalOrigin("ssh://git@ssh.github.com/sethstoll3/tc-mobile.git")
+    ).toBe(false);
+  });
+
+  it("accepts the canonical https URL with a trailing slash", () => {
+    expect(
+      isCanonicalOrigin("https://github.com/unfoldingWord/tc-mobile/")
+    ).toBe(true);
+  });
+
+  it("accepts the canonical https URL with a trailing .git and a trailing slash", () => {
+    expect(
+      isCanonicalOrigin("https://github.com/unfoldingWord/tc-mobile.git/")
+    ).toBe(true);
+  });
+
+  it("rejects a fork's URL with a trailing slash", () => {
+    expect(isCanonicalOrigin("https://github.com/sethstoll3/tc-mobile/")).toBe(
+      false
+    );
+  });
 });
 
 describe("ensureRemoteRefFresh", () => {
