@@ -284,9 +284,16 @@ export function resolveSendOutcome(
  * `SendLogControl`, the one that would, calls `useFailureLogShare()` itself —
  * so that is a possibility this creates, not a claim about the tree.
  */
-export interface ShareGestures {
+export interface ShareGestures<E = ShareError> {
   readonly status: ShareStatus;
-  readonly error: ShareError | null;
+  /**
+   * Parameterised because one surface reports a code the other two cannot:
+   * `useFailureLogShare` adds `"restart"`, for an open the shell refuses
+   * terminally. An interface may narrow an inherited member but not widen one,
+   * so a bare `extends` would have forced that hook back out of this contract.
+   * The default keeps every other implementer's declaration unchanged.
+   */
+  readonly error: E | null;
   /** See {@link UseShareFlow.sendUnconfirmed}. */
   readonly sendUnconfirmed: boolean;
   /** Tap 2: hand what tap 1 armed to the OS share sheet. See {@link UseShareFlow.send}. */

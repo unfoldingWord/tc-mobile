@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { formatFailureLog } from "@/lib/failure-text";
+import { isTerminalOpenRefusal } from "@/lib/storage/db";
 import {
   getLogGeneration,
   readFailureLog,
@@ -101,7 +102,20 @@ export function selectLogShareShape(
   return canShare.text() ? "text" : "unsupported";
 }
 
-export interface UseFailureLogShare extends ShareGestures {
+type FailureLogShareError = ShareError | "restart";
+
+export function classifyFailureLogOpenError(
+  cause: unknown
+): FailureLogShareError {
+  if (
+    isTerminalOpenRefusal((cause as { name?: string } | null)?.name ?? null)
+  ) {
+    return "restart";
+  }
+  return "failed";
+}
+
+export interface UseFailureLogShare extends ShareGestures<FailureLogShareError> {
   /**
    * See {@link UseShareFlow.sendUnconfirmed} — the identical field, on the
    * identical policy, for this hook's own `send()` (Frank at `238820a` P2,
@@ -175,7 +189,7 @@ export interface UseFailureLogShare extends ShareGestures {
  */
 export function useFailureLogShare(): UseFailureLogShare {
   const [status, setStatus] = useState<ShareStatus>("idle");
-  const [error, setError] = useState<ShareError | null>(null);
+  const [error, setError] = useState<FailureLogShareError | null>(null);
   // See UseFailureLogShare.sendUnconfirmed's own docblock.
   const [sendUnconfirmed, setSendUnconfirmed] = useState(false);
   /**
@@ -352,15 +366,25 @@ export function useFailureLogShare(): UseFailureLogShare {
       setStatus("ready");
     } catch (cause) {
       if (!current()) return;
+      const classified = classifyFailureLogOpenError(cause);
       // Through the funnel, not to the console (Frank, this round). Sharing the
       // log is an ordinary consumer of the log, not the log's own write: the
       // recursion that makes `writeEntry` swallow its failure — a row about the
       // failure to append a row — does not exist here. A facilitator whose
       // export failed gets a phone that has recorded WHY, and it goes out with
       // the next attempt. `reportFailure` terminates in `console.error` itself,
-      // so the maintainer's desk loses nothing.
-      reportFailure(cause, "failure-log-share-prepare");
-      setError("failed");
+      // so the maintainer's desk loses nothing. The terminal open refusal is the
+      // exception: this older page cannot write that row either, and retrying is
+      // not a real offer (#455).
+      if (classified !== "restart") {
+        reportFailure(cause, "failure-log-share-prepare");
+      } else {
+        console.error(
+          "[failure-log-share-prepare] Terminal database refusal",
+          cause
+        );
+      }
+      setError(classified);
       setStatus("idle");
     } finally {
       // Only the run that still owns the flow releases the guard. A stale run —

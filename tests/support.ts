@@ -71,9 +71,7 @@ export function ramp(n: number, base = 0): Int16Array {
 /**
  * What a decoder that returns every granule hands back for `mp3`, the encode
  * of `pcm`: 1105 samples of priming, the recording, then granule padding to the
- * stream's emitted length. The two facts this models — head offset and total
- * length — were measured in Chromium (`decodeAudioData`) for five input
- * lengths; this is that decoder, minus the codec noise.
+ * stream's emitted length. This is a synthetic layout, without codec noise.
  */
 export function noTrimDecode(pcm: Int16Array, mp3: Uint8Array): Int16Array {
   const out = new Int16Array(mp3GranuleCount(mp3) * MP3_GRANULE);
