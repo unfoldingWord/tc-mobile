@@ -159,14 +159,21 @@ describe("both screens read the table", () => {
   it("the recorder header resolves the heading before it builds the trail", () => {
     const sheet = compactSource("src/components/recorder.tsx");
     expect(sheet.length, "no recorder to read").toBeGreaterThan(1000);
-    const call = sheet.slice(sheet.indexOf("strings.recorderBreadcrumb("));
-    expect(call.length, "recorderBreadcrumb is not called").toBeGreaterThan(0);
+    // The index is what gets the floor, NOT the slice's length. `indexOf`
+    // returns -1 when the call is absent and `slice(-1)` is the last character
+    // of the file — length 1, so a length floor passes on a recorder that never
+    // calls this at all (George, #698). A floor that cannot fail on the state
+    // it names is the vacuous-assertion shape AGENTS.md keeps catching, and
+    // this one was an instance of it.
+    const at = sheet.indexOf("strings.recorderBreadcrumb(");
+    expect(at, "recorderBreadcrumb is not called").toBeGreaterThanOrEqual(0);
+    const call = sheet.slice(at, at + 200);
     // Inside this call's own arguments, not merely somewhere later in the file.
-    expect(call.slice(0, 200)).toContain("strings.chapterHeading(");
+    expect(call).toContain("strings.chapterHeading(");
     // The segment half stays the entry's business (#591): the caller hands it
     // the raw label and `segmentHeading` inside the table resolves it, exactly
     // as `chapterHeading` resolves the chapter half out here.
-    expect(call.slice(0, 200)).toContain("view.segmentLabel");
+    expect(call).toContain("view.segmentLabel");
   });
 });
 
