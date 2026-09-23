@@ -25,9 +25,10 @@
  * of a claim in a comment. It takes ids and a boolean, never elements, so it
  * stays inside `lib/`'s DOM ban and runs in the Node-only suite. The half that
  * reads the DOM and calls `scrollIntoView` / `.focus()` is
- * `hooks/use-scroll-to-new.ts`, and that half has no automated coverage
- * anywhere in this repo (the same gap as #361) — it is review and on-device
- * surface, and is not claimed as tested.
+ * `hooks/use-scroll-to-new.ts`, and that half is covered in jsdom by
+ * `tests/scroll-to-new.test.ts` — including this rule as the hook behaves it,
+ * not only as this function decides it. What neither reaches is layout: jsdom
+ * has none, so where a phone actually puts the row stays a device question.
  */
 
 /** What a screen has armed but not yet revealed. `null` is "nothing armed". */

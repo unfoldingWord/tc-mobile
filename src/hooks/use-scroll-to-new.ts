@@ -89,14 +89,19 @@ export interface ScrollToNew<Id> {
  * close edges, Segments on one), and each list carries a comment explaining
  * why, which is worth more at the call site than inside a shared hook.
  *
- * ## What is NOT verified
+ * ## What is and is not verified
  *
- * Everything in this file. The decision it delegates to is table-tested
- * (`tests/pending-reveal.test.ts`); the DOM around it — the node map,
- * `scrollIntoView`, `querySelector`, `.focus()` and the effect ordering that is
- * the point of the whole thing — has no automated coverage and cannot have any
- * in a Node-only suite. It is review and on-device surface; do not write
- * "verified" on it without a device.
+ * The decision this delegates to is table-tested (`tests/pending-reveal.test.ts`).
+ * The DOM around it — the node map, which control `focusSelector` resolves to,
+ * that an unmount drops a node, that an arm is spent even when its row never
+ * arrived, and that a HELD hand-off is retained and lands on the commit that
+ * lifts the hold — is covered in jsdom by `tests/scroll-to-new.test.ts`.
+ *
+ * What that cannot reach is LAYOUT. jsdom implements none, so
+ * `scrollIntoView` is a stub there: the test says this hook calls it, on which
+ * node, with `{ block: "nearest" }`. Whether a phone then puts the new row
+ * where the translator is looking is a device question, and nothing here
+ * answers it — do not write "verified" on that half without one.
  *
  * @param focusSelector which control inside the row takes the hand-off, as a
  *   CSS selector matched within the row's registered element. Chosen by ROLE at
