@@ -18,11 +18,7 @@ import {
 import { measureLevel } from "@/lib/audio/level";
 import { meterReadable, rmsLevel } from "@/lib/audio/meter";
 
-import {
-  audioProbeEnabled,
-  type ProbeSource,
-  recordAudioProbe,
-} from "./audio-probe";
+import { type ProbeSource, withAudioProbe } from "./audio-probe";
 import { reportFailure } from "./report-failure";
 
 /**
@@ -482,7 +478,7 @@ export async function decodeToCanonical(
 ): Promise<Int16Array> {
   const arrayBuffer = await blob.arrayBuffer();
   const decoded = await getAudioContext().decodeAudioData(arrayBuffer);
-  if (audioProbeEnabled()) probeDecode(decoded, probeSource);
+  probeDecode(decoded, probeSource);
   return toCanonical(decoded);
 }
 
@@ -503,13 +499,14 @@ const PROBED_TRACK_SETTINGS = [
 
 /** Record what the device granted for a capture stream, when the probe is on. */
 export function probeCaptureTrack(stream: MediaStream): void {
-  if (!audioProbeEnabled()) return;
-  const tracks = stream.getAudioTracks();
-  const granted = tracks[0]?.getSettings() as
-    Record<string, unknown> | undefined;
-  const settings: Record<string, unknown> = { audioTracks: tracks.length };
-  for (const key of PROBED_TRACK_SETTINGS) settings[key] = granted?.[key];
-  recordAudioProbe({ stage: "capture-track", settings });
+  withAudioProbe(() => {
+    const tracks = stream.getAudioTracks();
+    const granted = tracks[0]?.getSettings() as
+      Record<string, unknown> | undefined;
+    const settings: Record<string, unknown> = { audioTracks: tracks.length };
+    for (const key of PROBED_TRACK_SETTINGS) settings[key] = granted?.[key];
+    return { stage: "capture-track", settings };
+  });
 }
 
 /**
@@ -519,17 +516,19 @@ export function probeCaptureTrack(stream: MediaStream): void {
  * take with no trace of why (#555).
  */
 function probeDecode(decoded: AudioBuffer, source: ProbeSource): void {
-  const perChannel = [];
-  for (let c = 0; c < decoded.numberOfChannels; c++) {
-    perChannel.push(measureLevel(decoded.getChannelData(c), 1));
-  }
-  recordAudioProbe({
-    stage: "decode",
-    source,
-    channels: decoded.numberOfChannels,
-    sampleRate: decoded.sampleRate,
-    frames: decoded.length,
-    perChannel,
+  withAudioProbe(() => {
+    const perChannel = [];
+    for (let c = 0; c < decoded.numberOfChannels; c++) {
+      perChannel.push(measureLevel(decoded.getChannelData(c), 1));
+    }
+    return {
+      stage: "decode",
+      source,
+      channels: decoded.numberOfChannels,
+      sampleRate: decoded.sampleRate,
+      frames: decoded.length,
+      perChannel,
+    };
   });
 }
 
@@ -816,20 +815,28 @@ export async function playSamples(
       Math.min(options.offsetSeconds ?? 0, buffer.duration)
     );
     // Measured here, past both supersession bails and both fail-closed gates:
-    // a reading exists only for a buffer that is about to sound.
-    if (audioProbeEnabled()) {
-      recordAudioProbe({
+    // a reading exists only for a buffer that is about to sound. `level`
+    // covers only what `source.start(0, offset)` sounds, from `startFrame`
+    // on, so a scrubbed play of a quiet tail reads quiet (Frank round 1 on
+    // #716). `withAudioProbe` drops any throw, so this cannot fail the play.
+    withAudioProbe(() => {
+      const startFrame = Math.min(
+        samples.length,
+        Math.floor(offset * buffer.sampleRate)
+      );
+      return {
         stage: "play",
         source: options.source ?? "unlabelled",
-        level: measureLevel(samples, INT16_MAX),
+        level: measureLevel(samples.subarray(startFrame), INT16_MAX),
         viewOffset: samples.byteOffset / Int16Array.BYTES_PER_ELEMENT,
+        startFrame,
         backingFrames: samples.buffer.byteLength / Int16Array.BYTES_PER_ELEMENT,
         offsetSeconds: offset,
         contextState: ctx.state,
         contextRate: ctx.sampleRate,
         destinationChannels: ctx.destination.channelCount,
-      });
-    }
+      };
+    });
     const startedAt = ctx.currentTime;
     let stopped = false;
 

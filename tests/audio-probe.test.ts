@@ -182,6 +182,47 @@ describe("playSamples, probe on", () => {
     expect(info).toHaveBeenCalledWith("TCPROBE", expect.any(String));
   });
 
+  it("measures only the part a scrubbed play sounds, from the clamped offset", async () => {
+    const { playSamples } = await loadAudioIo("1");
+    // Loud first half, quiet second half; start playback at the halfway mark.
+    const frames = 2 * CANONICAL_SAMPLE_RATE;
+    const take = tone(16_000, frames);
+    take.set(tone(2_000, frames / 2), frames / 2);
+
+    await playSamples(take, {
+      source: "stored-pcm",
+      offsetSeconds: 1,
+      isStillCurrent: () => true,
+    });
+
+    const [entry] = readings() ?? [];
+    expect(entry).toMatchObject({
+      offsetSeconds: 1,
+      startFrame: frames / 2,
+    });
+    const level = entry!.level as { frames: number; peakDbfs: number };
+    expect(level.frames).toBe(frames / 2);
+    // The quiet suffix that sounds (2000), not the loud prefix (16000).
+    expect(level.peakDbfs).toBeCloseTo(20 * Math.log10(2_000 / INT16_MAX), 1);
+  });
+
+  it("still plays, and still decodes, when recording a reading throws", async () => {
+    const { playSamples, decodeToCanonical } = await loadAudioIo("1");
+    info.mockImplementation(() => {
+      throw new Error("hooked console");
+    });
+    const handle = await playSamples(tone(8_000, 500), {
+      source: "working",
+      isStillCurrent: () => true,
+    });
+    expect(handle.duration).toBeGreaterThan(0);
+
+    nextDecode = new FakeAudioBuffer(1, 100, CANONICAL_SAMPLE_RATE);
+    await expect(
+      decodeToCanonical(new Blob([new Uint8Array(8)]))
+    ).resolves.toHaveLength(100);
+  });
+
   it("labels an unlabelled caller as such rather than guessing a path", async () => {
     const { playSamples } = await loadAudioIo("1");
     await playSamples(tone(8_000, 500), { isStillCurrent: () => true });

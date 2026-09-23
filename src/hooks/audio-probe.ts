@@ -53,6 +53,8 @@ type ProbeReading =
       readonly level: SignalLevel;
       /** Where the played view starts in its backing buffer, in samples. */
       readonly viewOffset: number;
+      /** First frame of the view that sounds; `level` covers from here on. */
+      readonly startFrame: number;
       /** The backing buffer's length, in samples. */
       readonly backingFrames: number;
       readonly offsetSeconds: number;
@@ -64,7 +66,7 @@ type ProbeReading =
 let enabled: boolean | undefined;
 
 /** Whether the probe was asked for. Read once per page load. */
-export function audioProbeEnabled(): boolean {
+function audioProbeEnabled(): boolean {
   if (enabled === undefined) {
     try {
       enabled = window.localStorage.getItem(AUDIO_PROBE_KEY) === "1";
@@ -78,8 +80,28 @@ export function audioProbeEnabled(): boolean {
   return enabled;
 }
 
-/** Record one reading. Callers check `audioProbeEnabled()` first. */
-export function recordAudioProbe(reading: ProbeReading): void {
+/**
+ * Take and record one reading, when the probe is on. `read` runs only then, so
+ * off costs one cached boolean test and no measuring.
+ *
+ * A throw anywhere in the reading (the measurement itself, a hooked
+ * `console.info`, a page script that replaced `__tcAudioProbe` with a
+ * non-array) is dropped here, so the play or decode the reading sits inside
+ * never fails because of it (George round 1 on #716). The catch is empty on
+ * purpose: this is a developer's opt-in diagnostic, not a failure the funnel
+ * should carry (the #478 constraint), and a console that just threw is not a
+ * place to report to.
+ */
+export function withAudioProbe(read: () => ProbeReading): void {
+  if (!audioProbeEnabled()) return;
+  try {
+    recordAudioProbe(read());
+  } catch {
+    // Deliberately empty — see the docblock above.
+  }
+}
+
+function recordAudioProbe(reading: ProbeReading): void {
   const entry = { at: Date.now(), ...reading };
   const holder = globalThis as { __tcAudioProbe?: unknown[] };
   const list = (holder.__tcAudioProbe ??= []);
