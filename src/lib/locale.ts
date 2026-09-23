@@ -84,6 +84,16 @@ export const SHIPPED_LOCALE: Locale = { tag: "en", dir: "ltr" };
  */
 const LANGUAGE_TAG = /^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$/;
 
+/**
+ * The runtime twin of `Direction` (#711). The type is erased at runtime, so
+ * without this `dir` was the one input that reached the attribute text
+ * unchecked — the tag has `LANGUAGE_TAG`, the direction had nothing. A locale
+ * table that grows by data entry is exactly the caller the type cannot guard.
+ * Exact and lower-case on purpose: the attribute is written as given, and
+ * `withLocaleAttributes` refuses rather than normalises.
+ */
+const DIRECTION = /^(ltr|rtl)$/;
+
 /** The document's opening tag, whatever attributes it already carries. */
 const HTML_OPEN_TAG = /<html\b([^>]*)>/i;
 
@@ -111,6 +121,9 @@ export function withLocaleAttributes(html: string, locale: Locale): string {
   if (!LANGUAGE_TAG.test(locale.tag)) {
     throw new Error(`withLocaleAttributes: not a language tag: ${locale.tag}`);
   }
+  if (!DIRECTION.test(locale.dir)) {
+    throw new Error(`withLocaleAttributes: not a direction: ${locale.dir}`);
+  }
   const match = HTML_OPEN_TAG.exec(html);
   if (match === null) {
     throw new Error("withLocaleAttributes: no <html> tag to label");
@@ -137,6 +150,12 @@ export function withLocaleAttributes(html: string, locale: Locale): string {
  * would leave the old value in place beside the new one — two `dir`
  * attributes, first one winning, which is exactly the silent wrong answer the
  * caller's throw refuses elsewhere.
+ *
+ * The replacement is a FUNCTION, not a string (#711): `String.prototype.replace`
+ * expands `$&`, `` $` ``, `$'` and `$n` inside a replacement string, so a value
+ * carrying one would be spliced with pieces of the match instead of written
+ * literally. The caller's two allowlists keep `$` out today; this keeps the
+ * write literal if one of them is ever loosened.
  */
 function setAttribute(attributes: string, name: string, value: string): string {
   const existing = new RegExp(
@@ -145,6 +164,6 @@ function setAttribute(attributes: string, name: string, value: string): string {
   );
   const replacement = ` ${name}="${value}"`;
   return existing.test(attributes)
-    ? attributes.replace(existing, replacement)
+    ? attributes.replace(existing, () => replacement)
     : attributes + replacement;
 }
