@@ -555,6 +555,53 @@ describe("attachNativeBack — a press inside the detach's disable round trip is
     expect(back.calls).not.toContain("exitApp");
   });
 
+  it("(s) detached before the handle resolved (the handler was never enabled): inert at once, no drain", async () => {
+    const back = orderedBack();
+    const goBack = vi.fn();
+    const detach = attachNativeBack(
+      back.plugin,
+      { decide: decideFor("segments", []), goBack },
+      true
+    );
+
+    detach();
+    back.press(true);
+    back.press(false);
+    await back.settleHandle();
+    await back.confirmDisable();
+
+    expect(goBack).not.toHaveBeenCalled();
+    expect(back.calls).toEqual([
+      "addListener",
+      "toggle:false",
+      "press:true",
+      "press:false",
+      "remove",
+    ]);
+  });
+
+  it("(t) off Android there is no handler to disable: inert at once, no drain", async () => {
+    const back = orderedBack();
+    const goBack = vi.fn();
+    const detach = attachNativeBack(back.plugin, {
+      decide: decideFor("segments", []),
+      goBack,
+    });
+    await back.settleHandle();
+
+    detach();
+    back.press(true);
+    back.press(false);
+
+    expect(goBack).not.toHaveBeenCalled();
+    expect(back.calls).toEqual([
+      "addListener",
+      "remove",
+      "press:true",
+      "press:false",
+    ]);
+  });
+
   it("(r) a disable the plugin refuses is reported, and the detach still completes: the remove is posted and the callback goes inert", async () => {
     reportFailure.mockClear();
     const back = orderedBack();
