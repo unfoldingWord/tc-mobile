@@ -106,9 +106,22 @@ describe("describeCause", () => {
  * rather than a duplicate of it: the Error branch is real (a message, not
  * `String(err)`), and everything else falls through to `String`.
  *
- * Both halves matter. Drop the Error branch and every `setError` in the app
- * starts showing "Error: …" instead of the message; drop the `String` fallback
- * and a thrown string — which `lib/storage` does throw — renders as `undefined`.
+ * Both halves matter, but not for the reasons an earlier draft of this comment
+ * gave — George was right on `25c336fd5`, and the corrected version is what the
+ * two mutations actually print:
+ *
+ *   - Drop the ERROR branch and the name comes back: `setError` renders
+ *     "TypeError: bad input" rather than "bad input", and an `Error` thrown
+ *     with no message renders "Error" rather than "". Four cases here die.
+ *   - Drop the `String` FALLBACK and a thrown string is unaffected — it is
+ *     already a string, so `errorMessage("quota exceeded")` still returns it
+ *     and the first assertion below still passes. What breaks is every other
+ *     non-Error: `undefined` reaches the caller as the VALUE `undefined`
+ *     rather than the text, and that is the assertion that fails first, then
+ *     `null`, `42` and `{ code: 22 }`.
+ *
+ * The old sentence also said `lib/storage` throws bare strings. It does not —
+ * every throw there is `throw new …` or a re-throw of a caught `cause`.
  */
 describe("errorMessage", () => {
   it("gives an Error's message WITHOUT its name", () => {
