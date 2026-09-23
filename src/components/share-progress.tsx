@@ -181,10 +181,10 @@ export function ShareProgress({
   // `useLayoutEffect`, not `useEffect` (#517 item 4, George r3 P3 on #508),
   // matching `busyRef`'s own fix above: `inert` blurs whatever was focused in
   // the menu's about-to-go-inert subtree to `document.body` during React's
-  // MUTATION phase, in the SAME commit this overlay becomes visible. A
-  // passive effect runs after paint, so it leaves one frame where focus sits
-  // on `body` — inert, with nothing else yet grabbed — before this effect
-  // ever runs. A layout effect closes that frame: it runs synchronously right
+  // MUTATION phase, in the SAME commit this overlay becomes visible. React
+  // does not guarantee a passive effect runs before paint, so there can be a
+  // frame where focus sits on `body` — inert, with nothing else yet grabbed —
+  // before this effect runs. A layout effect closes that frame: it runs synchronously right
   // after the same mutation `inert` applies in, before the browser paints.
   useLayoutEffect(() => {
     if (visible) panelRef.current?.focus();

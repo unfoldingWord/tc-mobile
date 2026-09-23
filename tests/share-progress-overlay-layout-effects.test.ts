@@ -9,9 +9,9 @@ import { describe, expect, it } from "vitest";
  * `<Menu inert={shareOverlayOwnsScreen(progress)}>` blurs whatever was
  * focused in the menu's about-to-go-inert subtree to `document.body` during
  * React's MUTATION phase, in the SAME commit this overlay becomes visible
- * (`menu.tsx`'s own docblock on `inert`). A passive `useEffect` runs after
- * paint, so between that mutation and the effect running there is one frame
- * where focus sits on `body` — inert, with the overlay's own focus grab not
+ * (`menu.tsx`'s own docblock on `inert`). React does not guarantee a passive
+ * `useEffect` runs before paint, so between that mutation and the effect
+ * there can be a frame where focus sits on `body` — inert, with the overlay's own focus grab not
  * yet run and its capture-phase Escape/Tab listener not yet bound. Layout
  * effects close both halves of that window in the same commit `inert` itself
  * applies in, matching the fix this component's own `busyRef` sync already
@@ -23,10 +23,9 @@ import { describe, expect, it } from "vitest";
  * **A SOURCE gate, and this file says which** — the same reason
  * `recorder-interruption-layout-effect.test.ts` and
  * `tests/menu-close-ref-layout-sync.test.ts` are: a jsdom mount through
- * `act()` flushes layout and passive effects together (verified against this
- * exact React/Vitest pair before writing `menu-close-ref-layout-sync.test.ts`
- * — a sync `act()` render leaves no window in which a passive effect has not
- * yet run), so no mounted test here can tell `useLayoutEffect` apart from
+ * `act()` flushes layout and passive effects together (a sync `act()` render
+ * leaves no window in which a passive effect has not yet run), so no mounted
+ * test here can tell `useLayoutEffect` apart from
  * `useEffect` by observed behaviour. What is decidable from the text is the
  * hook name and, for the keydown listener, that its whole body still does
  * only what it did before — a legitimate rewrite has to re-argue the change

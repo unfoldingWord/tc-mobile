@@ -13,9 +13,9 @@ import { describe, expect, it } from "vitest";
  * listener (which reads `onCloseRef.current()`) could close the menu
  * underneath a still-showing overlay. `share-progress.tsx` already carries
  * this exact fix for its own `busyRef`/`onCancelRef`/`onDismissRef`
- * (Frank at `9832a8b` P2, #491) — a passive effect flushes after paint, so a
- * keydown queued in that window can fire against a ref that has not caught
- * up with what just rendered.
+ * (Frank at `9832a8b` P2, #491). React does not guarantee a passive effect
+ * flushes before paint or before a queued event, so a keydown in that window
+ * can fire against a ref that has not caught up with what just rendered.
  *
  * This is defense in depth, not an observed defect: `share-progress.tsx`'s
  * own capture-phase Escape listener is expected to swallow the keydown
@@ -26,8 +26,7 @@ import { describe, expect, it } from "vitest";
  * **A SOURCE gate, and this file says which** — same reason
  * `recorder-interruption-layout-effect.test.ts` is one: this component's
  * tests mount through `act()`, which flushes layout and passive effects
- * together (confirmed against this exact React/Vitest pair before writing
- * this file — a sync `act()` render leaves no window in which a passive
+ * together (a sync `act()` render leaves no window in which a passive
  * effect has not yet run), so no jsdom mount here can tell `useLayoutEffect`
  * apart from `useEffect` by observed behaviour. What is decidable from the
  * text is the hook name and that the effect's body still does only the ref

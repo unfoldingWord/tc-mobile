@@ -129,9 +129,10 @@ export function Menu({
   // through this ref by the Escape handler below) must see the LIVE
   // `shareOverlayOwnsScreen(progress)` and refuse to close, mirroring the
   // `busyRef`/`onCancelRef`/`onDismissRef` fix `share-progress.tsx` already
-  // carries for the identical shape (Frank at `9832a8b` P2, #491). A passive
-  // effect is scheduled to run in a macrotask after the browser paints, so a
-  // keydown queued in that same window — a fast Escape right after the
+  // carries for the identical shape (Frank at `9832a8b` P2, #491). React does
+  // not guarantee that a passive effect runs before the browser paints or
+  // before a queued event is handled, so a keydown in that window — a fast
+  // Escape right after the
   // overlay opens or closes in the same commit that changed what `onClose`
   // would do — can fire against a STALE ref. `share-progress.tsx`'s own
   // capture-phase Escape listener is expected to swallow the keydown before
