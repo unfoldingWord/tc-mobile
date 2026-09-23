@@ -1381,9 +1381,10 @@ export function BooksScreen({
           above it, for the two reasons recorded there. */}
       {/* `hamburger`: the ≡ in the header above stays a ≡ inside the open
           panel too — same glyph, same corner, and no visible "Menu" title
-          (#608, the requirements owner's navigation rule). This is the ONE
-          panel with a hamburger close control. The book, chapter and segment
-          menus open from ⋮ (#589); the recorder opener still uses ≡. */}
+          (#608, the requirements owner's navigation rule). The recorder's
+          drawer opts into the same `hamburger` control for the same reason
+          (#621); the book, chapter and segment menus open from ⋮ (#589) and
+          keep the chevron. */}
       <Menu open={menuOpen} onClose={closeGlobalMenu} hamburger>
         {failureCount > 0 && (
           <FailureLogPanel
