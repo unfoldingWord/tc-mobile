@@ -19,10 +19,16 @@ import { one, render } from "./render";
  *
  * So this asserts the SCREEN's output against the TABLE's functions rather
  * than against typed-out sentences — a test that re-typed the wording would
- * pass while the screen painted the other path's sentence. Which path the
- * arguments describe is then checked directly, by the two cases at the end
- * that read the words: those are the only assertions here that may name a
- * sentence, because "recording" vs "edited recording" is the whole claim.
+ * pass while the screen painted the other path's sentence.
+ *
+ * That comparison cannot, by itself, tell WHICH path an argument selects:
+ * both sides of it call the same function, so inverting a branch inside the
+ * table moves the expectation with the output along with it. So each argument
+ * also gets a case that reads the words — the ones at the end of this file,
+ * and the only assertions here that may name a sentence. They are not
+ * redundant with the cases above and are the only ones a table-side inversion
+ * can fail; the PR that added this file carries the mutation runs that show
+ * what each one catches.
  *
  * One render, no events (see `tests/render.ts`): the ARMED second tap of
  * Discard, and its hint line, are a state change this harness cannot reach,
@@ -115,8 +121,7 @@ describe("SaveFailed paints the table's copy (#169)", () => {
     // for the reason the `editOnly` cases above do: every assertion that calls
     // `strings.saveHeld` compares the screen against the table, so inverting
     // the table's own `ordinal === null` branch moves both sides together and
-    // passes. Proven by mutation — that inversion left all nine of the other
-    // cases green.
+    // passes. This case is what that inversion fails on.
     const numbered = render(createElement(SaveFailed, { ...base, ordinal: 3 }));
     const unnumbered = render(
       createElement(SaveFailed, { ...base, ordinal: null })
