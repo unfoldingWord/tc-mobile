@@ -409,7 +409,7 @@ describe("book tree", () => {
     // The pending-take retry path re-runs the save with the SAME clipId
     // (retrySave keeps it; putClip is an upsert). addTake then sees
     // prior.clipId === new clipId, and deleting "the superseded clip" would
-    // strand the take it just wrote — the guard at books.ts is the only thing
+    // strand the take it just wrote — the guard at takes.ts is the only thing
     // stopping that, and nothing else exercises it.
     const { segmentId } = await oneSegment();
     const clipId = await storedClip(1000);

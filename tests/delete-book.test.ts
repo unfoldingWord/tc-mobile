@@ -274,7 +274,7 @@ describe("deleteBook", () => {
     // ordinary. Deleting a book deletes MANY clips at once, so an unconditional
     // delete here would punch a whole book's worth of holes in another book's
     // audio. Reference-counting is the same guard `clearSegmentTake` already
-    // holds (books.ts) and that #68 tracks for `addTake`.
+    // holds (takes.ts) and that #68 tracks for `addTake`.
     const doomedBook = await createBook("Practice");
     const doomedChapter = await addChapter(doomedBook.id);
     const doomedSegment = await addSegment(doomedChapter.id);
