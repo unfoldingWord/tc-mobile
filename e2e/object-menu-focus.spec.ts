@@ -2,32 +2,14 @@ import { expect, test, type Page } from "@playwright/test";
 
 /**
  * Closing a book, chapter or segment ≡ menu returns focus to the ⋮ that
- * opened it (#679), against the shipped `dist/` build.
+ * opened it (#679), against the shipped `dist/` build. The restore lives at
+ * each menu's own open/close edge: `books-screen.tsx`, `segments-screen.tsx`
+ * and `segment-row.tsx`.
  *
- * #73 described this gap for `Menu` and `EraseConfirm`, and #97 closed it
- * with `src/hooks/use-focus-restore.ts` — but that hook was never wired to
- * the Books/Segments row-menu open/close edges themselves (`books-screen.tsx`
- * `onOpenShareMenu`/its own restore effect, `segments-screen.tsx`
- * `openChapterMenu`/its own restore effect, and `segment-row.tsx`'s
- * `onMenuChromeClose`, all added by this change). Before that wiring,
- * `document.activeElement` landed on `<body>` after Close or Escape, on all
- * three menus — the exact defect #679 describes.
- *
- * Read RIGHT AFTER the close action, with `expect.poll` rather than a bare
- * read (the same pattern `segment-rename.spec.ts`'s own focus case already
- * uses for this identical "the ≡ after a close" shape): the fix restores
- * focus in the SAME React commit that lifts `inert` (a `useLayoutEffect`, not
- * a `useEffect` or a timer), so nothing here is polling for a late arrival —
- * `expect.poll`'s job is to absorb ordinary Playwright/React scheduling
- * jitter around the click/keypress itself, not to mask a delayed restore.
- * Before the fix this poll never turns green (`document.activeElement` stays
- * `<body>` for the whole timeout), which is what a delayed-by-a-frame restore
- * would look like too — so a failing run here does not by itself distinguish
- * "never restores" from "restores one frame late". What DOES distinguish them
- * is the code: `focusRestoreTarget` reads `inert` synchronously off the
- * captured element inside the SAME layout effect that the `inert` attribute's
- * own removal committed in, so there is no frame in which the observation
- * could be right one tick and wrong the next.
+ * Each case reads focus right after the close action with `expect.poll`, the
+ * pattern `segment-rename.spec.ts`'s focus case uses for the same shape.
+ * `expect.poll` absorbs scheduling jitter around the click or keypress. A red
+ * run here does not by itself tell "never restores" from "restores late".
  *
  * No microphone, no recorded audio anywhere in this spec — every menu here
  * is reachable on a never-recorded book/chapter/segment.
