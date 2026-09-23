@@ -27,12 +27,9 @@ import {
  * (`tests/storage-persistence.test.ts`). No jsdom, no real
  * `navigator.storage`.
  *
- * NOT covered here, and not claimed anywhere: `useStoragePressure` itself —
- * this repo has no renderer, the same limitation `useStoragePersistence`'s and
- * `useEraseSegment`'s docblocks name — and what a real Android device actually
- * reports for `usage`/`quota`. The thresholds below are pinned AS WRITTEN,
- * which is a claim about this module, not about any device: they are #247's
- * proposal and no field reading exists to tune them against.
+ * Not covered here: `useStoragePressure` effects or real device readings of
+ * `usage`/`quota`. The thresholds below are pinned as written; these tests
+ * do not establish that the thresholds are appropriate on a device.
  *
  * Every threshold is asserted on BOTH sides of its `<`, and every disjunct is
  * asserted with the other one deliberately not tripping, so a `<` -> `<=` or

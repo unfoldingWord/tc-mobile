@@ -157,6 +157,12 @@ interface PreparedShare {
   readonly file: File;
   readonly missing: number;
   readonly partial?: number;
+  /**
+   * How many distinct parents hold the `partial` units (a book: the included
+   * chapters with a gap, #446). Omitted with `partial`; the sum in `partial`
+   * cannot recover it, so copy that names the chapter count needs it here.
+   */
+  readonly partialChapters?: number;
 }
 
 /**
@@ -190,6 +196,7 @@ interface ArmedShare {
   readonly staged: StagedShare | null;
   readonly missing: number;
   readonly partial: number;
+  readonly partialChapters: number;
 }
 
 /**
@@ -237,9 +244,14 @@ export function classifyShareError(
 export function sentGap(armed: {
   readonly missing: number;
   readonly partial: number;
+  readonly partialChapters: number;
 }): ShareGap | undefined {
   return armed.missing > 0 || armed.partial > 0
-    ? { missing: armed.missing, partial: armed.partial }
+    ? {
+        missing: armed.missing,
+        partial: armed.partial,
+        partialChapters: armed.partialChapters,
+      }
     : undefined;
 }
 
@@ -367,6 +379,11 @@ export interface UseShareFlow {
    */
   readonly partial: number;
   /**
+   * How many distinct parents hold {@link partial} — attached via
+   * {@link PreparedShare.partialChapters} (#446). 0 until ready.
+   */
+  readonly partialChapters: number;
+  /**
    * Tap 1: run `build` to encode and stash the File for the send gesture. Never
    * rejects — a reason surfaces through `error`.
    */
@@ -428,6 +445,7 @@ export function useShareFlow(): UseShareFlow {
   const [error, setError] = useState<ShareError | null>(null);
   const [missing, setMissing] = useState(0);
   const [partial, setPartial] = useState(0);
+  const [partialChapters, setPartialChapters] = useState(0);
   // See `UseShareFlow.sendUnconfirmed`'s own docblock: set on an `unproven`
   // settle, cleared only when a fresh `prepare()` begins.
   const [sendUnconfirmed, setSendUnconfirmed] = useState(false);
@@ -524,6 +542,7 @@ export function useShareFlow(): UseShareFlow {
       setError(null);
       setMissing(0);
       setPartial(0);
+      setPartialChapters(0);
       // A fresh attempt is itself the acknowledgment of any prior unconfirmed
       // one — see `UseShareFlow.sendUnconfirmed`'s own docblock.
       setSendUnconfirmed(false);
@@ -598,9 +617,11 @@ export function useShareFlow(): UseShareFlow {
           staged,
           missing: prepared.missing,
           partial: prepared.partial ?? 0,
+          partialChapters: prepared.partialChapters ?? 0,
         });
         setMissing(prepared.missing);
         setPartial(prepared.partial ?? 0);
+        setPartialChapters(prepared.partialChapters ?? 0);
         setStatus("ready");
         // Ready is not an outcome: the busy phase ends (after its minimum
         // hold) and the primary "Share now" control is what the person sees.
@@ -710,6 +731,7 @@ export function useShareFlow(): UseShareFlow {
       setStatus("idle");
       setMissing(0);
       setPartial(0);
+      setPartialChapters(0);
       // Handed to the sheet — which is all a resolve proves ON A ROUTE THAT
       // CAN PROVE IT (see the R-B7 note above and `resolveProvesDelivery`):
       // the glyph says "handed over", never "delivered". On native Android
@@ -785,6 +807,7 @@ export function useShareFlow(): UseShareFlow {
       setStatus("idle");
       setMissing(0);
       setPartial(0);
+      setPartialChapters(0);
       if (outcome === "failed") setError("failed");
       // `dismissed` and `failed` are outcomes the modal shows; a native
       // `retry` that fell through to idle (above) is not, and maps to null —
@@ -837,6 +860,7 @@ export function useShareFlow(): UseShareFlow {
     setError(null);
     setMissing(0);
     setPartial(0);
+    setPartialChapters(0);
     // See `UseShareFlow.sendUnconfirmed`'s own docblock for why this clears
     // here too, not just at the start of `prepare()`.
     setSendUnconfirmed(false);
@@ -852,6 +876,7 @@ export function useShareFlow(): UseShareFlow {
     sendUnconfirmed,
     missing,
     partial,
+    partialChapters,
     prepare,
     send,
     reset,
