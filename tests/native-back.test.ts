@@ -531,7 +531,7 @@ describe("attachNativeBack — a press inside the detach's disable round trip is
     expect(reportFailure).toHaveBeenCalledWith(cause, "native-back-remove");
   });
 
-  it("(q) a press in the window after a newer attach has begun is inert — never exitApp() beside a live successor", async () => {
+  it("(q) a press in the window beside an operational successor (its enable resolved) is inert — never exitApp() beside a live successor, which routes the press itself", async () => {
     const back = orderedBack();
     const goBack = vi.fn();
     const detach = attachNativeBack(
@@ -542,18 +542,67 @@ describe("attachNativeBack — a press inside the detach's disable round trip is
     await back.settleHandle();
     detach();
 
-    const successor = fakeBack();
+    const successor = orderedBack();
+    const successorGoBack = vi.fn();
     attachNativeBack(
       successor.plugin,
-      { decide: decideFor("segments", []), goBack: vi.fn() },
+      { decide: decideFor("segments", []), goBack: successorGoBack },
       true
     );
+    await successor.settleHandle();
+    await flush();
+    // One native press reaches every registered listener.
     back.press(true);
-    back.press(false);
+    successor.press(true);
 
     expect(goBack).not.toHaveBeenCalled();
     expect(back.calls).not.toContain("exitApp");
+    expect(successorGoBack).toHaveBeenCalledTimes(1);
   });
+
+  it.each<[string, (s: FakeBack, detach: () => void) => Promise<void>]>([
+    ["begun, handle still pending", () => Promise.resolve()],
+    [
+      "handle resolved, enable still pending",
+      (s) => {
+        s.toggle.mockReturnValue(new Promise<void>(() => undefined));
+        return s.settleHandle();
+      },
+    ],
+    ["its addListener rejected", (s) => s.failHandle(new Error("gone"))],
+    [
+      "detached before its handle resolved",
+      async (s, detachSuccessor) => {
+        detachSuccessor();
+        await s.settleHandle();
+      },
+    ],
+  ])(
+    "(u) a press in the window beside a successor that cannot take it (%s) still leaves",
+    async (_label, step) => {
+      const back = orderedBack();
+      const detach = attachNativeBack(
+        back.plugin,
+        { decide: decideFor("segments", []), goBack: vi.fn() },
+        true
+      );
+      await back.settleHandle();
+      detach();
+
+      const successor = fakeBack();
+      const detachSuccessor = attachNativeBack(
+        successor.plugin,
+        { decide: decideFor("segments", []), goBack: vi.fn() },
+        true
+      );
+      await step(successor, detachSuccessor);
+      back.press(true);
+      await back.confirmDisable();
+
+      expect(back.calls.filter((c) => c === "exitApp")).toHaveLength(1);
+      expect(successor.exitApp).not.toHaveBeenCalled();
+    }
+  );
 
   it("(s) detached before the handle resolved (the handler was never enabled): inert at once, no drain", async () => {
     const back = orderedBack();

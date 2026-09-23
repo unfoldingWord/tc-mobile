@@ -132,11 +132,24 @@ export interface NativeBackRoute {
 }
 
 /**
- * The most recent `attachNativeBack` call, so a draining listener can tell
- * whether a newer one has begun (#674). Module scope because the successor is
- * a separate call — a remount — with nothing else shared between the two.
+ * The most recent `attachNativeBack` call's id, so attaches are ordered and a
+ * draining listener can tell a newer one from itself (#674). Module scope
+ * because the successor is a separate call — a remount — with nothing else
+ * shared between the two.
  */
 let latestNativeBackAttach = 0;
+
+/**
+ * The newest attach whose own ENABLE has resolved while it was still live —
+ * the first point a successor can be shown to take a press. Beginning an
+ * attach proves nothing: `addListener`'s handle resolves once the call is
+ * posted, not once the plugin thread has registered it, and a successor whose
+ * `addListener` rejected, or that detached before its handle, never takes one.
+ * Its enable is posted after its `addListener`, so (inference, from the plugin
+ * thread running calls in order; not observed on a device) the enable
+ * resolving follows the registration.
+ */
+let operationalNativeBackAttach = 0;
 
 /**
  * Route a hardware Back inside the Capacitor shell (#374, design Amendment F).
@@ -209,10 +222,12 @@ let latestNativeBackAttach = 0;
  * was posted (that is, once the handle resolved). Earlier, or off Android,
  * the callback is not enabled and the detach is inert at once.
  *
- * A draining press leaves only while no newer `attachNativeBack` has begun.
- * `exitApp()` beside a live successor would finish the activity under a
- * running app — the variant #634 round 3 rejected — so with a successor the
- * draining listener is inert instead.
+ * A draining press leaves unless a newer attach is OPERATIONAL
+ * (`operationalNativeBackAttach`). `exitApp()` beside a successor that takes
+ * the same press would finish the activity under a running app — the variant
+ * #634 round 3 rejected — so then the draining listener is inert instead. A
+ * successor that has merely begun cannot take the press yet, so going inert
+ * beside it would swallow the press again (#674).
  */
 export function attachNativeBack(
   plugin: NativeBackPlugin,
@@ -246,7 +261,7 @@ export function attachNativeBack(
       // mount registers a second one — one press must not route twice.
       if (phase === "detached") return;
       if (phase === "draining") {
-        if (attach === latestNativeBackAttach) exitApp();
+        if (operationalNativeBackAttach <= attach) exitApp();
         return;
       }
       const action = route.decide();
@@ -266,7 +281,15 @@ export function attachNativeBack(
         return;
       }
       handle = resolved;
-      void setHandler(true);
+      if (!toggleAndroidHandler) return;
+      plugin.toggleBackButtonHandler({ enabled: true }).then(
+        () => {
+          if (phase === "live" && attach > operationalNativeBackAttach) {
+            operationalNativeBackAttach = attach;
+          }
+        },
+        (cause: unknown) => reportFailure(cause, "native-back-handler")
+      );
     })
     .catch((cause: unknown) => reportFailure(cause, "native-back-listener"));
   return () => {
@@ -276,7 +299,8 @@ export function attachNativeBack(
       return;
     }
     phase = "draining";
-    void disabling.then(release);
+    // `finally`: release even if the report threw; the throw stays visible.
+    void disabling.finally(release);
   };
 }
 
