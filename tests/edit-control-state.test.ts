@@ -131,13 +131,20 @@ describe("the cue (#91, #135)", () => {
   // THE ROUND-1 DEFECT, pinned as a rule rather than as two fixed sentences
   // (George round 1, Medium / WRONG RESULT). The cue shipped as "No edits to
   // undo yet." and "Nothing has been undone." — claims about the session's
-  // PAST, while `canUndo`/`canRedo` are only `cursor > 0` and
-  // `cursor < ops.length` (`lib/audio/edit-log.ts`). Three taps reach the lie:
-  // cut, undo (Undo greys: an edit WAS made), redo (Redo greys: an undo DID
-  // happen). Banning the tense is what generalises — a later reword that says
-  // "already" or "so far" would reintroduce exactly the same false claim while
-  // any assertion pinning the two literal strings stayed green.
-  it("claims nothing about the session's past — only the current stack", () => {
+  // PAST, while `canUndo`/`canRedo` only read the log's CURSOR: `cursor > 0`
+  // and `cursor < ops.length` (`lib/audio/edit-log.ts`). An edit undone back to
+  // the start, or an undo redone to the tip, reaches the same cursor as a fresh
+  // session, so three taps reach the lie — cut, undo (Undo greys: an edit WAS
+  // made), redo (Redo greys: an undo DID happen).
+  //
+  // ONE test, merging this session's guard with the bench round-1 commit's
+  // (`be67932`), which landed on this branch independently while this fix was
+  // being written. Both banned the tense; the wider pattern is kept, because
+  // the narrower `/\byet\b|\b(has|have) been\b/` goes green on "Nothing was
+  // undone so far." — a reworded version of the very claim being banned. Two
+  // tests asserting one property, one of them weaker, is the duplication the
+  // repo's own bar rules out.
+  it("neither cue claims a history the cursor cannot know", () => {
     for (const copy of [strings.nothingToUndo, strings.nothingToRedo]) {
       expect(copy.toLowerCase()).not.toMatch(
         /\b(yet|has been|have been|was|were|already|so far|ever)\b/

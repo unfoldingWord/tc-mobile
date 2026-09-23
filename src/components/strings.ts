@@ -303,6 +303,11 @@ export const strings = {
   // Each way out follows from the state itself, so there is nothing to point at
   // — and pointing is where cue copy has gone wrong here before
   // (`menu-row-state.ts`'s `rowHint`, and #648 round 1).
+  //
+  // The shortest statement of the rule, from the bench fix this merges with:
+  // an edit undone back to the start, or an undo redone to the tip, reaches
+  // the SAME cursor as a fresh session — so the words may state only where the
+  // cursor is, never what has or has not happened.
   nothingToUndo: "Nothing to undo.",
   nothingToRedo: "Nothing to redo.",
   recorderMenuTitle: "More",
