@@ -1414,8 +1414,8 @@ export function BooksScreen({
       {/* `hamburger`: the ≡ in the header above stays a ≡ inside the open
           panel too — same glyph, same corner, and no visible "Menu" title
           (#608, the requirements owner's navigation rule). This is the ONE
-          menu that wears it; the per-book ≡ below and the others keep their
-          title + chevron until #589 picks their affordances. */}
+          panel with a hamburger close control. The book, chapter and segment
+          menus open from ⋮ (#589); the recorder opener still uses ≡. */}
       <Menu open={menuOpen} onClose={closeGlobalMenu} hamburger>
         {failureCount > 0 && (
           <FailureLogPanel
@@ -1712,12 +1712,13 @@ function BookItem({
           variant="quiet"
           onClick={onNewChapter}
         />
-        {/* Overflow ≡ after the +. The new-book focus hand-off targets the
-            row's toggle button above, not either Control (George R4 P2-1) —
-            this ordering is no longer load-bearing for that hand-off, only
-            for the read/visual order: expand, add, manage. */}
+        {/* Overflow ⋮ after the + distinguishes this object menu from the
+            global menu (#589). The new-book focus hand-off targets the row's toggle
+            button above, not either Control (George R4 P2-1) — this ordering
+            is no longer load-bearing for that hand-off, only for the
+            read/visual order: expand, add, manage. */}
         <Control
-          icon="menu"
+          icon="more"
           label={strings.bookMenuOpen(book.name)}
           variant="quiet"
           onClick={onOpenShareMenu}
