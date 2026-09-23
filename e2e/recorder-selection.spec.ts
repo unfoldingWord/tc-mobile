@@ -81,13 +81,22 @@ test.describe("edit mode toggle", () => {
       await page.getByRole("button", { name: "Record segment 1" }).click();
       await page.getByRole("button", { name: "Record", exact: true }).click();
       await expect(
-        page.getByRole("button", { name: "Pause", exact: true })
+        page.getByRole("button", { name: "Stop recording", exact: true })
       ).toBeVisible();
       await page.waitForTimeout(1200);
       if (width === 390) {
-        await page.getByRole("button", { name: "Pause", exact: true }).click();
+        // The two widths reach Edit from the two states a take can be in since
+        // #614. 320px enters edit mode from a LIVE take, which `commitTake`
+        // commits on the way in (#134). 390px ends the take first: the tap that
+        // used to be Pause now commits it in place, so the control comes back
+        // as Record and the toolbar Edit below opens over audio that is already
+        // on the waveform. Both must land the frame at the same slot, which is
+        // what this case is about.
+        await page
+          .getByRole("button", { name: "Stop recording", exact: true })
+          .click();
         await expect(
-          page.getByRole("button", { name: "Resume", exact: true })
+          page.getByRole("button", { name: "Record", exact: true })
         ).toBeVisible();
       }
       const toggle = page
