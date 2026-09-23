@@ -91,9 +91,12 @@ export function redo(log: EditLog): EditLog {
  * this same op so `recorder.tsx` can map the centerline through its inverse
  * (#449), and that "which op did this step pass over" choice used to live
  * only as an inline `log.ops[log.cursor - 1]` read in the hook — untested,
- * because there is no DOM runner to exercise the hook itself. Read BEFORE
- * the cursor moves, next to the log it reads, so the seam is testable in
- * plain Node (`tests/audio-edit-log.test.ts`, `tests/recorder-stage.test.ts`).
+ * because no test mounts the hook itself directly (a jsdom hook-mount
+ * harness exists elsewhere in this repo,
+ * `tests/use-audio-session-supersession.test.ts`, #735/#739, but nothing
+ * applies it here yet, #549). Read BEFORE the cursor moves, next to the log
+ * it reads, so the seam is testable in plain Node
+ * (`tests/audio-edit-log.test.ts`, `tests/recorder-stage.test.ts`).
  */
 export function opUndone(log: EditLog): EditOp | null {
   return canUndo(log) ? (log.ops[log.cursor - 1] ?? null) : null;

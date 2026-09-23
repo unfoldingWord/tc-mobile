@@ -3,9 +3,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 /**
- * `useSegmentEditor` is a hook — there is no DOM runner here (AGENTS.md), so
- * it cannot be rendered and its returned `undo`/`redo` cannot be invoked
- * directly. This is a source-shape gate, the same comment-stripping-free,
+ * `useSegmentEditor` is a hook this file exercises only as source text, not
+ * mounted: nothing here invokes its returned `undo`/`redo` directly. A
+ * jsdom hook-mount harness now exists elsewhere in this repo
+ * (`tests/use-audio-session-supersession.test.ts`, #735/#739) that could
+ * reach them directly, but nothing applies it to `useSegmentEditor` yet
+ * (#549). This stays a source-shape gate, the same comment-stripping-free,
  * indexOf-isolated idiom `tests/nav-commit-close-race-guards.test.ts` and
  * `tests/recorder-resume-race.test.ts`'s "the wiring, not just the helper"
  * section use for the same reason.

@@ -272,12 +272,15 @@ export function useSegmentEditor(
   // being (re-)applied — so the recorder can map the centerline through its
   // inverse (#449) rather than dropping it unconditionally, through the
   // shared `opUndone`/`opRedone` pair (`lib/audio/edit-log.ts`, #512 George
-  // R1 P2-2) rather than an inline index read — this hook has no DOM runner
-  // to exercise it directly, so the "which op did this step pass over"
-  // choice is pulled out to where it IS testable. Read BEFORE `applyLog`
-  // runs (the cursor this closes over is the pre-step one); `null` when
-  // there was nothing to step to, or when `applyLog`'s guard reports the
-  // rematerialise failed, mirroring `cut()`'s own `applied ? range : null`.
+  // R1 P2-2) rather than an inline index read — no test mounts this hook
+  // directly today (a jsdom hook-mount harness exists elsewhere in this
+  // repo, `tests/use-audio-session-supersession.test.ts`, #735/#739, but
+  // nothing applies it here yet, #549), so the "which op did this step pass
+  // over" choice is pulled out to where it IS tested, in plain Node. Read
+  // BEFORE `applyLog` runs (the cursor this closes over is the pre-step
+  // one); `null` when there was nothing to step to, or when `applyLog`'s
+  // guard reports the rematerialise failed, mirroring `cut()`'s own
+  // `applied ? range : null`.
   const undo = useCallback((): EditOp | null => {
     const undoneOp = opUndone(log);
     if (undoneOp === null) return null;
