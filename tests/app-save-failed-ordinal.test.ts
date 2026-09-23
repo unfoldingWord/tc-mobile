@@ -102,7 +102,11 @@ vi.mock("@/hooks/use-nav-stack", () => ({
     commitCloseRecorder: params.onRecorderClosed,
   }),
 }));
-vi.mock("@/lib/storage/books", () => ({
+// `@/lib/storage/takes`, not `books`: the take writes moved out of the
+// repository in #160 L-16. A mock left on the old path resolves, exports a
+// `saveTake` nobody imports, and lets the REAL write run — which is how this
+// file's three cases went red on the merge with that branch.
+vi.mock("@/lib/storage/takes", () => ({
   saveTake: () =>
     new Promise<void>((resolve, reject) => {
       seam.writes.push({ resolve, reject });
