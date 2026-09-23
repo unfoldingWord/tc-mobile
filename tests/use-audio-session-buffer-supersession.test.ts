@@ -35,13 +35,6 @@ import type { SegmentRow } from "@/types/view";
  * has been reset by the take's `claimFloor` — to give a THIRD claim something
  * live and observable (`playingBuffer === true`) for the first buffer's stale
  * `onEnded` to corrupt if the guard were missing.
- *
- * Both assertions below are red-first BY MUTATION, per AGENTS.md ("where the
- * code already exists, get the same signal by mutation"): the guards already
- * exist, so there is no broken state to write this test against. Verified
- * manually, not captured in this file (AGENTS.md bars a run's output from
- * living in a comment) — see the PR body's mutation table for the observed
- * pass/fail pairs.
  */
 
 const mocks = vi.hoisted(() => ({
@@ -58,8 +51,8 @@ vi.mock("@/hooks/audio-io", () => ({
 // A STABLE object, not a fresh one per call — see #735's identical note:
 // `useAudioSession`'s `leave` depends on `recorder.cancel`'s identity (among
 // others), and `leave`'s own unmount-cleanup effect re-fires whenever `leave`
-// changes identity. A mock that hands back a new `vi.fn()` every render made
-// every render's commit look like an unmount.
+// changes identity. A mock that hands back a new `vi.fn()` every render
+// would rerun that cleanup.
 const recorderMock = {
   start: vi.fn(),
   stop: vi.fn(),
