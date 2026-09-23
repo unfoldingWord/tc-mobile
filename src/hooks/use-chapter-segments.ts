@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { requestTranscodeSweep } from "./finish-transcode";
+import { reportFailure } from "./report-failure";
 import { computePeaks } from "@/lib/audio/peaks";
 import {
   addSegment as addSegmentToChapter,
@@ -9,6 +10,7 @@ import {
   getSegmentsOfChapter,
   isFinished,
   renameChapter as renameChapterInStore,
+  renameSegment as renameSegmentInStore,
   setSegmentFinished,
 } from "@/lib/storage/books";
 import {
@@ -84,6 +86,7 @@ async function loadSegmentRow(segment: Segment): Promise<SegmentRow> {
   return {
     segmentId: segment.id,
     ordinal: segment.index,
+    label: segment.label,
     hasClip: audio !== null,
     finished: isFinished(segment.status),
     clipId: audio?.clipId ?? null,
@@ -198,6 +201,7 @@ export function useChapterSegments(chapterId: ChapterId) {
         {
           segmentId: segment.id,
           ordinal: segment.index,
+          label: segment.label,
           hasClip: false,
           finished: false,
           clipId: null,
@@ -276,6 +280,36 @@ export function useChapterSegments(chapterId: ChapterId) {
     [chapterId]
   );
 
+  const renameSegment = useCallback(
+    async (segmentId: SegmentId, label: string): Promise<boolean> => {
+      // The chapter rename's shape (#591): no audio moves, so patch the one row
+      // in place with the label the store actually kept, never reload().
+      //
+      // A failure goes to the funnel and NOT to `error`: the screen Notice would
+      // show the store's exception text (#172), and the row already says it in
+      // plain words (`renameSegmentFailed`) — this `false` is what tells it to.
+      try {
+        const segment = await renameSegmentInStore(segmentId, label);
+        setRows((rs) =>
+          rs.map((r) =>
+            r.segmentId === segmentId ? { ...r, label: segment.label } : r
+          )
+        );
+        setError(null);
+        return true;
+      } catch (cause) {
+        if (isMissingSegmentFailure(cause, segmentId)) {
+          setStaleTarget(true);
+          setError(null);
+        } else {
+          reportFailure(cause, "segment-rename");
+        }
+        return false;
+      }
+    },
+    []
+  );
+
   const eraseRow = useCallback((segmentId: SegmentId) => {
     // Erase makes ONE row never-recorded and touches no other clip, so patch it
     // in place — exactly like addSegment/setFinished — rather than reload() the
@@ -314,5 +348,6 @@ export function useChapterSegments(chapterId: ChapterId) {
     setFinished,
     eraseRow,
     renameChapter,
+    renameSegment,
   };
 }
