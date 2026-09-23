@@ -34,6 +34,11 @@ const seam = vi.hoisted(() => {
         insertionOffset: number,
         finished: boolean
       ) => Promise<boolean>;
+      saveEditedSegment: (
+        segmentId: SegmentId,
+        buffer: Int16Array,
+        finished: boolean
+      ) => Promise<boolean>;
       onExit: (dirty: boolean) => void;
     },
     // The in-flight `saveTake` writes, oldest first.
@@ -135,21 +140,28 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-/** Mount App, open a chapter, and record-and-close segment 2 with its save left in flight. */
-async function segmentTwoSaveInFlight() {
+/**
+ * Mount App, open a chapter, and save-and-close segment 2 with its save left in
+ * flight — a fresh recording, or an edit-only close.
+ */
+async function segmentTwoSaveInFlight(kind: "record" | "edit" = "record") {
   await act(async () => root.render(createElement(App)));
   await act(async () => seam.books!.onOpenChapter("chapter" as ChapterId));
   await act(async () => seam.segments!.onOpenRecorder(SEGMENT_2, 2));
   expect(seam.recorder?.segmentId).toBe(SEGMENT_2);
   const sheet = seam.recorder!;
   await act(async () => {
-    void sheet.saveRecording(
-      SEGMENT_2,
-      new Int16Array(0),
-      new Int16Array([1, 2, 3]),
-      0,
-      false
-    );
+    if (kind === "record") {
+      void sheet.saveRecording(
+        SEGMENT_2,
+        new Int16Array(0),
+        new Int16Array([1, 2, 3]),
+        0,
+        false
+      );
+    } else {
+      void sheet.saveEditedSegment(SEGMENT_2, new Int16Array([1, 2]), false);
+    }
     sheet.onExit(true);
   });
   expect(seam.writes).toHaveLength(1);
@@ -175,6 +187,15 @@ describe("SaveFailed names the held take's segment (#710)", () => {
 
     const text = await failFirstWrite();
     expect(text).toContain("Your recording of segment 2 is still here.");
+    expect(text).not.toContain("segment 5");
+  });
+
+  it("an edit-only save is named by its own segment the same way", async () => {
+    await segmentTwoSaveInFlight("edit");
+    await act(async () => seam.segments!.onOpenRecorder(SEGMENT_5, 5));
+
+    const text = await failFirstWrite();
+    expect(text).toContain("Your edited recording of segment 2 is still here.");
     expect(text).not.toContain("segment 5");
   });
 
