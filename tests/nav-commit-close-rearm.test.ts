@@ -15,16 +15,8 @@ import { describe, expect, it } from "vitest";
  * the moment a future caller can make `screenFor` return "recorder" with a null
  * recorder ref (a PR3 overlay conversion, an inner error boundary).
  *
- * WHY A TEXTUAL GATE AND NOT A BEHAVIOURAL TEST. This Node-only suite has no
- * renderer (AGENTS.md: no jsdom), so `useNavStack`'s popstate handler cannot be
- * mounted or a `popstate` dispatched at it — the null-handle branch cannot be
- * exercised at runtime here. Deleting the re-arm leaves every other test in the
- * repo green (the pure `src/lib/nav` tests never load the adapter, and the
- * Playwright spec's idle path always HAS a handle). That is the
- * mutation-survives case AGENTS.md says to close with a gate rather than leave
- * to a reviewer's memory; this mirrors
- * `tests/recorder-stop-release-guards.test.ts`'s comment-stripping,
- * brace-counting source-shape idiom.
+ * This source gate strips comments and isolates the null-handle branch; it
+ * does not mount `useNavStack` or dispatch a `popstate` event.
  *
  * WHAT IT PROVES, EXACTLY: that the source text's `commit-close-recorder` case
  * has a braced `if (!handle) { ... }` branch whose body calls
