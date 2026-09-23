@@ -123,11 +123,12 @@ describe("attemptsCapture", () => {
   // Enumerated over the whole of `RecorderState`. A state added there that is
   // missing from this list fails typecheck at the `attemptsCapture(state)` call
   // in `recorder.tsx`, not silently here.
-  it("stops a capture from the three states that can hold one", () => {
+  it("stops a capture from the two states that can hold one", () => {
     expect(attemptsCapture("recording")).toBe(true);
-    expect(attemptsCapture("paused")).toBe(true);
     // A #59 interruption freezes a real take to "processing"; its audio is
-    // still owed a stop, and skipping it drops the take.
+    // still owed a stop, and skipping it drops the take. #614 commits that
+    // take in place, but a Back landing in the render or two before the
+    // commit effect takes it still has to stop the capture itself.
     expect(attemptsCapture("processing")).toBe(true);
   });
 

@@ -29,6 +29,9 @@ export const strings = {
   // ── Books screen (B2) ────────────────────────────────────────────────────
   newBook: "New book",
   menuOpen: "Open menu",
+  // The global menu's dialog name for a screen reader — never painted (#608):
+  // that panel opens from a ≡ that stays a ≡, so the glyph is its only label.
+  // Every OTHER menu passes its own `title` and still shows it.
   menuTitle: "Menu",
   menuClose: "Close menu",
   booksEmpty: "Start your first book",
@@ -67,9 +70,10 @@ export const strings = {
   chapterHeading: (name: string | null, n: number): string =>
     name ?? `Chapter ${n}`,
 
-  // ── Naming (#264 rename, #314 New Book) ──────────────────────────────────
-  // One naming field serves both flows, so these strings are shared: the rename
-  // reached from a ≡ menu, and the New Book dialog the corner + now opens.
+  // ── Naming (#264 rename, #314 New Book, #609 Add chapter) ────────────────
+  // One naming field serves all three flows, so these strings are shared: the
+  // rename reached from a ≡ menu, the New Book dialog the corner + now opens,
+  // and the Add-chapter prompt a book row's + opens.
   renameBook: "Rename book",
   renameChapter: "Rename chapter",
   // The inline text field's accessible name (the whole text layer of the input)
@@ -91,10 +95,20 @@ export const strings = {
   // being saved back onto an existing book here — this activation is what
   // creates it, and the spoken label is the only thing that says so.
   createBook: "Create book",
-  // Shown in place of `saveName`/`createBook` while the write is in flight
-  // (#383) — the same in-place busy relabel `loadRetrying`/`takeRecoverRetrying`
-  // already do, so a screen reader focused on Confirm does not read it as idle
-  // for the whole write, on either caller.
+  // The Add-chapter prompt (#609), the chapter parallel of the three New Book
+  // strings above and worded for the same reason: the field arrives pre-filled
+  // with "Chapter N", so the heading has to say that the filled-in text is
+  // already a usable answer, the dismiss has to say that leaving creates
+  // nothing, and the check has to say that this activation is what makes the
+  // chapter. `chapterNameField` above is the field's own label, shared with
+  // Rename. The busy relabel is `savingName`, shared with both.
+  newChapterTitle: "Name your new chapter",
+  newChapterClose: "Close without creating a chapter",
+  createChapter: "Create chapter",
+  // Shown in place of `saveName`/`createBook`/`createChapter` while the write is
+  // in flight (#383) — the same in-place busy relabel
+  // `loadRetrying`/`takeRecoverRetrying` already do, so a screen reader focused
+  // on Confirm does not read it as idle for the whole write, on any caller.
   savingName: "Saving…",
 
   // ── Segments screen (B3) ─────────────────────────────────────────────────
@@ -145,8 +159,10 @@ export const strings = {
     segment: number
   ): string => `${book} > ${strings.chapterName(chapter)} > ${segment}`,
   record: "Record",
-  pause: "Pause",
-  resume: "Resume",
+  // The second tap on the record control ENDS the take and commits it in place
+  // (#614). It was "Pause"/"Resume" while a take could be suspended and
+  // continued; that state is gone, so the name says what the tap now does.
+  stop: "Stop recording",
   // The zoom toggle's two names (#91). Each says the STATE first and the ACTION
   // second, because the first external tester read the old glyph as the state
   // and the old labels ("Zoom: whole segment" / "Zoom: quarter view") named only
@@ -166,14 +182,19 @@ export const strings = {
   micRetry: "Try again",
   micBack: "Go back",
   finishedWriteFailed: "Could not save the finished mark.",
-  // The recorder's commit-window status (#39). "saving": a take is committing
-  // (stop → decode → the IndexedDB write, spanned by `isClosing`, not just the
-  // `processing` state). "interrupted": the mic was lost mid-take (#59) and the
-  // frozen take is held in memory until the recorder is closed — so the copy
-  // names the real control, "Close recorder" (nothing is named "Back"), the
-  // same wording #139 rewrites `previewUnavailable` to.
+  // The recorder's commit-window status (#39): a take is committing — stop →
+  // decode → the IndexedDB write, spanned by `isClosing`, not just the
+  // `processing` state.
+  //
+  // It had a second line, `recorderInterrupted`, for a #59 interruption's
+  // frozen take: 'Recording finished. Tap the back arrow at the top ("Close
+  // recorder") to save it.' #614 made that false — an interruption ends the
+  // take and the sheet commits it in place, with nothing asked of the
+  // translator — so the line is gone rather than reworded. Its #620 rule
+  // survives it and is stated on `blockedByTake` below, which still names a
+  // control: say what the control LOOKS LIKE as well as what AT calls it, since
+  // an icon-only `Control`'s accessible name is not a word anyone can see.
   recorderSaving: "Saving…",
-  recorderInterrupted: 'Recording finished. Use "Close recorder" to save it.',
 
   // ── Recorder load failure (#137) ──────────────────────────────────────────
   // A finished segment's stored MP3 could not be decoded when the sheet opened
@@ -265,20 +286,19 @@ export const strings = {
   paste: "Paste at the line",
   undo: "Undo",
   redo: "Redo",
+  // The recorder drawer's dialog name for a screen reader — never painted
+  // (#621, the rule #608 set for `menuTitle`): it opens from a ≡ that stays a
+  // ≡, so the glyph is its only visible label.
   recorderMenuTitle: "More",
   recorderMenuOpen: "More actions",
   selectionStartHandle: "Selection start",
   selectionEndHandle: "Selection end",
   editFailed: "That edit could not be applied. Try a shorter selection.",
   clearFailed: "Could not clear the audio. Try again.",
-  // Same rule as `blockedByTake`: name the control, do not invent "Back".
-  previewUnavailable:
-    'Can\'t preview this yet. Use "Close recorder" to save it, then play it.',
-
   // ── Disabled-row reasons (#135) ──────────────────────────────────────────
   // Appended to a disabled ≡-menu row's accessible name so the grey carries its
   // cause. Derived from the row's own gate in `menu-row-state.ts`, never set by
-  // hand. Short and literal, like `previewUnavailable`.
+  // hand. Short and literal.
   // Names both steps in the order the overlay allows — while this menu is open
   // the sheet's control is behind the scrim (and, at idle, behind its `inert`
   // too), so it is out of reach until the menu closes. Mid-take the SHEET is no
@@ -292,6 +312,15 @@ export const strings = {
   // Back", which matches NO control in the product: a screen-reader user hunting
   // for "Back" finds nothing, and the one live chevron dismisses the menu
   // (George, round 2). If `closeRecorder` is ever renamed, these move with it.
+  // This one names the controls by name ONLY and does not describe their
+  // glyphs the way the body notices do (#620): it is spoken
+  // inside the ≡ menu, where the recorder header — and so "Close recorder" —
+  // is `inert` and the one live back chevron on screen is the menu's own
+  // dismiss. Describing the save control by its looks here would point at the
+  // dismiss, the exact collision the round-1 `back` badge had
+  // (`menu-row-state.ts`, `rowHint`'s docblock); #648 round 1 (George P2)
+  // caught the words repeating it. `tests/menu-row-state.test.ts` pins this
+  // half: the hint never describes a glyph.
   blockedByTake:
     'Use "Close menu", then "Close recorder", to save the recording.',
   // The `requesting` race: Record tapped, ≡ opened before `getUserMedia`
@@ -594,6 +623,8 @@ export const strings = {
   // The log emptied between the render that offered Share and the tap.
   shareFailureLogNothing: "There is nothing to send now.",
   shareFailureLogFailed: "Could not send the problem report. Try again.",
+  shareFailureLogRestart:
+    "Cannot use this copy any more. Restart the app to use the new version.",
   clearFailureLog: "Clear problem report",
   // Behind the bin: the same two-tap confirm the segment Erase and the book
   // Delete use, not a second dialog (George R2 P3-3). Clearing is the one
