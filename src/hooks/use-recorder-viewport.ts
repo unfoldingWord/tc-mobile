@@ -8,13 +8,17 @@ import {
 
 export interface RecorderViewport {
   /**
-   * The pan the RECORD path splices at — `null` ⇒ resting at the end of the
-   * existing audio (append-ready, F7). A derived rest rather than a value set
-   * in an effect once the segment loads: the sheet mounts fresh on every open,
-   * so `null` IS the open state, and a drag is what replaces it with an
+   * Move the pan the RECORD path splices at. `null` ⇒ resting at the end of
+   * the existing audio (append-ready, F7): the sheet mounts fresh on every
+   * open, so `null` IS the open state, and a drag is what replaces it with an
    * absolute sample position.
+   *
+   * The setter WITHOUT its value, deliberately. Reading the raw offset is what
+   * #346's P1 was — the view drawn from the record insertion point, or worse
+   * the record point taken from the view. Callers get `pan` to draw and
+   * `insertionPan` to splice, and there is no third answer to reach for. An
+   * updater still sees the previous value where it belongs, inside the setter.
    */
-  readonly panState: number | null;
   setPanState: React.Dispatch<React.SetStateAction<number | null>>;
   /**
    * Where a zoom moved the view to keep an open selection on screen (#91).
@@ -50,10 +54,11 @@ export interface RecorderViewport {
  *
  * That gate stays where it is — pure and table-tested in `lib/audio/viewport`,
  * deliberately not an expression a reader has to spot. What this hook adds is
- * that the two values now leave one place, named for what each is FOR:
- * `pan` for drawing, `insertionPan` for splicing. A caller reaching past them
- * to raw `panState` for a view is still possible, but it is now visibly
- * reaching past something.
+ * that the two values leave one place, named for what each is FOR — `pan` for
+ * drawing, `insertionPan` for splicing — and that the raw offset does not
+ * leave at all. Only the SETTER is returned, so there is no third answer to
+ * reach for and no way to read the record point as a view (or the reverse,
+ * which is what #346 actually caught).
  *
  * `mode`, `selectionActive` and `length` are arguments rather than state
  * because they belong to the edit session and the buffer, not to the viewport —
@@ -82,7 +87,6 @@ export function useRecorderViewport(
   });
 
   return {
-    panState,
     setPanState,
     zoomPan,
     setZoomPan,

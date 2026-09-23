@@ -55,10 +55,32 @@ afterEach(() => {
 
 describe("useRecorderViewport", () => {
   it("rests at the end of the buffer with nothing set (F7, append-ready)", () => {
+    // The rest is observed through what the hook ANSWERS, not through the raw
+    // offset — which it deliberately does not return. Both answers are the
+    // buffer end, which is what "append-ready" means.
     mount("record", false);
-    expect(api.panState).toBeNull();
     expect(api.pan).toBe(LENGTH);
     expect(api.insertionPan).toBe(LENGTH);
+  });
+
+  it("returns no raw offset to read — only the setter, `pan` and `insertionPan`", () => {
+    // The boundary itself, asserted rather than asserted-about. #346's P1 was
+    // one value serving as both the view and the record point; a consumer that
+    // cannot reach the raw offset cannot reintroduce it by reading the wrong
+    // one. The compile-time half is in the PR (a `vp.panState` read is TS2339);
+    // this is the runtime half, so the field cannot come back unnoticed.
+    mount("record", false);
+    expect(Object.keys(api).sort()).toEqual([
+      "insertionPan",
+      "pan",
+      "setPanState",
+      "setZoom",
+      "setZoomPan",
+      "win",
+      "windowAt",
+      "zoom",
+      "zoomPan",
+    ]);
   });
 
   it("draws and splices at the same place once a drag sets the pan", () => {

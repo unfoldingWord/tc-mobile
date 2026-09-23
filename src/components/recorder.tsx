@@ -547,10 +547,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // that P1 at the setter left all 512 tests green. `pan` is for drawing,
     // `insertionPan` for splicing, and the hook's docblock carries the rest.
     const {
-      // `panState` itself is deliberately NOT destructured: after this
-      // extraction the component reads the raw record offset NOWHERE — it
-      // takes `pan` to draw and `insertionPan` to splice. What #346 fixed by
-      // convention is now structural, and `tsc` is what holds it.
+      // The hook returns no raw `panState` at all — only the setter, `pan` to
+      // draw and `insertionPan` to splice. What #346 fixed by convention is
+      // structural now: reading the record offset as a view is a type error,
+      // not a line someone can write. (An earlier round of this only left the
+      // field undestructured, which proved nothing about the API — jag3773 QA
+      // review on #661.)
       setPanState,
       zoomPan,
       setZoomPan,
