@@ -42,17 +42,17 @@ loader); do not read every description here as the target.
 
 ## Tech stack
 
-|         |                                                                            |
-| ------- | -------------------------------------------------------------------------- |
-| Runtime | Node 22.12+ (knip's floor)                                                 |
-| Build   | Vite 8, `@vitejs/plugin-react`                                             |
-| UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons                            |
-| PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)                               |
-| Storage | IndexedDB via `idb` 8                                                      |
-| Audio   | Web Audio + MediaRecorder; `@breezystack/lamejs` for MP3 (in a Web Worker) |
-| Tests   | Vitest 5, `fake-indexeddb`                                                 |
-| Lint    | ESLint 9 flat config, `typescript-eslint` 8, Prettier 3                    |
-| Deploy  | Cloudflare Workers static assets, Wrangler 4                               |
+|         |                                                                                                                                     |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime | Node `^22.12.0 \|\| >=24.0.0` (22.12 is knip's floor; Node 23.x is unsupported — jsdom 27's own engine range excludes it too, #577) |
+| Build   | Vite 8, `@vitejs/plugin-react`                                                                                                      |
+| UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons                                                                                     |
+| PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)                                                                                        |
+| Storage | IndexedDB via `idb` 8                                                                                                               |
+| Audio   | Web Audio + MediaRecorder; `@breezystack/lamejs` for MP3 (in a Web Worker)                                                          |
+| Tests   | Vitest 5, `fake-indexeddb`                                                                                                          |
+| Lint    | ESLint 9 flat config, `typescript-eslint` 8, Prettier 3                                                                             |
+| Deploy  | Cloudflare Workers static assets, Wrangler 4                                                                                        |
 
 ## Commands
 
