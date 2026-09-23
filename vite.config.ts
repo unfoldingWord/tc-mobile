@@ -5,7 +5,14 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import pkg from "./package.json" with { type: "json" };
-import { SHIPPED_LOCALE, withLocaleAttributes } from "./src/lib/locale";
+// Extension spelled out, unlike the `@/`-aliased imports inside `src/`. This
+// specifier is resolved by the CONFIG loader, not by Vite's own bundler
+// resolution, so extensionless lookup is not available to it: Vite already
+// warns that `configLoader: 'native'` (planned to become the default) cannot
+// resolve it, and `vite build --configLoader native` fails outright with
+// ERR_MODULE_NOT_FOUND. `allowImportingTsExtensions` in tsconfig.node.json is
+// what lets the `.ts` be named here (Frank R1, #697).
+import { SHIPPED_LOCALE, withLocaleAttributes } from "./src/lib/locale.ts";
 
 // The exact commit a build came from, for the footer stamp (with the version).
 // git works in the Cloudflare Workers build (it clones the repo) and in local
