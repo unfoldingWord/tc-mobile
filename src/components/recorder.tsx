@@ -71,6 +71,7 @@ import {
   effectivePan,
   panForZoom,
   playbackStrip,
+  seedSelection,
   viewportWindow,
 } from "@/lib/audio/viewport";
 import { overlayBlocksClose, overlayDismissal } from "@/lib/nav/navigation";
@@ -547,11 +548,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           zoom,
           CENTER_FRACTION
         );
-        const half = seedWindow.visibleSamples * 0.15;
-        editor.openSelection({
-          start: seedWindow.centerlineSample - half,
-          end: seedWindow.centerlineSample + half,
-        });
+        // The span STARTS at the line (#554) and slides left only as far as
+        // the end of the buffer forces. The rule is geometry, so it lives in
+        // `lib/audio/viewport` with the rest of the window math and is tested
+        // there.
+        editor.openSelection(
+          seedSelection(
+            length,
+            seedWindow.centerlineSample,
+            seedWindow.visibleSamples
+          )
+        );
       }
       if (selectionEntry) setSelectionEntry(null);
       if (zoomPan !== null) setZoomPan(null);
