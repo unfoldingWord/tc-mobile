@@ -185,16 +185,15 @@ describe("displayGain", () => {
   it("gives the wrong answer for the #366 R3 #2 moment if the caller passes capturing-shaped input instead of takeActive's own definition (#373)", () => {
     // #373: `isFirstTakeInFlight`'s first parameter used to be named
     // `capturing`, which invites a caller to pass a bare recording/capture
-    // predicate. The exact moment that breaks: Back is tapped on a paused
+    // predicate. The exact moment that breaks: Back is tapped on a
     // first-take preview. `stop()` has already flipped `state` to "idle", but
     // `isClosing` is still true for the stop→decode→save wait — the preview
     // stays on stage throughout.
     //
-    // Modelled with recorder.tsx's own inputs, not an opaque boolean pair, so
-    // a future caller who narrows the argument this way is caught by the
-    // VALUE, not only by the parameter's name (a rename alone changes nothing
-    // observable — booleans do not carry their argument names at the call
-    // site).
+    // This pins the function's contract for that moment. It does NOT guard
+    // the caller: both inputs are built here, and nothing observes what
+    // recorder.tsx passes, so a caller that drops `isClosing` still passes
+    // this suite. Making that a type error is #757.
     //
     // Premise check against the tree at this head: `RecorderState` is now
     // `"idle" | "requesting" | "recording" | "processing"` (`use-recorder.ts`)
