@@ -80,13 +80,6 @@ export function guidedStep(view: GuideView): GuidedStep | null {
     case "segments":
       return segmentsStep(view);
     case "recorder":
-      // Steps 7 and 8 in one condition. A take is spliced into the working
-      // buffer only when the sheet closes (Model A, commit-on-close — the
-      // `Recorder` component's own docblock, "a take is committed when the
-      // sheet closes (F8)"), so `hasAudio` stays false for the
-      // whole of a first take and the ring does not blink out the instant
-      // Record is tapped. It turns true on the next open, where the guide is
-      // over.
       return view.loaded && !view.hasAudio ? { kind: "record" } : null;
   }
 }

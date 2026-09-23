@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+
 import { expect, test, type Page } from "@playwright/test";
 
 /**
@@ -234,7 +236,11 @@ test("a collapsed book is guided OPEN, because the row the chain wants is not re
 test.use({
   permissions: ["microphone"],
   launchOptions: {
-    executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH,
+    executablePath:
+      process.env.PLAYWRIGHT_CHROMIUM_PATH ??
+      (existsSync("/opt/pw-browsers/chromium")
+        ? "/opt/pw-browsers/chromium"
+        : undefined),
     args: [
       "--use-fake-device-for-media-stream",
       "--use-fake-ui-for-media-stream",
