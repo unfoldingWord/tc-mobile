@@ -464,11 +464,9 @@ describe("the native share session", () => {
     // the bytes that land must still be exactly the bytes we had.
     const size = 2 * 1024 * 1024 + 17;
     const source = new Uint8Array(size);
-    // An LCG, NOT `(i * 31 + 7) % 256`. That fixture repeats every 256 bytes and
-    // `SHARE_CHUNK_BYTES` is a multiple of 256, so every chunk held identical
-    // bytes and a mutant that read chunk 0 three times passed this test. Caught
-    // by mutation, which is the only thing that could have caught it — the
-    // assertion was right and the data was lying to it.
+    // An LCG avoids a 256-byte repeating fixture: SHARE_CHUNK_BYTES is a
+    // multiple of 256, so such a fixture cannot distinguish repeated chunks
+    // from the intended sequence.
     let state = 0x2545f491;
     for (let i = 0; i < size; i += 1) {
       state = (state * 1103515245 + 12345) & 0x7fffffff;
