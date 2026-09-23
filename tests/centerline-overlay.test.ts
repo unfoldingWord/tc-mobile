@@ -5,18 +5,10 @@ import { describe, expect, it } from "vitest";
 import { CenterlineOverlay } from "@/components/centerline-overlay";
 
 /**
- * #513 — dev lead's cap pick at the round-4 stop (issuecomment-5742347381).
- *
- * Three rounds of `tests/recorder-centerline-overlay-gate.test.ts` each
- * tightened a source-TEXT match of the JSX gate, and Frank found the next
- * leak each time: the predicate was tested but not the rendered gate (r2),
- * the test checked identifier names rather than argument values (r3), the
- * test never proved the gate actually wrapped the centerline element (r4).
- * Text-matching the JSX does not converge. This asserts the component's
- * actual rendered HTML instead — the same `renderToStaticMarkup` pattern
- * `tests/save-failed.test.ts` uses, for the same reason: no jsdom, no
- * renderer (`vitest.config.ts` sets `environment: "node"`), so only the
- * markup a first render produces is checked here.
+ * Checks the component's first-render HTML with `renderToStaticMarkup`.
+ * Rendering the component exercises the gate and its content together; a
+ * source-text match of the gate's call site cannot establish that relationship.
+ * Effects, events, layout and CSS cascade are outside this test's scope.
  *
  * Full 3-axis table (mode x selectionActive x liveScope) — the same 8 cases
  * `tests/recorder-stage.test.ts`'s `centerlineOverlayShown` describe block
