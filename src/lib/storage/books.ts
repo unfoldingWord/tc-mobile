@@ -585,6 +585,9 @@ export async function addSegment(chapterId: ChapterId): Promise<Segment> {
     chapterId,
     index: chapter.segmentIds.length + 1,
     reference: null,
+    // Unlabelled by default — the row shows the ordinal alone until the
+    // facilitator labels it for its verses (#591).
+    label: null,
     activeTakeId: null,
     status: "not-started",
   };
@@ -595,6 +598,43 @@ export async function addSegment(chapterId: ChapterId): Promise<Segment> {
   });
   await tx.done;
   return segment;
+}
+
+/**
+ * Label a segment in place (#591 — "verses 3–4", so a facilitator can tell
+ * which verses a segment holds without playing it).
+ *
+ * The chapter-name rules, deliberately ({@link renameChapter}): get-then-put in
+ * ONE readwrite transaction, the label trimmed, a blank/whitespace-only rename
+ * CLEARS it back to `null` (a segment has a default — its ordinal), and a
+ * rename to the current label writes nothing. Only `label` changes: the
+ * ordinal, the chapter's order, the take pointer and the status are the audio's
+ * identity and progress, and a label is neither.
+ *
+ * Unlike a chapter rename it does not bump the book's `updatedAt`: the store is
+ * `segments` alone, matching `addSegment` and `setSegmentFinished`, the other
+ * segment edits that leave the shelf order where it was.
+ */
+export async function renameSegment(
+  id: SegmentId,
+  label: string
+): Promise<Segment> {
+  const db = await getDb();
+  const tx = db.transaction("segments", "readwrite");
+  const segment = await tx.store.get(id);
+  if (!segment) throw new Error(`No such segment: ${id}`);
+
+  const trimmed = label.trim();
+  const nextLabel = trimmed === "" ? null : trimmed;
+  if (nextLabel === segment.label) {
+    await tx.done; // idempotent no-op: no write.
+    return segment;
+  }
+
+  const updated: Segment = { ...segment, label: nextLabel };
+  await tx.store.put(updated);
+  await tx.done;
+  return updated;
 }
 
 export async function getSegment(id: SegmentId): Promise<Segment | undefined> {

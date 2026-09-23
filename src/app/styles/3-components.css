@@ -853,20 +853,32 @@
     background: color-mix(in srgb, var(--s-voice) 20%, transparent);
     border-inline: 2px solid var(--s-voice);
   }
+  /* Each edge is a thin stem on the sample plus a finger-sized hit box. While
+     the stem is on screen the component clamps the box's `left` to half its
+     width inside the canvas (#707), reading that width from
+     `--c-selection-hit` declared here, so a zoom-fitted edge keeps its whole
+     target. The stem is never clamped: it marks the sample. The box's inward
+     focus offset lives beside the unlayered default in globals.css, like
+     `.paste-marker`'s: a layered copy here never won (#635). */
   .selection-handle {
+    --c-selection-hit: 24px;
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 24px;
+    width: var(--c-selection-hit);
     transform: translateX(-50%);
     pointer-events: auto;
     cursor: ew-resize;
     touch-action: none;
-    /* A thin bar centred in a wide, finger-sized target. Its inward focus
-       offset lives beside the unlayered default in globals.css, like
-       `.paste-marker`'s: a layered copy here never won (#635). */
-    background: linear-gradient(var(--s-voice), var(--s-voice)) center / 3px
-      100% no-repeat;
+  }
+  .selection-stem {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    transform: translateX(-50%);
+    pointer-events: none;
+    background: var(--s-voice);
   }
   /* The paste row sits above the canvas — a normal flex item, not an overlay —
      so the circular drop icon never covers the waveform band it used to hide
@@ -1127,13 +1139,18 @@
     border-radius: var(--p-radius-full);
   }
 
-  /* --- the record button's footprint on an empty row (#82) --------------- */
-  /* An empty row has no trailing menu; this inert spacer reserves the menu's
-     width so the record button lands on the same axis as a recorded row's play
-     button, and the flex-1 waveform gets identical width in both. */
-  .row-menu-spacer {
-    width: var(--c-control-sm);
-    flex: none;
+  /* --- the ordinal and its label (#591) ---------------------------------- */
+  /* A label is free text up to 80 characters, so the left zone is capped and
+     the heading truncates: the waveform keeps its share of the row, and the
+     ordinal, which leads the heading, is never the part cut off. */
+  .row-open {
+    max-width: 45%;
+  }
+  .row-heading {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* #82: inside a row the record button matches the play button's 44px box, so
