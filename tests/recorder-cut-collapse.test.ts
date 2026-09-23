@@ -143,7 +143,7 @@ describe("selectionReseed — when the render-time frame is re-opened (#613)", (
     // indentation assertion above is the one proven to die when the resets
     // move into the arm.
     expect(recorder).toMatch(
-      /if \(reseed !== "none"\) \{\s*if \(reseed === "seed"\) \{[\s\S]*?editor\.openSelection\(\{[\s\S]*?\}\);\s*\}\s*if \(selectionEntry\) setSelectionEntry\(null\);\s*if \(zoomPan !== null\) setZoomPan\(null\);\s*\}/
+      /if \(reseed !== "none"\) \{\s*if \(reseed === "seed"\) \{[\s\S]*?editor\.openSelection\([\s\S]*?\);\s*\}\s*if \(selectionEntry\) setSelectionEntry\(null\);\s*if \(zoomPan !== null\) setZoomPan\(null\);\s*\}/
     );
   });
 
