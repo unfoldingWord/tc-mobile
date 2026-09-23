@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { requestTranscodeSweep } from "./finish-transcode";
 import { reportFailure } from "./report-failure";
 import { computePeaks } from "@/lib/audio/peaks";
+import { errorMessage } from "@/lib/failure-text";
 import {
   addSegment as addSegmentToChapter,
   getBook,
@@ -171,7 +172,7 @@ export function useChapterSegments(chapterId: ChapterId) {
           setStaleTarget(true);
           setError(null);
         } else {
-          setError(cause instanceof Error ? cause.message : String(cause));
+          setError(errorMessage(cause));
         }
       } finally {
         if (!cancelled) {
@@ -220,7 +221,7 @@ export function useChapterSegments(chapterId: ChapterId) {
         setStaleTarget(true);
         setError(null);
       } else {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(errorMessage(cause));
       }
       return null;
     }
@@ -249,7 +250,7 @@ export function useChapterSegments(chapterId: ChapterId) {
           setStaleTarget(true);
           setError(null);
         } else {
-          setError(cause instanceof Error ? cause.message : String(cause));
+          setError(errorMessage(cause));
         }
       }
     },
@@ -273,7 +274,7 @@ export function useChapterSegments(chapterId: ChapterId) {
           setStaleTarget(true);
           setError(null);
         } else {
-          setError(cause instanceof Error ? cause.message : String(cause));
+          setError(errorMessage(cause));
         }
         return false;
       }

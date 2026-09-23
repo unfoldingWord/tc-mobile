@@ -55,6 +55,7 @@
 
 import { decodeMp3ToCanonical } from "./audio-io";
 import { reportFailure } from "./report-failure";
+import { errorMessage } from "@/lib/failure-text";
 // The BUILT worker chunk's URL. `?worker&url` is the only form that yields it
 // outside a `new Worker(new URL(...))` literal: a bare
 // `new URL("./mp3.worker.ts", import.meta.url)` makes Vite inline the raw `.ts`
@@ -871,7 +872,7 @@ function obtainWorker(): Worker {
     dropEncoderWorker();
     noteEncodeFailed();
     throw new EncoderFailedError(
-      `The MP3 encoder worker could not be created: ${messageOf(cause)}`,
+      `The MP3 encoder worker could not be created: ${errorMessage(cause)}`,
       { cause }
     );
   }
@@ -1256,10 +1257,6 @@ function runEncodeOnWorker(
       reject(cause);
     }
   });
-}
-
-function messageOf(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
 }
 
 function abortReason(signal: AbortSignal): unknown {
