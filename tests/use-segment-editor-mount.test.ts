@@ -14,15 +14,14 @@ import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
 
 /**
- * `useSegmentEditor` (`src/hooks/use-segment-editor.ts`) was, until now, covered
- * only by source-shape tests (`tests/use-segment-editor-cut-shape.test.ts`,
- * `tests/use-segment-editor-undo-redo-shape.test.ts`) that read the source text
- * because "there is no DOM runner here" to mount the hook and call `cut`/`undo`/
- * `redo` directly. That is no longer true: #735/#739 added a jsdom hook-mount
- * harness (`tests/use-audio-session-supersession.test.ts`), which this file
- * copies the shape of (wrapper component, `createRoot`, `act`).
+ * Mounts the real `useSegmentEditor` (`src/hooks/use-segment-editor.ts`) in
+ * the jsdom hook-mount shape `tests/use-audio-session-supersession.test.ts`
+ * uses (wrapper component, `createRoot`, `act`), beside the two source-shape
+ * tests (`tests/use-segment-editor-cut-shape.test.ts`,
+ * `tests/use-segment-editor-undo-redo-shape.test.ts`) that read the hook as
+ * text.
  *
- * This mounts the real hook and drives `cut`, `paste`, `undo` and `redo`
+ * It drives `cut`, `paste`, `undo` and `redo`
  * directly, asserting only what the hook's own docblocks and the two shape
  * tests already claim: the op each undo/redo step passed over (the
  * `SegmentEditor` interface docblocks on `undo`/`redo`), the range `cut`
