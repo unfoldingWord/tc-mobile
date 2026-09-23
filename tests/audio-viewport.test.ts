@@ -476,28 +476,28 @@ describe("panForZoom", () => {
  */
 describe("seedSelection", () => {
   const LENGTH = 1000;
-  // Whole zoom: the viewport spans the clip, so the seed is 30% of it.
-  const WHOLE_SPAN = 300;
+  // Whole zoom: the viewport spans the clip, so the seed is a quarter of it.
+  const WHOLE_SPAN = 250;
 
   it("puts the left edge AT the playhead when there is room to the right", () => {
     // The #554 assertion itself. The centred rule put the span at `{250, 550}`
     // around 400, which is what the report is about.
     expect(seedSelection(LENGTH, 400, LENGTH)).toEqual({
       start: 400,
-      end: 700,
+      end: 650,
     });
   });
 
   it("anchors at the very start of the clip", () => {
-    expect(seedSelection(LENGTH, 0, LENGTH)).toEqual({ start: 0, end: 300 });
+    expect(seedSelection(LENGTH, 0, LENGTH)).toEqual({ start: 0, end: 250 });
   });
 
   it("anchors at the last playhead position that still fits a full span", () => {
-    // 700 = length - span: the boundary between "left edge at the playhead"
+    // 750 = length - span: the boundary between "left edge at the playhead"
     // and the slid tail below. Both rules must agree here, or the seed would
     // jump as the playhead crossed it.
-    expect(seedSelection(LENGTH, 700, LENGTH)).toEqual({
-      start: 700,
+    expect(seedSelection(LENGTH, 750, LENGTH)).toEqual({
+      start: 750,
       end: 1000,
     });
   });
@@ -508,7 +508,7 @@ describe("seedSelection", () => {
     // `spansWholeSample` calls "nothing selected": Cut and Play would open
     // dead. The span slides left instead and stays full width.
     const seed = seedSelection(LENGTH, LENGTH, LENGTH);
-    expect(seed).toEqual({ start: 700, end: 1000 });
+    expect(seed).toEqual({ start: 750, end: 1000 });
     expect(spansWholeSample(seed)).toBe(true);
   });
 
@@ -517,18 +517,36 @@ describe("seedSelection", () => {
     // is not a full span of audio to its right — but the width is constant, so
     // the two handles never land on top of each other.
     const seed = seedSelection(LENGTH, 900, LENGTH);
-    expect(seed).toEqual({ start: 700, end: 1000 });
+    expect(seed).toEqual({ start: 750, end: 1000 });
     expect(seed.end - seed.start).toBe(WHOLE_SPAN);
   });
 
   it("is a fraction of the VISIBLE window, not of the clip", () => {
-    // Quarter zoom: 250 visible, so a 75-sample seed.
-    expect(seedSelection(LENGTH, 100, 250)).toEqual({ start: 100, end: 175 });
+    // Quarter zoom: 250 visible, so a 62.5-sample seed.
+    expect(seedSelection(LENGTH, 100, 250)).toEqual({
+      start: 100,
+      end: 162.5,
+    });
     // And the same tail slide, measured against the buffer rather than the view.
     expect(seedSelection(LENGTH, LENGTH, 250)).toEqual({
-      start: 925,
+      start: 937.5,
       end: 1000,
     });
+  });
+
+  it("fits the quarter-zoom window when zoomed from the append rest (#567)", () => {
+    // Edit mode opens at whole zoom with the line at the append rest, so this
+    // seed is the one every fresh open starts with. Zooming to a quarter then
+    // fits the view to it through `panForZoom`; a seed wider than the quarter
+    // window takes its wider-than-the-window branch, which pins the START and
+    // leaves the END handle off the right of the stage. Both edges must land
+    // inside the window the zoom produces.
+    const CF = 0.5;
+    const seed = seedSelection(LENGTH, LENGTH, LENGTH);
+    const pan = panForZoom(LENGTH, LENGTH, 4, CF, seed);
+    const view = viewportWindow(LENGTH, pan, 4, CF);
+    expect(seed.start).toBeGreaterThanOrEqual(view.start);
+    expect(seed.end).toBeLessThanOrEqual(view.end);
   });
 
   it("is total on an empty buffer", () => {
@@ -547,7 +565,7 @@ describe("seedSelection", () => {
         const seed = seedSelection(LENGTH, c, visible);
         expect(seed.start).toBeGreaterThanOrEqual(0);
         expect(seed.end).toBeLessThanOrEqual(LENGTH);
-        expect(seed.end - seed.start).toBeCloseTo(0.3 * visible);
+        expect(seed.end - seed.start).toBeCloseTo(0.25 * visible);
       }
     }
   });

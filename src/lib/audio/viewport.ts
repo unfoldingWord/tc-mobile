@@ -282,22 +282,24 @@ export function panForZoom(
 /**
  * How much of the visible window the edit toggle seeds a span across (#554).
  *
- * The centred seed this replaces spelled it as two halves of 0.15 around the
- * centerline, so the NOMINAL width is the same 0.3 — but the DELIVERED width
- * is not, and the difference lands on the commonest path. At the append rest
- * (`centerlineSample === length`, the state every fresh open of the sheet
- * starts in) the centred seed ran past the end of the buffer and
- * `openSelection`'s per-endpoint clamp truncated it, so only 0.15 of the
- * visible window was actually selected. This seed slides back off the end
- * instead of overrunning, so the same first tap delivers the full 0.3. Away
- * from the tail, where a full span of audio lies to the right of the
- * centerline, the delivered width was 0.3 and still is. The wider default is a
- * deliberate, accepted behaviour change: the DRI's decision is recorded at
- * https://github.com/unfoldingWord/tc-mobile/pull/560#issuecomment-5767057659.
+ * A quarter, because that is the widest seed the quarter-zoom window can hold
+ * (#567). Edit mode opens at whole zoom, so this is a quarter of the clip, and
+ * a zoom to a quarter shows exactly that much. A seed any wider takes
+ * `panForZoom`'s wider-than-the-window branch, which pins the span's START and
+ * leaves its END handle off the right of the stage. At the append rest (every
+ * fresh open) that end is where the translator was parked. The composing test
+ * in `tests/audio-viewport.test.ts` ("fits the quarter-zoom window when zoomed
+ * from the append rest") pins this bound; the fix lives here rather than in
+ * `panForZoom` because that branch also serves spans a user dragged wider than
+ * the window mid-clip, which #567 leaves alone.
+ *
+ * Because the seed slides back off the end instead of overrunning, the whole
+ * quarter is delivered even at the append rest, where the centred seed this
+ * replaces had its overrun clamped away.
  *
  * Module-private: the seed has exactly one reader.
  */
-const SEED_SPAN_FRACTION = 0.3;
+const SEED_SPAN_FRACTION = 0.25;
 
 /**
  * The span the selection frame opens with (#554).
@@ -323,7 +325,7 @@ const SEED_SPAN_FRACTION = 0.3;
  * left edge, because there is not a full span of audio to its right.
  *
  * No clamps, and the `min` is the only branch, because `visibleSamples` is
- * `length / zoom` at `zoom >= 1`: the span is at most `0.3 * length`, so
+ * `length / zoom` at `zoom >= 1`: the span is at most `0.25 * length`, so
  * `length - span` is never negative and `start` is never below 0, while
  * `start <= length - span` puts `end` at or inside `length`. A `Math.max(0,…)`
  * would be a branch no input can reach — what `panForZoom`'s own note calls

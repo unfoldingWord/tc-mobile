@@ -152,10 +152,10 @@ describe("the edit toggle (#557) opens the forward seed (#554)", () => {
     await act(async () => toggle().click());
 
     // A fresh sheet rests at the end of the audio (the F7 append rest), whole
-    // zoom, so `seedSelection(1000, 1000, 1000)` is `{700, 1000}`. The centred
+    // zoom, so `seedSelection(1000, 1000, 1000)` is `{750, 1000}`. The centred
     // seed it replaces delivered `{850, 1000}` here once `openSelection`
-    // clamped its overrun: half the width, playhead in the middle of nothing.
-    expect(handle(strings.selectionStartHandle)).toBe(700);
+    // clamped its overrun.
+    expect(handle(strings.selectionStartHandle)).toBe(750);
     expect(handle(strings.selectionEndHandle)).toBe(1000);
     // #418 from the first edit frame: a loaded span hides the centerline.
     expect(
@@ -172,11 +172,11 @@ describe("the edit toggle (#557) opens the forward seed (#554)", () => {
     expect(cut).not.toBeNull();
     await act(async () => cut!.click());
 
-    // `{700, 1000}` is gone, so 700 samples remain and the pan rests at their
-    // end: `seedSelection(700, 700, 700)` is `{490, 700}`. The centred seed
-    // gave `{595, 700}`.
-    expect(handle(strings.selectionEndHandle)).toBe(700);
-    expect(handle(strings.selectionStartHandle)).toBe(490);
+    // `{750, 1000}` is gone, so 750 samples remain and the pan rests at their
+    // end: `seedSelection(750, 750, 750)` is `{562.5, 750}`, which the handle
+    // reports rounded. The centred seed gave `{637.5, 750}`.
+    expect(handle(strings.selectionEndHandle)).toBe(750);
+    expect(handle(strings.selectionStartHandle)).toBe(563);
   });
 
   it("is the same named control, last in both bars, and reads pressed only in edit mode", async () => {
