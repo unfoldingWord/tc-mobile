@@ -31,8 +31,8 @@ import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useScreenLayers } from "@/hooks/use-screen-layers";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { overlayDismissal } from "@/lib/nav/navigation";
+import { firstNotFinished } from "@/lib/view/segment-rows";
 import type { ChapterId, SegmentId } from "@/types/domain";
-import { firstNotFinished } from "@/types/view";
 
 /**
  * Every overlay this screen can put over the chapter, as a system-Back layer
@@ -968,7 +968,7 @@ export const SegmentsScreen = forwardRef<
               unconfirmedLabel={strings.shareChapterUnconfirmed}
               hasGap={share.missing > 0}
               gapText={shareGapText(
-                { missing: share.missing, partial: 0 },
+                { missing: share.missing, partial: 0, partialChapters: 0 },
                 "chapter"
               )}
               onPrepare={onPrepareShare}
