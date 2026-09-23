@@ -16,7 +16,7 @@ import {
 import { newClipId } from "@/lib/storage/clips";
 import * as segmentAudio from "@/lib/storage/segment-audio";
 import { commitTranscode } from "@/lib/storage/transcode";
-import { ROW_PEAK_BUCKETS } from "@/types/view";
+import { ROW_PEAK_BUCKETS } from "@/lib/view/segment-rows";
 import { clearAllStores, ramp } from "./support";
 
 /**

@@ -32,8 +32,6 @@ const view = {
   ordinal: 1,
   finished: false,
   hasClip: true,
-  peaks: null,
-  lengthSamples: original.length,
   samples: original,
 };
 /**
@@ -48,8 +46,8 @@ const view = {
  */
 const boundary = vi.hoisted(() => ({
   editor: {} as SegmentEditor,
-  view: null as { samples: Int16Array; lengthSamples: number } | null,
-  reloads: [] as Array<{ samples: Int16Array; lengthSamples: number }>,
+  view: null as { samples: Int16Array } | null,
+  reloads: [] as Array<{ samples: Int16Array }>,
 }));
 vi.mock("@/hooks/use-recorder-segment", () => ({
   useRecorderSegment: () => ({
@@ -281,7 +279,7 @@ it("leaves the line at the end of the take, so the next Record appends", async (
   // What the segment looks like once take 1 lands: the 4-sample clip with the
   // 3-sample capture appended at its end (the sheet opens at the F7 rest).
   const grown = new Int16Array([...original, ...captured]);
-  boundary.reloads = [{ samples: grown, lengthSamples: grown.length }];
+  boundary.reloads = [{ samples: grown }];
 
   // Take 1, started by a real Record tap so the insertion offset is locked the
   // way it is in the app — at the line, which rests at the end.
@@ -335,7 +333,7 @@ it("a Stop whose decode failed stays in place when Try again succeeds", async ()
   // could not express.
   const s = await setup();
   const grown = new Int16Array([...original, ...captured]);
-  boundary.reloads = [{ samples: grown, lengthSamples: grown.length }];
+  boundary.reloads = [{ samples: grown }];
 
   // The first decode fails but the container bytes survive — the #165 "hold"
   // verdict, the take's only copy.
@@ -370,7 +368,7 @@ it("an Edit-entry recovery still reaches edit mode, and a Back's still exits", a
   // The other two destinations, so the three-way discriminator is pinned in
   // every arm rather than only the new one. Same held-bytes shape as above.
   const s = await setup();
-  boundary.reloads = [{ samples: original, lengthSamples: original.length }];
+  boundary.reloads = [{ samples: original }];
   const bytes = new Blob(["kept"]);
   s.audio.stopRecording = vi.fn(async () => {
     s.audio.recorderState = "idle";
