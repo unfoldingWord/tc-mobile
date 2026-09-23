@@ -1873,6 +1873,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       databaseUnreachable,
       reloadView,
       onExitEdit,
+      // The viewport's setter is a hook return, not a `useState` setter, so it
+      // is a real dependency rather than a stable one eslint can elide (#160,
+      // L-1). Memoised in `use-recorder-viewport.ts`, so it never re-arms this.
+      setPanState,
     ]);
 
     // The record bar's bin (#592): straight to the SAME confirm the ≡ row opens,
