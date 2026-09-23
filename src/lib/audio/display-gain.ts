@@ -76,38 +76,63 @@ export const DISPLAY_TARGET_PEAK = 0.9;
 export const MAX_DISPLAY_GAIN = 20;
 
 /**
+ * The subset of `RecorderState` (`hooks/use-recorder.ts`) this function needs.
+ *
+ * Redeclared, not imported: `lib/` cannot import `hooks/` (the onion rule,
+ * `eslint.config.mjs`), and TypeScript's structural typing makes the real
+ * `RecorderState` assignable here without a cast, so the two stay in sync by
+ * construction rather than by convention. There is no separate paused state
+ * to add — `RecorderState` at this head is exactly these four.
+ */
+type RecorderTakeState = "idle" | "requesting" | "recording" | "processing";
+
+/**
  * Whether the canvas is showing a take that has nothing committed behind it and
  * is still being made — the one state the display fit is suppressed in.
  *
  * Both halves matter, and the second is the one a reader will be tempted to
  * drop:
  *
- *   - `capturing` alone is too wide. A punch-in is capturing, but what it draws
- *     is the segment's ALREADY COMMITTED audio: the new recording is not
- *     spliced into the working buffer until close, so the canvas is the stored
- *     clip the translator is aiming at. Un-fitting that is #358's own complaint
- *     at the worst possible moment (George R2 P2).
+ *   - a take being active alone is too wide. A punch-in has a take active, but
+ *     what it draws is the segment's ALREADY COMMITTED audio: the new
+ *     recording is not spliced into the working buffer until close, so the
+ *     canvas is the stored clip the translator is aiming at. Un-fitting that
+ *     is #358's own complaint at the worst possible moment (George R2 P2).
  *   - `!hasCommittedAudio` alone is too wide the other way: an idle segment
  *     with no audio draws the dotted never-recorded rule, and a committed take
  *     at idle must of course be fitted.
  *
- * `capturing` itself must be the WHOLE take-in-flight window, not literal mic
- * capture — recording, paused, `processing` (#59), and the `isClosing`
- * stop→decode→save wait, during which `state` has already flipped to idle
- * (`recorder.tsx`'s `takeActive`). Narrowing the caller's argument to
+ * "A take is active" itself must be the WHOLE take-in-flight window, not
+ * literal mic capture — `state !== "idle"` (recording, `requesting`,
+ * `processing`, #59) OR `isClosing`, the stop→decode→save wait during which
+ * `state` has already flipped to idle (`recorder.tsx`'s own `takeActive`
+ * expression, computed here instead of trusted from the caller).
+ *
+ * This used to take a single `capturing`/`takeActive` boolean the caller
+ * computed itself (#373). Narrowing that caller-side expression to
  * `recording || paused` let this go false the instant Back was tapped on a
  * paused first-take preview, while the very same preview stayed on stage —
- * exactly the jump this flag exists to prevent (George R3 #2, the round-3
- * re-run: a distinct finding from R3's `fitFrom` fix).
+ * the jump this flag exists to prevent (George R3 #2) — and nothing made a
+ * caller that dropped `isClosing` fail to type-check: `tests/display-gain.test.ts`
+ * could pin the CONTRACT for a given boolean, but nothing observed what
+ * `recorder.tsx` actually passed. #757 closes that gap by taking the three
+ * primitives directly and computing `takeActive` inside: a caller that omits
+ * `isClosing` is now a missing-property type error, not a silent wrong value.
  *
  * Lives here rather than inline in the recorder because it is the whole of the
  * decision, and nothing in `tests/` can mount a canvas to check it there.
  */
-export function isFirstTakeInFlight(
-  capturing: boolean,
-  hasCommittedAudio: boolean
-): boolean {
-  return capturing && !hasCommittedAudio;
+export function isFirstTakeInFlight({
+  state,
+  isClosing,
+  hasCommittedAudio,
+}: {
+  state: RecorderTakeState;
+  isClosing: boolean;
+  hasCommittedAudio: boolean;
+}): boolean {
+  const takeActive = state !== "idle" || isClosing;
+  return takeActive && !hasCommittedAudio;
 }
 
 /**
