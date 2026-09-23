@@ -14,10 +14,7 @@ import type { ClipId, SegmentId } from "@/types/domain";
 
 /**
  * The transitions that stand between a failed write and permanently lost field
- * audio. Each test below names the regression it exists to catch. None of them
- * could be written while this logic lived inside `useObsChapter`: `vitest`
- * runs in the Node environment here and the project has no renderer, so a
- * regression in any of these transitions used to ship with the suite green.
+ * audio. Each test below names the regression it exists to catch.
  *
  * What is NOT covered here: everything the hook does with the results. The
  * `saveTake` write (clip + take in one transaction), the `deleteClip` of the

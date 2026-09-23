@@ -71,7 +71,7 @@ export function RecorderMenu({
             // Editable when there is audio to edit, a full clipboard to paste
             // — a never-recorded segment with a pending clip must still open
             // edit mode to receive it, or the chapter-wide clipboard (G3) could
-            // never land on an empty segment (George R2) — OR a live/paused
+            // never land on an empty segment (George R2) — OR a live
             // take, which `onEnterEdit` commits first, then edits (#134). Only
             // the commit window itself blocks it now, not every non-idle state.
             // Never while `denied`: the permission panel owns the body, and
@@ -124,7 +124,7 @@ export function RecorderMenu({
             // recording has nothing on disk yet) AND only at idle: erasing the
             // stored take out from under a live capture is nonsensical, and the
             // menu opener stays reachable mid-take (Edit commits-then-edits a
-            // live/paused take, #134), so this entry must refuse there itself
+            // live take, #134), so this entry must refuse there itself
             // (George R-B6). Gate + reason from `eraseRowReason` (#135).
             disabled={eraseReason !== null}
             hint={rowHint(eraseReason)}

@@ -795,7 +795,7 @@ export const SegmentsScreen = forwardRef<
             segments yet, and renaming it for the passage is exactly the first
             setup step (#264). Share inside handles the no-audio case itself. */}
         <Control
-          icon="menu"
+          icon="more"
           label={strings.chapterMenuOpen}
           variant="quiet"
           disabled={staleTarget || loading || refreshing || loadFailed}
@@ -838,6 +838,7 @@ export const SegmentsScreen = forwardRef<
                   row={row}
                   playing={audio.playingId === row.segmentId}
                   playbackElapsedMs={audio.playbackElapsedMs}
+                  ranOut={audio.playbackRanOut}
                   busy={refreshing}
                   onPlay={(offsetSeconds) => audio.playTake(row, offsetSeconds)}
                   onOpenRecorder={() =>
