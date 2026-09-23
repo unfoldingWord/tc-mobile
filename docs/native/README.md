@@ -536,35 +536,27 @@ over the tester's existing app the §5 step 4 way. **Do not uninstall first.**
 5. **Wrap the bridge before tapping anything.** `@capacitor/core` looks up
    `Capacitor.nativePromise` each time a plugin method is called, so wrapping
    it in the Console catches the app's own `Share.share` call and its settle.
-   The wrapper logs the plugin and method names, and it logs the options for
-   `Share` only. `Filesystem.writeFile`/`appendFile` carry the audio as
-   base64, so their options are not logged.
+   The wrapper logs the plugin and method names, the option keys, a file
+   count and the settle time. It never logs option values, settled values or
+   error bodies: Share's `files` URIs carry the device path and the chapter
+   file name, and `Filesystem.writeFile`/`appendFile` carry the audio as
+   base64.
 
    ```js
-   const tcNative = Capacitor.nativePromise;
+   const tcNative = Capacitor.nativePromise.bind(Capacitor);
    Capacitor.nativePromise = (plugin, method, options) => {
      const t0 = performance.now();
      const call = tcNative(plugin, method, options);
      if (plugin === "Share" || plugin === "Filesystem") {
        const tag = `${plugin}.${method}`;
-       console.log("[call]", tag, plugin === "Share" ? options : "");
+       const ms = () => Math.round(performance.now() - t0);
+       console.log("[call]", tag, {
+         keys: options && typeof options === "object" ? Object.keys(options) : [],
+         files: Array.isArray(options?.files) ? options.files.length : 0,
+       });
        call.then(
-         (value) =>
-           console.log(
-             "[resolve]",
-             tag,
-             Math.round(performance.now() - t0),
-             "ms",
-             value
-           ),
-         (error) =>
-           console.log(
-             "[reject]",
-             tag,
-             Math.round(performance.now() - t0),
-             "ms",
-             error
-           )
+         () => console.log("[resolve]", tag, ms(), "ms"),
+         (error) => console.log("[reject]", tag, ms(), "ms", error?.name)
        );
      }
      return call;
@@ -583,8 +575,9 @@ over the tester's existing app the §5 step 4 way. **Do not uninstall first.**
    (`src/hooks/share-target.ts`, `resolveProvesDelivery`).
 7. **Report.** Paste the Console lines from `[call] Share.share` through its
    `[resolve]` or `[reject]`, plus the step 4 object and your notes from step
-   6, as a comment on #593. Put the output in the issue, not in a file in
-   this repo. If Share is tapped and no `[call] Share.share` line appears,
+   6, as a comment on #593. #593 is public: paste only those redacted lines,
+   never an expanded object from elsewhere in the Console. Put the output in
+   the issue, not in a file in this repo. If Share is tapped and no `[call] Share.share` line appears,
    the wrapper did not catch the call. Say that in the comment rather than
    reading the silence as "Share was never called."
 
