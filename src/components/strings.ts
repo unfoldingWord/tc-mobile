@@ -277,8 +277,13 @@ export const strings = {
   // ── Discarding held work (#165 recovery panel, #38 SaveFailed) ───────────
   // The two-tap discard. Both screens that offer it are a dead end otherwise —
   // the recovery panel when the decode never succeeds, `SaveFailed` when the
-  // translator will not retry — and both destroy the only copy, so a stray tap
-  // never deletes. ONE set of keys, not one per screen: the two screens carried
+  // translator will not retry — and on the RECORD path both destroy the only
+  // copy, so a stray tap never deletes. Not on the edit path: a failed
+  // edit-save leaves the stored recording on disk, which is why the
+  // `discardChanges*` siblings below exist at all, and why this sentence says
+  // "record path" rather than "both" (George round 1 on #600 — the earlier
+  // wording was the very lie those siblings were added to stop). ONE set of
+  // keys, not one per screen: the two screens carried
   // byte-identical copies of these three sentences until #169, and the comment
   // that noted they were "the same armed second-tap shape" was the only thing
   // keeping a wording edit to either from silently diverging them.
