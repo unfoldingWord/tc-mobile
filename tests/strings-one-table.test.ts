@@ -134,6 +134,86 @@ describe("the one string table (#169)", () => {
 });
 
 /**
+ * The other direction: a sentence in a hook that the table never held at all.
+ *
+ * The duplicate check above only knows the sentences already in the table, so a
+ * BRAND NEW one typed straight into `use-recorder.ts` passes it — the exact
+ * shape #169 is about, and the one the duplicate gate cannot see (raised as a
+ * nonblocking QA suggestion on PR #678). Four base merges under this branch each
+ * brought new files, and finding this class in them was a manual scan every
+ * time. This is that scan.
+ *
+ * SCOPE IS `hooks/` AND `app/` ONLY, and that is a boundary rather than an
+ * allowlist. In those two layers the table is the only legitimate source of a
+ * translator-facing sentence. `components/` is not: `recovery-copy.ts` is a
+ * second copy module on purpose — pure, tested, and deliberately left where it
+ * is by this PR — so every one of its thirteen sentences would fail here, and
+ * the repair would be a list of exceptions that a real leak could later hide
+ * inside. A gate that needs an allowlist on day one is the "weaken the pattern
+ * until it catches nothing" move AGENTS.md names; this one needs none.
+ *
+ * WHAT IT CANNOT SEE: a sentence composed at the call site. A template literal
+ * carrying `${...}` is skipped outright, because its text is not fixed and there
+ * is nothing to compare. So this is a floor under the hooks layer, not a proof
+ * that every word a hook can produce came from the table. The behavioural
+ * version of that proof — rendering a screen and reading what it says — is a
+ * different technique, and it belongs beside `recovery-copy.ts`'s own tests
+ * rather than in a source-text gate.
+ */
+const HOOK_LAYERS = ["app", "hooks"] as const;
+
+/**
+ * Double-quoted, single-quoted, and interpolation-free template literals.
+ * `[^`$\\\n]` is what drops a composed template: one `${` and the literal is not
+ * matched at all, which is the intended miss described above.
+ */
+const LITERAL_FORMS = [
+  /"((?:[^"\\\n]|\\.)+)"/g,
+  /'((?:[^'\\\n]|\\.)+)'/g,
+  /`([^`$\\\n]+)`/g,
+] as const;
+
+/**
+ * Compared against the table's VALUES, never its file text. A sentence that
+ * appears only inside a comment in `strings.ts` — explaining an entry rather
+ * than being one — must not satisfy this, or the gate could be silenced by
+ * documentation, which is the capture `share-progress.test.ts` actually
+ * suffered (AGENTS.md, "the same trap runs in the other direction").
+ */
+const tableSentences = new Set(
+  tableValues.filter((value): value is string => typeof value === "string")
+);
+
+const hookFiles = HOOK_LAYERS.flatMap((layer) =>
+  sourceFiles(path.join(ROOT, "src", layer))
+);
+
+describe("no sentence is stranded in a hook (#169)", () => {
+  it("has files to check", () => {
+    // Same floor, same reason as above: a rename of `src/hooks` would otherwise
+    // turn the loop below into an assertion over nothing.
+    expect(hookFiles.length).toBeGreaterThan(10);
+  });
+
+  it("every fixed sentence in app/ and hooks/ is one the table holds", () => {
+    const stranded: string[] = [];
+    for (const file of hookFiles) {
+      const code = stripComments(readFileSync(file, "utf8"));
+      for (const form of LITERAL_FORMS) {
+        for (const match of code.matchAll(form)) {
+          const value = match[1];
+          if (value === undefined) continue;
+          if (!isSentence(value)) continue;
+          if (tableSentences.has(value)) continue;
+          stranded.push(`${path.relative(ROOT, file)}: ${value}`);
+        }
+      }
+    }
+    expect(stranded).toEqual([]);
+  });
+});
+
+/**
  * The plural helper and the one alias it exists to make possible.
  *
  * The plurals in the table were inline `n === 1 ? … : …` ternaries that spelled
