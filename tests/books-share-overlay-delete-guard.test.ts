@@ -11,13 +11,13 @@ import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard } from "@/types/view";
 
 /**
- * #517 item 1 (George r3 P3 on #508, `books-screen.tsx:1114-1119`): `onArmDelete`
- * carries no `shareOverlayOwnsScreen` guard of its own any more — #491 removed
- * it in favour of `<Menu inert={shareOverlayOwnsScreen(bookShare.progress)}>`,
- * which makes Delete unreachable by click, keyboard or AT activation as long as
- * `inert` actually does its job. This is defense in depth for the case it does
- * not: none of this has been observed on a device, and no user-visible bug is
- * claimed.
+ * #517 item 1 (George r3 P3 on #508): before #517, `onArmDelete` carried no
+ * `shareOverlayOwnsScreen` guard of its own. #491 had removed it in favour of
+ * `<Menu inert={shareOverlayOwnsScreen(bookShare.progress)}>`, which makes
+ * Delete unreachable by click, keyboard or AT activation as long as `inert`
+ * actually does its job. #517 restores the guard as defense in depth for the
+ * case it does not: none of this has been observed on a device, and no
+ * user-visible bug is claimed.
  *
  * jsdom does not enforce `inert`'s hit-testing/event-blocking behaviour — it
  * only reflects the attribute — so a plain `.click()` on the Delete control
