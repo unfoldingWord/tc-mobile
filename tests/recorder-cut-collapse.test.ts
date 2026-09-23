@@ -137,6 +137,14 @@ describe("selectionReseed — when the render-time frame is re-opened (#613)", (
       block,
       "the resets are inside the seed arm, so a cut made while zoomed hides Paste"
     ).not.toMatch(/\n {8}if \(zoomPan !== null\) setZoomPan\(null\);/);
+    // The bench's round-1 rewrite of this same test states the claim
+    // structurally rather than by indentation — the arm must CLOSE before the
+    // two resets. Both are kept: this one says what the shape is, the
+    // indentation assertion above is the one proven to die when the resets
+    // move into the arm.
+    expect(recorder).toMatch(
+      /if \(reseed !== "none"\) \{\s*if \(reseed === "seed"\) \{[\s\S]*?editor\.openSelection\(\{[\s\S]*?\}\);\s*\}\s*if \(selectionEntry\) setSelectionEntry\(null\);\s*if \(zoomPan !== null\) setZoomPan\(null\);\s*\}/
+    );
   });
 
   it("is inert in record mode, with a frame already open, or before the committed buffer arrives", () => {
@@ -178,6 +186,31 @@ describe("recorder.tsx wires the collapse (#613)", () => {
     const block = recorder.slice(at, recorder.indexOf("</div>", at));
     expect(block).toMatch(/editor\.selectionActive &&/);
     expect(block).toMatch(/label=\{strings\.cut\}/);
+  });
+
+  it("a lift that resumes playback leaves the frame collapsed (#671 Frank R1 P2)", () => {
+    // After a cut, Play sounds the tail from the line (no span: `scroll`), a
+    // touch interrupts it, and the lift resumes `soundRange(from, length)`.
+    // Reopening the frame on that same lift seeded a ±15% span, and
+    // `stageView` then drew an in-place audition of that span while the
+    // TAIL was what sounded. Only a lift that does not resume may reopen.
+    const at = recorder.indexOf("const onPointerUp = useCallback(");
+    expect(at, "no onPointerUp in recorder.tsx").toBeGreaterThan(-1);
+    const end = recorder.indexOf("[length, soundRange", at);
+    expect(end).toBeGreaterThan(at);
+    const body = recorder.slice(at, end);
+    //
+    // The bench's round-1 fix put this gate in the handler as
+    // `wasOwner && !outcome.resume`. The rule kept instead is the fourth
+    // answer from `liftOutcome` (`!held && !resume`), which also covers the
+    // case a `wasOwner` gate gets wrong: the owner lifting first and a second
+    // contact lifting last left the frame collapsed for good. Both halves of
+    // the gate are asserted against the outcome, not against the pointer.
+    expect(body).toMatch(/if \(outcome\.resume\) soundRange\(from, length\)/);
+    expect(body).toMatch(/if \(outcome\.reopenFrame\) reopenFrame\(\)/);
+    expect(body).not.toMatch(
+      /if \(wasOwner(?: && !outcome\.resume)?\) reopenFrame\(\)/
+    );
   });
 
   it("everything that should bring the frame back clears the latch", () => {
