@@ -336,9 +336,16 @@ export const strings = {
   // what lets a second UI language be a change to this table rather than an
   // edit inside the recorder hook.
   //
-  // The two that name proven silence tell the translator to try again, because
-  // trying again is what can help:
+  // Only this one asks for a retry, because it is the only one where retrying
+  // is what helps: the capture reached the decoder and decoded to nothing.
   captureSilence: "No sound was recorded. Try again.",
+  // A failed decode, NOT silence — and deliberately not a second "try again".
+  // Where this reaches a screen the bytes are held and the recovery panel is
+  // up, so the retry is already there as its own control
+  // (`strings.takeRecoverRetry`); an instruction here would compete with it.
+  // An earlier draft grouped this key with the one above under "the two that
+  // name proven silence … tell the translator to try again", which is true of
+  // neither half for this key (George R5).
   captureUndecodable: "Recording could not be decoded on this device.",
   // The third must NOT say "no sound": the engine failed to hand the capture
   // over (a flush that threw, #485; a `stopRecording` that rejected, #480), so

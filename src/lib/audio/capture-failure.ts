@@ -32,8 +32,21 @@
 
 export type CaptureFailure =
   /**
-   * The capture decoded, and decoded to nothing — proven silence. A retry of
-   * the same bytes cannot help, so nothing is kept.
+   * The capture decoded, and decoded to nothing.
+   *
+   * A label for that outcome and nothing more — in particular it does NOT say
+   * whether bytes were kept, and the two producers differ. `stop()`'s empty
+   * seal returns it with `blob: null`, because a retry of those bytes cannot
+   * help. `retryDecode` ALSO returns it, on a zero-sample re-decode, and there
+   * the caller KEEPS the held bytes: they exist only because the first decode
+   * threw, so a later zero-sample decode is ambiguous and dropping them would
+   * lose the only copy (#165, George R3 G-1).
+   *
+   * An earlier draft of this comment said "proven silence … so nothing is
+   * kept", which is true of the first producer alone (George R5). It is
+   * corrected here rather than softened, because a later edit that trusted it
+   * and dropped the blob on `"silence"` would throw away a take. Retention is
+   * `StopResult.blob` and the caller's, never this code's.
    */
   | "silence"
   /**
