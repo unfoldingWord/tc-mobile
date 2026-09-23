@@ -9,16 +9,17 @@ import {
   selectLogShareShape,
 } from "@/hooks/use-failure-log-share";
 
-/** Source-shape reads, because there is no renderer here (#197). */
+/** Reads the hook source for wiring assertions; does not execute its effects. */
 const read = (rel: string) =>
   readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
 
 /**
  * #205 — which shape the durable failure log leaves the phone in.
  *
- * The two-gesture flow around this decision is React + browser glue this repo
- * has no renderer to exercise (the constraint `tests/share-flow.test.ts`
- * documents). The decision itself is pure, and it is the part with the history:
+ * This suite exercises the pure capability decision and reads the hook's
+ * source for wiring assertions. Neither those reads nor the static markup
+ * harness in `tests/render.ts` drive the two-gesture flow's effects or shares.
+ * The decision is the part with the history:
  * every review round so far has found a bug in it, each one the same mistake —
  * making a capability the log does not need a precondition for sending it.
  *
