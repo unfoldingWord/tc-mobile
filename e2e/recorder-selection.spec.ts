@@ -383,3 +383,109 @@ test.describe("edit mode toggle", () => {
     });
   }
 });
+
+// #370: at 320px with the frame open, `.recorder-toolbar.edit`'s old
+// `justify-content: space-between; flex-wrap: wrap` packed five 40px quiet
+// controls plus a 68px `primary`-variant Select onto one line and wrapped the
+// sixth (the ≡) alone onto a second line, where `space-between` on a
+// single-item line flushes it to main-start — landing the ≡ on the LEFT,
+// under Play, instead of the trailing edge it had been reached for.
+//
+// Premise check against `origin/develop` (2026-09-23): STALE. #579 (merged
+// 2026-09-21, "open selection with a stable edit toggle") rewrote this rule
+// to `grid-template-columns: repeat(5, minmax(0, 1fr)) var(--c-control-md)`
+// as a side effect of keeping the toggle in one stable slot — CSS Grid has
+// no wrap analogue to `flex-wrap`, so the five `1fr` tracks shrink instead of
+// wrapping, and the toggle keeps its own fixed trailing track regardless of
+// viewport width. No CSS change was needed; this pins the now-correct layout
+// against a regression.
+test.describe("edit toolbar keeps the ≡ off the leading edge (#370)", () => {
+  for (const width of [320, 360, 412]) {
+    test(`≡ stays on one row, right of the tools, with the frame open and closed (${width}px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 740 });
+      await page.goto("/");
+      await page.getByRole("button", { name: "New book" }).click();
+      await page.getByRole("button", { name: "Create book" }).click();
+      await page.getByRole("button", { name: /^Add chapter to/ }).click();
+      await page.getByRole("button", { name: "Create chapter" }).click();
+      await page.getByRole("button", { name: "Open Chapter 1" }).click();
+      await page.getByRole("button", { name: "Add segment" }).click();
+      await page.getByRole("button", { name: "Record segment 1" }).click();
+      await page.getByRole("button", { name: "Record", exact: true }).click();
+      await page.waitForTimeout(1200);
+      await page
+        .getByRole("button", { name: "Stop recording", exact: true })
+        .click();
+      await expect(
+        page.getByRole("button", { name: "Record", exact: true })
+      ).toBeVisible();
+      await page
+        .locator(".recorder-toolbar")
+        .getByRole("button", { name: "Edit recording", exact: true })
+        .click();
+      await expect(
+        page.getByLabel("Selection start", { exact: true })
+      ).toBeVisible();
+
+      const toolbar = page.locator(".recorder-toolbar.edit");
+      // `button.control` reaches the real button whether or not a control is
+      // wrapped in `.control-hinted` (any control passed a `hint` prop, even
+      // `null`, gets a wrapping span — `control.tsx`), so the count and order
+      // below are the six controls, not their wrappers.
+      const controls = toolbar.locator("button.control");
+
+      const expectOneRowRightOfTheTools = async () => {
+        await expect(controls).toHaveCount(6);
+        const boxes: { x: number; y: number; right: number }[] = [];
+        for (let i = 0; i < 6; i++) {
+          const box = await controls.nth(i).boundingBox();
+          expect(box).not.toBeNull();
+          boxes.push({ x: box!.x, y: box!.y, right: box!.x + box!.width });
+        }
+        // One row: nothing wrapped to a second line. This is the exact
+        // failure #370 named — the ≡ (index 4) landing on a line of its own.
+        // Tolerance is 3px, not 1: the trailing Select/Done slot (index 5) is
+        // the 44px `--c-control-md` box against the other five 40px `quiet`
+        // boxes, and `align-items: center` centres each within the shared
+        // row height, so its top sits ~2px higher than theirs even on a
+        // single row.
+        const firstY = boxes[0]!.y;
+        for (const b of boxes) {
+          expect(Math.abs(b.y - firstY)).toBeLessThanOrEqual(3);
+        }
+        // Left-to-right in DOM order: the ≡ never jumps ahead of a tool that
+        // comes after it in source order (the "lands on the left" failure).
+        for (let i = 1; i < boxes.length; i++) {
+          expect(boxes[i]!.x).toBeGreaterThan(boxes[i - 1]!.x);
+        }
+        // The ≡ (index 4) sits to the right of every other tool and
+        // immediately precedes the trailing Select/Done slot (index 5) — the
+        // trailing-edge position the issue says is worth protecting.
+        expect(boxes[4]!.x).toBeGreaterThan(boxes[3]!.x);
+        expect(boxes[4]!.right).toBeLessThanOrEqual(boxes[5]!.x + 0.5);
+        // No horizontal scroll at this width (AGENTS.md: no horizontal page
+        // scroll at phone width).
+        const scrollWidth = await page.evaluate(
+          () => document.documentElement.scrollWidth
+        );
+        expect(scrollWidth).toBeLessThanOrEqual(width);
+      };
+
+      // Frame open (the issue's named case).
+      await expectOneRowRightOfTheTools();
+
+      // Frame closed (the issue's "before closing" checklist: both states).
+      // A cut collapses the frame onto the centerline without leaving edit
+      // mode; #362's 40-vs-44 question is separate and untouched here.
+      await page
+        .getByRole("button", { name: "Cut the selection", exact: true })
+        .click();
+      await expect(
+        page.getByLabel("Selection start", { exact: true })
+      ).toHaveCount(0);
+      await expectOneRowRightOfTheTools();
+    });
+  }
+});
