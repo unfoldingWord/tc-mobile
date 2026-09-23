@@ -94,6 +94,31 @@ describe("App holds ONE ordinal, and it is the recovery screen's (#160 L-11)", (
     expect([...app.matchAll(/setRecordingOrdinal\(/g)].length).toBe(1);
   });
 
+  it("that one writer passes the opened segment's ordinal, beside its id", () => {
+    // George r1 (Low/HYGIENE) on PR #699: the count above proves there is
+    // exactly ONE `setRecordingOrdinal(`, and the window above proves no
+    // `setRecordingOrdinal(null)` sits next to a clear — but neither asks what
+    // the surviving call PASSES. `setRecordingOrdinal(0)`, and a decoupling
+    // that writes `ordinal + 1` after `setRecorder`, both survived those two.
+    // Confirmed by running them, not reasoned about.
+    //
+    // So read the open handler's own body and pin the pair. Adjacency is the
+    // claim: the ordinal is captured for the segment being opened, in the same
+    // call, which is what makes `recordingOrdinal` a faithful mirror of the
+    // sheet at open time rather than a number that drifted.
+    const at = app.indexOf("const openRecorderState = useCallback(");
+    expect(at, "no openRecorderState in App.tsx").toBeGreaterThan(-1);
+    const end = app.indexOf("const recorderClosedState = useCallback(", at);
+    expect(end).toBeGreaterThan(at);
+    const body = app.slice(at, end);
+    expect(body.length, "empty openRecorderState body read").toBeGreaterThan(
+      50
+    );
+    expect(body).toMatch(
+      /setRecordingOrdinal\(ordinal\);\s*setRecorder\(segmentId\);/
+    );
+  });
+
   it("the sheet is mounted on an explicit null check, not on truthiness", () => {
     // `SegmentId` is a branded STRING now that the slot is not an object, so
     // `{recorder && <Recorder …>}` would render the empty string instead of
