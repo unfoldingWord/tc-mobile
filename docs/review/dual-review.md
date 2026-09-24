@@ -79,11 +79,19 @@ on the harness's own tests (#547, #572), not on the product.
 | Any tier                                                       | A P3 never triggers a round: every P3 is batched into one follow-up issue at triage                 |
 
 **A test-only PR takes the tier of the code it covers, not a tier of its
-own.** A test for `hooks/*` is T2; a test for `lib/audio/*`, `lib/storage/*`
-or the schema is T1; a test that covers `components/*` or `app/*` is T3. A
-**gate test** — one that enforces a repo-wide rule, such as the drift guard,
-the dist gate, lint-boundary or the precache manifest — is Harness, regardless
-of which files it happens to touch. Added 2026-09-24 after the #839 audit
+own.** Classify in this order, and stop at the first match:
+
+1. A **gate test** — one that enforces a repo-wide rule, such as the drift
+   guard, the dist gate, lint-boundary or the precache manifest — is Harness,
+   regardless of which files it happens to touch.
+2. Otherwise it takes the **strictest** tier (T1 over T2 over T3) of every
+   surface it covers, using the rows above as the set. For example:
+   `src/hooks/*` (the product hooks, not the git hooks of the Harness row) is
+   T2; `lib/audio/*`, or `lib/storage/*` including the schema in
+   `lib/storage/db.ts`, is T1; `components/*` or `app/*` is T3. A test
+   covering `src/hooks/*` and `lib/storage/*` is T1.
+
+Added 2026-09-24 after the #839 audit
 found six test-only PRs (#797, #796, #792, #790, #786, #784) merged on George
 only; a retroactive Frank pass found real P2s on two of them (#845).
 
