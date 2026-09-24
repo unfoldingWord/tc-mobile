@@ -300,10 +300,11 @@ export function App() {
   //     - this `reload()`, when the sheet closes having changed something —
   //       the only repair for what changes the segment without reaching
   //       `onSaved`: a deferred Finished toggle, and the recorder MENU's
-  //       erase (`useEraseSegment`, which exits dirty). A cut to EMPTY also
-  //       clears the take, but runs `performClearEditedSegment`, which does
-  //       fire `onSaved` (hooks/use-save-take.ts) — so it is repaired by the
-  //       first route, not this one.
+  //       erase (`useEraseSegment`, which exits dirty). A cut to EMPTY is NOT
+  //       a counterexample and not a case this route skips: it runs
+  //       `performClearEditedSegment`, which fires `onSaved`
+  //       (hooks/use-save-take.ts), and THEN sets `dirty`, so both that route
+  //       and this one run for it. It simply does not depend on this one.
   //
   // The third is not redundant, and that is the part worth keeping: the
   // explicit toggle is DEFERRED to close (see `setFinished` in
