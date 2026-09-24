@@ -165,17 +165,16 @@ export function BooksScreen({
   // above, `useStoragePressure` itself is NOT gated on a loaded shelf — the
   // device can be full before this app has read anything
   // (`use-storage-pressure.ts`'s CONTRACT note) — so `storagePressureNotice`
-  // takes `hasReclaimableAudio` and the shelf's acute trio (`loading`/
-  // `loadFailed`/`deleteFailed`) as its own gate, rather than folding either
-  // into the hook the way `storage` above does. See that function's docblock
-  // for why the gate lives there now and not as JSX `&&` (#542, Frank P2-2 /
-  // George P3-5), why it is `hasReclaimableAudio` and not `hasContent`
-  // (#542 Part B), and why it is the acute trio and not the wider
-  // `noticeText` below (#542, George P2-4).
+  // takes `hasReclaimableAudio` and `deleteFailed` as its own gate, rather
+  // than folding either into the hook the way `storage` above does. See that
+  // function's docblock for why the gate lives there now and not as JSX `&&`
+  // (#542, Frank P2-2 / George P3-5), why it is `hasReclaimableAudio` and not
+  // `hasContent` (#542 Part B), why `deleteFailed` and not the wider
+  // `noticeText` below (#542, George P2-4), and why `loading`/`loadFailed`
+  // are not passed here (#843 item 4: unreachable in combination with
+  // `hasReclaimableAudio: true` from this call site).
   const pressureLine = storagePressureNotice(useStoragePressure(), {
     hasReclaimableAudio: reclaimableAudio,
-    loading,
-    loadFailed,
     deleteFailed,
   });
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1420,8 +1419,9 @@ export function BooksScreen({
           the device can be full before this app has read anything, so the
           underlying hook is NOT gated on content) — but the gate that
           exclusivity needs now lives INSIDE `storagePressureNotice` itself
-          (`hasReclaimableAudio` plus the acute trio `loading`/`loadFailed`/
-          `deleteFailed`, passed in above), not as JSX here. #542 round 1
+          (`hasReclaimableAudio` plus `deleteFailed`, passed in above — see
+          that call site's own comment for why `loading`/`loadFailed` are not
+          part of this gate, #843 item 4), not as JSX here. #542 round 1
           (Frank P2-2 / George P3-5) found the load-bearing predicate living
           here, in a bare `&&` no test could pin — the same shape
           `encoder-notice.ts` already avoids for `encoderLine`; #542 Part B
