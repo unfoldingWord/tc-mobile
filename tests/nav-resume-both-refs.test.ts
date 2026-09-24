@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { stripComments } from "./support";
+
 /**
  * George R3 P2 (PR #499), Amendment B's load-bearing half: the mount effect
  * must adopt the resumed index into BOTH `navIndex.current` AND
@@ -36,9 +38,6 @@ describe("Amendment B adopts the resumed index into BOTH refs (George R3 P2)", (
 
   // Strip comments so the gate reads CODE, not the docblock beside the effect
   // that (deliberately) names `navIndex`, `nextIndex` and "BOTH refs".
-  const stripComments = (text: string) =>
-    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
   const code = stripComments(readFileSync(sourceUrl, "utf8"));
 
   it("the adapter has exactly one resumeNavIndex(...) call (the mount effect)", () => {

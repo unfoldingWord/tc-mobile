@@ -86,11 +86,27 @@ jobs:
         with:
           node-version-file: .node-version
 
+      # `github.sha` on a `pull_request` event is GitHub's synthetic merge
+      # ref (refs/pull/N/merge), which contains the base branch's CURRENT
+      # tip, not just this PR's commits — and `pull_request.base.sha` can be
+      # older than that tip by the time CI runs. Diffing `base.sha..github.sha`
+      # therefore sweeps in every commit already merged to the base branch
+      # since the PR's base snapshot was taken (#865 follow-up, observed on
+      # PR #869 run 36033907345: the gate failed on four bodyless commits
+      # already on `develop` — via #875, #870, #852 — that #869 never
+      # introduced). Fetching `origin/<base_ref>` live and diffing it against
+      # `pull_request.head.sha` (the PR branch's own tip, never the
+      # synthetic merge ref) judges only the PR's own commits, whether the
+      # PR was branched from an old `develop` or has since merged `develop`
+      # back in. See tests/ci-commit-messages-range.test.ts, which pins this
+      # exact wiring.
       - name: Check PR commits for a non-blank body
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.sha }}
-        run: node scripts/check-commit-messages.mjs --range "$BASE_SHA..$HEAD_SHA"
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch origin "$BASE_REF"
+          node scripts/check-commit-messages.mjs --range "origin/$BASE_REF..$HEAD_SHA"
 
   quality:
     name: Code Quality

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { SaveFailed } from "@/components/save-failed";
 import { strings } from "@/components/strings";
+import { region } from "./support";
 
 /**
  * SaveFailed carries the same Send-log control the crash screen has (#456).
@@ -39,9 +40,13 @@ describe("SaveFailed — the Send-log control (#456)", () => {
 
     // Retry is the primary action and comes first; Send is second, matching
     // `ErrorBoundary`'s documented order (RestartControl then SendLogControl).
-    expect(html.indexOf('aria-label="Try saving again"')).toBeLessThan(
-      html.indexOf(`aria-label="${strings.shareFailureLog}"`)
-    );
+    // region() throws if either aria-label is missing, or if Send does not
+    // strictly follow Retry — a bare indexOf comparison would silently pass
+    // if BOTH returned -1 (#533).
+    region(html, {
+      from: html.indexOf('aria-label="Try saving again"'),
+      to: html.indexOf(`aria-label="${strings.shareFailureLog}"`),
+    });
   });
 
   it("is not shown while a save attempt is in flight, like every other control here", () => {
@@ -49,6 +54,11 @@ describe("SaveFailed — the Send-log control (#456)", () => {
       createElement(SaveFailed, { ...props, state: "saving" })
     );
 
+    // Positive floor first (#533): an early `return null` on the `saving` arm
+    // would make the negative assertion below pass on an empty document,
+    // checking nothing. "Saving" is the state's own title text, rendered
+    // independently of the block the negative assertion is really about.
+    expect(html).toContain("Saving");
     expect(html).not.toContain(`aria-label="${strings.shareFailureLog}"`);
   });
 
@@ -56,6 +66,12 @@ describe("SaveFailed — the Send-log control (#456)", () => {
     const html = renderToStaticMarkup(
       createElement(SaveFailed, { ...props, kind: "downgrade" })
     );
+
+    // Positive floor first (#533): an early `return null` on the `terminal`
+    // arm would make the negative assertion below pass on an empty document.
+    // The Discard control renders on every non-saving arm regardless of
+    // `terminal`, so its presence proves the screen actually rendered.
+    expect(html).toContain("Delete this recording");
 
     // Same reasoning `DatabasePanel` already carries (AGENTS.md): a
     // `DatabaseDowngradeError` latches `getDb()` for the life of the page, so

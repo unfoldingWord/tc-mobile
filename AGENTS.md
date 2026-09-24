@@ -507,11 +507,15 @@ No Actions workflow deploys the **PWA**. The four web-deploy workflows were
 deleted to remove a real collision: Cloudflare and Actions would otherwise both
 deploy on the same triggers, to different targets — two preview deploys per PR
 and two deployments per merge. The only deploy workflows in `.github/` are the
-two **manual** native lanes — the iOS TestFlight lane (`ios-testflight.yml`, a
-native build to App Store Connect, `docs/native/README.md` §4a) and the Android
+three **native** lanes — the iOS TestFlight lane (`ios-testflight.yml`, a
+native build to App Store Connect, `docs/native/README.md` §4a), the Android
 APK lane (`android-apk.yml`, a signed release APK attached as a run artifact,
-§5a). Both are `workflow_dispatch`-only, so they never fire on push/PR and are
-not Workers Builds triggers (#262, #318). Do not add a push/PR deploy job.
+§5a), and the Google Play lane (`android-play.yml`, a signed .aab uploaded to
+a Play testing track, `docs/native/play-store.md`). The first two are
+`workflow_dispatch`-only (#262, #318). The Play lane is the one exception that
+fires on push, to `staging` and `main` only: it ships a native bundle to Google
+Play, never the PWA, and holds no Cloudflare credentials, so it cannot collide
+with Workers Builds. Do not add a push/PR job that deploys the **PWA**.
 
 Workers Builds is configured **per Worker**, so the same repository is
 connected twice:
@@ -532,8 +536,8 @@ API token lives in Cloudflare's build settings, **not** in a GitHub secret —
 Actions does not deploy the PWA, so it needs no Cloudflare credentials (the
 TestFlight lane authenticates to App Store Connect with its own secrets, and
 the Android lane signs with its own keystore secrets — neither is Cloudflare's).
-Besides `ci.yml` and `dependabot.yml`, `.github/` holds only the two manual
-native lanes, `ios-testflight.yml` and `android-apk.yml`.
+Besides `ci.yml` and `dependabot.yml`, `.github/` holds only the three native
+lanes, `ios-testflight.yml`, `android-apk.yml` and `android-play.yml`.
 
 ### Confirming a deploy and rolling one back
 
@@ -768,6 +772,11 @@ Full process, and the traps that make a failed run look like a clean pass, in
 | **T2** | `hooks/*`, export/share paths                        | Tests where possible + on-device check on both Android and iOS.                                                   |
 | **T3** | `components/*`, `app/*`, copy, styling               | Review only. This layer is expected to churn.                                                                     |
 
+A test-only PR is tiered by what it covers, and a gate test is its own tier
+(Harness); the tier sets which reviewers run and how many rounds, not this
+table's on-device check — a test-only PR never gets the device check, only
+code changes do — see `docs/review/dual-review.md` ("Merge policy").
+
 ## Known open items
 
 1. **MP3 encoding is off the main thread** since B8 (ADR 0009): one Web Worker,
@@ -784,9 +793,14 @@ Full process, and the traps that make a failed run look like a clean pass, in
 2. **PCM storage is ~5.3 MB/minute** for segments still being worked on. **D3 is
    built** (B8, ADR 0009): a segment marked Finished is transcoded to 64 kbps
    MP3 and its PCM dropped in the same transaction, ~660 MB to ~66 MB for all 50
-   OBS stories once finished. The other two ADR 0002 mitigations are still open:
-   22 050 Hz for speech, and `navigator.storage.persist()`. #12 stays open on
-   those. **Resolve before October.**
+   OBS stories once finished. Of ADR 0002's other two mitigations,
+   `navigator.storage.persist()` **shipped** — #214 closed #12 (merged
+   2026-09-16) with the persist request and a not-persisted state-in-place
+   marker on Books. The separate nearly-full marker came later, under #247
+   (#537 the core, #542 the Books wiring). The 22 050 Hz-for-speech mitigation
+   was explicitly **deferred** on #12 (2026-09-04 decision, once D3 covered the
+   storage risk for the gate); #12's 2026-09-15 triage comment found no
+   separate tracking issue for it.
 3. **lamejs is LGPL-3.0** in an MIT repo. **Decided: keep it** — ADR 0003.
    What remains is the notice and attribution work, #36, not a product call.
 4. **The division-scheme question.** **Decided 2026-08-22 by Tim: no** to the
