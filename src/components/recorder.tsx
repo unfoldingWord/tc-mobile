@@ -307,10 +307,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * Lift the #613 collapse: the next render may seed a frame again.
      *
      * Called from every route that leaves the translator wanting one — a
-     * paste, an undo, leaving edit mode, and the lift of a stage drag
-     * (the waveform came to rest somewhere new, which is where the next span
-     * is picked). It is NOT called from the cut itself, and there is no timer:
-     * the collapsed state is the resting state after a cut, not a flash.
+     * paste, an undo, and leaving edit mode all call it unconditionally. The
+     * lift of a stage drag is the fourth route, but since #835 it is
+     * conditional: `onPointerUp` only calls this when `liftOutcome` says
+     * `reopenFrame`, which is false while the clipboard still holds a cut
+     * (`editor.canPaste`) — the requirements owner's decision that a drag
+     * must not swap the collapsed playhead back for a selection window while
+     * a paste is waiting. It is NOT called from the cut itself, and there is
+     * no timer: the collapsed state is the resting state after a cut, not a
+     * flash.
      */
     const reopenFrame = useCallback(() => setCutCollapsed(false), []);
     const stageRef = useRef<HTMLDivElement | null>(null);
@@ -1228,20 +1233,25 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           pan: from,
           length,
           takeActive,
+          canPaste: editor.canPaste,
         });
         setDragging(outcome.dragging);
         resumeAfterDragRef.current = outcome.keepOwed;
         if (outcome.resume) soundRange(from, length);
         // The stage has come to rest somewhere the translator chose, so a
-        // frame may be seeded there again (#613) — which keeps a second cut
-        // reachable without leaving edit mode. `liftOutcome` owns the rule:
-        // the stage must be clear of fingers AND silent, because a lift that
-        // resumes playback sounds the tail and a band drawn over it would
-        // claim an in-place audition of a span that is not sounding (Frank
-        // R1 P2). Its docblock carries the reasoning.
+        // frame may be seeded there again (#613) — UNLESS the clipboard still
+        // holds a cut (#835): the requirements owner's decision is that a
+        // drag does not reopen the frame while a paste is waiting, so a
+        // second cut is reachable only by pasting (or, once #862 lands,
+        // discarding) first, never by touching the waveform. `liftOutcome`
+        // owns the rule: besides `canPaste`, the stage must be clear of
+        // fingers AND silent, because a lift that resumes playback sounds the
+        // tail and a band drawn over it would claim an in-place audition of a
+        // span that is not sounding (Frank R1 P2). Its docblock carries the
+        // reasoning.
         if (outcome.reopenFrame) reopenFrame();
       },
-      [length, soundRange, takeActive, reopenFrame]
+      [length, soundRange, takeActive, reopenFrame, editor.canPaste]
     );
 
     /**

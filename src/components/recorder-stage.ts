@@ -695,6 +695,18 @@ export function resumesOnLift(input: {
  * FINGERS, not about which pointer owned the drag — gating it on `wasOwner`
  * leaves the frame collapsed for good when the owner lifts first and a
  * second contact lifts last.
+ *
+ * `canPaste` is a fifth term, added for #835: while the clipboard holds a
+ * cut, a drag's lift must NOT reopen the frame either, even once the stage
+ * is clear and silent. Before #835 a tap or drag on the waveform was a route
+ * back to a selection window regardless of the clipboard, which is exactly
+ * the bug reported — dragging to find a precise paste point kept swapping
+ * the red playhead back for a selection band. The requirements owner's
+ * decision on #835 is that a new selection is available only once the
+ * clipboard is empty (today, a paste — see `recorder.tsx`'s `onPaste`, which
+ * still always reopens the frame; that route, undo and redo are unaffected by
+ * this term). This is the ONLY route the decision narrows: `resumesOnLift`
+ * and the rest of this function's cases are unchanged.
  */
 export function liftOutcome(input: {
   /** This pointer owned the drag. */
@@ -710,6 +722,13 @@ export function liftOutcome(input: {
   readonly length: number;
   /** A take is live, paused, or being committed. */
   readonly takeActive: boolean;
+  /**
+   * The clipboard holds a cut (`editor.canPaste`, #835). While true, a
+   * drag's lift must not reseed a selection frame — the collapsed line stays
+   * the only thing on the stage until a paste (or, once #862 lands, a
+   * discard) empties the clipboard.
+   */
+  readonly canPaste: boolean;
 }): {
   readonly dragging: boolean;
   readonly resume: boolean;
@@ -738,7 +757,7 @@ export function liftOutcome(input: {
     dragging: held,
     resume,
     keepOwed: input.interrupted && !resume && input.contactsRemaining > 0,
-    reopenFrame: !held && !resume,
+    reopenFrame: !held && !resume && !input.canPaste,
   };
 }
 
