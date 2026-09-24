@@ -286,19 +286,24 @@ export function App() {
   //   `finishedIntent` over `pendingDemote` over the view's flag
   //   (components/recorder.tsx), recomputed every render — so it cannot go
   //   stale against the mirror it is derived from, only against the store, and
-  //   only because that mirror has.
+  //   only because that mirror has gone stale first.
   //
   // Nothing subscribes to the store, so each mirror is repaired by an explicit
-  // reload. THREE reload call sites exist, and this one is the last, not the
-  // only:
+  // reload. THREE reconciliation ROUTES exist, and this one is the last, not
+  // the only. Routes, not call sites — the sheet reaches the second from more
+  // than one place, so counting `reload(` calls gives a larger number than
+  // this list does, and the two are not the same claim.
   //     - a landed save reloads the LIST at once — `useSaveTake`'s `onSaved`,
   //       wired above, because the row reads as unrecorded until it does;
   //     - an in-sheet commit reloads the SHEET's own view (`reloadView()` in
   //       components/recorder.tsx);
   //     - this `reload()`, when the sheet closes having changed something —
-  //       which is the ONLY repair for everything that changes the segment
-  //       without landing a take through `onSaved`: a deferred Finished
-  //       toggle, and an erase (`clearSegmentTake`, which exits dirty).
+  //       the only repair for what changes the segment without reaching
+  //       `onSaved`: a deferred Finished toggle, and the recorder MENU's
+  //       erase (`useEraseSegment`, which exits dirty). A cut to EMPTY also
+  //       clears the take, but runs `performClearEditedSegment`, which does
+  //       fire `onSaved` (hooks/use-save-take.ts) — so it is repaired by the
+  //       first route, not this one.
   //
   // The third is not redundant, and that is the part worth keeping: the
   // explicit toggle is DEFERRED to close (see `setFinished` in
@@ -306,11 +311,9 @@ export function App() {
   // take reaches the list through this call and no other.
   //
   // This inventory lives HERE and is not restated in the hooks. Both mirrors'
-  // docblocks used to carry their own partial copies, and both had drifted —
-  // one naming two repair occasions of the three, the other disagreeing about
-  // the number of mirrors (Frank R1 on #746). A second copy of a list is a
-  // second thing to keep in step, and this list has now been corrected four
-  // times. Link to it; do not re-enumerate it.
+  // docblocks used to carry their own partial copies and both had drifted: a
+  // second copy of a list is a second thing to keep in step. Link to it; do
+  // not re-enumerate it.
   //
   // It is correct today for one reason — the sheet is MODAL. While it is open
   // the screens behind it are `inert` (the wrapper below), so the list's mirror

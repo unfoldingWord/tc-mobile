@@ -31,8 +31,7 @@ export interface RecorderSegmentView {
    * is a write from anywhere else: it is one of the mirrors, and none of them
    * observes the others (#160, L-10). How many there are, and what repairs
    * each, is enumerated once — at `recorderClosedState` in `app/App.tsx`. Do
-   * not restate the count here; see `use-chapter-segments.ts` for what a
-   * second copy of it cost. The sheet does not render this directly:
+   * not restate the count here. The sheet does not render this directly:
    * `displayedFinished` puts the translator's un-committed intent over it.
    */
   readonly finished: boolean;
