@@ -18,6 +18,7 @@
  */
 
 import type { SaveFailureKind } from "@/hooks/save-failure";
+import { strings } from "@/lib/strings";
 
 /**
  * The headline. `quota` is the same either way — the phone is full whether the
@@ -29,8 +30,15 @@ export function recoveryTitle(
   editOnly: boolean
 ): string {
   switch (kind) {
+    // `strings.noRoom` (#172), not a second literal of the same sentence: the
+    // no-room condition reads the same on this screen and on every other write
+    // that can hit it (Books, Segments) now that both exist. This was the
+    // ONE line `tests/strings-one-table.test.ts` (#678/#169) caught as a
+    // duplicate once #172 part 1 added the general vocabulary — the fix is to
+    // route through the shared word, not to weaken the gate or re-word either
+    // side into disagreement.
     case "quota":
-      return "No room left on this phone.";
+      return strings.noRoom;
     // Named as the condition it is, not as a failure that might go the other
     // way next time: another copy of the app has moved the data past this
     // build, so every further attempt from here fails the same way. The line

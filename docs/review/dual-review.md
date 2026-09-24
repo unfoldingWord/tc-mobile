@@ -66,12 +66,19 @@ stop at the first match:
    guard, the dist gate, lint-boundary or the precache manifest — is Harness,
    regardless of which files it happens to touch.
 2. Otherwise it takes the **strictest** tier (T1 over T2 over T3) of every
-   surface it covers, using the "Risk tiers" table in `AGENTS.md` as the set.
-   The globs are that table's own strings, all under `src/`. For example:
-   `hooks/*` (the product hooks, not the git hooks of the Harness row) is
-   T2; `lib/audio/*`, or `lib/storage/*` including the schema in
-   `lib/storage/db.ts`, is T1; `components/*` or `app/*` is T3. A test
-   covering `hooks/*` and `lib/storage/*` is T1.
+   surface it covers, using the "Risk tiers" table in `AGENTS.md` as the set —
+   that table is total over `src/` (#864): every path resolves to a tier, by
+   an explicit row or one of that table's own defaults, so this step never
+   runs out of table to consult. The named globs are that table's own
+   strings. For example: `hooks/*` (the product hooks, not the git hooks of
+   the Harness row) or `lib/export/*` is T2; `lib/audio/*`, or
+   `lib/storage/*` including the schema in `lib/storage/db.ts`, is T1;
+   `components/*` or `app/*` is T3. An unlisted `lib/*` path — `lib/nav/*` and
+   `lib/view/*` are the ones #864 named — is T1 by that table's default, and
+   `src/types/*`, an ambient `*.d.ts` or `src/data/*` takes the strictest
+   tier of its non-test importers (T1 if that set can't be determined); any
+   other unlisted `src/**` path is T1. A test covering `hooks/*` and
+   `lib/storage/*` is T1.
 
 **The tier sets which reviewers run and how many rounds — not T2's on-device
 check.** `AGENTS.md`'s "Risk tiers" table gives T2 a bar of "tests where

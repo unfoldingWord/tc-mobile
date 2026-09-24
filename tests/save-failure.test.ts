@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  failureKey,
   isDatabaseDowngrade,
   isQuotaExceeded,
   saveFailureKind,
@@ -65,5 +66,31 @@ describe("saveFailureKind", () => {
     expect(saveFailureKind("no room")).toBe("unknown");
     expect(saveFailureKind(undefined)).toBe("unknown");
     expect(saveFailureKind(null)).toBe("unknown");
+  });
+});
+
+/**
+ * `failureKey` (#172) — the general Books/Segments vocabulary, distinct from
+ * `saveFailureKind` above (that one is the take-save recovery screen's own
+ * four-way classification). Only quota is special-cased here: everything
+ * else is the call site's own fallback word, verbatim.
+ */
+describe("failureKey", () => {
+  it("returns the fallback for an ordinary (non-quota) failure", () => {
+    expect(failureKey(new Error("boom"), "loadFailed")).toBe("loadFailed");
+    expect(failureKey(new Error("No such segment: s1"), "saveFailed")).toBe(
+      "saveFailed"
+    );
+    expect(failureKey(undefined, "eraseFailed")).toBe("eraseFailed");
+  });
+
+  it('maps a quota-exceeded cause to "noRoom" regardless of the fallback', () => {
+    expect(failureKey({ name: "QuotaExceededError" }, "loadFailed")).toBe(
+      "noRoom"
+    );
+    expect(failureKey({ code: 22 }, "saveFailed")).toBe("noRoom");
+    expect(failureKey({ name: "QuotaExceededError" }, "eraseFailed")).toBe(
+      "noRoom"
+    );
   });
 });
