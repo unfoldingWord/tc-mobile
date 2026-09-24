@@ -111,7 +111,7 @@ Onion layers, enforced by ESLint `no-restricted-imports` — imports never go
 src/
 ├── types/       Domain types              (no internal imports)
 ├── lib/         Pure audio + storage core (imports: types)
-│   ├── audio/     PCM edit, peaks, WAV, MP3 — no DOM, unit-tested in Node
+│   ├── audio/     PCM edit, peaks, MP3 — no DOM, unit-tested in Node
 │   ├── scripture/ Burrito scope-string grammar
 │   └── storage/   IndexedDB repositories
 ├── hooks/       Browser boundary          (imports: lib, types)
@@ -132,7 +132,7 @@ MediaRecorder (webm/opus on Android, mp4/aac on iOS)
    → decodeAudioData + OfflineAudioContext resample
    → canonical mono 16-bit PCM @ 44.1 kHz     ← everything internal is this
    → edit: cut / insert / paste / concat      (pure Int16Array functions)
-   → export: MP3 (lamejs) or WAV                (encoder only — not wired, #18)
+   → export: MP3 (lamejs)                        (encoder only — not wired, #18)
 ```
 
 See [ADR 0002](docs/decisions/0002-audio-storage-format.md) and

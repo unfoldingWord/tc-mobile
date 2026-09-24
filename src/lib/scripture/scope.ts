@@ -13,6 +13,12 @@
  * Parsing these is the difference between emitting a burrito that validates
  * and one that merely looks right, so the grammar is implemented once, here,
  * and unit-tested.
+ *
+ * @pivotpending No caller yet under src/ (test-only). #253 (Template Library,
+ * storage half) names this module directly: the "Book of the Bible" template
+ * writes a `SegmentRef.reference` of `"{ch}"` per chapter, and this grammar is
+ * the read/format side `SegmentRef.scope` is typed on (`src/types/domain.ts:48`,
+ * already tagged against the same seam).
  */
 
 export interface ParsedScope {
@@ -29,6 +35,9 @@ const CV = /^(\d+)(?::(\d+))?$/;
  * Parse a scope string. Returns `null` for the whole-book scope (`""`) and
  * throws on anything that is not valid grammar — a malformed scope must not
  * silently become a plausible-looking wrong reference.
+ *
+ * @pivotpending No caller yet under src/ (test-only). Same seam as
+ * {@link ParsedScope} — #253.
  */
 export function parseScope(scope: string): ParsedScope | null {
   const trimmed = scope.trim();
@@ -84,6 +93,10 @@ export function parseScope(scope: string): ParsedScope | null {
   return result;
 }
 
+/**
+ * @pivotpending No caller yet under src/ (test-only). Same seam as
+ * {@link ParsedScope} — #253.
+ */
 export function isValidScope(scope: string): boolean {
   try {
     parseScope(scope);
@@ -93,7 +106,12 @@ export function isValidScope(scope: string): boolean {
   }
 }
 
-/** Render a parsed scope back to canonical string form. */
+/**
+ * Render a parsed scope back to canonical string form.
+ *
+ * @pivotpending No caller yet under src/ (test-only). Same seam as
+ * {@link ParsedScope} — #253.
+ */
 export function formatScope(parsed: ParsedScope | null): string {
   if (parsed === null) return "";
   const { startChapter, startVerse, endChapter, endVerse } = parsed;
