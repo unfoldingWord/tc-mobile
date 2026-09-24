@@ -2,6 +2,14 @@ import "fake-indexeddb/auto";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// `clearSegmentTake` passes through to the real store unless a case below
+// replaces one call, which is how a clear failure OTHER than a missing segment
+// is produced: fake-indexeddb has no quota to exhaust.
+vi.mock("@/lib/storage/books", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/storage/books")>();
+  return { ...actual, clearSegmentTake: vi.fn(actual.clearSegmentTake) };
+});
+
 import {
   performClearEditedSegment,
   performDiscardTake,
@@ -11,6 +19,7 @@ import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import {
   addChapter,
   addSegment,
+  clearSegmentTake,
   createBook,
   getSegment,
 } from "@/lib/storage/books";
@@ -442,13 +451,36 @@ describe("performClearEditedSegment — the cut-to-empty close (#456)", () => {
     const reports: FailureReport[] = [];
     const off = subscribeToFailures((r) => reports.push(r));
 
-    const ok = await performClearEditedSegment(bogusSegment());
+    const outcome = await performClearEditedSegment(bogusSegment());
 
     off();
     consoleError.mockRestore();
-    expect(ok).toBe(false);
+    expect(outcome).toBe("stale");
     expect(reports.map((r) => r.context)).toEqual(["erase-segment"]);
     expect(reports[0]?.cause).toBeInstanceOf(Error);
+  });
+
+  it('answers "stale" only for the segment it was asked to clear (#607)', async () => {
+    // A missing segment is a target another copy deleted, and a retry of the
+    // clear cannot bring it back; any other failure may pass on the next tap.
+    // The store call is the real one above; here it is replaced for one call.
+    const segmentId = await freshSegment();
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    vi.mocked(clearSegmentTake).mockRejectedValueOnce(
+      new Error("QuotaExceededError")
+    );
+    const transient = await performClearEditedSegment(segmentId);
+    vi.mocked(clearSegmentTake).mockRejectedValueOnce(
+      new Error("No such segment: some-other-segment")
+    );
+    const otherId = await performClearEditedSegment(segmentId);
+
+    consoleError.mockRestore();
+    expect(transient).toBe(false);
+    expect(otherId).toBe(false);
   });
 
   it("reports nothing to the funnel, and fires onCleared, on a successful clear", async () => {
@@ -457,10 +489,10 @@ describe("performClearEditedSegment — the cut-to-empty close (#456)", () => {
     const reports: FailureReport[] = [];
     const off = subscribeToFailures((r) => reports.push(r));
 
-    const ok = await performClearEditedSegment(segmentId, onCleared);
+    const outcome = await performClearEditedSegment(segmentId, onCleared);
 
     off();
-    expect(ok).toBe(true);
+    expect(outcome).toBe(true);
     expect(onCleared).toHaveBeenCalledTimes(1);
     expect(reports).toEqual([]);
   });
@@ -481,11 +513,11 @@ describe("performClearEditedSegment — the cut-to-empty close (#456)", () => {
     const reports: FailureReport[] = [];
     const off = subscribeToFailures((r) => reports.push(r));
 
-    const ok = await performClearEditedSegment(segmentId, onCleared);
+    const outcome = await performClearEditedSegment(segmentId, onCleared);
 
     off();
     consoleError.mockRestore();
-    expect(ok).toBe(true);
+    expect(outcome).toBe(true);
     expect(onCleared).toHaveBeenCalledTimes(1);
     // The store op committed — this is the notification-failure site, not
     // the store-failure one #456 routes. Only the latter reports.
