@@ -204,9 +204,10 @@ const PATHS: Record<IconName, React.ReactNode> = {
       strokeLinecap="round"
     />
   ),
-  // Three dots, stacked — an object's own menu (a book, a chapter, a segment).
-  // Distinguishes these object menus from the global ≡. The recorder still
-  // uses ≡; its separate affordance remains open in #589.
+  // Three dots, stacked — an object's own menu (a book, a chapter, a segment,
+  // since #589/#683) and, since #863, the recorder's edit-toolbar menu
+  // opener. Distinguishes these from the global ≡ (#608) and from the
+  // recorder's own record-mode header opener, which stays ≡.
   more: (
     <>
       <circle cx="11" cy="6" r="2" fill="currentColor" />

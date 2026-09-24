@@ -12,6 +12,13 @@ import type { SegmentId } from "@/types/domain";
 export interface RecorderSegmentView {
   readonly bookName: string;
   readonly chapterNumber: number;
+  /**
+   * The facilitator's passage label for this chapter (#264), or `null` when
+   * nobody has renamed it. Carried alongside the number rather than instead of
+   * it: the header resolves the two through `strings.chapterHeading`, which is
+   * the one place that decides what an unnamed chapter is called (#169).
+   */
+  readonly chapterName: string | null;
   readonly ordinal: number;
   /** The facilitator's label, shown after the ordinal (#591); null ⇒ none. */
   readonly segmentLabel: string | null;
@@ -94,6 +101,7 @@ export async function loadRecorderSegmentView(
   return {
     bookName: book?.name ?? "",
     chapterNumber: chapter?.number ?? 0,
+    chapterName: chapter?.name ?? null,
     ordinal: segment.index,
     segmentLabel: segment.label,
     finished: isFinished(segment.status),

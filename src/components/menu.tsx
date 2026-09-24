@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { Control } from "./control";
 import { FOCUSABLE, wrapTab } from "./focus-trap";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 
 interface MenuProps {
   open: boolean;
@@ -23,19 +23,24 @@ interface MenuProps {
    */
   closeLabel?: string;
   /**
-   * Opened by a ≡ that stays a ≡ (#608). The header's dismiss control wears
-   * the same `menu` glyph as the control that opened it, in the same top-right
-   * corner, and the panel shows no visible title — one control, one glyph, one
-   * place, and the glyph is the label. The recorder's overflow drawer wears
-   * it too (#621, the requirements owner's call on that panel): its "More"
-   * heading said nothing the ≡ did not, and a left-pointing chevron reads as
-   * "move left" on a drawer that docks on the RIGHT. Off (the default) the
-   * header is a title beside a back chevron, which every other menu keeps —
-   * the book, chapter and segment menus (opened from a ⋮ since #589) and the
-   * New Book dialog. What a screen reader hears does not change either way:
-   * `title` still names the dialog and `closeLabel` still names the control
-   * ("Close menu" dismisses, as before), which is also what the e2e specs
-   * locate the menu by.
+   * The header's dismiss control wears the `menu` glyph (≡), in the top-right
+   * corner, and the panel shows no visible title — one glyph, one place, and
+   * the glyph is the label. For the global menu (#608) that is also the glyph
+   * of the control that opened it — both are ≡, top-right, always. The
+   * recorder's overflow drawer opts in too (#621, the requirements owner's
+   * call on that panel): its "More" heading said nothing the ≡ did not, and a
+   * left-pointing chevron reads as "move left" on a drawer that docks on the
+   * RIGHT. Since #863 the recorder's two openers no longer match: record
+   * mode's header opener is ≡, but the edit toolbar's opener is ⋮ (the same
+   * kebab #589/#683 gave the object menus) — the drawer's OWN dismiss stays ≡
+   * regardless of which one opened it, because ≡ is used only at the top
+   * right (#608) and the drawer's header is the only top-right control
+   * showing while it is open. Off (the default) the header is a title beside
+   * a back chevron, which every other menu keeps — the book, chapter and
+   * segment menus (opened from a ⋮ since #589) and the New Book dialog. What
+   * a screen reader hears does not change either way: `title` still names the
+   * dialog and `closeLabel` still names the control ("Close menu" dismisses,
+   * as before), which is also what the e2e specs locate the menu by.
    */
   hamburger?: boolean;
   /**

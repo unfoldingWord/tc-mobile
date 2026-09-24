@@ -1,8 +1,8 @@
 import { Control } from "./control";
 import { Menu } from "./menu";
 import { rowHint, type RowReason } from "./menu-row-state";
-import { strings } from "./strings";
 import { ThemeControl } from "./theme-control";
+import { strings } from "@/lib/strings";
 
 /**
  * The recorder sheet's ≡ menu (#160, L-1).
@@ -90,12 +90,16 @@ export function RecorderMenu({
       // Still the drawer's name for a screen reader; never painted (#621).
       title={strings.recorderMenuTitle}
       // `hamburger` (#621, the requirements owner's call on this panel,
-      // after #608 set the rule on the global menu): the ≡ that opens this
-      // drawer stays a ≡ inside it, top-right, and is what dismisses it —
-      // no "More" heading, and no chevron, because a chevron pointing LEFT
-      // reads as "move left" on a drawer that docks on the RIGHT.
+      // after #608 set the rule on the global menu): this drawer's own
+      // dismiss stays a ≡, top-right, and is what dismisses it — no "More"
+      // heading, and no chevron, because a chevron pointing LEFT reads as
+      // "move left" on a drawer that docks on the RIGHT. That holds
+      // regardless of which control opened it: record mode's header opener
+      // is ≡, but since #863 the edit toolbar's opener is ⋮ (≡ is used only
+      // at the top right, and the toolbar is not the top right) — the
+      // drawer's own top-right control is the only ≡ on screen either way.
       // The book, chapter and segment menus open from a ⋮ since #589 and
-      // keep the chevron; this drawer opens from a ≡.
+      // keep the chevron; this drawer keeps ≡ no matter which opener it was.
       hamburger
     >
       {mode === "record" ? (
@@ -104,17 +108,21 @@ export function RecorderMenu({
             icon="edit"
             label={strings.enterEdit}
             variant="quiet"
-            // Editable when there is audio to edit, a full clipboard to paste
-            // — a never-recorded segment with a pending clip must still open
-            // edit mode to receive it, or the chapter-wide clipboard (G3) could
-            // never land on an empty segment (George R2) — OR a live
-            // take, which `onEnterEdit` commits first, then edits (#134). Only
-            // the commit window itself blocks it now, not every non-idle state.
+            // Editable when there is audio to edit, or a full clipboard to
+            // paste — a never-recorded segment with a pending clip must still
+            // open edit mode to receive it, or the chapter-wide clipboard (G3)
+            // could never land on an empty segment (George R2). Blocked while a
+            // take is live, not only while it is committing: #134 once let a
+            // live take through (`onEnterEdit` would commit it first, then
+            // edit), but #857 (Moto G tester report) found the toolbar's `[ ]`
+            // twin of this row still openable mid-recording and closed that for
+            // both — this row shares `editReason` with `recorder.tsx`'s
+            // toolbar Edit control verbatim, so the two can never disagree.
             // Never while `denied`: the permission panel owns the body, and
             // entering edit there strands the edit toolbar over a Retry that
             // starts the mic (George R3, with onRetryRecord as the other half).
             // The gate lives in `editRowReason` so the grey row can say WHY
-            // (#135): a take mid-commit shows the `alert` badge — a state mark
+            // (#135): a blocked take shows the `alert` badge — a state mark
             // that names no control — and the reason joins the row's
             // accessible name.
             disabled={editReason !== null}
@@ -178,8 +186,9 @@ export function RecorderMenu({
               This is the site the reframing of #149 turns on: the sheet is
               `aria-modal` over an `inert` Segments, so while it is up the Books
               hamburger is four screens away, and direct sun is exactly the
-              condition that arrives while you are recording. The `≡` that opens
-              this menu is itself closed through the close window, while `denied`,
+              condition that arrives while you are recording. The opener for this
+              menu — the header's `≡`, or the edit toolbar's `⋮` since #863 — is
+              itself closed through the close window, while `denied`,
               and while a take is held — the panels those states raise own the
               body — so the toggle inherits those gates rather than adding its own.
 

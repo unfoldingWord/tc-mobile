@@ -31,16 +31,12 @@ import { expect, type Locator, type Page } from "@playwright/test";
  *
  * So there is a real window — Record visible, `isClosing` still true — where
  * the toolbar's Edit control is only SOFT-blocked: `busy={isClosing}`
- * (`recorder.tsx:3649`) sets `aria-busy` and swallows `onClick`
+ * (`recorder.tsx:3690`) sets `aria-busy` and swallows `onClick`
  * (`src/components/control.tsx:143`) WITHOUT setting the native `disabled`
- * attribute (`control.tsx:149`, `!busy` in the expression) and WITHOUT
- * `aria-disabled` either — `barHint` returns `null` for the
- * `"uncommitted-take"` reason on this control on purpose
- * (`src/components/menu-row-state.ts:210`), so `hint` is `null` and
- * `softDisabled` (`control.tsx:133`) never turns on. Playwright's `click()`
- * actionability only reads the native `disabled` DOM property, never
- * `aria-busy`/`aria-disabled`, so it clicks a control whose `onClick` prop is
- * `undefined` — the click "succeeds" and does nothing, and the next
+ * attribute (`control.tsx:149`, `!busy` in the expression). Playwright's
+ * `click()` actionability only reads the native `disabled` DOM property,
+ * never `aria-busy`/`aria-disabled`, so it clicks a control whose `onClick`
+ * prop is `undefined` — the click "succeeds" and does nothing, and the next
  * assertion times out waiting for an effect that was never triggered. This
  * was reproduced locally (CPU-throttled, see the PR body) with the same
  * accessible-name snapshot every CI failure recorded: "Record" and
@@ -48,13 +44,22 @@ import { expect, type Locator, type Page } from "@playwright/test";
  *
  * `aria-busy` is the one attribute that tracks the real gate: it is set from
  * `isClosing` in the same render `editReason`/`committing` reads
- * (`recorder.tsx:2641-2648`), so waiting for it to clear is waiting on the
- * commit itself, not on a proxy that can lag it.
+ * (`recorder.tsx:2663`), so waiting for it to clear is waiting on the commit
+ * itself, not on a proxy that can lag it.
+ *
+ * **#857 correction:** while a take is LIVE this control is `aria-disabled`
+ * with the accessible name `"Edit recording. Stop recording to edit."`
+ * (`recorder.tsx`'s `editToolbarHint`, which passes `strings.stopToEdit` only
+ * while `recording`; the commit window after Stop keeps the plain name). An
+ * `exact: true` locator would match NOTHING in the live-take frame, and
+ * `not.toHaveAttribute` on zero elements is not the claim "found the control
+ * and its `aria-busy` is gone". Matched by prefix instead, so the same
+ * element is tracked through every name it wears.
  */
 export function editRecordingButton(page: Page): Locator {
   return page
     .locator(".recorder-toolbar")
-    .getByRole("button", { name: "Edit recording", exact: true });
+    .getByRole("button", { name: /^Edit recording/ });
 }
 
 /** Click the toolbar's Edit control once the commit it may be racing has

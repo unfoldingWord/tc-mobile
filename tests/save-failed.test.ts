@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import { SaveFailed } from "@/components/save-failed";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 import { region } from "./support";
 
 /**

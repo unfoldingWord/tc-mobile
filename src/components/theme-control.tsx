@@ -1,5 +1,5 @@
 import { Control } from "./control";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 import { useTheme } from "@/hooks/use-theme";
 
 /**
@@ -8,8 +8,9 @@ import { useTheme } from "@/hooks/use-theme";
  * ── Why it is a component and not three copies of a `Control` ──
  *
  * It is mounted in three menus now — the Books global `≡`, the chapter `≡` and
- * the recorder `≡` — and the three facts it has to get right are the same at
- * each one:
+ * the recorder's own menu (its header `≡`, or the edit toolbar's `⋮` since
+ * #863 — one menu, two openers) — and the three facts it has to get right are
+ * the same at each one:
  *
  *   - the glyph shows the DESTINATION, not the current state (a sun on a dark
  *     screen), because a text-free control that names what you already have
