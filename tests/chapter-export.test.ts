@@ -230,6 +230,48 @@ describe("gatherChapterPcm", () => {
     spy.mockRestore();
   });
 
+  it("fits a clip whose stored PCM is one frame SHORTER than its own metadata into its slot, instead of counting it missing (DRI decision, #812)", async () => {
+    // Same two-read disagreement as S-10, run the other way: `getClip()`
+    // hands back one fewer frame than `getClipMeta()` reserved. DRI decision
+    // on #812 (Seth): fit the short clip to `frames` with `fitToFrames`, the
+    // same helper the MP3 path already runs its decode through inside
+    // `fitMp3Decode` — so the clip's own audio is exported and only the tail
+    // of its slot is silence, rather than dropping the clip.
+    const { chapterId } = await chapterWith([
+      { n: 100, v: 100 },
+      { n: 100, v: 200 },
+    ]);
+    const real = clips.getClip.bind(clips);
+    let call = 0;
+    const spy = vi.spyOn(clips, "getClip").mockImplementation(async (id) => {
+      call++;
+      const clip = await real(id);
+      if (call === 2 && clip && clip.encoding === "pcm") {
+        return {
+          ...clip,
+          samples: clip.samples.subarray(0, clip.samples.length - 1),
+        };
+      }
+      return clip;
+    });
+
+    const gathered = await gatherChapterPcm(chapterId, testCodec());
+
+    expect(gathered).not.toBeNull();
+    const { samples: pcm, segments, missing } = gathered!;
+    expect(segments).toBe(2); // the short clip is exported, not dropped
+    expect(missing).toBe(0);
+    expect(pcm.length).toBe(100 + GAP + 100); // both slots reserved in full
+    const secondSlotStart = 100 + GAP;
+    // The clip's own 99 recorded frames land at the front of its slot.
+    expect(pcm.subarray(secondSlotStart, secondSlotStart + 99)).toEqual(
+      samples(99, 200)
+    );
+    // The one frame the slot reserved beyond the stored audio is silence.
+    expect(pcm[secondSlotStart + 99]).toBe(0);
+    spy.mockRestore();
+  });
+
   /**
    * B8/D3: a finished segment's clip is MP3. The gather decodes it through the
    * injected codec and puts the RECORDING — not the decode — in the slot its
