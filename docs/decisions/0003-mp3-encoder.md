@@ -70,19 +70,25 @@ attribution of every bundled web-bundle component ship under `public/licenses/`
 MIT-with-an-LGPL-3.0-encoder position in prose. The in-app surface has not yet
 been eyeballed on a device.
 
-**LGPL §4(d) — decided 2026-09-03 by the DRI: §4(d)(0), the Corresponding Source
-is the repository.** The boundary (items 1–2) is clean; §4(d)(0) also asks that
-a recipient be _able_ to relink, which it satisfies by providing the
-Corresponding Application Code in a form that permits recombination with a
-modified library. tC Mobile relies on **§4(d)(0)**: the Corresponding Source is
-`unfoldingWord/tc-mobile` itself, made public before the v0.2.0 `staging → main`
-promotion (org-transfer plan D2, pending the requirements owner's confirmation
-and the pre-publication review). **Until the repository is public, §4(d)(0) is
-met by supplying the source on request from unfoldingWord.** Constraints on the
-**shipped copy** (the in-app note and the README, not this ADR): they may state
-that the corresponding source is available from unfoldingWord, but must not
-claim the repository is public until it is, and carry no exercisable-relink
-language.
+**LGPL §4(d) — decided 2026-09-03 by the DRI; source-link mechanism confirmed
+2026-09-24 (#144): §4(d)(0), the Corresponding Source is the repository.** The
+boundary (items 1–2) is clean; §4(d)(0) also asks that a recipient be _able_ to
+relink, which it satisfies by providing the Corresponding Application Code in a
+form that permits recombination with a modified library. tC Mobile relies on
+**§4(d)(0)**: the Corresponding Source is `unfoldingWord/tc-mobile` itself, made
+public **2026-09-13** (org-transfer plan D2). The shipped About screen carries a
+durable, version-specific link to it — a GitHub `/tree/<sha>` URL for the exact
+build commit (`src/components/about-panel.tsx`, `SourceOfferLink`) — so a
+recipient of the Combined Work is directed to the matching source, and
+`tests/dist-source-offer.test.ts` asserts that link ships in the built bundle.
+**This is the §4(d)(0) mechanism, and it supersedes the pre-publication interim
+of "source on request":** the repository is public and the link is live, so the
+obligation is met by the link rather than a request channel. Constraints on the
+**shipped copy** (the in-app note and the README, not this ADR): they may name
+the public repository as the Corresponding Source and link it, and carry no
+exercisable-relink how-to. This mechanism was selected by the DRI, not confirmed
+by qualified counsel (Frank rounds 2–3 on #144 asked; recorded as fact, not as a
+compliance opinion).
 
 The in-app notice describes the **web bundle** — which includes the
 `@capacitor/*` JavaScript packages `src/` imports (core, app, filesystem, share

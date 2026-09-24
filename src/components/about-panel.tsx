@@ -78,10 +78,6 @@ export function AboutPanel({
         >
           <p className="text-ink-muted">{strings.aboutBlurb}</p>
           <p>{strings.aboutAppLicense}</p>
-          {/* The LGPL/GPL written offer for the app's own corresponding source,
-              on the shipped copy — the README that also carries it is not in the
-              installed PWA (Cloudflare excludes `*.md`). ADR 0003 §4(d)(0). */}
-          <p>{strings.aboutSourceOffer}</p>
 
           {/* Licence texts first: the open-edge focus lands on an in-app button,
               never on an off-phone link (George G2). */}
@@ -99,6 +95,16 @@ export function AboutPanel({
               </button>
             ))}
           </section>
+
+          {/* The app's own Corresponding Source (LGPL §4(d)(0)). Placed AFTER
+              the licence-text buttons so the open-edge focus still lands on a
+              button, not this off-phone link (George G2). `SourceOfferLink`
+              defers the `__BUILD_SHA__` read to render time, so mounting a
+              closed AboutPanel (every BooksScreen test) never evaluates it. */}
+          <div className="flex flex-col gap-[3px]">
+            <span>{strings.aboutSourceOffer}</span>
+            <SourceOfferLink />
+          </div>
 
           <section className="flex flex-col gap-[10px]">
             <h3 className="t-title">{strings.aboutThirdParty}</h3>
@@ -204,6 +210,26 @@ function LicenseTextView({ text }: { text: LicenseText }) {
     >
       {body}
     </pre>
+  );
+}
+
+/**
+ * The durable link to the app's own Corresponding Source for THIS build (LGPL
+ * §4(d)(0), the DRI's 2026-09-24 decision on #144). A GitHub `/tree/<sha>` URL
+ * is permanent and version-specific: it resolves to the exact commit shipped,
+ * so a recipient of the Combined Work can obtain the matching source. Kept a
+ * component so the `__BUILD_SHA__` build define is read at render time, not when
+ * a closed AboutPanel is constructed (mirrors `BuildStamp`). The built bundle
+ * carries the resolved URL; `tests/dist-source-offer.test.ts` asserts it ships.
+ */
+function SourceOfferLink() {
+  return (
+    <ExternalLink
+      href={`https://github.com/unfoldingWord/tc-mobile/tree/${__BUILD_SHA__}`}
+      label={strings.aboutVisitAppSource}
+    >
+      unfoldingWord/tc-mobile
+    </ExternalLink>
   );
 }
 
