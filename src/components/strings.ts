@@ -616,19 +616,28 @@ export const strings = {
   // anything, the device is simply filling up. No byte count or percentage in
   // either line: the estimate is coarse and per-origin
   // (`lib/storage/pressure.ts`), so a number here would be a precision the
-  // reading does not support. Neither line says "this phone" — `pressure.ts`'s
-  // own docblock says the reading is per-origin, not per-device: the OS can
-  // hand this origin a comfortable quota while the disk is nearly full, or the
-  // reverse, so a device-wide claim would overclaim what `estimate()` actually
-  // said (Frank P2-1 / George P2-1, #542). Names the pair `pressure.ts`'s
-  // docblock itself names — mark segments Finished (ADR 0009's transcode
-  // reclaims ~90%) OR share and erase — not bare "share", which does not
-  // reclaim anything: `lib/export/chapter.ts` decodes and re-encodes without
-  // deleting a single stored clip. Only the actual reclaim actions are named.
+  // reading does not support.
+  //
+  // **DRI decision (Seth, 2026-09-24), replacing the original wording.** The
+  // original copy said "here" rather than naming the phone, and "when you
+  // can" / "now" for urgency — deliberately, to avoid overclaiming a
+  // per-device condition from a per-origin reading (Frank P2-1 / George
+  // P2-1, #542; `pressure.ts`'s docblock still explains that risk: the OS can
+  // hand this origin a comfortable quota while the disk is nearly full, or
+  // the reverse). The DRI judged that hedge too vague to act on: it does not
+  // say what device is at risk or what happens if nothing is done. The new
+  // copy names the phone and, for the critical band, states the concrete
+  // consequence — new recordings may not save — which is also why
+  // `storageCritical` now renders in the `alert` tone rather than `info`
+  // (`storage-pressure-notice.ts`). Both lines still name the pair
+  // `pressure.ts`'s docblock names — mark segments Finished (ADR 0009's
+  // transcode reclaims ~90%) or share the work and then remove it — not bare
+  // "share", which does not reclaim anything on its own: `lib/export/
+  // chapter.ts` decodes and re-encodes without deleting a single stored clip.
   storageLow:
-    "There isn't much space left here for recordings. Mark segments finished, or share and erase, when you can.",
+    "This phone is running low on space. Mark the segments you're done with as finished — they take much less room.",
   storageCritical:
-    "There is almost no space left here for recordings. Mark segments finished, or share and erase, now.",
+    "This phone is almost out of space, and new recordings may not save. Mark finished segments, or share your work and then remove it.",
 
   // ── The database is unreachable (#221) ───────────────────────────────────
   // Two full-screen states, one in each copy of the app, when a newer copy

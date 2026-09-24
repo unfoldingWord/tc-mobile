@@ -2,18 +2,31 @@
  * What the Books shelf says about #247's storage-pressure band — the WHOLE
  * gate, in a DOM-free function.
  *
- * Lifted out of `books-screen.tsx` for the reason `encoder-notice.ts` was:
- * this repo has no DOM test runner, so a mount predicate left in JSX is
- * pinned by nothing. #540 (George's review of #537, the core PR this wires
- * up) found exactly that failure mode in the core PR's own published JSX
- * recipe: `Notice`'s default `tone` is `"alert"`, and `"low" | "critical"` is
- * a valid `ReactNode`, so completing the example the obvious way type-checks
- * while painting the band name on the home screen in the failure colour. The
- * DRI decided both bands read `info`, never `alert` (`lib/storage/
- * pressure.ts`'s `StoragePressure` docblock: a standing condition is not a
- * failure, and red on the home screen teaches people to ignore red). Putting
- * that decision here, in a function a test can pin, means a caller cannot get
- * it wrong the way a bare `{marker && <Notice>}` in JSX could.
+ * Lifted out of `books-screen.tsx` for the reason `encoder-notice.ts` was: no
+ * test currently mounts `BooksScreen` and this effectful hook graph
+ * (`useStoragePressure`, `useBooks`, …) through a DOM render — `tests/
+ * render.ts` (jsdom + `renderToStaticMarkup`, #197) exists, but nothing wires
+ * it to this screen — so a mount predicate left in JSX here is pinned by
+ * nothing. #540 (George's review of #537, the core PR this wires up) found
+ * exactly that failure mode in the core PR's own published JSX recipe:
+ * `Notice`'s default `tone` is `"alert"`, and `"low" | "critical"` is a valid
+ * `ReactNode`, so completing the example the obvious way type-checks while
+ * painting the band name on the home screen in the failure colour. Putting
+ * the tone/text decision here, in a function a test can pin, means a caller
+ * cannot get it wrong the way a bare `{marker && <Notice>}` in JSX could.
+ *
+ * **The tone split (DRI decision, Seth, 2026-09-24).** `"low"` reads `info`;
+ * `"critical"` now reads `alert`. This reverses the call recorded in
+ * `lib/storage/pressure.ts`'s `StoragePressure` docblock through
+ * 2026-09-24 — both bands `info`, on the reasoning that a standing condition
+ * is not a failure and red on the home screen teaches people to ignore red
+ * (George R4 G3) — see that docblock for the superseded reasoning and the
+ * reversal note. The DRI's reason for the reversal: a critical condition
+ * rendered in the same tone as a low one does not read as more urgent, and
+ * the critical copy (`strings.storageCritical`) now states a concrete
+ * consequence — new recordings may not save — which is the shape `alert`
+ * exists for. `"low"` keeps `info`: it is still a heads-up with time to act,
+ * not a failure.
  *
  * **Round 1 review (#542) found the tone/text half was lifted here but the
  * VISIBILITY half was not** — `books-screen.tsx` still decided "does this
@@ -80,8 +93,7 @@ export function storagePressureNotice(
   if (marker === null) return null;
   if (!gate.hasContent) return null;
   if (gate.loading || gate.loadFailed || gate.deleteFailed) return null;
-  return {
-    tone: "info",
-    text: marker === "critical" ? strings.storageCritical : strings.storageLow,
-  };
+  return marker === "critical"
+    ? { tone: "alert", text: strings.storageCritical }
+    : { tone: "info", text: strings.storageLow };
 }
