@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { matchingBraceClose, stripComments } from "./support";
+
 /**
  * George R2 P2-1 and P2-2 (PR #499): the commit-close-recorder RACE guards.
  *
@@ -19,25 +21,6 @@ import { describe, expect, it } from "vitest";
  * window is ever hit, or that any device has run this. Behaviour is the e2e
  * spec's idle path (cases b, d) plus the on-device items named in its header.
  */
-
-/** Strip block and line comments so the gates read CODE, not the prose that
- * (deliberately) discusses `isClosing`, `suppressPop` and `transitionInFlight`
- * in the very comments beside these lines — a naive match would score them. */
-const stripComments = (text: string) =>
-  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
-/** Brace-count from `openIndex` (an opening `{`) to its matching close. */
-const matchingBraceClose = (body: string, openIndex: number): number => {
-  let depth = 0;
-  for (let i = openIndex; i < body.length; i++) {
-    if (body[i] === "{") depth++;
-    else if (body[i] === "}") {
-      depth--;
-      if (depth === 0) return i;
-    }
-  }
-  return -1;
-};
 
 const navSource = stripComments(
   readFileSync(

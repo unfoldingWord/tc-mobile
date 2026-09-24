@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { stripComments } from "./support";
+
 /**
  * Pins the Recorder call site's CenterlineOverlay props (#513).
  * `tests/centerline-overlay.test.ts` checks the component's static markup;
@@ -10,9 +12,6 @@ import { describe, expect, it } from "vitest";
  * source-shape test reads that call site. It does not exercise hook effects,
  * interactions, layout, or the mounted Recorder.
  */
-
-const stripComments = (text: string) =>
-  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 
 const recorder = stripComments(
   readFileSync(

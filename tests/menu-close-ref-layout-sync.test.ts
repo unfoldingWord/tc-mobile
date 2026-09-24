@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { matchingBraceClose } from "./support";
+
 /**
  * `Menu`'s `onCloseRef` sync runs in a LAYOUT effect, not a passive one
  * (#517 item 2, George r3 P3 on #508).
@@ -56,18 +58,6 @@ describe("Menu's onCloseRef sync is a layout effect (#517 item 2)", () => {
   const before = source.slice(0, guardIndex);
   const openerIndex = before.lastIndexOf("Effect(");
   const hook = before.slice(before.lastIndexOf("use", openerIndex));
-
-  const matchingBraceClose = (text: string, openIndex: number): number => {
-    let depth = 0;
-    for (let i = openIndex; i < text.length; i++) {
-      if (text[i] === "{") depth++;
-      else if (text[i] === "}") {
-        depth--;
-        if (depth === 0) return i;
-      }
-    }
-    return -1;
-  };
 
   const braceOpen = source.indexOf("{", openerIndex);
   const braceClose = matchingBraceClose(source, braceOpen);
