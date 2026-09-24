@@ -345,8 +345,6 @@ export const strings = {
   modepillEditing: "Editing",
 
   // ── Waveform editing (B5) ────────────────────────────────────────────────
-  selectStart: "Select a span to edit",
-  selectStop: "Close the selection",
   cut: "Cut the selection",
   // Play's name says WHICH audio the tap will sound, because that changes with
   // the line and the picked span. `auditionPlan`'s `source` chooses between

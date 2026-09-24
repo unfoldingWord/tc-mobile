@@ -24,6 +24,7 @@ import {
   raceAudioResume,
   RESUME_TIMEOUT_MS,
   resumeAudioContext,
+  stopTracks,
 } from "./audio-io";
 import { reportFailure } from "./report-failure";
 
@@ -436,7 +437,8 @@ export function useRecorder(): UseRecorder {
 
   const releaseStream = useCallback(() => {
     closeTap();
-    streamRef.current?.getTracks().forEach((t) => t.stop());
+    const stream = streamRef.current;
+    if (stream) stopTracks(stream, "recorder-release-track");
     streamRef.current = null;
     recorderRef.current = null;
   }, [closeTap]);
@@ -449,7 +451,7 @@ export function useRecorder(): UseRecorder {
    * opened.
    */
   const abandonStream = useCallback((stream: MediaStream) => {
-    stream.getTracks().forEach((t) => t.stop());
+    stopTracks(stream, "recorder-release-track");
     if (streamRef.current === stream) streamRef.current = null;
   }, []);
 
@@ -890,8 +892,10 @@ export function useRecorder(): UseRecorder {
         // below (George r2 on #500, G-R2-P2-1; DRI decision 2026-09-19,
         // option A — this order, no new theory). `abandonStream` is safe to
         // call again from `finally`: `track.stop()` on an already-stopped
-        // track is a spec no-op, and the ref check is identity-gated, so the
-        // second call is inert.
+        // track is a spec no-op, and the ref check is identity-gated. A track
+        // whose `stop()` throws is the exception: `stopTracks` reports it on
+        // each call, so this path can write a second `"recorder-release-track"`
+        // row. That is a duplicate row, not a missed release.
         if (stream) abandonStream(stream);
         // One macrotask, same bound as the inactive arm and the timeout arm's
         // `finish`, so a slice already queued at the moment of the throw has
