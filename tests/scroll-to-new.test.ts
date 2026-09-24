@@ -47,10 +47,19 @@ const scrollIntoView = vi.fn(function (this: HTMLElement) {
 
 function Harness({
   onCommit,
+  selector = "button",
 }: {
   onCommit: (api: ScrollToNew<string>) => void;
+  /**
+   * Which contract this instance is under. Both real ones appear here —
+   * Books' `"button"` and Segments' `".row-open"` — and the fixture below
+   * resolves them to DIFFERENT nodes on purpose. Without that, a `controlIn`
+   * that ignored its argument and hardcoded `"button"` would answer correctly
+   * for every case in this file (George round 3, finding 1 — observed).
+   */
+  selector?: string;
 }) {
-  const api = useScrollToNew<string>("button");
+  const api = useScrollToNew<string>(selector);
   // Every commit, so the identity case below can compare across renders.
   useEffect(() => {
     onCommit(api);
@@ -69,7 +78,16 @@ function Harness({
         // A span BEFORE the button, so a `controlIn` that resolved by DOM
         // order rather than by the selector would answer with the wrong node.
         createElement("span", { id: `${id}-label` }, id),
-        createElement("button", { id: `${id}-open` }, "Open")
+        // Books' target: the row's first <button>, its expand toggle.
+        createElement("button", { id: `${id}-open` }, "Open"),
+        // Segments' target, AFTER it and carrying the class. `"button"` and
+        // `".row-open"` therefore resolve to different nodes, which is what
+        // lets a case hold the hook to the selector it was handed.
+        createElement(
+          "button",
+          { id: `${id}-row-open`, className: "row-open" },
+          "Record"
+        )
       )
     )
   );
@@ -77,9 +95,11 @@ function Harness({
 
 const api = (): ScrollToNew<string> => seen[seen.length - 1]!;
 
-function render() {
+function render(selector?: string) {
   act(() =>
-    root.render(createElement(Harness, { onCommit: (a) => seen.push(a) }))
+    root.render(
+      createElement(Harness, { onCommit: (a) => seen.push(a), selector })
+    )
   );
 }
 
@@ -126,6 +146,21 @@ describe("the registry", () => {
     // it, and a span takes no focus — the hand-off would be a silent no-op,
     // which is the #364 failure wearing different clothes.
     expect(api().controlIn("a")?.id).toBe("a-open");
+  });
+
+  it("resolves by the selector it was GIVEN, not a hardcoded one", () => {
+    // Books passes `"button"` and Segments `".row-open"`, and the two are
+    // different nodes in this fixture. A `controlIn` that ignored its
+    // argument and hardcoded `"button"` answers correctly for every other
+    // case in this file — it passed all thirteen before this one existed.
+    //
+    // What it would cost is the key-repeat landing: point Segments at the
+    // wrong control and a held Enter activates it, which is the class George
+    // R4 P2-1 established and the reason the selector is chosen at the call
+    // site rather than inside the hook.
+    render(".row-open");
+    expect(api().controlIn("a")?.id).toBe("a-row-open");
+    expect(api().controlIn("b")?.id).toBe("b-row-open");
   });
 
   it("keeps identity-stable callbacks, so a screen's effect deps do not churn", () => {
@@ -186,6 +221,36 @@ describe("arm, then reveal", () => {
     act(() => api().setNode("never-added", document.createElement("li")));
     act(() => api().reveal());
     expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it("SPENDS a focus arm whose control is missing", () => {
+    // The row is registered, but nothing inside it matches the selector, so
+    // `controlIn` answers null and no focus lands. The arm must still be
+    // spent: `reveal` clears what it planned before it calls anything, and a
+    // version that re-armed on a null control would fire the hand-off on some
+    // later, unrelated commit — dragging focus away from wherever the
+    // translator had got to.
+    //
+    // The sibling case below covers the scroll half. This is the focus half,
+    // and it was the one nothing pinned (George round 3, finding 1, second
+    // gap — a re-arm-on-null mutation passed all thirteen cases).
+    const bare = document.createElement("li");
+    bare.id = "bare";
+    host.appendChild(bare);
+    act(() => api().setNode("bare", bare));
+
+    act(() => {
+      api().armFocus("bare");
+      api().reveal();
+    });
+    expect(document.activeElement).toBe(document.body);
+
+    // The control arrives late. The arm is gone, so nothing grabs focus.
+    const late = document.createElement("button");
+    late.id = "bare-open";
+    bare.appendChild(late);
+    act(() => api().reveal());
+    expect(document.activeElement).toBe(document.body);
   });
 
   it("hands focus to the armed row's control", () => {
