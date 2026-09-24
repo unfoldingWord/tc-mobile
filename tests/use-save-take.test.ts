@@ -35,23 +35,17 @@ import type { ClipId, SegmentId } from "@/types/domain";
 /**
  * The save orchestration — the wiring between the pure transitions and the store.
  *
- * `tests/pending-take.test.ts` covers the transitions and says in its own
- * docblock what it does not cover: "everything the hook does with the results.
- * The `saveTake` write, the `deleteClip` of the orphan… The wiring between them
- * has no automated coverage." That is this file (#180). Until it existed,
- * `src/hooks/use-save-take.ts` was imported by no test at all, so a regression
- * in the sequencing — the classic being a `finally { setPending(null) }`, which
- * drops the only copy of a recording on the one path the slot exists for —
- * shipped with `npm run verify` and CI green.
+ * `tests/pending-take.test.ts` covers pure transitions. These tests cover
+ * store orchestration, including keeping the held recording on a failed save.
  *
  * What is covered: `performSaveTake` and `performDiscardTake`, which are the
  * whole of the two operations minus React, against fake-indexeddb through the
  * real store helpers. Same split as `performErase` in `use-erase-segment.ts`.
  *
- * What is NOT covered, and cannot be: the hook itself. This repo has no jsdom
- * and no renderer (`vitest.config.ts` sets `environment: "node"`), so the
- * `useState` slot, the `savingRef` double-tap guard and the `onSaved` latest-ref
- * are review and on-device surface. The transcode sweep is injected here rather
+ * These tests do not mount the hook or exercise its `useState` slot,
+ * `savingRef` double-tap guard or `onSaved` latest-ref. The static render
+ * harness does not run hook effects or interactions.
+ * The transcode sweep is injected here rather
  * than run: it starts the MP3 encoder in a Web Worker, which does not exist in
  * Node — so what these tests assert about it is whether it is ASKED for, which
  * is the decision (D3: only a Finished commit, only after it lands).
