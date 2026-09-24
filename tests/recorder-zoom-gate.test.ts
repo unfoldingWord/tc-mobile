@@ -88,7 +88,18 @@ describe("Zoom's disabled gate covers the leftover-preview close window (#396)",
     const end = sheet.indexOf("/>", open);
     expect(open, "no <RecorderToolbar in the sheet").toBeGreaterThan(-1);
     expect(end, "unterminated <RecorderToolbar").toBeGreaterThan(open);
-    const toolbarTag = sheet.slice(open, end);
+    // Strip comments before matching. Bounding the slice to the element (the
+    // fix that closed the earlier slice-to-EOF hole) only excluded comments
+    // AFTER it — a comment INSIDE the tag still satisfies the positive
+    // matches below while the live prop says something else. Proven by
+    // mutation: a commented `windowControlsInert={stage.windowControlsInert}`
+    // ahead of a hard-wired `{false}` kept this green. Same strip
+    // `tests/menu-hamburger-header.test.ts` and `tests/recorder-menu.test.ts`
+    // use; any test that slices a region out of source needs it.
+    const toolbarTag = sheet
+      .slice(open, end)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
     expect(toolbarTag).toMatch(
       /windowControlsInert=\{stage\.windowControlsInert\}/
     );
