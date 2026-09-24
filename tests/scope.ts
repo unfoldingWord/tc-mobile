@@ -13,6 +13,16 @@
  * Parsing these is the difference between emitting a burrito that validates
  * and one that merely looks right, so the grammar is implemented once, here,
  * and unit-tested.
+ *
+ * Test-only helper (moved out of `src/lib/scripture/` in #818/#159, per the
+ * DRI pick on that PR): no `src/` caller exists, and #253's own text does not
+ * name `ParsedScope`/`parseScope`/`isValidScope`/`formatScope` as consumers —
+ * AGENTS.md: an export with no issue behind it gets deleted, not tagged. This
+ * grammar is kept because `tests/obs-catalog.test.ts` uses `parseScope` and
+ * `isValidScope` as a real helper to check `obsFrameScope`'s output against
+ * it, alongside `tests/scope.test.ts`'s own coverage. #253 can reintroduce a
+ * `src/`-side version of this grammar if the Template Library actually needs
+ * one.
  */
 
 export interface ParsedScope {
@@ -93,7 +103,9 @@ export function isValidScope(scope: string): boolean {
   }
 }
 
-/** Render a parsed scope back to canonical string form. */
+/**
+ * Render a parsed scope back to canonical string form.
+ */
 export function formatScope(parsed: ParsedScope | null): string {
   if (parsed === null) return "";
   const { startChapter, startVerse, endChapter, endVerse } = parsed;
