@@ -2,6 +2,8 @@ import { existsSync } from "node:fs";
 
 import { expect, test, type Locator } from "@playwright/test";
 
+import { clickEditRecording, editRecordingButton } from "./recorder-fixtures";
+
 // Shipped-build computed styles cover the real cascade, including Tailwind and
 // inline overrides. Chromium cannot verify the iOS callout; that is issue #564.
 async function expectSelectionSuppressed(root: Locator) {
@@ -88,10 +90,9 @@ test.describe("handle targets after a zoom fit", () => {
       await expect(
         page.getByRole("button", { name: "Record", exact: true })
       ).toBeVisible();
-      await page
-        .locator(".recorder-toolbar")
-        .getByRole("button", { name: "Edit recording", exact: true })
-        .click();
+      // #846/#848/#825: wait for the real precondition (the commit, not the
+      // Record button's label) before clicking — see recorder-fixtures.ts.
+      await clickEditRecording(page);
       const startHandle = page.getByLabel("Selection start", { exact: true });
       const endHandle = page.getByLabel("Selection end", { exact: true });
       await expect(startHandle).toBeVisible();
@@ -184,11 +185,13 @@ test.describe("edit mode toggle", () => {
           page.getByRole("button", { name: "Record", exact: true })
         ).toBeVisible();
       }
-      const toggle = page
-        .locator(".recorder-toolbar")
-        .getByRole("button", { name: "Edit recording", exact: true });
+      const toggle = editRecordingButton(page);
       const before = await toggle.boundingBox();
       expect(before).not.toBeNull();
+      // #846/#848/#825: this first entry can follow a Stop tap (390px, above)
+      // — wait for the real precondition before clicking. See
+      // recorder-fixtures.ts.
+      await expect(toggle).not.toHaveAttribute("aria-busy", "true");
       await toggle.click();
       await expect(
         page.getByLabel("Selection start", { exact: true })
@@ -424,10 +427,9 @@ test.describe("edit toolbar keeps the ≡ off the leading edge (#370)", () => {
       await expect(
         page.getByRole("button", { name: "Record", exact: true })
       ).toBeVisible();
-      await page
-        .locator(".recorder-toolbar")
-        .getByRole("button", { name: "Edit recording", exact: true })
-        .click();
+      // #846/#848/#825: wait for the real precondition (the commit, not the
+      // Record button's label) before clicking — see recorder-fixtures.ts.
+      await clickEditRecording(page);
       await expect(
         page.getByLabel("Selection start", { exact: true })
       ).toBeVisible();
@@ -520,10 +522,10 @@ test.describe("selection handle focus ring at 0%/100% (#659)", () => {
       await page
         .getByRole("button", { name: "Stop recording", exact: true })
         .click();
-      await page
-        .locator(".recorder-toolbar")
-        .getByRole("button", { name: "Edit recording", exact: true })
-        .click();
+      // #846/#848/#825: this spec never waited for "Record" to reappear
+      // either — wait for the real precondition before clicking. See
+      // recorder-fixtures.ts.
+      await clickEditRecording(page);
       await page
         .getByRole("button", {
           name: "Zoomed to the whole segment. Zoom in to a quarter.",

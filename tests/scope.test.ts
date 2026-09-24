@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatScope, isValidScope, parseScope } from "@/lib/scripture/scope";
+import { formatScope, isValidScope, parseScope } from "./scope";
 
 describe("parseScope", () => {
   it("treats the empty scope as the whole book", () => {

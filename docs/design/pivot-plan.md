@@ -60,14 +60,14 @@ Its second half said the timing seam stays built and inert, contradicting B0.
 
 ### Confirmed: build stays as designed
 
-| Element                                                  | Where it already is                                           |
-| -------------------------------------------------------- | ------------------------------------------------------------- |
-| Vertical segment list, ordinal + waveform per row        | `components/section-view.tsx`, `section-row.tsx`              |
-| Waveform as the row's face; no waveform = not recorded   | `components/waveform.tsx`, `lib/audio/peaks.ts`               |
-| Recording as a distinct mode with the list receding      | Pass A "A2 — The states"; mockup dims the list behind a sheet |
-| Cut / insert / paste / concat over raw PCM               | `lib/audio/edit.ts` — already pure, already sample-accurate   |
-| PCM in IndexedDB, encode once on export                  | ADR 0002, ADR 0003, `lib/storage/clips.ts`                    |
-| Scripture scope-string grammar, where a reference exists | ADR 0004 (accepted half), `lib/scripture/scope.ts`            |
+| Element                                                  | Where it already is                                                                                                 |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Vertical segment list, ordinal + waveform per row        | `components/section-view.tsx`, `section-row.tsx`                                                                    |
+| Waveform as the row's face; no waveform = not recorded   | `components/waveform.tsx`, `lib/audio/peaks.ts`                                                                     |
+| Recording as a distinct mode with the list receding      | Pass A "A2 — The states"; mockup dims the list behind a sheet                                                       |
+| Cut / insert / paste / concat over raw PCM               | `lib/audio/edit.ts` — already pure, already sample-accurate                                                         |
+| PCM in IndexedDB, encode once on export                  | ADR 0002, ADR 0003, `lib/storage/clips.ts`                                                                          |
+| Scripture scope-string grammar, where a reference exists | ADR 0004 (accepted half), `tests/scope.ts` (test-only since #818/#159; no `src/` caller — #253 can reintroduce one) |
 
 `lib/audio/edit.ts` deserves a specific note: its header already says _"an edit
 window that can cut, an edit marker that can paste, and insert… undo is just
