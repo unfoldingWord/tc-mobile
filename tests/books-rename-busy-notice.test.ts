@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
 import { strings } from "@/lib/strings";
+import type { FailureKey } from "@/hooks/save-failure";
 import type { ShareProgress } from "@/hooks/share-progress";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { Book, BookId } from "@/types/domain";
@@ -35,15 +36,16 @@ const fakeBook = (): Book => ({
 
 // What `useBooks().createBook` actually resolves to (`use-books.ts`'s
 // unexported `CreateBookOutcome`) — a discriminated outcome, not a bare
-// `Book`, so `onConfirmNewBook` knows a failure's reason.
+// `Book`, so `onConfirmNewBook` knows a failure's reason. `key` (#172), not
+// `message`: a `strings`-mapped KEY, never the raw store text.
 type CreateBookOutcome =
   | { readonly ok: true; readonly book: Book }
-  | { readonly ok: false; readonly message: string };
+  | { readonly ok: false; readonly key: FailureKey };
 
 const HIDDEN: ShareProgress = { phase: "hidden" };
 
 const mocks = vi.hoisted(() => ({
-  error: null as string | null,
+  error: null as FailureKey | null,
   renameBook: vi.fn(),
   createBook: vi.fn(),
 }));
@@ -157,13 +159,16 @@ it(
     "Notice is up (#395 item 1)",
   async () => {
     // A previous rename attempt already failed — the Notice this leaves up.
-    mocks.error = "Could not rename the book.";
+    // The hook exposes a `strings`-mapped KEY (#172), never the raw store
+    // text, so the mock stands in with a real key and the assertions below
+    // check for its MAPPED copy.
+    mocks.error = "saveFailed";
     await mount();
     await click(strings.bookMenuOpen(bookName));
     await click(strings.renameBook);
 
     // Idle: the stale failure is the only thing showing.
-    expect(notice(mocks.error)).not.toBeNull();
+    expect(notice(strings.saveFailed)).not.toBeNull();
 
     // Retry: Save starts a new attempt, which never resolves in this test —
     // the in-flight window the busy Notice below is standing in for.
@@ -178,7 +183,7 @@ it(
     // The wait and the (stale) failure must not share the panel at once —
     // the #112 collision `control-affordance.ts` names.
     expect(notice(strings.savingName)).not.toBeNull();
-    expect(notice("Could not rename the book.")).toBeNull();
+    expect(notice(strings.saveFailed)).toBeNull();
 
     // Quiet the dangling promise so the suite does not warn on teardown.
     await act(async () => {

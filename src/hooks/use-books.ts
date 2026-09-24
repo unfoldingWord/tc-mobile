@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { errorMessage } from "@/lib/failure-text";
 import {
   addChapter as addChapterToBook,
   chapterProgress,
@@ -14,6 +13,7 @@ import {
   renameBook as renameBookInStore,
 } from "@/lib/storage/books";
 import { reportFailure } from "./report-failure";
+import { failureKey, type FailureKey } from "./save-failure";
 import { bumpStoragePressure } from "./use-storage-pressure";
 import type { Book, BookId, Chapter } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
@@ -153,14 +153,16 @@ export function dropBookCard(
 }
 
 /**
- * The hook's single error slot: the message, and whether it came from a delete.
+ * The hook's single error slot: the failure KEY (#172 — never the raw
+ * `cause.message` a screen would otherwise speak verbatim), and whether it
+ * came from a delete.
  *
- * One state, not two, so the label and the message it labels cannot drift apart
+ * One state, not two, so the label and the key it labels cannot drift apart
  * — a delete's copy must never outlive the error it describes, and a later
  * failure from any other mutation must take the label off (George R1 P2-2).
  */
 interface Failure {
-  readonly message: string;
+  readonly key: FailureKey;
   readonly fromDelete: boolean;
 }
 
@@ -311,7 +313,7 @@ export function isLoadCurrent(startedAt: number, current: number): boolean {
  */
 type CreateBookOutcome =
   | { readonly ok: true; readonly book: Book }
-  | { readonly ok: false; readonly message: string };
+  | { readonly ok: false; readonly key: FailureKey };
 
 /**
  * The Books screen (B2): the book/chapter tree and its two creation actions.
@@ -395,7 +397,11 @@ export function useBooks() {
       return;
     }
     setFailure({
-      message: errorMessage(cause),
+      // Every caller here is a write (create/addChapter/rename/delete), so
+      // "saveFailed" is the fallback; `deleteBook`'s own failure never shows
+      // this key on screen regardless — `fromDelete` relabels it to
+      // `deleteBookFailed` instead (see `books-screen.tsx`'s `noticeText`).
+      key: failureKey(cause, "saveFailed"),
       fromDelete,
     });
   }, []);
@@ -432,7 +438,7 @@ export function useBooks() {
         // so `loadFailed` is false. The book is still on disk in that state, so
         // the delete's copy is the one that has to survive (George R4 P2-1).
         //
-        // `message` is extracted BEFORE the updater, not inside it: the
+        // `key` is extracted BEFORE the updater, not inside it: the
         // updater must not reference `cause` itself, only a value already
         // read from it. A nested function inside a `catch (cause)` block that
         // DOES reference `cause` silences eslint-plugin-react-hooks 7.1.1's
@@ -446,9 +452,13 @@ export function useBooks() {
         // so it is outside what eslint-plugin-react-hooks analyses at all.
         // This hoist stays inside the hook and only changes what the nested
         // closure references.)
-        const message = errorMessage(cause);
+        const key = failureKey(cause, "loadFailed");
+        // #172: this site had no funnel report before this PR. Called
+        // directly here, not inside the updater above (same reason `key` is
+        // hoisted out of it) — see the comment block above.
+        reportFailure(cause, "books-load");
         setFailure((prev) =>
-          prev?.fromDelete ? prev : { message, fromDelete: false }
+          prev?.fromDelete ? prev : { key, fromDelete: false }
         );
       } finally {
         if (!stale()) setLoading(false);
@@ -537,9 +547,13 @@ export function useBooks() {
         reload();
         return { ok: true, book };
       } catch (cause) {
+        // #172: this site had no funnel report before this PR — the reason
+        // reached only the New Book dialog's own scoped Notice, and only as
+        // the raw store string.
+        reportFailure(cause, "books-create");
         return {
           ok: false,
-          message: errorMessage(cause),
+          key: failureKey(cause, "saveFailed"),
         };
       }
     },
@@ -601,7 +615,18 @@ export function useBooks() {
         // calling `reload()`, which would also trigger a needless extra read
         // of a book that has not changed — marks that load stale so its
         // resolution is a no-op.
-        const { swallowed } = await reportUnlessStale(cause, bookId, report);
+        // #172: this site had no funnel report before this PR. The wrapper
+        // — not bare `report` — only fires on the NOT-swallowed branch,
+        // exactly where `reportUnlessStale` calls it; a stale race is not a
+        // genuine failure to log, matching `renameSegment`'s same rule.
+        const { swallowed } = await reportUnlessStale(
+          cause,
+          bookId,
+          (reported) => {
+            reportFailure(reported, "books-add-chapter");
+            report(reported);
+          }
+        );
         if (swallowed) {
           setBooks((prev) => dropBookCard(prev, bookId));
           reload();
@@ -651,10 +676,13 @@ export function useBooks() {
         // in the same synchronous step as the Notice: bumping after the
         // `await` left a microtask window in which an already-resolved load
         // continuation still read the old generation (Frank, #733 round 1).
+        // #172: this site had no funnel report before this PR — added the
+        // same way `addChapter` above does, and for the same reason.
         const { swallowed } = await reportUnlessStale(
           cause,
           bookId,
           (reported) => {
+            reportFailure(reported, "books-rename");
             loadGen.current += 1;
             report(reported);
           }
@@ -749,9 +777,9 @@ export function useBooks() {
     newBookPlaceholder,
     loading,
     loaded,
-    // Derived from the one failure slot, so the message and its delete label
+    // Derived from the one failure slot, so the key and its delete label
     // are always the same failure's.
-    error: failure?.message ?? null,
+    error: failure?.key ?? null,
     deleteFailed: failure?.fromDelete ?? false,
     reload,
     createBook,
