@@ -21,6 +21,14 @@ import { bodyAfter, stripComments } from "./support";
  * with `pushHistoryEntry()` instead of `performWrite`; drop the replay from
  * the `popstate` listener, or run it before the landing is routed; replay
  * through `historyWriteDecision`, which can refuse.
+ *
+ * #802 adds one more replay-side mutation this file must catch: drop the
+ * restore of `outcome.pending` when a write throws (the tail is lost again,
+ * silently); or swallow the throw instead of rethrowing it (AGENTS.md —
+ * "never swallow an error silently"). `tests/nav-history-latch.test.ts`'s
+ * `replayQueue` block pins that the WALK itself stops at the throw and hands
+ * back the right tail; this file pins that the adapter actually USES that
+ * result rather than ignoring it.
  */
 const sourceUrl = new URL("../src/hooks/use-nav-stack.ts", import.meta.url);
 
@@ -122,5 +130,34 @@ describe("the latch's own plumbing", () => {
     expect(code).toMatch(
       /addEventListener\(\s*"popstate"\s*,\s*onPopState\s*\)/
     );
+  });
+});
+
+describe("replayDeferredWrites restores the unreplayed tail before it rethrows (#802)", () => {
+  const replay = bodyAfter("const replayDeferredWrites = useCallback(");
+
+  it("walks the queue through replayQueue rather than a bare loop", () => {
+    expect(replay).toMatch(/replayQueue\(\s*queued\s*,/);
+  });
+
+  it("on a failed outcome, restores `pending` onto the ref before doing anything else with it", () => {
+    const guard = index(replay, /if\s*\(\s*outcome\.ok\s*\)\s*return\s*;/);
+    const restore = index(
+      replay,
+      /deferredWrites\.current\s*=\s*outcome\.pending\.reduce\(\s*deferWrite\s*,\s*deferredWrites\.current\s*\)/
+    );
+    const rethrow = index(replay, /throw\s+outcome\.cause\s*;/);
+    expect(guard).toBeLessThan(restore);
+    expect(restore).toBeLessThan(rethrow);
+  });
+
+  it("does not swallow the failure — no local catch, no reportFailure call in this body", () => {
+    // AGENTS.md "never swallow an error silently": a throw from `perform` is
+    // handled entirely inside `replayQueue` (`tests/nav-history-latch.test.ts`
+    // pins that), so this body has no `try`/`catch` of its own and does not
+    // report through the funnel — it rethrows, rejoining the same uncaught
+    // path every other bare `window.history` call in this file already takes.
+    expect(replay).not.toMatch(/\btry\s*\{/);
+    expect(replay).not.toMatch(/reportFailure\(/);
   });
 });

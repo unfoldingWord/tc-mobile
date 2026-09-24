@@ -5,6 +5,8 @@ import {
   historyWriteDecision,
   outstandingConsume,
   replayDecision,
+  replayQueue,
+  type DeferredWrite,
   type HistoryWrite,
   type OutstandingConsume,
 } from "@/lib/nav/history-latch";
@@ -21,6 +23,13 @@ import {
  * write it makes from a UI command is `tests/nav-history-latch-wiring.test.ts`;
  * the write actually being withheld in a browser is `e2e/back-navigation.spec.ts`
  * cases (n) and (o).
+ *
+ * `replayQueue` (#802) is the walk `replayDeferredWrites` runs at a landing,
+ * pulled out here because it is the one piece of that walk with no `window` in
+ * it — `perform` is an injected function, so a throw can be driven directly
+ * rather than through a real `window.history` failure. That the adapter wires
+ * this in (restores `pending` before it rethrows, never swallows) is
+ * `tests/nav-history-latch-wiring.test.ts`.
  */
 
 const guard = (
@@ -121,5 +130,69 @@ describe("deferWrite — the queue a landing replays", () => {
     const next = deferWrite(queue, "arm-floor");
     expect(next).not.toBe(queue);
     expect(queue).toEqual(["arm-floor"]);
+  });
+});
+
+describe("replayQueue — walking a landing's deferred writes (#802)", () => {
+  const allThree: readonly DeferredWrite[] = [
+    "enter-segments",
+    "enter-recorder",
+    "arm-floor",
+  ];
+
+  it("a clean walk performs every write in order and reports ok", () => {
+    const performed: DeferredWrite[] = [];
+    const outcome = replayQueue(allThree, (write) => performed.push(write));
+    expect(outcome).toEqual({ ok: true });
+    expect(performed).toEqual(allThree);
+  });
+
+  it("(p) the FIRST key's write throws: the remaining keys come back pending, in order — the walk stops rather than skip ahead", () => {
+    const performed: DeferredWrite[] = [];
+    const cause = new Error("SecurityError: pushState quota exceeded");
+    const outcome = replayQueue(allThree, (write) => {
+      performed.push(write);
+      if (write === "enter-segments") throw cause;
+    });
+    // Red against the pre-#802 loop: it called performWrite for every queued
+    // write with no try/catch, so the throw on "enter-segments" would have
+    // propagated straight out of the whole walk, and the caller never saw an
+    // `outcome` — "enter-recorder" and "arm-floor" were never even reached, let
+    // alone reported as still pending, and nothing survived to be restored to
+    // the ref (`tests/nav-history-latch-wiring.test.ts`'s new gate pins the
+    // adapter half; this pins the walk skipping ahead instead of stopping).
+    expect(outcome).toEqual({
+      ok: false,
+      pending: ["enter-recorder", "arm-floor"],
+      cause,
+    });
+    // The walk stopped AT the throw — it did not skip past it and keep going.
+    expect(performed).toEqual(["enter-segments"]);
+  });
+
+  it("a LATER key's write throws: the keys already performed before it are not requeued, only the ones behind it", () => {
+    const outcome = replayQueue(allThree, (write) => {
+      if (write === "enter-recorder") throw new Error("history throw");
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.pending).toEqual(["arm-floor"]);
+  });
+
+  it("the LAST key's write throws: pending is empty, but ok is still false — the caller must not read an empty pending as a clean walk", () => {
+    const outcome = replayQueue(allThree, (write) => {
+      if (write === "arm-floor") throw new Error("history throw");
+    });
+    expect(outcome).toEqual({
+      ok: false,
+      pending: [],
+      cause: expect.any(Error),
+    });
+  });
+
+  it("the throwing write's OWN key is never in `pending` — requeuing it would retry the same failing call every landing, forever, with nothing to break the cycle", () => {
+    const outcome = replayQueue(allThree, (write) => {
+      if (write === "enter-recorder") throw new Error("history throw");
+    });
+    if (!outcome.ok) expect(outcome.pending).not.toContain("enter-recorder");
   });
 });

@@ -204,10 +204,10 @@ export function storageEstimateSourceOf(
  * what round 6 deferred — a translator who stays inside one chapter recording
  * segment after segment sees no change until they come back out. Open on #247.
  *
- * Not covered by any test in this repo: everything below this line. There is
- * no jsdom or renderer here (the same limitation `useStoragePersistence`'s and
- * `useEraseSegment`'s docblocks name), so the effect and its cancellation are
- * review and on-device surface. Every decision they make IS pinned in Node:
+ * Not covered by any test in this repo: everything below this line. Nothing
+ * mounts this hook's effect graph (the same boundary `useStoragePersistence`'s
+ * and `useEraseSegment`'s docblocks name), so the effect and its cancellation
+ * are review and on-device surface. Every decision they make IS pinned in Node:
  * `storagePressure`, `storagePressureMarker`, `readStorageEstimate` and
  * `storageEstimateSourceOf`.
  *

@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadRecorderSegmentView } from "@/hooks/use-recorder-segment";
 import {
@@ -17,6 +17,7 @@ import { closeDb, getDb } from "@/lib/storage/db";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { encodeMp3 } from "@/lib/audio/mp3";
 import { computePeaks } from "@/lib/audio/peaks";
+import * as peaksModule from "@/lib/audio/peaks";
 import type { SegmentId } from "@/types/domain";
 
 /**
@@ -92,6 +93,7 @@ describe("loadRecorderSegmentView", () => {
     const pcm = samples(500);
     const meta = await putClip(clipId, pcm, CANONICAL_SAMPLE_RATE);
     await addTake(segmentId, clipId, meta.durationMs);
+    const computePeaksSpy = vi.spyOn(peaksModule, "computePeaks");
 
     const view = await loadRecorderSegmentView(segmentId);
 
@@ -101,6 +103,12 @@ describe("loadRecorderSegmentView", () => {
     // buffer, so peaks computed here would only be redrawn over (L-9, #160).
     expect(view.samples).toEqual(pcm);
     expect(view.finished).toBe(false);
+    // Pins the absence of a full-PCM computePeaks pass on this path (#708 item
+    // 2, George round-1 P3 on #702). Nothing in this open path is INCORRECT if
+    // it returns — the byte-for-byte assertion above would still pass — it is
+    // wasted work on every recorder open, on the phones least able to spare it.
+    expect(computePeaksSpy).not.toHaveBeenCalled();
+    computePeaksSpy.mockRestore();
   });
 
   it("carries the finished flag through for a finished PCM segment", async () => {
