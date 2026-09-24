@@ -3731,11 +3731,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     // `heldByDrag(dragging, !idleEditable || !canUndo)`, and
                     // `tests/edit-control-state.test.ts` pins that against
                     // `heldByDrag` itself. What is new is that the grey now
-                    // carries its cause (#91): an edit session opens with no
-                    // history, so this arrow is inert from the moment edit mode
-                    // is entered until the first cut or paste, and #135 already
-                    // found that a grey icon-only control with no reason reads
-                    // as a broken one.
+                    // carries its cause (#91). This arrow is grey whenever
+                    // the cursor sits at the START of the stack — on a fresh
+                    // edit session, and again after undoing back to it, which
+                    // is the case round 1's copy got wrong. #135 already found
+                    // that a grey icon-only control with no reason reads as a
+                    // broken one.
                     disabled={undoBlocked !== null}
                     hint={editControlHint(undoBlocked)}
                     onClick={onUndo}

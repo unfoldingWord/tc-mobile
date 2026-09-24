@@ -7,8 +7,9 @@
  * far less often than record and play. Undo and Redo are the same class and
  * were not on that list. They are also the ones that sit grey the LONGEST —
  * an edit session opens with no history at all, so both arrows are inert from
- * the moment edit mode is entered until the first cut or paste, and Redo is
- * inert again at every tip of the stack. (That is the MOTIVATION for the cue;
+ * the moment edit mode is entered until the first cut or paste. Neither is
+ * inert only then: Undo greys again whenever the cursor is undone back to the
+ * start, and Redo at every tip of the stack. (That is the MOTIVATION for the cue;
  * it is not what the cue asserts — see {@link editControlHint}.) An icon-only
  * control that is grey for
  * a reason nobody states is the finding #135 already recorded once, in the ≡
