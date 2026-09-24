@@ -789,9 +789,14 @@ code changes do — see `docs/review/dual-review.md` ("Merge policy").
 2. **PCM storage is ~5.3 MB/minute** for segments still being worked on. **D3 is
    built** (B8, ADR 0009): a segment marked Finished is transcoded to 64 kbps
    MP3 and its PCM dropped in the same transaction, ~660 MB to ~66 MB for all 50
-   OBS stories once finished. The other two ADR 0002 mitigations are still open:
-   22 050 Hz for speech, and `navigator.storage.persist()`. #12 stays open on
-   those. **Resolve before October.**
+   OBS stories once finished. Of ADR 0002's other two mitigations,
+   `navigator.storage.persist()` **shipped** — #214 closed #12 (merged
+   2026-09-16) with the persist request and a not-persisted state-in-place
+   marker on Books. The separate nearly-full marker came later, under #247
+   (#537 the core, #542 the Books wiring). The 22 050 Hz-for-speech mitigation
+   was explicitly **deferred** on #12 (2026-09-04 decision, once D3 covered the
+   storage risk for the gate); #12's 2026-09-15 triage comment found no
+   separate tracking issue for it.
 3. **lamejs is LGPL-3.0** in an MIT repo. **Decided: keep it** — ADR 0003.
    What remains is the notice and attribution work, #36, not a product call.
 4. **The division-scheme question.** **Decided 2026-08-22 by Tim: no** to the
