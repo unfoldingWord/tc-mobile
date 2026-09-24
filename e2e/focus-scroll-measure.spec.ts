@@ -13,6 +13,12 @@ import { expect, test, type Page } from "@playwright/test";
  * ("button")?.focus()`, run once the Books delete confirm's `deleteTargetId`
  * goes back to `null`.
  *
+ * `listBooks` sorts by `updatedAt` descending (`src/lib/storage/books.ts`),
+ * so the most recently created (or renamed) book renders at the TOP of the
+ * shelf, not the bottom — the helper below names the top row from the create
+ * count rather than assuming "Book 001" is first, which it is not once a
+ * second book exists.
+ *
  * Every case here PINS what Chromium observably does today against the
  * shipped `dist/` build. None of it is a decision about what SHOULD happen,
  * and none of it was run on a device — iOS Safari and the Android WebView
@@ -36,9 +42,13 @@ function focusedName(page: Page): Promise<string> {
   });
 }
 
-/** Enough books ("Book 001".."Book 0NN") that the shelf overflows its
- *  container on a Desktop Chrome viewport — asserted, not assumed, by each
- *  test that calls this. */
+/** `nextBookName`'s own zero-padded scheme (`src/lib/storage/books.ts`). */
+function bookName(n: number): string {
+  return `Book ${String(n).padStart(3, "0")}`;
+}
+
+/** Creates `count` books ("Book 001".."Book 0NN"). The Nth create is the one
+ *  that ends up on top, since the shelf sorts newest-first. */
 async function createBooks(page: Page, count: number) {
   for (let i = 0; i < count; i++) {
     await page.getByRole("button", { name: "New book" }).click();
@@ -49,13 +59,13 @@ async function createBooks(page: Page, count: number) {
   }
 }
 
-/** Arms the Books delete confirm for "Book 001", assuming it is on screen. */
-async function armDeleteForBookOne(page: Page) {
-  await page.getByRole("button", { name: "More actions for Book 001" }).click();
+/** Arms the Books delete confirm for `name`. */
+async function armDeleteFor(page: Page, name: string) {
+  await page.getByRole("button", { name: `More actions for ${name}` }).click();
   await expect(page.getByRole("dialog", { name: "Book" })).toBeVisible();
   await page.getByRole("button", { name: "Delete book" }).click();
   await expect(
-    page.getByRole("dialog", { name: /^Delete Book 001/ })
+    page.getByRole("dialog", { name: new RegExp(`^Delete ${name}`) })
   ).toBeVisible();
 }
 
@@ -65,6 +75,7 @@ test("a wheel scroll over the shelf while the Books delete confirm is up does no
   await page.goto("/");
   await createBooks(page, 25);
   const list = shelf(page);
+  const top = bookName(25);
 
   // The rest of this case means nothing on a shelf that does not actually
   // overflow its container.
@@ -75,7 +86,7 @@ test("a wheel scroll over the shelf while the Books delete confirm is up does no
   await list.evaluate((el) => {
     el.scrollTop = 0;
   });
-  await armDeleteForBookOne(page);
+  await armDeleteFor(page, top);
 
   const beforeAttempt = await list.evaluate((el) => el.scrollTop);
   // `.confirm-scrim` is `position: fixed; inset: 0` (3-components.css) at
@@ -96,14 +107,19 @@ test("cancelling the Books delete confirm hands focus off with a bare .focus(), 
   await page.goto("/");
   await createBooks(page, 25);
   const list = shelf(page);
+  const top = bookName(25);
+
   await expect
     .poll(() => list.evaluate((el) => el.scrollHeight > el.clientHeight))
     .toBe(true);
 
+  // `top` is the most-recently-created book, so it renders first — scrolling
+  // to 0 puts it in view without Playwright's own auto-scroll-into-view
+  // moving the shelf on our behalf before the confirm ever arms.
   await list.evaluate((el) => {
     el.scrollTop = 0;
   });
-  await armDeleteForBookOne(page);
+  await armDeleteFor(page, top);
 
   // A real pointer/touch gesture cannot reach the shelf while the confirm's
   // scrim is up (the case above) — so this stands in for "the shelf ended up
@@ -118,12 +134,12 @@ test("cancelling the Books delete confirm hands focus off with a bare .focus(), 
 
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(
-    page.getByRole("dialog", { name: /^Delete Book 001/ })
+    page.getByRole("dialog", { name: new RegExp(`^Delete ${top}`) })
   ).toHaveCount(0);
 
   await expect
     .poll(() => focusedName(page))
-    .toBe("Book 001, 0 chapters, expanded");
+    .toBe(`${top}, 0 chapters, expanded`);
   await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBe(0);
 });
 
@@ -133,14 +149,19 @@ test("a fresh book create scrolls the new row into view ahead of the same focus 
   await page.goto("/");
   await createBooks(page, 25);
   const list = shelf(page);
+
   await expect
     .poll(() => list.evaluate((el) => el.scrollHeight > el.clientHeight))
     .toBe(true);
 
-  await list.evaluate((el) => {
-    el.scrollTop = 0;
+  // The new row lands at the TOP (newest-first). Scroll away from the top
+  // first, so revealing it is an actual move, not a no-op at an
+  // already-correct position.
+  const beforeCreate = await list.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+    return el.scrollTop;
   });
-  const beforeCreate = await list.evaluate((el) => el.scrollTop);
+  expect(beforeCreate).toBeGreaterThan(0);
 
   await page.getByRole("button", { name: "New book" }).click();
   await page.getByRole("button", { name: "Create book" }).click();
@@ -149,9 +170,9 @@ test("a fresh book create scrolls the new row into view ahead of the same focus 
   // before the same bare-`.focus()` hand-off runs — the "split it" option
   // #800 names distinguishes this from the delete-confirm case above, where
   // no scroll is ever planned.
+  const created = bookName(26);
   await expect
     .poll(() => focusedName(page))
-    .toBe("Book 026, 0 chapters, expanded");
-  const afterCreate = await list.evaluate((el) => el.scrollTop);
-  expect(afterCreate).toBeGreaterThan(beforeCreate);
+    .toBe(`${created}, 0 chapters, expanded`);
+  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBe(0);
 });
