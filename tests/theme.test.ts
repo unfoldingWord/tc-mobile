@@ -126,9 +126,14 @@ describe("the light theme is reachable (#171)", () => {
    * that string today, so the counts were honest as written; this closes the
    * shape before it can become true.
    *
-   * Deliberately naive about string literals: a line-comment marker inside one
-   * would be cut. Nothing these assertions read has one, and a real parser
-   * would be more code than the thing it protects.
+   * What each pass removes, since the two are not symmetric. The block pass is
+   * unanchored, so a block-comment opener inside a string literal would start a
+   * cut. The line pass is anchored to the start of a line, so it removes only a
+   * line whose first non-whitespace is a line-comment marker: one TRAILING code
+   * on the same line survives, and so does a marker inside a string. Trailing
+   * comments do occur in the counted files; none of them names a mount, which
+   * is the same fact the paragraph above rests on. A real parser would be more
+   * code than the thing it protects.
    */
   const code = (rel: string) =>
     read(rel)
