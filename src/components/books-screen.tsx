@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import { AboutPanel } from "./about-panel";
+import type { LicenseText } from "./licenses";
 import { Control } from "./control";
 import { EMPTY_STATE_NODE, focusTargetAfterDelete } from "./delete-focus";
 import { EmptyState } from "./empty-state";
@@ -76,7 +77,9 @@ type BooksLayerId =
   | "books:new-book"
   | "books:new-chapter"
   | "books:book-menu"
-  | "books:delete-confirm";
+  | "books:delete-confirm"
+  | "books:about"
+  | "books:about-text";
 
 interface BooksScreenProps {
   /** Open a chapter's Segments screen. Owned by App (slice 4) for navigation. */
@@ -149,6 +152,7 @@ export function BooksScreen({
   // `menuOpen` so the two-level surface (menu → About panel) composes: opening
   // About closes the menu, and the About panel owns its own Menu.
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [aboutViewing, setAboutViewing] = useState<LicenseText | null>(null);
   // #171. The global menu is the only place a theme switch belongs: it is a
   // once-per-session decision about the light you are standing in, not a
   // per-screen action, and putting it in the header would spend a header slot
@@ -502,6 +506,22 @@ export function BooksScreen({
       busy: isDeleting,
       dismiss: closeDeleteConfirmState,
     },
+    // About & licenses (#36) writes nothing, so Back is never refused. Two
+    // layers so Back walks the same path Escape does: licence text → list →
+    // shelf (Frank F2, bench round 1 on #144).
+    "books:about": {
+      busy: () => false,
+      dismiss: () => {
+        setAboutViewing(null);
+        setAboutOpen(false);
+      },
+    },
+    "books:about-text": {
+      busy: () => false,
+      dismiss: () => {
+        setAboutViewing(null);
+      },
+    },
   });
 
   // The global menu's ONE open and ONE close. Every entry point — the ≡, the
@@ -532,6 +552,35 @@ export function BooksScreen({
   const onClearConfirmClose = useCallback(() => {
     layers.close("books:log-clear-confirm");
     logClearBehavior.current = null;
+  }, [layers]);
+
+  // About replaces the global menu, so the menu's layer must go with it — a
+  // raw `setMenuOpen(false)` left `books:global-menu` registered under the
+  // visible About, and Back spent itself on that hidden menu (Frank F2). The
+  // new layer registers BEFORE the menu's closes, as the delete confirm does,
+  // so the stack is never empty between the two.
+  const openAbout = useCallback(() => {
+    layers.open("books:about");
+    closeGlobalMenu();
+    setAboutViewing(null);
+    setAboutOpen(true);
+  }, [closeGlobalMenu, layers]);
+  const closeAbout = useCallback(() => {
+    setAboutViewing(null);
+    setAboutOpen(false);
+    layers.close("books:about-text");
+    layers.close("books:about");
+  }, [layers]);
+  const viewLicenseText = useCallback(
+    (text: LicenseText) => {
+      setAboutViewing(text);
+      layers.open("books:about-text");
+    },
+    [layers]
+  );
+  const closeLicenseText = useCallback(() => {
+    setAboutViewing(null);
+    layers.close("books:about-text");
   }, [layers]);
 
   useEffect(() => {
@@ -1509,10 +1558,7 @@ export function BooksScreen({
           icon="info"
           label={strings.aboutOpen}
           variant="quiet"
-          onClick={() => {
-            setMenuOpen(false);
-            setAboutOpen(true);
-          }}
+          onClick={openAbout}
         />
         <Control
           icon={theme.theme === "dark" ? "sun" : "moon"}
@@ -1526,7 +1572,13 @@ export function BooksScreen({
         />
       </Menu>
 
-      <AboutPanel open={aboutOpen} onClose={() => setAboutOpen(false)} />
+      <AboutPanel
+        open={aboutOpen}
+        viewing={aboutViewing}
+        onView={viewLicenseText}
+        onBack={closeLicenseText}
+        onClose={closeAbout}
+      />
 
       {/* New Book asks for the name before it creates anything (#314). The same
           panel surface the rename uses — so the focus trap, Escape, the scrim

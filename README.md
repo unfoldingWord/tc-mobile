@@ -221,5 +221,6 @@ texts also ship and precache for offline under
 [`public/licenses/`](public/licenses/), so a translator in the field is not sent
 to `node_modules` to find them. The Corresponding Source under LGPL §4(d)(0) is
 this repository, available from unfoldingWord (ADR 0003). The in-app notice
-covers the web bundle; the Capacitor native shell's own attribution is tracked
-separately (#477).
+covers the web bundle, including the `@capacitor/*` JavaScript packages the app
+imports; the Capacitor native shell's own attribution (the Gradle / CocoaPods /
+native tree) is tracked separately (#477).

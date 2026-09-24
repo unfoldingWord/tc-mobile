@@ -13,6 +13,13 @@ import { strings } from "./strings";
 
 interface AboutPanelProps {
   open: boolean;
+  /** The licence text read in-drawer, or `null` for the list. Owned by the
+   * caller so each level can carry its own system-Back layer (Frank F2, bench
+   * round 1 on #144). */
+  viewing: LicenseText | null;
+  onView: (text: LicenseText) => void;
+  /** Pop the licence text back to the list. */
+  onBack: () => void;
   onClose: () => void;
 }
 
@@ -40,12 +47,16 @@ interface AboutPanelProps {
  * has no wordless form. Links are underlined ink, not the amber accent
  * (`--s-voice` is "audio exists" and fails contrast as text, 2-semantic).
  */
-export function AboutPanel({ open, onClose }: AboutPanelProps) {
-  const [viewing, setViewing] = useState<LicenseText | null>(null);
-
+export function AboutPanel({
+  open,
+  viewing,
+  onView,
+  onBack,
+  onClose,
+}: AboutPanelProps) {
   // Close/Escape/scrim pop the in-drawer text back to the list before they
   // close the whole drawer — so the list is always the state a fresh open sees.
-  const handleClose = viewing ? () => setViewing(null) : onClose;
+  const handleClose = viewing ? onBack : onClose;
 
   return (
     <Menu
@@ -80,7 +91,7 @@ export function AboutPanel({ open, onClose }: AboutPanelProps) {
               <button
                 key={text.href}
                 type="button"
-                onClick={() => setViewing(text)}
+                onClick={() => onView(text)}
                 aria-label={strings.aboutReadText(text.label)}
                 className="text-ink flex min-h-[40px] w-fit items-center border-0 bg-transparent p-0 text-left text-[13px] underline"
               >

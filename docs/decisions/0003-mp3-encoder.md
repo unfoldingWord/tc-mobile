@@ -84,7 +84,9 @@ that the corresponding source is available from unfoldingWord, but must not
 claim the repository is public until it is, and carry no exercisable-relink
 language.
 
-The in-app notice describes the **web bundle**. The Capacitor native shell's own
+The in-app notice describes the **web bundle** — which includes the
+`@capacitor/*` JavaScript packages `src/` imports (core, app, filesystem, share
+and what they pull), so those are disclosed there. The Capacitor native shell's own
 open-source attribution (#262) — the Gradle / CocoaPods / native-Capacitor tree
 — is separate, larger work, tracked in #477.
 

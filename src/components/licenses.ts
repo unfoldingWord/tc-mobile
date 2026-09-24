@@ -125,6 +125,53 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     noticeMarker: "Arjun Barrett",
   },
   {
+    name: "@capacitor/core",
+    version: "8.5.2",
+    spdx: "MIT",
+    role: "native-shell bridge, imported by the web code (share, storage, Back)",
+    copyright: "© 2017-present Drifty Co.",
+    noticeMarker: "Drifty Co.",
+  },
+  {
+    name: "@capacitor/app",
+    version: "8.1.1",
+    spdx: "MIT",
+    copyright: "© 2020-present Ionic",
+    noticeMarker: "Ionic",
+  },
+  {
+    name: "@capacitor/filesystem",
+    version: "8.1.3",
+    spdx: "MIT",
+    copyright: "© 2025 Ionic",
+    noticeMarker: "Ionic",
+  },
+  {
+    name: "@capacitor/share",
+    version: "8.0.1",
+    spdx: "MIT",
+    copyright: "© 2020-present Ionic",
+    noticeMarker: "Ionic",
+  },
+  {
+    name: "@capacitor/synapse",
+    version: "1.0.4",
+    // package.json declares ISC; the LICENSE.md it ships is the MIT text, which
+    // is what THIRD-PARTY-NOTICES.txt carries verbatim.
+    spdx: "ISC",
+    role: "@capacitor/filesystem's web helper (bundled transitively)",
+    copyright: "© 2025 Ionic",
+    noticeMarker: "Ionic",
+  },
+  {
+    name: "tslib",
+    version: "2.8.1",
+    spdx: "0BSD",
+    role: "declared runtime dependency of @capacitor/core",
+    copyright: "© Microsoft Corporation",
+    noticeMarker: "Microsoft Corporation",
+  },
+  {
     name: "workbox",
     version: "7.4.1",
     spdx: "MIT",

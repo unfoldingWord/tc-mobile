@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -49,18 +49,19 @@ function installedVersion(name: string): string {
  * react-dom) is included — that is the drift this guards — because the walk
  * follows every runtime edge; a top-level-only check would miss it.
  *
- * The Capacitor native shell (#262) is deliberately NOT walked. `@capacitor/*`
- * and the packages reachable *only* through it (`tslib`, `@capacitor/synapse`)
- * are native-project scaffolding, not part of the web bundle this in-app notice
- * describes. The native app's own attribution — the full Gradle / CocoaPods /
- * native-Capacitor tree, of which these npm packages are a fraction — is a
- * separate, larger deliverable (#477), not this web-PWA notice. So the walk
- * starts from the root's non-`@capacitor/*` runtime deps and follows only what
- * they reach: a package pulled by *both* the web side and Capacitor stays
- * required (it is reached from the web side), so nothing actually bundled slips
- * through the exclusion. Workbox is injected from a build-time (dev) dependency,
- * so it is not in this closure and is disclosed as a hand-listed inclusion.
+ * Only the Capacitor native PLATFORM projects (`NATIVE_ONLY`) are excluded:
+ * `@capacitor/android` and `@capacitor/ios` are Gradle / Xcode scaffolding that
+ * no `src/` module imports, so they never reach the web bundle. Every other
+ * `@capacitor/*` package IS walked — `src/hooks/` imports `@capacitor/core`,
+ * `/app`, `/filesystem` and `/share`, so Vite bundles their web code (Frank F1,
+ * bench round 1 on #144: a blanket `@capacitor/*` exclusion hid them). The
+ * native app's own attribution — the full Gradle / CocoaPods / native-Capacitor
+ * tree — is still a separate deliverable (#477). Workbox is injected from a
+ * build-time (dev) dependency, so it is not in this closure and is disclosed as
+ * a hand-listed inclusion.
  */
+const NATIVE_ONLY = new Set(["@capacitor/android", "@capacitor/ios"]);
+
 function runtimeClosure(): Set<string> {
   const lock = JSON.parse(
     readFileSync(path.join(REPO_ROOT, "package-lock.json"), "utf8")
@@ -93,7 +94,7 @@ function runtimeClosure(): Set<string> {
   // staying inside the non-dev closure.
   const reachable = new Set<string>();
   const queue = Object.keys(lock.packages[""]?.dependencies ?? {}).filter(
-    (n) => nonDev.has(n) && !n.startsWith("@capacitor/")
+    (n) => nonDev.has(n) && !NATIVE_ONLY.has(n)
   );
   while (queue.length > 0) {
     const name = queue.shift() as string;
@@ -109,12 +110,38 @@ function runtimeClosure(): Set<string> {
 describe("third-party licence disclosure", () => {
   it("discloses every package in the production runtime closure", () => {
     const disclosed = new Set(thirdPartyLicenses.map((l) => l.name));
-    for (const dep of runtimeClosure()) {
+    const closure = runtimeClosure();
+    // A floor, so a lockfile shape change that empties the walk fails here
+    // instead of looping over nothing (George Low, bench round 1 on #144).
+    expect(closure.size).toBeGreaterThanOrEqual(10);
+    for (const dep of closure) {
       expect(
         disclosed.has(dep),
         `${dep} is bundled (runtime closure) but not disclosed`
       ).toBe(true);
     }
+  });
+
+  it("excludes only packages no src/ module imports", () => {
+    // The exclusion above is honest only while nothing in src/ reaches a
+    // NATIVE_ONLY package; an import of one would put it in the web bundle.
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.(ts|tsx|mjs|js)$/.test(entry.name)) {
+          const src = readFileSync(full, "utf8");
+          for (const pkg of NATIVE_ONLY) {
+            if (src.includes(`"${pkg}"`) || src.includes(`'${pkg}'`)) {
+              offenders.push(`${path.relative(REPO_ROOT, full)} → ${pkg}`);
+            }
+          }
+        }
+      }
+    };
+    walk(path.join(REPO_ROOT, "src"));
+    expect(offenders).toEqual([]);
   });
 
   it("discloses lamejs as the copyleft LGPL-3.0 dependency", () => {
@@ -217,6 +244,34 @@ describe("reachability wiring (#36)", () => {
     // disclosure is unreachable on the phone.
     expect(screen).toContain("AboutPanel");
     expect(screen).toContain("strings.aboutOpen");
+  });
+
+  it("hands the global menu's Back layer to About instead of leaving it behind", () => {
+    // Frank F2 (bench round 1 on #144): the About row did a raw
+    // `setMenuOpen(false)`, so `books:global-menu` stayed registered under the
+    // visible About and a system Back spent itself on the hidden menu. This
+    // pins the wiring as text; the Back behaviour itself is a browser-level
+    // test (e2e/back-navigation.spec.ts) and is not claimed here.
+    const screen = readSource("src/components/books-screen.tsx");
+    const body = (name: string) => {
+      const start = screen.indexOf(`const ${name} = useCallback(`);
+      expect(start, `${name} not found`).toBeGreaterThan(-1);
+      return screen.slice(start, screen.indexOf("}, [", start));
+    };
+    const open = body("openAbout");
+    expect(open).toContain('layers.open("books:about")');
+    expect(open).toContain("closeGlobalMenu()");
+    const close = body("closeAbout");
+    expect(close).toContain('layers.close("books:about-text")');
+    expect(close).toContain('layers.close("books:about")');
+    expect(body("viewLicenseText")).toContain(
+      'layers.open("books:about-text")'
+    );
+    expect(body("closeLicenseText")).toContain(
+      'layers.close("books:about-text")'
+    );
+    expect(screen).toContain("onClick={openAbout}");
+    expect(screen).not.toMatch(/setMenuOpen\(false\);\s*setAboutOpen\(true\)/);
   });
 
   it("keeps the lamejs row's relink affordances (the note and the source link)", () => {
