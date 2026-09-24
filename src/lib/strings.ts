@@ -12,12 +12,25 @@
  * onion rule runs one way, so `hooks/` cannot import from `components/`. While
  * this table sat in `components/`, every sentence a hook had to produce was
  * stranded as a literal beside the code that raised it — `use-recorder.ts` said
- * so in its own comment, "`hooks/` cannot reach the components' string table" —
- * and three of those sentences had already been typed out a second time
- * further down the same file, which is the drift this table exists to prevent.
- * `lib/` is the one layer every other layer can reach, and the table is pure
- * data and pure functions, so it costs the DOM-free core nothing: it compiles
- * under `tsconfig.lib.json` with the rest of `lib/`. #169.
+ * so in a comment this move deleted, "`hooks/` cannot reach the components'
+ * string table". `lib/` is the one layer every other layer can reach, and the
+ * table is pure data and pure functions, so it costs the DOM-free core nothing:
+ * it compiles under `tsconfig.lib.json` with the rest of `lib/`. #169.
+ *
+ * WHICH sentences that is, today: `playbackFailed`, the five
+ * `classifyMicRefusal` classes, and `recordingUnsupported`. Each one IS the
+ * state its hook holds, on the far side of a `useState` that never crosses into
+ * `lib/`, so there is no domain value to route and a code would be a union with
+ * one consumer.
+ *
+ * The recorder's three CAPTURE failures took the other route and are not that
+ * argument's evidence: #700 made them codes in `lib/audio/capture-failure.ts`,
+ * worded at the screen by `components/capture-failure-copy.ts`, because
+ * `lib/takes/close-plan.ts` already reasons about that value. AGENTS.md states
+ * which route to reach for. An earlier draft of this paragraph cited those
+ * three — "typed out a second time further down the same file" — as the reason
+ * this table moved; that was true before #700 and is not the case this move
+ * rests on now.
  */
 import { plural } from "@/lib/plural";
 import { filenameSafe } from "@/lib/utils";
@@ -609,19 +622,30 @@ export const strings = {
   // be included." as one gap double-counted, or as an unrelated,
   // under-counted hole (George #423 round 1 P3).
   //
-  // One missing segment is always exactly one chapter, so the
-  // `segments === 1` case can safely name that chapter's scope without
-  // misstating a count.
+  // The two halves of this sentence are counted differently on purpose, and
+  // that split is the load-bearing part.
   //
-  // That is why this branch is NOT `plural`'s `one` form, although every other
-  // count-varying string in this table now is (#169). CLDR's `one` category is
-  // not "exactly 1" — Russian selects it for 21, 31, 101 — so moving this
-  // clause into a forms table would let a second locale assert "an included
-  // chapter", singular, about twenty-one segments spread across an unknown
-  // number of them, which is the #400/#423 bug in a new place. The branch here
-  // is a claim about the count being exactly one, not an agreement with it; a
-  // locale that needs `few`/`many` inside the else branch should add the table
-  // there and leave this exactly-one branch as a branch.
+  // The SEGMENT noun goes through `plural` like every other count-varying
+  // string in this table (#169) — a CLDR category, not an English `n === 1`.
+  //
+  // The CHAPTER scope does NOT, and must not. It branches on
+  // `partialChapters > 1`, the producer's count of DISTINCT included chapters,
+  // and it stays an explicit branch rather than a forms table because CLDR's
+  // `one` is not "exactly 1" — Russian selects it for 21, 31, 101. Keying the
+  // singular "an included chapter" off a plural category would let a second
+  // locale assert one chapter about twenty-one segments spread across an
+  // unknown number of them, which is the #400/#423 bug in a new place. This
+  // branch is a claim that the count IS exactly one, not an agreement with it.
+  // A locale needing `few`/`many` for the segment noun gets it from `plural`
+  // above; the chapter-scope branch stays a branch.
+  //
+  // An earlier draft of this paragraph said the clause was "NOT `plural`'s
+  // `one` form" and described a `segments === 1` case. That case is gone —
+  // `5860fb6` routed the segment noun through `plural` and the chapter scope
+  // already keyed off `partialChapters` (#446) — so the sentence described
+  // code that is not here (Frank, round 4). Rewritten rather than patched,
+  // because the warning it carried is still right and worth keeping; only its
+  // account of the code was false.
   //
   // George round 2 caught that the first attempt at that
   // clause ("...was left out of a chapter that shipped") used maintainer

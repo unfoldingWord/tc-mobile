@@ -225,58 +225,36 @@ describe("no sentence is stranded in a hook (#169)", () => {
 });
 
 /**
- * The count labels, and the one alias that stops two of them drifting.
+ * The two count labels this file still owns, and nothing else.
  *
- * These were inline `n === 1 ? … : …` ternaries that spelled the count out on
- * both arms. They now go through `lib/plural.ts`, which selects a CLDR category
- * with `Intl.PluralRules` rather than asserting English's two forms — so what
- * is pinned below is the English OUTPUT, not the rule that produced it, and a
- * locale that adds `few`/`many` does not touch these expectations.
+ * `tests/strings-plural.test.ts` owns the plural OUTPUT coverage — `bookRow`,
+ * `shareBookMissing`, `failuresMarker`, and `menuOpenWithFailures` including
+ * the equality that keeps it from drifting from `failuresMarker`. This block
+ * used to assert all four a second time (Frank, round 4): duplicated coverage,
+ * which is the "no duplicates" rule in AGENTS.md, and two places to edit when
+ * a wording changes.
  *
- * `menuOpenWithFailures` is what the old shape cost: it carried a byte-for-byte
- * copy of `failuresMarker`'s wording, so tightening one would have left the
- * other alone. Pinned by equality rather than by a repeated literal, exactly as
- * `shareBookPartial` is in `tests/share-book-partial-copy.test.ts`.
+ * What is left is what no other file pins:
  *
- * What the equality catches is DIVERGENCE, not duplication: re-typing the words
- * at both sites passes this, because the two still agree on the day it is
- * written. It goes red on the next copy edit to either one, which is the moment
- * the duplicate actually costs something and the moment nobody is looking for
- * it. The source-level "one sentence, one place" half is the duplicate check
- * above.
+ *   - `shareMissing`'s own words. `share-book-partial-copy.test.ts` asserts
+ *     `shareBookPartial(n) === shareMissing(n)`, and `share-error-copy.test.ts`
+ *     uses `shareMissing(...)` as an expected value inside composed sentences —
+ *     both catch divergence, neither pins the sentence itself.
+ *   - The two zero cases. `strings-plural.test.ts` has one for `bookRow`; these
+ *     two have none anywhere.
  */
-describe("count labels", () => {
-  it("says the same words as failuresMarker — one wording, not two that can drift", () => {
-    expect(strings.menuOpenWithFailures(1)).toBe(
-      `Open menu. ${strings.failuresMarker(1)}.`
-    );
-    expect(strings.menuOpenWithFailures(7)).toBe(
-      `Open menu. ${strings.failuresMarker(7)}.`
-    );
-  });
-
-  it("switches form at one, and nowhere else", () => {
-    expect(strings.failuresMarker(1)).toBe("1 problem recorded");
-    expect(strings.failuresMarker(2)).toBe("2 problems recorded");
+describe("count labels this file owns", () => {
+  it("pins shareMissing's own wording — no other file does", () => {
     expect(strings.shareMissing(1)).toBe("1 segment could not be included.");
     expect(strings.shareMissing(2)).toBe("2 segments could not be included.");
-    expect(strings.shareBookMissing(1)).toBe(
-      "1 chapter could not be included."
-    );
-    expect(strings.shareBookMissing(2)).toBe(
-      "2 chapters could not be included."
-    );
-    expect(strings.bookRow("Mark", 1, false)).toBe(
-      "Mark, 1 chapter, collapsed"
-    );
-    expect(strings.bookRow("Mark", 3, true)).toBe("Mark, 3 chapters, expanded");
   });
 
   it("says zero in the plural form, not the singular", () => {
     // Nothing renders a zero today — `menuOpenWithFailures` replaces the plain
-    // name only while the log is non-empty, and the share Notices only show on a
-    // gap — but a table that answered "0 segment" would be wrong the first time
-    // one of those gates changed, and the cost of pinning it now is one line.
+    // name only while the log is non-empty, and the share Notices only show on
+    // a gap — but a table that answered "0 segment" would be wrong the first
+    // time one of those gates changed, and the cost of pinning it now is one
+    // line.
     //
     // English puts zero in `other`, which is CLDR's rule and not a choice this
     // file makes. A locale with a `zero` category selects it and these two
