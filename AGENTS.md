@@ -327,7 +327,10 @@ share _prepare_ (`hooks/share-flow.ts`), the recorder's own guards and bounds
 recorder still active `"recorder-interrupted-active"` #478, and a native
 `stop()` throwing inside `stop()`'s own flush `"recorder-stop-flush"` #485 —
 which seals the slices already in hand and rides the `StopResult`, so it
-never reaches the backstop below), `stopRecording`'s commit-path backstop
+never reaches the backstop below — and a track `stop()` that throws while the
+mic stream is released `"recorder-release-track"` #479), the level tap's clone
+track throwing on its own `stop()` (`hooks/audio-io.ts`,
+`"recorder-tap-clone-stop"`, #479), `stopRecording`'s commit-path backstop
 (`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), a failed
 save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
