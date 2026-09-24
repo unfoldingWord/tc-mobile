@@ -69,7 +69,7 @@ async function armDeleteFor(page: Page, name: string) {
   ).toBeVisible();
 }
 
-test("a wheel scroll over the shelf while the Books delete confirm is up does not move it", async ({
+test("wheel over the shelf: closed confirm vs. open Books delete confirm", async ({
   page,
 }) => {
   await page.goto("/");
@@ -83,69 +83,84 @@ test("a wheel scroll over the shelf while the Books delete confirm is up does no
     .poll(() => list.evaluate((el) => el.scrollHeight > el.clientHeight))
     .toBe(true);
 
+  // A point inside the shelf's own box, not a fixed viewport coordinate.
+  const box = await list.boundingBox();
+  expect(box).not.toBeNull();
+  const x = box!.x + box!.width / 2;
+  const y = box!.y + box!.height / 2;
+  await page.mouse.move(x, y);
+
+  // Unblocked state: the same wheel at the same point moves the shelf.
+  await page.mouse.wheel(0, 400);
+  await expect
+    .poll(() => list.evaluate((el) => el.scrollTop))
+    .toBeGreaterThan(0);
+
   await list.evaluate((el) => {
     el.scrollTop = 0;
   });
   await armDeleteFor(page, top);
 
+  // Blocked state: the same wheel leaves `scrollTop` put for the whole window.
   const beforeAttempt = await list.evaluate((el) => el.scrollTop);
-  // `.confirm-scrim` is `position: fixed; inset: 0` (3-components.css) at
-  // z-index 90 — above the shelf everywhere in the viewport, not only over
-  // the panel — so a wheel anywhere lands on the scrim, not the shelf,
-  // regardless of the shelf's own `inert`.
-  await page.mouse.move(20, 20);
+  await page.mouse.move(x, y);
   await page.mouse.wheel(0, 2000);
-  await page.waitForTimeout(150);
-  const afterAttempt = await list.evaluate((el) => el.scrollTop);
-
-  expect(afterAttempt).toBe(beforeAttempt);
+  for (let i = 0; i < 6; i++) {
+    await page.waitForTimeout(50);
+    expect(await list.evaluate((el) => el.scrollTop)).toBe(beforeAttempt);
+  }
 });
 
-test("cancelling the Books delete confirm hands focus off with a bare .focus(), which drags the shelf back to the target row", async ({
+test("cancelling the Books delete confirm for a row away from the top: shelf scroll after the focus hand-off", async ({
   page,
 }) => {
   await page.goto("/");
   await createBooks(page, 25);
   const list = shelf(page);
-  const top = bookName(25);
+  // The OLDEST book renders last, so a container reset to 0 cannot pass.
+  const target = bookName(1);
 
   await expect
     .poll(() => list.evaluate((el) => el.scrollHeight > el.clientHeight))
     .toBe(true);
 
-  // `top` is the most-recently-created book, so it renders first — scrolling
-  // to 0 puts it in view without Playwright's own auto-scroll-into-view
-  // moving the shelf on our behalf before the confirm ever arms.
-  await list.evaluate((el) => {
-    el.scrollTop = 0;
-  });
-  await armDeleteFor(page, top);
+  // Arming may auto-scroll the shelf; that happens before the measurement.
+  await armDeleteFor(page, target);
 
   // A real pointer/touch gesture cannot reach the shelf while the confirm's
   // scrim is up (the case above) — so this stands in for "the shelf ended up
   // scrolled away from the armed row by the time Cancel runs" by whatever
   // means got it there. It is not a claim that a translator's own scrolling
   // is what does it.
-  const scrolledAway = await list.evaluate((el) => {
-    el.scrollTop = el.scrollHeight;
-    return el.scrollTop;
+  await list.evaluate((el) => {
+    el.scrollTop = 0;
   });
-  expect(scrolledAway).toBeGreaterThan(0);
 
-  await page.getByRole("button", { name: "Cancel" }).click();
+  // A DOM click: no Playwright actionability scroll ahead of the hand-off.
+  await page
+    .getByRole("button", { name: "Cancel" })
+    .evaluate((el) => (el as HTMLButtonElement).click());
   await expect(
-    page.getByRole("dialog", { name: new RegExp(`^Delete ${top}`) })
+    page.getByRole("dialog", { name: new RegExp(`^Delete ${target}`) })
   ).toHaveCount(0);
 
   await expect
     .poll(() => focusedName(page))
-    .toBe(`${top}, 0 chapters, expanded`);
-  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBe(0);
+    .toBe(`${target}, 0 chapters, expanded`);
+  await expect
+    .poll(() =>
+      list.evaluate((el) => {
+        const a = el.getBoundingClientRect();
+        const b = document.activeElement!.getBoundingClientRect();
+        return (
+          el.scrollTop > 0 && b.top >= a.top - 1 && b.bottom <= a.bottom + 1
+        );
+      })
+    )
+    .toBe(true);
 });
 
-test("a fresh book create scrolls the new row into view ahead of the same focus hand-off", async ({
-  page,
-}) => {
+test("a fresh book create: end state of the new top row", async ({ page }) => {
   await page.goto("/");
   await createBooks(page, 25);
   const list = shelf(page);
