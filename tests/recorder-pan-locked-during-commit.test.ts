@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { matchingBraceClose, stripComments } from "./support";
+
 /**
  * The commit window is locked for the WHOLE gesture, not just its start
  * (George r1 pass C, P1, on PR #681).
@@ -29,27 +31,12 @@ import { describe, expect, it } from "vitest";
  * below names the mutation it must die on.
  */
 describe("a drag cannot survive a commit (George r1 pass C P1)", () => {
-  const stripComments = (text: string) =>
-    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
   const code = stripComments(
     readFileSync(
       new URL("../src/components/recorder.tsx", import.meta.url),
       "utf8"
     )
   );
-
-  const matchingBraceClose = (text: string, openIndex: number): number => {
-    let depth = 0;
-    for (let i = openIndex; i < text.length; i++) {
-      if (text[i] === "{") depth++;
-      else if (text[i] === "}") {
-        depth--;
-        if (depth === 0) return i;
-      }
-    }
-    return -1;
-  };
 
   const bodyOf = (declaration: string): string => {
     const start = code.indexOf(declaration);

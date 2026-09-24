@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { stripComments } from "./support";
+
 /**
  * `raceAudioResume` bounds the one blocking `await resumeAudioContext()` in
  * `start()` (use-recorder.ts, between `getUserMedia` and `new MediaRecorder`,
@@ -325,14 +327,6 @@ describe("the wiring, not just the helper (#108, #469)", () => {
   const audioIoSourceUrl = new URL("../src/hooks/audio-io.ts", import.meta.url);
   const recorderSource = () => readFileSync(recorderSourceUrl, "utf8");
   const audioIoSource = () => readFileSync(audioIoSourceUrl, "utf8");
-
-  /**
-   * Strip comments so prose about an unbounded await cannot match as code.
-   * This regex helper is not a JavaScript parser: comment delimiters inside
-   * string literals would also be removed.
-   */
-  const stripComments = (text: string) =>
-    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 
   it("use-recorder.ts never awaits resumeAudioContext() directly — every use is bounded or fire-and-forget", () => {
     // An unbounded resume await between getUserMedia and MediaRecorder

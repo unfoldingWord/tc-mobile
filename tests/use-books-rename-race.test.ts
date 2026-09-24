@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { stripComments } from "./support";
+
 /**
  * `renameBook`'s catch had the identical race `addChapter`'s catch had before
  * PR #728 fixed it for #666: a genuine (non-stale) reported failure sets the
@@ -26,9 +28,6 @@ import { describe, expect, it } from "vitest";
  */
 describe("renameBook invalidates an in-flight load on a reported failure (#732, mirrors #728's addChapter fix)", () => {
   const sourceUrl = new URL("../src/hooks/use-books.ts", import.meta.url);
-
-  const stripComments = (text: string) =>
-    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 
   const code = stripComments(readFileSync(sourceUrl, "utf8"));
 

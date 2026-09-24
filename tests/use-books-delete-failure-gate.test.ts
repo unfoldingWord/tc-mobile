@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { stripComments } from "./support";
+
 /**
  * `deleteBook`'s failure catch reports to the funnel (#456), and this is a
  * structural gate on it, not a behavioural test — same shape and same reason
@@ -28,9 +30,6 @@ describe('deleteBook reports its catch to the funnel under "book-delete" (#456)'
    * code. This simple strip does not distinguish comments from comment-like
    * text inside string literals.
    */
-  const stripComments = (text: string) =>
-    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
   const code = stripComments(readFileSync(sourceUrl, "utf8"));
 
   const declStart = code.indexOf("const deleteBook = useCallback");
