@@ -89,12 +89,16 @@ export function RecorderMenu({
       // Still the drawer's name for a screen reader; never painted (#621).
       title={strings.recorderMenuTitle}
       // `hamburger` (#621, the requirements owner's call on this panel,
-      // after #608 set the rule on the global menu): the ≡ that opens this
-      // drawer stays a ≡ inside it, top-right, and is what dismisses it —
-      // no "More" heading, and no chevron, because a chevron pointing LEFT
-      // reads as "move left" on a drawer that docks on the RIGHT.
+      // after #608 set the rule on the global menu): this drawer's own
+      // dismiss stays a ≡, top-right, and is what dismisses it — no "More"
+      // heading, and no chevron, because a chevron pointing LEFT reads as
+      // "move left" on a drawer that docks on the RIGHT. That holds
+      // regardless of which control opened it: record mode's header opener
+      // is ≡, but since #863 the edit toolbar's opener is ⋮ (≡ is used only
+      // at the top right, and the toolbar is not the top right) — the
+      // drawer's own top-right control is the only ≡ on screen either way.
       // The book, chapter and segment menus open from a ⋮ since #589 and
-      // keep the chevron; this drawer opens from a ≡.
+      // keep the chevron; this drawer keeps ≡ no matter which opener it was.
       hamburger
     >
       {mode === "record" ? (

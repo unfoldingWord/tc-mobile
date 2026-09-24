@@ -863,11 +863,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      *
      * It also DROPS any resume the #317 gesture still owes (George R2 P1). A
      * stop is the translator asking for silence, and every non-lift route out
-     * of the drag — Undo, Redo, Select, ≡, Edit, Done editing, Cut, Paste,
-     * Back — comes through here or through `stopPlaybackDroppingPan`, so
-     * clearing the flag in the TWO stop paths covers all nine without nine
-     * assignments that a tenth handler could later forget. The `"interrupt"`
-     * in `onPointerDown` sets the flag immediately AFTER its own call here;
+     * of the drag — Undo, Redo, Select, the menu opener (⋮ since #863), Edit,
+     * Done editing, Cut, Paste, Back — comes through here or through
+     * `stopPlaybackDroppingPan`, so clearing the flag in the TWO stop paths
+     * covers all nine without nine assignments that a tenth handler could
+     * later forget. The `"interrupt"` in `onPointerDown` sets the flag
+     * immediately AFTER its own call here;
      * that order is what makes it the one stop that does not void the resume.
      */
     const stopBuffer = audio.stopBuffer;
@@ -1617,21 +1618,23 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       audio.startRecording();
     }, [audio]);
 
-    // Open the ≡ menu. Stops buffer playback first: the menu is the one gateway to
-    // every idle-time action reachable while a buffer sounds (Edit, Finished, VU,
-    // Erase), and opening it inerts the sheet AT IDLE — so Play, the only stop
-    // control, goes unreachable, and Erase locks a confirm behind that scrim
-    // (George R5). Mid-take the sheet is no longer inert (#75, the rule at the
-    // sheet `<div>`), so Play is reachable there and this stop is belt rather
-    // than the only exit; at idle — which is every path that reaches Erase or
-    // Edit — it is still the whole of the guarantee.
+    // Open the recorder menu — shared by both openers: record mode's header
+    // ≡ and, since #863, the edit toolbar's ⋮. Stops buffer playback first:
+    // the menu is the one gateway to every idle-time action reachable while a
+    // buffer sounds (Edit, Finished, VU, Erase), and opening it inerts the
+    // sheet AT IDLE — so Play, the only stop control, goes unreachable, and
+    // Erase locks a confirm behind that scrim (George R5). Mid-take the sheet
+    // is no longer inert (#75, the rule at the sheet `<div>`), so Play is
+    // reachable there and this stop is belt rather than the only exit; at
+    // idle — which is every path that reaches Erase or Edit — it is still the
+    // whole of the guarantee.
     // Stopping here closes that whole class at the boundary, like entering edit.
     const openMenu = useCallback(() => {
-      // Remember the ≡ that was tapped, HERE — synchronously, in the gesture's
-      // own handler (#97). One React commit later the sheet goes `inert`, which
-      // blurs this button to `<body>` in the mutation phase, before any effect
-      // could read it; #96's attempt captured that `body` and its restore was a
-      // silent no-op for every menu in the app.
+      // Remember the opener that was tapped, HERE — synchronously, in the
+      // gesture's own handler (#97). One React commit later the sheet goes
+      // `inert`, which blurs this button to `<body>` in the mutation phase,
+      // before any effect could read it; #96's attempt captured that `body`
+      // and its restore was a silent no-op for every menu in the app.
       focusRestore.capture();
       stopPlayback();
       setMenuOpen(true);
@@ -2563,27 +2566,32 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       sheetRef.current?.querySelector<HTMLElement>("button")?.focus();
     }, []);
 
-    // The safe landmark for every mid-task hand-off: the "More actions" (≡)
+    // The safe landmark for every mid-task hand-off: the "More actions"
     // control, resolved by its accessible NAME through `overlayFallbackLabel`
     // (`lib/a11y/focus-restore.ts`) and never by position — so it can only
-    // ever resolve to the ≡ or to nothing, never to Back or the "Editing"
-    // pill. Shared by the overlay restore and the panel recovery below, which
-    // are the two edges that hand focus back into a sheet the translator is
-    // still working in. `null` when the ≡ is not rendered, AND `null` when it
-    // is natively `disabled` — an earlier draft promised the second half in
-    // this comment and returned the disabled node anyway (George R3 P2-2 on
-    // #457): `.focus()` on a disabled button is a silent no-op, and
-    // `use-focus-restore.ts`'s `hasFallback` checks connectivity, not
-    // `disabled`, so both callers "succeeded" with focus on <body> and the
-    // next Tab on header Back. Both `null`s leave focus alone, the contract's
-    // own "prefer `null` over anything dangerous". Native `disabled` only,
-    // the same idiom that hook uses for the trigger: an `aria-disabled`
-    // control keeps its place in the Tab order (#135), and the ≡ has no
-    // `hint`, so `Control` sets the native attribute for it. The ≡'s
-    // `disabled` expression is `!view || isClosing || denied ||
-    // heldTake !== null`; a panel resolving clears `denied` / `heldTake`, and
-    // the recovery effect below is what copes when the rest has not cleared
-    // on the same commit.
+    // ever resolve to that control or to nothing, never to Back or the
+    // "Editing" pill. Resolving by name rather than glyph is what lets this
+    // stay one landmark after #863: record mode's opener wears ≡ and the
+    // edit toolbar's wears ⋮, but both answer to the same accessible name, so
+    // `overlayFallbackLabel` cannot tell them apart and does not need to.
+    // Shared by the overlay restore and the panel recovery below, which are
+    // the two edges that hand focus back into a sheet the translator is
+    // still working in. `null` when neither opener is rendered, AND `null`
+    // when the one that is is natively `disabled` — an earlier draft
+    // promised the second half in this comment and returned the disabled
+    // node anyway (George R3 P2-2 on #457): `.focus()` on a disabled button
+    // is a silent no-op, and `use-focus-restore.ts`'s `hasFallback` checks
+    // connectivity, not `disabled`, so both callers "succeeded" with focus on
+    // <body> and the next Tab on header Back. Both `null`s leave focus alone,
+    // the contract's own "prefer `null` over anything dangerous". Native
+    // `disabled` only, the same idiom that hook uses for the trigger: an
+    // `aria-disabled` control keeps its place in the Tab order (#135), and
+    // this opener has no `hint`, so `Control` sets the native attribute for
+    // it. Its `disabled` expression is `!view || isClosing || denied ||
+    // heldTake !== null` in record mode (`!hasView || isClosing` in edit
+    // mode, `recorder-toolbars.tsx`); a panel resolving clears `denied` /
+    // `heldTake`, and the recovery effect below is what copes when the rest
+    // has not cleared on the same commit.
     const menuLandmark = useCallback((): HTMLElement | null => {
       const sheet = sheetRef.current;
       if (!sheet) return null;
@@ -2857,9 +2865,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // — so a `.focus()` any earlier is dead code, the exact shape
     // `docs/progress_tracker.md` warns about and #364 shipped again today.
     //
-    // Keyed on `overlayUp`, so the menu → confirm chain restores ONCE, to the ≡
-    // that started it. `restore` is a no-op with nothing captured, so the
-    // re-runs the other dependencies cause are harmless.
+    // Keyed on `overlayUp`, so the menu → confirm chain restores ONCE, to the
+    // opener that started it (≡ or ⋮, #863). `restore` is a no-op with
+    // nothing captured, so the re-runs the other dependencies cause are
+    // harmless.
     //
     // `suppressed` when a full-body panel owns the screen: each `autoFocus`es
     // its own control in the same commit, and stealing that back would strand a
@@ -2876,21 +2885,22 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (isClosing) return;
       focusRestore.restore({
         suppressed: panelOwnsFocus,
-        // The overlay-close landmark is the "More actions" (≡) control itself
-        // — deliberately NOT the sheet's first focusable, which is Back
+        // The overlay-close landmark is the "More actions" control itself —
+        // deliberately NOT the sheet's first focusable, which is Back
         // (George R1 P1), and NOT "the header's last button" either (George R5
         // P2): that was correct in record mode, where the header's right-hand
-        // control IS the ≡, but wrong in edit mode, where that slot is the
-        // "Editing" pill — a control that EXITS edit mode. Landing overlay-
-        // close focus there would arm the very next Space/Enter/switch-
-        // activate to leave, the #97 hazard on the ordinary Edit row.
+        // control IS this opener, but wrong in edit mode, where that slot is
+        // the "Editing" pill — a control that EXITS edit mode. Landing
+        // overlay-close focus there would arm the very next Space/Enter/
+        // switch-activate to leave, the #97 hazard on the ordinary Edit row.
         //
-        // The ≡ is safe in every mode: it reopens the very overlay that just
-        // closed, and this app renders it under the same accessible name in
-        // both places it lives (the header in record mode, the toolbar in
-        // edit mode). `menuLandmark` above resolves it by that name, never by
-        // position, so it can only ever resolve to the ≡ or to nothing —
-        // never to Back or the pill.
+        // This opener is safe in every mode: it reopens the very overlay that
+        // just closed, and this app renders it under the same accessible name
+        // in both places it lives (the header in record mode, the toolbar in
+        // edit mode) — even though its GLYPH differs since #863 (≡ in the
+        // header, ⋮ in the edit toolbar). `menuLandmark` above resolves it by
+        // name, never by position or glyph, so it can only ever resolve to
+        // this opener or to nothing — never to Back or the pill.
         fallback: menuLandmark(),
       });
       // …except when that landing is the bar's bin and the bin has just gone
