@@ -1018,7 +1018,9 @@ export const SegmentsScreen = forwardRef<
                 recorder: Rename above carries no `disabled` and no `hint`, so
                 it is always the first actionable child. If a later change
                 gives it a hinted state, focus moves here in that state, and
-                the recorder's comment is where that trade is argued. Books-only was right while the global menu held a
+                the recorder's comment is where that trade is argued.
+
+                Books-only was right while the global menu held a
                 licence notice; it stopped being right when the menu grew a
                 control for direct sun, which arrives mid-session.
 

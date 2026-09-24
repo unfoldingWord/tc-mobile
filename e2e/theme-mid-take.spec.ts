@@ -56,7 +56,6 @@ test.use({
   },
 });
 
-/** The recorder's elapsed readout (`t-timer`), as whole seconds. */
 /**
  * The transport's elapsed readout, in seconds.
  *
