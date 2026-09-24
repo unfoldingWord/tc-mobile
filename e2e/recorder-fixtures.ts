@@ -61,6 +61,13 @@ export function editRecordingButton(page: Page): Locator {
  * actually landed — see {@link editRecordingButton}'s docblock. */
 export async function clickEditRecording(page: Page): Promise<void> {
   const button = editRecordingButton(page);
+  // A negated assertion passes on its first sample when `aria-busy` is ABSENT,
+  // which is also the pre-Stop frame. Pin the post-Stop (idle) render first so
+  // the gate below cannot pass on the frame before the commit started. Every
+  // caller is post-Stop; do not use this from a live take.
+  await expect(
+    page.getByRole("button", { name: "Record", exact: true })
+  ).toBeVisible();
   await expect(button).not.toHaveAttribute("aria-busy", "true");
   await button.click();
 }
