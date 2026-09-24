@@ -10,13 +10,8 @@ import {
   exportChapterMp3,
   gatherChapterPcm,
 } from "@/lib/export/chapter";
-import {
-  addChapter,
-  addSegment,
-  createBook,
-  saveTake,
-  setSegmentFinished,
-} from "@/lib/storage/books";
+import { addChapter, addSegment, createBook } from "@/lib/storage/books";
+import { saveTake, setSegmentFinished } from "@/lib/storage/takes";
 import * as clips from "@/lib/storage/clips";
 import { newClipId } from "@/lib/storage/clips";
 import { resolveSegmentAudio } from "@/lib/storage/segment-audio";
