@@ -257,6 +257,54 @@ describe("the light theme is reachable (#171)", () => {
     expect(mounts("src/components/recorder-menu.tsx")).toBe(2);
     expect(mounts("src/components/recorder.tsx")).toBe(0);
 
+    // ORDER, not just presence (George, this head). The e2e focus assertion
+    // cannot catch a reorder — in the empty state the toggle is the only
+    // actionable row wherever it sits — and an earlier version of this file's
+    // companion comment credited THIS test with holding order when it only
+    // counted. It holds it now.
+    //
+    // Last is the position that matters: `Menu` lands open-edge focus on the
+    // first ACTIONABLE child, so while Edit/Done and the chapter's Rename are
+    // actionable they must come first, and the toggle must not displace them.
+    // The Books case below already pins its own order this way.
+    // Checked per BRANCH, which took three tries and two failed mutations to
+    // get right, both recorded on the PR. `lastIndexOf` over the whole file
+    // passed with the record branch's mount above Edit. So did a per-`</Menu>`
+    // check, because `recorder-menu.tsx` is ONE `<Menu>` holding a ternary —
+    // its two row sets share a single closing tag.
+    //
+    // So each mount is checked against the end of ITS OWN branch: the first
+    // of `) : (`, `)}` or `</Menu>` that follows it. No row may open in
+    // between. `Menu` lands open-edge focus on the first ACTIONABLE child, so
+    // while Edit/Done and the chapter's Rename are actionable they must come
+    // first and the toggle must not displace them.
+    const toggleClosesEveryBranch = (file: string) => {
+      const body = code(file);
+      const mounts = [...body.matchAll(/<ThemeControl\b/g)].map((m) => m.index);
+      expect(mounts.length, `no ThemeControl mount in ${file}`).toBeGreaterThan(
+        0
+      );
+      return mounts.every((mount) => {
+        const rest = body.slice(mount);
+        const ends = [") : (", ")}", "</Menu>"]
+          .map((token) => rest.indexOf(token))
+          .filter((at) => at !== -1);
+        expect(
+          ends.length,
+          `no branch end after a mount in ${file}`
+        ).toBeGreaterThan(0);
+        // `<ThemeControl` is not a substring of `<Control`, so the mount
+        // itself cannot satisfy this.
+        return rest.slice(0, Math.min(...ends)).indexOf("<Control") === -1;
+      });
+    };
+    expect(toggleClosesEveryBranch("src/components/recorder-menu.tsx")).toBe(
+      true
+    );
+    expect(toggleClosesEveryBranch("src/components/segments-screen.tsx")).toBe(
+      true
+    );
+
     // And the other half of the claim, which the counts alone do NOT pin
     // (George round 10, #623). The whole argument for mounting this control
     // on a live take is that the SUBSCRIPTION stays in the leaf: a toggle
@@ -305,18 +353,26 @@ describe("the light theme is reachable (#171)", () => {
     const sweep = (source: (rel: string) => string) =>
       walk(path.resolve(import.meta.dirname, "..", "src"))
         .filter((file) => /\.tsx?$/.test(file))
-        // The hook module DEFINES both; its own `export function useTheme()` is
-        // not a subscription.
-        .filter((file) => !file.endsWith("hooks/use-theme.ts"))
-        .filter((file) => /\buseLiveTheme\(|\buseTheme\(/.test(source(file)))
+        // Normalised FIRST, so everything below compares forward slashes:
+        // `walk` joins with `path.sep` and `path.relative` yields `\` on
+        // win32. The previous version normalised only at the end, which left
+        // the exclusion below matching nothing there — `use-theme.ts` stayed
+        // in the set, its own `export function useTheme()` matched, and the
+        // gate failed on a correct tree (George, this head, catching the half
+        // of his own earlier win32 note that the first fix missed).
         .map((file) =>
-          // Normalised to forward slashes: `path.relative` yields `\` on
-          // win32, which would fail the literal comparison below for a reason
-          // that has nothing to do with theme subscribers (George).
           path
             .relative(path.resolve(import.meta.dirname, ".."), file)
             .split(path.sep)
             .join("/")
+        )
+        // The hook module DEFINES both; its own `export function useTheme()` is
+        // not a subscription.
+        .filter((rel) => rel !== "src/hooks/use-theme.ts")
+        .filter((rel) =>
+          /\buseLiveTheme\(|\buseTheme\(/.test(
+            source(path.resolve(import.meta.dirname, "..", rel))
+          )
         )
         .sort();
 
