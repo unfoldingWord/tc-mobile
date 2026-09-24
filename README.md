@@ -132,7 +132,7 @@ MediaRecorder (webm/opus on Android, mp4/aac on iOS)
    → decodeAudioData + OfflineAudioContext resample
    → canonical mono 16-bit PCM @ 44.1 kHz     ← everything internal is this
    → edit: cut / insert / paste / concat      (pure Int16Array functions)
-   → export: MP3 (lamejs)                        (encoder only — not wired, #18)
+   → export: MP3 (lamejs, in a Web Worker)      (Share Chapter / Share Book)
 ```
 
 See [ADR 0002](docs/decisions/0002-audio-storage-format.md) and
