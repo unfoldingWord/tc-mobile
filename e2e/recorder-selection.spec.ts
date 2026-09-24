@@ -2,6 +2,8 @@ import { existsSync } from "node:fs";
 
 import { expect, test, type Locator } from "@playwright/test";
 
+import { clickEditRecording, editRecordingButton } from "./recorder-fixtures";
+
 // Shipped-build computed styles cover the real cascade, including Tailwind and
 // inline overrides. Chromium cannot verify the iOS callout; that is issue #564.
 async function expectSelectionSuppressed(root: Locator) {
@@ -88,10 +90,9 @@ test.describe("handle targets after a zoom fit", () => {
       await expect(
         page.getByRole("button", { name: "Record", exact: true })
       ).toBeVisible();
-      await page
-        .locator(".recorder-toolbar")
-        .getByRole("button", { name: "Edit recording", exact: true })
-        .click();
+      // #846/#848/#825: wait for the real precondition (the commit, not the
+      // Record button's label) before clicking — see recorder-fixtures.ts.
+      await clickEditRecording(page);
       const startHandle = page.getByLabel("Selection start", { exact: true });
       const endHandle = page.getByLabel("Selection end", { exact: true });
       await expect(startHandle).toBeVisible();
@@ -174,39 +175,37 @@ test.describe("edit mode toggle", () => {
       // widths, since the toolbar's own layout could plausibly diverge on
       // how it renders `aria-disabled` at a narrower breakpoint. While
       // disabled the accessible name carries the block reason
-      // (`strings.stopToEdit`, round 1 of #857's review), so the plain,
-      // `exact: true` "Edit recording" match a few lines down only starts
-      // matching again once Stop lifts the gate.
-      const liveToggle = page
-        .locator(".recorder-toolbar")
-        .getByRole("button", { name: /^Edit recording/ });
+      // (`strings.stopToEdit`, round 1 of #857's review), which is why
+      // `editRecordingButton` (`recorder-fixtures.ts`) matches by prefix,
+      // not exact name.
+      const liveToggle = editRecordingButton(page);
       await expect(liveToggle).toHaveAttribute("aria-disabled", "true");
       await expect(liveToggle).toHaveJSProperty("disabled", false);
-      // Stop, then wait for the commit to land — the "Record" label
-      // reappearing is the aria-busy-clear signal here: `Control` never
-      // natively disables a `busy` control, so the toolbar Edit stays
-      // `aria-busy` and unreachable through the commit window itself, and
-      // "Record" replacing "Stop recording" is `recording`
-      // (`state === "recording"`) going false, which only happens once the
-      // commit settles. #857 removed the one-tap live-take entry #134 built
-      // — `commitTake("edit")` is no longer reachable from either toolbar
-      // control (`menu-row-state.ts`'s `editRowReason`) — so Stop-then-Edit
-      // is now the only path at EITHER width; the two widths still differ on
-      // layout/breakpoint, which the frame-slot assertions below are for.
-      // Inlined here rather than imported: PR #867 adds
-      // `e2e/recorder-fixtures.ts`'s `clickEditRecording` for exactly this
-      // wait, but #867 is unmerged as of this PR.
+      // Stop, then wait for the commit to land — "Record" reappearing pins
+      // the post-Stop render (`recorder-fixtures.ts`'s own pattern: a
+      // `not.toHaveAttribute("aria-busy", ...)` polled before that pin can
+      // pass on the pre-Stop, not-yet-busy frame), and the `aria-busy` wait a
+      // few lines down (`editRecordingButton`/`toggle`, reused from
+      // `recorder-fixtures.ts` and now matched by PREFIX rather than exact
+      // name — see that file's docblock) is what actually waits out
+      // `commitTake`'s own async tail. #857 removed the one-tap live-take
+      // entry #134 built — `commitTake("edit")` is no longer reachable from
+      // either toolbar control (`menu-row-state.ts`'s `editRowReason`) — so
+      // Stop-then-Edit is now the only path at EITHER width; the two widths
+      // still differ on layout/breakpoint, which the frame-slot assertions
+      // below are for.
       await page
         .getByRole("button", { name: "Stop recording", exact: true })
         .click();
       await expect(
         page.getByRole("button", { name: "Record", exact: true })
       ).toBeVisible();
-      const toggle = page
-        .locator(".recorder-toolbar")
-        .getByRole("button", { name: "Edit recording", exact: true });
+      const toggle = editRecordingButton(page);
       const before = await toggle.boundingBox();
       expect(before).not.toBeNull();
+      // #846/#848/#825: wait for the real precondition before clicking. See
+      // recorder-fixtures.ts.
+      await expect(toggle).not.toHaveAttribute("aria-busy", "true");
       await toggle.click();
       await expect(
         page.getByLabel("Selection start", { exact: true })
@@ -442,10 +441,9 @@ test.describe("edit toolbar keeps the ≡ off the leading edge (#370)", () => {
       await expect(
         page.getByRole("button", { name: "Record", exact: true })
       ).toBeVisible();
-      await page
-        .locator(".recorder-toolbar")
-        .getByRole("button", { name: "Edit recording", exact: true })
-        .click();
+      // #846/#848/#825: wait for the real precondition (the commit, not the
+      // Record button's label) before clicking — see recorder-fixtures.ts.
+      await clickEditRecording(page);
       await expect(
         page.getByLabel("Selection start", { exact: true })
       ).toBeVisible();
@@ -538,10 +536,10 @@ test.describe("selection handle focus ring at 0%/100% (#659)", () => {
       await page
         .getByRole("button", { name: "Stop recording", exact: true })
         .click();
-      await page
-        .locator(".recorder-toolbar")
-        .getByRole("button", { name: "Edit recording", exact: true })
-        .click();
+      // #846/#848/#825: this spec never waited for "Record" to reappear
+      // either — wait for the real precondition before clicking. See
+      // recorder-fixtures.ts.
+      await clickEditRecording(page);
       await page
         .getByRole("button", {
           name: "Zoomed to the whole segment. Zoom in to a quarter.",
