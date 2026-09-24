@@ -112,7 +112,6 @@ src/
 ├── types/       Domain types              (no internal imports)
 ├── lib/         Pure audio + storage core (imports: types)
 │   ├── audio/     PCM edit, peaks, MP3 — no DOM, unit-tested in Node
-│   ├── scripture/ Burrito scope-string grammar
 │   └── storage/   IndexedDB repositories
 ├── hooks/       Browser boundary          (imports: lib, types)
 │                  the ONLY place MediaRecorder / Web Audio appear
