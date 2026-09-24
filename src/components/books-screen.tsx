@@ -839,10 +839,25 @@ export function BooksScreen({
   // values that are `ref.current ??= …` in `share-flow.ts:388,409`, created
   // once for the hook's life.
   const resetBookShare = bookShare.reset;
+  // The share overlay's own capture/restore pair (#96/#97, George r2 P2-1,
+  // #491). See `segments-screen.tsx`'s own copy of this comment for why
+  // capture must happen synchronously in the tap handlers below, never from an
+  // effect.
+  const focusRestore = useFocusRestore();
+  // The book menu's OWN pair (#679), one per inert scope: the menu inerts the
+  // shelf, the share overlay inerts the menu. Sharing one slot let the share
+  // effect below consume the ⋮ capture while the menu stayed open, so a later
+  // Close/Escape found nothing to restore (Frank r1 P2 on #754).
+  const menuFocusRestore = useFocusRestore();
   // Open a book's ≡ menu, ending any prior menu session so a rename still in
   // flight from the previous one cannot close this one.
   const onOpenShareMenu = useCallback(
     (bookId: BookId) => {
+      // Remember the ⋮ that opened this menu, HERE — synchronously, in the
+      // tap's own handler (#97, #679): one commit later the shelf goes
+      // `inert`, which blurs this button to `<body>` in the mutation phase,
+      // before any effect could read it.
+      menuFocusRestore.capture();
       bookMenuSession.current += 1;
       setShareMenuBookId(bookId);
       // A different book's still-pending rename must not show THIS book's fresh
@@ -850,7 +865,7 @@ export function BooksScreen({
       setSavingName(false);
       layers.open("books:book-menu");
     },
-    [layers, setSavingName]
+    [menuFocusRestore, layers, setSavingName]
   );
   // Menu's actual `onClose`, and the one close every caller uses — see
   // `closeBookMenuState` above for what it does and why the share-overlay guard
@@ -923,10 +938,6 @@ export function BooksScreen({
     setRenamingBook(false);
     setSavingName(false);
   }, [setSavingName]);
-  // The overlay's own capture/restore pair (#96/#97, George r2 P2-1, #491) —
-  // see `segments-screen.tsx`'s own copy of this comment for why capture must
-  // happen synchronously in the tap handlers below, never from an effect.
-  const focusRestore = useFocusRestore();
   // Whichever of "Share book"/"Preparing…"/"Share now" is currently rendered
   // — attached to every branch of the ternary below, so it survives that
   // remount and always names a live, non-destructive landmark for
@@ -970,6 +981,35 @@ export function BooksScreen({
       fallback: shareControlRef.current,
     });
   }, [bookShare.progress, focusRestore]);
+  // Return focus to the ⋮ that opened this book's menu once the menu itself
+  // is fully closed — Close, Escape, a scrim tap, or a completed rename/share
+  // that closes it (#679) — and no share overlay still owns the screen.
+  //
+  // A SEPARATE effect from the one above, deliberately, rather than adding
+  // `shareMenuBookId` to that effect's own dependency array: that effect must
+  // keep firing on every `bookShare.progress` change made WHILE this menu
+  // stays open (the busy → ready transition after `onPrepareBookShare`,
+  // moving focus onto whichever of "Share book"/"Share now" is live), and it
+  // must NOT also fire on this menu's OPEN edge — which adding
+  // `shareMenuBookId` there would, since opening flips it non-null with
+  // `bookShare.progress` still `"hidden"`, and that would consume the ⋮
+  // capture `onOpenShareMenu` above just took, before the menu has shown
+  // anything. Guarding on `shareMenuBookId === null` keeps this effect silent
+  // while the menu is open. It also runs on mount and on later progress
+  // changes, but `menuFocusRestore` is captured only by `onOpenShareMenu`, so
+  // those runs find an empty slot and do nothing. A close into the delete
+  // confirm (shelf still inert) consumes the capture without focusing;
+  // `closeDeleteConfirmState`'s `pendingFocus` owns that landing.
+  //
+  // No fallback: once the whole menu is gone there is no live landmark left
+  // inside it (`shareControlRef` unmounts in the same commit), and the ⋮
+  // itself is the only sensible target — `restore()` already prefers it
+  // whenever it is connected, focusable and no longer `inert`.
+  useLayoutEffect(() => {
+    if (shareMenuBookId !== null) return;
+    if (shareOverlayOwnsScreen(bookShare.progress)) return;
+    menuFocusRestore.restore({ suppressed: false, fallback: null });
+  }, [shareMenuBookId, bookShare.progress, menuFocusRestore]);
   // Share speaks inside its own menu, not the shelf: the two-gesture flow keeps
   // the menu open across prepare → ready → send. The control's glyph, the gap
   // mark and the error mark all live in `ShareMenuSection` now (#160, L-15) —
