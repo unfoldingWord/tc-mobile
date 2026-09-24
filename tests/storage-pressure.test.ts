@@ -463,8 +463,7 @@ describe("bumpStoragePressure", () => {
    * Deltas, not absolute values, throughout: `generation` is module-scope
    * state shared by every test in this file (and every other `it` in this
    * `describe`), so an assertion on an absolute count would be order-
-   * dependent. Red-first: reverting `generation += 1` to a no-op, or to
-   * `generation = 1`, fails every case below.
+   * dependent (#542).
    */
 
   it("advances the generation by exactly one per call", () => {
