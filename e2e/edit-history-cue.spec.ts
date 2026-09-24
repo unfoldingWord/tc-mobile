@@ -155,13 +155,20 @@ test.describe("edit-toolbar history cue (#91)", () => {
         const next = controls
           .filter((c) => c.left >= owner.right)
           .sort((a, b) => a.left - b.left)[0];
-        return next
-          ? next.left - hint.getBoundingClientRect().right
-          : Number.POSITIVE_INFINITY;
+        // `null`, never Infinity: a sentinel that satisfies `> 0` is how this
+        // check would go back to passing while measuring nothing (George r6).
+        return next ? next.left - hint.getBoundingClientRect().right : null;
       });
     });
     expect(badgeGaps).toHaveLength(2);
     for (const [i, gap] of badgeGaps.entries()) {
+      // Finite FIRST. Both badges have a control to their right in this
+      // toolbar; if a reorder ever removes it, that must fail here rather than
+      // quietly measure nothing.
+      expect(
+        gap,
+        `badge ${i} has no neighbour to measure against`
+      ).not.toBeNull();
       expect(gap, `badge ${i} paints into the next control`).toBeGreaterThan(0);
     }
 
@@ -238,6 +245,12 @@ test.describe("edit-toolbar history cue (#91)", () => {
     await undoByName().click();
     await expect(undoByName()).toHaveAttribute("aria-disabled", "true");
     await expect(undoByName()).toHaveAccessibleName("Undo. Nothing to undo.");
+    // Not natively disabled here either (George r6). This is the cell round 1
+    // got wrong, so it earns the same lock the fresh stack gets above rather
+    // than a name assertion a Tab-skipped control would also satisfy.
+    expect(
+      await undoByName().evaluate((el) => el.hasAttribute("disabled"))
+    ).toBe(false);
     await expect(redoByName()).toHaveAccessibleName("Redo");
     await expect(redoByName()).not.toHaveAttribute("aria-disabled", "true");
 

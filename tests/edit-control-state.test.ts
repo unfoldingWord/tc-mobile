@@ -149,6 +149,18 @@ describe("the cue (#91, #135)", () => {
     expect(strings.nothingToUndo).not.toBe(strings.nothingToRedo);
   });
 
+  // The literal sentences, in vitest (George r6). The tense ban below is a
+  // backstop and he is right that it leaks: "No edits to undo." clears every
+  // banned word and is still false once an edit has been made and undone to
+  // cursor 0. `toEqual({ label: strings.nothingToUndo })` cannot catch that
+  // either — it restates the constant. Only the literals do, and until now they
+  // lived solely in the Playwright spec, which runs in one CI job rather than
+  // everywhere `npm test` does.
+  it("says exactly the two sentences that are true at both stack ends", () => {
+    expect(strings.nothingToUndo).toBe("Nothing to undo.");
+    expect(strings.nothingToRedo).toBe("Nothing to redo.");
+  });
+
   // THE ROUND-1 DEFECT, pinned as a rule rather than as two fixed sentences
   // (George round 1, Medium / WRONG RESULT). The cue shipped as "No edits to
   // undo yet." and "Nothing has been undone." — claims about the session's
