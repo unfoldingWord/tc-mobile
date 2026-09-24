@@ -10,11 +10,10 @@ import { SHARE_SETTLED } from "@/hooks/share-progress";
 import { one, render } from "./render";
 
 /**
- * The share overlay's busy state used to wear a STATIC glyph — the same
- * `retry` mark `notice-tone.ts`'s shared `busy` entry gives every other wait
- * in the app — with no dedicated animation of its own. It is now a dedicated
- * ring-of-dots mark (`icon.tsx`'s "share-busy"), scoped to the share overlay
- * only.
+ * The share overlay's busy state used to wear the `retry` mark that
+ * `notice-tone.ts`'s shared `busy` entry gives every other wait in the app.
+ * It is now a dedicated ring-of-dots mark (`icon.tsx`'s "share-busy"),
+ * scoped to the share overlay only.
  *
  * `shareOverlayGlyph` (#850, `share-overlay-glyph.ts`) is the plain function
  * that makes the busy-vs-settled CHOICE testable as behaviour: called with a

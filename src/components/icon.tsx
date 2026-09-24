@@ -559,10 +559,11 @@ const PATHS: Record<IconName, React.ReactNode> = {
      2026-09-19). The Android BUILD's Share control wears this; iOS and the
      web keep the tray above (`share`, the plain up-arrow-out-of-a-tray),
      because on those the tray is the shape the platform teaches. #490 names
-     the CONTROL glyph only — the five OUTCOME marks below are a separate
-     vocabulary, redrawn for #850 to their own Material Symbols shapes on
-     every build alike; that redraw does not reopen #490, since #490 was
-     never about them. Hand-rolled on the same 22-unit grid, `currentColor`,
+     the CONTROL glyph only. The share OUTCOME marks are a separate
+     vocabulary: #850 redrew four of them (sent, closed, partial, empty) to
+     Material Symbols shapes on every build alike, and `failed` keeps the
+     shared `alert` triangle. That redraw does not reopen #490, since #490
+     was never about them. Hand-rolled on the same 22-unit grid, `currentColor`,
      no icon font. */
   "share-android": (
     <>
