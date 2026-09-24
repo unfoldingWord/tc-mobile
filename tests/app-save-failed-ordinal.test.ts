@@ -103,9 +103,10 @@ vi.mock("@/hooks/use-nav-stack", () => ({
   }),
 }));
 // `@/lib/storage/takes`, not `books`: the take writes moved out of the
-// repository in #160 L-16. A mock left on the old path resolves, exports a
-// `saveTake` nobody imports, and lets the REAL write run — which is how this
-// file's three cases went red on the merge with that branch.
+// repository in #160 L-16. A mock left on the old path still resolves and
+// still exports a `saveTake`, but nothing imports that one any more, so the
+// REAL write runs and the seam below holds nothing. Nothing fails to compile
+// when that happens, which is why the path is worth a comment.
 vi.mock("@/lib/storage/takes", () => ({
   saveTake: () =>
     new Promise<void>((resolve, reject) => {
