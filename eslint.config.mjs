@@ -137,12 +137,13 @@ const BROWSER_ONLY_GLOBALS = [
  *   - `dynamicImportDeny(layer, message)` bans a dynamic `import()` whose
  *     source is the `@/<layer>/...` alias OR a relative `../<layer>/...`
  *     path (any depth of `../`) — the same two spellings `deny()` already
- *     covers for the static form. Never `lib`, `types` or `data` as a banned
- *     target here: a dynamic import of a SIBLING or INNER module is not an
- *     onion violation, and `src/lib/obs/catalog.ts`'s
- *     `await import("@/data/obs-catalog.json")` — the one dynamic import
- *     `src/lib` makes today (`grep -rn "import(" src/lib` confirms it is the
- *     only one) — must stay legal.
+ *     covers for the static form, as a string or a substitution-free
+ *     template literal. A block never bans its own layer (a SIBLING import
+ *     is not an onion violation), and lib/ never bans `data`:
+ *     `src/lib/obs/catalog.ts`'s `await import("@/data/obs-catalog.json")`
+ *     must stay legal. Every OTHER layer bans a dynamic `data` import —
+ *     types/ via its own list below, hooks/components/app via
+ *     `NON_HISTORY_SYNTAX_SELECTORS` — matching their static `data` deny.
  *   - `NEW_URL_IMPORT_META_SELECTOR` bans `new URL(..., import.meta.url)`
  *     outright in lib/ and types/, regardless of its first argument. It has
  *     no legitimate use in either — `grep -rn "new URL(" src/lib src/types`
@@ -154,10 +155,17 @@ const BROWSER_ONLY_GLOBALS = [
  * `new URL(..., import.meta.url)` legitimately lives, so this selector set is
  * never added to those blocks.
  */
-const dynamicImportDeny = (layer, message) => ({
-  selector: `ImportExpression[source.value=/^(@\\/|(\\.\\.\\/)+)${layer}(\\/|$)/]`,
-  message,
-});
+const dynamicImportDeny = (layer, message) => {
+  const re = `/^(@\\/|(\\.\\.\\/)+)${layer}(\\/|$)/`;
+  // A string literal, or a template literal with no `${}` substitution
+  // (import(`@/hooks/y`) is as static as the quoted form; Frank round 1).
+  return {
+    selector:
+      `ImportExpression:matches([source.value=${re}], ` +
+      `[source.expressions.length=0][source.quasis.0.value.cooked=${re}])`,
+    message,
+  };
+};
 
 const NEW_URL_IMPORT_META_SELECTOR = {
   selector:
@@ -222,13 +230,21 @@ const HISTORY_POPSTATE_SELECTOR = {
 
 /**
  * Non-history `no-restricted-syntax` selectors for the boundary layers
- * (app/components/hooks). EMPTY today. A selector added here reaches EVERY
+ * (app/components/hooks). A selector added here reaches EVERY
  * boundary file, INCLUDING the adapter (`use-nav-stack.ts`) — the adapter's
  * override below spreads this same list — so a future onion/safety syntax rule
  * is not silently dropped for the adapter the way a blanket
  * `no-restricted-syntax: "off"` would drop it (George R3 P3-4).
  */
-const NON_HISTORY_SYNTAX_SELECTORS = [];
+const NON_HISTORY_SYNTAX_SELECTORS = [
+  // #159 L-6: the dynamic half of the static `data` deny in each of the three
+  // boundary blocks — data/ is reachable only from lib/ (Frank round 1).
+  dynamicImportDeny(
+    "data",
+    "hooks/components/app cannot dynamically import data (onion " +
+      "architecture) — route through lib/obs/catalog.ts."
+  ),
+];
 
 /**
  * The full boundary-layer `no-restricted-syntax` set: the history popstate ban
@@ -409,6 +425,7 @@ export default tseslint.config(
           "hooks",
           "components",
           "app",
+          "data",
         ]),
       ],
     },

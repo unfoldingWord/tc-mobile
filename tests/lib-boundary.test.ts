@@ -373,4 +373,48 @@ describe("#159 L-6 — src/data/ is classified", () => {
       }
     }
   );
+
+  // Frank round 1: the static deny above had no dynamic half, so
+  // `await import("@/data/…")` passed from every non-lib layer. Both quote
+  // styles, and the adapter file (use-nav-stack.ts has its own override).
+  it.each(
+    [
+      "src/types/probe.ts",
+      "src/lib/audio/probe.ts",
+      "src/hooks/probe.ts",
+      "src/hooks/use-nav-stack.ts",
+      "src/components/probe.tsx",
+      "src/app/probe.ts",
+    ].flatMap((file) => [
+      [file, '"@/data/obs-catalog.json"'],
+      [file, "`@/data/obs-catalog.json`"],
+    ])
+  )(
+    "%s: dynamic import(%s) of data/ is allowed only from lib/",
+    (file, spec) => {
+      const messages = lintStdin(
+        `export async function f() { return (await import(${spec})).default; }\n`,
+        file
+      );
+      const syntax = messages.filter(
+        (m) => m.ruleId === "no-restricted-syntax"
+      );
+      expect(syntax).toHaveLength(file.startsWith("src/lib/") ? 0 : 1);
+    }
+  );
+});
+
+describe("#159 L-6 — substitution-free template-literal specifiers", () => {
+  it.each([
+    ["`@/hooks/y`", 1],
+    ["`../../app/y`", 1],
+    ["`@/lib/audio/format`", 0],
+  ])("lib/ dynamic import(%s) → %i no-restricted-syntax hit(s)", (spec, n) => {
+    const messages = lintStdin(
+      `export async function f() { return (await import(${spec})).default; }\n`,
+      "src/lib/audio/probe.ts"
+    );
+    const syntax = messages.filter((m) => m.ruleId === "no-restricted-syntax");
+    expect(syntax).toHaveLength(n);
+  });
 });
