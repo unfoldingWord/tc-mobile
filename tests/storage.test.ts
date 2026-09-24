@@ -14,15 +14,12 @@ import { closeDb, getDb } from "@/lib/storage/db";
 import {
   addChapter,
   addSegment,
-  addTake,
   chapterProgress,
-  clearSegmentTake,
   createBook,
   getBook,
   getChapter,
   getSegment,
   getSegmentsOfChapter,
-  isFinished,
   isStaleBookFailure,
   listBooks,
   nextBookName,
@@ -31,9 +28,14 @@ import {
   renameChapter,
   renameSegment,
   resolveChapterClipIds,
+} from "@/lib/storage/books";
+import {
+  addTake,
+  clearSegmentTake,
+  isFinished,
   saveTake,
   setSegmentFinished,
-} from "@/lib/storage/books";
+} from "@/lib/storage/takes";
 import {
   danglingReason,
   loadSegmentClip,
@@ -418,7 +420,7 @@ describe("book tree", () => {
     // The pending-take retry path re-runs the save with the SAME clipId
     // (retrySave keeps it; putClip is an upsert). addTake then sees
     // prior.clipId === new clipId, and deleting "the superseded clip" would
-    // strand the take it just wrote — the guard at books.ts is the only thing
+    // strand the take it just wrote — the guard at takes.ts is the only thing
     // stopping that, and nothing else exercises it.
     const { segmentId } = await oneSegment();
     const clipId = await storedClip(1000);

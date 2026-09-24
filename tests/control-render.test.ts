@@ -108,6 +108,30 @@ describe("Control's disabled-row badge", () => {
     );
   });
 
+  it("keeps the NATIVE disable when a hint-capable control is disabled with no reason", () => {
+    // George round 1 on #703 asked for this cell by name. #91's two history
+    // controls pass `hint={editControlHint(reason)}`, which is `null` for the
+    // reasons that get no cue — among them `held-by-drag`, the #317 lock that
+    // must not take a click or an Enter while a finger owns the stage. `null`
+    // is hint-capable (the wrapper stays, so the root never remounts) but not
+    // hinted, so it must fall to the NATIVE attribute rather than the
+    // focusable `aria-disabled` route: there is no reason to announce, and
+    // aria-disabled alone does not stop activation.
+    //
+    // The cell the file already had is `hint: null` on an ENABLED control,
+    // which cannot distinguish the two routes because neither applies.
+    const el = button({
+      icon: "undo",
+      label: "Undo",
+      disabled: true,
+      hint: null,
+    });
+
+    expect(el.hasAttribute("disabled")).toBe(true);
+    expect(el.hasAttribute("aria-disabled")).toBe(false);
+    expect(el.getAttribute("aria-label")).toBe("Undo");
+  });
+
   it("drops the wrapper entirely for a control that can never carry a hint", () => {
     const plain = render(
       createElement(Control, { icon: "play", label: "Play" })

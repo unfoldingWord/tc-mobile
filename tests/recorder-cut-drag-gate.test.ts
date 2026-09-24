@@ -8,10 +8,15 @@ import { describe, expect, it } from "vitest";
  *
  * `onPointerMove` keeps writing `panAfterDragMove` into `panState` for as
  * long as `dragging` is true, and Cut does not clear `dragging`,
- * `ownerRef`, or `panAtDragStart` when it fires. Undo and Redo are wrapped in
- * `heldByDrag(dragging, …)` for exactly this reason — rematerialising
+ * `ownerRef`, or `panAtDragStart` when it fires. Undo and Redo carry a
+ * `dragging` term for exactly this reason — rematerialising
  * `working` (or, for Cut, writing `panState` through `panAfterCutCollapse`)
- * under a finger that is still moving is the #317 class. Cut's own gate was
+ * under a finger that is still moving is the #317 class. They carried it as a
+ * literal `heldByDrag(dragging, …)` wrap until #91 moved them onto
+ * `undoReason`/`redoReason`, so that a disabled history control can also say
+ * WHY it is disabled; `tests/edit-control-state.test.ts` pins those two as
+ * equivalent to the wrap. Cut still calls `heldByDrag` directly, and Cut is
+ * what this file is about. Cut's own gate was
  * `!idleEditable || !editor.canCut` with no `dragging` term, so a second
  * finger could tap Cut mid-drag, after which the first finger's next
  * `pointermove` writes a pan measured against the PRE-cut origin over the
@@ -28,10 +33,13 @@ describe("Cut's disabled gate carries the #317 drag term, the way Undo/Redo do (
     new URL("../src/components/recorder.tsx", import.meta.url),
     "utf8"
   );
-  // Undo moved to the toolbars when #160's L-1 split them out of the sheet;
-  // Cut stayed, because it lives in the edit body above the bar. So the two
-  // controls this test compares now sit in two files, and reading both is what
-  // keeps the comparison the one the test claims to make.
+  // Two files, because the two controls this file talks about now live apart:
+  // Cut stayed in the sheet's edit body, and #160's L-1 split moved Undo into
+  // the bottom bars. #91 then changed what Undo is checked FOR — its gate is a
+  // derived `undoBlocked !== null` rather than an inline `heldByDrag(...)`, so
+  // the old "same call shape as Undo" comparison lost its subject and is gone.
+  // What is still asserted here is that Undo has not quietly gone back to an
+  // inline gate, which is what would leave Cut's reference dangling.
   const toolbars = readFileSync(
     new URL("../src/components/recorder-toolbars.tsx", import.meta.url),
     "utf8"
@@ -69,29 +77,38 @@ describe("Cut's disabled gate carries the #317 drag term, the way Undo/Redo do (
     expect(cutDisabledExpr).toMatch(/editor\.canCut/);
   });
 
-  it("matches the Undo control's gate shape exactly (same heldByDrag call convention)", () => {
-    // Undo: `heldByDrag(dragging, !idleEditable || !canUndo)` — the editor's
-    // flag arrives as a prop since the toolbar split, so the NAME differs
-    // while the call shape, which is what this compares, does not. Cut's
-    // wrap must be the same call shape — `heldByDrag(dragging, <original>)`
-    // — not, say, an inline `dragging || (...)` that reimplements the rule
-    // heldByDrag exists to centralise (its own docblock: "so the rule is
-    // written once rather than three times in JSX").
-    const undoLabelIdx = toolbars.indexOf("label={strings.undo}");
-    expect(
-      undoLabelIdx,
-      "no Control with label={strings.undo} in recorder-toolbars.tsx"
-    ).toBeGreaterThan(-1);
-    const undoMatch = /disabled=\{([^}]*)\}/.exec(toolbars.slice(undoLabelIdx));
-    expect(undoMatch).not.toBeNull();
-    const undoDisabledExpr = undoMatch![1] ?? "";
-    // Both must open with `heldByDrag(` and pass `dragging` as the first
-    // argument, matching the shape `disabled={heldByDrag(\n  dragging,`.
-    expect(undoDisabledExpr.replace(/\s+/g, "")).toMatch(
-      /^heldByDrag\(dragging,/
-    );
+  it("calls the centralised rule rather than reimplementing it inline", () => {
+    // Cut's wrap must be `heldByDrag(dragging, <original>)` — not, say, an
+    // inline `dragging || (...)` that reimplements the rule heldByDrag exists
+    // to centralise (its own docblock: "so the rule is written once rather
+    // than three times in JSX").
     expect(cutDisabledExpr.replace(/\s+/g, "")).toMatch(
       /^heldByDrag\(dragging,/
     );
+  });
+
+  it("Undo still carries the same drag term, through its own derivation (#91)", () => {
+    // This assertion used to read Undo's `disabled` expression and require the
+    // identical `heldByDrag(dragging,` text, using Undo as the live reference
+    // for the convention. #91 moved Undo and Redo off that literal: their gate
+    // is now `undoBlocked !== null`, from `edit-control-state.ts`, so that a
+    // disabled history control can also state WHY it is disabled — one value
+    // answering both questions is the whole point, and it cannot be an inline
+    // expression and still do that.
+    //
+    // The guarantee is unchanged, only relocated, so this checks the relocation
+    // is real rather than dropping the claim: `tests/edit-control-state.test.ts`
+    // asserts `undoReason(...) !== null` against `heldByDrag(dragging,
+    // !idleEditable || !canUndo)` over every cell of the input space, which is
+    // strictly stronger than the text match that stood here — it survives a
+    // reformat and fails on a term that is dropped rather than merely reworded.
+    // What this file keeps is that Undo has not quietly gone back to an inline
+    // gate with no drag term at all, which would leave Cut's reference dangling.
+    const undoLabelIdx = toolbars.indexOf("label={strings.undo}");
+    expect(undoLabelIdx).toBeGreaterThan(-1);
+    const undoMatch = /disabled=\{([^}]*)\}/.exec(toolbars.slice(undoLabelIdx));
+    expect(undoMatch).not.toBeNull();
+    const undoDisabledExpr = (undoMatch![1] ?? "").replace(/\s+/g, "");
+    expect(undoDisabledExpr).toBe("undoBlocked!==null");
   });
 });

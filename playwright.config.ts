@@ -89,7 +89,7 @@ export default defineConfig({
       // by the production minifier or by Tailwind's layer ordering would pass
       // there (#171).
       testMatch:
-        /(service-worker-precache|theme-toggle|recorder-selection|segment-rename|object-menu-focus|focus-scroll-measure)\.spec\.ts$/,
+        /(service-worker-precache|theme-toggle|recorder-selection|segment-rename|object-menu-focus|edit-history-cue|focus-scroll-measure)\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
     },
     {

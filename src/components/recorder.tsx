@@ -13,6 +13,7 @@ import { captureFailureText } from "./capture-failure-copy";
 import { CenterlineOverlay } from "./centerline-overlay";
 import { Control } from "./control";
 import { shareControlGlyph } from "./control-affordance";
+import { redoReason, undoReason } from "./edit-control-state";
 import { EraseConfirm } from "./erase-confirm";
 import { guidedRecordShown, guidedStep } from "./guided-step";
 import { Icon } from "./icon";
@@ -66,7 +67,7 @@ import {
   resolveProvesDelivery,
   selectShareRoute,
 } from "@/hooks/share-target";
-import type { UseAudioSession } from "@/hooks/use-audio-session";
+import type { RecorderAudio } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
@@ -101,7 +102,7 @@ import type { SegmentId } from "@/types/domain";
 interface RecorderProps {
   segmentId: SegmentId;
   /** The single audio owner, held by App so `leave()` fires on every nav. */
-  audio: UseAudioSession;
+  audio: RecorderAudio;
   /**
    * Persist the recording as an insert/append into the segment's audio, at the
    * given Finished state. Never rejects — a failure becomes the recovery screen
@@ -2657,6 +2658,30 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       hasClip: view?.hasClip ?? false,
     });
 
+    // Why the edit toolbar's two history arrows are grey, derived from the same
+    // predicates that grey them (#91, `edit-control-state.ts`) — the ≡ rows'
+    // rule above, applied to the toolbar. Not a second switch beside the
+    // `disabled` expressions they replace: each control's `disabled` is now
+    // `reason !== null`, which is what keeps the cue from drifting out of step
+    // with the gate.
+    //
+    // Derived HERE, beside those rows, rather than up beside `playDisabled`
+    // where the terms first become available: an object literal reading
+    // `editor` above the memoized callbacks makes React Compiler treat the
+    // value as one that may be mutated later and skip their memoization
+    // outright, which surfaces as `react-hooks/preserve-manual-memoization`
+    // errors in callbacks this change never touched.
+    const undoBlocked = undoReason({
+      dragging,
+      idleEditable,
+      canUndo: editor.canUndo,
+    });
+    const redoBlocked = redoReason({
+      dragging,
+      idleEditable,
+      canRedo: editor.canRedo,
+    });
+
     // Enabled once a take WILL exist on close, not only when one already does.
     // `takeActive` covers the FIRST take — recording/closing before any clip
     // exists — so the day-1 path can record and mark done in one sheet (G8); the
@@ -3544,8 +3569,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 playDisabled={playDisabled}
                 editToolbarDisabled={editToolbarDisabled}
                 editToolbarHint={editToolbarHint}
-                canUndo={editor.canUndo}
-                canRedo={editor.canRedo}
+                undoBlocked={undoBlocked}
+                redoBlocked={redoBlocked}
                 zoom={zoom}
                 windowControlsInert={stage.windowControlsInert}
                 onRecordButton={onRecordButton}

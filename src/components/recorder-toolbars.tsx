@@ -1,6 +1,7 @@
 import type { RefObject } from "react";
 
 import { Control } from "./control";
+import { editControlHint, type EditControlReason } from "./edit-control-state";
 import { heldByDrag, ZOOM_QUARTER, ZOOM_WHOLE } from "./recorder-stage";
 import { strings } from "./strings";
 import type { RowHint } from "./menu-row-state";
@@ -72,8 +73,16 @@ export interface RecorderToolbarProps {
   editToolbarDisabled: boolean;
   /** Its reason, which is NOT always the ≡ row's words (#315). */
   editToolbarHint: RowHint | null;
-  canUndo: boolean;
-  canRedo: boolean;
+  /**
+   * Why Undo is grey, or null when it is live (#91). The REASON rather than a
+   * boolean, because the bar both disables on it AND speaks it through
+   * `editControlHint` — #135 found a grey icon-only control with no reason
+   * reads as a broken one. `undoReason` in the sheet already folds in the
+   * #317 drag hold and the close window, so nothing is re-derived here.
+   */
+  undoBlocked: EditControlReason | null;
+  /** Why Redo is grey, or null when it is live (#91). See `undoBlocked`. */
+  redoBlocked: EditControlReason | null;
   /** The real zoom level; `displayedZoom` retired with the preview (#614). */
   zoom: number;
   /** The stage says its window controls cannot act right now. */
@@ -108,8 +117,8 @@ export function RecorderToolbar({
   playDisabled,
   editToolbarDisabled,
   editToolbarHint,
-  canUndo,
-  canRedo,
+  undoBlocked,
+  redoBlocked,
   zoom,
   windowControlsInert,
   onRecordButton,
@@ -301,11 +310,14 @@ export function RecorderToolbar({
         label={strings.undo}
         variant="quiet"
         size={24}
-        // `heldByDrag` is the history half of the #317 stage lock
-        // (George R2 P1): Undo rematerialises `working`, and a lift
-        // still owing a resume would sound a sample index measured
-        // in the buffer that no longer exists.
-        disabled={heldByDrag(dragging, !idleEditable || !canUndo)}
+        // The gate arrives already derived (#91): `undoReason` in the sheet
+        // reproduces `heldByDrag(dragging, !idleEditable || !canUndo)` — the
+        // history half of the #317 stage lock, since Undo rematerialises
+        // `working` and a lift still owing a resume would sound a sample
+        // index measured in a buffer that no longer exists. What the reason
+        // adds is the grey's CAUSE, so the arrow can say why it is grey.
+        disabled={undoBlocked !== null}
+        hint={editControlHint(undoBlocked)}
         onClick={onUndo}
       />
       <Control
@@ -313,12 +325,16 @@ export function RecorderToolbar({
         label={strings.redo}
         variant="quiet"
         size={24}
-        // Same guard the menu Redo had (George R4): a Redo mid-take
-        // would rematerialise the working buffer under the locked
-        // insertion offset — but `idleEditable` forbids that, and edit
-        // mode is idle-only regardless. `heldByDrag` is the #317
-        // finger, for the same reason Undo carries it.
-        disabled={heldByDrag(dragging, !idleEditable || !canRedo)}
+        // Same guard the menu Redo had (George R4), now derived the way
+        // Undo's is: a Redo mid-take would rematerialise the working buffer
+        // under the locked insertion offset — but `idleEditable` forbids
+        // that, and edit mode is idle-only regardless. `redoReason`'s
+        // `dragging` term is the #317 finger, for the reason Undo carries
+        // it. Redo is grey for longer than Undo, never having anything to
+        // redo until something is undone, so it is the stronger half of
+        // #91's case here.
+        disabled={redoBlocked !== null}
+        hint={editControlHint(redoBlocked)}
         onClick={onRedo}
       />
       <Control

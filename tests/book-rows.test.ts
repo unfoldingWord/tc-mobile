@@ -15,10 +15,7 @@ import type { BookCard, ChapterRow } from "@/types/view";
  * THE case that distinguishes the two predicates, and the one a reviewer
  * should check first: a book (and a chapter) that exist but hold zero
  * recordings. `books.length > 0` reads `true` there; `hasReclaimableAudio`
- * must read `false`. Red-first / mutation check performed by hand: reverting
- * this function's body to `books.length > 0` (the old `hasContent` shape)
- * makes "is false for a book with a chapter that has never been recorded"
- * below fail — confirmed, then the fix reapplied and the suite passes again.
+ * must read `false` (#542).
  */
 
 const bookId = (n: number) => `book-${n}` as BookId;
