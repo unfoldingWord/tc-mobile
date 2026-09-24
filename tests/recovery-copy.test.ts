@@ -7,6 +7,7 @@ import {
   restartConsequence,
   restartLabel,
 } from "@/components/recovery-copy";
+import type { SaveFailureKind } from "@/hooks/save-failure";
 
 /**
  * The recovery-screen wording, isolated from the component so it can be exercised
@@ -269,5 +270,32 @@ describe("recoveryAttempts", () => {
       expect(recoveryAttempts(kind, 2)).toBeNull();
       expect(recoveryAttempts(kind, 9)).toBeNull();
     }
+  });
+});
+
+describe("a kind outside SaveFailureKind (#777)", () => {
+  // The `never` defaults make a new kind a compile error in all three
+  // choosers. This covers the other half: a value `tsc` never saw (stale
+  // persisted state, a cast) still gets the safe lines at runtime rather than
+  // a throw, because this screen holds the only copy of a recording.
+  const future = "future" as unknown as SaveFailureKind;
+
+  it("gets the unknown title, not a throw", () => {
+    expect(recoveryTitle(future, false)).toBe(
+      "This recording could not be saved."
+    );
+    expect(recoveryTitle(future, true)).toBe(
+      "Your changes could not be saved."
+    );
+  });
+
+  it("gets the don't-close line, the one that keeps a RAM-only take alive", () => {
+    expect(recoverySafetyLine(false, future)).toBe(recoverySafetyLine(false));
+    expect(recoverySafetyLine(true, future)).toBe(recoverySafetyLine(true));
+  });
+
+  it("is counted, as every kind outside quota/downgrade/stale always was", () => {
+    expect(recoveryAttempts(future, 1)).toBeNull();
+    expect(recoveryAttempts(future, 3)).toBe("Attempts: 3");
   });
 });
