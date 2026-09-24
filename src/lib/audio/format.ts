@@ -18,19 +18,14 @@ export const CANONICAL_CHANNELS = 1;
 /**
  * Frames required by the canonical renderer, with a one-frame minimum.
  *
- * The multiply-then-divide by `sourceSampleRate` looks redundant — reading as
- * `duration * CANONICAL_SAMPLE_RATE` — and for every integer Hz value a real
- * `AudioBuffer`/`AudioContext` has ever been observed to report (8 kHz through
- * 192 kHz), the two forms round to the same `Math.ceil`. But the parameter's
- * type is an unconstrained `number`, the Web Audio spec does not require it to
- * be an integer, and for a non-integer `sourceSampleRate` the two forms CAN
- * disagree by one frame at a ceiling boundary: `(d * R * s) / s` is two
- * roundings, `d * R` is one, and they are not guaranteed to land on the same
- * side of an integer. `tests/canonical-frame-count.test.ts` pins the current,
- * two-rounding form's output for specific inputs ("preserves the existing
- * floating-point ceiling"), so this is left as-is rather than simplified —
- * simplifying it would be a silent behaviour change for an input the type
- * signature admits even though no known runtime ever supplies one (#163 A-15).
+ * The multiply-then-divide by `sourceSampleRate` looks redundant, but it is
+ * not the same arithmetic as `duration * CANONICAL_SAMPLE_RATE`:
+ * `(d * R * s) / s` rounds twice and `d * R` rounds once, so for a
+ * `sourceSampleRate` that is not an integer (the type and the Web Audio spec
+ * both allow one) the two can land on opposite sides of an integer and the
+ * ceiling differs by a frame. `tests/canonical-frame-count.test.ts` pins this
+ * form's output ("preserves the existing floating-point ceiling"), so it is
+ * kept rather than simplified (#163 A-15).
  */
 export function canonicalFrameCount(
   duration: number,

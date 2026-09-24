@@ -200,9 +200,9 @@ describe("gatherChapterPcm", () => {
     // copies `getClip()`'s bytes into the slot that size reserved. The two
     // reads are not one transaction, so nothing here stops them from
     // disagreeing about a clip's length. Reproduce that disagreement directly
-    // by handing back a PCM clip one frame longer than its own metadata says —
-    // on develop's code, `out.set(fitted, written)` then throws a RangeError
-    // because the reserved slot is a frame too small.
+    // by handing back a PCM clip one frame longer than its own metadata says:
+    // the reserved slot is a frame too small, so an unguarded
+    // `out.set(fitted, written)` throws a RangeError.
     const { chapterId } = await chapterWith([
       { n: 100, v: 100 },
       { n: 100, v: 200 },
