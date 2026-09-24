@@ -76,6 +76,11 @@ beforeEach(() => {
     addSegment: vi.fn(),
     reload: vi.fn(),
     renameChapter: vi.fn(),
+    // The screen calls this on an erase that lands. The busy cases never
+    // reach it, but the third erase in the #91-adjacent recovery case below
+    // succeeds, and without it that success throws an UNHANDLED rejection —
+    // which vitest reports as an error while still passing the test.
+    eraseRow: vi.fn(),
   });
   root = createRoot(document.getElementById("root")!);
 });
