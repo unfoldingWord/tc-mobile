@@ -1,6 +1,4 @@
 import { act, createElement, type RefObject } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { JSDOM } from "jsdom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -13,6 +11,7 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
 
 import { render } from "./render";
+import { mountInteractive, type InteractiveMount } from "./interactive-mount";
 
 // Hoisted mocks for the interactive header render below (`vi.mock` runs
 // before this module's own top-level code, so these must live here, not
@@ -199,38 +198,27 @@ describe("record mode's header opener stays ≡, and the Editing pill hides it i
     };
   }
 
-  let dom: JSDOM;
-  let root: Root;
+  let mount: InteractiveMount;
+  let root: InteractiveMount["root"];
   let container: HTMLElement;
 
   beforeEach(() => {
     vi.clearAllMocks();
     recorderSegmentBoundary.view = segmentView();
-    dom = new JSDOM(
-      "<!doctype html><html><body><div id='root'></div></body></html>",
-      // A named origin, the same reason `menu-hamburger-header.test.ts` gives
-      // one: an opaque jsdom origin trips vitest's failure printer on
-      // `localStorage`, turning a red assertion into an unrelated
-      // `SecurityError`.
-      { url: "http://localhost/" }
-    );
-    vi.stubGlobal("window", dom.window);
-    vi.stubGlobal("document", dom.window.document);
-    // `recorder.tsx`'s paste-row probe (`getComputedStyle(probe).height`) is
-    // the one bare global this tree touches outside `window`/`document`.
-    vi.stubGlobal(
-      "getComputedStyle",
-      dom.window.getComputedStyle.bind(dom.window)
-    );
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    container = dom.window.document.getElementById("root")!;
-    root = createRoot(container);
+    mount = mountInteractive();
+    root = mount.root;
+    container = mount.container;
   });
 
   afterEach(async () => {
-    await act(async () => root.unmount());
-    dom.window.close();
-    vi.unstubAllGlobals();
+    // try/finally: if unmount throws, the stubbed window/document must still
+    // be torn down, or they leak into later tests in the same worker (#907
+    // item 2, George r1 on #902).
+    try {
+      await act(async () => root.unmount());
+    } finally {
+      mount.teardown();
+    }
   });
 
   async function mountRecorder(): Promise<void> {
@@ -295,17 +283,31 @@ describe("record mode's header opener stays ≡, and the Editing pill hides it i
     await mountRecorder();
     const opener = findButton(header(), strings.recorderMenuOpen);
     expect(opener, "no ≡ opener in the header").toBeDefined();
-    const svg = opener!.querySelector("svg")!;
+    const svg = opener!.querySelector("svg");
+    // #907 item 1 (George r1 on #902): assert the <svg> exists, with a
+    // message, before reading path/circle counts off it — a button rendered
+    // with no <svg> must fail here with a named assertion, not a bare
+    // TypeError off a non-null assertion on `null`.
+    expect(svg, "no <svg> in the ≡ opener").not.toBeNull();
     // The exact shape, not just the name: the header's ≡ opener and the edit
     // toolbar's ⋮ opener both carry `strings.recorderMenuOpen` as their
     // accessible name (see `menuOpeners` above), so only the glyph — not the
     // aria-label — can tell a wrongly-swapped icon from the real one.
-    expect(svg.querySelectorAll("path").length).toBe(1);
-    expect(svg.querySelectorAll("circle").length).toBe(0);
+    expect(svg!.querySelectorAll("path").length).toBe(1);
+    expect(svg!.querySelectorAll("circle").length).toBe(0);
     expect(header().querySelector(".modepill")).toBeNull();
   });
 
-  it("entering edit mode swaps the ≡ for the Editing pill, and no ≡ is left anywhere in the header", async () => {
+  it("entering edit mode leaves no button named recorderMenuOpen in the header, and the Editing pill carries no glyph of its own", async () => {
+    // #907 item 3 (George r1 on #902): this title used to claim "no ≡ is left
+    // anywhere in the header", which is a visual claim the assertions below
+    // don't make. What they actually check is (a) no *button* whose
+    // accessible name is `strings.recorderMenuOpen` survives into edit mode,
+    // and (b) the Editing pill itself renders no `<svg>` — the shape check
+    // that rules out the pill being mistaken for a leftover opener glyph.
+    // That is the right check for the #890 bug: a name-only check can't tell
+    // a real ≡ removal from a coincidental re-render, and a full-header scan
+    // (not sliced to the pill) is what #890 item 2 fixed.
     await mountRecorder();
     const enterEdit = findButton(container, strings.enterEdit);
     expect(
@@ -325,8 +327,8 @@ describe("record mode's header opener stays ≡, and the Editing pill hides it i
     expect(pill, "no Editing pill in the header").not.toBeNull();
     expect(pill!.getAttribute("aria-label")).toBe(strings.doneEditing);
     expect(pill!.textContent).toBe(strings.modepillEditing);
-    // The pill is a plain text control — no icon of its own to confuse with
-    // either opener glyph.
+    // The shape check: the pill is a plain text control — no icon of its own
+    // to confuse with either opener glyph.
     expect(pill!.querySelector("svg")).toBeNull();
   });
 });
