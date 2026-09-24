@@ -780,9 +780,13 @@ Full process, and the traps that make a failed run look like a clean pass, in
 2. **PCM storage is ~5.3 MB/minute** for segments still being worked on. **D3 is
    built** (B8, ADR 0009): a segment marked Finished is transcoded to 64 kbps
    MP3 and its PCM dropped in the same transaction, ~660 MB to ~66 MB for all 50
-   OBS stories once finished. The other two ADR 0002 mitigations are still open:
-   22 050 Hz for speech, and `navigator.storage.persist()`. #12 stays open on
-   those. **Resolve before October.**
+   OBS stories once finished. Of ADR 0002's other two mitigations,
+   `navigator.storage.persist()` **shipped** — #214 closed #12 (merged
+   2026-09-16), pairing the persist request with a not-persisted /
+   nearly-full state-in-place marker on Books (#247, closed 2026-09-24). The
+   22 050 Hz-for-speech mitigation was explicitly **deferred** on #12
+   (2026-09-04 decision, once D3 covered the storage risk for the gate) and,
+   per #12's own 2026-09-15 triage comment, has no tracking issue of its own.
 3. **lamejs is LGPL-3.0** in an MIT repo. **Decided: keep it** — ADR 0003.
    What remains is the notice and attribution work, #36, not a product call.
 4. **The division-scheme question.** **Decided 2026-08-22 by Tim: no** to the
