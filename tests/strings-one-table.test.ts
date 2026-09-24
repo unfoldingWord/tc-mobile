@@ -11,17 +11,19 @@ import { strings } from "@/lib/strings";
  *
  * The table always claimed to be that, and was not: it lived in `components/`,
  * the onion rule forbids `hooks/` from importing upward, so every sentence a
- * hook had to produce was a literal beside the code that raised it. Three of
- * them were then typed out a SECOND time further down `use-recorder.ts` —
- * "No sound was recorded. Try again." at the empty-seal exit and again in
- * `retryDecode`, "Recording could not be decoded on this device." likewise, and
- * "Could not finish this recording." in `use-recorder.ts` AND
- * `use-audio-session.ts`'s backstop. A copy edit to any one of them would have
- * left the others saying the old thing, on the screens a facilitator reads a
- * sentence off a phone to report it.
+ * hook had to produce was a literal beside the code that raised it.
  *
- * Moving the table down to `lib/` removed the reason for those literals. This
- * is what stops them coming back.
+ * There are two ways out of that, and #169 has now taken both. Where the
+ * failure is a domain value `lib/` also reasons about, the hook emits a CODE
+ * and a component words it: #700 did that for the recorder's three capture
+ * failures (`lib/audio/capture-failure.ts` ->
+ * `components/capture-failure-copy.ts`). Where the sentence IS the state the
+ * hook holds — `playbackError`, the recorder's mic-refusal `error` — there is
+ * no value to route, and the only fix is for the table to be reachable from
+ * below. Moving it to `lib/` is that fix.
+ *
+ * Either way the words end up in one file, and this is what stops a literal
+ * coming back beside the code that raises it.
  *
  * WHAT IT CHECKS, EXACTLY: no fixed sentence in the table appears as source text
  * anywhere in `app/`, `components/` or `hooks/` outside the table itself. It is

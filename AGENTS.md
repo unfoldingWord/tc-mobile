@@ -164,10 +164,24 @@ If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
 **`lib/` also holds the one string table**, `lib/strings.ts`. It is neither audio
 nor storage, and it is down there because imports never go upward: while it sat
 in `components/` it was unreachable from `hooks/`, so every sentence a hook
-raises was a literal beside the code that raised it — and three of them had been
-typed out a second time (#169). It is pure data and pure functions, so it
-compiles under `tsconfig.lib.json` with the rest of the layer.
-`tests/strings-one-table.test.ts` keeps those literals from coming back: no
+raises was a literal beside the code that raised it (#169). It is pure data and
+pure functions, so it compiles under `tsconfig.lib.json` with the rest of the
+layer.
+
+**A sentence a hook produces gets out of that one of two ways, and which one
+depends on whether the failure is a domain value.** When `lib/` also reasons
+about it, the hook emits a **code** and a component words it —
+`lib/audio/capture-failure.ts` -> `components/capture-failure-copy.ts` is the
+worked example (#700), with a `switch` and a `never` default so a new code
+cannot reach a screen wordless, and `lib/takes/close-plan.ts` carries the code
+rather than prose. When the sentence simply **is** the state the hook holds — a
+`playbackError`, the recorder's mic-refusal `error` — there is no value to
+route and no second reader to keep honest, so the hook reads the table
+directly. Reach for a code first where a `lib/` module is already in the path;
+reach for the table where adding one would mean inventing a union with a single
+consumer.
+
+`tests/strings-one-table.test.ts` keeps the literals from coming back: no
 fixed sentence in the table may appear again in `app/`, `components/` or
 `hooks/`. `lib/`'s own `Error` messages are deliberately outside that check —
 they are for whoever reads the failure log, not for the screen, and that test's
@@ -175,16 +189,20 @@ docblock names the one pair where the two wordings overlap on purpose. The
 second check is the stronger one and the reason a base merge cannot quietly
 undo this: every fixed sentence in `app/` and `hooks/` must be one the table
 holds, so a brand-new literal fails as loudly as a re-typed one.
+`tests/capture-failure-copy.test.ts` sweeps `hooks/` and `lib/` for the three
+capture sentences, skipping the table's own file — holding a sentence is what a
+table is for; minting one beside the code that raises it is the defect.
 
-Two more halves of #169 have landed beside it, both in `lib/` and both for this
-same reason. `lib/locale.ts` puts `<html lang>`, `dir` and the manifest language
-behind one entry, so a second locale is an entry there rather than an edit in
-three files. `lib/plural.ts` makes count-varying wording a CLDR table keyed by
-category (`Intl.PluralRules`) instead of an English `n === 1` ternary, with each
-form a whole phrase carrying `{n}` — so a language with three count forms, or
-one that puts its numeral last, adds keys rather than rewriting call sites.
+Two more slices of #169 have landed beside these, both in `lib/` and both for
+this same reason. `lib/locale.ts` puts `<html lang>`, `dir` and the manifest
+language behind one entry, so a second locale is an entry there rather than an
+edit in three files. `lib/plural.ts` makes count-varying wording a CLDR table
+keyed by category (`Intl.PluralRules`) instead of an English `n === 1` ternary,
+with each form a whole phrase carrying `{n}` — so a language with three count
+forms, or one that puts its numeral last, adds keys rather than rewriting call
+sites.
 
-What #169 still asks for beyond these three is a `strings[locale]` dimension,
+What #169 still asks for beyond these is a `strings[locale]` dimension,
 sentences that are not assembled from translated fragments, and book names
 stored as numbers rather than written into IndexedDB as English data.
 

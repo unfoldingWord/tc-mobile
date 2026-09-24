@@ -295,29 +295,18 @@ export const strings = {
   takeRecoverDiscardHint: "Tap again to delete it.",
 
   // ── What the recorder and the audio session raise (#169) ─────────────────
-  // These sentences are produced in `hooks/`, not in a component: they ride a
-  // `StopResult` or a `playbackError` up to whichever surface is mounted. They
-  // were literals beside the code that raised them until this table moved down
-  // into `lib/` (see the file header), and three of them had been typed out a
-  // second time further down the same file.
+  // These sentences are read in `hooks/`, not in a component: they ride a
+  // `playbackError`, or the recorder's own `error` state, up to whichever
+  // surface is mounted. They were literals beside the code that raised them
+  // until this table moved down into `lib/` (see the file header).
+  //
+  // The recorder's CAPTURE failures took the other route and are not here:
+  // #700 made them codes (`lib/audio/capture-failure.ts`) that
+  // `components/capture-failure-copy.ts` words out of the block further down,
+  // because that value is a domain fact `lib/takes/close-plan.ts` also reasons
+  // about. The ones below never leave the hook as data — they ARE the copy the
+  // hook's state holds — so they read the table directly.
 
-  // Proven silence: `classifyStopDecode` decoded the take and found no samples,
-  // or the seal was empty with nothing thrown behind it. It says "try again"
-  // because trying again is the whole remedy.
-  captureSilent: "No sound was recorded. Try again.",
-  // The bytes exist and would not decode. Names the DEVICE, not the recording,
-  // because the recording is usually fine — a transient iOS "interrupted"
-  // AudioContext (#106) is the common cause, and `retryDecode` commonly
-  // succeeds on the next gesture.
-  captureUndecodable: "Recording could not be decoded on this device.",
-  // An empty seal AFTER the flush arm threw (#485). That is the engine failing,
-  // which is not the translator's silence, so it must never be `captureSilent`.
-  // Both sites that can produce it use this one key — the recorder's own
-  // empty-capture exit and `stopRecording`'s backstop (`use-audio-session.ts`,
-  // #480) — so a tester reading the sentence off a phone gets the same words
-  // whichever raised it, and `docs/training/facilitator-runbook.md` names it as
-  // written down.
-  captureUnfinished: "Could not finish this recording.",
   // Playback could not sound: a decode that failed, or a take whose clip the
   // database no longer has. One sentence for both, because from where the
   // translator stands they are the same event — the tap made no sound.
@@ -388,6 +377,33 @@ export const strings = {
   selectionEndHandle: "Selection end",
   editFailed: "That edit could not be applied. Try a shorter selection.",
   clearFailed: "Could not clear the audio. Try again.",
+  // ── Why a capture produced no take (#169) ────────────────────────────────
+  // One sentence per `CaptureFailure` code; `capture-failure-copy.ts` picks
+  // which. These words used to be minted inside `hooks/use-recorder.ts` and
+  // `hooks/use-audio-session.ts` — the latter typing "could not finish" out a
+  // second time, with nothing tying the two copies together. The codes are now
+  // minted in `lib/audio/`, which never sees a sentence, and that separation is
+  // what lets a second UI language be a change to this table rather than an
+  // edit inside the recorder hook.
+  //
+  // Only this one asks for a retry, because it is the only one where retrying
+  // is what helps: the capture reached the decoder and decoded to nothing.
+  captureSilence: "No sound was recorded. Try again.",
+  // A failed decode, NOT silence — and deliberately not a second "try again".
+  // Where this reaches a screen the bytes are held and the recovery panel is
+  // up, so the retry is already there as its own control
+  // (`strings.takeRecoverRetry`); an instruction here would compete with it.
+  // An earlier draft grouped this key with the one above under "the two that
+  // name proven silence … tell the translator to try again", which is true of
+  // neither half for this key (George R5).
+  captureUndecodable: "Recording could not be decoded on this device.",
+  // The third must NOT say "no sound": the engine failed to hand the capture
+  // over (a flush that threw, #485; a `stopRecording` that rejected, #480), so
+  // the translator may well have spoken, and the silence sentence would blame
+  // them for it. It stays a statement rather than an instruction — what the
+  // sheet offers next after this code is `planClose`'s `stay`, which leaves the
+  // recorder open with this Notice in place, not a named remedy.
+  captureUnfinished: "Could not finish this recording.",
   // ── Disabled-row reasons (#135) ──────────────────────────────────────────
   // Appended to a disabled ≡-menu row's accessible name so the grey carries its
   // cause. Derived from the row's own gate in `menu-row-state.ts`, never set by

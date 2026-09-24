@@ -574,11 +574,7 @@ export function useAudioSession(): UseAudioSession {
       // beside it, not replaced.
       reportFailure(cause, "recorder-stop-backstop");
       console.error("Stopping the recorder failed", cause);
-      return {
-        samples: null,
-        error: strings.captureUnfinished,
-        blob: null,
-      };
+      return { samples: null, error: "unfinished", blob: null };
     } finally {
       // The microphone gives the floor back whether or not it produced audio —
       // but only its own. `endRecording` awaits, so by the time this runs the
