@@ -119,8 +119,12 @@ it("reproduces the reported failure: Select Xcode needs ruby on PATH", () => {
   expect(path.isAbsolute(hostBash), hostBash).toBe(true);
   symlinkSync(hostBash, path.join(bashOnlyBin, "bash"));
 
+  // run() inherits the parent environment, and bash translates "command not
+  // found" under a non-English locale; pin C so the stderr check below holds.
   const result = run(step("Select Xcode"), {
     PATH: `${stubBin}:${bashOnlyBin}`,
+    LANG: "C",
+    LC_ALL: "C",
   });
 
   expect(result.status).toBe(1);
