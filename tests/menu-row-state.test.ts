@@ -60,8 +60,8 @@ describe("editRowReason — blocked while a take is in flight (#857, #134)", () 
   // shares `editReason`) still openable mid-recording on a Moto G — #134 had
   // let a live take (`hasTake`) straight through, on the theory that entering
   // Edit would commit it first. #614 gave the sheet its own Stop since then,
-  // so the one-tap "stop and edit" #134 bought is no longer the only way to
-  // reach Edit from a live take, and this asserted `toBeNull()` before the fix.
+  // so #857 retires #134's one-tap "stop and edit": Stop, then Edit, is now
+  // the only way from a live take. This asserted `toBeNull()` before the fix.
   it("is disabled while a take is LIVE — recording — same reason as committing (#857)", () => {
     expect(editRowReason({ ...editOpen, hasTake: true })).toBe(
       "uncommitted-take"
