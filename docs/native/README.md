@@ -388,7 +388,8 @@ is the repeatable path. **The first green CI run is the first real verification.
 
 ## 5. Android → APK sideload
 
-Sideload only; **Play Store submission is out of scope** (#262).
+Sideload only here. Google Play distribution is its own lane and runbook:
+[`play-store.md`](play-store.md).
 
 **Microphone permission — two manifest lines, not one:** the manifest declares
 `RECORD_AUDIO` **and** `MODIFY_AUDIO_SETTINGS`
