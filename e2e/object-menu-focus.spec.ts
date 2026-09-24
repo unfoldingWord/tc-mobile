@@ -89,6 +89,36 @@ test("the chapter ≡ menu returns focus to its opener on Close and on Escape", 
     .toBe("More actions for this chapter");
 });
 
+test("the chapter ≡ menu's rename mode returns focus on Escape and after a save (#676)", async ({
+  page,
+}) => {
+  await seedToSegments(page);
+  const opener = page.getByRole("button", {
+    name: "More actions for this chapter",
+  });
+
+  // Escape from the rename field leaves rename mode, not the menu: the field
+  // unmounts, so focus must be put on the Rename control it returns to, or it
+  // falls to <body> behind the still-open modal (#676 item 1).
+  await opener.click();
+  await page.getByRole("button", { name: "Rename chapter" }).click();
+  await expect(
+    page.getByRole("textbox", { name: "Chapter name" })
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Chapter" })).toBeVisible();
+  await expect.poll(() => focusedName(page)).toBe("Rename chapter");
+
+  // A save closes the whole menu; focus returns to the ⋮ that opened it.
+  await page.getByRole("button", { name: "Rename chapter" }).click();
+  await page.getByRole("textbox", { name: "Chapter name" }).fill("verses 3–4");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "Chapter" })).toHaveCount(0);
+  await expect
+    .poll(() => focusedName(page))
+    .toBe("More actions for this chapter");
+});
+
 test("the segment ≡ menu returns focus to its opener on Close and on Escape", async ({
   page,
 }) => {

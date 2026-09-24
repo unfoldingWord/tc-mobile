@@ -194,6 +194,16 @@ export const SegmentsScreen = forwardRef<
   // `books-screen.tsx`'s `menuFocusRestore` for why sharing the overlay's slot
   // lost the ⋮ after any share-progress cycle (Frank r1 P2 on #754).
   const menuFocusRestore = useFocusRestore();
+  // Where focus goes once leaving the chapter rename field has committed
+  // (#676 item 1). `#679`'s `menuFocusRestore` above already returns focus to
+  // the ⋮ once the WHOLE menu closes — a completed save included — but
+  // Escape/Cancel here only leaves rename mode: `chapterMenuOpen` stays true,
+  // so that effect's `if (chapterMenuOpen) return;` guard never fires, and
+  // the unmounting `NameEdit` field drops focus to `<body>` behind the still-
+  // open panel. `segment-row.tsx`'s `pendingFocus` is the same shape, applied
+  // here to the one target this screen still needs.
+  const pendingRenameFocus = useRef(false);
+  const renameChapterControlRef = useRef<HTMLButtonElement | null>(null);
   const share = useChapterShare();
   const erase = useEraseSegment();
   // MEMBERS, never the objects — and this is #452's own open question 3,
@@ -632,9 +642,18 @@ export const SegmentsScreen = forwardRef<
   // showed the NEXT Rename tap's fresh Confirm as busy before it was tapped.
   const onCancelRenameChapter = useCallback(() => {
     chapterMenuSession.current += 1;
+    pendingRenameFocus.current = true;
     setRenamingChapter(false);
     setSavingName(false);
   }, [setSavingName]);
+  // Runs after the commit that brings the action list back, mirroring
+  // `segment-row.tsx`'s identical effect for the row's own rename mode.
+  useLayoutEffect(() => {
+    if (pendingRenameFocus.current && !renamingChapter) {
+      pendingRenameFocus.current = false;
+      renameChapterControlRef.current?.focus();
+    }
+  }, [renamingChapter]);
   const onConfirmErase = useCallback(() => {
     if (eraseTarget === null) return;
     void (async () => {
@@ -977,6 +996,7 @@ export const SegmentsScreen = forwardRef<
         ) : (
           <>
             <Control
+              ref={renameChapterControlRef}
               icon="edit"
               label={strings.renameChapter}
               variant="quiet"
