@@ -42,17 +42,17 @@ loader); do not read every description here as the target.
 
 ## Tech stack
 
-|         |                                                                            |
-| ------- | -------------------------------------------------------------------------- |
-| Runtime | Node 22.12+ (knip's floor)                                                 |
-| Build   | Vite 7, `@vitejs/plugin-react`                                             |
-| UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons                            |
-| PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)                               |
-| Storage | IndexedDB via `idb` 8                                                      |
-| Audio   | Web Audio + MediaRecorder; `@breezystack/lamejs` for MP3 (in a Web Worker) |
-| Tests   | Vitest 3, `fake-indexeddb`                                                 |
-| Lint    | ESLint 9 flat config, `typescript-eslint` 8, Prettier 3                    |
-| Deploy  | Cloudflare Workers static assets, Wrangler 4                               |
+|         |                                                                                                                                     |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime | Node `^22.12.0 \|\| >=24.0.0` (22.12 is knip's floor; Node 23.x is unsupported — jsdom 27's own engine range excludes it too, #577) |
+| Build   | Vite 8, `@vitejs/plugin-react`                                                                                                      |
+| UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons                                                                                     |
+| PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)                                                                                        |
+| Storage | IndexedDB via `idb` 8                                                                                                               |
+| Audio   | Web Audio + MediaRecorder; `@breezystack/lamejs` for MP3 (in a Web Worker)                                                          |
+| Tests   | Vitest 5, `fake-indexeddb`                                                                                                          |
+| Lint    | ESLint 9 flat config, `typescript-eslint` 8, Prettier 3                                                                             |
+| Deploy  | Cloudflare Workers static assets, Wrangler 4                                                                                        |
 
 ## Commands
 
@@ -65,9 +65,10 @@ npm run lint           # ESLint, zero warnings allowed
 npm run typecheck      # tsc -b (project references)
 npm run typecheck:lib  # lib/ + types/ compiled with NO DOM lib — see below
 npm run knip           # unused files, deps, exports and exported types
-npm test               # vitest run
+npm test               # vitest run — the build-artifact suites always skip here
+npm run test:dist      # the build-artifact suites, run for real; needs a prior build
 npm run format         # prettier --write
-npm run verify         # everything above, in one command
+npm run verify         # everything above, in one command (test:dist last, after the build)
 npm run deploy:staging # wrangler deploy --env staging
 npm run deploy         # wrangler deploy (production)
 npm run check:deploy      # confirm a develop -> staging deploy; see "Confirming a deploy" below
@@ -103,11 +104,13 @@ linter reads CSS, so it is a convention that is read, not enforced.
 No _linter_ reads CSS — there is no stylelint, and knip's project globs are
 `ts`/`tsx`/`mjs` only — but the test suite does. **Treat the list below as
 examples, not as a set this file keeps current: `grep -rln "\.css\"" tests` is
-the source of truth.** That grep returns eight files today and over-matches by
-exactly one — `tests/smoke-path-filter.test.ts` lists stylesheet _paths_ as
-fixtures for a CI path filter and never reads their contents. The other seven:
-`tests/touch-policy.test.ts`, `tests/notice-bridge.test.ts` and
-`tests/share-progress.test.ts` all read `3-components.css`;
+the source of truth.** It over-matches by one —
+`tests/smoke-path-filter.test.ts` lists stylesheet _paths_ as fixtures for a CI
+path filter and never reads their contents. Among the readers:
+`tests/touch-policy.test.ts`, `tests/notice-bridge.test.ts`,
+`tests/share-progress.test.ts` and `tests/guided-ring.test.ts` all read
+`3-components.css` — the last two by SLICING a rule block out of it, which is
+the trap the paragraph below is about;
 `tests/contrast.test.ts` and `tests/theme.test.ts` read layers 1 and 2
 (theme.test.ts pins a `--p-cool-950` hex);
 `tests/style-bridge.test.ts` reads `globals.css` and `2-semantic.css`; and
@@ -166,17 +169,20 @@ If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
   can only be verified on-device. **First on-device run: 2026-08-24, Seth,
   iPhone / iOS 27 beta 6 / Safari** — capture continued while Safari was
   backgrounded and while the phone was locked, and the audio from that period
-  was present in the take. That is one device on one pre-release build; **iOS 27
-  beta 6 is not a shipping release and Android has never been run at all.** The
-  cases in `docs/progress_tracker.md` — a take shorter than one 250 ms
-  timeslice, and backgrounding immediately after Stop — are still open. Say so
-  honestly rather than claiming coverage that does not exist.
+  was present in the take. That is one device on one pre-release build, and
+  **iOS 27 beta 6 is not a shipping release.** **Android has been run.** The
+  runs are recorded in `docs/progress_tracker.md`; they are not a finished #245
+  sheet, and this file does not say which of them confirmed a defect — read the
+  tracker and the issue. The cases in `docs/progress_tracker.md` — a take shorter
+  than one 250 ms timeslice, and backgrounding immediately after Stop — are
+  still open. Say so honestly rather than claiming coverage that does not exist.
 - **Second on-device run: 2026-08-25, Seth, iPhone / Safari (staging pivot
   build).** Record → playback works. Backgrounding mid-take still records, and an
   incoming call mid-take (dialed in via Google Voice) stopped capture but **saved
   the partial take as a playable segment** — the #59 interruption fix, verified
-  on iOS. Still **iOS Safari only; Android has never been run**, so #59 and #58
-  (pagehide) remain open for Android. The two cases above (sub-timeslice take,
+  on iOS. **Backgrounding and interruption are still iOS Safari only** — no Android pass has
+  reached interruption or background capture (#245), so #59 and #58 (pagehide)
+  remain open for Android. The two cases above (sub-timeslice take,
   background right after Stop) are also still unrun. iOS version not recorded.
 - **The export path exists (B7) and the encoder runs in a Web Worker (B8).**
   Share Chapter / Share Book, the worker round-trip (`hooks/mp3.worker.ts`,
@@ -186,6 +192,21 @@ If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
   `AudioCodec`, but the worker, the share sheet and the decode are verified only
   in a browser or on a device. **Neither has been run on a phone as of
   2026-09-02.**
+- **There is a render harness now, and it is narrow on purpose (#197).**
+  `tests/render.ts` runs one component through `renderToStaticMarkup` and parses
+  the result with `jsdom`, so a test can read the attributes a component's JSX
+  actually emits. The Vitest environment stays `node` — the harness brings its
+  own document rather than swapping the global one, so `lib/`'s DOM ban and
+  `typecheck:lib` are untouched. What it gives is **one render, no effects, no
+  `act()`, no events, no layout and no cascade**: enough for a props → attribute
+  guarantee (`tests/recorder-status.test.ts`, `tests/control-render.test.ts`),
+  and nothing else. Where the CASCADE or the real build is what is under test,
+  the answer is still the Playwright suite against `dist/`
+  (`e2e/theme-toggle.spec.ts`); where a HOOK's effects or focus are, it is still
+  on-device. Existing claims in `src/` and `tests/` still need individual
+  review (#549): hook, focus and cascade limitations survive this harness,
+  but statements that jsdom or a renderer is absent are now stale. The local
+  corrections in this PR do not complete that sweep.
 - `fake-indexeddb` backs the storage tests. Reset between cases by **clearing
   every object store**, not by `deleteDatabase`: deletion blocks indefinitely
   while any connection is open, and a harness that resolves on `onblocked`
@@ -233,6 +254,50 @@ review history — three separate passes wrote a false "verified" claim. A test
 file's name is a claim too: a file named for a bug, covering only a string
 classifier, invites a triage reader to mark a P1 fixed.
 
+**A run's output belongs in a PR comment or the progress tracker, never in a
+docblock, a CSS comment or a test name.** Those three cannot be re-stamped at a
+new head, and whoever opens the file next reads them as current. A docblock may
+link that comment's URL; it may not restate its output. `docs/progress_tracker.md`
+**is** the run record, and a dated observation a file needs in order to explain
+itself is a reason rather than a run report. This rule binds prose you write or
+edit; the sweep of what already violates it is **#575**, which is where an
+existing docblock gets fixed, not here. Counts go in an assertion,
+not in prose: a CSS comment quoting its own grep named a count the tree no
+longer returns, having counted four comment lines as declarations — one of them
+the sentence's own grep string. Do not name an environment: a docblock credited
+a pinned Chromium that resolved to a path with nothing at it, so the run it
+described used Playwright's own cached browser. Five such sentences shipped
+across three PRs in one day — those two, a docblock claiming both assertions
+were observed red when the first `expect` throws and the second never
+evaluates, and two PR-body tallies a fresh checkout does not reproduce. Where
+such a claim must change, **prefer deleting it to restating it**: of ten
+repairs attempted that day, the only one that never needed re-correcting was
+the one that removed a claim.
+
+**"At the head this docblock ships on" is unverifiable by construction.** The
+head moves with the commit that carries the sentence, so there is no head at
+which the sentence can be checked. It reads as maximally precise and cannot be
+falsified.
+
+**A known-stale claim is worse than an unknown one, because it is being relied
+on while it waits.** This file said Android had never been run; the staleness
+was logged and deferred to the issue that would rewrite it "once the protocol
+runs"; that sheet was never finished, the deferral was never revisited, and the
+false sentence went on propagating into every agent's context, because that is
+what AGENTS.md does. Correct a false claim where you find it, and prefer
+deleting it to restating it. Deferring is available only when the claim is
+quoted at several sites that have to move together and the deferral names the
+issue that moves them — #525 and #575 are the standing examples. A single
+false sentence does not qualify.
+
+This applies to **living instructions** — this file, `CONTRIBUTING.md`, the
+runbooks, docblocks, CSS comments. It does **not** apply to a dated entry in
+`docs/progress_tracker.md`: that file is append-only and newest-first, so a
+sentence inside an entry is judged as of that entry's date and is superseded
+by a later one, never edited in place. "Android has still never run" in a
+2026-09-12 entry was true on 2026-09-12; rewriting it would destroy the reason
+that session's next step was the first Android pass.
+
 **Idempotency is a property, not a policy.** Every write is safely re-runnable
 or documented as to why not. In practice that means: get-or-create in **one**
 transaction, never two; content-addressed clips so a repeated import dedupes
@@ -266,7 +331,9 @@ never reaches the backstop below), `stopRecording`'s commit-path backstop
 (`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), a failed
 save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
-(`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), playback's own
+(`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
+segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591),
+playback's own
 resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
 `"playback-resume"`, and the fail-closed gate that still finds the context
 unusable after the resume await — `"playback-resume-timeout"` when the
@@ -277,17 +344,14 @@ carries the same `SendLogControl` the crash screen does (#456, moved into
 its own module, `components/send-log-control.tsx`, so both screens share one
 implementation) — `DatabasePanel` still does not: #456 itself calls that a
 design call, since an unreachable database cannot read its own log either,
-and that is different work from wiring the funnel. **`SaveFailed`'s Send
-control also sits on a still-live app** (unlike `ErrorBoundary`'s, which runs
-after `quiesceTranscodeSweep()` — `components/error-boundary.tsx`): the
-module-scoped transcode sweep (`hooks/finish-transcode.ts`) keeps writing
-while `SaveFailed` is up, and a live failing sweep can churn the armed share
-and prune the 50-row ring before the tap that was supposed to send it lands.
-The crash screen's quiesce is one-way, on purpose, because its only exit is a
-reload; `SaveFailed`'s primary exit is Retry on the _same_ page, so copying
-that one-way quiesce would silently skip the post-retry sweep a successful
-Finished retry still owes (D3). Left as a known hole rather than a silent
-one — see #514 (George R1 P2-2 on #509).
+and that is different work from wiring the funnel. **`SaveFailed` pauses the
+module-scoped transcode sweep while mounted** (#514), then resumes it on
+unmount. Requests made during the pause are held in `requestedDuringPause`,
+so a successful Finished retry still gets its conversion after recovery.
+This pause is reversible; the crash screen's `quiesceTranscodeSweep()` remains
+one-way because that screen exits through reload. An encoder turn already
+in flight can still finish and write one failure entry before the pause takes
+effect; pausing is not cancellation of that turn.
 What still ends at `console.error` and is therefore **never written down** is
 mic/record-start and the `use-audio-session.ts` catch sites that wrap
 `playSamples` (a failed decode, a dangling clip with nothing to play) — the
@@ -648,6 +712,13 @@ wrong, and more rounds will not help) — and **ask the DRI whether to run
 again**. The cap prompts a decision; it is not a gate the loop closes on its
 own. Hitting it with findings open is an **escalation, not an approval**: name
 the residual findings on the PR and have them explicitly accepted.
+
+**Freeze budget (decided 2026-09-21, expires 2026-10-04).** Until the v0.3.0
+handoff, T3 and docs changes take one George round (P1/P2 only), harness and
+meta PRs cap at two rounds with residuals accepted on the PR, and a P3 never
+triggers a round on any tier — it is batched into one follow-up issue at
+triage. T1 and T2 are unchanged. The table is in
+`docs/review/dual-review.md` ("Freeze budget").
 
 **Decompose before any post-cap round (decided 2026-09-18).** The DRI's pick
 at the cap is made from a _judgment sheet_, not from the round narrative:

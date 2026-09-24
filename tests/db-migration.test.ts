@@ -12,7 +12,7 @@ const DB_NAME = "tc-mobile";
 // The version `getDb` opens. Like DB_NAME, kept in sync with db.ts by hand —
 // a migration test necessarily knows the ladder it is climbing. Asserted rather
 // than assumed, so a bump that forgets to add its own case fails here first.
-const APP_VERSION = 6;
+const APP_VERSION = 8;
 
 /**
  * Delete the database outright so each test starts from a true fresh install.
@@ -124,8 +124,163 @@ async function openLegacyV5() {
   });
 }
 
+/**
+ * Stand up the v6 schema: the pivot stores plus the failures log.
+ * Clip metadata has no stall count, and segments have no label.
+ */
+async function openLegacyV6() {
+  return openDB(DB_NAME, 6, {
+    upgrade(db) {
+      db.createObjectStore("books", { keyPath: "id" });
+      const chapters = db.createObjectStore("chapters", { keyPath: "id" });
+      chapters.createIndex("bookId", "bookId");
+      const segments = db.createObjectStore("segments", { keyPath: "id" });
+      segments.createIndex("chapterId", "chapterId");
+      const takes = db.createObjectStore("takes", { keyPath: "id" });
+      takes.createIndex("segmentId", "segmentId");
+      db.createObjectStore("clipMeta", { keyPath: "id" });
+      db.createObjectStore("clipData");
+      db.createObjectStore("failures", { autoIncrement: true });
+    },
+  });
+}
+
 beforeEach(wipe);
 afterEach(wipe);
+
+describe("v8 segment-label backfill (append-only)", () => {
+  it.each([6, 7])(
+    "stamps a v%i database while preserving recordings and stall counts",
+    async (version) => {
+      const legacy = await openLegacyV6();
+      legacy.close();
+      const v6 = await openDB(DB_NAME, version);
+      await v6.put("chapters", {
+        id: "ch1",
+        bookId: "b1",
+        number: 1,
+        segmentIds: ["s1", "s2"],
+        name: null,
+      });
+      await v6.put("segments", {
+        id: "s1",
+        chapterId: "ch1",
+        index: 1,
+        reference: null,
+        activeTakeId: "t1",
+        status: "affirmed",
+      });
+      await v6.put("segments", {
+        id: "s2",
+        chapterId: "ch1",
+        index: 2,
+        reference: null,
+        activeTakeId: null,
+        status: "not-started",
+      });
+      await v6.put("takes", {
+        id: "t1",
+        segmentId: "s1",
+        clipId: "c1",
+        createdAt: 3,
+        durationMs: 1,
+      });
+      const pcm = Int16Array.from([1, 2, 3, 4]);
+      await v6.put("clipMeta", {
+        id: "c1",
+        sampleRate: 44100,
+        frameCount: 4,
+        durationMs: 1,
+        createdAt: 3,
+        encoding: "pcm",
+        generation: 0,
+        byteLength: 8,
+        peaks: null,
+        ...(version === 7 ? { transcodeStallCount: 3 } : {}),
+      });
+      await v6.put("clipData", pcm.buffer, "c1");
+      const priorMeta = await v6.get("clipMeta", "c1");
+      const priorTake = await v6.get("takes", "t1");
+      v6.close();
+
+      const v8 = await getDb();
+      expect(v8.version).toBe(APP_VERSION);
+
+      // Every row gains the field as null — never undefined — and nothing else
+      // about it moves: ordinal, pointer and status come through as they were.
+      expect(await v8.getAll("segments")).toEqual([
+        {
+          id: "s1",
+          chapterId: "ch1",
+          index: 1,
+          reference: null,
+          activeTakeId: "t1",
+          status: "affirmed",
+          label: null,
+        },
+        {
+          id: "s2",
+          chapterId: "ch1",
+          index: 2,
+          reference: null,
+          activeTakeId: null,
+          status: "not-started",
+          label: null,
+        },
+      ]);
+      expect(await v8.get("clipMeta", "c1" as never)).toEqual({
+        ...priorMeta,
+        transcodeStallCount: version === 7 ? 3 : 0,
+      });
+      expect(await v8.get("takes", "t1" as never)).toEqual(priorTake);
+      // The audio behind the segment is untouched.
+      expect((await v8.get("takes", "t1" as never))?.clipId).toBe("c1");
+      const bytes = await v8.get("clipData", "c1" as never);
+      expect(Array.from(new Int16Array(bytes!))).toEqual([1, 2, 3, 4]);
+      expect((await v8.get("chapters", "ch1" as never))?.segmentIds).toEqual([
+        "s1",
+        "s2",
+      ]);
+    }
+  );
+
+  it("leaves a segment that already carries a label alone", async () => {
+    // Keys on the field being ABSENT, like the v5 chapter backfill, so a row a
+    // newer build already labelled is not clobbered back to null.
+    const v6 = await openLegacyV6();
+    await v6.put("segments", {
+      id: "s1",
+      chapterId: "ch1",
+      index: 3,
+      reference: null,
+      activeTakeId: null,
+      status: "not-started",
+      label: "verses 3–4",
+    });
+    v6.close();
+
+    const v8 = await getDb();
+    expect((await v8.get("segments", "s1" as never))?.label).toBe("verses 3–4");
+  });
+
+  it("stamps a v3 segment on the way up, alongside the older backfills", async () => {
+    // A device that recorded on the v3 pivot build jumps every step in one open.
+    const v3 = await openLegacyV3();
+    await v3.put("segments", {
+      id: "s1",
+      chapterId: "ch1",
+      index: 1,
+      reference: null,
+      activeTakeId: null,
+      status: "not-started",
+    });
+    v3.close();
+
+    const db = await getDb();
+    expect(db.version).toBe(APP_VERSION);
+    expect((await db.get("segments", "s1" as never))?.label).toBeNull();
+  });
+});
 
 describe("v4 → v5 chapter-name backfill (append-only)", () => {
   it("stamps a pre-existing nameless chapter with name: null, keeping its data", async () => {
@@ -264,7 +419,7 @@ describe("v5 → v6 failure log (append-only, a new store)", () => {
 describe("no structure change after the upgrade has yielded (George #2, R1)", () => {
   /**
    * A `versionchange` transaction stays alive across awaited IDB requests, and
-   * the v4/v5 backfills depend on that. A STRUCTURE change after the handler has
+   * the backfills depend on that. A STRUCTURE change after the handler has
    * yielded is a different thing: some WebKit versions refuse it with
    * `InvalidStateError` and abort the whole upgrade, which would leave `getDb()`
    * rejecting and nothing able to record. `fake-indexeddb` permits it, so the
@@ -306,10 +461,10 @@ describe("no structure change after the upgrade has yielded (George #2, R1)", ()
   }
 
   it("opens on a FRESH install under an engine that refuses a late create", async () => {
-    // oldVersion 0 runs the v3 recreate and then BOTH backfills, each of which
+    // oldVersion 0 runs the v3 recreate and then every backfill, each of which
     // opens a cursor unconditionally even over an empty store — so this is the
-    // path where a v6 create placed after them sits behind two awaits, on every
-    // new phone.
+    // path where a v6 create placed after them sits behind those awaits, on
+    // every new phone.
     const restore = refuseStructureChangeAfterYield();
     try {
       const db = await getDb();
@@ -321,10 +476,11 @@ describe("no structure change after the upgrade has yielded (George #2, R1)", ()
   });
 
   it("opens on a v3 UPGRADE carrying rows, under the same refusal", async () => {
-    // The other entry that actually yields. A v5 → v6 upgrade runs ONLY the v6
-    // block — no backfill, so no cursor and no await — and would pass this
-    // whatever the order. A v3 device is the real case: both backfills run, over
-    // NON-EMPTY stores, so the upgrade genuinely yields before it finishes.
+    // The other entry that actually yields with the create still ahead of it.
+    // An upgrade that starts at or above the newest create runs backfills only,
+    // so it would pass this whatever the order. A v3 device is the real case:
+    // every backfill runs, over NON-EMPTY stores, so the upgrade genuinely
+    // yields — after the v6 create, which is what the ordering is about.
     const v3 = await openLegacyV3();
     await v3.put("chapters", {
       id: "ch1",
@@ -401,6 +557,7 @@ describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
       generation: 0,
       byteLength: 20,
       peaks: null,
+      transcodeStallCount: 0,
     });
   });
 
@@ -427,6 +584,49 @@ describe("v3 → v4 clip-encoding backfill (append-only resumes)", () => {
     expect(meta?.encoding).toBe("mp3");
     expect(meta?.generation).toBe(2);
     expect(meta?.byteLength).toBe(5);
+    expect(meta?.transcodeStallCount).toBe(0);
+  });
+});
+
+describe("the v7 transcode-stall count backfill", () => {
+  const fieldlessMeta = (id: string) => ({
+    id,
+    sampleRate: 44100,
+    frameCount: 10,
+    durationMs: 1,
+    createdAt: 7,
+    encoding: "pcm" as const,
+    generation: 0,
+    byteLength: 20,
+    peaks: null,
+  });
+
+  it("stamps a v6 device's clip metadata, leaving the failure log alone", async () => {
+    const v6 = await openLegacyV6();
+    await v6.put("clipMeta", fieldlessMeta("c1"));
+    await v6.add("failures", { context: "save-take", at: 1 } as never);
+    v6.close();
+
+    const v7 = await getDb();
+    expect(v7.version).toBe(APP_VERSION);
+    expect((await v7.get("clipMeta", "c1" as never))?.transcodeStallCount).toBe(
+      0
+    );
+    // Append-only: the upgrade touches clip metadata and nothing else.
+    expect(await v7.count("failures")).toBe(1);
+  });
+
+  it("stamps a v5 device's clip metadata, which gains `failures` in the same open", async () => {
+    const v5 = await openLegacyV5();
+    await v5.put("clipMeta", fieldlessMeta("c1"));
+    v5.close();
+
+    const v7 = await getDb();
+    expect(v7.version).toBe(APP_VERSION);
+    expect((await v7.get("clipMeta", "c1" as never))?.transcodeStallCount).toBe(
+      0
+    );
+    expect(Array.from(v7.objectStoreNames)).toContain("failures");
   });
 });
 

@@ -17,14 +17,13 @@ import type { EditOp } from "@/lib/audio/edit-log";
 export interface StageState {
   /** `state === "recording"` — the mic is actively capturing. */
   recording: boolean;
-  /** `state === "paused"`. */
-  paused: boolean;
   /** `state === "processing"` — a #59 interruption's decode, or an F8 decode. */
   processing: boolean;
   /**
-   * The F8 close window (`stop()` flipped to idle, PCM not yet in `working`)
-   * — but ONLY when the close being committed followed an actual capture
-   * (recording, paused, or a #59 `processing` freeze).
+   * The commit window (`stop()` flipped to idle, PCM not yet in `working`)
+   * — but ONLY when the commit followed an actual capture (recording, or a #59
+   * `processing` freeze). Since #614 that is the Stop tap's own commit as well
+   * as Back's and Edit-entry's; they run one path.
    *
    * The recorder's own `isClosing` state does NOT mean that by itself: the
    * same `close()` handler, and the same flag, cover an edit-only or
@@ -45,65 +44,52 @@ export interface StageState {
    * `length > 0` — the segment already holds audio, so this take is an append.
    *
    * **Not** read by {@link liveScopeShown}. The first #283 fix gated the
-   * frozen arm on it (`!hasAudio && (paused || …)`), which made an append SWAP
-   * `LiveScope`→`Waveform` at the recording→paused/close edge: `Waveform`
-   * paints in `useEffect`, so the stage flashed blank then showed the
-   * pre-take clip (Model A does not splice the take into `working` until
-   * close), reading as "pause discarded my take" — the "read as discarded"
-   * class the first-take `isClosing` clause exists to prevent (George R1 P2).
-   *
-   * A second attempt (George R-resume round 1, `a96a81e`) also gated the
-   * `previewShown` arm on it, so an append's own Pause+Play preview stayed on
-   * `LiveScope` instead of winning the stage. George round 2 caught that this
-   * broke a DIFFERENT, pre-existing contract: `#101` Play-while-paused still
-   * `mergeTake`s and sounds the merged buffer regardless, so the stage showed
-   * a frozen take-only ring with no playhead while the translator HEARD the
-   * full spliced result — a "hear X, see Y" mismatch, and worse than the scale
-   * jump it was trying to prevent (a first take's preview never had this
-   * problem: `isFirstTakeInFlight` already draws it absolute, matching
-   * `LiveScope`'s own scale, so there is no jump to prevent there in the first
-   * place). Reverted here; kept as an input so the tests can pin that prior
-   * audio never changes the recording/frozen-arm outcome.
+   * frozen arm on it, which made an append SWAP `LiveScope`→`Waveform` at the
+   * recording→commit edge: `Waveform` paints in `useEffect`, so the stage
+   * flashed blank then showed the pre-take clip (the take is not spliced into
+   * `working` until the commit lands), reading as "that discarded my take" —
+   * the "read as discarded" class the first-take `isClosing` clause exists to
+   * prevent (George R1 P2). Reverted there; kept as an input so the tests can
+   * pin that prior audio never changes the recording/frozen-arm outcome.
    */
   hasAudio: boolean;
   /** The mic tap could not be wired — no live scope data to draw. */
   meterFailed: boolean;
-  /** A prepared whole-buffer preview is up (`previewShown !== null`). */
-  previewShown: boolean;
 }
 
 /**
  * Whether the dedicated live scope (vs. the `Waveform` path) drives the record
  * stage.
  *
- * - A failed tap or a prepared preview always wins the stage — no live scope.
- *   A preview (first take OR append) is `#101`'s Play-while-paused: it plays
- *   an actual decoded buffer and must be drawn (with a working playhead) on
- *   `Waveform`, not left silently behind a frozen `LiveScope` — see
- *   {@link StageState.hasAudio}'s second paragraph.
+ * - A failed tap always wins the stage — there is no live scope data to draw.
  * - Otherwise the live scope drives the **whole take-in-flight window**
- *   (recording, paused, processing, and the F8 close) for a first take **and an
- *   append (#283)**, growing while `recording` and freezing on its last frame
+ *   (recording, processing, and the commit) for a first take **and an append
+ *   (#283)**, growing while `recording` and freezing on its last frame
  *   otherwise. Before #283 an append fell to `Waveform` for the whole take, so a
  *   second take showed the VU moving but no waveform growing until the segment
  *   was left and re-entered.
+ *
+ * Since #614 that window ENDS at the commit rather than parking in a paused
+ * state: the tap that stops a recording runs the commit, so the frozen arm
+ * covers only `processing` and the commit itself, and the stage is back on
+ * `Waveform` — pannable, playable, editable — the moment the take lands.
  *
  * `hasAudio` is intentionally absent from the logic — see {@link StageState}.
  * Treating an append exactly like a first take is both the behaviour #283 asked
  * for ("the same way it renders during the first take") and what avoids the
  * pause/close swap-and-flash that gating the frozen arm on `hasAudio` caused.
  *
- * Tradeoff: while an append is in flight (and not being previewed) this shows
- * the head-growing (then frozen) live scope in place of the existing clip; the
- * clip returns once a preview is prepared or the take commits. For the default
+ * Tradeoff: while an append is in flight this shows the head-growing (then
+ * frozen) live scope in place of the existing clip; the clip returns as soon as
+ * the take commits, which is now the same tap that ends it. For the default
  * end-append that reads naturally; for a mid-clip insert it shows the take
  * without the surrounding clip / insert position. Preserving the existing clip
  * *and* live growth together (a composed view) is a larger change tracked
  * separately if wanted.
  */
 export function liveScopeShown(s: StageState): boolean {
-  if (s.meterFailed || s.previewShown) return false;
-  return s.recording || s.paused || s.processing || s.isClosing;
+  if (s.meterFailed) return false;
+  return s.recording || s.processing || s.isClosing;
 }
 /**
  * The recorder stage's view-coupled decisions, in one place (#284).
@@ -143,12 +129,10 @@ export function liveScopeShown(s: StageState): boolean {
 
 interface StageInput {
   readonly mode: "record" | "edit";
-  /** A buffer is sounding — a record-mode play, a preview, or an audition. */
+  /** A buffer is sounding — a record-mode play or an edit-mode audition. */
   readonly playingBuffer: boolean;
   /** The selection frame is open (its band is drawn through the pan window). */
   readonly selectionActive: boolean;
-  /** A paused-take preview is on the stage, drawing its own whole-clip peaks. */
-  readonly previewShown: boolean;
   /**
    * A pointer is mid-pan on the stage. It does not change WHAT is drawn — a
    * drag pans the static window — only what may act on it while the gesture is
@@ -158,12 +142,14 @@ interface StageInput {
 }
 
 /**
- * The four ways the recorder stage can be drawn.
+ * The three ways the recorder stage can be drawn.
  *
- * ONE value rather than a bag of booleans (#415): the three questions the
- * stage used to answer separately — "whole clip?", "in place?", and now "does
- * the waveform scroll?" — are answers to the same question, and a bag can
- * disagree with itself in a way an enum cannot.
+ * ONE value rather than a bag of booleans (#415): the questions the stage used
+ * to answer separately — "in place?" and "does the waveform scroll?" — are
+ * answers to the same question, and a bag can disagree with itself in a way an
+ * enum cannot. A fourth, `"whole"`, drew the #101 paused-take preview at clip
+ * fractions 0..1; #614 retired the preview with the paused take, and with it
+ * the one render mode in which the pan meant nothing.
  *
  * - **`static`** — nothing is sounding: the pan/zoom window, as panned.
  * - **`scroll`** — a sounding buffer that is the working buffer sounded from
@@ -175,12 +161,8 @@ interface StageInput {
  *   because the band and its handles are positioned through it and hearing
  *   exactly the span they mark is the point; the travelling overlay is the cue,
  *   clamped at the window's edges rather than hidden.
- * - **`whole`** — a paused-take preview (#101), which paints its own peaks for
- *   a DIFFERENT buffer (the merged take) across clip fractions 0..1. No pan
- *   into `working` means anything there, so it can be neither scrolled nor
- *   in-place.
  */
-type StageRender = "static" | "scroll" | "inPlace" | "whole";
+type StageRender = "static" | "scroll" | "inPlace";
 
 interface StageView {
   /** How the stage is drawn — see {@link StageRender}. */
@@ -209,15 +191,15 @@ interface StageView {
    *   — under a swapped view that reads as "the middle of the clip" rather
    *   than the pan window's own sample (it is unmounted, not merely disabled,
    *   so the false IMPLICATION goes too);
-   * - **Select**: seeds its span from `win.centerlineSample` ± the visible
-   *   width — a position that, while sounding, no longer matches what the
-   *   (visible except for a loaded edit-mode span, #316/#418) line marks once
-   *   the view has swapped to the whole clip, so it would highlight the
-   *   insert point rather than the audio being heard. Inert in both
-   *   directions: closing a frame mid-audition would also flip the view out
-   *   from under the sound.
-   *
    * OUT, deliberately — each stays live, and why:
+   *
+   * - **the edit toggle** (#557): it used to be a separate Select control in
+   *   this list, seeding a span around a centerline that could be stale while
+   *   a buffer sounded. There is no separate Select now — the frame opens on
+   *   entering edit mode and closes on leaving it — and both directions stop
+   *   playback first (`onEnterEdit`, `onExitEdit` in `recorder.tsx`). The
+   *   seed (`seedSelection`, #554) is measured from the insertion pan, not
+   *   from this window;
    *
    * - **the stage pan** (`onPointerDown`/`onPointerMove`): the oldest member of
    *   this class until the requirements owner reversed it for this one gesture
@@ -272,14 +254,47 @@ type PanGesture =
   /** A pan that must PAUSE playback first, and resume it on lift (#317). */
   | "interrupt";
 
-interface PanGestureInput {
-  /** `length > 0` — there is a waveform to slide (F11). */
-  readonly hasAudio: boolean;
+interface CaptureLock {
   readonly recording: boolean;
-  /** A paused TAKE — the microphone, not paused playback. */
-  readonly paused: boolean;
   /** `requesting` or `processing`. */
   readonly busy: boolean;
+  /**
+   * A commit is in flight: the post-stop save and reload. NOT covered by
+   * `busy` — `stop()` sets the recorder back to `idle` before it returns, so
+   * the whole multi-second write happens with `busy` false.
+   */
+  readonly isClosing: boolean;
+}
+
+/**
+ * Whether a capture or its commit owns the insertion offset right now (#61,
+ * F9), and therefore whether the centerline may move.
+ *
+ * One predicate, two callers, because the window they have to agree on is the
+ * same window: `onPointerDown` (through {@link panGesture}) decides whether a
+ * finger may START a pan, and `onPointerMove` decides whether a pan already in
+ * flight may continue. A term present in one and missing from the other is a
+ * pan that cannot begin but can still be finished, which is what George's pass
+ * C P1 found: `isClosing` was in neither, and `busy` goes false at `stop()`
+ * while `saveRecording` + `reloadView` are still running. With the sheet now
+ * STAYING open across that write (#614 — before Option A it closed, so there
+ * was no stage to touch), the translator sees a frozen waveform and a
+ * "Saving…" notice for a multi-megabyte write, and a finger landing on it
+ * panned: the drag origin was the pre-splice end, the commit then wrote
+ * {@link panAfterCommit}'s rest, and the next move overwrote that rest with an
+ * absolute sample derived from the OLD origin — leaving Record splicing inside
+ * the take just saved, so two appends came out in the wrong order.
+ *
+ * `recordDisabled` already reads the commit as locked. This is the same
+ * reading for the gesture.
+ */
+export function captureLocksPan(input: CaptureLock): boolean {
+  return input.recording || input.busy || input.isClosing;
+}
+
+interface PanGestureInput extends CaptureLock {
+  /** `length > 0` — there is a waveform to slide (F11). */
+  readonly hasAudio: boolean;
   /** A buffer is sounding right now. */
   readonly playingBuffer: boolean;
   /** How the stage is drawn — see {@link StageRender}. */
@@ -299,27 +314,26 @@ interface PanGestureInput {
  * that takes over a sounding buffer is a different act from one that starts at
  * idle, and the component has to know which it is holding.
  *
- * The order is load-bearing. The take terms come FIRST: a live or paused mic
- * has locked its insertion offset at the Record tap (#61, F9), and sliding the
- * line out from under it is the defect those guards exist for — stopping a
- * sound would not make that safe. Only then does the sounding buffer decide,
- * and only the scroll mode yields:
+ * The order is load-bearing. The take term comes FIRST: a LIVE mic has locked
+ * its insertion offset at the Record tap (#61, F9), and sliding the line out
+ * from under it is the defect that guard exists for — stopping a sound would
+ * not make that safe. Only then does the sounding buffer decide, and only the
+ * scroll mode yields: **`inPlace`** is an audition of a picked span (#284), and
+ * the band and its two handles are positioned through the pan window, so
+ * panning would slide them off the audio they mark while that audio sounds.
  *
- * - **`whole`** is a paused-take preview: a DIFFERENT buffer (#101), whose
- *   samples have no relationship to the pan the drag would move;
- * - **`inPlace`** is an audition of a picked span (#284): the band and its two
- *   handles are positioned through the pan window, so panning would slide them
- *   off the audio they mark while that audio sounds.
- *
- * `playingBuffer` is asked separately from `render` on purpose, and is not
- * redundant with it: `previewShown` outlives the sound (the preview stays on
- * stage through `busy` and the close window), so `"whole"` with nothing
- * sounding is an ordinary pan — as it was before #317 — while `"whole"` with a
- * buffer sounding is refused.
+ * **`paused` is gone, and its removal is the whole of #614.** The refusal used
+ * to name `paused` beside `recording`, for the same F9 reason: a take could be
+ * suspended with its offset still locked, and Resume would continue there.
+ * Option A (the requirements owner, 2026-09-22) ends that state — the tap that
+ * ends a recording commits it, so a take is either live or committed, and a
+ * committed take is ordinary audio the finger may move. What did not change is
+ * that the offset stays locked while a capture OR ITS COMMIT is in flight; the
+ * terms that say so are {@link captureLocksPan}'s, and `isClosing` is among
+ * them precisely because a take is "committed" only once that write lands.
  */
 export function panGesture(input: PanGestureInput): PanGesture {
-  if (!input.hasAudio || input.recording || input.paused || input.busy)
-    return "ignore";
+  if (!input.hasAudio || captureLocksPan(input)) return "ignore";
   if (!input.playingBuffer) return "pan";
   return input.render === "scroll" ? "interrupt" : "ignore";
 }
@@ -457,6 +471,41 @@ export function panOrRest(sample: number, length: number): number | null {
 }
 
 /**
+ * Where the centerline comes to rest once an in-place commit lands (#614).
+ *
+ * Option A makes the tap that ends a recording the tap that commits it, and the
+ * sheet stays open on the committed audio. So the line needs a position, and
+ * there is exactly one that keeps the requirements owner's condition true
+ * ("append by moving the playhead to the end and hitting Record again"): the
+ * END of what was just recorded. Tapping Record again then continues from where
+ * the last take stopped — an append at the end of the clip, and a continuation
+ * rather than a re-insert in front of itself when the take went in mid-clip.
+ *
+ * Not "leave the pan alone". A mid-clip insert locks its offset at the line, so
+ * leaving the line there would put the next Record BEFORE the take just made,
+ * and two takes recorded back to back would come out in reverse order. Not "the
+ * end of the clip" either: that is right for the common append and wrong for
+ * every insert, which is the whole reason this is a computation and not a
+ * constant.
+ *
+ * Through {@link panOrRest}, so an append lands on the F7 REST rather than on
+ * the number `length` — the rest follows the end through a later Paste or Undo,
+ * where a frozen absolute index would silently become a punch-in (the #442
+ * class). An insert is strictly inside the clip and keeps its absolute sample,
+ * which is what "one specific place in the audio" means.
+ */
+export function panAfterCommit(
+  /** The sample the take was spliced at — `insertionOffset`, locked at Record. */
+  offset: number,
+  /** How many samples the committed take added. */
+  takeLength: number,
+  /** The working buffer's length AFTER the splice. */
+  length: number
+): number | null {
+  return panOrRest(offset + takeLength, length);
+}
+
+/**
  * What a drag move on the bare stage writes, and what it hands back for the
  * #317 lift to read (#442).
  *
@@ -487,20 +536,18 @@ export function panAfterDragMove(input: {
 }
 
 /**
- * What `onCut` writes into `panState` — #442's sibling, on the ONE `panState`
- * writer #442 did not touch (#473).
+ * What `onCut` writes into `panState` — the cut point, which is where a paste
+ * lands (#613), through #442's rest rule (#473).
  *
- * `onCut`'s own `panAfterCut(p, removed)` shifts an absolute pan left by
- * whatever the cut removed before it, which is correct on its own — but it
- * is `viewport.ts`'s general clamp-free geometry, not `panState`'s rest rule.
- * A cut that runs all the way to the end leaves `panAfterCut` returning the
- * post-cut length EXACTLY (a cut entirely after the pan leaves it at the old
- * length; a cut that reaches the pan itself clamps it to the cut's start,
- * which — for a cut to the end — is also the new length), and #442 already
- * established what a bare numeric `length` in `panState` means: a stale
- * absolute index the moment anything is pasted or appended, where the next
- * Record punches into the new audio instead of following it. This is that
- * defect by the cut path rather than the drag path.
+ * The rule this replaces (`panAfterCutRest`) kept the centerline on the SAME
+ * AUDIO across a cut: a span removed to the line's left shifted it left by
+ * what went, a span removed under it clamped it to the cut's start. Correct
+ * for "the view did not move", and wrong for what the requirements owner
+ * asked the state to say (#613): after a cut the band is gone and the one
+ * line left on the stage is the paste target, so it has to BE the paste
+ * target — the cut point — whatever the pan happened to be before the cut.
+ * The two rules already agreed for the commonest cut, the one picked around
+ * the line; they differ for a span picked away from it.
  *
  * `preCutLength` is the working buffer's length BEFORE this cut — the
  * caller's own `length` closure, which #473 flags as the one easy thing to
@@ -510,23 +557,29 @@ export function panAfterDragMove(input: {
  * derived from `removed` rather than re-read from `editor` (whose `working`
  * has not re-rendered into this closure yet either).
  *
+ * The F7 rest survives the rule change and is the reason this is not a bare
+ * `range.start`: a cut that runs to the end puts the cut point exactly AT the
+ * new length, and #442 established what a bare numeric `length` in `panState`
+ * means — a stale absolute index the moment anything is pasted or appended,
+ * where the next Record punches into the new audio instead of following it.
+ * {@link panOrRest} answers `null` there, "the end, whatever the end becomes".
+ *
  * `removed` is normalised through {@link wholeSampleRange} before EITHER
- * question it answers — the removed LENGTH and the POSITION `panAfterCut`
- * maps `pan` through — not just the length: selection edges are floats, and
- * the buffer edit (`cut`/`sliceRange` in `lib/audio/edit.ts`) truncates them
- * via `Int16Array.slice`. A fractional-boundary cut whose raw span disagreed
- * with that truncation left both the rest clamp AND the shifted pan a
- * fraction of a sample off the buffer's real post-cut shape (#473 round-2
- * Frank P2 caught the length; round 3 found the position term was still raw).
+ * question it answers — the cut POSITION and the removed LENGTH — not just
+ * the length: selection edges are floats, and the buffer edit (`cut`/
+ * `sliceRange` in `lib/audio/edit.ts`) truncates them via `Int16Array.slice`.
+ * A fractional-boundary cut whose raw span disagreed with that truncation
+ * left both the rest clamp AND the position a fraction of a sample off the
+ * buffer's real post-cut shape (#473 round-2 Frank P2 caught the length;
+ * round 3 found the position term was still raw).
  */
-export function panAfterCutRest(
-  pan: number,
+export function panAfterCutCollapse(
   removed: { readonly start: number; readonly end: number },
   preCutLength: number
 ): number | null {
   const range = wholeSampleRange(removed);
   const removedLength = range.end - range.start;
-  return panOrRest(panAfterCut(pan, range), preCutLength - removedLength);
+  return panOrRest(range.start, preCutLength - removedLength);
 }
 
 /**
@@ -624,6 +677,24 @@ export function resumesOnLift(input: {
  * A refusal for any reason other than a finger — the line at the very end, a
  * take that started mid-gesture — is final, and the debt is dropped: leaving
  * the flag set would fire a resume on some later, unrelated lift.
+ *
+ * `reopenFrame` is the fourth answer (#613, Frank R1 P2). A lift that leaves
+ * the stage at rest is what asks for a selection frame again after a cut
+ * collapsed it — but NOT a lift that also resumes playback: `onPointerUp`
+ * resumes `soundRange(from, length)`, the TAIL from the line, while a seeded
+ * frame would make {@link stageView} read `playingBuffer && selectionActive`
+ * as an in-place audition and draw a band over a span that is not what is
+ * sounding. While the tail plays, the collapsed line is the honest display.
+ *
+ * It does NOT come back on "the next touch": a touch landing while the tail
+ * is still sounding interrupts it, and that lift resumes, so this stays false
+ * for as long as the playback lasts. The frame returns on the first lift that
+ * does not resume — once the tail has run out there is nothing to interrupt,
+ * or {@link resumesOnLift} refuses for one of its own reasons. Like
+ * `dragging` and `resume` it is about
+ * FINGERS, not about which pointer owned the drag — gating it on `wasOwner`
+ * leaves the frame collapsed for good when the owner lifts first and a
+ * second contact lifts last.
  */
 export function liftOutcome(input: {
   /** This pointer owned the drag. */
@@ -643,12 +714,19 @@ export function liftOutcome(input: {
   readonly dragging: boolean;
   readonly resume: boolean;
   readonly keepOwed: boolean;
+  /** The stage is at rest and silent, so a collapsed frame may be seeded again. */
+  readonly reopenFrame: boolean;
 } {
   const held = input.ownerActive || input.contactsRemaining > 0;
   // A non-owner's lift matters for one reason only: it may be the moment the
   // stage goes clear. While the owner is still dragging it changes nothing.
   if (!input.wasOwner && input.ownerActive)
-    return { dragging: true, resume: false, keepOwed: input.interrupted };
+    return {
+      dragging: true,
+      resume: false,
+      keepOwed: input.interrupted,
+      reopenFrame: false,
+    };
   const resume = resumesOnLift({
     interrupted: input.interrupted,
     pan: input.pan,
@@ -660,6 +738,7 @@ export function liftOutcome(input: {
     dragging: held,
     resume,
     keepOwed: input.interrupted && !resume && input.contactsRemaining > 0,
+    reopenFrame: !held && !resume,
   };
 }
 
@@ -752,7 +831,8 @@ export function panAfterInsert(pan: number, at: number, len: number): number {
  *
  * `preUndoLength` is `editor.workingLength` AS READ IN THE CALLER'S RENDER
  * CLOSURE, i.e. the length BEFORE this undo runs — matching #473's
- * `panAfterCutRest`, the length the restored (post-undo) buffer will have is
+ * {@link panAfterCutCollapse}, the length the restored (post-undo) buffer will
+ * have is
  * derived from the op rather than re-read from `editor`, because `editor` is
  * a React object whose own `workingLength` has not advanced yet inside the
  * same callback that just called `editor.undo()` (the `setHist` it triggers
@@ -837,21 +917,20 @@ export function panAfterRedo(
  * - **`busy` / `isClosing` / no `view`** — nothing to record into, or a commit
  *   already in flight.
  * - **`playingBuffer` at idle** — under the scrolling view the line marks the
- *   SOUNDING sample while `panState` is still the pre-play value, and under a
- *   whole-clip preview it marks nothing in the working buffer at all. Either
- *   way a take would splice somewhere the translator cannot see.
+ *   SOUNDING sample while `panState` is still the pre-play value, so a take
+ *   would splice somewhere the translator cannot see.
  * - **`dragging`** — the #317 hole (George R1 P2 #3). That gesture stops
  *   playback the instant the finger lands, which LIFTS the `playingBuffer`
  *   term while the drag is still in flight; a second finger on Record would
  *   lock the offset to a pan that then keeps moving under it. The finger owns
  *   the stage until it lifts.
  *
- * The one state that stays LIVE while a buffer sounds is **paused**: this
- * button is Resume then, its offset was locked at the original Record tap, and
- * resuming stops the preview and continues the take (George R3 #4 on #101).
- * `dragging` is deliberately NOT subordinate to that — a drag cannot begin
- * during a paused take (`panGesture` refuses it), so the two never co-occur
- * legitimately, and if they ever did the moving pan would still be the danger.
+ * A sounding buffer used to have ONE exemption, `paused`: the button was
+ * Resume then, its offset was locked at the original Record tap, and resuming
+ * stopped the preview and continued the take (George R3 #4 on #101). #614 ended
+ * the paused take, so the exemption has nothing left to exempt and a sounding
+ * buffer now disables this outright — which is what the three bullets above
+ * already said on their own.
  */
 export function recordDisabled(input: {
   readonly busy: boolean;
@@ -859,14 +938,12 @@ export function recordDisabled(input: {
   /** A segment is loaded. */
   readonly hasView: boolean;
   readonly playingBuffer: boolean;
-  /** A take is PAUSED — this button is Resume. */
-  readonly paused: boolean;
   /** A pointer is mid-pan on the stage. */
   readonly dragging: boolean;
 }): boolean {
   if (input.busy || input.isClosing || !input.hasView) return true;
   if (input.dragging) return true;
-  return input.playingBuffer && !input.paused;
+  return input.playingBuffer;
 }
 
 /**
@@ -936,10 +1013,10 @@ export const CENTER_FRACTION = 0.5;
  * - the #418 exception to #316's "always visible": a selection span loaded
  *   in edit mode has no playback role for the line — with a span picked,
  *   the audition sounds only the selection (#284), and the line is only the
- *   audition's start point when nothing is picked. Drawn inside the span it
- *   does not describe, it is clutter rather than a cue, so it hides for
- *   that one sub-state and nothing else — record, play, paused preview, and
- *   edit mode with no span picked all keep it, per the table in #418.
+ *   audition's start point when nothing is picked. It is clutter rather
+ *   than a cue, so it hides for
+ *   that one sub-state and nothing else — record, play, and edit mode with no
+ *   span picked all keep it, per the table in #418.
  *
  * The #418 half is deliberately NOT keyed off {@link StageRender} or
  * `playingBuffer`: the hide is about whether a span is loaded, not about
@@ -956,15 +1033,67 @@ export function centerlineOverlayShown(input: {
   return !(input.mode === "edit" && input.selectionActive);
 }
 
+/**
+ * What the render-time selection reseed does this render (#613).
+ *
+ * `recorder.tsx` re-opens the selection frame during render whenever edit mode
+ * has none open: cut, undo and redo all clear the frame (their sample ranges
+ * were measured against a buffer the history has just changed), and without a
+ * reseed the translator would be left in edit mode with no way to pick a span.
+ * It runs in render rather than an effect so the frame is never missing for a
+ * painted frame.
+ *
+ * It also re-opened it after a CUT, in the same commit the cut cleared it —
+ * which is #613: the band the requirements owner saw "stay highlighted" is a
+ * NEW span seeded around the insertion pan, the scissors over it is live
+ * because `canCut` is true again, and the centerline is hidden underneath
+ * because {@link centerlineOverlayShown} is false while a frame is open. All
+ * three of the reported symptoms are this one reseed.
+ *
+ * So a cut suspends it — `collapsedByCut` — until something asks for a frame
+ * again: a paste, an undo, a redo, leaving edit mode, or the stage coming to
+ * rest under a finger (`recorder.tsx` clears the latch at each).
+ *
+ * Three answers rather than a boolean, because the reseed block does two
+ * things and only one of them is suspended: `"seed"` opens a span AND drops
+ * the entry latch and the stale zoom fit; `"clear"` does only the latter —
+ * which the collapsed state NEEDS, since the paste marker is gated on
+ * `zoomPan === null` and a leftover fit would hide the very control this
+ * state exists to offer; `"none"` is not this render's business at all.
+ *
+ * Pure and DOM-free so the truth table is a test rather than a phone.
+ */
+export type SelectionReseed = "seed" | "clear" | "none";
+
+export function selectionReseed(input: {
+  readonly mode: "record" | "edit";
+  readonly selectionActive: boolean;
+  /**
+   * The frame may be seeded from the buffer on screen. False across the window
+   * where an edit-mode entry committed a take and the committed buffer has not
+   * arrived yet — a span seeded from the pre-commit buffer names the wrong
+   * samples in the one that lands.
+   */
+  readonly entrySettled: boolean;
+  /** `editor.workingLength`. An empty buffer has no frame to seed. */
+  readonly length: number;
+  /** A cut has collapsed the frame to the playhead and it stays collapsed. */
+  readonly collapsedByCut: boolean;
+}): SelectionReseed {
+  if (input.mode !== "edit" || input.selectionActive || !input.entrySettled) {
+    return "none";
+  }
+  if (input.length <= 0 || input.collapsedByCut) return "clear";
+  return "seed";
+}
+
 export function stageView(input: StageInput): StageView {
   const inPlace = input.mode === "edit" && input.selectionActive;
-  const render: StageRender = input.previewShown
-    ? "whole"
-    : !input.playingBuffer
-      ? "static"
-      : inPlace
-        ? "inPlace"
-        : "scroll";
+  const render: StageRender = !input.playingBuffer
+    ? "static"
+    : inPlace
+      ? "inPlace"
+      : "scroll";
   // `dragging` does NOT reach `render`: a drag pans the static window, it does
   // not change what is drawn (George R2 P1 asked for the inert half only, and
   // folding it into `render` would swap the view out from under the finger).

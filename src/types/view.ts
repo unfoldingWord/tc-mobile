@@ -3,8 +3,11 @@
  *
  * The pre-pivot pair — `SectionCard`/`ChapterCard` with `hasArtwork`,
  * `thumbUrl`, `imageUrl` — is gone (D6: artwork no longer decides layout).
- * These are pure shapes plus a couple of pure derivations; building the rows
- * (reading the repo, `segment-audio`, and `peaks`) is a `hooks/` job.
+ * These are pure shapes and nothing else. The derivations over them
+ * (`segmentRowState`, `firstNotFinished`) and the row's peak resolution live
+ * in `lib/view/segment-rows.ts` — this layer is domain types, and
+ * `tests/types-erasable.test.ts` holds it to that (L-17, #160). Building the
+ * rows (reading the repo, `segment-audio`, and `peaks`) is a `hooks/` job.
  */
 
 import type { Peaks } from "./audio";
@@ -35,20 +38,15 @@ export interface BookCard {
 
 // ── Segments screen (B3) ───────────────────────────────────────────────────
 
-/**
- * Waveform resolution of a Segments row, in min/max buckets.
- *
- * Shared between the row loader (which computes peaks from a PCM clip) and the
- * Finished transcode (which computes them from the PCM it is about to drop and
- * stores them on the MP3 clip, B8) — so a finished row draws from stored peaks
- * at exactly the resolution a PCM row is drawn at, and the two never diverge.
- */
-export const ROW_PEAK_BUCKETS = 120;
-
 export interface SegmentRow {
   readonly segmentId: SegmentId;
   /** = `Segment.index`, the wordless identifier and the export position. */
   readonly ordinal: number;
+  /**
+   * = `Segment.label` (#591): the facilitator's label, shown after the ordinal
+   * through `strings.segmentHeading`, or `null` ⇒ the ordinal alone.
+   */
+  readonly label: string | null;
   /**
    * Playable audio is present — derived from
    * `resolveSegmentAudio(...).kind === "resolved"`, NOT from
@@ -72,24 +70,3 @@ export interface SegmentRow {
 }
 
 export type SegmentRowState = "finished" | "recorded" | "empty";
-
-/**
- * The three row states of mockup 2, derived clip-presence-first (F3):
- * a dangling/undecodable clip renders as "empty" so re-record is the only
- * offer, never a finished-looking row with no audio behind it.
- */
-export function segmentRowState(row: SegmentRow): SegmentRowState {
-  if (!row.hasClip) return "empty"; // no status glyph, flat line, red record
-  return row.finished ? "finished" : "recorded"; // green check + green wave / amber wave, play
-}
-
-/**
- * F5 scroll target: where a returning user lands. Replaces `firstUnrecorded`
- * — the pivot lands on the first *not finished* segment, not the first with no
- * audio. All finished ⇒ null (caller scrolls to top).
- */
-export function firstNotFinished(
-  rows: readonly SegmentRow[]
-): SegmentRow | null {
-  return rows.find((r) => !r.finished) ?? null;
-}

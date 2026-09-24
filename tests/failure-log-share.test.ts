@@ -4,20 +4,22 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  classifyFailureLogOpenError,
   type LogShareCapabilities,
   selectLogShareShape,
 } from "@/hooks/use-failure-log-share";
 
-/** Source-shape reads, because there is no renderer here (#197). */
+/** Reads the hook source for wiring assertions; does not execute its effects. */
 const read = (rel: string) =>
   readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
 
 /**
  * #205 — which shape the durable failure log leaves the phone in.
  *
- * The two-gesture flow around this decision is React + browser glue this repo
- * has no renderer to exercise (the constraint `tests/share-flow.test.ts`
- * documents). The decision itself is pure, and it is the part with the history:
+ * This suite exercises the pure capability decision and reads the hook's
+ * source for wiring assertions. Neither those reads nor the static markup
+ * harness in `tests/render.ts` drive the two-gesture flow's effects or shares.
+ * The decision is the part with the history:
  * every review round so far has found a bug in it, each one the same mistake —
  * making a capability the log does not need a precondition for sending it.
  *
@@ -168,16 +170,9 @@ describe("selectLogShareShape", () => {
  * unconfirmed native resolve closed the panel exactly as confidently as a
  * proven one, the same defect the Share menus already fixed one layer up.
  *
- * The two-gesture flow itself is React + browser glue this repo has no
- * renderer to exercise (this file's own header). What IS pinned here, at the
- * source, is that the fix reuses the SAME policy function
- * (`resolveSendOutcome`) Share Chapter/Book already use, rather than a second,
- * hand-rolled comparison — and that the stale comment is gone.
- *
- * Red-first: reverting this hook's `send()` to the old `return "sent";` — no
- * `resolveProvesDelivery`/`resolveSendOutcome` call at all — makes every
- * assertion below fail; confirmed with `git stash` against the pre-fix
- * source.
+ * These source assertions check reuse of the same outcome policy as Share
+ * Chapter/Book and removal of the stale comment. They do not mount the hook
+ * or exercise the browser/native handoff.
  */
 describe("use-failure-log-share.ts: an unconfirmed native resolve settles unproven, not sent (George r2 P2-3, #491)", () => {
   const hook = read("src/hooks/use-failure-log-share.ts");
@@ -233,10 +228,7 @@ describe("use-failure-log-share.ts: an unconfirmed native resolve settles unprov
  * Wired the same way: `sendUnconfirmed` on the hook, read by BOTH callers to
  * swap the idle control's icon (`share-closed`, not a new glyph) and label,
  * never `disabled`.
- *
- * Red-first: removing `setSendUnconfirmed(true)` from `send()`'s success
- * branch, or the `sendUnconfirmed` reads in either caller, makes the
- * corresponding assertion below fail; confirmed with `git stash`.
+
  */
 describe("use-failure-log-share.ts: sendUnconfirmed reaches both idle Send controls (Frank 238820a P2, #491)", () => {
   const hook = read("src/hooks/use-failure-log-share.ts");
@@ -280,6 +272,73 @@ describe("use-failure-log-share.ts: sendUnconfirmed reaches both idle Send contr
   it("the returned object carries sendUnconfirmed through", () => {
     expect(hook).toMatch(
       /return \{ status, error, sendUnconfirmed, prepare, send, reset \};/
+    );
+  });
+});
+
+describe("use-failure-log-share.ts and failure-log-panel.tsx: terminal DB refusals ask for restart, not retry (#455)", () => {
+  it("classifies DatabaseDowngradeError as the restart-only failure-log error", () => {
+    expect(
+      classifyFailureLogOpenError({ name: "DatabaseDowngradeError" })
+    ).toBe("restart");
+    expect(classifyFailureLogOpenError({ name: "DatabaseBlockedError" })).toBe(
+      "failed"
+    );
+    expect(classifyFailureLogOpenError(new Error("ordinary failure"))).toBe(
+      "failed"
+    );
+  });
+
+  it("prepare() surfaces the restart-only error and does not route a terminal open refusal through the failure funnel", () => {
+    const hook = read("src/hooks/use-failure-log-share.ts");
+    const catchAt = hook.indexOf(
+      "} catch (cause) {",
+      hook.indexOf("const prepare = useCallback")
+    );
+    const finallyAt = hook.indexOf("} finally {", catchAt);
+    const catchBody = hook.slice(catchAt, finallyAt);
+    expect(catchBody).toMatch(
+      /const classified = classifyFailureLogOpenError\(cause\);/
+    );
+    expect(catchBody).toMatch(/setError\(classified\);/);
+    expect(catchBody).toMatch(/if \(classified !== "restart"\) \{/);
+    expect(catchBody).toMatch(
+      /reportFailure\(cause, "failure-log-share-prepare"\);/
+    );
+  });
+
+  for (const file of [
+    "src/components/failure-log-panel.tsx",
+    "src/components/send-log-control.tsx",
+  ] as const) {
+    const name = file.split("/").pop();
+
+    it(`${name}: maps the failure-log restart error to restart copy, not the Try again line`, () => {
+      const source = read(file);
+      const errorTextAt = source.indexOf("const errorText =");
+      expect(errorTextAt).toBeGreaterThan(-1);
+      const errorTextEnd = source.indexOf(";", errorTextAt);
+      const errorText = source.slice(errorTextAt, errorTextEnd);
+      expect(errorText).toMatch(/share\.error === "restart"/);
+      expect(errorText).toMatch(/strings\.shareFailureLogRestart/);
+    });
+  }
+
+  it("FailureLogPanel clear classifies a terminal clear rejection and renders the same restart copy", () => {
+    const source = read("src/components/failure-log-panel.tsx");
+    expect(source).toMatch(
+      /import \{ isTerminalOpenRefusal \} from "@\/lib\/storage\/db";/
+    );
+    expect(source).toMatch(
+      /const \[clearError, setClearError\] = useState<"restart" \| null>\(null\);/
+    );
+    expect(source).toMatch(/setClearError\(null\);/);
+    expect(source).toMatch(
+      /isTerminalOpenRefusal\([\s\S]*\(cause as \{ name\?: string \} \| null\)[\s\S]*\?\.name \?\? null[\s\S]*\)/
+    );
+    expect(source).toMatch(/setClearError\("restart"\);/);
+    expect(source).toMatch(
+      /clearError === "restart" && share\.error !== "restart" && \([\s\S]*?<Notice>\{strings\.shareFailureLogRestart\}<\/Notice>[\s\S]*?\)/
     );
   });
 });

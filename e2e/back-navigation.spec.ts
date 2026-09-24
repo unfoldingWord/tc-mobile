@@ -88,8 +88,13 @@ async function seedToSegments(page: Page) {
   // Confirm alone accepts the pre-filled placeholder name — the one-tap create.
   await page.getByRole("button", { name: "Create book" }).click();
 
-  // The new book opens expanded; add its first chapter.
+  // The new book opens expanded; add its first chapter. Add chapter opens a
+  // naming prompt of its own (#609) — a second overlay, opened and closed
+  // inside this seed, so it arms no history entry the New Book dialog above
+  // has not already armed (`floorEntryForLayerChange`, and `popLayer` touches
+  // history not at all). The index assertions below are what prove that.
   await page.getByRole("button", { name: /^Add chapter to/ }).click();
+  await page.getByRole("button", { name: "Create chapter" }).click();
   // Open the chapter → Segments. This is the first transition that pushes a
   // protective history entry.
   await page.getByRole("button", { name: "Open Chapter 1" }).click();
@@ -287,15 +292,10 @@ test("(d) a rapid double Back from the recorder issues exactly one history.back(
 /**
  * ── #452 PR3: Books' overlays are Back layers (#374) ──────────────────────
  *
- * Books is the app's FLOOR: it pushes no entry of its own, so before this PR a
- * Back on the shelf had nothing to consume and the document simply left. That
- * was measured, not assumed, on the pre-PR3 build: with the hamburger menu
- * open, `history.length` was 2 (`about:blank` + the app), `history.state` was
- * `{tc:true,index:0}` — the app's own top entry, with no entry of the app's
- * BELOW it — and `page.goBack()` navigated the document to `about:blank` with
- * NO `popstate` fired. So registering a Layer alone could not have helped: the
- * layer stack is consulted from the `popstate` handler, and there was no
- * `popstate`.
+ * Books is the app's FLOOR. With no protective entry, Back can navigate away
+ * from the document instead of producing an in-app popstate. Registering a
+ * layer alone cannot intercept that navigation: layer routing runs from the
+ * popstate handler.
  *
  * Hence the floor entry (Amendment G, `lib/nav/layer-stack.ts`'s
  * `floorEntryForLayerChange`): once the FLOOR screen's layer stack goes

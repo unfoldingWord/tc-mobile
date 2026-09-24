@@ -9,24 +9,19 @@ import {
 } from "react";
 
 import { Control } from "./control";
-import { shareControlAffordance } from "./control-affordance";
 import { EmptyState } from "./empty-state";
+import { guidedStep } from "./guided-step";
 import { EraseConfirm } from "./erase-confirm";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
 import { segmentsListInert } from "./segments-inert";
-import {
-  shareErrorText as shareErrorCopy,
-  shareGapText,
-  shareProgressText,
-} from "./share-error-copy";
-import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
+import { shareGapText, shareProgressText } from "./share-error-copy";
+import { ShareMenuSection } from "./share-menu-section";
 import { ShareProgress } from "./share-progress";
 import { strings } from "./strings";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
-import { readSharePlatform } from "@/hooks/share-target";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
@@ -35,8 +30,8 @@ import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useScreenLayers } from "@/hooks/use-screen-layers";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { overlayDismissal } from "@/lib/nav/navigation";
+import { firstNotFinished } from "@/lib/view/segment-rows";
 import type { ChapterId, SegmentId } from "@/types/domain";
-import { firstNotFinished } from "@/types/view";
 
 /**
  * Every overlay this screen can put over the chapter, as a system-Back layer
@@ -132,11 +127,13 @@ export const SegmentsScreen = forwardRef<
     loaded,
     refreshing,
     error,
+    staleTarget,
     reload,
     addSegment,
     setFinished,
     eraseRow,
     renameChapter,
+    renameSegment,
   } = useChapterSegments(chapterId);
   // The passage heading the breadcrumb shows: the facilitator's label, else
   // "Chapter {number}" (#264).
@@ -186,6 +183,17 @@ export const SegmentsScreen = forwardRef<
   // encode (F1). onSaveChapterName captures it and closes only if it still
   // matches. A ref, read at resolution time, so it sees the live value.
   const chapterMenuSession = useRef(0);
+  // The share overlay's own capture/restore pair (#96/#97, George r2 P2-1,
+  // #491). `capture()` runs synchronously in the opening gesture's own
+  // handler — before `<Menu inert={...}>` (below) can apply `inert` in the
+  // same render — never from an effect. See `share-progress.tsx`'s docblock
+  // for why a passive effect there could never get this ordering right once
+  // `inert` is involved.
+  const focusRestore = useFocusRestore();
+  // The chapter menu's OWN pair (#679), one per inert scope — see
+  // `books-screen.tsx`'s `menuFocusRestore` for why sharing the overlay's slot
+  // lost the ⋮ after any share-progress cycle (Frank r1 P2 on #754).
+  const menuFocusRestore = useFocusRestore();
   const share = useChapterShare();
   const erase = useEraseSegment();
   // MEMBERS, never the objects — and this is #452's own open question 3,
@@ -320,7 +328,11 @@ export const SegmentsScreen = forwardRef<
       // Edit, Finished and Erase all hand off to the screen and close; none of
       // them holds a write open behind this panel, so there is nothing for Back
       // to wait on. (`onSetFinished`'s store write fires and forgets, with its
-      // own failure channel — the row menu is already gone by then.)
+      // own failure channel — the row menu is already gone by then.) Rename
+      // (#591) can still be saving when Back lands, and closing over it is
+      // safe: the row's session token drops the late settle, and the hook
+      // patches the label, or reports a failure to the failure log, whether or
+      // not the menu is still up.
       busy: () => false,
       // The row's own close, which also reports back up through `onMenuClose`.
       // `?.` covers only the window in which the row unmounted without this
@@ -347,6 +359,11 @@ export const SegmentsScreen = forwardRef<
   // Open the chapter ≡ menu, starting a fresh session so a rename still in
   // flight from a prior open cannot close this one.
   const openChapterMenu = useCallback(() => {
+    // Remember the ⋮ that opened this menu, HERE — synchronously, in the
+    // tap's own handler (#97, #679): one commit later the header/list go
+    // `inert`, which blurs this button to `<body>` in the mutation phase,
+    // before any effect could read it.
+    menuFocusRestore.capture();
     chapterMenuSession.current += 1;
     setChapterMenuOpen(true);
     // A still-pending rename from the last time this menu was open must not
@@ -356,7 +373,7 @@ export const SegmentsScreen = forwardRef<
     // state above for the reason `use-nav-stack.ts`'s `openChapter` documents:
     // the layer is on the stack before this gesture returns either way.
     layers.open("segments:chapter-menu");
-  }, [layers, setSavingName]);
+  }, [menuFocusRestore, layers, setSavingName]);
   // Menu's actual `onClose`, and the one close every caller uses.
   //
   // The Menu-level guard that blocked this while `savingChapterName` was true
@@ -462,9 +479,10 @@ export const SegmentsScreen = forwardRef<
       isErasing()
     );
     if (closeMenu) onCloseChapterMenu();
-    // The row menu has no in-flight state of its own, so it is not a row in
-    // `overlayDismissal`'s table; it comes down unconditionally, and its own
-    // close reports up and unregisters it.
+    // The row menu is not a row in `overlayDismissal`'s table: the one write it
+    // can hold, a rename, survives its menu closing (see its layer above). It
+    // comes down unconditionally, and its own close reports up and
+    // unregisters it.
     rowMenuDismiss.current?.();
     if (closeConfirm) closeErase();
   }, [chapterMenuOpen, closeErase, eraseTarget, isErasing, onCloseChapterMenu]);
@@ -474,13 +492,6 @@ export const SegmentsScreen = forwardRef<
     dismissOverlays,
   ]);
 
-  // The overlay's own capture/restore pair (#96/#97, George r2 P2-1, #491):
-  // `capture()` runs synchronously in `onPrepareShare`/`onSendShare` below —
-  // the opening gesture's own handler, before `<Menu inert={...}>` (below)
-  // can apply `inert` in the same render — never from an effect. See
-  // `share-progress.tsx`'s docblock for why a passive effect there could
-  // never get this ordering right once `inert` is involved.
-  const focusRestore = useFocusRestore();
   // Whichever of "Share chapter"/"Preparing…"/"Share now" is CURRENTLY
   // rendered (the ternary below swaps the mounted `Control` as `share.status`
   // moves) — attached to every branch, so it survives that remount and always
@@ -557,6 +568,32 @@ export const SegmentsScreen = forwardRef<
       fallback: shareControlRef.current,
     });
   }, [share.progress, focusRestore]);
+  // Return focus to the ⋮ that opened this chapter's menu once the menu
+  // itself is fully closed — Close, Escape, a scrim tap, or a completed
+  // rename/share that closes it (#679) — and no share overlay still owns the
+  // screen.
+  //
+  // A SEPARATE effect from the one above, deliberately — see `books-screen
+  // .tsx`'s identical pair for the full reasoning: that effect must keep
+  // firing on every `share.progress` change made WHILE this menu stays open,
+  // and must NOT also fire on this menu's own OPEN edge, which adding
+  // `chapterMenuOpen` to ITS dependency array would (opening flips it
+  // non-null while `share.progress` is still `"hidden"`, consuming the ⋮
+  // capture `openChapterMenu` above just took before the menu has shown
+  // anything). Guarding on `chapterMenuOpen === false` keeps this effect
+  // silent while the menu is open; its other runs (mount, later progress
+  // changes) find `menuFocusRestore` empty, since only `openChapterMenu`
+  // captures into it, and do nothing.
+  //
+  // No fallback: once the whole menu is gone there is no live landmark left
+  // inside it (`shareControlRef` unmounts in the same commit), and the ⋮
+  // itself is the only sensible target — `restore()` already prefers it
+  // whenever it is connected, focusable and no longer `inert`.
+  useLayoutEffect(() => {
+    if (chapterMenuOpen) return;
+    if (shareOverlayOwnsScreen(share.progress)) return;
+    menuFocusRestore.restore({ suppressed: false, fallback: null });
+  }, [chapterMenuOpen, share.progress, menuFocusRestore]);
   // Commit the typed chapter name (#264), then close the menu on success. The
   // hook patches the breadcrumb in place. A failed write keeps the field up
   // with the reason in the menu's own Notice — the screen Notice sits behind
@@ -670,27 +707,19 @@ export const SegmentsScreen = forwardRef<
   const loadFailed = error !== null && !loaded;
   // See books-screen: hide the header create + while the invite's own primary
   // CTA is up, so there is one create action, announced once.
-  const showEmpty = loaded && rows.length === 0;
+  const showEmpty = !staleTarget && loaded && rows.length === 0;
+  // The guided chain's answer for this screen (#604). The append `+` in the
+  // header is hidden while the invite is up, so the CTA below is the only
+  // control this step can mean.
+  const guide = guidedStep({ screen: "segments", loaded, segments: rows });
 
   // Share (B7) speaks inside its own menu, not the screen Notice: the two-gesture
   // flow keeps the ≡ menu open across prepare → ready → send, so the panel is
-  // what the translator is looking at. Its error code is mapped to copy here and
-  // rendered in the menu below.
-  // The Share Control's glyph/variant/busy across idle → preparing → ready
-  // (#354) — the same table Share Book and NameEdit's Confirm use. Its idle
-  // mark is the platform's own (#490): read from the Capacitor runtime each
-  // render — a constant, cheap read — never from the user agent.
-  const shareAffordance = shareControlAffordance(
-    share.status,
-    readSharePlatform(),
-    share.sendUnconfirmed
-  );
-  const shareErrorText = shareErrorCopy(share.error, "chapter");
-  // Hoisted: the same mark for a chapter and a book, from one table.
-  const sharePartial = shareOutcomeGlyph("partial");
-  // Mark and tone for the error line, from the same table (#178); `undefined`
-  // for `encoder` and for no error, which is `Notice`'s own default.
-  const shareErrorMark = shareErrorGlyph(share.error);
+  // what the translator is looking at. Its error code is mapped to copy by
+  // `shareErrorText` inside `ShareMenuSection` (#670) and rendered in the menu
+  // below. The Share control's own glyph, the gap mark and the error mark all
+  // moved into `ShareMenuSection` with the rows they paint (#160, L-15) —
+  // Books derived the identical three.
 
   const nodes = useRef(new Map<SegmentId, HTMLElement>());
   const didInitialScroll = useRef(false);
@@ -785,7 +814,7 @@ export const SegmentsScreen = forwardRef<
             icon="plus"
             label={strings.addSegment}
             variant="quiet"
-            disabled={loading || refreshing || loadFailed}
+            disabled={staleTarget || loading || refreshing || loadFailed}
             onClick={() => void onAppend()}
           />
         )}
@@ -794,10 +823,10 @@ export const SegmentsScreen = forwardRef<
             segments yet, and renaming it for the passage is exactly the first
             setup step (#264). Share inside handles the no-audio case itself. */}
         <Control
-          icon="menu"
+          icon="more"
           label={strings.chapterMenuOpen}
           variant="quiet"
-          disabled={loading || refreshing || loadFailed}
+          disabled={staleTarget || loading || refreshing || loadFailed}
           onClick={openChapterMenu}
         />
       </header>
@@ -806,7 +835,11 @@ export const SegmentsScreen = forwardRef<
           dangling/undecodable clip routes to audio.error) — never only the
           console. `console.error is not a channel on a phone in a village.`
           Share speaks in its own menu, not here. */}
-      {(error ?? audio.error ?? (erase.error ? strings.eraseFailed : null)) ? (
+      {staleTarget ? (
+        <Notice>{strings.staleChapter}</Notice>
+      ) : (error ??
+        audio.error ??
+        (erase.error ? strings.eraseFailed : null)) ? (
         <Notice>{error ?? audio.error ?? strings.eraseFailed}</Notice>
       ) : loading ? (
         // First mount: a slow chapter (sequential PCM walk) is otherwise a
@@ -817,12 +850,13 @@ export const SegmentsScreen = forwardRef<
       )}
 
       <div className="flex-1 overflow-y-auto" inert={listInert || undefined}>
-        {showEmpty ? (
+        {staleTarget ? null : showEmpty ? (
           <EmptyState
             headline={strings.segmentsEmpty}
             teach={strings.segmentsEmptyTeach}
             ctaLabel={strings.addSegment}
             ctaIcon="plus"
+            guided={guide?.kind === "add-segment"}
             onCta={() => void onAppend()}
           />
         ) : (
@@ -833,6 +867,7 @@ export const SegmentsScreen = forwardRef<
                   row={row}
                   playing={audio.playingId === row.segmentId}
                   playbackElapsedMs={audio.playbackElapsedMs}
+                  ranOut={audio.playbackRanOut}
                   busy={refreshing}
                   onPlay={(offsetSeconds) => audio.playTake(row, offsetSeconds)}
                   onOpenRecorder={() =>
@@ -841,7 +876,12 @@ export const SegmentsScreen = forwardRef<
                   onSetFinished={(finished) =>
                     onSetFinished(row.segmentId, finished)
                   }
+                  guided={
+                    guide?.kind === "open-segment" &&
+                    guide.segmentId === row.segmentId
+                  }
                   onErase={() => armErase(row.segmentId)}
+                  onRename={(label) => renameSegment(row.segmentId, label)}
                   onMenuOpen={onRowMenuOpen}
                   onMenuClose={onRowMenuClose}
                 />
@@ -870,6 +910,10 @@ export const SegmentsScreen = forwardRef<
       />
 
       <Menu
+        // Re-enter Menu's open focus behavior when stale contents replace a
+        // focused rename field. Only Close remains; the screen keeps its layer
+        // until the translator dismisses it and explicitly goes Back (#378).
+        key={staleTarget ? "stale" : "live"}
         open={chapterMenuOpen}
         onClose={onCloseChapterMenu}
         title={strings.chapterMenuTitle}
@@ -904,7 +948,9 @@ export const SegmentsScreen = forwardRef<
           )
         }
       >
-        {renamingChapter ? (
+        {staleTarget ? (
+          <Notice>{strings.staleChapter}</Notice>
+        ) : renamingChapter ? (
           <>
             {/* Rename the chapter in place (#264). Seeded with the current
                 custom label, or empty when it is still the default "Chapter N"
@@ -946,66 +992,23 @@ export const SegmentsScreen = forwardRef<
                 armed it becomes a primary "Share now" that hands the File to the
                 sheet in a fresh activation (tap 2). autoFocus moves focus onto it
                 as it appears, since the Menu only lands focus on its open edge. */}
-            {share.status === "ready" ? (
-              <Control
-                ref={shareControlRef}
-                icon={shareAffordance.icon}
-                label={strings.shareSend}
-                variant={shareAffordance.variant}
-                className={shareAffordance.className}
-                autoFocus
-                onClick={onSendShare}
-              />
-            ) : (
-              // Stays enabled while `preparing`: a re-tap is already a no-op via
-              // the hook's `preparingRef`, and disabling it would drop this
-              // control out of Menu's `FOCUSABLE` set (which excludes
-              // `[disabled]`), breaking the Tab trap and letting focus escape the
-              // portal (George R-B7). `busy` (not disabled) is what now paints
-              // and reads that wait state (#354; `control-affordance.ts`).
-              <Control
-                ref={shareControlRef}
-                icon={shareAffordance.icon}
-                label={
-                  share.status === "preparing"
-                    ? strings.sharePreparing
-                    : share.sendUnconfirmed
-                      ? strings.shareChapterUnconfirmed
-                      : strings.shareChapter
-                }
-                variant={shareAffordance.variant}
-                busy={shareAffordance.busy}
-                onClick={onPrepareShare}
-              />
-            )}
-            {/* Feedback rides inside the panel because the flow keeps the menu
-                open: the busy state while encoding, a gap warning once armed
-                (`info`, not `busy` — the chapter is ready, this is a heads-up
-                about what it lacks, #112), and any error code mapped above. */}
-            {share.status === "preparing" && (
-              <Notice tone="busy">{strings.sharePreparing}</Notice>
-            )}
-            {share.status === "ready" && share.missing > 0 && (
-              // Its own mark, not `info`'s generic ring-and-i (#178): that
-              // glyph also carries storage durability (#214/#406), so share
-              // would otherwise share a shape with an unrelated condition.
-              <Notice tone={sharePartial.tone} icon={sharePartial.icon}>
-                {shareGapText(
-                  { missing: share.missing, partial: 0 },
-                  "chapter"
-                )}
-              </Notice>
-            )}
-            {shareErrorText && (
-              // `nothing` and `failed` both wear the `alert` tone — that split
-              // is #147's open question — so the mark is the only thing
-              // separating "record a segment first" from "try again" (#178).
-              // The tone comes from the same table as the mark, so a #147
-              // re-tone reaches this line without a second edit (George R3 P3).
-              <Notice tone={shareErrorMark?.tone} icon={shareErrorMark?.icon}>
-                {shareErrorText}
-              </Notice>
-            )}
+            <ShareMenuSection
+              status={share.status}
+              sendUnconfirmed={share.sendUnconfirmed}
+              error={share.error}
+              scope="chapter"
+              controlRef={shareControlRef}
+              idleLabel={strings.shareChapter}
+              preparingLabel={strings.sharePreparing}
+              unconfirmedLabel={strings.shareChapterUnconfirmed}
+              hasGap={share.missing > 0}
+              gapText={shareGapText(
+                { missing: share.missing, partial: 0, partialChapters: 0 },
+                "chapter"
+              )}
+              onPrepare={onPrepareShare}
+              onSend={onSendShare}
+            />
           </>
         )}
       </Menu>

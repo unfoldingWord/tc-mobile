@@ -15,6 +15,19 @@
 export const CANONICAL_SAMPLE_RATE = 44_100;
 export const CANONICAL_CHANNELS = 1;
 
+/** Frames required by the canonical renderer, with a one-frame minimum. */
+export function canonicalFrameCount(
+  duration: number,
+  sourceSampleRate: number
+): number {
+  return Math.max(
+    1,
+    Math.ceil(
+      (duration * CANONICAL_SAMPLE_RATE * sourceSampleRate) / sourceSampleRate
+    )
+  );
+}
+
 export const INT16_MAX = 32_767;
 const INT16_MIN = -32_768;
 

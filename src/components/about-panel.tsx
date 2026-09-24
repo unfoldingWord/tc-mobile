@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { BuildStamp } from "./build-stamp";
 import {
   contentAttribution,
   licenseTexts,
@@ -135,9 +136,7 @@ export function AboutPanel({ open, onClose }: AboutPanelProps) {
             ))}
           </section>
 
-          <p className="text-ink-faint">
-            v{__APP_VERSION__} · {__BUILD_SHA__}
-          </p>
+          <BuildStamp />
         </div>
       )}
     </Menu>

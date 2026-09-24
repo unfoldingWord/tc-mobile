@@ -7,12 +7,11 @@ import { describe, expect, it } from "vitest";
  * The two zoom/touch policies #164 found wrong, gated so they cannot drift
  * back (R-10, R-11).
  *
- * Neither is assertable by rendering — #197 records that this repo has no DOM
- * runner, and a real touch target is a measurement on a phone, which #164's own
- * evidence class already concedes it never made ("touch-target sizes are read
- * from the tokens, not measured on a phone"). What IS assertable is the two
- * things that were actually wrong in source: a viewport that forbade pinch
- * zoom, and an interactive element whose hit area was its text.
+ * These source assertions check viewport restrictions, touch-action rules,
+ * the rename field's font-size floor, and the breadcrumb's target token and
+ * class wiring. They do not measure rendered hit areas or exercise gestures
+ * on a device. The static render harness in tests/render.ts does not provide
+ * layout or cascade.
  */
 const ROOT = path.resolve(import.meta.dirname, "..");
 const html = readFileSync(path.join(ROOT, "index.html"), "utf8");
@@ -30,8 +29,8 @@ describe("the viewport does not forbid pinch zoom (#164 R-11)", () => {
 
   // `user-scalable=no` was here to protect the drag gestures and never did:
   // iOS has ignored it since iOS 10, so the only platform it restricted is
-  // Android — never yet run (#245), and the one whose testers report capture
-  // quiet enough to squint at (#359). The gesture surfaces declare their own
+  // Android (#245), and the one whose testers report capture quiet enough to
+  // squint at (#359). The gesture surfaces declare their own
   // `touch-action`, which is what actually protects them.
   it("does not set user-scalable=no", () => {
     expect(viewport?.[1] ?? "").not.toMatch(/user-scalable\s*=\s*no/i);

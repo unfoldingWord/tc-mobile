@@ -22,17 +22,9 @@ import {
  * term and the argument is silently false: a tap on Record would open the
  * recorder over a committing delete of the very row it opens.
  *
- * Before PR4 this predicate was four inline `||`s in the screen's render body,
- * where this repo has no renderer to reach it (AGENTS.md) — so the only
- * automated evidence for any of it was one headless case that opens the chapter
- * ≡ menu, and the `eraseConfirmOpen` term could have been deleted with every
- * gate in the repo green. Each term is now one row that dies on its own.
- *
- * **What these rows do NOT prove**, kept here rather than left to inference:
- * that the value reaches the DOM. That is the screen's wiring, review surface
- * in Node, observed once — for the `chapterMenuOpen` term — by
- * `e2e/back-navigation.spec.ts` case (m) in real Chromium. The erase confirm
- * needs a RECORDED row, so no headless case can open it at all.
+ * Each row isolates one term of the predicate. These pure-function tests do
+ * not establish that the screen applies the result to the DOM or that the
+ * browser blocks focus and pointer events during an erase.
  */
 
 const nothingOpen: SegmentsOverlayState = {
@@ -50,7 +42,7 @@ describe("segmentsListInert", () => {
   /**
    * One row per term. The mutation each kills is the deletion of its own term:
    * with that term removed from `segmentsListInert`, its row reads `false` and
-   * dies, and no other row moves. Run for all four while writing this file.
+   * dies, and no other row moves.
    */
   const terms: readonly {
     readonly term: keyof SegmentsOverlayState;
