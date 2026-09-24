@@ -562,19 +562,19 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
       case "issue": {
         // Both guard flags are clear on this row, so today `beginBack`
         // always proceeds — but that is two independent checks of the same
-        // state agreeing, not a guarantee. Take the same refusal branch the
-        // commit-close settle already uses (the `case "commit-close-recorder"`
-        // popstate arm below) rather than trusting the prose coupling: only
-        // write `.next`, set `suppressPop` and issue `history.back()` when
-        // `beginBack` actually says this issuer may proceed. A future
-        // refusal reason must not make this row stack a traversal the guard
-        // declined (#763's bug class, George r1 on #833 / #838 item 2).
+        // state agreeing, not a guarantee. Only write `.next`, set
+        // `suppressPop` and issue `history.back()` when `beginBack` actually
+        // says this issuer may proceed. A future refusal reason must not
+        // make this row stack a traversal the guard declined (#763's bug
+        // class, George r1 on #833 / #838 item 2).
         //
-        // On refusal, set NOTHING — unlike the settle's refused arm, which
-        // absorbs a goBack landing already in flight. This row is reached
-        // only with both guard flags clear, so a refusal here has no landing
-        // to absorb; arming `suppressPop` would make `goBack`'s early return
-        // swallow the next Back (Frank r1 on #854).
+        // On refusal, set NOTHING — unlike the commit-close settle's refused
+        // arm (the `case "commit-close-recorder"` popstate arm below), which
+        // absorbs a `goBack` landing already in flight. This row is reached
+        // only with both guard flags already clear, so a refusal here has no
+        // landing to absorb; arming `suppressPop` anyway would make
+        // `goBack`'s own early return swallow the very next Back (Frank r1
+        // on #854, bench round 1).
         const begun = beginBack(travelGuard.current, "commit-close");
         if (begun.ok) {
           travelGuard.current = begun.next;

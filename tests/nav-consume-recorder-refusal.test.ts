@@ -9,36 +9,39 @@ import { useNavStack, type UseNavStack } from "@/hooks/use-nav-stack";
  * George r1 on #833 (Low, HYGIENE, deferred to #838 item 2):
  * https://github.com/unfoldingWord/tc-mobile/pull/833#issuecomment-5814266754
  *
- * `consumeRecorderEntry`'s `"issue"` row (`use-nav-stack.ts` ~562-569) is
- * taken only when `recorderExitTraversal` finds both travel-guard flags
- * clear. The comment beside it then asserts `beginBack("commit-close")`
- * "therefore proceeds" and the code writes `.next`, sets `suppressPop` and
- * calls `history.back()` unconditionally. But `recorderExitTraversal` and
- * `beginBack` are two INDEPENDENT checks of the guard, coupled only by that
- * prose comment, not by a shared code path. The commit-close-recorder
- * popstate case (same file, the `"commit-close-recorder"` switch arm) makes
- * the same `beginBack` call and DOES check `.ok`, taking a refusal branch
- * (`suppressPop.current = true;`, no `back()`) when it is false
- * (`nav-commit-close-race-guards.test.ts` pins that arm). The `"issue"` row
- * does not.
+ * `consumeRecorderEntry`'s `"issue"` row (`use-nav-stack.ts`, the
+ * programmatic recorder close) calls `beginBack("commit-close")` and only
+ * writes `.next`, sets `suppressPop` and issues `history.back()` when that
+ * call returns `ok`. This file pins two things about the refusal path:
  *
- * `beginBack` has no second refusal reason today — `recorderExitTraversal`'s
- * own guard check and `beginBack`'s are evaluated against the same
- * synchronous state, so in the CURRENT tree this row's `beginBack` call can
- * never actually observe a refusal. That is exactly the coupling George is
- * warning about: it holds only because both checks happen to read the same
- * state today, not because the code enforces it. This test manufactures the
- * break directly — it mocks `beginBack` to refuse independently of the
- * guard state — to show what the CURRENT code does when that coupling no
- * longer holds: it calls `history.back()` anyway, stacking a traversal the
- * guard declined (the #763 bug class). This is a defensive invariant against
- * a future refusal reason, not a reproduced field failure — nothing today
- * reaches a real `beginBack` refusal at this exact row.
+ * - it issues no `history.back()` — the row must not stack a traversal
+ *   `beginBack` declined (the #763 bug class); and
+ * - it leaves no stale `suppressPop` latch: the NEXT `goBack()` still
+ *   issues its own traversal.
+ *
+ * The refusal deliberately stays clear of the latch rather than mirroring
+ * the commit-close settle's refused arm, which absorbs a `goBack` landing
+ * already in flight (`suppressPop.current = true`). This row is reached
+ * only when `recorderExitTraversal` has already found BOTH guard flags
+ * clear, so a refusal here has nothing outstanding to absorb; arming
+ * `suppressPop` anyway would make `goBack`'s own early return swallow the
+ * very next Back — a real regression Frank r1 on #854 caught (bench round
+ * 1) in this PR's first cut, which did absorb here.
+ *
+ * `beginBack` has no second refusal reason today — `recorderExitTraversal`
+ * and `beginBack` check the same two guard flags one line apart, so in the
+ * current tree this exact call can never actually observe a refusal. This
+ * test manufactures the break by mocking `beginBack` to refuse independently
+ * of the guard state, while `recorderExitTraversal` (unmocked) still
+ * resolves to `"issue"` from the real, untouched guard state. This is a
+ * defensive invariant against a future refusal reason, not a reproduced
+ * field failure — nothing today reaches a real `beginBack` refusal at this
+ * exact row.
  *
  * Mounts the real `useNavStack` (the `use-nav-stack-latest-ref-layout-phase`
- * harness shape) and drives `commitCloseRecorder` directly, rather than
- * text-matching the hook's source, so this is a behavioural test of what the
- * hook actually does under the manufactured refusal.
+ * harness shape) and drives `commitCloseRecorder` / `goBack` directly,
+ * rather than text-matching the hook's source, so this is a behavioural test
+ * of what the hook actually does under the manufactured refusal.
  */
 
 const control = vi.hoisted(() => ({ refuse: true }));
