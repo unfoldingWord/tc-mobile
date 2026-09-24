@@ -101,6 +101,13 @@ describe("useEraseSegment's in-flight guard", () => {
     let running!: Promise<string>;
     act(() => {
       running = api.erase(seg(1));
+      // INSIDE the act callback, before React flushes. That placement is the
+      // whole assertion: `erasing` state is still last frame's `false` here,
+      // so a state-backed `isErasing` reads false and this line fails. The
+      // same expect AFTER the act block passes either way, because the flush
+      // has happened and the harness has republished `api` by then — which is
+      // what it used to do (George r8).
+      expect(api.isErasing()).toBe(true);
     });
     expect(api.isErasing()).toBe(true);
 
