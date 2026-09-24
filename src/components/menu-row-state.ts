@@ -221,7 +221,10 @@ export function rowHint(reason: RowReason | null): RowHint | null {
  * - No words for `"uncommitted-take"`. `blockedByTake` sends the translator to
  *   "Close menu", then "Close recorder" — a menu the bar is not in, and during
  *   a take the bar's own Stop, beside it, is the way out. The control is
- *   plainly off (natively disabled) instead.
+ *   plainly off instead: natively disabled while the take runs, but not while
+ *   it commits. The toolbar Edit is also `busy={isClosing}` (recorder.tsx),
+ *   and `Control` never natively disables a busy control, so through the
+ *   commit it stays focusable and `aria-busy`, and swallows the click.
  */
 export function barHint(reason: RowReason | null): { label: string } | null {
   if (reason === "uncommitted-take") return null;
