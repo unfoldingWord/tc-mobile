@@ -1,5 +1,10 @@
 import { useLayoutEffect, useRef } from "react";
 
+import {
+  CANVAS_FALLBACK_FAINT,
+  CANVAS_FALLBACK_VOICE,
+  withCanvasFallback,
+} from "./canvas-fallback-colors";
 import { useLiveTheme } from "@/hooks/use-theme";
 import { clampUnit, displayGain } from "@/lib/audio/display-gain";
 import { type WaveformWindow } from "@/lib/audio/viewport";
@@ -118,12 +123,20 @@ export function Waveform({
     const styles = getComputedStyle(canvas);
     // The bar colour is a component token so a finished row can remap it to green
     // (`.row--finished { --c-wave-stroke: var(--s-done) }`) without a prop. Falls
-    // back to the resolved voice value, then to amber, for a canvas outside a row.
-    const stroke =
-      styles.getPropertyValue("--c-wave-stroke").trim() ||
-      styles.getPropertyValue("--s-voice").trim() ||
-      "#e6a444";
-    const faint = styles.getPropertyValue("--s-ink-faint").trim() || "#5f6b7a";
+    // back to the resolved voice value, then, only if BOTH reads come back
+    // empty, to the unthemed dark-only fallback in `canvas-fallback-colors.ts`
+    // (#506 item 1) — a token failing to resolve, not the normal path.
+    const stroke = withCanvasFallback(
+      styles.getPropertyValue("--c-wave-stroke"),
+      withCanvasFallback(
+        styles.getPropertyValue("--s-voice"),
+        CANVAS_FALLBACK_VOICE
+      )
+    );
+    const faint = withCanvasFallback(
+      styles.getPropertyValue("--s-ink-faint"),
+      CANVAS_FALLBACK_FAINT
+    );
     const mid = h / 2;
 
     // The centerline is NOT painted here (#415). It used to be, unconditionally
