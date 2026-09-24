@@ -18,11 +18,13 @@
  *     range with `git log --no-merges`, so a merge commit never needs its own
  *     exemption there. `<base>..<head>` is passed straight to `git log`.
  *
- * A commit whose first non-blank line (the subject) starts with `Merge ` is
- * always allowed, body or not — this is what lets the hook run without
- * `--no-verify` on a local `git merge`, and it is checked independently of
- * the CI form's `--no-merges` so the two entry points agree on the same rule
- * rather than trusting two different mechanisms to reach the same answer.
+ * In the hook form only, a message whose first non-blank line (the subject)
+ * starts with `Merge ` is allowed, body or not — this is what lets the hook
+ * run without `--no-verify` on a local `git merge`, where the hook sees only
+ * the message text. The CI form does NOT apply that allowance: there
+ * `--no-merges` has already excluded every real merge by topology, so a
+ * commit it still sees is an ordinary commit whatever its subject says, and
+ * a bodyless one titled `Merge …` fails like any other.
  *
  * Dependabot's commits are NOT given a code exemption. Its messages carry a
  * changelog body by default (see `.github/dependabot.yml` and, e.g., commit
@@ -38,10 +40,18 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-/** Lines beginning with the default git comment char are never body content. */
+/** `git commit -v`'s scissors line; git discards it and everything below. */
+const SCISSORS = /^# -+ >8 -+\s*$/;
+
+/**
+ * Reduce a raw message to what git will store: drop everything from the
+ * scissors line down (the unprefixed `-v` diff would otherwise read as a
+ * body), then drop lines beginning with the default git comment char.
+ */
 function stripCommentLines(raw) {
-  return raw
-    .split("\n")
+  const lines = raw.split("\n");
+  const cut = lines.findIndex((line) => SCISSORS.test(line));
+  return (cut === -1 ? lines : lines.slice(0, cut))
     .filter((line) => !line.startsWith("#"))
     .join("\n");
 }
@@ -71,8 +81,10 @@ export function isMergeSubject(subject) {
 /**
  * The one rule both entry points enforce: `{ ok: false }` only for a commit
  * with a real (non-merge) subject and no non-blank body.
+ * `allowMergeSubject: false` is the range form: its commits are already
+ * known not to be merges, so a `Merge ` subject earns nothing there.
  */
-export function checkMessage(raw) {
+export function checkMessage(raw, { allowMergeSubject = true } = {}) {
   const { subject, hasBody } = hasNonBlankBody(raw);
   if (!subject) {
     return {
@@ -81,7 +93,7 @@ export function checkMessage(raw) {
       reason: "empty message; not this gate's concern",
     };
   }
-  if (isMergeSubject(subject)) {
+  if (allowMergeSubject && isMergeSubject(subject)) {
     return { ok: true, subject, reason: "merge commit" };
   }
   if (!hasBody) {
@@ -134,7 +146,7 @@ export function checkRange(range, { runGit } = {}) {
   const records = parseLogRecords(stdout);
   const results = records.map(({ sha, body }) => ({
     sha,
-    ...checkMessage(body),
+    ...checkMessage(body, { allowMergeSubject: false }),
   }));
   return { results, failures: results.filter((r) => !r.ok) };
 }

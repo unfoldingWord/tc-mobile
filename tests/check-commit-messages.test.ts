@@ -170,6 +170,28 @@ describe("checkMessage — the rule both entry points share", () => {
     expect(result.ok).toBe(true);
   });
 
+  // `git commit -v`: git stores nothing from the scissors line down, and the
+  // diff under it carries no `#` prefix, so it must not count as a body.
+  const SCISSORS_TAIL = [
+    "# ------------------------ >8 ------------------------",
+    "# Do not modify or remove the line above.",
+    "diff --git a/f b/f",
+    "+added line",
+    "",
+  ].join("\n");
+
+  it("rejects a subject-only verbose message (diff below the scissors line)", () => {
+    expect(checkMessage(`fix(x): subject only\n${SCISSORS_TAIL}`).ok).toBe(
+      false
+    );
+  });
+
+  it("accepts a verbose message whose body sits above the scissors line", () => {
+    expect(
+      checkMessage(`fix(x): subject\n\nWhy it changed.\n${SCISSORS_TAIL}`).ok
+    ).toBe(true);
+  });
+
   it("does not gate an empty message (a different, pre-existing failure)", () => {
     expect(checkMessage("\n").ok).toBe(true);
   });
@@ -212,6 +234,14 @@ describe("checkRange — the CI form, against an injected git log", () => {
     const stdout = `aaa1111${FS}fix(x): good\n\nBody.\n${RS}`;
     const { failures } = checkRange("base..head", { runGit: () => stdout });
     expect(failures).toEqual([]);
+  });
+
+  // `--no-merges` already removed real merges, so a `Merge ` subject here is
+  // an ordinary commit and gets no allowance.
+  it("fails a bodyless non-merge commit whose subject starts with Merge", () => {
+    const stdout = "ddd4444\x1fMerge ordinary subject with no body\n\x1e";
+    const { failures } = checkRange("base..head", { runGit: () => stdout });
+    expect(failures.map((f) => f.sha)).toEqual(["ddd4444"]);
   });
 });
 
@@ -326,6 +356,23 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
     }
   });
 
+  // FILE MODE, RED (verbose commit: diff below the scissors line).
+  it("exits non-zero on a subject-only verbose message file", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "commit-msg-file-verbose-"));
+    try {
+      const file = path.join(dir, "COMMIT_EDITMSG");
+      writeFileSync(
+        file,
+        "fix(x): subject only\n# ------------------------ >8 ------------------------\ndiff --git a/f b/f\n+x\n"
+      );
+      const result = runCli([file]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("no non-blank body");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("exits non-zero with an unrecognized-argument message when given nothing", () => {
     const result = runCli([]);
     expect(result.status).toBe(1);
@@ -410,6 +457,17 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
         "Real body.",
       ]);
       git(["checkout", "-q", "-b", "other"]);
+      // `other` needs its own commit, or the merge below is "Already up to
+      // date" and creates nothing for `--no-merges` to exclude.
+      git([
+        "commit",
+        "--allow-empty",
+        "-q",
+        "-m",
+        "fix(x): other commit",
+        "-m",
+        "Other body.",
+      ]);
       // A merge-commit-only, bodyless subject reaches this range ONLY as the
       // merge commit itself — `--no-merges` must exclude it for this to pass.
       git(["checkout", "-q", "feature"]);
@@ -421,6 +479,9 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
         "-m",
         "Merge branch 'other' into feature",
       ]);
+      expect(
+        git(["rev-list", "--count", "--merges", "base..feature"]).trim()
+      ).toBe("1");
       const result = runCli(["--range", "base..feature"], dir);
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("PASS");
@@ -448,7 +509,37 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
       ]);
       const result = runCli(["--range", "base..feature"], dir);
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain("bad commit, no body");
+      const shortSha = git(["rev-parse", "--short=7", "HEAD"]).trim();
+      expect(result.stderr).toContain(
+        `${shortSha} fix(x): bad commit, no body`
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails a real non-merge, bodyless commit whose subject starts with Merge", () => {
+    const dir = initScratchRepo();
+    try {
+      const { gitDir, workTree } = scratchGitDirs(dir);
+      execFileSync(
+        "git",
+        [
+          "--git-dir",
+          gitDir,
+          "--work-tree",
+          workTree,
+          "commit",
+          "--allow-empty",
+          "-q",
+          "-m",
+          "Merge ordinary subject with no body",
+        ],
+        { encoding: "utf8", env: cleanGitEnv() }
+      );
+      const result = runCli(["--range", "base..feature"], dir);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("Merge ordinary subject with no body");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -10,7 +10,10 @@ export declare function hasNonBlankBody(raw: string): {
 
 export declare function isMergeSubject(subject: string): boolean;
 
-export declare function checkMessage(raw: string): {
+export declare function checkMessage(
+  raw: string,
+  options?: { allowMergeSubject?: boolean }
+): {
   ok: boolean;
   subject: string;
   reason?: string;
