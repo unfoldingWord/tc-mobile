@@ -375,6 +375,21 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
 
     const toLight = menu.getByRole("button", { name: /light screen/i });
     await expect(toLight).toBeVisible();
+
+    // The AT consequence this PR asks a reviewer to ACCEPT, pinned rather than
+    // left in prose. `Menu` lands open-edge focus on the first ACTIONABLE child,
+    // skipping `aria-disabled` hinted rows (#135); on a segment with nothing
+    // recorded and an empty clipboard every pre-existing row is hinted, so the
+    // toggle is that child. Before this control existed, focus fell back to Edit
+    // and its reason.
+    //
+    // It is asserted BEFORE the click, because clicking moves focus itself and
+    // would make this pass for the wrong reason. A later edit that reorders the
+    // rows, or makes one of them actionable in this state, changes what an AT
+    // user hears first — and that should fail here rather than be discovered on
+    // a phone by the person it happens to (George, this head).
+    await expect(toLight).toBeFocused();
+
     await toLight.click();
 
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
