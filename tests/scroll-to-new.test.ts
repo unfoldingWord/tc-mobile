@@ -148,10 +148,18 @@ describe("arm, then reveal", () => {
   });
 
   it("SPENDS an arm whose row never arrived", () => {
-    // Both screens arm before the state change that adds the row. If an append
-    // failed, holding the id would fire a scroll on some unrelated commit much
-    // later — a list that jumps for no reason a translator can connect to
-    // anything they did is worse than one that never jumps.
+    // Hook policy, not a reachable screen path: an arm is spent by the next
+    // reveal whether or not its row was found. Retaining it instead would fire
+    // a scroll on some unrelated later commit, and a list that jumps for no
+    // reason a translator can connect to anything they did is worse than one
+    // that never jumps.
+    //
+    // No caller produces that id today — both screens arm only AFTER their
+    // create resolves and return before arming when it fails
+    // (`segments-screen.tsx`'s `if (!segment) return`, `books-screen.tsx`'s
+    // `if (!chapter) return`). That is caller discipline, which is exactly why
+    // the hook is held to it here: the same "premise, not a property"
+    // reasoning this lane applies to Segments' missing `inert` hold.
     act(() => {
       api().armScroll("never-added");
       api().reveal();
