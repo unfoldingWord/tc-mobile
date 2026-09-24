@@ -83,8 +83,9 @@
     --p-radius-full: 999px;
 
     /* --- Type. Three sizes carry a whole screen. ---------------------------- */
-    --p-font-ui:
-      "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    /* system-ui first: no @font-face ships (R-13, #161) — naming a face here
+       that never renders would just be wrong, not aspirational. */
+    --p-font-ui: system-ui, ui-sans-serif, -apple-system, sans-serif;
     --p-text-xs: 11px;
     --p-text-sm: 12px;
     --p-text-md: 13px;
