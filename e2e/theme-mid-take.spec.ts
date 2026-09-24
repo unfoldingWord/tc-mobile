@@ -107,12 +107,32 @@ test("a toggle mid-take leaves the capture running, and the take still commits",
   await expect(menu).toHaveCount(0);
 
   // Finally, the take commits: since #614 the tap that ends a recording
-  // commits it in place, so Record coming back is the take having landed
-  // rather than the sheet merely idling.
+  // commits it in place. Record COMING BACK is not that, and asserting only
+  // that was this case's one weak link (Frank round 1, #623): the transport's
+  // label is `recording ? stop : record`, so it reads Record the moment state
+  // leaves `"recording"` and enters `"processing"` — with the write and the
+  // view reload still in flight. `Control` gives a busy control `aria-busy`
+  // and deliberately NOT the native `disabled` attribute (a busy control must
+  // keep focus, #137), so `toBeVisible` and even `toBeEnabled` are both
+  // satisfied during that window.
+  //
+  // So the commit is read off the two things only a LANDED take produces:
+  // `aria-busy` gone from the transport, and "Erase and record again"
+  // actionable. The bin is always drawn and is hinted-inert while there is
+  // nothing to erase, so its hint clearing means `eraseRowReason` found a
+  // stored clip in the RELOADED view — which is the persistence this case
+  // claims, rather than the label flip that precedes it.
   await stop.click();
-  await expect(
-    page.getByRole("button", { name: "Record", exact: true })
-  ).toBeVisible();
+  const record = page.getByRole("button", { name: "Record", exact: true });
+  await expect(record).toBeVisible();
+  await expect(record).not.toHaveAttribute("aria-busy", "true");
+  // Matched on the name PREFIX, because a hinted control appends its reason to
+  // its accessible name — so the assertion below is about the inert state
+  // itself and not about which wording the hint happens to carry.
+  const rerecord = page.getByRole("button", {
+    name: /^Erase and record again/,
+  });
+  await expect(rerecord).not.toHaveAttribute("aria-disabled", "true");
   // Still light after the commit — the theme outlived the take it spanned.
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 });
