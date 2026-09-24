@@ -136,12 +136,21 @@ describe("the record bar's re-record control", () => {
     ).toHaveLength(0);
   });
 
-  it("is off while recording — erasing under a live take is refused", () => {
+  it("is aria-disabled with its own reason while recording — erasing under a live take is refused (#878)", () => {
+    // Was natively `disabled` with no reason until #878: the bin had the
+    // IDENTICAL accessibility gap #869 round 1 (Frank P2) found and fixed for
+    // the toolbar Edit control alone. `recorder.tsx` now passes
+    // `strings.stopToErase` through `barHint`'s `uncommittedTakeLabel`
+    // parameter while `recording` is true, naming the bar's own Stop control
+    // — the menu's "Close menu, then Close recorder" words still describe a
+    // menu this bar is not in, so the bar keeps its own wording rather than
+    // reusing them.
     const control = one(renderBar("recording", true), SELECTOR);
-    expect(control.hasAttribute("disabled")).toBe(true);
-    // The menu's "Close menu, then Close recorder" words describe a menu this
-    // bar is not in, so the bar carries no reason for a live take.
-    expect(control.getAttribute("aria-label")).toBe(strings.rerecord);
+    expect(control.hasAttribute("disabled")).toBe(false);
+    expect(control.getAttribute("aria-disabled")).toBe("true");
+    expect(control.getAttribute("aria-label")).toBe(
+      `${strings.rerecord}. ${strings.stopToErase}`
+    );
   });
 
   it("is greyed with its reason while the microphone is still starting", () => {
