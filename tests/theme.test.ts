@@ -114,6 +114,27 @@ describe("the light theme is reachable (#171)", () => {
   const read = (rel: string) =>
     readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
 
+  /**
+   * The same file with its comments removed - block and line - so an assertion
+   * about the CODE cannot be satisfied by prose (George round 12, #623).
+   *
+   * AGENTS.md records the capture-by-comment trap in one direction: a comment
+   * naming a string a test greps for can CAPTURE that test (#529 round 3).
+   * This is the other direction, and the mount tripwire had it. Comments are
+   * part of the file, so a later edit that parked the JSX inside a JSX comment
+   * would still have been counted as a mount. No comment in the tree contains
+   * that string today, so the counts were honest as written; this closes the
+   * shape before it can become true.
+   *
+   * Deliberately naive about string literals: a line-comment marker inside one
+   * would be cut. Nothing these assertions read has one, and a real parser
+   * would be more code than the thing it protects.
+   */
+  const code = (rel: string) =>
+    read(rel)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^[ \t]*\/\/.*$/gm, "");
+
   /** Every file under `dir`, recursively. Used by the subscriber sweep below. */
   const walk = (dir: string): string[] =>
     readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -160,7 +181,7 @@ describe("the light theme is reachable (#171)", () => {
     const control = read("src/components/theme-control.tsx");
     expect(control).toMatch(/useTheme\(\)/);
     expect(control).toMatch(/onClick=\{theme\.toggle\}/);
-    const screen = read("src/components/books-screen.tsx");
+    const screen = code("src/components/books-screen.tsx");
     expect(screen).toMatch(/<ThemeControl\s*\/>/);
     // A `<Menu>` with CHILDREN — before this it was a self-closing empty panel.
     //
@@ -182,7 +203,7 @@ describe("the light theme is reachable (#171)", () => {
     // switch/AT user who activates what they landed on flips the theme
     // instead (George R1 P2 on #457). The panel is mounted only while
     // `failureCount > 0`, so on a quiet phone the toggle is still first.
-    const screen = read("src/components/books-screen.tsx");
+    const screen = code("src/components/books-screen.tsx");
     const menu = screen.search(new RegExp(GLOBAL_MENU_OPEN_TAG));
     expect(menu).toBeGreaterThan(-1);
     const body = screen.slice(menu);
@@ -219,7 +240,7 @@ describe("the light theme is reachable (#171)", () => {
     // Matched as `<ThemeControl`, never as the bare identifier, for the
     // comment-capture reason above.
     const mounts = (file: string) =>
-      read(file).match(/<ThemeControl\s*\/>/g)?.length ?? 0;
+      code(file).match(/<ThemeControl\s*\/>/g)?.length ?? 0;
     // The chapter `≡`'s one action branch (the stale and rename branches are
     // transient sub-states with no action list of their own).
     expect(mounts("src/components/segments-screen.tsx")).toBe(1);
