@@ -212,13 +212,8 @@ export const b: typeof window = null as never;
  * about DOM globals: `no-restricted-imports` only sees STATIC
  * import/export declarations, the lib/ and types/ eslint blocks and
  * tsconfig.lib.json's `include` were `.ts`-only, and `src/data/` appeared in
- * no layer block at all. Each `it` below is red-first: it was run against
- * develop `70fc41fe` before the corresponding eslint.config.mjs /
- * tsconfig.lib.json fix landed, returned the OPPOSITE of what it asserts
- * now (an empty message list where it now expects one, or vice versa), and
- * the observed develop-era output is pasted in the #159 PR body rather than
- * restated here (AGENTS.md: a run's output belongs in the PR, not a
- * docblock).
+ * no layer block at all. Each `it` below is red-first against the
+ * corresponding eslint.config.mjs / tsconfig.lib.json fix (#815).
  */
 describe("#159 L-6 — dynamic import and new URL(..., import.meta.url)", () => {
   it("still bans a STATIC upward import from lib/ (baseline sanity)", () => {
