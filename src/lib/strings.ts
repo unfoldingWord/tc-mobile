@@ -961,4 +961,15 @@ export const strings = {
   // The wording itself is a coordinator assumption pending the requirements
   // owner's sign-off — see the #857 PR body.
   stopToEdit: "Stop recording to edit.",
+
+  // ── Record-bar bin, blocked by a live take (#878, sibling of #857/#869) ──
+  // `barHint`'s words for the bin's own `"uncommitted-take"` reason
+  // (`menu-row-state.ts`) — #869 round 1 fixed the toolbar Edit control's
+  // identical gap and left this one as a named residual, since it predates
+  // #857's `hasTake` change and needed its own copy no one had reviewed.
+  // Names the bar's own Stop control by its real accessible name
+  // (`strings.stop`, "Stop recording"), the same rule `stopToEdit` follows.
+  // The wording itself is a coordinator assumption pending the requirements
+  // owner's sign-off — see the #878 PR body.
+  stopToErase: "Stop recording to erase.",
 } as const;

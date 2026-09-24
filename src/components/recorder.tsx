@@ -2820,13 +2820,24 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // never disagree about when erasing is allowed. No `menuShown` clause, unlike
     // Edit above: the sheet body is reachable under the menu only during a take
     // (`inert={(overlayUp && !takeActive) || undefined}`), and a take is exactly
-    // when `eraseReason` already refuses. No `uncommittedTakeLabel` passed to
-    // `barHint` here, unlike Edit above: the bin's own native-disabled,
-    // no-reason gap during a live take is real and structurally identical to
-    // Edit's (#857 round 1, Frank P2), but is pre-existing, unrelated to this
-    // PR's `hasTake` change, and no one has reviewed bar-appropriate erase
-    // copy — carried as a named residual rather than invented here.
-    const rerecordHint = barHint(eraseReason);
+    // when `eraseReason` already refuses.
+    //
+    // `uncommittedTakeLabel` IS now passed, unlike when #869 first built this
+    // parameter: that PR fixed the toolbar Edit control's identical
+    // native-disabled, no-reason gap and left the bin's as a named residual —
+    // pre-existing, unrelated to #857's `hasTake` change, and nobody had
+    // reviewed bar-appropriate erase copy yet. #878 closes it the same way
+    // Edit was closed: `strings.stopToErase` ("Stop recording to erase."),
+    // naming the bar's own Stop control, only while the take is LIVE
+    // (`recording`) — the same split `editToolbarHint` above uses. The commit
+    // window (`committing` half of `"uncommitted-take"`, Stop already
+    // pressed) gets no label and stays natively `disabled` with no reason,
+    // same as Edit's commit-window half: "Stop recording to erase." would
+    // name a control that is now Record.
+    const rerecordHint = barHint(
+      eraseReason,
+      recording ? strings.stopToErase : undefined
+    );
 
     // A full-body panel owns the sheet body — the permission panel, the
     // load-error panel or the held-take recovery (#165) — and has `autoFocus`ed
