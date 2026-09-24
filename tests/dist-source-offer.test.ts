@@ -24,6 +24,7 @@ import { resolveDistGate } from "./dist-gate";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const ASSETS = path.join(ROOT, "dist", "assets");
+const VERSION = path.join(ROOT, "dist", "version.json");
 
 function builtJs(): string {
   return readdirSync(ASSETS)
@@ -32,17 +33,26 @@ function builtJs(): string {
     .join("\n");
 }
 
-const gate = resolveDistGate(existsSync(ASSETS), "dist/assets");
+const gate = resolveDistGate(
+  existsSync(ASSETS) && existsSync(VERSION),
+  "dist/assets or dist/version.json"
+);
 
 describe.skipIf(gate === "skip")(
   "the built About surface ships the source offer",
   () => {
-    it("carries the public Corresponding Source link in the bundle", () => {
-      // Present it as the URL that resolves to the source, not a bare mention,
-      // so a build that keeps the string but drops the `https://github.com/`
-      // prefix (no longer a usable link) still fails.
+    it("links the corresponding source at THIS build's exact commit", () => {
+      // Pin the actual build sha, not just the `/tree/` prefix: a link to
+      // `/tree/dev`, a bare `/tree/`, or an unrelated revision is NOT the
+      // corresponding source for this build (Frank round 4, #144). `SourceOfferLink`
+      // and `version.json` both read the same `buildSha`, so the emitted URL must
+      // carry exactly it — this fails if the two ever diverge.
+      const { sha } = JSON.parse(readFileSync(VERSION, "utf8")) as {
+        sha: string;
+      };
+      expect(sha, "no sha in dist/version.json").toBeTruthy();
       expect(builtJs()).toContain(
-        "https://github.com/unfoldingWord/tc-mobile/tree/"
+        `https://github.com/unfoldingWord/tc-mobile/tree/${sha}`
       );
     });
   }
