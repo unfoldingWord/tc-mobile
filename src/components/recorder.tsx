@@ -212,11 +212,14 @@ export interface RecorderHandle {
  * with the selection frame over the canvas, the paste marker in its own
  * reserved row above the canvas (#414 — no longer an overlay drawn on top of
  * the waveform), and Cut in its own reserved row below, marked by a header
- * "Editing" pill that also exits. A live take does not block either entry
- * point: `onEnterEdit` commits the take first (#134), then opens edit mode over
- * the committed audio. Edit-mode Play is the audition (#284): it
- * sounds the picked span, and only that span, so a cut can be heard before it
- * is made.
+ * "Editing" pill that also exits. Both entry points are greyed while a take
+ * is live (#857: `editReason`'s `hasTake` term, `menu-row-state.ts`) — #614
+ * gave the sheet a Stop that ends and commits a take on its own, so entering
+ * Edit no longer has to. `onEnterEdit` itself still commits a live take first
+ * (#134) before opening edit mode over the committed audio, for whatever
+ * reaches it despite the gate; the UI path there is now Stop, then Edit.
+ * Edit-mode Play is the audition (#284): it sounds the picked span, and only
+ * that span, so a cut can be heard before it is made.
  */
 export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
   function Recorder(
@@ -2621,9 +2624,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // The ≡-menu rows' disabled REASONS (#135). Each row's `disabled` is
     // `reason !== null`, so the cue that explains a grey row and the gate that
     // greys it are one derivation, not two switches. Erase still spells
-    // `!idleEditable` as `!view || takeActive`; Edit no longer does — since #134 a
-    // live take reaches Edit (it commits first), so Edit's `takeActive` input is
-    // split into `committing` (the real commit window) and `hasTake`.
+    // `!idleEditable` as `!view || takeActive`; Edit no longer does — since #134
+    // Edit's `takeActive` input is split into `committing` (the close/processing
+    // window) and `hasTake` (a live take). #857 blocks Edit on `hasTake` again,
+    // the same as `committing` — see `editRowReason`'s docblock in
+    // `menu-row-state.ts` for why the split survives that reversal.
     const starting = state === "requesting";
     // Hoisted out of the Record control's JSX so the guide can read the same
     // answer the button does (#604) — the gate itself is unchanged and is
@@ -2656,10 +2661,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     });
     const editReason = editRowReason({
       hasView: view !== null,
-      // A live take no longer blocks Edit (#134) — entering Edit commits it
-      // first (`onEnterEdit`). Only the actual commit window does: any commit in
-      // flight, and the render or two a #59 interruption's `processing` freeze
-      // sits in before the commit effect takes it.
+      // The actual commit window: any commit in flight, and the render or two
+      // a #59 interruption's `processing` freeze sits in before the commit
+      // effect takes it. A live take ALSO blocks Edit again as of #857 — see
+      // `hasTake` below and `editRowReason`'s docblock in `menu-row-state.ts`.
       committing: isClosing || state === "processing",
       hasTake: recording,
       starting,
@@ -2771,28 +2776,48 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // undefined}`, below) keeps the WHOLE sheet body reachable to AT during a
     // live take with the ≡ menu open — the sheet's own comment there
     // states the consequence is "exactly Record/Stop and Play". The toolbar
-    // Edit control is a body sibling of those two, and `editReason` is null
-    // while `hasTake` (#134) — so without this it is a THIRD control the sheet
-    // exemption newly exposes: reachable to VoiceOver/switch scanning one step
-    // past Play, under the visual scrim, while the menu's OWN Edit row is the
-    // correctly-scoped in-overlay affordance for the identical action.
+    // Edit control is a body sibling of those two, and until #857 `editReason`
+    // was null while `hasTake` (#134) — so without the `menuShown` clause below
+    // it was a THIRD control the sheet exemption newly exposed: reachable to
+    // VoiceOver/switch scanning one step past Play, under the visual scrim,
+    // while the menu's OWN Edit row is the correctly-scoped in-overlay
+    // affordance for the identical action. #857 makes `editReason` itself
+    // NON-null while `hasTake`, closing that gap at the source (see the
+    // exemption's own bullet list, further down this component, for the
+    // current, now-redundant, state of this clause) — the `menuShown` OR
+    // below is kept rather than pulled.
     //
     // `editReason` alone must not gain a `menuShown` clause — that would split
-    // the #134/#135 gate the ≡ row and this control otherwise share verbatim.
+    // the #135 gate the ≡ row and this control otherwise share verbatim.
     // Instead the toolbar copy ORs in `menuShown` on top of the shared reason.
     const editToolbarDisabled = editReason !== null || menuShown;
     // Keep the blocked reason reachable to keyboard and switch users without
     // painting an alert badge for an empty segment or a starting microphone.
-    // The commit Notice already explains uncommitted-take; its menu-specific
-    // "Close menu" hint does not describe this toolbar. `barHint` is that rule,
-    // shared with the bin beside it (#592).
-    const editToolbarHint = barHint(editReason);
+    // The menu's own "Close menu" hint does not describe this toolbar (the bar
+    // is not in the menu), so `barHint` words `"uncommitted-take"` on its own
+    // terms here — `strings.stopToEdit`, naming the bar's own Stop control
+    // (#857 round 1, Frank P2) — rather than reusing `rowHint`'s menu-specific
+    // copy or, as before that round, saying nothing at all for this control.
+    // Only while the take is LIVE (`recording`): `"uncommitted-take"` also
+    // covers the commit window (`committing`), where Stop has already been
+    // pressed and "Stop recording to edit." would name a control that is now
+    // Record (#869 round 3, George Medium). The commit window keeps the
+    // wordless bar behaviour, and `busy={isClosing}` keeps it focusable.
+    const editToolbarHint = barHint(
+      editReason,
+      recording ? strings.stopToEdit : undefined
+    );
     // The bar's bin (#592) wears the SAME gate as the ≡ menu's Erase rows —
     // `eraseReason`, one derivation — so the two entries to the one erase can
     // never disagree about when erasing is allowed. No `menuShown` clause, unlike
     // Edit above: the sheet body is reachable under the menu only during a take
     // (`inert={(overlayUp && !takeActive) || undefined}`), and a take is exactly
-    // when `eraseReason` already refuses.
+    // when `eraseReason` already refuses. No `uncommittedTakeLabel` passed to
+    // `barHint` here, unlike Edit above: the bin's own native-disabled,
+    // no-reason gap during a live take is real and structurally identical to
+    // Edit's (#857 round 1, Frank P2), but is pre-existing, unrelated to this
+    // PR's `hasTake` change, and no one has reviewed bar-appropriate erase
+    // copy — carried as a named residual rather than invented here.
     const rerecordHint = barHint(eraseReason);
 
     // A full-body panel owns the sheet body — the permission panel, the
@@ -3042,17 +3067,24 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             anyway — the paste marker, Cut, Select, Undo/Redo and the selection
             handles all require `idleEditable` or edit mode, both false while a
             take is live — and the header is inert in its own right.
-          - The toolbar Edit control (#315) is NOT part of this exemption, even
-            though `editReason` alone would allow it during a live take
-            (#134's commit-then-edit). It carries its own `menuShown` clause
-            (`editToolbarDisabled`, above `menuShown`'s declaration) precisely
-            so this scoping stays true — George R1 P2-2 caught that without it,
+          - The toolbar Edit control (#315) is NOT part of this exemption. It
+            carries its own `menuShown` clause (`editToolbarDisabled`, above
+            `menuShown`'s declaration) — George R1 P2-2 caught that without it,
             the exemption silently grew a THIRD reachable control, one that
-            FINALIZES the take where Pause would have kept it resumable. Since
-            #614 Stop finalizes it too, so the two are no longer different acts;
-            the scoping is kept all the same, because one of them also changes
-            MODE. The ≡ menu's own Edit row is the correctly-scoped in-overlay
-            affordance for the identical action.
+            FINALIZES the take where Pause would have kept it resumable. At the
+            time, `editReason` alone would have allowed Edit through during a
+            live take (#134's commit-then-edit), so `menuShown` was the only
+            thing closing that gap. #857 makes `editReason` itself block a live
+            take (`hasTake`, `menu-row-state.ts`) the same as it already blocked
+            the commit window, so `menuShown` is now redundant here — every
+            `takeActive` state already reads `editReason !== null` on its own,
+            and every menu-open state that is NOT `takeActive` already gets the
+            sheet's own `inert` above. Left in place as an explicit
+            belt-and-suspenders rather than pulled, since removing it is no
+            part of what #857 asks. Since #614 Stop finalizes a take too, Pause
+            and Stop are no longer different acts in the sense the exemption
+            cared about. The ≡ menu's own Edit row is the correctly-scoped
+            in-overlay affordance for the identical action.
           - Play is dead mid-take (`playDisabled` reads `recording`), so George
             R5's "Play goes unreachable behind the scrim" is about the idle
             case, which `openMenu`'s own stop covers.

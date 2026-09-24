@@ -2,7 +2,8 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
 import { Control } from "@/components/control";
-import { rowHint } from "@/components/menu-row-state";
+import { barHint, rowHint } from "@/components/menu-row-state";
+import { strings } from "@/lib/strings";
 
 import { one, render } from "./render";
 
@@ -67,6 +68,33 @@ describe("Control's inert cells", () => {
     expect(el.getAttribute("aria-disabled")).toBe("true");
     expect(el.getAttribute("aria-label")).toBe(
       `Erase recording. ${hint!.label}`
+    );
+  });
+
+  it("makes the record-bar Edit control aria-disabled, with the bar's own reason, while a take is live (#857 round 1, Frank P2)", () => {
+    // `barHint`'s "uncommitted-take" branch used to return `null`
+    // unconditionally, so the toolbar Edit control (`recorder.tsx`'s
+    // `editToolbarHint = barHint(editReason)`) went NATIVELY disabled for a
+    // live take — dropping out of the tab order with no reason attached, the
+    // exact defect the "hard-disabled" case above pins for a control with no
+    // hint at all. `recorder.tsx` now calls
+    // `barHint(editReason, strings.stopToEdit)`; this reproduces that exact
+    // call for `editReason === "uncommitted-take"` (what `hasTake` produces,
+    // `menu-row-state.ts`'s `editRowReason`) and asserts the control the
+    // translator actually sees: `aria-disabled`, not native `disabled`, and an
+    // accessible name that carries the reason.
+    const hint = barHint("uncommitted-take", strings.stopToEdit);
+    const el = button({
+      icon: "selection",
+      label: strings.enterEdit,
+      disabled: true,
+      hint,
+    });
+
+    expect(el.hasAttribute("disabled")).toBe(false);
+    expect(el.getAttribute("aria-disabled")).toBe("true");
+    expect(el.getAttribute("aria-label")).toBe(
+      `${strings.enterEdit}. ${strings.stopToEdit}`
     );
   });
 });

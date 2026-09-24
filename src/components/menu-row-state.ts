@@ -18,11 +18,15 @@ import { strings } from "@/lib/strings";
 
 /**
  * The reasons, most actionable first. `"uncommitted-take"` marks a take in
- * flight, and closing the recorder is what lifts it. Its scope differs per row:
- * for Erase and Mark, any live/paused/committing take; for Edit, ONLY the commit
- * window itself — a live or paused take instead lets Edit commit-then-edit
- * (#134). It outranks the state reasons because it is the one the translator can
- * act on from here. Nothing in this product is named "Back"; see {@link rowHint}.
+ * flight, and closing the recorder is what lifts it. Edit shared Erase and
+ * Mark's narrower scope once (#134: only the commit window blocked Edit, so a
+ * live take could commit-then-edit in one tap) — #857 puts Edit back in step
+ * with Erase: a LIVE take now blocks Edit too, the same as the commit window
+ * does, because #614 gave every take a Stop that ends and commits it without
+ * Edit's help — so Stop, then Edit (two taps) is now the ONLY way to reach
+ * Edit from a live take; the one-tap "stop and edit" #134 bought is gone. It
+ * outranks the state reasons because it is the one the translator can act on
+ * from here. Nothing in this product is named "Back"; see {@link rowHint}.
  */
 export type RowReason =
   | "uncommitted-take"
@@ -40,17 +44,26 @@ interface EditRowInputs {
    * stop→decode→save still in flight), or a #59 interruption's `processing`
    * freeze. Editing waits for that commit to settle.
    *
-   * Deliberately NARROWER than the old "any non-idle state" — the #134 fix. A
-   * recording or paused take no longer blocks Edit: entering Edit COMMITS that
-   * take first (stop → decode → save → reopen at idle) and then edits it, the
+   * For a window, #134 narrowed this off the old "any non-idle state": a live
+   * take no longer blocked Edit, because entering Edit COMMITS that take first
+   * (stop → decode → save → reopen at idle) and then edits it — the
    * record-then-edit-in-one-sitting flow the requirements owner confirmed
-   * required (2026-09-04). Mirrors `markRowReason`'s `takeCommitting`.
+   * required (2026-09-04). #857 reverses that half: `hasTake` now blocks
+   * alongside `committing`, below, once a tester found a live take's selection
+   * still openable mid-recording on a Moto G. Mirrors `markRowReason`'s
+   * `takeCommitting`, which never adopted the #134 carve-out Edit is now
+   * dropping.
    */
   readonly committing: boolean;
   /**
-   * A live or paused take exists — the audio entering Edit will commit and then
-   * edit. Counts as "there is something to edit" alongside `hasAudio`/`canPaste`,
-   * so a FIRST take (nothing stored on disk yet) still reaches Edit.
+   * A live take exists (recorder `state === "recording"`). Blocks Edit the
+   * same as `committing` does (#857) — `editRowReason` treats the two as one
+   * reason, `"uncommitted-take"`, since #614 gave every take a Stop that ends
+   * and commits it without Edit's help, so Stop, then Edit is now the ONLY
+   * way to reach Edit from a live take — the #134 commit-then-edit shortcut
+   * this field used to grant is gone. `RecorderState`
+   * (`hooks/use-recorder.ts`) is `"idle" | "requesting" | "recording" |
+   * "processing"` — there is no separate "paused" state to fold in here.
    */
   readonly hasTake: boolean;
   /**
@@ -71,22 +84,26 @@ interface EditRowInputs {
 }
 
 /**
- * The record-menu "Edit recording" row. Null when enabled.
+ * The record-menu "Edit recording" row, and (via `recorder.tsx`'s shared
+ * `editReason`) the bottom-bar `[ ]` selection toggle. Null when enabled.
  *
- * Enabled when there is something to edit — stored audio, a full clipboard, or a
- * live/paused take that entering Edit commits first (#134) — and no commit is
- * already in flight. Blocked by: the mic still starting, a commit already
- * running, no segment, a denied mic, or an empty segment with an empty clipboard
- * and no take. The old gate `!idleEditable || denied || (!hasAudio && !canPaste)`
- * treated every non-idle state as a block; #134 splits that into `committing`
- * (still a block) and `hasTake` (now editable, commit-then-edit).
+ * Enabled when there is something to edit — stored audio or a full clipboard —
+ * and no take is in flight. Blocked by: the mic still starting, a live take
+ * (`hasTake`) or a commit already running (`committing`) — the two collapse to
+ * one reason, `"uncommitted-take"`, since #857 — no segment, a denied mic, or
+ * an empty segment with an empty clipboard and no stored audio. #134 once let
+ * `hasTake` alone through so entering Edit would commit-then-edit a live take
+ * in one tap; #857 (Moto G, tester report) closes that gap — `[ ]` read as
+ * openable mid-recording — now that #614's Stop ends and commits a take
+ * without Edit's help, so the two-tap Stop-then-Edit path is now the ONLY
+ * way to reach Edit from a live take.
  */
 export function editRowReason(i: EditRowInputs): RowReason | null {
   if (i.starting) return "starting";
-  if (i.committing) return "uncommitted-take";
+  if (i.committing || i.hasTake) return "uncommitted-take";
   if (!i.hasView) return "no-segment";
   if (i.denied) return "denied";
-  if (!i.hasTake && !i.hasAudio && !i.canPaste) return "no-audio";
+  if (!i.hasAudio && !i.canPaste) return "no-audio";
   return null;
 }
 
@@ -194,20 +211,45 @@ export function rowHint(reason: RowReason | null): RowHint | null {
  * The same reason, worn by a control on the record BAR rather than in the ≡
  * menu — the toolbar Edit (#315) and the bin (#592).
  *
- * Two differences from {@link rowHint}, both because the bar is not the menu:
+ * One difference from {@link rowHint}, because the bar is not the menu: no
+ * badge. The bar's controls sit in the translator's hand all session, and an
+ * `alert` mark on an empty segment's Edit or bin would read as something gone
+ * wrong on the first screen of every new segment. The reason stays in the
+ * accessible name, and the control goes `aria-disabled`, so keyboard and
+ * switch users still reach it.
  *
- * - No badge. The bar's controls sit in the translator's hand all session, and
- *   an `alert` mark on an empty segment's Edit or bin would read as something
- *   gone wrong on the first screen of every new segment. The reason stays in
- *   the accessible name, and the control goes `aria-disabled`, so keyboard and
- *   switch users still reach it.
- * - No words for `"uncommitted-take"`. `blockedByTake` sends the translator to
- *   "Close menu", then "Close recorder" — a menu the bar is not in, and during
- *   a take the bar's own Stop, beside it, is the way out. The control is
- *   plainly off (natively disabled) instead.
+ * `"uncommitted-take"` never gets `blockedByTake`'s words here: that sends
+ * the translator to "Close menu", then "Close recorder" — a menu the bar is
+ * not in — and during a take the bar's own Stop is the way out instead. What
+ * it DOES get is caller-specific, through `uncommittedTakeLabel`, because
+ * unlike every other reason this one names a DIFFERENT next action per
+ * control (Edit: stop, then edit; the bin: stop, then erase) — a single
+ * shared sentence would be wrong for at least one caller. The toolbar Edit
+ * control (`recorder.tsx`'s `editToolbarHint`) passes `strings.stopToEdit`
+ * (#857 round 1, Frank P2): until then this returned `null` unconditionally
+ * for `"uncommitted-take"`, so Edit went NATIVELY disabled — dropping out of
+ * the tab order with no reason attached — for the live-take half of the
+ * reason, since `busy={isClosing}` (recorder.tsx) only covers the
+ * commit-window half. Once `hasTake` joined `committing` under this one
+ * reason (`editRowReason`, above), a live take became a real,
+ * tester-reachable case of that gap, not only a narrow commit-window race.
+ * The toolbar passes that label only while the take is LIVE, which makes the
+ * control `aria-disabled` (`Control`'s `softDisabled`, `control.tsx`) —
+ * focusable and named — for that half. The commit-window half gets no label
+ * (the take is already stopped, so "Stop recording to edit." would be false;
+ * #869 round 3, George Medium) and stays `aria-busy` while `isClosing`. The bin (`rerecordHint`) omits the argument and
+ * keeps the pre-#857 `null` behaviour — its own identical native-disabled gap
+ * is real but untouched here: #857 is about Edit, and inventing bin copy
+ * nobody asked for is exactly the kind of unreviewed assumption this
+ * function's callers should not make silently.
  */
-export function barHint(reason: RowReason | null): { label: string } | null {
-  if (reason === "uncommitted-take") return null;
+export function barHint(
+  reason: RowReason | null,
+  uncommittedTakeLabel?: string
+): { label: string } | null {
+  if (reason === "uncommitted-take") {
+    return uncommittedTakeLabel ? { label: uncommittedTakeLabel } : null;
+  }
   const hint = rowHint(reason);
   return hint === null ? null : { label: hint.label };
 }
