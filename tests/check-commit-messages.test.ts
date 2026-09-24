@@ -29,18 +29,14 @@ import {
  * defaults, not just its exported function."
  */
 
-// Whole-file safety net. The first version of this file's range-mode CLI
-// tests scoped their scratch-repo git commands with `cwd` alone and, the
-// first time this suite ran under `.husky/pre-push`, leaked real `chore:
-// base` / `feature` / `other` commits into THIS repository's actual checked-
-// out branch — recovered by hand afterward (`git update-ref` back to the
-// last real commit, both throwaway branches deleted). The exact mechanism
-// was not conclusively isolated. Rather than trust that the `--git-dir`/
-// `--work-tree` pinning below (or the spawned script's own `cwd`-scoped git
-// call) can never regress, this asserts after every test in the file that
-// the real repository's checked-out branch is exactly what it was before —
-// turning any recurrence into an immediate, specific test failure instead
-// of a silent write to the real repo.
+// Whole-file safety net: a scratch-repo git command scoped only by `cwd`, or
+// only by `--git-dir`/`--work-tree`, can still land on this worktree's own
+// checked-out branch, because git hooks export `GIT_DIR`/`GIT_WORK_TREE`/
+// `GIT_INDEX_FILE` and every child process inherits them (see
+// `cleanGitEnv`, below). This re-reads the real repository's checked-out
+// branch after every test and fails immediately if it ever differs from
+// what it was before this file's tests started running, so any such leak is
+// a loud, specific failure rather than a silent write to the real repo.
 const REAL_REPO_ROOT = execFileSync("git", ["rev-parse", "--show-toplevel"], {
   encoding: "utf8",
 }).trim();
@@ -59,19 +55,15 @@ afterEach(() => {
 });
 
 /**
- * The actual root cause of the leak `afterEach` above guards against: git
- * sets `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` (and related `GIT_*`
- * plumbing variables) in the environment of every hook it runs, including
- * `.husky/pre-push`'s `npm run test`. Those variables are inherited by every
- * child process spawned from within that `npm test` run — vitest, its
- * workers, and any `git` this suite spawns — and an explicit `--git-dir`/
- * `--work-tree` pair on the command line does not reliably out-rank them
- * (confirmed directly: setting `GIT_DIR`/`GIT_WORK_TREE` to this worktree's
- * own paths and re-running this file standalone reproduces the exact
- * "not in a git directory" failure the `--git-dir`/`--work-tree`-only fix
- * still hit under `.husky/pre-push`). Stripping these variables from the
- * environment of every scratch-repo subprocess call removes the ambient git
- * context entirely, rather than trying to out-rank it.
+ * git hooks export `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` (and related
+ * `GIT_*` plumbing variables) into the environment of every command they
+ * run, including `.husky/pre-push`'s `npm run test`. Those variables are
+ * inherited by every child process spawned from within that run — vitest,
+ * its workers, and any `git` this suite spawns — and are not reliably
+ * out-ranked by an explicit `--git-dir`/`--work-tree` pair on the command
+ * line. Stripping them from the environment of every scratch-repo
+ * subprocess call removes the ambient git context entirely, rather than
+ * trying to out-rank it.
  */
 const GIT_ENV_KEYS_TO_STRIP = [
   "GIT_DIR",
@@ -157,7 +149,7 @@ describe("checkMessage — the rule both entry points share", () => {
   // non-blank body, so it needs no separate code exemption — this test pins
   // that observation as a contract, not a claim that Dependabot's template
   // can never change.
-  it("accepts a Dependabot-shaped body (observed shape, no special-casing needed)", () => {
+  it("accepts a Dependabot-shaped commit: subject plus body", () => {
     const result = checkMessage(
       [
         "chore(deps-dev): bump lint-staged from 16.4.0 to 17.5.1",
@@ -345,20 +337,12 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
   //
   // Every setup command below is pinned with explicit `--git-dir`/
   // `--work-tree` (never bare `cwd`, and never a bare `git init` with no
-  // directory argument) AND a stripped environment (`cleanGitEnv`, above):
-  // a scratch-repo helper that relied on `cwd` alone leaked real `chore:
-  // base` / `feature` / `other` commits into this very worktree's actual
-  // branch the first time this suite ran under `.husky/pre-push`
-  // (recovered by hand: `git update-ref` back to the last real commit,
-  // both throwaway branches deleted). Root cause, confirmed directly: git
-  // sets `GIT_DIR`/`GIT_WORK_TREE` in every hook's environment, `npm run
-  // test` inherits them from `.husky/pre-push`, and those variables kept
-  // reaching the real worktree even after adding `--git-dir`/`--work-tree`
-  // (see `cleanGitEnv`'s docblock). Stripping the `GIT_*` variables is what
-  // actually closes it; the explicit flags alone were necessary but not
-  // sufficient. `assertIsolated` is a canary that turns any future
-  // recurrence of the same leak into an immediate, specific test failure
-  // instead of a silent write to the real repo.
+  // directory argument) and a stripped environment (`cleanGitEnv`, above):
+  // a scratch-repo git command must be unambiguous about its target
+  // repository from its argument list and environment alone, independent of
+  // any process's current working directory or ambient `GIT_*` variables.
+  // `assertIsolated` checks the scratch dir is under the OS tmpdir and is
+  // not the real worktree root before any git command touches it.
   function scratchGitDirs(dir: string) {
     return { gitDir: path.join(dir, ".git"), workTree: dir };
   }
