@@ -50,8 +50,8 @@ export async function listStories(): Promise<
  *
  * OBS is addressed as book "OBS" with story-as-chapter and frame-as-verse, so
  * story 1 frame 7 is `"1:7"`. This keeps OBS sections in the same addressing
- * scheme as scripture sections (`src/lib/scripture/scope.ts`) rather than
- * inventing a second one.
+ * scheme as scripture sections (the grammar in `tests/scope.ts`, test-only
+ * since #818/#159) rather than inventing a second one.
  *
  * Note the standard does not define an audio flavour for stories — see
  * docs/research/prior-art.md §4. This addressing is internally consistent and

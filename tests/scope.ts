@@ -14,11 +14,15 @@
  * and one that merely looks right, so the grammar is implemented once, here,
  * and unit-tested.
  *
- * @pivotpending No caller yet under src/ (test-only). #253 (Template Library,
- * storage half) names this module directly: the "Book of the Bible" template
- * writes a `SegmentRef.reference` of `"{ch}"` per chapter, and this grammar is
- * the read/format side `SegmentRef.scope` is typed on (`src/types/domain.ts:48`,
- * already tagged against the same seam).
+ * Test-only helper (moved out of `src/lib/scripture/` in #818/#159, per the
+ * DRI pick on that PR): no `src/` caller exists, and #253's own text does not
+ * name `ParsedScope`/`parseScope`/`isValidScope`/`formatScope` as consumers —
+ * AGENTS.md: an export with no issue behind it gets deleted, not tagged. This
+ * grammar is kept because `tests/obs-catalog.test.ts` uses `parseScope` and
+ * `isValidScope` as a real helper to check `obsFrameScope`'s output against
+ * it, alongside `tests/scope.test.ts`'s own coverage. #253 can reintroduce a
+ * `src/`-side version of this grammar if the Template Library actually needs
+ * one.
  */
 
 export interface ParsedScope {
@@ -35,9 +39,6 @@ const CV = /^(\d+)(?::(\d+))?$/;
  * Parse a scope string. Returns `null` for the whole-book scope (`""`) and
  * throws on anything that is not valid grammar — a malformed scope must not
  * silently become a plausible-looking wrong reference.
- *
- * @pivotpending No caller yet under src/ (test-only). Same seam as
- * {@link ParsedScope} — #253.
  */
 export function parseScope(scope: string): ParsedScope | null {
   const trimmed = scope.trim();
@@ -93,10 +94,6 @@ export function parseScope(scope: string): ParsedScope | null {
   return result;
 }
 
-/**
- * @pivotpending No caller yet under src/ (test-only). Same seam as
- * {@link ParsedScope} — #253.
- */
 export function isValidScope(scope: string): boolean {
   try {
     parseScope(scope);
@@ -108,9 +105,6 @@ export function isValidScope(scope: string): boolean {
 
 /**
  * Render a parsed scope back to canonical string form.
- *
- * @pivotpending No caller yet under src/ (test-only). Same seam as
- * {@link ParsedScope} — #253.
  */
 export function formatScope(parsed: ParsedScope | null): string {
   if (parsed === null) return "";
