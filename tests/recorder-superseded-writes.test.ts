@@ -19,8 +19,6 @@ const view = {
   ordinal: 1,
   finished: false,
   hasClip: true,
-  peaks: null,
-  lengthSamples: original.length,
   samples: original,
 };
 vi.mock("@/hooks/use-recorder-segment", () => ({
@@ -240,11 +238,7 @@ it("does not release withheld edits for a subsequent empty capture", async () =>
   await s.click(strings.enterEdit);
   s.audio.stopRecording = vi.fn(async () => {
     s.audio.recorderState = "idle";
-    return {
-      samples: null,
-      blob: null,
-      error: "No sound was recorded. Try again.",
-    };
+    return { samples: null, blob: null, error: "silence" as const };
   });
   s.audio.recorderState = "recording";
   await s.render();

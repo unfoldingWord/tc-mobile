@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadRecorderSegmentView } from "@/hooks/use-recorder-segment";
 import {
@@ -17,6 +17,7 @@ import { closeDb, getDb } from "@/lib/storage/db";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { encodeMp3 } from "@/lib/audio/mp3";
 import { computePeaks } from "@/lib/audio/peaks";
+import * as peaksModule from "@/lib/audio/peaks";
 import type { SegmentId } from "@/types/domain";
 
 /**
@@ -61,15 +62,13 @@ beforeEach(async () => {
 });
 
 describe("loadRecorderSegmentView", () => {
-  it("opens an unrecorded segment as record-only: no clip, no peaks", async () => {
+  it("opens an unrecorded segment as record-only: no clip, no samples", async () => {
     const segmentId = await freshSegment();
 
     const view = await loadRecorderSegmentView(segmentId);
 
     expect(view.hasClip).toBe(false);
     expect(view.samples).toBeNull();
-    expect(view.peaks).toBeNull();
-    expect(view.lengthSamples).toBe(0);
     expect(view.finished).toBe(false);
     // The breadcrumb the sheet header shows.
     expect(view.bookName).toBe("Ruth");
@@ -88,22 +87,28 @@ describe("loadRecorderSegmentView", () => {
     expect(view.segmentLabel).toBe("verses 3–4");
   });
 
-  it("opens a PCM segment over its samples, with peaks and the length domain", async () => {
+  it("opens a PCM segment over its samples, byte for byte", async () => {
     const segmentId = await freshSegment();
     const clipId = newClipId();
     const pcm = samples(500);
     const meta = await putClip(clipId, pcm, CANONICAL_SAMPLE_RATE);
     await addTake(segmentId, clipId, meta.durationMs);
+    const computePeaksSpy = vi.spyOn(peaksModule, "computePeaks");
 
     const view = await loadRecorderSegmentView(segmentId);
 
     expect(view.hasClip).toBe(true);
-    // The stored PCM is handed through untouched — no decode/align on this path.
+    // The stored PCM is handed through untouched — no decode/align on this
+    // path, and no peaks pass: the sheet draws `editor.peaks` over the working
+    // buffer, so peaks computed here would only be redrawn over (L-9, #160).
     expect(view.samples).toEqual(pcm);
-    expect(view.lengthSamples).toBe(pcm.length);
-    // Peaks are computed for the waveform (a fixed bucket count, so non-null).
-    expect(view.peaks).not.toBeNull();
     expect(view.finished).toBe(false);
+    // Pins the absence of a full-PCM computePeaks pass on this path (#708 item
+    // 2, George round-1 P3 on #702). Nothing in this open path is INCORRECT if
+    // it returns — the byte-for-byte assertion above would still pass — it is
+    // wasted work on every recorder open, on the phones least able to spare it.
+    expect(computePeaksSpy).not.toHaveBeenCalled();
+    computePeaksSpy.mockRestore();
   });
 
   it("carries the finished flag through for a finished PCM segment", async () => {
