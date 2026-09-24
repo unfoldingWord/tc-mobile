@@ -1,6 +1,6 @@
 import { Control } from "./control";
 import { Icon } from "./icon";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 
 /**
  * The mic-needed / mic-denied full-panel recovery screen (#203).

@@ -3,7 +3,7 @@ import type { RefObject } from "react";
 import { Control } from "./control";
 import { editControlHint, type EditControlReason } from "./edit-control-state";
 import { heldByDrag, ZOOM_QUARTER, ZOOM_WHOLE } from "./recorder-stage";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 import type { RowHint } from "./menu-row-state";
 import { cn } from "@/lib/utils";
 
@@ -338,7 +338,16 @@ export function RecorderToolbar({
         onClick={onRedo}
       />
       <Control
-        icon="menu"
+        // ⋮, not ≡ (#863, the requirements owner's rule on #608): ≡ is used
+        // only at the top right, and the top right in edit mode is the
+        // "Editing" pill, not this control. `openMenu` and the accessible
+        // name (`recorderMenuOpen`, "More actions") are unchanged — record
+        // mode's header opener still calls the same handler and answers to
+        // the same name, and still wears ≡ there (`recorder.tsx`'s header,
+        // untouched by this issue). Only the glyph in THIS toolbar moves,
+        // to the same kebab the book, chapter and segment rows have used
+        // since #589/#683.
+        icon="more"
         label={strings.recorderMenuOpen}
         variant="quiet"
         size={24}

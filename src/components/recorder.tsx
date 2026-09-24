@@ -46,7 +46,7 @@ import {
   ZOOM_WHOLE,
 } from "./recorder-stage";
 import { SelectionOverlay } from "./selection-overlay";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 import { LiveScope } from "./live-scope";
 import {
   barHint,
@@ -212,11 +212,14 @@ export interface RecorderHandle {
  * with the selection frame over the canvas, the paste marker in its own
  * reserved row above the canvas (#414 — no longer an overlay drawn on top of
  * the waveform), and Cut in its own reserved row below, marked by a header
- * "Editing" pill that also exits. A live take does not block either entry
- * point: `onEnterEdit` commits the take first (#134), then opens edit mode over
- * the committed audio. Edit-mode Play is the audition (#284): it
- * sounds the picked span, and only that span, so a cut can be heard before it
- * is made.
+ * "Editing" pill that also exits. Both entry points are greyed while a take
+ * is live (#857: `editReason`'s `hasTake` term, `menu-row-state.ts`) — #614
+ * gave the sheet a Stop that ends and commits a take on its own, so entering
+ * Edit no longer has to. `onEnterEdit` itself still commits a live take first
+ * (#134) before opening edit mode over the committed audio, for whatever
+ * reaches it despite the gate; the UI path there is now Stop, then Edit.
+ * Edit-mode Play is the audition (#284): it sounds the picked span, and only
+ * that span, so a cut can be heard before it is made.
  */
 export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
   function Recorder(
@@ -860,11 +863,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      *
      * It also DROPS any resume the #317 gesture still owes (George R2 P1). A
      * stop is the translator asking for silence, and every non-lift route out
-     * of the drag — Undo, Redo, Select, ≡, Edit, Done editing, Cut, Paste,
-     * Back — comes through here or through `stopPlaybackDroppingPan`, so
-     * clearing the flag in the TWO stop paths covers all nine without nine
-     * assignments that a tenth handler could later forget. The `"interrupt"`
-     * in `onPointerDown` sets the flag immediately AFTER its own call here;
+     * of the drag — Undo, Redo, Select, the menu opener (⋮ since #863), Edit,
+     * Done editing, Cut, Paste, Back — comes through here or through
+     * `stopPlaybackDroppingPan`, so clearing the flag in the TWO stop paths
+     * covers all nine without nine assignments that a tenth handler could
+     * later forget. The `"interrupt"` in `onPointerDown` sets the flag
+     * immediately AFTER its own call here;
      * that order is what makes it the one stop that does not void the resume.
      */
     const stopBuffer = audio.stopBuffer;
@@ -1614,21 +1618,23 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       audio.startRecording();
     }, [audio]);
 
-    // Open the ≡ menu. Stops buffer playback first: the menu is the one gateway to
-    // every idle-time action reachable while a buffer sounds (Edit, Finished, VU,
-    // Erase), and opening it inerts the sheet AT IDLE — so Play, the only stop
-    // control, goes unreachable, and Erase locks a confirm behind that scrim
-    // (George R5). Mid-take the sheet is no longer inert (#75, the rule at the
-    // sheet `<div>`), so Play is reachable there and this stop is belt rather
-    // than the only exit; at idle — which is every path that reaches Erase or
-    // Edit — it is still the whole of the guarantee.
+    // Open the recorder menu — shared by both openers: record mode's header
+    // ≡ and, since #863, the edit toolbar's ⋮. Stops buffer playback first:
+    // the menu is the one gateway to every idle-time action reachable while a
+    // buffer sounds (Edit, Finished, VU, Erase), and opening it inerts the
+    // sheet AT IDLE — so Play, the only stop control, goes unreachable, and
+    // Erase locks a confirm behind that scrim (George R5). Mid-take the sheet
+    // is no longer inert (#75, the rule at the sheet `<div>`), so Play is
+    // reachable there and this stop is belt rather than the only exit; at
+    // idle — which is every path that reaches Erase or Edit — it is still the
+    // whole of the guarantee.
     // Stopping here closes that whole class at the boundary, like entering edit.
     const openMenu = useCallback(() => {
-      // Remember the ≡ that was tapped, HERE — synchronously, in the gesture's
-      // own handler (#97). One React commit later the sheet goes `inert`, which
-      // blurs this button to `<body>` in the mutation phase, before any effect
-      // could read it; #96's attempt captured that `body` and its restore was a
-      // silent no-op for every menu in the app.
+      // Remember the opener that was tapped, HERE — synchronously, in the
+      // gesture's own handler (#97). One React commit later the sheet goes
+      // `inert`, which blurs this button to `<body>` in the mutation phase,
+      // before any effect could read it; #96's attempt captured that `body`
+      // and its restore was a silent no-op for every menu in the app.
       focusRestore.capture();
       stopPlayback();
       setMenuOpen(true);
@@ -2560,27 +2566,32 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       sheetRef.current?.querySelector<HTMLElement>("button")?.focus();
     }, []);
 
-    // The safe landmark for every mid-task hand-off: the "More actions" (≡)
+    // The safe landmark for every mid-task hand-off: the "More actions"
     // control, resolved by its accessible NAME through `overlayFallbackLabel`
     // (`lib/a11y/focus-restore.ts`) and never by position — so it can only
-    // ever resolve to the ≡ or to nothing, never to Back or the "Editing"
-    // pill. Shared by the overlay restore and the panel recovery below, which
-    // are the two edges that hand focus back into a sheet the translator is
-    // still working in. `null` when the ≡ is not rendered, AND `null` when it
-    // is natively `disabled` — an earlier draft promised the second half in
-    // this comment and returned the disabled node anyway (George R3 P2-2 on
-    // #457): `.focus()` on a disabled button is a silent no-op, and
-    // `use-focus-restore.ts`'s `hasFallback` checks connectivity, not
-    // `disabled`, so both callers "succeeded" with focus on <body> and the
-    // next Tab on header Back. Both `null`s leave focus alone, the contract's
-    // own "prefer `null` over anything dangerous". Native `disabled` only,
-    // the same idiom that hook uses for the trigger: an `aria-disabled`
-    // control keeps its place in the Tab order (#135), and the ≡ has no
-    // `hint`, so `Control` sets the native attribute for it. The ≡'s
-    // `disabled` expression is `!view || isClosing || denied ||
-    // heldTake !== null`; a panel resolving clears `denied` / `heldTake`, and
-    // the recovery effect below is what copes when the rest has not cleared
-    // on the same commit.
+    // ever resolve to that control or to nothing, never to Back or the
+    // "Editing" pill. Resolving by name rather than glyph is what lets this
+    // stay one landmark after #863: record mode's opener wears ≡ and the
+    // edit toolbar's wears ⋮, but both answer to the same accessible name, so
+    // `overlayFallbackLabel` cannot tell them apart and does not need to.
+    // Shared by the overlay restore and the panel recovery below, which are
+    // the two edges that hand focus back into a sheet the translator is
+    // still working in. `null` when neither opener is rendered, AND `null`
+    // when the one that is is natively `disabled` — an earlier draft
+    // promised the second half in this comment and returned the disabled
+    // node anyway (George R3 P2-2 on #457): `.focus()` on a disabled button
+    // is a silent no-op, and `use-focus-restore.ts`'s `hasFallback` checks
+    // connectivity, not `disabled`, so both callers "succeeded" with focus on
+    // <body> and the next Tab on header Back. Both `null`s leave focus alone,
+    // the contract's own "prefer `null` over anything dangerous". Native
+    // `disabled` only, the same idiom that hook uses for the trigger: an
+    // `aria-disabled` control keeps its place in the Tab order (#135), and
+    // this opener has no `hint`, so `Control` sets the native attribute for
+    // it. Its `disabled` expression is `!view || isClosing || denied ||
+    // heldTake !== null` in record mode (`!hasView || isClosing` in edit
+    // mode, `recorder-toolbars.tsx`); a panel resolving clears `denied` /
+    // `heldTake`, and the recovery effect below is what copes when the rest
+    // has not cleared on the same commit.
     const menuLandmark = useCallback((): HTMLElement | null => {
       const sheet = sheetRef.current;
       if (!sheet) return null;
@@ -2621,9 +2632,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // The ≡-menu rows' disabled REASONS (#135). Each row's `disabled` is
     // `reason !== null`, so the cue that explains a grey row and the gate that
     // greys it are one derivation, not two switches. Erase still spells
-    // `!idleEditable` as `!view || takeActive`; Edit no longer does — since #134 a
-    // live take reaches Edit (it commits first), so Edit's `takeActive` input is
-    // split into `committing` (the real commit window) and `hasTake`.
+    // `!idleEditable` as `!view || takeActive`; Edit no longer does — since #134
+    // Edit's `takeActive` input is split into `committing` (the close/processing
+    // window) and `hasTake` (a live take). #857 blocks Edit on `hasTake` again,
+    // the same as `committing` — see `editRowReason`'s docblock in
+    // `menu-row-state.ts` for why the split survives that reversal.
     const starting = state === "requesting";
     // Hoisted out of the Record control's JSX so the guide can read the same
     // answer the button does (#604) — the gate itself is unchanged and is
@@ -2656,10 +2669,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     });
     const editReason = editRowReason({
       hasView: view !== null,
-      // A live take no longer blocks Edit (#134) — entering Edit commits it
-      // first (`onEnterEdit`). Only the actual commit window does: any commit in
-      // flight, and the render or two a #59 interruption's `processing` freeze
-      // sits in before the commit effect takes it.
+      // The actual commit window: any commit in flight, and the render or two
+      // a #59 interruption's `processing` freeze sits in before the commit
+      // effect takes it. A live take ALSO blocks Edit again as of #857 — see
+      // `hasTake` below and `editRowReason`'s docblock in `menu-row-state.ts`.
       committing: isClosing || state === "processing",
       hasTake: recording,
       starting,
@@ -2771,28 +2784,48 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // undefined}`, below) keeps the WHOLE sheet body reachable to AT during a
     // live take with the ≡ menu open — the sheet's own comment there
     // states the consequence is "exactly Record/Stop and Play". The toolbar
-    // Edit control is a body sibling of those two, and `editReason` is null
-    // while `hasTake` (#134) — so without this it is a THIRD control the sheet
-    // exemption newly exposes: reachable to VoiceOver/switch scanning one step
-    // past Play, under the visual scrim, while the menu's OWN Edit row is the
-    // correctly-scoped in-overlay affordance for the identical action.
+    // Edit control is a body sibling of those two, and until #857 `editReason`
+    // was null while `hasTake` (#134) — so without the `menuShown` clause below
+    // it was a THIRD control the sheet exemption newly exposed: reachable to
+    // VoiceOver/switch scanning one step past Play, under the visual scrim,
+    // while the menu's OWN Edit row is the correctly-scoped in-overlay
+    // affordance for the identical action. #857 makes `editReason` itself
+    // NON-null while `hasTake`, closing that gap at the source (see the
+    // exemption's own bullet list, further down this component, for the
+    // current, now-redundant, state of this clause) — the `menuShown` OR
+    // below is kept rather than pulled.
     //
     // `editReason` alone must not gain a `menuShown` clause — that would split
-    // the #134/#135 gate the ≡ row and this control otherwise share verbatim.
+    // the #135 gate the ≡ row and this control otherwise share verbatim.
     // Instead the toolbar copy ORs in `menuShown` on top of the shared reason.
     const editToolbarDisabled = editReason !== null || menuShown;
     // Keep the blocked reason reachable to keyboard and switch users without
     // painting an alert badge for an empty segment or a starting microphone.
-    // The commit Notice already explains uncommitted-take; its menu-specific
-    // "Close menu" hint does not describe this toolbar. `barHint` is that rule,
-    // shared with the bin beside it (#592).
-    const editToolbarHint = barHint(editReason);
+    // The menu's own "Close menu" hint does not describe this toolbar (the bar
+    // is not in the menu), so `barHint` words `"uncommitted-take"` on its own
+    // terms here — `strings.stopToEdit`, naming the bar's own Stop control
+    // (#857 round 1, Frank P2) — rather than reusing `rowHint`'s menu-specific
+    // copy or, as before that round, saying nothing at all for this control.
+    // Only while the take is LIVE (`recording`): `"uncommitted-take"` also
+    // covers the commit window (`committing`), where Stop has already been
+    // pressed and "Stop recording to edit." would name a control that is now
+    // Record (#869 round 3, George Medium). The commit window keeps the
+    // wordless bar behaviour, and `busy={isClosing}` keeps it focusable.
+    const editToolbarHint = barHint(
+      editReason,
+      recording ? strings.stopToEdit : undefined
+    );
     // The bar's bin (#592) wears the SAME gate as the ≡ menu's Erase rows —
     // `eraseReason`, one derivation — so the two entries to the one erase can
     // never disagree about when erasing is allowed. No `menuShown` clause, unlike
     // Edit above: the sheet body is reachable under the menu only during a take
     // (`inert={(overlayUp && !takeActive) || undefined}`), and a take is exactly
-    // when `eraseReason` already refuses.
+    // when `eraseReason` already refuses. No `uncommittedTakeLabel` passed to
+    // `barHint` here, unlike Edit above: the bin's own native-disabled,
+    // no-reason gap during a live take is real and structurally identical to
+    // Edit's (#857 round 1, Frank P2), but is pre-existing, unrelated to this
+    // PR's `hasTake` change, and no one has reviewed bar-appropriate erase
+    // copy — carried as a named residual rather than invented here.
     const rerecordHint = barHint(eraseReason);
 
     // A full-body panel owns the sheet body — the permission panel, the
@@ -2832,9 +2865,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // — so a `.focus()` any earlier is dead code, the exact shape
     // `docs/progress_tracker.md` warns about and #364 shipped again today.
     //
-    // Keyed on `overlayUp`, so the menu → confirm chain restores ONCE, to the ≡
-    // that started it. `restore` is a no-op with nothing captured, so the
-    // re-runs the other dependencies cause are harmless.
+    // Keyed on `overlayUp`, so the menu → confirm chain restores ONCE, to the
+    // opener that started it (≡ or ⋮, #863). `restore` is a no-op with
+    // nothing captured, so the re-runs the other dependencies cause are
+    // harmless.
     //
     // `suppressed` when a full-body panel owns the screen: each `autoFocus`es
     // its own control in the same commit, and stealing that back would strand a
@@ -2851,21 +2885,22 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (isClosing) return;
       focusRestore.restore({
         suppressed: panelOwnsFocus,
-        // The overlay-close landmark is the "More actions" (≡) control itself
-        // — deliberately NOT the sheet's first focusable, which is Back
+        // The overlay-close landmark is the "More actions" control itself —
+        // deliberately NOT the sheet's first focusable, which is Back
         // (George R1 P1), and NOT "the header's last button" either (George R5
         // P2): that was correct in record mode, where the header's right-hand
-        // control IS the ≡, but wrong in edit mode, where that slot is the
-        // "Editing" pill — a control that EXITS edit mode. Landing overlay-
-        // close focus there would arm the very next Space/Enter/switch-
-        // activate to leave, the #97 hazard on the ordinary Edit row.
+        // control IS this opener, but wrong in edit mode, where that slot is
+        // the "Editing" pill — a control that EXITS edit mode. Landing
+        // overlay-close focus there would arm the very next Space/Enter/
+        // switch-activate to leave, the #97 hazard on the ordinary Edit row.
         //
-        // The ≡ is safe in every mode: it reopens the very overlay that just
-        // closed, and this app renders it under the same accessible name in
-        // both places it lives (the header in record mode, the toolbar in
-        // edit mode). `menuLandmark` above resolves it by that name, never by
-        // position, so it can only ever resolve to the ≡ or to nothing —
-        // never to Back or the pill.
+        // This opener is safe in every mode: it reopens the very overlay that
+        // just closed, and this app renders it under the same accessible name
+        // in both places it lives (the header in record mode, the toolbar in
+        // edit mode) — even though its GLYPH differs since #863 (≡ in the
+        // header, ⋮ in the edit toolbar). `menuLandmark` above resolves it by
+        // name, never by position or glyph, so it can only ever resolve to
+        // this opener or to nothing — never to Back or the pill.
         fallback: menuLandmark(),
       });
       // …except when that landing is the bar's bin and the bin has just gone
@@ -3042,17 +3077,24 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             anyway — the paste marker, Cut, Select, Undo/Redo and the selection
             handles all require `idleEditable` or edit mode, both false while a
             take is live — and the header is inert in its own right.
-          - The toolbar Edit control (#315) is NOT part of this exemption, even
-            though `editReason` alone would allow it during a live take
-            (#134's commit-then-edit). It carries its own `menuShown` clause
-            (`editToolbarDisabled`, above `menuShown`'s declaration) precisely
-            so this scoping stays true — George R1 P2-2 caught that without it,
+          - The toolbar Edit control (#315) is NOT part of this exemption. It
+            carries its own `menuShown` clause (`editToolbarDisabled`, above
+            `menuShown`'s declaration) — George R1 P2-2 caught that without it,
             the exemption silently grew a THIRD reachable control, one that
-            FINALIZES the take where Pause would have kept it resumable. Since
-            #614 Stop finalizes it too, so the two are no longer different acts;
-            the scoping is kept all the same, because one of them also changes
-            MODE. The ≡ menu's own Edit row is the correctly-scoped in-overlay
-            affordance for the identical action.
+            FINALIZES the take where Pause would have kept it resumable. At the
+            time, `editReason` alone would have allowed Edit through during a
+            live take (#134's commit-then-edit), so `menuShown` was the only
+            thing closing that gap. #857 makes `editReason` itself block a live
+            take (`hasTake`, `menu-row-state.ts`) the same as it already blocked
+            the commit window, so `menuShown` is now redundant here — every
+            `takeActive` state already reads `editReason !== null` on its own,
+            and every menu-open state that is NOT `takeActive` already gets the
+            sheet's own `inert` above. Left in place as an explicit
+            belt-and-suspenders rather than pulled, since removing it is no
+            part of what #857 asks. Since #614 Stop finalizes a take too, Pause
+            and Stop are no longer different acts in the sense the exemption
+            cared about. The ≡ menu's own Edit row is the correctly-scoped
+            in-overlay affordance for the identical action.
           - Play is dead mid-take (`playDisabled` reads `recording`), so George
             R5's "Play goes unreachable behind the scrim" is about the idle
             case, which `openMenu`'s own stop covers.
@@ -3121,7 +3163,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               {view
                 ? strings.recorderBreadcrumb(
                     view.bookName,
-                    view.chapterNumber,
+                    // Resolved here, the same way the Segments header resolves
+                    // it, so a renamed chapter (#264) reads the same on both
+                    // screens. Passing the number let this trail spell the
+                    // default name itself and ignore the label (#169). The
+                    // segment's own label rides alongside and is resolved by
+                    // `segmentHeading` inside the entry (#591).
+                    strings.chapterHeading(
+                      view.chapterName,
+                      view.chapterNumber
+                    ),
                     view.ordinal,
                     view.segmentLabel
                   )

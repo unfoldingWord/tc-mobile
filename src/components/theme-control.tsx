@@ -1,5 +1,5 @@
 import { Control } from "./control";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 import { useTheme } from "@/hooks/use-theme";
 
 /**

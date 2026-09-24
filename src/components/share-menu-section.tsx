@@ -5,7 +5,7 @@ import { shareControlAffordance } from "./control-affordance";
 import { Notice } from "./notice";
 import { shareErrorText } from "./share-error-copy";
 import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 import { readSharePlatform } from "@/hooks/share-target";
 import type { ShareError, ShareStatus } from "@/hooks/share-flow";
 

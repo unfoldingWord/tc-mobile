@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { SegmentsScreen } from "@/components/segments-screen";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { ChapterId } from "@/types/domain";

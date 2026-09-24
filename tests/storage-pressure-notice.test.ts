@@ -4,7 +4,7 @@ import {
   storagePressureNotice,
   type StoragePressureGate,
 } from "@/components/storage-pressure-notice";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 
 /**
  * What the Books shelf says for #247's storage-pressure marker.
