@@ -134,7 +134,7 @@ describe("the latch's own plumbing", () => {
 });
 
 describe("replayDeferredWrites restores the unreplayed tail before it rethrows (#802)", () => {
-  const replay = bodyAfter("const replayDeferredWrites = useCallback(");
+  const replay = bodyAfter(code, "const replayDeferredWrites = useCallback(");
 
   it("walks the queue through replayQueue rather than a bare loop", () => {
     expect(replay).toMatch(/replayQueue\(\s*queued\s*,/);
