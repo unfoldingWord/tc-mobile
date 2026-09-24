@@ -180,6 +180,7 @@ it("playTake's onEnded is the producer: invoking it flips playbackRanOut true (#
   const call = mocks.playSamples.mock.calls[0];
   if (!call) throw new Error("playSamples was not called for row A");
   const options = call[1] as { onEnded?: () => void };
+  expect(options.onEnded).toEqual(expect.any(Function));
 
   await act(async () => {
     options.onEnded?.();
@@ -216,6 +217,10 @@ it("a hand stop (tapping the sounding row again) does NOT set playbackRanOut (co
     await flush();
   });
 
+  // The first tap really started a load (an idle, never-played session would
+  // also read null/false below), and the second tap did not start another.
+  expect(mocks.loadSegmentClip).toHaveBeenCalledTimes(1);
+  expect(mocks.playSamples).not.toHaveBeenCalled();
   expect(api().playingId).toBeNull();
   expect(api().playbackRanOut).toBe(false);
 });
