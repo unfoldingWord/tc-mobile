@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import {
   storagePressure,
@@ -6,6 +6,7 @@ import {
   type StoragePressure,
   type StoragePressureMarker,
 } from "@/lib/storage/pressure";
+import { reportFailure } from "./report-failure";
 
 /**
  * The `navigator.storage.estimate()` boundary for #247's storage-pressure
@@ -19,10 +20,9 @@ import {
  * Node against stubs; the React half below is the thin part, and is the part
  * no test in this repo reaches.
  *
- * **This is the core only. Nothing on any screen consumes it yet.** #247's
- * other half — the Books marker — is a separate PR: `books-screen.tsx` was
- * rewritten by #531 (its overlays became system-Back layers) and the marker
- * lands once that has settled.
+ * Read by the Books screen (`books-screen.tsx`, through
+ * `storagePressureNotice`) — #247's wiring half, landed once #531's rewrite
+ * had settled.
  *
  * **The marker is all that leaves this file.** `useStoragePressure` returns
  * `"low" | "critical" | null` rather than the `usage`/`quota` pair, so
@@ -30,21 +30,40 @@ import {
  * coarse and per-origin, and #247 asks for no number on screen) is a property
  * of the boundary rather than a rule a future caller has to remember.
  *
- * **There is deliberately no cross-mount cache here, and that is a decision,
- * not an omission.** Two rounds of review built one — a module-scope band plus
- * a refresh generation — and it produced four P2s, every one of them the cache
- * disagreeing with the fact that Books unmounts for the whole time a chapter
- * is open. The DRI removed it (round 6, option B): it existed to serve a
- * consumer that does not exist yet, and the question it answers — whether a
- * remount painting the marker one frame late actually matters — cannot be
- * answered from inside this repository, because nothing here renders and
- * nobody has watched a real Books screen on a real phone. So this hook reads
- * once per mount and holds nothing between mounts. **If the wiring PR decides
- * that first-render paint does matter, the invalidation belongs at module
- * scope, bumped by the write that changed the world** — the shape
- * `mp3-codec.ts`'s encoder health and `failure-log.ts`'s count already use —
- * and NOT on a React prop, which dies with the screen that held it. That
- * analysis is George R6 H2 and is recorded on #247.
+ * **There is still no cross-mount CACHE here — that remains a decision, not
+ * an omission — but there IS now a module-scope INVALIDATION, and the two are
+ * different claims.** Two rounds of review once built a cache (a module-scope
+ * band plus a refresh generation) and it produced four P2s, every one of them
+ * the cache disagreeing with the fact that Books unmounts for the whole time a
+ * chapter is open. The DRI removed it (round 6, option B): it existed to serve
+ * a consumer that does not exist yet, and whether a remount painting the
+ * marker one frame late actually matters could not be answered from inside
+ * this repository, because nothing here renders and nobody had watched a real
+ * Books screen on a real phone. **That question is still open** — a translator
+ * who stays inside one chapter recording segment after segment, with Books
+ * unmounted the whole time, still sees no update until they come back out
+ * (the "recorder-close refresh" half of #247, `books-screen.tsx`'s own note).
+ * This hook still starts a fresh mount at `"unknown"` and paints only once
+ * `estimate()` lands; nothing here caches that answer across a remount.
+ *
+ * **What round 6 deferred, and #542 Part B's DRI comment (2026-09-24)
+ * explicitly overrode, was narrower: a STALE reading resurrecting mid-visit
+ * with no remount at all.** Delete a book down to an empty shelf — the line
+ * correctly hides, because `hasReclaimableAudio` (`books-screen.tsx`) goes
+ * false — then create a new one on the SAME visit, and without an
+ * invalidation the marker painted whatever `estimate()` answered at mount,
+ * before the delete freed anything. The DRI's words: "build the module-scope
+ * estimate() invalidation now, bumped by book delete/create, without a device
+ * reading" — authorizing exactly the shape this docblock used to defer,
+ * scoped to those two writes only. `bumpStoragePressure` below is that
+ * invalidation: a module-scope generation, in the same
+ * `useSyncExternalStore` shape `mp3-codec.ts`'s encoder health and
+ * `failure-log.ts`'s count already use, that `useStoragePressure` takes as an
+ * effect dependency so a bump re-reads `estimate()` in whatever mount is
+ * live — never a cached BAND, only a trigger to ask again. `use-books.ts`
+ * calls it from `createBook`'s and `deleteBook`'s success paths, after each
+ * write is durable. The recorder-close half above is deliberately NOT wired
+ * to it — that scope was not authorized here and stays open on #247.
  */
 
 /**
@@ -168,15 +187,102 @@ export function storageEstimateSourceOf(
 }
 
 /**
- * The storage-pressure marker for the Books standing-condition slot, or `null`
- * when there is nothing to show. One read, once, when this mounts.
+ * How many times a write that "changed the world" for storage has landed —
+ * `bumpStoragePressure`'s call count (#542 Part A).
  *
- * **It holds nothing between mounts.** Books unmounts for the whole time a
- * chapter is open, so every trip home starts this at `null` and paints the
- * marker only once the read lands — an effect later, not on the first render.
- * That is the deliberate shape after round 6; see this module's header for why
- * the cache that used to close that gap was removed and what the wiring PR has
- * to decide before building another one.
+ * Module scope, not a ref or a prop, for the reason this module's header
+ * explains at length: the invalidation has to survive whichever Books mount
+ * is live, and a React prop dies with the screen that held it. Mirrors
+ * `mp3-codec.ts`'s `encoderHealth`/`healthListeners` and `failure-log.ts`'s
+ * `logGeneration`/`logWatchers` — a plain module-scope counter, a listener
+ * set, and a `useSyncExternalStore` pair — rather than inventing a fourth
+ * shape for the same problem.
+ *
+ * A COUNTER, not a cached band: nothing here remembers what `estimate()` last
+ * answered. Bumping only tells a live `useStoragePressure` instance "ask
+ * again"; a mount that starts after the bump just reads the current value as
+ * its initial one and asks anyway, the same as any other mount.
+ */
+let generation = 0;
+
+/** Subscribers to {@link generation}, in the `useSyncExternalStore` shape. */
+const generationListeners = new Set<() => void>();
+
+/** The `getSnapshot` half of the store. */
+function getGeneration(): number {
+  return generation;
+}
+
+/** The `subscribe` half. Returns the unsubscribe. */
+function subscribeToGeneration(onChange: () => void): () => void {
+  generationListeners.add(onChange);
+  return () => {
+    generationListeners.delete(onChange);
+  };
+}
+
+/**
+ * The current generation, as a monotonic count of landed
+ * {@link bumpStoragePressure} calls. For `tests/storage-pressure.test.ts`'s
+ * readiness probe only (mirroring `mp3-codec.ts`'s `encoderHealth()`, which
+ * the same test file's sibling reads directly rather than through
+ * `subscribeToEncoderHealth`): nothing in the app needs a synchronous read of
+ * this outside `useStoragePressure`'s own `useSyncExternalStore` snapshot, so
+ * this exists to let a Node test pin the counter's own contract — that a bump
+ * always advances it, and by exactly one per call — without a DOM renderer to
+ * mount the hook in.
+ */
+export function storagePressureGeneration(): number {
+  return generation;
+}
+
+/**
+ * A write that changed the world for storage just landed: a book delete or a
+ * book create committed (#542 Part A, DRI decision 2026-09-24 — scoped to
+ * exactly those two; segment erase and recorder close are NOT wired to this,
+ * and remain #247's separate, still-open "recorder-close refresh" bullet).
+ *
+ * Called from `use-books.ts`'s `deleteBook` and `createBook`, AFTER the
+ * underlying IndexedDB transaction has committed — never from an optimistic
+ * pre-commit state update — so a bump always means the read a subsequent
+ * `estimate()` call makes can reflect the write, not a promise of one still
+ * in flight.
+ *
+ * Idempotent in the sense that matters: a monotonic counter tolerates being
+ * called more than once for one logical write (a retry, or two callers
+ * bumping for the same commit) with no harm beyond one extra `estimate()`
+ * read in whichever `useStoragePressure` mount is live — there is no
+ * "already bumped" state to duplicate or corrupt.
+ *
+ * A listener that throws is reported, not swallowed — this store's whole
+ * purpose is that a stale reading stops being silent — mirroring
+ * `mp3-codec.ts`'s `publishHealth`.
+ */
+export function bumpStoragePressure(): void {
+  generation += 1;
+  // A copy, so a listener that unsubscribes from inside its own callback does
+  // not mutate the set being iterated (same defensive copy `mp3-codec.ts`'s
+  // `publishHealth` and `failure-log.ts`'s `notifyLog` both make).
+  for (const listener of [...generationListeners]) {
+    try {
+      listener();
+    } catch (cause) {
+      reportFailure(cause, "storage-pressure-bump");
+    }
+  }
+}
+
+/**
+ * The storage-pressure marker for the Books standing-condition slot, or `null`
+ * when there is nothing to show. Reads `estimate()` on every mount, and again
+ * whenever {@link bumpStoragePressure} fires while this instance is mounted.
+ *
+ * **Still no cross-mount CACHE.** Books unmounts for the whole time a chapter
+ * is open, so every trip home still starts this at `"unknown"` and paints the
+ * marker only once a read lands — an effect later, not on the first render.
+ * That half of round 6's shape is unchanged; see this module's header for
+ * what #542 Part A added instead (a module-scope INVALIDATION, not a cache)
+ * and why the two are different claims.
  *
  * **Not gated on content** the way `useStoragePersistence` is. That gate exists
  * because `persist()` spends a one-time browser decision; `estimate()` spends
@@ -191,33 +297,47 @@ export function storageEstimateSourceOf(
  * different on purpose — the device can be full before this app has read
  * anything — so it can return a marker while Books is still loading or showing
  * a load failure, and that slot is exclusive and acute-first
- * (`books-screen.tsx:1124-1137`). **A consumer that must not stack the two
- * gates on its own side** (`{!noticeText && !loading && marker && …}`), the way
- * it already orders the rest of that chain. A `ready` parameter was considered
- * and left out: the ordering is the screen's decision, the screen already holds
- * both flags, and this PR has just finished removing one parameter that
- * existed for a caller that does not exist yet.
+ * (`books-screen.tsx:1124-1137`). **The consumer must not show this marker
+ * while that slot is showing something** — `storagePressureNotice`
+ * (`components/storage-pressure-notice.ts`) is where that gate now lives, as
+ * an explicit `hasReclaimableAudio`/acute-trio (`loading`/`loadFailed`/
+ * `deleteFailed`) parameter rather than as JSX prose in the screen (#542,
+ * Frank P2-2 / George P3-5; the predicate itself was `hasContent` through
+ * round 1 and is `hasReclaimableAudio` as of Part B) — a `ready` parameter on
+ * THIS hook was considered and left out: the ordering is the screen's
+ * decision, the screen already holds those flags, and this file has just
+ * finished removing one parameter that existed for a caller that does not
+ * exist yet.
  *
- * **The recorder-close half of #247's fix shape is not here.** #247 asks for
- * "once on Books mount and after each recorder close". This is the first half.
- * The second needs an invalidation that survives an unmount, which is exactly
- * what round 6 deferred — a translator who stays inside one chapter recording
- * segment after segment sees no change until they come back out. Open on #247.
+ * **The recorder-close half of #247's fix shape is still not here.** #247 asks
+ * for "once on Books mount and after each recorder close". Part A's bump
+ * covers book delete/create only (see {@link bumpStoragePressure}); a
+ * translator who stays inside one chapter recording segment after
+ * segment — Books unmounted the whole time — still sees no change until they
+ * come back out. Open on #247.
  *
- * Not covered by any test in this repo: everything below this line. Nothing
- * mounts this hook's effect graph (the same boundary `useStoragePersistence`'s
- * and `useEraseSegment`'s docblocks name), so the effect and its cancellation
- * are review and on-device surface. Every decision they make IS pinned in Node:
- * `storagePressure`, `storagePressureMarker`, `readStorageEstimate` and
- * `storageEstimateSourceOf`.
+ * Not covered by any test in this repo: the effect and its cancellation
+ * below. Nothing mounts this hook's effect graph (the same boundary
+ * `useStoragePersistence`'s and `useEraseSegment`'s docblocks name), so they
+ * are review and on-device surface. Every decision they make IS pinned in
+ * Node: `storagePressure`, `storagePressureMarker`, `readStorageEstimate`,
+ * `storageEstimateSourceOf`, and — new in Part A — `bumpStoragePressure`'s
+ * own counter/listener contract (`tests/storage-pressure.test.ts`).
  *
- * @pivotpending No caller yet — #247's Books marker is the reader, and it is
- * deliberately a separate PR: `books-screen.tsx` was rewritten by #531 and the
- * marker lands once that has settled. Tagged rather than left to knip's
- * test-only blind spot, which would otherwise hide it.
+ * Read by `books-screen.tsx` (#247's wiring half), through
+ * `storagePressureNotice`.
  */
 export function useStoragePressure(): StoragePressureMarker | null {
   const [band, setBand] = useState<StoragePressure>("unknown");
+  // Reactive purely to force the effect below to re-run on a bump — nothing
+  // reads this value directly. `useSyncExternalStore`, not a ref, so a bump
+  // that lands while this instance is mounted schedules the re-render
+  // `useEffect`'s dependency array needs to see a new value at all.
+  const generationValue = useSyncExternalStore(
+    subscribeToGeneration,
+    getGeneration,
+    getGeneration
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -225,12 +345,13 @@ export function useStoragePressure(): StoragePressureMarker | null {
     // here and no second channel to catch one in.
     void readStorageEstimate(storageEstimateSourceOf(globalThis)).then(
       (reading) => {
-        // A read that outlives its mount has nothing left to tell: with no
-        // cross-mount cache, the only thing this could still do is set state
-        // on a screen that is gone. (This guard carried more weight when there
-        // was a module cache behind it — Frank R1 P2-1 — and that reason is
-        // gone with the cache. It stays as the plain cleanup it always also
-        // was.)
+        // A read that outlives its mount (or outlives a fresher bump's own
+        // re-run of this same effect) has nothing left to tell: with no
+        // cross-mount cache, the only thing this could still do is set stale
+        // state. (This guard carried more weight when there was a module
+        // cache behind it — Frank R1 P2-1 — and that reason is gone with the
+        // cache. It stays as the plain cleanup it always also was, and now
+        // also covers one mount's own superseded re-run.)
         if (cancelled) return;
         setBand(storagePressure(reading?.usage, reading?.quota));
       }
@@ -238,7 +359,10 @@ export function useStoragePressure(): StoragePressureMarker | null {
     return () => {
       cancelled = true;
     };
-  }, []);
+    // `generationValue` is not read inside this effect; it is a dependency
+    // ONLY so that a bump — which changes it — makes this effect re-run and
+    // ask `estimate()` again without waiting for a remount (#542 Part A).
+  }, [generationValue]);
 
   return storagePressureMarker(band);
 }

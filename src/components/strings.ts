@@ -378,6 +378,30 @@ export const strings = {
   paste: "Paste at the line",
   undo: "Undo",
   redo: "Redo",
+  // Why the two history arrows are grey, appended to their accessible names
+  // while they are (#91, via `edit-control-state.ts`). A grey icon-only control
+  // with no reason reads as a broken one — the #135 finding — and these two are
+  // grey the longest of any edit control.
+  //
+  // PRESENT TENSE, describing the current end of the edit stack and nothing
+  // else. Round 1 said "No edits to undo yet." and "Nothing has been undone.";
+  // both are claims about the session's PAST, while `canUndo`/`canRedo` are
+  // only `cursor > 0` and `cursor < ops.length`. George round 1 showed the gap
+  // is reachable in three taps: cut, undo — Undo now greys and "no edits yet"
+  // is false — then redo, and Redo greys while "has been undone" is false.
+  // `tests/edit-control-state.test.ts` bans the tense so this cannot drift back.
+  //
+  // Pure statements of STATE: no control is named and no gesture is described.
+  // Each way out follows from the state itself, so there is nothing to point at
+  // — and pointing is where cue copy has gone wrong here before
+  // (`menu-row-state.ts`'s `rowHint`, and #648 round 1).
+  //
+  // The shortest statement of the rule, from the bench fix this merges with:
+  // an edit undone back to the start, or an undo redone to the tip, reaches
+  // the SAME cursor as a fresh session — so the words may state only where the
+  // cursor is, never what has or has not happened.
+  nothingToUndo: "Nothing to undo.",
+  nothingToRedo: "Nothing to redo.",
   // The recorder drawer's dialog name for a screen reader — never painted
   // there (#621, the rule #608 set for `menuTitle`): the recorder drawer
   // opens from a ≡ that stays a ≡, so the glyph is its only visible label.
@@ -715,6 +739,36 @@ export const strings = {
   // recordings already sitting at risk.
   storageNotPersisted:
     "This phone may delete what you record here if space runs low. Share your work when you can.",
+
+  // ── Storage pressure (#247) ──────────────────────────────────────────────
+  // State-in-place on the Books screen, alongside `storageNotPersisted`:
+  // `navigator.storage.estimate()` says this ORIGIN is running low, which is a
+  // different risk from durability above — the browser has not evicted
+  // anything, the device is simply filling up. No byte count or percentage in
+  // either line: the estimate is coarse and per-origin
+  // (`lib/storage/pressure.ts`), so a number here would be a precision the
+  // reading does not support.
+  //
+  // **DRI decision (Seth, 2026-09-24), replacing the original wording.** The
+  // original copy said "here" rather than naming the phone, and "when you
+  // can" / "now" for urgency — deliberately, to avoid overclaiming a
+  // per-device condition from a per-origin reading (Frank P2-1 / George
+  // P2-1, #542; `pressure.ts`'s docblock still explains that risk: the OS can
+  // hand this origin a comfortable quota while the disk is nearly full, or
+  // the reverse). The DRI judged that hedge too vague to act on: it does not
+  // say what device is at risk or what happens if nothing is done. The new
+  // copy names the phone and, for the critical band, states the concrete
+  // consequence — new recordings may not save — which is also why
+  // `storageCritical` now renders in the `alert` tone rather than `info`
+  // (`storage-pressure-notice.ts`). Both lines still name the pair
+  // `pressure.ts`'s docblock names — mark segments Finished (ADR 0009's
+  // transcode reclaims ~90%) or share the work and then remove it — not bare
+  // "share", which does not reclaim anything on its own: `lib/export/
+  // chapter.ts` decodes and re-encodes without deleting a single stored clip.
+  storageLow:
+    "This phone is running low on space. Mark the segments you're done with as finished — they take much less room.",
+  storageCritical:
+    "This phone is almost out of space, and new recordings may not save. Mark finished segments, or share your work and then remove it.",
 
   // ── The database is unreachable (#221) ───────────────────────────────────
   // Two full-screen states, one in each copy of the app, when a newer copy

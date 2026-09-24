@@ -13,6 +13,7 @@ import { captureFailureText } from "./capture-failure-copy";
 import { CenterlineOverlay } from "./centerline-overlay";
 import { Control } from "./control";
 import { shareControlGlyph } from "./control-affordance";
+import { editControlHint, redoReason, undoReason } from "./edit-control-state";
 import { EraseConfirm } from "./erase-confirm";
 import { guidedRecordShown, guidedStep } from "./guided-step";
 import { Icon } from "./icon";
@@ -38,6 +39,7 @@ import {
   captureLocksPan,
   panGesture,
   recordDisabled,
+  redoCollapsesFrame,
   stageView,
 } from "./recorder-stage";
 import { SelectionOverlay } from "./selection-overlay";
@@ -62,7 +64,7 @@ import {
   resolveProvesDelivery,
   selectShareRoute,
 } from "@/hooks/share-target";
-import type { UseAudioSession } from "@/hooks/use-audio-session";
+import type { RecorderAudio } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
@@ -101,7 +103,7 @@ const ZOOM_QUARTER = 4;
 interface RecorderProps {
   segmentId: SegmentId;
   /** The single audio owner, held by App so `leave()` fires on every nav. */
-  audio: UseAudioSession;
+  audio: RecorderAudio;
   /**
    * Persist the recording as an insert/append into the segment's audio, at the
    * given Finished state. Never rejects — a failure becomes the recovery screen
@@ -319,7 +321,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * Lift the #613 collapse: the next render may seed a frame again.
      *
      * Called from every route that leaves the translator wanting one — a
-     * paste, an undo, a redo, leaving edit mode, and the lift of a stage drag
+     * paste, an undo, leaving edit mode, and the lift of a stage drag
      * (the waveform came to rest somewhere new, which is where the next span
      * is picked). It is NOT called from the cut itself, and there is no timer:
      * the collapsed state is the resting state after a cut, not a flash.
@@ -1746,8 +1748,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (redoneOp !== null) {
         setPanState((p) => panAfterRedo(p, redoneOp, length));
       }
-      reopenFrame();
-    }, [editor, stopPlaybackDroppingPan, length, reopenFrame]);
+      // A redone cut collapses to the line like a live one; a redone paste
+      // reopens the frame (#722).
+      setCutCollapsed(redoCollapsesFrame(redoneOp));
+    }, [editor, stopPlaybackDroppingPan, length]);
 
     const onCut = useCallback(() => {
       stopPlayback();
@@ -2653,6 +2657,30 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       takeActive,
       starting,
       hasClip: view?.hasClip ?? false,
+    });
+
+    // Why the edit toolbar's two history arrows are grey, derived from the same
+    // predicates that grey them (#91, `edit-control-state.ts`) — the ≡ rows'
+    // rule above, applied to the toolbar. Not a second switch beside the
+    // `disabled` expressions they replace: each control's `disabled` is now
+    // `reason !== null`, which is what keeps the cue from drifting out of step
+    // with the gate.
+    //
+    // Derived HERE, beside those rows, rather than up beside `playDisabled`
+    // where the terms first become available: an object literal reading
+    // `editor` above the memoized callbacks makes React Compiler treat the
+    // value as one that may be mutated later and skip their memoization
+    // outright, which surfaces as `react-hooks/preserve-manual-memoization`
+    // errors in callbacks this change never touched.
+    const undoBlocked = undoReason({
+      dragging,
+      idleEditable,
+      canUndo: editor.canUndo,
+    });
+    const redoBlocked = redoReason({
+      dragging,
+      idleEditable,
+      canRedo: editor.canRedo,
     });
 
     // Enabled once a take WILL exist on close, not only when one already does.
@@ -3711,14 +3739,18 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     label={strings.undo}
                     variant="quiet"
                     size={24}
-                    // `heldByDrag` is the history half of the #317 stage lock
-                    // (George R2 P1): Undo rematerialises `working`, and a lift
-                    // still owing a resume would sound a sample index measured
-                    // in the buffer that no longer exists.
-                    disabled={heldByDrag(
-                      dragging,
-                      !idleEditable || !editor.canUndo
-                    )}
+                    // The gate is unchanged — `undoReason` reproduces
+                    // `heldByDrag(dragging, !idleEditable || !canUndo)`, and
+                    // `tests/edit-control-state.test.ts` pins that against
+                    // `heldByDrag` itself. What is new is that the grey now
+                    // carries its cause (#91). This arrow is grey whenever
+                    // the cursor sits at the START of the stack — on a fresh
+                    // edit session, and again after undoing back to it, which
+                    // is the case round 1's copy got wrong. #135 already found
+                    // that a grey icon-only control with no reason reads as a
+                    // broken one.
+                    disabled={undoBlocked !== null}
+                    hint={editControlHint(undoBlocked)}
                     onClick={onUndo}
                   />
                   <Control
@@ -3726,15 +3758,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     label={strings.redo}
                     variant="quiet"
                     size={24}
-                    // Same guard the menu Redo had (George R4): a Redo mid-take
-                    // would rematerialise the working buffer under the locked
-                    // insertion offset — but `idleEditable` forbids that, and edit
-                    // mode is idle-only regardless. `heldByDrag` is the #317
-                    // finger, for the same reason Undo carries it.
-                    disabled={heldByDrag(
-                      dragging,
-                      !idleEditable || !editor.canRedo
-                    )}
+                    // Same guard the menu Redo had (George R4), now derived:
+                    // a Redo mid-take would rematerialise the working buffer
+                    // under the locked insertion offset — but `idleEditable`
+                    // forbids that, and edit mode is idle-only regardless.
+                    // `redoReason`'s `dragging` term is the #317 finger, for the
+                    // reason Undo carries it. Redo is grey for longer than Undo,
+                    // never having anything to redo until something is undone,
+                    // so it is the stronger half of #91's case here.
+                    disabled={redoBlocked !== null}
+                    hint={editControlHint(redoBlocked)}
                     onClick={onRedo}
                   />
                   <Control
