@@ -11,6 +11,64 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-24 (late evening, Docker session) — after the v0.2.11 cut: 14 PRs merged, the Play lane's first build_only pass, an upload-key mix-up found and reset, and an open-issue scan
+
+This follows the entry below in the same session. The DRI asked for "3-4 lanes" on the backlog, then called a stopping point: no new issues after 22:00Z, finish what is in flight, EOD.
+
+### Shipped (merged to develop after the v0.2.11 bump)
+
+| PR   | What                                                                                                               | Closes       |
+| ---- | ------------------------------------------------------------------------------------------------------------------ | ------------ |
+| #887 | The edit toolbar's menu opener is ⋮; ≡ only at the top right                                                       | #863         |
+| #892 | After a cut, dragging keeps the red playhead until the clipboard is empty (the requirements owner's rule on #835)  | #835         |
+| #888 | The test-tier rule covers every `src/` path; unlisted paths default to T1 (DRI: "Confirm all three (Recommended)") | #864         |
+| #886 | Books and Segments show mapped copy (`loadFailed` / `saveFailed` / `noRoom`), never raw browser text               | part of #172 |
+| #895 | The Commit Messages gate checks only commits not already on develop for staging/main PRs                           | #891         |
+| #904 | That gate's test runs the step for each base ref instead of matching substrings                                    | #901         |
+| #896 | This tracker's v0.2.11 deploy PASS line                                                                            | —            |
+| #898 | The bin says why it is unavailable during a live take ("Stop recording to erase.")                                 | #878         |
+| #902 | The glyph test renders the whole Recorder header                                                                   | #890         |
+| #899 | Play `build_only` needs only the signing secrets; README names the Play lane                                       | #893         |
+| #906 | Pins the `canPaste` dependency, fixes the 320px length check, corrects the paste comment                           | #897         |
+| #911 | Clicks the live-take bin and asserts nothing erases; tightens the glyph test's guards                              | #907         |
+
+Before these, and still this session: the v0.2.11 bump (#885) and promotion (#889). The promotion is recorded in the entry below.
+
+### Google Play lane (#874)
+
+- The first `build_only` run from staging passed (run 36058347482): a signed .aab was built and the upload step was skipped, as intended. `keytool -printcert` on the artifact gives upload-key SHA-256 `98:E7:EF:93:…:32:53`.
+- **The Play Console listed our release key (`EE:D2:…:BA:F2`) as the upload key.** The likely cause, inferred and not checked: pepk enrollment registered no separate upload certificate. It was not the old OBS account. The DRI requested an upload key reset with the upload certificate PEM. Google's notice says the new key is valid from **2026-09-26 21:15 UTC**. `vars.PLAY_UPLOAD_ENABLED` stays unset until then.
+
+### Decisions (DRI, verbatim)
+
+- The #889 promotion's red Commit Messages check: "Merge + scope gate (Recommended)" (fixed by #895).
+- #888's tier defaults: "Confirm all three (Recommended)".
+- #886's Frank r2 P2: "Our lane fixes it (Recommended)". #886 merged before the fix landed; the fix is #905.
+- #899's docs-only change after round 1: "Merge without round 2 (Recommended)".
+- The open-issue scan: close #594 and #602 (the requirements owner's "leave as-is" calls), close #713 (refiled as #900), close #233 as superseded by Dependabot, and drop `needs-decision` from #13.
+- #904 merged with George clean and Frank not run. The exemption is recorded on the PR.
+
+### Still open at EOD
+
+- **#905** (Part of #172): quota classification never throws on a hostile cause. The review bench's fix for Frank r1's blocking finding is `2fc08574`. It needs round 2 from both reviewers.
+- **#908** (Part of #894): tests for the chapter-set-finished and chapter-rename failure keys. George is clean; Frank is still to run.
+- **#910** (Closes #172): the recorder's load and erase paths use failure keys. It needs both reviewers and, as a T2 change, a check on an Android and an iOS phone. It conflicts with #684 in `recorder.tsx`.
+- **The checks on a phone still owed:** #886 and #910 (T2), plus the usual #772 and #245.
+
+### Follow-up issues filed (P3 batches, not started)
+
+#890 (done), #893 (done), #894, #897 (done), #900, #901 (done), #903 (item 2 is the copy sign-off), #907 (done), #909, #912, #913.
+
+### Next
+
+1. After 2026-09-26 21:15 UTC: confirm the Console's pending-reset banner is gone, set `vars.PLAY_UPLOAD_ENABLED`, dispatch `android-play.yml` on staging without `build_only`, roll out the release in Internal testing, and send the join link.
+2. Finish #905, #908 and #910 through review, then cut v0.2.12 (#678 and everything above are on develop and not yet on staging).
+3. The requirements owner signs off `stopToEdit` ("Stop recording to edit.") and `stopToErase` ("Stop recording to erase."), tracked in #903.
+4. #843 item 3 is a DRI call: keep or clear the storage warning when a re-read fails.
+5. AGENTS.md's milestone table names "v0.3.0 — Oct: East Africa training", but the milestone is "v0.3.0 — Oct: training". Fix it with the next AGENTS.md change.
+
+---
+
 ## 2026-09-24 (evening, Docker session) — v0.2.11 promoted and verified on staging
 
 v0.2.11 was cut from develop at `a3ec786f` (after #869, per the DRI's "Wait for #869"), bumped by #885 (`48f9fb86`), and promoted by #889. #889's head was `release/v0.2.11`, pinned at the bump commit, so #678, which merged to develop after the bump, is not in this cut. The promotion's Commit Messages check was red on 20 bodyless commits already on develop; the DRI's pick, verbatim, was "Merge + scope gate (Recommended)", and the gate fix is #891.
