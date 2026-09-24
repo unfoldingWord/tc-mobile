@@ -223,6 +223,27 @@ describe("the light theme is reachable (#171)", () => {
     // the screen fails here instead of silently double-mounting.
     expect(mounts("src/components/recorder-menu.tsx")).toBe(2);
     expect(mounts("src/components/recorder.tsx")).toBe(0);
+
+    // And the other half of the claim, which the counts alone do NOT pin
+    // (George round 10, #623). The whole argument for mounting this control
+    // on a live take is that the SUBSCRIPTION stays in the leaf: a toggle
+    // re-renders that button, not the screen hosting the menu. Counting
+    // mounts cannot see a regression there — a later `useTheme()` in any of
+    // these screens would re-render that tree on every toggle and still leave
+    // every count above correct. The books case used to pin this incidentally,
+    // by requiring `useTheme()` in `books-screen.tsx`; that assertion left
+    // with the inline control it was written for, and nothing replaced it.
+    //
+    // So the absence is pinned directly. `theme-control.tsx` is the one file
+    // allowed to call it, which the wiring case above asserts positively.
+    for (const file of [
+      "src/components/books-screen.tsx",
+      "src/components/segments-screen.tsx",
+      "src/components/recorder-menu.tsx",
+      "src/components/recorder.tsx",
+    ]) {
+      expect(read(file), file).not.toMatch(/useTheme\(/);
+    }
   });
 
   it("is applied before React renders, not in an effect", () => {
@@ -337,11 +358,13 @@ describe("the light theme is reachable (#171)", () => {
     // A canvas painted once cannot observe a CSS-variable change — which is
     // exactly why `finished` sits in `Waveform`'s draw deps. `data-theme` is
     // a CSS-variable change of the same class (`--c-wave-stroke`, `--s-voice`,
-    // `--s-ink-faint`). Today `useTheme` is Books-only and `App` renders Books
-    // XOR Segments, so a toggle unmounts every canvas — but the moment the
-    // toggle is reachable from a screen with a `Waveform` or `LiveScope`
-    // mounted (#149), the bars keep the previous theme's amber/faint until
-    // `peaks`/`finished`/`active` happen to change (George R2 P2 on #457).
+    // `--s-ink-faint`). This used to be anticipatory — while the toggle was
+    // Books-only, `App` rendered Books XOR Segments, so a toggle unmounted
+    // every canvas and the subscription cost nothing yet. #149 made the
+    // toggle reachable from the chapter and recorder menus, so the case it
+    // was written for is now the ordinary one: without these subscriptions
+    // the bars would keep the previous theme's amber/faint until
+    // `peaks`/`finished`/`active` happened to change (George R2 P2 on #457).
     // So both draw effects subscribe to the live theme and list it.
     const hook = read("src/hooks/use-theme.ts");
     expect(hook).toMatch(/export function useLiveTheme\(\)/);
