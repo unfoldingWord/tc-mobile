@@ -29,8 +29,6 @@ const view = {
   ordinal: 1,
   finished: false,
   hasClip: true,
-  peaks: null,
-  lengthSamples: 4,
   samples: new Int16Array([1, 2, 3, 4]),
 };
 vi.mock("@/hooks/use-recorder-segment", () => ({
@@ -159,7 +157,15 @@ it("keeps the confirm when Back arrives in the same turn as erase, before a rend
   expect(s.saveRecording).not.toHaveBeenCalled();
   expect(s.saveEditedSegment).not.toHaveBeenCalled();
   await act(async () => complete());
-  expect(s.onExit).toHaveBeenCalledExactlyOnceWith(true);
+  // The erase's own completion is what takes the confirm down — and since
+  // #592 it leaves the sheet open over the emptied segment rather than
+  // exiting (`tests/recorder-rerecord.test.ts` owns that post-condition).
+  expect(
+    document.querySelector(`[aria-label="${strings.eraseConfirmTitle}"]`)
+  ).toBeNull();
+  expect(s.onExit).not.toHaveBeenCalled();
+  expect(s.saveRecording).not.toHaveBeenCalled();
+  expect(s.saveEditedSegment).not.toHaveBeenCalled();
 });
 it("dismisses a waiting confirm, then permits ordinary idle Back", async () => {
   const s = await setup();

@@ -22,9 +22,10 @@ import {
   isMissingChapterFailure,
   isMissingSegmentFailure,
 } from "@/lib/storage/stale-target";
+import { ROW_PEAK_BUCKETS } from "@/lib/view/segment-rows";
 import type { ClipMeta, Peaks } from "@/types/audio";
 import type { ChapterId, ClipId, Segment, SegmentId } from "@/types/domain";
-import { ROW_PEAK_BUCKETS, type SegmentRow } from "@/types/view";
+import type { SegmentRow } from "@/types/view";
 
 /**
  * A row's waveform, or `null` when the segment has no playable audio.
