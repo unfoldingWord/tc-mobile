@@ -2,7 +2,11 @@
  * The pure verdict for what `stop()` returns after it tries to decode a capture
  * (`hooks/use-recorder.ts`). Extracted so the #106/#165 data-loss contract is
  * pinned by a Node test rather than living only in the browser-bound hook, which
- * has no jsdom coverage (George R3 G-3).
+ * no test mounts: jsdom implements neither `MediaRecorder` nor `AudioContext`
+ * (`tests/audio-session.test.ts`), and the jsdom hook-mount harness elsewhere in
+ * this repo (`tests/use-audio-session-supersession.test.ts`) mocks `use-recorder`
+ * out rather than exercising it, so this hook's real decode path stays
+ * on-device only (George R3 G-3, #549).
  *
  * The load-bearing rule: when the decode THREW, the captured container bytes are
  * KEPT even if the stop was superseded. A `leave()`/pagehide bumping the
