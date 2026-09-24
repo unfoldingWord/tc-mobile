@@ -569,13 +569,17 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
         // `beginBack` actually says this issuer may proceed. A future
         // refusal reason must not make this row stack a traversal the guard
         // declined (#763's bug class, George r1 on #833 / #838 item 2).
+        //
+        // On refusal, set NOTHING — unlike the settle's refused arm, which
+        // absorbs a goBack landing already in flight. This row is reached
+        // only with both guard flags clear, so a refusal here has no landing
+        // to absorb; arming `suppressPop` would make `goBack`'s early return
+        // swallow the next Back (Frank r1 on #854).
         const begun = beginBack(travelGuard.current, "commit-close");
         if (begun.ok) {
           travelGuard.current = begun.next;
           suppressPop.current = true;
           window.history.back();
-        } else {
-          suppressPop.current = true;
         }
         return;
       }

@@ -122,6 +122,22 @@ describe("consumeRecorderEntry's \"issue\" row honours beginBack's refusal (#838
     expect(backSpy).not.toHaveBeenCalled();
   });
 
+  it("a refusal leaves no stale suppressPop latch: the next goBack() still issues one traversal", async () => {
+    // Frank r1 on #854: nothing is in flight after a refused "issue" row, so
+    // arming suppressPop there made goBack()'s early return eat the next Back.
+    control.refuse = true;
+    const handle = await mountAndGetHandle();
+    await act(async () => {
+      handle.commitCloseRecorder(false);
+    });
+    control.refuse = false;
+    await act(async () => {
+      handle.goBack();
+    });
+
+    expect(backSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('control: still issues exactly one history.back() on the un-refused "issue" row', async () => {
     control.refuse = false;
     const handle = await mountAndGetHandle();

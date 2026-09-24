@@ -206,7 +206,7 @@ describe("the programmatic recorder close is arbitrated, not a raw back() (#763)
 
   it(
     'the consume issues its one back() only when beginBack("commit-close") returns ok, ' +
-      "and refuses like the commit-close settle otherwise (#838 item 2)",
+      "and arms nothing on refusal (#838 item 2, Frank r1 on #854)",
     () => {
       // Exactly one window.history.back() in the whole consume body — the
       // "issue" row's ok branch — not one per row and not an unconditional
@@ -225,15 +225,10 @@ describe("the programmatic recorder close is arbitrated, not a raw back() (#763)
       expect(ifBraceClose).toBeGreaterThan(ifBraceOpen);
       const ifBody = consume.slice(ifBraceOpen, ifBraceClose + 1);
 
-      const elseKeyword = consume.indexOf("else", ifBraceClose);
-      expect(
-        elseKeyword,
-        "no else branch after the begun.ok check"
-      ).toBeGreaterThan(-1);
-      const elseBraceOpen = consume.indexOf("{", elseKeyword);
-      const elseBraceClose = matchingBraceClose(consume, elseBraceOpen);
-      expect(elseBraceClose).toBeGreaterThan(elseBraceOpen);
-      const elseBody = consume.slice(elseBraceOpen, elseBraceClose + 1);
+      // Everything after the ok branch up to the row's return: the refusal path.
+      const rowReturn = consume.indexOf("return", ifBraceClose);
+      expect(rowReturn).toBeGreaterThan(ifBraceClose);
+      const refusalPath = consume.slice(ifBraceClose + 1, rowReturn);
 
       // The ok branch: sets the guard from begun.next, absorbs, THEN calls
       // the one back() — the same order the commit-close settle's ok branch
@@ -244,10 +239,11 @@ describe("the programmatic recorder close is arbitrated, not a raw back() (#763)
         ifBody.match(/window\.history\.back\s*\(\s*\)/g) ?? []
       ).toHaveLength(1);
 
-      // The refusal branch: absorbs the landing the guard declined, issues
-      // no back() — the same shape as the commit-close settle's refused arm.
-      expect(elseBody).toMatch(/suppressPop\.current\s*=\s*true/);
-      expect(elseBody).not.toMatch(/window\.history\.back\s*\(/);
+      // The refusal path: no landing is in flight on this row, so it must
+      // neither arm suppressPop (goBack would swallow the next Back — Frank
+      // r1 on #854) nor issue a back().
+      expect(refusalPath).not.toMatch(/suppressPop\.current\s*=/);
+      expect(refusalPath).not.toMatch(/window\.history\.back\s*\(/);
     }
   );
 
