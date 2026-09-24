@@ -204,15 +204,52 @@ describe("the programmatic recorder close is arbitrated, not a raw back() (#763)
     expect(close).not.toMatch(/suppressPop\.current\s*=/);
   });
 
-  it('the consume issues its one back() only after beginBack("commit-close") has set the guard', () => {
-    const backs = consume.match(/window\.history\.back\s*\(\s*\)/g) ?? [];
-    expect(backs).toHaveLength(1);
-    const begin = index(
-      consume,
-      /travelGuard\.current\s*=\s*beginBack\(\s*travelGuard\.current\s*,\s*"commit-close"\s*\)\.next/
-    );
-    expect(begin).toBeLessThan(consume.search(/window\.history\.back\s*\(/));
-  });
+  it(
+    'the consume issues its one back() only when beginBack("commit-close") returns ok, ' +
+      "and refuses like the commit-close settle otherwise (#838 item 2)",
+    () => {
+      // Exactly one window.history.back() in the whole consume body — the
+      // "issue" row's ok branch — not one per row and not an unconditional
+      // call outside the ok check.
+      const backs = consume.match(/window\.history\.back\s*\(\s*\)/g) ?? [];
+      expect(backs).toHaveLength(1);
+
+      const beginIdx = index(
+        consume,
+        /const\s+begun\s*=\s*beginBack\(\s*travelGuard\.current\s*,\s*"commit-close"\s*\)/
+      );
+      const ifIdx = consume.indexOf("if", beginIdx);
+      const ifBraceOpen = consume.indexOf("{", ifIdx);
+      const ifBraceClose = matchingBraceClose(consume, ifBraceOpen);
+      expect(ifBraceOpen).toBeGreaterThan(-1);
+      expect(ifBraceClose).toBeGreaterThan(ifBraceOpen);
+      const ifBody = consume.slice(ifBraceOpen, ifBraceClose + 1);
+
+      const elseKeyword = consume.indexOf("else", ifBraceClose);
+      expect(
+        elseKeyword,
+        "no else branch after the begun.ok check"
+      ).toBeGreaterThan(-1);
+      const elseBraceOpen = consume.indexOf("{", elseKeyword);
+      const elseBraceClose = matchingBraceClose(consume, elseBraceOpen);
+      expect(elseBraceClose).toBeGreaterThan(elseBraceOpen);
+      const elseBody = consume.slice(elseBraceOpen, elseBraceClose + 1);
+
+      // The ok branch: sets the guard from begun.next, absorbs, THEN calls
+      // the one back() — the same order the commit-close settle's ok branch
+      // uses (`nav-commit-close-race-guards.test.ts` pins that arm).
+      expect(ifBody).toMatch(/travelGuard\.current\s*=\s*begun\.next/);
+      expect(ifBody).toMatch(/suppressPop\.current\s*=\s*true/);
+      expect(
+        ifBody.match(/window\.history\.back\s*\(\s*\)/g) ?? []
+      ).toHaveLength(1);
+
+      // The refusal branch: absorbs the landing the guard declined, issues
+      // no back() — the same shape as the commit-close settle's refused arm.
+      expect(elseBody).toMatch(/suppressPop\.current\s*=\s*true/);
+      expect(elseBody).not.toMatch(/window\.history\.back\s*\(/);
+    }
+  );
 
   it("the replay hands a deferred consume back to consumeRecorderEntry, not to performWrite", () => {
     expect(replay).toMatch(

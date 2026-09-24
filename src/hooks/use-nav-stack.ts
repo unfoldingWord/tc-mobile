@@ -559,15 +559,26 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
           "consume-recorder"
         );
         return;
-      case "issue":
-        // Both guard flags are clear on this row, so `beginBack` proceeds.
-        travelGuard.current = beginBack(
-          travelGuard.current,
-          "commit-close"
-        ).next;
-        suppressPop.current = true;
-        window.history.back();
+      case "issue": {
+        // Both guard flags are clear on this row, so today `beginBack`
+        // always proceeds — but that is two independent checks of the same
+        // state agreeing, not a guarantee. Take the same refusal branch the
+        // commit-close settle already uses (the `case "commit-close-recorder"`
+        // popstate arm below) rather than trusting the prose coupling: only
+        // write `.next`, set `suppressPop` and issue `history.back()` when
+        // `beginBack` actually says this issuer may proceed. A future
+        // refusal reason must not make this row stack a traversal the guard
+        // declined (#763's bug class, George r1 on #833 / #838 item 2).
+        const begun = beginBack(travelGuard.current, "commit-close");
+        if (begun.ok) {
+          travelGuard.current = begun.next;
+          suppressPop.current = true;
+          window.history.back();
+        } else {
+          suppressPop.current = true;
+        }
         return;
+      }
     }
   }, []);
   // Called at the end of every landing. Each write is re-decided, never
