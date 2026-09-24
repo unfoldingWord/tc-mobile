@@ -49,7 +49,10 @@ it. <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor)
    that "can harm your device." That warning is the browser being cautious
    about any app file; it is not specific to tC Mobile. Look for the button
    that lets the download continue or keeps the file — it is usually not the
-   first or most prominent one — and choose it. If the browser removes the
+   first or most prominent one — and choose it. **Only keep the file if it is
+   `app-release.apk` from the releases page in step 1.** If the warning names
+   a different file, or the file came from anywhere else, stop. Do not keep
+   it — tell the facilitator instead. If the browser removes the
    file outright instead of just warning ("blocked"), the setting that
    controls it may be in the browser or in the phone; tell the facilitator
    rather than guessing which one to change. <!-- source: standard
@@ -73,9 +76,18 @@ it. <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor)
    Allow it — the app needs the microphone to record, and without it
    recording will not work. In English the choice that allows it may say
    **Allow**, **While using the app** or **Only this time**; do not choose
-   **Don't allow**. The choices may be a list, one under another, and the
-   side a button sits on changes with the phone's language, so ask the
-   facilitator rather than guessing by position.
+   **Don't allow**. On some older Android versions the button that refuses
+   may instead say **Deny** — it means the same thing as **Don't allow**. If
+   you will be recording more than once, such as over a training day,
+   choose **Allow** or **While using the app** rather than **Only this
+   time** if you can: **Only this time** may only last for that one
+   recording, and you could be asked to grant the microphone again before
+   your next one. <!-- inference, not repo evidence: how long an "Only this
+   time" grant lasts is Android platform behaviour, and this repo has no
+   record of testing it per OS version; confidence: medium; gh issue #248,
+   PR #870 George round 2 --> The choices may be a list, one under another,
+   and the side a button sits on changes with the phone's language, so ask
+   the facilitator rather than guessing by position.
 
 If you cannot reach Install, tell the facilitator whether the download stopped
 or the downloaded file would not open. Include the phone model, screen
