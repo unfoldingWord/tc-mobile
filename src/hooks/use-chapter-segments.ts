@@ -170,17 +170,25 @@ export function useChapterSegments(chapterId: ChapterId) {
   // discarding a whole in-flight load here would leave `loading`/`refreshing`
   // stuck true forever with nothing left to clear them — trading one stale
   // label for a chapter wedged in "Updating…". Instead, every load's result
-  // is merged against the latest label this hook itself has already written:
-  // the store write a `renameSegment` success reads back from is the one
-  // source of truth, so overlaying it is correct whether the racing load's
-  // own read landed before or after it — a no-op when they already agree,
-  // a correction when they do not. Entries are never cleared: label is the
-  // only field rename ever touches, so the newest recorded value can never
-  // go stale on its own.
+  // is merged against the latest label this hook itself has already written.
+  //
+  // An entry is retired the first time a load's OWN read already carries it
+  // (the store has caught up, so the override has done its job) — it must
+  // NOT live for the rest of this hook's life, or it would mask any LATER
+  // change to the same segment forever: a second tab's own rename, or any
+  // future write path, would land on disk and still lose to a value this
+  // hook wrote minutes earlier. `chapterId` changing clears the whole map
+  // for the same reason and to stop it growing across chapters — none of
+  // its entries can apply to a different chapter's segment ids anyway.
   const renamedLabels = useRef(new Map<SegmentId, string | null>());
+  const renamedLabelsChapter = useRef(chapterId);
 
   useEffect(() => {
     let cancelled = false;
+    if (renamedLabelsChapter.current !== chapterId) {
+      renamedLabelsChapter.current = chapterId;
+      renamedLabels.current.clear();
+    }
     void (async () => {
       try {
         const view = await loadChapterView(chapterId);
@@ -189,11 +197,18 @@ export function useChapterSegments(chapterId: ChapterId) {
         setChapterNumber(view.chapterNumber);
         setChapterName(view.chapterName);
         setRows(
-          view.rows.map((r) =>
-            renamedLabels.current.has(r.segmentId)
-              ? { ...r, label: renamedLabels.current.get(r.segmentId) ?? null }
-              : r
-          )
+          view.rows.map((r) => {
+            const pending = renamedLabels.current.get(r.segmentId);
+            if (pending === undefined) return r;
+            // The store already agrees — this read is proof the override has
+            // served its purpose, so retire it rather than let it keep
+            // masking whatever the NEXT load finds.
+            if (r.label === pending) {
+              renamedLabels.current.delete(r.segmentId);
+              return r;
+            }
+            return { ...r, label: pending };
+          })
         );
         setError(null);
         setStaleTarget(false);

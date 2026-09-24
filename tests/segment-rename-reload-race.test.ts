@@ -11,6 +11,7 @@ import {
   addSegment,
   createBook,
   getSegmentsOfChapter,
+  renameSegment as renameSegmentInStore,
 } from "@/lib/storage/books";
 import { closeDb, getDb } from "@/lib/storage/db";
 import type { ChapterId, Segment, SegmentId } from "@/types/domain";
@@ -128,5 +129,43 @@ it("keeps a landed rename's label when a reload's stale read settles after it", 
 
   expect(hook().rows.find((r) => r.segmentId === segmentId)?.label).toBe(
     "verses 3–4"
+  );
+});
+
+it("does not let an own-rename override outlive the store catching up to it", async () => {
+  const { segmentId } = await mountChapter();
+
+  await act(async () => {
+    const ok = await hook().renameSegment(segmentId, "verses 3–4");
+    expect(ok).toBe(true);
+  });
+  expect(hook().rows.find((r) => r.segmentId === segmentId)?.label).toBe(
+    "verses 3–4"
+  );
+
+  // A plain reload, with nothing racing it: its own read now agrees with the
+  // rename, so the override this hook recorded for itself has served its
+  // purpose and must not survive past this point.
+  act(() => {
+    hook().reload();
+  });
+  await vi.waitFor(() => expect(hook().refreshing).toBe(false));
+  expect(hook().rows.find((r) => r.segmentId === segmentId)?.label).toBe(
+    "verses 3–4"
+  );
+
+  // A SECOND writer — another tab, or any future write path — changes the
+  // same segment's label directly in the store, bypassing this hook's own
+  // `renameSegment` entirely.
+  await renameSegmentInStore(segmentId, "chapter two");
+
+  // A later reload must show what the store now holds, not the stale
+  // override from this hook's own earlier rename.
+  act(() => {
+    hook().reload();
+  });
+  await vi.waitFor(() => expect(hook().refreshing).toBe(false));
+  expect(hook().rows.find((r) => r.segmentId === segmentId)?.label).toBe(
+    "chapter two"
   );
 });
