@@ -86,7 +86,7 @@ const elapsedSeconds = async (page: Page) => {
   return Number(match[1]) * 60 + Number(match[2]);
 };
 
-test("a toggle mid-take leaves the recorder recording, and the take still lands", async ({
+test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the take lands", async ({
   page,
 }) => {
   await seedToRecorder(page);
