@@ -22,17 +22,28 @@ import { strings } from "@/components/strings";
  * Round 1 review of #542 (Frank P2-2 / George P3-5) found that first pass had
  * lifted the tone/text decision here but left the VISIBILITY decision behind
  * in `books-screen.tsx`'s own untested JSX `&&`. The cases below pin the
- * exclusivity gate that moved into this function: hidden when the shelf is
- * empty (George P2-2), hidden while the shelf's acute trio is live
- * (George P2-4), and visible otherwise for both bands — each in the tone the
- * DRI decided for its band (Seth, 2026-09-24): `"low"` in `info`, `"critical"`
- * in `alert`.
+ * exclusivity gate that moved into this function: hidden when the shelf holds
+ * no recorded audio (George P2-2, strengthened from `hasContent` to
+ * `hasReclaimableAudio` by #542 Part B, DRI decision 2026-09-24), hidden
+ * while the shelf's acute trio is live (George P2-4), and visible otherwise
+ * for both bands — each in the tone the DRI decided for its band (Seth,
+ * 2026-09-24): `"low"` in `info`, `"critical"` in `alert`.
+ *
+ * **`hasReclaimableAudio`, not `hasContent`** (#542 Part B). The round-1 gate
+ * asked only "does a book exist" — a book with zero chapters, or a chapter
+ * with zero recorded segments, could still show this line's remediation copy
+ * ("mark segments finished", "share your work and remove it") with nothing to
+ * remediate. The case below named "a book with no recordings" is the one that
+ * distinguishes the two predicates: it sets `hasReclaimableAudio: false` on a
+ * gate that a `books.length > 0` check would have read as `true`, so
+ * reverting the gate's *meaning* back to "a book exists" — even under the new
+ * field's name — fails it.
  */
 
 /** A gate with nothing suppressing the line — every case below starts from
  * this and flips exactly the one thing it means to test. */
 const openGate: StoragePressureGate = {
-  hasContent: true,
+  hasReclaimableAudio: true,
   loading: false,
   loadFailed: false,
   deleteFailed: false,
@@ -78,33 +89,44 @@ describe("storagePressureNotice", () => {
     expect(critical).not.toMatch(/\d/);
   });
 
-  it("says nothing when the shelf is empty, even with a marker (George P2-2, #542)", () => {
-    // A book deleted down to an empty shelf must not keep showing a
-    // device-storage warning over the empty-shelf invite — the same
-    // retraction `storageNotPersisted`'s sibling line already makes.
+  it("says nothing when the gate reports no reclaimable audio, even with a marker (George P2-2, #542)", () => {
+    // This function only ever sees the already-computed boolean — it cannot
+    // tell "the shelf is empty" from "a book (or chapter) exists but holds no
+    // recording" apart, and it does not need to: both are `hasReclaimableAudio
+    // === false`, and both must retract the line the same way
+    // `storageNotPersisted`'s sibling line already does for an empty shelf.
+    // The test that DOES distinguish the two states — a book that exists,
+    // with a chapter that exists, but with `recordedCount: 0` — is
+    // `hasReclaimableAudio`'s own, in `tests/book-rows.test.ts`: that is
+    // where a caller-side regression back to "a book exists" (`hasContent`)
+    // would actually be caught, since `books-screen.tsx` computes this
+    // boolean before it ever reaches this function.
     expect(
-      storagePressureNotice("low", { ...openGate, hasContent: false })
+      storagePressureNotice("low", { ...openGate, hasReclaimableAudio: false })
     ).toBeNull();
     expect(
-      storagePressureNotice("critical", { ...openGate, hasContent: false })
+      storagePressureNotice("critical", {
+        ...openGate,
+        hasReclaimableAudio: false,
+      })
     ).toBeNull();
   });
 
   // The next two cases pair `loading: true` / `loadFailed: true` with
-  // `hasContent: true` (via `openGate`). That combination is one the pure
-  // function accepts and must still retract on, but the real caller
-  // (`books-screen.tsx`) can never actually construct it: `hasContent`
-  // requires `loaded === true` (`hasContent = loaded && books.length > 0`),
+  // `hasReclaimableAudio: true` (via `openGate`). That combination is one the
+  // pure function accepts and must still retract on, but the real caller
+  // (`books-screen.tsx`) can never actually construct it: `hasReclaimableAudio`
+  // requires `loaded === true` (it is `loaded && hasReclaimableAudio(books)`),
   // `loadFailed` requires `loaded === false`
   // (`loadFailed = error !== null && !loaded`), and `loading`
   // (`use-books.ts`) only ever transitions back to `false` inside the same
   // load effect that, on the success path, has already called `setLoaded
   // (true)` moments earlier in the same batched update — so no render can
-  // observe `loading: true` once `loaded`, and therefore `hasContent`, is
-  // true. These two were previously named for George P2-4 as if they pinned
-  // Books-reachable behavior; they don't, so they are named here for what
-  // they actually check: the gate FUNCTION's own contract on `loading` and
-  // `loadFailed` in isolation, not a state `books-screen.tsx` can produce.
+  // observe `loading: true` once `loaded`, and therefore `hasReclaimableAudio`,
+  // could be true. These two were previously named for George P2-4 as if they
+  // pinned Books-reachable behavior; they don't, so they are named here for
+  // what they actually check: the gate FUNCTION's own contract on `loading`
+  // and `loadFailed` in isolation, not a state `books-screen.tsx` can produce.
   it("retracts on `loading` alone, as a function contract (not a books-screen-reachable state)", () => {
     expect(
       storagePressureNotice("critical", { ...openGate, loading: true })
@@ -119,9 +141,9 @@ describe("storagePressureNotice", () => {
 
   it("says nothing after a failed delete (George P2-4, #542)", () => {
     // Unlike the two cases above, THIS combination is reachable from
-    // `books-screen.tsx` with `hasContent: true`: a delete can fail while
-    // another book remains on the shelf, so `deleteFailed` and `hasContent`
-    // can both be true at once.
+    // `books-screen.tsx` with `hasReclaimableAudio: true`: a delete can fail
+    // while another book — with a recording on it — remains on the shelf, so
+    // `deleteFailed` and `hasReclaimableAudio` can both be true at once.
     //
     // The acute trio, not the wider `noticeText` the sibling slot renders:
     // `noticeText` also covers a failed `addChapter`, a quota-shaped write

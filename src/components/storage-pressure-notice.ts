@@ -38,15 +38,25 @@
  *
  * Two exclusivity rules moved in, both modelled on this line's sibling,
  * `storageNotPersisted` (`persistence.ts` / `use-storage-persistence.ts`),
- * and both missing before this fix (George P2-2, P2-4, #542):
+ * and both missing before the round-1 fix (George P2-2, P2-4, #542):
  *
- * - **`hasContent`.** `useStoragePressure` is deliberately NOT gated on shelf
- *   content itself (the device can be full before this app has read
+ * - **`hasReclaimableAudio`** (renamed from `hasContent`, #542 Part B, DRI
+ *   decision 2026-09-24). `useStoragePressure` is deliberately NOT gated on
+ *   shelf content itself (the device can be full before this app has read
  *   anything — see that hook's CONTRACT note), so the retraction has to live
- *   on the display side instead. Without it, deleting a book down to an empty
- *   shelf left a device-storage warning standing over the empty-shelf invite
- *   — the exact bug `storageNotPersisted`'s own `hasContent` gate exists to
- *   prevent, that this line failed to inherit.
+ *   on the display side instead. The round-1 fix gated that retraction on
+ *   `hasContent` — "the shelf holds at least one book" — which closed the
+ *   empty-shelf case (a device-storage warning must not stand over the
+ *   empty-shelf invite) but left a weaker one open: a book with zero
+ *   chapters, or a chapter with zero recorded segments, could still show the
+ *   full warning even though its copy ("mark segments finished", "share your
+ *   work and remove it") has nothing to act on there — there is no recording
+ *   to reclaim. `hasReclaimableAudio` (`lib/view/book-rows.ts`) answers the
+ *   stronger question — does at least one segment, anywhere on the shelf,
+ *   hold a recorded take — and retracts the line on an empty shelf for the
+ *   same reason `hasContent` did (no books ⇒ no chapters ⇒ no recorded
+ *   segments), so that case stays covered by construction, not by keeping
+ *   both predicates.
  * - **The acute trio — `loading`, `loadFailed`, `deleteFailed`.** The load/
  *   delete/loading slot above this line in `books-screen.tsx` is exclusive
  *   and acute-first; this line must retract while any of the three is live,
@@ -70,11 +80,16 @@ export interface StoragePressureNotice {
 /** Everything `storagePressureNotice` needs to decide whether its line
  * appears at all, in addition to the marker itself. */
 export interface StoragePressureGate {
-  /** Whether the shelf holds at least one book. `false` retracts the line —
-   * the same predicate `storageNotPersisted`'s sibling line is gated on, so a
-   * book deleted down to an empty shelf clears this warning too rather than
-   * showing a device-storage caveat over the empty-shelf invite. */
-  readonly hasContent: boolean;
+  /** Whether at least one segment, in any chapter of any book on the shelf,
+   * holds a recorded take (`ChapterRow.recordedCount > 0` somewhere) —
+   * `lib/view/book-rows.ts`'s `hasReclaimableAudio` (#542 Part B, DRI
+   * decision 2026-09-24). `false` retracts the line: an empty shelf, or one
+   * with books/chapters but nothing yet recorded in any of them, has nothing
+   * this line's copy could tell someone to reclaim. Stronger than, and
+   * replaces, the round-1 `hasContent` ("the shelf holds at least one book")
+   * — a book or chapter with zero recordings used to still show the full
+   * warning with no remediation available. */
+  readonly hasReclaimableAudio: boolean;
   /** The shelf is (re)loading. */
   readonly loading: boolean;
   /** The last shelf load failed. */
@@ -91,7 +106,7 @@ export function storagePressureNotice(
   gate: StoragePressureGate
 ): StoragePressureNotice | null {
   if (marker === null) return null;
-  if (!gate.hasContent) return null;
+  if (!gate.hasReclaimableAudio) return null;
   if (gate.loading || gate.loadFailed || gate.deleteFailed) return null;
   return marker === "critical"
     ? { tone: "alert", text: strings.storageCritical }

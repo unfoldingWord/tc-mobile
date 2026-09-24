@@ -14,6 +14,7 @@ import {
   renameBook as renameBookInStore,
 } from "@/lib/storage/books";
 import { reportFailure } from "./report-failure";
+import { bumpStoragePressure } from "./use-storage-pressure";
 import type { Book, BookId, Chapter } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
@@ -37,13 +38,14 @@ async function loadBookCard(book: Book): Promise<BookCard> {
     book.chapterIds.map(async (id): Promise<ChapterRow | null> => {
       const chapter = await getChapter(id);
       if (!chapter) return null; // drop a dangling id rather than render a blank
-      const { finished, total } = await chapterProgress(id);
+      const { finished, total, recorded } = await chapterProgress(id);
       return {
         chapterId: chapter.id,
         number: chapter.number,
         name: chapter.name,
         finishedCount: finished,
         totalCount: total,
+        recordedCount: recorded,
       };
     })
   );
@@ -212,10 +214,11 @@ export function patchNewChapter(
         chapterId: chapter.id,
         number: chapter.number,
         name: chapter.name,
-        // A brand-new chapter has no segments, so both counts are known
+        // A brand-new chapter has no segments, so all three counts are known
         // without a read — mirrors `addSegment`'s optimistic row.
         finishedCount: 0,
         totalCount: 0,
+        recordedCount: 0,
       },
     ],
   };
@@ -492,6 +495,15 @@ export function useBooks() {
       // independently by both lenses). Still never a silent unhandled rejection.
       try {
         const book = await createBookInStore(name);
+        // The write is durable now — a new book may hold new chapters/takes
+        // before this screen next asks `estimate()` on its own, so a live
+        // `useStoragePressure` mount must re-read rather than keep whatever
+        // it answered before this commit (#542 Part A, DRI decision
+        // 2026-09-24). Called here, after the `await` lands, never from the
+        // optimistic `setBooks` patch below — that patch can still be
+        // superseded by a stale concurrent load, but this write already
+        // committed regardless.
+        bumpStoragePressure();
         report(null); // a successful write clears the slot — see `deleteBook`
         // Put the row on the shelf in THIS turn, before `reload()`'s async read
         // lands. The New Book dialog unmounts on success, and every contract it
@@ -665,6 +677,13 @@ export function useBooks() {
       report(null);
       try {
         await deleteBookFromStore(bookId);
+        // The delete transaction has committed — real storage (clipMeta/
+        // clipData, `lib/storage/books.ts`) is freed now, so a live
+        // `useStoragePressure` mount must re-read `estimate()` rather than
+        // keep repainting whatever it answered before this delete (#542 Part
+        // A, DRI decision 2026-09-24). After the commit, not from the
+        // optimistic `setBooks` patch below.
+        bumpStoragePressure();
         // Drop the row in the SAME turn the store commits, THEN reload for
         // authority. `reload()` alone only bumps a token: the shelf would keep
         // rendering the deleted book until an async `loadBookCards` resolved,

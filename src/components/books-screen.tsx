@@ -39,6 +39,7 @@ import { useTheme } from "@/hooks/use-theme";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { nextChapterNumber } from "@/lib/storage/books";
 import { cn } from "@/lib/utils";
+import { hasReclaimableAudio } from "@/lib/view/book-rows";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
@@ -135,10 +136,11 @@ export function BooksScreen({
   // (ui-craft §21), and a screen reader would announce it twice. Hide the
   // corner + exactly while the invite is up; it returns once the shelf fills.
   const showEmpty = loaded && books.length === 0;
-  // The shelf holds at least one book. Shared by `useStoragePersistence`
-  // below and by `storagePressureNotice`'s own `hasContent` gate (#542,
-  // George P2-2): a book deleted down to an empty shelf must clear BOTH
-  // storage lines, not just the durability one.
+  // The shelf holds at least one book. Used by `useStoragePersistence` below
+  // only — `storagePressureNotice`'s gate used to share this too (#542 round
+  // 1, George P2-2) but now uses the stronger `hasReclaimableAudio` below
+  // (#542 Part B, DRI decision 2026-09-24): a book can exist with nothing
+  // recorded in it, which `hasContent` alone could not distinguish.
   const hasContent = loaded && books.length > 0;
   // Durable storage (#12). A book exists only because a write committed, so a
   // successful shelf read that finds one is "after the first successful write"
@@ -150,18 +152,27 @@ export function BooksScreen({
   // evicted the same way; `lib/storage/persistence.ts`). Unknown (no API, a
   // rejected query) says nothing.
   const storage = useStoragePersistence(hasContent);
+  // At least one segment, anywhere on the shelf, holds a recorded take
+  // (#542 Part B). `recordedCount` is already in `books` — `useBooks`
+  // computes it per chapter from the same `getSegmentsOfChapter` read that
+  // fills `finishedCount`/`totalCount` — so this is a plain fold over data
+  // already in memory, not a new read. `loaded &&` matches `hasContent`'s own
+  // guard: `books` is `[]` before the first load lands either way, so this is
+  // for clarity rather than to change the answer.
+  const reclaimableAudio = loaded && hasReclaimableAudio(books);
   // Storage pressure (#247, wiring half of #537's core). Unlike `storage`
   // above, `useStoragePressure` itself is NOT gated on a loaded shelf — the
   // device can be full before this app has read anything
   // (`use-storage-pressure.ts`'s CONTRACT note) — so `storagePressureNotice`
-  // takes `hasContent` and the shelf's acute trio (`loading`/`loadFailed`/
-  // `deleteFailed`) as its own gate, rather than folding `hasContent` into
-  // the hook the way `storage` above does. See that function's docblock for
-  // why the gate lives there now and not as JSX `&&` (#542, Frank P2-2 /
-  // George P3-5), and why it is the acute trio and not the wider
+  // takes `hasReclaimableAudio` and the shelf's acute trio (`loading`/
+  // `loadFailed`/`deleteFailed`) as its own gate, rather than folding either
+  // into the hook the way `storage` above does. See that function's docblock
+  // for why the gate lives there now and not as JSX `&&` (#542, Frank P2-2 /
+  // George P3-5), why it is `hasReclaimableAudio` and not `hasContent`
+  // (#542 Part B), and why it is the acute trio and not the wider
   // `noticeText` below (#542, George P2-4).
   const pressureLine = storagePressureNotice(useStoragePressure(), {
-    hasContent,
+    hasReclaimableAudio: reclaimableAudio,
     loading,
     loadFailed,
     deleteFailed,
@@ -1420,13 +1431,17 @@ export function BooksScreen({
           the device can be full before this app has read anything, so the
           underlying hook is NOT gated on content) — but the gate that
           exclusivity needs now lives INSIDE `storagePressureNotice` itself
-          (`hasContent` plus the acute trio `loading`/`loadFailed`/
-          `deleteFailed`, passed in above), not as JSX here. #542 (Frank P2-2 /
-          George P3-5) found the load-bearing predicate living here, in a
-          bare `&&` no test could pin — the same shape `encoder-notice.ts`
-          already avoids for `encoderLine`. `pressureLine` is `null` whenever
-          any of that applies, so the render below needs no extra condition of
-          its own.
+          (`hasReclaimableAudio` plus the acute trio `loading`/`loadFailed`/
+          `deleteFailed`, passed in above), not as JSX here. #542 round 1
+          (Frank P2-2 / George P3-5) found the load-bearing predicate living
+          here, in a bare `&&` no test could pin — the same shape
+          `encoder-notice.ts` already avoids for `encoderLine`; #542 Part B
+          (DRI decision 2026-09-24) then strengthened the predicate itself
+          from `hasContent` ("a book exists") to `hasReclaimableAudio` ("a
+          recorded take exists somewhere"), because the former let an empty
+          book or chapter show this line's remediation copy with nothing to
+          remediate. `pressureLine` is `null` whenever any of that applies, so
+          the render below needs no extra condition of its own.
 
           Order: storage, pressure, encoder. Storage's risk is total and
           unrecoverable (browser eviction, no restore path); pressure is
@@ -1440,12 +1455,16 @@ export function BooksScreen({
 
           Two things #247 still leaves open, honestly: `pressureLine` starts
           `null` on every Books mount and only paints once `estimate()` lands
-          (no cross-mount cache — #537 round 6), so a translator who stays
-          inside one chapter recording segment after segment sees no update
-          until they come back out; and this has not been read against a real
-          Android `estimate()` value or inside the Capacitor training shell,
-          so the thresholds and the native behaviour are both unverified
-          in-shell. Neither is guessed at here. */}
+          (no cross-mount CACHE — #537 round 6, unchanged by #542 Part A,
+          which bumps `use-storage-pressure.ts`'s module-scope generation on a
+          book delete/create commit but caches nothing across a remount), so
+          a translator who stays inside one chapter recording segment after
+          segment — Books unmounted the whole time — sees no update until
+          they come back out (the still-open "recorder-close refresh" half of
+          #247); and this has not been read against a real Android
+          `estimate()` value or inside the Capacitor training shell, so the
+          thresholds and the native behaviour are both unverified in-shell.
+          Neither is guessed at here. */}
       {storage === "not-persisted" && (
         <Notice tone="info">{strings.storageNotPersisted}</Notice>
       )}
