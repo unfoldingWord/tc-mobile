@@ -11,6 +11,11 @@ import tseslint from "typescript-eslint";
  * hooks/      → Browser/stateful glue (can import from: lib, types)
  * lib/        → Pure audio + storage core (can import from: types only)
  * types/      → Domain types (no internal dependencies)
+ * data/       → Bundled static JSON assets, no code, no internal
+ *               dependencies (#159 L-6). Reachable ONLY from lib/ —
+ *               `src/lib/obs/catalog.ts`'s dynamic `import("@/data/...")`
+ *               is the one production import today (`grep -rn "@/data/"
+ *               src` confirms it). Every other layer denies it below.
  *
  * Rule: Never import "upward" in the hierarchy.
  *
@@ -113,6 +118,70 @@ const BROWSER_ONLY_GLOBALS = [
   "Image",
   "HTMLElement",
   "requestAnimationFrame",
+];
+
+/**
+ * #159 L-6 — `no-restricted-imports` only sees STATIC import/export
+ * declarations. Verified on develop `70fc41fe` with `eslint --stdin` probes
+ * (pasted in the PR body): a static `import { x } from "@/hooks/y"` from
+ * `src/lib` errors under the block below, but `await import("@/hooks/y")`,
+ * `await import("../hooks/y")` and
+ * `new URL("../hooks/mp3.worker.ts", import.meta.url)` from the same file all
+ * return ZERO errors — three ways to reach an outer layer that the static
+ * rule cannot see at all, none of them exotic (the `new URL` form is the
+ * exact shape `hooks/mp3-codec.ts` and `app/e2e-harness.ts` already use for
+ * their own Worker construction).
+ *
+ * `no-restricted-syntax` closes both holes with esquery selectors:
+ *
+ *   - `dynamicImportDeny(layer, message)` bans a dynamic `import()` whose
+ *     source is the `@/<layer>/...` alias OR a relative `../<layer>/...`
+ *     path (any depth of `../`) — the same two spellings `deny()` already
+ *     covers for the static form. Never `lib`, `types` or `data` as a banned
+ *     target here: a dynamic import of a SIBLING or INNER module is not an
+ *     onion violation, and `src/lib/obs/catalog.ts`'s
+ *     `await import("@/data/obs-catalog.json")` — the one dynamic import
+ *     `src/lib` makes today (`grep -rn "import(" src/lib` confirms it is the
+ *     only one) — must stay legal.
+ *   - `NEW_URL_IMPORT_META_SELECTOR` bans `new URL(..., import.meta.url)`
+ *     outright in lib/ and types/, regardless of its first argument. It has
+ *     no legitimate use in either — `grep -rn "new URL(" src/lib src/types`
+ *     returns zero hits on develop — so there is nothing to carve out, unlike
+ *     the dynamic-import selectors above.
+ *
+ * Applied only to the lib/ and types/ blocks below (#159 L-6's ask): hooks/,
+ * components/ and app/ are exactly where a Worker's own
+ * `new URL(..., import.meta.url)` legitimately lives, so this selector set is
+ * never added to those blocks.
+ */
+const dynamicImportDeny = (layer, message) => ({
+  selector: `ImportExpression[source.value=/^(@\\/|(\\.\\.\\/)+)${layer}(\\/|$)/]`,
+  message,
+});
+
+const NEW_URL_IMPORT_META_SELECTOR = {
+  selector:
+    "NewExpression[callee.name='URL'][arguments.1.object.type='MetaProperty'][arguments.1.property.name='url']",
+  message:
+    "new URL(..., import.meta.url) is a bundler asset-URL escape hatch that " +
+    "no-restricted-imports cannot see. It has no legitimate use in the " +
+    "DOM-free core — the Worker construction that needs it belongs in " +
+    "hooks/ (hooks/mp3-codec.ts) or app/ (app/e2e-harness.ts). See AGENTS.md.",
+};
+
+/**
+ * The full dynamic-import + `new URL` `no-restricted-syntax` set for one
+ * inner layer: denies a dynamic `import()` of each name in `upwardLayers`,
+ * plus the `new URL(..., import.meta.url)` ban.
+ */
+const dynamicBoundarySyntax = (fromLayer, upwardLayers) => [
+  ...upwardLayers.map((layer) =>
+    dynamicImportDeny(
+      layer,
+      `${fromLayer} cannot dynamically import ${layer} (onion architecture)`
+    )
+  ),
+  NEW_URL_IMPORT_META_SELECTOR,
 ];
 
 /**
@@ -299,34 +368,61 @@ export default tseslint.config(
   },
 
   // types/ — the innermost layer, no internal dependencies at all.
+  // *.{ts,tsx} (#159 L-6): *.ts alone let a src/types/**/*.tsx file skip
+  // every rule below — confirmed on develop with an `eslint --stdin`
+  // probe under a `.tsx` filename returning zero errors for the same
+  // `@/hooks/…` import that errors under `.ts` (pasted in the PR body).
   {
-    files: ["src/types/**/*.ts"],
-    rules: deny(
-      [
-        {
-          layer: "lib",
-          message: "types cannot import lib (onion architecture)",
-        },
-        {
-          layer: "hooks",
-          message: "types cannot import hooks (onion architecture)",
-        },
-        {
-          layer: "components",
-          message: "types cannot import components (onion architecture)",
-        },
-        {
-          layer: "app",
-          message: "types cannot import app (onion architecture)",
-        },
+    files: ["src/types/**/*.{ts,tsx}"],
+    rules: {
+      ...deny(
+        [
+          {
+            layer: "lib",
+            message: "types cannot import lib (onion architecture)",
+          },
+          {
+            layer: "hooks",
+            message: "types cannot import hooks (onion architecture)",
+          },
+          {
+            layer: "components",
+            message: "types cannot import components (onion architecture)",
+          },
+          {
+            layer: "app",
+            message: "types cannot import app (onion architecture)",
+          },
+          {
+            layer: "data",
+            message:
+              "types cannot import data (onion architecture) — data/ is " +
+              "reachable only from lib/, see the header note above.",
+          },
+        ],
+        [CAPACITOR_DENIED]
+      ),
+      "no-restricted-syntax": [
+        "error",
+        ...dynamicBoundarySyntax("types", [
+          "lib",
+          "hooks",
+          "components",
+          "app",
+        ]),
       ],
-      [CAPACITOR_DENIED]
-    ),
+    },
   },
 
-  // lib/ — pure core. May import types only, and may touch no browser API.
+  // lib/ — pure core. May import types only (and data/, its one bundled
+  // asset — see the header note), and may touch no browser API.
+  // *.{ts,tsx} (#159 L-6): a src/lib/**/*.tsx file using `window` and
+  // `new AudioContext()` produced zero ESLint and zero `tsc` diagnostics
+  // under *.ts-only globs — confirmed on develop with an `eslint --stdin`
+  // probe and a real `tsc -p tsconfig.lib.json --listFilesOnly` run
+  // (pasted in the PR body).
   {
-    files: ["src/lib/**/*.ts"],
+    files: ["src/lib/**/*.{ts,tsx}"],
     rules: {
       ...deny(
         [
@@ -355,6 +451,10 @@ export default tseslint.config(
             "audio boundary. See AGENTS.md.",
         })),
       ],
+      "no-restricted-syntax": [
+        "error",
+        ...dynamicBoundarySyntax("lib", ["hooks", "components", "app"]),
+      ],
     },
   },
 
@@ -374,6 +474,12 @@ export default tseslint.config(
         {
           layer: "app",
           message: "hooks cannot import app (onion architecture)",
+        },
+        {
+          layer: "data",
+          message:
+            "hooks cannot import data directly (onion architecture) — " +
+            "route through lib/obs/catalog.ts, see the header note above.",
         },
       ]),
       ...HISTORY_BOUNDARY_RULES,
@@ -418,6 +524,12 @@ export default tseslint.config(
             layer: "app",
             message: "components cannot import app (onion architecture)",
           },
+          {
+            layer: "data",
+            message:
+              "components cannot import data directly (onion architecture) " +
+              "— route through lib/obs/catalog.ts, see the header note above.",
+          },
         ],
         [CAPACITOR_DENIED]
       ),
@@ -431,7 +543,20 @@ export default tseslint.config(
   // denials of its own.
   {
     files: ["src/app/**/*.{ts,tsx}"],
-    rules: { ...deny([], [CAPACITOR_DENIED]), ...HISTORY_BOUNDARY_RULES },
+    rules: {
+      ...deny(
+        [
+          {
+            layer: "data",
+            message:
+              "app cannot import data directly (onion architecture) — " +
+              "route through lib/obs/catalog.ts, see the header note above.",
+          },
+        ],
+        [CAPACITOR_DENIED]
+      ),
+      ...HISTORY_BOUNDARY_RULES,
+    },
   },
 
   // The popstate `no-restricted-syntax` ban across the boundary layers, in its
