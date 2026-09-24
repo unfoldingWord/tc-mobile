@@ -1,40 +1,61 @@
-import { readFileSync } from "node:fs";
 import { createElement } from "react";
 
 import { describe, expect, it } from "vitest";
 
+import { shareOverlayGlyph } from "@/components/share-overlay-glyph";
+import { shareSettledGlyph } from "@/components/share-outcome-glyph";
 import { ShareProgressPanel } from "@/components/share-progress-panel";
+import { SHARE_SETTLED } from "@/hooks/share-progress";
 
 import { one, render } from "./render";
-
-const read = (rel: string) =>
-  readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
 
 /**
  * The share overlay's busy state used to wear a STATIC glyph — the same
  * `retry` mark `notice-tone.ts`'s shared `busy` entry gives every other wait
- * in the app — with no animation of its own (#850's premise). It is now a
- * dedicated ring-of-dots mark (`icon.tsx`'s "share-busy"), scoped to the
- * share overlay only.
+ * in the app — with no dedicated animation of its own. It is now a dedicated
+ * ring-of-dots mark (`icon.tsx`'s "share-busy"), scoped to the share overlay
+ * only.
+ *
+ * `shareOverlayGlyph` (#850, `share-overlay-glyph.ts`) is the plain function
+ * that makes the busy-vs-settled CHOICE testable as behaviour: called with a
+ * `busy` progress value or with an `outcome` one, it is exercised the same
+ * way `share-progress.tsx` exercises it, not matched against that
+ * component's source text.
  *
  * `ShareProgress` itself cannot be rendered through `tests/render.ts`: it
  * portals to `document.body`, and `renderToStaticMarkup` refuses a portal
  * outright ("Portals are not currently supported by the server renderer").
- * `ShareProgressPanel` is the presentational split that makes this
- * render-testable at all (see that file's own header) — the same reason
- * `RecorderStatus` exists as its own component.
+ * `ShareProgressPanel` is the presentational split that makes the RESULT of
+ * that choice render-testable — the same reason `RecorderStatus` exists as
+ * its own component.
  */
-describe("the share overlay's busy glyph is a dedicated mark, not the shared retry arc (#850)", () => {
-  it("share-progress.tsx's busy branch picks the dedicated share-busy mark", () => {
-    const source = read("src/components/share-progress.tsx");
-    expect(source).toMatch(/icon:\s*"share-busy"/);
-    // The old wiring must be gone, not merely shadowed by a new branch above
-    // it — this is the assertion that actually distinguishes "replaced" from
-    // "added a second, unused path".
-    expect(source).not.toMatch(/noticePresentation\("busy"\)\.icon/);
+describe("shareOverlayGlyph picks the overlay's mark (#850)", () => {
+  it('a busy progress gives "share-busy", never the shared busy retry arc', () => {
+    const glyph = shareOverlayGlyph({
+      phase: "busy",
+      work: "prepare",
+      since: 0,
+      pending: null,
+    });
+    expect(glyph.icon).toBe("share-busy");
+    expect(glyph.tone).toBe("busy");
   });
 
-  it('renders a ring-of-dots for icon="share-busy" — not the two-path retry arrow', () => {
+  it("every settled outcome gives the same mark the outcome table gives it", () => {
+    // Ties this function to `shareSettledGlyph` rather than re-asserting its
+    // table: `tests/share-outcome-glyph.test.ts` already pins which mark
+    // each settled value gets, and which two settled values must differ
+    // (#178) — this only has to prove the busy/outcome DISPATCH is correct,
+    // not re-prove the table underneath it.
+    for (const settled of SHARE_SETTLED) {
+      const glyph = shareOverlayGlyph({ phase: "outcome", settled, since: 0 });
+      expect(glyph).toEqual(shareSettledGlyph(settled));
+    }
+  });
+});
+
+describe("the busy mark renders as a ring of dots, not the two-path retry arrow (#850)", () => {
+  it('renders a ring-of-dots for icon="share-busy"', () => {
     const container = render(
       createElement(ShareProgressPanel, {
         role: "status",

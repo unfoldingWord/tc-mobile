@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 
 import { noticePresentation } from "./notice-tone";
 import { shareProgressText } from "./share-error-copy";
-import { shareSettledGlyph } from "./share-outcome-glyph";
+import { shareOverlayGlyph } from "./share-overlay-glyph";
 import { ShareProgressPanel } from "./share-progress-panel";
 import type { ShareProgress as ShareProgressState } from "@/hooks/share-progress";
 
@@ -222,15 +222,11 @@ export function ShareProgress({
   }, [visible]);
 
   if (progress.phase === "hidden") return null;
-  // The wait wears its own ring-of-dots mark (#850, `icon.tsx`'s
-  // "share-busy"), not `Notice`'s shared `busy` retry arc — spun by the
-  // stylesheet either way (`.share-scrim[data-outcome="busy"]
-  // .share-progress-glyph`); an outcome wears the table's mark for it. The
-  // ROLE and the glyph's ink still come from `noticePresentation("busy")` —
-  // only the icon is share-specific.
-  const glyph = busy
-    ? { icon: "share-busy" as const, tone: "busy" as const }
-    : shareSettledGlyph(progress.settled);
+  // Which mark and tone: `shareOverlayGlyph` (#850, `share-overlay-glyph
+  // .ts`) owns the busy-vs-settled choice as a plain function, so it is a
+  // behaviour a test can call directly rather than something only rendered
+  // JSX or source text could show.
+  const glyph = shareOverlayGlyph(progress);
   const { role } = noticePresentation(glyph.tone);
   // The stylesheet keys the glyph's ink on this, not on the tone: success is
   // `--s-done`, not the `info` tone's amber.
