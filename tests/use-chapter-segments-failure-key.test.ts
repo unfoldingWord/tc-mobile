@@ -12,9 +12,11 @@ import {
   addSegment,
   createBook,
   getSegmentsOfChapter,
+  renameChapter,
 } from "@/lib/storage/books";
+import { setSegmentFinished } from "@/lib/storage/takes";
 import { closeDb, getDb } from "@/lib/storage/db";
-import type { ChapterId } from "@/types/domain";
+import type { ChapterId, Segment } from "@/types/domain";
 
 /**
  * #172 part 1: `useChapterSegments` must store a `strings`-mapped failure
@@ -34,6 +36,14 @@ vi.mock("@/lib/storage/books", async (importOriginal) => {
     ...actual,
     getSegmentsOfChapter: vi.fn(actual.getSegmentsOfChapter),
     addSegment: vi.fn(actual.addSegment),
+    renameChapter: vi.fn(actual.renameChapter),
+  };
+});
+vi.mock("@/lib/storage/takes", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/storage/takes")>();
+  return {
+    ...actual,
+    setSegmentFinished: vi.fn(actual.setSegmentFinished),
   };
 });
 
@@ -136,6 +146,66 @@ it('maps a quota-exceeded addSegment failure to "noRoom" (#172)', async () => {
 
   await act(async () => {
     await hook().addSegment();
+  });
+
+  expect(hook().error).toBe("noRoom");
+});
+
+it('maps a failed setFinished write to "saveFailed", not the raw message, and reports the cause under "chapter-set-finished" (#894)', async () => {
+  await mountChapter();
+  let segment: Segment | null = null;
+  await act(async () => {
+    segment = await hook().addSegment();
+  });
+  const cause = new Error(BROWSER_MESSAGE);
+  vi.mocked(setSegmentFinished).mockRejectedValueOnce(cause);
+
+  await act(async () => {
+    await hook().setFinished(segment!.id, true);
+  });
+
+  expect(hook().error).toBe("saveFailed");
+  expect(hook().error).not.toContain("UnknownError");
+  expect(reportFailure).toHaveBeenCalledWith(cause, "chapter-set-finished");
+});
+
+it('maps a quota-exceeded setFinished failure to "noRoom" (#894)', async () => {
+  await mountChapter();
+  let segment: Segment | null = null;
+  await act(async () => {
+    segment = await hook().addSegment();
+  });
+  vi.mocked(setSegmentFinished).mockRejectedValueOnce(quotaError());
+
+  await act(async () => {
+    await hook().setFinished(segment!.id, true);
+  });
+
+  expect(hook().error).toBe("noRoom");
+});
+
+it('maps a failed chapter-rename write to "saveFailed", not the raw message, and reports the cause under "chapter-rename" (#894)', async () => {
+  await mountChapter();
+  const cause = new Error(BROWSER_MESSAGE);
+  vi.mocked(renameChapter).mockRejectedValueOnce(cause);
+
+  let result: boolean | undefined;
+  await act(async () => {
+    result = await hook().renameChapter("Genesis 3");
+  });
+
+  expect(result).toBe(false);
+  expect(hook().error).toBe("saveFailed");
+  expect(hook().error).not.toContain("UnknownError");
+  expect(reportFailure).toHaveBeenCalledWith(cause, "chapter-rename");
+});
+
+it('maps a quota-exceeded chapter-rename failure to "noRoom" (#894)', async () => {
+  await mountChapter();
+  vi.mocked(renameChapter).mockRejectedValueOnce(quotaError());
+
+  await act(async () => {
+    await hook().renameChapter("Genesis 3");
   });
 
   expect(hook().error).toBe("noRoom");
