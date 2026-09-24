@@ -21,9 +21,14 @@ import { LIGHT_FLOOR, floorOf, resolved } from "./support/theme";
  * WHAT THIS IS REALLY GUARDING. Mounting `ThemeControl` inside the recorder
  * puts a `useSyncExternalStore` subscriber in a tree that is capturing audio,
  * and a toggle re-renders it. The PR's claim is that the blast radius stops
- * at the leaf (plus the canvases, which subscribe on their own account), so a
- * toggle cannot disturb a live take. Until this case that claim rested on
- * reading the code. Here the take is actually running when the theme flips.
+ * at the leaf (plus the canvases, which subscribe on their own account), and
+ * until this case even that rested on reading the code. Here the take is
+ * actually running when the theme flips.
+ *
+ * What that buys is narrow, and WHAT IS NOT ASSERTED below is the binding
+ * statement of it: the recorder does not leave its recording state and the
+ * take still commits. This case is NOT evidence that a toggle cannot disturb
+ * a live take — it cannot see the stream at all.
  *
  * DRIVING A LIVE TAKE IS ESTABLISHED HERE, which the file header's "the
  * recorder cannot [be driven honestly]" predates:
@@ -104,8 +109,15 @@ test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the 
   // rather than one reading against a clock that had not started.
   await expect.poll(() => elapsedSeconds(page)).toBeGreaterThan(0);
 
-  // The `≡` stays reachable mid-take on purpose (Edit commits-then-edits a
-  // live take, #134), which is what makes the toggle reachable here at all.
+  // The `≡` stays reachable mid-take on purpose, which is what makes the
+  // toggle reachable here at all. The OPENER is gated on `!view`, the close
+  // window, `denied` and a held take (`recorder.tsx`) — recording is not among
+  // them — and the rows inside are gated one by one. So the menu being open
+  // says nothing about any particular row: Edit is blocked while a take is
+  // live, since #857 found the toolbar's `[ ]` twin openable mid-recording and
+  // closed both. An earlier version of this comment gave #134's
+  // commits-then-edits behaviour as the reason the menu opens; that behaviour
+  // is gone, and it was never what kept the opener reachable.
   await page.getByRole("button", { name: "More actions", exact: true }).click();
   const menu = page.getByRole("dialog", { name: "More", exact: true });
   await expect(menu).toBeVisible();
