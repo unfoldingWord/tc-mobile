@@ -289,37 +289,37 @@ export function App() {
   //   only because that mirror has gone stale first.
   //
   // Nothing subscribes to the store, so each mirror is repaired by an explicit
-  // reload. THREE reconciliation ROUTES exist, and this one is the last, not
-  // the only. Routes, not call sites, and no grep lines up with them: route 2
-  // calls `reloadView()`, a DIFFERENT function from routes 1 and 3's
-  // `reload()`, and more than one call site reaches the same route. The list
-  // below is the claim; a search for either name is not.
-  //     - a landed save reloads the LIST at once — `useSaveTake`'s `onSaved`,
-  //       wired above, because the row reads as unrecorded until it does;
-  //     - an in-sheet commit reloads the SHEET's own view (`reloadView()` in
-  //       components/recorder.tsx);
-  //     - this `reload()`, when the sheet closes having changed something —
-  //       the only repair for what changes the segment without reaching
-  //       `onSaved`: a deferred Finished toggle, and the recorder MENU's
-  //       erase (`useEraseSegment`, which exits dirty). A cut to EMPTY is NOT
-  //       a counterexample and not a case this route skips: it runs
-  //       `performClearEditedSegment`, which fires `onSaved`
-  //       (hooks/use-save-take.ts), and THEN sets `dirty`, so both that route
-  //       and this one run for it. It simply does not depend on this one.
+  // reload. THREE reconciliation ROUTES exist; this `reload()` is route 3, the
+  // last of them and not the only one. Routes, not call sites, and no grep
+  // lines up with them: route 2 calls `reloadView()`, a DIFFERENT function
+  // from routes 1 and 3's `reload()`, and more than one call site reaches the
+  // same route. The list below is the claim; a search for either name is not.
+  //     1. a landed save reloads the LIST at once — `useSaveTake`'s `onSaved`,
+  //        wired above, because the row reads as unrecorded until it does;
+  //     2. an in-sheet commit reloads the SHEET's own view (`reloadView()` in
+  //        components/recorder.tsx);
+  //     3. this `reload()`, when the sheet closes having changed something —
+  //        the only repair for what changes the segment without reaching
+  //        `onSaved`: a deferred Finished toggle, and the recorder MENU's
+  //        erase (`useEraseSegment`, which exits dirty). A cut to EMPTY runs
+  //        `performClearEditedSegment`, which fires `onSaved`
+  //        (hooks/use-save-take.ts) and then sets `dirty`, so routes 1 and 3
+  //        both run for it.
   //
-  // The third is not redundant, and that is the part worth keeping: the
+  // Route 3 is not redundant, and that is the part worth keeping: the
   // explicit toggle is DEFERRED to close (see `setFinished` in
   // hooks/use-recorder-segment.ts), so a segment marked finished without a new
-  // take reaches the list through this call and no other.
+  // take reaches the list through route 3 and no other.
   //
   // This inventory lives HERE and is not restated in the hooks. Both mirrors'
   // docblocks used to carry their own partial copies and both had drifted: a
   // second copy of a list is a second thing to keep in step. Link to it; do
   // not re-enumerate it.
   //
-  // It is correct today for one reason — the sheet is MODAL. While it is open
-  // the screens behind it are `inert` (the wrapper below), so the list's mirror
-  // cannot be focused or activated during the window in which it is stale --
+  // Deferring the list's repair to close is correct today for one reason — the
+  // sheet is MODAL. While it is open the screens behind it are `inert` (the
+  // wrapper below), so the list's mirror cannot be focused or activated
+  // during the window in which it is stale --
   // it is still PAINTED, which is why this is a modality argument and not a
   // visibility one; and the
   // list's own toggle patches its row in place only after a landed write, so it
