@@ -35,13 +35,28 @@ describe("Zoom's disabled gate covers the leftover-preview close window (#396)",
   // the gate is now spread over TWO files: the terms are joined here, and the
   // sheet is what feeds the stage's half in. Both halves are read, because
   // either one alone can be broken without the other noticing.
-  const toolbars = readFileSync(
-    new URL("../src/components/recorder-toolbars.tsx", import.meta.url),
-    "utf8"
+  // Both are stripped of comments AT READ TIME, before anything locates an
+  // element in them. Three holes have now been found on pins of this shape:
+  // a slice running to end of file, a comment INSIDE the slice, and the one
+  // a slice-level strip cannot reach — a block comment whose `/*` opens
+  // BEFORE the element, leaving no `/*` in the slice, so `indexOf` lands on
+  // the decoy and the live code is never read. Proven here by mutation.
+  // Read, strip, then search, as `tests/menu-hamburger-header.test.ts` and
+  // `tests/recorder-menu.test.ts` do: the ORDER is the guarantee, not the
+  // regexes. Both reads get it — each one is searched and sliced.
+  const strip = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const toolbars = strip(
+    readFileSync(
+      new URL("../src/components/recorder-toolbars.tsx", import.meta.url),
+      "utf8"
+    )
   );
-  const sheet = readFileSync(
-    new URL("../src/components/recorder.tsx", import.meta.url),
-    "utf8"
+  const sheet = strip(
+    readFileSync(
+      new URL("../src/components/recorder.tsx", import.meta.url),
+      "utf8"
+    )
   );
 
   const zoomDisabledExpr = (() => {
@@ -79,11 +94,8 @@ describe("Zoom's disabled gate covers the leftover-preview close window (#396)",
     // The half the rename could silently lose: a prop is only as good as what
     // the sheet passes into it, and `windowControlsInert={false}` would leave
     // every assertion above green while the gate did nothing.
-    // Bounded to the ELEMENT, not to end-of-file. A slice running to EOF
-    // passes if either string turns up in some later comment while the real
-    // prop is a constant — the comment-captures-a-test trap AGENTS.md
-    // documents, here in the gate that exists to catch exactly that
-    // substitution (George R1).
+    // Bounded to the ELEMENT, not to end-of-file (George R1); comments are
+    // already gone from `sheet` by the strip at read time above.
     const open = sheet.indexOf("<RecorderToolbar");
     const end = sheet.indexOf("/>", open);
     expect(open, "no <RecorderToolbar in the sheet").toBeGreaterThan(-1);
@@ -96,10 +108,7 @@ describe("Zoom's disabled gate covers the leftover-preview close window (#396)",
     // ahead of a hard-wired `{false}` kept this green. Same strip
     // `tests/menu-hamburger-header.test.ts` and `tests/recorder-menu.test.ts`
     // use; any test that slices a region out of source needs it.
-    const toolbarTag = sheet
-      .slice(open, end)
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^\s*\/\/.*$/gm, "");
+    const toolbarTag = sheet.slice(open, end);
     expect(toolbarTag).toMatch(
       /windowControlsInert=\{stage\.windowControlsInert\}/
     );
