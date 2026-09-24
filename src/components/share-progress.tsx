@@ -1,10 +1,10 @@
 import { useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
-import { Icon } from "./icon";
 import { noticePresentation } from "./notice-tone";
 import { shareProgressText } from "./share-error-copy";
 import { shareSettledGlyph } from "./share-outcome-glyph";
+import { ShareProgressPanel } from "./share-progress-panel";
 import type { ShareProgress as ShareProgressState } from "@/hooks/share-progress";
 
 interface ShareProgressProps {
@@ -222,10 +222,14 @@ export function ShareProgress({
   }, [visible]);
 
   if (progress.phase === "hidden") return null;
-  // The wait wears the same retry mark `Notice`'s `busy` tone does, spun by
-  // the stylesheet; an outcome wears the table's mark for it.
+  // The wait wears its own ring-of-dots mark (#850, `icon.tsx`'s
+  // "share-busy"), not `Notice`'s shared `busy` retry arc — spun by the
+  // stylesheet either way (`.share-scrim[data-outcome="busy"]
+  // .share-progress-glyph`); an outcome wears the table's mark for it. The
+  // ROLE and the glyph's ink still come from `noticePresentation("busy")` —
+  // only the icon is share-specific.
   const glyph = busy
-    ? { icon: noticePresentation("busy").icon, tone: "busy" as const }
+    ? { icon: "share-busy" as const, tone: "busy" as const }
     : shareSettledGlyph(progress.settled);
   const { role } = noticePresentation(glyph.tone);
   // The stylesheet keys the glyph's ink on this, not on the tone: success is
@@ -243,12 +247,12 @@ export function ShareProgress({
         } else onDismiss();
       }}
     >
-      <div ref={panelRef} tabIndex={-1} role={role} className="share-progress">
-        <Icon name={glyph.icon} size={48} className="share-progress-glyph" />
-        <span className="share-progress-text">
-          {shareProgressText(progress, scope)}
-        </span>
-      </div>
+      <ShareProgressPanel
+        ref={panelRef}
+        role={role}
+        icon={glyph.icon}
+        text={shareProgressText(progress, scope)}
+      />
     </div>,
     document.body
   );

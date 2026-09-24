@@ -41,7 +41,8 @@ export type IconName =
   | "share-empty"
   | "share-sent"
   | "share-closed"
-  | "share-android";
+  | "share-android"
+  | "share-busy";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   back: (
@@ -454,144 +455,104 @@ const PATHS: Record<IconName, React.ReactNode> = {
       fill="currentColor"
     />
   ),
-  /* The two share outcomes that had no mark of their own (#178). Share is the
-     only way audio leaves the phone, so "some of it went" and "none of it
-     could" must not look alike — a facilitator who reads them as the same
-     thing collects an incomplete chapter believing it is whole.
+  /* The four outcomes a share can settle into (#178, #491, redrawn for #850):
+     standard platform marks, not an invented tray family. Each follows a
+     Material Symbols shape for the state it names, so the SILHOUETTE is one
+     a translator may already have seen on a phone somewhere else, rather
+     than a share-specific glyph nobody has met before. Each stays a
+     hand-drawn path on the same 22-unit grid, `currentColor`, no icon font —
+     the precedent #490 already set for the Android Share control.
 
-     Both are built on `share`'s own up-arrow-out-of-a-tray, so they read as
-     members of the share family rather than as two unrelated signs, and both
-     say what they mean by what is MISSING from that shape: `share-partial`
-     breaks the tray's rim on one side (some went, some stayed), `share-empty`
-     drops the arrow entirely (none of it could go).
-
-     Checked at the real 20px Notice size, not just drawn: with `alert` for the
-     third outcome, the three are three distinct silhouettes — arrow + broken
-     tray, bare tray, triangle — rather than one shape wearing modifiers, which
-     is what survives at that size.
-
-     Whether a non-reader actually reads them that way is NOT decided here.
-     That is the ten-minute icon-recognition protocol at the training (#249),
-     which #178 names as its own acceptance evidence. */
+     Whether a non-reader actually reads any of the four this way is NOT
+     decided here. That is the ten-minute icon-recognition protocol at the
+     training (#249), which #178 named as its own acceptance evidence and
+     which none of the four below has been through yet. */
+  /* `share-partial`: an open ring, three-quarters drawn — Material's
+     `incomplete_circle`. The gap IS the message: some of the chapter went
+     out and some did not, the way a partly-filled ring already reads
+     "not finished" in a battery or a download meter. Distinct from the full,
+     closed ring `share-sent` draws below. */
   "share-partial": (
-    <>
-      <path
-        d="M11 3.7 L11 12"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-      <path
-        d="M7.7 7 L11 3.7 L14.3 7"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      {/* The tray, with its right-hand wall and part of its floor absent —
-          the gap IS the message, so it is drawn as an open path, never as a
-          dashed rectangle that could read as a selection. */}
-      <path
-        d="M14.5 9 L16.5 9 L16.5 12.5 M5.5 17.5 L11 17.5 M7.5 9 L5.5 9 L5.5 17.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </>
-  ),
-  /* The share tray with NO ARROW — nothing is going out. The absence is the
-     whole mark, and it is deliberately not a crossed-out share glyph.
-
-     Three crossed-out variants were drawn and rendered at the real 20px
-     Notice size (full share + full-bleed slash, tray + slash, share + ring)
-     and ALL THREE were mud: at 22 units and 1.8 stroke there is not enough
-     room to lay a prohibition stroke over a tray and an arrow and have either
-     survive. Dropping the arrow instead changes the silhouette by a third of
-     the glyph's height, which is what actually reads small. Recorded because
-     it is the kind of thing the next person will otherwise try again. */
-  "share-empty": (
     <path
-      d="M7.5 9 L5.5 9 L5.5 17.5 L16.5 17.5 L16.5 9 L14.5 9"
+      d="M11 3.6 A7.4 7.4 0 1 1 3.6 11"
       fill="none"
       stroke="currentColor"
       strokeWidth="1.8"
       strokeLinecap="round"
-      strokeLinejoin="round"
     />
   ),
-  /* The two outcomes a share can end in once the sheet has closed (#491):
-     handed over, and dismissed. Same tray family as the three above, for the
-     same reason — five marks that read as one vocabulary, each saying what
-     it means by what happens to the arrow.
-
-     `share-sent`: the tray with a TICK where the arrow was. Not the bare
-     `check` (that is the "Share now" control the person just tapped, and a
-     success wearing the control's own mark says "tap this" rather than "this
-     happened"), and not the plain `share`. It means HANDED TO THE SHEET and
-     nothing further — a resolve proves the bytes reached the OS, not that
-     any app kept them (`resolveProvesDelivery`), so the copy under it stops
-     there too.
-
-     `share-closed`: the arrow pointing DOWN into the tray — it came back,
-     nothing left. Not `back` (a control glyph). Shown for a sheet the person
-     closed; on Android native the plugin can resolve a Back after the
-     activity stopped as a success, so this mark is the clean-cancel case
-     only, and that hole is documented where it lives, not papered over here.
-
-     Neither has been shown to a non-reader. The recognition check at the
-     training (#249) is the acceptance evidence for both, as #178 already
-     says for the three above. Drawn at 48px (the modal) — check them there
-     before claiming anything about legibility. */
-  "share-sent": (
+  /* `share-empty`: a closed ring with a single bar through the middle —
+     Material's `do_not_disturb`, the standard "nothing here" mark. `nothing`
+     and `failed` (the triangle below) share a tone (#178), so this shape is
+     the ONLY thing that tells a non-reader "there is nothing to share yet"
+     from "it tried and failed" — a closed ring is also not the open,
+     three-quarter one `share-partial` draws above, so the three marks that
+     can share a modal stay three different silhouettes. */
+  "share-empty": (
     <>
-      <path
-        d="M7.6 8.2 L10.4 11 L15.2 4.6"
+      <circle
+        cx="11"
+        cy="11"
+        r="7.4"
         fill="none"
         stroke="currentColor"
-        strokeWidth="2.1"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+        strokeWidth="1.7"
       />
       <path
-        d="M7.5 9 L5.5 9 L5.5 17.5 L16.5 17.5 L16.5 9 L14.5 9"
+        d="M6.8 11 L15.2 11"
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.8"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+      />
+    </>
+  ),
+  /* The two outcomes a share can end in once the sheet has closed (#491).
+     `share-sent`: a closed ring with a tick — Material's `check_circle`, the
+     universal "done" mark. Not the bare `check` (that is the "Share now"
+     control the person just tapped, and a success wearing the control's own
+     mark says "tap this" rather than "this happened") and not the plain
+     `share`. It means HANDED TO THE SHEET and nothing further — a resolve
+     proves the bytes reached the OS, not that any app kept them
+     (`resolveProvesDelivery`), so the copy under it stops there too.
+
+     `share-closed`: a plain X — Material's `close`, the standard dismiss
+     mark. Not `back` (a control glyph, not an outcome) and not the alert
+     triangle: this outcome carries the `info` tone and the muted ink, not
+     the failure colour, so the mark must not read as an error either.
+
+     Neither mark has been shown to a non-reader; #249 is the acceptance
+     evidence for both, the same as `share-partial`/`share-empty` above.
+     Drawn at 48px (the modal) — check them there before claiming anything
+     about legibility. */
+  "share-sent": (
+    <>
+      <circle
+        cx="11"
+        cy="11"
+        r="7.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+      <path
+        d="M7.6 11.2 L9.8 13.6 L14.6 8.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
     </>
   ),
   "share-closed": (
-    <>
-      <path
-        d="M11 4 L11 13"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-      <path
-        d="M7.7 10 L11 13.3 L14.3 10"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M7.5 9 L5.5 9 L5.5 17.5 L16.5 17.5 L16.5 9 L14.5 9"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </>
+    <path
+      d="M7.2 7.2 L14.8 14.8 M14.8 7.2 L7.2 14.8"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+    />
   ),
   /* Android's own share glyph — three discs joined by two strokes, the shape
      Material draws and every Android phone has already taught (#490, decided
@@ -613,6 +574,45 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <circle cx="15.5" cy="5" r="2.2" fill="currentColor" />
       <circle cx="6.5" cy="11" r="2.2" fill="currentColor" />
       <circle cx="15.5" cy="17" r="2.2" fill="currentColor" />
+    </>
+  ),
+  /* The share overlay's busy mark (#850): a ring of eight dots, the
+     iOS/Material indeterminate activity indicator a translator has already
+     seen in every camera roll and app-store download — not the static
+     `retry` arrow the overlay used to borrow from `notice-tone.ts`'s shared
+     `busy` entry for every OTHER wait in the app.
+
+     The eight dots are drawn pre-faded, each one dimmer than the last going
+     clockwise from the top. `.share-scrim[data-outcome="busy"]
+     .share-progress-glyph` (3-components.css) already rotates whatever sits
+     in the busy slot on the same `control-spin` keyframes every
+     `aria-busy` control uses, and already drops to a still frame under
+     `prefers-reduced-motion: reduce` — that rule predates this glyph, so
+     spinning the pre-faded ring is the whole animation; nothing new was
+     added to the stylesheet. The pre-fade also matters for the
+     reduced-motion case: eight EQUALLY lit dots sitting still would read as
+     a plain ring, not a paused spinner, so the fade itself has to be baked
+     into the glyph rather than done by the animation.
+
+     Scoped to the share overlay only. `notice-tone.ts`'s own `busy` entry —
+     the retry arc every other wait in the app still wears — is unchanged;
+     widening this to every `Notice` is out of #850's scope. */
+  "share-busy": (
+    <>
+      <circle cx="11" cy="3.6" r="1.5" fill="currentColor" opacity="1" />
+      <circle cx="16.23" cy="5.77" r="1.5" fill="currentColor" opacity="0.85" />
+      <circle cx="18.4" cy="11" r="1.5" fill="currentColor" opacity="0.7" />
+      <circle
+        cx="16.23"
+        cy="16.23"
+        r="1.5"
+        fill="currentColor"
+        opacity="0.55"
+      />
+      <circle cx="11" cy="18.4" r="1.5" fill="currentColor" opacity="0.4" />
+      <circle cx="5.77" cy="16.23" r="1.5" fill="currentColor" opacity="0.28" />
+      <circle cx="3.6" cy="11" r="1.5" fill="currentColor" opacity="0.18" />
+      <circle cx="5.77" cy="5.77" r="1.5" fill="currentColor" opacity="0.12" />
     </>
   ),
 };
