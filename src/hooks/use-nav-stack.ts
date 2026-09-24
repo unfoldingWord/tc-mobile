@@ -7,6 +7,7 @@ import {
   historyWriteDecision,
   outstandingConsume,
   replayDecision,
+  replayQueue,
   type DeferredWrite,
   type HistoryWrite,
   type HistoryWriteDecision,
@@ -527,17 +528,43 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // Called at the end of every landing. Each write is re-decided, never
   // refused (`replayDecision`), so one whose landing issued another Back of
   // its own waits for that one as well.
+  //
+  // `enterScreen`/`armFloor`'s `window.history` call is the only thing in this
+  // walk that can throw (#802). `replayQueue` is what stops that throw from
+  // costing the keys behind it: on a clean walk `outcome.ok` and there is
+  // nothing left to do; on a throw, the writes it had not yet attempted come
+  // back as `outcome.pending`, restored to the ref BEFORE the rethrow below —
+  // `deferredWrites.current` was already emptied above, and an exception
+  // unwinding out of this function is the only path back to the `popstate`
+  // listener that called it, so the restore has to happen first or it never
+  // happens at all.
+  //
+  // Rethrown, not reported through a new funnel key: no `window.history` call
+  // anywhere else in this file is caught locally either — every other one is
+  // bare, and a throw from any of them would already reach the same place
+  // this one now does, an uncaught exception out of a native `popstate`
+  // listener, which the global `error` handler
+  // (`app/install-failure-listeners.ts`) reports as `"uncaught-error"`. Adding
+  // a local catch-and-swallow here would make this one call the sole
+  // exception to a pattern the rest of the file does not have, for no gain the
+  // log can feel — the failure still reaches the same channel either way.
   const replayDeferredWrites = useCallback(() => {
     const queued = deferredWrites.current;
     deferredWrites.current = [];
-    for (const write of queued) {
+    const outcome = replayQueue(queued, (write) =>
       performWrite(
         write,
         replayDecision(
           outstandingConsume(suppressPop.current, travelGuard.current)
         )
-      );
-    }
+      )
+    );
+    if (outcome.ok) return;
+    deferredWrites.current = outcome.pending.reduce(
+      deferWrite,
+      deferredWrites.current
+    );
+    throw outcome.cause;
   }, [performWrite]);
 
   // Amendment B (reload/bootstrap safety) — declared BEFORE the popstate effect
