@@ -56,10 +56,24 @@ test.use({
 });
 
 /** The recorder's elapsed readout (`t-timer`), as whole seconds. */
+/**
+ * The transport's elapsed readout, in seconds.
+ *
+ * The shape is pinned and a miss THROWS rather than returning `NaN` (George
+ * round 1, #623). `split(":")` + `Number` turns any unexpected string into
+ * `NaN`, and `NaN > n` is false forever — so a renamed class or a changed
+ * format would have failed as a 5s poll timeout reading "expected > 3", which
+ * is the diagnosis pointing at the recorder instead of at this helper. The
+ * pattern is `formatDuration`'s own output (`src/lib/utils.ts`): minutes
+ * zero-padded to two but not capped there, seconds always exactly two.
+ */
 const elapsedSeconds = async (page: Page) => {
   const text = (await page.locator(".t-timer").innerText()).trim();
-  const [minutes, seconds] = text.split(":");
-  return Number(minutes) * 60 + Number(seconds);
+  const match = /^(\d{2,}):(\d{2})$/.exec(text);
+  if (!match) {
+    throw new Error(`elapsed readout is not MM:SS: ${JSON.stringify(text)}`);
+  }
+  return Number(match[1]) * 60 + Number(match[2]);
 };
 
 test("a toggle mid-take leaves the capture running, and the take still commits", async ({

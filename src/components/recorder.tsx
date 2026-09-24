@@ -3832,10 +3832,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                   setConfirmOpen(true);
                 }}
               />
-              {/* The theme toggle (#149). LAST in both branches, so the
-                  open-edge focus still lands on Edit / Done — what the
-                  translator opened this menu for — and never on a control
-                  that repaints the screen.
+              {/* The theme toggle (#149). LAST in both branches, so that
+                  WHEREVER A ROW ABOVE IS ACTIONABLE the open-edge focus still
+                  lands on it — Edit / Done, what the translator opened this
+                  menu for — rather than on a control that repaints the
+                  screen. Where none of them is, focus lands here, and that is
+                  the correct outcome rather than a regression to repair by
+                  reordering: see the consequence stated below, which is the
+                  half that governs (George round 1 read the two halves as
+                  contradicting, and the unqualified "never" was the wrong
+                  one).
 
                   This is the site the reframing of #149 turns on: the sheet
                   is `aria-modal` over an `inert` Segments, so while it is up
