@@ -13,17 +13,9 @@ import { describe, expect, it } from "vitest";
  * as stale-and-current and silently clears the Notice the rename failure just
  * set — #732 (this PR).
  *
- * WHY A STRUCTURAL GATE AND NOT A BEHAVIOURAL TEST. `renameBook` is a
- * `useCallback` inside `useBooks()`, entangled with `setBooks`, `reload` and
- * `report` — hook-owned React state this Node-only suite (no jsdom, no
- * renderer, no timers driving a real `useEffect`) cannot exercise. #728's own
- * PR body says exactly this of the identical `addChapter` fix: "this repo's
- * render harness (`tests/render.ts`) explicitly does not run effects ...
- * nothing here drives IndexedDB read timing against a hook's own
- * `useEffect`. The fix is verified by tracing the code paths ... not by an
- * automated red test or a device run." Same shape, same limit — this file
- * pins the source text instead, the same trade `use-books-delete-failure-gate
- * .test.ts` makes for `deleteBook`'s funnel call.
+ * This is a source-text gate. It does not mount `useBooks`, run its effects
+ * or schedule IndexedDB reads against a reported failure. The static render
+ * helper in `tests/render.ts` does not exercise those timings either.
  *
  * WHAT IT PROVES, EXACTLY: that `renameBook`'s `catch (cause)` block bumps
  * `loadGen.current` inside the callback `reportUnlessStale` reports through,
