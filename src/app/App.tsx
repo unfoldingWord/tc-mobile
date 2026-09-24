@@ -289,7 +289,8 @@ export function App() {
   //   only because that mirror has.
   //
   // Nothing subscribes to the store, so each mirror is repaired by an explicit
-  // reload. THREE of them exist, and this one is the last, not the only:
+  // reload. THREE reload call sites exist, and this one is the last, not the
+  // only:
   //     - a landed save reloads the LIST at once — `useSaveTake`'s `onSaved`,
   //       wired above, because the row reads as unrecorded until it does;
   //     - an in-sheet commit reloads the SHEET's own view (`reloadView()` in
