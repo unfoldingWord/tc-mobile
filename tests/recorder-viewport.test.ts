@@ -25,14 +25,26 @@ import {
 
 const CENTER = 0.5;
 const LENGTH = 1000;
+/** The caller's zoom-out level. `recorder.tsx` passes its own `ZOOM_WHOLE`. */
+const WHOLE = 1;
 
 let root: Root;
 let host: HTMLDivElement;
 let api: RecorderViewport;
 
-function mount(mode: "record" | "edit", selectionActive: boolean) {
+function mount(
+  mode: "record" | "edit",
+  selectionActive: boolean,
+  initialZoom = WHOLE
+) {
   function Harness() {
-    const vp = useRecorderViewport(mode, selectionActive, LENGTH, CENTER);
+    const vp = useRecorderViewport(
+      mode,
+      selectionActive,
+      LENGTH,
+      CENTER,
+      initialZoom
+    );
     useEffect(() => {
       api = vp;
     });
@@ -131,6 +143,18 @@ describe("useRecorderViewport", () => {
     act(() => api.setPanState(LENGTH + 500));
     expect(api.pan).toBe(LENGTH);
     expect(api.insertionPan).toBe(LENGTH);
+  });
+
+  it("opens at the zoom its CALLER names, not a level of its own", () => {
+    // The initial zoom is an argument because `ZOOM_WHOLE` lives in
+    // `components/` and `hooks/` may not import it (the onion). A literal here
+    // would be a second copy with no link to the first: the caller's zoom-out
+    // control writes `ZOOM_WHOLE`, so if that constant moved, a fresh open and
+    // every later zoom-to-whole would disagree, and neither would look wrong
+    // on its own. This pins that the argument is what the hook opens at.
+    mount("record", false, 4);
+    expect(api.zoom).toBe(4);
+    expect(api.win.visibleSamples).toBe(LENGTH / 4);
   });
 
   it("narrows the window as the zoom goes in, around the drawn pan", () => {

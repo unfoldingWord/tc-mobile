@@ -558,7 +558,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       mode,
       editor.selectionActive,
       length,
-      CENTER_FRACTION
+      CENTER_FRACTION,
+      ZOOM_WHOLE
     );
     // Reloads must reach their committed buffer first. Undo/Redo clear the old
     // frame, so reseed from the remapped insertion pan before painting. Empty

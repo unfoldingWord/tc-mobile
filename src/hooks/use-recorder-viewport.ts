@@ -62,21 +62,29 @@ export interface RecorderViewport {
  *
  * `mode`, `selectionActive` and `length` are arguments rather than state
  * because they belong to the edit session and the buffer, not to the viewport —
- * the viewport only reads them to decide which pan applies. `centerFraction`
- * is an argument for a different reason: the recorder's value lives in
- * `components/recorder-stage.ts`, and `hooks/` may not import `components/`
- * (the onion, enforced by `no-restricted-imports`). Taking it in keeps the
- * layering honest and the hook free of one screen's layout constant.
+ * the viewport only reads them to decide which pan applies.
+ *
+ * `centerFraction` and `initialZoom` are arguments for a different reason: both
+ * of the recorder's values live in `components/`, and `hooks/` may not import
+ * `components/` (the onion, enforced by `no-restricted-imports`). Taking them
+ * in keeps the layering honest and the hook free of one screen's constants.
+ * `initialZoom` in particular must NOT be inlined as a literal, even one that
+ * happens to equal today's `ZOOM_WHOLE`: the caller's zoom-out control writes
+ * `ZOOM_WHOLE`, so a copy here that did not track it would leave a fresh open
+ * painting at one scale and every later zoom-to-whole at another — a
+ * divergence nothing would catch, because neither value is wrong on its own
+ * (George R1 #1).
  */
 export function useRecorderViewport(
   mode: "record" | "edit",
   selectionActive: boolean,
   length: number,
-  centerFraction: number
+  centerFraction: number,
+  initialZoom: number
 ): RecorderViewport {
   const [panState, setPanState] = useState<number | null>(null);
   const [zoomPan, setZoomPan] = useState<number | null>(null);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(initialZoom);
 
   const pan = effectivePan({
     mode,
