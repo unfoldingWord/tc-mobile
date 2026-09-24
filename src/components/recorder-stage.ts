@@ -991,9 +991,9 @@ export const CENTER_FRACTION = 0.5;
  * The two zoom levels: the whole clip in view, or a quarter of it (§4.4).
  *
  * Here rather than in `recorder.tsx` since #160's L-1 split the toolbars out:
- * the zoom toggle reads both, the sheet reads `ZOOM_WHOLE` for its default and
- * its swapped-view override, and a constant two modules key their paint on
- * should not live inside one of them.
+ * the zoom toggle reads both, the sheet reads `ZOOM_WHOLE` for its initial
+ * zoom, its edit-exit reset and the toggle's next level, and a constant two
+ * modules key their paint on should not live inside one of them.
  */
 export const ZOOM_WHOLE = 1;
 export const ZOOM_QUARTER = 4;

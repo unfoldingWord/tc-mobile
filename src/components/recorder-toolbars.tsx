@@ -12,8 +12,8 @@ import { cn } from "@/lib/utils";
  *
  * ONE component holding the `mode === "record" ? … : …`, not two exported
  * side by side, and that is a correction rather than a preference. The first
- * attempt exported `RecordToolbar` and `EditToolbar` and let the sheet pick;
- * `e2e/recorder-selection.spec.ts` caught it. The mode toggle carries
+ * attempt exported `RecordToolbar` and `EditToolbar` and let the sheet pick.
+ * The mode toggle carries
  * `key="edit-toggle"` in BOTH arms so React matches the two `Control`s across
  * the flip and reuses the one DOM node — which is what keeps focus on it, and
  * keeps it at the same pixel, when a keyboard user toggles into edit mode. A
@@ -192,8 +192,9 @@ export function RecorderToolbar({
       </span>
       <Control
         icon={playingBuffer ? "pause" : "play"}
-        // The name comes from `playPlan.source`, the same map the
-        // edit toolbar uses, because since #317 this control plays
+        // The name comes from `playSource` (the sheet passes
+        // `playPlan?.source`), the same map the edit toolbar uses,
+        // because since #317 this control plays
         // from the LINE and not always the whole segment (George R2
         // P2). Speaking "Play recording" over a tap that sounds
         // only the tail is a lie told to the one channel — a screen
@@ -234,8 +235,9 @@ export function RecorderToolbar({
         // uses, play/pause, because it is the same act: a non-reader
         // recognises the control by its shape, and a second play
         // glyph would be a second thing to learn. The name is what
-        // differs, and it names the target (`auditionPlan`'s
-        // `source`) so what a screen reader speaks is what sounds.
+        // differs, and it names the target (`playSource`, which the
+        // sheet derives from the audition plan) so what a screen
+        // reader speaks is what sounds.
         icon={playingBuffer ? "pause" : "play"}
         label={
           playingBuffer
