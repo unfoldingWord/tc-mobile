@@ -238,21 +238,35 @@ describe("rowHint — which reasons carry a cue", () => {
   // way `tests/menu-hamburger-header.test.ts` pins the Books global menu's
   // wiring (#643).
   it("the recorder's own ≡-menu is the one that opts into `hamburger` (#621, #677)", () => {
-    const recorderSource = readFileSync(
-      new URL("../src/components/recorder.tsx", import.meta.url),
-      "utf8"
-    )
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^\s*\/\/.*$/gm, "");
+    // Since #160 L-1 this is a TWO-file chain: `recorder.tsx` opens
+    // `<RecorderMenu open={menuShown}>`, and `recorder-menu.tsx` is what
+    // renders the `<Menu>` that does or does not opt in. Both links are
+    // asserted — pinning only the second would let the sheet stop rendering
+    // the component at all with this still green, which is the #677 hole one
+    // file further along.
+    const read = (rel: string) =>
+      readFileSync(new URL(`../${rel}`, import.meta.url), "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
     // `(?:=>|[^>])*` in place of the plain `[^>]*` used elsewhere (e.g.
-    // `tests/menu-hamburger-header.test.ts`): this call site's `onClose`
-    // prop is an inline arrow function, `() => setMenuOpen(false)`, whose
+    // `tests/menu-hamburger-header.test.ts`): these call sites' `onClose`
+    // props are inline arrow functions, `() => setMenuOpen(false)`, whose
     // `=>` is itself a `>` — a bare `[^>]*` scan truncates there and never
-    // reaches `hamburger`. Preferring the two-char `=>` alternative first
-    // steps over it while still stopping at the tag's real closing `>`.
-    const recorderMenus = [
-      ...recorderSource.matchAll(/<Menu\b(?:=>|[^>])*>/g),
+    // reaches the prop being checked. Preferring the two-char `=>`
+    // alternative first steps over it while still stopping at the tag's real
+    // closing `>`.
+    const openers = [
+      ...read("src/components/recorder.tsx").matchAll(
+        /<RecorderMenu\b(?:=>|[^>])*>/g
+      ),
     ].filter(([tag]) => /\bopen\s*=\s*\{\s*menuShown\s*\}/.test(tag));
+    expect(openers, "the sheet no longer opens RecorderMenu").toHaveLength(1);
+
+    const recorderMenus = [
+      ...read("src/components/recorder-menu.tsx").matchAll(
+        /<Menu\b(?:=>|[^>])*>/g
+      ),
+    ];
     expect(recorderMenus).toHaveLength(1);
     expect(recorderMenus.at(0)?.[0]).toMatch(/\shamburger(?=\s|>)/);
   });
