@@ -183,6 +183,17 @@ export const SegmentsScreen = forwardRef<
   // encode (F1). onSaveChapterName captures it and closes only if it still
   // matches. A ref, read at resolution time, so it sees the live value.
   const chapterMenuSession = useRef(0);
+  // The share overlay's own capture/restore pair (#96/#97, George r2 P2-1,
+  // #491). `capture()` runs synchronously in the opening gesture's own
+  // handler — before `<Menu inert={...}>` (below) can apply `inert` in the
+  // same render — never from an effect. See `share-progress.tsx`'s docblock
+  // for why a passive effect there could never get this ordering right once
+  // `inert` is involved.
+  const focusRestore = useFocusRestore();
+  // The chapter menu's OWN pair (#679), one per inert scope — see
+  // `books-screen.tsx`'s `menuFocusRestore` for why sharing the overlay's slot
+  // lost the ⋮ after any share-progress cycle (Frank r1 P2 on #754).
+  const menuFocusRestore = useFocusRestore();
   const share = useChapterShare();
   const erase = useEraseSegment();
   // MEMBERS, never the objects — and this is #452's own open question 3,
@@ -348,6 +359,11 @@ export const SegmentsScreen = forwardRef<
   // Open the chapter ≡ menu, starting a fresh session so a rename still in
   // flight from a prior open cannot close this one.
   const openChapterMenu = useCallback(() => {
+    // Remember the ⋮ that opened this menu, HERE — synchronously, in the
+    // tap's own handler (#97, #679): one commit later the header/list go
+    // `inert`, which blurs this button to `<body>` in the mutation phase,
+    // before any effect could read it.
+    menuFocusRestore.capture();
     chapterMenuSession.current += 1;
     setChapterMenuOpen(true);
     // A still-pending rename from the last time this menu was open must not
@@ -357,7 +373,7 @@ export const SegmentsScreen = forwardRef<
     // state above for the reason `use-nav-stack.ts`'s `openChapter` documents:
     // the layer is on the stack before this gesture returns either way.
     layers.open("segments:chapter-menu");
-  }, [layers, setSavingName]);
+  }, [menuFocusRestore, layers, setSavingName]);
   // Menu's actual `onClose`, and the one close every caller uses.
   //
   // The Menu-level guard that blocked this while `savingChapterName` was true
@@ -476,13 +492,6 @@ export const SegmentsScreen = forwardRef<
     dismissOverlays,
   ]);
 
-  // The overlay's own capture/restore pair (#96/#97, George r2 P2-1, #491):
-  // `capture()` runs synchronously in `onPrepareShare`/`onSendShare` below —
-  // the opening gesture's own handler, before `<Menu inert={...}>` (below)
-  // can apply `inert` in the same render — never from an effect. See
-  // `share-progress.tsx`'s docblock for why a passive effect there could
-  // never get this ordering right once `inert` is involved.
-  const focusRestore = useFocusRestore();
   // Whichever of "Share chapter"/"Preparing…"/"Share now" is CURRENTLY
   // rendered (the ternary below swaps the mounted `Control` as `share.status`
   // moves) — attached to every branch, so it survives that remount and always
@@ -559,6 +568,32 @@ export const SegmentsScreen = forwardRef<
       fallback: shareControlRef.current,
     });
   }, [share.progress, focusRestore]);
+  // Return focus to the ⋮ that opened this chapter's menu once the menu
+  // itself is fully closed — Close, Escape, a scrim tap, or a completed
+  // rename/share that closes it (#679) — and no share overlay still owns the
+  // screen.
+  //
+  // A SEPARATE effect from the one above, deliberately — see `books-screen
+  // .tsx`'s identical pair for the full reasoning: that effect must keep
+  // firing on every `share.progress` change made WHILE this menu stays open,
+  // and must NOT also fire on this menu's own OPEN edge, which adding
+  // `chapterMenuOpen` to ITS dependency array would (opening flips it
+  // non-null while `share.progress` is still `"hidden"`, consuming the ⋮
+  // capture `openChapterMenu` above just took before the menu has shown
+  // anything). Guarding on `chapterMenuOpen === false` keeps this effect
+  // silent while the menu is open; its other runs (mount, later progress
+  // changes) find `menuFocusRestore` empty, since only `openChapterMenu`
+  // captures into it, and do nothing.
+  //
+  // No fallback: once the whole menu is gone there is no live landmark left
+  // inside it (`shareControlRef` unmounts in the same commit), and the ⋮
+  // itself is the only sensible target — `restore()` already prefers it
+  // whenever it is connected, focusable and no longer `inert`.
+  useLayoutEffect(() => {
+    if (chapterMenuOpen) return;
+    if (shareOverlayOwnsScreen(share.progress)) return;
+    menuFocusRestore.restore({ suppressed: false, fallback: null });
+  }, [chapterMenuOpen, share.progress, menuFocusRestore]);
   // Commit the typed chapter name (#264), then close the menu on success. The
   // hook patches the breadcrumb in place. A failed write keeps the field up
   // with the reason in the menu's own Notice — the screen Notice sits behind

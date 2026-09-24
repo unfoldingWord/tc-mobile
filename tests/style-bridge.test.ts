@@ -22,7 +22,7 @@ import { describe, expect, it } from "vitest";
  *      nothing, paints nothing, and fails nothing.
  *   2. The deleted bridge creeping back, one component at a time.
  *
- * Source text, not a computed style: there is no renderer here (#197).
+ * These assertions read source text, not computed styles.
  */
 const ROOT = path.resolve(import.meta.dirname, "..");
 const globals = readFileSync(
