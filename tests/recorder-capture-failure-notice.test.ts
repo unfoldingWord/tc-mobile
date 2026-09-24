@@ -14,7 +14,7 @@ import type { SegmentId } from "@/types/domain";
  * three routes a stop can take (#169).
  *
  * Since the hooks emit codes rather than prose, three sites in `recorder.tsx`
- * word them — `close()`'s `stay`, the Edit-commit path's `notice`, and the
+ * word them — `close()`'s `stay`, `commitTake`'s own `notice` verdict, and the
  * recovery panel's failed retry. Every one of those is a single
  * `captureFailureText(...)` wrap, which `tsc` accepts whether or not it is
  * there: `stopError` and `heldRetryError` are `string | null`, and a bare
@@ -25,9 +25,13 @@ import type { SegmentId } from "@/types/domain";
  * The three shapes are the ones the QA round on #700 asked to be exercised
  * apart: a zero-byte capture, a stop-flush throw, and a non-empty undecodable
  * capture whose bytes are held. They differ in more than their sentence —
- * whether bytes survive, and whether the exit is the sheet staying open, edit
- * mode, or the recovery panel — so each is driven through its own route rather
- * than asserted on a shared one.
+ * whether bytes survive, and whether the exit is the sheet staying open or the
+ * recovery panel — so each is driven through its own route rather than
+ * asserted on a shared one. The second case used to be driven through
+ * Edit-entry (`onEnterEdit`'s own `commitTake("edit")`), which reached the
+ * identical shared `notice` verdict a Stop tap's `commitTake("stay")` does;
+ * #857 disables Edit-entry while a take is live, so it now goes through Stop,
+ * the trigger that remains reachable and always exercised this same code.
  *
  * Harness: `tests/recorder-stop-commits.test.ts`'s, which is
  * `tests/recorder-superseded-writes.test.ts`'s — the real `Recorder` with the
@@ -235,10 +239,16 @@ it("a zero-byte capture keeps the sheet open with its sentence, not its code", a
   expectWorded(strings.captureSilence);
 });
 
-it("a stop-flush throw reaching the Edit-commit path shows its sentence", async () => {
+it("a stop-flush throw reaching commitTake's own notice site shows its sentence", async () => {
   // The engine failed to hand the capture over (#485): an empty seal, so the
   // same `notice` verdict as above but a different code and a different route
-  // into the component — `onEnterEdit`'s own stop, not `close()`'s.
+  // into the component — `commitTake`'s own stop, not `close()`'s. Driven
+  // through the Stop tap (`commitTake("stay")`), not Edit-entry: #857 disables
+  // the `[ ]`/"Edit recording" entry while a take is live, so
+  // `commitTake("edit")` is no longer UI-reachable, but Stop reaches the exact
+  // same shared verdict handling in `commitTake` (`recorder.tsx`'s
+  // `verdict.kind === "notice"` branch runs unconditionally on `after`), so
+  // this keeps the same coverage the Edit-triggered version had.
   const s = await setup();
   s.audio.stopRecording = vi.fn(async () => {
     s.audio.recorderState = "idle";
@@ -247,7 +257,7 @@ it("a stop-flush throw reaching the Edit-commit path shows its sentence", async 
   s.audio.recorderState = "recording";
   await s.render();
 
-  await s.click(strings.enterEdit);
+  await s.click(strings.stop);
   await s.render();
 
   expect(s.onExit).not.toHaveBeenCalled();

@@ -18,11 +18,15 @@ import { strings } from "./strings";
 
 /**
  * The reasons, most actionable first. `"uncommitted-take"` marks a take in
- * flight, and closing the recorder is what lifts it. Its scope differs per row:
- * for Erase and Mark, any live/paused/committing take; for Edit, ONLY the commit
- * window itself — a live or paused take instead lets Edit commit-then-edit
- * (#134). It outranks the state reasons because it is the one the translator can
- * act on from here. Nothing in this product is named "Back"; see {@link rowHint}.
+ * flight, and closing the recorder is what lifts it. Edit shared Erase and
+ * Mark's narrower scope once (#134: only the commit window blocked Edit, so a
+ * live take could commit-then-edit in one tap) — #857 puts Edit back in step
+ * with Erase: a LIVE take now blocks Edit too, the same as the commit window
+ * does, because #614 gave every take a Stop that ends and commits it without
+ * Edit's help, so the one-tap "stop and edit" #134 bought is no longer the
+ * only way to reach Stop, then Edit. It outranks the state reasons because it
+ * is the one the translator can act on from here. Nothing in this product is
+ * named "Back"; see {@link rowHint}.
  */
 export type RowReason =
   | "uncommitted-take"
@@ -40,17 +44,26 @@ interface EditRowInputs {
    * stop→decode→save still in flight), or a #59 interruption's `processing`
    * freeze. Editing waits for that commit to settle.
    *
-   * Deliberately NARROWER than the old "any non-idle state" — the #134 fix. A
-   * recording or paused take no longer blocks Edit: entering Edit COMMITS that
-   * take first (stop → decode → save → reopen at idle) and then edits it, the
+   * For a window, #134 narrowed this off the old "any non-idle state": a live
+   * take no longer blocked Edit, because entering Edit COMMITS that take first
+   * (stop → decode → save → reopen at idle) and then edits it — the
    * record-then-edit-in-one-sitting flow the requirements owner confirmed
-   * required (2026-09-04). Mirrors `markRowReason`'s `takeCommitting`.
+   * required (2026-09-04). #857 reverses that half: `hasTake` now blocks
+   * alongside `committing`, below, once a tester found a live take's selection
+   * still openable mid-recording on a Moto G. Mirrors `markRowReason`'s
+   * `takeCommitting`, which never adopted the #134 carve-out Edit is now
+   * dropping.
    */
   readonly committing: boolean;
   /**
-   * A live or paused take exists — the audio entering Edit will commit and then
-   * edit. Counts as "there is something to edit" alongside `hasAudio`/`canPaste`,
-   * so a FIRST take (nothing stored on disk yet) still reaches Edit.
+   * A live take exists (recorder `state === "recording"`). Blocks Edit the
+   * same as `committing` does (#857) — `editRowReason` treats the two as one
+   * reason, `"uncommitted-take"`, since #614 gave every take a Stop that ends
+   * and commits it without Edit's help, so the #134 commit-then-edit shortcut
+   * this field used to grant is no longer the only way to reach Stop, then
+   * Edit. `RecorderState` (`hooks/use-recorder.ts`) is `"idle" | "requesting" |
+   * "recording" | "processing"` — there is no separate "paused" state to fold
+   * in here.
    */
   readonly hasTake: boolean;
   /**
@@ -71,22 +84,26 @@ interface EditRowInputs {
 }
 
 /**
- * The record-menu "Edit recording" row. Null when enabled.
+ * The record-menu "Edit recording" row, and (via `recorder.tsx`'s shared
+ * `editReason`) the bottom-bar `[ ]` selection toggle. Null when enabled.
  *
- * Enabled when there is something to edit — stored audio, a full clipboard, or a
- * live/paused take that entering Edit commits first (#134) — and no commit is
- * already in flight. Blocked by: the mic still starting, a commit already
- * running, no segment, a denied mic, or an empty segment with an empty clipboard
- * and no take. The old gate `!idleEditable || denied || (!hasAudio && !canPaste)`
- * treated every non-idle state as a block; #134 splits that into `committing`
- * (still a block) and `hasTake` (now editable, commit-then-edit).
+ * Enabled when there is something to edit — stored audio or a full clipboard —
+ * and no take is in flight. Blocked by: the mic still starting, a live take
+ * (`hasTake`) or a commit already running (`committing`) — the two collapse to
+ * one reason, `"uncommitted-take"`, since #857 — no segment, a denied mic, or
+ * an empty segment with an empty clipboard and no stored audio. #134 once let
+ * `hasTake` alone through so entering Edit would commit-then-edit a live take
+ * in one tap; #857 (Moto G, tester report) closes that gap — `[ ]` read as
+ * openable mid-recording — now that #614's Stop ends and commits a take
+ * without Edit's help, so the two-tap Stop-then-Edit path #857 leaves behind
+ * is no longer the only way to reach Edit from a live take.
  */
 export function editRowReason(i: EditRowInputs): RowReason | null {
   if (i.starting) return "starting";
-  if (i.committing) return "uncommitted-take";
+  if (i.committing || i.hasTake) return "uncommitted-take";
   if (!i.hasView) return "no-segment";
   if (i.denied) return "denied";
-  if (!i.hasTake && !i.hasAudio && !i.canPaste) return "no-audio";
+  if (!i.hasAudio && !i.canPaste) return "no-audio";
   return null;
 }
 

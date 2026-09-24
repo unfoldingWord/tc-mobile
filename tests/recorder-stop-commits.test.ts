@@ -364,11 +364,26 @@ it("a Stop whose decode failed stays in place when Try again succeeds", async ()
   expect(s.button(strings.record)).toBeDefined();
 });
 
-it("an Edit-entry recovery still reaches edit mode, and a Back's still exits", async () => {
-  // The other two destinations, so the three-way discriminator is pinned in
-  // every arm rather than only the new one. Same held-bytes shape as above.
+// `recoverDestination`'s third answer, `"edit"` — set only by
+// `onEnterEdit`'s `commitTake("edit")` — used to be reachable here: entering
+// Edit mid-take, decode failing, then a successful Try again landed in edit
+// mode rather than exiting (the "an Edit-entry recovery still reaches edit
+// mode" case this replaced pinned exactly that). #857 disables the `[ ]`
+// toggle and the ≡ menu's "Edit recording" row while a take is live
+// (`editRowReason`'s `hasTake` term, `menu-row-state.ts`), and
+// `commitTake("edit")` has no other caller — so `onEnterEdit`'s live-take
+// branch, and `recoverDestination`'s `"edit"` value, are unreachable from any
+// real UI surface as of this PR. That is a residual, not silently dropped:
+// left in place rather than removed (a `commitTake`/`recoverDestination`
+// refactor is out of scope for #857, and this is a HOT file with several
+// PRs in flight), and flagged in the #857 PR body for a follow-up cleanup
+// issue. What this case pins now, instead of the destination it used to
+// prove reachable, is that the toggle itself stays inert even with a
+// recovery panel already in play — the same live-take state the pure-function
+// gate in `tests/menu-row-state.test.ts` covers, exercised here through the
+// real component.
+it("stays disabled through a held-take recovery — a live take blocks Edit-entry (#857)", async () => {
   const s = await setup();
-  boundary.reloads = [{ samples: original }];
   const bytes = new Blob(["kept"]);
   s.audio.stopRecording = vi.fn(async () => {
     s.audio.recorderState = "idle";
@@ -380,13 +395,19 @@ it("an Edit-entry recovery still reaches edit mode, and a Back's still exits", a
 
   s.audio.recorderState = "recording";
   await s.render();
-  await s.click(strings.enterEdit);
-  await s.render();
-  await s.click(strings.takeRecoverRetry);
+
+  const toggle = s.button(strings.enterEdit);
+  expect(toggle, strings.enterEdit).toBeDefined();
+  expect(toggle!.disabled).toBe(true);
+  toggle!.click();
   await s.render();
 
-  expect(s.onExit).not.toHaveBeenCalled();
-  expect(document.body.textContent).toContain(strings.modepillEditing);
+  // A disabled native button does not dispatch `click` — this is the
+  // behavioural half `menu-row-state.test.ts`'s pure-function assertion
+  // cannot reach: the tap never even started a stop, let alone reached the
+  // recovery panel this scenario would otherwise set up.
+  expect(s.audio.stopRecording).not.toHaveBeenCalled();
+  expect(document.body.textContent).not.toContain(strings.modepillEditing);
 });
 
 it("a Back's recovery exits to Segments, unchanged", async () => {
