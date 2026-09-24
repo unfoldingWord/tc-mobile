@@ -666,8 +666,8 @@ export async function chapterProgress(
  * key. It probes the second rather than reading it, so the check costs a key
  * lookup per segment and not a chapter of PCM.
  *
- * It used to push `take.clipId` on the strength of the take row alone. Once an
- * export path exists (#18), a take whose clip had gone would count as
+ * It used to push `take.clipId` on the strength of the take row alone. With an
+ * export path in place (#18), a take whose clip had gone would count as
  * exported: the chapter would read as complete and the segment would be absent
  * from the file. A gap the count admits to is recoverable; one it does not is
  * not.
