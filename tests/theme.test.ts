@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -113,6 +113,13 @@ describe("THEME_STORAGE_KEY (#171)", () => {
 describe("the light theme is reachable (#171)", () => {
   const read = (rel: string) =>
     readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
+
+  /** Every file under `dir`, recursively. Used by the subscriber sweep below. */
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(dir, entry.name);
+      return entry.isDirectory() ? walk(full) : [full];
+    });
 
   /**
    * The global menu's opening tag, matched by the props this file is actually
@@ -234,16 +241,36 @@ describe("the light theme is reachable (#171)", () => {
     // by requiring `useTheme()` in `books-screen.tsx`; that assertion left
     // with the inline control it was written for, and nothing replaced it.
     //
-    // So the absence is pinned directly. `theme-control.tsx` is the one file
-    // allowed to call it, which the wiring case above asserts positively.
-    for (const file of [
-      "src/components/books-screen.tsx",
-      "src/components/segments-screen.tsx",
-      "src/components/recorder-menu.tsx",
-      "src/components/recorder.tsx",
-    ]) {
-      expect(read(file), file).not.toMatch(/useTheme\(/);
-    }
+    // So the absence is pinned directly — and SWEPT, not listed (George round
+    // 11, #623). A four-file ban was narrower than the sentence it sat under:
+    // `useLiveTheme(` does not match `/useTheme\(/`, and a subscription added
+    // in any file outside the list — a shared hook the recorder already calls,
+    // a new component — would re-render that tree on every toggle and leave
+    // every count and every named file green. A list cannot say "the one file
+    // allowed"; only a sweep with an allow-list can.
+    //
+    // So: walk all of `src/`, find every call site of either hook, and require
+    // the set to be exactly the allow-list. Adding a subscriber is then a
+    // deliberate edit to this list with a reason, which is the point — the
+    // canvases are allowed BECAUSE they must repaint on a token change
+    // (`waveform.tsx`, `live-scope.tsx`, George R2 P2 on #457); a screen or a
+    // menu is not, because that is the blast radius this control was factored
+    // to avoid.
+    const subscribers = walk(path.resolve(import.meta.dirname, "..", "src"))
+      .filter((file) => /\.tsx?$/.test(file))
+      // The hook module DEFINES both; its own `export function useTheme()` is
+      // not a subscription.
+      .filter((file) => !file.endsWith("hooks/use-theme.ts"))
+      .filter((file) => /\buseLiveTheme\(|\buseTheme\(/.test(read(file)))
+      .map((file) =>
+        path.relative(path.resolve(import.meta.dirname, ".."), file)
+      )
+      .sort();
+    expect(subscribers).toEqual([
+      "src/components/live-scope.tsx",
+      "src/components/theme-control.tsx",
+      "src/components/waveform.tsx",
+    ]);
   });
 
   it("is applied before React renders, not in an effect", () => {
