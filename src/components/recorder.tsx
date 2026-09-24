@@ -66,6 +66,7 @@ import {
   resolveProvesDelivery,
   selectShareRoute,
 } from "@/hooks/share-target";
+import type { FailureKey } from "@/hooks/save-failure";
 import type { RecorderAudio } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { useRecorderViewport } from "@/hooks/use-recorder-viewport";
@@ -3251,8 +3252,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             // unreachable and nothing said the recording was safe (#137). This full
             // panel gives the state-in-place the bar asks for: a recovery tap
             // (resume + re-read), an exit (Back, to the row's Erase), and copy that
-            // the audio is untouched. The raw `loadError` is kept for the log, not
-            // shown — it is a decoder message, not translator-facing.
+            // the audio is untouched. `loadError` is the strings-mapped KEY (#172
+            // part 2), never a raw decoder/store message — the raw cause reaches
+            // the log sink through `reportFailure` in the hook, not this screen.
             // Checked BEFORE `denied`: a device with no MediaRecorder (`!supported`)
             // is `denied`, but its PermissionPanel Retry only re-arms the mic
             // (`startRecording`), which cannot re-read a clip — so a decode failure
@@ -3260,6 +3262,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             // The two never co-occur otherwise: opening the sheet clears any mic
             // error, so `micError` and `loadError` cannot both be set.
             <LoadErrorPanel
+              errorKey={loadError}
               retrying={loadRetrying}
               onRetry={retryLoad}
               onBack={onRequestBack}
@@ -3284,7 +3287,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               )}
               {erase.error && (
                 <div className="px-[12px] pt-[8px]">
-                  <Notice>{strings.eraseFailed}</Notice>
+                  {/* strings[key] (#172 part 2), not the fixed eraseFailed
+                    sentence for every key — a full disk gets `noRoom`'s
+                    actionable copy instead of the generic erase failure. */}
+                  <Notice>{strings[erase.error]}</Notice>
                 </div>
               )}
               <RecorderStatus state={state} isClosing={isClosing} />
@@ -3721,12 +3727,25 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
  * too: it is the panel's own named exit, and a retry decode cannot be aborted,
  * so hiding it would leave the whole retry window with no labelled way out
  * (George R1 P2).
+ *
+ * `errorKey` (#172 part 2) is the `strings`-mapped `FailureKey` the load/reload
+ * effect stored, never the raw cause — `useRecorderSegment` already routes the
+ * raw cause to the log sink through `reportFailure`. Body copy branches on it:
+ * `"noRoom"` gets the actionable no-room sentence instead of the generic
+ * decode-failure body, since a load that failed because the device is out of
+ * space is not the transient-interruption case the default copy describes and
+ * "Try again" cannot fix it. Every other key keeps the existing decode-failure
+ * copy — this panel's title and controls are unchanged for that, the common,
+ * case (#106/#137). Exported (like `PermissionPanel`) so
+ * `tests/load-error-panel.test.ts` can render it directly (#197).
  */
-function LoadErrorPanel({
+export function LoadErrorPanel({
+  errorKey,
   retrying,
   onRetry,
   onBack,
 }: {
+  errorKey: FailureKey;
   retrying: boolean;
   onRetry: () => void;
   onBack: () => void;
@@ -3740,7 +3759,9 @@ function LoadErrorPanel({
         <Icon name="alert" size={52} />
       </span>
       <p className="t-title text-ink">{strings.loadFailedTitle}</p>
-      <p className="text-ink-muted">{strings.loadFailedBody}</p>
+      <p className="text-ink-muted">
+        {errorKey === "noRoom" ? strings.noRoom : strings.loadFailedBody}
+      </p>
       <Control
         icon="retry"
         label={retrying ? strings.loadRetrying : strings.loadRetry}
