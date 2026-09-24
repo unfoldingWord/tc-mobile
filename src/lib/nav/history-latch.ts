@@ -130,3 +130,52 @@ export function deferWrite(
 ): DeferredWrite[] {
   return queue.includes(write) ? [...queue] : [...queue, write];
 }
+
+/**
+ * The result of walking a replay queue (#802): either every write ran, or one
+ * threw and the walk stopped there.
+ */
+export type ReplayOutcome =
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      /** The writes that had not yet been attempted when `cause` was thrown. */
+      readonly pending: readonly DeferredWrite[];
+      readonly cause: unknown;
+    };
+
+/**
+ * Walks `queued` in order, calling `perform` for each (#802 — before this,
+ * `replayDeferredWrites` copied the ref, cleared it, then looped calling
+ * `performWrite` directly: a throw on the first key unwound out of the loop
+ * with the ref already emptied, and keys 2 and 3 were gone for good, replayed
+ * never).
+ *
+ * On a throw, the walk stops and returns the writes STILL TO COME as
+ * `pending`, so the caller can put them back on the ref before the next
+ * landing replays them. The THROWING write's own key is deliberately left out
+ * of `pending`: it is the same write, asking the same `window.history` call to
+ * do the same thing under the same condition that just made it throw, so
+ * requeuing it would retry forever, once per landing, with nothing to break
+ * the cycle — worse than dropping that one entry. The writes behind it are a
+ * different case: each is an independent key for a different screen
+ * (`DeferredWrite`'s three members, at most one of each), so one throwing
+ * write says nothing about whether the others would.
+ *
+ * Pure aside from calling `perform`, which is the one thing here allowed to
+ * touch `window` — this file takes DOM access as an injected function rather
+ * than performing it (AGENTS.md — `lib/` stays DOM-free).
+ */
+export function replayQueue(
+  queued: readonly DeferredWrite[],
+  perform: (write: DeferredWrite) => void
+): ReplayOutcome {
+  for (const [i, write] of queued.entries()) {
+    try {
+      perform(write);
+    } catch (cause) {
+      return { ok: false, pending: queued.slice(i + 1), cause };
+    }
+  }
+  return { ok: true };
+}

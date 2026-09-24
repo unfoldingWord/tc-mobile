@@ -16,10 +16,10 @@ import {
  *
  * `close()` in `components/recorder.tsx` is the ONLY commit path in the product
  * — there is no Stop control — and it used to hold this whole decision inline.
- * This project has no renderer (`vitest.config.ts` sets `environment: "node"`,
- * and there is no jsdom or testing-library in `package.json`), so nothing could
- * drive it: a wrong branch there does not produce a wrong pixel, it drops a
- * take, and it shipped with `npm run verify` green (#180).
+ * Nothing mounts `Recorder`'s effect graph in this suite (`vitest.config.ts`'s
+ * default environment is `node`, and no test here renders the component), so
+ * nothing could drive it: a wrong branch there does not produce a wrong pixel,
+ * it drops a take, and it shipped with `npm run verify` green (#180).
  *
  * So the decision was lifted out unchanged, by the same move that produced
  * `lib/takes/pending-take.ts` and `lib/audio/session.ts`: pure, DOM-free,
