@@ -103,17 +103,21 @@ export function RecorderMenu({
             icon="edit"
             label={strings.enterEdit}
             variant="quiet"
-            // Editable when there is audio to edit, a full clipboard to paste
-            // — a never-recorded segment with a pending clip must still open
-            // edit mode to receive it, or the chapter-wide clipboard (G3) could
-            // never land on an empty segment (George R2) — OR a live
-            // take, which `onEnterEdit` commits first, then edits (#134). Only
-            // the commit window itself blocks it now, not every non-idle state.
+            // Editable when there is audio to edit, or a full clipboard to
+            // paste — a never-recorded segment with a pending clip must still
+            // open edit mode to receive it, or the chapter-wide clipboard (G3)
+            // could never land on an empty segment (George R2). Blocked while a
+            // take is live, not only while it is committing: #134 once let a
+            // live take through (`onEnterEdit` would commit it first, then
+            // edit), but #857 (Moto G tester report) found the toolbar's `[ ]`
+            // twin of this row still openable mid-recording and closed that for
+            // both — this row shares `editReason` with `recorder.tsx`'s
+            // toolbar Edit control verbatim, so the two can never disagree.
             // Never while `denied`: the permission panel owns the body, and
             // entering edit there strands the edit toolbar over a Retry that
             // starts the mic (George R3, with onRetryRecord as the other half).
             // The gate lives in `editRowReason` so the grey row can say WHY
-            // (#135): a take mid-commit shows the `alert` badge — a state mark
+            // (#135): a blocked take shows the `alert` badge — a state mark
             // that names no control — and the reason joins the row's
             // accessible name.
             disabled={editReason !== null}

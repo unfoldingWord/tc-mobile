@@ -178,19 +178,23 @@ async function setup() {
   };
 }
 
-it("still saves and exits on a fresh close-path capture after an earlier superseded Edit-commit stop left the latch stale", async () => {
+it("still saves and exits on a fresh close-path capture after an earlier superseded Stop-commit left the latch stale", async () => {
   const s = await setup();
 
-  // Set the latch stale-true: an Edit-entry stop that yields nothing
-  // (samples/bytes/error all null) classifies as `superseded`
-  // (`classifyCapture` in `lib/takes/close-plan.ts`) and `commitTake` sets
+  // Set the latch stale-true: a Stop that yields nothing (samples/bytes/error
+  // all null) classifies as `superseded` (`classifyCapture` in
+  // `lib/takes/close-plan.ts`) and `commitTake` sets
   // `supersededCapture.current = true`. That verdict does not exit or enter
   // edit mode, so the sheet stays mounted with the latch left true — the
   // same trigger `recorder-superseded-writes.test.ts` uses for its withhold
-  // cases.
+  // cases. Driven through Stop (`commitTake("stay")`), not Edit-entry
+  // (`commitTake("edit")`, #134): #857 disables Edit-entry while a take is
+  // live, and the superseded verdict this sets up runs unconditionally on
+  // `commitTake`'s `after` argument, so Stop reaches the identical shared code
+  // the Edit-triggered version did.
   s.audio.recorderState = "recording";
   await s.render();
-  await s.click(strings.enterEdit);
+  await s.click(strings.stop);
   expect(s.audio.stopRecording).toHaveBeenCalledOnce();
   expect(s.onExit).not.toHaveBeenCalled();
   await s.render();
