@@ -22,12 +22,9 @@ import type { ChapterId } from "@/types/domain";
  * `"noRoom"`. Same harness as `segment-rename-failure.test.ts` (the hook
  * mounted for real over fake-indexeddb, one store function made to reject).
  *
- * RED FIRST: run against the tree before this PR (`setError(errorMessage(
- * cause))`), these assertions failed with, e.g.:
- *
- *   expected 'UnknownError: Internal error opening backing store' to be 'saveFailed'
- *
- * — the raw browser string the Segments Notice used to speak verbatim.
+ * Written red-first against the tree before this PR, where
+ * `setError(errorMessage(cause))` was the raw browser string the Segments
+ * Notice used to speak verbatim.
  */
 
 vi.mock("@/hooks/report-failure", () => ({ reportFailure: vi.fn() }));

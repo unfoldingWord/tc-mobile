@@ -1691,9 +1691,9 @@ export function BooksScreen({
                 on the shelf. Without the guard, failing a delete and then
                 opening Rename put the raw store message inside a rename field
                 nothing had submitted yet (George stand-in P3-2). `error` here
-                is a `strings`-mapped KEY, not the raw store message — a
-                create or add-chapter failure reaching this panel now speaks
-                the same mapped copy the shelf's own Notice does (#172 part 1).
+                is a `strings`-mapped KEY, not the raw store message — an
+                add-chapter failure reaching this panel now speaks the same
+                mapped copy the shelf's own Notice does (#172 part 1).
 
                 Also never while `savingBookName` (#395 item 1): a retried
                 rename flips its own busy Notice on before this one's `finally`

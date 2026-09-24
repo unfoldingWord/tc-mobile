@@ -17,12 +17,9 @@ import { closeDb, getDb } from "@/lib/storage/db";
  * harness (the hook mounted for real over fake-indexeddb, one store function
  * made to reject).
  *
- * RED FIRST: run against the tree before this PR (`setError`/`setFailure`
- * storing `errorMessage(cause)`), these three assertions failed with, e.g.:
- *
- *   expected 'UnknownError: Internal error opening backing store' to be 'loadFailed'
- *
- * — the raw, untranslatable browser string the hook used to hand the screen.
+ * Written red-first against the tree before this PR, where `setError`/
+ * `setFailure` stored `errorMessage(cause)` — the raw, untranslatable
+ * browser string the hook used to hand the screen.
  */
 
 vi.mock("@/hooks/report-failure", () => ({ reportFailure: vi.fn() }));
