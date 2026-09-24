@@ -93,13 +93,20 @@ test("a toggle mid-take leaves the capture running, and the take still commits",
   // Let the timer leave 0:00, so "advanced" below compares two real readings
   // rather than one reading against a clock that had not started.
   await expect.poll(() => elapsedSeconds(page)).toBeGreaterThan(0);
-  const beforeToggle = await elapsedSeconds(page);
 
   // The `≡` stays reachable mid-take on purpose (Edit commits-then-edits a
   // live take, #134), which is what makes the toggle reachable here at all.
   await page.getByRole("button", { name: "More actions", exact: true }).click();
   const menu = page.getByRole("dialog", { name: "More", exact: true });
   await expect(menu).toBeVisible();
+
+  // Sampled HERE, with the menu already up and the next action being the tap
+  // itself — not before the menu opened (George round 3, #623). Opening the
+  // menu takes real time, so a reading taken before it can cross a second
+  // boundary on its own; "advanced" would then be satisfiable by the walk
+  // rather than by the capture, and a stall beginning AT the toggle could
+  // pass. Everything between this line and the assertion below is the toggle.
+  const beforeToggle = await elapsedSeconds(page);
   await menu.getByRole("button", { name: /light screen/i }).click();
 
   // The screen repaints, in the shipped cascade, mid-capture.
