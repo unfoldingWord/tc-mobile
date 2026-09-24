@@ -165,9 +165,11 @@ describe("the level tap's close() stops every cloned track (#479)", () => {
 });
 
 describe("use-recorder's stream-release helpers go through stopTracks (#479)", () => {
-  // Comments stripped so the gate reads code, not prose about code.
-  // `tests/recorder-resume-race.test.ts` records that this file has no `//`
-  // or `/*` inside a string literal, so the strip cannot misfire.
+  // Comments stripped so the gate reads code, not prose about code. The
+  // strip is string-blind (the class #789 names): a `//` or `/*` inside a
+  // string literal in use-recorder.ts would remove real code with it.
+  // `tests/recorder-resume-race.test.ts` documents the same limit, and nothing
+  // asserts that the file is free of such strings.
   const code = readFileSync(
     new URL("../src/hooks/use-recorder.ts", import.meta.url),
     "utf8"
