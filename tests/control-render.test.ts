@@ -2,7 +2,8 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
 import { Control } from "@/components/control";
-import { rowHint } from "@/components/menu-row-state";
+import { barHint, rowHint } from "@/components/menu-row-state";
+import { strings } from "@/components/strings";
 
 import { one, render } from "./render";
 
@@ -69,6 +70,33 @@ describe("Control's inert cells", () => {
       `Erase recording. ${hint!.label}`
     );
   });
+
+  it("makes the record-bar Edit control aria-disabled, with the bar's own reason, while a take is live (#857 round 1, Frank P2)", () => {
+    // `barHint`'s "uncommitted-take" branch used to return `null`
+    // unconditionally, so the toolbar Edit control (`recorder.tsx`'s
+    // `editToolbarHint = barHint(editReason)`) went NATIVELY disabled for a
+    // live take — dropping out of the tab order with no reason attached, the
+    // exact defect the "hard-disabled" case above pins for a control with no
+    // hint at all. `recorder.tsx` now calls
+    // `barHint(editReason, strings.stopToEdit)`; this reproduces that exact
+    // call for `editReason === "uncommitted-take"` (what `hasTake` produces,
+    // `menu-row-state.ts`'s `editRowReason`) and asserts the control the
+    // translator actually sees: `aria-disabled`, not native `disabled`, and an
+    // accessible name that carries the reason.
+    const hint = barHint("uncommitted-take", strings.stopToEdit);
+    const el = button({
+      icon: "selection",
+      label: strings.enterEdit,
+      disabled: true,
+      hint,
+    });
+
+    expect(el.hasAttribute("disabled")).toBe(false);
+    expect(el.getAttribute("aria-disabled")).toBe("true");
+    expect(el.getAttribute("aria-label")).toBe(
+      `${strings.enterEdit}. ${strings.stopToEdit}`
+    );
+  });
 });
 
 describe("Control's disabled-row badge", () => {
@@ -106,6 +134,30 @@ describe("Control's disabled-row badge", () => {
     expect(one(enabled, "button").getAttribute("aria-label")).toBe(
       "Erase recording"
     );
+  });
+
+  it("keeps the NATIVE disable when a hint-capable control is disabled with no reason", () => {
+    // George round 1 on #703 asked for this cell by name. #91's two history
+    // controls pass `hint={editControlHint(reason)}`, which is `null` for the
+    // reasons that get no cue — among them `held-by-drag`, the #317 lock that
+    // must not take a click or an Enter while a finger owns the stage. `null`
+    // is hint-capable (the wrapper stays, so the root never remounts) but not
+    // hinted, so it must fall to the NATIVE attribute rather than the
+    // focusable `aria-disabled` route: there is no reason to announce, and
+    // aria-disabled alone does not stop activation.
+    //
+    // The cell the file already had is `hint: null` on an ENABLED control,
+    // which cannot distinguish the two routes because neither applies.
+    const el = button({
+      icon: "undo",
+      label: "Undo",
+      disabled: true,
+      hint: null,
+    });
+
+    expect(el.hasAttribute("disabled")).toBe(true);
+    expect(el.hasAttribute("aria-disabled")).toBe(false);
+    expect(el.getAttribute("aria-label")).toBe("Undo");
   });
 
   it("drops the wrapper entirely for a control that can never carry a hint", () => {

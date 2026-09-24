@@ -49,7 +49,7 @@ describe("measureLevel", () => {
   });
 
   it("puts a sine's RMS 3.01 dB under its peak", () => {
-    // Amplitude 8000 is the quiet probe #561 measured: 20·log10(8000/32767)
+    // For amplitude 8000, 20·log10(8000/32767)
     // = -12.247 dBFS peak, and a sine's RMS is peak/√2, so -15.257 dBFS.
     const level = measureLevel(toInt16(sine(8_000)), INT16_MAX);
     expect(level.peakDbfs).toBeCloseTo(20 * Math.log10(8_000 / INT16_MAX), 2);

@@ -22,9 +22,9 @@ import type { Layer, LayerStack } from "@/lib/nav/layer-stack";
 const REARM_TRANSITION_BUSY: PopAction = "rearm-transition-busy";
 
 /**
- * The History wiring in `App.tsx` is browser-only and untestable here (there is
- * no jsdom/renderer — see AGENTS.md); what IS testable is the decision it runs
- * on. The regression these guard: a Back gesture on the recorder must route to
+ * These tests exercise the pure navigation decisions, not the history adapter
+ * in `hooks/use-nav-stack.ts`. They do not mount effects or dispatch browser
+ * events. A Back gesture on the recorder must route to
  * the commit path, not to a bare unmount that drops the in-progress take (#58 /
  * #168). If `backEffectFor("recorder")` ever stops returning
  * `"commit-close-recorder"`, that data-loss regression is back — so that row is

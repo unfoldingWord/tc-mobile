@@ -2,6 +2,8 @@ import { existsSync } from "node:fs";
 
 import { expect, test, type Locator } from "@playwright/test";
 
+import { clickEditRecording, editRecordingButton } from "./recorder-fixtures";
+
 // Shipped-build computed styles cover the real cascade, including Tailwind and
 // inline overrides. Chromium cannot verify the iOS callout; that is issue #564.
 async function expectSelectionSuppressed(root: Locator) {
@@ -88,10 +90,9 @@ test.describe("handle targets after a zoom fit", () => {
       await expect(
         page.getByRole("button", { name: "Record", exact: true })
       ).toBeVisible();
-      await page
-        .locator(".recorder-toolbar")
-        .getByRole("button", { name: "Edit recording", exact: true })
-        .click();
+      // #846/#848/#825: wait for the real precondition (the commit, not the
+      // Record button's label) before clicking — see recorder-fixtures.ts.
+      await clickEditRecording(page);
       const startHandle = page.getByLabel("Selection start", { exact: true });
       const endHandle = page.getByLabel("Selection end", { exact: true });
       await expect(startHandle).toBeVisible();
@@ -169,26 +170,42 @@ test.describe("edit mode toggle", () => {
         page.getByRole("button", { name: "Stop recording", exact: true })
       ).toBeVisible();
       await page.waitForTimeout(1200);
-      if (width === 390) {
-        // The two widths reach Edit from the two states a take can be in since
-        // #614. 320px enters edit mode from a LIVE take, which `commitTake`
-        // commits on the way in (#134). 390px ends the take first: the tap that
-        // used to be Pause now commits it in place, so the control comes back
-        // as Record and the toolbar Edit below opens over audio that is already
-        // on the waveform. Both must land the frame at the same slot, which is
-        // what this case is about.
-        await page
-          .getByRole("button", { name: "Stop recording", exact: true })
-          .click();
-        await expect(
-          page.getByRole("button", { name: "Record", exact: true })
-        ).toBeVisible();
-      }
-      const toggle = page
-        .locator(".recorder-toolbar")
-        .getByRole("button", { name: "Edit recording", exact: true });
+      // #857 (Moto G tester report): the toolbar Edit control stays inert
+      // while a take is live — asserted before Stop is tapped, at BOTH
+      // widths, since the toolbar's own layout could plausibly diverge on
+      // how it renders `aria-disabled` at a narrower breakpoint. While
+      // disabled the accessible name carries the block reason
+      // (`strings.stopToEdit`, round 1 of #857's review), which is why
+      // `editRecordingButton` (`recorder-fixtures.ts`) matches by prefix,
+      // not exact name.
+      const liveToggle = editRecordingButton(page);
+      await expect(liveToggle).toHaveAttribute("aria-disabled", "true");
+      await expect(liveToggle).toHaveJSProperty("disabled", false);
+      // Stop, then wait for the commit to land — "Record" reappearing pins
+      // the post-Stop render (`recorder-fixtures.ts`'s own pattern: a
+      // `not.toHaveAttribute("aria-busy", ...)` polled before that pin can
+      // pass on the pre-Stop, not-yet-busy frame), and the `aria-busy` wait a
+      // few lines down (`editRecordingButton`/`toggle`, reused from
+      // `recorder-fixtures.ts` and now matched by PREFIX rather than exact
+      // name — see that file's docblock) is what actually waits out
+      // `commitTake`'s own async tail. #857 removed the one-tap live-take
+      // entry #134 built — `commitTake("edit")` is no longer reachable from
+      // either toolbar control (`menu-row-state.ts`'s `editRowReason`) — so
+      // Stop-then-Edit is now the only path at EITHER width; the two widths
+      // still differ on layout/breakpoint, which the frame-slot assertions
+      // below are for.
+      await page
+        .getByRole("button", { name: "Stop recording", exact: true })
+        .click();
+      await expect(
+        page.getByRole("button", { name: "Record", exact: true })
+      ).toBeVisible();
+      const toggle = editRecordingButton(page);
       const before = await toggle.boundingBox();
       expect(before).not.toBeNull();
+      // #846/#848/#825: wait for the real precondition before clicking. See
+      // recorder-fixtures.ts.
+      await expect(toggle).not.toHaveAttribute("aria-busy", "true");
       await toggle.click();
       await expect(
         page.getByLabel("Selection start", { exact: true })
@@ -325,8 +342,11 @@ test.describe("edit mode toggle", () => {
       expect(secondCutLength).toBeLessThan(firstCutLength);
       await page.getByRole("button", { name: "Undo", exact: true }).click();
       expect(await expectUsableFrame()).toBe(firstCutLength);
+      // A redone cut collapses onto the line like the live one (#722); undo
+      // above still reopens the frame where the audio came back.
       await page.getByRole("button", { name: "Redo", exact: true }).click();
-      expect(await expectUsableFrame()).toBe(secondCutLength);
+      await expectCollapsedOntoTheLine();
+      expect(await reopenFrameFromTheWaveform()).toBe(secondCutLength);
       await page
         .getByRole("button", { name: "Paste at the line", exact: true })
         .click();
@@ -380,6 +400,199 @@ test.describe("edit mode toggle", () => {
       await expect(
         page.getByLabel("Selection start", { exact: true })
       ).toHaveCount(0);
+    });
+  }
+});
+
+// #370: at 320px with the frame open, `.recorder-toolbar.edit`'s old
+// `justify-content: space-between; flex-wrap: wrap` packed five 40px quiet
+// controls plus a 68px `primary`-variant Select onto one line and wrapped the
+// sixth (the ≡) alone onto a second line, where `space-between` on a
+// single-item line flushes it to main-start — landing the ≡ on the LEFT,
+// under Play, instead of the trailing edge it had been reached for.
+//
+// Premise check against `origin/develop` (2026-09-23): STALE. #579 (merged
+// 2026-09-21, "open selection with a stable edit toggle") rewrote this rule
+// to `grid-template-columns: repeat(5, minmax(0, 1fr)) var(--c-control-md)`
+// as a side effect of keeping the toggle in one stable slot — CSS Grid has
+// no wrap analogue to `flex-wrap`, so the five `1fr` tracks shrink instead of
+// wrapping, and the toggle keeps its own fixed trailing track regardless of
+// viewport width. No CSS change was needed; this pins the now-correct layout
+// against a regression.
+test.describe("edit toolbar keeps the ≡ off the leading edge (#370)", () => {
+  for (const width of [320, 360, 412]) {
+    test(`≡ stays on one row, right of the tools, with the frame open and closed (${width}px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 740 });
+      await page.goto("/");
+      await page.getByRole("button", { name: "New book" }).click();
+      await page.getByRole("button", { name: "Create book" }).click();
+      await page.getByRole("button", { name: /^Add chapter to/ }).click();
+      await page.getByRole("button", { name: "Create chapter" }).click();
+      await page.getByRole("button", { name: "Open Chapter 1" }).click();
+      await page.getByRole("button", { name: "Add segment" }).click();
+      await page.getByRole("button", { name: "Record segment 1" }).click();
+      await page.getByRole("button", { name: "Record", exact: true }).click();
+      await page.waitForTimeout(1200);
+      await page
+        .getByRole("button", { name: "Stop recording", exact: true })
+        .click();
+      await expect(
+        page.getByRole("button", { name: "Record", exact: true })
+      ).toBeVisible();
+      // #846/#848/#825: wait for the real precondition (the commit, not the
+      // Record button's label) before clicking — see recorder-fixtures.ts.
+      await clickEditRecording(page);
+      await expect(
+        page.getByLabel("Selection start", { exact: true })
+      ).toBeVisible();
+
+      const toolbar = page.locator(".recorder-toolbar.edit");
+      // `button.control` reaches the real button whether or not a control is
+      // wrapped in `.control-hinted` (any control passed a `hint` prop, even
+      // `null`, gets a wrapping span — `control.tsx`), so the count and order
+      // below are the six controls, not their wrappers.
+      const controls = toolbar.locator("button.control");
+
+      const expectOneRowRightOfTheTools = async () => {
+        await expect(controls).toHaveCount(6);
+        const boxes: { x: number; y: number; right: number }[] = [];
+        for (let i = 0; i < 6; i++) {
+          const box = await controls.nth(i).boundingBox();
+          expect(box).not.toBeNull();
+          boxes.push({ x: box!.x, y: box!.y, right: box!.x + box!.width });
+        }
+        // One row: nothing wrapped to a second line. This is the exact
+        // failure #370 named — the ≡ (index 4) landing on a line of its own.
+        // Tolerance is 3px, not 1: the trailing Select/Done slot (index 5) is
+        // the 44px `--c-control-md` box against the other five 40px `quiet`
+        // boxes, and `align-items: center` centres each within the shared
+        // row height, so its top sits ~2px higher than theirs even on a
+        // single row.
+        const firstY = boxes[0]!.y;
+        for (const b of boxes) {
+          expect(Math.abs(b.y - firstY)).toBeLessThanOrEqual(3);
+        }
+        // Left-to-right in DOM order: the ≡ never jumps ahead of a tool that
+        // comes after it in source order (the "lands on the left" failure).
+        for (let i = 1; i < boxes.length; i++) {
+          expect(boxes[i]!.x).toBeGreaterThan(boxes[i - 1]!.x);
+        }
+        // The ≡ (index 4) sits to the right of every other tool and
+        // immediately precedes the trailing Select/Done slot (index 5) — the
+        // trailing-edge position the issue says is worth protecting.
+        expect(boxes[4]!.x).toBeGreaterThan(boxes[3]!.x);
+        expect(boxes[4]!.right).toBeLessThanOrEqual(boxes[5]!.x + 0.5);
+        // No horizontal scroll at this width (AGENTS.md: no horizontal page
+        // scroll at phone width).
+        const scrollWidth = await page.evaluate(
+          () => document.documentElement.scrollWidth
+        );
+        expect(scrollWidth).toBeLessThanOrEqual(width);
+      };
+
+      // Frame open (the issue's named case).
+      await expectOneRowRightOfTheTools();
+
+      // Frame closed (the issue's "before closing" checklist: both states).
+      // A cut collapses the frame onto the centerline without leaving edit
+      // mode; #362's 40-vs-44 question is separate and untouched here.
+      await page
+        .getByRole("button", { name: "Cut the selection", exact: true })
+        .click();
+      await expect(
+        page.getByLabel("Selection start", { exact: true })
+      ).toHaveCount(0);
+      await expectOneRowRightOfTheTools();
+    });
+  }
+});
+
+// #659 (a Claude review of #638): at 0%/100% a handle's hit box sits flush
+// against `.recorder-canvas`'s clipped edge (the #707 clamp), so whether its
+// keyboard focus ring clips there too is not something a source read of
+// `outline-offset: -2px` can answer — CSS resolves the ring's rendered
+// bounds from the box's live geometry plus the offset and width, not from
+// the declaration's sign alone. This reads all three from the shipped build
+// and derives the ring's own edges, rather than trusting that a negative
+// offset is automatically safe.
+test.describe("selection handle focus ring at 0%/100% (#659)", () => {
+  for (const width of [320, 390]) {
+    test(`the focus ring never renders past the canvas edge (${width}px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 740 });
+      await page.goto("/");
+      await page.getByRole("button", { name: "New book" }).click();
+      await page.getByRole("button", { name: "Create book" }).click();
+      await page.getByRole("button", { name: /^Add chapter to/ }).click();
+      await page.getByRole("button", { name: "Create chapter" }).click();
+      await page.getByRole("button", { name: "Open Chapter 1" }).click();
+      await page.getByRole("button", { name: "Add segment" }).click();
+      await page.getByRole("button", { name: "Record segment 1" }).click();
+      await page.getByRole("button", { name: "Record", exact: true }).click();
+      await page.waitForTimeout(1200);
+      await page
+        .getByRole("button", { name: "Stop recording", exact: true })
+        .click();
+      // #846/#848/#825: this spec never waited for "Record" to reappear
+      // either — wait for the real precondition before clicking. See
+      // recorder-fixtures.ts.
+      await clickEditRecording(page);
+      await page
+        .getByRole("button", {
+          name: "Zoomed to the whole segment. Zoom in to a quarter.",
+          exact: true,
+        })
+        .click();
+      const stage = await page.locator(".recorder-canvas").boundingBox();
+      expect(stage).not.toBeNull();
+
+      for (const label of ["Selection start", "Selection end"] as const) {
+        const handle = page.getByLabel(label, { exact: true });
+        await expect(handle).toBeVisible();
+        // A real Tab, not `.focus()`: `:focus-visible` is a heuristic over
+        // input history, and a script-driven focus does not satisfy it, so a
+        // programmatic focus would silently skip the very rule under test.
+        await page.evaluate(() => document.body.focus());
+        let tabs = 0;
+        while (tabs < 30) {
+          await page.keyboard.press("Tab");
+          if (await handle.evaluate((el) => el === document.activeElement)) {
+            break;
+          }
+          tabs++;
+        }
+        await expect(handle).toBeFocused();
+        expect(
+          await handle.evaluate((el) => el.matches(":focus-visible"))
+        ).toBe(true);
+        const box = await handle.boundingBox();
+        expect(box).not.toBeNull();
+        const { outlineWidth, outlineOffset } = await handle.evaluate((el) => {
+          const cs = getComputedStyle(el);
+          return {
+            outlineWidth: parseFloat(cs.outlineWidth),
+            outlineOffset: parseFloat(cs.outlineOffset),
+          };
+        });
+        // CSS Outline: the ring is drawn `outline-width` further from the
+        // border edge than `outline-offset` places it — outward for a
+        // positive offset, and inward (toward, then past, the edge) for a
+        // negative one. This is the rendered ring's outer bound on each
+        // side, derived rather than assumed.
+        const ringLeft = box!.x - outlineOffset - outlineWidth;
+        const ringRight = box!.x + box!.width + outlineOffset + outlineWidth;
+        expect(
+          ringLeft,
+          `${label} ring's left edge vs the canvas`
+        ).toBeGreaterThanOrEqual(stage!.x - 0.5);
+        expect(
+          ringRight,
+          `${label} ring's right edge vs the canvas`
+        ).toBeLessThanOrEqual(stage!.x + stage!.width + 0.5);
+      }
     });
   }
 });

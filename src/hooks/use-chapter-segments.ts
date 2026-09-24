@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 
 import { requestTranscodeSweep } from "./finish-transcode";
 import { reportFailure } from "./report-failure";
@@ -9,11 +10,10 @@ import {
   getBook,
   getChapter,
   getSegmentsOfChapter,
-  isFinished,
   renameChapter as renameChapterInStore,
   renameSegment as renameSegmentInStore,
-  setSegmentFinished,
 } from "@/lib/storage/books";
+import { isFinished, setSegmentFinished } from "@/lib/storage/takes";
 import {
   loadSegmentClip,
   resolveSegmentAudio,
@@ -22,9 +22,10 @@ import {
   isMissingChapterFailure,
   isMissingSegmentFailure,
 } from "@/lib/storage/stale-target";
+import { ROW_PEAK_BUCKETS } from "@/lib/view/segment-rows";
 import type { ClipMeta, Peaks } from "@/types/audio";
 import type { ChapterId, ClipId, Segment, SegmentId } from "@/types/domain";
-import { ROW_PEAK_BUCKETS, type SegmentRow } from "@/types/view";
+import type { SegmentRow } from "@/types/view";
 
 /**
  * A row's waveform, or `null` when the segment has no playable audio.
@@ -127,6 +128,22 @@ async function loadChapterView(chapterId: ChapterId): Promise<ChapterView> {
   };
 }
 
+type FieldStamps = Map<keyof SegmentRow, { value: unknown; asOfGen: number }>;
+
+/** Stamp only `patch`'s own fields: a later patch never re-dates another's. */
+function stamp(
+  overrides: RefObject<Map<SegmentId, FieldStamps>>,
+  loadGen: RefObject<number>,
+  segmentId: SegmentId,
+  patch: Partial<SegmentRow>
+): void {
+  const fields = overrides.current.get(segmentId) ?? new Map();
+  for (const [key, value] of Object.entries(patch)) {
+    fields.set(key, { value, asOfGen: loadGen.current });
+  }
+  overrides.current.set(segmentId, fields);
+}
+
 /**
  * The Segments screen (B3): a chapter's ordered rows, its breadcrumb, and the
  * two mutations the screen owns — append a segment, toggle finished.
@@ -151,9 +168,57 @@ export function useChapterSegments(chapterId: ChapterId) {
   const [error, setError] = useState<string | null>(null);
   const [staleTarget, setStaleTarget] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
+  // The set of segments this hook has locally patched — a rename, a finished
+  // toggle, an erase — since the load current when that patch landed (#676
+  // item 4; generalized for #824). `renameSegment`/`setFinished`/`eraseRow`
+  // patch `rows` in place rather than `reload()`ing (the docblock above says
+  // why), so a `reload()` already in flight for an unrelated reason — a
+  // recorder commit elsewhere in the chapter — can still be reading the
+  // pre-patch snapshot `getSegmentsOfChapter` took at ITS OWN start. If that
+  // read resolves and calls `setRows(view.rows)` after the patch has landed,
+  // the stale row would repaint over it until the next load — and #676 item 4
+  // guarded only the `label` field this way, so `hasClip`, `peaks`, `clipId`
+  // and `durationMs` still repainted to their pre-patch values for one paint
+  // (#824: a row just erased could flash its clip back, or one just recorded
+  // could flash to no clip, until the next load corrected it).
+  //
+  // NOT `use-books.ts`'s `loadGen`/`isLoadCurrent` shape: that pattern
+  // discards a WHOLE stale load, which is safe there because every caller
+  // that bumps the generation (`createBook`/`addChapter`/`renameBook`) also
+  // calls `reload()` in the same breath, so a fresh load is always right
+  // behind the one being discarded. None of this hook's patch functions
+  // reload (peaks are expensive to recompute for a change that touches no
+  // audio), so discarding a whole in-flight load here would leave
+  // `loading`/`refreshing` stuck true forever with nothing left to clear them
+  // — trading one stale row for a chapter wedged in "Updating…". Instead,
+  // every load's result is merged PER FIELD: an entry holds only the fields a
+  // local patch wrote, and a racing load overlays those onto its own read;
+  // every other field installs from the load, which is newer than `rows` (a
+  // post-save reload is how a new take's `hasClip`/`peaks` arrive).
+  //
+  // Each entry records `asOfGen`, the load generation current when the
+  // patch's store write returned (or, for `eraseRow`, which writes nothing
+  // itself, current when the patch was applied). Only a load of that
+  // generation or older (one already in flight when the patch landed) defers
+  // to the live row; a load that STARTED later read the store after the
+  // patch, so its own read wins even when it differs — another writer's
+  // later change must not lose to a patch this hook applied earlier.
+  // Retirement is by order, not by equality: an equality-only retire kept the
+  // entry armed forever once a second writer's change reached disk first.
+  // `chapterId` changing clears the whole map — none of its entries can apply
+  // to a different chapter's segments.
+  const rowOverrides = useRef(new Map<SegmentId, FieldStamps>());
+  const loadGen = useRef(0);
+  const rowOverridesChapter = useRef(chapterId);
 
   useEffect(() => {
     let cancelled = false;
+    // Taken synchronously, before the read below starts.
+    const gen = ++loadGen.current;
+    if (rowOverridesChapter.current !== chapterId) {
+      rowOverridesChapter.current = chapterId;
+      rowOverrides.current.clear();
+    }
     void (async () => {
       try {
         const view = await loadChapterView(chapterId);
@@ -161,7 +226,22 @@ export function useChapterSegments(chapterId: ChapterId) {
         setBookName(view.bookName);
         setChapterNumber(view.chapterNumber);
         setChapterName(view.chapterName);
-        setRows(view.rows);
+        // Retire every override this load started after — including ids it
+        // no longer returns — then overlay fields older patches still stamp.
+        for (const [id, fields] of rowOverrides.current) {
+          for (const [key, s] of fields)
+            if (gen > s.asOfGen) fields.delete(key);
+          if (fields.size === 0) rowOverrides.current.delete(id);
+        }
+        setRows(
+          view.rows.map((r) => {
+            const fields = rowOverrides.current.get(r.segmentId) ?? [];
+            const out = { ...r };
+            for (const [key, s] of fields)
+              Object.assign(out, { [key]: s.value });
+            return out;
+          })
+        );
         setError(null);
         setStaleTarget(false);
         setLoaded(true);
@@ -226,12 +306,15 @@ export function useChapterSegments(chapterId: ChapterId) {
     }
   }, [chapterId]);
 
-  // One of the three mirrors of the stored finished flag (#160, L-10 — the
-  // writers, the mirrors and the single reconciliation point are recorded at
-  // `recorderClosedState` in `app/App.tsx`). This one patches in place after a
-  // LANDED write, so it never diverges from the store on its own; what makes
-  // it stale is a write from the sheet, and what fixes it is the `reload()` on
-  // close.
+  // A mirror of the stored finished flag (#160, L-10). This one patches in
+  // place after a LANDED write, so it never diverges from the store on its
+  // own; what makes it stale is a write from the sheet, and what fixes it is
+  // a `reload()`.
+  //
+  // WHICH reloads, and every writer and mirror, are enumerated once — at
+  // `recorderClosedState` in `app/App.tsx`. Deliberately not restated here:
+  // this comment used to carry its own partial copy, and a second copy of an
+  // inventory is a second thing to keep in step.
   const setFinished = useCallback(
     async (segmentId: SegmentId, finished: boolean): Promise<void> => {
       // The store rejects marking a never-recorded segment finished; the row
@@ -242,6 +325,11 @@ export function useChapterSegments(chapterId: ChapterId) {
       // Only a landed write patches the row.
       try {
         await setSegmentFinished(segmentId, finished);
+        // Recorded BEFORE the patch below, same order the merge above assumes
+        // (#824): the store write has already landed by this line, so any
+        // load's read from this point on — in flight already, or started
+        // fresh from here — sees (or is corrected to) this row.
+        stamp(rowOverrides, loadGen, segmentId, { finished });
         setRows((rs) =>
           rs.map((r) => (r.segmentId === segmentId ? { ...r, finished } : r))
         );
@@ -264,6 +352,11 @@ export function useChapterSegments(chapterId: ChapterId) {
 
   const renameChapter = useCallback(
     async (name: string): Promise<boolean> => {
+      // Clear at the START of the op, matching `useBooks`'s `deleteBook`
+      // (#395 item 1): a Notice from a PREVIOUS failed rename must not still
+      // be standing once a retry is under way, alongside the screen's own
+      // busy Notice for THIS attempt (George, #395).
+      setError(null);
       // Rename touches no audio, so patch the breadcrumb in place rather than
       // reload() (which re-walks the chapter's PCM). The store normalises the
       // name (trim, blank ⇒ null); take the resolved value back from it so the
@@ -297,6 +390,13 @@ export function useChapterSegments(chapterId: ChapterId) {
       // plain words (`renameSegmentFailed`) — this `false` is what tells it to.
       try {
         const segment = await renameSegmentInStore(segmentId, label);
+        // Recorded BEFORE the patch below, in the same order a racing load's
+        // merge above assumes: the store write has already landed by this
+        // line, so any load's read from this point on — in flight already,
+        // or started fresh from here — sees (or is corrected to) this row.
+        // `asOfGen` is read AFTER the await on purpose: a load that began
+        // during the write may have read the pre-write snapshot.
+        stamp(rowOverrides, loadGen, segmentId, { label: segment.label });
         setRows((rs) =>
           rs.map((r) =>
             r.segmentId === segmentId ? { ...r, label: segment.label } : r
@@ -324,19 +424,24 @@ export function useChapterSegments(chapterId: ChapterId) {
     // on EVERY row while it re-walks each clip's PCM (tens–hundreds of MB on a
     // long chapter), so erasing one segment would freeze the transport of a
     // sibling that is still playing, with no way to stop it (George R-B6).
+    //
+    // This function does no store write of its own (the caller's own erase
+    // already landed, or is assumed to have — `segments-screen.tsx`'s
+    // `onConfirmErase` only calls this after `erase.erase()` resolves "ok"),
+    // so there is no "after the await" point to read `loadGen.current` from;
+    // it is read here, synchronously, at the moment the patch is applied
+    // (#824) — the same moment a racing load's merge above must treat as the
+    // boundary between "stale" and "fresh".
+    const erased = {
+      hasClip: false,
+      finished: false,
+      clipId: null,
+      peaks: null,
+      durationMs: null,
+    } satisfies Partial<SegmentRow>;
+    stamp(rowOverrides, loadGen, segmentId, erased);
     setRows((rs) =>
-      rs.map((r) =>
-        r.segmentId === segmentId
-          ? {
-              ...r,
-              hasClip: false,
-              finished: false,
-              clipId: null,
-              peaks: null,
-              durationMs: null,
-            }
-          : r
-      )
+      rs.map((r) => (r.segmentId === segmentId ? { ...r, ...erased } : r))
     );
   }, []);
 

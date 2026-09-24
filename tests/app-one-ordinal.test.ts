@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { stripComments } from "./support";
+
 /**
  * #160 (L-11): `App` held two state slots for one fact — `recorder.ordinal`
  * and `recordingOrdinal`, written from the same argument in the same call —
@@ -21,9 +23,6 @@ import { describe, expect, it } from "vitest";
  * comment that quotes `setRecorder(null)` in order to explain it — so a
  * whole-file regex would false-hit on the explanation instead of the code.
  */
-
-const stripComments = (text: string) =>
-  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 
 const app = stripComments(
   readFileSync(new URL("../src/app/App.tsx", import.meta.url), "utf8")
@@ -105,8 +104,19 @@ describe("App holds ONE ordinal, and the sheet's saves stamp it on the take (#16
     // sheet at open time rather than a number that drifted.
     const at = app.indexOf("const openRecorderState = useCallback(");
     expect(at, "no openRecorderState in App.tsx").toBeGreaterThan(-1);
-    const end = app.indexOf("const recorderClosedState = useCallback(", at);
-    expect(end).toBeGreaterThan(at);
+    // #718: end the slice at the callback's OWN closing dependency array, not
+    // at the NEXT declaration. Anchoring on the next declaration only pins
+    // the pair somewhere in the span between the two anchors — a function
+    // inserted between this callback's close and `recorderClosedState`, that
+    // happens to carry the same two lines, would satisfy the old match even
+    // with the pair moved out of `openRecorderState` itself.
+    const depsMarker = "[leave, primeAudioContext]";
+    const depsAt = app.indexOf(depsMarker, at);
+    expect(
+      depsAt,
+      "no closing dependency array for openRecorderState"
+    ).toBeGreaterThan(at);
+    const end = depsAt + depsMarker.length;
     const body = app.slice(at, end);
     expect(body.length, "empty openRecorderState body read").toBeGreaterThan(
       50

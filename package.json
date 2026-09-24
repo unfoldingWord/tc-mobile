@@ -1,6 +1,6 @@
 {
   "name": "tc-mobile",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "private": true,
   "type": "module",
   "description": "translationCore Mobile — offline-first audio notebook/editor PWA for oral Bible translation",
@@ -30,7 +30,8 @@
     "knip": "knip --include dependencies,unlisted,files,exports,types",
     "typecheck:lib": "tsc -p tsconfig.lib.json",
     "check:deploy": "node scripts/check-deploy.mjs",
-    "check:deploy:prod": "node scripts/check-deploy.mjs --require-origin --origin=https://tc-mobile.unfoldingword.workers.dev"
+    "check:deploy:prod": "node scripts/check-deploy.mjs --require-origin --origin=https://tc-mobile.unfoldingword.workers.dev",
+    "check:commit-msg": "node scripts/check-commit-messages.mjs"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs}": [

@@ -19,8 +19,6 @@ const view = {
   ordinal: 1,
   finished: false,
   hasClip: true,
-  peaks: null,
-  lengthSamples: original.length,
   samples: original,
 };
 vi.mock("@/hooks/use-recorder-segment", () => ({
@@ -159,7 +157,13 @@ async function setup() {
 }
 
 it.each(["edit", "clear", "finished"])(
-  "withholds pending %s after Edit stops a superseded capture and idle Back follows",
+  // Driven through Stop (`commitTake("stay")`), not Edit-entry
+  // (`commitTake("edit")`): #857 disables the `[ ]`/"Edit recording" entry
+  // while a take is live, so it is no longer UI-reachable. The superseded
+  // verdict this pins runs unconditionally on `commitTake`'s `after` argument
+  // (`recorder.tsx`'s `verdict.kind === "superseded"` branch), so Stop
+  // exercises the identical shared code the Edit-triggered version did.
+  "withholds pending %s after a superseded capture and idle Back follows",
   async (kind) => {
     const s = await setup();
     if (kind === "finished") {
@@ -180,7 +184,7 @@ it.each(["edit", "clear", "finished"])(
     }
     s.audio.recorderState = "recording";
     await s.render();
-    await s.click(strings.enterEdit);
+    await s.click(strings.stop);
     expect(s.audio.stopRecording).toHaveBeenCalledOnce();
     await s.render();
     await act(async () => {
@@ -203,11 +207,15 @@ it("still saves an ordinary idle edit", async () => {
   expect(s.saveEditedSegment).toHaveBeenCalledWith("segment", original, false);
 });
 
+// Both stops below are driven through Stop (`commitTake("stay")`), not
+// Edit-entry — #857 disables Edit-entry while a take is live, and neither
+// assertion here cares which mode the sheet lands in, only that a superseded
+// stop is followed by a real capture and idle writes still land afterward.
 it("commits a fresh capture after supersession and restores later idle writes", async () => {
   const s = await setup();
   s.audio.recorderState = "recording";
   await s.render();
-  await s.click(strings.enterEdit);
+  await s.click(strings.stop);
   await s.render();
   const fresh = new Int16Array([5, 6]);
   s.audio.stopRecording = vi.fn(async () => {
@@ -216,7 +224,7 @@ it("commits a fresh capture after supersession and restores later idle writes", 
   });
   s.audio.recorderState = "recording";
   await s.render();
-  await s.click(strings.enterEdit);
+  await s.click(strings.stop);
   expect(s.saveRecording).toHaveBeenCalledWith(
     "segment",
     original,
@@ -232,23 +240,22 @@ it("commits a fresh capture after supersession and restores later idle writes", 
   expect(s.saveEditedSegment).toHaveBeenCalledOnce();
 });
 
+// Both stops driven through Stop, for the reason noted above the previous
+// test — the withhold logic under test runs unconditionally on `commitTake`'s
+// `after` argument.
 it("does not release withheld edits for a subsequent empty capture", async () => {
   const s = await setup();
   boundary.editor = { ...boundary.editor, hasEdits: true };
   s.audio.recorderState = "recording";
   await s.render();
-  await s.click(strings.enterEdit);
+  await s.click(strings.stop);
   s.audio.stopRecording = vi.fn(async () => {
     s.audio.recorderState = "idle";
-    return {
-      samples: null,
-      blob: null,
-      error: "No sound was recorded. Try again.",
-    };
+    return { samples: null, blob: null, error: "silence" as const };
   });
   s.audio.recorderState = "recording";
   await s.render();
-  await s.click(strings.enterEdit);
+  await s.click(strings.stop);
   await s.render();
   await act(async () => {
     await s.ref.current!.requestClose();
@@ -258,20 +265,24 @@ it("does not release withheld edits for a subsequent empty capture", async () =>
 });
 
 it.each(["discard", "retry"])(
+  // Driven through Stop, not Edit-entry (see the comment above "commits a
+  // fresh capture..."). The retry arm lands with `recoverDestination.current
+  // === "stay"` rather than `"edit"` as a result — neither arm asserts on the
+  // sheet's mode, only on which saves and exits fire, so this is unaffected.
   "keeps recovery ownership after supersession: %s",
   async (action) => {
     const s = await setup();
     boundary.editor = { ...boundary.editor, hasEdits: true };
     s.audio.recorderState = "recording";
     await s.render();
-    await s.click(strings.enterEdit);
+    await s.click(strings.stop);
     s.audio.stopRecording = vi.fn(async () => {
       s.audio.recorderState = "idle";
       return { samples: null, blob: new Blob(["kept"]), error: null };
     });
     s.audio.recorderState = "recording";
     await s.render();
-    await s.click(strings.enterEdit);
+    await s.click(strings.stop);
     await s.render();
     await act(async () => {
       expect(await s.ref.current!.requestClose()).toBe(false);

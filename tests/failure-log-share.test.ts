@@ -8,6 +8,7 @@ import {
   type LogShareCapabilities,
   selectLogShareShape,
 } from "@/hooks/use-failure-log-share";
+import { region } from "./support";
 
 /** Reads the hook source for wiring assertions; does not execute its effects. */
 const read = (rel: string) =>
@@ -170,16 +171,9 @@ describe("selectLogShareShape", () => {
  * unconfirmed native resolve closed the panel exactly as confidently as a
  * proven one, the same defect the Share menus already fixed one layer up.
  *
- * The two-gesture flow itself is React + browser glue this repo has no
- * renderer to exercise (this file's own header). What IS pinned here, at the
- * source, is that the fix reuses the SAME policy function
- * (`resolveSendOutcome`) Share Chapter/Book already use, rather than a second,
- * hand-rolled comparison — and that the stale comment is gone.
- *
- * Red-first: reverting this hook's `send()` to the old `return "sent";` — no
- * `resolveProvesDelivery`/`resolveSendOutcome` call at all — makes every
- * assertion below fail; confirmed with `git stash` against the pre-fix
- * source.
+ * These source assertions check reuse of the same outcome policy as Share
+ * Chapter/Book and removal of the stale comment. They do not mount the hook
+ * or exercise the browser/native handoff.
  */
 describe("use-failure-log-share.ts: an unconfirmed native resolve settles unproven, not sent (George r2 P2-3, #491)", () => {
   const hook = read("src/hooks/use-failure-log-share.ts");
@@ -215,7 +209,10 @@ describe("use-failure-log-share.ts: an unconfirmed native resolve settles unprov
   it('never unconditionally returns "sent" from the success branch any more', () => {
     const sendAt = hook.indexOf("const send = useCallback(async ()");
     const catchAt = hook.indexOf("} catch (cause) {", sendAt);
-    const successBody = hook.slice(sendAt, catchAt);
+    // region() throws if either anchor is missing or catchAt does not
+    // strictly follow sendAt, rather than silently slicing "" when either
+    // indexOf misses (#533).
+    const successBody = region(hook, { from: sendAt, to: catchAt });
     expect(successBody).not.toMatch(/\n\s*return "sent";\s*\n/);
   });
 
@@ -235,10 +232,7 @@ describe("use-failure-log-share.ts: an unconfirmed native resolve settles unprov
  * Wired the same way: `sendUnconfirmed` on the hook, read by BOTH callers to
  * swap the idle control's icon (`share-closed`, not a new glyph) and label,
  * never `disabled`.
- *
- * Red-first: removing `setSendUnconfirmed(true)` from `send()`'s success
- * branch, or the `sendUnconfirmed` reads in either caller, makes the
- * corresponding assertion below fail; confirmed with `git stash`.
+
  */
 describe("use-failure-log-share.ts: sendUnconfirmed reaches both idle Send controls (Frank 238820a P2, #491)", () => {
   const hook = read("src/hooks/use-failure-log-share.ts");

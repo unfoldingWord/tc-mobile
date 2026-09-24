@@ -19,8 +19,8 @@ vi.mock("@/lib/nav/navigation", async (importOriginal) => {
   };
 });
 const storage = vi.hoisted(() => ({ clear: vi.fn() }));
-vi.mock("@/lib/storage/books", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/storage/books")>()),
+vi.mock("@/lib/storage/takes", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/storage/takes")>()),
   clearSegmentTake: storage.clear,
 }));
 const view = {
@@ -29,8 +29,6 @@ const view = {
   ordinal: 1,
   finished: false,
   hasClip: true,
-  peaks: null,
-  lengthSamples: 4,
   samples: new Int16Array([1, 2, 3, 4]),
 };
 vi.mock("@/hooks/use-recorder-segment", () => ({

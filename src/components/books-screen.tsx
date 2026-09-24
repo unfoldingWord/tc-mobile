@@ -21,6 +21,7 @@ import { encoderNotice } from "./encoder-notice";
 import { shareGapText, shareProgressText } from "./share-error-copy";
 import { ShareMenuSection } from "./share-menu-section";
 import { ShareProgress } from "./share-progress";
+import { storagePressureNotice } from "./storage-pressure-notice";
 import { strings } from "./strings";
 import { useFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
@@ -28,15 +29,18 @@ import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
+import { useScrollToNew } from "@/hooks/use-scroll-to-new";
 import {
   useScreenLayers,
   type ScreenLayerBehavior,
 } from "@/hooks/use-screen-layers";
 import { useStoragePersistence } from "@/hooks/use-storage-persistence";
+import { useStoragePressure } from "@/hooks/use-storage-pressure";
 import { useTheme } from "@/hooks/use-theme";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { nextChapterNumber } from "@/lib/storage/books";
 import { cn } from "@/lib/utils";
+import { hasReclaimableAudio } from "@/lib/view/book-rows";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
@@ -133,6 +137,12 @@ export function BooksScreen({
   // (ui-craft §21), and a screen reader would announce it twice. Hide the
   // corner + exactly while the invite is up; it returns once the shelf fills.
   const showEmpty = loaded && books.length === 0;
+  // The shelf holds at least one book. Used by `useStoragePersistence` below
+  // only — `storagePressureNotice`'s gate used to share this too (#542 round
+  // 1, George P2-2) but now uses the stronger `hasReclaimableAudio` below
+  // (#542 Part B, DRI decision 2026-09-24): a book can exist with nothing
+  // recorded in it, which `hasContent` alone could not distinguish.
+  const hasContent = loaded && books.length > 0;
   // Durable storage (#12). A book exists only because a write committed, so a
   // successful shelf read that finds one is "after the first successful write"
   // reached from the read side — the trigger the hook's docblock explains. The
@@ -142,7 +152,31 @@ export function BooksScreen({
   // and the app is not the Capacitor training shell (native storage is not
   // evicted the same way; `lib/storage/persistence.ts`). Unknown (no API, a
   // rejected query) says nothing.
-  const storage = useStoragePersistence(loaded && books.length > 0);
+  const storage = useStoragePersistence(hasContent);
+  // At least one segment, anywhere on the shelf, holds a recorded take
+  // (#542 Part B). `recordedCount` is already in `books` — `useBooks`
+  // computes it per chapter from the same `getSegmentsOfChapter` read that
+  // fills `finishedCount`/`totalCount` — so this is a plain fold over data
+  // already in memory, not a new read. `loaded &&` matches `hasContent`'s own
+  // guard: `books` is `[]` before the first load lands either way, so this is
+  // for clarity rather than to change the answer.
+  const reclaimableAudio = loaded && hasReclaimableAudio(books);
+  // Storage pressure (#247, wiring half of #537's core). Unlike `storage`
+  // above, `useStoragePressure` itself is NOT gated on a loaded shelf — the
+  // device can be full before this app has read anything
+  // (`use-storage-pressure.ts`'s CONTRACT note) — so `storagePressureNotice`
+  // takes `hasReclaimableAudio` and `deleteFailed` as its own gate, rather
+  // than folding either into the hook the way `storage` above does. See that
+  // function's docblock for why the gate lives there now and not as JSX `&&`
+  // (#542, Frank P2-2 / George P3-5), why it is `hasReclaimableAudio` and not
+  // `hasContent` (#542 Part B), why `deleteFailed` and not the wider
+  // `noticeText` below (#542, George P2-4), and why `loading`/`loadFailed`
+  // are not passed here (#843 item 4: unreachable in combination with
+  // `hasReclaimableAudio: true` from this call site).
+  const pressureLine = storagePressureNotice(useStoragePressure(), {
+    hasReclaimableAudio: reclaimableAudio,
+    deleteFailed,
+  });
   const [menuOpen, setMenuOpen] = useState(false);
   // #171. The global menu is the only place a theme switch belongs: it is a
   // once-per-session decision about the light you are standing in, not a
@@ -212,7 +246,7 @@ export function BooksScreen({
   // Where focus was when the New Book dialog opened — the corner + or the empty
   // state's CTA. Restored when the dialog closes WITHOUT creating, so a cancel
   // does not drop focus to the document (the dialog's own controls unmount).
-  // Cleared on a successful create, where `pendingFocus` takes over instead.
+  // Cleared on a successful create, where the row hand-off takes over instead.
   const newBookReturnFocus = useRef<HTMLElement | null>(null);
   // The Add-chapter prompt (#609). `null` is closed; an open prompt carries
   // BOTH the book it will add to and the "Chapter N" the field is seeded with,
@@ -232,13 +266,13 @@ export function BooksScreen({
   const [creatingChapterBusy, setCreatingChapterBusy] = useState(false);
   // Where focus was when the prompt opened — the row's `+`. Restored when the
   // prompt is cancelled, so focus does not drop to the document. A failed
-  // create targets the book toggle; success uses `pendingFocus` instead.
+  // create targets the book toggle; success uses the row hand-off instead.
   // Exactly New Book's split, and for a reason this prompt shares: returning
   // focus to the `+` after a create leaves a live control that reopens this
   // panel under the key that just confirmed it, and `NameEdit` autofocuses, so
   // the NEXT repeat submits — the pre-#609 held-Enter loop with one more
   // keystroke per turn rather than none, still writing chapters this tree
-  // cannot delete. It also undid the `pendingScroll` that had just brought the
+  // cannot delete. It also undid the armed scroll that had just brought the
   // new row into view, by focusing the row above it.
   const newChapterReturnFocus = useRef<HTMLElement | null>(null);
   // Share Book (B7): the per-book ≡ menu. Which book's menu is open, and one
@@ -287,22 +321,29 @@ export function BooksScreen({
   const bookShare = useBookShare();
   // Per-viewer UI state, so it lives here and not on disk. Collapsed by default.
   const [expanded, setExpanded] = useState<ReadonlySet<BookId>>(new Set());
-  // What to scroll to once the list next reloads — a freshly made book or
-  // chapter. A ref, not state: creating one patches `books` directly (no
-  // `reload()` needed — see `useBooks.createBook`/`addChapter`, George R4
-  // P2-2), so the `books` change already re-renders us; clearing a ref here
-  // avoids a setState-in-effect cascade.
-  const pendingScroll = useRef<string | null>(null);
-  // The empty-state CTA unmounts on the create it triggers. Without this, focus
-  // falls to the document and the first header stop takes over — on a chapter
-  // that would be Back, one activation from leaving. Hand focus to the new row.
-  const pendingFocus = useRef<string | null>(null);
-  const nodes = useRef(new Map<string, HTMLElement>());
-
-  const setNode = useCallback((id: string, el: HTMLElement | null) => {
-    if (el) nodes.current.set(id, el);
-    else nodes.current.delete(id);
-  }, []);
+  // The row registry and the arm-then-reveal pair, shared with Segments (#160
+  // L-15). Refs inside, not state: creating a book or chapter patches `books`
+  // directly (no `reload()` needed — see `useBooks.createBook`/`addChapter`,
+  // George R4 P2-2), so the change already re-renders us and an arm does not
+  // have to. The empty-state CTA unmounts on the create it triggers, so without
+  // the focus half focus falls to the document and the first header stop takes
+  // over — on a chapter that would be Back, one activation from leaving.
+  //
+  // The selector is the row's first `<button>`, and it is a DELIBERATE step
+  // back from an earlier round. For a BOOK id (New Book) that is the
+  // expand/collapse toggle; for a CHAPTER id (#609's Add-chapter prompt) it is
+  // that row's only button, "Open Chapter N". Both satisfy the rule: a stray
+  // re-activation writes nothing — one re-collapses a row, the other navigates
+  // into the chapter, which one Back undoes. Targeting `.control` instead put a
+  // live, activating native button under focus as the direct continuation of
+  // Confirm's own Enter — and a still-held Enter key-repeats `click` on
+  // whatever is focused, so a facilitator holding Enter through Confirm wrote
+  // MULTIPLE undeletable chapters before the per-book latch could catch up (the
+  // latch only stops OVERLAPPING calls; it releases the instant each write
+  // resolves, and a `put` is typically faster than OS key-repeat — George R4
+  // P2-1). Add-chapter is the more useful landing, one Tab further on; it is
+  // not the safe one.
+  const rowReveal = useScrollToNew<string>("button");
 
   // ── System Back: this screen's overlays as layers (#452 PR3, #374) ────────
   //
@@ -446,9 +487,9 @@ export function BooksScreen({
    * would land on `document`. Do not "simplify" that layout effect back.
    */
   const closeDeleteConfirmState = useCallback(() => {
-    if (deleteTargetId !== null) pendingFocus.current = deleteTargetId;
+    if (deleteTargetId !== null) rowReveal.armFocus(deleteTargetId);
     setDeleteTargetId(null);
-  }, [deleteTargetId]);
+  }, [deleteTargetId, rowReveal]);
 
   const layers = useScreenLayers<BooksLayerId>(pushLayer, popLayer, {
     "books:global-menu": {
@@ -530,44 +571,16 @@ export function BooksScreen({
   }, [layers]);
 
   useEffect(() => {
-    const id = pendingScroll.current;
-    if (id !== null) {
-      nodes.current.get(id)?.scrollIntoView({ block: "nearest" });
-      pendingScroll.current = null;
-    }
-    const focusId = pendingFocus.current;
     // HOLD the hand-off while the delete confirm is up. The shelf is `inert`
     // then (see the wrapper below), and an element inside an inert subtree
-    // cannot take focus at all — so focusing here would be a silent no-op and
-    // the pending target would be consumed and lost. `deleteTargetId` going
-    // null is exactly the moment `inert` comes off, and it is in this effect's
-    // deps, so the hand-off runs on that render instead. This is the repo's own
-    // lesson, learned twice: a focus fix that ignores `inert` is dead code
-    // (#364; docs/progress_tracker.md).
-    if (focusId !== null && deleteTargetId === null) {
-      // Two kinds of row reach this now. For a BOOK id (New Book) the first
-      // <button> is the expand/collapse toggle; for a CHAPTER id (#609's
-      // Add-chapter prompt) it is that row's only button, "Open Chapter N".
-      // Both satisfy the rule the rest of this comment establishes: a stray
-      // re-activation writes nothing — one re-collapses a row, the other
-      // navigates into the chapter, which one Back undoes.
-      //
-      // Landing on the toggle
-      // instead of the add-chapter Control is a DELIBERATE step back from an
-      // earlier round: targeting `.control` put a live, activating native
-      // button under focus as the direct continuation of Confirm's own Enter
-      // — and a still-held Enter key-repeats `click` on whatever is focused,
-      // so a facilitator holding Enter through Confirm wrote MULTIPLE
-      // undeletable chapters before the per-book latch could catch up (the
-      // latch only stops OVERLAPPING calls; it releases the instant each
-      // write resolves, and a `put` is typically faster than OS key-repeat —
-      // George R4 P2-1). A stray re-activation of the toggle just re-collapses
-      // the row — visible immediately, undone by one more tap, and it writes
-      // nothing — so it is the safe landing spot even though Add-chapter is
-      // the more useful one Tab further on.
-      nodes.current.get(focusId)?.querySelector<HTMLElement>("button")?.focus();
-      pendingFocus.current = null;
-    }
+    // cannot take focus at all — so focusing there would be a silent no-op and
+    // the pending target would be consumed and lost. The hook RETAINS a held
+    // target rather than spending it (`lib/a11y/pending-reveal`, table-tested),
+    // and `deleteTargetId` going null is exactly the moment `inert` comes off —
+    // it is in this effect's deps, so the hand-off runs on that render instead.
+    // This is the repo's own lesson, learned twice: a focus fix that ignores
+    // `inert` is dead code (#364; docs/progress_tracker.md).
+    rowReveal.reveal(deleteTargetId !== null);
     // Keyed on ALL THREE: `books` covers create/add-chapter and a successful
     // delete, `deleteTargetId` covers the render on which the delete confirm
     // comes down, and `newBookSeed` covers the render on which the New Book
@@ -575,14 +588,16 @@ export function BooksScreen({
     // and closes the dialog (here) as two setStates in one async continuation;
     // React batches those into a single commit, but this hand-off must not
     // DEPEND on that — if they ever split, the `books` render would run this
-    // effect before the refs below were set and the focus would be lost for
-    // good. Re-running on either close edge makes the order irrelevant; a run
-    // with nothing pending is a no-op.
+    // effect before the hand-off below was armed and the focus would be lost
+    // for good. Re-running on either close edge makes the order irrelevant; a
+    // run with nothing armed is a no-op.
     // `newChapter` is in the list for the same reason `newBookSeed` is: the
-    // Add-chapter prompt sets `pendingScroll` and closes itself in one async
+    // Add-chapter prompt arms the scroll and closes itself in one async
     // continuation alongside the hook's own `setBooks`, and this hand-off must
     // not depend on React batching those into one commit.
-  }, [books, deleteTargetId, newBookSeed, newChapter]);
+    // `rowReveal` is a fifth dependency but never a trigger: it is memoised
+    // (`use-scroll-to-new.ts`), so it is there for exhaustiveness.
+  }, [books, deleteTargetId, newBookSeed, newChapter, rowReveal]);
 
   const toggle = useCallback((id: BookId) => {
     setExpanded((prev) => {
@@ -637,11 +652,11 @@ export function BooksScreen({
   // Return focus to the trigger once the dialog is gone. In an effect, not in
   // the handler: the shelf is `inert` while the dialog is open, and focusing an
   // element inside an inert subtree does nothing — so this has to wait for the
-  // render that removes `inert`. A create clears the ref, because `pendingFocus`
-  // hands focus to the new row's toggle button instead (George R5 P3 — this
-  // comment used to say "add-chapter control", which is what an earlier round
-  // targeted before George R4 P2-1 moved the landing to the toggle; see the
-  // `pendingFocus` effect above for why).
+  // render that removes `inert`. A create clears the ref, because the row
+  // hand-off (`rowReveal`) focuses the new row's toggle button instead (George
+  // R5 P3 — this comment used to say "add-chapter control", which is what an
+  // earlier round targeted before George R4 P2-1 moved the landing to the
+  // toggle; see `rowReveal`'s declaration above for why).
   useEffect(() => {
     if (newBookSeed !== null) return;
     const el = newBookReturnFocus.current;
@@ -694,13 +709,13 @@ export function BooksScreen({
       // not: it unmounts on Confirm, so without this hand-off focus falls to
       // the document and the first header stop takes over.
       setExpanded((prev) => new Set(prev).add(book.id));
-      pendingScroll.current = book.id;
-      pendingFocus.current = book.id;
+      rowReveal.armScroll(book.id);
+      rowReveal.armFocus(book.id);
       // No `finally`: on success the latch stays held until the next open edge.
       // See its declaration — releasing it here reopens the double-create window
       // between the write resolving and the panel actually unmounting.
     },
-    [createBook, layers, newBookSeed]
+    [createBook, layers, newBookSeed, rowReveal]
   );
 
   // A book row's `+` no longer creates anything either: it opens the naming
@@ -761,16 +776,18 @@ export function BooksScreen({
       // A second copy can delete the trigger's book while this prompt is up.
       const firstBook = books[0];
       if (firstBook) {
-        nodes.current
-          .get(firstBook.bookId)
-          ?.querySelector<HTMLElement>("button")
-          ?.focus();
+        // The same control an armed hand-off would land on, resolved through
+        // the registry's own selector rather than a second copy of it.
+        rowReveal.controlIn(firstBook.bookId)?.focus();
       } else {
-        // Held Enter must not open and submit New Book after the last book disappears.
-        nodes.current.get(EMPTY_STATE_NODE)?.focus();
+        // Held Enter must not open and submit New Book after the last book
+        // disappears. The empty state is registered as a node that IS the
+        // target — it carries its own `tabIndex={-1}` — not a row with a
+        // control inside it, so this reads the node rather than a control.
+        rowReveal.nodeFor(EMPTY_STATE_NODE)?.focus();
       }
     }
-  }, [newChapter, books]);
+  }, [newChapter, books, rowReveal]);
 
   const onConfirmNewChapter = useCallback(
     async (typed: string) => {
@@ -804,26 +821,25 @@ export function BooksScreen({
       // If the book vanished, the return-focus effect chooses a shelf fallback.
       if (!chapter) {
         newChapterReturnFocus.current =
-          nodes.current.get(bookId)?.querySelector<HTMLElement>("button") ??
-          newChapterReturnFocus.current;
+          rowReveal.controlIn(bookId) ?? newChapterReturnFocus.current;
         return;
       }
-      // On success it is cleared and `pendingFocus` takes over, for the reason
-      // the ref's declaration gives. The chapter row's only button is
+      // On success it is cleared and the row hand-off takes over, for the
+      // reason `rowReveal`'s declaration gives. The chapter row's only button is
       // "Open Chapter N": a stray re-activation navigates into the chapter,
       // which writes nothing and one Back undoes — the same "land on something
       // recoverable, not something that writes" rule George R4 P2-1 established
       // for New Book's own hand-off.
       newChapterReturnFocus.current = null;
       setExpanded((prev) => new Set(prev).add(bookId));
-      pendingScroll.current = chapter.id;
-      pendingFocus.current = chapter.id;
+      rowReveal.armScroll(chapter.id);
+      rowReveal.armFocus(chapter.id);
       // No `finally`: the latch stays held until the next open edge, so the
       // window between the write resolving and the panel unmounting cannot
       // take a second Confirm and write a chapter nothing on this tree can
       // delete.
     },
-    [addChapter, layers, newChapter]
+    [addChapter, layers, newChapter, rowReveal]
   );
 
   // The book whose ≡ menu is open, resolved from the shelf. `null` closes the
@@ -844,10 +860,25 @@ export function BooksScreen({
   // values that are `ref.current ??= …` in `share-flow.ts:388,409`, created
   // once for the hook's life.
   const resetBookShare = bookShare.reset;
+  // The share overlay's own capture/restore pair (#96/#97, George r2 P2-1,
+  // #491). See `segments-screen.tsx`'s own copy of this comment for why
+  // capture must happen synchronously in the tap handlers below, never from an
+  // effect.
+  const focusRestore = useFocusRestore();
+  // The book menu's OWN pair (#679), one per inert scope: the menu inerts the
+  // shelf, the share overlay inerts the menu. Sharing one slot let the share
+  // effect below consume the ⋮ capture while the menu stayed open, so a later
+  // Close/Escape found nothing to restore (Frank r1 P2 on #754).
+  const menuFocusRestore = useFocusRestore();
   // Open a book's ≡ menu, ending any prior menu session so a rename still in
   // flight from the previous one cannot close this one.
   const onOpenShareMenu = useCallback(
     (bookId: BookId) => {
+      // Remember the ⋮ that opened this menu, HERE — synchronously, in the
+      // tap's own handler (#97, #679): one commit later the shelf goes
+      // `inert`, which blurs this button to `<body>` in the mutation phase,
+      // before any effect could read it.
+      menuFocusRestore.capture();
       bookMenuSession.current += 1;
       setShareMenuBookId(bookId);
       // A different book's still-pending rename must not show THIS book's fresh
@@ -855,7 +886,7 @@ export function BooksScreen({
       setSavingName(false);
       layers.open("books:book-menu");
     },
-    [layers, setSavingName]
+    [menuFocusRestore, layers, setSavingName]
   );
   // Menu's actual `onClose`, and the one close every caller uses — see
   // `closeBookMenuState` above for what it does and why the share-overlay guard
@@ -894,6 +925,15 @@ export function BooksScreen({
   const onSaveBookName = useCallback(
     (name: string) => {
       if (!shareMenuBookId) return;
+      // The same synchronous ref latch New Book's `creatingBook` uses (#395
+      // item 3). `NameEdit`'s own `if (busy) return` in its `onSubmit` reads
+      // LAST RENDER's `busy` — a key-repeated Enter can call this a second
+      // time before the first commit's `savingBookName` paints. Reading
+      // `savingBookNameRef` HERE, before this call flips it, closes that gap
+      // for free: the ref already tracks "a rename for this menu session is
+      // in flight" synchronously, for `Layer.busy()`'s own sync read (see its
+      // declaration above) — reusing it costs no new state.
+      if (savingBookNameRef.current) return;
       // Capture the session this rename belongs to. IDB can settle after the
       // user has closed the menu, reopened another book's menu, or armed a share
       // — all of which advance the token — so close ONLY if we are still the
@@ -928,10 +968,6 @@ export function BooksScreen({
     setRenamingBook(false);
     setSavingName(false);
   }, [setSavingName]);
-  // The overlay's own capture/restore pair (#96/#97, George r2 P2-1, #491) —
-  // see `segments-screen.tsx`'s own copy of this comment for why capture must
-  // happen synchronously in the tap handlers below, never from an effect.
-  const focusRestore = useFocusRestore();
   // Whichever of "Share book"/"Preparing…"/"Share now" is currently rendered
   // — attached to every branch of the ternary below, so it survives that
   // remount and always names a live, non-destructive landmark for
@@ -975,6 +1011,35 @@ export function BooksScreen({
       fallback: shareControlRef.current,
     });
   }, [bookShare.progress, focusRestore]);
+  // Return focus to the ⋮ that opened this book's menu once the menu itself
+  // is fully closed — Close, Escape, a scrim tap, or a completed rename/share
+  // that closes it (#679) — and no share overlay still owns the screen.
+  //
+  // A SEPARATE effect from the one above, deliberately, rather than adding
+  // `shareMenuBookId` to that effect's own dependency array: that effect must
+  // keep firing on every `bookShare.progress` change made WHILE this menu
+  // stays open (the busy → ready transition after `onPrepareBookShare`,
+  // moving focus onto whichever of "Share book"/"Share now" is live), and it
+  // must NOT also fire on this menu's OPEN edge — which adding
+  // `shareMenuBookId` there would, since opening flips it non-null with
+  // `bookShare.progress` still `"hidden"`, and that would consume the ⋮
+  // capture `onOpenShareMenu` above just took, before the menu has shown
+  // anything. Guarding on `shareMenuBookId === null` keeps this effect silent
+  // while the menu is open. It also runs on mount and on later progress
+  // changes, but `menuFocusRestore` is captured only by `onOpenShareMenu`, so
+  // those runs find an empty slot and do nothing. A close into the delete
+  // confirm (shelf still inert) consumes the capture without focusing;
+  // `closeDeleteConfirmState`'s `pendingFocus` owns that landing.
+  //
+  // No fallback: once the whole menu is gone there is no live landmark left
+  // inside it (`shareControlRef` unmounts in the same commit), and the ⋮
+  // itself is the only sensible target — `restore()` already prefers it
+  // whenever it is connected, focusable and no longer `inert`.
+  useLayoutEffect(() => {
+    if (shareMenuBookId !== null) return;
+    if (shareOverlayOwnsScreen(bookShare.progress)) return;
+    menuFocusRestore.restore({ suppressed: false, fallback: null });
+  }, [shareMenuBookId, bookShare.progress, menuFocusRestore]);
   // Share speaks inside its own menu, not the shelf: the two-gesture flow keeps
   // the menu open across prepare → ready → send. The control's glyph, the gap
   // mark and the error mark all live in `ShareMenuSection` now (#160, L-15) —
@@ -1025,12 +1090,12 @@ export function BooksScreen({
   // against. `deleteTarget` resolving to null already takes the dialog and
   // `inert` down (both now key off `deleteTargetId` directly, below), but
   // nothing cleared `deleteTargetId` itself, so the focus hold stayed latched
-  // with no confirm left to close it and no `pendingFocus` ever recorded —
+  // with no confirm left to close it and no focus target ever armed —
   // silently swallowing the NEXT hand-off too (George R10 P2-3).
   //
   // The setState is pushed past a microtask so it is not SYNCHRONOUS within
   // the effect body — `react-hooks/set-state-in-effect` flags exactly that
-  // shape, and refs (`pendingFocus`, `armedShelf`) may not be read or written
+  // shape, and refs (`armedShelf`, and `rowReveal`'s own) may not be read or written
   // during render (`react-hooks/refs`), which rules out doing this inline in
   // the render body instead. Matches how every other effect in this hook
   // already only calls its setters from inside an async callback (the load
@@ -1039,10 +1104,8 @@ export function BooksScreen({
     if (deleteTargetId === null || deleteTarget !== null) return;
     const targetId = deleteTargetId;
     void Promise.resolve().then(() => {
-      pendingFocus.current = focusTargetAfterDelete(
-        "ok",
-        targetId,
-        armedShelf.current
+      rowReveal.armFocus(
+        focusTargetAfterDelete("ok", targetId, armedShelf.current)
       );
       setDeleteTargetId(null);
       // The confirm comes down here without any tap, so its layer has to come
@@ -1052,12 +1115,13 @@ export function BooksScreen({
       // This is an EFFECT closing a layer, which invariant 6 does NOT forbid:
       // what it forbids is REGISTRATION keyed on an effect, because that is
       // what an unstable dependency can fire spuriously. Both deps here are
-      // plain state values and `layers` is memoized (`use-screen-layers.ts`),
-      // so there is no hook-returned object literal to destabilise the array —
-      // the round-6 P1 shape cannot occur.
+      // plain state values, and `layers` and `rowReveal` are both memoized
+      // (`use-screen-layers.ts`, `use-scroll-to-new.ts`), so there is no
+      // per-render object literal to destabilise the array — the round-6 P1
+      // shape cannot occur.
       layers.close("books:delete-confirm");
     });
-  }, [deleteTarget, deleteTargetId, layers]);
+  }, [deleteTarget, deleteTargetId, layers, rowReveal]);
   // The SAME class for the book ≡ menu (George R1 P3-2). `<Menu>` is open on
   // `shareMenuBook !== null`, which is resolved from the shelf — so when
   // another tab deletes the open book the panel unmounts on its own, while
@@ -1117,11 +1181,20 @@ export function BooksScreen({
   // which is what would make R4 P2-3 safely fixable — is #363, its own change to
   // its own unchanged code.
   const onArmDelete = useCallback(() => {
-    // No `shareOverlayOwnsScreen` guard here any more (#491): Delete sits
-    // inside the panel's `inert` subtree (see `<Menu>`'s own `inert` prop
-    // below), so it is unreachable by click, keyboard or AT activation for
-    // the whole time the guard used to check — the primitive covers it now,
-    // not a per-handler check.
+    // #491 removed the per-handler `shareOverlayOwnsScreen` guard here in
+    // favour of `<Menu>`'s own `inert` prop below: with `inert` doing its job,
+    // Delete is unreachable by click, keyboard or AT activation for the whole
+    // time this guard used to check.
+    //
+    // #517 item 1 (George r3 P3 on #508) put it back, as defense in depth: if
+    // `inert` is ever bypassed (a WebView bug, an unsupported `inert`
+    // implementation), `onCloseShareMenu()` two lines below already no-ops
+    // while the overlay owns the screen, but nothing stopped `setDeleteTargetId`
+    // from still running — `EraseConfirm` would then paint under the share
+    // glyph at the same z-index (`3-components.css`). This has not been
+    // observed on a device; it is a second, redundant check behind the
+    // primitive, not evidence the primitive is insufficient.
+    if (shareOverlayOwnsScreen(bookShare.progress)) return;
     const bookId = shareMenuBookId;
     // Registered BEFORE the menu's own layer is unregistered, so the floor's
     // layer stack goes 1 → 2 → 1 and never passes through empty (#452 PR3).
@@ -1147,7 +1220,7 @@ export function BooksScreen({
     // time it detects the vanish, `books` has already moved on without it.
     armedShelf.current = books.map((b) => b.bookId);
     setDeleteTargetId(bookId);
-  }, [books, layers, onCloseShareMenu, shareMenuBookId]);
+  }, [books, bookShare.progress, layers, onCloseShareMenu, shareMenuBookId]);
   const onConfirmDelete = useCallback(() => {
     if (deleteTargetId === null) return;
     // The shelf order as it is right now, captured while the row is still on
@@ -1183,10 +1256,8 @@ export function BooksScreen({
       // unmounts, so it falls to the document just the same. Which node each
       // case wants is decided by `focusTargetAfterDelete`, which is pure and has
       // a test table — the ordering below is the half no test here can observe.
-      pendingFocus.current = focusTargetAfterDelete(
-        result,
-        deleteTargetId,
-        shelfBefore
+      rowReveal.armFocus(
+        focusTargetAfterDelete(result, deleteTargetId, shelfBefore)
       );
       setDeleteTargetId(null);
       // Both outcomes take the confirm down, so both take its layer down.
@@ -1194,7 +1265,7 @@ export function BooksScreen({
       // right: the first delete still owns them.
       layers.close("books:delete-confirm");
     })();
-  }, [books, deleteBook, deleteTargetId, layers]);
+  }, [books, deleteBook, deleteTargetId, layers, rowReveal]);
 
   // `deleteFailed` only ever RELABELS the hook's current error — they are one
   // state there, so the label cannot outlive what it labels. A *reload* no
@@ -1322,16 +1393,18 @@ export function BooksScreen({
         loading && <Notice tone="busy">{strings.loadingBooks}</Notice>
       )}
 
-      {/* Two standing background conditions can be true at once — the browser
-          has not promised to keep this storage (#12), AND the encoder has
-          stopped working (#166) — and they are about different subsystems, so
-          #279's precedent (encoderLine's own line, not folded into the
+      {/* Three standing background conditions can be true at once — the
+          browser has not promised to keep this storage (#12), this origin is
+          running low regardless (#247), AND the encoder has stopped working
+          (#166) — and they are about different subsystems, so #279's
+          precedent (encoderLine's own line, not folded into the
           load/delete/loading slot above, which stays exclusive and acute-first)
-          extends to both rather than making one dominant CSS-flag over the
-          other: each is `&&`-rendered on its own, and BOTH may show stacked.
+          extends to all three rather than making one dominant CSS-flag over
+          the others: each is `&&`-rendered on its own, and ANY combination may
+          show stacked.
 
-          Neither is gated by the slot above, and neither waits for it to go
-          quiet: `storage` and `encoderLine` render as soon as THEIR OWN
+          Neither `storage` nor `encoderLine` is gated by the slot above, and
+          neither waits for it to go quiet: both render as soon as THEIR OWN
           readiness condition is met — `useStoragePersistence` resolves once
           `hasContent` (a loaded shelf with at least one book) is true;
           `encoderHealth()` is independent module state that has nothing to
@@ -1341,18 +1414,51 @@ export function BooksScreen({
           true, so `storage` keeps rendering underneath a `deleteFailed`
           notice in the slot above rather than waiting on it to clear (#406
           item 1 — the prior wording here tied this to `noticeText`/`loading`
-          being settled, which is not how either gate works).
+          being settled, which is not how either gate works). `pressureLine`
+          used to be different on purpose (`use-storage-pressure.ts`'s CONTRACT note:
+          the device can be full before this app has read anything, so the
+          underlying hook is NOT gated on content) — but the gate that
+          exclusivity needs now lives INSIDE `storagePressureNotice` itself
+          (`hasReclaimableAudio` plus `deleteFailed`, passed in above — see
+          that call site's own comment for why `loading`/`loadFailed` are not
+          part of this gate, #843 item 4), not as JSX here. #542 round 1
+          (Frank P2-2 / George P3-5) found the load-bearing predicate living
+          here, in a bare `&&` no test could pin — the same shape
+          `encoder-notice.ts` already avoids for `encoderLine`; #542 Part B
+          (DRI decision 2026-09-24) then strengthened the predicate itself
+          from `hasContent` ("a book exists") to `hasReclaimableAudio` ("a
+          recorded take exists somewhere"), because the former let an empty
+          book or chapter show this line's remediation copy with nothing to
+          remediate. `pressureLine` is `null` whenever any of that applies, so
+          the render below needs no extra condition of its own.
 
-          Order: storage first, encoder second. Storage's risk is total and
-          unrecoverable (browser eviction, no restore path) where encoder's
-          copy explicitly promises nothing is lost — the more severe standing
-          risk reads first, same principle the load-failure/loading slot above
+          Order: storage, pressure, encoder. Storage's risk is total and
+          unrecoverable (browser eviction, no restore path); pressure is
+          recoverable by acting on it (mark segments finished, share and
+          erase); encoder's copy explicitly promises nothing is lost — most
+          severe first, same principle the load-failure/loading slot above
           already applies by being exclusive and ordered acute-first.
           `notice-tone.ts`'s `info` docblock names this exact case (a standing
           condition, not only a completed-event caveat) after George round 1
-          P3-3 flagged the original wording as covering only the latter. */}
+          P3-3 flagged the original wording as covering only the latter.
+
+          Two things #247 still leaves open, honestly: `pressureLine` starts
+          `null` on every Books mount and only paints once `estimate()` lands
+          (no cross-mount CACHE — #537 round 6, unchanged by #542 Part A,
+          which bumps `use-storage-pressure.ts`'s module-scope generation on a
+          book delete/create commit but caches nothing across a remount), so
+          a translator who stays inside one chapter recording segment after
+          segment — Books unmounted the whole time — sees no update until
+          they come back out (the still-open "recorder-close refresh" half of
+          #247); and this has not been read against a real Android
+          `estimate()` value or inside the Capacitor training shell, so the
+          thresholds and the native behaviour are both unverified in-shell.
+          Neither is guessed at here. */}
       {storage === "not-persisted" && (
         <Notice tone="info">{strings.storageNotPersisted}</Notice>
+      )}
+      {pressureLine && (
+        <Notice tone={pressureLine.tone}>{pressureLine.text}</Notice>
       )}
       {encoderLine && (
         <Notice tone={encoderLine.tone}>{encoderLine.text}</Notice>
@@ -1368,7 +1474,7 @@ export function BooksScreen({
             role="group"
             aria-label={strings.booksEmpty}
             tabIndex={-1}
-            ref={(el) => setNode(EMPTY_STATE_NODE, el)}
+            ref={(el) => rowReveal.setNode(EMPTY_STATE_NODE, el)}
           >
             <EmptyState
               headline={strings.booksEmpty}
@@ -1399,7 +1505,7 @@ export function BooksScreen({
                 guidedChapterId={
                   guide?.kind === "open-chapter" ? guide.chapterId : null
                 }
-                setNode={setNode}
+                setNode={rowReveal.setNode}
               />
             ))}
           </ul>
@@ -1475,8 +1581,20 @@ export function BooksScreen({
           onSave={(name) => void onConfirmNewBook(name)}
           onCancel={onCancelNewBook}
           busy={creatingBookBusy}
+          busyLabel={strings.creatingBook}
           guided={guide?.kind === "create-book"}
         />
+        {/* New Book's own busy AT channel (#395 item 2) — the third busy
+            `NameEdit` caller, and the one that had none: the field
+            `autoFocus`es and Enter submits without moving focus to Confirm,
+            exactly why rename's own busy Notice below exists, so nothing was
+            announced here when `creatingBookBusy` went true with focus still
+            on the field. Its own busy string, not `savingName` — nothing
+            exists yet for "Saving…" to describe (see `createBook`'s own
+            comment above). */}
+        {creatingBookBusy && (
+          <Notice tone="busy">{strings.creatingBook}</Notice>
+        )}
         {/* THIS dialog's own failure channel — never the shared `error`, which
             also carries a failed addChapter or rename and would announce one
             here as if naming had gone wrong. */}
@@ -1570,8 +1688,20 @@ export function BooksScreen({
                 nothing had submitted yet (George stand-in P3-2). The remaining
                 instances of that class — a failed create or add-chapter reaching
                 this panel the same way — are pre-existing and belong to #172,
-                which is about raw browser strings in Notices generally. */}
-            {error && !deleteFailed && <Notice>{error}</Notice>}
+                which is about raw browser strings in Notices generally.
+
+                Also never while `savingBookName` (#395 item 1): a retried
+                rename flips its own busy Notice on before this one's `finally`
+                clears `error` from the PREVIOUS attempt, so a wait and a
+                failure shared the panel for one commit — the exact #112
+                collision `control-affordance.ts` names as the rule this
+                whole busy/Notice wiring follows. `renameBook`/`renameChapter`
+                also now clear `error` at the START of the write (see
+                `use-books.ts`/`use-chapter-segments.ts`); either half alone
+                still leaves the other channel wrong (George, #395). */}
+            {error && !deleteFailed && !savingBookName && (
+              <Notice>{error}</Notice>
+            )}
           </>
         ) : (
           <>

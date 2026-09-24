@@ -14,7 +14,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   cut / insert / paste / replace / concat, waveform peak extraction, WAV
   writer, and a lamejs MP3 encoder — the encoder only; nothing wires it to an
   export (#18).
-- Scripture Burrito scope-string grammar (`src/lib/scripture/scope.ts`).
+- Scripture Burrito scope-string grammar (`tests/scope.ts`; moved out of
+  `src/lib/scripture/` as test-only in #818/#159, 2026-09-24 — no `src/`
+  caller existed).
 - IndexedDB storage (`src/lib/storage`): clip persistence and a chapter and
   segment repository. Its original Project → Chapter → Section → Segment → Take
   hierarchy belongs to the initial scaffold, replaced on 22 Aug 2026 ("the

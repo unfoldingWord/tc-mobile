@@ -21,10 +21,15 @@ import { storageMarker, type StorageMarker } from "@/lib/storage/persistence";
  * `hooks/use-storage-pressure.ts` owns the browser call (#247). The thresholds
  * this paragraph once said nobody had decided are named constants there — a
  * documented proposal, since no device reading exists to tune them against.
- * The staleness this paragraph worried about is real and is still open: that
- * hook reads once per mount and holds nothing between mounts, deliberately,
- * because the invalidation it needs has to outlive a Books unmount and nobody
- * has yet decided whether it is needed at all (#247).
+ * The staleness this paragraph worried about is PARTLY resolved, as of #542
+ * Part A (DRI decision, 2026-09-24): that hook still starts every mount at
+ * `"unknown"` and holds no cache across a Books unmount (a translator who
+ * stays inside one chapter recording segment after segment still sees no
+ * update until they come back out — the "recorder-close refresh" half of
+ * #247, still open), but it now re-reads `estimate()` on a book delete/create
+ * commit even while ALREADY mounted, via a module-scope generation
+ * `use-books.ts` bumps — narrower than "outlive a Books unmount", and scoped
+ * to exactly those two writes.
  *
  * **Round 1 (George, #214) found two lifecycle bugs**, both fixed here:
  * `storageMarker` now also takes `hasContent` and `native` (an empty shelf or
@@ -160,9 +165,9 @@ let resolvedAnswer: boolean | undefined = undefined;
  * repository can determine, and no run has recorded it — #12 stays open on
  * that. This code asks and reports; it does not know what the answer will be.
  *
- * Not covered by any test in this repo: everything below this line. There is no
- * jsdom or renderer here, so the effect and its gating are review and on-device
- * surface, exactly as `useEraseSegment`'s guard is. What IS pinned is
+ * Not covered by any test in this repo: everything below this line. Nothing
+ * mounts this hook's effect graph, so the effect and its gating are review and
+ * on-device surface, exactly as `useEraseSegment`'s guard is. What IS pinned is
  * `ensurePersistedStorage` and `storageMarker`.
  */
 export function useStoragePersistence(

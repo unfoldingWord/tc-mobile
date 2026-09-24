@@ -9,9 +9,6 @@
  * which is plain data by construction.
  */
 
-/** How many entries the durable log keeps. Oldest are dropped past this. */
-export const FAILURE_LOG_LIMIT = 50;
-
 /**
  * One durable failure entry.
  *

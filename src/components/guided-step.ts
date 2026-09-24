@@ -116,25 +116,37 @@ function booksStep(
     // the placeholder (#314), so Confirm alone completes the create and typing
     // is optional.
     return view.naming ? { kind: "create-book" } : { kind: "new-book" };
-  // Past the first run. Someone making a second book has done this before, and
-  // naming it is not a step anyone needs walked through.
-  if (books.length > 1 || view.naming) return null;
   const book = books[0];
   if (!book) return null;
-  if (book.chapters.length === 0)
+  // `listBooks` sorts newest-first (`use-books.ts`), so `books[0]` is always
+  // the book that was just created. A book with no chapters yet gets the
+  // Add-chapter ring whether or not other books already exist on the shelf —
+  // #834, Tim's decision: "once a book is added, the blue ring goes around
+  // that book's + for adding a chapter." `naming` gates this off because the
+  // New Book dialog for a FURTHER book then sits on top of the shelf, and that
+  // dialog — not this book's Add chapter — is the thing in front of the user.
+  if (book.chapters.length === 0 && !view.naming)
     // The chapter dialog is New Book's again: its field arrives pre-filled
     // with "Chapter N" (#609), so its Confirm is the next required tap. The
     // shelf is inert behind it, so Add chapter could not show a ring there.
     return view.namingChapter
       ? { kind: "create-chapter" }
       : { kind: "add-chapter", bookId: book.bookId };
+  // Past the newest book's first chapter, or naming a further book. Someone
+  // making a second book — or whose newest book already holds a chapter — has
+  // done this before, and the terminal chain below (expand/open that book) is
+  // not walked for them. #834's decision reaches only the Add-chapter branch
+  // above, not this one.
+  if (books.length > 1 || view.naming) return null;
   // Adding a further chapter is not a first-run step, and the shelf is inert
   // behind that dialog.
   if (view.namingChapter) return null;
-  // The Books half of the terminal rule. `ChapterRow` carries segment counts
-  // and no take information (`types/view.ts`), and the guide takes no reading
-  // of its own, so "a chapter holds segments" is the strongest honest reading
-  // of "this book has been worked in" available on the shelf.
+  // The Books half of the terminal rule. `ChapterRow` also carries
+  // `recordedCount` (#542 Part B, take-derived) since this was written, but
+  // the guide deliberately reads `totalCount`, not `recordedCount`: "this
+  // book has been worked in" is about a chapter existing to work in, not
+  // about whether anything in it has been recorded yet — the guide takes no
+  // reading of its own beyond that.
   if (book.chapters.some((chapter) => chapter.totalCount > 0)) return null;
   const first = book.chapters[0];
   if (!first) return null;

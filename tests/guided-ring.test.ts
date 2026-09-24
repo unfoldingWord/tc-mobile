@@ -106,12 +106,18 @@ describe("the guide accent is one colour, reached through layer 2 (#604)", () =>
     expect(ruleBlock(components, ".record-guide.is-guided")).toMatch(
       /box-shadow:\s*0/
     );
-    const source = read("src/components/recorder.tsx");
-    expect(source).toContain(
+    // The answer and the mark that draws it live in two files since the bar's
+    // JSX was lifted out of the sheet (#160, L-1): `recorder.tsx` derives
+    // `guidedRecord`, `recorder-toolbars.tsx` paints it. Both halves are still
+    // asserted — each against the file that now owns it.
+    const bar = read("src/components/recorder-toolbars.tsx");
+    expect(bar).toContain(
       'className={cn("record-guide", guidedRecord && "is-guided")}'
     );
-    expect(source).not.toContain("guided={guidedRecord}");
-    expect(source).toContain("isClosing: isClosing && !stoppingInPlace");
+    expect(bar).not.toContain("guided={guidedRecord}");
+    expect(read("src/components/recorder.tsx")).toContain(
+      "isClosing: isClosing && !stoppingInPlace"
+    );
   });
 
   it("keeps the record ring OUTSIDE the red, and every other ring inside", () => {
@@ -149,18 +155,32 @@ describe("the guide accent is one colour, reached through layer 2 (#604)", () =>
 
 describe("every step of the chain reaches a control (#604)", () => {
   const resolver = read("src/components/guided-step.ts");
-  const screens = {
-    "src/components/books-screen.tsx": [
-      "new-book",
-      "create-book",
-      "add-chapter",
-      "create-chapter",
-      "expand-book",
-      "open-chapter",
-    ],
-    "src/components/segments-screen.tsx": ["add-segment", "open-segment"],
-    "src/components/recorder.tsx": ["record"],
-  } as const;
+  // `marks` is the file that DRAWS the answer, which is the screen's own file
+  // everywhere but the recorder: the bar's JSX is a sibling module since #160
+  // L-1, so the sheet asks the resolver and `recorder-toolbars.tsx` carries the
+  // class. Naming it per screen keeps both halves asserted rather than dropping
+  // the one that moved.
+  const screens: Record<string, { marks: string; kinds: readonly string[] }> = {
+    "src/components/books-screen.tsx": {
+      marks: "src/components/books-screen.tsx",
+      kinds: [
+        "new-book",
+        "create-book",
+        "add-chapter",
+        "create-chapter",
+        "expand-book",
+        "open-chapter",
+      ],
+    },
+    "src/components/segments-screen.tsx": {
+      marks: "src/components/segments-screen.tsx",
+      kinds: ["add-segment", "open-segment"],
+    },
+    "src/components/recorder.tsx": {
+      marks: "src/components/recorder-toolbars.tsx",
+      kinds: ["record"],
+    },
+  };
 
   it("claims every member of the union, so a new step cannot ship unwired", () => {
     const declared = new Set(
@@ -168,15 +188,18 @@ describe("every step of the chain reaches a control (#604)", () => {
     );
     expect(declared.size).toBeGreaterThanOrEqual(6);
     expect([...declared].sort()).toEqual(
-      Object.values(screens).flat().slice().sort()
+      Object.values(screens)
+        .flatMap((screen) => screen.kinds)
+        .slice()
+        .sort()
     );
   });
 
-  for (const [file, kinds] of Object.entries(screens)) {
+  for (const [file, { marks, kinds }] of Object.entries(screens)) {
     it(`${path.basename(file)} asks the resolver and marks its own steps`, () => {
       const source = read(file);
       expect(source, "does not call guidedStep").toMatch(/guidedStep\(/);
-      expect(source, "marks no control").toMatch(
+      expect(read(marks), "marks no control").toMatch(
         /guided=\{|guidedRecord && "is-guided"/
       );
       for (const kind of kinds) {

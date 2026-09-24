@@ -2,45 +2,25 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { matchingBraceClose, stripComments } from "./support";
+
 /**
  * George R2 P2-1 and P2-2 (PR #499): the commit-close-recorder RACE guards.
  *
  * These are source-shape gates, the same comment-stripping / brace-counting
  * idiom as `tests/nav-commit-close-rearm.test.ts` and
- * `tests/recorder-stop-release-guards.test.ts`. This Node-only suite has no
- * renderer (AGENTS.md: no jsdom), so `useNavStack`'s popstate handler cannot be
- * mounted nor a real `popstate` dispatched, and the recorder's `disabled` prop
- * cannot be rendered and inspected. The ms-window this PR guards — a
- * `requestClose()` resolving before an outstanding go-back's `popstate` lands —
- * is a device item the Playwright spec cannot reproduce either
- * (`e2e/back-navigation.spec.ts` header). So the three lines George asked be
- * protected from a silent later edit get source-shape gates, each mutation-red
- * on the exact deletion it exists to catch.
+ * `tests/recorder-stop-release-guards.test.ts`. These tests read source text;
+ * they do not mount `useNavStack`, dispatch `popstate`, or render the recorder.
+ * The static render harness does not execute effects or browser events either.
+ * The race is a `requestClose()` resolving before an outstanding go-back's
+ * `popstate` lands. The Playwright spec covers idle navigation, not this timing
+ * window (`e2e/back-navigation.spec.ts` header).
  *
  * WHAT THESE PROVE, EXACTLY: that the source TEXT still has the three shapes.
  * They do NOT prove any of it executes correctly at runtime, that the race
  * window is ever hit, or that any device has run this. Behaviour is the e2e
  * spec's idle path (cases b, d) plus the on-device items named in its header.
  */
-
-/** Strip block and line comments so the gates read CODE, not the prose that
- * (deliberately) discusses `isClosing`, `suppressPop` and `transitionInFlight`
- * in the very comments beside these lines — a naive match would score them. */
-const stripComments = (text: string) =>
-  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
-/** Brace-count from `openIndex` (an opening `{`) to its matching close. */
-const matchingBraceClose = (body: string, openIndex: number): number => {
-  let depth = 0;
-  for (let i = openIndex; i < body.length; i++) {
-    if (body[i] === "{") depth++;
-    else if (body[i] === "}") {
-      depth--;
-      if (depth === 0) return i;
-    }
-  }
-  return -1;
-};
 
 const navSource = stripComments(
   readFileSync(

@@ -125,20 +125,12 @@ describe("liveScopeShown — the stage-owning states win", () => {
 /**
  * The recorder stage's view-coupled decisions, as a truth table.
  *
- * Rounds 3, 4, 5 and 7 of this PR's review each found the same defect wearing
- * a different hat — the paste marker, then zoom, then Select, then the
- * playhead's own hide rule — and each time the answer was "this control (or
- * overlay) assumes the pan/zoom window while something else is drawn, or
- * assumes every sounding buffer swapped to the whole clip when this one
- * didn't". Repetition is a class, not a coincidence, so the decision is made
- * once, here, where it can be enumerated and pinned; `recorder.tsx` reads the
- * answers rather than re-deriving them per control.
+ * Controls and overlays must agree with the waveform's current view. The
+ * table enumerates the shared decision that `recorder.tsx` consumes instead
+ * of re-deriving it per control.
  *
- * The axes are the four the recorder actually varies: which mode the sheet is
- * in, whether a buffer is sounding, whether a selection frame is up, and
- * whether a paused-take preview is on the stage. The answer is now ONE value —
- * `render`, the four ways the stage can be drawn — rather than a bag of
- * booleans that could disagree with each other (#415).
+ * Inputs are mode, playback, selection and dragging. `render` selects one
+ * of three views: static, scrolling or in-place audition.
  *
  * A fourth decision, `centerlineHidden`, lived in this table from R2 through
  * R4 P3. #316 (requirements owner, 2026-09-16) retired it as a decision made
@@ -513,16 +505,16 @@ describe("resumesOnLift", () => {
 });
 
 /**
- * What a lift leaves behind (Frank R3 P2, twice).
+ * What a lift leaves behind.
  *
  * `resumesOnLift` answers one question — does sound start? — and a lift asks
  * three, because the stage can outlive the pointer that owned it. The lock has
  * to hold while ANY finger is on the waveform (otherwise the owner lifting
  * first re-enables Play, Record, Undo, Zoom and Select with a finger still
  * down), and a resume the lift cannot perform has to survive as a debt rather
- * than be consumed into silence. Those are state transitions, not a predicate,
- * and there is no renderer in this suite — so they are enumerated here, where
- * the owner-up-before-non-owner-up order is a test rather than a phone.
+ * than be consumed into silence. These cases enumerate pure state transitions,
+ * including owner-up before non-owner-up; they do not dispatch pointer events
+ * or establish the behavior on a phone.
  */
 describe("liftOutcome", () => {
   const LEN = 1000;
@@ -1380,12 +1372,14 @@ describe("panAfterUndo / panAfterRedo", () => {
     expect(panAfterUndo(7_000, pasteOp, 9_000)).toBe(4_000);
   });
 
-  it("redoing maps forward the same way the live writers do", () => {
-    // Redoing a cut maps a pan forward through `panAfterCut`, the mapping
-    // the live writer used before #613 collapsed the line onto the cut point
-    // (minus the rest clamp, which `panAfterRedo` also applies).
+  it("redoing a cut lands the line where the live cut writer does, not where the pan was (#722)", () => {
+    // The redone cut goes through `panAfterCutCollapse`, the #613 rule the
+    // live `onCut` writes: the line is the paste target, the cut point,
+    // whatever the pan was before the redo. This cut runs to the end, so the
+    // cut point IS the post-redo length and the answer is the rest. Before
+    // #722 a pan before the cut stayed put (`panAfterCut`'s mapping).
     const preRedoLength = 10_000; // the buffer as it stands before the redo
-    expect(panAfterRedo(2_000, cutAtEnd, preRedoLength)).toBe(2_000); // before the cut
+    expect(panAfterRedo(2_000, cutAtEnd, preRedoLength)).toBeNull(); // before the cut
     expect(panAfterRedo(9_500, cutAtEnd, preRedoLength)).toBeNull(); // inside/after -> rests
   });
 
@@ -1401,11 +1395,11 @@ describe("panAfterUndo / panAfterRedo", () => {
   });
 
   it("redoing a cut collapses both its START and END boundary pans to the same value (panel P1, forward direction)", () => {
-    // The forward direction is `panAfterCut` directly, so this is the same
-    // collapse the two undo boundary cases above pin, shown from the other
-    // side: a pan at the cut's start and a pan at the cut's end both land
-    // on the cut's start once the cut (re-)applies. Nothing about Redo
-    // recovers the distinction Undo cannot either.
+    // A pan at the cut's start and a pan at the cut's end both land on the
+    // cut's start once the cut (re-)applies: since #722 because every pan
+    // does (the collapse rule), and these two already did under the
+    // `panAfterCut` mapping it replaced. Nothing about Redo recovers the
+    // distinction Undo cannot either.
     const cutFromFour: EditOp = {
       kind: "cut",
       range: { start: 4_000, end: 8_000 },
@@ -1511,8 +1505,14 @@ describe("#473 round 3 — a fractional cut's POSITION terms match its truncated
     }
   );
 
-  it("panAfterRedo: Frank r3's own example — 9_000.6 redoes to 5_000.6, not the raw-span 5_000.3", () => {
-    expect(panAfterRedo(9_000.6, fractionalOp, preLength)).toBe(5_000.6);
+  it("panAfterRedo: Frank r3's pan of 9_000.6 lands on the truncated cut point, 4_000, the same as the live cut (#722)", () => {
+    // Before #722 this pan mapped through `panAfterCut` to 5_000.6 (not the
+    // raw-span 5_000.3, Frank r3's point). A redone cut collapses the line
+    // onto the cut point, so the pan's own value no longer enters into it.
+    expect(panAfterRedo(9_000.6, fractionalOp, preLength)).toBe(4_000);
+    expect(panAfterRedo(9_000.6, fractionalOp, preLength)).toBe(
+      panAfterCutCollapse(fractionalRange, preLength)
+    );
   });
 
   it("panAfterCutCollapse: the live cut lands on the truncated start, 4_000 — the sibling the class-level fix covers beyond Frank r3's named lines", () => {

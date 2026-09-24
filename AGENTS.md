@@ -5,9 +5,9 @@ The canonical contributor guide. Read this before changing anything.
 ## Purpose
 
 tC Mobile is an offline-first PWA for oral Bible translation: record a passage,
-edit the waveform, manage the segments of a chapter, export MP3 (export is not
-wired yet, #18). It targets Android and iOS phones, frequently offline, used by
-people who may not read.
+edit the waveform, manage the segments of a chapter, and share a chapter or a
+book as MP3 through the OS share sheet. It targets Android and iOS phones,
+frequently offline, used by people who may not read.
 
 The driving deadline is the **East Africa training in the first week of
 October 2026**, with production readiness targeted for **end of September 2026**.
@@ -327,7 +327,10 @@ share _prepare_ (`hooks/share-flow.ts`), the recorder's own guards and bounds
 recorder still active `"recorder-interrupted-active"` #478, and a native
 `stop()` throwing inside `stop()`'s own flush `"recorder-stop-flush"` #485 —
 which seals the slices already in hand and rides the `StopResult`, so it
-never reaches the backstop below), `stopRecording`'s commit-path backstop
+never reaches the backstop below — and a track `stop()` that throws while the
+mic stream is released `"recorder-release-track"` #479), the level tap's clone
+track throwing on its own `stop()` (`hooks/audio-io.ts`,
+`"recorder-tap-clone-stop"`, #479), `stopRecording`'s commit-path backstop
 (`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), a failed
 save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
@@ -478,7 +481,11 @@ place. Decided 2026-09-02, when the repo stopped being solo.
 - **One `chore(release): vX.Y.Z` PR per `develop -> staging` promotion bumps
   the patch** — daily, whenever there is something to promote. Its body lists
   the PRs it carries (#131 is the shape). Patch numbers are not capped;
-  `0.1.30` is fine.
+  `0.1.30` is fine. **After the merge deploys, run `npm run check:deploy` and
+  paste the PASS line into `docs/progress_tracker.md`** — v0.2.10 (#775)
+  promoted without this and went unrecorded until a 2026-09-24 PR audit
+  caught it (#839, #840 R7); the confirmation belongs in the tracker at
+  promotion time, not reconstructed after the fact.
 - **The minor is the milestone.** Every GitHub milestone is named for the
   version its `staging -> main` promotion ships. That PR bumps the minor and
   tags `main` (`git tag vX.Y.0` — the first tags this repo will have). A
@@ -500,11 +507,15 @@ No Actions workflow deploys the **PWA**. The four web-deploy workflows were
 deleted to remove a real collision: Cloudflare and Actions would otherwise both
 deploy on the same triggers, to different targets — two preview deploys per PR
 and two deployments per merge. The only deploy workflows in `.github/` are the
-two **manual** native lanes — the iOS TestFlight lane (`ios-testflight.yml`, a
-native build to App Store Connect, `docs/native/README.md` §4a) and the Android
+three **native** lanes — the iOS TestFlight lane (`ios-testflight.yml`, a
+native build to App Store Connect, `docs/native/README.md` §4a), the Android
 APK lane (`android-apk.yml`, a signed release APK attached as a run artifact,
-§5a). Both are `workflow_dispatch`-only, so they never fire on push/PR and are
-not Workers Builds triggers (#262, #318). Do not add a push/PR deploy job.
+§5a), and the Google Play lane (`android-play.yml`, a signed .aab uploaded to
+a Play testing track, `docs/native/play-store.md`). The first two are
+`workflow_dispatch`-only (#262, #318). The Play lane is the one exception that
+fires on push, to `staging` and `main` only: it ships a native bundle to Google
+Play, never the PWA, and holds no Cloudflare credentials, so it cannot collide
+with Workers Builds. Do not add a push/PR job that deploys the **PWA**.
 
 Workers Builds is configured **per Worker**, so the same repository is
 connected twice:
@@ -525,8 +536,8 @@ API token lives in Cloudflare's build settings, **not** in a GitHub secret —
 Actions does not deploy the PWA, so it needs no Cloudflare credentials (the
 TestFlight lane authenticates to App Store Connect with its own secrets, and
 the Android lane signs with its own keystore secrets — neither is Cloudflare's).
-Besides `ci.yml` and `dependabot.yml`, `.github/` holds only the two manual
-native lanes, `ios-testflight.yml` and `android-apk.yml`.
+Besides `ci.yml` and `dependabot.yml`, `.github/` holds only the three native
+lanes, `ios-testflight.yml`, `android-apk.yml` and `android-play.yml`.
 
 ### Confirming a deploy and rolling one back
 
@@ -569,9 +580,13 @@ node scripts/check-deploy.mjs --require-origin --origin=<url> --sha=<short-sha> 
 Workers Builds deploys the promoted branch's tip — for this repo's merge-PR
 promotion flow, that tip is a **merge commit**, not the feature/develop
 branch tip a promoter's local checkout usually has `HEAD` on (round-3
-George #1: `docs/progress_tracker.md:102,118` recorded the v0.1.12
-`develop -> staging` promotion (#202) as merge commit `afdfa6e`, not
-develop's pre-merge tip `7152289`). So the bare commands above do **not**
+George #1: `docs/progress_tracker.md`'s append-only, newest-first log means a
+line-number citation drifts as soon as a newer entry is prepended above it
+(#443 item 2), so cite by heading instead — its **"2026-09-03 (evening) —
+v0.1.12 promoted and verified on staging; the microphone report resolved
+outside the app"** entry recorded the v0.1.12 `develop -> staging` promotion
+(#202) as merge commit `afdfa6e`, not develop's pre-merge tip `7152289`). So
+the bare commands above do **not**
 compare against local `HEAD` by default: for the staging and production
 default origins, `resolveExpectedSha()`/`resolveExpectedVersion()`
 (`scripts/check-deploy.mjs`) read the corresponding **remote-tracking ref**
@@ -757,6 +772,11 @@ Full process, and the traps that make a failed run look like a clean pass, in
 | **T2** | `hooks/*`, export/share paths                        | Tests where possible + on-device check on both Android and iOS.                                                   |
 | **T3** | `components/*`, `app/*`, copy, styling               | Review only. This layer is expected to churn.                                                                     |
 
+A test-only PR is tiered by what it covers, and a gate test is its own tier
+(Harness); the tier sets which reviewers run and how many rounds, not this
+table's on-device check — a test-only PR never gets the device check, only
+code changes do — see `docs/review/dual-review.md` ("Merge policy").
+
 ## Known open items
 
 1. **MP3 encoding is off the main thread** since B8 (ADR 0009): one Web Worker,
@@ -773,9 +793,14 @@ Full process, and the traps that make a failed run look like a clean pass, in
 2. **PCM storage is ~5.3 MB/minute** for segments still being worked on. **D3 is
    built** (B8, ADR 0009): a segment marked Finished is transcoded to 64 kbps
    MP3 and its PCM dropped in the same transaction, ~660 MB to ~66 MB for all 50
-   OBS stories once finished. The other two ADR 0002 mitigations are still open:
-   22 050 Hz for speech, and `navigator.storage.persist()`. #12 stays open on
-   those. **Resolve before October.**
+   OBS stories once finished. Of ADR 0002's other two mitigations,
+   `navigator.storage.persist()` **shipped** — #214 closed #12 (merged
+   2026-09-16) with the persist request and a not-persisted state-in-place
+   marker on Books. The separate nearly-full marker came later, under #247
+   (#537 the core, #542 the Books wiring). The 22 050 Hz-for-speech mitigation
+   was explicitly **deferred** on #12 (2026-09-04 decision, once D3 covered the
+   storage risk for the gate); #12's 2026-09-15 triage comment found no
+   separate tracking issue for it.
 3. **lamejs is LGPL-3.0** in an MIT repo. **Decided: keep it** — ADR 0003.
    What remains is the notice and attribution work, #36, not a product call.
 4. **The division-scheme question.** **Decided 2026-08-22 by Tim: no** to the

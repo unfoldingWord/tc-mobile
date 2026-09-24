@@ -343,6 +343,30 @@ export interface LevelTap {
 }
 
 /**
+ * Stop every track on `stream`, even when one `stop()` throws (#479).
+ *
+ * A bare `getTracks().forEach((t) => t.stop())` ends at the first throw: the
+ * tracks after it stay live, and the throw escapes into a caller whose
+ * contract is a synchronous, total microphone release (`cancel()` and
+ * `leave()`). Each throw is reported through the funnel under `context` and
+ * the loop moves on; nothing is rethrown, so the caller's own cleanup after
+ * this call still runs.
+ *
+ * `MediaStreamTrack.stop()` is not specified to throw, and no engine has been
+ * seen to throw there. This is insurance for a native call on a dying audio
+ * stack, the same threat model as `cancel()`'s guarded `recorder.stop()`.
+ */
+export function stopTracks(stream: MediaStream, context: string): void {
+  for (const track of stream.getTracks()) {
+    try {
+      track.stop();
+    } catch (cause) {
+      reportFailure(cause, context);
+    }
+  }
+}
+
+/**
  * Open a read-only level tap on a live capture stream.
  *
  * The Web Audio graph stays inside this boundary; the meter math is imported
@@ -381,7 +405,7 @@ export function createLevelTap(stream: MediaStream): LevelTap {
     }
   };
   // Stop the cloned tracks; the recorder's own stream is left untouched.
-  const stopClone = () => tapStream.getTracks().forEach((t) => t.stop());
+  const stopClone = () => stopTracks(tapStream, "recorder-tap-clone-stop");
 
   let source: MediaStreamAudioSourceNode | undefined;
   let analyser: AnalyserNode | undefined;
@@ -540,11 +564,12 @@ function probeDecode(decoded: AudioBuffer, source: ProbeSource): void {
  * injected function rather than doing it.
  *
  * NOT the clip as recorded: the decode carries the encoder's priming at its
- * head (1105 samples on a decoder that trims nothing)
- * and granule padding at its tail. EVERY consumer must pass the result through
- * `fitMp3Decode` (`lib/audio/mp3-align.ts`) with the clip's bytes and
- * `frameCount` — the chapter export, playback and the recorder's edit buffer
- * all do — or the recording plays late and, once saved, loses its last ~25 ms.
+ * head and granule padding at its tail (the exact sample counts are
+ * `lib/audio/mp3-align.ts`'s, pinned there). EVERY consumer must pass the
+ * result through `fitMp3Decode` (`lib/audio/mp3-align.ts`) with the clip's
+ * bytes and `frameCount` — the chapter export, playback and the recorder's
+ * edit buffer all do — or the recording plays late and, once saved, loses
+ * its last ~25 ms.
  */
 export async function decodeMp3ToCanonical(
   mp3: Uint8Array<ArrayBuffer>

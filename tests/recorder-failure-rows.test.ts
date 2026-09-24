@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { bodyAfter, matchingBraceClose, stripComments } from "./support";
+
 /**
  * Three recorder-path failure rows reach the funnel (`reportFailure`) from
  * code the Node suite cannot execute:
@@ -36,10 +38,9 @@ import { describe, expect, it } from "vitest";
  * WHY A TEXTUAL GATE AND NOT A BEHAVIOURAL TEST. `start()` is a
  * `useCallback` inside `useRecorder()` and `onInterrupted` is created inside
  * `start()`; `stopRecording` is a `useCallback` inside `useAudioSession()`.
- * This suite has no renderer, no `MediaRecorder` and no `AudioContext`
- * (`tests/audio-session.test.ts` and
- * `tests/recorder-stop-release-guards.test.ts` both say so), so neither
- * site can be reached at runtime here, and removing either report would
+ * This suite mounts neither hook, and jsdom implements neither
+ * `MediaRecorder` nor `AudioContext` (`tests/audio-session.test.ts` says so),
+ * so neither site can be reached at runtime here, and removing either report would
  * leave every other test green. That is the mutation-survives case
  * AGENTS.md says to close with a gate; this file mirrors
  * `tests/recorder-stop-release-guards.test.ts` (comment strip, brace-counted
@@ -69,40 +70,6 @@ import { describe, expect, it } from "vitest";
  * that scope — a declaration INSIDE the handler would reset on every call.
  */
 
-const stripComments = (text: string) =>
-  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
-/** Brace-counts from `openIndex` (the index of an opening `{`) to find its
- *  matching close, or -1. */
-const matchingBraceClose = (body: string, openIndex: number): number => {
-  let depth = 0;
-  for (let i = openIndex; i < body.length; i++) {
-    if (body[i] === "{") depth++;
-    else if (body[i] === "}") {
-      depth--;
-      if (depth === 0) return i;
-    }
-  }
-  return -1;
-};
-
-/** Slice out the `{ ... }` body that follows the first occurrence of
- *  `declaration` in `code`, throwing (not failing an assertion) when the
- *  anchor is gone — a renamed callback is a harness defect, not a finding. */
-const bodyAfter = (code: string, declaration: string): string => {
-  const declStart = code.indexOf(declaration);
-  if (declStart === -1) {
-    throw new Error(`${declaration} not found — has it been renamed or moved?`);
-  }
-  const open = code.indexOf("{", declStart);
-  if (open === -1) throw new Error(`${declaration}: opening brace not found`);
-  const close = matchingBraceClose(code, open);
-  if (close === -1 || close <= open) {
-    throw new Error(`${declaration}: closing brace not found`);
-  }
-  return code.slice(open, close + 1);
-};
-
 describe("source pins (text shape only): onInterrupted's still-active arm reports once per take (#478)", () => {
   /**
    * Comment strip is safe for `src/hooks/use-recorder.ts`:
@@ -127,8 +94,8 @@ describe("source pins (text shape only): onInterrupted's still-active arm report
    * template literal that interpolates `${event.type}` and then
    * `${recorder.state}` — the two facts beyond the key the row exists to
    * carry (#478 Shape: "the recorder state and which event arrived"). An
-   * earlier `[\s\S]*?` admitted `new Error(``)` (panel r1 mutation M15,
-   * 8/8 green). `[^`]` spans newlines, so a Prettier wrap still matches.
+   * earlier `[\s\S]*?` admitted `new Error(``)` (panel r1 mutation M15).
+   * `[^`]` spans newlines, so a Prettier wrap still matches.
    *
    * The `{ cause: "error" in event ? event.error : undefined }` segment is
    * George R1 P3: the `error` feed's event carries the native failure as
@@ -201,7 +168,7 @@ describe("source pins (text shape only): onInterrupted's still-active arm report
     // (1)-(3) pin the guarded else-if and its key, but none of them counts
     // CALLS: a second, unguarded `reportFailure(...)` placed before the arm
     // split, under any other key, passed all of them (panel r1 mutation:
-    // inserted after `setState("processing")`, 8/8 green). That shape
+    // inserted after `setState("processing")`). That shape
     // writes a row per lifecycle event — `error` AND every `ended` — and on
     // the inactive arm too, breaking both halves of #478 constraint (1).
     // Counting the handler's call sites is what closes it.
@@ -349,6 +316,22 @@ describe("source pins (text shape only): stopRecording()'s backstop catch report
   it('(2) "recorder-stop-backstop" is one site in the file', () => {
     const hits = code.match(/"recorder-stop-backstop"/g) ?? [];
     expect(hits).toHaveLength(1);
+  });
+
+  it('(4) the catch returns "unfinished", never "silence" (#169, George R1 finding 2)', () => {
+    // The code the backstop picks is load-bearing in the same way the row key
+    // is, and it was the twin of `use-recorder.ts`'s empty-seal ternary — which
+    // `tests/recorder-stop-release-guards.test.ts` pins — with nothing pinning
+    // this side. `tsc` narrows the field to `CaptureFailure | null` (the
+    // `useCallback` is annotated `Promise<StopResult>`), so a TYPO cannot land
+    // here; what it cannot catch is the wrong MEMBER, and "silence" is the
+    // wrong member with a cost: `stopRecording` rejecting is the engine
+    // failing to hand the capture over, and the silence sentence tells a
+    // translator who did speak that nothing was heard.
+    expect(stopBody).toMatch(
+      /catch\s*\([\s\S]*?return\s*\{[^}]*\berror:\s*"unfinished"/
+    );
+    expect(stopBody).not.toMatch(/\berror:\s*"silence"/);
   });
 
   it("(3) reportFailure is the real import from ./report-failure, not a same-named local", () => {

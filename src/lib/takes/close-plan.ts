@@ -3,10 +3,11 @@
  *
  * `close()` in `components/recorder.tsx` is the ONLY commit path in the
  * product: there is no Stop control, so a take exists on disk because the sheet
- * was closed (F8). It carried this whole decision inline, and this project has
- * no renderer — `vitest.config.ts` sets `environment: "node"` and there is no
- * jsdom or testing-library in `package.json` — so nothing could reach it. A
- * wrong branch there does not produce a wrong pixel; it drops a recording a
+ * was closed (F8). It carried this whole decision inline, where only a
+ * mounted `Recorder` could reach it. jsdom suites now mount one with its
+ * browser boundaries mocked (`tests/recorder-superseded-writes.test.ts` drives
+ * `requestClose()`), but those exercise particular paths, not every branch. A
+ * wrong branch does not produce a wrong pixel; it drops a recording a
  * translator cannot make again, with `npm run verify` and CI green (#180).
  *
  * So the decision moved here, by the same move that produced
@@ -38,6 +39,8 @@
  * audio and break the #59 / #165 contract.
  */
 
+import type { CaptureFailure } from "@/lib/audio/capture-failure";
+
 /**
  * What a stopped capture yielded.
  *
@@ -64,34 +67,44 @@ export interface CaptureOutcome<TBytes = unknown> {
    */
   readonly bytes: TBytes | null;
   /**
-   * A translator-facing reason when `samples` is null and it is worth saying.
-   * Null when there is nothing to say — a superseded stop, whose UI belongs to
-   * a newer recording. Never the empty string. Three producers write it, and
-   * each writes either null or a whole sentence: `use-recorder.ts`'s
-   * `stopDecodeMessage` for the two decode exits of `stop()`; `stop()`'s
-   * empty-seal exit directly ("No sound was recorded. Try again.", or after
-   * the flush executor threw, "Could not finish this recording." — #485,
-   * George R1 P3 on #500); and `stopRecording`'s backstop in
-   * `use-audio-session.ts`, which returns that same "could not finish"
-   * sentence directly. `stopDecodeMessage`'s union is therefore NOT the
-   * closed set of stop errors — a `lib/` change or test that treats it as
-   * one is wrong. `!== null` here and the component's former truthiness test
-   * agree on every value that can actually arrive.
+   * Why `samples` is null, when it is worth saying — a {@link CaptureFailure}
+   * code. Null when there is nothing to say: a superseded stop, whose UI
+   * belongs to a newer recording.
+   *
+   * A CLOSED set, and only since #169 moved the wording up to the screen.
+   * Three producers write this field, and each used to mint its own sentence:
+   * `use-recorder.ts`'s decode exits via `classifyStopDecode`; `stop()`'s
+   * empty-seal exit directly (silence, or after the flush executor threw,
+   * "could not finish" — #485, George R1 P3 on #500); and `stopRecording`'s
+   * backstop in `use-audio-session.ts`, which typed that same "could not
+   * finish" sentence out a second time. Only the first went through a
+   * classifier, so `StopDecodeError` was NOT the set of stop errors and this
+   * docblock had to warn that a `lib/` change treating it as one was wrong.
+   * Now every producer picks a member of one union, `StopDecodeError` narrows
+   * from it by construction. This file's own readers carry a fourth member
+   * unchanged, deliberately — choosing its sentence is `captureFailureText`'s
+   * job, and that `never` default is what refuses to compile until someone
+   * does.
+   * `!== null` here and the component's former truthiness test agree on every
+   * value that can actually arrive.
    */
-  readonly error: string | null;
+  readonly error: CaptureFailure | null;
 }
 
 /**
  * What a stop yielded, as the one classification both commit paths read.
  *
- * `close()` and the commit-and-edit path in `onEnterEdit` (#134) must take the
- * same four-way decision on a stop result and then do DIFFERENT things with it
- * — one exits, the other opens edit mode. That agreement used to be a comment
- * ("Mirror close()'s precedence exactly"), which is the kind of claim that
- * rots; it is now one function they both call.
+ * `close()` and `recorder.tsx`'s shared `commitTake` — the Stop tap
+ * (`commitTake("stay")`) and, before #857 gated it out during a live take,
+ * Edit-entry (`onEnterEdit`'s `commitTake("edit")`, #134) — must take the same
+ * four-way decision on a stop result and then do DIFFERENT things with it: one
+ * exits, the other stays open (and, for an `"edit"` commit reachable before
+ * #857, opened edit mode). That agreement used to be a comment ("Mirror
+ * close()'s precedence exactly"), which is the kind of claim that rots; it is
+ * now one function they both call.
  * Their write policy also agrees: a superseded capture withholds pending edits,
- * clear and Finished. The component carries that verdict across an Edit-commit
- * to later no-capture exits, until a fresh take is successfully saved (#527).
+ * clear and Finished. The component carries that verdict across a commit to
+ * later no-capture exits, until a fresh take is successfully saved (#527).
  *
  * The payload rides the verdict so neither caller re-checks what the classifier
  * has already established: `samples` is proved non-empty, `bytes` proved
@@ -107,7 +120,7 @@ export type CaptureVerdict<TBytes = unknown> =
    */
   | { readonly kind: "hold"; readonly bytes: TBytes }
   /** No audio and nothing kept, but something worth saying — an empty capture. */
-  | { readonly kind: "notice"; readonly error: string }
+  | { readonly kind: "notice"; readonly error: CaptureFailure }
   /**
    * Nothing at all: a `leave()`/pagehide bumped the generation mid-flush, so a
    * newer owner speaks for the screen and this stop has no UI of its own.
@@ -167,7 +180,7 @@ export interface PendingWork {
    * Whether the segment has audio on disk that a Finished mark can attach to.
    *
    * The store is the reason this input exists: `setSegmentFinished` THROWS on
-   * `finished === true` when `activeTakeId === null` (`lib/storage/books.ts`),
+   * `finished === true` when `activeTakeId === null` (`lib/storage/takes.ts`),
    * and accepts `false` there (it resets the row to not-started). Without this,
    * a Finished box ticked while recording a FIRST take, on a capture that then
    * produced nothing, plans a `mark` the store rejects — and the recorder's
@@ -227,7 +240,7 @@ export type ClosePlan<TBytes = unknown> =
    * Do not exit: the capture yielded no audio and said why, so the sheet stays
    * open with the reason in place. Closing here would lose a take silently.
    */
-  | { readonly action: "stay"; readonly error: string }
+  | { readonly action: "stay"; readonly error: CaptureFailure }
   | TailPlan;
 
 /**
