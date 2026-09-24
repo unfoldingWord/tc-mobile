@@ -1,8 +1,8 @@
 import { useCallback, useRef, useState } from "react";
 
-import { errorMessage } from "@/lib/failure-text";
 import { clearSegmentTake } from "@/lib/storage/takes";
 import { reportFailure } from "./report-failure";
+import { failureKey, type FailureKey } from "./save-failure";
 import type { SegmentId } from "@/types/domain";
 
 /**
@@ -36,7 +36,7 @@ import type { SegmentId } from "@/types/domain";
  */
 export async function performErase(
   segmentId: SegmentId
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true } | { ok: false; key: FailureKey }> {
   try {
     await clearSegmentTake(segmentId);
   } catch (cause) {
@@ -45,7 +45,9 @@ export async function performErase(
     reportFailure(cause, "erase-segment");
     return {
       ok: false,
-      error: errorMessage(cause),
+      // The KEY (#172), never the raw store message — a full disk gets
+      // `noRoom` instead of the generic erase copy.
+      key: failureKey(cause, "eraseFailed"),
     };
   }
   return { ok: true };
@@ -83,8 +85,10 @@ export interface UseEraseSegment {
    * captured when the overlay opens and called much later.
    */
   isErasing: () => boolean;
-  /** The reason the last erase failed, or null. Set on failure, cleared when the next erase starts. */
-  error: string | null;
+  /** The KEY (#172) the last erase failed with, or null. Set on failure,
+   *  cleared when the next erase starts. Never the raw store message — the
+   *  caller looks this up in `strings`. */
+  error: FailureKey | null;
 }
 
 /**
@@ -94,7 +98,7 @@ export interface UseEraseSegment {
  */
 export function useEraseSegment(): UseEraseSegment {
   const [erasing, setErasing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FailureKey | null>(null);
   /**
    * The live in-flight guard, readable synchronously.
    *
@@ -117,7 +121,7 @@ export function useEraseSegment(): UseEraseSegment {
       setError(null);
       try {
         const result = await performErase(segmentId);
-        if (!result.ok) setError(result.error);
+        if (!result.ok) setError(result.key);
         return result.ok ? "ok" : "failed";
       } finally {
         // Releases the guard rather than dropping state, so it is safe in

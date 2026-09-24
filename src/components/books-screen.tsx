@@ -25,6 +25,7 @@ import { storagePressureNotice } from "./storage-pressure-notice";
 import { strings } from "./strings";
 import { useFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
+import type { FailureKey } from "@/hooks/save-failure";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
@@ -218,7 +219,7 @@ export function BooksScreen({
   // announced (Notice is `role="alert"`) inside a New Book dialog that has not
   // failed at anything — on the one-tap create path, to someone who may not read
   // the words disowning it (Frank R1 P3, George R1 P2-2).
-  const [newBookError, setNewBookError] = useState<string | null>(null);
+  const [newBookError, setNewBookError] = useState<FailureKey | null>(null);
   // The in-flight latch. It stops a second Confirm, and it is what
   // `onCancelNewBook` checks: once the write is committing, dismissal is a no-op
   // rather than a promise the store cannot keep.
@@ -692,7 +693,7 @@ export function BooksScreen({
         // only here, is what makes that retry (and Cancel) work again.
         creatingBook.current = false;
         setCreatingBookBusy(false);
-        setNewBookError(outcome.message);
+        setNewBookError(outcome.key);
         return;
       }
       const { book } = outcome;
@@ -1272,7 +1273,11 @@ export function BooksScreen({
   // longer takes this line down (it would race the delete's own error off the
   // screen); what clears it is another delete, or any write that succeeds
   // (George R4 P2-2 / Frank R4 P2).
-  const noticeText = deleteFailed ? strings.deleteBookFailed : error;
+  const noticeText = deleteFailed
+    ? strings.deleteBookFailed
+    : error
+      ? strings[error]
+      : null;
 
   // The guided chain's answer for this screen (#604): one accent on the next
   // required action, and nothing once the first book has been worked in. Read
@@ -1598,7 +1603,7 @@ export function BooksScreen({
         {/* THIS dialog's own failure channel — never the shared `error`, which
             also carries a failed addChapter or rename and would announce one
             here as if naming had gone wrong. */}
-        {newBookError && <Notice>{newBookError}</Notice>}
+        {newBookError && <Notice>{strings[newBookError]}</Notice>}
       </Menu>
 
       {/* Add chapter asks for the name before it creates anything (#609). The
@@ -1685,10 +1690,10 @@ export function BooksScreen({
                 error as the delete's, and that one already has a labelled home
                 on the shelf. Without the guard, failing a delete and then
                 opening Rename put the raw store message inside a rename field
-                nothing had submitted yet (George stand-in P3-2). The remaining
-                instances of that class — a failed create or add-chapter reaching
-                this panel the same way — are pre-existing and belong to #172,
-                which is about raw browser strings in Notices generally.
+                nothing had submitted yet (George stand-in P3-2). `error` here
+                is a `strings`-mapped KEY, not the raw store message — a
+                create or add-chapter failure reaching this panel now speaks
+                the same mapped copy the shelf's own Notice does (#172 part 1).
 
                 Also never while `savingBookName` (#395 item 1): a retried
                 rename flips its own busy Notice on before this one's `finally`
@@ -1700,7 +1705,7 @@ export function BooksScreen({
                 `use-books.ts`/`use-chapter-segments.ts`); either half alone
                 still leaves the other channel wrong (George, #395). */}
             {error && !deleteFailed && !savingBookName && (
-              <Notice>{error}</Notice>
+              <Notice>{strings[error]}</Notice>
             )}
           </>
         ) : (

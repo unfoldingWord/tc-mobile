@@ -835,4 +835,18 @@ export const strings = {
   // which is where the thumb already is.
   clearFailureLogConfirmTitle: "Clear the problem report?",
   clearFailureLogConfirm: "Clear",
+
+  // ── Failure vocabulary (#172) ────────────────────────────────────────────
+  // What `use-books.ts`, `use-chapter-segments.ts` and `use-erase-segment.ts`
+  // map a caught failure KEY to, so a Books/Segments Notice never speaks a raw
+  // browser exception string. Deliberately generic — a message worth wording
+  // more specifically per site is a product decision for the requirements
+  // owner, not one this table invents (see the PR's residual list).
+  // `eraseFailed` already existed above and is reused rather than duplicated.
+  loadFailed: "Could not load. Try again.",
+  saveFailed: "Could not save. Try again.",
+  // Repeats `recoveryTitle`'s quota sentence (`components/recovery-copy.ts`)
+  // so the one condition a translator can act on reads the same everywhere a
+  // write can hit it, not only on the take-save recovery screen.
+  noRoom: "No room left on this phone.",
 } as const;

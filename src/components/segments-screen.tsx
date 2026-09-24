@@ -735,6 +735,11 @@ export const SegmentsScreen = forwardRef<
   // invite CTA (the only enabled create, no Retry here) up with the error in the
   // Notice, not tear it down and strand focus on Back (George R3 P2).
   const loadFailed = error !== null && !loaded;
+  // `error` and `erase.error` are `strings`-mapped KEYs (#172), never the raw
+  // store message a screen would otherwise speak verbatim — resolved here,
+  // once, so every render site below reads the mapped copy.
+  const chapterErrorText = error ? strings[error] : null;
+  const eraseErrorText = erase.error ? strings[erase.error] : null;
   // See books-screen: hide the header create + while the invite's own primary
   // CTA is up, so there is one create action, announced once.
   const showEmpty = !staleTarget && loaded && rows.length === 0;
@@ -845,10 +850,8 @@ export const SegmentsScreen = forwardRef<
           Share speaks in its own menu, not here. */}
       {staleTarget ? (
         <Notice>{strings.staleChapter}</Notice>
-      ) : (error ??
-        audio.error ??
-        (erase.error ? strings.eraseFailed : null)) ? (
-        <Notice>{error ?? audio.error ?? strings.eraseFailed}</Notice>
+      ) : (chapterErrorText ?? audio.error ?? eraseErrorText) ? (
+        <Notice>{chapterErrorText ?? audio.error ?? eraseErrorText}</Notice>
       ) : loading ? (
         // First mount: a slow chapter (sequential PCM walk) is otherwise a
         // header over a blank list with no reason given (G8).
@@ -991,8 +994,13 @@ export const SegmentsScreen = forwardRef<
                 `control-affordance.ts` names as the rule this wiring
                 follows. `renameChapter` also now clears `error` at the START
                 of the write (`use-chapter-segments.ts`); either half alone
-                still leaves the other channel wrong (George, #395). */}
-            {error && !savingChapterName && <Notice>{error}</Notice>}
+                still leaves the other channel wrong (George, #395).
+
+                `error` is a `strings`-mapped KEY (#172), never the raw store
+                message. */}
+            {chapterErrorText && !savingChapterName && (
+              <Notice>{chapterErrorText}</Notice>
+            )}
           </>
         ) : (
           <>
