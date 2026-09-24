@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import { Icon } from "./icon";
@@ -76,9 +76,9 @@ interface ShareProgressProps {
  * non-interactive node" shape `error-boundary.tsx`'s crash heading already
  * uses — this is the initial focus target inside the overlay). Handing focus
  * BACK on the visible→hidden edge (Frank round 2 P2) USED to also live here,
- * but moved to the calling screens (George r2 P2-1, #491) — see the
- * `useEffect` below for why a passive effect in THIS component can never
- * satisfy the #96/#97 contract once `inert` is involved. The menu very often
+ * but moved to the calling screens (George r2 P2-1, #491) — see the effect
+ * below for why a passive effect in THIS component can never satisfy the
+ * #96/#97 contract once `inert` is involved. The menu very often
  * outlives this overlay (a failed prepare, a "nothing" error, a native
  * `retry` that quietly re-arms `ready`), and the screens still restore focus
  * rather than merely dropping it, for the same reason this paragraph always
@@ -177,13 +177,29 @@ export function ShareProgress({
   // also what can hand `restore()` a stable fallback landmark when the
   // status-driven ternary has remounted the originally-captured node out
   // from under it.
-  useEffect(() => {
+  //
+  // `useLayoutEffect`, not `useEffect` (#517 item 4, George r3 P3 on #508),
+  // matching `busyRef`'s own fix above: `inert` blurs whatever was focused in
+  // the menu's about-to-go-inert subtree to `document.body` during React's
+  // MUTATION phase, in the SAME commit this overlay becomes visible. React
+  // does not guarantee a passive effect runs before paint, so there can be a
+  // frame where focus sits on `body` — inert, with nothing else yet grabbed —
+  // before this effect runs. A layout effect closes that frame: it runs synchronously right
+  // after the same mutation `inert` applies in, before the browser paints.
+  useLayoutEffect(() => {
     if (visible) panelRef.current?.focus();
   }, [visible]);
 
   // The isolation fix itself (George r1 P2 #1/#2): see the docblock above for
   // why CAPTURE and `stopPropagation`, both, are required.
-  useEffect(() => {
+  //
+  // `useLayoutEffect`, not `useEffect` (#517 item 4, same reasoning as the
+  // focus grab immediately above): a passive binding leaves the same one-frame
+  // window unprotected from the OTHER side — a Tab or Escape arriving before
+  // this listener is bound at all, not merely before focus has moved. Binding
+  // in the same commit as the focus grab means the capture-phase listener is
+  // live before the browser can ever deliver a queued key event here.
+  useLayoutEffect(() => {
     if (!visible) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {

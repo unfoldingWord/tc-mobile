@@ -2,6 +2,14 @@ import "fake-indexeddb/auto";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// `clearSegmentTake` passes through to the real store unless a case below
+// replaces one call, which is how a clear failure OTHER than a missing segment
+// is produced: fake-indexeddb has no quota to exhaust.
+vi.mock("@/lib/storage/takes", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/storage/takes")>();
+  return { ...actual, clearSegmentTake: vi.fn(actual.clearSegmentTake) };
+});
+
 import {
   performClearEditedSegment,
   performDiscardTake,
@@ -14,6 +22,7 @@ import {
   createBook,
   getSegment,
 } from "@/lib/storage/books";
+import { clearSegmentTake } from "@/lib/storage/takes";
 import { getClip, getClipMeta, newClipId, putClip } from "@/lib/storage/clips";
 import { closeDb, getDb } from "@/lib/storage/db";
 import {
@@ -26,23 +35,17 @@ import type { ClipId, SegmentId } from "@/types/domain";
 /**
  * The save orchestration — the wiring between the pure transitions and the store.
  *
- * `tests/pending-take.test.ts` covers the transitions and says in its own
- * docblock what it does not cover: "everything the hook does with the results.
- * The `saveTake` write, the `deleteClip` of the orphan… The wiring between them
- * has no automated coverage." That is this file (#180). Until it existed,
- * `src/hooks/use-save-take.ts` was imported by no test at all, so a regression
- * in the sequencing — the classic being a `finally { setPending(null) }`, which
- * drops the only copy of a recording on the one path the slot exists for —
- * shipped with `npm run verify` and CI green.
+ * `tests/pending-take.test.ts` covers pure transitions. These tests cover
+ * store orchestration, including keeping the held recording on a failed save.
  *
  * What is covered: `performSaveTake` and `performDiscardTake`, which are the
  * whole of the two operations minus React, against fake-indexeddb through the
  * real store helpers. Same split as `performErase` in `use-erase-segment.ts`.
  *
- * What is NOT covered, and cannot be: the hook itself. This repo has no jsdom
- * and no renderer (`vitest.config.ts` sets `environment: "node"`), so the
- * `useState` slot, the `savingRef` double-tap guard and the `onSaved` latest-ref
- * are review and on-device surface. The transcode sweep is injected here rather
+ * These tests do not mount the hook or exercise its `useState` slot,
+ * `savingRef` double-tap guard or `onSaved` latest-ref. The static render
+ * harness does not run hook effects or interactions.
+ * The transcode sweep is injected here rather
  * than run: it starts the MP3 encoder in a Web Worker, which does not exist in
  * Node — so what these tests assert about it is whether it is ASKED for, which
  * is the decision (D3: only a Finished commit, only after it lands).
@@ -442,13 +445,36 @@ describe("performClearEditedSegment — the cut-to-empty close (#456)", () => {
     const reports: FailureReport[] = [];
     const off = subscribeToFailures((r) => reports.push(r));
 
-    const ok = await performClearEditedSegment(bogusSegment());
+    const outcome = await performClearEditedSegment(bogusSegment());
 
     off();
     consoleError.mockRestore();
-    expect(ok).toBe(false);
+    expect(outcome).toBe("stale");
     expect(reports.map((r) => r.context)).toEqual(["erase-segment"]);
     expect(reports[0]?.cause).toBeInstanceOf(Error);
+  });
+
+  it('answers "stale" only for the segment it was asked to clear (#607)', async () => {
+    // A missing segment is a target another copy deleted, and a retry of the
+    // clear cannot bring it back; any other failure may pass on the next tap.
+    // The store call is the real one above; here it is replaced for one call.
+    const segmentId = await freshSegment();
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    vi.mocked(clearSegmentTake).mockRejectedValueOnce(
+      new Error("QuotaExceededError")
+    );
+    const transient = await performClearEditedSegment(segmentId);
+    vi.mocked(clearSegmentTake).mockRejectedValueOnce(
+      new Error("No such segment: some-other-segment")
+    );
+    const otherId = await performClearEditedSegment(segmentId);
+
+    consoleError.mockRestore();
+    expect(transient).toBe(false);
+    expect(otherId).toBe(false);
   });
 
   it("reports nothing to the funnel, and fires onCleared, on a successful clear", async () => {
@@ -457,10 +483,10 @@ describe("performClearEditedSegment — the cut-to-empty close (#456)", () => {
     const reports: FailureReport[] = [];
     const off = subscribeToFailures((r) => reports.push(r));
 
-    const ok = await performClearEditedSegment(segmentId, onCleared);
+    const outcome = await performClearEditedSegment(segmentId, onCleared);
 
     off();
-    expect(ok).toBe(true);
+    expect(outcome).toBe(true);
     expect(onCleared).toHaveBeenCalledTimes(1);
     expect(reports).toEqual([]);
   });
@@ -481,11 +507,11 @@ describe("performClearEditedSegment — the cut-to-empty close (#456)", () => {
     const reports: FailureReport[] = [];
     const off = subscribeToFailures((r) => reports.push(r));
 
-    const ok = await performClearEditedSegment(segmentId, onCleared);
+    const outcome = await performClearEditedSegment(segmentId, onCleared);
 
     off();
     consoleError.mockRestore();
-    expect(ok).toBe(true);
+    expect(outcome).toBe(true);
     expect(onCleared).toHaveBeenCalledTimes(1);
     // The store op committed — this is the notification-failure site, not
     // the store-failure one #456 routes. Only the latter reports.

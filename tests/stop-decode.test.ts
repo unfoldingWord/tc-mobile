@@ -4,7 +4,7 @@ import { classifyStopDecode } from "@/lib/audio/stop-decode";
 
 /**
  * The #106/#165 data-loss contract, extracted from the browser-bound `stop()` so
- * it is pinned here rather than only in a hook no jsdom can reach (George R3 G-3).
+ * these tests can exercise the decision without mounting the recorder hook.
  *
  * The load-bearing row is the SUPERSEDED THROW: a decode that rejected keeps the
  * container bytes even when the stop was superseded, because a `leave()`/pagehide

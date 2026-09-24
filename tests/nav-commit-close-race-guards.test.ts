@@ -7,15 +7,12 @@ import { describe, expect, it } from "vitest";
  *
  * These are source-shape gates, the same comment-stripping / brace-counting
  * idiom as `tests/nav-commit-close-rearm.test.ts` and
- * `tests/recorder-stop-release-guards.test.ts`. This Node-only suite has no
- * renderer (AGENTS.md: no jsdom), so `useNavStack`'s popstate handler cannot be
- * mounted nor a real `popstate` dispatched, and the recorder's `disabled` prop
- * cannot be rendered and inspected. The ms-window this PR guards — a
- * `requestClose()` resolving before an outstanding go-back's `popstate` lands —
- * is a device item the Playwright spec cannot reproduce either
- * (`e2e/back-navigation.spec.ts` header). So the three lines George asked be
- * protected from a silent later edit get source-shape gates, each mutation-red
- * on the exact deletion it exists to catch.
+ * `tests/recorder-stop-release-guards.test.ts`. These tests read source text;
+ * they do not mount `useNavStack`, dispatch `popstate`, or render the recorder.
+ * The static render harness does not execute effects or browser events either.
+ * The race is a `requestClose()` resolving before an outstanding go-back's
+ * `popstate` lands. The Playwright spec covers idle navigation, not this timing
+ * window (`e2e/back-navigation.spec.ts` header).
  *
  * WHAT THESE PROVE, EXACTLY: that the source TEXT still has the three shapes.
  * They do NOT prove any of it executes correctly at runtime, that the race

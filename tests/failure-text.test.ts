@@ -158,6 +158,90 @@ describe("errorMessage", () => {
     // nothing — which is right — but must not render the string "undefined".
     expect(errorMessage(new Error())).toBe("");
   });
+
+  /**
+   * #721: every caller of `errorMessage` is a `catch` block, so if the
+   * conversion itself throws, a handled failure becomes an unhandled one —
+   * inside the code meant to report it. This table is the hazards George's
+   * note named, as the issue body corrected them: a hostile `toString`, a
+   * null-prototype object, an `Error` whose own
+   * `message` getter throws, and a revoked `Proxy` (where even `instanceof`
+   * throws) all must be survived with a stable fallback string. `Symbol` and
+   * `BigInt` are deliberately included as the NON-hazard cases — `String()`
+   * does not throw on either, so a guard aimed at "exotic values" rather than
+   * the actual throwing operations would be guarding the wrong thing.
+   */
+  describe("never throws, even on a hostile cause (#721)", () => {
+    it("survives a toString that throws", () => {
+      const cause = {
+        toString() {
+          throw new Error("nope");
+        },
+      };
+      expect(() => errorMessage(cause)).not.toThrow();
+      expect(errorMessage(cause)).toBe("[unstringifiable object]");
+    });
+
+    it("survives a null-prototype object, which String() cannot convert", () => {
+      const cause = Object.create(null) as unknown;
+      expect(() => errorMessage(cause)).not.toThrow();
+      expect(errorMessage(cause)).toBe("[unstringifiable object]");
+    });
+
+    it("survives an Error whose own message getter throws", () => {
+      const cause = new Error("original");
+      Object.defineProperty(cause, "message", {
+        get() {
+          throw new Error("getter boom");
+        },
+      });
+      expect(() => errorMessage(cause)).not.toThrow();
+      expect(errorMessage(cause)).toBe("[unstringifiable object]");
+    });
+
+    it("survives a revoked Proxy, where even `instanceof` throws", () => {
+      const { proxy, revoke } = Proxy.revocable({}, {});
+      revoke();
+      expect(() => errorMessage(proxy)).not.toThrow();
+      expect(errorMessage(proxy)).toBe("[unstringifiable object]");
+    });
+
+    it("returns a string even when an Error's message is not one", () => {
+      const as = (m: unknown) =>
+        Object.defineProperty(new Error("o"), "message", { value: m });
+      expect(errorMessage(as(Symbol("m")))).toBe("Symbol(m)");
+      expect(errorMessage(as(Object.create(null)))).toBe(
+        "[unstringifiable object]"
+      );
+    });
+
+    it("survives a Symbol.toPrimitive that throws", () => {
+      const cause = {
+        [Symbol.toPrimitive]() {
+          throw new Error("nope");
+        },
+      };
+      expect(errorMessage(cause)).toBe("[unstringifiable object]");
+    });
+
+    it("renders a Symbol's own text rather than a fallback — not a hazard", () => {
+      // `String(Symbol(...))` does not throw; only implicit conversion does.
+      // A guard that mistook this for a hazard would guard the safe case and
+      // still miss the real ones.
+      expect(errorMessage(Symbol("boom"))).toBe("Symbol(boom)");
+    });
+
+    it("renders a BigInt's own text rather than a fallback — not a hazard", () => {
+      expect(errorMessage(10n)).toBe("10");
+    });
+
+    it("does not throw on a cyclic object — String() does not recurse", () => {
+      const cause: { self?: unknown } = {};
+      cause.self = cause;
+      expect(() => errorMessage(cause)).not.toThrow();
+      expect(errorMessage(cause)).toBe("[object Object]");
+    });
+  });
 });
 
 /**
