@@ -909,6 +909,15 @@ export function BooksScreen({
   const onSaveBookName = useCallback(
     (name: string) => {
       if (!shareMenuBookId) return;
+      // The same synchronous ref latch New Book's `creatingBook` uses (#395
+      // item 3). `NameEdit`'s own `if (busy) return` in its `onSubmit` reads
+      // LAST RENDER's `busy` — a key-repeated Enter can call this a second
+      // time before the first commit's `savingBookName` paints. Reading
+      // `savingBookNameRef` HERE, before this call flips it, closes that gap
+      // for free: the ref already tracks "a rename for this menu session is
+      // in flight" synchronously, for `Layer.busy()`'s own sync read (see its
+      // declaration above) — reusing it costs no new state.
+      if (savingBookNameRef.current) return;
       // Capture the session this rename belongs to. IDB can settle after the
       // user has closed the menu, reopened another book's menu, or armed a share
       // — all of which advance the token — so close ONLY if we are still the
@@ -1524,8 +1533,20 @@ export function BooksScreen({
           onSave={(name) => void onConfirmNewBook(name)}
           onCancel={onCancelNewBook}
           busy={creatingBookBusy}
+          busyLabel={strings.creatingBook}
           guided={guide?.kind === "create-book"}
         />
+        {/* New Book's own busy AT channel (#395 item 2) — the third busy
+            `NameEdit` caller, and the one that had none: the field
+            `autoFocus`es and Enter submits without moving focus to Confirm,
+            exactly why rename's own busy Notice below exists, so nothing was
+            announced here when `creatingBookBusy` went true with focus still
+            on the field. Its own busy string, not `savingName` — nothing
+            exists yet for "Saving…" to describe (see `createBook`'s own
+            comment above). */}
+        {creatingBookBusy && (
+          <Notice tone="busy">{strings.creatingBook}</Notice>
+        )}
         {/* THIS dialog's own failure channel — never the shared `error`, which
             also carries a failed addChapter or rename and would announce one
             here as if naming had gone wrong. */}
@@ -1619,8 +1640,20 @@ export function BooksScreen({
                 nothing had submitted yet (George stand-in P3-2). The remaining
                 instances of that class — a failed create or add-chapter reaching
                 this panel the same way — are pre-existing and belong to #172,
-                which is about raw browser strings in Notices generally. */}
-            {error && !deleteFailed && <Notice>{error}</Notice>}
+                which is about raw browser strings in Notices generally.
+
+                Also never while `savingBookName` (#395 item 1): a retried
+                rename flips its own busy Notice on before this one's `finally`
+                clears `error` from the PREVIOUS attempt, so a wait and a
+                failure shared the panel for one commit — the exact #112
+                collision `control-affordance.ts` names as the rule this
+                whole busy/Notice wiring follows. `renameBook`/`renameChapter`
+                also now clear `error` at the START of the write (see
+                `use-books.ts`/`use-chapter-segments.ts`); either half alone
+                still leaves the other channel wrong (George, #395). */}
+            {error && !deleteFailed && !savingBookName && (
+              <Notice>{error}</Notice>
+            )}
           </>
         ) : (
           <>

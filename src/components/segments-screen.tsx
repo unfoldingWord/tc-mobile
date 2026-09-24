@@ -600,6 +600,16 @@ export const SegmentsScreen = forwardRef<
   // the scrim.
   const onSaveChapterName = useCallback(
     (name: string) => {
+      // The same synchronous ref latch New Book's `creatingBook` uses (#395
+      // item 3), mirroring `books-screen.tsx`'s `onSaveBookName`.
+      // `NameEdit`'s own `if (busy) return` in its `onSubmit` reads LAST
+      // RENDER's `busy` — a key-repeated Enter can call this a second time
+      // before the first commit's `savingChapterName` paints. Reading
+      // `savingChapterNameRef` HERE, before this call flips it, closes that
+      // gap for free: the ref already tracks the in-flight write
+      // synchronously, for `Layer.busy()`'s own sync read (see its
+      // declaration above).
+      if (savingChapterNameRef.current) return;
       // Capture the session this rename belongs to. IDB can settle after the
       // user has closed the menu or armed a share — both advance the token — so
       // close ONLY if we are still the same session (F1). Without this, the stale
@@ -971,8 +981,17 @@ export const SegmentsScreen = forwardRef<
               <Notice tone="busy">{strings.savingName}</Notice>
             )}
             {/* A failed rename speaks here — the screen Notice is behind the
-                scrim — while the field stays up for another try. */}
-            {error && <Notice>{error}</Notice>}
+                scrim — while the field stays up for another try.
+
+                Never while `savingChapterName` (#395 item 1), mirroring
+                `books-screen.tsx`'s identical guard: a retried rename's own
+                busy Notice must not share the panel with a failure Notice
+                from the PREVIOUS attempt — the #112 collision
+                `control-affordance.ts` names as the rule this wiring
+                follows. `renameChapter` also now clears `error` at the START
+                of the write (`use-chapter-segments.ts`); either half alone
+                still leaves the other channel wrong (George, #395). */}
+            {error && !savingChapterName && <Notice>{error}</Notice>}
           </>
         ) : (
           <>

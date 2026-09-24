@@ -265,6 +265,11 @@ export function useChapterSegments(chapterId: ChapterId) {
 
   const renameChapter = useCallback(
     async (name: string): Promise<boolean> => {
+      // Clear at the START of the op, matching `useBooks`'s `deleteBook`
+      // (#395 item 1): a Notice from a PREVIOUS failed rename must not still
+      // be standing once a retry is under way, alongside the screen's own
+      // busy Notice for THIS attempt (George, #395).
+      setError(null);
       // Rename touches no audio, so patch the breadcrumb in place rather than
       // reload() (which re-walks the chapter's PCM). The store normalises the
       // name (trim, blank ⇒ null); take the resolved value back from it so the
