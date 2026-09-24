@@ -128,25 +128,20 @@ function commentRanges(
     fileName,
     source,
     ts.ScriptTarget.Latest,
-    false
+    true
   );
   const ranges: Array<{ pos: number; end: number }> = [];
 
-  // A comment is always the leading trivia of the token that follows it —
-  // there is no other place one can live in JS/TS grammar — so visiting
-  // every node's full start (which includes its own leading trivia) finds
-  // every comment attached to real code. `ts.forEachChild` on a `SourceFile`
-  // visits its `endOfFileToken` as a child too, so a comment with nothing
-  // after it — the last thing in the file — is still reached, through the
-  // same recursion, with no separate call needed for that case.
-  const collectAt = (pos: number) => {
-    for (const range of ts.getLeadingCommentRanges(source, pos) ?? []) {
-      ranges.push({ pos: range.pos, end: range.end });
-    }
+  // A comment is a token's leading trivia or the previous token's same-line
+  // trailing trivia, so collect both at every node AND token: `getChildren`,
+  // not `forEachChild`, which skips punctuation such as `}` and `)`.
+  const collect = (found: ts.CommentRange[] | undefined) => {
+    for (const range of found ?? []) ranges.push(range);
   };
   const visit = (node: ts.Node) => {
-    collectAt(node.getFullStart());
-    ts.forEachChild(node, visit);
+    collect(ts.getLeadingCommentRanges(source, node.getFullStart()));
+    collect(ts.getTrailingCommentRanges(source, node.getEnd()));
+    for (const child of node.getChildren(sourceFile)) visit(child);
   };
   visit(sourceFile);
 
@@ -219,6 +214,17 @@ describe("withoutComments (#789 — AST-aware, not regex-based)", () => {
       "// do not call distGateDecision( directly, use resolveDistGate instead",
     ].join("\n");
     expect(withoutComments(source)).not.toMatch(/distGateDecision\(/);
+  });
+
+  // Round-1 review (Frank P2, George Medium): these were all left in place.
+  it.each([
+    ["same-line trailing", "a; /*\nresolveDistGate(\n*/\nb;", "Gate(", "b;"],
+    ["last-in-block", "{\ngo();\n// distGateDecision(\n}", "Decision(", "go()"],
+    ["before-paren", "go(1 /* distGateDecision( */);", "Decision(", "go(1"],
+  ])("strips a %s comment", (_name, source, gone, kept) => {
+    const stripped = withoutComments(source);
+    expect(stripped).not.toContain(gone);
+    expect(stripped).toContain(kept);
   });
 });
 
