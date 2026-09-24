@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   checkMessage,
@@ -28,6 +28,35 @@ import {
  * CLI subprocess, per the same rule's "test a gate script's entry path and
  * defaults, not just its exported function."
  */
+
+// Whole-file safety net. The first version of this file's range-mode CLI
+// tests scoped their scratch-repo git commands with `cwd` alone and, the
+// first time this suite ran under `.husky/pre-push`, leaked real `chore:
+// base` / `feature` / `other` commits into THIS repository's actual checked-
+// out branch — recovered by hand afterward (`git update-ref` back to the
+// last real commit, both throwaway branches deleted). The exact mechanism
+// was not conclusively isolated. Rather than trust that the `--git-dir`/
+// `--work-tree` pinning below (or the spawned script's own `cwd`-scoped git
+// call) can never regress, this asserts after every test in the file that
+// the real repository's checked-out branch is exactly what it was before —
+// turning any recurrence into an immediate, specific test failure instead
+// of a silent write to the real repo.
+const REAL_REPO_ROOT = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+  encoding: "utf8",
+}).trim();
+const REAL_BRANCH_BEFORE = execFileSync(
+  "git",
+  ["symbolic-ref", "--short", "HEAD"],
+  { encoding: "utf8", cwd: REAL_REPO_ROOT }
+).trim();
+
+afterEach(() => {
+  const branchNow = execFileSync("git", ["symbolic-ref", "--short", "HEAD"], {
+    encoding: "utf8",
+    cwd: REAL_REPO_ROOT,
+  }).trim();
+  expect(branchNow).toBe(REAL_BRANCH_BEFORE);
+});
 
 describe("hasNonBlankBody / isMergeSubject", () => {
   it("finds no body after a subject-only message", () => {
@@ -275,11 +304,49 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
   // RANGE MODE, against a real scratch git repository — both states, and a
   // real merge commit excluded by `git log --no-merges` itself rather than
   // by the subject-based allowance file mode relies on.
+  //
+  // Every setup command below is pinned with explicit `--git-dir`/
+  // `--work-tree` (never bare `cwd`, and never a bare `git init` with no
+  // directory argument): a scratch-repo helper that instead relied on `cwd`
+  // alone leaked real `chore: base` / `feature` / `other` commits into this
+  // very worktree's actual branch the first time this suite ran under
+  // `.husky/pre-push` (observed directly — recovered via `git update-ref`
+  // and reflog, both throwaway branches deleted). The exact mechanism was
+  // not conclusively isolated, so the fix does not depend on diagnosing it:
+  // an explicit `--git-dir`/`--work-tree` pair makes the target repository
+  // unambiguous from the argument list alone, with no dependency on any
+  // process's current working directory. `assertIsolated` is a canary that
+  // turns any future recurrence of the same leak into an immediate,
+  // specific test failure instead of a silent write to the real repo.
+  function scratchGitDirs(dir: string) {
+    return { gitDir: path.join(dir, ".git"), workTree: dir };
+  }
+
+  function assertIsolated(dir: string) {
+    if (dir === path.join(import.meta.dirname, "..")) {
+      throw new Error("scratch repo dir resolved to the real worktree root");
+    }
+    if (!dir.startsWith(tmpdir())) {
+      throw new Error(`scratch repo dir ${dir} is not under the OS tmpdir`);
+    }
+  }
+
   function initScratchRepo(): string {
     const dir = mkdtempSync(path.join(tmpdir(), "commit-msg-range-"));
+    assertIsolated(dir);
+    const { gitDir, workTree } = scratchGitDirs(dir);
     const git = (args: string[]) =>
-      execFileSync("git", args, { cwd: dir, encoding: "utf8" });
-    git(["init", "-q"]);
+      execFileSync(
+        "git",
+        ["--git-dir", gitDir, "--work-tree", workTree, ...args],
+        { encoding: "utf8" }
+      );
+    // A directory argument to `init` (rather than a bare `init` relying on
+    // cwd) creates the repo at `dir` regardless of the calling process's
+    // cwd.
+    execFileSync("git", ["init", "-q", "-b", "base", dir], {
+      encoding: "utf8",
+    });
     git(["config", "user.email", "test@example.com"]);
     git(["config", "user.name", "Test"]);
     git([
@@ -298,8 +365,13 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
   it("passes a range where every non-merge commit has a body, merge commit included and excluded", () => {
     const dir = initScratchRepo();
     try {
+      const { gitDir, workTree } = scratchGitDirs(dir);
       const git = (args: string[]) =>
-        execFileSync("git", args, { cwd: dir, encoding: "utf8" });
+        execFileSync(
+          "git",
+          ["--git-dir", gitDir, "--work-tree", workTree, ...args],
+          { encoding: "utf8" }
+        );
       git([
         "commit",
         "--allow-empty",
@@ -321,7 +393,7 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
         "-m",
         "Merge branch 'other' into feature",
       ]);
-      const result = runCli(["--range", "master..feature"], dir);
+      const result = runCli(["--range", "base..feature"], dir);
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("PASS");
     } finally {
@@ -332,8 +404,13 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
   it("fails a range containing a real non-merge, bodyless commit, and reports its short sha", () => {
     const dir = initScratchRepo();
     try {
+      const { gitDir, workTree } = scratchGitDirs(dir);
       const git = (args: string[]) =>
-        execFileSync("git", args, { cwd: dir, encoding: "utf8" });
+        execFileSync(
+          "git",
+          ["--git-dir", gitDir, "--work-tree", workTree, ...args],
+          { encoding: "utf8" }
+        );
       git([
         "commit",
         "--allow-empty",
@@ -341,7 +418,7 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
         "-m",
         "fix(x): bad commit, no body",
       ]);
-      const result = runCli(["--range", "master..feature"], dir);
+      const result = runCli(["--range", "base..feature"], dir);
       expect(result.status).toBe(1);
       expect(result.stderr).toContain("bad commit, no body");
     } finally {
