@@ -325,8 +325,11 @@ test.describe("edit mode toggle", () => {
       expect(secondCutLength).toBeLessThan(firstCutLength);
       await page.getByRole("button", { name: "Undo", exact: true }).click();
       expect(await expectUsableFrame()).toBe(firstCutLength);
+      // A redone cut collapses onto the line like the live one (#722); undo
+      // above still reopens the frame where the audio came back.
       await page.getByRole("button", { name: "Redo", exact: true }).click();
-      expect(await expectUsableFrame()).toBe(secondCutLength);
+      await expectCollapsedOntoTheLine();
+      expect(await reopenFrameFromTheWaveform()).toBe(secondCutLength);
       await page
         .getByRole("button", { name: "Paste at the line", exact: true })
         .click();
@@ -380,6 +383,200 @@ test.describe("edit mode toggle", () => {
       await expect(
         page.getByLabel("Selection start", { exact: true })
       ).toHaveCount(0);
+    });
+  }
+});
+
+// #370: at 320px with the frame open, `.recorder-toolbar.edit`'s old
+// `justify-content: space-between; flex-wrap: wrap` packed five 40px quiet
+// controls plus a 68px `primary`-variant Select onto one line and wrapped the
+// sixth (the ≡) alone onto a second line, where `space-between` on a
+// single-item line flushes it to main-start — landing the ≡ on the LEFT,
+// under Play, instead of the trailing edge it had been reached for.
+//
+// Premise check against `origin/develop` (2026-09-23): STALE. #579 (merged
+// 2026-09-21, "open selection with a stable edit toggle") rewrote this rule
+// to `grid-template-columns: repeat(5, minmax(0, 1fr)) var(--c-control-md)`
+// as a side effect of keeping the toggle in one stable slot — CSS Grid has
+// no wrap analogue to `flex-wrap`, so the five `1fr` tracks shrink instead of
+// wrapping, and the toggle keeps its own fixed trailing track regardless of
+// viewport width. No CSS change was needed; this pins the now-correct layout
+// against a regression.
+test.describe("edit toolbar keeps the ≡ off the leading edge (#370)", () => {
+  for (const width of [320, 360, 412]) {
+    test(`≡ stays on one row, right of the tools, with the frame open and closed (${width}px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 740 });
+      await page.goto("/");
+      await page.getByRole("button", { name: "New book" }).click();
+      await page.getByRole("button", { name: "Create book" }).click();
+      await page.getByRole("button", { name: /^Add chapter to/ }).click();
+      await page.getByRole("button", { name: "Create chapter" }).click();
+      await page.getByRole("button", { name: "Open Chapter 1" }).click();
+      await page.getByRole("button", { name: "Add segment" }).click();
+      await page.getByRole("button", { name: "Record segment 1" }).click();
+      await page.getByRole("button", { name: "Record", exact: true }).click();
+      await page.waitForTimeout(1200);
+      await page
+        .getByRole("button", { name: "Stop recording", exact: true })
+        .click();
+      await expect(
+        page.getByRole("button", { name: "Record", exact: true })
+      ).toBeVisible();
+      await page
+        .locator(".recorder-toolbar")
+        .getByRole("button", { name: "Edit recording", exact: true })
+        .click();
+      await expect(
+        page.getByLabel("Selection start", { exact: true })
+      ).toBeVisible();
+
+      const toolbar = page.locator(".recorder-toolbar.edit");
+      // `button.control` reaches the real button whether or not a control is
+      // wrapped in `.control-hinted` (any control passed a `hint` prop, even
+      // `null`, gets a wrapping span — `control.tsx`), so the count and order
+      // below are the six controls, not their wrappers.
+      const controls = toolbar.locator("button.control");
+
+      const expectOneRowRightOfTheTools = async () => {
+        await expect(controls).toHaveCount(6);
+        const boxes: { x: number; y: number; right: number }[] = [];
+        for (let i = 0; i < 6; i++) {
+          const box = await controls.nth(i).boundingBox();
+          expect(box).not.toBeNull();
+          boxes.push({ x: box!.x, y: box!.y, right: box!.x + box!.width });
+        }
+        // One row: nothing wrapped to a second line. This is the exact
+        // failure #370 named — the ≡ (index 4) landing on a line of its own.
+        // Tolerance is 3px, not 1: the trailing Select/Done slot (index 5) is
+        // the 44px `--c-control-md` box against the other five 40px `quiet`
+        // boxes, and `align-items: center` centres each within the shared
+        // row height, so its top sits ~2px higher than theirs even on a
+        // single row.
+        const firstY = boxes[0]!.y;
+        for (const b of boxes) {
+          expect(Math.abs(b.y - firstY)).toBeLessThanOrEqual(3);
+        }
+        // Left-to-right in DOM order: the ≡ never jumps ahead of a tool that
+        // comes after it in source order (the "lands on the left" failure).
+        for (let i = 1; i < boxes.length; i++) {
+          expect(boxes[i]!.x).toBeGreaterThan(boxes[i - 1]!.x);
+        }
+        // The ≡ (index 4) sits to the right of every other tool and
+        // immediately precedes the trailing Select/Done slot (index 5) — the
+        // trailing-edge position the issue says is worth protecting.
+        expect(boxes[4]!.x).toBeGreaterThan(boxes[3]!.x);
+        expect(boxes[4]!.right).toBeLessThanOrEqual(boxes[5]!.x + 0.5);
+        // No horizontal scroll at this width (AGENTS.md: no horizontal page
+        // scroll at phone width).
+        const scrollWidth = await page.evaluate(
+          () => document.documentElement.scrollWidth
+        );
+        expect(scrollWidth).toBeLessThanOrEqual(width);
+      };
+
+      // Frame open (the issue's named case).
+      await expectOneRowRightOfTheTools();
+
+      // Frame closed (the issue's "before closing" checklist: both states).
+      // A cut collapses the frame onto the centerline without leaving edit
+      // mode; #362's 40-vs-44 question is separate and untouched here.
+      await page
+        .getByRole("button", { name: "Cut the selection", exact: true })
+        .click();
+      await expect(
+        page.getByLabel("Selection start", { exact: true })
+      ).toHaveCount(0);
+      await expectOneRowRightOfTheTools();
+    });
+  }
+});
+
+// #659 (a Claude review of #638): at 0%/100% a handle's hit box sits flush
+// against `.recorder-canvas`'s clipped edge (the #707 clamp), so whether its
+// keyboard focus ring clips there too is not something a source read of
+// `outline-offset: -2px` can answer — CSS resolves the ring's rendered
+// bounds from the box's live geometry plus the offset and width, not from
+// the declaration's sign alone. This reads all three from the shipped build
+// and derives the ring's own edges, rather than trusting that a negative
+// offset is automatically safe.
+test.describe("selection handle focus ring at 0%/100% (#659)", () => {
+  for (const width of [320, 390]) {
+    test(`the focus ring never renders past the canvas edge (${width}px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 740 });
+      await page.goto("/");
+      await page.getByRole("button", { name: "New book" }).click();
+      await page.getByRole("button", { name: "Create book" }).click();
+      await page.getByRole("button", { name: /^Add chapter to/ }).click();
+      await page.getByRole("button", { name: "Create chapter" }).click();
+      await page.getByRole("button", { name: "Open Chapter 1" }).click();
+      await page.getByRole("button", { name: "Add segment" }).click();
+      await page.getByRole("button", { name: "Record segment 1" }).click();
+      await page.getByRole("button", { name: "Record", exact: true }).click();
+      await page.waitForTimeout(1200);
+      await page
+        .getByRole("button", { name: "Stop recording", exact: true })
+        .click();
+      await page
+        .locator(".recorder-toolbar")
+        .getByRole("button", { name: "Edit recording", exact: true })
+        .click();
+      await page
+        .getByRole("button", {
+          name: "Zoomed to the whole segment. Zoom in to a quarter.",
+          exact: true,
+        })
+        .click();
+      const stage = await page.locator(".recorder-canvas").boundingBox();
+      expect(stage).not.toBeNull();
+
+      for (const label of ["Selection start", "Selection end"] as const) {
+        const handle = page.getByLabel(label, { exact: true });
+        await expect(handle).toBeVisible();
+        // A real Tab, not `.focus()`: `:focus-visible` is a heuristic over
+        // input history, and a script-driven focus does not satisfy it, so a
+        // programmatic focus would silently skip the very rule under test.
+        await page.evaluate(() => document.body.focus());
+        let tabs = 0;
+        while (tabs < 30) {
+          await page.keyboard.press("Tab");
+          if (await handle.evaluate((el) => el === document.activeElement)) {
+            break;
+          }
+          tabs++;
+        }
+        await expect(handle).toBeFocused();
+        expect(
+          await handle.evaluate((el) => el.matches(":focus-visible"))
+        ).toBe(true);
+        const box = await handle.boundingBox();
+        expect(box).not.toBeNull();
+        const { outlineWidth, outlineOffset } = await handle.evaluate((el) => {
+          const cs = getComputedStyle(el);
+          return {
+            outlineWidth: parseFloat(cs.outlineWidth),
+            outlineOffset: parseFloat(cs.outlineOffset),
+          };
+        });
+        // CSS Outline: the ring is drawn `outline-width` further from the
+        // border edge than `outline-offset` places it — outward for a
+        // positive offset, and inward (toward, then past, the edge) for a
+        // negative one. This is the rendered ring's outer bound on each
+        // side, derived rather than assumed.
+        const ringLeft = box!.x - outlineOffset - outlineWidth;
+        const ringRight = box!.x + box!.width + outlineOffset + outlineWidth;
+        expect(
+          ringLeft,
+          `${label} ring's left edge vs the canvas`
+        ).toBeGreaterThanOrEqual(stage!.x - 0.5);
+        expect(
+          ringRight,
+          `${label} ring's right edge vs the canvas`
+        ).toBeLessThanOrEqual(stage!.x + stage!.width + 0.5);
+      }
     });
   }
 });

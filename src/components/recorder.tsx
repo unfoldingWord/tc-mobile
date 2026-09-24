@@ -9,14 +9,17 @@ import {
   useState,
 } from "react";
 
+import { captureFailureText } from "./capture-failure-copy";
 import { CenterlineOverlay } from "./centerline-overlay";
 import { Control } from "./control";
 import { shareControlGlyph } from "./control-affordance";
+import { editControlHint, redoReason, undoReason } from "./edit-control-state";
 import { EraseConfirm } from "./erase-confirm";
 import { guidedRecordShown, guidedStep } from "./guided-step";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
+import { PermissionPanel } from "./permission-panel";
 import { PlayheadOverlay } from "./playhead-overlay";
 import { resolveProbedPx } from "./recorder-layout";
 import { RecorderStatus } from "./recorder-status";
@@ -36,6 +39,7 @@ import {
   captureLocksPan,
   panGesture,
   recordDisabled,
+  redoCollapsesFrame,
   stageView,
 } from "./recorder-stage";
 import { SelectionOverlay } from "./selection-overlay";
@@ -60,7 +64,7 @@ import {
   resolveProvesDelivery,
   selectShareRoute,
 } from "@/hooks/share-target";
-import type { UseAudioSession } from "@/hooks/use-audio-session";
+import type { RecorderAudio } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
@@ -99,7 +103,7 @@ const ZOOM_QUARTER = 4;
 interface RecorderProps {
   segmentId: SegmentId;
   /** The single audio owner, held by App so `leave()` fires on every nav. */
-  audio: UseAudioSession;
+  audio: RecorderAudio;
   /**
    * Persist the recording as an insert/append into the segment's audio, at the
    * given Finished state. Never rejects — a failure becomes the recovery screen
@@ -317,7 +321,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * Lift the #613 collapse: the next render may seed a frame again.
      *
      * Called from every route that leaves the translator wanting one — a
-     * paste, an undo, a redo, leaving edit mode, and the lift of a stage drag
+     * paste, an undo, leaving edit mode, and the lift of a stage drag
      * (the waveform came to rest somewhere new, which is where the next span
      * is picked). It is NOT called from the cut itself, and there is no timer:
      * the collapsed state is the resting state after a cut, not a flash.
@@ -1403,7 +1407,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             supersededCapture.current = true;
           }
           if (verdict.kind === "notice") {
-            setStopError(verdict.error);
+            setStopError(captureFailureText(verdict.error));
           }
           closing.current = false;
           setIsClosing(false);
@@ -1744,8 +1748,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (redoneOp !== null) {
         setPanState((p) => panAfterRedo(p, redoneOp, length));
       }
-      reopenFrame();
-    }, [editor, stopPlaybackDroppingPan, length, reopenFrame]);
+      // A redone cut collapses to the line like a live one; a redone paste
+      // reopens the frame (#722).
+      setCutCollapsed(redoCollapsesFrame(redoneOp));
+    }, [editor, stopPlaybackDroppingPan, length]);
 
     const onCut = useCallback(() => {
       stopPlayback();
@@ -2199,7 +2205,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             // permission panel). A toolbar Notice (not the permission panel — this
             // is not a permission miss), and re-enable so Back or Record works. Do
             // NOT onExit.
-            stayOpen(plan.error);
+            stayOpen(captureFailureText(plan.error));
             return false;
           // Persist any pending edit and Finished flag, then exit — the shared
           // no-capture tail (`leaveHeldTake` runs the SAME one, George R4-G1 root).
@@ -2354,7 +2360,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // trapping (the concern G5 raised, now met without dropping the take).
           setHeldRetrying(false);
           heldRetryingRef.current = false;
-          setHeldRetryError(result.error);
+          setHeldRetryError(captureFailureText(result.error));
         } catch (cause: unknown) {
           // saveRecording is contracted never to reject; this is the last net so a
           // thrown save cannot strand the panel busy with the take still held. A
@@ -2651,6 +2657,30 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       takeActive,
       starting,
       hasClip: view?.hasClip ?? false,
+    });
+
+    // Why the edit toolbar's two history arrows are grey, derived from the same
+    // predicates that grey them (#91, `edit-control-state.ts`) — the ≡ rows'
+    // rule above, applied to the toolbar. Not a second switch beside the
+    // `disabled` expressions they replace: each control's `disabled` is now
+    // `reason !== null`, which is what keeps the cue from drifting out of step
+    // with the gate.
+    //
+    // Derived HERE, beside those rows, rather than up beside `playDisabled`
+    // where the terms first become available: an object literal reading
+    // `editor` above the memoized callbacks makes React Compiler treat the
+    // value as one that may be mutated later and skip their memoization
+    // outright, which surfaces as `react-hooks/preserve-manual-memoization`
+    // errors in callbacks this change never touched.
+    const undoBlocked = undoReason({
+      dragging,
+      idleEditable,
+      canUndo: editor.canUndo,
+    });
+    const redoBlocked = redoReason({
+      dragging,
+      idleEditable,
+      canRedo: editor.canRedo,
     });
 
     // Enabled once a take WILL exist on close, not only when one already does.
@@ -3334,9 +3364,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                         // (George R2 P2). The rule itself is pure and table-tested
                         // in `lib/audio/display-gain.ts`, not spelled out here.
                         //
-                        // `takeActive`, NOT `recording` (George R3 #2 — the
-                        // re-run, a distinct finding from the fitFrom fix above).
-                        // `LiveScope`'s mount window is gated on the WHOLE
+                        // `state` + `isClosing`, NOT `recording` (George R3 #2 —
+                        // the re-run, a distinct finding from the fitFrom fix
+                        // above). `LiveScope`'s mount window is gated on the WHOLE
                         // take-in-flight span — recording, `processing` (#59), and
                         // the `isClosing` stop→decode→save wait, during which
                         // `stop()` has already flipped `state` to idle. Gating this
@@ -3347,11 +3377,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                         // prevent. `hasAudio` still gates the punch-in case
                         // unchanged: once there is committed audio,
                         // `isFirstTakeInFlight` is false regardless of
-                        // `takeActive`, so George R2 P2 stands.
-                        firstTakeInFlight={isFirstTakeInFlight(
-                          takeActive,
-                          hasAudio
-                        )}
+                        // `state`/`isClosing`, so George R2 P2 stands.
+                        //
+                        // `isFirstTakeInFlight` takes `state` and `isClosing`
+                        // separately and computes `takeActive` itself (#757) — a
+                        // caller can no longer collapse them into one wrong
+                        // boolean, the drift #373 named at this same call site.
+                        firstTakeInFlight={isFirstTakeInFlight({
+                          state,
+                          isClosing,
+                          hasCommittedAudio: hasAudio,
+                        })}
                         // Fit to the COMMITTED clip. Since #614 this is the same
                         // array as `peaks` in every state this branch renders —
                         // the second buffer it used to guard against (the #101
@@ -3694,14 +3730,18 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     label={strings.undo}
                     variant="quiet"
                     size={24}
-                    // `heldByDrag` is the history half of the #317 stage lock
-                    // (George R2 P1): Undo rematerialises `working`, and a lift
-                    // still owing a resume would sound a sample index measured
-                    // in the buffer that no longer exists.
-                    disabled={heldByDrag(
-                      dragging,
-                      !idleEditable || !editor.canUndo
-                    )}
+                    // The gate is unchanged — `undoReason` reproduces
+                    // `heldByDrag(dragging, !idleEditable || !canUndo)`, and
+                    // `tests/edit-control-state.test.ts` pins that against
+                    // `heldByDrag` itself. What is new is that the grey now
+                    // carries its cause (#91). This arrow is grey whenever
+                    // the cursor sits at the START of the stack — on a fresh
+                    // edit session, and again after undoing back to it, which
+                    // is the case round 1's copy got wrong. #135 already found
+                    // that a grey icon-only control with no reason reads as a
+                    // broken one.
+                    disabled={undoBlocked !== null}
+                    hint={editControlHint(undoBlocked)}
                     onClick={onUndo}
                   />
                   <Control
@@ -3709,15 +3749,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     label={strings.redo}
                     variant="quiet"
                     size={24}
-                    // Same guard the menu Redo had (George R4): a Redo mid-take
-                    // would rematerialise the working buffer under the locked
-                    // insertion offset — but `idleEditable` forbids that, and edit
-                    // mode is idle-only regardless. `heldByDrag` is the #317
-                    // finger, for the same reason Undo carries it.
-                    disabled={heldByDrag(
-                      dragging,
-                      !idleEditable || !editor.canRedo
-                    )}
+                    // Same guard the menu Redo had (George R4), now derived:
+                    // a Redo mid-take would rematerialise the working buffer
+                    // under the locked insertion offset — but `idleEditable`
+                    // forbids that, and edit mode is idle-only regardless.
+                    // `redoReason`'s `dragging` term is the #317 finger, for the
+                    // reason Undo carries it. Redo is grey for longer than Undo,
+                    // never having anything to redo until something is undone,
+                    // so it is the stronger half of #91's case here.
+                    disabled={redoBlocked !== null}
+                    hint={editControlHint(redoBlocked)}
                     onClick={onRedo}
                   />
                   <Control
@@ -3871,49 +3912,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     );
   }
 );
-
-function PermissionPanel({
-  message,
-  onRetry,
-  onBack,
-}: {
-  /** The actual error when there is one (a denied mic, or a failed decode) — */
-  /** honest over the generic mic-needed title. */
-  message: string | null;
-  onRetry: () => void;
-  onBack: () => void;
-}) {
-  return (
-    // `role="alert"` so AT announces the title when the panel mounts and — the
-    // point here — when the async permission refine sharpens the message after
-    // Retry has autofocused, which a screen-reader user parked on Retry would
-    // otherwise never hear (#203 is a non-reader feature; George R1 P3). Mirrors
-    // `LoadErrorPanel`, whose title is likewise announced without being focused.
-    <div
-      role="alert"
-      className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center"
-    >
-      <span className="text-live">
-        <Icon name="alert" size={52} />
-      </span>
-      <p className="t-title text-ink">{message ?? strings.micNeededTitle}</p>
-      <Control
-        icon="retry"
-        label={strings.micRetry}
-        variant="primary"
-        size={30}
-        autoFocus
-        onClick={onRetry}
-      />
-      <Control
-        icon="back"
-        label={strings.micBack}
-        variant="quiet"
-        onClick={onBack}
-      />
-    </div>
-  );
-}
 
 /**
  * The segment could not be opened — a load walk or, far more often, a finished

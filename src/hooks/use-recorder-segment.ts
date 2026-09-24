@@ -4,13 +4,8 @@ import { decodeMp3ToCanonical, resumeAudioContext } from "./audio-io";
 import { requestTranscodeSweep } from "./finish-transcode";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
 import { errorMessage } from "@/lib/failure-text";
-import {
-  getBook,
-  getChapter,
-  getSegment,
-  isFinished,
-  setSegmentFinished,
-} from "@/lib/storage/books";
+import { getBook, getChapter, getSegment } from "@/lib/storage/books";
+import { isFinished, setSegmentFinished } from "@/lib/storage/takes";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import type { SegmentId } from "@/types/domain";
 
@@ -23,11 +18,11 @@ export interface RecorderSegmentView {
   /**
    * The stored flag as loaded at open, and patched again by this hook's own
    * `setFinished` once that write lands — NOT a snapshot. What it never sees
-   * is a write from anywhere else; it is one of three mirrors, and none of
-   * them observes the others (#160, L-10; the seam is recorded at
-   * `recorderClosedState` in `app/App.tsx`). The sheet does not render this
-   * directly: `displayedFinished` puts the translator's un-committed intent
-   * over it.
+   * is a write from anywhere else: it is one of the mirrors, and none of them
+   * observes the others (#160, L-10). How many there are, and what repairs
+   * each, is enumerated once — at `recorderClosedState` in `app/App.tsx`. Do
+   * not restate the count here. The sheet does not render this directly:
+   * `displayedFinished` puts the translator's un-committed intent over it.
    */
   readonly finished: boolean;
   /** Playable audio is present (F3: resolved, not merely a take pointer). */

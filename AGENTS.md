@@ -327,7 +327,10 @@ share _prepare_ (`hooks/share-flow.ts`), the recorder's own guards and bounds
 recorder still active `"recorder-interrupted-active"` #478, and a native
 `stop()` throwing inside `stop()`'s own flush `"recorder-stop-flush"` #485 —
 which seals the slices already in hand and rides the `StopResult`, so it
-never reaches the backstop below), `stopRecording`'s commit-path backstop
+never reaches the backstop below — and a track `stop()` that throws while the
+mic stream is released `"recorder-release-track"` #479), the level tap's clone
+track throwing on its own `stop()` (`hooks/audio-io.ts`,
+`"recorder-tap-clone-stop"`, #479), `stopRecording`'s commit-path backstop
 (`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), a failed
 save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
@@ -569,9 +572,13 @@ node scripts/check-deploy.mjs --require-origin --origin=<url> --sha=<short-sha> 
 Workers Builds deploys the promoted branch's tip — for this repo's merge-PR
 promotion flow, that tip is a **merge commit**, not the feature/develop
 branch tip a promoter's local checkout usually has `HEAD` on (round-3
-George #1: `docs/progress_tracker.md:102,118` recorded the v0.1.12
-`develop -> staging` promotion (#202) as merge commit `afdfa6e`, not
-develop's pre-merge tip `7152289`). So the bare commands above do **not**
+George #1: `docs/progress_tracker.md`'s append-only, newest-first log means a
+line-number citation drifts as soon as a newer entry is prepended above it
+(#443 item 2), so cite by heading instead — its **"2026-09-03 (evening) —
+v0.1.12 promoted and verified on staging; the microphone report resolved
+outside the app"** entry recorded the v0.1.12 `develop -> staging` promotion
+(#202) as merge commit `afdfa6e`, not develop's pre-merge tip `7152289`). So
+the bare commands above do **not**
 compare against local `HEAD` by default: for the staging and production
 default origins, `resolveExpectedSha()`/`resolveExpectedVersion()`
 (`scripts/check-deploy.mjs`) read the corresponding **remote-tracking ref**

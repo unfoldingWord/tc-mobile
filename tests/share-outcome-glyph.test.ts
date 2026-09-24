@@ -15,7 +15,7 @@ import { SHARE_SETTLED, type ShareSettled } from "@/hooks/share-progress";
 import type { ShareError } from "@/hooks/share-flow";
 import { noticePresentation } from "@/components/notice-tone";
 
-/** Source-shape reads, because there is no renderer here (#197). */
+/** Source-shape reads: these check source text, not rendered markup (#197). */
 const read = (rel: string) =>
   readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
 

@@ -22,12 +22,13 @@ import { ShareMenuSection } from "./share-menu-section";
 import { ShareProgress } from "./share-progress";
 import { strings } from "./strings";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
-import type { UseAudioSession } from "@/hooks/use-audio-session";
+import type { SegmentsAudio } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useScreenLayers } from "@/hooks/use-screen-layers";
+import { useScrollToNew } from "@/hooks/use-scroll-to-new";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { overlayDismissal } from "@/lib/nav/navigation";
 import { firstNotFinished } from "@/lib/view/segment-rows";
@@ -95,7 +96,7 @@ interface SegmentsScreenProps {
    * navigation. The screen reads playback state from it and plays through it;
    * "only one row plays at a time" falls out of that single floor for free.
    */
-  audio: UseAudioSession;
+  audio: SegmentsAudio;
   onBack: () => void;
   onOpenRecorder: (segmentId: SegmentId, ordinal: number) => void;
   /** Register an open overlay as a Back layer. `useNavStack`'s, through App. */
@@ -194,6 +195,16 @@ export const SegmentsScreen = forwardRef<
   // `books-screen.tsx`'s `menuFocusRestore` for why sharing the overlay's slot
   // lost the ⋮ after any share-progress cycle (Frank r1 P2 on #754).
   const menuFocusRestore = useFocusRestore();
+  // Where focus goes once leaving the chapter rename field has committed
+  // (#676 item 1). `#679`'s `menuFocusRestore` above already returns focus to
+  // the ⋮ once the WHOLE menu closes — a completed save included — but
+  // Escape/Cancel here only leaves rename mode: `chapterMenuOpen` stays true,
+  // so that effect's `if (chapterMenuOpen) return;` guard never fires, and
+  // the unmounting `NameEdit` field drops focus to `<body>` behind the still-
+  // open panel. `segment-row.tsx`'s `pendingFocus` is the same shape, applied
+  // here to the one target this screen still needs.
+  const pendingRenameFocus = useRef(false);
+  const renameChapterControlRef = useRef<HTMLButtonElement | null>(null);
   const share = useChapterShare();
   const erase = useEraseSegment();
   // MEMBERS, never the objects — and this is #452's own open question 3,
@@ -600,6 +611,16 @@ export const SegmentsScreen = forwardRef<
   // the scrim.
   const onSaveChapterName = useCallback(
     (name: string) => {
+      // The same synchronous ref latch New Book's `creatingBook` uses (#395
+      // item 3), mirroring `books-screen.tsx`'s `onSaveBookName`.
+      // `NameEdit`'s own `if (busy) return` in its `onSubmit` reads LAST
+      // RENDER's `busy` — a key-repeated Enter can call this a second time
+      // before the first commit's `savingChapterName` paints. Reading
+      // `savingChapterNameRef` HERE, before this call flips it, closes that
+      // gap for free: the ref already tracks the in-flight write
+      // synchronously, for `Layer.busy()`'s own sync read (see its
+      // declaration above).
+      if (savingChapterNameRef.current) return;
       // Capture the session this rename belongs to. IDB can settle after the
       // user has closed the menu or armed a share — both advance the token — so
       // close ONLY if we are still the same session (F1). Without this, the stale
@@ -632,9 +653,18 @@ export const SegmentsScreen = forwardRef<
   // showed the NEXT Rename tap's fresh Confirm as busy before it was tapped.
   const onCancelRenameChapter = useCallback(() => {
     chapterMenuSession.current += 1;
+    pendingRenameFocus.current = true;
     setRenamingChapter(false);
     setSavingName(false);
   }, [setSavingName]);
+  // Runs after the commit that brings the action list back, mirroring
+  // `segment-row.tsx`'s identical effect for the row's own rename mode.
+  useLayoutEffect(() => {
+    if (pendingRenameFocus.current && !renamingChapter) {
+      pendingRenameFocus.current = false;
+      renameChapterControlRef.current?.focus();
+    }
+  }, [renamingChapter]);
   const onConfirmErase = useCallback(() => {
     if (eraseTarget === null) return;
     void (async () => {
@@ -721,19 +751,11 @@ export const SegmentsScreen = forwardRef<
   // moved into `ShareMenuSection` with the rows they paint (#160, L-15) —
   // Books derived the identical three.
 
-  const nodes = useRef(new Map<SegmentId, HTMLElement>());
   const didInitialScroll = useRef(false);
-  // What to scroll to once `rows` next includes it — a freshly appended
-  // segment. A ref, not state: `addSegment` already re-renders us.
-  const pendingScroll = useRef<SegmentId | null>(null);
-  // See books-screen: the invite CTA unmounts on the append it triggers, so
-  // hand focus to the new row rather than let it fall to Back in the header.
-  const pendingFocus = useRef<SegmentId | null>(null);
-
-  const setNode = useCallback((id: SegmentId, el: HTMLElement | null) => {
-    if (el) nodes.current.set(id, el);
-    else nodes.current.delete(id);
-  }, []);
+  // The row registry and the arm-then-reveal pair, shared with Books (#160
+  // L-15). Focus lands on the row's open/record control explicitly (not DOM
+  // order) — the right next move on a never-recorded row (George R3 P3).
+  const rowReveal = useScrollToNew<SegmentId>(".row-open");
 
   useEffect(() => {
     // Land on the first not-finished segment once the list is first loaded
@@ -741,27 +763,15 @@ export const SegmentsScreen = forwardRef<
     if (loading || didInitialScroll.current) return;
     didInitialScroll.current = true;
     const target = firstNotFinished(rows);
-    if (target)
-      nodes.current.get(target.segmentId)?.scrollIntoView({ block: "nearest" });
-  }, [loading, rows]);
+    if (target) rowReveal.scrollTo(target.segmentId);
+  }, [loading, rows, rowReveal]);
 
+  // Nothing on this screen holds the hand-off: focus is armed from one site
+  // only — the empty chapter's invite — and no overlay is up over it. Books
+  // passes a hold here, for a delete confirm that leaves the list `inert`.
   useEffect(() => {
-    const id = pendingScroll.current;
-    if (id !== null) {
-      nodes.current.get(id)?.scrollIntoView({ block: "nearest" });
-      pendingScroll.current = null;
-    }
-    const focusId = pendingFocus.current;
-    if (focusId !== null) {
-      // Target the row's open/record control explicitly (not DOM order) — the
-      // right next move on a never-recorded row (George R3 P3).
-      nodes.current
-        .get(focusId)
-        ?.querySelector<HTMLElement>(".row-open")
-        ?.focus();
-      pendingFocus.current = null;
-    }
-  }, [rows]);
+    rowReveal.reveal();
+  }, [rows, rowReveal]);
 
   const onAppend = useCallback(async () => {
     // Only the first append comes from the invite (the corner + is hidden while
@@ -769,11 +779,11 @@ export const SegmentsScreen = forwardRef<
     const fromEmpty = rows.length === 0;
     const segment = await addSegment();
     if (!segment) return; // failed append surfaced through the hook's Notice
-    // The new <li> is not committed yet, so scroll once `rows` includes it —
-    // the same pending-id + effect pattern BooksScreen uses.
-    pendingScroll.current = segment.id;
-    if (fromEmpty) pendingFocus.current = segment.id;
-  }, [addSegment, rows]);
+    // The new <li> is not committed yet, so arm it and let the effect above
+    // scroll once `rows` includes it — the same hook BooksScreen uses.
+    rowReveal.armScroll(segment.id);
+    if (fromEmpty) rowReveal.armFocus(segment.id);
+  }, [addSegment, rows, rowReveal]);
 
   const onSetFinished = useCallback(
     (segmentId: SegmentId, finished: boolean) => {
@@ -862,7 +872,10 @@ export const SegmentsScreen = forwardRef<
         ) : (
           <ul className="flex flex-col gap-[8px]">
             {rows.map((row) => (
-              <li key={row.segmentId} ref={(el) => setNode(row.segmentId, el)}>
+              <li
+                key={row.segmentId}
+                ref={(el) => rowReveal.setNode(row.segmentId, el)}
+              >
                 <SegmentRow
                   row={row}
                   playing={audio.playingId === row.segmentId}
@@ -971,12 +984,22 @@ export const SegmentsScreen = forwardRef<
               <Notice tone="busy">{strings.savingName}</Notice>
             )}
             {/* A failed rename speaks here — the screen Notice is behind the
-                scrim — while the field stays up for another try. */}
-            {error && <Notice>{error}</Notice>}
+                scrim — while the field stays up for another try.
+
+                Never while `savingChapterName` (#395 item 1), mirroring
+                `books-screen.tsx`'s identical guard: a retried rename's own
+                busy Notice must not share the panel with a failure Notice
+                from the PREVIOUS attempt — the #112 collision
+                `control-affordance.ts` names as the rule this wiring
+                follows. `renameChapter` also now clears `error` at the START
+                of the write (`use-chapter-segments.ts`); either half alone
+                still leaves the other channel wrong (George, #395). */}
+            {error && !savingChapterName && <Notice>{error}</Notice>}
           </>
         ) : (
           <>
             <Control
+              ref={renameChapterControlRef}
               icon="edit"
               label={strings.renameChapter}
               variant="quiet"

@@ -8,6 +8,7 @@
  * where it would otherwise be edited in a dozen places. This is a table, not a
  * provider: parameterised labels are small pure functions, nothing more.
  */
+import { plural } from "@/lib/plural";
 import { filenameSafe } from "@/lib/utils";
 
 /**
@@ -56,9 +57,10 @@ export const strings = {
   loadingBooks: "Loading your books.",
   tryAgain: "Try again",
   bookRow: (name: string, chapters: number, expanded: boolean): string =>
-    `${name}, ${chapters} ${chapters === 1 ? "chapter" : "chapters"}, ${
-      expanded ? "expanded" : "collapsed"
-    }`,
+    `${name}, ${plural(chapters, {
+      one: "{n} chapter",
+      other: "{n} chapters",
+    })}, ${expanded ? "expanded" : "collapsed"}`,
   addChapter: (bookName: string): string => `Add chapter to ${bookName}`,
   openChapter: (heading: string): string => `Open ${heading}`,
   chapterName: (n: number): string => `Chapter ${n}`,
@@ -107,11 +109,18 @@ export const strings = {
   newChapterTitle: "Name your new chapter",
   newChapterClose: "Close without creating a chapter",
   createChapter: "Create chapter",
-  // Shown in place of `saveName`/`createBook`/`createChapter` while the write is
-  // in flight (#383) — the same in-place busy relabel
-  // `loadRetrying`/`takeRecoverRetrying` already do, so a screen reader focused
-  // on Confirm does not read it as idle for the whole write, on any caller.
+  // Shown in place of `saveName`/`createChapter` while the write is in flight
+  // (#383) — the same in-place busy relabel `loadRetrying`/`takeRecoverRetrying`
+  // already do, so a screen reader focused on Confirm does not read it as idle
+  // for the whole write. NOT New Book any more (#395 item 2): that caller has
+  // its own busy string below, because "Saving…" implies something already
+  // existed to save back onto — exactly what `createBook`'s own comment above
+  // was written to avoid, and the generic relabel here quietly reintroduced.
   savingName: "Saving…",
+  // The New Book dialog's OWN busy relabel (#395 item 2) — used for both its
+  // Confirm control's label and its own in-panel busy Notice, so a screen
+  // reader on either hears that a book is being MADE, not saved.
+  creatingBook: "Creating your book…",
 
   // ── Segments screen (B3) ─────────────────────────────────────────────────
   backToBooks: "Back to books",
@@ -295,8 +304,6 @@ export const strings = {
   modepillEditing: "Editing",
 
   // ── Waveform editing (B5) ────────────────────────────────────────────────
-  selectStart: "Select a span to edit",
-  selectStop: "Close the selection",
   cut: "Cut the selection",
   // Play's name says WHICH audio the tap will sound, because that changes with
   // the line and the picked span. `auditionPlan`'s `source` chooses between
@@ -314,6 +321,30 @@ export const strings = {
   paste: "Paste at the line",
   undo: "Undo",
   redo: "Redo",
+  // Why the two history arrows are grey, appended to their accessible names
+  // while they are (#91, via `edit-control-state.ts`). A grey icon-only control
+  // with no reason reads as a broken one — the #135 finding — and these two are
+  // grey the longest of any edit control.
+  //
+  // PRESENT TENSE, describing the current end of the edit stack and nothing
+  // else. Round 1 said "No edits to undo yet." and "Nothing has been undone.";
+  // both are claims about the session's PAST, while `canUndo`/`canRedo` are
+  // only `cursor > 0` and `cursor < ops.length`. George round 1 showed the gap
+  // is reachable in three taps: cut, undo — Undo now greys and "no edits yet"
+  // is false — then redo, and Redo greys while "has been undone" is false.
+  // `tests/edit-control-state.test.ts` bans the tense so this cannot drift back.
+  //
+  // Pure statements of STATE: no control is named and no gesture is described.
+  // Each way out follows from the state itself, so there is nothing to point at
+  // — and pointing is where cue copy has gone wrong here before
+  // (`menu-row-state.ts`'s `rowHint`, and #648 round 1).
+  //
+  // The shortest statement of the rule, from the bench fix this merges with:
+  // an edit undone back to the start, or an undo redone to the tip, reaches
+  // the SAME cursor as a fresh session — so the words may state only where the
+  // cursor is, never what has or has not happened.
+  nothingToUndo: "Nothing to undo.",
+  nothingToRedo: "Nothing to redo.",
   // The recorder drawer's dialog name for a screen reader — never painted
   // there (#621, the rule #608 set for `menuTitle`): the recorder drawer
   // opens from a ≡ that stays a ≡, so the glyph is its only visible label.
@@ -327,6 +358,33 @@ export const strings = {
   selectionEndHandle: "Selection end",
   editFailed: "That edit could not be applied. Try a shorter selection.",
   clearFailed: "Could not clear the audio. Try again.",
+  // ── Why a capture produced no take (#169) ────────────────────────────────
+  // One sentence per `CaptureFailure` code; `capture-failure-copy.ts` picks
+  // which. These words used to be minted inside `hooks/use-recorder.ts` and
+  // `hooks/use-audio-session.ts` — the latter typing "could not finish" out a
+  // second time, with nothing tying the two copies together. The codes are now
+  // minted in `lib/audio/`, which never sees a sentence, and that separation is
+  // what lets a second UI language be a change to this table rather than an
+  // edit inside the recorder hook.
+  //
+  // Only this one asks for a retry, because it is the only one where retrying
+  // is what helps: the capture reached the decoder and decoded to nothing.
+  captureSilence: "No sound was recorded. Try again.",
+  // A failed decode, NOT silence — and deliberately not a second "try again".
+  // Where this reaches a screen the bytes are held and the recovery panel is
+  // up, so the retry is already there as its own control
+  // (`strings.takeRecoverRetry`); an instruction here would compete with it.
+  // An earlier draft grouped this key with the one above under "the two that
+  // name proven silence … tell the translator to try again", which is true of
+  // neither half for this key (George R5).
+  captureUndecodable: "Recording could not be decoded on this device.",
+  // The third must NOT say "no sound": the engine failed to hand the capture
+  // over (a flush that threw, #485; a `stopRecording` that rejected, #480), so
+  // the translator may well have spoken, and the silence sentence would blame
+  // them for it. It stays a statement rather than an instruction — what the
+  // sheet offers next after this code is `planClose`'s `stay`, which leaves the
+  // recorder open with this Notice in place, not a named remedy.
+  captureUnfinished: "Could not finish this recording.",
   // ── Disabled-row reasons (#135) ──────────────────────────────────────────
   // Appended to a disabled ≡-menu row's accessible name so the grey carries its
   // cause. Derived from the row's own gate in `menu-row-state.ts`, never set by
@@ -445,7 +503,9 @@ export const strings = {
   // resolve — never-recorded, but also a dangling take or a half-missing clip —
   // so "no recording yet" would misdescribe a hole the translator never left.
   shareMissing: (n: number): string =>
-    couldNotBeIncluded(n === 1 ? "1 segment" : `${n} segments`),
+    couldNotBeIncluded(
+      plural(n, { one: "{n} segment", other: "{n} segments" })
+    ),
   // The book name is free text since #264, so sanitise it into the filename —
   // a `/` in "Mark/Luke" would otherwise split a zip entry into a folder (G3).
   // The chapter is an ordinal, always safe.
@@ -466,7 +526,9 @@ export const strings = {
   // `missing` counts whole chapters left out of the zip — a chapter with no
   // resolvable audio at all.
   shareBookMissing: (n: number): string =>
-    couldNotBeIncluded(n === 1 ? "1 chapter" : `${n} chapters`),
+    couldNotBeIncluded(
+      plural(n, { one: "{n} chapter", other: "{n} chapters" })
+    ),
   // A chapter that IS included can still be partial — one or more of its own
   // segments had no resolvable audio (`exportChapterMp3`'s own `missing`,
   // rolled up across every included chapter, #116). Distinct from
@@ -501,7 +563,19 @@ export const strings = {
   //
   // One missing segment is always exactly one chapter, so the
   // `segments === 1` case can safely name that chapter's scope without
-  // misstating a count. George round 2 caught that the first attempt at that
+  // misstating a count.
+  //
+  // That is why this branch is NOT `plural`'s `one` form, although every other
+  // count-varying string in this table now is (#169). CLDR's `one` category is
+  // not "exactly 1" — Russian selects it for 21, 31, 101 — so moving this
+  // clause into a forms table would let a second locale assert "an included
+  // chapter", singular, about twenty-one segments spread across an unknown
+  // number of them, which is the #400/#423 bug in a new place. The branch here
+  // is a claim about the count being exactly one, not an agreement with it; a
+  // locale that needs `few`/`many` inside the else branch should add the table
+  // there and leave this exactly-one branch as a branch.
+  //
+  // George round 2 caught that the first attempt at that
   // clause ("...was left out of a chapter that shipped") used maintainer
   // vocabulary that collides with two unchanged contracts: "shipped" reads as
   // past-tense send while the share menu is only `ready` (Share now — `hooks/
@@ -609,6 +683,36 @@ export const strings = {
   storageNotPersisted:
     "This phone may delete what you record here if space runs low. Share your work when you can.",
 
+  // ── Storage pressure (#247) ──────────────────────────────────────────────
+  // State-in-place on the Books screen, alongside `storageNotPersisted`:
+  // `navigator.storage.estimate()` says this ORIGIN is running low, which is a
+  // different risk from durability above — the browser has not evicted
+  // anything, the device is simply filling up. No byte count or percentage in
+  // either line: the estimate is coarse and per-origin
+  // (`lib/storage/pressure.ts`), so a number here would be a precision the
+  // reading does not support.
+  //
+  // **DRI decision (Seth, 2026-09-24), replacing the original wording.** The
+  // original copy said "here" rather than naming the phone, and "when you
+  // can" / "now" for urgency — deliberately, to avoid overclaiming a
+  // per-device condition from a per-origin reading (Frank P2-1 / George
+  // P2-1, #542; `pressure.ts`'s docblock still explains that risk: the OS can
+  // hand this origin a comfortable quota while the disk is nearly full, or
+  // the reverse). The DRI judged that hedge too vague to act on: it does not
+  // say what device is at risk or what happens if nothing is done. The new
+  // copy names the phone and, for the critical band, states the concrete
+  // consequence — new recordings may not save — which is also why
+  // `storageCritical` now renders in the `alert` tone rather than `info`
+  // (`storage-pressure-notice.ts`). Both lines still name the pair
+  // `pressure.ts`'s docblock names — mark segments Finished (ADR 0009's
+  // transcode reclaims ~90%) or share the work and then remove it — not bare
+  // "share", which does not reclaim anything on its own: `lib/export/
+  // chapter.ts` decodes and re-encodes without deleting a single stored clip.
+  storageLow:
+    "This phone is running low on space. Mark the segments you're done with as finished — they take much less room.",
+  storageCritical:
+    "This phone is almost out of space, and new recordings may not save. Mark finished segments, or share your work and then remove it.",
+
   // ── The database is unreachable (#221) ───────────────────────────────────
   // Two full-screen states, one in each copy of the app, when a newer copy
   // upgrades the database. The mark on the panel carries the meaning; these
@@ -673,11 +777,20 @@ export const strings = {
   // a facilitator sending something to a maintainer, and the noun has to name
   // the thing they are sending, not the file format it happens to be.
   failuresMarker: (n: number): string =>
-    n === 1 ? "1 problem recorded" : `${n} problems recorded`,
+    plural(n, {
+      one: "{n} problem recorded",
+      other: "{n} problems recorded",
+    }),
   // Replaces the plain "Open menu" name while the log is non-empty, so the one
   // control that leads to the report announces that it does.
+  //
+  // Reads `failuresMarker` rather than spelling the phrase out again (#169).
+  // The two used to be byte-identical, so a later edit to one would have left
+  // the panel and the control it opens saying different things about the same
+  // number — and a count phrase is now a plural TABLE, which is a worse thing
+  // to keep two copies of than a sentence was.
   menuOpenWithFailures: (n: number): string =>
-    `Open menu. ${n === 1 ? "1 problem recorded" : `${n} problems recorded`}.`,
+    `Open menu. ${strings.failuresMarker(n)}.`,
   // Said in the menu, above the two actions. Deliberately not "the app
   // crashed": most entries are a single failed write the translator never saw,
   // and alarming a person about work that is still on the phone is its own harm.

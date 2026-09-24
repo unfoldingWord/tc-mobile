@@ -6,8 +6,8 @@ import { defineConfig, devices } from "@playwright/test";
  * Headless Chromium projects for browser boundaries and shipped UI behavior.
  * The project list below maps each spec to its build.
  *
- * TWO builds, two previews, two projects — because the two specs need
- * different builds (round-1 George G3):
+ * TWO builds, two previews — the projects below map each spec to whichever
+ * one it needs (round-1 George G3):
  *
  *   - `dist-e2e/` (`vite build --mode e2e`) is the ONLY build that ships
  *     `src/app/e2e-harness.ts` (see `vite.config.ts`), so the harness-driven
@@ -89,7 +89,7 @@ export default defineConfig({
       // by the production minifier or by Tailwind's layer ordering would pass
       // there (#171).
       testMatch:
-        /(service-worker-precache|theme-toggle|recorder-selection|segment-rename|object-menu-focus)\.spec\.ts$/,
+        /(service-worker-precache|theme-toggle|recorder-selection|segment-rename|object-menu-focus|edit-history-cue|focus-scroll-measure)\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
     },
     {
@@ -110,9 +110,10 @@ export default defineConfig({
       // suite and this is the only automated place they run — same reasoning
       // `failure-log.spec.ts` documents. The commit path itself running is the
       // device item the spec header names, not something this project
-      // observes.
+      // observes. `recorder-programmatic-close.spec.ts` (#763) is the same
+      // adapter with a synthetic microphone, which its own `test.use` sets.
       name: "chromium-back-navigation",
-      testMatch: /back-navigation\.spec\.ts$/,
+      testMatch: /(back-navigation|recorder-programmatic-close)\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
     },
     {

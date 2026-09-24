@@ -11,6 +11,18 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-24 — v0.2.10 staging deploy confirmed retroactively, closing a gap found by a PR audit
+
+v0.2.10 was promoted by #775 (release bump #773), but no one ran `npm run check:deploy` at promotion time, so the deploy was never confirmed in this tracker. A 2026-09-24 PR audit found the gap; this entry records the check, run after the fact against the still-current staging build.
+
+### Shipped
+
+| What                                                                                                                                                                   | Evidence                                                                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **v0.2.10 staging deploy confirmed** — promoted by #775 (release bump #773); the `npm run check:deploy` PASS was not recorded at promotion time, docs-only correction. | `npm run check:deploy` PASS: `version=0.2.10 sha=184a457 builtAt=2026-09-23T21:40:01.506Z`, checked ~11:45Z on 2026-09-24. |
+
+---
+
 ## 2026-09-22 (late, Docker session) — #681 merged: Stop commits the take in place (#614 closed), after a one-shot George that could not finish and a three-pass one that found a P1 and a P2; #656 parked on a class-level pick; #683 claimed and triaged
 
 Dev lead's parallel Docker session, running ultracode lanes with the dev lead present for pickers until ~23:10Z, then "finish the loop and file the eod". The Mac's three entries below carry the tester thread, the board and the batch plan; this entry records the lane work and updates three of that plan's lines (L2, L7, and #683's status). A Claude subagent limit held the coordinator alone from ~19:00 to 20:00 UTC.
