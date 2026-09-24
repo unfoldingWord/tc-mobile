@@ -19,12 +19,37 @@ import type { SaveFailureKind } from "@/lib/takes/pending-take";
  */
 export type { SaveFailureKind };
 
+/**
+ * Every duck-typed classifier below reads `name`/`code` off a `cause` this
+ * module does not control the shape of. A getter that throws instead of
+ * returning a value — or a revoked Proxy, where every property read throws —
+ * would otherwise take the classifier down with it, at exactly the moment a
+ * failure is being handled (Frank r2 P2 on #886, issuecomment-5822215744).
+ *
+ * The catch below is not a silent swallow: a shape that cannot even be READ
+ * has already answered the question every classifier is asking ("is this
+ * object a QuotaExceededError/DatabaseDowngradeError by name or code?") —
+ * no, because there is no name or code to compare, only a throw. Falling
+ * through to `{}` (so every classifier's `=== `comparison misses) is the
+ * correct classification, not a fabricated one, and there was never a real
+ * value here to hand `reportFailure` either. Centralized once here, so every
+ * classifier below shares one try/catch rather than each wrapping its own.
+ */
+function readFailureShape(cause: unknown): { name?: unknown; code?: unknown } {
+  if (typeof cause !== "object" || cause === null) return {};
+  try {
+    const e = cause as { name?: unknown; code?: unknown };
+    return { name: e.name, code: e.code };
+  } catch {
+    return {};
+  }
+}
+
 export function isQuotaExceeded(cause: unknown): boolean {
-  if (typeof cause !== "object" || cause === null) return false;
-  const e = cause as { name?: unknown; code?: unknown };
+  const { name, code } = readFailureShape(cause);
   // 22 is the legacy DOMException code for a quota failure, which is still
   // what some WebKit builds report instead of the name.
-  return e.name === "QuotaExceededError" || e.code === 22;
+  return name === "QuotaExceededError" || code === 22;
 }
 
 /**
@@ -38,8 +63,7 @@ export function isQuotaExceeded(cause: unknown): boolean {
  * Node.
  */
 export function isDatabaseDowngrade(cause: unknown): boolean {
-  if (typeof cause !== "object" || cause === null) return false;
-  return (cause as { name?: unknown }).name === "DatabaseDowngradeError";
+  return readFailureShape(cause).name === "DatabaseDowngradeError";
 }
 
 export function saveFailureKind(cause: unknown): SaveFailureKind {

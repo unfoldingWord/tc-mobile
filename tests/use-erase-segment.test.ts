@@ -156,6 +156,38 @@ describe("performErase", () => {
     consoleError.mockRestore();
   });
 
+  it("resolves to its caught eraseFailed result, and still reports, when the rejection's own name cannot be read (Frank r2 P2, #886)", async () => {
+    // A hostile `name` getter throws instead of returning a value —
+    // `failureKey`'s own classification (`isQuotaExceeded`) would previously
+    // throw reading it, mid-`catch`, leaving `performErase` reject instead of
+    // resolving to its caught-result contract every caller relies on.
+    const { segmentId } = await recordedSegment();
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    // `Object.defineProperty`, not `Object.assign`: assigning a getter as a
+    // source property would invoke it immediately (`Object.assign` performs a
+    // real `[[Get]]`), throwing here at setup rather than where the test
+    // means to observe the throw — inside `failureKey`'s own classification.
+    const hostileCause = new Error("boom");
+    Object.defineProperty(hostileCause, "name", {
+      get(): string {
+        throw new Error("hostile getter");
+      },
+      configurable: true,
+    });
+    vi.mocked(clearSegmentTake).mockRejectedValueOnce(hostileCause);
+    const reports: FailureReport[] = [];
+    const off = subscribeToFailures((r) => reports.push(r));
+
+    const result = await performErase(segmentId);
+
+    off();
+    expect(result).toEqual({ ok: false, key: "eraseFailed" });
+    expect(reports.map((r) => r.context)).toEqual(["erase-segment"]);
+    consoleError.mockRestore();
+  });
+
   it('reports a store rejection to the funnel once, under "erase-segment" (#456)', async () => {
     const bogus = newClipId() as unknown as SegmentId;
     const consoleError = vi
