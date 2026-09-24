@@ -58,6 +58,37 @@ afterEach(() => {
   expect(branchNow).toBe(REAL_BRANCH_BEFORE);
 });
 
+/**
+ * The actual root cause of the leak `afterEach` above guards against: git
+ * sets `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` (and related `GIT_*`
+ * plumbing variables) in the environment of every hook it runs, including
+ * `.husky/pre-push`'s `npm run test`. Those variables are inherited by every
+ * child process spawned from within that `npm test` run — vitest, its
+ * workers, and any `git` this suite spawns — and an explicit `--git-dir`/
+ * `--work-tree` pair on the command line does not reliably out-rank them
+ * (confirmed directly: setting `GIT_DIR`/`GIT_WORK_TREE` to this worktree's
+ * own paths and re-running this file standalone reproduces the exact
+ * "not in a git directory" failure the `--git-dir`/`--work-tree`-only fix
+ * still hit under `.husky/pre-push`). Stripping these variables from the
+ * environment of every scratch-repo subprocess call removes the ambient git
+ * context entirely, rather than trying to out-rank it.
+ */
+const GIT_ENV_KEYS_TO_STRIP = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_COMMON_DIR",
+  "GIT_PREFIX",
+];
+
+function cleanGitEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const key of GIT_ENV_KEYS_TO_STRIP) delete env[key];
+  return env;
+}
+
 describe("hasNonBlankBody / isMergeSubject", () => {
   it("finds no body after a subject-only message", () => {
     expect(hasNonBlankBody("fix(x): subject only\n")).toEqual({
@@ -239,6 +270,13 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
         encoding: "utf8",
         timeout: 10_000,
         cwd,
+        // Range-mode invocations (`cwd` given) spawn the script against a
+        // scratch repo; the script's own internal `git log` call (no
+        // `--git-dir`/`--work-tree` of its own — that is production
+        // behaviour, not a test concern) must not inherit any ambient
+        // `GIT_DIR`/`GIT_WORK_TREE` this process was itself started with.
+        // See `cleanGitEnv`'s docblock.
+        env: cwd ? cleanGitEnv() : undefined,
       });
       return { status: 0, stdout, stderr: "" };
     } catch (err) {
@@ -307,17 +345,20 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
   //
   // Every setup command below is pinned with explicit `--git-dir`/
   // `--work-tree` (never bare `cwd`, and never a bare `git init` with no
-  // directory argument): a scratch-repo helper that instead relied on `cwd`
-  // alone leaked real `chore: base` / `feature` / `other` commits into this
-  // very worktree's actual branch the first time this suite ran under
-  // `.husky/pre-push` (observed directly — recovered via `git update-ref`
-  // and reflog, both throwaway branches deleted). The exact mechanism was
-  // not conclusively isolated, so the fix does not depend on diagnosing it:
-  // an explicit `--git-dir`/`--work-tree` pair makes the target repository
-  // unambiguous from the argument list alone, with no dependency on any
-  // process's current working directory. `assertIsolated` is a canary that
-  // turns any future recurrence of the same leak into an immediate,
-  // specific test failure instead of a silent write to the real repo.
+  // directory argument) AND a stripped environment (`cleanGitEnv`, above):
+  // a scratch-repo helper that relied on `cwd` alone leaked real `chore:
+  // base` / `feature` / `other` commits into this very worktree's actual
+  // branch the first time this suite ran under `.husky/pre-push`
+  // (recovered by hand: `git update-ref` back to the last real commit,
+  // both throwaway branches deleted). Root cause, confirmed directly: git
+  // sets `GIT_DIR`/`GIT_WORK_TREE` in every hook's environment, `npm run
+  // test` inherits them from `.husky/pre-push`, and those variables kept
+  // reaching the real worktree even after adding `--git-dir`/`--work-tree`
+  // (see `cleanGitEnv`'s docblock). Stripping the `GIT_*` variables is what
+  // actually closes it; the explicit flags alone were necessary but not
+  // sufficient. `assertIsolated` is a canary that turns any future
+  // recurrence of the same leak into an immediate, specific test failure
+  // instead of a silent write to the real repo.
   function scratchGitDirs(dir: string) {
     return { gitDir: path.join(dir, ".git"), workTree: dir };
   }
@@ -339,13 +380,14 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
       execFileSync(
         "git",
         ["--git-dir", gitDir, "--work-tree", workTree, ...args],
-        { encoding: "utf8" }
+        { encoding: "utf8", env: cleanGitEnv() }
       );
     // A directory argument to `init` (rather than a bare `init` relying on
     // cwd) creates the repo at `dir` regardless of the calling process's
     // cwd.
     execFileSync("git", ["init", "-q", "-b", "base", dir], {
       encoding: "utf8",
+      env: cleanGitEnv(),
     });
     git(["config", "user.email", "test@example.com"]);
     git(["config", "user.name", "Test"]);
@@ -370,7 +412,7 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
         execFileSync(
           "git",
           ["--git-dir", gitDir, "--work-tree", workTree, ...args],
-          { encoding: "utf8" }
+          { encoding: "utf8", env: cleanGitEnv() }
         );
       git([
         "commit",
@@ -409,7 +451,7 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
         execFileSync(
           "git",
           ["--git-dir", gitDir, "--work-tree", workTree, ...args],
-          { encoding: "utf8" }
+          { encoding: "utf8", env: cleanGitEnv() }
         );
       git([
         "commit",
