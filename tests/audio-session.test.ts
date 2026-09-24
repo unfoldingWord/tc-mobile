@@ -7,13 +7,9 @@ import { createAudioSession, type Stoppable } from "@/lib/audio/session";
  * replayed here deterministically — the interleavings that need a slow phone
  * and a fast thumb in the field are just call order in Node.
  *
- * What is NOT covered here: everything the hook does with the result, beyond
- * what the jsdom hook-mount harness elsewhere in this repo already reaches
- * (`tests/use-audio-session-supersession.test.ts`, #650) — it mounts the real
- * `useAudioSession` via `createRoot`/`act()` with `audio-io`, `use-recorder`
- * and `segment-audio` mocked, so "not coverable" overstates it (#549). What
- * neither harness reaches is real capture and playback: jsdom implements
- * neither MediaRecorder nor AudioContext, so that part of `useAudioSession`
+ * What is NOT covered here, and is not coverable: everything the hook does
+ * with the result. There is no jsdom and no renderer in this project, and
+ * jsdom implements neither MediaRecorder nor AudioContext, so `useAudioSession`
  * and the screens can only be verified on-device. Record and playback have been
  * run on a device against staging (2026-08-22) and work. What that does NOT
  * reach is what these tests model: a second tap landing inside a pending one,
