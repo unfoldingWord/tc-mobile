@@ -557,11 +557,13 @@ const PATHS: Record<IconName, React.ReactNode> = {
   /* Android's own share glyph — three discs joined by two strokes, the shape
      Material draws and every Android phone has already taught (#490, decided
      2026-09-19). The Android BUILD's Share control wears this; iOS and the
-     web keep the tray above, because on those the tray is the shape the
-     platform teaches. The outcome marks stay one tray family on every build:
-     the decision names the control only, and a second family of outcome
-     glyphs would double the surface #249 has to check. Hand-rolled on the
-     same 22-unit grid, `currentColor`, no icon font. */
+     web keep the tray above (`share`, the plain up-arrow-out-of-a-tray),
+     because on those the tray is the shape the platform teaches. #490 names
+     the CONTROL glyph only — the five OUTCOME marks below are a separate
+     vocabulary, redrawn for #850 to their own Material Symbols shapes on
+     every build alike; that redraw does not reopen #490, since #490 was
+     never about them. Hand-rolled on the same 22-unit grid, `currentColor`,
+     no icon font. */
   "share-android": (
     <>
       <path
