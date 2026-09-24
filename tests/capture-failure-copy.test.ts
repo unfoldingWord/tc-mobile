@@ -144,7 +144,16 @@ describe("no layer below components mints this copy (#169)", () => {
   // defect. Nothing is lost by skipping it — the case above pins that these
   // three keys hold exactly these three sentences, so the table's copy of each
   // is asserted positively rather than merely tolerated here.
-  const TABLE = "src/lib/strings.ts";
+  // Built with `path.join`, not written as a literal, because `sourcesUnder`
+  // produces its paths that way too: on Windows it yields `src\lib\strings.ts`,
+  // which a forward-slash literal never equals, so the table would stay in the
+  // sweep and all three cases below would fail on a Windows checkout while
+  // passing everywhere else (Frank, round 6).
+  //
+  // This is the #189 defect class, which blocked EVERY push from this repo's
+  // Windows contributor once already, and whose fix (#190) is still draft — so
+  // it is not a hypothetical platform, and not cosmetic.
+  const TABLE = path.join("src", "lib", "strings.ts");
   const files = [
     ...sourcesUnder("src/hooks"),
     ...sourcesUnder("src/lib"),
