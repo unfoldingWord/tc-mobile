@@ -259,6 +259,13 @@ test.describe("edit-toolbar history cue (#91)", () => {
     await redoByName().click();
     await expect(redoByName()).toHaveAttribute("aria-disabled", "true");
     await expect(redoByName()).toHaveAccessibleName("Redo. Nothing to redo.");
+    // Symmetry with the other two cued cells (George r7). Same `redoReason`
+    // path, so this is test coverage rather than a second product hole — but
+    // this is the tip position round 1 got wrong, and the fresh stack and
+    // undo-to-start both reject the native attribute here.
+    expect(
+      await redoByName().evaluate((el) => el.hasAttribute("disabled"))
+    ).toBe(false);
     await expect(undoByName()).toHaveAccessibleName("Undo");
 
     // And the columns are still where they started, after four stack moves.
