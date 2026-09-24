@@ -26,7 +26,8 @@ the tree wins, and the disagreement is worth an issue.
 
 ## Setup and commands
 
-Node **22.12 or newer** (`engines` in `package.json`).
+Node **22.12+**, except the 23.x line (`engines` in `package.json`; a
+render-test dependency's own engine range excludes 23.x, #577).
 
 ```bash
 npm ci
@@ -134,8 +135,11 @@ The full version, with the incident behind each rule, is in
 - **Mutation proves coverage on T1.** Break the guard, run the suite, confirm a
   test dies. Line coverage does not prove anything here.
 - **Never claim verification you did not perform.** No comment, docblock or PR
-  body says tested, verified or checked on-device unless it was. **Android and
-  iOS are separate claims** — name the platform, the OS version and the build.
+  body says tested, verified or checked on-device unless it was. A run's
+  OUTPUT goes in a PR comment or `docs/progress_tracker.md`, never in a
+  docblock, a CSS comment or a test name — a docblock may link that comment's
+  URL. On those allowed sites, **Android and iOS are separate claims** — name
+  the platform, the OS version and the build.
 - **Idempotent writes.** Get-or-create in one transaction, clips never deleted
   while another segment still references them, append-only migrations.
 - **Errors have a channel before they have copy.** An unhandled rejection

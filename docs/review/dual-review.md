@@ -62,6 +62,25 @@ just do.
 escalation: it blocks merge until the residual findings are named and
 explicitly accepted, recorded on the PR.
 
+## Freeze budget — 2026-09-21 to 2026-10-04
+
+Decided by the DRI on 2026-09-21 for the run-up to the v0.3.0 handoff, and
+expiring with it. The reasoning: the harness's machine cost is small (about
+18 s for `npm run verify` locally, about 2 min in CI), and the cost that was
+eating the week was rounds — every documented five-round chain that week was
+on the harness's own tests (#547, #572), not on the product.
+
+| Change                                                         | Bar until 2026-10-04                                                                                |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| T1 (`lib/audio/*`, `lib/storage/*`, the schema)                | Unchanged: both reviewers, cap 4, judgment sheet at the cap                                         |
+| T2 (`hooks/*`, export and share paths)                         | Unchanged                                                                                           |
+| T3 (`components/*`, `app/*`, copy, styling, docs, the tracker) | George only, one round, P1/P2 only; the exemption is recorded on the PR                             |
+| Harness and meta (`scripts/**`, gate tests, `ci.yml`, hooks)   | Both reviewers, hard cap 2; residuals are accepted on the PR by the DRI, never carried into a round |
+| Any tier                                                       | A P3 never triggers a round: every P3 is batched into one follow-up issue at triage                 |
+
+After 2026-10-04 this table is void and the merge policy above applies again
+unchanged.
+
 ## Merging multiple lanes
 
 When several lanes are in flight, **merge them one at a time, in a deliberate

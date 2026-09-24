@@ -1,19 +1,22 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { Control } from "./control";
 import { confirmControlAffordance } from "./control-affordance";
 import { strings } from "./strings";
 
 interface NameEditProps {
-  /** The name to seed the field with — the current name, the placeholder a new
-   *  book would get (#314), or "" to type a fresh one. */
+  /** The name to seed the field with — the current name, the default a new book
+   *  (#314) or chapter (#609) would get, or "" to type a fresh one. */
   initialValue: string;
+  /** Select the offered default once, so initial typing replaces it. */
+  selectInitialValue?: boolean;
   /** The field's accessible name AND placeholder — the whole text layer of the input. */
   fieldLabel: string;
   /**
-   * Accessible name of the commit control. Defaults to the rename wording;
-   * New Book passes its own, because "Save name" would not tell a screen-reader
-   * user that this activation is what creates the book (#314).
+   * Accessible name of the commit control. Defaults to the rename wording; the
+   * two creation prompts pass their own, because "Save name" would not tell a
+   * screen-reader user that this activation is what creates the book (#314) or
+   * the chapter (#609).
    */
   saveLabel?: string;
   /** Commit the typed name. The store normalises it (trim, blank handling). */
@@ -40,37 +43,47 @@ interface NameEditProps {
    * write, on either caller.
    */
   busy?: boolean;
+  /**
+   * The commit control is the next required action in the guided chain (#604).
+   * Only New Book passes it: the field arrives pre-filled with the placeholder
+   * (#314), so Confirm alone completes the create and the typing is the
+   * optional part. The rename call sites are not steps in the chain.
+   */
+  guided?: boolean;
 }
 
 /**
  * The app's ONE naming field: rename a book or a chapter in place (#264), and
- * name a book at creation (#314). One text field and a commit control, shared by
- * the Books and Segments ≡ menus and the New Book dialog, so the affordance,
- * the strings and the validation are written once.
+ * name a book (#314) or a chapter (#609) at creation. One text field and a
+ * commit control, shared by the Books and Segments ≡ menus and both creation
+ * prompts, so the affordance, the strings and the validation are written once.
  *
  * Enter commits, Escape abandons — the two keys a facilitator on a hardware
  * keyboard expects, alongside the tappable check for touch. The field
  * auto-focuses because it is only ever REVEALED by a deliberate tap ("Rename",
- * or New Book), never shown unbidden, so opening the soft keyboard is the
+ * or either `+`), never shown unbidden, so opening the soft keyboard is the
  * intent, not a surprise.
  *
  * This field never validates and never disables its own commit: it passes the
  * raw value straight through, and what a blank one MEANS belongs to the caller's
- * store, which is the only place that knows. The three are deliberately
+ * store, which is the only place that knows. The four are deliberately
  * different — `renameBook` keeps the current name, `renameChapter` clears the
  * label back to the "Chapter N" default, `createBook` falls back to the
- * "Book NNN" placeholder — so do not read any one of them as this component's
- * contract (George R1 P3-5).
+ * "Book NNN" placeholder, `addChapter` stores no label at all — so do not read
+ * any one of them as this component's contract (George R1 P3-5).
  */
 export function NameEdit({
   initialValue,
+  selectInitialValue = false,
   fieldLabel,
   saveLabel = strings.saveName,
   onSave,
   onCancel,
   busy = false,
+  guided,
 }: NameEditProps) {
   const [value, setValue] = useState(initialValue);
+  const selectedInitialValue = useRef(false);
   const affordance = confirmControlAffordance(busy);
   return (
     <form
@@ -96,11 +109,18 @@ export function NameEdit({
         // stored name. Display already truncates; this keeps the data sane too.
         maxLength={80}
         autoComplete="off"
-        // Revealed by an explicit tap — "Rename", or New Book — so taking focus
-        // (and the keyboard) is the intent, the one place autoFocus is right
-        // outside the recovery overlay. On New Book the field arrives pre-filled,
-        // so the caret lands on text the translator can accept as it stands.
+        // Revealed by an explicit tap — "Rename", or either `+` — so taking
+        // focus (and the keyboard) is the intent, the one place autoFocus is
+        // right outside the recovery overlay. On both creation prompts the field
+        // arrives pre-filled, so the caret lands on text the translator can
+        // accept as it stands.
         autoFocus
+        onFocus={(event) => {
+          if (selectInitialValue && !selectedInitialValue.current) {
+            selectedInitialValue.current = true;
+            event.currentTarget.select();
+          }
+        }}
         // Frozen while the write is in flight (George R1 P2, #384): `onSave`
         // already closed over the value it was called with, so a keystroke
         // typed after that tap (the field keeps focus; nothing moves it to
@@ -122,7 +142,7 @@ export function NameEdit({
             // second fire would also drop an armed share via `share.reset()`
             // (G1) — a double-fire is a real loss, not a cosmetic one. What
             // Cancel MEANS is the caller's decision: the rename steps back to
-            // the action list, New Book dismisses its dialog and creates
+            // the action list, a creation prompt dismisses itself and creates
             // nothing — but either way, only on ONE keypress.
             e.stopPropagation();
             // While busy, a no-op — like EraseConfirm's Cancel while erasing —
@@ -149,6 +169,11 @@ export function NameEdit({
         label={busy ? strings.savingName : saveLabel}
         variant="default"
         busy={affordance.busy}
+        // Not while the write is in flight: a busy Control stays on screen and
+        // focusable but swallows activations (`control.tsx`), so a ring on it
+        // would be pointing at a tap that does nothing. The recorder's Record
+        // keeps its guide through the take's transient busy states instead.
+        guided={guided && !busy}
         onClick={() => onSave(value)}
       />
     </form>

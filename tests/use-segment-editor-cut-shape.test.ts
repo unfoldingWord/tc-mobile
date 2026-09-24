@@ -20,8 +20,9 @@ const source = readFileSync(
  * "the ONE place" a fractional selection becomes the whole-sample bounds a
  * buffer edit acts on — but `cut()` stored and returned `clampRange`'s still
  * -fractional range on the `EditOp`, one caller reimplementing the
- * truncation question instead of sharing the answer. `panAfterCutRest`
- * happens to truncate again downstream, so nothing broke live, but the
+ * truncation question instead of sharing the answer. `onCut`'s pan writer
+ * (`panAfterCutRest` then, `panAfterCutCollapse` since #613) happens to
+ * truncate again downstream, so nothing broke live, but the
  * stored op itself was not actually whole-sample, and the interface's own
  * JSDoc ("the range removed (normalised)") did not say what "normalised"
  * left out.

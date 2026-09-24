@@ -22,7 +22,13 @@ import {
 import { computePeaks } from "@/lib/audio/peaks";
 import type { Peaks, SampleRange } from "@/types/audio";
 
-/** Waveform resolution, matched to `useRecorderSegment` so the redraw is stable. */
+/**
+ * Waveform resolution of the recorder stage — coarser than a row is wrong.
+ *
+ * The only declaration: `useRecorderSegment` used to carry a second copy for a
+ * peaks pass nothing drew, dropped with it (L-9, #160). A row's resolution is
+ * `ROW_PEAK_BUCKETS`, which is a different number for a different surface.
+ */
 const PEAK_BUCKETS = 400;
 
 const EMPTY = new Int16Array(0);

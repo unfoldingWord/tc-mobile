@@ -9,7 +9,7 @@ import {
   shareControlGlyph,
 } from "@/components/control-affordance";
 
-/** Source-shape reads, because there is no renderer here (#197). */
+/** Source-shape reads: what the JSX SAYS, where no render would show it. */
 const read = (rel: string) =>
   readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
 
@@ -17,7 +17,8 @@ const read = (rel: string) =>
  * #354 / #383 — a busy `Control` and a ready `Control` must each look and
  * read like it, and neither may borrow the other's mark. Mirrors
  * `notice-tone.test.ts`'s shape: pin the state → presentation table, not a
- * render (this repo has no jsdom).
+ * render. `tests/control-render.test.ts` is the render half — the attributes
+ * `Control` emits for its inert cells — and neither file subsumes the other.
  */
 
 const SHARE_STATUSES = ["idle", "preparing", "ready"] as const;

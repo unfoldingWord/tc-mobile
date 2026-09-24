@@ -7,12 +7,8 @@ import { describe, expect, it } from "vitest";
  * The AA gate for the roles that paint SMALL TEXT (#164 R-9, and the contrast
  * caveat #171 asked to land with the light theme).
  *
- * Why a gate and not a one-time fix: the ratios in #164 were computed by hand,
- * once, and nothing in the tree re-derived them — AGENTS.md says outright that
- * "nothing in this repo reads CSS at all", so a later token nudge in layer 1 or
- * layer 2 could put a text role back under AA with every check green. This
- * reads the SOURCE token values and recomputes the ratios, so the next nudge
- * fails here.
+ * This reads source token values and recomputes contrast ratios so changes to
+ * layer 1 or layer 2 cannot silently put a small-text role below AA.
  *
  * What it does NOT claim: nothing here is measured on a screen. WCAG's formula
  * over the declared sRGB values is what this computes, exactly as #164's own
@@ -123,6 +119,13 @@ function wash(fg: string, over: string, pct: number): string {
 /** WCAG AA for text below 18.66px bold / 24px regular. Every site below is 11–16px. */
 const AA_SMALL_TEXT = 4.5;
 
+/**
+ * WCAG 2.1 non-text contrast (1.4.11), the floor for a visual boundary that
+ * identifies a control rather than spelling anything. The guide ring (#604)
+ * is exactly that: a mark on a control's own shape, never text.
+ */
+const AA_NON_TEXT = 3;
+
 describe("the ink and voice roles that paint small text meet AA (#164 R-9, #171)", () => {
   // The surfaces `--s-ink-faint` is ACTUALLY painted on today, each with the
   // call site that puts it there — so this list is falsifiable by reading the
@@ -199,6 +202,64 @@ describe("the ink and voice roles that paint small text meet AA (#164 R-9, #171)
       // And separated by more than a rounding error at each step.
       expect(steps[0]! - steps[1]!).toBeGreaterThan(1);
       expect(steps[1]! - steps[2]!).toBeGreaterThan(1);
+    });
+  }
+});
+
+describe("the guide ring is visible on every surface it is drawn on (#604)", () => {
+  // The ring is INSET on a control's own box and on the chapter row, and
+  // OUTSET on either red Record — the recorder's and the segment row's, which
+  // the stylesheet covers with one variant-keyed rule. What the ring has to
+  // stand out from therefore differs by call site, and each one is scored
+  // against what is actually behind it.
+  const behind = [
+    [
+      "--s-raised",
+      "inset on raised controls — Create book and both empty-state CTAs",
+    ],
+    [
+      "--s-surface",
+      "Add chapter and the segment row's red Record — `.row`'s own surface",
+    ],
+    [
+      "--s-floor",
+      "inset on the transparent chapter row; outset around the record button",
+    ],
+  ] as const;
+
+  for (const theme of ["dark", "light"] as const) {
+    for (const [surface, site] of behind) {
+      it(`${theme}: --s-guide on ${surface} — ${site}`, () => {
+        const ratio = contrast(
+          resolve(theme, "--s-guide"),
+          resolve(theme, surface)
+        );
+        expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT);
+      });
+    }
+
+    it(`${theme}: the guide and the focus role resolve to different colours`, () => {
+      // Exactly that and no more: the two roles are not the same value in this
+      // theme. It is not a claim about hue distance, or about whether the two
+      // marks are distinguishable to any particular eye — that rests on the
+      // geometry (inside the shape against an outline outside it, with a gap
+      // where both are outside), which `tests/guided-ring.test.ts` pins.
+      expect(resolve(theme, "--s-guide")).not.toBe(resolve(theme, "--s-focus"));
+    });
+
+    it(`${theme}: the ring cannot live INSIDE the record button — the reason it is outset`, () => {
+      // The reason `3-components.css` gives for the one exception to the inset
+      // ring, asserted here rather than quoted there. Blue on the live red is
+      // a hue difference with almost no luminance difference, so an inset ring
+      // there is a ring a low-vision user does not get. Both themes, because
+      // the red differs between them and the exception is unconditional. If a
+      // future accent clears the floor here, the exception can go — and this
+      // assertion is what says so.
+      const ratio = contrast(
+        resolve(theme, "--s-guide"),
+        resolve(theme, "--s-live")
+      );
+      expect(ratio).toBeLessThan(AA_NON_TEXT);
     });
   }
 });

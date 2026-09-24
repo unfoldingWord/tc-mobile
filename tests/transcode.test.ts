@@ -29,6 +29,7 @@ import {
 import {
   commitTranscode,
   listPcmFinishedSegments,
+  recordTranscodeStall,
 } from "@/lib/storage/transcode";
 import type { ClipId, SegmentId } from "@/types/domain";
 import { clearAllStores, samplesOf } from "./support";
@@ -96,6 +97,22 @@ describe("listPcmFinishedSegments", () => {
     await commitTranscode(segmentId, clipId, mp3, peaks);
 
     expect(await listPcmFinishedSegments()).toEqual([]);
+  });
+
+  it("orders owed PCM by durable stall count", async () => {
+    const first = await recordedSegment(2000, 100);
+    await setSegmentFinished(first.segmentId, true);
+    const second = await recordedSegment(2000, 200);
+    await setSegmentFinished(second.segmentId, true);
+
+    await recordTranscodeStall(first.clipId);
+
+    expect(await listPcmFinishedSegments()).toEqual([
+      { segmentId: second.segmentId, clipId: second.clipId },
+      { segmentId: first.segmentId, clipId: first.clipId },
+    ]);
+    expect((await getClipMeta(first.clipId))?.transcodeStallCount).toBe(1);
+    expect((await getClipMeta(second.clipId))?.transcodeStallCount).toBe(0);
   });
 
   it("skips a finished segment whose take or clip is dangling", async () => {

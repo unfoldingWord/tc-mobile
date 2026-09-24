@@ -1,5 +1,11 @@
 import { execFile, execFileSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -375,6 +381,63 @@ describe("CLI entry point against a real server serving a malformed version.json
         expect(result.status).toBe(0);
       }
     ));
+});
+
+describe("CLI through an explicit symlink", () => {
+  it.each(["file", "directory"] as const)(
+    "checks matching and mismatching builds through a %s symlink",
+    async (kind) => {
+      const dir = mkdtempSync(path.join(tmpdir(), "check deploy symlink "));
+      const script = path.resolve(
+        import.meta.dirname,
+        "../scripts/check-deploy.mjs"
+      );
+      const link = path.join(dir, "linked path");
+      symlinkSync(
+        kind === "file" ? script : path.dirname(script),
+        link,
+        kind === "file" ? "file" : "dir"
+      );
+      const entry =
+        kind === "file" ? link : path.join(link, "check-deploy.mjs");
+      const server = createServer((_req, res) => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({ version: "0.2.9", sha: "abc1234", builtAt: "now" })
+        );
+      });
+      try {
+        await new Promise<void>((resolve) =>
+          server.listen(0, "127.0.0.1", resolve)
+        );
+        const address = server.address();
+        if (address === null || typeof address === "string")
+          throw new Error("expected a bound TCP address");
+        const args = [
+          entry,
+          `--origin=http://127.0.0.1:${address.port}`,
+          "--sha=abc1234",
+        ];
+        const run = promisify(execFile);
+        const match = await run("node", [...args, "--version=0.2.9"], {
+          timeout: 10_000,
+        });
+        expect(match.stdout).toContain("PASS:");
+        await expect(
+          run("node", [...args, "--version=0.2.8"], { timeout: 10_000 })
+        ).rejects.toMatchObject({
+          code: 1,
+          stderr: expect.stringContaining("FAIL:"),
+        });
+      } finally {
+        if (server.listening)
+          await new Promise<void>((resolve, reject) =>
+            server.close((err) => (err ? reject(err) : resolve()))
+          );
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  );
 });
 
 describe("describeFetchFailure", () => {

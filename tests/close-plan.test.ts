@@ -32,10 +32,6 @@ import {
  * anything else committed. Two of those interactions are the whole reason the
  * plan exists (see "a superseded capture" below).
  *
- * Written against mutations, not by inspection: each guard in `close-plan.ts`
- * was inverted or removed in turn and confirmed to fail at least one test here.
- * The mutation table is in the PR body for #180.
- *
  * NOT covered here, and nothing below should be read as covering it: the
  * component wiring that calls these functions. `recorder.tsx` needs a renderer,
  * which this repo does not have, so which effect each action actually runs is
@@ -127,11 +123,12 @@ describe("attemptsCapture", () => {
   // Enumerated over the whole of `RecorderState`. A state added there that is
   // missing from this list fails typecheck at the `attemptsCapture(state)` call
   // in `recorder.tsx`, not silently here.
-  it("stops a capture from the three states that can hold one", () => {
+  it("stops a capture from the two states that can hold one", () => {
     expect(attemptsCapture("recording")).toBe(true);
-    expect(attemptsCapture("paused")).toBe(true);
     // A #59 interruption freezes a real take to "processing"; its audio is
-    // still owed a stop, and skipping it drops the take.
+    // still owed a stop, and skipping it drops the take. #614 commits that
+    // take in place, but a Back landing in the render or two before the
+    // commit effect takes it still has to stop the capture itself.
     expect(attemptsCapture("processing")).toBe(true);
   });
 

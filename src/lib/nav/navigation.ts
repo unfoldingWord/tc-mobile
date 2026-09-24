@@ -192,7 +192,7 @@ export type PopAction =
  * described PR2 after PR3 had shipped, and a reader who trusted it would treat
  * `"rearm-layer-dismiss"` as inert and copy "always `pushHistoryEntry()`" onto
  * the floor path — the exact mutant `e2e` case (e) exists to kill). Books'
- * overlays push as of PR3; Segments' follow in PR4. Both layer tags are
+ * and Segments' overlays push onto it. Both layer tags are
  * reachable on any Back landing with an overlay open, and what the adapter owes
  * each of them — including Amendment G's one exception at the floor, the
  * paragraph above — is the contract to read, not an unreachable branch.
@@ -258,15 +258,12 @@ export function popAction(
 }
 
 /**
- * Whether a Back must be spent dismissing a recorder overlay instead of running
- * the commit (George R2 G1). The sheet's `inert` blocks the on-screen Back while
- * the ≡ menu or the erase-confirm is up, but the SYSTEM gesture reaches
- * `close()` through the imperative handle and never saw those flags — so a Back
- * during an in-flight erase raced `saveEditedSegment` against the erase (last
- * IndexedDB writer wins, the confirmed-erased take written back), and a Back
- * over the confirm dialog committed instead of cancelling. When this returns
- * true, `close()` dismisses the overlay and resolves `false` (the sheet stays,
- * its history entry re-armed); it commits only when nothing is in the way.
+ * Whether a Back must dismiss a recorder overlay instead of committing.
+ * The header is inert under any overlay, blocking on-screen Back. The sheet
+ * is inert only while idle; during a take its recording controls stay usable.
+ * System Back reaches `close()` through the imperative handle, so this guard
+ * must also block commits while a menu, confirmation, or erase is active.
+ * A blocked close resolves false and leaves the recorder open.
  */
 export function overlayBlocksClose(
   menuOpen: boolean,
@@ -277,14 +274,12 @@ export function overlayBlocksClose(
 }
 
 /**
- * When a system Back is absorbed by an open recorder overlay (`overlayBlocksClose`
- * is true), WHICH overlays `close()` may dismiss (Frank R4-1). The ≡ menu and a
- * confirm dialog still awaiting the user are dismissed; but a confirm whose erase
- * is ALREADY IN FLIGHT is NOT. `onConfirmErase` deliberately holds `confirmOpen`
- * true across the whole IndexedDB delete precisely to keep the sheet `inert`, and
- * clearing it mid-erase un-inerts the sheet and exposes Record — whose newly
- * started capture the erase's own completion (`onExit`) then discards. So while
- * `erasing`, leave the confirm alone and let the erase tear itself down.
+ * Which recorder overlays a blocked system Back may dismiss.
+ * Segments also uses this table for its confirmation layer. A menu or pending
+ * confirmation can close, but an in-flight erase owns its confirmation until
+ * completion. `overlayUp` includes `erasing` independently of `confirmOpen`,
+ * so clearing confirmation alone cannot expose idle controls during deletion.
+ * The header stays inert under any overlay; the sheet does so only at idle.
  */
 export function overlayDismissal(
   menuOpen: boolean,

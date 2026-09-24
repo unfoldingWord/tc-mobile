@@ -89,6 +89,9 @@ export interface CaptureOutcome<TBytes = unknown> {
  * — one exits, the other opens edit mode. That agreement used to be a comment
  * ("Mirror close()'s precedence exactly"), which is the kind of claim that
  * rots; it is now one function they both call.
+ * Their write policy also agrees: a superseded capture withholds pending edits,
+ * clear and Finished. The component carries that verdict across an Edit-commit
+ * to later no-capture exits, until a fresh take is successfully saved (#527).
  *
  * The payload rides the verdict so neither caller re-checks what the classifier
  * has already established: `samples` is proved non-empty, `bytes` proved
@@ -236,19 +239,19 @@ export type ClosePlan<TBytes = unknown> =
  * there and not here fails typecheck at that call rather than silently reading
  * as "no capture in play".
  */
-type CaptureState =
-  "idle" | "requesting" | "recording" | "paused" | "processing";
+type CaptureState = "idle" | "requesting" | "recording" | "processing";
 
 /**
  * Whether closing from this state has to stop a capture first.
  *
  * `processing` counts: a #59 mic interruption freezes a real take there, and
- * its audio is owed a stop. `requesting` does not — the permission prompt is
- * still up and there is no recorder yet, so treating it as a take would swallow
- * an edit-only close behind a stop that returns nothing.
+ * its audio is owed a stop — a close can still land in that window before the
+ * sheet's own in-place commit (#614) has taken it. `requesting` does not — the
+ * permission prompt is still up and there is no recorder yet, so treating it as
+ * a take would swallow an edit-only close behind a stop that returns nothing.
  */
 export function attemptsCapture(state: CaptureState): boolean {
-  return state === "recording" || state === "paused" || state === "processing";
+  return state === "recording" || state === "processing";
 }
 
 /**

@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { resolveDistGate } from "./dist-gate";
+
 // The Workbox precache manifest is generated at build time from the
 // `workbox.globPatterns` in vite.config.ts, so what it contains cannot be
 // asserted without a full production build. This pins the one knob that
@@ -65,13 +67,38 @@ function navigateFallbackDenylist(): RegExp {
 // generateSW inlines it as `precacheAndRoute([{url:"...",revision:...},...])`.
 const SW = path.join(ROOT, "dist", "sw.js");
 
-function precachedUrls(): string[] {
-  const source = readFileSync(SW, "utf8");
+// generateSW emits the manifest in one of TWO shapes, and which one depends on
+// the ambient `NODE_ENV` rather than on anything in this repo:
+//
+//   NODE_ENV unset or "production"  ->  {url:"registerSW.js",revision:"..."}
+//   NODE_ENV="development"          ->  { "url": "registerSW.js", ... }
+//
+// A parser that matches only the first is BLIND, not red, on the second: it
+// returns `[]`, every `filter` over it finds no offender, and the assertion
+// passes vacuously. The `toBeGreaterThan(0)` floor below is the only reason
+// that surfaces as a failure at all — and it surfaces as a confusing one,
+// since the manifest is fine and the reader is broken.
+//
+// The build-artifact caller (`npm run test:dist`) reads whichever shape the
+// preceding build emitted. Support both development and production output;
+// `NODE_ENV` must not change whether this parser can inspect the manifest.
+//
+// Matching both shapes is what makes this a reader of the manifest rather than
+// a reader of the minifier.
+const PRECACHE_URL = /"?url"?\s*:\s*"([^"]+)"/g;
+
+/** The manifest's urls, parsed out of an emitted `sw.js` source. Split from
+ *  the file read so both emitted shapes can be pinned without two builds. */
+function parsePrecachedUrls(source: string): string[] {
   const match = source.match(/precacheAndRoute\(\[(.*?)\],/s);
   const body = match?.[1];
   if (body === undefined)
     throw new Error("could not find precacheAndRoute([...]) in dist/sw.js");
-  return [...body.matchAll(/url:"([^"]+)"/g)].map((m) => m[1] ?? "");
+  return [...body.matchAll(PRECACHE_URL)].map((m) => m[1] ?? "");
+}
+
+function precachedUrls(): string[] {
+  return parsePrecachedUrls(readFileSync(SW, "utf8"));
 }
 
 function tsFiles(dir: string): string[] {
@@ -178,19 +205,79 @@ describe("navigateFallbackDenylist keeps /version.json off the SPA shell", () =>
 // TWO limitations, stated rather than glossed, because a reader must not take
 // a green run here for more than it is:
 //
-//   1. It needs a build. `npm run verify` runs the suite BEFORE `npm run
-//      build`, and CI builds in a separate job that runs no tests — so on a
-//      tree that has never been built there is nothing to read and this is
-//      skipped rather than failing a fresh clone or CI's quality job.
-//   2. What it reads is the LAST build's output, which within a single
-//      `verify` is the build from before the current source change. A green
-//      result is therefore a statement about that build, not a proof about
-//      uncommitted source. Two consecutive verifies converge.
+//   1. It needs a build, so it runs only where one is guaranteed to precede
+//      it — `npm run test:dist`, which `npm run verify` invokes after `npm
+//      run build` and which ci.yml's build-artifact step calls after its own.
+//      Everywhere else it skips, and it skips whether or not a `dist/`
+//      happens to be lying around. See `./dist-gate` for why the artifact's
+//      presence decides nothing (#568).
+//   2. What it reads is the last build's output. A green result is a
+//      statement about that build, not an unconditional proof about source
+//      that was never rebuilt.
 //
 // The always-on half of the invariant is the exact-allowlist assertion above:
 // `json` cannot enter globPatterns without failing that, unskippably and with
 // no build required.
-describe.skipIf(!existsSync(SW))(
+// The manifest READER, pinned against both shapes generateSW emits, with no
+// build required — so this runs in CI's Quality job and on a fresh clone,
+// unlike the build-dependent block below. #522.
+//
+// Both directions are pinned on purpose (AGENTS.md, "a gate is tested in both
+// states"): each shape must PARSE (green on a legitimate build) and each shape
+// must SURFACE a version.json entry (red on the state the gate exists to
+// catch). Pinning only the first would let the parser regress to matching
+// nothing and still look green here.
+describe("the precache manifest reader (#522)", () => {
+  // Trimmed from real `dist/sw.js` output, one per NODE_ENV.
+  const MINIFIED =
+    'precacheAndRoute([{url:"registerSW.js",revision:"abc"},{url:"index.html",revision:"def"}],{});';
+  const DEVELOPMENT = `precacheAndRoute([{
+    "url": "registerSW.js",
+    "revision": "abc"
+  }, {
+    "url": "index.html",
+    "revision": "def"
+  }], {});`;
+
+  it("parses the minified shape (NODE_ENV unset or production — what CI builds)", () => {
+    expect(parsePrecachedUrls(MINIFIED)).toEqual([
+      "registerSW.js",
+      "index.html",
+    ]);
+  });
+
+  it("parses the development shape (NODE_ENV=development — what uw-sandbox builds)", () => {
+    expect(parsePrecachedUrls(DEVELOPMENT)).toEqual([
+      "registerSW.js",
+      "index.html",
+    ]);
+  });
+
+  it("surfaces a version.json entry in the minified shape", () => {
+    const offending = MINIFIED.replace("index.html", "version.json");
+    expect(parsePrecachedUrls(offending)).toContain("version.json");
+  });
+
+  it("surfaces a version.json entry in the development shape", () => {
+    const offending = DEVELOPMENT.replace("index.html", "version.json");
+    expect(parsePrecachedUrls(offending)).toContain("version.json");
+  });
+
+  it("throws rather than returning [] when there is no manifest at all", () => {
+    // A silent [] here is the failure mode this whole block exists to stop:
+    // it would satisfy every `filter`-based assertion vacuously.
+    expect(() => parsePrecachedUrls("// no service worker here")).toThrow(
+      /precacheAndRoute/
+    );
+  });
+});
+
+// Which of these two build-artifact suites runs is decided by the caller,
+// never by whether a `dist/` happens to be lying around from an earlier
+// command — see `./dist-gate` (#568).
+const GATE = resolveDistGate(existsSync(SW), "dist/sw.js");
+
+describe.skipIf(GATE === "skip")(
   "the emitted precache manifest (dist/sw.js, requires a prior `npm run build`)",
   () => {
     it("never contains version.json", () => {
@@ -208,29 +295,16 @@ describe.skipIf(!existsSync(SW))(
   }
 );
 
-// `describe.skipIf(!existsSync(SW))` above is a convenience for a developer
-// running the suite on an unbuilt tree — a missing `dist/sw.js` skips rather
-// than fails, so `npm run verify`'s pre-build test pass and a fresh clone's
-// `npm test` both exit 0 with nothing built yet. Unguarded, that is also how
-// this file behaves inside CI: the Quality job runs `npm test` before any
-// build exists, so this describe block has been skipping there on every run
-// since it landed (#436) — and the Build job that actually produces
-// `dist/sw.js` never re-asks the question at all. Round 7 (#414/#420, same
-// gap Frank found for tests/dist-css.test.ts) closes that with a dedicated
-// CI step (`.github/workflows/ci.yml`, Build job, after `npm run build`)
-// that re-runs this file with `REQUIRE_DIST_BUILD=1` set — a purpose-built
-// env var, not GitHub Actions' ambient `CI` (`true` in every job, including
-// Quality, where skipping is still correct). Only that one step sets it, so
-// local dev, Quality, and `npm run verify`'s pre-build pass are unaffected.
-it("fails, rather than silently skips, when required to find a build and does not", () => {
-  if (process.env.REQUIRE_DIST_BUILD && !existsSync(SW)) {
-    throw new Error(
-      "REQUIRE_DIST_BUILD is set but dist/sw.js was not found — this step " +
-        "must run in ci.yml's Build job, after `npm run build`, not before " +
-        "it and not in the Quality job."
-    );
-  }
-});
+// The skip above is a convenience for anyone running the suite without a
+// build: a missing `dist/sw.js` skips rather than fails, so a plain `npm
+// test` exits 0 with nothing built. A skip is also indistinguishable from a
+// pass, so the gate makes the other half loud — `npm run test:dist` promises
+// a build, and the shared resolver turns that promise into a module-scope
+// throw rather than a case in this file that could be deleted.
+// `REQUIRE_DIST_BUILD` is a purpose-built flag rather than the ambient `CI`
+// variable, which is true wherever tests run, including the passes that
+// legitimately have no build yet. See `./dist-gate` for why the loud half
+// does not live here.
 
 describe("OBS thumbnail precache is reader-gated (#177 / ADR 0006)", () => {
   const readers = obsThumbnailReaders();

@@ -13,9 +13,9 @@ import { describe, expect, it } from "vitest";
  * Back as "same"/"forward", and `popAction` swallows it — the translator is
  * stuck on Segments.
  *
- * WHY A TEXTUAL GATE AND NOT A BEHAVIOURAL TEST. This Node-only suite has no
- * renderer (AGENTS.md: no jsdom), so `useNavStack`'s mount effect cannot be
- * run and its refs cannot be read at runtime. `tests/nav-resume-index.test.ts`
+ * This source-shape gate does not execute the mount effect or inspect live
+ * refs. The static render harness does not run effects either.
+ * `tests/nav-resume-index.test.ts`
  * proves the pure COMPOSITION (that adopting both refs classifies the next
  * Back correctly) against a local `let nextIndex`, not against the adapter
  * source — deleting `nextIndex.current = resumed` from the real effect leaves

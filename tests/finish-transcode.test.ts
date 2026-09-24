@@ -12,7 +12,7 @@ import { computePeaks } from "@/lib/audio/peaks";
 import type { AudioCodec, Clip } from "@/types/audio";
 import type { ChapterId, ClipId, Segment, TakeId } from "@/types/domain";
 import type { SegmentId } from "@/types/domain";
-import { ROW_PEAK_BUCKETS } from "@/types/view";
+import { ROW_PEAK_BUCKETS } from "@/lib/view/segment-rows";
 
 /**
  * Transcode on Finished (B8, D3) — the SWEEP, in Node (#181).
@@ -48,6 +48,7 @@ function segment(): Segment {
     chapterId: "ch" as ChapterId,
     index: 1,
     reference: null,
+    label: null,
     activeTakeId: "take" as TakeId,
     status: "affirmed",
   };
@@ -79,6 +80,7 @@ function metaFor(id: ClipId, encoding: "pcm" | "mp3", frames: number) {
     encoding,
     generation: encoding === "mp3" ? 1 : 0,
     byteLength: frames * 2,
+    transcodeStallCount: 0,
     peaks: null,
   } as const;
 }

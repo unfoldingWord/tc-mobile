@@ -31,10 +31,9 @@ import {
  *   - NOT COVERED: `readTheme`'s catch path (an accessor that throws on READ,
  *     as opposed to on write), and `applyTheme`'s empty-`--s-floor` early
  *     return. Both are engine-specific states this suite cannot produce.
- *   - NOT COVERED, and not coverable here: any of it on a phone. Capacitor's
- *     Android WebView has never run this app at all (#245), and headless
- *     Chromium in a container is not the sunlit screen the light theme exists
- *     for. `lib/theme.ts`'s Node table remains what pins the decision.
+ *   - NOT COVERED, and not coverable here: any of it on a phone.
+ *     `lib/theme.ts`'s Node table remains what pins the decision.
+ *     Device evidence: `docs/progress_tracker.md` and #245.
  *
  * WHY `localStorage` AND NOT IndexedDB. Every byte this app stores in IndexedDB
  * is a translator's recording or the structure around it: losing it is
@@ -192,14 +191,13 @@ function applyTheme(theme: Theme): void {
  * has applied `body { background: var(--s-floor) }` in its dark default, so a
  * very slow module evaluation could show a dark flash before this lands. The
  * zero-flash fix is an inline script in `index.html`, which is a build and CSP
- * question rather than a line here. Not observed on a device — nothing in this
- * file has been run on a phone.
+ * question rather than a line here.
  *
  * A SECOND RESIDUAL, also unverified: `applyTheme` rewrites
  * `apple-mobile-web-app-status-bar-style` alongside `theme-color`, and whether
  * iOS reads that meta LIVE (on a toggle, after launch) or only once at the
- * launch of an installed PWA is not known here — no iOS device was available
- * to the session that added it, and `e2e/theme-toggle.spec.ts` proves only
+ * launch of an installed PWA needs a device check. `e2e/theme-toggle.spec.ts`
+ * checks only
  * that the attribute is written. If iOS reads it at launch only, a toggle to
  * light gets the right status bar from the NEXT launch AT BEST — and this
  * call does not by itself make that launch right: `index.html` always ships

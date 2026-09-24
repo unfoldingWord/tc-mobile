@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { mergeTake } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { clearSegmentTake, saveTake } from "@/lib/storage/books";
+import { isMissingSegmentFailure } from "@/lib/storage/stale-target";
 import { deleteClip, newClipId } from "@/lib/storage/clips";
 import {
   discardSave,
@@ -176,11 +177,16 @@ export async function performDiscardTake(
  * reached from the edit sheet rather than the overflow menu (George R1 P3-3).
  * Never rejects: the caller is a tap handler where a rejection is an
  * unhandled promise that leaves the sheet stuck.
+ *
+ * Resolves `"stale"` rather than `false` when the store says this segment no
+ * longer exists (#607): another copy deleted its book, and a retry of the
+ * clear cannot bring the row back, so the sheet must not offer one. It is
+ * still a failure and is reported the same way.
  */
 export async function performClearEditedSegment(
   segmentId: SegmentId,
   onCleared?: () => void
-): Promise<boolean> {
+): Promise<boolean | "stale"> {
   // Only the STORE op is fallible-and-reportable, same split as
   // `performErase`: once `clearSegmentTake` commits, the audio is
   // irreversibly gone, so the result is success no matter what the
@@ -194,7 +200,7 @@ export async function performClearEditedSegment(
     // report-failure.ts's own contract asks — matching `performErase`.
     console.error("Clearing an edited-to-empty segment failed", cause);
     reportFailure(cause, "erase-segment");
-    return false;
+    return isMissingSegmentFailure(cause, segmentId) ? "stale" : false;
   }
   // The clear has committed. A notification failure is logged, never folded
   // back into the clear result.
@@ -240,8 +246,7 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
   const savingRef = useRef(false);
   // The latest `onSaved`, read from the commit closure without making `commit`
   // depend on a callback identity the caller re-creates each render. Kept
-  // current in an effect, not written during render (`react-hooks/refs`) — the
-  // same latest-ref shape `recorderStateRef` uses in `use-audio-session.ts`. The
+  // current in an effect, not written during render (`react-hooks/refs`). The
   // `useRef` initialiser already holds the first render's callback, and effects
   // flush before the next tap, so no commit can read a stale one.
   const onSavedRef = useRef(onSaved);
@@ -287,6 +292,9 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
   const saveRecording = useCallback(
     (
       segmentId: SegmentId,
+      // The segment's display number, carried on the take so the recovery
+      // screen names the segment the audio belongs to (#710).
+      ordinal: number | null,
       existing: Int16Array,
       recorded: Int16Array,
       insertionOffset: number,
@@ -297,6 +305,7 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
     ): Promise<boolean> => {
       const take = startSave(pending, {
         segmentId,
+        ordinal,
         // Minted here, not per attempt: IndexedDB `put` is an upsert, so a
         // retry with the same id overwrites the bytes a failed attempt may
         // already have written instead of spending the space twice.
@@ -346,19 +355,30 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
    * exists to prevent, and it does not need the slot. A clear failure leaves the
    * original take in place (no loss); it is reported, not sent to the recovery
    * screen, whose copy and retry are about a recording that could not be saved.
+   * Only this branch can resolve `"stale"` (`performClearEditedSegment`); a
+   * non-empty buffer's missing target reaches `SaveFailed` as `stale` instead.
    */
   const saveEditedSegment = useCallback(
     (
       segmentId: SegmentId,
+      ordinal: number | null,
       buffer: Int16Array,
       finished: boolean
-    ): Promise<boolean> => {
+    ): Promise<boolean | "stale"> => {
       if (buffer.length === 0) {
         return performClearEditedSegment(segmentId, () =>
           onSavedRef.current?.()
         );
       }
-      return saveRecording(segmentId, buffer, NO_SAMPLES, 0, finished, true);
+      return saveRecording(
+        segmentId,
+        ordinal,
+        buffer,
+        NO_SAMPLES,
+        0,
+        finished,
+        true
+      );
     },
     [saveRecording]
   );

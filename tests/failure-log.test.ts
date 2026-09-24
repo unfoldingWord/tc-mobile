@@ -27,9 +27,10 @@ import {
   appendFailure,
   clearFailures,
   countFailures,
+  FAILURE_LOG_LIMIT,
   readFailures,
 } from "@/lib/storage/failures";
-import { FAILURE_LOG_LIMIT, type StoredFailure } from "@/types/failure";
+import type { StoredFailure } from "@/types/failure";
 import { clearAllStores } from "./support";
 
 /**
@@ -562,6 +563,25 @@ describe("the durable sink", () => {
     });
     // And the original row is still there — a failed clear loses nothing.
     expect(rows).toHaveLength(2);
+  });
+
+  it("a terminal clear rejection rejects without trying to append", async () => {
+    reportFailure(new Error("boom"), "a");
+    await settle(1);
+    const appendSpy = vi.spyOn(failuresStore, "appendFailure");
+    vi.spyOn(failuresStore, "clearFailures").mockRejectedValueOnce(
+      Object.assign(new Error("the database has moved on"), {
+        name: "DatabaseDowngradeError",
+      })
+    );
+
+    await expect(clearFailureLog()).rejects.toMatchObject({
+      name: "DatabaseDowngradeError",
+    });
+    await flushFailureLog();
+
+    expect(appendSpy).not.toHaveBeenCalled();
+    expect(await readFailures()).toHaveLength(1);
   });
 
   it("a failed clear does not poison the lane", async () => {

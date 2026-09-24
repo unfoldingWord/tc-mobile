@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Control } from "./control";
 import { Icon } from "./icon";
@@ -13,6 +13,10 @@ import {
 import { SendLogControl } from "./send-log-control";
 import { strings } from "./strings";
 import { flushFailureLog } from "@/hooks/failure-log";
+import {
+  pauseTranscodeSweep,
+  resumeTranscodeSweep,
+} from "@/hooks/finish-transcode";
 import type { SaveFailureKind } from "@/hooks/save-failure";
 import { restartAfterFlush } from "@/lib/restart-after-flush";
 
@@ -24,6 +28,8 @@ import { restartAfterFlush } from "@/lib/restart-after-flush";
 function reload(): void {
   window.location.reload();
 }
+
+const SAVE_FAILED_SWEEP_PAUSE = "save-failed";
 
 interface SaveFailedProps {
   state: "saving" | "failed";
@@ -59,11 +65,10 @@ interface SaveFailedProps {
  *
  * It takes the whole screen and offers no way out that is not a decision.
  * There is no backdrop to tap through and no Escape to press, because the only
- * two honest answers are "try again" and "throw this away", and the second one
- * costs a translator work that cannot be recovered — the audio only ever
- * existed on this device, in this session.
+ * exits must acknowledge held work that cannot be recovered after discard.
  *
- * Discard is two taps for the same reason. Retry is the large one.
+ * Discard takes two taps. Retry is primary for retryable failures; downgrade
+ * offers Restart, and a stale target makes Discard the primary exit.
  */
 export function SaveFailed({
   state,
@@ -92,6 +97,12 @@ export function SaveFailed({
   // quietly went un-busy while nothing had changed would be a dead button
   // wearing a spinner first, the same reasoning `RestartControl` documents.
   const [restarting, setRestarting] = useState(false);
+
+  useEffect(() => {
+    pauseTranscodeSweep(SAVE_FAILED_SWEEP_PAUSE);
+    return () => resumeTranscodeSweep(SAVE_FAILED_SWEEP_PAUSE);
+  }, []);
+
   const saving = state === "saving";
   const armed = armedAt === attempts && !saving;
   const restartArmed = restartArmedAt === attempts && !saving;
@@ -103,15 +114,19 @@ export function SaveFailed({
   const safetyLine = saving ? null : recoverySafetyLine(editOnly, kind);
   const attemptsLine = saving ? null : recoveryAttempts(kind, attempts);
 
-  // The one failure this screen cannot offer a retry for: a newer copy of the
-  // app has moved the database past this build, so `getDb()` fails the version
-  // check before any transaction and will do so on every attempt. Offering "Try
-  // saving again" here teaches retry-and-stay for a condition that is already
-  // decided, and leaves the honest exit reachable only through Discard — which
-  // deletes the only copy (George R2 P2-1). The control becomes the same
-  // restart `DatabasePanel` and `ErrorBoundary` offer, which is what picks up
-  // the newer build. Discard stays, unchanged and still two taps.
+  // Two failures this screen cannot offer a retry for:
+  //
+  // - `downgrade`: a newer copy of the app has moved the database past this
+  //   build, so `getDb()` fails before any transaction and will do so on every
+  //   attempt. The control becomes the same restart `DatabasePanel` and
+  //   `ErrorBoundary` offer, which is what picks up the newer build (George R2
+  //   P2-1).
+  // - `stale`: another live copy deleted the chapter/segment this take belongs
+  //   to (#378). There is no row a Retry could write, and a restart would only
+  //   lose the held RAM audio under a different label, so no retry/restart
+  //   control is rendered; Discard is promoted to the primary exit.
   const terminal = kind === "downgrade";
+  const stale = kind === "stale";
 
   // The held work: a fresh recording, or the edited buffer of one. Every visible
   // line names it correctly, because on the edit path the previously stored
@@ -150,38 +165,40 @@ export function SaveFailed({
 
       {!saving && (
         <>
-          <Control
-            icon="retry"
-            label={
-              terminal
-                ? restarting
-                  ? strings.appReloading
-                  : restartLabel(
-                      editOnly ? "changes" : "recording",
-                      restartArmed,
-                      holdsCutAudio
-                    )
-                : "Try saving again"
-            }
-            variant="primary"
-            size={30}
-            className={terminal && restartArmed ? "text-live" : undefined}
-            busy={terminal && restarting}
-            autoFocus
-            onClick={
-              terminal
-                ? () =>
-                    restartArmed
-                      ? void restartAfterFlush(
-                          restarting,
-                          () => setRestarting(true),
-                          flushFailureLog,
-                          reload
-                        )
-                      : setRestartArmedAt(attempts)
-                : onRetry
-            }
-          />
+          {!stale && (
+            <Control
+              icon="retry"
+              label={
+                terminal
+                  ? restarting
+                    ? strings.appReloading
+                    : restartLabel(
+                        editOnly ? "changes" : "recording",
+                        restartArmed,
+                        holdsCutAudio
+                      )
+                  : "Try saving again"
+              }
+              variant="primary"
+              size={30}
+              className={terminal && restartArmed ? "text-live" : undefined}
+              busy={terminal && restarting}
+              autoFocus
+              onClick={
+                terminal
+                  ? () =>
+                      restartArmed
+                        ? void restartAfterFlush(
+                            restarting,
+                            () => setRestarting(true),
+                            flushFailureLog,
+                            reload
+                          )
+                        : setRestartArmedAt(attempts)
+                  : onRetry
+              }
+            />
+          )}
 
           {terminal && restarting && (
             <Notice tone="busy">{strings.appReloading}</Notice>
@@ -212,18 +229,12 @@ export function SaveFailed({
               (George R1 P2-1). This is the same reason `DatabasePanel`
               carries no Send control.
 
-              KNOWN HOLE (George R1 P2-2, unfoldingWord/tc-mobile#514): unlike
-              `ErrorBoundary`, which calls `quiesceTranscodeSweep()` before
-              ever reaching its own `SendLogControl`, this screen does NOT
-              stop `App`'s module-scoped transcode sweep (`finish-transcode.ts`)
-              — `App` stays mounted underneath `SaveFailed`. A live failing
-              sweep can churn the armed share and prune the 50-row ring before
-              a tap here lands. Not fixed here: `ErrorBoundary`'s quiesce is
-              one-way, and its only exit is a reload, while this screen's
-              primary exit is Retry on the SAME page — a one-way quiesce would
-              silently skip the post-retry sweep a successful Finished retry
-              still owes (D3). Needs an explicit pause/resume, tracked in the
-              linked issue; documented, not silently reused. */}
+              `ErrorBoundary` can one-way quiesce the transcode sweep because
+              its only exit is a reload. This screen's primary exit is Retry on
+              the SAME page, so it pauses the module-scoped sweep while mounted
+              and resumes on unmount instead; otherwise a live failing sweep can
+              churn the armed share and prune the 50-row ring before a Send tap
+              lands (unfoldingWord/tc-mobile#514). */}
           {!terminal && <SendLogControl />}
 
           {safetyLine && (
@@ -238,8 +249,9 @@ export function SaveFailed({
             <Control
               icon="trash"
               label={discardLabel}
-              variant="quiet"
+              variant={stale ? "primary" : "quiet"}
               className={armed ? "text-live" : undefined}
+              autoFocus={stale}
               onClick={() => (armed ? onDiscard() : setArmedAt(attempts))}
             />
             {armed && (

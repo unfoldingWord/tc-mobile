@@ -41,9 +41,9 @@
  *
  * NO inline fallback. An earlier draft fell back to `encodeMp3` on the main
  * thread where `Worker` was absent; that static import kept lamejs in the app
- * bundle AND duplicated it into the worker chunk (round-1 George G2, verified
- * against `dist/`). Every target phone has `Worker`. Where it is missing the
- * encode rejects with a clear error, and lamejs ships in the worker chunk only —
+ * bundle AND duplicated it into the worker chunk (round-1 George G2).
+ * Where `Worker` is missing the encode rejects with a clear error, and lamejs
+ * ships in the worker chunk only —
  * which is the boundary ADR 0003 asks for.
  *
  * Browser-only, by construction. The pure encoder is `lib/audio/mp3.ts`, tested
@@ -55,12 +55,13 @@
 
 import { decodeMp3ToCanonical } from "./audio-io";
 import { reportFailure } from "./report-failure";
+import { errorMessage } from "@/lib/failure-text";
 // The BUILT worker chunk's URL. `?worker&url` is the only form that yields it
 // outside a `new Worker(new URL(...))` literal: a bare
 // `new URL("./mp3.worker.ts", import.meta.url)` makes Vite inline the raw `.ts`
-// SOURCE as a `data:video/mp2t;base64,…` URI, which is un-runnable (#192,
-// observed in `dist/` on PR #187). This is now the module's ONLY reference to
-// the worker file, so exactly one chunk is emitted and lamejs is not duplicated
+// SOURCE as a `data:video/mp2t;base64,…` URI, which is un-runnable (#192).
+// This is the module's ONLY reference to the worker file, so exactly one chunk
+// is emitted and lamejs is not duplicated
 // (round-1 George G2).
 import encoderChunkUrl from "./mp3.worker.ts?worker&url";
 import type { AudioCodec } from "@/types/audio";
@@ -159,11 +160,10 @@ export const ENCODER_SILENCE_TIMEOUT_MS = 15_000;
  * What it has to cover is evaluation of the whole ~170 KB worker chunk, lamejs
  * included, because `ready` is posted at the FOOT of `mp3.worker.ts` — not the
  * "script load" an earlier version of this comment claimed (George R2 P2). The
- * #251 smoke measures that evaluation on Chromium and logs the number; it is
- * single-digit milliseconds there, which is the only engine anyone has measured.
- * Three seconds is a guess about phones, so the window is made SAFE rather than
- * merely long: it is not counted while the page is hidden, and one expiry costs
- * this job a fallback rather than the snapshot (`SNAPSHOT_MUTE_STRIKES`).
+ * #251 smoke logs that evaluation time in Chromium. The three-second window
+ * is an assumption about phones, not a measured phone latency budget. It is
+ * not counted while the page is hidden, and one expiry costs this job a
+ * fallback rather than the snapshot (`SNAPSHOT_MUTE_STRIKES`).
  */
 export const ENCODER_READY_TIMEOUT_MS = 3_000;
 
@@ -413,9 +413,8 @@ let workerReady = false;
  * The blob snapshot of the worker chunk, the one attempt to take it, and
  * whether a worker built from it has ever answered anything.
  *
- * The blob worker has never run on a phone, so it ships with a self-healing
- * guard rather than on faith: a snapshot-built worker that FAILS WITHOUT EVER
- * HAVING ANSWERED is treated as a bad snapshot and thrown away, so the next
+ * A snapshot-built worker that FAILS WITHOUT EVER HAVING ANSWERED is treated
+ * as a bad snapshot and thrown away, so the next
  * rebuild falls back to the chunk URL and the encoder degrades to the #182
  * behaviour instead of bricking. Once a worker built from this blob has answered
  * anything, the blob is PROVEN to run on this browser, and a later failure is
@@ -465,9 +464,9 @@ function workerScriptUrl(): string {
  * as a real ES module with live imports, and only a module worker can run it.
  *
  * The BLOB is classic. The snapshot is production-only and the production chunk
- * is a zero-import IIFE — verified against `dist/`, `(function(){"use strict";…`
- * — so there is nothing for module semantics to do, while declaring `module`
- * asks the platform to parse a blob as an ES module and to honour whatever
+ * is a zero-import IIFE, so there is nothing for module semantics to do,
+ * while declaring `module` asks the platform to parse a blob as an ES module
+ * and to honour whatever
  * module-worker restrictions it applies to `blob:`. Classic is the weaker claim
  * and the one that matches the bytes.
  */
@@ -872,7 +871,7 @@ function obtainWorker(): Worker {
     dropEncoderWorker();
     noteEncodeFailed();
     throw new EncoderFailedError(
-      `The MP3 encoder worker could not be created: ${messageOf(cause)}`,
+      `The MP3 encoder worker could not be created: ${errorMessage(cause)}`,
       { cause }
     );
   }
@@ -1257,10 +1256,6 @@ function runEncodeOnWorker(
       reject(cause);
     }
   });
-}
-
-function messageOf(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
 }
 
 function abortReason(signal: AbortSignal): unknown {

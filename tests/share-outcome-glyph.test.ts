@@ -180,22 +180,32 @@ describe("shareErrorGlyph (#178)", () => {
 describe("the share menus actually pass the mark (#178)", () => {
   // The table could be perfect and wired to nothing — the knip blind spot
   // AGENTS.md names first, since a module imported only by a test looks used.
+  //
+  // Both menus render the same rows since #160's L-15, so the marks are
+  // asserted ONCE, where they are passed. The per-screen half that remains is
+  // the one the shared component cannot answer: that each menu renders it at
+  // all. Without that, this whole describe could pass over a component
+  // nothing mounts — the same blind spot, one level up.
+  it("share-menu-section.tsx passes an icon to both share Notices", () => {
+    const source = read("src/components/share-menu-section.tsx");
+    // The partial/gap Notice.
+    expect(source).toMatch(/icon=\{partial\.icon\}/);
+    // The error Notice — the mark from `shareErrorGlyph` beside it (George R3
+    // P3 on #457 moved the tone with it).
+    expect(source).toMatch(/icon=\{errorMark\?\.icon\}/);
+    // And no bare `<Notice>` left holding share copy, which is what the error
+    // line looked like before.
+    expect(source).not.toMatch(/<Notice>\{errorText\}<\/Notice>/);
+  });
+
   for (const screen of [
     "src/components/segments-screen.tsx",
     "src/components/books-screen.tsx",
   ]) {
-    it(`${screen.split("/").pop()} passes an icon to both share Notices`, () => {
-      const source = read(screen);
-      // The partial/gap Notice.
-      expect(source).toMatch(/icon=\{sharePartial\.icon\}/);
-      // The error Notice — the mark hoisted from `shareErrorGlyph` beside
-      // `sharePartial` (George R3 P3 on #457 moved the tone with it).
-      expect(source).toMatch(/icon=\{(bookS|s)hareErrorMark\?\.icon\}/);
-      // And no bare `<Notice>` left holding share copy, which is what the
-      // error line looked like before.
-      expect(source).not.toMatch(
-        /<Notice>\{(bookS|s)hareErrorText\}<\/Notice>/
-      );
+    it(`${screen.split("/").pop()} actually renders those rows`, () => {
+      // The tag must END here — a bare prefix match would accept
+      // `<ShareMenuSectionAnythingElse`, which is not this component.
+      expect(read(screen)).toMatch(/<ShareMenuSection[\s/>]/);
     });
   }
 
@@ -230,17 +240,13 @@ describe("the share error Notices carry the table's tone (#457 George R3 P3-3)",
     expect(shareErrorGlyph("failed")).toEqual(shareOutcomeGlyph("failed"));
   });
 
-  for (const screen of [
-    "src/components/segments-screen.tsx",
-    "src/components/books-screen.tsx",
-  ]) {
-    it(`${screen.split("/").pop()} passes the table's tone to the error Notice`, () => {
-      const source = read(screen);
-      expect(source).toMatch(/tone=\{(bookS|s)hareErrorMark\?\.tone\}/);
-      // And no error Notice left leaning on the default tone.
-      expect(source).not.toMatch(/<Notice icon=\{shareErrorGlyph\(/);
-    });
-  }
+  it("share-menu-section.tsx passes the table's tone to the error Notice", () => {
+    // One call site since #160's L-15, where there were two to keep in step.
+    const source = read("src/components/share-menu-section.tsx");
+    expect(source).toMatch(/tone=\{errorMark\?\.tone\}/);
+    // And no error Notice left leaning on the default tone.
+    expect(source).not.toMatch(/<Notice icon=\{shareErrorGlyph\(/);
+  });
 });
 
 /**
