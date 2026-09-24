@@ -131,10 +131,12 @@ function booksStep(
   // Adding a further chapter is not a first-run step, and the shelf is inert
   // behind that dialog.
   if (view.namingChapter) return null;
-  // The Books half of the terminal rule. `ChapterRow` carries segment counts
-  // and no take information (`types/view.ts`), and the guide takes no reading
-  // of its own, so "a chapter holds segments" is the strongest honest reading
-  // of "this book has been worked in" available on the shelf.
+  // The Books half of the terminal rule. `ChapterRow` also carries
+  // `recordedCount` (#542 Part B, take-derived) since this was written, but
+  // the guide deliberately reads `totalCount`, not `recordedCount`: "this
+  // book has been worked in" is about a chapter existing to work in, not
+  // about whether anything in it has been recorded yet — the guide takes no
+  // reading of its own beyond that.
   if (book.chapters.some((chapter) => chapter.totalCount > 0)) return null;
   const first = book.chapters[0];
   if (!first) return null;

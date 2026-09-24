@@ -4,6 +4,7 @@ import {
   deferWrite,
   historyWriteDecision,
   outstandingConsume,
+  recorderExitTraversal,
   replayDecision,
   replayQueue,
   type DeferredWrite,
@@ -105,6 +106,54 @@ describe("replayDecision — a deferred write at a landing", () => {
       expect(replayDecision(outstanding)).toBe("defer");
     }
   );
+});
+
+describe("recorderExitTraversal — the programmatic recorder close's entry (#763)", () => {
+  const guards: readonly TravelGuardState[] = [
+    guard(false, false),
+    guard(true, false),
+    guard(false, true),
+    guard(true, true),
+  ];
+
+  it.each(guards.flatMap((g) => [false, true].map((s) => [s, g] as const)))(
+    "an entry still in the queue was never written: unqueue it, whatever is in flight (suppressPop %s, %o)",
+    (suppressPop, g) => {
+      expect(
+        recorderExitTraversal(suppressPop, g, ["arm-floor", "enter-recorder"])
+      ).toBe("unqueue");
+    }
+  );
+
+  it.each(
+    guards
+      .filter((g) => g.goBackOutstanding || g.commitCloseOutstanding)
+      .flatMap((g) => [false, true].map((s) => [s, g] as const))
+  )(
+    "a tracked Back in flight is already consuming the entry: absorb its landing, issue nothing (suppressPop %s, %o)",
+    (suppressPop, g) => {
+      expect(recorderExitTraversal(suppressPop, g, [])).toBe("absorb");
+      expect(recorderExitTraversal(suppressPop, g, ["enter-segments"])).toBe(
+        "absorb"
+      );
+    }
+  );
+
+  it("only a suppressed, untracked Back in flight: it lands on the entry, so the consume waits for it", () => {
+    expect(recorderExitTraversal(true, initialTravelGuardState, [])).toBe(
+      "defer"
+    );
+  });
+
+  it("nothing in flight: issue the consume now", () => {
+    expect(recorderExitTraversal(false, initialTravelGuardState, [])).toBe(
+      "issue"
+    );
+    // A queued write for ANOTHER screen does not stand in for this entry.
+    expect(
+      recorderExitTraversal(false, initialTravelGuardState, ["enter-segments"])
+    ).toBe("issue");
+  });
 });
 
 describe("deferWrite — the queue a landing replays", () => {

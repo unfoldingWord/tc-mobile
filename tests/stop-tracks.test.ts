@@ -150,8 +150,9 @@ describe("the level tap's close() stops every cloned track (#479)", () => {
     const { audioIo, reports, stopSink } = await load();
     const failure = new Error("clone stop failed");
     const clones = [new FakeTrack(failure), new FakeTrack()];
+    const sourceTrack = new FakeTrack();
     const tap = audioIo.createLevelTap(
-      new FakeStream([new FakeTrack()], clones) as unknown as MediaStream
+      new FakeStream([sourceTrack], clones) as unknown as MediaStream
     );
 
     expect(() => tap.close()).not.toThrow();
@@ -161,6 +162,11 @@ describe("the level tap's close() stops every cloned track (#479)", () => {
     expect(reports).toEqual([
       { context: "recorder-tap-clone-stop", cause: failure },
     ]);
+    // #808: close() tears down the TAP's own clone (`tapStream = stream.clone()`
+    // in `createLevelTap`) — the source capture stream `stopClone` is built
+    // over is a different `MediaStream` object, and stopping it here would be
+    // the recorder's own mic going dead under a meter teardown mid-take.
+    expect(sourceTrack.stopped).toBe(0);
   });
 });
 

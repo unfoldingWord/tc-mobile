@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  bumpStoragePressure,
   readStorageEstimate,
   storageEstimateSourceOf,
+  storagePressureGeneration,
   type StorageEstimateSource,
 } from "@/hooks/use-storage-pressure";
 import {
@@ -440,5 +442,54 @@ describe("storageEstimateSourceOf", () => {
       }
     );
     expect(storageEstimateSourceOf(scope)).toBeUndefined();
+  });
+});
+
+describe("bumpStoragePressure", () => {
+  /**
+   * #542 Part A (DRI decision, 2026-09-24): "build the module-scope
+   * estimate() invalidation now, bumped by book delete/create, without a
+   * device reading." `bumpStoragePressure` is that invalidation — a
+   * module-scope generation counter, in the same shape `mp3-codec.ts`'s
+   * encoder health and `failure-log.ts`'s log count already use — that
+   * `useStoragePressure` (untestable here without a DOM renderer, same
+   * limitation as every other effect in this module) takes as an effect
+   * dependency so a bump makes it re-read `estimate()` without a remount.
+   *
+   * This is the whole of what can be pinned in Node: the counter's own
+   * contract. `storagePressureGeneration()` exists only to make that
+   * possible — see its own docblock.
+   *
+   * Deltas, not absolute values, throughout: `generation` is module-scope
+   * state shared by every test in this file (and every other `it` in this
+   * `describe`), so an assertion on an absolute count would be order-
+   * dependent. Red-first: reverting `generation += 1` to a no-op, or to
+   * `generation = 1`, fails every case below.
+   */
+
+  it("advances the generation by exactly one per call", () => {
+    const before = storagePressureGeneration();
+    bumpStoragePressure();
+    expect(storagePressureGeneration()).toBe(before + 1);
+  });
+
+  it("is monotonic across repeated calls — never resets, never decreases", () => {
+    const before = storagePressureGeneration();
+    bumpStoragePressure();
+    bumpStoragePressure();
+    bumpStoragePressure();
+    expect(storagePressureGeneration()).toBe(before + 3);
+  });
+
+  it("tolerates being called more than once for one logical write, harmlessly", () => {
+    // The idempotency property this needs: a retried book create/delete that
+    // calls this twice must not corrupt anything or throw — it costs one
+    // extra `estimate()` read in whichever mount is live, nothing else.
+    const before = storagePressureGeneration();
+    expect(() => {
+      bumpStoragePressure();
+      bumpStoragePressure();
+    }).not.toThrow();
+    expect(storagePressureGeneration()).toBe(before + 2);
   });
 });

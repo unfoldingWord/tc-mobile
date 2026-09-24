@@ -874,34 +874,46 @@ export function panAfterUndo(
 }
 
 /**
- * Where the centerline goes when an op is REDONE — the forward half of
- * {@link panAfterUndo}'s mapping: re-applying a `cut` maps the pan the same
- * way the live cut writer does ({@link panAfterCut}), onto a buffer SHORTER
- * by what the cut removes; re-applying a `paste` maps it the way a live
- * insert does ({@link panAfterInsert}), onto a buffer LONGER by the pasted
- * clip. `preRedoLength` is the same kind of pre-op closure value
- * {@link panAfterUndo} takes, read before this redo runs.
+ * Where the centerline goes when an op is REDONE. Re-applying a `cut` writes
+ * exactly what the live cut writer does, {@link panAfterCutCollapse}: the line
+ * goes to the cut point, the paste target, whatever the pan was (#722, the
+ * DRI's call that a redone cut reproduces the cut's view as well as its
+ * buffer). Re-applying a `paste` maps the pan the way a live insert does
+ * ({@link panAfterInsert}), onto a buffer LONGER by the pasted clip — the
+ * forward half of {@link panAfterUndo}'s mapping. `preRedoLength` is the same
+ * kind of pre-op closure value {@link panAfterUndo} takes, read before this
+ * redo runs. The frame half of the same decision is
+ * {@link redoCollapsesFrame}.
  */
 export function panAfterRedo(
   pan: number | null,
   redoneOp: EditOp,
   preRedoLength: number
 ): number | null {
-  if (pan === null) return null;
+  // Before the rest check on purpose: the live cut collapses a rested `null`
+  // pan onto the cut point too (`onCut`).
   if (redoneOp.kind === "cut") {
-    // Normalised ONCE, through `wholeSampleRange` — both the length AND the
-    // range `panAfterCut` maps `pan` through, not just the length: passing
-    // `redoneOp.range` straight to `panAfterCut` here read the raw fractional
-    // bounds even after round 2 fixed `removedLen` (#473 round-3 Frank P2).
-    // See `panAfterUndo`'s cut branch, same shape, inverse direction.
-    const range = wholeSampleRange(redoneOp.range);
-    const removedLen = range.end - range.start;
-    return panOrRest(panAfterCut(pan, range), preRedoLength - removedLen);
+    return panAfterCutCollapse(redoneOp.range, preRedoLength);
   }
+  if (pan === null) return null;
   return panOrRest(
     panAfterInsert(pan, redoneOp.at, redoneOp.clip.length),
     preRedoLength + redoneOp.clip.length
   );
+}
+
+/**
+ * Whether a redo leaves the #613 collapse latched — `recorder.tsx`'s
+ * `cutCollapsed` — rather than reopening the frame.
+ *
+ * A redone cut does (#722): the band is gone again and the one line left is
+ * where a paste lands, the state a live cut leaves. A redone paste does not;
+ * it has no collapse to make, and the frame reseeds over the audio that
+ * landed, as after a live paste. `null` — nothing was redone — keeps what the
+ * redo path did before #722, which is to reopen.
+ */
+export function redoCollapsesFrame(redoneOp: EditOp | null): boolean {
+  return redoneOp?.kind === "cut";
 }
 
 /**
@@ -1062,8 +1074,9 @@ export function centerlineOverlayShown(input: {
  * three of the reported symptoms are this one reseed.
  *
  * So a cut suspends it — `collapsedByCut` — until something asks for a frame
- * again: a paste, an undo, a redo, leaving edit mode, or the stage coming to
- * rest under a finger (`recorder.tsx` clears the latch at each).
+ * again: a paste, an undo, a redone paste (a redone cut re-latches it, #722),
+ * leaving edit mode, or the stage coming to rest under a finger
+ * (`recorder.tsx` clears the latch at each).
  *
  * Three answers rather than a boolean, because the reseed block does two
  * things and only one of them is suspended: `"seed"` opens a span AND drops

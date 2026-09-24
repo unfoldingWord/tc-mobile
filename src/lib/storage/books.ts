@@ -964,25 +964,39 @@ export async function setSegmentFinished(
 }
 
 /**
- * The chapter's finished/total roll-up for the Books-screen counter.
+ * The chapter's finished/total/recorded roll-up for the Books-screen counter
+ * and its storage-pressure gate.
  *
  * A cheap read — segments only, never clips. `total` counts resolvable segment
  * rows; a dangling id contributes to neither count. An empty chapter is
- * `{ finished: 0, total: 0 }`, and the UI shows no counter when `total === 0`.
+ * `{ finished: 0, total: 0, recorded: 0 }`, and the UI shows no counter when
+ * `total === 0`.
+ *
+ * `recorded` (#542 Part B) counts segments with `activeTakeId !== null` — a
+ * segment that holds a take, finished or not — from the SAME
+ * `getSegmentsOfChapter` read `finished`/`total` already make, so it costs no
+ * extra IndexedDB trip. It exists because the storage-pressure line's copy
+ * ("mark segments finished", "share your work and remove it") only makes
+ * sense once a recording exists to reclaim, and neither `finished` (too
+ * narrow — a "draft" segment has reclaimable bytes too) nor `total` (too
+ * wide — an unrecorded segment has nothing to reclaim) answers that; see
+ * `lib/view/book-rows.ts`'s `hasReclaimableAudio`, which sums this field
+ * across every chapter of every book.
  *
  * Known corner (documented, cheap to revisit): an externally-corrupted
- * `affirmed`-but-dangling segment counts as finished here while its row renders
- * as never-recorded. It is near-unreachable by construction — `addTake` demotes
- * `affirmed → draft` and `setSegmentFinished(true)` requires an active take, so
- * only external clip loss produces it — and a full audio walk per segment on
- * every render is not worth its cost.
+ * `affirmed`-but-dangling segment counts as finished (and recorded) here while
+ * its row renders as never-recorded. It is near-unreachable by construction —
+ * `addTake` demotes `affirmed → draft` and `setSegmentFinished(true)` requires
+ * an active take, so only external clip loss produces it — and a full audio
+ * walk per segment on every render is not worth its cost.
  */
 export async function chapterProgress(
   chapterId: ChapterId
-): Promise<{ finished: number; total: number }> {
+): Promise<{ finished: number; total: number; recorded: number }> {
   const segments = await getSegmentsOfChapter(chapterId);
   const finished = segments.filter((s) => isFinished(s.status)).length;
-  return { finished, total: segments.length };
+  const recorded = segments.filter((s) => s.activeTakeId !== null).length;
+  return { finished, total: segments.length, recorded };
 }
 
 /**
