@@ -262,8 +262,17 @@ describe("arm, then reveal", () => {
   });
 
   it("arming null focuses nothing, so a decision with no target needs no branch", () => {
-    // `focusTargetAfterDelete` can legitimately answer "nowhere", and Books
-    // passes that straight through.
+    // Hook policy, not a reachable screen path — the same shape as the
+    // never-arrived case above. `armFocus` takes `Id | null` so a caller can
+    // hand a decision straight through without branching, and Books does
+    // exactly that with `focusTargetAfterDelete`.
+    //
+    // That function cannot actually answer null today: it returns `string`,
+    // and every branch gives a book id or `EMPTY_STATE_NODE`
+    // (`components/delete-focus.ts`). So no caller exercises this, and the
+    // hook is held to it anyway — a signature that accepts null has to mean
+    // something, or the next caller to pass one gets a silent `.focus()` on
+    // whatever `nodes.get(null)` misses.
     act(() => {
       api().armFocus(null);
       api().reveal();

@@ -88,8 +88,10 @@ describe("planReveal", () => {
       focus: null,
       rest: { scroll: null, focus: null },
     });
-    // And the delete path arms a focus alone: the row that takes focus has been
-    // on screen the whole time.
+    // And the delete path arms a focus alone, because a delete creates no row
+    // to scroll to: focus goes to a sibling already laid out, or — deleting
+    // the last book — to the empty state's CTA, which replaces the whole
+    // shelf (`focusTargetAfterDelete`). Neither needs a scroll armed.
     expect(planReveal({ scroll: null, focus: B }, false)).toEqual({
       scroll: null,
       focus: B,
