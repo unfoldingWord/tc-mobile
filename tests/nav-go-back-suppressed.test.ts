@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { matchingBraceClose, stripComments } from "./support";
+
 /**
  * `goBack` refuses while a SUPPRESSED traversal is in flight (George r3 P2 on
  * PR 634, #374).
@@ -25,22 +27,7 @@ import { describe, expect, it } from "vitest";
 describe("goBack refuses while a suppressed traversal is outstanding (George r3 P2, PR 634)", () => {
   const sourceUrl = new URL("../src/hooks/use-nav-stack.ts", import.meta.url);
 
-  const stripComments = (text: string) =>
-    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
   const code = stripComments(readFileSync(sourceUrl, "utf8"));
-
-  const matchingBraceClose = (body: string, openIndex: number): number => {
-    let depth = 0;
-    for (let i = openIndex; i < body.length; i++) {
-      if (body[i] === "{") depth++;
-      else if (body[i] === "}") {
-        depth--;
-        if (depth === 0) return i;
-      }
-    }
-    return -1;
-  };
 
   const declStart = code.indexOf("const goBack = useCallback(");
   if (declStart === -1) {

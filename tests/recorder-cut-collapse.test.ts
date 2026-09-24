@@ -7,6 +7,7 @@ import {
   panAfterCutCollapse,
   selectionReseed,
 } from "@/components/recorder-stage";
+import { stripComments } from "./support";
 
 /**
  * #613: after a cut, the selection band collapses to the red centerline at the
@@ -26,9 +27,6 @@ import {
  * so the truth table is a function and the wiring is read as text, the same
  * split `tests/recorder-centerline-overlay-gate.test.ts` uses.
  */
-
-const stripComments = (text: string) =>
-  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 
 const read = (rel: string) =>
   readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");

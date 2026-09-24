@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { bodyAfter, stripComments } from "./support";
+
 /**
  * The adapter asks the #435 latch before every history write a UI command
  * makes, and replays what it deferred at every landing.
@@ -22,34 +24,7 @@ import { describe, expect, it } from "vitest";
  */
 const sourceUrl = new URL("../src/hooks/use-nav-stack.ts", import.meta.url);
 
-const stripComments = (text: string) =>
-  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
 const code = stripComments(readFileSync(sourceUrl, "utf8"));
-
-const matchingBraceClose = (body: string, openIndex: number): number => {
-  let depth = 0;
-  for (let i = openIndex; i < body.length; i++) {
-    if (body[i] === "{") depth++;
-    else if (body[i] === "}") {
-      depth--;
-      if (depth === 0) return i;
-    }
-  }
-  return -1;
-};
-
-/** The first `{ ... }` block after `marker`, braces included. */
-const bodyAfter = (marker: string): string => {
-  const start = code.indexOf(marker);
-  if (start === -1) throw new Error(`${marker} not found — renamed or moved?`);
-  const open = code.indexOf("{", start + marker.length);
-  const close = matchingBraceClose(code, open);
-  if (open === -1 || close <= open) {
-    throw new Error(`${marker}: body braces not found`);
-  }
-  return code.slice(open, close + 1);
-};
 
 const index = (body: string, pattern: RegExp): number => {
   const at = body.search(pattern);
@@ -61,7 +36,7 @@ describe.each([
   ["openChapter", "onOpenChapterRef.current("],
   ["openRecorder", "onOpenRecorderRef.current("],
 ])("%s asks the latch before either half runs (#435)", (name, stateHalf) => {
-  const body = bodyAfter(`const ${name} = useCallback(`);
+  const body = bodyAfter(code, `const ${name} = useCallback(`);
   // Keyed by its own screen, so a repeat of this command coalesces in the
   // deferred queue and the other command's entry does not (`deferWrite`).
   const key = name === "openChapter" ? "enter-segments" : "enter-recorder";
@@ -95,7 +70,7 @@ describe.each([
 });
 
 describe("pushLayer arms the floor through the latch (#435)", () => {
-  const body = bodyAfter("const pushLayer = useCallback(");
+  const body = bodyAfter(code, "const pushLayer = useCallback(");
 
   it("isolates a real body — the one that registers the layer", () => {
     expect(body).toMatch(/layerStack\.current\s*=/);
@@ -115,14 +90,14 @@ describe("pushLayer arms the floor through the latch (#435)", () => {
 
 describe("the latch's own plumbing", () => {
   it("performWrite queues a deferral through deferWrite, which coalesces repeats", () => {
-    const performBody = bodyAfter("const performWrite = useCallback(");
+    const performBody = bodyAfter(code, "const performWrite = useCallback(");
     expect(performBody).toMatch(
       /deferredWrites\.current\s*=\s*deferWrite\(\s*deferredWrites\.current\s*,\s*write\s*\)/
     );
   });
 
   it("performWrite is the only caller of enterScreen() and armFloor()", () => {
-    const performBody = bodyAfter("const performWrite = useCallback(");
+    const performBody = bodyAfter(code, "const performWrite = useCallback(");
     expect(code.match(/\benterScreen\(\)/g) ?? []).toHaveLength(1);
     expect(code.match(/\barmFloor\(\)/g) ?? []).toHaveLength(1);
     expect(performBody).toMatch(/\benterScreen\(\)/);
@@ -130,14 +105,17 @@ describe("the latch's own plumbing", () => {
   });
 
   it("the replay re-decides through replayDecision, which cannot refuse", () => {
-    const replay = bodyAfter("const replayDeferredWrites = useCallback(");
+    const replay = bodyAfter(code, "const replayDeferredWrites = useCallback(");
     expect(replay).toMatch(/replayDecision\s*\(/);
     expect(replay).not.toMatch(/historyWriteDecision\s*\(/);
     expect(replay).toMatch(/deferredWrites\.current\s*=\s*\[\s*\]/);
   });
 
   it("the popstate listener routes the landing, THEN replays", () => {
-    const listener = bodyAfter("const onPopState = (event: PopStateEvent) =>");
+    const listener = bodyAfter(
+      code,
+      "const onPopState = (event: PopStateEvent) =>"
+    );
     const land = index(listener, /\bland\(\s*event\s*\)/);
     const replay = index(listener, /replayDeferredWrites\(\s*\)/);
     expect(land).toBeLessThan(replay);
