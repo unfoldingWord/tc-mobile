@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { matchingBraceClose, stripComments } from "./support";
+
 /**
  * Three release-on-throw properties in `use-recorder.ts` (#59, PR #474,
  * #485):
@@ -109,9 +111,6 @@ describe("cancel()'s native recorder.stop() call is guarded (#59)", () => {
    * `src/hooks/use-recorder.ts` contains no `//` or `/*` inside a string
    * literal, so the strip cannot misfire on one.
    */
-  const stripComments = (text: string) =>
-    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
   const code = stripComments(readFileSync(sourceUrl, "utf8"));
 
   /**
@@ -271,23 +270,7 @@ describe("cancel()'s native recorder.stop() call is guarded (#59)", () => {
  */
 describe("stop() releases the stolen stream and the LOCAL tap in both arms, and its flush-throw path reports, seals what it has and falls through to a tail that returns to idle (#59 #474 R6, #485, panel r1, panel r2)", () => {
   const sourceUrl = new URL("../src/hooks/use-recorder.ts", import.meta.url);
-  const stripComments = (text: string) =>
-    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
   const code = stripComments(readFileSync(sourceUrl, "utf8"));
-
-  /** Brace-counts from `openIndex` (the index of an opening `{`) to find its
-   *  matching close. Shared by every isolation step below. */
-  const matchingBraceClose = (body: string, openIndex: number): number => {
-    let depth = 0;
-    for (let i = openIndex; i < body.length; i++) {
-      if (body[i] === "{") depth++;
-      else if (body[i] === "}") {
-        depth--;
-        if (depth === 0) return i;
-      }
-    }
-    return -1;
-  };
 
   /**
    * Isolate `stop()`'s own body, then BOTH arms of its `if/else` on

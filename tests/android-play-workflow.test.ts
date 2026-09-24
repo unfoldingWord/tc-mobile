@@ -11,6 +11,11 @@ const workflow = readFileSync(
   "utf8"
 );
 
+const fastfile = readFileSync(
+  new URL("../fastlane/Fastfile", import.meta.url),
+  "utf8"
+);
+
 function preflightScript(): string {
   const start = workflow.indexOf("      - name: Map branch to Play track\n");
   if (start < 0) throw new Error("Missing preflight step");
@@ -69,6 +74,47 @@ describe("Play upload lane triggers", () => {
     expect(workflow).toMatch(
       /- name: Remove decoded credentials\n {8}if: always\(\)\n/
     );
+  });
+  it("installs fastlane before any Play secret reaches disk", () => {
+    // gem install / bundle install run arbitrary code (install hooks), so
+    // this must happen before the keystore and service-account JSON are
+    // written to disk, not merely before they are read.
+    const npmCi = workflow.indexOf("- name: Install dependencies");
+    const installFastlane = workflow.indexOf("- name: Install fastlane");
+    const writeSecrets = workflow.indexOf(
+      "- name: Write the upload keystore and Play service-account key"
+    );
+    expect(npmCi).toBeGreaterThan(-1);
+    expect(installFastlane).toBeGreaterThan(-1);
+    expect(writeSecrets).toBeGreaterThan(-1);
+    expect(installFastlane).toBeGreaterThan(npmCi);
+    expect(installFastlane).toBeLessThan(writeSecrets);
+  });
+});
+
+describe("Fastlane Play lane", () => {
+  // The five skip_upload_* flags are what keeps this lane from touching the
+  // Play Console store listing (metadata, changelogs, images, screenshots)
+  // or uploading a bare APK alongside the .aab. Pin each one so a later edit
+  // that drops or flips one fails a test instead of silently widening what
+  // fastlane is allowed to touch.
+  function playLaneBlock(): string {
+    const start = fastfile.indexOf("lane :play do");
+    if (start < 0) throw new Error("Missing Play lane");
+    const end = fastfile.indexOf("\nend", start);
+    if (end < 0) throw new Error("Could not find end of Play lane");
+    return fastfile.slice(start, end);
+  }
+
+  it.each([
+    "skip_upload_apk",
+    "skip_upload_metadata",
+    "skip_upload_changelogs",
+    "skip_upload_images",
+    "skip_upload_screenshots",
+  ])("pins %s: true in the Play lane", (flag) => {
+    const block = playLaneBlock();
+    expect(block).toMatch(new RegExp(`^\\s*${flag}: true,?\\s*$`, "m"));
   });
 });
 

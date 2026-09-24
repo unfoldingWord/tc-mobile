@@ -1000,6 +1000,17 @@ export function heldByDrag(dragging: boolean, otherwise: boolean): boolean {
 export const CENTER_FRACTION = 0.5;
 
 /**
+ * The two zoom levels: the whole clip in view, or a quarter of it (§4.4).
+ *
+ * Here rather than in `recorder.tsx` since #160's L-1 split the toolbars out:
+ * the zoom toggle reads both, the sheet reads `ZOOM_WHOLE` for its initial
+ * zoom, its edit-exit reset and the toggle's next level, and a constant two
+ * modules key their paint on should not live inside one of them.
+ */
+export const ZOOM_WHOLE = 1;
+export const ZOOM_QUARTER = 4;
+
+/**
  * Whether the fixed centerline overlay is drawn — the COMPLETE render
  * decision for `recorder.tsx`'s centerline `<div>` (#418; folded together
  * with the `liveScope` term here by George round-1 / Frank round-2 P2 on

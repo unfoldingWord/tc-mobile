@@ -17,6 +17,7 @@ import {
   shareProgressWakeAt,
 } from "@/hooks/share-progress";
 import type { ShareOutcome } from "@/hooks/share-flow";
+import { region } from "./support";
 
 /**
  * The share progress timeline (#491): a busy modal held for a MINIMUM time so
@@ -1043,8 +1044,10 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
     expect(prepareAt).toBeGreaterThan(-1);
     const controlStart = source.lastIndexOf("<Control", prepareAt);
     const controlEnd = source.indexOf("/>", prepareAt);
-    expect(controlEnd).toBeGreaterThan(prepareAt);
-    const control = source.slice(controlStart, controlEnd);
+    // region() throws if the lastIndexOf walk-back found no preceding
+    // <Control at all (#533's "unfloored lastIndexOf" finding), not just if
+    // the forward search for the closing /> came up empty.
+    const control = region(source, { from: controlStart, to: controlEnd });
 
     // The label is a three-way: preparing, then unconfirmed, then idle.
     expect(control).toMatch(/label=\{/);

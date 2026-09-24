@@ -8,6 +8,7 @@ import {
   type LogShareCapabilities,
   selectLogShareShape,
 } from "@/hooks/use-failure-log-share";
+import { region } from "./support";
 
 /** Reads the hook source for wiring assertions; does not execute its effects. */
 const read = (rel: string) =>
@@ -208,7 +209,10 @@ describe("use-failure-log-share.ts: an unconfirmed native resolve settles unprov
   it('never unconditionally returns "sent" from the success branch any more', () => {
     const sendAt = hook.indexOf("const send = useCallback(async ()");
     const catchAt = hook.indexOf("} catch (cause) {", sendAt);
-    const successBody = hook.slice(sendAt, catchAt);
+    // region() throws if either anchor is missing or catchAt does not
+    // strictly follow sendAt, rather than silently slicing "" when either
+    // indexOf misses (#533).
+    const successBody = region(hook, { from: sendAt, to: catchAt });
     expect(successBody).not.toMatch(/\n\s*return "sent";\s*\n/);
   });
 
