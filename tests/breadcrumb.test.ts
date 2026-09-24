@@ -170,6 +170,16 @@ describe("both screens read the table", () => {
     const call = sheet.slice(at, at + 200);
     // Inside this call's own arguments, not merely somewhere later in the file.
     expect(call).toContain("strings.chapterHeading(");
+    // AND the STORED NAME is what it resolves. Requiring only the call left the
+    // regression this whole PR exists to kill wide open (George, #698 round 8):
+    //
+    //     strings.chapterHeading(null, view.chapterNumber)
+    //
+    // typechecks, passes all 21 cases, and puts the default name back on the
+    // sheet — a renamed chapter reads correctly on Segments and wrongly one tap
+    // deeper, which is the original bug verbatim. The storage test proves the
+    // VIEW carries the name; only this proves the HEADER reads it.
+    expect(call).toContain("view.chapterName");
     // The segment half stays the entry's business (#591): the caller hands it
     // the raw label and `segmentHeading` inside the table resolves it, exactly
     // as `chapterHeading` resolves the chapter half out here.
