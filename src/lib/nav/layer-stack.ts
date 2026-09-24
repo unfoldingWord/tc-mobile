@@ -188,9 +188,7 @@ export type FloorEntryAction = "arm" | "none";
  *
  * The decision is `open` — the stack size AFTER the change — and not a
  * before/after PAIR, because a transition adds nothing `armed` does not
- * already say. A `before` parameter was written first and its mutation
- * survived the decision table — an unkillable branch, which AGENTS.md reads as
- * redundant logic rather than a missing test — so it is gone.
+ * already say.
  *
  * `armed` is also what makes this correct across a global trap
  * (`recovering` / `databasePanel`). Amendment C's cleanup clears the WHOLE

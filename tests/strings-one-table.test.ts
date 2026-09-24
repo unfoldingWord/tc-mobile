@@ -214,14 +214,18 @@ describe("no sentence is stranded in a hook (#169)", () => {
 });
 
 /**
- * The plural helper and the one alias it exists to make possible.
+ * The count labels, and the one alias that stops two of them drifting.
  *
- * The plurals in the table were inline `n === 1 ? … : …` ternaries that spelled
- * the count out on both arms. `menuOpenWithFailures` is what that shape costs: it
- * carried a byte-for-byte copy of `failuresMarker`'s wording, so tightening one
- * would have left the other alone. Pinned by equality rather than by a repeated
- * literal, exactly as `shareBookPartial` is in
- * `tests/share-book-partial-copy.test.ts`.
+ * These were inline `n === 1 ? … : …` ternaries that spelled the count out on
+ * both arms. They now go through `lib/plural.ts`, which selects a CLDR category
+ * with `Intl.PluralRules` rather than asserting English's two forms — so what
+ * is pinned below is the English OUTPUT, not the rule that produced it, and a
+ * locale that adds `few`/`many` does not touch these expectations.
+ *
+ * `menuOpenWithFailures` is what the old shape cost: it carried a byte-for-byte
+ * copy of `failuresMarker`'s wording, so tightening one would have left the
+ * other alone. Pinned by equality rather than by a repeated literal, exactly as
+ * `shareBookPartial` is in `tests/share-book-partial-copy.test.ts`.
  *
  * What the equality catches is DIVERGENCE, not duplication: re-typing the words
  * at both sites passes this, because the two still agree on the day it is
@@ -230,7 +234,7 @@ describe("no sentence is stranded in a hook (#169)", () => {
  * it. The source-level "one sentence, one place" half is the duplicate check
  * above.
  */
-describe("counted plurals", () => {
+describe("count labels", () => {
   it("says the same words as failuresMarker — one wording, not two that can drift", () => {
     expect(strings.menuOpenWithFailures(1)).toBe(
       `Open menu. ${strings.failuresMarker(1)}.`
@@ -260,8 +264,13 @@ describe("counted plurals", () => {
   it("says zero in the plural form, not the singular", () => {
     // Nothing renders a zero today — `menuOpenWithFailures` replaces the plain
     // name only while the log is non-empty, and the share Notices only show on a
-    // gap — but a helper that answered "0 segment" would be wrong the first time
+    // gap — but a table that answered "0 segment" would be wrong the first time
     // one of those gates changed, and the cost of pinning it now is one line.
+    //
+    // English puts zero in `other`, which is CLDR's rule and not a choice this
+    // file makes. A locale with a `zero` category selects it and these two
+    // expectations no longer describe that locale — which is the point of the
+    // rule living in `lib/plural.ts` rather than here.
     expect(strings.shareMissing(0)).toBe("0 segments could not be included.");
     expect(strings.failuresMarker(0)).toBe("0 problems recorded");
   });

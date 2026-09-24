@@ -176,12 +176,17 @@ second check is the stronger one and the reason a base merge cannot quietly
 undo this: every fixed sentence in `app/` and `hooks/` must be one the table
 holds, so a brand-new literal fails as loudly as a re-typed one.
 
-`lib/locale.ts` is the other half of #169 that has landed — one entry behind
-`<html lang>`, `dir` and the manifest language, so a second locale is an entry
-there rather than an edit in three files. What #169 still asks for beyond these
-two is a `strings[locale]` dimension, a plural rule that is not English's two
-forms, sentences that are not assembled from translated fragments, and book
-names stored as numbers rather than written into IndexedDB as English data.
+Two more halves of #169 have landed beside it, both in `lib/` and both for this
+same reason. `lib/locale.ts` puts `<html lang>`, `dir` and the manifest language
+behind one entry, so a second locale is an entry there rather than an edit in
+three files. `lib/plural.ts` makes count-varying wording a CLDR table keyed by
+category (`Intl.PluralRules`) instead of an English `n === 1` ternary, with each
+form a whole phrase carrying `{n}` — so a language with three count forms, or
+one that puts its numeral last, adds keys rather than rewriting call sites.
+
+What #169 still asks for beyond these three is a `strings[locale]` dimension,
+sentences that are not assembled from translated fragments, and book names
+stored as numbers rather than written into IndexedDB as English data.
 
 ## Testing
 

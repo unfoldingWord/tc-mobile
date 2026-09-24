@@ -19,6 +19,7 @@
  * data and pure functions, so it costs the DOM-free core nothing: it compiles
  * under `tsconfig.lib.json` with the rest of `lib/`. #169.
  */
+import { plural } from "@/lib/plural";
 import { filenameSafe } from "@/lib/utils";
 
 /**
@@ -34,28 +35,6 @@ import { filenameSafe } from "@/lib/utils";
  */
 function couldNotBeIncluded(subject: string): string {
   return `${subject} could not be included.`;
-}
-
-/**
- * A count and the noun it counts: "1 segment", "3 segments".
- *
- * The plurals in this table were inline `n === 1 ? … : …` ternaries that spelled
- * the count out on both arms, and that shape is how `menuOpenWithFailures` came
- * to carry a byte-for-byte copy of `failuresMarker`'s wording — the same
- * duplicate-not-alias defect `shareBookPartial` records below. English's two
- * forms are all this does; a language whose plural rule is not one-versus-many
- * needs a different function here rather than a different ternary at each call
- * site (#169).
- *
- * `shareBookMissingAndPartial` uses this for its segment count and NOT for its
- * `partialChapters` branch, which is not a plural: that branch's singular arm is
- * "an included chapter" rather than "1 included chapter", because naming the
- * count of a single chapter tells a facilitator nothing they cannot see. Two
- * arms that are different sentences are not two forms of one noun, and this
- * helper is only for the latter.
- */
-function counted(n: number, one: string, many: string): string {
-  return `${n} ${n === 1 ? one : many}`;
 }
 
 export const strings = {
@@ -89,9 +68,10 @@ export const strings = {
   loadingBooks: "Loading your books.",
   tryAgain: "Try again",
   bookRow: (name: string, chapters: number, expanded: boolean): string =>
-    `${name}, ${counted(chapters, "chapter", "chapters")}, ${
-      expanded ? "expanded" : "collapsed"
-    }`,
+    `${name}, ${plural(chapters, {
+      one: "{n} chapter",
+      other: "{n} chapters",
+    })}, ${expanded ? "expanded" : "collapsed"}`,
   addChapter: (bookName: string): string => `Add chapter to ${bookName}`,
   openChapter: (heading: string): string => `Open ${heading}`,
   chapterName: (n: number): string => `Chapter ${n}`,
@@ -526,7 +506,9 @@ export const strings = {
   // resolve — never-recorded, but also a dangling take or a half-missing clip —
   // so "no recording yet" would misdescribe a hole the translator never left.
   shareMissing: (n: number): string =>
-    couldNotBeIncluded(counted(n, "segment", "segments")),
+    couldNotBeIncluded(
+      plural(n, { one: "{n} segment", other: "{n} segments" })
+    ),
   // The book name is free text since #264, so sanitise it into the filename —
   // a `/` in "Mark/Luke" would otherwise split a zip entry into a folder (G3).
   // The chapter is an ordinal, always safe.
@@ -547,7 +529,9 @@ export const strings = {
   // `missing` counts whole chapters left out of the zip — a chapter with no
   // resolvable audio at all.
   shareBookMissing: (n: number): string =>
-    couldNotBeIncluded(counted(n, "chapter", "chapters")),
+    couldNotBeIncluded(
+      plural(n, { one: "{n} chapter", other: "{n} chapters" })
+    ),
   // A chapter that IS included can still be partial — one or more of its own
   // segments had no resolvable audio (`exportChapterMp3`'s own `missing`,
   // rolled up across every included chapter, #116). Distinct from
@@ -582,7 +566,19 @@ export const strings = {
   //
   // One missing segment is always exactly one chapter, so the
   // `segments === 1` case can safely name that chapter's scope without
-  // misstating a count. George round 2 caught that the first attempt at that
+  // misstating a count.
+  //
+  // That is why this branch is NOT `plural`'s `one` form, although every other
+  // count-varying string in this table now is (#169). CLDR's `one` category is
+  // not "exactly 1" — Russian selects it for 21, 31, 101 — so moving this
+  // clause into a forms table would let a second locale assert "an included
+  // chapter", singular, about twenty-one segments spread across an unknown
+  // number of them, which is the #400/#423 bug in a new place. The branch here
+  // is a claim about the count being exactly one, not an agreement with it; a
+  // locale that needs `few`/`many` inside the else branch should add the table
+  // there and leave this exactly-one branch as a branch.
+  //
+  // George round 2 caught that the first attempt at that
   // clause ("...was left out of a chapter that shipped") used maintainer
   // vocabulary that collides with two unchanged contracts: "shipped" reads as
   // past-tense send while the share menu is only `ready` (Share now — `hooks/
@@ -609,7 +605,7 @@ export const strings = {
     partialChapters: number
   ): string =>
     `${strings.shareBookMissing(chapters)} ${couldNotBeIncluded(
-      `${counted(segments, "segment", "segments")} of ${
+      `${plural(segments, { one: "{n} segment", other: "{n} segments" })} of ${
         partialChapters > 1
           ? `${partialChapters} included chapters`
           : "an included chapter"
@@ -759,13 +755,18 @@ export const strings = {
   // a facilitator sending something to a maintainer, and the noun has to name
   // the thing they are sending, not the file format it happens to be.
   failuresMarker: (n: number): string =>
-    counted(n, "problem recorded", "problems recorded"),
+    plural(n, {
+      one: "{n} problem recorded",
+      other: "{n} problems recorded",
+    }),
   // Replaces the plain "Open menu" name while the log is non-empty, so the one
   // control that leads to the report announces that it does.
   //
-  // It CALLS `failuresMarker` rather than repeating its wording, for the reason
-  // `shareBookPartial` gives: the two were byte-for-byte copies, so a tightening
-  // of one would have left the other saying the old thing (#169).
+  // Reads `failuresMarker` rather than spelling the phrase out again (#169).
+  // The two used to be byte-identical, so a later edit to one would have left
+  // the panel and the control it opens saying different things about the same
+  // number — and a count phrase is now a plural TABLE, which is a worse thing
+  // to keep two copies of than a sentence was.
   menuOpenWithFailures: (n: number): string =>
     `Open menu. ${strings.failuresMarker(n)}.`,
   // Said in the menu, above the two actions. Deliberately not "the app

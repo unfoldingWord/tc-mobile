@@ -15,9 +15,8 @@ import { describe, expect, it } from "vitest";
  * handle is flush to the top and bottom of the clipping canvas, so its ring
  * clipped on every focus. Both now live beside the global rule, unlayered.
  *
- * Source text, not a computed style: there is no renderer in this suite. The
- * shipped build's computed value was read in Chromium for each fix, and the
- * PR bodies for #622 and #635 hold those runs.
+ * These assertions read source text; they do not compute styles or render
+ * focus rings in a browser.
  *
  * Comments are stripped before matching. `3-components.css`'s header names
  * selectors and values in prose, and a raw regex over the whole file matches
