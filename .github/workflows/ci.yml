@@ -58,6 +58,40 @@ jobs:
       - name: Scan full history
         run: ./gitleaks detect --source . --redact -v --exit-code 1
 
+  # #840 R3: a commit with a subject and no body has reached `develop` before
+  # (#776; the review bench's fix-lane commits on #792 `7a41ee29d` and #793
+  # `21108948e`), past AGENTS.md's "Conventions" rule (subject AND body,
+  # neither blank) and past `.husky/commit-msg`, which only guards a commit
+  # made in a checkout that ran `npm run prepare` — a PR opened from a
+  # checkout where hooks were bypassed or never installed reaches here
+  # ungated otherwise. `pull_request` only, per AGENTS.md's own rule for a
+  # check that reads `base..head`: the equivalent `push` event has no PR base
+  # to diff against, and a push to develop/staging/main is always a merge, not
+  # an individual commit this check would ever fail.
+  commit-messages:
+    name: Commit Messages
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Full history: `--range` below needs the merge base, which a shallow
+      # (default depth-1) checkout does not have. Same reasoning as
+      # browser-smoke's "Changed paths" step below.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+
+      - name: Check PR commits for a non-blank body
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: node scripts/check-commit-messages.mjs --range "$BASE_SHA..$HEAD_SHA"
+
   quality:
     name: Code Quality
     runs-on: ubuntu-latest
