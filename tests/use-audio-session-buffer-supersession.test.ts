@@ -20,9 +20,9 @@ import {
  * #650 named this hole in both copies of the playback tail; #735 closed it
  * for `playTake` (`tests/use-audio-session-supersession.test.ts`) and its own
  * docblock named `playBuffer`'s copy as the sibling left open — filed here as
- * #736. This is that coverage, for `playBuffer`'s `onEnded` guard
- * (`src/hooks/use-audio-session.ts:433`) and its `settle`/`playbackHandleRef`
- * assignment (`:449-451`).
+ * #736. This is that coverage, for `playBuffer`'s `onEnded` guard and its
+ * `settle`/`playbackHandleRef` assignment, both now in the shared
+ * `startPlayback` in `src/hooks/use-audio-session.ts`.
  *
  * `playBuffer` treats a SECOND tap while `playingBufferRef.current` is true as
  * a stop, not a new claim (there is only one working buffer) — so this test
