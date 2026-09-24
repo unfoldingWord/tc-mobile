@@ -1,8 +1,8 @@
 import { Control } from "./control";
 import { Menu } from "./menu";
 import { rowHint, type RowReason } from "./menu-row-state";
-import { ThemeControl } from "./theme-control";
 import { strings } from "@/lib/strings";
+import { ThemeControl } from "./theme-control";
 
 /**
  * The recorder sheet's ≡ menu (#160, L-1).
