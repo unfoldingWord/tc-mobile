@@ -33,16 +33,21 @@ export type { SaveFailureKind };
  * through to `{}` (so every classifier's `=== `comparison misses) is the
  * correct classification, not a fabricated one, and there was never a real
  * value here to hand `reportFailure` either. Centralized once here, so every
- * classifier below shares one try/catch rather than each wrapping its own.
+ * classifier below shares one guarded read rather than each wrapping its own.
+ * Each field is read on its own, so a throwing `code` cannot discard a `name`
+ * that read fine, or the reverse (Frank r1 on #905).
  */
+function readField(cause: object, key: "name" | "code"): unknown {
+  try {
+    return (cause as { name?: unknown; code?: unknown })[key];
+  } catch {
+    return undefined;
+  }
+}
+
 function readFailureShape(cause: unknown): { name?: unknown; code?: unknown } {
   if (typeof cause !== "object" || cause === null) return {};
-  try {
-    const e = cause as { name?: unknown; code?: unknown };
-    return { name: e.name, code: e.code };
-  } catch {
-    return {};
-  }
+  return { name: readField(cause, "name"), code: readField(cause, "code") };
 }
 
 export function isQuotaExceeded(cause: unknown): boolean {

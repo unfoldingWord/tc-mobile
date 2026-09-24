@@ -98,6 +98,25 @@ describe("saveFailureKind", () => {
     expect(() => saveFailureKind(revokedProxyCause())).not.toThrow();
     expect(saveFailureKind(revokedProxyCause())).toBe("unknown");
   });
+
+  it("keeps a readable name or code when only the other one throws (Frank r1 on #905)", () => {
+    const throws = (): never => {
+      throw new Error("hostile getter");
+    };
+    const nameWithThrowingCode = (name: string): unknown =>
+      Object.defineProperty({ name }, "code", { get: throws });
+    expect(isQuotaExceeded(nameWithThrowingCode("QuotaExceededError"))).toBe(
+      true
+    );
+    expect(
+      isDatabaseDowngrade(nameWithThrowingCode("DatabaseDowngradeError"))
+    ).toBe(true);
+    expect(
+      isQuotaExceeded(
+        Object.defineProperty({ code: 22 }, "name", { get: throws })
+      )
+    ).toBe(true);
+  });
 });
 
 /**
