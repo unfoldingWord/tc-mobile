@@ -5,12 +5,16 @@ import { describe, expect, it } from "vitest";
 
 /**
  * The two zoom/touch policies #164 found wrong, gated so they cannot drift
- * back (R-10, R-11).
+ * back: R-11 (pinch zoom must stay available) and R-10 (touch targets stay
+ * control-sized).
  *
- * These source assertions check viewport restrictions, touch-action rules,
- * the rename field's font-size floor, and the breadcrumb's target token and
- * class wiring. They do not measure rendered hit areas or exercise gestures
- * on a device. The static render harness in tests/render.ts does not provide
+ * Three of these source checks tie to R-11 — the viewport does not forbid
+ * pinch zoom, the per-surface touch-action rules that replaced the blanket
+ * restriction, and the rename field's font-size floor, which is what now
+ * keeps a focused input from auto-zooming in place of the removed viewport
+ * lock. The fourth, the breadcrumb's target token and class wiring, ties to
+ * R-10. None of them measure rendered hit areas or exercise gestures on a
+ * device; the static render harness in tests/render.ts does not provide
  * layout or cascade.
  */
 const ROOT = path.resolve(import.meta.dirname, "..");

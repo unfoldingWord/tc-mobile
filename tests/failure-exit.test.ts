@@ -14,9 +14,10 @@ import {
  * So the cases below are about the SET of sites as much as about either answer:
  * they must agree, and the list must be exhaustive.
  *
- * What cannot be tested here, and is not claimed: that the four call sites
- * actually consult this. They are inside `recorder.tsx`, and this repo has no
- * renderer. That is on the two-tab staging list.
+ * What this file does not cover: whether the call sites in `recorder.tsx`
+ * consult this. `tests/recorder-missing-target.test.ts` mounts the sheet for
+ * the two close tails (`clear`, `mark`) on a missing segment; the `erase` and
+ * `load` sites have no mounted test of their decision.
  */
 const SITES: readonly RecorderFailureSite[] = [
   "clear",
@@ -32,7 +33,9 @@ describe("failureExit", () => {
     // throwing the translator out of the sheet over a transient would be a worse
     // defect than the one this fixes.
     for (const site of SITES) {
-      expect(failureExit(site, false)).toBe("stay");
+      expect(
+        failureExit(site, { databaseUnreachable: false, targetMissing: false })
+      ).toBe("stay");
     }
   });
 
@@ -43,7 +46,34 @@ describe("failureExit", () => {
     // close tails, Back IS that control, so the sheet cannot be left at all
     // (George R6 P2).
     for (const site of SITES) {
-      expect(failureExit(site, true)).toBe("exit");
+      expect(
+        failureExit(site, { databaseUnreachable: true, targetMissing: false })
+      ).toBe("exit");
+    }
+  });
+
+  it("leaves and re-reads when the segment it wrote to no longer exists (#607)", () => {
+    // Another live copy deleted the book: `clearSegmentTake` and
+    // `setSegmentFinished` throw `No such segment`, and segment ids are never
+    // reused, so the Back that retries the write can never land. The screen
+    // behind has a stale state for a missing chapter (#597), and only a
+    // re-read shows it — hence a distinct answer from `exit`, whose Segments
+    // re-read would fail against a latched database anyway.
+    for (const site of SITES) {
+      expect(
+        failureExit(site, { databaseUnreachable: false, targetMissing: true })
+      ).toBe("leave-stale");
+    }
+  });
+
+  it("lets an unreachable database outrank a missing target", () => {
+    // With `getDb()` latched a re-read fails too, and what the translator
+    // needs is the restart `DatabasePanel` offers, not a stale chapter state
+    // that cannot load.
+    for (const site of SITES) {
+      expect(
+        failureExit(site, { databaseUnreachable: true, targetMissing: true })
+      ).toBe("exit");
     }
   });
 
@@ -51,11 +81,15 @@ describe("failureExit", () => {
     // The class was four sites deciding separately. If one of them ever needs a
     // different answer, that divergence has to be written down here as a
     // divergence, and this case is what forces the conversation.
-    for (const unreachable of [false, true]) {
-      const answers = new Set(
-        SITES.map((site) => failureExit(site, unreachable))
-      );
-      expect(answers.size).toBe(1);
+    for (const databaseUnreachable of [false, true]) {
+      for (const targetMissing of [false, true]) {
+        const answers = new Set(
+          SITES.map((site) =>
+            failureExit(site, { databaseUnreachable, targetMissing })
+          )
+        );
+        expect(answers.size).toBe(1);
+      }
     }
   });
 

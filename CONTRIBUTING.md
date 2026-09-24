@@ -26,7 +26,8 @@ the tree wins, and the disagreement is worth an issue.
 
 ## Setup and commands
 
-Node **22.12 or newer** (`engines` in `package.json`).
+Node **22.12+**, except the 23.x line (`engines` in `package.json`; a
+render-test dependency's own engine range excludes 23.x, #577).
 
 ```bash
 npm ci

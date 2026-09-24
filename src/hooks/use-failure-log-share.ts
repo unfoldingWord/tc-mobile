@@ -68,10 +68,9 @@ export interface LogShareCapabilities {
  * `text/plain` File through Web Share, as plain text through Web Share, or not
  * at all.
  *
- * The whole point of extracting it: this is the decision both earlier review
- * rounds found a bug in, and the hook around it is React + browser glue this
- * repo has no renderer to exercise (the constraint `tests/share-flow.test.ts`
- * documents). Four rules, each paid for:
+ * Extracted so `tests/failure-log-share.test.ts` can exercise the capability
+ * decision directly. The static markup harness in `tests/render.ts` does not
+ * drive the surrounding hook's effects or share gestures. Four rules:
  *
  *  1. **Native wins first, and asks the WebView nothing** (Frank, this round).
  *     `share-target.ts` exists because the first external tester's Android APK
@@ -600,12 +599,8 @@ export function useFailureLogShare(): UseFailureLogShare {
   // **TWO TRIGGERS, ONE DROP** (Frank R8 P2). This effect was the only trigger,
   // and a passive effect is not a guard against a TAP: between React committing
   // the render that moved the generation and this effect running, the armed
-  // payload is still armed and `send` was still willing to hand it over. That is
-  // not reasoning — it was reproduced in headless Chromium against the shipped
-  // build, with the failure and the tap in one task, and the stale one-entry
-  // File went to `navigator.share` while this effect ran a beat later. The e2e
-  // case `a failure landing in the SAME TASK as tap 2 sends nothing` is that
-  // reproduction, kept.
+  // payload is still armed. The send path needs its own synchronous check
+  // so it cannot hand over a snapshot invalidated in that window.
   //
   // So `send` now asks the same question synchronously, from
   // `getLogGeneration()` rather than the `generation` captured below — the

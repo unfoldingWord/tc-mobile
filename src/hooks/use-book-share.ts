@@ -15,6 +15,12 @@ export interface UseBookShare extends ShareSurface {
    */
   readonly partialSegments: number;
   /**
+   * How many distinct included chapters hold {@link partialSegments} (#446) —
+   * what lets the gap Notice name a chapter count the sum cannot. Zero until a
+   * prepare succeeds.
+   */
+  readonly partialChapters: number;
+  /**
    * Tap 1: encode the book's chapters and archive them into one zip, stashing the
    * File for the send gesture. `zipFilename` names the archive; `nameChapter`
    * names each MP3 inside it (both are translator-facing copy from the screen).
@@ -44,6 +50,7 @@ export function useBookShare(): UseBookShare {
     sendUnconfirmed,
     missing,
     partial: partialSegments,
+    partialChapters,
     prepare: run,
     send,
     progress,
@@ -81,6 +88,7 @@ export function useBookShare(): UseBookShare {
             file,
             missing: result.missing,
             partial: result.partialSegments,
+            partialChapters: result.partialChapters,
           };
         })
       ),
@@ -93,6 +101,7 @@ export function useBookShare(): UseBookShare {
     sendUnconfirmed,
     missing,
     partialSegments,
+    partialChapters,
     prepare,
     send,
     reset,

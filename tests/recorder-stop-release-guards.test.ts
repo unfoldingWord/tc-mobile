@@ -466,13 +466,15 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     expect(catchBody).not.toMatch(/\bthrow\b/);
   });
 
-  it('"recorder-stop-flush" is one site in the file, and the tail\'s empty-capture exit picks its sentence on flushThrew (#485, panel r1)', () => {
+  it('"recorder-stop-flush" is one site in the file, and the tail\'s empty-capture exit picks its code on flushThrew (#485, panel r1)', () => {
     // One row key, one site: a second site would double-report the same
-    // throw. The sentence: an empty seal after a throw is "Could not finish
-    // this recording." (the engine failed, and the facilitator runbook
-    // names that sentence as written down), not "No sound was recorded"
-    // (which reads as the translator's silence). `flushThrew` is declared
-    // in stop()'s body before the try, so the flag is per invocation.
+    // throw. The code: an empty seal after a throw is "unfinished" (the
+    // engine failed), not "silence" (which reads as the translator's own).
+    // Since #169 the sentences live in `components/strings.ts` and the hook
+    // emits only the code, so this now pins the CODE the exit picks; the
+    // words it maps to are pinned in `tests/capture-failure-copy.test.ts`.
+    // `flushThrew` is declared in stop()'s body before the try, so the flag
+    // is per invocation.
     const hits = code.match(/"recorder-stop-flush"/g) ?? [];
     expect(hits).toHaveLength(1);
     expect(stopBody).toMatch(/\blet\s+flushThrew\s*=\s*false\s*;/);
@@ -481,7 +483,7 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     );
     const afterElse = stopBody.slice(elseBraceClose + 1);
     expect(afterElse).toMatch(
-      /blob\.size\s*===\s*0[\s\S]*?flushThrew\s*\?\s*"Could not finish this recording\."\s*:\s*"No sound was recorded\. Try again\."/
+      /blob\.size\s*===\s*0[\s\S]*?flushThrew\s*\?\s*"unfinished"\s*:\s*"silence"/
     );
   });
 

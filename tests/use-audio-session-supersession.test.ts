@@ -17,42 +17,33 @@ import type { SegmentId } from "@/types/domain";
 import type { SegmentRow } from "@/types/view";
 
 /**
- * #650: `tests/audio-session.test.ts` covers only the pure arbiter in
- * `lib/audio/session.ts`; what it names as uncoverable there — the hook's OWN
- * use of the arbiter's answer, in `playTake`'s `onEnded` guard and its
- * `settle` branch around `playbackHandleRef` — is coverable now that a jsdom
- * mount exists in this repo (`tests/render.ts`, #197; several suites already
- * mount real components with `act`). This mounts the real `useAudioSession`
+ * #650: mounts the real `useAudioSession` with `createRoot` and `act` in
+ * jsdom to exercise `playTake`'s use of the arbiter's answer, including its
+ * `onEnded` guard and `settle` branch around `playbackHandleRef`. The pure
+ * arbiter is covered separately by `tests/audio-session.test.ts`. This runs the
  * hook over a mocked `./audio-io`, `./use-recorder` and
  * `@/lib/storage/segment-audio`, and drives the exact race #650 names: tap
  * segment A, tap segment B before A's `playSamples` has resolved, then
  * resolve A.
- *
- * Both assertions below are red-first BY MUTATION, per AGENTS.md ("where the
- * code already exists, get the same signal by mutation"): the guard already
- * exists in `use-audio-session.ts`, so there is no broken state to write this
- * test against. Verified manually, not captured in this file (AGENTS.md bars
- * a run's output from living in a comment) — see the PR body's mutation
- * table for the observed pass/fail pairs.
  */
 
 const mocks = vi.hoisted(() => ({
   playSamples: vi.fn(),
   loadSegmentClip: vi.fn(),
+  decodeMp3ToCanonical: vi.fn(),
 }));
 
 vi.mock("@/hooks/audio-io", () => ({
   playSamples: mocks.playSamples,
   resumeAudioContext: vi.fn().mockResolvedValue(undefined),
-  decodeMp3ToCanonical: vi.fn(),
+  decodeMp3ToCanonical: mocks.decodeMp3ToCanonical,
 }));
 
 // A STABLE object, not a fresh one per call: `useAudioSession`'s `leave`
 // depends on `recorder.cancel`'s identity (among others), and `leave`'s own
 // unmount-cleanup effect re-fires whenever `leave` changes identity. A mock
-// that hands back a new `vi.fn()` every render made every render's commit
-// look like an unmount, which called `leave()` and reset `playingId` to
-// `null` before this test ever read it.
+// that hands back a new `vi.fn()` every render would rerun that cleanup,
+// calling `leave()` and resetting `playingId` to `null`.
 const recorderMock = {
   start: vi.fn(),
   stop: vi.fn(),
@@ -101,6 +92,29 @@ function resolvedClip(samples: Int16Array) {
   };
 }
 
+/**
+ * A resolved clip that drives `playTake`'s mp3 branch (#781's `"stored-mp3"`
+ * case). `mp3` is deliberately an empty byte stream — `mp3GranuleCount`
+ * (`lib/audio/mp3-align.ts`) reads zero frames from it, so `fitMp3Decode`
+ * takes its `decoded.length === frames` branch (no header math needed) as
+ * long as the mocked `decodeMp3ToCanonical` resolves exactly `frameCount`
+ * samples, which the caller below arranges.
+ */
+function resolvedMp3Clip(frameCount: number) {
+  return {
+    kind: "resolved",
+    segment: {},
+    take: {},
+    clip: { encoding: "mp3", meta: { frameCount }, mp3: new Uint8Array(0) },
+  };
+}
+
+/** Cast for reading the `source` a `playSamples` call was made with, without
+ * pulling in the full `PlaySamplesOptions` shape this test doesn't need. */
+function sourceOf(call: unknown): string | undefined {
+  return (call as { source?: string } | undefined)?.source;
+}
+
 function stubHandle(elapsedSeconds: number) {
   return { stop: vi.fn(), elapsed: () => elapsedSeconds, duration: 10 };
 }
@@ -135,6 +149,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.playSamples.mockReset();
   mocks.loadSegmentClip.mockReset();
+  mocks.decodeMp3ToCanonical.mockReset();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -176,6 +191,10 @@ it("does not adopt a handle whose claim was superseded, and its stale onEnded le
   });
   expect(mocks.playSamples).toHaveBeenCalledTimes(1);
   expect(api().playingId).toBe(rowA.segmentId);
+  // #781: playTake over a pcm clip must label its probe source "stored-pcm" —
+  // nothing else pinned that the hook passes the right `ProbeSource` per
+  // caller (only what the probe DOES with a label, in tests/audio-probe.test.ts).
+  expect(sourceOf(mocks.playSamples.mock.calls[0]?.[1])).toBe("stored-pcm");
 
   // Tap B before A's playSamples settles: B's claim supersedes A's
   // synchronously, inside the same tap.
@@ -216,4 +235,34 @@ it("does not adopt a handle whose claim was superseded, and its stale onEnded le
     await flush();
   });
   expect(api().readPlaybackPosition()).toEqual({ ms: 5000, measured: true });
+});
+
+it('labels playTake\'s probe source "stored-mp3" for a finished (mp3) clip (#781)', async () => {
+  const rowM = row("segment-mp3");
+  const frameCount = 4;
+  mocks.loadSegmentClip.mockResolvedValueOnce(resolvedMp3Clip(frameCount));
+  // Shaped so `fitMp3Decode` (which runs for real over this mock's return,
+  // per #781) takes its `decoded.length === frames` branch: no granule-count
+  // math applies when the decode already comes back the right length.
+  mocks.decodeMp3ToCanonical.mockResolvedValueOnce(new Int16Array(frameCount));
+
+  const handle = deferredHandle();
+  mocks.playSamples.mockImplementationOnce(() => handle.promise);
+
+  const ref = createRef<UseAudioSession>();
+  await act(async () => {
+    root.render(createElement(Harness, { ref }));
+  });
+  const api = () => {
+    if (!ref.current) throw new Error("Harness did not mount useAudioSession");
+    return ref.current;
+  };
+
+  await act(async () => {
+    api().playTake(rowM);
+    await flush();
+  });
+
+  expect(mocks.playSamples).toHaveBeenCalledTimes(1);
+  expect(sourceOf(mocks.playSamples.mock.calls[0]?.[1])).toBe("stored-mp3");
 });

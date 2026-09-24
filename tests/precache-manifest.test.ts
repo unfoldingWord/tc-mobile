@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import { resolveDistGate } from "./dist-gate";
@@ -23,10 +24,10 @@ import { resolveDistGate } from "./dist-gate";
 // updated in the same change, on purpose) — otherwise the tiles are
 // precached nowhere, there is no runtimeCaching, and a field install strands
 // on broken images. The reader-gated test below fails exactly that omission.
-// #219 widened what counts as "reads" beyond the `thumbUrl` identifier — see
-// `OBS_IMAGERY_PATTERNS` below. (A `frame.image` CDN read is deliberately
-// NOT one of the matched patterns — see the comment there, #232 round-1
-// review, finding C1.)
+// #219 widened what counts as "reads" beyond the `thumbUrl` identifier, and
+// #280 replaced the raw-text scan with an AST walk — see `readsObsImagery`
+// below. (A `frame.image` CDN read is deliberately NOT one of the matched
+// shapes — see the comment there, #232 round-1 review, finding C1.)
 const ROOT = path.resolve(import.meta.dirname, "..");
 const CONFIG = path.join(ROOT, "vite.config.ts");
 const SRC = path.join(ROOT, "src");
@@ -115,12 +116,26 @@ function tsFiles(dir: string): string[] {
 // decision actually turns on — two ways, neither of which requires going
 // through the `thumbUrl` symbol (#219):
 //
-// 1. Imports or calls `thumbUrl`. A bare doc-comment mention (e.g.
-//    src/types/obs.ts) is not a reader, so this matches an import of the
-//    symbol or a call `thumbUrl(` — not the identifier alone.
+// 1. Imports `thumbUrl`, under any local alias, or calls it through a
+//    namespace import (`catalog.thumbUrl(...)`).
 // 2. Hand-builds the `/obs/thumbs/…` path itself instead of calling
 //    `thumbUrl` — the same bundled file, reached without the symbol the old
 //    check tracked.
+//
+// #280 (deferred from #232 round-1, Frank #2): the previous check ran these
+// as regexes over each file's RAW TEXT, so a `//` comment or doc link that
+// merely mentioned `thumbUrl` or `/obs/thumbs/` tripped the gate exactly as a
+// real reader would, and the reverse — `const fn = thumbUrl; fn(...)`, or
+// any other indirection between an import and its call site — could slip
+// past a regex built to match a specific call shape. Below walks the real
+// syntax tree instead (`ts.createSourceFile` — already a dependency; see
+// `tests/types-erasable.test.ts` for the existing precedent). A `//` or
+// JSDoc comment is trivia the walk never visits, so it cannot register no
+// matter what it says. And checking the import specifier's ORIGINAL name
+// (`propertyName ?? name`) rather than guessing at call shapes means every
+// downstream use of `thumbUrl` — direct call, reassignment, whatever —
+// is caught at the one point a file must go through to have the symbol at
+// all, so there is no longer a call shape left to miss.
 //
 // Deliberately NOT matched:
 //
@@ -141,19 +156,66 @@ function tsFiles(dir: string): string[] {
 //   doc link, or unrelated fetch that happens to name the host, and a false
 //   positive here fails CI with "jpg must be restored" until 2.5 MB of
 //   thumbnails are added back.
-const OBS_IMAGERY_PATTERNS = [
-  /import[^;]*\bthumbUrl\b/,
-  /\bthumbUrl\s*\(/,
-  /\/obs\/thumbs\//,
-];
+
+/** The name a call expression's callee resolves to as plain text — an
+ *  identifier (`thumbUrl(...)`) or a property access (`catalog.thumbUrl(...)`).
+ *  Anything else (a computed access, a call on a call result, …) is not a
+ *  shape this guard recognises and returns `undefined`. */
+function calleeName(expr: ts.Expression): string | undefined {
+  if (ts.isIdentifier(expr)) return expr.text;
+  if (ts.isPropertyAccessExpression(expr)) return expr.name.text;
+  return undefined;
+}
+
+/** The literal text of every string/template piece a node IS — not a
+ *  substring search over the source, so a comment or JSDoc tag containing
+ *  the same characters is not a "piece" because it is not a literal node at
+ *  all. */
+function literalPieces(node: ts.Node): string[] {
+  if (ts.isStringLiteralLike(node)) return [node.text];
+  if (ts.isTemplateExpression(node))
+    return [
+      node.head.text,
+      ...node.templateSpans.map((span) => span.literal.text),
+    ];
+  return [];
+}
+
+/** Whether `source` reads OBS frame imagery, per the two ways described
+ *  above. Parses with the real TypeScript grammar for `fileName`'s extension
+ *  (`createSourceFile` infers `.ts` vs `.tsx` from it), so JSX attribute
+ *  literals are ordinary string-literal nodes here too. */
+function readsObsImagery(source: string, fileName: string): boolean {
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    false
+  );
+
+  function visit(node: ts.Node): boolean {
+    if (
+      ts.isImportSpecifier(node) &&
+      (node.propertyName ?? node.name).text === "thumbUrl"
+    )
+      return true;
+
+    if (ts.isCallExpression(node) && calleeName(node.expression) === "thumbUrl")
+      return true;
+
+    if (literalPieces(node).some((text) => text.includes("/obs/thumbs/")))
+      return true;
+
+    return ts.forEachChild(node, visit) ?? false;
+  }
+
+  return visit(sourceFile);
+}
 
 function obsThumbnailReaders(): string[] {
   return tsFiles(SRC)
     .filter((file) => file !== CATALOG)
-    .filter((file) => {
-      const source = readFileSync(file, "utf8");
-      return OBS_IMAGERY_PATTERNS.some((pattern) => pattern.test(source));
-    })
+    .filter((file) => readsObsImagery(readFileSync(file, "utf8"), file))
     .map((file) => path.relative(ROOT, file));
 }
 
@@ -305,6 +367,91 @@ describe.skipIf(GATE === "skip")(
 // variable, which is true wherever tests run, including the passes that
 // legitimately have no build yet. See `./dist-gate` for why the loud half
 // does not live here.
+
+// `readsObsImagery` pinned directly, on synthetic sources — the same shape
+// as `tests/types-erasable.test.ts`'s `runtimeEmit` block: red states first
+// (AGENTS.md, "a gate is tested in both states"), so a parser that matched
+// everything, or nothing, would be caught here rather than by the
+// integration block below, which only ever sees today's real tree.
+describe("readsObsImagery (#280 — AST, not raw text)", () => {
+  const FILE = "probe.ts";
+
+  it("does not count a // comment mentioning the path as a reader", () => {
+    const source =
+      "// bundled thumbnails live under /obs/thumbs/ — see catalog.ts\nexport const x = 1;";
+    expect(readsObsImagery(source, FILE)).toBe(false);
+  });
+
+  it("does not count a doc comment mentioning thumbUrl as a reader", () => {
+    // Built from single-character parts rather than typed as a normal block
+    // comment: this file is one of the two tests/dist-gate.test.ts is itself
+    // gated on, via a raw-text scan of that file for its own two markers.
+    // That scan doesn't understand string literals either, so writing this
+    // synthetic source in the ordinary way — a literal comment-open marker,
+    // eventually followed by a literal comment-close marker — would pair
+    // with an unrelated stray open marker elsewhere in THIS file and strip
+    // real code (dist-gate.test.ts names the trap; this avoids tripping it,
+    // rather than tripping and then explaining it away).
+    const star = String.fromCharCode(42);
+    const slash = String.fromCharCode(47);
+    const source = [
+      slash,
+      star,
+      star,
+      "\n * See `thumbUrl` in `@/lib/obs/catalog` for the path shape.\n ",
+      star,
+      slash,
+      "\nexport const x = 1;",
+    ].join("");
+    expect(readsObsImagery(source, FILE)).toBe(false);
+  });
+
+  it("does not count a string that merely names thumbUrl as a reader", () => {
+    // Regression against the old regex's `\bthumbUrl\s*\(/`, which matched
+    // this text as a call even though it is only a string literal's content.
+    const source = 'export const msg = "call thumbUrl(1, 2) to get the path";';
+    expect(readsObsImagery(source, FILE)).toBe(false);
+  });
+
+  it("counts a real import of thumbUrl as a reader", () => {
+    const source =
+      'import { thumbUrl } from "@/lib/obs/catalog";\nexport const url = thumbUrl;';
+    expect(readsObsImagery(source, FILE)).toBe(true);
+  });
+
+  it("counts an aliased import of thumbUrl as a reader, under its alias", () => {
+    // The old regex matched `thumbUrl\s*\(` — a call under a RENAMED local
+    // binding (`getThumb(...)`) would not contain that text at all. Checking
+    // the specifier's original name catches every downstream use of the
+    // symbol, aliased or not, at the one point a file must go through to
+    // have it.
+    const source =
+      'import { thumbUrl as getThumb } from "@/lib/obs/catalog";\nconst url = getThumb(1, 2);';
+    expect(readsObsImagery(source, FILE)).toBe(true);
+  });
+
+  it("counts a namespace call to thumbUrl as a reader", () => {
+    const source =
+      'import * as catalog from "@/lib/obs/catalog";\nconst url = catalog.thumbUrl(1, 2);';
+    expect(readsObsImagery(source, FILE)).toBe(true);
+  });
+
+  it("counts a hand-built /obs/thumbs/ string literal as a reader", () => {
+    const source = 'export const url = "/obs/thumbs/obs-01-01.jpg";';
+    expect(readsObsImagery(source, FILE)).toBe(true);
+  });
+
+  it("counts a hand-built /obs/thumbs/ template literal as a reader", () => {
+    const source =
+      "export const url = (s: string, f: string) => `/obs/thumbs/obs-${s}-${f}.jpg`;";
+    expect(readsObsImagery(source, FILE)).toBe(true);
+  });
+
+  it("counts a /obs/thumbs/ JSX attribute literal as a reader", () => {
+    const source = 'export const Img = () => <img src="/obs/thumbs/x.jpg" />;';
+    expect(readsObsImagery(source, "probe.tsx")).toBe(true);
+  });
+});
 
 describe("OBS thumbnail precache is reader-gated (#177 / ADR 0006)", () => {
   const readers = obsThumbnailReaders();

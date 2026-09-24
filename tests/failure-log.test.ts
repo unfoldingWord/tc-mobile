@@ -27,20 +27,19 @@ import {
   appendFailure,
   clearFailures,
   countFailures,
+  FAILURE_LOG_LIMIT,
   readFailures,
 } from "@/lib/storage/failures";
-import { FAILURE_LOG_LIMIT, type StoredFailure } from "@/types/failure";
+import type { StoredFailure } from "@/types/failure";
 import { clearAllStores } from "./support";
 
 /**
  * The durable failure log (#205) — the store, and the sink that feeds it.
  *
- * Not covered here, and not claimed: the panel and the marker. There is no
- * renderer in this suite (`vitest.config.ts` sets `environment: "node"`, and
- * this repo has declined jsdom before), so `FailureLogPanel`, the `≡` marker on
- * Books, and the share handoff are verified in a browser and recorded on the PR.
- * What IS covered is everything they read: the ring, the order, the sink's
- * ordering guarantee, and the sink's refusal to re-enter the funnel.
+ * The ring, ordering, sink sequencing and refusal to re-enter the funnel are
+ * exercised here. Static hook probes read server snapshots without effects.
+ * The panel, Books marker interactions and native share handoff need separate
+ * browser or device coverage; this suite does not exercise them.
  */
 
 /**
@@ -65,13 +64,10 @@ const entry = (over: Partial<StoredFailure> = {}): StoredFailure => ({
 });
 
 /**
- * What a screen reads on its FIRST paint — one render of the hook, no effects.
+ * Read the hook's server snapshot with one static render and no effects.
  *
- * There is no renderer in this suite, but `renderToStaticMarkup` runs a
- * component body exactly once and resolves `useSyncExternalStore` through its
- * server snapshot. That is precisely the paint at issue whenever the question is
- * "what does Books show the instant it comes back", and it is the only way to
- * read these two hooks here.
+ * This checks the snapshot supplied to `useSyncExternalStore`; it does not
+ * mount Books, run subscriptions or observe a browser paint.
  */
 function firstPaintCount(): number {
   let seen = 0;
@@ -595,15 +591,12 @@ describe("the durable sink", () => {
 });
 
 /**
- * The count the ≡ marker reads, across the unmount `App` does on every chapter.
+ * The module-store count exposed by the hook's server snapshot.
  *
- * There is no renderer in this suite, so "first paint" is `renderToStaticMarkup`
- * — which runs the component body once, with no effects, and reads
- * `useSyncExternalStore` through its server snapshot. That is exactly the paint
- * George R2 P2-1 is about: the one Books does the instant it remounts, before
- * any `countFailures()` this hook starts could possibly have landed. A hook that
- * begins each mount at `useState(0)` renders "0" here; a hook reading the module
- * store renders the number that is actually on disk.
+ * `renderToStaticMarkup` reads that snapshot without effects. Starting each
+ * render at `useState(0)` would lose the stored count in these probes; reading
+ * the module store preserves it. Browser remount and subscription timing are
+ * outside this suite.
  */
 describe("the count a remount inherits", () => {
   let uninstall: (() => void) | null = null;
@@ -1117,12 +1110,9 @@ describe("the log's generation", () => {
   });
 
   it("the synchronous getter is current the moment a write lands", async () => {
-    // What `send`'s tap-time check reads (Frank R8 P2). The hook cannot be
-    // driven here — there is no renderer in this suite, and arming a payload
-    // needs `navigator.share`/`canShare` and a File besides — so what IS pinned
-    // is the contract `send` depends on: this getter is never a version behind
-    // the subscribed one, which is the whole reason it is read instead of the
-    // value a render captured. The tap itself is covered in the e2e suite.
+    // The tap-time getter must stay current with the hook's server snapshot,
+    // rather than return a generation captured by an earlier render. This
+    // checks that contract, not the share hook's effects or native handoff.
     const before = getLogGeneration();
 
     reportFailure(new Error("one row"), "unhandled-rejection");

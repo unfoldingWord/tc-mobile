@@ -15,7 +15,7 @@ import { strings } from "./strings";
 import { reportFailure } from "@/hooks/report-failure";
 import { Waveform } from "./waveform";
 import { cn } from "@/lib/utils";
-import { segmentRowState } from "@/types/view";
+import { segmentRowState } from "@/lib/view/segment-rows";
 import type { SegmentRow as SegmentRowModel } from "@/types/view";
 
 interface SegmentRowProps {
@@ -165,8 +165,9 @@ export function SegmentRow({
     onMenuOpenRef.current = onMenuOpen;
     onMenuCloseRef.current = onMenuClose;
   });
-  // One close for every path out of the menu — its own Close/scrim/Escape, each
-  // action item, and the system Back that runs this as the layer's `dismiss()`.
+  // One close for every path out of the menu — its own Close/scrim/Escape (via
+  // `onMenuChromeClose` below), each action item directly, and the system Back
+  // that runs `onMenuChromeClose` as the layer's `dismiss()` (#799 item 1).
   // Idempotent: closing an already-closed menu re-reports `false`, which
   // `popLayer` and the screen's own `setRowMenuOpen(false)` both absorb.
   const closeMenu = useCallback(() => {
@@ -178,13 +179,36 @@ export function SegmentRow({
     menuOpenRef.current = false;
     onMenuCloseRef.current?.();
   }, []);
+  // The panel's OWN chrome closing it — its Close control, Escape, a scrim
+  // tap, or a system Back (#679, #799) — as opposed to an action item
+  // choosing something. `<Menu>`'s `onClose` fires for the first three the
+  // same way (`menu.tsx`'s `onKeyDown` and its scrim `onClick` both just call
+  // it), and `openMenu` below hands this SAME wrapper to the system-Back
+  // layer as its `dismiss()` (#799 item 1) — so one function covers all four.
+  //
+  // Deliberately NOT folded into `closeMenu` itself: every action item below
+  // (Edit, Finished, Erase, a landed rename) also calls `closeMenu` directly,
+  // and Edit hands off to `onOpenRecorder` right after — forcing focus back
+  // onto this row's ≡ there would race the recorder screen taking over the
+  // page. Setting the target here, one call site up, keeps every OTHER
+  // `closeMenu` caller exactly as focus-silent as it already was (the landed-
+  // rename path already sets its own "menu" target, just below, for the same
+  // reason).
+  const onMenuChromeClose = useCallback(() => {
+    pendingFocus.current = "menu";
+    closeMenu();
+  }, [closeMenu]);
   const openMenu = useCallback(() => {
     menuSession.current += 1;
     setMenuOpen(true);
     menuOpenRef.current = true;
-    // Handed over in the SAME handler that flips the state (invariant 6).
-    onMenuOpenRef.current?.(closeMenu);
-  }, [closeMenu]);
+    // Handed over in the SAME handler that flips the state (invariant 6). The
+    // system-Back layer's `dismiss()` runs this same restoring wrapper, not
+    // the bare `closeMenu` (#799 item 1) — a hardware/gesture Back used to
+    // leave focus on `<body>` while Close and Escape (which go through
+    // `<Menu>`'s own `onClose` below) already restored it.
+    onMenuOpenRef.current?.(onMenuChromeClose);
+  }, [onMenuChromeClose]);
   // The one thing the old reporting effect did that a tap handler cannot: a row
   // that unmounts with its menu open must still release the list's `inert` and
   // its layer, or the screen is left inert behind a menu that no longer exists
@@ -461,7 +485,7 @@ export function SegmentRow({
       />
       <Menu
         open={menuOpen}
-        onClose={closeMenu}
+        onClose={onMenuChromeClose}
         title={strings.recorderMenuTitle}
       >
         {renaming ? (
