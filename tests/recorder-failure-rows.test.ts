@@ -351,6 +351,22 @@ describe("source pins (text shape only): stopRecording()'s backstop catch report
     expect(hits).toHaveLength(1);
   });
 
+  it('(4) the catch returns "unfinished", never "silence" (#169, George R1 finding 2)', () => {
+    // The code the backstop picks is load-bearing in the same way the row key
+    // is, and it was the twin of `use-recorder.ts`'s empty-seal ternary — which
+    // `tests/recorder-stop-release-guards.test.ts` pins — with nothing pinning
+    // this side. `tsc` narrows the field to `CaptureFailure | null` (the
+    // `useCallback` is annotated `Promise<StopResult>`), so a TYPO cannot land
+    // here; what it cannot catch is the wrong MEMBER, and "silence" is the
+    // wrong member with a cost: `stopRecording` rejecting is the engine
+    // failing to hand the capture over, and the silence sentence tells a
+    // translator who did speak that nothing was heard.
+    expect(stopBody).toMatch(
+      /catch\s*\([\s\S]*?return\s*\{[^}]*\berror:\s*"unfinished"/
+    );
+    expect(stopBody).not.toMatch(/\berror:\s*"silence"/);
+  });
+
   it("(3) reportFailure is the real import from ./report-failure, not a same-named local", () => {
     // The pattern above cannot be satisfied by a local no-op shadow if the
     // import is required to be present.
