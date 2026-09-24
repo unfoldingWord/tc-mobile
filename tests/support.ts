@@ -165,17 +165,19 @@ export function region(
 
 /**
  * Finds an exact, standalone CSS rule for `selector` and returns its
- * declaration body, trimmed. Strips comments first, so a comment naming the
- * selector in prose (#529's trap) can never be the match, and throws —
- * rather than returning `""` or `null` — when the rule is absent or
- * ambiguous, so a caller cannot coerce a miss into an empty string and regex
- * nothing (#533's `notice-bridge` finding). A caller that must assert a rule
- * is deliberately ABSENT asserts the throw itself
- * (`expect(() => cssRule(css, selector)).toThrow()`), rather than getting a
- * nullable return to silently coerce.
+ * declaration body, trimmed. Strips CSS block comments first, so a comment
+ * naming the selector in prose (#529's trap) can never be the match — block
+ * comments only: CSS has no `//` comment, and `stripComments`' line strip
+ * would eat the rest of a line holding a `url(https://…)`, closing brace
+ * included. Throws — rather than returning `""` or `null` — when the rule is
+ * absent, ambiguous or empty, so a caller cannot coerce a miss into an empty
+ * string and regex nothing (#533's `notice-bridge` finding). A caller that
+ * must assert a rule is deliberately ABSENT asserts the MISSING-rule throw
+ * specifically (`toThrow(\`cssRule: missing rule: ${selector}\`)`); a bare
+ * `toThrow()` would also accept an ambiguous or empty rule.
  */
 export function cssRule(css: string, selector: string): string {
-  const stripped = stripComments(css);
+  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const rules = [
     ...stripped.matchAll(new RegExp(`^\\s*${escaped}\\s*\\{([^{}]*)\\}`, "gm")),

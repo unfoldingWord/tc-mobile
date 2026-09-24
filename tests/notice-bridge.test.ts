@@ -57,7 +57,8 @@ const TONES: NoticeTone[] = ["alert", "busy", "info"];
  * regexed and compared to `false`, green and proving nothing. `info` has no
  * base override BY DESIGN, so its two per-tone tests must not ask "is the
  * override empty" (a `cssRule` throw can't answer that) — they assert the
- * throw itself, an honest "this rule does not exist", via `toneOverride`.
+ * MISSING-rule throw specifically, an honest "this rule does not exist", via
+ * `toneOverride`; an ambiguous or empty `info` rule must still go red.
  */
 function toneOverride(tone: NoticeTone): string {
   const selector = `.notice[data-tone="${tone}"]`;
@@ -66,7 +67,7 @@ function toneOverride(tone: NoticeTone): string {
   expect(
     () => cssRule(CSS, selector),
     "info must keep the base edge and ink"
-  ).toThrow();
+  ).toThrow(`cssRule: missing rule: ${selector}`);
   return "";
 }
 
