@@ -132,7 +132,17 @@ export async function gatherChapterPcm(
       // neither may land in the chapter or push the next segment off its slot.
       fitted = fitMp3Decode(decoded, clip.mp3, frames);
     }
-    if (fitted.length === 0) {
+    // `frames` is what pass 1 reserved this clip's slot from, read via
+    // `getClipMeta` in a transaction separate from the `getClip` above.
+    // `fitMp3Decode` always returns exactly `frames` (via `fitToFrames`), but
+    // a PCM clip's stored samples are used as-is, so nothing here stops the
+    // two reads from disagreeing about a clip's length. If they ever did,
+    // `out.set` below would throw (S-10, #163) for a clip that overran its
+    // slot, or silently misalign every clip after it for one that undershot.
+    // Guard on the length actually in hand and count the clip missing — the
+    // same outcome an absent clip already has — rather than trust the
+    // earlier read.
+    if (fitted.length !== frames) {
       missingAudio++;
       continue;
     }
