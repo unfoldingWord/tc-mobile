@@ -18,7 +18,11 @@ import type { SegmentRow } from "@/types/view";
  * half is in `tests/recorder-erase-back.test.ts`.
  */
 
-const mocks = vi.hoisted(() => ({ chapter: vi.fn(), clear: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  chapter: vi.fn(),
+  clear: vi.fn(),
+  eraseRow: vi.fn(),
+}));
 vi.mock("@/hooks/use-chapter-segments", () => ({
   useChapterSegments: mocks.chapter,
 }));
@@ -76,11 +80,11 @@ beforeEach(() => {
     addSegment: vi.fn(),
     reload: vi.fn(),
     renameChapter: vi.fn(),
-    // The screen calls this on an erase that lands. The busy cases never
-    // reach it, but the third erase in the #91-adjacent recovery case below
-    // succeeds, and without it that success throws an UNHANDLED rejection —
-    // which vitest reports as an error while still passing the test.
-    eraseRow: vi.fn(),
+    // The screen calls this on an erase that LANDS, to drop the row. The two
+    // busy cases never reach it; the recovery case below does, and the last
+    // assertion there is what makes this mock load-bearing rather than a way
+    // to silence the unhandled rejection its absence produced.
+    eraseRow: mocks.eraseRow,
   });
   root = createRoot(document.getElementById("root")!);
 });
@@ -165,4 +169,8 @@ it("keeps its own erase-failed Notice when a retry is refused as busy", async ()
   await act(async () => button(strings.eraseConfirm).click());
   expect(mocks.clear).toHaveBeenCalledTimes(3);
   expect(mocks.clear).toHaveBeenLastCalledWith("segment");
+  // The store write is only half of a landed erase: the row has to go too,
+  // and neither refused tap may have dropped one (Frank r8).
+  expect(mocks.eraseRow).toHaveBeenCalledTimes(1);
+  expect(mocks.eraseRow).toHaveBeenCalledWith("segment");
 });
