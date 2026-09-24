@@ -97,6 +97,55 @@ describe("Control's inert cells", () => {
       `${strings.enterEdit}. ${strings.stopToEdit}`
     );
   });
+
+  it("makes the record-bar bin control aria-disabled, with the bar's own reason, while a take is live (#878, sibling of #869)", () => {
+    // `barHint`'s "uncommitted-take" branch used to return `null`
+    // unconditionally for the bin — `recorder.tsx`'s
+    // `rerecordHint = barHint(eraseReason)` — so the bin went NATIVELY
+    // disabled for a live take, exactly the gap #869 round 1 (Frank P2) found
+    // and fixed for the toolbar Edit control alone, and named as an unfixed
+    // sibling in that PR's residuals. `recorder.tsx` now calls
+    // `barHint(eraseReason, recording ? strings.stopToErase : undefined)`;
+    // this reproduces that exact call for `eraseReason === "uncommitted-take"`
+    // (what a live take produces, `menu-row-state.ts`'s `eraseRowReason`) and
+    // asserts the control the translator actually sees: `aria-disabled`, not
+    // native `disabled`, and an accessible name that carries the reason.
+    const hint = barHint("uncommitted-take", strings.stopToErase);
+    const el = button({
+      icon: "trash",
+      label: strings.rerecord,
+      disabled: true,
+      hint,
+    });
+
+    expect(el.hasAttribute("disabled")).toBe(false);
+    expect(el.getAttribute("aria-disabled")).toBe("true");
+    expect(el.getAttribute("aria-label")).toBe(
+      `${strings.rerecord}. ${strings.stopToErase}`
+    );
+  });
+
+  it("keeps the bin natively disabled with no reason through the commit window, after Stop (#878)", () => {
+    // The commit window (Stop already pressed, `isClosing`/`processing`) also
+    // collapses into `eraseRowReason`'s `"uncommitted-take"`, but the take is
+    // no longer live there, so "Stop recording to erase." would name a
+    // control that no longer exists in that form — the same reasoning
+    // `editToolbarHint` already applies (`recorder.tsx`). `recorder.tsx` only
+    // passes `strings.stopToErase` while `recording` is true, so this window
+    // reproduces the call with no label and keeps the pre-#878 native-disabled
+    // behaviour rather than inventing a false instruction.
+    const hint = barHint("uncommitted-take");
+    const el = button({
+      icon: "trash",
+      label: strings.rerecord,
+      disabled: true,
+      hint,
+    });
+
+    expect(el.hasAttribute("disabled")).toBe(true);
+    expect(el.hasAttribute("aria-disabled")).toBe(false);
+    expect(el.getAttribute("aria-label")).toBe(strings.rerecord);
+  });
 });
 
 describe("Control's disabled-row badge", () => {

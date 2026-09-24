@@ -124,26 +124,40 @@ jobs:
       # the synced capacitor.config.json, so it must be explicit.
       TC_ANDROID_DIAGNOSTIC: "false"
     steps:
-      - name: Require all five secrets
+      - name: Require the signing secrets
         env:
           PLAY_UPLOAD_KEYSTORE_BASE64: ${{ secrets.PLAY_UPLOAD_KEYSTORE_BASE64 }}
           PLAY_UPLOAD_STORE_PASSWORD: ${{ secrets.PLAY_UPLOAD_STORE_PASSWORD }}
           PLAY_UPLOAD_KEY_ALIAS: ${{ secrets.PLAY_UPLOAD_KEY_ALIAS }}
           PLAY_UPLOAD_KEY_PASSWORD: ${{ secrets.PLAY_UPLOAD_KEY_PASSWORD }}
-          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           set -euo pipefail
           missing=0
           for name in PLAY_UPLOAD_KEYSTORE_BASE64 PLAY_UPLOAD_STORE_PASSWORD \
-                      PLAY_UPLOAD_KEY_ALIAS PLAY_UPLOAD_KEY_PASSWORD \
-                      PLAY_SERVICE_ACCOUNT_JSON; do
+                      PLAY_UPLOAD_KEY_ALIAS PLAY_UPLOAD_KEY_PASSWORD; do
             if [ -z "${!name:-}" ]; then
               echo "::error::environment secret $name is unset or empty (environment: play-upload)"
               missing=1
             fi
           done
           [ "$missing" -eq 0 ] || exit 1
-          echo "All five Play secrets present."
+          echo "All four signing secrets present."
+
+      # build_only (workflow_dispatch-only) builds and signs the .aab but
+      # never uploads it, so it needs no Play API credential. inputs.build_only
+      # is empty on a push, so a push takes this branch too — same as an
+      # explicit build_only:false dispatch.
+      - name: Require the Play service-account secret
+        if: ${{ !inputs.build_only }}
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PLAY_SERVICE_ACCOUNT_JSON:-}" ]; then
+            echo "::error::environment secret PLAY_SERVICE_ACCOUNT_JSON is unset or empty (environment: play-upload)"
+            exit 1
+          fi
+          echo "Play service-account secret present."
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -219,14 +233,23 @@ jobs:
             || { echo "::error::cap sync did not copy the web bundle into android/"; exit 1; }
           echo "Bundle built, clean, and synced into android/."
 
-      # Decoded into gitignored paths (android/*.jks; fastlane/play-service-account.json).
-      - name: Write the upload keystore and Play service-account key
+      # Decoded into a gitignored path: android/tc-mobile-upload.jks. Needed to
+      # sign the .aab on every path, build_only included.
+      - name: Write the upload keystore
         env:
           PLAY_UPLOAD_KEYSTORE_BASE64: ${{ secrets.PLAY_UPLOAD_KEYSTORE_BASE64 }}
-          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           set -euo pipefail
           ruby -rbase64 -e 'File.binwrite("android/tc-mobile-upload.jks", Base64.decode64(ENV.fetch("PLAY_UPLOAD_KEYSTORE_BASE64")))'
+
+      # Decoded into a gitignored path: fastlane/play-service-account.json.
+      # Skipped on build_only — nothing after this step reads it there.
+      - name: Write the Play service-account key
+        if: ${{ !inputs.build_only }}
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
           ruby -rjson -e 'j = JSON.parse(ENV.fetch("PLAY_SERVICE_ACCOUNT_JSON")); abort("::error::PLAY_SERVICE_ACCOUNT_JSON is not a service_account key") unless j["type"] == "service_account"; File.write("fastlane/play-service-account.json", JSON.generate(j))'
 
       # versionCode: unix timestamp, same scheme as the APK lane, so a Play

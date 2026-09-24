@@ -951,6 +951,20 @@ export const strings = {
   clearFailureLogConfirmTitle: "Clear the problem report?",
   clearFailureLogConfirm: "Clear",
 
+  // ── Failure vocabulary (#172) ────────────────────────────────────────────
+  // What `use-books.ts`, `use-chapter-segments.ts` and `use-erase-segment.ts`
+  // map a caught failure KEY to, so a Books/Segments Notice never speaks a raw
+  // browser exception string. Deliberately generic — a message worth wording
+  // more specifically per site is a product decision for the requirements
+  // owner, not one this table invents (see the PR's residual list).
+  // `eraseFailed` already existed above and is reused rather than duplicated.
+  loadFailed: "Could not load. Try again.",
+  saveFailed: "Could not save. Try again.",
+  // Repeats `recoveryTitle`'s quota sentence (`components/recovery-copy.ts`)
+  // so the one condition a translator can act on reads the same everywhere a
+  // write can hit it, not only on the take-save recovery screen.
+  noRoom: "No room left on this phone.",
+
   // ── Record-bar Edit, blocked by a live take (#857 round 1, Frank P2) ─────
   // `barHint`'s own words for the `"uncommitted-take"` reason (`menu-row-
   // state.ts`) — distinct from `blockedByTake`, which sends a translator to
@@ -961,4 +975,15 @@ export const strings = {
   // The wording itself is a coordinator assumption pending the requirements
   // owner's sign-off — see the #857 PR body.
   stopToEdit: "Stop recording to edit.",
+
+  // ── Record-bar bin, blocked by a live take (#878, sibling of #857/#869) ──
+  // `barHint`'s words for the bin's own `"uncommitted-take"` reason
+  // (`menu-row-state.ts`) — #869 round 1 fixed the toolbar Edit control's
+  // identical gap and left this one as a named residual, since it predates
+  // #857's `hasTake` change and needed its own copy no one had reviewed.
+  // Names the bar's own Stop control by its real accessible name
+  // (`strings.stop`, "Stop recording"), the same rule `stopToEdit` follows.
+  // The wording itself is a coordinator assumption pending the requirements
+  // owner's sign-off — see the #878 PR body.
+  stopToErase: "Stop recording to erase.",
 } as const;

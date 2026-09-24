@@ -526,6 +526,7 @@ describe("liftOutcome", () => {
     pan: 500,
     length: LEN,
     takeActive: false,
+    canPaste: false,
   };
 
   it("resumes and unlocks when the last finger leaves", () => {
@@ -610,6 +611,34 @@ describe("liftOutcome", () => {
       keepOwed: false,
       // The ordinary #613 gesture: pan, lift, pick a new span.
       reopenFrame: true,
+    });
+  });
+
+  it("does not reopen the frame while the clipboard holds a cut, even at rest and silent (#835)", () => {
+    // Same inputs as the plain-pan case above — stage clear, nothing to
+    // resume — except the clipboard is full. Before #835 this returned
+    // `reopenFrame: true`, which is the reported bug: a drag's lift kept
+    // swapping the collapsed playhead back for a selection window while a
+    // cut was still waiting to be pasted.
+    expect(
+      liftOutcome({ ...base, interrupted: false, canPaste: true })
+    ).toEqual({
+      dragging: false,
+      resume: false,
+      keepOwed: false,
+      reopenFrame: false,
+    });
+  });
+
+  it("still does not reopen when the lift also resumes playback and the clipboard is full", () => {
+    // `canPaste` is one more term ANDed onto an already-false case here
+    // (`resume: true` already forces `reopenFrame: false`) — pinned anyway so
+    // the two reasons for `false` are not confused for each other.
+    expect(liftOutcome({ ...base, canPaste: true })).toEqual({
+      dragging: false,
+      resume: true,
+      keepOwed: false,
+      reopenFrame: false,
     });
   });
 });

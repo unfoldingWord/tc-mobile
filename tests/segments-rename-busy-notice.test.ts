@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { SegmentsScreen } from "@/components/segments-screen";
 import { strings } from "@/lib/strings";
+import type { FailureKey } from "@/hooks/save-failure";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { ChapterId } from "@/types/domain";
@@ -17,7 +18,7 @@ import type { ChapterId } from "@/types/domain";
  */
 
 const mocks = vi.hoisted(() => ({
-  error: null as string | null,
+  error: null as FailureKey | null,
   renameChapter: vi.fn(),
 }));
 vi.mock("@/hooks/use-chapter-segments", () => ({
@@ -128,12 +129,15 @@ it(
   "does not show a stale chapter-rename failure's Notice once a retry's " +
     "own busy Notice is up (#395 item 1)",
   async () => {
-    mocks.error = "Could not rename the chapter.";
+    // The hook exposes a `strings`-mapped KEY (#172), never the raw store
+    // text, so the mock stands in with a real key and the assertions below
+    // check for its MAPPED copy.
+    mocks.error = "saveFailed";
     await mount();
     await click(strings.chapterMenuOpen);
     await click(strings.renameChapter);
 
-    expect(notice(mocks.error)).not.toBeNull();
+    expect(notice(strings.saveFailed)).not.toBeNull();
 
     let resolveRename: ((ok: boolean) => void) | null = null;
     mocks.renameChapter.mockReturnValue(
@@ -144,7 +148,7 @@ it(
     await click(strings.saveName);
 
     expect(notice(strings.savingName)).not.toBeNull();
-    expect(notice("Could not rename the chapter.")).toBeNull();
+    expect(notice(strings.saveFailed)).toBeNull();
 
     await act(async () => {
       resolveRename!(true);

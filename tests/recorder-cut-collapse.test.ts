@@ -340,6 +340,7 @@ describe("a lift that resumes playback does not seed a frame (#613, Frank R1 P2)
     pan: 5_000,
     length: 10_000,
     takeActive: false,
+    canPaste: false,
   };
 
   it("reopens the frame on an ordinary lift — the #613 gesture", () => {
@@ -404,5 +405,53 @@ describe("a lift that resumes playback does not seed a frame (#613, Frank R1 P2)
     const body = recorder.slice(at, recorder.indexOf("}, [", at));
     expect(body).toMatch(/if \(outcome\.reopenFrame\) reopenFrame\(\)/);
     expect(body).not.toMatch(/if \(wasOwner\) reopenFrame\(\)/);
+  });
+
+  it("does not reopen it on an otherwise-reopening lift while the clipboard holds a cut (#835)", () => {
+    // The reported bug: after a cut, dragging the waveform to find a paste
+    // point restored the selection window on lift. `lift` here is the same
+    // ordinary #613 gesture the first test in this block reopens on — the
+    // only change is `canPaste: true`, the clipboard still holding the cut.
+    expect(liftOutcome({ ...lift, canPaste: true }).reopenFrame).toBe(false);
+  });
+
+  it("recorder.tsx passes the clipboard's fullness into liftOutcome (#835)", () => {
+    // Source-shape only, alongside the pure rule pinned above: this is what
+    // keeps `onPointerUp`'s call wired to the live clipboard rather than a
+    // stale or hardcoded value.
+    const at = recorder.indexOf("const outcome = liftOutcome({");
+    expect(at).toBeGreaterThan(-1);
+    const body = recorder.slice(at, recorder.indexOf("});", at));
+    expect(body).toMatch(/canPaste:\s*editor\.canPaste/);
+  });
+
+  it("recorder.tsx also keeps `editor.canPaste` in onPointerUp's own dependency array (#897)", () => {
+    // The previous test alone would still pass if `editor.canPaste` were
+    // dropped from `onPointerUp`'s `useCallback` dependency array (#897,
+    // George r1 on #835): the call site would still read the live prop at
+    // definition time, but the memoized callback itself would go stale on
+    // the next render where only `canPaste` changed, reopening the frame
+    // from a closure captured before the cut. Render is not an option here
+    // (AGENTS.md — the #197 harness is one component, no effects; this
+    // callback fires from a pointer event, which the harness cannot raise),
+    // so this pins the dependency array by source shape, same as the call
+    // site above.
+    const callbackAt = recorder.indexOf("const onPointerUp = useCallback(");
+    expect(callbackAt).toBeGreaterThan(-1);
+    // Anchor on the callback's own last statement rather than a bare "}, ["
+    // (which also matches later, unrelated `useCallback`/`useLayoutEffect`
+    // closings elsewhere in the file, e.g. `}, [state, commitTake]);`), then
+    // take the very next `[...]` after it — that is the dependency array.
+    const reopenCallAt = recorder.indexOf(
+      "if (outcome.reopenFrame) reopenFrame();",
+      callbackAt
+    );
+    expect(reopenCallAt).toBeGreaterThan(callbackAt);
+    const depsStart = recorder.indexOf("[", reopenCallAt);
+    const depsEnd = recorder.indexOf("]", depsStart);
+    expect(depsStart).toBeGreaterThan(-1);
+    expect(depsEnd).toBeGreaterThan(depsStart);
+    const deps = recorder.slice(depsStart, depsEnd + 1);
+    expect(deps).toMatch(/editor\.canPaste/);
   });
 });

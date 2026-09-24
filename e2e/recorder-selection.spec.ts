@@ -282,8 +282,13 @@ test.describe("edit mode toggle", () => {
       };
       // #613: a cut COLLAPSES the frame onto the centerline, which is then
       // the paste target — it does not reseed a new span the way undo, redo
-      // and paste do. Cutting twice in a row is therefore two taps plus a
-      // touch on the waveform, and this is the state in between.
+      // and paste do. Since #835, dragging the waveform does not reseed one
+      // either while the clipboard still holds the cut: the requirements
+      // owner's decision on #835 (2026-09-24) is that a new selection is
+      // available only once the clipboard is empty — today that means a
+      // paste; undo and redo already always reopen the frame regardless.
+      // Cutting twice in a row is therefore a paste in between, not a touch
+      // on the waveform.
       const canvasBounds = async () =>
         (await page.locator(".recorder-canvas").boundingBox())!;
       const expectCollapsedOntoTheLine = async () => {
@@ -302,11 +307,19 @@ test.describe("edit mode toggle", () => {
           page.getByRole("button", { name: "Paste at the line", exact: true })
         ).toBeVisible();
       };
-      // Touching the waveform is what asks for a span again without leaving
-      // edit mode (`onPointerUp` → `reopenFrame`).
-      const reopenFrameFromTheWaveform = async () => {
-        await page.locator(".recorder-canvas").click();
-        return expectUsableFrame();
+      // #835: a drag on the waveform while the clipboard holds a cut must
+      // leave the collapsed line exactly where it was — this is the reported
+      // bug (drag left or right, lift, and the selection window used to come
+      // back). `onPointerUp` still runs on the lift; `liftOutcome`'s
+      // `reopenFrame` is what now stays false while `canPaste` is true.
+      const dragStaysCollapsed = async () => {
+        const canvas = page.locator(".recorder-canvas");
+        const box = (await canvas.boundingBox())!;
+        await canvas.dragTo(canvas, {
+          sourcePosition: { x: box.width * 0.7, y: 60 },
+          targetPosition: { x: box.width * 0.3, y: 60 },
+        });
+        await expectCollapsedOntoTheLine();
       };
 
       // #613 review (jag3773 P3): the Cut row must reserve the WHOLE of what
@@ -331,26 +344,36 @@ test.describe("edit mode toggle", () => {
         .click();
       await expectCollapsedOntoTheLine();
       expect(await canvasBounds()).toEqual(canvasBeforeCut);
-      const firstCutLength = await reopenFrameFromTheWaveform();
+      // The #835 regression: dragging right after the cut must not restore
+      // the selection window while this cut is still on the clipboard.
+      await dragStaysCollapsed();
       expect(await canvasBounds()).toEqual(canvasBeforeCut);
-      expect(firstCutLength).toBeLessThan(originalLength);
+      // A second cut is reachable by pasting first (Tim's decision on #835)
+      // — not, as it was before #835, by a touch on the waveform. The cut
+      // and this paste are an exact round trip (paste re-inserts precisely
+      // what cut removed), so the reopened frame is back at `originalLength`.
+      await page
+        .getByRole("button", { name: "Paste at the line", exact: true })
+        .click();
+      expect(await expectUsableFrame()).toBe(originalLength);
       await page
         .getByRole("button", { name: "Cut the selection", exact: true })
         .click();
       await expectCollapsedOntoTheLine();
-      const secondCutLength = await reopenFrameFromTheWaveform();
-      expect(secondCutLength).toBeLessThan(firstCutLength);
+      // Same #835 assertion after the second cut.
+      await dragStaysCollapsed();
       await page.getByRole("button", { name: "Undo", exact: true }).click();
-      expect(await expectUsableFrame()).toBe(firstCutLength);
+      expect(await expectUsableFrame()).toBe(originalLength);
       // A redone cut collapses onto the line like the live one (#722); undo
       // above still reopens the frame where the audio came back.
       await page.getByRole("button", { name: "Redo", exact: true }).click();
       await expectCollapsedOntoTheLine();
-      expect(await reopenFrameFromTheWaveform()).toBe(secondCutLength);
+      // #835: the redo-collapsed frame does not reopen on a drag either.
+      await dragStaysCollapsed();
       await page
         .getByRole("button", { name: "Paste at the line", exact: true })
         .click();
-      expect(await expectUsableFrame()).toBe(firstCutLength);
+      expect(await expectUsableFrame()).toBe(originalLength);
       if (width === 320) {
         // Center the whole buffer, then drag both handles to its boundaries.
         await toggle.click();
@@ -375,9 +398,23 @@ test.describe("edit mode toggle", () => {
           await page.mouse.up();
         }
         await expect(startHandle).toHaveAttribute("aria-valuenow", "0");
+        // The buffer is whole again after the round trip above, so dragging
+        // the end handle to the canvas's right edge selects up to whatever
+        // that current total (`aria-valuemax`) is — read fresh rather than
+        // assumed, since #835 changed how this state was reached.
+        const reenterLength = Number(
+          await endHandle.getAttribute("aria-valuemax")
+        );
+        // #897: the buffer is whole again (comment above), so this read
+        // should equal the segment's original length. Without this, the
+        // handle assertion right below compares `aria-valuenow` to
+        // `reenterLength` — a value read from the SAME attribute pair one
+        // line earlier — so it would hold for any length the handle drag
+        // reached, including a wrong one, and never fail.
+        expect(reenterLength).toBe(originalLength);
         await expect(endHandle).toHaveAttribute(
           "aria-valuenow",
-          String(firstCutLength)
+          String(reenterLength)
         );
         await page
           .getByRole("button", { name: "Cut the selection", exact: true })
@@ -385,13 +422,13 @@ test.describe("edit mode toggle", () => {
         await expect(startHandle).toHaveCount(0);
         await expect(toggle).toHaveAttribute("aria-pressed", "true");
         await page.getByRole("button", { name: "Undo", exact: true }).click();
-        expect(await expectUsableFrame()).toBe(firstCutLength);
+        expect(await expectUsableFrame()).toBe(reenterLength);
         await page.getByRole("button", { name: "Redo", exact: true }).click();
         await expect(startHandle).toHaveCount(0);
         await page
           .getByRole("button", { name: "Paste at the line", exact: true })
           .click();
-        expect(await expectUsableFrame()).toBe(firstCutLength);
+        expect(await expectUsableFrame()).toBe(reenterLength);
       }
       await page
         .getByRole("button", { name: "Done editing", exact: true })
