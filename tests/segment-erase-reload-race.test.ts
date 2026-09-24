@@ -13,10 +13,10 @@ import {
   addSegment,
   createBook,
   getSegmentsOfChapter,
-  saveTake,
 } from "@/lib/storage/books";
 import { newClipId } from "@/lib/storage/clips";
 import { closeDb, getDb } from "@/lib/storage/db";
+import { saveTake } from "@/lib/storage/takes";
 import { ROW_PEAK_BUCKETS } from "@/lib/view/segment-rows";
 import type { ChapterId, Segment, SegmentId } from "@/types/domain";
 import { ramp } from "./support";
