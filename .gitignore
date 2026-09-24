@@ -57,3 +57,6 @@ fastlane/test_output/
 .bundle/
 *.ipa
 *.app.dSYM.zip
+# Google Play upload lane (docs/native/play-store.md): the service-account key
+# and the upload keystore are decoded from secrets at build time only.
+fastlane/play-service-account.json

@@ -17,6 +17,7 @@ const WORKFLOW_FILES = [
   ".github/workflows/ci.yml",
   ".github/workflows/ios-testflight.yml",
   ".github/workflows/android-apk.yml",
+  ".github/workflows/android-play.yml",
 ] as const;
 
 const workflows = Object.fromEntries(

@@ -1,0 +1,262 @@
+name: Android → Google Play
+
+# AUTOMATIC native lane: every push to `staging` or `main` builds a signed
+# Android App Bundle (.aab) and uploads it to a Google Play track.
+#
+#   staging → Internal testing   (vars.PLAY_TRACK_STAGING, default "internal")
+#   main    → Closed testing     (vars.PLAY_TRACK_MAIN,    default "alpha")
+#
+# Promotion to Production is a deliberate, manual step in Play Console.
+#
+# This is a NATIVE build, not a web deploy. Cloudflare Workers Builds still
+# owns the PWA (AGENTS.md); this lane never touches Cloudflare and needs no
+# Cloudflare credentials, so the two do not collide even though both fire on
+# the same merges.
+#
+# Signing: the bundle is signed with the Play UPLOAD key, not the app signing
+# key. Google holds the app signing key (Play App Signing) and re-signs what
+# Play delivers. Because an upload key can be reset in Play Console if it
+# leaks, it is safe to hold it in an environment WITHOUT required reviewers —
+# unlike the app signing keystore in `release-signing`, which is permanent app
+# identity. The `play-upload` environment is instead restricted to the
+# `staging` and `main` branches (Settings → Environments → Deployment
+# branches), which is what keeps a feature branch that rewrites this file from
+# reaching its secrets. Setup: docs/native/play-store.md.
+#
+# Off by default: until vars.PLAY_UPLOAD_ENABLED is "true", a push runs only
+# the preflight job and reports that the lane is disabled (no red X).
+on:
+  push:
+    branches: ["staging", "main"]
+    # Mirror Cloudflare's Exclude paths: a docs-only merge ships no new code.
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  workflow_dispatch:
+    inputs:
+      build_only:
+        description: "Build and sign the .aab but do not upload it (for the first, manual Play Console upload)."
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  # One upload per branch at a time; never cancel an in-flight upload. Two
+  # merges landing close together each get their own build (and versionCode).
+  group: android-play-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Preflight (branch → track)
+    runs-on: ubuntu-24.04
+    permissions: {}
+    outputs:
+      enabled: ${{ steps.plan.outputs.enabled }}
+      track: ${{ steps.plan.outputs.track }}
+      status: ${{ steps.plan.outputs.status }}
+    env:
+      REF: ${{ github.ref_name }}
+      REF_TYPE: ${{ github.ref_type }}
+      ENABLED: ${{ vars.PLAY_UPLOAD_ENABLED }}
+      # A build_only dispatch runs even while the lane is disabled: that is how
+      # the first .aab is produced for the manual upload Play requires before
+      # its API will accept one (docs/native/play-store.md §5).
+      BUILD_ONLY: ${{ inputs.build_only }}
+      TRACK_STAGING: ${{ vars.PLAY_TRACK_STAGING || 'internal' }}
+      TRACK_MAIN: ${{ vars.PLAY_TRACK_MAIN || 'alpha' }}
+      # "draft" until the app has been published once; Play rejects any other
+      # status on a never-published app. Flip the variable to "completed" after
+      # the first manual rollout (docs/native/play-store.md §6).
+      STATUS: ${{ vars.PLAY_RELEASE_STATUS || 'draft' }}
+    steps:
+      - name: Map branch to Play track
+        id: plan
+        run: |
+          set -euo pipefail
+          if [ "$REF_TYPE" != "branch" ]; then
+            echo "::error::Play uploads come from the staging or main BRANCH, not $REF_TYPE '$REF'."
+            exit 1
+          fi
+          case "$REF" in
+            staging) track="$TRACK_STAGING" ;;
+            main)    track="$TRACK_MAIN" ;;
+            *) echo "::error::Refusing to upload '$REF' to Play. Only staging and main publish."; exit 1 ;;
+          esac
+          case "$STATUS" in
+            draft|completed) ;;
+            *) echo "::error::vars.PLAY_RELEASE_STATUS must be draft or completed, got '$STATUS'."; exit 1 ;;
+          esac
+          if [ "$ENABLED" != "true" ] && [ "${BUILD_ONLY:-}" != "true" ]; then
+            echo "::notice::Play upload lane is disabled (vars.PLAY_UPLOAD_ENABLED != 'true'). See docs/native/play-store.md."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "track=$track" >> "$GITHUB_OUTPUT"
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          echo "$REF → Play track '$track' (release status '$STATUS')."
+
+  upload:
+    name: Build .aab and upload to Play (${{ needs.preflight.outputs.track }})
+    needs: preflight
+    if: needs.preflight.outputs.enabled == 'true'
+    # Branch-restricted environment, no required reviewers (see header).
+    environment: play-upload
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      # Store builds are never diagnostic builds; build.gradle compares this to
+      # the synced capacitor.config.json, so it must be explicit.
+      TC_ANDROID_DIAGNOSTIC: "false"
+    steps:
+      - name: Require all five secrets
+        env:
+          PLAY_UPLOAD_KEYSTORE_BASE64: ${{ secrets.PLAY_UPLOAD_KEYSTORE_BASE64 }}
+          PLAY_UPLOAD_STORE_PASSWORD: ${{ secrets.PLAY_UPLOAD_STORE_PASSWORD }}
+          PLAY_UPLOAD_KEY_ALIAS: ${{ secrets.PLAY_UPLOAD_KEY_ALIAS }}
+          PLAY_UPLOAD_KEY_PASSWORD: ${{ secrets.PLAY_UPLOAD_KEY_PASSWORD }}
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in PLAY_UPLOAD_KEYSTORE_BASE64 PLAY_UPLOAD_STORE_PASSWORD \
+                      PLAY_UPLOAD_KEY_ALIAS PLAY_UPLOAD_KEY_PASSWORD \
+                      PLAY_SERVICE_ACCOUNT_JSON; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::environment secret $name is unset or empty (environment: play-upload)"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "All five Play secrets present."
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: "npm"
+
+      # Same JDK pin as android-apk.yml: Capacitor's generated gradle compiles
+      # at Java 21 and the runner image defaults to 17.
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Assert the toolchain this project compiles against
+        run: |
+          set -euo pipefail
+          : "${ANDROID_HOME:?ANDROID_HOME is unset on this runner image}"
+          test -d "$ANDROID_HOME/platforms/android-36" \
+            || { echo "::error::Android SDK Platform 36 not found under $ANDROID_HOME/platforms"; ls "$ANDROID_HOME/platforms" || true; exit 1; }
+          test -d "$ANDROID_HOME/build-tools/36.0.0" \
+            || { echo "::error::Android Build-tools 36.0.0 not found under $ANDROID_HOME/build-tools"; ls "$ANDROID_HOME/build-tools" || true; exit 1; }
+          command -v ruby >/dev/null \
+            || { echo "::error::ruby not on PATH; the decode steps and fastlane need it"; exit 1; }
+          java -version 2>&1 | head -1
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the web bundle
+        run: npm run build
+
+      - name: Sync dist/ into the Android project
+        run: |
+          npx cap sync android
+          node scripts/check-android-diagnostic.mjs android/app/src/main/assets/capacitor.config.json
+
+      # Same ship-blockers as android-apk.yml's guard. A push to staging/main
+      # has normally passed ci.yml via its PR, but this is what reaches phones.
+      - name: Guard the synced bundle
+        run: |
+          set -euo pipefail
+          test -f dist/sw.js || { echo "::error::dist/sw.js missing"; exit 1; }
+          test -f dist/manifest.webmanifest || { echo "::error::manifest missing"; exit 1; }
+          for tok in "e2e-harness" "__e2e"; do
+            if grep -rq "$tok" dist/; then
+              echo "::error::e2e harness ($tok) leaked into dist/"
+              exit 1
+            fi
+          done
+          if grep -q "obs/thumbs" dist/sw.js; then
+            echo "::error::dist/sw.js precaches obs/thumbs — vite.config.ts globPatterns regressed"
+            exit 1
+          fi
+          test -f android/app/src/main/assets/public/index.html \
+            || { echo "::error::cap sync did not copy the web bundle into android/"; exit 1; }
+          echo "Bundle built, clean, and synced into android/."
+
+      # Decoded into gitignored paths (android/*.jks; fastlane/play-service-account.json).
+      - name: Write the upload keystore and Play service-account key
+        env:
+          PLAY_UPLOAD_KEYSTORE_BASE64: ${{ secrets.PLAY_UPLOAD_KEYSTORE_BASE64 }}
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          ruby -rbase64 -e 'File.binwrite("android/tc-mobile-upload.jks", Base64.decode64(ENV.fetch("PLAY_UPLOAD_KEYSTORE_BASE64")))'
+          ruby -rjson -e 'j = JSON.parse(ENV.fetch("PLAY_SERVICE_ACCOUNT_JSON")); abort("::error::PLAY_SERVICE_ACCOUNT_JSON is not a service_account key") unless j["type"] == "service_account"; File.write("fastlane/play-service-account.json", JSON.generate(j))'
+
+      # versionCode: unix timestamp, same scheme as the APK lane, so a Play
+      # build always outranks any sideloaded APK and vice versa by build time.
+      # Play's ceiling is 2,100,000,000 — the timestamp reaches it on
+      # 2036-07-18; switch schemes before then (docs/native/README.md §6).
+      # android/app/build.gradle reads the ANDROID_* signing vars; here they
+      # point at the UPLOAD key.
+      - name: Build the release bundle
+        id: aab
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/android/tc-mobile-upload.jks
+          ANDROID_STORE_PASSWORD: ${{ secrets.PLAY_UPLOAD_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.PLAY_UPLOAD_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.PLAY_UPLOAD_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          code="$(date +%s)"
+          cd android
+          ./gradlew bundleRelease -PversionCode="$code" --no-daemon
+          test -f app/build/outputs/bundle/release/app-release.aab \
+            || { echo "::error::bundleRelease exited 0 but app-release.aab is missing"; exit 1; }
+          version="$(node -p 'require("../package.json").version')"
+          echo "version_code=$code" >> "$GITHUB_OUTPUT"
+          echo "release_name=$version ($code) ${GITHUB_REF_NAME}@${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Install fastlane
+        if: ${{ !inputs.build_only }}
+        run: |
+          set -euo pipefail
+          gem install bundler -v 2.6.9 --no-document --user-install
+          export PATH="$(ruby -e 'print Gem.user_dir')/bin:$PATH"
+          echo "$(ruby -e 'print Gem.user_dir')/bin" >> "$GITHUB_PATH"
+          bundle _2.6.9_ config set --local path vendor/bundle
+          bundle _2.6.9_ config set --local frozen true
+          bundle _2.6.9_ install --jobs 4 --retry 3
+
+      - name: Upload to Google Play
+        if: ${{ !inputs.build_only }}
+        env:
+          PLAY_AAB_PATH: ${{ github.workspace }}/android/app/build/outputs/bundle/release/app-release.aab
+          PLAY_JSON_KEY_PATH: ${{ github.workspace }}/fastlane/play-service-account.json
+          PLAY_TRACK: ${{ needs.preflight.outputs.track }}
+          PLAY_RELEASE_STATUS: ${{ needs.preflight.outputs.status }}
+          PLAY_RELEASE_NAME: ${{ steps.aab.outputs.release_name }}
+        run: bundle _2.6.9_ exec fastlane android play
+
+      - name: Remove decoded credentials
+        if: always()
+        run: rm -f android/tc-mobile-upload.jks fastlane/play-service-account.json
+
+      # Keep the exact bundle that was uploaded, for audit and for a manual
+      # re-upload if Play rejected it for a console-side reason.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && steps.aab.outcome == 'success'
+        with:
+          name: android-aab-${{ github.ref_name }}-${{ steps.aab.outputs.version_code }}
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 30

@@ -163,3 +163,43 @@ platform :ios do
     )
   end
 end
+
+# Android → Google Play (docs/native/play-store.md).
+#
+# The `play` lane uploads an Android App Bundle that the workflow
+# (.github/workflows/android-play.yml) has ALREADY built and signed with the
+# Play UPLOAD key — not the app signing key. Google re-signs every bundle with
+# the app signing key it holds (Play App Signing); for tC Mobile that is the
+# same key the sideload APK lane signs with, so a phone that sideloaded an APK
+# can update from Play without an uninstall (which would wipe IndexedDB, i.e.
+# every recording — docs/native/README.md §5a "One keystore, forever").
+#
+# Inputs (all ENV, set by the workflow):
+#   PLAY_AAB_PATH           absolute path to the signed .aab
+#   PLAY_JSON_KEY_PATH      absolute path to the service-account JSON key
+#   PLAY_TRACK              internal | alpha | beta | production | <custom>
+#   PLAY_RELEASE_STATUS     draft | completed   (draft while the app has never
+#                           been published — Play rejects anything else then)
+#   PLAY_RELEASE_NAME       shown in Play Console's release list
+#   PLAY_PACKAGE_NAME       optional, defaults to org.unfoldingword.tcmobile
+#
+# Store listing text, screenshots and changelogs are maintained in Play Console
+# by hand, not from this repo, so every metadata upload is skipped.
+platform :android do
+  desc "Upload a signed .aab to a Google Play track"
+  lane :play do
+    upload_to_play_store(
+      package_name: ENV.fetch("PLAY_PACKAGE_NAME", "org.unfoldingword.tcmobile"),
+      json_key: ENV.fetch("PLAY_JSON_KEY_PATH"),
+      aab: ENV.fetch("PLAY_AAB_PATH"),
+      track: ENV.fetch("PLAY_TRACK"),
+      release_status: ENV.fetch("PLAY_RELEASE_STATUS"),
+      version_name: ENV.fetch("PLAY_RELEASE_NAME"),
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+    )
+  end
+end

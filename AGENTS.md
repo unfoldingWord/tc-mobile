@@ -503,11 +503,15 @@ No Actions workflow deploys the **PWA**. The four web-deploy workflows were
 deleted to remove a real collision: Cloudflare and Actions would otherwise both
 deploy on the same triggers, to different targets — two preview deploys per PR
 and two deployments per merge. The only deploy workflows in `.github/` are the
-two **manual** native lanes — the iOS TestFlight lane (`ios-testflight.yml`, a
-native build to App Store Connect, `docs/native/README.md` §4a) and the Android
+three **native** lanes — the iOS TestFlight lane (`ios-testflight.yml`, a
+native build to App Store Connect, `docs/native/README.md` §4a), the Android
 APK lane (`android-apk.yml`, a signed release APK attached as a run artifact,
-§5a). Both are `workflow_dispatch`-only, so they never fire on push/PR and are
-not Workers Builds triggers (#262, #318). Do not add a push/PR deploy job.
+§5a), and the Google Play lane (`android-play.yml`, a signed .aab uploaded to
+a Play testing track, `docs/native/play-store.md`). The first two are
+`workflow_dispatch`-only (#262, #318). The Play lane is the one exception that
+fires on push, to `staging` and `main` only: it ships a native bundle to Google
+Play, never the PWA, and holds no Cloudflare credentials, so it cannot collide
+with Workers Builds. Do not add a push/PR job that deploys the **PWA**.
 
 Workers Builds is configured **per Worker**, so the same repository is
 connected twice:
@@ -528,8 +532,8 @@ API token lives in Cloudflare's build settings, **not** in a GitHub secret —
 Actions does not deploy the PWA, so it needs no Cloudflare credentials (the
 TestFlight lane authenticates to App Store Connect with its own secrets, and
 the Android lane signs with its own keystore secrets — neither is Cloudflare's).
-Besides `ci.yml` and `dependabot.yml`, `.github/` holds only the two manual
-native lanes, `ios-testflight.yml` and `android-apk.yml`.
+Besides `ci.yml` and `dependabot.yml`, `.github/` holds only the three native
+lanes, `ios-testflight.yml`, `android-apk.yml` and `android-play.yml`.
 
 ### Confirming a deploy and rolling one back
 
