@@ -169,3 +169,32 @@ it("does not let an own-rename override outlive the store catching up to it", as
     "chapter two"
   );
 });
+
+it("lets a load started after a rename show a second writer's label (Frank r1 on #809)", async () => {
+  const { chapterId, segmentId } = await mountChapter();
+  const staleSnapshot: Segment[] = await getSegmentsOfChapter(chapterId);
+  let resolveStaleRead: ((segments: Segment[]) => void) | null = null;
+  vi.mocked(getSegmentsOfChapter).mockImplementationOnce(
+    () => new Promise<Segment[]>((resolve) => (resolveStaleRead = resolve))
+  );
+  act(() => {
+    hook().reload();
+  });
+  await vi.waitFor(() => expect(hook().refreshing).toBe(true));
+  await act(async () => {
+    expect(await hook().renameSegment(segmentId, "verses 3–4")).toBe(true);
+  });
+  // A second writer lands BEFORE the stale read settles, so no load ever
+  // reads this hook's own label back from the store.
+  await renameSegmentInStore(segmentId, "chapter two");
+  resolveStaleRead!(staleSnapshot);
+  await vi.waitFor(() => expect(hook().refreshing).toBe(false));
+
+  act(() => {
+    hook().reload();
+  });
+  await vi.waitFor(() => expect(hook().refreshing).toBe(false));
+  expect(hook().rows.find((r) => r.segmentId === segmentId)?.label).toBe(
+    "chapter two"
+  );
+});

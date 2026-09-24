@@ -172,19 +172,25 @@ export function useChapterSegments(chapterId: ChapterId) {
   // label for a chapter wedged in "Updating…". Instead, every load's result
   // is merged against the latest label this hook itself has already written.
   //
-  // An entry is retired the first time a load's OWN read already carries it
-  // (the store has caught up, so the override has done its job) — it must
-  // NOT live for the rest of this hook's life, or it would mask any LATER
-  // change to the same segment forever: a second tab's own rename, or any
-  // future write path, would land on disk and still lose to a value this
-  // hook wrote minutes earlier. `chapterId` changing clears the whole map
-  // for the same reason and to stop it growing across chapters — none of
-  // its entries can apply to a different chapter's segment ids anyway.
-  const renamedLabels = useRef(new Map<SegmentId, string | null>());
+  // Each entry records `asOfGen`, the load generation current when the
+  // rename's store write returned. Only a load of that generation or older
+  // (one already in flight when the write landed) may be overlaid; a load
+  // that STARTED later read the store after the write, so its label wins
+  // even when it differs — another tab's later rename must not lose to a
+  // value this hook wrote earlier. Retirement is by order, not by equality:
+  // an equality-only retire kept the entry armed forever once a second
+  // writer's label reached disk first. `chapterId` changing clears the whole
+  // map — none of its entries can apply to a different chapter's segments.
+  const renamedLabels = useRef(
+    new Map<SegmentId, { label: string | null; asOfGen: number }>()
+  );
+  const loadGen = useRef(0);
   const renamedLabelsChapter = useRef(chapterId);
 
   useEffect(() => {
     let cancelled = false;
+    // Taken synchronously, before the read below starts.
+    const gen = ++loadGen.current;
     if (renamedLabelsChapter.current !== chapterId) {
       renamedLabelsChapter.current = chapterId;
       renamedLabels.current.clear();
@@ -196,18 +202,15 @@ export function useChapterSegments(chapterId: ChapterId) {
         setBookName(view.bookName);
         setChapterNumber(view.chapterNumber);
         setChapterName(view.chapterName);
+        // Retire every override this load started after — including ids it
+        // no longer returns — then overlay the rest (still-older writes).
+        for (const [id, entry] of renamedLabels.current) {
+          if (gen > entry.asOfGen) renamedLabels.current.delete(id);
+        }
         setRows(
           view.rows.map((r) => {
             const pending = renamedLabels.current.get(r.segmentId);
-            if (pending === undefined) return r;
-            // The store already agrees — this read is proof the override has
-            // served its purpose, so retire it rather than let it keep
-            // masking whatever the NEXT load finds.
-            if (r.label === pending) {
-              renamedLabels.current.delete(r.segmentId);
-              return r;
-            }
-            return { ...r, label: pending };
+            return pending === undefined ? r : { ...r, label: pending.label };
           })
         );
         setError(null);
@@ -349,7 +352,12 @@ export function useChapterSegments(chapterId: ChapterId) {
         // merge above assumes: the store write has already landed by this
         // line, so any load's read from this point on — in flight already,
         // or started fresh from here — sees (or is corrected to) this label.
-        renamedLabels.current.set(segmentId, segment.label);
+        // `asOfGen` is read AFTER the await on purpose: a load that began
+        // during the write may have read the pre-write snapshot.
+        renamedLabels.current.set(segmentId, {
+          label: segment.label,
+          asOfGen: loadGen.current,
+        });
         setRows((rs) =>
           rs.map((r) =>
             r.segmentId === segmentId ? { ...r, label: segment.label } : r
