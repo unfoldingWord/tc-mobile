@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 
+import { captureFailureText } from "./capture-failure-copy";
 import { CenterlineOverlay } from "./centerline-overlay";
 import { Control } from "./control";
 import { shareControlGlyph } from "./control-affordance";
@@ -17,6 +18,7 @@ import { guidedRecordShown, guidedStep } from "./guided-step";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
+import { PermissionPanel } from "./permission-panel";
 import { PlayheadOverlay } from "./playhead-overlay";
 import { resolveProbedPx } from "./recorder-layout";
 import { RecorderStatus } from "./recorder-status";
@@ -1403,7 +1405,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             supersededCapture.current = true;
           }
           if (verdict.kind === "notice") {
-            setStopError(verdict.error);
+            setStopError(captureFailureText(verdict.error));
           }
           closing.current = false;
           setIsClosing(false);
@@ -2199,7 +2201,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             // permission panel). A toolbar Notice (not the permission panel — this
             // is not a permission miss), and re-enable so Back or Record works. Do
             // NOT onExit.
-            stayOpen(plan.error);
+            stayOpen(captureFailureText(plan.error));
             return false;
           // Persist any pending edit and Finished flag, then exit — the shared
           // no-capture tail (`leaveHeldTake` runs the SAME one, George R4-G1 root).
@@ -2354,7 +2356,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // trapping (the concern G5 raised, now met without dropping the take).
           setHeldRetrying(false);
           heldRetryingRef.current = false;
-          setHeldRetryError(result.error);
+          setHeldRetryError(captureFailureText(result.error));
         } catch (cause: unknown) {
           // saveRecording is contracted never to reject; this is the last net so a
           // thrown save cannot strand the panel busy with the take still held. A
@@ -3334,9 +3336,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                         // (George R2 P2). The rule itself is pure and table-tested
                         // in `lib/audio/display-gain.ts`, not spelled out here.
                         //
-                        // `takeActive`, NOT `recording` (George R3 #2 — the
-                        // re-run, a distinct finding from the fitFrom fix above).
-                        // `LiveScope`'s mount window is gated on the WHOLE
+                        // `state` + `isClosing`, NOT `recording` (George R3 #2 —
+                        // the re-run, a distinct finding from the fitFrom fix
+                        // above). `LiveScope`'s mount window is gated on the WHOLE
                         // take-in-flight span — recording, `processing` (#59), and
                         // the `isClosing` stop→decode→save wait, during which
                         // `stop()` has already flipped `state` to idle. Gating this
@@ -3347,11 +3349,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                         // prevent. `hasAudio` still gates the punch-in case
                         // unchanged: once there is committed audio,
                         // `isFirstTakeInFlight` is false regardless of
-                        // `takeActive`, so George R2 P2 stands.
-                        firstTakeInFlight={isFirstTakeInFlight(
-                          takeActive,
-                          hasAudio
-                        )}
+                        // `state`/`isClosing`, so George R2 P2 stands.
+                        //
+                        // `isFirstTakeInFlight` takes `state` and `isClosing`
+                        // separately and computes `takeActive` itself (#757) — a
+                        // caller can no longer collapse them into one wrong
+                        // boolean, the drift #373 named at this same call site.
+                        firstTakeInFlight={isFirstTakeInFlight({
+                          state,
+                          isClosing,
+                          hasCommittedAudio: hasAudio,
+                        })}
                         // Fit to the COMMITTED clip. Since #614 this is the same
                         // array as `peaks` in every state this branch renders —
                         // the second buffer it used to guard against (the #101
@@ -3871,49 +3879,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     );
   }
 );
-
-function PermissionPanel({
-  message,
-  onRetry,
-  onBack,
-}: {
-  /** The actual error when there is one (a denied mic, or a failed decode) — */
-  /** honest over the generic mic-needed title. */
-  message: string | null;
-  onRetry: () => void;
-  onBack: () => void;
-}) {
-  return (
-    // `role="alert"` so AT announces the title when the panel mounts and — the
-    // point here — when the async permission refine sharpens the message after
-    // Retry has autofocused, which a screen-reader user parked on Retry would
-    // otherwise never hear (#203 is a non-reader feature; George R1 P3). Mirrors
-    // `LoadErrorPanel`, whose title is likewise announced without being focused.
-    <div
-      role="alert"
-      className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center"
-    >
-      <span className="text-live">
-        <Icon name="alert" size={52} />
-      </span>
-      <p className="t-title text-ink">{message ?? strings.micNeededTitle}</p>
-      <Control
-        icon="retry"
-        label={strings.micRetry}
-        variant="primary"
-        size={30}
-        autoFocus
-        onClick={onRetry}
-      />
-      <Control
-        icon="back"
-        label={strings.micBack}
-        variant="quiet"
-        onClick={onBack}
-      />
-    </div>
-  );
-}
 
 /**
  * The segment could not be opened — a load walk or, far more often, a finished

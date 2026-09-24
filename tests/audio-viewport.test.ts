@@ -162,7 +162,8 @@ describe("panAfterCut", () => {
  * must never see, and until now that separation lived only in a JSX-adjacent
  * expression inside a 2000-line component, where nothing could test it. The
  * George stand-in demonstrated the cost: mutating the WRITER (`setZoomPan` →
- * `setPanState`) reintroduced the P1 verbatim and all 512 tests stayed green.
+ * `setPanState`) reintroduced the P1 verbatim, and nothing in the suite caught
+ * it.
  *
  * This table pins the READER half of that guarantee — above all the first case,
  * which is the invariant itself: in record mode the view pan is not consulted,

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, posix } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -28,6 +28,7 @@ const PROBE_DIR = join(REPO, ".lib-boundary-probe");
 // assertions below are `toBe("")`, so one npx line would fail a passing
 // compile. Spawn the resolved compiler directly.
 const TSC = join(REPO, "node_modules", "typescript", "bin", "tsc");
+const ESLINT = join(REPO, "node_modules", "eslint", "bin", "eslint.js");
 
 /** Compile `source` under tsconfig.lib.json's options; return tsc's output. */
 function compileInLib(source: string): string {
@@ -46,6 +47,41 @@ function compileInLib(source: string): string {
   } catch (err) {
     // tsc exits non-zero on a type error and puts diagnostics on stdout.
     return String((err as { stdout?: string }).stdout ?? "");
+  }
+}
+
+interface EslintMessage {
+  ruleId: string | null;
+  message: string;
+}
+
+/**
+ * Lint `source` as if it were `stdinFilename` (a repo-relative path), using
+ * the real `eslint.config.mjs` at the repo root. `--stdin`/`--stdin-filename`
+ * resolves the file-glob config for that path without a real file on disk —
+ * `no-restricted-imports`, `no-restricted-syntax` and `no-restricted-globals`
+ * are all purely syntactic, so no module resolution or type info is needed.
+ */
+function lintStdin(source: string, stdinFilename: string): EslintMessage[] {
+  try {
+    const raw = execFileSync(
+      process.execPath,
+      [
+        ESLINT,
+        "--stdin",
+        "--stdin-filename",
+        stdinFilename,
+        "--format",
+        "json",
+      ],
+      { cwd: REPO, encoding: "utf8", stdio: "pipe", input: source }
+    );
+    return (JSON.parse(raw) as Array<{ messages: EslintMessage[] }>)[0]!
+      .messages;
+  } catch (err) {
+    const out = (err as { stdout?: string }).stdout ?? "[]";
+    return (JSON.parse(out) as Array<{ messages: EslintMessage[] }>)[0]!
+      .messages;
   }
 }
 
@@ -168,5 +204,217 @@ export const b: typeof window = null as never;
 }
 `)
     ).toBe("");
+  });
+});
+
+/**
+ * #159 L-6 — three holes the audit found in the gates above, none of them
+ * about DOM globals: `no-restricted-imports` only sees STATIC
+ * import/export declarations, the lib/ and types/ eslint blocks and
+ * tsconfig.lib.json's `include` were `.ts`-only, and `src/data/` appeared in
+ * no layer block at all. Each `it` below is red-first: it was run against
+ * develop `70fc41fe` before the corresponding eslint.config.mjs /
+ * tsconfig.lib.json fix landed, returned the OPPOSITE of what it asserts
+ * now (an empty message list where it now expects one, or vice versa), and
+ * the observed develop-era output is pasted in the #159 PR body rather than
+ * restated here (AGENTS.md: a run's output belongs in the PR, not a
+ * docblock).
+ */
+describe("#159 L-6 — dynamic import and new URL(..., import.meta.url)", () => {
+  it("still bans a STATIC upward import from lib/ (baseline sanity)", () => {
+    const messages = lintStdin(
+      'import { x } from "@/hooks/y";\nexport const y = x;\n',
+      "src/lib/audio/probe.ts"
+    );
+    expect(messages.map((m) => m.ruleId)).toContain("no-restricted-imports");
+  });
+
+  it.each([
+    ["@/hooks/y", "alias"],
+    ["../hooks/y", "relative, one level"],
+    ["../../hooks/y", "relative, two levels"],
+  ])(
+    "bans a dynamic import() of hooks from lib/ (%s spelling: %s)",
+    (specifier) => {
+      const messages = lintStdin(
+        `export async function f() { return (await import("${specifier}")).default; }\n`,
+        "src/lib/audio/probe.ts"
+      );
+      expect(messages).toContainEqual(
+        expect.objectContaining({ ruleId: "no-restricted-syntax" })
+      );
+    }
+  );
+
+  it.each(["components", "app"])(
+    "bans a dynamic import() of %s from lib/",
+    (layer) => {
+      const messages = lintStdin(
+        `export async function f() { return (await import("@/${layer}/y")).default; }\n`,
+        "src/lib/audio/probe.ts"
+      );
+      expect(messages).toContainEqual(
+        expect.objectContaining({ ruleId: "no-restricted-syntax" })
+      );
+    }
+  );
+
+  it("bans new URL(..., import.meta.url) in lib/, regardless of target", () => {
+    const messages = lintStdin(
+      'export const w = new URL("../hooks/mp3.worker.ts", import.meta.url);\n',
+      "src/lib/audio/probe.ts"
+    );
+    expect(messages).toContainEqual(
+      expect.objectContaining({ ruleId: "no-restricted-syntax" })
+    );
+  });
+
+  it("bans a dynamic import() of lib/ from types/ (types denies lib/ too)", () => {
+    const messages = lintStdin(
+      'export async function f() { return (await import("@/lib/audio/format")).default; }\n',
+      "src/types/probe.ts"
+    );
+    expect(messages).toContainEqual(
+      expect.objectContaining({ ruleId: "no-restricted-syntax" })
+    );
+  });
+
+  it("leaves a dynamic import() of a SIBLING lib/ module legal", () => {
+    // Not an onion violation: lib/ importing lib/. Mutating either
+    // dynamicImportDeny layer list to include "lib" would fail this.
+    const messages = lintStdin(
+      'export async function f() { return (await import("@/lib/audio/format")).default; }\n',
+      "src/lib/audio/probe.ts"
+    );
+    expect(messages).toEqual([]);
+  });
+
+  it("leaves a dynamic import() of an npm package legal", () => {
+    const messages = lintStdin(
+      'export async function f() { return (await import("zustand")).default; }\n',
+      "src/lib/audio/probe.ts"
+    );
+    expect(messages).toEqual([]);
+  });
+
+  it("leaves lib/obs/catalog.ts's own dynamic import() of data/ legal", () => {
+    // The one dynamic import src/lib makes today (grep -rn "import(" src/lib
+    // confirms it). This is the case the selectors above must NOT catch.
+    const messages = lintStdin(
+      'export async function f() { return (await import("@/data/obs-catalog.json")).default; }\n',
+      "src/lib/audio/probe.ts"
+    );
+    expect(messages).toEqual([]);
+  });
+});
+
+describe("#159 L-6 — the .tsx escape", () => {
+  it("bans a browser global as a VALUE in a lib/ .tsx file", () => {
+    const messages = lintStdin(
+      "export const w = window;\n",
+      "src/lib/audio/probe.tsx"
+    );
+    expect(messages).toContainEqual(
+      expect.objectContaining({ ruleId: "no-restricted-globals" })
+    );
+  });
+
+  it("bans a static upward import in a types/ .tsx file", () => {
+    const messages = lintStdin(
+      'import { x } from "@/hooks/y";\nexport const y = x;\n',
+      "src/types/probe.tsx"
+    );
+    expect(messages).toContainEqual(
+      expect.objectContaining({ ruleId: "no-restricted-imports" })
+    );
+  });
+
+  it("tsconfig.lib.json's include lists both extensions for both directories", () => {
+    // A config-shape check: no probe file is written under the real src/lib
+    // or src/types (every other probe in this repo — .lib-boundary-probe,
+    // .react-hooks-refs-probe, .nav-history-probe — deliberately lives
+    // outside src/ so an interrupted run cannot leave a stray file inside
+    // knip's src/** project; a real .tsx file here would be that same risk
+    // with no interruption needed to reach it, since this "include" string
+    // IS the thing under test). Removing any one of the four strings below
+    // — in particular either .tsx entry — fails this immediately.
+    const raw = readFileSync(join(REPO, "tsconfig.lib.json"), "utf8");
+    // JSONC: the file carries a leading /* */ block comment.
+    const withoutComment = raw.replace(/\/\*[\s\S]*?\*\//, "");
+    const config = JSON.parse(withoutComment) as { include: string[] };
+    expect(config.include).toEqual(
+      expect.arrayContaining([
+        "src/lib/**/*.ts",
+        "src/lib/**/*.tsx",
+        "src/types/**/*.ts",
+        "src/types/**/*.tsx",
+      ])
+    );
+  });
+});
+
+describe("#159 L-6 — src/data/ is classified", () => {
+  it.each(["types", "lib", "hooks", "components", "app"])(
+    "src/%s's config denies or allows importing data/ as designed",
+    (layer) => {
+      const messages = lintStdin(
+        'import catalog from "@/data/obs-catalog.json";\nexport const c = catalog;\n',
+        `src/${layer}/probe.ts`
+      );
+      // lib/ is the one layer allowed to reach data/ directly
+      // (lib/obs/catalog.ts is the canonical accessor); every other layer
+      // must route through it.
+      if (layer === "lib") {
+        expect(messages).toEqual([]);
+      } else {
+        expect(messages).toContainEqual(
+          expect.objectContaining({ ruleId: "no-restricted-imports" })
+        );
+      }
+    }
+  );
+
+  // Frank round 1: the static deny above had no dynamic half, so
+  // `await import("@/data/…")` passed from every non-lib layer. Both quote
+  // styles, and the adapter file (use-nav-stack.ts has its own override).
+  it.each(
+    [
+      "src/types/probe.ts",
+      "src/lib/audio/probe.ts",
+      "src/hooks/probe.ts",
+      "src/hooks/use-nav-stack.ts",
+      "src/components/probe.tsx",
+      "src/app/probe.ts",
+    ].flatMap((file) => [
+      [file, '"@/data/obs-catalog.json"'],
+      [file, "`@/data/obs-catalog.json`"],
+    ])
+  )(
+    "%s: dynamic import(%s) of data/ is allowed only from lib/",
+    (file, spec) => {
+      const messages = lintStdin(
+        `export async function f() { return (await import(${spec})).default; }\n`,
+        file
+      );
+      const syntax = messages.filter(
+        (m) => m.ruleId === "no-restricted-syntax"
+      );
+      expect(syntax).toHaveLength(file.startsWith("src/lib/") ? 0 : 1);
+    }
+  );
+});
+
+describe("#159 L-6 — substitution-free template-literal specifiers", () => {
+  it.each([
+    ["`@/hooks/y`", 1],
+    ["`../../app/y`", 1],
+    ["`@/lib/audio/format`", 0],
+  ])("lib/ dynamic import(%s) → %i no-restricted-syntax hit(s)", (spec, n) => {
+    const messages = lintStdin(
+      `export async function f() { return (await import(${spec})).default; }\n`,
+      "src/lib/audio/probe.ts"
+    );
+    const syntax = messages.filter((m) => m.ruleId === "no-restricted-syntax");
+    expect(syntax).toHaveLength(n);
   });
 });
