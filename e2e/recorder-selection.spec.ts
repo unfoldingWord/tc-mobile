@@ -405,6 +405,13 @@ test.describe("edit mode toggle", () => {
         const reenterLength = Number(
           await endHandle.getAttribute("aria-valuemax")
         );
+        // #897: the buffer is whole again (comment above), so this read
+        // should equal the segment's original length. Without this, the
+        // handle assertion right below compares `aria-valuenow` to
+        // `reenterLength` — a value read from the SAME attribute pair one
+        // line earlier — so it would hold for any length the handle drag
+        // reached, including a wrong one, and never fail.
+        expect(reenterLength).toBe(originalLength);
         await expect(endHandle).toHaveAttribute(
           "aria-valuenow",
           String(reenterLength)

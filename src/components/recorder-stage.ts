@@ -725,8 +725,16 @@ export function liftOutcome(input: {
   /**
    * The clipboard holds a cut (`editor.canPaste`, #835). While true, a
    * drag's lift must not reseed a selection frame — the collapsed line stays
-   * the only thing on the stage until a paste (or, once #862 lands, a
-   * discard) empties the clipboard.
+   * the only thing on the stage. NOT because a paste empties the clipboard:
+   * paste is not one-shot yet (#489 is open), so `editor.canPaste` stays true
+   * across a paste, and the frame reopens instead because `recorder.tsx`'s
+   * `onPaste` calls `reopenFrame()` itself, unconditionally, as the
+   * paragraph above already says (a discard would presumably empty the
+   * clipboard for real, once #862 lands, but that is not built yet either).
+   * #489 must not route paste through this predicate — a one-shot paste that
+   * merely flips `canPaste` false would leave this term believing the stage
+   * is still owed a reseed with no `reopenFrame()` call left to satisfy it,
+   * and the frame would never come back.
    */
   readonly canPaste: boolean;
 }): {
