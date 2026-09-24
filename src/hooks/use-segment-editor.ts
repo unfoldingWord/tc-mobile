@@ -22,7 +22,13 @@ import {
 import { computePeaks } from "@/lib/audio/peaks";
 import type { Peaks, SampleRange } from "@/types/audio";
 
-/** Waveform resolution, matched to `useRecorderSegment` so the redraw is stable. */
+/**
+ * Waveform resolution of the recorder stage — coarser than a row is wrong.
+ *
+ * The only declaration: `useRecorderSegment` used to carry a second copy for a
+ * peaks pass nothing drew, dropped with it (L-9, #160). A row's resolution is
+ * `ROW_PEAK_BUCKETS`, which is a different number for a different surface.
+ */
 const PEAK_BUCKETS = 400;
 
 const EMPTY = new Int16Array(0);
@@ -266,12 +272,12 @@ export function useSegmentEditor(
   // being (re-)applied — so the recorder can map the centerline through its
   // inverse (#449) rather than dropping it unconditionally, through the
   // shared `opUndone`/`opRedone` pair (`lib/audio/edit-log.ts`, #512 George
-  // R1 P2-2) rather than an inline index read — this hook has no DOM runner
-  // to exercise it directly, so the "which op did this step pass over"
-  // choice is pulled out to where it IS testable. Read BEFORE `applyLog`
-  // runs (the cursor this closes over is the pre-step one); `null` when
-  // there was nothing to step to, or when `applyLog`'s guard reports the
-  // rematerialise failed, mirroring `cut()`'s own `applied ? range : null`.
+  // R1 P2-2) rather than an inline index read, so the "which op did this
+  // step pass over" choice lives where a plain Node test reaches it. Read
+  // BEFORE `applyLog` runs (the cursor this closes over is the pre-step
+  // one); `null` when there was nothing to step to, or when `applyLog`'s
+  // guard reports the rematerialise failed, mirroring `cut()`'s own
+  // `applied ? range : null`.
   const undo = useCallback((): EditOp | null => {
     const undoneOp = opUndone(log);
     if (undoneOp === null) return null;

@@ -10,9 +10,9 @@ import type { BookId } from "@/types/domain";
  * Where focus goes after a delete (#364).
  *
  * Pinning the CHOICE, in plain Node. The other half of the fix — that focus must
- * move only after the shelf stops being `inert` — is DOM ordering and cannot be
- * observed in this repo at all (no jsdom, no testing-library: #361). Nothing
- * here should be read as covering it.
+ * move only after the shelf stops being `inert` — is DOM ordering, outside
+ * this pure-function suite. The static markup harness in `tests/render.ts`
+ * does not run effects or focus transitions.
  */
 
 const id = (n: string) => n as BookId;

@@ -188,7 +188,7 @@ describe("resolveProvesDelivery", () => {
     expect(resolveProvesDelivery("web", "web")).toBe(true);
   });
 
-  it("does NOT trust a native resolve, so nothing destructive may hang off it", () => {
+  it("does NOT trust a native resolve on Android, so nothing destructive may hang off it", () => {
     // George stand-in R4 P2. `SharePlugin.java`'s `activityResult` rejects a
     // RESULT_CANCELED chooser only while `stopped` is false, and `handleOnStop`
     // sets `stopped` on any activity stop — a notification, a call. So a chooser

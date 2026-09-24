@@ -150,8 +150,8 @@ export interface EffectivePanInputs {
  * function of five values, and inside `recorder.tsx` nothing could reach it. It
  * pins the READER half only — that the record path ignores the view pan. The
  * WRITER half (that the zoom writes `zoomPan` and not `panState`) is still
- * structural and untested: a node-only suite with no renderer cannot observe
- * which setter a handler called. See the round-3 triage on #346.
+ * outside this pure-function test: it does not invoke the component handler
+ * or observe which setter it calls.
  *
  * The fallback chain is deliberately nullish, not falsy: a pan of exactly 0 is
  * the start of the clip and must survive, where `||` would replace it with the
