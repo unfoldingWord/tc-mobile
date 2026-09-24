@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { mergeTake } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import { clearSegmentTake, saveTake } from "@/lib/storage/books";
+import { clearSegmentTake, saveTake } from "@/lib/storage/takes";
 import { isMissingSegmentFailure } from "@/lib/storage/stale-target";
 import { deleteClip, newClipId } from "@/lib/storage/clips";
 import {

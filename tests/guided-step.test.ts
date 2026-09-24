@@ -30,6 +30,7 @@ const chapter = (n: number, totalCount = 0): ChapterRow => ({
   name: null,
   finishedCount: 0,
   totalCount,
+  recordedCount: 0,
 });
 
 const segment = (n: number, hasClip = false): SegmentRow => ({

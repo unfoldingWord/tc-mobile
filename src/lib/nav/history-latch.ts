@@ -50,8 +50,11 @@
  *
  * `goBack` is not a write and is not routed through here: it is a traversal,
  * and its own refusal already covers both kinds (`beginBack` for a routed
- * Back, its `suppressPop` check for an absorbed one). `backToBooks` writes no
- * history at all — it runs from a landing (`"to-books"`).
+ * Back, its `suppressPop` check for an absorbed one). The programmatic
+ * recorder close is the one traversal that does come through here, because it
+ * cannot simply be refused: its screen has already closed, so its entry has to
+ * go (`recorderExitTraversal`, #763). `backToBooks` writes no history at all —
+ * it runs from a landing (`"to-books"`).
  *
  * Pure: no DOM, no `window`, no React (AGENTS.md — `lib/` stays DOM-free).
  */
@@ -114,8 +117,55 @@ export function replayDecision(
 /**
  * A write held for a landing, keyed by the screen entry it protects rather
  * than by the kind of write, so the queue can tell a repeat from a new screen.
+ *
+ * `"consume-recorder"` is the one member that is a traversal rather than a
+ * write: the programmatic recorder close's own `history.back()`, held because
+ * a suppressed Back had not landed yet (`recorderExitTraversal`, #763).
  */
-export type DeferredWrite = "enter-segments" | "enter-recorder" | "arm-floor";
+export type DeferredWrite =
+  "enter-segments" | "enter-recorder" | "arm-floor" | "consume-recorder";
+
+/**
+ * What the programmatic recorder close does about the recorder's history entry
+ * (#763). This is the close that comes from inside the sheet, with no
+ * `popstate` behind it — for example a failed save's exit to `SaveFailed`, or
+ * erase's exit. The recorder's state half has already run; what is left is its
+ * entry on the stack. A `popstate`-driven close is not asked this: the
+ * commit-close settle consumes that entry itself.
+ *
+ * Before #763 this close always issued its own `history.back()`. If another
+ * Back was still in flight, that made two traversals outstanding at once — the
+ * precondition `travel-guard.ts`'s any-outstanding rule exists to remove. The
+ * rows, in the order they are checked:
+ *
+ * - `"unqueue"`: the recorder's entry is still in the deferred queue, so it
+ *   was never written and there is nothing to consume. Drop it from the queue
+ *   instead; otherwise the landing replays an entry for a recorder that is
+ *   already gone. Checked first, because whatever Back is in flight then was
+ *   issued before this entry existed, so it cannot be consuming it.
+ * - `"absorb"`: a tracked Back is in flight (`goBack`, or the commit-close
+ *   settle). With the recorder showing and its entry written, that Back came
+ *   from the recorder screen and is already consuming this entry, so its
+ *   landing is suppressed and nothing more is issued — the same absorb the
+ *   refused commit-close settle performs.
+ * - `"defer"`: only a suppressed, untracked Back is in flight (`trap-forward`'s
+ *   cancel). It lands ON the recorder's entry rather than consuming it, so the
+ *   consume waits for that landing and is replayed there.
+ * - `"issue"`: nothing is in flight. Consume the entry now, through
+ *   `beginBack("commit-close")`, so the travel guard sees this traversal too.
+ */
+export type RecorderExitTraversal = "unqueue" | "absorb" | "defer" | "issue";
+
+export function recorderExitTraversal(
+  suppressPop: boolean,
+  guard: TravelGuardState,
+  queue: readonly DeferredWrite[]
+): RecorderExitTraversal {
+  if (queue.includes("enter-recorder")) return "unqueue";
+  if (guard.goBackOutstanding || guard.commitCloseOutstanding) return "absorb";
+  if (suppressPop) return "defer";
+  return "issue";
+}
 
 /**
  * Queue a deferred write, once per key. Two Record taps (or two chapter taps)
@@ -158,8 +208,8 @@ export type ReplayOutcome =
  * do the same thing under the same condition that just made it throw, so
  * requeuing it would retry forever, once per landing, with nothing to break
  * the cycle — worse than dropping that one entry. The writes behind it are a
- * different case: each is an independent key for a different screen
- * (`DeferredWrite`'s three members, at most one of each), so one throwing
+ * different case: each is an independent key (`DeferredWrite`'s members, at
+ * most one of each), so one throwing
  * write says nothing about whether the others would.
  *
  * Pure aside from calling `perform`, which is the one thing here allowed to

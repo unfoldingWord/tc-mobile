@@ -21,6 +21,7 @@ import { encoderNotice } from "./encoder-notice";
 import { shareGapText, shareProgressText } from "./share-error-copy";
 import { ShareMenuSection } from "./share-menu-section";
 import { ShareProgress } from "./share-progress";
+import { storagePressureNotice } from "./storage-pressure-notice";
 import { strings } from "./strings";
 import { ThemeControl } from "./theme-control";
 import { useFailureCount } from "@/hooks/failure-log";
@@ -35,9 +36,11 @@ import {
   type ScreenLayerBehavior,
 } from "@/hooks/use-screen-layers";
 import { useStoragePersistence } from "@/hooks/use-storage-persistence";
+import { useStoragePressure } from "@/hooks/use-storage-pressure";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { nextChapterNumber } from "@/lib/storage/books";
 import { cn } from "@/lib/utils";
+import { hasReclaimableAudio } from "@/lib/view/book-rows";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
@@ -134,6 +137,12 @@ export function BooksScreen({
   // (ui-craft §21), and a screen reader would announce it twice. Hide the
   // corner + exactly while the invite is up; it returns once the shelf fills.
   const showEmpty = loaded && books.length === 0;
+  // The shelf holds at least one book. Used by `useStoragePersistence` below
+  // only — `storagePressureNotice`'s gate used to share this too (#542 round
+  // 1, George P2-2) but now uses the stronger `hasReclaimableAudio` below
+  // (#542 Part B, DRI decision 2026-09-24): a book can exist with nothing
+  // recorded in it, which `hasContent` alone could not distinguish.
+  const hasContent = loaded && books.length > 0;
   // Durable storage (#12). A book exists only because a write committed, so a
   // successful shelf read that finds one is "after the first successful write"
   // reached from the read side — the trigger the hook's docblock explains. The
@@ -143,7 +152,32 @@ export function BooksScreen({
   // and the app is not the Capacitor training shell (native storage is not
   // evicted the same way; `lib/storage/persistence.ts`). Unknown (no API, a
   // rejected query) says nothing.
-  const storage = useStoragePersistence(loaded && books.length > 0);
+  const storage = useStoragePersistence(hasContent);
+  // At least one segment, anywhere on the shelf, holds a recorded take
+  // (#542 Part B). `recordedCount` is already in `books` — `useBooks`
+  // computes it per chapter from the same `getSegmentsOfChapter` read that
+  // fills `finishedCount`/`totalCount` — so this is a plain fold over data
+  // already in memory, not a new read. `loaded &&` matches `hasContent`'s own
+  // guard: `books` is `[]` before the first load lands either way, so this is
+  // for clarity rather than to change the answer.
+  const reclaimableAudio = loaded && hasReclaimableAudio(books);
+  // Storage pressure (#247, wiring half of #537's core). Unlike `storage`
+  // above, `useStoragePressure` itself is NOT gated on a loaded shelf — the
+  // device can be full before this app has read anything
+  // (`use-storage-pressure.ts`'s CONTRACT note) — so `storagePressureNotice`
+  // takes `hasReclaimableAudio` and the shelf's acute trio (`loading`/
+  // `loadFailed`/`deleteFailed`) as its own gate, rather than folding either
+  // into the hook the way `storage` above does. See that function's docblock
+  // for why the gate lives there now and not as JSX `&&` (#542, Frank P2-2 /
+  // George P3-5), why it is `hasReclaimableAudio` and not `hasContent`
+  // (#542 Part B), and why it is the acute trio and not the wider
+  // `noticeText` below (#542, George P2-4).
+  const pressureLine = storagePressureNotice(useStoragePressure(), {
+    hasReclaimableAudio: reclaimableAudio,
+    loading,
+    loadFailed,
+    deleteFailed,
+  });
   const [menuOpen, setMenuOpen] = useState(false);
   // The durable failure log's size (#205). Books is home, and the global menu is
   // the only surface reachable from every state this screen can be in — a failed
@@ -1355,16 +1389,18 @@ export function BooksScreen({
         loading && <Notice tone="busy">{strings.loadingBooks}</Notice>
       )}
 
-      {/* Two standing background conditions can be true at once — the browser
-          has not promised to keep this storage (#12), AND the encoder has
-          stopped working (#166) — and they are about different subsystems, so
-          #279's precedent (encoderLine's own line, not folded into the
+      {/* Three standing background conditions can be true at once — the
+          browser has not promised to keep this storage (#12), this origin is
+          running low regardless (#247), AND the encoder has stopped working
+          (#166) — and they are about different subsystems, so #279's
+          precedent (encoderLine's own line, not folded into the
           load/delete/loading slot above, which stays exclusive and acute-first)
-          extends to both rather than making one dominant CSS-flag over the
-          other: each is `&&`-rendered on its own, and BOTH may show stacked.
+          extends to all three rather than making one dominant CSS-flag over
+          the others: each is `&&`-rendered on its own, and ANY combination may
+          show stacked.
 
-          Neither is gated by the slot above, and neither waits for it to go
-          quiet: `storage` and `encoderLine` render as soon as THEIR OWN
+          Neither `storage` nor `encoderLine` is gated by the slot above, and
+          neither waits for it to go quiet: both render as soon as THEIR OWN
           readiness condition is met — `useStoragePersistence` resolves once
           `hasContent` (a loaded shelf with at least one book) is true;
           `encoderHealth()` is independent module state that has nothing to
@@ -1374,18 +1410,50 @@ export function BooksScreen({
           true, so `storage` keeps rendering underneath a `deleteFailed`
           notice in the slot above rather than waiting on it to clear (#406
           item 1 — the prior wording here tied this to `noticeText`/`loading`
-          being settled, which is not how either gate works).
+          being settled, which is not how either gate works). `pressureLine`
+          used to be different on purpose (`use-storage-pressure.ts`'s CONTRACT note:
+          the device can be full before this app has read anything, so the
+          underlying hook is NOT gated on content) — but the gate that
+          exclusivity needs now lives INSIDE `storagePressureNotice` itself
+          (`hasReclaimableAudio` plus the acute trio `loading`/`loadFailed`/
+          `deleteFailed`, passed in above), not as JSX here. #542 round 1
+          (Frank P2-2 / George P3-5) found the load-bearing predicate living
+          here, in a bare `&&` no test could pin — the same shape
+          `encoder-notice.ts` already avoids for `encoderLine`; #542 Part B
+          (DRI decision 2026-09-24) then strengthened the predicate itself
+          from `hasContent` ("a book exists") to `hasReclaimableAudio` ("a
+          recorded take exists somewhere"), because the former let an empty
+          book or chapter show this line's remediation copy with nothing to
+          remediate. `pressureLine` is `null` whenever any of that applies, so
+          the render below needs no extra condition of its own.
 
-          Order: storage first, encoder second. Storage's risk is total and
-          unrecoverable (browser eviction, no restore path) where encoder's
-          copy explicitly promises nothing is lost — the more severe standing
-          risk reads first, same principle the load-failure/loading slot above
+          Order: storage, pressure, encoder. Storage's risk is total and
+          unrecoverable (browser eviction, no restore path); pressure is
+          recoverable by acting on it (mark segments finished, share and
+          erase); encoder's copy explicitly promises nothing is lost — most
+          severe first, same principle the load-failure/loading slot above
           already applies by being exclusive and ordered acute-first.
           `notice-tone.ts`'s `info` docblock names this exact case (a standing
           condition, not only a completed-event caveat) after George round 1
-          P3-3 flagged the original wording as covering only the latter. */}
+          P3-3 flagged the original wording as covering only the latter.
+
+          Two things #247 still leaves open, honestly: `pressureLine` starts
+          `null` on every Books mount and only paints once `estimate()` lands
+          (no cross-mount CACHE — #537 round 6, unchanged by #542 Part A,
+          which bumps `use-storage-pressure.ts`'s module-scope generation on a
+          book delete/create commit but caches nothing across a remount), so
+          a translator who stays inside one chapter recording segment after
+          segment — Books unmounted the whole time — sees no update until
+          they come back out (the still-open "recorder-close refresh" half of
+          #247); and this has not been read against a real Android
+          `estimate()` value or inside the Capacitor training shell, so the
+          thresholds and the native behaviour are both unverified in-shell.
+          Neither is guessed at here. */}
       {storage === "not-persisted" && (
         <Notice tone="info">{strings.storageNotPersisted}</Notice>
+      )}
+      {pressureLine && (
+        <Notice tone={pressureLine.tone}>{pressureLine.text}</Notice>
       )}
       {encoderLine && (
         <Notice tone={encoderLine.tone}>{encoderLine.text}</Notice>

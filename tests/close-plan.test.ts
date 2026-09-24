@@ -479,7 +479,7 @@ describe("planClose — the finished mark on its own", () => {
 /**
  * The mark the store would throw on.
  *
- * `setSegmentFinished` (`lib/storage/books.ts`) rejects `finished === true`
+ * `setSegmentFinished` (`lib/storage/takes.ts`) rejects `finished === true`
  * when `activeTakeId === null`, and the recorder's only answer to a failed flag
  * write is to stay open — on a sheet where the Finished box has gone disabled
  * with the take, so the intent that caused the throw cannot be cleared. Every

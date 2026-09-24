@@ -177,7 +177,7 @@ export interface PendingWork {
    * Whether the segment has audio on disk that a Finished mark can attach to.
    *
    * The store is the reason this input exists: `setSegmentFinished` THROWS on
-   * `finished === true` when `activeTakeId === null` (`lib/storage/books.ts`),
+   * `finished === true` when `activeTakeId === null` (`lib/storage/takes.ts`),
    * and accepts `false` there (it resets the row to not-started). Without this,
    * a Finished box ticked while recording a FIRST take, on a capture that then
    * produced nothing, plans a `mark` the store rejects — and the recorder's
