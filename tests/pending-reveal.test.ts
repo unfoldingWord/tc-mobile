@@ -56,8 +56,14 @@ describe("planReveal", () => {
   });
 
   it("does not re-scroll on the commit that lifts the hold", () => {
-    // The scroll was already spent while held. Re-running it would fight a
-    // translator who scrolled away while the overlay was up.
+    // The scroll was already spent while held, so the lift commit plans no
+    // SECOND `scrollIntoView` — which is the whole of what this pins, and
+    // deliberately narrower than "the viewport does not move". The hook hands
+    // focus on that same commit with a bare `.focus()`, and the HTML focus
+    // steps scroll the target into view unless `preventScroll: true` is
+    // passed, so the view may still shift. Whether to pass it is a behaviour
+    // question, not this extraction's (#800, George round 1 finding 2); it is
+    // filed separately rather than settled here.
     const held = planReveal({ scroll: A, focus: A }, true);
     expect(planReveal(held.rest, false).scroll).toBeNull();
   });

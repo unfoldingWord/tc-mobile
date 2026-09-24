@@ -29,7 +29,21 @@ import { useScrollToNew, type ScrollToNew } from "@/hooks/use-scroll-to-new";
 let root: Root;
 let host: HTMLDivElement;
 let seen: ScrollToNew<string>[] = [];
-const scrollIntoView = vi.fn();
+/**
+ * Which rows were scrolled, newest last — the RECEIVER's id, not just a count.
+ *
+ * The mock below sits on `HTMLElement.prototype`, so every row shares it. A
+ * call count and an options argument therefore cannot tell "scrolled row b"
+ * from "scrolled row a": a hook that ignored the armed id and scrolled some
+ * other row that happens to exist passed all thirteen cases here (George
+ * round 1, finding 1 — observed, not reasoned). Capturing `this.id` is what
+ * makes the which-row mutation die, and that mutation is the one this file
+ * exists to kill.
+ */
+const scrolled: string[] = [];
+const scrollIntoView = vi.fn(function (this: HTMLElement) {
+  scrolled.push(this.id);
+});
 
 function Harness({
   onCommit,
@@ -72,6 +86,7 @@ function render() {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   scrollIntoView.mockClear();
+  scrolled.length = 0;
   seen = [];
   // jsdom implements no layout, so this method is absent entirely.
   HTMLElement.prototype.scrollIntoView = scrollIntoView;
@@ -133,12 +148,13 @@ describe("arm, then reveal", () => {
       api().reveal();
     });
 
-    expect(scrollIntoView).toHaveBeenCalledTimes(1);
     expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+    // The ARMED row, not merely some row.
+    expect(scrolled).toEqual(["b"]);
 
     // Spent: a second reveal with nothing newly armed does nothing.
     act(() => api().reveal());
-    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrolled).toEqual(["b"]);
   });
 
   it("does nothing when nothing is armed", () => {
@@ -213,7 +229,7 @@ describe("arm, then reveal", () => {
       api().armFocus("a");
       api().reveal(true);
     });
-    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrolled).toEqual(["b"]);
     expect(document.activeElement).toBe(document.body);
   });
 
@@ -221,9 +237,9 @@ describe("arm, then reveal", () => {
     // Segments' first load lands on the first not-finished row, a landing
     // decided from the list itself rather than from a create.
     act(() => api().scrollTo("a"));
-    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrolled).toEqual(["a"]);
 
     act(() => api().reveal());
-    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrolled).toEqual(["a"]);
   });
 });

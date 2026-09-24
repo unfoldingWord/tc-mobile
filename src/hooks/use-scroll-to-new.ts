@@ -148,6 +148,13 @@ export function useScrollToNew<Id>(focusSelector: string): ScrollToNew<Id> {
       // exactly the duplication this hook exists to remove from the screens —
       // and it is the copy a later `controlIn` change would silently skip.
       if (plan.scroll !== null) scrollTo(plan.scroll);
+      // A bare `.focus()`, as both screens called it before this hook existed.
+      // The HTML focus steps scroll the target into view unless
+      // `preventScroll: true` is passed, so a hand-off can move the viewport
+      // even on a commit that plans no scroll of its own. Carried over
+      // deliberately: changing it is a behaviour change, which a no-change
+      // extraction is the wrong place for. Filed rather than decided here
+      // (George round 1 finding 2, #800).
       if (plan.focus !== null) controlIn(plan.focus)?.focus();
     },
     // Both are stable (`scrollTo` has no deps, `controlIn` keys on the same
