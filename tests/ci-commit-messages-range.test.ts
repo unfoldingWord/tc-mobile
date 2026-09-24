@@ -91,3 +91,57 @@ describe("commit-messages CI gate judges only the PR's own commits (#865 follow-
     );
   });
 });
+
+/**
+ * Pins the base-conditional added for #891.
+ *
+ * #883 fixed HEAD_SHA (above), but the base side is still
+ * `origin/$BASE_REF..$HEAD_SHA` unconditionally. For a `develop -> staging`
+ * (or `staging -> main`) promotion, `$BASE_REF` is `staging` (or `main`), and
+ * that range is every commit since the LAST promotion — commits already
+ * judged by develop's own gate, or that predate the gate entirely (#889, 20
+ * such commits). Giving them bodies would mean rewriting develop's history,
+ * which this repo does not do, so a promotion can never pass.
+ *
+ * The fix: when `$BASE_REF` is `staging` or `main`, diff against
+ * `origin/develop` instead of `origin/$BASE_REF` — every commit on develop
+ * has already been judged by develop's own gate, or predates it. A PR into
+ * develop (or anything else) is unchanged: `origin/$BASE_REF..$HEAD_SHA`,
+ * still pinned by the describe block above.
+ *
+ * This must still catch a hotfix: a PR into `staging` carrying a commit that
+ * is NOT on develop (branched off staging directly, or added after
+ * branching) is exactly the case `origin/develop..$HEAD_SHA` is supposed to
+ * keep catching, so the conditional must apply `origin/develop`, never
+ * unconditionally skip the check for a staging/main base.
+ */
+describe("commit-messages CI gate scopes staging/main PRs to commits not on develop (#891)", () => {
+  it("branches the range on whether the PR's base is staging or main", () => {
+    const job = commitMessagesCode();
+    // The exact comparison shape this PR wires up: a shell conditional on
+    // $BASE_REF, not a GitHub Actions `if:` (the step already runs
+    // unconditionally for every PR; only the RANGE differs by base).
+    expect(job).toMatch(
+      /\[\s*"\$BASE_REF"\s*=\s*"staging"\s*\]\s*\|\|\s*\[\s*"\$BASE_REF"\s*=\s*"main"\s*\]/
+    );
+  });
+
+  it("diffs a staging/main base against origin/develop, not origin/$BASE_REF", () => {
+    const job = commitMessagesCode();
+    expect(job).toMatch(/git fetch origin develop/);
+    expect(job).toMatch(
+      /check-commit-messages\.mjs --range "origin\/develop\.\.\$HEAD_SHA"/
+    );
+  });
+
+  it("still diffs a develop (or other) base against origin/$BASE_REF, unchanged", () => {
+    const job = commitMessagesCode();
+    // Same assertion as the #865 describe block above, re-stated here so
+    // this describe block alone proves state (c)/(d) is untouched even if
+    // the #865 block is ever removed.
+    expect(job).toMatch(/git fetch origin "\$BASE_REF"/);
+    expect(job).toMatch(
+      /check-commit-messages\.mjs --range "origin\/\$BASE_REF\.\.\$HEAD_SHA"/
+    );
+  });
+});
