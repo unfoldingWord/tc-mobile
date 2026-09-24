@@ -325,8 +325,11 @@ test.describe("edit mode toggle", () => {
       expect(secondCutLength).toBeLessThan(firstCutLength);
       await page.getByRole("button", { name: "Undo", exact: true }).click();
       expect(await expectUsableFrame()).toBe(firstCutLength);
+      // A redone cut collapses onto the line like the live one (#722); undo
+      // above still reopens the frame where the audio came back.
       await page.getByRole("button", { name: "Redo", exact: true }).click();
-      expect(await expectUsableFrame()).toBe(secondCutLength);
+      await expectCollapsedOntoTheLine();
+      expect(await reopenFrameFromTheWaveform()).toBe(secondCutLength);
       await page
         .getByRole("button", { name: "Paste at the line", exact: true })
         .click();

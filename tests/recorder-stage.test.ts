@@ -1372,12 +1372,14 @@ describe("panAfterUndo / panAfterRedo", () => {
     expect(panAfterUndo(7_000, pasteOp, 9_000)).toBe(4_000);
   });
 
-  it("redoing maps forward the same way the live writers do", () => {
-    // Redoing a cut maps a pan forward through `panAfterCut`, the mapping
-    // the live writer used before #613 collapsed the line onto the cut point
-    // (minus the rest clamp, which `panAfterRedo` also applies).
+  it("redoing a cut lands the line where the live cut writer does, not where the pan was (#722)", () => {
+    // The redone cut goes through `panAfterCutCollapse`, the #613 rule the
+    // live `onCut` writes: the line is the paste target, the cut point,
+    // whatever the pan was before the redo. This cut runs to the end, so the
+    // cut point IS the post-redo length and the answer is the rest. Before
+    // #722 a pan before the cut stayed put (`panAfterCut`'s mapping).
     const preRedoLength = 10_000; // the buffer as it stands before the redo
-    expect(panAfterRedo(2_000, cutAtEnd, preRedoLength)).toBe(2_000); // before the cut
+    expect(panAfterRedo(2_000, cutAtEnd, preRedoLength)).toBeNull(); // before the cut
     expect(panAfterRedo(9_500, cutAtEnd, preRedoLength)).toBeNull(); // inside/after -> rests
   });
 
@@ -1393,11 +1395,11 @@ describe("panAfterUndo / panAfterRedo", () => {
   });
 
   it("redoing a cut collapses both its START and END boundary pans to the same value (panel P1, forward direction)", () => {
-    // The forward direction is `panAfterCut` directly, so this is the same
-    // collapse the two undo boundary cases above pin, shown from the other
-    // side: a pan at the cut's start and a pan at the cut's end both land
-    // on the cut's start once the cut (re-)applies. Nothing about Redo
-    // recovers the distinction Undo cannot either.
+    // A pan at the cut's start and a pan at the cut's end both land on the
+    // cut's start once the cut (re-)applies: since #722 because every pan
+    // does (the collapse rule), and these two already did under the
+    // `panAfterCut` mapping it replaced. Nothing about Redo recovers the
+    // distinction Undo cannot either.
     const cutFromFour: EditOp = {
       kind: "cut",
       range: { start: 4_000, end: 8_000 },
@@ -1503,8 +1505,14 @@ describe("#473 round 3 — a fractional cut's POSITION terms match its truncated
     }
   );
 
-  it("panAfterRedo: Frank r3's own example — 9_000.6 redoes to 5_000.6, not the raw-span 5_000.3", () => {
-    expect(panAfterRedo(9_000.6, fractionalOp, preLength)).toBe(5_000.6);
+  it("panAfterRedo: Frank r3's pan of 9_000.6 lands on the truncated cut point, 4_000, the same as the live cut (#722)", () => {
+    // Before #722 this pan mapped through `panAfterCut` to 5_000.6 (not the
+    // raw-span 5_000.3, Frank r3's point). A redone cut collapses the line
+    // onto the cut point, so the pan's own value no longer enters into it.
+    expect(panAfterRedo(9_000.6, fractionalOp, preLength)).toBe(4_000);
+    expect(panAfterRedo(9_000.6, fractionalOp, preLength)).toBe(
+      panAfterCutCollapse(fractionalRange, preLength)
+    );
   });
 
   it("panAfterCutCollapse: the live cut lands on the truncated start, 4_000 — the sibling the class-level fix covers beyond Frank r3's named lines", () => {
