@@ -38,6 +38,7 @@ import {
   captureLocksPan,
   panGesture,
   recordDisabled,
+  redoCollapsesFrame,
   stageView,
 } from "./recorder-stage";
 import { SelectionOverlay } from "./selection-overlay";
@@ -304,7 +305,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * Lift the #613 collapse: the next render may seed a frame again.
      *
      * Called from every route that leaves the translator wanting one — a
-     * paste, an undo, a redo, leaving edit mode, and the lift of a stage drag
+     * paste, an undo, leaving edit mode, and the lift of a stage drag
      * (the waveform came to rest somewhere new, which is where the next span
      * is picked). It is NOT called from the cut itself, and there is no timer:
      * the collapsed state is the resting state after a cut, not a flash.
@@ -1757,8 +1758,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (redoneOp !== null) {
         setPanState((p) => panAfterRedo(p, redoneOp, length));
       }
-      reopenFrame();
-    }, [editor, stopPlaybackDroppingPan, length, reopenFrame, setPanState]);
+      // A redone cut collapses to the line like a live one; a redone paste
+      // reopens the frame (#722).
+      setCutCollapsed(redoCollapsesFrame(redoneOp));
+    }, [editor, stopPlaybackDroppingPan, length, setPanState]);
 
     const onCut = useCallback(() => {
       stopPlayback();
