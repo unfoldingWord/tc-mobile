@@ -10,10 +10,8 @@ import {
   type MicPermissionState,
   type MicRefusal,
 } from "@/lib/audio/mic-refusal";
-import {
-  classifyStopDecode,
-  type StopDecodeError,
-} from "@/lib/audio/stop-decode";
+import type { CaptureFailure } from "@/lib/audio/capture-failure";
+import { classifyStopDecode } from "@/lib/audio/stop-decode";
 
 import {
   createLevelTap,
@@ -25,21 +23,9 @@ import {
   raceAudioResume,
   RESUME_TIMEOUT_MS,
   resumeAudioContext,
+  stopTracks,
 } from "./audio-io";
 import { reportFailure } from "./report-failure";
-
-/** The translator-facing sentence for each `classifyStopDecode` error class. Kept
- *  here beside the recorder's other error copy; the classifier stays UI-free. */
-function stopDecodeMessage(error: StopDecodeError): string | null {
-  switch (error) {
-    case "silence":
-      return "No sound was recorded. Try again.";
-    case "undecodable":
-      return "Recording could not be decoded on this device.";
-    case null:
-      return null;
-  }
-}
 
 /**
  * The permission state for the microphone, or `"unknown"` where the platform
@@ -135,21 +121,24 @@ export interface StopResult {
   /** Canonical PCM when the take produced usable audio, else null. */
   readonly samples: Int16Array | null;
   /**
-   * A translator-facing reason when `samples` is null and it is worth saying —
-   * an empty capture, an undecodable one, or a teardown that threw. A native
-   * `stop()` throwing inside the flush (#485) is NOT its own outcome: the
-   * slices MediaRecorder delivered before the throw are sealed from the local
-   * `chunks` exactly as on the flush timeout, reported under
+   * Why there are no usable samples, when it is worth saying — a {@link
+   * CaptureFailure} code, never a sentence. The words are chosen at the screen
+   * (`components/capture-failure-copy.ts`), so this hook has no copy to drift
+   * from the table (#169).
+   *
+   * A native `stop()` throwing inside the flush (#485) is NOT its own outcome:
+   * the slices MediaRecorder delivered before the throw are sealed from the
+   * local `chunks` exactly as on the flush timeout, reported under
    * `"recorder-stop-flush"`, and classified by the same tail — a decodable
    * seal is the take, an undecodable one is held in `blob`, and only an EMPTY
-   * seal yields `samples` and `blob` both null with `error` "Could not finish
-   * this recording." (the backstop's sentence, chosen over "No sound" because
-   * the engine failed). The recorder is back at `idle` either way, free to
+   * seal yields `samples` and `blob` both null with `"unfinished"` (the
+   * backstop's code, chosen over `"silence"` because the engine failed, not
+   * the translator). The recorder is back at `idle` either way, free to
    * `start()` again. Null when there is nothing to say: a superseded stop,
    * whose UI belongs to a newer recording — on every exit, the throw path
    * included.
    */
-  readonly error: string | null;
+  readonly error: CaptureFailure | null;
   /**
    * The captured container bytes, kept whenever a decode FAILED — on a current
    * stop AND on a superseded one (George R1 G2). A failed decode is the one case
@@ -170,7 +159,8 @@ export interface StopResult {
 /** The outcome of re-decoding a held take's container bytes (#165). */
 export interface RetryDecodeResult {
   readonly samples: Int16Array | null;
-  readonly error: string | null;
+  /** Why the re-decode produced nothing, as a code — see `StopResult.error`. */
+  readonly error: CaptureFailure | null;
 }
 
 /**
@@ -230,9 +220,8 @@ export interface UseRecorder {
    * path reports `"recorder-stop-flush"`, seals whatever slices are already in
    * hand and resolves through the same tail as a flush timeout — the take, a
    * held `blob`, or (only when the seal is empty) `{ samples: null, error:
-   * "Could not finish this recording.", blob: null }` — with state back at
-   * `idle` when current and the recorder ref dropped, so `start()` is free
-   * again (#485).
+   * "unfinished", blob: null }` — with state back at `idle` when current and
+   * the recorder ref dropped, so `start()` is free again (#485).
    */
   stop: () => Promise<StopResult>;
   /**
@@ -447,7 +436,8 @@ export function useRecorder(): UseRecorder {
 
   const releaseStream = useCallback(() => {
     closeTap();
-    streamRef.current?.getTracks().forEach((t) => t.stop());
+    const stream = streamRef.current;
+    if (stream) stopTracks(stream, "recorder-release-track");
     streamRef.current = null;
     recorderRef.current = null;
   }, [closeTap]);
@@ -460,7 +450,7 @@ export function useRecorder(): UseRecorder {
    * opened.
    */
   const abandonStream = useCallback((stream: MediaStream) => {
-    stream.getTracks().forEach((t) => t.stop());
+    stopTracks(stream, "recorder-release-track");
     if (streamRef.current === stream) streamRef.current = null;
   }, []);
 
@@ -862,9 +852,9 @@ export function useRecorder(): UseRecorder {
         // immediately; it yields the same one macrotask the inactive arm
         // above yields, THEN seals — the same seal the timeout arm's `finish`
         // builds. It then FALLS THROUGH to the ordinary tail below — an empty
-        // seal becomes the notice (with the "could not finish" sentence, via
-        // `flushThrew`), an undecodable one is held with its bytes for the
-        // recovery panel, a decodable one is the take — instead of returning
+        // seal becomes the notice (as `"unfinished"`, via `flushThrew`), an
+        // undecodable one is held with its bytes for the recovery panel, a
+        // decodable one is the take — instead of returning
         // `blob: null` and discarding minutes of audio that were in this
         // closure (panel r1 P2 on #500). The tail also owns
         // `setState("idle")`, gated on `current` exactly as at every other
@@ -901,8 +891,10 @@ export function useRecorder(): UseRecorder {
         // below (George r2 on #500, G-R2-P2-1; DRI decision 2026-09-19,
         // option A — this order, no new theory). `abandonStream` is safe to
         // call again from `finally`: `track.stop()` on an already-stopped
-        // track is a spec no-op, and the ref check is identity-gated, so the
-        // second call is inert.
+        // track is a spec no-op, and the ref check is identity-gated. A track
+        // whose `stop()` throws is the exception: `stopTracks` reports it on
+        // each call, so this path can write a second `"recorder-release-track"`
+        // row. That is a duplicate row, not a missed release.
         if (stream) abandonStream(stream);
         // One macrotask, same bound as the inactive arm and the timeout arm's
         // `finish`, so a slice already queued at the moment of the throw has
@@ -958,13 +950,9 @@ export function useRecorder(): UseRecorder {
       return {
         samples: null,
         // An empty seal after the flush arm threw is the engine's failure,
-        // not the translator's silence — the same sentence `stopRecording`'s
-        // backstop uses, and the one the facilitator runbook names.
-        error: current
-          ? flushThrew
-            ? "Could not finish this recording."
-            : "No sound was recorded. Try again."
-          : null,
+        // not the translator's silence — the same code `stopRecording`'s
+        // backstop uses.
+        error: current ? (flushThrew ? "unfinished" : "silence") : null,
         blob: null, // nothing was captured — no bytes to keep
       };
     }
@@ -985,7 +973,7 @@ export function useRecorder(): UseRecorder {
       if (current2) setState("idle");
       return {
         samples: verdict.emitSamples ? samples : null,
-        error: stopDecodeMessage(verdict.error),
+        error: verdict.error,
         blob: verdict.keepBlob ? blob : null,
       };
     } catch {
@@ -994,7 +982,7 @@ export function useRecorder(): UseRecorder {
       if (current2) setState("idle");
       return {
         samples: null,
-        error: stopDecodeMessage(verdict.error),
+        error: verdict.error,
         // Kept even when superseded — see `classifyStopDecode` and #165.
         blob: verdict.keepBlob ? blob : null,
       };
@@ -1021,14 +1009,11 @@ export function useRecorder(): UseRecorder {
         // (George R3 G-1). So this is just another retry failure — the caller
         // keeps the bytes and surfaces the message; it never drops them.
         if (samples.length === 0) {
-          return { samples: null, error: "No sound was recorded. Try again." };
+          return { samples: null, error: "silence" };
         }
         return { samples, error: null };
       } catch {
-        return {
-          samples: null,
-          error: "Recording could not be decoded on this device.",
-        };
+        return { samples: null, error: "undecodable" };
       }
     },
     []

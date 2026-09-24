@@ -3,12 +3,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 /**
- * `useSegmentEditor` is a hook — there is no DOM runner here (AGENTS.md), so
- * it cannot be rendered and its returned `cut` cannot be invoked directly.
- * This is a source-shape gate, the same comment-stripping-free,
- * indexOf-isolated idiom `tests/nav-commit-close-race-guards.test.ts` and
+ * `useSegmentEditor` is a hook this file exercises only as source text, not
+ * mounted: nothing here invokes its returned `cut` directly. It is a
+ * source-shape gate, in the same comment-stripping-free, indexOf-isolated
+ * idiom `tests/nav-commit-close-race-guards.test.ts` and
  * `tests/recorder-resume-race.test.ts`'s "the wiring, not just the helper"
- * section use for the same reason.
+ * section use.
  */
 const source = readFileSync(
   new URL("../src/hooks/use-segment-editor.ts", import.meta.url),
