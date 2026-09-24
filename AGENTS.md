@@ -778,7 +778,8 @@ by an explicit row above or a default below (#864, closing a residual from
 tier at all). `lib/export/*` (the MP3-building logic behind Share Chapter and
 Share Book, `lib/export/chapter.ts` / `lib/export/book.ts`) is added to T2
 above as a restatement of what "export/share paths" already meant, not a new
-policy call.
+policy call. Where one path matches two rows, the strictest wins (T1 over T2
+over T3).
 
 For everything else under `src/lib/` this table doesn't name by row — as of
 this writing that's `lib/a11y/*`, `lib/nav/*`, `lib/obs/*`, `lib/takes/*`,
@@ -794,13 +795,14 @@ an assertion that e.g. a `lib/nav/*` regression is unrecoverable data loss the
 way a `lib/audio/*` one is.
 
 `src/types/*`, any ambient `*.d.ts` under `src/` (e.g. `src/globals.d.ts`),
-and any other `src/*` path this table doesn't otherwise name (e.g.
-`src/data/*`) carry no behavior of their own, so each **takes the strictest
-tier (T1 over T2 over T3) among the surfaces that import it** — the same
-strictest-wins rule `docs/review/dual-review.md` already applies when one
-test covers two tiers. Where that can't be determined, or importers span
-tiers with no clear strictest one, it defaults to T1 for the same reason as
-the `lib/*` default above.
+and `src/data/*` carry no behavior of their own, so each **takes the
+strictest tier (T1 over T2 over T3) among the non-test surfaces that import
+it** — the same strictest-wins rule `docs/review/dual-review.md` already
+applies when one test covers two tiers. Where that importer set can't be
+determined, it is T1.
+
+Any other `src/**` path this table doesn't name by row is T1, the same
+conservative default as unlisted `lib/*` above.
 
 A test-only PR is tiered by what it covers, and a gate test is its own tier
 (Harness); the tier sets which reviewers run and how many rounds, not this

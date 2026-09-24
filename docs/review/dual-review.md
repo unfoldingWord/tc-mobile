@@ -75,8 +75,10 @@ stop at the first match:
    `lib/storage/*` including the schema in `lib/storage/db.ts`, is T1;
    `components/*` or `app/*` is T3. An unlisted `lib/*` path — `lib/nav/*` and
    `lib/view/*` are the ones #864 named — is T1 by that table's default, and
-   `src/types/*` takes the tier of what imports it, strictest tier if it
-   spans more than one. A test covering `hooks/*` and `lib/storage/*` is T1.
+   `src/types/*`, an ambient `*.d.ts` or `src/data/*` takes the strictest
+   tier of its non-test importers (T1 if that set can't be determined); any
+   other unlisted `src/**` path is T1. A test covering `hooks/*` and
+   `lib/storage/*` is T1.
 
 **The tier sets which reviewers run and how many rounds — not T2's on-device
 check.** `AGENTS.md`'s "Risk tiers" table gives T2 a bar of "tests where
