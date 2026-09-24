@@ -108,6 +108,31 @@ describe("withLocaleAttributes", () => {
     }
   );
 
+  // #711. `Direction` is a type, and a type is gone at runtime, so `dir` was
+  // the one input that reached `String.prototype.replace` unguarded — where
+  // `$&`, `` $` `` and `$'` expand instead of landing literally. The first
+  // input here is the malformed shape the issue reproduced; the rest are
+  // values the type forbids but a data-fed locale could still carry.
+  it.each(["$&", "$`", "$'", "$1", "auto", "RTL", 'ltr" onload="x', ""])(
+    "throws on dir %j rather than writing it into an attribute",
+    (dir) => {
+      expect(() =>
+        withLocaleAttributes('<html lang="en" dir="ltr">', {
+          tag: "en",
+          dir: dir as Locale["dir"],
+        })
+      ).toThrow(/not a direction/);
+    }
+  );
+
+  it("accepts both directions a locale can state", () => {
+    for (const dir of ["ltr", "rtl"] as const) {
+      expect(
+        withLocaleAttributes('<html lang="en" dir="ltr">', { tag: "en", dir })
+      ).toBe(`<html lang="en" dir="${dir}">`);
+    }
+  });
+
   it("accepts the subtagged forms a real second locale arrives as", () => {
     for (const tag of ["en", "pt-BR", "az-Cyrl-AZ"]) {
       expect(withLocaleAttributes("<html>", { tag, dir: "ltr" })).toContain(

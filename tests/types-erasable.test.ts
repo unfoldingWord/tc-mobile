@@ -38,16 +38,33 @@ import { describe, expect, it } from "vitest";
 const REPO = join(import.meta.dirname, "..");
 const TYPES_DIR = join(REPO, "src", "types");
 
+/** Minimal host `ts.formatDiagnostics` needs to render a message. */
+const DIAGNOSTIC_HOST: ts.FormatDiagnosticsHost = {
+  getCurrentDirectory: () => REPO,
+  getCanonicalFileName: (f) => f,
+  getNewLine: () => "\n",
+};
+
 /**
- * What survives type erasure in `source`, normalised.
+ * What survives type erasure in `source`, normalised — or throws.
+ *
+ * `transpileModule` only reports diagnostics when asked (`reportDiagnostics:
+ * true`); without that flag a file that fails to parse still returns
+ * `outputText`, often the empty-module marker itself (#708 item 1: a
+ * truncated `export type Foo = ` reports one diagnostic but still emits
+ * `export {};`). A caller that reads only `outputText` cannot tell that file
+ * apart from a legitimate type-only one, so the gate must fail CLOSED —
+ * throw — the moment there is anything to report, before the emptiness
+ * check ever runs.
  *
  * A module with no runtime content still emits the `export {};` marker that
  * keeps it a module rather than a script, so that one statement is erased
  * here too — it is a shape, not behaviour.
  */
 function runtimeEmit(source: string, fileName: string): string {
-  const { outputText } = ts.transpileModule(source, {
+  const { outputText, diagnostics } = ts.transpileModule(source, {
     fileName,
+    reportDiagnostics: true,
     compilerOptions: {
       module: ts.ModuleKind.ESNext,
       target: ts.ScriptTarget.ES2022,
@@ -55,6 +72,9 @@ function runtimeEmit(source: string, fileName: string): string {
       removeComments: true,
     },
   });
+  if (diagnostics && diagnostics.length > 0) {
+    throw new Error(ts.formatDiagnostics(diagnostics, DIAGNOSTIC_HOST));
+  }
   return outputText.replace(/export\s*\{\s*\}\s*;?/g, "").trim();
 }
 
@@ -93,6 +113,15 @@ describe("the erasability predicate", () => {
     ["a type-only re-export", "export type { Peaks } from './audio';"],
   ])("reports %s as erasable", (_label, source) => {
     expect(runtimeEmit(source, "probe.ts")).toBe("");
+  });
+
+  // The THIRD state the predicate must not collapse into "erasable": a file
+  // that does not transpile at all. `ts.transpileModule` reports this as a
+  // diagnostic, not an exception, so a caller that reads only `outputText`
+  // never sees it — and a truncated type alias transpiles to the same
+  // `export {};` marker a legitimate type-only file does (#708 item 1).
+  it("reports a file that fails to transpile as a failure, not as erasable", () => {
+    expect(() => runtimeEmit("export type Foo = ", "probe.ts")).toThrow();
   });
 });
 

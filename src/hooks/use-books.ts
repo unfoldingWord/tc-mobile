@@ -620,6 +620,12 @@ export function useBooks() {
 
   const renameBook = useCallback(
     async (bookId: BookId, name: string): Promise<Book | null> => {
+      // Clear at the START of the op, as `deleteBook` does (#395 item 1): a
+      // Notice from a PREVIOUS failed rename must not still be standing once
+      // a retry is under way, alongside the screen's own busy Notice for
+      // THIS attempt — the exact collision `control-affordance.ts` names as
+      // the rule the busy/Notice wiring follows (George, #395).
+      report(null);
       // `reload()` follows the patch — see `createBook`'s matching comment
       // (George R7 P2). A failed write reaches the same Notice a load
       // failure does.

@@ -316,13 +316,13 @@ export function bumpStoragePressure(): void {
  * segment — Books unmounted the whole time — still sees no change until they
  * come back out. Open on #247.
  *
- * Not covered by any test in this repo: the effect and its cancellation below
- * (the same limitation `useStoragePersistence`'s and `useEraseSegment`'s
- * docblocks name), so they are review and on-device surface. Every decision
- * they make IS pinned in Node: `storagePressure`, `storagePressureMarker`,
- * `readStorageEstimate`, `storageEstimateSourceOf`, and — new in Part A —
- * `bumpStoragePressure`'s own counter/listener contract
- * (`tests/storage-pressure.test.ts`).
+ * Not covered by any test in this repo: the effect and its cancellation
+ * below. Nothing mounts this hook's effect graph (the same boundary
+ * `useStoragePersistence`'s and `useEraseSegment`'s docblocks name), so they
+ * are review and on-device surface. Every decision they make IS pinned in
+ * Node: `storagePressure`, `storagePressureMarker`, `readStorageEstimate`,
+ * `storageEstimateSourceOf`, and — new in Part A — `bumpStoragePressure`'s
+ * own counter/listener contract (`tests/storage-pressure.test.ts`).
  *
  * Read by `books-screen.tsx` (#247's wiring half), through
  * `storagePressureNotice`.

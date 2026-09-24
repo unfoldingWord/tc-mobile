@@ -33,9 +33,7 @@ interface NameEditProps {
    * a focused "Create book" going natively disabled mid-commit and stranding
    * a keyboard/switch user with no focused control left in the still-open
    * dialog. `disabled` is the wrong half of `EraseConfirm` to imitate; `busy`
-   * is the one Control ships for this. Optional and defaulted false: the
-   * rename call sites have no in-flight window worth signalling (their menu
-   * already re-renders on the write's own error/close paths).
+   * is the one Control ships for this. Optional and defaulted false.
    *
    * The glyph/label swap while busy, and the Escape/re-tap guards below, come
    * from the SAME table Share's `ready` state uses (`control-affordance.ts`,
@@ -43,6 +41,16 @@ interface NameEditProps {
    * write, on either caller.
    */
   busy?: boolean;
+  /**
+   * The commit control's OWN label while `busy` is true — and, on New Book,
+   * the SAME string its in-panel busy `Notice` shows (#395 item 2), so a
+   * screen reader hears one consistent answer whether it is focused on
+   * Confirm or reading the panel's own live region. Defaults to the shared
+   * `strings.savingName` ("Saving…"), which fits every rename call site and
+   * New Chapter; New Book passes its own (`strings.creatingBook`) because
+   * nothing exists yet for "Saving…" to describe.
+   */
+  busyLabel?: string;
   /**
    * The commit control is the next required action in the guided chain (#604).
    * Only New Book passes it: the field arrives pre-filled with the placeholder
@@ -80,6 +88,7 @@ export function NameEdit({
   onSave,
   onCancel,
   busy = false,
+  busyLabel = strings.savingName,
   guided,
 }: NameEditProps) {
   const [value, setValue] = useState(initialValue);
@@ -166,7 +175,7 @@ export function NameEdit({
           for the glyph table (#383). */}
       <Control
         icon={affordance.icon}
-        label={busy ? strings.savingName : saveLabel}
+        label={busy ? busyLabel : saveLabel}
         variant="default"
         busy={affordance.busy}
         // Not while the write is in flight: a busy Control stays on screen and
