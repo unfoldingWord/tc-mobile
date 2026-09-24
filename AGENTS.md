@@ -761,7 +761,9 @@ Full process, and the traps that make a failed run look like a clean pass, in
 | **T3** | `components/*`, `app/*`, copy, styling               | Review only. This layer is expected to churn.                                                                     |
 
 A test-only PR is tiered by what it covers, and a gate test is its own tier
-(Harness) — see `docs/review/dual-review.md` ("Freeze budget").
+(Harness); the tier sets which reviewers run and how many rounds, not this
+table's on-device check — a test-only PR never gets the device check, only
+code changes do — see `docs/review/dual-review.md` ("Merge policy").
 
 ## Known open items
 
