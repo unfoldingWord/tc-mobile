@@ -78,8 +78,11 @@ describe("planReveal", () => {
   });
 
   it("keeps the two halves independent", () => {
-    // Books arms a scroll alone when adding a chapter to a book that is already
-    // on screen — there is no CTA unmounting, so nothing needs the hand-off.
+    // Segments arms a scroll alone on every append after the first: the corner
+    // `+` survives the append and keeps focus, so only the empty chapter's
+    // invite — which unmounts on the append it triggers — arms the hand-off
+    // too (`segments-screen.tsx`'s `if (fromEmpty)`). Both of Books' create
+    // paths arm the pair.
     expect(planReveal({ scroll: A, focus: null }, false)).toEqual({
       scroll: A,
       focus: null,
