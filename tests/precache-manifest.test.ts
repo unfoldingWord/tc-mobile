@@ -194,11 +194,31 @@ function readsObsImagery(source: string, fileName: string): boolean {
   );
 
   function visit(node: ts.Node): boolean {
-    if (
-      ts.isImportSpecifier(node) &&
-      (node.propertyName ?? node.name).text === "thumbUrl"
-    )
-      return true;
+    // Checked at the ImportDeclaration, not by visiting ImportSpecifier
+    // nodes directly (`createSourceFile` was called with `setParentNodes:
+    // false` above, so a specifier cannot walk back up to its ImportClause
+    // via `.parent`): a type-only import is erased at build time, so it
+    // cannot reach `/obs/thumbs/` at runtime and must not count as a reader
+    // (#786/#845). Both spellings are type-only and are skipped — the whole
+    // clause (`import type { thumbUrl } from …`, `clause.isTypeOnly`) and a
+    // single specifier (`import { type thumbUrl } from …`,
+    // `specifier.isTypeOnly`).
+    if (ts.isImportDeclaration(node) && node.importClause) {
+      const clause = node.importClause;
+      if (
+        !clause.isTypeOnly &&
+        clause.namedBindings &&
+        ts.isNamedImports(clause.namedBindings)
+      ) {
+        for (const specifier of clause.namedBindings.elements) {
+          if (
+            !specifier.isTypeOnly &&
+            (specifier.propertyName ?? specifier.name).text === "thumbUrl"
+          )
+            return true;
+        }
+      }
+    }
 
     if (ts.isCallExpression(node) && calleeName(node.expression) === "thumbUrl")
       return true;
@@ -450,6 +470,22 @@ describe("readsObsImagery (#280 — AST, not raw text)", () => {
   it("counts a /obs/thumbs/ JSX attribute literal as a reader", () => {
     const source = 'export const Img = () => <img src="/obs/thumbs/x.jpg" />;';
     expect(readsObsImagery(source, "probe.tsx")).toBe(true);
+  });
+
+  // #786/#845: a type-only import of `thumbUrl` is erased at build time, so a
+  // file that has only one of these cannot possibly reach `/obs/thumbs/` at
+  // runtime. Counting it as a reader would demand the OBS thumbnails (~2.5
+  // MB) back in the precache on a false positive.
+  it("does not count a clause-level type-only import of thumbUrl as a reader", () => {
+    const source =
+      'import type { thumbUrl } from "@/lib/obs/catalog";\nexport type T = typeof thumbUrl;';
+    expect(readsObsImagery(source, FILE)).toBe(false);
+  });
+
+  it("does not count a specifier-level type-only import of thumbUrl as a reader", () => {
+    const source =
+      'import { type thumbUrl } from "@/lib/obs/catalog";\nexport type T = typeof thumbUrl;';
+    expect(readsObsImagery(source, FILE)).toBe(false);
   });
 });
 

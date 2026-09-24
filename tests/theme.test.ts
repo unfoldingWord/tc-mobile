@@ -216,8 +216,13 @@ describe("the light theme is reachable (#171)", () => {
     // The chapter `≡`'s one action branch (the stale and rename branches are
     // transient sub-states with no action list of their own).
     expect(mounts("src/components/segments-screen.tsx")).toBe(1);
-    // Record mode and edit mode.
-    expect(mounts("src/components/recorder.tsx")).toBe(2);
+    // Record mode and edit mode — in `recorder-menu.tsx` since #662 lifted the
+    // recorder's `≡` out of `recorder.tsx` into its own component. The count
+    // follows the menu rather than the screen, and `recorder.tsx` is asserted
+    // to hold NONE, so a half-finished move that leaves one mount behind in
+    // the screen fails here instead of silently double-mounting.
+    expect(mounts("src/components/recorder-menu.tsx")).toBe(2);
+    expect(mounts("src/components/recorder.tsx")).toBe(0);
   });
 
   it("is applied before React renders, not in an effect", () => {

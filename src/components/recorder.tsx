@@ -17,9 +17,9 @@ import { editControlHint, redoReason, undoReason } from "./edit-control-state";
 import { EraseConfirm } from "./erase-confirm";
 import { guidedRecordShown, guidedStep } from "./guided-step";
 import { Icon } from "./icon";
-import { Menu } from "./menu";
 import { Notice } from "./notice";
 import { PermissionPanel } from "./permission-panel";
+import { RecorderMenu } from "./recorder-menu";
 import { PlayheadOverlay } from "./playhead-overlay";
 import { resolveProbedPx } from "./recorder-layout";
 import { RecorderStatus } from "./recorder-status";
@@ -44,7 +44,6 @@ import {
 } from "./recorder-stage";
 import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
-import { ThemeControl } from "./theme-control";
 import { LiveScope } from "./live-scope";
 import {
   barHint,
@@ -52,7 +51,6 @@ import {
   eraseRowReason,
   heldTakeIsBusy,
   markRowReason,
-  rowHint,
 } from "./menu-row-state";
 import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
@@ -3787,151 +3785,23 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             </>
           )}
         </div>
-        <Menu
+        <RecorderMenu
           open={menuShown}
           onClose={() => setMenuOpen(false)}
-          // Still the drawer's name for a screen reader; never painted (#621).
-          title={strings.recorderMenuTitle}
-          // `hamburger` (#621, the requirements owner's call on this panel,
-          // after #608 set the rule on the global menu): the ≡ that opens this
-          // drawer stays a ≡ inside it, top-right, and is what dismisses it —
-          // no "More" heading, and no chevron, because a chevron pointing LEFT
-          // reads as "move left" on a drawer that docks on the RIGHT.
-          // The book, chapter and segment menus open from a ⋮ since #589 and
-          // keep the chevron; this drawer opens from a ≡.
-          hamburger
-        >
-          {mode === "record" ? (
-            <>
-              <Control
-                icon="edit"
-                label={strings.enterEdit}
-                variant="quiet"
-                // Editable when there is audio to edit, a full clipboard to paste
-                // — a never-recorded segment with a pending clip must still open
-                // edit mode to receive it, or the chapter-wide clipboard (G3) could
-                // never land on an empty segment (George R2) — OR a live take,
-                // which `onEnterEdit` commits first, then edits (#134). Only
-                // the commit window itself blocks it now, not every non-idle state.
-                // Never while `denied`: the permission panel owns the body, and
-                // entering edit there strands the edit toolbar over a Retry that
-                // starts the mic (George R3, with onRetryRecord as the other half).
-                // The gate lives in `editRowReason` so the grey row can say WHY
-                // (#135): a take mid-commit shows the `alert` badge — a state mark
-                // that names no control — and the reason joins the row's
-                // accessible name.
-                disabled={editReason !== null}
-                hint={rowHint(editReason)}
-                onClick={onEnterEdit}
-              />
-              <Control
-                icon="check"
-                // Green AND the mark/unmark label both key on `finishedState`, the
-                // resolved state the store will actually write — NOT the raw
-                // `displayedFinished` intent. They diverge on an emptied segment:
-                // mark finished, Edit, cut all, Done → `finishedState` is
-                // "disabled" (a 0-frame take cannot be finished, and close writes
-                // `finished: false`), but `displayedFinished` is still true, so
-                // keying the paint on it would show a green, "Unmark finished" row
-                // that lies until close (George R1). `finishedState === "finished"`
-                // is true only when the mark will stick.
-                label={
-                  view && finishedState === "finished"
-                    ? strings.markUnfinished(view.ordinal)
-                    : strings.markFinished(view?.ordinal ?? 0)
-                }
-                variant="quiet"
-                // Same `onToggleFinished`/`finishedIntent` semantics the header
-                // checkbox carried (D1) — only the trigger moved. It does NOT close
-                // the menu: the row re-renders in place so the check turns green as
-                // the translator taps, the record-and-mark-done-in-one-sheet flow.
-                // Frozen through the requesting/processing/close window exactly as
-                // Record is (G10), plus the never-recorded `finishedState ===
-                // "disabled"` the Checkbox encoded via `state`.
-                className={finishedState === "finished" ? "is-done" : undefined}
-                // Gate + reason from `markRowReason` (#135 round 3): this row greyed
-                // silently while Edit and Erase beside it explained themselves.
-                disabled={markReason !== null}
-                hint={rowHint(markReason)}
-                onClick={onToggleFinished}
-              />
-              <Control
-                icon="trash"
-                label={strings.eraseSegment}
-                variant="quiet"
-                // Only when there is stored audio to erase (a first, uncommitted
-                // recording has nothing on disk yet) AND only at idle: erasing the
-                // stored take out from under a live capture is nonsensical, and the
-                // menu opener stays reachable mid-take (Edit commits-then-edits a
-                // live take, #134), so this entry must refuse there itself
-                // (George R-B6). Gate + reason from `eraseRowReason` (#135).
-                disabled={eraseReason !== null}
-                hint={rowHint(eraseReason)}
-                onClick={() => {
-                  setMenuOpen(false);
-                  setConfirmOpen(true);
-                }}
-              />
-              {/* The theme toggle (#149). LAST in both branches, so that
-                  WHEREVER A ROW ABOVE IS ACTIONABLE the open-edge focus still
-                  lands on it — Edit / Done, what the translator opened this
-                  menu for — rather than on a control that repaints the
-                  screen. Where none of them is, focus lands here, and that is
-                  the correct outcome rather than a regression to repair by
-                  reordering: see the consequence stated below, which is the
-                  half that governs (George round 1 read the two halves as
-                  contradicting, and the unqualified "never" was the wrong
-                  one).
-
-                  This is the site the reframing of #149 turns on: the sheet
-                  is `aria-modal` over an `inert` Segments, so while it is up
-                  the Books hamburger is four screens away, and direct sun is
-                  exactly the condition that arrives while you are recording.
-                  The `≡` that opens this menu is itself closed through the
-                  close window, while `denied`, and while a take is held —
-                  the panels those states raise own the body — so the toggle
-                  inherits those gates rather than adding its own.
-
-                  ONE CONSEQUENCE, STATED RATHER THAN GLOSSED. `Menu` lands
-                  open-edge focus on the first ACTIONABLE child, skipping the
-                  `aria-disabled` hinted rows (#135). On a segment with
-                  nothing recorded and an empty clipboard all three rows above
-                  are hinted, so this control — always actionable — is now
-                  what focus lands on, where it used to fall back to Edit and
-                  its reason. That is `Menu`'s own rule applied to a menu that
-                  finally has something actionable in that state, and the
-                  hinted rows keep their place in the Tab order and still
-                  announce their reasons; but it IS a change to what an AT
-                  user hears first there, and it is #149's to own. */}
-              <ThemeControl />
-            </>
-          ) : (
-            <>
-              <Control
-                icon="check"
-                label={strings.doneEditing}
-                variant="quiet"
-                onClick={onExitEdit}
-              />
-              <Control
-                icon="trash"
-                label={strings.eraseSegment}
-                variant="quiet"
-                // Kept reachable from edit mode too — erasing is a segment-level op
-                // useful in either mode. Same idle + has-stored-clip guard.
-                disabled={eraseReason !== null}
-                hint={rowHint(eraseReason)}
-                onClick={() => {
-                  setMenuOpen(false);
-                  setConfirmOpen(true);
-                }}
-              />
-              {/* Same entry, same last position, in edit mode too — see the
-                  record-mode branch above for why. */}
-              <ThemeControl />
-            </>
-          )}
-        </Menu>
+          mode={mode}
+          ordinal={view?.ordinal ?? null}
+          finishedState={finishedState}
+          editReason={editReason}
+          markReason={markReason}
+          eraseReason={eraseReason}
+          onEnterEdit={onEnterEdit}
+          onToggleFinished={onToggleFinished}
+          onErase={() => {
+            setMenuOpen(false);
+            setConfirmOpen(true);
+          }}
+          onExitEdit={onExitEdit}
+        />
         <EraseConfirm
           open={confirmOpen}
           title={strings.eraseConfirmTitle}

@@ -262,6 +262,21 @@ describe("useSegmentEditor.cut refuses a no-op cut without dropping the frame (#
   it("returns null and leaves a sub-whole-sample selection open to be resized, per the inline comment above cut()'s spansWholeSample guard", async () => {
     const api = await mount(original10());
 
+    // Seed the clipboard with a real whole-sample cut first (#797/#845): the
+    // original version of this case never put anything on the clipboard, so
+    // a regression in which a REFUSED cut wipes an already-populated
+    // clipboard (the data-loss class the guard's own comment names) would
+    // pass unnoticed.
+    await act(async () => {
+      api().openSelection({ start: 0, end: 3 });
+    });
+    await act(async () => {
+      api().cut();
+    });
+    expect(api().clip).toEqual(Int16Array.from([10, 11, 12]));
+    const hasEditsAfterSeed = api().hasEdits;
+    const canUndoAfterSeed = api().canUndo;
+
     await act(async () => {
       api().openSelection({ start: 3, end: 3.4 });
     });
@@ -276,7 +291,12 @@ describe("useSegmentEditor.cut refuses a no-op cut without dropping the frame (#
     // resized" — selectionActive/selection are UNCHANGED, not cleared.
     expect(api().selectionActive).toBe(true);
     expect(api().selection).toEqual({ start: 3, end: 3.4 });
-    expect(api().hasEdits).toBe(false);
-    expect(api().canUndo).toBe(false);
+    // The refusal creates no new edit — history is exactly what the seed cut
+    // above left it at, neither advanced nor rolled back.
+    expect(api().hasEdits).toBe(hasEditsAfterSeed);
+    expect(api().canUndo).toBe(canUndoAfterSeed);
+    // The clipboard populated by the seed cut is untouched by the refusal
+    // (#797/#845).
+    expect(api().clip).toEqual(Int16Array.from([10, 11, 12]));
   });
 });
