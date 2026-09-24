@@ -1843,6 +1843,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // What is local is the failure flag — a shared one would paint that
     // screen's failed erase inside this sheet.
     const [eraseFailed, setEraseFailed] = useState(false);
+    // Bumped on a "busy" refusal to remount EraseConfirm, whose Erase tap
+    // latched an in-flight ref only an open edge resets; the refused call never
+    // closes the dialog, so without this Confirm and Cancel stay dead. The fresh
+    // mount reads `busy` (true while the other caller holds the guard), so it
+    // stays protected until that erase settles, then works again.
+    const [confirmMount, setConfirmMount] = useState(0);
     const isErasing = erase.isErasing;
     const onConfirmErase = useCallback(() => {
       // Stop any buffer playback before the delete: EraseConfirm latches its
@@ -1913,6 +1919,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           )
             onExit(false);
           else setConfirmOpen(false);
+        } else {
+          setConfirmMount((n) => n + 1);
         }
       })();
     }, [
@@ -3713,6 +3721,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           onExitEdit={onExitEdit}
         />
         <EraseConfirm
+          key={confirmMount}
           open={confirmOpen}
           title={strings.eraseConfirmTitle}
           confirmLabel={strings.eraseConfirm}

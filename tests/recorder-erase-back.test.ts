@@ -225,10 +225,21 @@ it("keeps its own erase-failed Notice when a retry is refused as busy", async ()
   expect(storage.clear).toHaveBeenCalledTimes(2);
   expect(storage.clear).toHaveBeenLastCalledWith("other");
   expect(notice()).toBe(true);
+  // Frank r7: the refused tap latched EraseConfirm's in-flight ref. While the
+  // other erase holds the guard the dialog stays protected…
+  const dialog = () =>
+    document.querySelector(`[aria-label="${strings.eraseConfirmTitle}"]`);
+  expect(button(strings.eraseConfirm).disabled).toBe(true);
+  await act(async () => button(strings.eraseCancel).click());
+  expect(dialog()).not.toBeNull();
 
   await act(async () => {
     release();
     await held;
   });
+  // …and once it settles, the same dialog's Confirm reaches the store again.
+  await act(async () => button(strings.eraseConfirm).click());
+  expect(storage.clear).toHaveBeenCalledTimes(3);
+  expect(storage.clear).toHaveBeenLastCalledWith("segment");
   consoleError.mockRestore();
 });

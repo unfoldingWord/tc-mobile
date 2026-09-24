@@ -141,9 +141,23 @@ it("keeps its own erase-failed Notice when a retry is refused as busy", async ()
   expect(mocks.clear).toHaveBeenCalledTimes(2);
   expect(mocks.clear).toHaveBeenLastCalledWith("other");
   expect(notice()).toBe(true);
+  // Frank r7: the refused tap latched EraseConfirm's in-flight ref. While the
+  // other erase holds the guard the dialog stays protected…
+  const dialog = () =>
+    document.querySelector(`[aria-label="${strings.eraseConfirmTitle}"]`);
+  expect(button(strings.eraseConfirm).disabled).toBe(true);
+  await act(async () => button(strings.eraseCancel).click());
+  expect(dialog()).not.toBeNull();
 
   await act(async () => {
     release();
     await held;
   });
+  // …and once it settles, Cancel and Confirm both work again.
+  await act(async () => button(strings.eraseCancel).click());
+  expect(dialog()).toBeNull();
+  await openConfirm();
+  await act(async () => button(strings.eraseConfirm).click());
+  expect(mocks.clear).toHaveBeenCalledTimes(3);
+  expect(mocks.clear).toHaveBeenLastCalledWith("segment");
 });

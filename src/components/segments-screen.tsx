@@ -219,6 +219,12 @@ export const SegmentsScreen = forwardRef<
   // owns the in-flight guard, which genuinely must be single; whose failure it
   // was is the caller's to remember.
   const [eraseFailed, setEraseFailed] = useState(false);
+  // Bumped on a "busy" refusal to remount EraseConfirm: its Erase tap latched
+  // an in-flight ref that only an open edge resets, and a refused call never
+  // closes the dialog, so Confirm and Cancel would stay dead. The fresh mount
+  // reads `busy={erase.erasing}` (true while the other caller holds the guard),
+  // so it is protected until that erase settles, then usable again.
+  const [confirmMount, setConfirmMount] = useState(0);
   // MEMBERS, never the objects — and this is #452's own open question 3,
   // answered here on this screen's evidence as the design asks PR4 to do.
   //
@@ -711,6 +717,7 @@ export const SegmentsScreen = forwardRef<
       // `"busy"` returns without touching either: the first erase still owns
       // them, and its own settle is what closes them.
       if (result !== "busy") closeErase();
+      else setConfirmMount((n) => n + 1);
     })();
   }, [audio, closeErase, erase, eraseTarget, eraseRow]);
   // The list is hidden from AT while a dialog is up, mirroring the recorder
@@ -923,6 +930,7 @@ export const SegmentsScreen = forwardRef<
       </div>
 
       <EraseConfirm
+        key={confirmMount}
         open={eraseTarget !== null}
         title={strings.eraseConfirmTitle}
         confirmLabel={strings.eraseConfirm}
