@@ -109,11 +109,18 @@ export const strings = {
   newChapterTitle: "Name your new chapter",
   newChapterClose: "Close without creating a chapter",
   createChapter: "Create chapter",
-  // Shown in place of `saveName`/`createBook`/`createChapter` while the write is
-  // in flight (#383) — the same in-place busy relabel
-  // `loadRetrying`/`takeRecoverRetrying` already do, so a screen reader focused
-  // on Confirm does not read it as idle for the whole write, on any caller.
+  // Shown in place of `saveName`/`createChapter` while the write is in flight
+  // (#383) — the same in-place busy relabel `loadRetrying`/`takeRecoverRetrying`
+  // already do, so a screen reader focused on Confirm does not read it as idle
+  // for the whole write. NOT New Book any more (#395 item 2): that caller has
+  // its own busy string below, because "Saving…" implies something already
+  // existed to save back onto — exactly what `createBook`'s own comment above
+  // was written to avoid, and the generic relabel here quietly reintroduced.
   savingName: "Saving…",
+  // The New Book dialog's OWN busy relabel (#395 item 2) — used for both its
+  // Confirm control's label and its own in-panel busy Notice, so a screen
+  // reader on either hears that a book is being MADE, not saved.
+  creatingBook: "Creating your book…",
 
   // ── Segments screen (B3) ─────────────────────────────────────────────────
   backToBooks: "Back to books",
