@@ -45,9 +45,18 @@ import { strings } from "@/lib/strings";
  *     deliberate pair, and the repair would be to weaken the pattern, which
  *     AGENTS.md names as the way a gate like this stops catching anything.
  *   - The parameterised entries (the functions) are not enumerated at all —
- *     only the fixed strings are. `saveFailedDiscard`'s four labels are
- *     therefore covered by `tests/save-failed.test.ts` rendering them, not by
- *     this file.
+ *     only the fixed strings are, because `Object.values` hands back the
+ *     function, never the labels it can return. `saveFailedDiscard`'s four
+ *     `(editOnly, armed)` labels are therefore pinned NOWHERE, and that gap
+ *     is tracked as item 2 of #805.
+ *
+ *     An earlier draft of this sentence said they were "covered by
+ *     `tests/save-failed.test.ts` rendering them." That was false and is
+ *     deleted rather than reworded (Frank, round 3): that file renders
+ *     `editOnly: false` only, never an armed state, and its own docblock says
+ *     the armed paint needs a browser this suite does not have. Pointing at a
+ *     test that does not make the check is worse than naming the gap, because
+ *     the next reader stops looking.
  */
 const ROOT = path.resolve(import.meta.dirname, "..");
 

@@ -669,6 +669,60 @@ describe("isCanonicalOrigin", () => {
       isCanonicalOrigin("https://some-user@github.com/sethstoll3/tc-mobile.git")
     ).toBe(false);
   });
+
+  // Frank r2 P2 on #751: a suffix-style `~/.ssh/config` Host alias is
+  // rejected, because the URL text cannot show where it resolves. A benign
+  // `-uw` and a hostile `-evil` are the same string shape, so the gate
+  // treats them alike and fails closed on both.
+  it.each([
+    "git@github.com-uw:unfoldingWord/tc-mobile.git",
+    "git@github.com-uw:unfoldingWord/tc-mobile",
+    "git@github.com-evil:unfoldingWord/tc-mobile.git",
+    "git@ssh.github.com-uw:unfoldingWord/tc-mobile.git",
+    "git@github.com-uw:sethstoll3/tc-mobile.git",
+  ])("rejects a suffix-style Host alias: %s", (url) => {
+    expect(isCanonicalOrigin(url)).toBe(false);
+  });
+
+  it.each([
+    "git@gitlab.com:unfoldingWord/tc-mobile.git",
+    "git@evil.example:unfoldingWord/tc-mobile.git",
+    "git@github.com.evil.example:unfoldingWord/tc-mobile.git",
+    "git@localhost:unfoldingWord/tc-mobile",
+    "git@gh:unfoldingWord/tc-mobile.git",
+  ])("rejects a non-GitHub scp host with the canonical path: %s", (url) => {
+    expect(isCanonicalOrigin(url)).toBe(false);
+  });
+
+  it("accepts an explicit ssh:// URL via the ssh.github.com alias host", () => {
+    expect(
+      isCanonicalOrigin("ssh://git@ssh.github.com/unfoldingWord/tc-mobile.git")
+    ).toBe(true);
+  });
+
+  it("rejects a fork's URL via ssh://ssh.github.com", () => {
+    expect(
+      isCanonicalOrigin("ssh://git@ssh.github.com/sethstoll3/tc-mobile.git")
+    ).toBe(false);
+  });
+
+  it("accepts the canonical https URL with a trailing slash", () => {
+    expect(
+      isCanonicalOrigin("https://github.com/unfoldingWord/tc-mobile/")
+    ).toBe(true);
+  });
+
+  it("accepts the canonical https URL with a trailing .git and a trailing slash", () => {
+    expect(
+      isCanonicalOrigin("https://github.com/unfoldingWord/tc-mobile.git/")
+    ).toBe(true);
+  });
+
+  it("rejects a fork's URL with a trailing slash", () => {
+    expect(isCanonicalOrigin("https://github.com/sethstoll3/tc-mobile/")).toBe(
+      false
+    );
+  });
 });
 
 describe("ensureRemoteRefFresh", () => {
