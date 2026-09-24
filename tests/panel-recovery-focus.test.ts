@@ -225,10 +225,10 @@ describe("panelRecoveryFocus holds through a close that may fail (#457 QA P2)", 
  * `overlayFallbackLabel` — the same landmark the overlay restore in the same
  * file uses, for the same reason — and never by position.
  *
- * Source-shape, because no test mounts `recorder.tsx` itself — it wires the
- * full audio hook graph, which the jsdom hook-mount harness elsewhere in
- * this repo (`tests/use-audio-session-supersession.test.ts`, #735/#739)
- * does not stub — so the `.focus()` itself stays uncovered (#361).
+ * Source-shape. The jsdom suites that mount `Recorder` with a stubbed
+ * `audio` prop (`tests/recorder-stop-commits.test.ts` is one) could drive
+ * this landing behaviourally; no test here does yet, so the `.focus()` call
+ * itself is not exercised (#549 candidate, #361).
  */
 describe("the recovery landing is the ≡ landmark, never the sheet's first button (#457 George R1 P2)", () => {
   const recorder = readFileSync(
@@ -286,11 +286,10 @@ describe("the recovery landing is the ≡ landmark, never the sheet's first butt
  * the first commit, read through a first-render `useRef` snapshot so the
  * effect stays mount-only. `panelOwnsFocus` is deliberately NOT a dependency —
  * that would re-run the effect when the panel resolves and land on Back, the
- * recovery bug round 1 closed. Source-shape, because no test mounts
- * `recorder.tsx` itself — it wires the full audio hook graph, which the
- * jsdom hook-mount harness elsewhere in this repo
- * (`tests/use-audio-session-supersession.test.ts`, #735/#739) does not stub
- * — so the `.focus()` itself stays uncovered (#361).
+ * recovery bug round 1 closed. Source-shape. The jsdom suites that mount
+ * `Recorder` with a stubbed `audio` prop (`tests/recorder-stop-commits.test.ts`
+ * is one) could drive this landing behaviourally; no test here does yet, so
+ * the `.focus()` call itself is not exercised (#549 candidate, #361).
  */
 describe("the open-edge landing yields to a panel that owns the first commit (#457 George R3 P2-1)", () => {
   const recorder = readFileSync(
