@@ -195,6 +195,41 @@ describe("gatherChapterPcm", () => {
     spy.mockRestore();
   });
 
+  it("counts a clip whose stored PCM length disagrees with its own metadata as missing, instead of throwing (S-10)", async () => {
+    // Pass 1 sizes the output buffer from `getClipMeta().frameCount`; pass 2
+    // copies `getClip()`'s bytes into the slot that size reserved. The two
+    // reads are not one transaction, so nothing here stops them from
+    // disagreeing about a clip's length. Reproduce that disagreement directly
+    // by handing back a PCM clip one frame longer than its own metadata says —
+    // on develop's code, `out.set(fitted, written)` then throws a RangeError
+    // because the reserved slot is a frame too small.
+    const { chapterId } = await chapterWith([
+      { n: 100, v: 100 },
+      { n: 100, v: 200 },
+    ]);
+    const real = clips.getClip.bind(clips);
+    let call = 0;
+    const spy = vi.spyOn(clips, "getClip").mockImplementation(async (id) => {
+      call++;
+      const clip = await real(id);
+      if (call === 2 && clip && clip.encoding === "pcm") {
+        const grown = new Int16Array(clip.samples.length + 1);
+        grown.set(clip.samples);
+        return { ...clip, samples: grown };
+      }
+      return clip;
+    });
+
+    const gathered = await gatherChapterPcm(chapterId, testCodec());
+
+    expect(gathered).not.toBeNull();
+    const { samples: pcm, segments, missing } = gathered!;
+    expect(segments).toBe(1); // only the well-formed segment survived
+    expect(missing).toBe(1); // the length-mismatched one is counted, not thrown
+    expect(pcm.length).toBe(100); // one segment, no gap
+    spy.mockRestore();
+  });
+
   /**
    * B8/D3: a finished segment's clip is MP3. The gather decodes it through the
    * injected codec and puts the RECORDING — not the decode — in the slot its
