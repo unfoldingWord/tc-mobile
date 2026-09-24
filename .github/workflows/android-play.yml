@@ -42,9 +42,11 @@ on:
 permissions: {}
 
 concurrency:
-  # One upload per branch at a time; never cancel an in-flight upload. Two
-  # merges landing close together each get their own build (and versionCode).
-  group: android-play-${{ github.ref_name }}
+  # One run for this Play app at a time, across BOTH branches: staging and main
+  # share one package and one service account, a second Play edit invalidates
+  # the first, and versionCode (date +%s) must increase per app, not per track.
+  # Never cancel an in-flight upload; queued runs each get their own build.
+  group: android-play
   cancel-in-progress: false
 
 jobs:
@@ -84,6 +86,15 @@ jobs:
             main)    track="$TRACK_MAIN" ;;
             *) echo "::error::Refusing to upload '$REF' to Play. Only staging and main publish."; exit 1 ;;
           esac
+          # Production is promoted by hand in Play Console, never by this lane;
+          # and the track must be one token, since it is written to GITHUB_OUTPUT.
+          case "$track" in
+            ""|*[!A-Za-z0-9._-]*) echo "::error::Play track must be a single token, got '$track'."; exit 1 ;;
+          esac
+          if [ "$(printf '%s' "$track" | tr '[:upper:]' '[:lower:]')" = "production" ]; then
+            echo "::error::Refusing Play track '$track'. Promote to production in Play Console."
+            exit 1
+          fi
           case "$STATUS" in
             draft|completed) ;;
             *) echo "::error::vars.PLAY_RELEASE_STATUS must be draft or completed, got '$STATUS'."; exit 1 ;;

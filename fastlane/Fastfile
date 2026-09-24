@@ -177,7 +177,8 @@ end
 # Inputs (all ENV, set by the workflow):
 #   PLAY_AAB_PATH           absolute path to the signed .aab
 #   PLAY_JSON_KEY_PATH      absolute path to the service-account JSON key
-#   PLAY_TRACK              internal | alpha | beta | production | <custom>
+#   PLAY_TRACK              internal | alpha | beta | <custom> — the workflow's
+#                           preflight refuses production (promoted by hand)
 #   PLAY_RELEASE_STATUS     draft | completed   (draft while the app has never
 #                           been published — Play rejects anything else then)
 #   PLAY_RELEASE_NAME       shown in Play Console's release list

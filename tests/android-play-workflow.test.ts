@@ -58,6 +58,18 @@ describe("Play upload lane triggers", () => {
   it("never builds a diagnostic bundle", () => {
     expect(workflow).toContain('TC_ANDROID_DIAGNOSTIC: "false"');
   });
+  it("serializes every run for this Play app across both branches", () => {
+    expect(workflow).toMatch(
+      /^ {2}group: android-play\n {2}cancel-in-progress: false\n/m
+    );
+  });
+  it("keeps the security shape the header relies on", () => {
+    expect(workflow).toMatch(/^permissions: \{\}$/m);
+    expect(workflow).toMatch(/^ {4}permissions:\n {6}contents: read$/m);
+    expect(workflow).toMatch(
+      /- name: Remove decoded credentials\n {8}if: always\(\)\n/
+    );
+  });
 });
 
 describe("Play preflight branch → track mapping", () => {
@@ -79,6 +91,36 @@ describe("Play preflight branch → track mapping", () => {
   it("refuses a tag named like a branch", () => {
     expect(runPreflight({ REF: "main", REF_TYPE: "tag" }).status).not.toBe(0);
   });
+
+  it.each(["production", "Production", "PRODUCTION"])(
+    "refuses the %s track from either branch",
+    (track) => {
+      expect(runPreflight({ REF: "main", TRACK_MAIN: track }).status).not.toBe(
+        0
+      );
+      expect(
+        runPreflight({ REF: "staging", TRACK_STAGING: track }).status
+      ).not.toBe(0);
+    }
+  );
+
+  it.each(["alpha\nenabled=true", "closed beta", "a;b"])(
+    "refuses a track that is not a single token (%j)",
+    (track) => {
+      expect(runPreflight({ REF: "main", TRACK_MAIN: track }).status).not.toBe(
+        0
+      );
+    }
+  );
+
+  it.each(["beta", "internal", "tc-mobile.field_2"])(
+    "passes the testing or custom track %s",
+    (track) => {
+      const r = runPreflight({ REF: "main", TRACK_MAIN: track });
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain(`track=${track}\n`);
+    }
+  );
 
   it("rejects an unknown release status", () => {
     expect(runPreflight({ REF: "main", STATUS: "inProgress" }).status).not.toBe(
