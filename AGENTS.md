@@ -769,8 +769,38 @@ Full process, and the traps that make a failed run look like a clean pass, in
 | Tier   | Examples here                                        | Bar                                                                                                               |
 | ------ | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | **T1** | `lib/audio/*`, `lib/storage/*`, the IndexedDB schema | Tests required. Data loss or corrupted audio is unrecoverable in the field. Schema changes need a migration path. |
-| **T2** | `hooks/*`, export/share paths                        | Tests where possible + on-device check on both Android and iOS.                                                   |
+| **T2** | `hooks/*`, `lib/export/*`, export/share paths        | Tests where possible + on-device check on both Android and iOS.                                                   |
 | **T3** | `components/*`, `app/*`, copy, styling               | Review only. This layer is expected to churn.                                                                     |
+
+**This table is total over `src/`: every path resolves to exactly one tier,**
+by an explicit row above or a default below (#864, closing a residual from
+#852 where an unlisted path — `lib/nav/*`, `lib/view/*`, `types/*` — got no
+tier at all). `lib/export/*` (the MP3-building logic behind Share Chapter and
+Share Book, `lib/export/chapter.ts` / `lib/export/book.ts`) is added to T2
+above as a restatement of what "export/share paths" already meant, not a new
+policy call.
+
+For everything else under `src/lib/` this table doesn't name by row — as of
+this writing that's `lib/a11y/*`, `lib/nav/*`, `lib/obs/*`, `lib/takes/*`,
+`lib/view/*`, and the flat files directly under `lib/` (`locale.ts`,
+`plural.ts`, `theme.ts`, `utils.ts`, `failure-text.ts`,
+`restart-after-flush.ts`) — **the default is T1.**
+**Assumption, and a policy call for the DRI to revisit, not a claim these
+carry `lib/audio`'s data-loss stakes (#864):** `lib/` is where the onion
+architecture keeps the browser-free, unit-testable logic (see "Architecture —
+onion layers" above), so an unlisted `lib/*` path reads as T1-adjacent by
+default until someone deliberately narrows it — the conservative reading, not
+an assertion that e.g. a `lib/nav/*` regression is unrecoverable data loss the
+way a `lib/audio/*` one is.
+
+`src/types/*`, any ambient `*.d.ts` under `src/` (e.g. `src/globals.d.ts`),
+and any other `src/*` path this table doesn't otherwise name (e.g.
+`src/data/*`) carry no behavior of their own, so each **takes the strictest
+tier (T1 over T2 over T3) among the surfaces that import it** — the same
+strictest-wins rule `docs/review/dual-review.md` already applies when one
+test covers two tiers. Where that can't be determined, or importers span
+tiers with no clear strictest one, it defaults to T1 for the same reason as
+the `lib/*` default above.
 
 A test-only PR is tiered by what it covers, and a gate test is its own tier
 (Harness); the tier sets which reviewers run and how many rounds, not this
