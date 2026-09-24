@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { CaptureFailure } from "@/lib/audio/capture-failure";
 import {
   attemptsCapture,
   classifyCapture,
@@ -51,7 +52,7 @@ const captured = (frames = 3): CaptureOutcome<string> => ({
  * may name a web type and nothing here inspects them.
  */
 const undecodable = (
-  error: string | null = "Recording could not be decoded on this device."
+  error: CaptureFailure | null = "undecodable"
 ): CaptureOutcome<string> => ({
   samples: null,
   bytes: "container-bytes",
@@ -60,7 +61,7 @@ const undecodable = (
 
 /** A stop that yielded nothing, kept nothing, and has something to say. */
 const failedCapture = (
-  error = "No sound was recorded. Try again."
+  error: CaptureFailure = "silence"
 ): CaptureOutcome<string> => ({
   samples: null,
   bytes: null,
@@ -160,7 +161,9 @@ describe("classifyCapture", () => {
 
   it("prefers audio in hand over an error also reported", () => {
     // Reversing this would surface a notice and drop audio already decoded.
-    expect(classifyCapture({ ...captured(), error: "late" }).kind).toBe("take");
+    expect(classifyCapture({ ...captured(), error: "silence" }).kind).toBe(
+      "take"
+    );
   });
 
   it("prefers audio in hand over kept bytes", () => {
@@ -178,9 +181,9 @@ describe("classifyCapture", () => {
       classifyCapture({
         samples: new Int16Array(0),
         bytes: null,
-        error: "No sound",
+        error: "silence",
       })
-    ).toEqual({ kind: "notice", error: "No sound" });
+    ).toEqual({ kind: "notice", error: "silence" });
   });
 
   it("holds kept bytes ahead of the error", () => {
@@ -203,9 +206,9 @@ describe("classifyCapture", () => {
   });
 
   it("reads an empty capture as a notice, carrying its reason", () => {
-    expect(classifyCapture(failedCapture("No sound"))).toEqual({
+    expect(classifyCapture(failedCapture("unfinished"))).toEqual({
       kind: "notice",
-      error: "No sound",
+      error: "unfinished",
     });
   });
 
@@ -291,10 +294,8 @@ describe("planClose — a capture whose decode failed", () => {
 
 describe("planClose — a capture that produced nothing", () => {
   it("stays open on a stop error, carrying its reason", () => {
-    const plan = planClose(
-      idle({ capture: failedCapture("Could not decode") })
-    );
-    expect(plan).toEqual({ action: "stay", error: "Could not decode" });
+    const plan = planClose(idle({ capture: failedCapture("unfinished") }));
+    expect(plan).toEqual({ action: "stay", error: "unfinished" });
   });
 
   it("stays open rather than persisting the edits underneath the failed take", () => {

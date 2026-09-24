@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 
+import { captureFailureText } from "./capture-failure-copy";
 import { CenterlineOverlay } from "./centerline-overlay";
 import { Control } from "./control";
 import { shareControlGlyph } from "./control-affordance";
@@ -79,6 +80,7 @@ import {
 } from "@/lib/audio/viewport";
 import { overlayBlocksClose, overlayDismissal } from "@/lib/nav/navigation";
 import { failureExit } from "@/lib/takes/failure-exit";
+import { isMissingSegmentFailure } from "@/lib/storage/stale-target";
 import {
   attemptsCapture,
   classifyCapture,
@@ -115,13 +117,15 @@ interface RecorderProps {
   /**
    * Persist an already-flattened, edited segment buffer (B5 edit-only close —
    * cut/paste with no new recording). Never rejects — a failure becomes App's
-   * recovery screen, exactly like `saveRecording`.
+   * recovery screen, exactly like `saveRecording`. An empty buffer clears the
+   * take instead and resolves `false` on failure, or `"stale"` when the segment
+   * no longer exists (#607).
    */
   saveEditedSegment: (
     segmentId: SegmentId,
     buffer: Int16Array,
     finished: boolean
-  ) => Promise<boolean>;
+  ) => Promise<boolean | "stale">;
   /**
    * The cut/paste clipboard, held by App so it outlives this sheet (G3: reaches
    * across a chapter, lost on close). Read for paste; replaced on cut.
@@ -263,7 +267,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // after the commit that observed it, not during it.
     useEffect(() => {
       if (loadError === null) return;
-      if (failureExit("load", databaseUnreachable) === "exit") onExit(false);
+      if (
+        failureExit("load", { databaseUnreachable, targetMissing: false }) ===
+        "exit"
+      )
+        onExit(false);
     }, [loadError, databaseUnreachable, onExit]);
 
     const [menuOpen, setMenuOpen] = useState(false);
@@ -1396,7 +1404,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             supersededCapture.current = true;
           }
           if (verdict.kind === "notice") {
-            setStopError(verdict.error);
+            setStopError(captureFailureText(verdict.error));
           }
           closing.current = false;
           setIsClosing(false);
@@ -1849,7 +1857,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // unreachable it fails identically every time, and the confirm's
           // notice would invite a retry that cannot land (George R6 P2). Exit
           // with `false`: nothing changed, and the panel takes the screen.
-          if (failureExit("erase", databaseUnreachable) === "exit")
+          if (
+            failureExit("erase", {
+              databaseUnreachable,
+              targetMissing: false,
+            }) === "exit"
+          )
             onExit(false);
           else setConfirmOpen(false);
         }
@@ -1921,7 +1934,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 editor.working,
                 false
               );
-              if (!cleared) {
+              if (cleared !== true) {
                 // Terminal once the database cannot be reopened. An empty-buffer
                 // save does NOT go through the never-lose slot — it calls
                 // `clearSegmentTake` and returns false — so nothing reaches
@@ -1931,8 +1944,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 // succeed, on a screen whose only exit is the Back that just
                 // failed (George R6 P2). Nothing is lost by leaving: the clear
                 // never committed, so the original take is still on disk.
-                if (failureExit("clear", databaseUnreachable) === "exit") {
-                  onExit(dirty.current);
+                // Terminal too when the segment is gone (#607): nothing is on
+                // disk to keep, and the cut phrase is App's clipboard, which
+                // leaving does not touch.
+                const exit = failureExit("clear", {
+                  databaseUnreachable,
+                  targetMissing: cleared === "stale",
+                });
+                if (exit !== "stay") {
+                  onExit(exit === "leave-stale" || dirty.current);
                   return true;
                 }
                 stayOpen(strings.clearFailed);
@@ -1958,7 +1978,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 // (F5-#1) rather than only the console, and stay open.
                 console.error("Could not change the finished flag", cause);
                 // Same trap as the clear above, over a flag rather than audio.
-                if (failureExit("mark", databaseUnreachable) === "exit") {
+                // A mark plan carries no edits, so leaving over a missing
+                // segment drops nothing the store still holds (#607). No
+                // separate re-read flag: `onToggleFinished` already set
+                // `dirty`, and a mark plan needs that toggle to exist.
+                const exit = failureExit("mark", {
+                  databaseUnreachable,
+                  targetMissing: isMissingSegmentFailure(cause, segmentId),
+                });
+                if (exit !== "stay") {
                   onExit(dirty.current);
                   return true;
                 }
@@ -2172,7 +2200,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             // permission panel). A toolbar Notice (not the permission panel — this
             // is not a permission miss), and re-enable so Back or Record works. Do
             // NOT onExit.
-            stayOpen(plan.error);
+            stayOpen(captureFailureText(plan.error));
             return false;
           // Persist any pending edit and Finished flag, then exit — the shared
           // no-capture tail (`leaveHeldTake` runs the SAME one, George R4-G1 root).
@@ -2327,7 +2355,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // trapping (the concern G5 raised, now met without dropping the take).
           setHeldRetrying(false);
           heldRetryingRef.current = false;
-          setHeldRetryError(result.error);
+          setHeldRetryError(captureFailureText(result.error));
         } catch (cause: unknown) {
           // saveRecording is contracted never to reject; this is the last net so a
           // thrown save cannot strand the panel busy with the take still held. A
