@@ -15,7 +15,7 @@ import {
  * `lib/audio/viewport`. What was never checked is that the component's two
  * outputs are wired to the right ones: #346's P1 was exactly a wiring mistake —
  * a zoom's re-centred view pan reaching the record path — and reintroducing it
- * at the setter left all 512 tests of the day green.
+ * at the setter left the whole suite green.
  *
  * So these assert the divergence itself: with a zoom pan open in edit mode,
  * `pan` (drawn) and `insertionPan` (spliced at) must not be the same number.

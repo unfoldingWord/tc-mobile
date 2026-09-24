@@ -536,7 +536,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // insertion offset (the round-1 P1 of #346), which stays pure and
     // table-tested in `lib/audio/viewport` rather than being an expression here
     // that nothing could reach: the George stand-in showed that reintroducing
-    // that P1 at the setter left all 512 tests green. `pan` is for drawing,
+    // that P1 at the setter left the whole suite green. `pan` is for drawing,
     // `insertionPan` for splicing, and the hook's docblock carries the rest.
     const {
       // The hook returns no raw `panState` at all — only the setter, `pan` to
@@ -1873,9 +1873,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       databaseUnreachable,
       reloadView,
       onExitEdit,
-      // The viewport's setter is a hook return, not a `useState` setter, so it
-      // is a real dependency rather than a stable one eslint can elide (#160,
-      // L-1). Memoised in `use-recorder-viewport.ts`, so it never re-arms this.
+      // React guarantees a `useState` setter's identity across renders, so
+      // this never re-arms the callback — but `exhaustive-deps` cannot see
+      // that through a custom hook's return value, so it has to be listed
+      // (#160, L-1).
       setPanState,
     ]);
 
