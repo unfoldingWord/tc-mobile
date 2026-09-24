@@ -323,8 +323,9 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ========================================================================
 
-@capacitor/synapse 1.0.4 — ISC
+@capacitor/synapse 1.0.4 — MIT
 https://www.npmjs.com/package/@capacitor/synapse
+(Its package.json declares ISC; the LICENSE.md it ships is the MIT text below.)
 
 MIT License
 

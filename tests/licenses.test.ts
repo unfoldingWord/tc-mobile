@@ -205,6 +205,34 @@ describe("bundled licence texts", () => {
       expect(section).toContain(lib.noticeMarker);
     }
   );
+
+  it.each(thirdPartyLicenses)(
+    "labels $name with the licence its notice section carries",
+    (lib) => {
+      // The panel shows `lib.spdx`; the notices file shows a `name version —
+      // licence` header over the verbatim text. All three must agree, or the
+      // phone names one licence and hands over another (Frank F1, bench round 2
+      // on #144: @capacitor/synapse was labelled ISC over the MIT text).
+      const sections = read("/licenses/THIRD-PARTY-NOTICES.txt").split(
+        /\n=+\n/
+      );
+      const section = sections.find((s) =>
+        s.includes(`${lib.name} ${lib.version}`)
+      );
+      expect(section, `${lib.name} has no section`).toBeDefined();
+      const header = (section ?? "")
+        .split("\n")
+        .find((l) => l.startsWith(`${lib.name} ${lib.version}`));
+      expect(header).toMatch(
+        new RegExp(`^\\S+ \\S+ — ${lib.spdx.replace(/[.]/g, "\\.")}(\\s|$)`)
+      );
+      // The MIT grant sentence is the MIT text; a section that carries it must
+      // not be labelled with some other licence.
+      if (section?.includes("Permission is hereby granted, free of charge")) {
+        expect(lib.spdx, `${lib.name} ships the MIT text`).toBe("MIT");
+      }
+    }
+  );
 });
 
 /**
@@ -282,5 +310,14 @@ describe("reachability wiring (#36)", () => {
     // is owed on the row itself, not just in the licence text.
     expect(lamejs?.note, "lamejs lost its boundary note").toBeTruthy();
     expect(lamejs?.source?.href, "lamejs lost its source link").toBeTruthy();
+    // The LAME acknowledgement the licence asks for (George Low, bench round 2).
+    expect(lamejs?.acknowledges?.href).toBe("https://lame.sourceforge.net");
+  });
+
+  it("keeps Workbox, which the closure walk cannot see, in the disclosure", () => {
+    // Workbox is a build-time (dev) dependency injected into the service
+    // worker, so the runtime-closure test above never requires it; this pins
+    // the hand-listed inclusion (George Low, bench round 2 on #144).
+    expect(thirdPartyLicenses.map((l) => l.name)).toContain("workbox");
   });
 });

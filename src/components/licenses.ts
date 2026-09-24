@@ -156,11 +156,13 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   {
     name: "@capacitor/synapse",
     version: "1.0.4",
-    // package.json declares ISC; the LICENSE.md it ships is the MIT text, which
-    // is what THIRD-PARTY-NOTICES.txt carries verbatim.
-    spdx: "ISC",
+    // Labelled by the licence text it actually ships (LICENSE.md is the MIT
+    // text, carried verbatim in THIRD-PARTY-NOTICES.txt); the upstream
+    // package.json's ISC field is disclosed in the note rather than hidden here.
+    spdx: "MIT",
     role: "@capacitor/filesystem's web helper (bundled transitively)",
     copyright: "© 2025 Ionic",
+    note: "Its package.json declares ISC; the licence file it ships is the MIT text, reproduced in the third-party notices.",
     noticeMarker: "Ionic",
   },
   {
