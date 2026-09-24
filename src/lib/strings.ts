@@ -464,9 +464,10 @@ export const strings = {
   nothingToUndo: "Nothing to undo.",
   nothingToRedo: "Nothing to redo.",
   // The recorder drawer's dialog name for a screen reader — never painted
-  // there (#621, the rule #608 set for `menuTitle`): the recorder drawer
-  // opens from a ≡ that stays a ≡, so the glyph is its only visible label.
-  // This string is shared with the per-row segment menu (`segment-row.tsx`),
+  // there (#621, the rule #608 set for `menuTitle`): the drawer's own
+  // dismiss stays a ≡ regardless of which control opened it (the record-mode
+  // header's ≡, or the edit toolbar's ⋮ since #863), so the glyph is its
+  // only visible label. This string is shared with the per-row segment menu (`segment-row.tsx`),
   // which does not pass `hamburger` and still paints it as that menu's
   // visible heading — #589 owns that menu's affordances and has not
   // retitled it, so treat "never painted" as scoped to the recorder only.
