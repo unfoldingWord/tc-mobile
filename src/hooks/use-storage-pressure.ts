@@ -302,10 +302,11 @@ export function bumpStoragePressure(): void {
  * (`books-screen.tsx:1124-1137`). **The consumer must not show this marker
  * while that slot is showing something** — `storagePressureNotice`
  * (`components/storage-pressure-notice.ts`) is where that gate now lives, as
- * an explicit `hasReclaimableAudio`/acute-trio (`loading`/`loadFailed`/
- * `deleteFailed`) parameter rather than as JSX prose in the screen (#542,
- * Frank P2-2 / George P3-5; the predicate itself was `hasContent` through
- * round 1 and is `hasReclaimableAudio` as of Part B) — a `ready` parameter on
+ * an explicit `hasReclaimableAudio`/`deleteFailed` parameter rather than as
+ * JSX prose in the screen (#542, Frank P2-2 / George P3-5; the predicate
+ * itself was `hasContent` through round 1 and is `hasReclaimableAudio` as of
+ * Part B; #843 item 4 dropped `loading` and `loadFailed`, which the screen
+ * never renders alongside reclaimable audio) — a `ready` parameter on
  * THIS hook was considered and left out: the ordering is the screen's
  * decision, the screen already holds those flags, and this file has just
  * finished removing one parameter that existed for a caller that does not
@@ -323,9 +324,8 @@ export function bumpStoragePressure(): void {
  * harness in the shape `tests/use-segment-editor-mount.test.ts` already uses
  * for a different hook — which drives a real mount through a bump and pins
  * that `estimate()` is asked again and the marker updates from the second
- * answer. That is what proves `generationValue` is load-bearing: remove it
- * from the dependency array below and this is the test that dies (#843's own
- * mutation). It does NOT independently exercise the `requestGeneration`
+ * answer. That test is what pins `generationValue` as load-bearing in the
+ * dependency array below. It does NOT independently exercise the `requestGeneration`
  * guard's distinct reason for existing — inside `act()`, React flushes this
  * effect's cleanup (which already sets `cancelled`) before that harness's
  * next assertion runs, so that harness cannot tell `requestGeneration` apart
@@ -360,8 +360,9 @@ export function useStoragePressure(): StoragePressureMarker | null {
     // wasn't a risk yet: `generationValue` sat in the dependency array only to
     // force a re-run, with nothing reading its value, so a "this dependency is
     // unused" cleanup — by a person or an eslint auto-fix — could delete the
-    // array entry and nothing in this file would object; nothing in the test
-    // suite mounts this effect, so nothing would catch it either. Reading the
+    // array entry and nothing in this file would object; before #843 nothing
+    // in the test suite mounted this effect, so nothing would have caught it
+    // either. Reading the
     // value here, not just depending on it, is the fix: it is now an ordinary
     // used variable, and `tests/use-storage-pressure-mount.test.ts` mounts the
     // hook for real and asserts the re-read that depending on it produces.
