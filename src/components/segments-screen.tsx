@@ -815,9 +815,7 @@ export const SegmentsScreen = forwardRef<
             arbitrary utilities here, so the 44px floor reads the same
             `--c-control-md` every other control does. */}
         <button type="button" onClick={onBack} className="breadcrumb">
-          <span>
-            {bookName} &gt; {chapterHeading}
-          </span>
+          <span>{strings.chapterBreadcrumb(bookName, chapterHeading)}</span>
         </button>
         {!showEmpty && (
           <Control
