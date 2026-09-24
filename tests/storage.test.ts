@@ -307,23 +307,34 @@ describe("book tree", () => {
     for (const status of notFinished) expect(isFinished(status)).toBe(false);
   });
 
-  it("rolls up finished/total for the chapter counter", async () => {
+  it("rolls up finished/total/recorded for the chapter counter and the storage-pressure gate", async () => {
     const book = await createBook("b");
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
-    await addSegment(chapter.id);
-    await addSegment(chapter.id);
+    const s2 = await addSegment(chapter.id);
+    await addSegment(chapter.id); // s3: never recorded
     await addTake(s1.id, await storedClip(), 100);
     await setSegmentFinished(s1.id, true);
+    // s2 is recorded but NOT finished ("draft") — the case `recorded` exists
+    // for (#542 Part B): it has reclaimable bytes behind it, but would not
+    // count as `finished`, and a mutation collapsing `recorded` back to
+    // `finished` must fail this exact assertion.
+    await addTake(s2.id, await storedClip(), 100);
 
     expect(await chapterProgress(chapter.id)).toEqual({
       finished: 1,
       total: 3,
+      recorded: 2,
     });
 
-    // An empty chapter is 0/0 — the UI hides the counter when total === 0.
+    // An empty chapter is 0/0/0 — the UI hides the counter when total === 0,
+    // and `hasReclaimableAudio` (`lib/view/book-rows.ts`) reads `recorded`.
     const empty = await addChapter(book.id);
-    expect(await chapterProgress(empty.id)).toEqual({ finished: 0, total: 0 });
+    expect(await chapterProgress(empty.id)).toEqual({
+      finished: 0,
+      total: 0,
+      recorded: 0,
+    });
   });
 
   it("replaces the take on re-record, deleting the superseded clip (1:1)", async () => {
