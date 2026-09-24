@@ -56,9 +56,14 @@ export interface RecorderViewport {
  * deliberately not an expression a reader has to spot. What this hook adds is
  * that the two values leave one place, named for what each is FOR — `pan` for
  * drawing, `insertionPan` for splicing — and that the raw offset does not
- * leave at all. Only the SETTER is returned, so there is no third answer to
- * reach for and no way to read the record point as a view (or the reverse,
- * which is what #346 actually caught).
+ * leave at all. Only the SETTER is returned, so there is no third value to
+ * reach for.
+ *
+ * That last part is the only half the type system holds. `pan` and
+ * `insertionPan` are both `number`: passing one where the other belongs
+ * compiles, and nothing here stops it. What the hook removes is the third
+ * reader — the raw offset #346 found being written by a zoom fit — not the
+ * ability to confuse the two that remain.
  *
  * `mode`, `selectionActive` and `length` are arguments rather than state
  * because they belong to the edit session and the buffer, not to the viewport —

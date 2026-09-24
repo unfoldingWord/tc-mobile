@@ -548,12 +548,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // expression no test could reach. `pan` is for drawing, `insertionPan` for
     // splicing, and the hook's docblock carries the rest.
     const {
-      // The hook returns no raw `panState` at all — only the setter, `pan` to
-      // draw and `insertionPan` to splice. What #346 fixed by convention is
-      // structural now: reading the record offset as a view is a type error,
-      // not a line someone can write. (An earlier round of this only left the
-      // field undestructured, which proved nothing about the API — jag3773 QA
-      // review on #661.)
+      // The hook returns no raw `panState` — only the setter, `pan` to draw
+      // and `insertionPan` to splice. Hiding the raw offset is the part the
+      // compiler holds: it is not on the returned type, so reaching for it
+      // does not build. Keeping the two that DO leave apart is NOT — both are
+      // `number`, so drawing with `insertionPan` compiles. Their names carry
+      // that separation; #346 is why they have the names they do.
       setPanState,
       zoomPan,
       setZoomPan,

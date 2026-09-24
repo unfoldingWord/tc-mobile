@@ -9,17 +9,24 @@ import {
 } from "@/hooks/use-recorder-viewport";
 
 /**
- * The recorder's viewport (#160, L-1) — specifically its WIRING.
+ * The recorder's viewport (#160, L-1) — specifically the HOOK's derivation.
  *
  * `effectivePan` and `viewportWindow` are pure and already table-tested in
- * `lib/audio/viewport`. What was never checked is that the component's two
- * outputs are wired to the right ones: #346's P1 was exactly a wiring mistake —
- * a zoom's re-centred view pan reaching the record path.
+ * `lib/audio/viewport`. What was never checked is that the HOOK feeds them the
+ * right inputs and returns each result under the right name: #346's P1 was a
+ * mistake of exactly that kind — a zoom's re-centred view pan reaching the
+ * record path.
  *
  * So these assert the divergence itself: with a zoom pan open in edit mode,
  * `pan` (drawn) and `insertionPan` (spliced at) must not be the same number.
  * That is the one claim the pure tests cannot make, because neither function
  * knows what the other is for.
+ *
+ * These do NOT check the COMPONENT's wiring — whether `recorder.tsx` paints
+ * with `pan` and splices at `insertionPan`. This file mounts the hook alone.
+ * Nothing below renders `Recorder`, so a sheet that drew with the splice
+ * offset would pass every case here. That end-to-end case wants the recorder
+ * over a mocked audio session, which is #650's harness.
  */
 
 const CENTER = 0.5;
