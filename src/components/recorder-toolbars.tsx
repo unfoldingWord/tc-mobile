@@ -332,6 +332,12 @@ export function RecorderToolbar({
         icon="selection"
         label={strings.enterEdit}
         pressed={true}
+        // Not deletable, although it reads that way. Both arms pass `hint` so
+        // the edit toggle keeps ONE prop shape across the mode flip — the
+        // record arm passes `editToolbarHint`, which may itself be null. This
+        // is the node React reuses through the shared `key`, so changing the
+        // props it is reconciled with is how the focus guarantee in the module
+        // docblock gets lost. The comment moved here with the JSX (George R1).
         hint={null}
         variant="default"
         disabled={!idleEditable || dragging}

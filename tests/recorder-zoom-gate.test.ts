@@ -79,7 +79,16 @@ describe("Zoom's disabled gate covers the leftover-preview close window (#396)",
     // The half the rename could silently lose: a prop is only as good as what
     // the sheet passes into it, and `windowControlsInert={false}` would leave
     // every assertion above green while the gate did nothing.
-    const toolbarTag = sheet.slice(sheet.indexOf("<RecorderToolbar"));
+    // Bounded to the ELEMENT, not to end-of-file. A slice running to EOF
+    // passes if either string turns up in some later comment while the real
+    // prop is a constant — the comment-captures-a-test trap AGENTS.md
+    // documents, here in the gate that exists to catch exactly that
+    // substitution (George R1).
+    const open = sheet.indexOf("<RecorderToolbar");
+    const end = sheet.indexOf("/>", open);
+    expect(open, "no <RecorderToolbar in the sheet").toBeGreaterThan(-1);
+    expect(end, "unterminated <RecorderToolbar").toBeGreaterThan(open);
+    const toolbarTag = sheet.slice(open, end);
     expect(toolbarTag).toMatch(
       /windowControlsInert=\{stage\.windowControlsInert\}/
     );
