@@ -451,11 +451,11 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
 
   it('"recorder-stop-flush" is one site in the file, and the tail\'s empty-capture exit picks its code on flushThrew (#485, panel r1)', () => {
     // One row key, one site: a second site would double-report the same
-    // throw. The code: an empty seal after a throw is "unfinished" (the
-    // engine failed), not "silence" (which reads as the translator's own).
-    // Since #169 the sentences live in `lib/strings.ts` and the hook
-    // emits only the code, so this now pins the CODE the exit picks; the
-    // words it maps to are pinned in `tests/capture-failure-copy.test.ts`.
+    // throw. The code: the empty-capture exit hands `flushThrew` and
+    // `current` to `classifyEmptySeal`, whose choice of member — including
+    // null on a superseded stop — is tested directly in
+    // `tests/stop-decode.test.ts` (#745). What is pinned here is only the
+    // wiring: that this exit asks the classifier, with these two flags.
     // `flushThrew` is declared in stop()'s body before the try, so the flag
     // is per invocation.
     const hits = code.match(/"recorder-stop-flush"/g) ?? [];
@@ -466,7 +466,7 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     );
     const afterElse = stopBody.slice(elseBraceClose + 1);
     expect(afterElse).toMatch(
-      /blob\.size\s*===\s*0[\s\S]*?flushThrew\s*\?\s*"unfinished"\s*:\s*"silence"/
+      /blob\.size\s*===\s*0[\s\S]*?error:\s*classifyEmptySeal\(\s*flushThrew\s*,\s*current\s*\)/
     );
   });
 

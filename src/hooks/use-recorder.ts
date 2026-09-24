@@ -11,7 +11,8 @@ import {
   type MicRefusal,
 } from "@/lib/audio/mic-refusal";
 import type { CaptureFailure } from "@/lib/audio/capture-failure";
-import { classifyStopDecode } from "@/lib/audio/stop-decode";
+import { decodeRetry } from "@/lib/audio/retry-decode";
+import { classifyEmptySeal, classifyStopDecode } from "@/lib/audio/stop-decode";
 import { strings } from "@/lib/strings";
 
 import {
@@ -951,9 +952,8 @@ export function useRecorder(): UseRecorder {
       return {
         samples: null,
         // An empty seal after the flush arm threw is the engine's failure,
-        // not the translator's silence — the same code `stopRecording`'s
-        // backstop uses.
-        error: current ? (flushThrew ? "unfinished" : "silence") : null,
+        // not the translator's silence — see `classifyEmptySeal` (#745).
+        error: classifyEmptySeal(flushThrew, current),
         blob: null, // nothing was captured — no bytes to keep
       };
     }
@@ -1001,21 +1001,10 @@ export function useRecorder(): UseRecorder {
       void resumeAudioContext().catch((cause: unknown) => {
         console.error("Could not resume the audio context", cause);
       });
-      try {
-        const samples = await decodeToCanonical(blob);
-        // A decode to zero samples yields no usable take. On the RETRY path this
-        // is NOT proven silence the way it is for `stop()`: the bytes are held
-        // only because the FIRST decode THREW, so a later zero-sample decode is
-        // ambiguous, and dropping the held take on it would lose the only copy
-        // (George R3 G-1). So this is just another retry failure — the caller
-        // keeps the bytes and surfaces the message; it never drops them.
-        if (samples.length === 0) {
-          return { samples: null, error: "silence" };
-        }
-        return { samples, error: null };
-      } catch {
-        return { samples: null, error: "undecodable" };
-      }
+      // The empty-vs-throw choice, and why a zero-sample re-decode is not
+      // proven silence here the way it is on `stop()`, are `decodeRetry`'s
+      // (#745). The caller keeps the bytes on every failure.
+      return decodeRetry(() => decodeToCanonical(blob));
     },
     []
   );
