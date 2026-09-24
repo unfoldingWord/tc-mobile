@@ -50,18 +50,11 @@ import type { Layer } from "@/lib/nav/layer-stack";
  * `useShareFlow`'s `ownsScreen()`); see `Layer`'s docblock and the negative
  * example in `tests/nav-layer-stack.test.ts`.
  *
- * **Review-only, and this is the honest bound on it.** The window this closes
- * cannot be covered by a test in this repo: there is no jsdom or renderer for
- * a unit test (AGENTS.md), and Playwright cannot deterministically schedule a
- * Back inside a commit→effect window. The mutation
- * `useLayoutEffect` → `useEffect` leaves the entire suite green. Stated rather
- * than implied, because a reader is otherwise entitled to assume the suite
- * would catch a regression here. It would not.
- *
- * Node-testable surface: none. This is a hook, and this repo runs Vitest in
- * the Node environment with no jsdom or renderer (AGENTS.md), so it is review
- * surface plus `e2e/back-navigation.spec.ts` in real Chromium — stated here
- * rather than implied.
+ * The static markup harness in `tests/render.ts` does not run this hook's
+ * effects or schedule Back between commit and passive-effect delivery.
+ * `e2e/back-navigation.spec.ts` exercises browser navigation; that does not
+ * establish coverage of this specific scheduling window. Keep the synchronous
+ * refresh requirement explicit when reviewing changes to this hook.
  */
 export interface ScreenLayerBehavior {
   /**

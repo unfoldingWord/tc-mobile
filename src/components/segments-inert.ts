@@ -22,14 +22,10 @@
  * that these four conditions, and no fewer, cover the content. Drop a term and
  * its row dies.
  *
- * **What it is NOT.** It says nothing about the value reaching the DOM. That
- * half is `segments-screen.tsx`'s wiring, which has no renderer in this repo's
- * Node suite (AGENTS.md) and is observed once, for one term, by
- * `e2e/back-navigation.spec.ts` case (m) in real Chromium. The two compose —
- * one `listInert` value feeds both `inert` props, so a branch proved to reach
- * the DOM proves the path for every term — but composition is the claim, not a
- * direct observation of the erase-confirm branch, which needs a RECORDED row
- * and so needs audio Playwright does not have.
+ * This predicate does not exercise the DOM wiring in `segments-screen.tsx`.
+ * Its unit tests check the input conditions; `e2e/back-navigation.spec.ts`
+ * case (m) exercises the chapter-menu path in a browser. Neither is a direct
+ * check of the erase-confirm path, which requires a recorded row.
  */
 export interface SegmentsOverlayState {
   /** The erase confirm is armed for a row — including while its erase runs. */

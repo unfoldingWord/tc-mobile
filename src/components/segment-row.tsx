@@ -15,7 +15,7 @@ import { strings } from "./strings";
 import { reportFailure } from "@/hooks/report-failure";
 import { Waveform } from "./waveform";
 import { cn } from "@/lib/utils";
-import { segmentRowState } from "@/types/view";
+import { segmentRowState } from "@/lib/view/segment-rows";
 import type { SegmentRow as SegmentRowModel } from "@/types/view";
 
 interface SegmentRowProps {
@@ -184,6 +184,29 @@ export function SegmentRow({
     menuOpenRef.current = true;
     // Handed over in the SAME handler that flips the state (invariant 6).
     onMenuOpenRef.current?.(closeMenu);
+  }, [closeMenu]);
+  // The panel's OWN chrome closing it — its Close control, Escape, or a scrim
+  // tap (#679) — as opposed to an action item choosing something. `<Menu>`'s
+  // `onClose` fires for all three the same way (`menu.tsx`'s `onKeyDown` and
+  // its scrim `onClick` both just call it), so one wrapper here covers all
+  // three at once.
+  //
+  // Deliberately NOT folded into `closeMenu` itself: every action item below
+  // (Edit, Finished, Erase, a landed rename) also calls `closeMenu` directly,
+  // and Edit hands off to `onOpenRecorder` right after — forcing focus back
+  // onto this row's ≡ there would race the recorder screen taking over the
+  // page. Setting the target here, one call site up, keeps every OTHER
+  // `closeMenu` caller exactly as focus-silent as it already was (the landed-
+  // rename path already sets its own "menu" target, just below, for the same
+  // reason).
+  //
+  // System Back is the one path this does NOT cover: `openMenu` above hands
+  // the system-Back layer `closeMenu` itself, unwrapped, so a hardware/
+  // gesture Back does not (yet) return focus here either. Named, not fixed —
+  // #679's own repro is Close and Escape only.
+  const onMenuChromeClose = useCallback(() => {
+    pendingFocus.current = "menu";
+    closeMenu();
   }, [closeMenu]);
   // The one thing the old reporting effect did that a tap handler cannot: a row
   // that unmounts with its menu open must still release the list's `inert` and
@@ -461,7 +484,7 @@ export function SegmentRow({
       />
       <Menu
         open={menuOpen}
-        onClose={closeMenu}
+        onClose={onMenuChromeClose}
         title={strings.recorderMenuTitle}
       >
         {renaming ? (

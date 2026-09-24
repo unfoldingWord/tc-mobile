@@ -82,8 +82,8 @@ export const MAX_DISPLAY_GAIN = 20;
  * Both halves matter, and the second is the one a reader will be tempted to
  * drop:
  *
- *   - `capturing` alone is too wide. A punch-in is capturing, but what it draws
- *     is the segment's ALREADY COMMITTED audio: the new recording is not
+ *   - `takeActive` alone is too wide. A punch-in has a take active, but what it
+ *     draws is the segment's ALREADY COMMITTED audio: the new recording is not
  *     spliced into the working buffer until close, so the canvas is the stored
  *     clip the translator is aiming at. Un-fitting that is #358's own complaint
  *     at the worst possible moment (George R2 P2).
@@ -91,23 +91,29 @@ export const MAX_DISPLAY_GAIN = 20;
  *     with no audio draws the dotted never-recorded rule, and a committed take
  *     at idle must of course be fitted.
  *
- * `capturing` itself must be the WHOLE take-in-flight window, not literal mic
- * capture — recording, paused, `processing` (#59), and the `isClosing`
- * stop→decode→save wait, during which `state` has already flipped to idle
- * (`recorder.tsx`'s `takeActive`). Narrowing the caller's argument to
- * `recording || paused` let this go false the instant Back was tapped on a
- * paused first-take preview, while the very same preview stayed on stage —
+ * The first parameter is named `takeActive`, not `capturing` (renamed in
+ * #373), because the caller MUST pass the WHOLE take-in-flight window, not
+ * literal mic capture: **true while a take is live** — recording, paused,
+ * `processing` (#59) — **OR while the close sheet is still saving it**
+ * (`isClosing`), the stop→decode→save wait during which `state` has already
+ * flipped to `"idle"`. The definition is `recorder.tsx`'s own expression:
+ * `const takeActive = state !== "idle" || isClosing`. A caller that narrows
+ * this to a bare recording/capture predicate — `recording || paused` was the
+ * shape that did it — lets this go false the instant Back is tapped on a
+ * paused first-take preview, while the very same preview stays on stage:
  * exactly the jump this flag exists to prevent (George R3 #2, the round-3
- * re-run: a distinct finding from R3's `fitFrom` fix).
+ * re-run: a distinct finding from R3's `fitFrom` fix). #373 is the same drift
+ * caught again at the parameter's name, deferred from George's round-5 review
+ * of #366 rather than found at a call site.
  *
  * Lives here rather than inline in the recorder because it is the whole of the
  * decision, and nothing in `tests/` can mount a canvas to check it there.
  */
 export function isFirstTakeInFlight(
-  capturing: boolean,
+  takeActive: boolean,
   hasCommittedAudio: boolean
 ): boolean {
-  return capturing && !hasCommittedAudio;
+  return takeActive && !hasCommittedAudio;
 }
 
 /**

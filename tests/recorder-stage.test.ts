@@ -125,20 +125,12 @@ describe("liveScopeShown — the stage-owning states win", () => {
 /**
  * The recorder stage's view-coupled decisions, as a truth table.
  *
- * Rounds 3, 4, 5 and 7 of this PR's review each found the same defect wearing
- * a different hat — the paste marker, then zoom, then Select, then the
- * playhead's own hide rule — and each time the answer was "this control (or
- * overlay) assumes the pan/zoom window while something else is drawn, or
- * assumes every sounding buffer swapped to the whole clip when this one
- * didn't". Repetition is a class, not a coincidence, so the decision is made
- * once, here, where it can be enumerated and pinned; `recorder.tsx` reads the
- * answers rather than re-deriving them per control.
+ * Controls and overlays must agree with the waveform's current view. The
+ * table enumerates the shared decision that `recorder.tsx` consumes instead
+ * of re-deriving it per control.
  *
- * The axes are the four the recorder actually varies: which mode the sheet is
- * in, whether a buffer is sounding, whether a selection frame is up, and
- * whether a paused-take preview is on the stage. The answer is now ONE value —
- * `render`, the four ways the stage can be drawn — rather than a bag of
- * booleans that could disagree with each other (#415).
+ * Inputs are mode, playback, selection and dragging. `render` selects one
+ * of three views: static, scrolling or in-place audition.
  *
  * A fourth decision, `centerlineHidden`, lived in this table from R2 through
  * R4 P3. #316 (requirements owner, 2026-09-16) retired it as a decision made
@@ -513,16 +505,16 @@ describe("resumesOnLift", () => {
 });
 
 /**
- * What a lift leaves behind (Frank R3 P2, twice).
+ * What a lift leaves behind.
  *
  * `resumesOnLift` answers one question — does sound start? — and a lift asks
  * three, because the stage can outlive the pointer that owned it. The lock has
  * to hold while ANY finger is on the waveform (otherwise the owner lifting
  * first re-enables Play, Record, Undo, Zoom and Select with a finger still
  * down), and a resume the lift cannot perform has to survive as a debt rather
- * than be consumed into silence. Those are state transitions, not a predicate,
- * and there is no renderer in this suite — so they are enumerated here, where
- * the owner-up-before-non-owner-up order is a test rather than a phone.
+ * than be consumed into silence. These cases enumerate pure state transitions,
+ * including owner-up before non-owner-up; they do not dispatch pointer events
+ * or establish the behavior on a phone.
  */
 describe("liftOutcome", () => {
   const LEN = 1000;

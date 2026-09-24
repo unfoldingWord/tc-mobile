@@ -12,7 +12,7 @@
 
 import { strings } from "./strings";
 import type { ShareError } from "@/hooks/share-flow";
-import type { ShareProgress } from "@/hooks/share-progress";
+import type { ShareGap, ShareProgress } from "@/hooks/share-progress";
 
 /**
  * The words under the share modal's glyph (#491), for each phase of the
@@ -80,14 +80,18 @@ export function shareProgressText(
  * there — see `share-flow.ts`), so it never reads the finer count.
  */
 export function shareGapText(
-  gap: { readonly missing: number; readonly partial: number } | undefined,
+  gap: ShareGap | undefined,
   scope: "chapter" | "book"
 ): string {
   const missing = gap?.missing ?? 0;
   const partial = gap?.partial ?? 0;
   if (scope === "chapter") return strings.shareMissing(missing);
   if (missing > 0 && partial > 0)
-    return strings.shareBookMissingAndPartial(missing, partial);
+    return strings.shareBookMissingAndPartial(
+      missing,
+      partial,
+      gap?.partialChapters ?? 0
+    );
   if (missing > 0) return strings.shareBookMissing(missing);
   return strings.shareBookPartial(partial);
 }
