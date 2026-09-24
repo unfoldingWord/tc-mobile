@@ -71,10 +71,11 @@ Each promotion is a PR. The `staging` -> `main` PR is the production gate.
 Live staging: <https://tc-mobile-staging.unfoldingword.workers.dev>
 
 **Cloudflare Workers Builds deploys** the PWA straight from the repo — no
-Actions workflow deploys the web app. (`.github/` holds two manual native
-lanes, run by hand and never on push/PR: `ios-testflight.yml`, a TestFlight
-upload, and `android-apk.yml`, a signed release APK attached to the run as an
-artifact — native builds, not web deploys, and never to Cloudflare.)
+Actions workflow deploys the web app. (`.github/` holds three native lanes:
+`ios-testflight.yml` and `android-apk.yml` are manual-dispatch only;
+`android-play.yml` runs on push to `staging`/`main`, shipping a native bundle
+to Google Play, never Cloudflare — see AGENTS.md → "Cloudflare Workers Builds
+owns deployment".)
 Workers Builds is configured per Worker, so the repo is connected twice:
 `tc-mobile` builds from `main`, `tc-mobile-staging` builds from `staging` with
 `--env staging`.
