@@ -125,11 +125,12 @@ const BROWSER_ONLY_GLOBALS = [
  * declarations: a static `import { x } from "@/hooks/y"` from `src/lib`
  * errors under the block below, but `await import("@/hooks/y")`,
  * `await import("../hooks/y")` and
- * `new URL("../hooks/mp3.worker.ts", import.meta.url)` from the same file all
- * return ZERO errors — three ways to reach an outer layer that the static
- * rule cannot see at all, none of them exotic (the `new URL` form is the
- * exact shape `hooks/mp3-codec.ts` and `app/e2e-harness.ts` already use for
- * their own Worker construction) (#815).
+ * `new URL("../hooks/mp3.worker.ts", import.meta.url)` from the same file are
+ * none of them a static import/export declaration, so the rule above does
+ * not inspect them at all — three ways to reach an outer layer invisible to
+ * it, none of them exotic (the `new URL` form is the exact shape
+ * `hooks/mp3-codec.ts` and `app/e2e-harness.ts` already use for their own
+ * Worker construction) (#815).
  *
  * `no-restricted-syntax` closes both holes with esquery selectors:
  *

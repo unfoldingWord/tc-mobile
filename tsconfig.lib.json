@@ -38,16 +38,14 @@
    * (#159 L-6): listing only the .ts glob let a .tsx file anywhere under
    * src/lib or src/types skip this gate entirely — such a file is invisible
    * to the command `npm run typecheck:lib` runs, so `window` in one
-   * compiled clean where the identical .ts file does not (#815). No .tsx
-   * file exists under either directory
-   * today (a `find` for that extension is empty), so this widens the glob
-   * rather than narrows a working set. Deliberately not a single brace-
-   * expansion glob per directory: JSON's `include` matcher accepts the
-   * pattern here as one string per extension, and a stray "star-slash" two
-   * characters apart inside this very comment block is exactly the kind of
-   * thing that silently truncates a JSONC comment, so the four extensions
-   * are spelled out as four plain strings instead of packed together. No
-   * `jsx` compiler option is added: lib/ and types/ have no reason to
+   * compiled clean where the identical .ts file does not (#815).
+   * Deliberately not a single brace-expansion glob per directory: JSON's
+   * `include` matcher accepts the pattern here as one string per extension,
+   * and a stray "star-slash" two characters apart inside this very comment
+   * block is exactly the kind of thing that silently truncates a JSONC
+   * comment, so the four extensions are spelled out as four plain strings
+   * instead of packed together. No `jsx` compiler option is added: lib/
+   * and types/ have no reason to
    * contain JSX, so actual JSX syntax in a .tsx file here should keep
    * failing to compile, not be accommodated.
    */
