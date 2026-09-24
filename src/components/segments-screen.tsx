@@ -195,6 +195,16 @@ export const SegmentsScreen = forwardRef<
   // `books-screen.tsx`'s `menuFocusRestore` for why sharing the overlay's slot
   // lost the ⋮ after any share-progress cycle (Frank r1 P2 on #754).
   const menuFocusRestore = useFocusRestore();
+  // Where focus goes once leaving the chapter rename field has committed
+  // (#676 item 1). `#679`'s `menuFocusRestore` above already returns focus to
+  // the ⋮ once the WHOLE menu closes — a completed save included — but
+  // Escape/Cancel here only leaves rename mode: `chapterMenuOpen` stays true,
+  // so that effect's `if (chapterMenuOpen) return;` guard never fires, and
+  // the unmounting `NameEdit` field drops focus to `<body>` behind the still-
+  // open panel. `segment-row.tsx`'s `pendingFocus` is the same shape, applied
+  // here to the one target this screen still needs.
+  const pendingRenameFocus = useRef(false);
+  const renameChapterControlRef = useRef<HTMLButtonElement | null>(null);
   const share = useChapterShare();
   const erase = useEraseSegment();
   // MEMBERS, never the objects — and this is #452's own open question 3,
@@ -601,6 +611,16 @@ export const SegmentsScreen = forwardRef<
   // the scrim.
   const onSaveChapterName = useCallback(
     (name: string) => {
+      // The same synchronous ref latch New Book's `creatingBook` uses (#395
+      // item 3), mirroring `books-screen.tsx`'s `onSaveBookName`.
+      // `NameEdit`'s own `if (busy) return` in its `onSubmit` reads LAST
+      // RENDER's `busy` — a key-repeated Enter can call this a second time
+      // before the first commit's `savingChapterName` paints. Reading
+      // `savingChapterNameRef` HERE, before this call flips it, closes that
+      // gap for free: the ref already tracks the in-flight write
+      // synchronously, for `Layer.busy()`'s own sync read (see its
+      // declaration above).
+      if (savingChapterNameRef.current) return;
       // Capture the session this rename belongs to. IDB can settle after the
       // user has closed the menu or armed a share — both advance the token — so
       // close ONLY if we are still the same session (F1). Without this, the stale
@@ -633,9 +653,18 @@ export const SegmentsScreen = forwardRef<
   // showed the NEXT Rename tap's fresh Confirm as busy before it was tapped.
   const onCancelRenameChapter = useCallback(() => {
     chapterMenuSession.current += 1;
+    pendingRenameFocus.current = true;
     setRenamingChapter(false);
     setSavingName(false);
   }, [setSavingName]);
+  // Runs after the commit that brings the action list back, mirroring
+  // `segment-row.tsx`'s identical effect for the row's own rename mode.
+  useLayoutEffect(() => {
+    if (pendingRenameFocus.current && !renamingChapter) {
+      pendingRenameFocus.current = false;
+      renameChapterControlRef.current?.focus();
+    }
+  }, [renamingChapter]);
   const onConfirmErase = useCallback(() => {
     if (eraseTarget === null) return;
     void (async () => {
@@ -955,12 +984,22 @@ export const SegmentsScreen = forwardRef<
               <Notice tone="busy">{strings.savingName}</Notice>
             )}
             {/* A failed rename speaks here — the screen Notice is behind the
-                scrim — while the field stays up for another try. */}
-            {error && <Notice>{error}</Notice>}
+                scrim — while the field stays up for another try.
+
+                Never while `savingChapterName` (#395 item 1), mirroring
+                `books-screen.tsx`'s identical guard: a retried rename's own
+                busy Notice must not share the panel with a failure Notice
+                from the PREVIOUS attempt — the #112 collision
+                `control-affordance.ts` names as the rule this wiring
+                follows. `renameChapter` also now clears `error` at the START
+                of the write (`use-chapter-segments.ts`); either half alone
+                still leaves the other channel wrong (George, #395). */}
+            {error && !savingChapterName && <Notice>{error}</Notice>}
           </>
         ) : (
           <>
             <Control
+              ref={renameChapterControlRef}
               icon="edit"
               label={strings.renameChapter}
               variant="quiet"
