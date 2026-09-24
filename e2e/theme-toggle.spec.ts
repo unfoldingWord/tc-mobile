@@ -384,10 +384,17 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
     // and its reason.
     //
     // It is asserted BEFORE the click, because clicking moves focus itself and
-    // would make this pass for the wrong reason. A later edit that reorders the
-    // rows, or makes one of them actionable in this state, changes what an AT
-    // user hears first — and that should fail here rather than be discovered on
-    // a phone by the person it happens to (George, this head).
+    // would make this pass for the wrong reason.
+    //
+    // WHAT THIS DOES AND DOES NOT CATCH. It catches one of the GATES changing:
+    // if a pre-existing row becomes actionable in this state, it takes the
+    // first actionable position and this fails. It does NOT catch a reorder,
+    // and an earlier version of this comment wrongly said it did (George).
+    // In this state every other row is hinted, so the toggle is the only
+    // actionable child WHEREVER it sits — which also means a reorder does not
+    // change what an AT user hears first here, so there is nothing for an
+    // order-sensitive assertion to protect. The mount ORDER is held by
+    // `tests/theme.test.ts` and by the comments in `recorder-menu.tsx`.
     await expect(toLight).toBeFocused();
 
     await toLight.click();

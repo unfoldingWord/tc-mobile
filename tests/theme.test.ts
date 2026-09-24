@@ -310,7 +310,13 @@ describe("the light theme is reachable (#171)", () => {
         .filter((file) => !file.endsWith("hooks/use-theme.ts"))
         .filter((file) => /\buseLiveTheme\(|\buseTheme\(/.test(source(file)))
         .map((file) =>
-          path.relative(path.resolve(import.meta.dirname, ".."), file)
+          // Normalised to forward slashes: `path.relative` yields `\` on
+          // win32, which would fail the literal comparison below for a reason
+          // that has nothing to do with theme subscribers (George).
+          path
+            .relative(path.resolve(import.meta.dirname, ".."), file)
+            .split(path.sep)
+            .join("/")
         )
         .sort();
 
