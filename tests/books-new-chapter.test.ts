@@ -49,6 +49,7 @@ const shelf = (): BookCard[] => [
         name: null,
         finishedCount: 0,
         totalCount: 0,
+        recordedCount: 0,
       },
       {
         chapterId: "chapter-0000-4000-8000-000000000002" as ChapterId,
@@ -56,6 +57,7 @@ const shelf = (): BookCard[] => [
         name: "Mark 6",
         finishedCount: 0,
         totalCount: 0,
+        recordedCount: 0,
       },
     ],
   },
@@ -77,6 +79,7 @@ function landChapter() {
           name: made.name,
           finishedCount: 0,
           totalCount: 0,
+          recordedCount: 0,
         },
       ],
     },

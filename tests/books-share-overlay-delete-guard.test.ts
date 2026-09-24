@@ -45,6 +45,7 @@ const shelf = (): BookCard[] => [
         name: null,
         finishedCount: 0,
         totalCount: 0,
+        recordedCount: 0,
       },
     ],
   },

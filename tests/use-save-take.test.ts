@@ -5,8 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // `clearSegmentTake` passes through to the real store unless a case below
 // replaces one call, which is how a clear failure OTHER than a missing segment
 // is produced: fake-indexeddb has no quota to exhaust.
-vi.mock("@/lib/storage/books", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/storage/books")>();
+vi.mock("@/lib/storage/takes", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/storage/takes")>();
   return { ...actual, clearSegmentTake: vi.fn(actual.clearSegmentTake) };
 });
 
@@ -19,10 +19,10 @@ import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import {
   addChapter,
   addSegment,
-  clearSegmentTake,
   createBook,
   getSegment,
 } from "@/lib/storage/books";
+import { clearSegmentTake } from "@/lib/storage/takes";
 import { getClip, getClipMeta, newClipId, putClip } from "@/lib/storage/clips";
 import { closeDb, getDb } from "@/lib/storage/db";
 import {

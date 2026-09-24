@@ -460,7 +460,9 @@ recorder close (`commitCloseRecorder`'s raw `window.history.back()`,
 `hooks/use-nav-stack.ts`): that is a THIRD raw issuer
 outside `TravelGuardState` entirely, suppressed rather than arbitrated, and
 the any-outstanding guard cannot see or refuse against it — already disclosed
-at `travel-guard.ts` (the THIRD raw issuer paragraph). `goBack` and the recorder's commit-close exit are
+at `travel-guard.ts` (the THIRD raw issuer paragraph). (#763 later found that
+it could race and folded it into the guard's `"commit-close"` slot through
+`history-latch.ts`'s `recorderExitTraversal`; see `travel-guard.ts`.) `goBack` and the recorder's commit-close exit are
 rewritten to call `beginBack` (settling at the next landing with
 `settleOutstanding`) instead of touching **only** `backRequested` — **not**
 `suppressPop`, which stays fully load-bearing in the adapter at the

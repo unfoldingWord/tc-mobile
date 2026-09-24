@@ -10,11 +10,10 @@ import {
   getBook,
   getChapter,
   getSegmentsOfChapter,
-  isFinished,
   renameChapter as renameChapterInStore,
   renameSegment as renameSegmentInStore,
-  setSegmentFinished,
 } from "@/lib/storage/books";
+import { isFinished, setSegmentFinished } from "@/lib/storage/takes";
 import {
   loadSegmentClip,
   resolveSegmentAudio,
