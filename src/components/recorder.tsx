@@ -63,7 +63,7 @@ import {
   resolveProvesDelivery,
   selectShareRoute,
 } from "@/hooks/share-target";
-import type { UseAudioSession } from "@/hooks/use-audio-session";
+import type { RecorderAudio } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
@@ -102,7 +102,7 @@ const ZOOM_QUARTER = 4;
 interface RecorderProps {
   segmentId: SegmentId;
   /** The single audio owner, held by App so `leave()` fires on every nav. */
-  audio: UseAudioSession;
+  audio: RecorderAudio;
   /**
    * Persist the recording as an insert/append into the segment's audio, at the
    * given Finished state. Never rejects — a failure becomes the recovery screen
