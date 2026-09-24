@@ -12,6 +12,7 @@ import {
 } from "@/lib/audio/mic-refusal";
 import type { CaptureFailure } from "@/lib/audio/capture-failure";
 import { classifyStopDecode } from "@/lib/audio/stop-decode";
+import { strings } from "@/lib/strings";
 
 import {
   createLevelTap,
@@ -48,20 +49,20 @@ async function queryMicPermission(): Promise<MicPermissionState> {
   }
 }
 
-/** The honest sentence for each refusal (#203). Inline here, like the recorder's
- *  other error copy, because `hooks/` cannot reach the components' string table. */
+/** The honest sentence for each refusal (#203). The words live in the one string
+ *  table; this maps the pure classifier's verdict onto them. */
 function micRefusalMessage(refusal: MicRefusal): string {
   switch (refusal) {
     case "no-device":
-      return "No microphone was found on this device.";
+      return strings.micNoDevice;
     case "site-blocked":
-      return "Recording is blocked for this app. Allow the microphone in your browser's site settings, then try again.";
+      return strings.micSiteBlocked;
     case "os-blocked":
-      return "Your device is not letting the app use the microphone. Check microphone access in your device settings, then try again.";
+      return strings.micOsBlocked;
     case "prompt":
-      return "Microphone access is needed to record. Allow it when asked — or if you already allowed it, check your device settings.";
+      return strings.micPrompt;
     case "other":
-      return "Could not start recording.";
+      return strings.micStartFailed;
   }
 }
 
@@ -456,7 +457,7 @@ export function useRecorder(): UseRecorder {
 
   const start = useCallback(async (): Promise<boolean> => {
     if (!supported) {
-      setError("This device cannot record audio.");
+      setError(strings.recordingUnsupported);
       return false;
     }
     // Refuse to open a SECOND microphone while one is already live. Unreachable

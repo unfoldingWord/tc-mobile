@@ -4,7 +4,7 @@ import type { DatabaseStatus } from "@/hooks/use-database-status";
 import { Control } from "./control";
 import { Icon, type IconName } from "./icon";
 import { restartConsequence, restartLabel } from "./recovery-copy";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 
 /** The heading that names the alert, referenced by `aria-labelledby`. */
 const TITLE_ID = "db-panel-title";

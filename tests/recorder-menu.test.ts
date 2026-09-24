@@ -10,7 +10,7 @@ import {
   RecorderMenu,
   type RecorderMenuProps,
 } from "@/components/recorder-menu";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 
 /**
  * The recorder's ≡ menu, now that it is its own component (#160, L-1).

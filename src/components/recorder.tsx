@@ -46,7 +46,7 @@ import {
   ZOOM_WHOLE,
 } from "./recorder-stage";
 import { SelectionOverlay } from "./selection-overlay";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 import { LiveScope } from "./live-scope";
 import {
   barHint,

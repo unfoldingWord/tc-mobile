@@ -11,7 +11,7 @@ import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 import { reportFailure } from "@/hooks/report-failure";
 import { Waveform } from "./waveform";
 import { cn } from "@/lib/utils";

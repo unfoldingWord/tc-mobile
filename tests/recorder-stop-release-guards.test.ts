@@ -453,7 +453,7 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     // One row key, one site: a second site would double-report the same
     // throw. The code: an empty seal after a throw is "unfinished" (the
     // engine failed), not "silence" (which reads as the translator's own).
-    // Since #169 the sentences live in `components/strings.ts` and the hook
+    // Since #169 the sentences live in `lib/strings.ts` and the hook
     // emits only the code, so this now pins the CODE the exit picks; the
     // words it maps to are pinned in `tests/capture-failure-copy.test.ts`.
     // `flushThrew` is declared in stop()'s body before the try, so the flag

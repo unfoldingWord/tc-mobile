@@ -14,7 +14,7 @@
  * and this is the only place the sentence is chosen.
  */
 
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 import type { CaptureFailure } from "@/lib/audio/capture-failure";
 
 /**

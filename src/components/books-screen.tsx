@@ -22,7 +22,7 @@ import { shareGapText, shareProgressText } from "./share-error-copy";
 import { ShareMenuSection } from "./share-menu-section";
 import { ShareProgress } from "./share-progress";
 import { storagePressureNotice } from "./storage-pressure-notice";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 import { useFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import type { FailureKey } from "@/hooks/save-failure";
