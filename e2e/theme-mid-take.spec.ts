@@ -29,7 +29,8 @@ import { LIGHT_FLOOR, floorOf, resolved } from "./support/theme";
  * recorder cannot [be driven honestly]" predates:
  * `e2e/recorder-selection.spec.ts` records against
  * `--use-fake-device-for-media-stream` and asserts on the resulting take. The
- * same flags are scoped to this describe.
+ * same flags are scoped to this file (`test.use` at file scope below) —
+ * there is no describe here, for the reason given above.
  *
  * WHAT IS ASSERTED, and what is NOT. Capture is still live after the toggle
  * (the transport still offers Stop), the elapsed timer has ADVANCED across
