@@ -85,31 +85,37 @@ export interface ShareOutcomeGlyph {
 
 export function shareOutcomeGlyph(outcome: ShareOutcome): ShareOutcomeGlyph {
   switch (outcome) {
-    // Some of it went. Built on the share family's tray with its rim broken,
-    // and NOT `info`'s generic ring-and-i — that glyph also carries storage
-    // durability (#214/#406) and the interruption heads-up, so leaving share on
-    // it would mean sharing a mark with an unrelated standing condition.
+    // Some of it went, some did not — an open ring, three-quarters drawn
+    // (Material's `incomplete_circle`, redrawn for #850; was a tray with its
+    // rim broken). NOT `info`'s generic ring-and-i — that glyph also carries
+    // storage durability (#214/#406) and the interruption heads-up, so
+    // leaving share on it would mean sharing a mark with an unrelated
+    // standing condition.
     case "partial":
       return { icon: "share-partial", tone: "info" };
-    // None of it could go, and nothing failed to do it — there is no audio yet.
-    // The struck-through tray, so it is not the failure triangle.
+    // None of it could go, and nothing failed to do it — there is no audio
+    // yet. A closed ring with a bar through it (Material's `do_not_disturb`,
+    // redrawn for #850; was a struck-through tray), so it is not the failure
+    // triangle.
     case "nothing":
       return { icon: "share-empty", tone: "alert" };
     // It genuinely failed. Keeps the alert triangle, which is what that mark is
     // for and what the translator has already learned it means.
     case "failed":
       return { icon: "alert", tone: "alert" };
-    // Handed to the sheet (#491). The tray with a tick where the arrow was —
-    // not the bare `check`, which is the "Share now" control the person just
-    // tapped, and not `share`, which is the control. `info` is the tone the
-    // only existing success Notice already wears (`takeRecoverShared`); it
-    // decides the a11y role only — the modal keys its ink on the outcome, so
-    // success is not painted amber.
+    // Handed to the sheet (#491). A closed ring with a tick (Material's
+    // `check_circle`, redrawn for #850; was a tray with a tick where the
+    // arrow was) — not the bare `check`, which is the "Share now" control the
+    // person just tapped, and not `share`, which is the control. `info` is
+    // the tone the only existing success Notice already wears
+    // (`takeRecoverShared`); it decides the a11y role only — the modal keys
+    // its ink on the outcome, so success is not painted amber.
     case "sent":
       return { icon: "share-sent", tone: "info" };
-    // The sheet was closed before anything went out. The arrow back DOWN
-    // into the tray. Not a failure, so not `alert`: a person who changed
-    // their mind must not be shown the failure colour for it.
+    // The sheet was closed before anything went out. A plain X (Material's
+    // `close`, redrawn for #850; was an arrow pointing back down into the
+    // tray). Not a failure, so not `alert`: a person who changed their mind
+    // must not be shown the failure colour for it.
     case "dismissed":
       return { icon: "share-closed", tone: "info" };
     default: {

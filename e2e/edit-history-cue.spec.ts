@@ -2,6 +2,8 @@ import { existsSync } from "node:fs";
 
 import { expect, test, type Page } from "@playwright/test";
 
+import { clickEditRecording } from "./recorder-fixtures";
+
 /**
  * The grey Undo/Redo arrows carry their reason, and saying so does not move the
  * toolbar (#91).
@@ -65,10 +67,10 @@ async function openEditMode(page: Page): Promise<void> {
   await expect(
     page.getByRole("button", { name: "Record", exact: true })
   ).toBeVisible();
-  await page
-    .locator(".recorder-toolbar")
-    .getByRole("button", { name: "Edit recording", exact: true })
-    .click();
+  // #846/#848/#825: "Record" reappearing is not proof the commit has landed
+  // — wait for the real precondition before clicking. See
+  // recorder-fixtures.ts.
+  await clickEditRecording(page);
   await expect(
     page.getByLabel("Selection start", { exact: true })
   ).toBeVisible();

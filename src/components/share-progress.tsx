@@ -1,10 +1,10 @@
 import { useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
-import { Icon } from "./icon";
 import { noticePresentation } from "./notice-tone";
 import { shareProgressText } from "./share-error-copy";
-import { shareSettledGlyph } from "./share-outcome-glyph";
+import { shareOverlayGlyph } from "./share-overlay-glyph";
+import { ShareProgressPanel } from "./share-progress-panel";
 import type { ShareProgress as ShareProgressState } from "@/hooks/share-progress";
 
 interface ShareProgressProps {
@@ -222,11 +222,11 @@ export function ShareProgress({
   }, [visible]);
 
   if (progress.phase === "hidden") return null;
-  // The wait wears the same retry mark `Notice`'s `busy` tone does, spun by
-  // the stylesheet; an outcome wears the table's mark for it.
-  const glyph = busy
-    ? { icon: noticePresentation("busy").icon, tone: "busy" as const }
-    : shareSettledGlyph(progress.settled);
+  // Which mark and tone: `shareOverlayGlyph` (#850, `share-overlay-glyph
+  // .ts`) owns the busy-vs-settled choice as a plain function, so it is a
+  // behaviour a test can call directly rather than something only rendered
+  // JSX or source text could show.
+  const glyph = shareOverlayGlyph(progress);
   const { role } = noticePresentation(glyph.tone);
   // The stylesheet keys the glyph's ink on this, not on the tone: success is
   // `--s-done`, not the `info` tone's amber.
@@ -243,12 +243,12 @@ export function ShareProgress({
         } else onDismiss();
       }}
     >
-      <div ref={panelRef} tabIndex={-1} role={role} className="share-progress">
-        <Icon name={glyph.icon} size={48} className="share-progress-glyph" />
-        <span className="share-progress-text">
-          {shareProgressText(progress, scope)}
-        </span>
-      </div>
+      <ShareProgressPanel
+        ref={panelRef}
+        role={role}
+        icon={glyph.icon}
+        text={shareProgressText(progress, scope)}
+      />
     </div>,
     document.body
   );

@@ -5,9 +5,9 @@ The canonical contributor guide. Read this before changing anything.
 ## Purpose
 
 tC Mobile is an offline-first PWA for oral Bible translation: record a passage,
-edit the waveform, manage the segments of a chapter, export MP3 (export is not
-wired yet, #18). It targets Android and iOS phones, frequently offline, used by
-people who may not read.
+edit the waveform, manage the segments of a chapter, and share a chapter or a
+book as MP3 through the OS share sheet. It targets Android and iOS phones,
+frequently offline, used by people who may not read.
 
 The driving deadline is the **East Africa training in the first week of
 October 2026**, with production readiness targeted for **end of September 2026**.
@@ -481,7 +481,11 @@ place. Decided 2026-09-02, when the repo stopped being solo.
 - **One `chore(release): vX.Y.Z` PR per `develop -> staging` promotion bumps
   the patch** — daily, whenever there is something to promote. Its body lists
   the PRs it carries (#131 is the shape). Patch numbers are not capped;
-  `0.1.30` is fine.
+  `0.1.30` is fine. **After the merge deploys, run `npm run check:deploy` and
+  paste the PASS line into `docs/progress_tracker.md`** — v0.2.10 (#775)
+  promoted without this and went unrecorded until a 2026-09-24 PR audit
+  caught it (#839, #840 R7); the confirmation belongs in the tracker at
+  promotion time, not reconstructed after the fact.
 - **The minor is the milestone.** Every GitHub milestone is named for the
   version its `staging -> main` promotion ships. That PR bumps the minor and
   tags `main` (`git tag vX.Y.0` — the first tags this repo will have). A
