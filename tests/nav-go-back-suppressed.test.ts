@@ -7,10 +7,10 @@ import { describe, expect, it } from "vitest";
  * PR 634, #374).
  *
  * The travel guard (`beginBack`) refuses a second `history.back()` only for
- * issuers it tracks. `commitCloseRecorder` and `trap-forward`'s cancel are
- * raw issuers outside it on purpose (`travel-guard.ts`, the third-issuer
- * paragraph): they set `suppressPop` and call `history.back()` themselves,
- * and their `popstate` lands a task later. The on-screen header Back is
+ * issuers it tracks. `trap-forward`'s cancel is a raw issuer outside it
+ * (`travel-guard.ts`; the programmatic recorder close was the other until
+ * #763 folded it in): it sets `suppressPop` and calls `history.back()`
+ * itself, and its `popstate` lands a task later. The on-screen header Back is
  * disabled for that window, so `goBack` could never run inside it — until the
  * hardware Back (#374) became a `goBack` issuer that nothing disables. Two
  * `history.back()` calls before the first lands is the coalescing hazard #493
