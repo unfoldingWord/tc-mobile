@@ -31,27 +31,29 @@ import {
 
 // Whole-file safety net: a scratch-repo git command scoped only by `cwd`, or
 // only by `--git-dir`/`--work-tree`, can still land on this worktree's own
-// checked-out branch, because git hooks export `GIT_DIR`/`GIT_WORK_TREE`/
+// checked-out commit, because git hooks export `GIT_DIR`/`GIT_WORK_TREE`/
 // `GIT_INDEX_FILE` and every child process inherits them (see
-// `cleanGitEnv`, below). This re-reads the real repository's checked-out
-// branch after every test and fails immediately if it ever differs from
-// what it was before this file's tests started running, so any such leak is
-// a loud, specific failure rather than a silent write to the real repo.
+// `cleanGitEnv`, below). This re-reads the real repository's HEAD commit
+// after every test and fails immediately if it ever differs from what it
+// was before this file's tests started running, so any such leak is a
+// loud, specific failure rather than a silent write to the real repo.
+// `rev-parse HEAD`, not `symbolic-ref --short HEAD`: CI checks out a PR at
+// a detached HEAD (no branch name to read), and the commit identity is what
+// this guard actually needs — a leaked commit moves it either way.
 const REAL_REPO_ROOT = execFileSync("git", ["rev-parse", "--show-toplevel"], {
   encoding: "utf8",
 }).trim();
-const REAL_BRANCH_BEFORE = execFileSync(
-  "git",
-  ["symbolic-ref", "--short", "HEAD"],
-  { encoding: "utf8", cwd: REAL_REPO_ROOT }
-).trim();
+const REAL_HEAD_BEFORE = execFileSync("git", ["rev-parse", "HEAD"], {
+  encoding: "utf8",
+  cwd: REAL_REPO_ROOT,
+}).trim();
 
 afterEach(() => {
-  const branchNow = execFileSync("git", ["symbolic-ref", "--short", "HEAD"], {
+  const headNow = execFileSync("git", ["rev-parse", "HEAD"], {
     encoding: "utf8",
     cwd: REAL_REPO_ROOT,
   }).trim();
-  expect(branchNow).toBe(REAL_BRANCH_BEFORE);
+  expect(headNow).toBe(REAL_HEAD_BEFORE);
 });
 
 /**
