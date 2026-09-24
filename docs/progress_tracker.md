@@ -34,6 +34,12 @@ This follows the entry below in the same session. The DRI asked for "3-4 lanes" 
 
 Before these, and still this session: the v0.2.11 bump (#885) and promotion (#889). The promotion is recorded in the entry below.
 
+### v0.2.11 tester build released
+
+- **Pre-release [`android-release-v0.2.11`](https://github.com/unfoldingWord/tc-mobile/releases/tag/android-release-v0.2.11)** at staging `9662da9`, with `app-release.apk` from APK run 36066787724. The APK's own `version.json` reads 0.2.11 at `9662da9`. Its signing certificate SHA-256 is `eed23e1b…34baf2`, the same as v0.2.10's, so it installs in place. It was read from the v2 signing block with apksigtool, which was first checked against the v0.2.10 APK. The asset link needs no login, and a QR code of it decodes back to the exact URL.
+- **TestFlight** run 36066815909 succeeded at `9662da9`.
+- **The tester announcement** follows v0.2.10's shape: changed since v0.2.10, seven "what to test" steps, and known limits. The developer checklist is **#915**, which carries forward #772's open rows.
+
 ### Google Play lane (#874)
 
 - The first `build_only` run from staging passed (run 36058347482): a signed .aab was built and the upload step was skipped, as intended. `keytool -printcert` on the artifact gives upload-key SHA-256 `98:E7:EF:93:…:32:53`.
