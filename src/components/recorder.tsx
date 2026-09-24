@@ -533,11 +533,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // The pan/zoom viewport: its three pieces of state and the derivation over
     // them (#160, L-1). `pan` is NOT `panState` — it goes through
     // `effectivePan`, the gate that keeps a zoom's view fit out of the record
-    // insertion offset (the round-1 P1 of #346), which stays pure and
-    // table-tested in `lib/audio/viewport` rather than being an expression here
-    // that nothing could reach: the George stand-in showed that reintroducing
-    // that P1 at the setter left the whole suite green. `pan` is for drawing,
-    // `insertionPan` for splicing, and the hook's docblock carries the rest.
+    // insertion offset (the round-1 P1 of #346). That gate stays pure and
+    // table-tested in `lib/audio/viewport` rather than living here as an
+    // expression no test could reach. `pan` is for drawing, `insertionPan` for
+    // splicing, and the hook's docblock carries the rest.
     const {
       // The hook returns no raw `panState` at all — only the setter, `pan` to
       // draw and `insertionPan` to splice. What #346 fixed by convention is

@@ -14,8 +14,7 @@ import {
  * `effectivePan` and `viewportWindow` are pure and already table-tested in
  * `lib/audio/viewport`. What was never checked is that the component's two
  * outputs are wired to the right ones: #346's P1 was exactly a wiring mistake —
- * a zoom's re-centred view pan reaching the record path — and reintroducing it
- * at the setter left the whole suite green.
+ * a zoom's re-centred view pan reaching the record path.
  *
  * So these assert the divergence itself: with a zoom pan open in edit mode,
  * `pan` (drawn) and `insertionPan` (spliced at) must not be the same number.
@@ -79,7 +78,7 @@ describe("useRecorderViewport", () => {
     // The boundary itself, asserted rather than asserted-about. #346's P1 was
     // one value serving as both the view and the record point; a consumer that
     // cannot reach the raw offset cannot reintroduce it by reading the wrong
-    // one. The compile-time half is in the PR (a `vp.panState` read is TS2339);
+    // one. The type carries no `panState`, so reading one does not compile;
     // this is the runtime half, so the field cannot come back unnoticed.
     mount("record", false);
     expect(Object.keys(api).sort()).toEqual([

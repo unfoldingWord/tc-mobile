@@ -71,9 +71,9 @@ export interface RecorderViewport {
  * `initialZoom` in particular must NOT be inlined as a literal, even one that
  * happens to equal today's `ZOOM_WHOLE`: the caller's zoom-out control writes
  * `ZOOM_WHOLE`, so a copy here that did not track it would leave a fresh open
- * painting at one scale and every later zoom-to-whole at another — a
- * divergence nothing would catch, because neither value is wrong on its own
- * (George R1 #1).
+ * painting at one scale and every later zoom-to-whole at another, with neither
+ * value wrong on its own (George R1 #1). `tests/recorder-viewport.test.ts`
+ * pins the argument as the level the hook opens at, so a literal here fails.
  */
 export function useRecorderViewport(
   mode: "record" | "edit",
