@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { Control } from "@/components/control";
 import { barHint, rowHint } from "@/components/menu-row-state";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 
 import { one, render } from "./render";
 

@@ -80,7 +80,7 @@
  *   the pair added nothing this caller could ever trigger.
  */
 
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 import type { NoticeTone } from "./notice-tone";
 import type { StoragePressureMarker } from "@/lib/storage/pressure";
 

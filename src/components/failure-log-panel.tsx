@@ -4,7 +4,7 @@ import { Control } from "./control";
 import { shareControlGlyph } from "./control-affordance";
 import { EraseConfirm } from "./erase-confirm";
 import { Notice } from "./notice";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 import { clearFailureLog } from "@/hooks/failure-log";
 import { readSharePlatform } from "@/hooks/share-target";
 import { isTerminalOpenRefusal } from "@/lib/storage/db";

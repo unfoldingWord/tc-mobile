@@ -6,7 +6,7 @@ import { Recorder, type RecorderHandle } from "@/components/recorder";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import type { SegmentId } from "@/types/domain";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 
 /**
  * #586 item 2. #585 added a `supersededCapture` ref latch in

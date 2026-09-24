@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { captureFailureText } from "@/components/capture-failure-copy";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 import type { CaptureFailure } from "@/lib/audio/capture-failure";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -136,7 +136,28 @@ describe("no layer below components mints this copy (#169)", () => {
   // bare `string`. Re-inlining any of them is what this sweep catches — and
   // it catches it wherever in those trees it lands, not only in the two files
   // this lane happened to edit.
-  const files = [...sourcesUnder("src/hooks"), ...sourcesUnder("src/lib")];
+  //
+  // `lib/strings.ts` is the one exclusion, and it is the table itself: #169
+  // moved it down from `components/` so that the layers below could reach it,
+  // which is the same fix as this lane by another route. Holding a sentence is
+  // what a table is for; MINTING one beside the code that raises it is the
+  // defect. Nothing is lost by skipping it — the case above pins that these
+  // three keys hold exactly these three sentences, so the table's copy of each
+  // is asserted positively rather than merely tolerated here.
+  // Built with `path.join`, not written as a literal, because `sourcesUnder`
+  // produces its paths that way too: on Windows it yields `src\lib\strings.ts`,
+  // which a forward-slash literal never equals, so the table would stay in the
+  // sweep and all three cases below would fail on a Windows checkout while
+  // passing everywhere else (Frank, round 6).
+  //
+  // This is the #189 defect class, which blocked EVERY push from this repo's
+  // Windows contributor once already, and whose fix (#190) is still draft — so
+  // it is not a hypothetical platform, and not cosmetic.
+  const TABLE = path.join("src", "lib", "strings.ts");
+  const files = [
+    ...sourcesUnder("src/hooks"),
+    ...sourcesUnder("src/lib"),
+  ].filter((rel) => rel !== TABLE);
 
   it("sweeps a tree that is actually there", () => {
     expect(files.length).toBeGreaterThan(20);
