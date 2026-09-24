@@ -111,7 +111,13 @@ it("reproduces the reported failure: Select Xcode needs ruby on PATH", () => {
     path.join(tmpdir(), "ios-xcode-gate-noruby-bash-")
   );
   fixtures.push(bashOnlyBin);
-  symlinkSync("/usr/bin/bash", path.join(bashOnlyBin, "bash"));
+  // Resolve the host's bash rather than hard-coding a path: macOS ships it
+  // at /bin/bash only, and a dangling symlink makes the spawn ENOENT.
+  const hostBash = spawnSync("bash", ["-c", "command -v bash"], {
+    encoding: "utf8",
+  }).stdout.trim();
+  expect(path.isAbsolute(hostBash), hostBash).toBe(true);
+  symlinkSync(hostBash, path.join(bashOnlyBin, "bash"));
 
   const result = run(step("Select Xcode"), {
     PATH: `${stubBin}:${bashOnlyBin}`,
@@ -306,7 +312,8 @@ describe("the emitted iOS thumbnail precache", () => {
     const result = run(step("Guard the synced bundle"), {}, root);
     expect(result.status, result.stderr + result.stdout).toBe(status);
     if (status === 1) {
-      expect(annotation).not.toBeNull();
+      expect(annotation).toEqual(expect.any(String));
+      expect(annotation).not.toHaveLength(0);
       expect(result.stderr).toContain(`::error::${annotation}`);
       expect(result.stderr).not.toContain("at file:");
       expect(result.stdout).not.toContain("Bundle built, clean, and synced");
