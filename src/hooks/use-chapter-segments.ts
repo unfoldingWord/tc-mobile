@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 
 import { requestTranscodeSweep } from "./finish-transcode";
 import { reportFailure } from "./report-failure";
@@ -128,6 +129,22 @@ async function loadChapterView(chapterId: ChapterId): Promise<ChapterView> {
   };
 }
 
+type FieldStamps = Map<keyof SegmentRow, { value: unknown; asOfGen: number }>;
+
+/** Stamp only `patch`'s own fields: a later patch never re-dates another's. */
+function stamp(
+  overrides: RefObject<Map<SegmentId, FieldStamps>>,
+  loadGen: RefObject<number>,
+  segmentId: SegmentId,
+  patch: Partial<SegmentRow>
+): void {
+  const fields = overrides.current.get(segmentId) ?? new Map();
+  for (const [key, value] of Object.entries(patch)) {
+    fields.set(key, { value, asOfGen: loadGen.current });
+  }
+  overrides.current.set(segmentId, fields);
+}
+
 /**
  * The Segments screen (B3): a chapter's ordered rows, its breadcrumb, and the
  * two mutations the screen owns — append a segment, toggle finished.
@@ -175,11 +192,10 @@ export function useChapterSegments(chapterId: ChapterId) {
   // audio), so discarding a whole in-flight load here would leave
   // `loading`/`refreshing` stuck true forever with nothing left to clear them
   // — trading one stale row for a chapter wedged in "Updating…". Instead,
-  // every load's result is merged PER ROW against the live `rows` state: a
-  // segment with a live entry here keeps whatever `rows` already holds for it
-  // — every field, not only the label — rather than installing that load's
-  // own (possibly stale) read for that one row. Rows with no entry install
-  // normally from the load, exactly as before.
+  // every load's result is merged PER FIELD: an entry holds only the fields a
+  // local patch wrote, and a racing load overlays those onto its own read;
+  // every other field installs from the load, which is newer than `rows` (a
+  // post-save reload is how a new take's `hasClip`/`peaks` arrive).
   //
   // Each entry records `asOfGen`, the load generation current when the
   // patch's store write returned (or, for `eraseRow`, which writes nothing
@@ -192,7 +208,7 @@ export function useChapterSegments(chapterId: ChapterId) {
   // entry armed forever once a second writer's change reached disk first.
   // `chapterId` changing clears the whole map — none of its entries can apply
   // to a different chapter's segments.
-  const rowOverrides = useRef(new Map<SegmentId, { asOfGen: number }>());
+  const rowOverrides = useRef(new Map<SegmentId, FieldStamps>());
   const loadGen = useRef(0);
   const rowOverridesChapter = useRef(chapterId);
 
@@ -212,20 +228,21 @@ export function useChapterSegments(chapterId: ChapterId) {
         setChapterNumber(view.chapterNumber);
         setChapterName(view.chapterName);
         // Retire every override this load started after — including ids it
-        // no longer returns — then keep the live row for the rest (still-older
-        // patches): this load's own read of them may predate the patch.
-        for (const [id, entry] of rowOverrides.current) {
-          if (gen > entry.asOfGen) rowOverrides.current.delete(id);
+        // no longer returns — then overlay fields older patches still stamp.
+        for (const [id, fields] of rowOverrides.current) {
+          for (const [key, s] of fields)
+            if (gen > s.asOfGen) fields.delete(key);
+          if (fields.size === 0) rowOverrides.current.delete(id);
         }
-        setRows((prevRows) => {
-          if (rowOverrides.current.size === 0) return view.rows;
-          const live = new Map(prevRows.map((r) => [r.segmentId, r]));
-          return view.rows.map((r) =>
-            rowOverrides.current.has(r.segmentId)
-              ? (live.get(r.segmentId) ?? r)
-              : r
-          );
-        });
+        setRows(
+          view.rows.map((r) => {
+            const fields = rowOverrides.current.get(r.segmentId) ?? [];
+            const out = { ...r };
+            for (const [key, s] of fields)
+              Object.assign(out, { [key]: s.value });
+            return out;
+          })
+        );
         setError(null);
         setStaleTarget(false);
         setLoaded(true);
@@ -313,7 +330,7 @@ export function useChapterSegments(chapterId: ChapterId) {
         // (#824): the store write has already landed by this line, so any
         // load's read from this point on — in flight already, or started
         // fresh from here — sees (or is corrected to) this row.
-        rowOverrides.current.set(segmentId, { asOfGen: loadGen.current });
+        stamp(rowOverrides, loadGen, segmentId, { finished });
         setRows((rs) =>
           rs.map((r) => (r.segmentId === segmentId ? { ...r, finished } : r))
         );
@@ -380,7 +397,7 @@ export function useChapterSegments(chapterId: ChapterId) {
         // or started fresh from here — sees (or is corrected to) this row.
         // `asOfGen` is read AFTER the await on purpose: a load that began
         // during the write may have read the pre-write snapshot.
-        rowOverrides.current.set(segmentId, { asOfGen: loadGen.current });
+        stamp(rowOverrides, loadGen, segmentId, { label: segment.label });
         setRows((rs) =>
           rs.map((r) =>
             r.segmentId === segmentId ? { ...r, label: segment.label } : r
@@ -416,20 +433,16 @@ export function useChapterSegments(chapterId: ChapterId) {
     // it is read here, synchronously, at the moment the patch is applied
     // (#824) — the same moment a racing load's merge above must treat as the
     // boundary between "stale" and "fresh".
-    rowOverrides.current.set(segmentId, { asOfGen: loadGen.current });
+    const erased = {
+      hasClip: false,
+      finished: false,
+      clipId: null,
+      peaks: null,
+      durationMs: null,
+    } satisfies Partial<SegmentRow>;
+    stamp(rowOverrides, loadGen, segmentId, erased);
     setRows((rs) =>
-      rs.map((r) =>
-        r.segmentId === segmentId
-          ? {
-              ...r,
-              hasClip: false,
-              finished: false,
-              clipId: null,
-              peaks: null,
-              durationMs: null,
-            }
-          : r
-      )
+      rs.map((r) => (r.segmentId === segmentId ? { ...r, ...erased } : r))
     );
   }, []);
 

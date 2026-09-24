@@ -182,3 +182,28 @@ it("does not let an erase override outlive a later, non-racing reload", async ()
   expect(row?.peaks).toEqual(computePeaks(ramp(3000), ROW_PEAK_BUCKETS));
   void chapterId;
 });
+
+it("a rename during an in-flight post-save reload keeps the label AND installs the new clip", async () => {
+  const chapter = await addChapter((await createBook("Mark")).id);
+  const segment = await addSegment(chapter.id);
+  await act(async () => {
+    root.render(createElement(Probe, { chapterId: chapter.id }));
+  });
+  await vi.waitFor(() => expect(hook().rows[0]?.hasClip).toBe(false));
+  // A take lands; the reload that observes it holds its read open (post-save).
+  await saveTake(segment.id, newClipId(), ramp(3000), CANONICAL_SAMPLE_RATE);
+  const snapshot = await getSegmentsOfChapter(chapter.id);
+  let resolveRead: ((segments: Segment[]) => void) | null = null;
+  vi.mocked(getSegmentsOfChapter).mockImplementationOnce(
+    () => new Promise<Segment[]>((resolve) => (resolveRead = resolve))
+  );
+  act(() => hook().reload());
+  await vi.waitFor(() => expect(resolveRead).not.toBeNull());
+  expect(await hook().renameSegment(segment.id, "verses 1–2")).toBe(true);
+  resolveRead!(snapshot);
+  await vi.waitFor(() => expect(hook().refreshing).toBe(false));
+  const row = hook().rows[0];
+  expect(row?.label).toBe("verses 1–2");
+  expect(row?.hasClip).toBe(true);
+  expect(row?.peaks).toEqual(computePeaks(ramp(3000), ROW_PEAK_BUCKETS));
+});
