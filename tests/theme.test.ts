@@ -282,21 +282,46 @@ describe("the light theme is reachable (#171)", () => {
     // (`waveform.tsx`, `live-scope.tsx`, George R2 P2 on #457); a screen or a
     // menu is not, because that is the blast radius this control was factored
     // to avoid.
-    const subscribers = walk(path.resolve(import.meta.dirname, "..", "src"))
-      .filter((file) => /\.tsx?$/.test(file))
-      // The hook module DEFINES both; its own `export function useTheme()` is
-      // not a subscription.
-      .filter((file) => !file.endsWith("hooks/use-theme.ts"))
-      .filter((file) => /\buseLiveTheme\(|\buseTheme\(/.test(read(file)))
-      .map((file) =>
-        path.relative(path.resolve(import.meta.dirname, ".."), file)
-      )
-      .sort();
-    expect(subscribers).toEqual([
+    //
+    // The sweep runs TWICE, over the same allow-list, because the two readings
+    // fail closed in opposite directions and neither covers both (George
+    // rounds 14 and 17 each named one half, and they conflict if you have to
+    // pick one).
+    //
+    //   raw  — catches an ADDED subscriber even in a file whose call the
+    //          comment stripper would have eaten. Were the sweep stripped-only,
+    //          a new subscriber that the stripper swallowed would drop out of
+    //          the set, the set would still match, and the gate would go green
+    //          on the thing it exists to catch.
+    //   code — catches a REMOVED subscriber whose call text survives in a
+    //          comment. Were the sweep raw-only, commenting out the only
+    //          `useLiveTheme()` in `live-scope.tsx` would leave it on the list
+    //          and the gate would stay green while the canvas silently stopped
+    //          repainting on a token change. Observed, not reasoned: that exact
+    //          mutation passed 21/21 before this second assertion existed.
+    //
+    // Both directions are a false GREEN, which is why neither reading is
+    // enough on its own and why this is two assertions rather than a choice.
+    const sweep = (source: (rel: string) => string) =>
+      walk(path.resolve(import.meta.dirname, "..", "src"))
+        .filter((file) => /\.tsx?$/.test(file))
+        // The hook module DEFINES both; its own `export function useTheme()` is
+        // not a subscription.
+        .filter((file) => !file.endsWith("hooks/use-theme.ts"))
+        .filter((file) => /\buseLiveTheme\(|\buseTheme\(/.test(source(file)))
+        .map((file) =>
+          path.relative(path.resolve(import.meta.dirname, ".."), file)
+        )
+        .sort();
+
+    const allowed = [
       "src/components/live-scope.tsx",
       "src/components/theme-control.tsx",
       "src/components/waveform.tsx",
-    ]);
+    ];
+
+    expect(sweep(read)).toEqual(allowed);
+    expect(sweep(code)).toEqual(allowed);
   });
 
   it("is applied before React renders, not in an effect", () => {

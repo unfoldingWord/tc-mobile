@@ -116,8 +116,12 @@ test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the 
   // boundary on its own; "advanced" would then be satisfiable by the walk
   // rather than by anything the toggle did, and a CLOCK stall beginning at the
   // toggle could pass. (The clock is not the stream — see the docblock on what
-  // this readout does and does not witness.) Everything between this line and
-  // the assertion below is the toggle.
+  // this readout does and does not witness.) So the reading is taken on the
+  // line before the tap and nothing is allowed between the two — the assertions
+  // that follow (the repaint, the floor probe, Stop) sit AFTER the toggle, and
+  // the time they take is time the clock is free to advance in. That is why
+  // this proves the clock did not stall FROM the toggle onward, and not that
+  // the toggle itself advanced it.
   const beforeToggle = await elapsedSeconds(page);
   await menu.getByRole("button", { name: /light screen/i }).click();
 
