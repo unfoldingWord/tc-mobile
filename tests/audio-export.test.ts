@@ -45,8 +45,8 @@ describe("encodeMp3", () => {
 
   it("encodes concatenated multi-section buffers", () => {
     // The shape an export would hand the encoder: sections joined with a gap.
-    // Not a product export path — there is none yet (#18); this covers the
-    // encoder primitive only.
+    // This covers the encoder primitive only; the product export path (Share
+    // Chapter, `lib/export/chapter.ts`) is tested in `chapter-export.test.ts`.
     const gap = silence(CANONICAL_SAMPLE_RATE * 0.25);
     const joined = concat([tone(0.3), gap, tone(0.3), gap, tone(0.3)]);
     const mp3 = encodeMp3(joined);

@@ -84,8 +84,8 @@ Open a deployed URL on the device. It is HTTPS, which matters —
 `http://192.168.x.x` **cannot record audio** no matter what else is correct.
 
 Add it to the home screen to exercise the installed PWA (standalone display and
-safe-area insets behave differently there than in a browser tab). There is no
-share-sheet export path yet — see #18.
+safe-area insets behave differently there than in a browser tab). Share
+Chapter and Share Book hand an MP3 (or a zip of them) to the OS share sheet.
 
 ### CI
 
@@ -186,9 +186,9 @@ aggregation.
 > derivative work, so recordings produced against OBS content **are** CC BY-SA
 > and must not carry the unfoldingWord® trademark. The requirements owner
 > confirmed that reading on 2026-08-23 (#15 closed). **Nothing in the export
-> path implements it yet** —
-> there is no export path at all (#18) — and the data model still cannot tell an
-> OBS-derived recording from a user-authored one. ADR 0006.
+> path implements it yet**: Share Chapter and Share Book carry no attribution
+> (#252), and the data model still cannot tell an OBS-derived recording from a
+> user-authored one. ADR 0006.
 
 ## Prior art
 
