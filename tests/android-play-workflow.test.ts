@@ -52,6 +52,44 @@ function runPreflight(env: Record<string, string>) {
   return out;
 }
 
+// Extracts a single `- name: <name>` step's YAML block (up to but not
+// including the next `- name:`/`- uses:` step at the same 6-space indent),
+// so a test can inspect that one step's `if:` condition and run its script
+// in isolation — the same "read the real step, don't restate it" approach
+// preflightScript() above already uses for the preflight job.
+function stepBlock(name: string): string {
+  const marker = `      - name: ${name}\n`;
+  const start = workflow.indexOf(marker);
+  if (start < 0) throw new Error(`Missing step: ${name}`);
+  const rest = workflow.slice(start + marker.length);
+  const next = rest.search(/\n {6}(- name:|- uses:)/);
+  return next >= 0 ? rest.slice(0, next) : rest;
+}
+
+function stepIf(block: string): string | null {
+  const m = /^ {8}if: (.+)$/m.exec(block);
+  return m?.[1] ? m[1].trim() : null;
+}
+
+function stepRunScript(block: string): string {
+  const run = /^ {8}run: \|\n/m.exec(block);
+  if (!run) throw new Error("Missing run block in step");
+  const lines = block.slice(run.index + run[0].length).split("\n");
+  const script: string[] = [];
+  for (const line of lines) {
+    if (line && !line.startsWith("          ")) break;
+    script.push(line.slice(10));
+  }
+  return script.join("\n");
+}
+
+function runScript(script: string, env: Record<string, string>) {
+  return spawnSync("bash", ["-c", script], {
+    encoding: "utf8",
+    env: { PATH: process.env.PATH ?? "", ...env },
+  });
+}
+
 describe("Play upload lane triggers", () => {
   it("fires only on pushes to staging and main", () => {
     expect(workflow).toContain('branches: ["staging", "main"]');
@@ -77,18 +115,77 @@ describe("Play upload lane triggers", () => {
   });
   it("installs fastlane before any Play secret reaches disk", () => {
     // gem install / bundle install run arbitrary code (install hooks), so
-    // this must happen before the keystore and service-account JSON are
-    // written to disk, not merely before they are read.
+    // this must happen before the keystore is written to disk, not merely
+    // before it is read.
     const npmCi = workflow.indexOf("- name: Install dependencies");
     const installFastlane = workflow.indexOf("- name: Install fastlane");
-    const writeSecrets = workflow.indexOf(
-      "- name: Write the upload keystore and Play service-account key"
-    );
+    const writeSecrets = workflow.indexOf("- name: Write the upload keystore");
     expect(npmCi).toBeGreaterThan(-1);
     expect(installFastlane).toBeGreaterThan(-1);
     expect(writeSecrets).toBeGreaterThan(-1);
     expect(installFastlane).toBeGreaterThan(npmCi);
     expect(installFastlane).toBeLessThan(writeSecrets);
+  });
+});
+
+// #893: a build_only dispatch builds and signs the .aab but never uploads it,
+// so it should need only the four signing secrets — not the Play
+// service-account credential the upload alone consumes. inputs.build_only is
+// empty on a push (pushes carry no `inputs` context at all), so `!inputs.
+// build_only` is true there too: a push always takes the "requires the
+// service account" branch, same as an explicit build_only:false dispatch.
+describe("build_only needs only the signing secrets, not the service account (#893)", () => {
+  it("requires the four signing secrets unconditionally, and nothing else", () => {
+    const block = stepBlock("Require the signing secrets");
+    expect(stepIf(block)).toBeNull();
+    expect(block).not.toContain("PLAY_SERVICE_ACCOUNT_JSON");
+
+    const script = stepRunScript(block);
+    const complete = runScript(script, {
+      PLAY_UPLOAD_KEYSTORE_BASE64: "a",
+      PLAY_UPLOAD_STORE_PASSWORD: "b",
+      PLAY_UPLOAD_KEY_ALIAS: "c",
+      PLAY_UPLOAD_KEY_PASSWORD: "d",
+    });
+    expect(complete.status).toBe(0);
+
+    const incomplete = runScript(script, {
+      PLAY_UPLOAD_KEYSTORE_BASE64: "a",
+      PLAY_UPLOAD_STORE_PASSWORD: "b",
+      PLAY_UPLOAD_KEY_ALIAS: "c",
+      // PLAY_UPLOAD_KEY_PASSWORD missing
+    });
+    expect(incomplete.status).not.toBe(0);
+  });
+
+  it("gates the Play service-account requirement on build_only", () => {
+    const block = stepBlock("Require the Play service-account secret");
+    expect(stepIf(block)).toBe("${{ !inputs.build_only }}");
+  });
+
+  it("still enforces the service-account secret whenever that step runs (the upload path)", () => {
+    const block = stepBlock("Require the Play service-account secret");
+    const script = stepRunScript(block);
+    expect(runScript(script, {}).status).not.toBe(0);
+    expect(
+      runScript(script, { PLAY_SERVICE_ACCOUNT_JSON: '{"type":"x"}' }).status
+    ).toBe(0);
+  });
+
+  it("decodes the upload keystore unconditionally", () => {
+    const block = stepBlock("Write the upload keystore");
+    expect(stepIf(block)).toBeNull();
+  });
+
+  it("gates decoding the Play service-account key on build_only", () => {
+    const block = stepBlock("Write the Play service-account key");
+    expect(stepIf(block)).toBe("${{ !inputs.build_only }}");
+  });
+
+  it("still cleans up both decoded credential paths regardless of which ran", () => {
+    const block = stepBlock("Remove decoded credentials");
+    expect(block).toContain("android/tc-mobile-upload.jks");
+    expect(block).toContain("fastlane/play-service-account.json");
   });
 });
 
