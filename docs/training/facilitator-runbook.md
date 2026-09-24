@@ -123,16 +123,14 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
     picture say what was left out. Check the recording before treating it as
     complete.
   - a **tray with a down arrow** means one of two things, and the words under
-    the picture say which. On iPhone, in the browser, or whenever the words
-    say the sheet was closed, it means exactly that — nothing was sent, share
-    again when ready. **On the installed Android app, a share that worked can
-    look the same as one that did not.** Android's own share screen does not
-    reliably tell the app whether the chooser was actually dismissed or a
-    target was picked, so the tray-with-a-tick below is not something the
-    Android app can promise even on a successful share; instead the words say
-    the app "can't confirm it went further." Read that line as "probably
-    sent, not provable" rather than as a failure, and do not assume nothing
-    went out: check the app you meant to send it to (WhatsApp, Drive,
+    the picture say which. If they say the sheet was closed "before anything
+    went out", nothing was sent — share again when ready. **On the installed
+    Android app** the words may instead say the phone "can't confirm it went
+    further." That line means a cancelled share and a sent one look the same:
+    Android's own share screen does not reliably tell the app which happened,
+    so the tray-with-a-tick below is not something the Android app can
+    promise even on a successful share. Do not read the line as sent or as
+    not sent: check the app you meant to send it to (WhatsApp, Drive,
     whichever was chosen) before sharing again, so the same chapter or book is
     not sent twice. <!-- source: src/hooks/share-target.ts resolveProvesDelivery
     (`route === "native" && platform === "ios"` — a native Android resolve is
@@ -140,7 +138,7 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
     RESULT_CANCELED as a resolve rather than a rejection once the activity has
     merely stopped, so the plugin cannot tell a real cancel from a real send);
     src/hooks/share-flow.ts resolveSendOutcome; src/components/strings.ts
-    shareUnproven ("The share sheet closed. This phone can't confirm it went
+    shareDismissed ("... before anything went out."), shareUnproven ("The share sheet closed. This phone can't confirm it went
     further."); this wording was reported back near-verbatim from a real
     Android phone on gh issue #593 (2026-09-22 comment, Galaxy A36: "The share
     sheet closed, this phone can't confirm it went further.") -->

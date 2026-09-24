@@ -50,8 +50,8 @@ it. <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor)
    about any app file; it is not specific to tC Mobile. Look for the button
    that lets the download continue or keeps the file — it is usually not the
    first or most prominent one — and choose it. If the browser removes the
-   file outright instead of just warning ("blocked"), that setting lives
-   inside the browser's own settings, not the phone's; tell the facilitator
+   file outright instead of just warning ("blocked"), the setting that
+   controls it may be in the browser or in the phone; tell the facilitator
    rather than guessing which one to change. <!-- source: standard
    Chrome/Android download-warning behaviour for .apk files — this app ships
    no download logic of its own (the file comes straight from GitHub's own
@@ -68,12 +68,14 @@ it. <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor)
    name — turn that **on**, then go back to the warning. In English this is
    **Settings** and **Allow from this source**.
 4. **Tap Install**, then **Open** when it finishes. These are usually the
-   single large button on the screen at each step — there is nothing else to
-   choose between.
+   single large button on the screen at each step.
 5. **The first time you record, your phone will ask to use the microphone.**
-   Tap **Allow** — usually the button that is not greyed out, or on the
-   right — the app needs the microphone to record, and without it recording
-   will not work.
+   Allow it — the app needs the microphone to record, and without it
+   recording will not work. In English the choice that allows it may say
+   **Allow**, **While using the app** or **Only this time**; do not choose
+   **Don't allow**. The choices may be a list, one under another, and the
+   side a button sits on changes with the phone's language, so ask the
+   facilitator rather than guessing by position.
 
 If you cannot reach Install, tell the facilitator whether the download stopped
 or the downloaded file would not open. Include the phone model, screen
