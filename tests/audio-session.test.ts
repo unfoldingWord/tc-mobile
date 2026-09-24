@@ -7,16 +7,16 @@ import { createAudioSession, type Stoppable } from "@/lib/audio/session";
  * replayed here deterministically — the interleavings that need a slow phone
  * and a fast thumb in the field are just call order in Node.
  *
- * What is NOT covered here: everything the hook does with the result. Part of
- * that is reachable in Node: `tests/use-audio-session-supersession.test.ts`
+ * What is NOT covered here: everything the hook does with the result. Some
+ * of that is reachable in Node. `tests/use-audio-session-supersession.test.ts`
  * (#650) mounts the real `useAudioSession` in jsdom with `audio-io`,
- * `use-recorder` and `segment-audio` mocked (#549). Real capture and playback
- * are not: jsdom implements neither MediaRecorder nor AudioContext, so those
- * paths and the screens are verified only on-device, and
- * `docs/progress_tracker.md` is the run record. These tests model races a
- * device pass is unlikely to hit by chance: a second tap landing inside a
- * pending one, and an interruption mid-decode. The window this file is about
- * only opens while a decode is still running.
+ * `use-recorder` and `segment-audio` mocked, and the `recorder-*.test.ts`
+ * suites render the real `Recorder` the same way (#549). What stays
+ * device-only is real capture and playback, because jsdom implements neither
+ * MediaRecorder nor AudioContext; `docs/progress_tracker.md` is the run
+ * record. These tests model races a device pass is unlikely to hit by chance:
+ * a second tap landing inside a pending one, and an interruption mid-decode.
+ * The window this file is about only opens while a decode is still running.
  *
  * In particular, "the session never stops the microphone" is not asserted
  * below and cannot be: it is a property of `hooks/use-audio-session.ts`, which

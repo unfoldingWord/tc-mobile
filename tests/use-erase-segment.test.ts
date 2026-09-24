@@ -23,14 +23,15 @@ import type { SegmentId } from "@/types/domain";
  * Lane E — the reusable erase hook.
  *
  * `useEraseSegment` is thin React glue (guard state, error state) over
- * `performErase`, which is the whole of the operation minus React. Nothing
- * mounts this hook's effect graph in this suite — the same boundary
- * `tests/audio-session.test.ts` documents — so the hook's `erasing` flag and
- * its double-tap guard (both `useRef`/`useState`) are NOT exercised here; they
- * are review + on-device surface. What IS node-testable is `performErase`: the
- * call it makes to the real store, the outcome that leaves, the success/failure
- * result it returns. That is what these cover, against fake-indexeddb through
- * the real store helpers.
+ * `performErase`, which is the whole of the operation minus React. This file
+ * does not mount the hook, so its `erasing` flag and double-tap guard (both
+ * `useRef`/`useState`) are not exercised HERE. The mounted jsdom suites cover
+ * them through the real `Recorder`: `tests/recorder-rerecord.test.ts` (the
+ * busy control, and close blocked during an erase) and
+ * `tests/recorder-erase-back.test.ts` (the synchronous guard). This file covers
+ * `performErase`: the call it makes to the real store, the outcome that
+ * leaves, the success/failure result it returns. That is what these cover,
+ * against fake-indexeddb through the real store helpers.
  *
  * `performErase` wraps `clearSegmentTake`, whose own atomicity/ref-counting is
  * proved in `tests/storage.test.ts`; this file asserts the hook-owned contract

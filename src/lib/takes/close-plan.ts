@@ -3,10 +3,11 @@
  *
  * `close()` in `components/recorder.tsx` is the ONLY commit path in the
  * product: there is no Stop control, so a take exists on disk because the sheet
- * was closed (F8). It carried this whole decision inline, and nothing mounts
- * `Recorder`'s effect graph in this test suite — `vitest.config.ts`'s default
- * environment is `node`, and no test renders the component to reach it. A
- * wrong branch there does not produce a wrong pixel; it drops a recording a
+ * was closed (F8). It carried this whole decision inline, where only a
+ * mounted `Recorder` could reach it. jsdom suites now mount one with its
+ * browser boundaries mocked (`tests/recorder-superseded-writes.test.ts` drives
+ * `requestClose()`), but those exercise particular paths, not every branch. A
+ * wrong branch does not produce a wrong pixel; it drops a recording a
  * translator cannot make again, with `npm run verify` and CI green (#180).
  *
  * So the decision moved here, by the same move that produced
