@@ -78,6 +78,15 @@ on the harness's own tests (#547, #572), not on the product.
 | Harness and meta (`scripts/**`, gate tests, `ci.yml`, hooks)   | Both reviewers, hard cap 2; residuals are accepted on the PR by the DRI, never carried into a round |
 | Any tier                                                       | A P3 never triggers a round: every P3 is batched into one follow-up issue at triage                 |
 
+**A test-only PR takes the tier of the code it covers, not a tier of its
+own.** A test for `hooks/*` is T2; a test for `lib/audio/*`, `lib/storage/*`
+or the schema is T1; a test that covers `components/*` or `app/*` is T3. A
+**gate test** — one that enforces a repo-wide rule, such as the drift guard,
+the dist gate, lint-boundary or the precache manifest — is Harness, regardless
+of which files it happens to touch. Added 2026-09-24 after the #839 audit
+found six test-only PRs (#797, #796, #792, #790, #786, #784) merged on George
+only; a retroactive Frank pass found real P2s on two of them (#845).
+
 After 2026-10-04 this table is void and the merge policy above applies again
 unchanged.
 
