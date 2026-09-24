@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { requestTranscodeSweep } from "./finish-transcode";
 import { reportFailure } from "./report-failure";
@@ -152,9 +152,49 @@ export function useChapterSegments(chapterId: ChapterId) {
   const [error, setError] = useState<string | null>(null);
   const [staleTarget, setStaleTarget] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
+  // The most recently LANDED label for any segment renamed in this hook's
+  // life (#676 item 4). `renameSegment` patches `rows` in place rather than
+  // `reload()`ing (the docblock above says why), so a `reload()` already in
+  // flight for an unrelated reason — a recorder commit elsewhere in the
+  // chapter — can still be reading the pre-rename snapshot
+  // `getSegmentsOfChapter` took at ITS OWN start. If that read resolves and
+  // calls `setRows(view.rows)` after the rename's own patch has landed, the
+  // stale label would repaint over it until the next load.
+  //
+  // NOT `use-books.ts`'s `loadGen`/`isLoadCurrent` shape: that pattern
+  // discards a WHOLE stale load, which is safe there because every caller
+  // that bumps the generation (`createBook`/`addChapter`/`renameBook`) also
+  // calls `reload()` in the same breath, so a fresh load is always right
+  // behind the one being discarded. `renameSegment` deliberately does NOT
+  // reload (peaks are expensive to recompute for a label-only change), so
+  // discarding a whole in-flight load here would leave `loading`/`refreshing`
+  // stuck true forever with nothing left to clear them — trading one stale
+  // label for a chapter wedged in "Updating…". Instead, every load's result
+  // is merged against the latest label this hook itself has already written.
+  //
+  // Each entry records `asOfGen`, the load generation current when the
+  // rename's store write returned. Only a load of that generation or older
+  // (one already in flight when the write landed) may be overlaid; a load
+  // that STARTED later read the store after the write, so its label wins
+  // even when it differs — another tab's later rename must not lose to a
+  // value this hook wrote earlier. Retirement is by order, not by equality:
+  // an equality-only retire kept the entry armed forever once a second
+  // writer's label reached disk first. `chapterId` changing clears the whole
+  // map — none of its entries can apply to a different chapter's segments.
+  const renamedLabels = useRef(
+    new Map<SegmentId, { label: string | null; asOfGen: number }>()
+  );
+  const loadGen = useRef(0);
+  const renamedLabelsChapter = useRef(chapterId);
 
   useEffect(() => {
     let cancelled = false;
+    // Taken synchronously, before the read below starts.
+    const gen = ++loadGen.current;
+    if (renamedLabelsChapter.current !== chapterId) {
+      renamedLabelsChapter.current = chapterId;
+      renamedLabels.current.clear();
+    }
     void (async () => {
       try {
         const view = await loadChapterView(chapterId);
@@ -162,7 +202,17 @@ export function useChapterSegments(chapterId: ChapterId) {
         setBookName(view.bookName);
         setChapterNumber(view.chapterNumber);
         setChapterName(view.chapterName);
-        setRows(view.rows);
+        // Retire every override this load started after — including ids it
+        // no longer returns — then overlay the rest (still-older writes).
+        for (const [id, entry] of renamedLabels.current) {
+          if (gen > entry.asOfGen) renamedLabels.current.delete(id);
+        }
+        setRows(
+          view.rows.map((r) => {
+            const pending = renamedLabels.current.get(r.segmentId);
+            return pending === undefined ? r : { ...r, label: pending.label };
+          })
+        );
         setError(null);
         setStaleTarget(false);
         setLoaded(true);
@@ -301,6 +351,16 @@ export function useChapterSegments(chapterId: ChapterId) {
       // plain words (`renameSegmentFailed`) — this `false` is what tells it to.
       try {
         const segment = await renameSegmentInStore(segmentId, label);
+        // Recorded BEFORE the patch below, in the same order a racing load's
+        // merge above assumes: the store write has already landed by this
+        // line, so any load's read from this point on — in flight already,
+        // or started fresh from here — sees (or is corrected to) this label.
+        // `asOfGen` is read AFTER the await on purpose: a load that began
+        // during the write may have read the pre-write snapshot.
+        renamedLabels.current.set(segmentId, {
+          label: segment.label,
+          asOfGen: loadGen.current,
+        });
         setRows((rs) =>
           rs.map((r) =>
             r.segmentId === segmentId ? { ...r, label: segment.label } : r
