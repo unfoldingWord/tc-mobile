@@ -5,8 +5,12 @@ import { describe, expect, it } from "vitest";
 import {
   liftOutcome,
   panAfterCutCollapse,
+  panAfterRedo,
+  redoCollapsesFrame,
   selectionReseed,
 } from "@/components/recorder-stage";
+import type { EditOp } from "@/lib/audio/edit-log";
+
 import { stripComments } from "./support";
 
 /**
@@ -88,6 +92,66 @@ describe("panAfterCutCollapse — the line lands on the cut point (#613)", () =>
   it("cutting the whole buffer rests, and a one-sample cut at the head stays at 0", () => {
     expect(panAfterCutCollapse({ start: 0, end: 10_000 }, 10_000)).toBeNull();
     expect(panAfterCutCollapse({ start: 0, end: 1 }, 10_000)).toBe(0);
+  });
+});
+
+/**
+ * #722: a REDONE cut reproduces the cut's view as well as its buffer (DRI
+ * decision on #722). Undo is unchanged, and so is a redone paste. Both inputs
+ * are built inside each case, so this pins the pure rule's contract; the
+ * wiring is the `onRedo` source-shape case below and the Redo step in
+ * `e2e/recorder-selection.spec.ts`.
+ */
+describe("a redone cut collapses to the line, like a live cut (#722)", () => {
+  const interiorCut: EditOp = {
+    kind: "cut",
+    range: { start: 5_000, end: 6_000 },
+  };
+  const preRedoLength = 10_000;
+
+  it.each([
+    ["before the cut", 2_000],
+    ["inside the cut", 5_500],
+    ["after the cut", 9_000],
+    ["resting at the end", null],
+  ] as const)(
+    "maps a pan %s onto the cut point, the same answer the live cut writes",
+    (_label, pan) => {
+      expect(panAfterRedo(pan, interiorCut, preRedoLength)).toBe(5_000);
+      expect(panAfterRedo(pan, interiorCut, preRedoLength)).toBe(
+        panAfterCutCollapse(interiorCut.range, preRedoLength)
+      );
+    }
+  );
+
+  it("rests when the redone cut ran to the end, through the same #442/#473 rule", () => {
+    const toEnd: EditOp = { kind: "cut", range: { start: 8_000, end: 10_000 } };
+    expect(panAfterRedo(2_000, toEnd, preRedoLength)).toBeNull();
+  });
+
+  it("latches the collapse for a redone cut", () => {
+    expect(redoCollapsesFrame(interiorCut)).toBe(true);
+  });
+
+  it("does not latch it for a redone paste, or when nothing was redone", () => {
+    const paste: EditOp = {
+      kind: "paste",
+      at: 2_000,
+      clip: new Int16Array(3_000),
+    };
+    expect(redoCollapsesFrame(paste)).toBe(false);
+    expect(redoCollapsesFrame(null)).toBe(false);
+  });
+
+  it("leaves a redone paste's pan mapping as it was: shifted past the insert, the rest kept", () => {
+    const paste: EditOp = {
+      kind: "paste",
+      at: 2_000,
+      clip: new Int16Array(3_000),
+    };
+    expect(panAfterRedo(1_000, paste, 6_000)).toBe(1_000);
+    expect(panAfterRedo(4_000, paste, 6_000)).toBe(7_000);
+    expect(panAfterRedo(null, paste, 6_000)).toBeNull();
   });
 });
 
@@ -211,11 +275,23 @@ describe("recorder.tsx wires the collapse (#613)", () => {
     );
   });
 
+  it("onRedo sets the latch from the redone op, not unconditionally open (#722)", () => {
+    // Source shape only: the rule itself is `redoCollapsesFrame`, pinned
+    // below. This reads that `onRedo` hands the latch that answer rather than
+    // calling `reopenFrame()`, which was the pre-#722 wiring.
+    const at = recorder.indexOf("const onRedo = useCallback(");
+    expect(at, "no onRedo in recorder.tsx").toBeGreaterThan(-1);
+    const body = recorder.slice(at, recorder.indexOf("}, [", at));
+    expect(body).toMatch(/setCutCollapsed\(redoCollapsesFrame\(redoneOp\)\)/);
+    expect(body).not.toMatch(/reopenFrame\(\)/);
+  });
+
   it("everything that should bring the frame back clears the latch", () => {
+    // Redo left this list with #722: it clears the latch for a redone paste
+    // and sets it for a redone cut (the case above).
     for (const handler of [
       "const onPaste = useCallback(",
       "const onUndo = useCallback(",
-      "const onRedo = useCallback(",
       "const onExitEdit = useCallback(",
     ]) {
       const at = recorder.indexOf(handler);

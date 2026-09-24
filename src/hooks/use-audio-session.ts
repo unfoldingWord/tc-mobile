@@ -174,6 +174,71 @@ export interface UseAudioSession {
 }
 
 /**
+ * The two narrow views of {@link UseAudioSession} the screens actually take
+ * (#160, L-18).
+ *
+ * One object was drilled to both screens, which use different subsets — not
+ * disjoint ones: `error`, `playingBuffer` and `stopBuffer` are on both, and
+ * `primeAudioContext` is on neither. So the
+ * list screen's prop type admitted `startRecording` and `stopRecording` — the
+ * microphone — to a screen whose only job with audio is to play a row back.
+ * Nothing called them, and the type is what stops the next change from being
+ * able to: a list that can start the microphone has no sheet up to stop it,
+ * and the floor arbiter would be holding "mic" with nothing on screen able to
+ * release it.
+ *
+ * `Pick` rather than two hand-written interfaces, deliberately: the member
+ * lists here are an allow-list over one declaration, so a view cannot drift
+ * from the session's own types, and every member keeps the docblock it has
+ * above rather than acquiring a second, staler copy.
+ *
+ * `primeAudioContext` is on neither: App calls it itself, in the tap that
+ * opens the recorder.
+ *
+ * No membership COUNTS here, and that is not an omission. An earlier draft
+ * named three (26 members, 21 and 7) and every one of them is now wrong:
+ * #614's retirement of the paused preview took `audioNeedsGesture`,
+ * `pauseRecording`, `previewCapture` and `resumeRecording` off the interface
+ * and #601 added `playbackRanOut`, so the two views drifted out of step with
+ * it and only `tsc` noticed. `tests/audio-views.test.ts` asserts the two
+ * properties that actually matter instead — the microphone is on exactly one
+ * view, and `primeAudioContext` is the only member on neither — where a
+ * number cannot go stale unread.
+ */
+export type SegmentsAudio = Pick<
+  UseAudioSession,
+  | "error"
+  | "leave"
+  | "playTake"
+  | "playbackElapsedMs"
+  | "playbackRanOut"
+  | "playingBuffer"
+  | "playingId"
+  | "stopBuffer"
+>;
+
+export type RecorderAudio = Pick<
+  UseAudioSession,
+  | "elapsedMs"
+  | "error"
+  | "meterFailed"
+  | "peekScope"
+  | "playBuffer"
+  | "playingBuffer"
+  | "readLevel"
+  | "readMeterAvailable"
+  | "readPlaybackPosition"
+  | "readScope"
+  | "recorderError"
+  | "recorderState"
+  | "retryDecode"
+  | "startRecording"
+  | "stopBuffer"
+  | "stopRecording"
+  | "supported"
+>;
+
+/**
  * Everything on screen that can make or capture sound, under one owner.
  *
  * The arbitration lives in `lib/audio/session.ts`, which is pure; this is only

@@ -122,15 +122,15 @@ const BROWSER_ONLY_GLOBALS = [
 
 /**
  * #159 L-6 — `no-restricted-imports` only sees STATIC import/export
- * declarations. Verified on develop `70fc41fe` with `eslint --stdin` probes
- * (pasted in the PR body): a static `import { x } from "@/hooks/y"` from
- * `src/lib` errors under the block below, but `await import("@/hooks/y")`,
+ * declarations: a static `import { x } from "@/hooks/y"` from `src/lib`
+ * errors under the block below, but `await import("@/hooks/y")`,
  * `await import("../hooks/y")` and
- * `new URL("../hooks/mp3.worker.ts", import.meta.url)` from the same file all
- * return ZERO errors — three ways to reach an outer layer that the static
- * rule cannot see at all, none of them exotic (the `new URL` form is the
- * exact shape `hooks/mp3-codec.ts` and `app/e2e-harness.ts` already use for
- * their own Worker construction).
+ * `new URL("../hooks/mp3.worker.ts", import.meta.url)` from the same file are
+ * none of them a static import/export declaration, so the rule above does
+ * not inspect them at all — three ways to reach an outer layer invisible to
+ * it, none of them exotic (the `new URL` form is the exact shape
+ * `hooks/mp3-codec.ts` and `app/e2e-harness.ts` already use for their own
+ * Worker construction) (#815).
  *
  * `no-restricted-syntax` closes both holes with esquery selectors:
  *
@@ -384,10 +384,10 @@ export default tseslint.config(
   },
 
   // types/ — the innermost layer, no internal dependencies at all.
-  // *.{ts,tsx} (#159 L-6): *.ts alone let a src/types/**/*.tsx file skip
-  // every rule below — confirmed on develop with an `eslint --stdin`
-  // probe under a `.tsx` filename returning zero errors for the same
-  // `@/hooks/…` import that errors under `.ts` (pasted in the PR body).
+  // *.{ts,tsx} (#159 L-6): *.ts alone would let a src/types/**/*.tsx file
+  // skip every rule below — ESLint's `files` glob matches by extension, so
+  // a `.tsx` file matches nothing under a `.ts`-only glob regardless of
+  // what it imports (#815).
   {
     files: ["src/types/**/*.{ts,tsx}"],
     rules: {
@@ -433,11 +433,10 @@ export default tseslint.config(
 
   // lib/ — pure core. May import types only (and data/, its one bundled
   // asset — see the header note), and may touch no browser API.
-  // *.{ts,tsx} (#159 L-6): a src/lib/**/*.tsx file using `window` and
-  // `new AudioContext()` produced zero ESLint and zero `tsc` diagnostics
-  // under *.ts-only globs — confirmed on develop with an `eslint --stdin`
-  // probe and a real `tsc -p tsconfig.lib.json --listFilesOnly` run
-  // (pasted in the PR body).
+  // *.{ts,tsx} (#159 L-6): *.ts alone would let a src/lib/**/*.tsx file
+  // using `window` or `new AudioContext()` skip both ESLint's glob and
+  // `tsconfig.lib.json`'s `include`, so neither tool would flag it under a
+  // `.ts`-only glob (#815).
   {
     files: ["src/lib/**/*.{ts,tsx}"],
     rules: {

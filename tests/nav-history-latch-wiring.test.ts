@@ -161,3 +161,40 @@ describe("replayDeferredWrites restores the unreplayed tail before it rethrows (
     expect(replay).not.toMatch(/reportFailure\(/);
   });
 });
+
+describe("the programmatic recorder close is arbitrated, not a raw back() (#763)", () => {
+  const close = bodyAfter(code, "const commitCloseRecorder = useCallback(");
+  const consume = bodyAfter(code, "const consumeRecorderEntry = useCallback(");
+  const replay = bodyAfter(code, "const replayDeferredWrites = useCallback(");
+
+  it("isolates real bodies — the close runs the state half, the consume decides", () => {
+    expect(close).toContain("onRecorderClosedRef.current(");
+    expect(consume).toMatch(
+      /recorderExitTraversal\(\s*suppressPop\.current\s*,\s*travelGuard\.current\s*,\s*deferredWrites\.current\s*\)/
+    );
+  });
+
+  it("the close hands its history tail to consumeRecorderEntry and touches no history itself", () => {
+    expect(close).toMatch(
+      /if\s*\(\s*!transitionInFlight\.current\s*\)\s*consumeRecorderEntry\(\s*\)/
+    );
+    expect(close).not.toMatch(/window\.history\./);
+    expect(close).not.toMatch(/suppressPop\.current\s*=/);
+  });
+
+  it('the consume issues its one back() only after beginBack("commit-close") has set the guard', () => {
+    const backs = consume.match(/window\.history\.back\s*\(\s*\)/g) ?? [];
+    expect(backs).toHaveLength(1);
+    const begin = index(
+      consume,
+      /travelGuard\.current\s*=\s*beginBack\(\s*travelGuard\.current\s*,\s*"commit-close"\s*\)\.next/
+    );
+    expect(begin).toBeLessThan(consume.search(/window\.history\.back\s*\(/));
+  });
+
+  it("the replay hands a deferred consume back to consumeRecorderEntry, not to performWrite", () => {
+    expect(replay).toMatch(
+      /if\s*\(\s*write\s*===\s*"consume-recorder"\s*\)\s*\{\s*consumeRecorderEntry\(\s*\)\s*;\s*return\s*;\s*\}/
+    );
+  });
+});

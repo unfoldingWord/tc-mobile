@@ -7,11 +7,10 @@ import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import {
   addChapter,
   addSegment,
-  clearSegmentTake,
   createBook,
   deleteBook,
-  saveTake,
 } from "@/lib/storage/books";
+import { clearSegmentTake, saveTake } from "@/lib/storage/takes";
 import { newClipId } from "@/lib/storage/clips";
 import { getDb } from "@/lib/storage/db";
 import { clearAllStores } from "./support";
