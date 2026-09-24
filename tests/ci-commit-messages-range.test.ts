@@ -12,24 +12,21 @@ import { describe, expect, it } from "vitest";
  * `pull_request` event `github.sha` is GitHub's synthetic merge ref
  * (`refs/pull/N/merge`), which contains the base branch's CURRENT tip, not
  * the PR's own commits — and `pull_request.base.sha` can be older than that
- * tip. Observed on PR #869, run 36033907345 (`BASE_SHA=6eb37531`,
- * `HEAD_SHA=f2ba1c2a` the merge ref, develop at `1b42e600`): the gate failed
- * on four bodyless commits already merged to `develop` (via #875, #870,
- * #852) that #869 never introduced.
+ * tip, so the range swept in commits already on the base branch that the PR
+ * never made (#869; the run evidence is in #883's PR body).
  *
  * The fix judges only the PR's own commits: diff a freshly-fetched
  * `origin/<base_ref>` (never the possibly-stale `pull_request.base.sha`)
  * against `pull_request.head.sha` (the PR branch's own tip, never the
- * synthetic merge ref). Proven correct in three states with a real local-git
- * scratch scenario (PR body): a PR branched from an old `develop` that never
- * merges it back in, the same PR after it merges `develop` in, and the
- * normal fresh-branch case.
+ * synthetic merge ref).
  *
  * "A gate is tested in both states" (AGENTS.md), and per
  * `tests/smoke-path-filter.test.ts`'s pattern: this reads the LITERAL text
  * out of `ci.yml` rather than re-typing the wiring, so a revert back to
  * `github.sha` (or a switch back to the raw `pull_request.base.sha`) fails
- * here even if nobody remembers why it mattered.
+ * here even if nobody remembers why it mattered. Assertions read
+ * `commitMessagesCode()`, which drops full-line YAML comments, so neither a
+ * commented-out good range nor an inline `${{ }}` revert in `run:` passes.
  */
 const ROOT = path.resolve(import.meta.dirname, "..");
 const workflow = readFileSync(
@@ -48,6 +45,14 @@ function commitMessagesJob(): string {
   return match[1];
 }
 
+/** The same job with full-line `#` comments removed: only live YAML. */
+function commitMessagesCode(): string {
+  return commitMessagesJob()
+    .split("\n")
+    .filter((line) => !/^\s*#/.test(line))
+    .join("\n");
+}
+
 describe("commit-messages CI gate judges only the PR's own commits (#865 follow-up)", () => {
   it("is still in ci.yml where this test reads it from", () => {
     // If the job is renamed or moved, fail loudly here rather than silently
@@ -57,18 +62,18 @@ describe("commit-messages CI gate judges only the PR's own commits (#865 follow-
   });
 
   it("derives HEAD from the PR branch's own tip, never the pull_request merge ref", () => {
-    const job = commitMessagesJob();
+    const job = commitMessagesCode();
     // `github.sha` on a `pull_request` event is GitHub's synthetic merge-ref
     // commit — it contains the base branch's CURRENT tip, not just the PR's
     // commits. This is the exact defect observed on #869 (run 36033907345).
-    expect(job).not.toMatch(/:\s*\$\{\{\s*github\.sha\s*\}\}/);
+    expect(job).not.toMatch(/\$\{\{\s*github\.sha\s*\}\}/);
     expect(job).toMatch(
       /HEAD_SHA:\s*\$\{\{\s*github\.event\.pull_request\.head\.sha\s*\}\}/
     );
   });
 
   it("diffs against a freshly-fetched base ref, not a possibly-stale pull_request.base.sha", () => {
-    const job = commitMessagesJob();
+    const job = commitMessagesCode();
     // `pull_request.base.sha` is a snapshot that can be behind the base
     // branch's current tip by the time CI runs. Fetching `origin/<base_ref>`
     // live and using it as the range's base keeps the comparison point
@@ -80,9 +85,9 @@ describe("commit-messages CI gate judges only the PR's own commits (#865 follow-
   });
 
   it("never falls back to the raw pull_request.base.sha as the range's base", () => {
-    const job = commitMessagesJob();
+    const job = commitMessagesCode();
     expect(job).not.toMatch(
-      /:\s*\$\{\{\s*github\.event\.pull_request\.base\.sha\s*\}\}/
+      /\$\{\{\s*github\.event\.pull_request\.base\.sha\s*\}\}/
     );
   });
 });
