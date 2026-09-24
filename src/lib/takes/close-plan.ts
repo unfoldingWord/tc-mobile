@@ -3,9 +3,9 @@
  *
  * `close()` in `components/recorder.tsx` is the ONLY commit path in the
  * product: there is no Stop control, so a take exists on disk because the sheet
- * was closed (F8). It carried this whole decision inline, and this project has
- * no renderer — `vitest.config.ts` sets `environment: "node"` and there is no
- * jsdom or testing-library in `package.json` — so nothing could reach it. A
+ * was closed (F8). It carried this whole decision inline, and nothing mounts
+ * `Recorder`'s effect graph in this test suite — `vitest.config.ts`'s default
+ * environment is `node`, and no test renders the component to reach it. A
  * wrong branch there does not produce a wrong pixel; it drops a recording a
  * translator cannot make again, with `npm run verify` and CI green (#180).
  *

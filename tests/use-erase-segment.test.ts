@@ -23,9 +23,9 @@ import type { SegmentId } from "@/types/domain";
  * Lane E — the reusable erase hook.
  *
  * `useEraseSegment` is thin React glue (guard state, error state) over
- * `performErase`, which is the whole of the operation minus React. This repo
- * has no jsdom and no renderer — the same constraint `tests/audio-session.test.ts`
- * and `tests/save-failure.test.ts` document — so the hook's `erasing` flag and
+ * `performErase`, which is the whole of the operation minus React. Nothing
+ * mounts this hook's effect graph in this suite — the same boundary
+ * `tests/audio-session.test.ts` documents — so the hook's `erasing` flag and
  * its double-tap guard (both `useRef`/`useState`) are NOT exercised here; they
  * are review + on-device surface. What IS node-testable is `performErase`: the
  * call it makes to the real store, the outcome that leaves, the success/failure

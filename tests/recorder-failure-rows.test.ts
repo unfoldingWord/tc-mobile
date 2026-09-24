@@ -36,10 +36,9 @@ import { describe, expect, it } from "vitest";
  * WHY A TEXTUAL GATE AND NOT A BEHAVIOURAL TEST. `start()` is a
  * `useCallback` inside `useRecorder()` and `onInterrupted` is created inside
  * `start()`; `stopRecording` is a `useCallback` inside `useAudioSession()`.
- * This suite has no renderer, no `MediaRecorder` and no `AudioContext`
- * (`tests/audio-session.test.ts` and
- * `tests/recorder-stop-release-guards.test.ts` both say so), so neither
- * site can be reached at runtime here, and removing either report would
+ * This suite mounts neither hook, and jsdom implements neither
+ * `MediaRecorder` nor `AudioContext` (`tests/audio-session.test.ts` says so),
+ * so neither site can be reached at runtime here, and removing either report would
  * leave every other test green. That is the mutation-survives case
  * AGENTS.md says to close with a gate; this file mirrors
  * `tests/recorder-stop-release-guards.test.ts` (comment strip, brace-counted
@@ -127,8 +126,8 @@ describe("source pins (text shape only): onInterrupted's still-active arm report
    * template literal that interpolates `${event.type}` and then
    * `${recorder.state}` — the two facts beyond the key the row exists to
    * carry (#478 Shape: "the recorder state and which event arrived"). An
-   * earlier `[\s\S]*?` admitted `new Error(``)` (panel r1 mutation M15,
-   * 8/8 green). `[^`]` spans newlines, so a Prettier wrap still matches.
+   * earlier `[\s\S]*?` admitted `new Error(``)` (panel r1 mutation M15).
+   * `[^`]` spans newlines, so a Prettier wrap still matches.
    *
    * The `{ cause: "error" in event ? event.error : undefined }` segment is
    * George R1 P3: the `error` feed's event carries the native failure as
@@ -201,7 +200,7 @@ describe("source pins (text shape only): onInterrupted's still-active arm report
     // (1)-(3) pin the guarded else-if and its key, but none of them counts
     // CALLS: a second, unguarded `reportFailure(...)` placed before the arm
     // split, under any other key, passed all of them (panel r1 mutation:
-    // inserted after `setState("processing")`, 8/8 green). That shape
+    // inserted after `setState("processing")`). That shape
     // writes a row per lifecycle event — `error` AND every `ended` — and on
     // the inactive arm too, breaking both halves of #478 constraint (1).
     // Counting the handler's call sites is what closes it.
