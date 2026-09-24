@@ -207,7 +207,16 @@ describe("RecorderMenu", () => {
     const end = sheet.indexOf("/>", open);
     expect(open, "no <RecorderMenu in the sheet").toBeGreaterThan(-1);
     expect(end, "unterminated <RecorderMenu").toBeGreaterThan(open);
-    const tag = sheet.slice(open, end);
+    // Strip comments before matching. A commented-out "safe" lambda ahead of
+    // the real `onErase` otherwise satisfies the regex below while the live
+    // handler goes unchecked — proven by mutation, and this is the SECOND
+    // comment hole on this pin (the first was at end of file). Same strip
+    // `tests/menu-hamburger-header.test.ts` uses. This is the row that can
+    // destroy a recording, so the pin may not be satisfiable by prose.
+    const tag = sheet
+      .slice(open, end)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
 
     const lambda = /onErase=\{\(\)\s*=>\s*\{([^}]*)\}/.exec(tag)?.[1] ?? "";
     expect(lambda, "no onErase lambda on <RecorderMenu>").not.toBe("");

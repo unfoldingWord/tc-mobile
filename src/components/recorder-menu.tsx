@@ -23,8 +23,21 @@ export interface RecorderMenuProps {
   mode: "record" | "edit";
   /**
    * The segment's ordinal for the mark/unmark label, or null before the
-   * segment has loaded — in which case `finishedState` is "disabled" too, so
-   * the row is grey and the number is never shown as a real one.
+   * segment has loaded.
+   *
+   * The `?? 0` fallback below is never shown as a real number, but the gate
+   * that guarantees it is `markReason`, NOT `finishedState` (George R2 named
+   * the wrong one here). `RecorderSegmentView.ordinal` is a non-nullable
+   * `number`, so the sheet's `view?.ordinal ?? null` is null exactly when
+   * `view` is null — and that is the same input `markRowReason` reads as
+   * `hasView: false`, which answers "no-audio". A null ordinal therefore
+   * always arrives with a non-null `markReason`, and the row is
+   * `disabled` for that reason.
+   *
+   * This component does not enforce that itself: given `ordinal: null` with
+   * `markReason: null` it would render an enabled `markFinished(0)`. No
+   * caller can produce that pair, so the split does not add a gate the sheet
+   * did not have.
    */
   ordinal: number | null;
   /**
