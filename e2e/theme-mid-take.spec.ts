@@ -32,14 +32,24 @@ import { LIGHT_FLOOR, floorOf, resolved } from "./support/theme";
  * same flags are scoped to this file (`test.use` at file scope below) —
  * there is no describe here, for the reason given above.
  *
- * WHAT IS ASSERTED, and what is NOT. Capture is still live after the toggle
- * (the transport still offers Stop), the elapsed timer has ADVANCED across
- * it, the menu keeps the toggle reachable, and the take still commits
- * afterwards — so the toggle neither cancelled nor stalled the capture.
- * Nothing here inspects the captured samples: a fake device emits a synthetic
- * tone, so "the audio is intact" is not a claim Chromium can settle, and it
- * stays a device item (#245). Timer text over a synthetic clock is the honest
- * observable; sample integrity is not.
+ * WHAT IS ASSERTED. Four observables, and the wording stops where they do
+ * (Frank round 9, #623). After the toggle: the transport still offers Stop,
+ * the elapsed readout has ADVANCED past a sample taken at the tap, the menu
+ * still offers the way back, and the take lands — `aria-busy` clears and the
+ * erase row becomes actionable, so the reloaded view found a clip.
+ *
+ * WHAT IS NOT ASSERTED, and why the obvious stronger sentence is absent.
+ * This does NOT establish that audio capture continued after the toggle. The
+ * elapsed readout is a wall clock — `use-recorder.ts`'s `startTick` sets it
+ * from `performance.now()` on a 100 ms interval — so it keeps climbing
+ * whether or not the media stream is still delivering, and this case waits
+ * more than a second before toggling, so a take made only of pre-toggle
+ * chunks still commits. An earlier draft of this docblock said the toggle
+ * "neither cancelled nor stalled the capture"; the second half of that was
+ * never observed here, and the sentence is removed rather than restated.
+ * Nothing inspects the samples either: a fake device emits a synthetic tone,
+ * so audio content is not a claim Chromium can settle. Both stay device
+ * items (#245).
  */
 test.use({
   permissions: ["microphone"],
@@ -76,7 +86,7 @@ const elapsedSeconds = async (page: Page) => {
   return Number(match[1]) * 60 + Number(match[2]);
 };
 
-test("a toggle mid-take leaves the capture running, and the take still commits", async ({
+test("a toggle mid-take leaves the recorder recording, and the take still lands", async ({
   page,
 }) => {
   await seedToRecorder(page);
@@ -104,8 +114,10 @@ test("a toggle mid-take leaves the capture running, and the take still commits",
   // itself — not before the menu opened (George round 3, #623). Opening the
   // menu takes real time, so a reading taken before it can cross a second
   // boundary on its own; "advanced" would then be satisfiable by the walk
-  // rather than by the capture, and a stall beginning AT the toggle could
-  // pass. Everything between this line and the assertion below is the toggle.
+  // rather than by anything the toggle did, and a CLOCK stall beginning at the
+  // toggle could pass. (The clock is not the stream — see the docblock on what
+  // this readout does and does not witness.) Everything between this line and
+  // the assertion below is the toggle.
   const beforeToggle = await elapsedSeconds(page);
   await menu.getByRole("button", { name: /light screen/i }).click();
 
@@ -113,9 +125,11 @@ test("a toggle mid-take leaves the capture running, and the take still commits",
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   expect(await resolved(page, await floorOf(page))).toBe(LIGHT_FLOOR);
 
-  // And the take is still running: the transport still offers Stop, and the
-  // clock has moved past the reading taken before the toggle. A toggle that
-  // cancelled or stalled the capture fails one of these two.
+  // The recorder is still in its recording state: the transport still offers
+  // Stop, and the elapsed readout has moved past the reading taken at the tap.
+  // A toggle that CANCELLED the take fails one of these two. It does not
+  // follow that audio is still arriving — that readout is a wall clock, not a
+  // signal off the stream (see the docblock).
   await expect(stop).toBeVisible();
   await expect.poll(() => elapsedSeconds(page)).toBeGreaterThan(beforeToggle);
 
