@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -100,6 +103,27 @@ describe("RecorderMenu", () => {
     expect(unmarked?.className).not.toContain("is-done");
   });
 
+  it("keeps the paint and the label agreeing when the ordinal is missing", () => {
+    // The two used to be separate expressions with different conditions: the
+    // label required a non-null ordinal, the class did not. So this pair —
+    // ordinal null, `finishedState` "finished" — painted the row GREEN under a
+    // "Mark finished" label numbered 0, which is a row contradicting itself.
+    //
+    // The parent never sends this pair (the `ordinal` prop's docblock says a
+    // null ordinal arrives with "disabled"), so this is defensive: it pins that
+    // the component stays self-consistent without relying on its caller. That
+    // is the whole reason the two expressions were collapsed into one, and
+    // without this case reverting the collapse passes (George R1).
+    show({ ordinal: null, finishedState: "finished" });
+    const row = startingWith(strings.markFinished(0));
+    expect(
+      row,
+      "the unmarked label is what a null ordinal shows"
+    ).toBeDefined();
+    expect(row?.className).not.toContain("is-done");
+    expect(named(strings.markUnfinished(0))).toBeUndefined();
+  });
+
   it("does NOT paint the green mark on a disabled-finished row", () => {
     // "disabled" is a never-recorded or emptied segment: the mark cannot
     // stick, so the row must not look as if it has.
@@ -151,7 +175,11 @@ describe("RecorderMenu", () => {
     ).toBe("true");
   });
 
-  it("arms the erase confirm rather than erasing, from either mode", () => {
+  it("hands the erase tap to its caller, from either mode", () => {
+    // Named for what it pins. This component cannot see whether the tap arms a
+    // confirm or erases outright — it only calls the prop, and a caller that
+    // erased immediately would leave this green. That half is pinned at the
+    // source, in the case below (George R1).
     const onErase = vi.fn();
     show({ onErase });
     act(() => named(strings.eraseSegment)?.click());
@@ -160,6 +188,33 @@ describe("RecorderMenu", () => {
     show({ mode: "edit", onErase });
     act(() => named(strings.eraseSegment)?.click());
     expect(onErase).toHaveBeenCalledTimes(2);
+  });
+
+  it("the sheet's onErase ARMS the confirm — it does not erase", () => {
+    // The claim the mount cannot make. Erase is the one row that can destroy a
+    // recording, so what the sheet passes down has to be the two-statement
+    // arming lambda and not a call into the erase itself. Read from source, and
+    // bounded to the element rather than to end-of-file, so the strings cannot
+    // be satisfied by some later comment.
+    // `import.meta.url` is not a file: URL under this file's jsdom
+    // environment, so resolve from `import.meta.dirname` — the same way
+    // `tests/guided-ring.test.ts` reaches the tree.
+    const sheet = readFileSync(
+      path.resolve(import.meta.dirname, "..", "src/components/recorder.tsx"),
+      "utf8"
+    );
+    const open = sheet.indexOf("<RecorderMenu");
+    const end = sheet.indexOf("/>", open);
+    expect(open, "no <RecorderMenu in the sheet").toBeGreaterThan(-1);
+    expect(end, "unterminated <RecorderMenu").toBeGreaterThan(open);
+    const tag = sheet.slice(open, end);
+
+    const lambda = /onErase=\{\(\)\s*=>\s*\{([^}]*)\}/.exec(tag)?.[1] ?? "";
+    expect(lambda, "no onErase lambda on <RecorderMenu>").not.toBe("");
+    expect(lambda).toContain("setConfirmOpen(true)");
+    expect(lambda).toContain("setMenuOpen(false)");
+    // The destructive call must not be reachable from here at all.
+    expect(lambda).not.toMatch(/erase|clearSegmentTake/i);
   });
 
   it("does not close itself when the finished mark is toggled", () => {

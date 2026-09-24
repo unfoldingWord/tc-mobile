@@ -60,6 +60,15 @@ export function RecorderMenu({
   onErase,
   onExitEdit,
 }: RecorderMenuProps) {
+  // ONE answer for "this segment is marked", read by both the label and the
+  // paint. They were two expressions that disagreed: the label also required a
+  // non-null ordinal, the class did not. A null ordinal with `finishedState`
+  // "finished" therefore painted the row green under a "Mark finished" label
+  // numbered 0. The parent never sends that pair — the `ordinal` prop's
+  // docblock says so — but a component should not depend on its caller being
+  // right to stay self-consistent (George R1).
+  const marked = ordinal !== null && finishedState === "finished";
+
   return (
     <Menu
       open={open}
@@ -110,8 +119,8 @@ export function RecorderMenu({
             // that lies until close (George R1). `finishedState === "finished"`
             // is true only when the mark will stick.
             label={
-              ordinal !== null && finishedState === "finished"
-                ? strings.markUnfinished(ordinal ?? 0)
+              marked
+                ? strings.markUnfinished(ordinal)
                 : strings.markFinished(ordinal ?? 0)
             }
             variant="quiet"
@@ -122,7 +131,7 @@ export function RecorderMenu({
             // Frozen through the requesting/processing/close window exactly as
             // Record is (G10), plus the never-recorded `finishedState ===
             // "disabled"` the Checkbox encoded via `state`.
-            className={finishedState === "finished" ? "is-done" : undefined}
+            className={marked ? "is-done" : undefined}
             // Gate + reason from `markRowReason` (#135 round 3): this row greyed
             // silently while Edit and Erase beside it explained themselves.
             disabled={markReason !== null}
