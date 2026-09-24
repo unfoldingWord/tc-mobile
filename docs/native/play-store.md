@@ -22,6 +22,26 @@ Do the steps below **in order**. Step 1 has a deadline: after any release has
 gone to open testing or production, you can no longer change the app signing
 key.
 
+**This app's current values, for reference — the steps below are already done
+for tC Mobile, not a from-scratch checklist:**
+
+- **Cloud project:** `uw-tc-mobile` (step 3). Not a random unfoldingWord
+  project — use this one, so the service account and API enablement stay in
+  one place.
+- **Service account:** `tc-mobile-play-ci@uw-tc-mobile.iam.gserviceaccount.com`
+  (step 3), granted **Release apps to testing tracks** only.
+- **Certificate SHA-256 fingerprints**, read from the keystores with
+  `keytool` (not secret — a fingerprint cannot be used to sign anything):
+  - App signing / release key (`tc-mobile-release.jks`, alias `tc-mobile`):
+    `EE:D2:3E:1B:CC:F9:FB:AD:8B:69:F2:F9:59:8F:D8:D9:7E:09:4D:23:E5:44:B7:1B:9E:91:DD:21:C9:34:BA:F2`
+  - Upload key (`tc-mobile-upload.jks`, alias `upload`):
+    `98:E7:EF:93:D5:9A:FB:6F:5D:E8:EE:E1:44:0D:3C:C7:2B:AB:FA:88:8C:C9:7D:0A:77:62:5E:B4:EE:6B:32:53`
+
+  Confirming these against what Play Console's **App integrity** page shows
+  for the app signing key certificate and the upload key certificate is a
+  separate, not-yet-done check (#874) — this list only records what the
+  keystores themselves report.
+
 ---
 
 ## 1. Keep the existing release keystore as the app signing key
@@ -77,7 +97,7 @@ release keystore.
 You no longer have to link a Google Cloud project in Play Console
 ([Google docs](https://developers.google.com/android-publisher/getting_started)).
 
-1. In Google Cloud Console (any unfoldingWord project), enable the
+1. In Google Cloud Console (the `uw-tc-mobile` project), enable the
    **Google Play Android Developer API**, then **IAM & Admin → Service
    Accounts → Create**. Name it something like `tc-mobile-play-ci`. It needs
    no Cloud roles.
@@ -86,8 +106,11 @@ You no longer have to link a Google Cloud project in Play Console
 3. Play Console (account level) → **Users and permissions → Invite new
    users**. Enter the service account's email, then under **App permissions**
    add **tC Mobile** only, with **Release apps to testing tracks** (plus **View
-   app information**). Leave production release off unless you later want CI
-   to reach production.
+   app information**). Do not grant **Release to production**: the service
+   account is scoped to testing tracks only, and even if it were granted
+   production release, the workflow's preflight
+   (`.github/workflows/android-play.yml`) refuses the `production` track
+   before any upload runs.
 
 ## 4. GitHub environment, secrets, and variables
 
@@ -98,13 +121,13 @@ Settings → Environments → **New environment** `play-upload`:
   secrets. Leave **Required reviewers** off so uploads are automatic.
 - **Environment secrets:**
 
-  | Secret                        | Value                                              |
-  | ----------------------------- | -------------------------------------------------- |
-  | `PLAY_UPLOAD_KEYSTORE_BASE64` | `base64 -i tc-mobile-upload.jks` (one line)        |
-  | `PLAY_UPLOAD_STORE_PASSWORD`  | upload keystore password                           |
-  | `PLAY_UPLOAD_KEY_ALIAS`       | `upload`                                           |
-  | `PLAY_UPLOAD_KEY_PASSWORD`    | same as the store password for a PKCS12 keystore   |
-  | `PLAY_SERVICE_ACCOUNT_JSON`   | the full contents of the service-account JSON file |
+  | Secret                        | Value                                                              |
+  | ----------------------------- | ------------------------------------------------------------------ |
+  | `PLAY_UPLOAD_KEYSTORE_BASE64` | `base64 < tc-mobile-upload.jks \| tr -d '\n'` (one line, portable) |
+  | `PLAY_UPLOAD_STORE_PASSWORD`  | upload keystore password                                           |
+  | `PLAY_UPLOAD_KEY_ALIAS`       | `upload`                                                           |
+  | `PLAY_UPLOAD_KEY_PASSWORD`    | same as the store password for a PKCS12 keystore                   |
+  | `PLAY_SERVICE_ACCOUNT_JSON`   | the full contents of the service-account JSON file                 |
 
 Repository **variables** (Settings → Secrets and variables → Actions →
 Variables), all optional except the first:

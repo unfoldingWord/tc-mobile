@@ -174,6 +174,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Installed here, before any Play secret reaches disk (the "Write the
+      # upload keystore and Play service-account key" step, below): a gem
+      # install hook runs arbitrary code, and neither the bundler install nor
+      # fastlane itself needs the keystore or the service-account JSON — only
+      # the upload step later does.
+      - name: Install fastlane
+        if: ${{ !inputs.build_only }}
+        run: |
+          set -euo pipefail
+          gem install bundler -v 2.6.9 --no-document --user-install
+          export PATH="$(ruby -e 'print Gem.user_dir')/bin:$PATH"
+          echo "$(ruby -e 'print Gem.user_dir')/bin" >> "$GITHUB_PATH"
+          bundle _2.6.9_ config set --local path vendor/bundle
+          bundle _2.6.9_ config set --local frozen true
+          bundle _2.6.9_ install --jobs 4 --retry 3
+
       - name: Build the web bundle
         run: npm run build
 
@@ -236,17 +252,6 @@ jobs:
           version="$(node -p 'require("../package.json").version')"
           echo "version_code=$code" >> "$GITHUB_OUTPUT"
           echo "release_name=$version ($code) ${GITHUB_REF_NAME}@${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-
-      - name: Install fastlane
-        if: ${{ !inputs.build_only }}
-        run: |
-          set -euo pipefail
-          gem install bundler -v 2.6.9 --no-document --user-install
-          export PATH="$(ruby -e 'print Gem.user_dir')/bin:$PATH"
-          echo "$(ruby -e 'print Gem.user_dir')/bin" >> "$GITHUB_PATH"
-          bundle _2.6.9_ config set --local path vendor/bundle
-          bundle _2.6.9_ config set --local frozen true
-          bundle _2.6.9_ install --jobs 4 --retry 3
 
       - name: Upload to Google Play
         if: ${{ !inputs.build_only }}

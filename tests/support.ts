@@ -78,3 +78,118 @@ export function noTrimDecode(pcm: Int16Array, mp3: Uint8Array): Int16Array {
   out.set(pcm, MP3_TOTAL_DELAY);
   return out;
 }
+
+/**
+ * #533's extraction primitive family — the read-only source/text audits
+ * (`*.test.ts` source-pin suites, the CSS bridge tests) each re-declared
+ * `stripComments` (14 copies) and `matchingBraceClose` (10 copies), and four
+ * `indexOf`/`lastIndexOf`-then-slice call sites had no floor on the anchor at
+ * all: a missing or reordered anchor silently sliced an empty or wrong
+ * region, and the assertion after it — often a `not.toMatch`/`not.toContain`
+ * — passed trivially instead of catching anything (#533's audit, `b7004f8`).
+ * Nine-plus hand-copies of the same discipline is exactly how four call sites
+ * drifted without one; this file is the one place it is written down.
+ */
+
+/** Strips `/* ... *\/` and `// ...` comments. Not comment-in-string aware —
+ *  callers that rely on it (see each source-pin suite) have checked by hand
+ *  that the file they read holds no `//` or `/*` inside a string literal. */
+export function stripComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+}
+
+/** Brace-counts from `openIndex` (the index of an opening `{`) to find its
+ *  matching close, or -1. */
+export function matchingBraceClose(text: string, openIndex: number): number {
+  let depth = 0;
+  for (let i = openIndex; i < text.length; i++) {
+    if (text[i] === "{") depth++;
+    else if (text[i] === "}") {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** Slice out the `{ ... }` body that follows the first occurrence of
+ *  `declaration` in `code`, throwing (not failing an assertion) when the
+ *  anchor is gone — a renamed callback is a harness defect, not a finding. */
+export function bodyAfter(code: string, declaration: string): string {
+  const declStart = code.indexOf(declaration);
+  if (declStart === -1) {
+    throw new Error(`${declaration} not found — has it been renamed or moved?`);
+  }
+  const open = code.indexOf("{", declStart);
+  if (open === -1) throw new Error(`${declaration}: opening brace not found`);
+  const close = matchingBraceClose(code, open);
+  if (close === -1 || close <= open) {
+    throw new Error(`${declaration}: closing brace not found`);
+  }
+  return code.slice(open, close + 1);
+}
+
+/**
+ * Slices `text.slice(from, to)`, and turns three silent-pass shapes into a
+ * throw instead of a trivially-satisfied assertion:
+ *
+ *   - a missing anchor — `from`/`to` still `-1` from whatever `indexOf` /
+ *     `lastIndexOf` / `search` produced it, so `slice(-1, n)` cannot quietly
+ *     become `""` and get regexed as if it were real content;
+ *   - a degenerate or reversed span (`to <= from`) — an end anchor that
+ *     resolved at or before the start, including the empty span `to === from`;
+ *   - a span that resolves to nothing but whitespace, which a bare
+ *     `expect(slice).not.toMatch(...)` cannot distinguish from real, checked
+ *     content.
+ *
+ * `from`/`to` are indices the caller already computed by whatever means fits
+ * the anchor (a forward `indexOf`, a `lastIndexOf` walking back from a later
+ * point, a brace count) — `region` does not itself search text; it is the one
+ * place the floor those searches all need gets checked, once.
+ */
+export function region(
+  text: string,
+  { from, to }: { from: number; to: number }
+): string {
+  if (from === -1) throw new Error("region: missing start anchor (-1)");
+  if (to === -1) throw new Error("region: missing end anchor (-1)");
+  if (to <= from) {
+    throw new Error(`region: end (${to}) is not after start (${from})`);
+  }
+  const slice = text.slice(from, to);
+  if (slice.trim() === "") {
+    throw new Error("region: matched a region with no content");
+  }
+  return slice;
+}
+
+/**
+ * Finds an exact, standalone CSS rule for `selector` and returns its
+ * declaration body, trimmed. Strips CSS block comments first, so a comment
+ * naming the selector in prose (#529's trap) can never be the match — block
+ * comments only: CSS has no `//` comment, and `stripComments`' line strip
+ * would eat the rest of a line holding a `url(https://…)`, closing brace
+ * included. Throws — rather than returning `""` or `null` — when the rule is
+ * absent, ambiguous or empty, so a caller cannot coerce a miss into an empty
+ * string and regex nothing (#533's `notice-bridge` finding). A caller that
+ * must assert a rule is deliberately ABSENT asserts the MISSING-rule throw
+ * specifically (`toThrow(\`cssRule: missing rule: ${selector}\`)`); a bare
+ * `toThrow()` would also accept an ambiguous or empty rule.
+ */
+export function cssRule(css: string, selector: string): string {
+  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const rules = [
+    ...stripped.matchAll(new RegExp(`^\\s*${escaped}\\s*\\{([^{}]*)\\}`, "gm")),
+  ];
+  if (rules.length > 1) {
+    throw new Error(
+      `cssRule: ambiguous rule (${rules.length} matches): ${selector}`
+    );
+  }
+  const body = rules.at(0)?.[1];
+  if (body === undefined) throw new Error(`cssRule: missing rule: ${selector}`);
+  const trimmed = body.trim();
+  if (trimmed === "") throw new Error(`cssRule: empty rule: ${selector}`);
+  return trimmed;
+}

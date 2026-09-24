@@ -250,23 +250,31 @@ describe("the cue (#91, #135)", () => {
  * round 3), and it surfaced only because that test carried a floor — so this
  * one carries a floor too.
  */
-function recorderCode(): string {
+/**
+ * The bottom bars, which is where the history controls live since #160's L-1
+ * split them out of the sheet. The two assertions below moved with the JSX —
+ * pointing them at `recorder.tsx` would leave the positive one failing and,
+ * worse, the NEGATIVE one passing over a file that no longer contains the
+ * controls it is meant to be policing.
+ */
+function toolbarsCode(): string {
   const raw = readFileSync(
-    new URL("../src/components/recorder.tsx", import.meta.url),
+    new URL("../src/components/recorder-toolbars.tsx", import.meta.url),
     "utf8"
   );
   const stripped = raw
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^[ \t]*\/\/.*$/gm, "");
-  expect(stripped.length, "recorder.tsx stripped to nothing").toBeGreaterThan(
-    10000
-  );
+  expect(
+    stripped.length,
+    "recorder-toolbars.tsx stripped to nothing"
+  ).toBeGreaterThan(3000);
   return stripped;
 }
 
 describe("the toolbar reads one value for both halves (#91)", () => {
   it("each history control's `disabled` IS its reason being non-null", () => {
-    const source = recorderCode();
+    const source = toolbarsCode();
     for (const slot of ["undoBlocked", "redoBlocked"]) {
       expect(source).toContain(`disabled={${slot} !== null}`);
       expect(source).toContain(`hint={editControlHint(${slot})}`);
@@ -279,7 +287,7 @@ describe("the toolbar reads one value for both halves (#91)", () => {
     // control goes grey for a reason the badge does not know about. `heldByDrag`
     // legitimately survives at Play and `playDisabled`, so this is scoped to the
     // history terms rather than banning the helper.
-    const source = recorderCode();
+    const source = toolbarsCode();
     expect(source).not.toMatch(/heldByDrag\([^)]*canUndo/s);
     expect(source).not.toMatch(/heldByDrag\([^)]*canRedo/s);
   });

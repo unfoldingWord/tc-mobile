@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { matchingBraceClose, stripComments } from "./support";
+
 /**
  * George R1 P2-2 (PR #499): the `commit-close-recorder` popstate case must
  * RE-ARM the screen-depth entry the browser already popped even when the
@@ -30,23 +32,7 @@ describe("commit-close-recorder re-arms on a null recorder handle (George R1 P2-
   // Comments are stripped so the gate reads CODE, not prose: the branch's own
   // comment discusses re-arming and `pushHistoryEntry`, and a naive match would
   // score documentation.
-  const stripComments = (text: string) =>
-    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
   const code = stripComments(readFileSync(sourceUrl, "utf8"));
-
-  /** Brace-count from `openIndex` (an opening `{`) to its matching close. */
-  const matchingBraceClose = (body: string, openIndex: number): number => {
-    let depth = 0;
-    for (let i = openIndex; i < body.length; i++) {
-      if (body[i] === "{") depth++;
-      else if (body[i] === "}") {
-        depth--;
-        if (depth === 0) return i;
-      }
-    }
-    return -1;
-  };
 
   /**
    * Isolate the `case "commit-close-recorder":` block so the assertions check

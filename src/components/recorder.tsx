@@ -13,7 +13,7 @@ import { captureFailureText } from "./capture-failure-copy";
 import { CenterlineOverlay } from "./centerline-overlay";
 import { Control } from "./control";
 import { shareControlGlyph } from "./control-affordance";
-import { editControlHint, redoReason, undoReason } from "./edit-control-state";
+import { redoReason, undoReason } from "./edit-control-state";
 import { EraseConfirm } from "./erase-confirm";
 import { guidedRecordShown, guidedStep } from "./guided-step";
 import { Icon } from "./icon";
@@ -23,6 +23,7 @@ import { RecorderMenu } from "./recorder-menu";
 import { PlayheadOverlay } from "./playhead-overlay";
 import { resolveProbedPx } from "./recorder-layout";
 import { RecorderStatus } from "./recorder-status";
+import { RecorderToolbar } from "./recorder-toolbars";
 import {
   CENTER_FRACTION,
   dragOriginAfterInterrupt,
@@ -41,6 +42,8 @@ import {
   recordDisabled,
   redoCollapsesFrame,
   stageView,
+  ZOOM_QUARTER,
+  ZOOM_WHOLE,
 } from "./recorder-stage";
 import { SelectionOverlay } from "./selection-overlay";
 import { strings } from "./strings";
@@ -89,10 +92,6 @@ import {
 import { cn, formatDuration } from "@/lib/utils";
 import type { SampleRange } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
-
-/** The two zoom levels: the whole clip in view, or a quarter of it (§4.4). */
-const ZOOM_WHOLE = 1;
-const ZOOM_QUARTER = 4;
 
 interface RecorderProps {
   segmentId: SegmentId;
@@ -3567,238 +3566,39 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
 
               {audio.error && <Notice>{audio.error}</Notice>}
 
-              {mode === "record" ? (
-                // Both modes reserve the same right-hand slot for the toggle.
-                <div className="recorder-toolbar pair grid items-center px-[16px]">
-                  <Control
-                    ref={rerecordRef}
-                    // Wipe and record again (#592), on the bar so a translator
-                    // who re-records whole passages sees it without opening a
-                    // menu. The bin, because it is the one "throw away" glyph
-                    // ADR 0010's check already puts in front of translators;
-                    // the confirm it opens wears the same bin. Left end, away
-                    // from the hero Record, so the destructive control is not
-                    // the one under a thumb reaching to record; the confirm is
-                    // the second tap either way. Always drawn, so the bar does
-                    // not re-lay out when a first take lands: greyed, with its
-                    // reason, where there is nothing to erase.
-                    icon="trash"
-                    label={strings.rerecord}
-                    variant="default"
-                    disabled={eraseReason !== null}
-                    hint={rerecordHint}
-                    onClick={onRerecord}
-                  />
-                  <span
-                    className={cn("record-guide", guidedRecord && "is-guided")}
-                  >
-                    <Control
-                      ref={recordRef}
-                      // The square, not the pause bars: this tap ENDS the take and
-                      // commits it (#614). A pause glyph over a control that
-                      // finalizes is the wrong promise to the one reader who
-                      // cannot check the label — the translator who does not read.
-                      icon={recording ? "stop" : "record"}
-                      label={recording ? strings.stop : strings.record}
-                      variant="record"
-                      // This is a gate on the INSERTION OFFSET, not button
-                      // chrome, so the rule is enumerated in `recordDisabled`
-                      // and tested in both directions rather than inlined here
-                      // (George R1 P2 #3). Two states it must catch, and the one
-                      // it must not:
-                      //
-                      // - a buffer sounding at idle — under the scrolling view
-                      //   (#415) the drawn line marks the SOUNDING sample while
-                      //   `panState` is still the pre-play value, so a take would
-                      //   splice where the translator cannot see. (This used to be
-                      //   explained as a swapped whole-clip view lying about the
-                      //   line; since #415 the line is honest during playback and
-                      //   it is the stored pan that is stale. The gate is the same
-                      //   either way — do not "correct" it into an enable.)
-                      // - a finger mid-pan (#317): the touch that pauses playback
-                      //   lifts the sounding term while the drag is still moving
-                      //   the pan, so a second finger here would lock the offset
-                      //   to a position that then slides away from it.
-                      //
-                      // PAUSED used to be an exception to the first of those — the
-                      // button was Resume, its offset locked at the original Record
-                      // tap (F9), so it stayed live over a sounding preview (George
-                      // R3 #4). #614 ended the paused take, so the exception is
-                      // gone rather than loosened.
-                      disabled={recordInert}
-                      // The last link in the guided chain (#604): the ring sits
-                      // on Record until this segment has audio, which — because a
-                      // take splices after Stop — means it stays through the
-                      // whole take, the permission wait and the seal included.
-                      // `guidedRecordShown` above owns the whole rule.
-                      onClick={onRecordButton}
-                    />
-                  </span>
-                  <Control
-                    icon={audio.playingBuffer ? "pause" : "play"}
-                    // The name comes from `playPlan.source`, the same map the
-                    // edit toolbar uses, because since #317 this control plays
-                    // from the LINE and not always the whole segment (George R2
-                    // P2). Speaking "Play recording" over a tap that sounds
-                    // only the tail is a lie told to the one channel — a screen
-                    // reader — that cannot see the line. `"whole"` is the F7
-                    // rest and the line at 0, where it IS the whole segment;
-                    // `"selection"` is unreachable here (`playPlan` reads the
-                    // span in edit mode only) and falls through to the same
-                    // name rather than adding a branch that cannot run.
-                    label={
-                      audio.playingBuffer
-                        ? strings.stopPlayback
-                        : playPlan?.source === "line"
-                          ? strings.auditionFromLine
-                          : strings.playRecording
-                    }
-                    variant="play"
-                    disabled={playDisabled}
-                    onClick={onPlayButton}
-                  />
-                  <Control
-                    key="edit-toggle"
-                    icon="selection"
-                    label={strings.enterEdit}
-                    pressed={false}
-                    variant="default"
-                    busy={isClosing}
-                    disabled={editToolbarDisabled}
-                    hint={editToolbarHint}
-                    onClick={onEnterEdit}
-                  />
-                </div>
-              ) : (
-                // Edit mode: the spread editing toolbar. Redo is a visible button
-                // here (out of the menu); the menu opener lives at the end.
-                <div className="recorder-toolbar edit grid items-center px-[16px]">
-                  <Control
-                    // The audition (#284) — the SAME glyph pair the record bar
-                    // uses, play/pause, because it is the same act: a non-reader
-                    // recognises the control by its shape, and a second play
-                    // glyph would be a second thing to learn. The name is what
-                    // differs, and it names the target (`auditionPlan`'s
-                    // `source`) so what a screen reader speaks is what sounds.
-                    icon={audio.playingBuffer ? "pause" : "play"}
-                    label={
-                      audio.playingBuffer
-                        ? strings.stopPlayback
-                        : playPlan?.source === "selection"
-                          ? strings.auditionSelection
-                          : playPlan?.source === "line"
-                            ? strings.auditionFromLine
-                            : strings.playRecording
-                    }
-                    variant="quiet"
-                    size={24}
-                    // Inert when there is nothing to hear — no audio, or a span
-                    // dragged shut — exactly as Cut is on the same span. While it
-                    // sounds it is the stop, so it stays live. `idleEditable`
-                    // carries the close window, where the sheet is committing;
-                    // `heldByDrag` carries the #317 finger (George R2 P1),
-                    // which cannot co-occur with `playingBuffer` because the
-                    // touch stops playback before the drag begins.
-                    disabled={heldByDrag(
-                      dragging,
-                      !audio.playingBuffer &&
-                        (!idleEditable || playPlan === null)
-                    )}
-                    onClick={onAuditionButton}
-                  />
-                  <Control
-                    // The magnifier carries the ACTION (+ widens, − narrows) and
-                    // `pressed` carries the STATE — quarter view is the non-
-                    // default one, so that is the "on". Splitting the two is the
-                    // #91 fix: the old facing-arrow pair asked one glyph to do
-                    // both, and the first external tester read it the other way
-                    // round and asked whether the icons were reversed.
-                    //
-                    // These read `zoom` directly. They used to read a
-                    // `displayedZoom` that substituted the whole-clip level
-                    // while `render === "whole"` (#284, George R7), because
-                    // that render drew clip fractions 0..1 whatever `zoom`
-                    // said. #417 had already narrowed it to the paused-take
-                    // preview alone (a sounding buffer scrolls at the real
-                    // zoom — that is #417's whole point), and #614 retires the
-                    // preview, so `render` can no longer be `"whole"` at all
-                    // and the substitution has no state left to correct for.
-                    icon={zoom === ZOOM_WHOLE ? "zoom-in" : "zoom-out"}
-                    label={
-                      zoom === ZOOM_WHOLE
-                        ? strings.zoomAtWhole
-                        : strings.zoomAtQuarter
-                    }
-                    pressed={zoom === ZOOM_QUARTER}
-                    variant="quiet"
-                    size={24}
-                    // A window control: it rebuilds the window under a line that
-                    // is already travelling. `recorder-stage.ts` carries the class.
-                    // `!idleEditable` also gates #396's slack window: a leftover
-                    // preview during `isClosing` shows whole-view chrome over the
-                    // REAL zoom handler, and a tap there silently flips the stored
-                    // zoom with no visible change — see the comment above.
-                    disabled={stage.windowControlsInert || !idleEditable}
-                    onClick={onToggleZoom}
-                  />
-                  <Control
-                    icon="undo"
-                    label={strings.undo}
-                    variant="quiet"
-                    size={24}
-                    // The gate is unchanged — `undoReason` reproduces
-                    // `heldByDrag(dragging, !idleEditable || !canUndo)`, and
-                    // `tests/edit-control-state.test.ts` pins that against
-                    // `heldByDrag` itself. What is new is that the grey now
-                    // carries its cause (#91). This arrow is grey whenever
-                    // the cursor sits at the START of the stack — on a fresh
-                    // edit session, and again after undoing back to it, which
-                    // is the case round 1's copy got wrong. #135 already found
-                    // that a grey icon-only control with no reason reads as a
-                    // broken one.
-                    disabled={undoBlocked !== null}
-                    hint={editControlHint(undoBlocked)}
-                    onClick={onUndo}
-                  />
-                  <Control
-                    icon="redo"
-                    label={strings.redo}
-                    variant="quiet"
-                    size={24}
-                    // Same guard the menu Redo had (George R4), now derived:
-                    // a Redo mid-take would rematerialise the working buffer
-                    // under the locked insertion offset — but `idleEditable`
-                    // forbids that, and edit mode is idle-only regardless.
-                    // `redoReason`'s `dragging` term is the #317 finger, for the
-                    // reason Undo carries it. Redo is grey for longer than Undo,
-                    // never having anything to redo until something is undone,
-                    // so it is the stronger half of #91's case here.
-                    disabled={redoBlocked !== null}
-                    hint={editControlHint(redoBlocked)}
-                    onClick={onRedo}
-                  />
-                  <Control
-                    icon="menu"
-                    label={strings.recorderMenuOpen}
-                    variant="quiet"
-                    size={24}
-                    disabled={!view || isClosing}
-                    onClick={openMenu}
-                  />
-                  <Control
-                    key="edit-toggle"
-                    icon="selection"
-                    label={strings.enterEdit}
-                    pressed={true}
-                    // Both twins keep the hinted root so their shared key
-                    // preserves the button and focus across the mode switch.
-                    hint={null}
-                    variant="default"
-                    disabled={!idleEditable || dragging}
-                    onClick={onExitEdit}
-                  />
-                </div>
-              )}
+              <RecorderToolbar
+                mode={mode}
+                recording={recording}
+                recordRef={recordRef}
+                rerecordRef={rerecordRef}
+                rerecordDisabled={eraseReason !== null}
+                rerecordHint={rerecordHint}
+                onRerecord={onRerecord}
+                recordInert={recordInert}
+                guidedRecord={guidedRecord}
+                isClosing={isClosing}
+                hasView={view !== null}
+                playingBuffer={audio.playingBuffer}
+                dragging={dragging}
+                idleEditable={idleEditable}
+                playSource={playPlan?.source ?? null}
+                playDisabled={playDisabled}
+                editToolbarDisabled={editToolbarDisabled}
+                editToolbarHint={editToolbarHint}
+                undoBlocked={undoBlocked}
+                redoBlocked={redoBlocked}
+                zoom={zoom}
+                windowControlsInert={stage.windowControlsInert}
+                onRecordButton={onRecordButton}
+                onPlayButton={onPlayButton}
+                onEnterEdit={onEnterEdit}
+                onAuditionButton={onAuditionButton}
+                onToggleZoom={onToggleZoom}
+                onUndo={onUndo}
+                onRedo={onRedo}
+                openMenu={openMenu}
+                onExitEdit={onExitEdit}
+              />
             </>
           )}
         </div>

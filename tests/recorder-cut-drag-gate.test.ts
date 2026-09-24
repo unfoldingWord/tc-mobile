@@ -33,6 +33,17 @@ describe("Cut's disabled gate carries the #317 drag term, the way Undo/Redo do (
     new URL("../src/components/recorder.tsx", import.meta.url),
     "utf8"
   );
+  // Two files, because the two controls this file talks about now live apart:
+  // Cut stayed in the sheet's edit body, and #160's L-1 split moved Undo into
+  // the bottom bars. #91 then changed what Undo is checked FOR — its gate is a
+  // derived `undoBlocked !== null` rather than an inline `heldByDrag(...)`, so
+  // the old "same call shape as Undo" comparison lost its subject and is gone.
+  // What is still asserted here is that Undo has not quietly gone back to an
+  // inline gate, which is what would leave Cut's reference dangling.
+  const toolbars = readFileSync(
+    new URL("../src/components/recorder-toolbars.tsx", import.meta.url),
+    "utf8"
+  );
 
   const cutDisabledExpr = (() => {
     // Isolate the Cut control by its unique `label={strings.cut}` and read
@@ -93,9 +104,9 @@ describe("Cut's disabled gate carries the #317 drag term, the way Undo/Redo do (
     // reformat and fails on a term that is dropped rather than merely reworded.
     // What this file keeps is that Undo has not quietly gone back to an inline
     // gate with no drag term at all, which would leave Cut's reference dangling.
-    const undoLabelIdx = recorder.indexOf("label={strings.undo}");
+    const undoLabelIdx = toolbars.indexOf("label={strings.undo}");
     expect(undoLabelIdx).toBeGreaterThan(-1);
-    const undoMatch = /disabled=\{([^}]*)\}/.exec(recorder.slice(undoLabelIdx));
+    const undoMatch = /disabled=\{([^}]*)\}/.exec(toolbars.slice(undoLabelIdx));
     expect(undoMatch).not.toBeNull();
     const undoDisabledExpr = (undoMatch![1] ?? "").replace(/\s+/g, "");
     expect(undoDisabledExpr).toBe("undoBlocked!==null");
