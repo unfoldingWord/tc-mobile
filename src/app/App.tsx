@@ -294,12 +294,22 @@ export function App() {
   //       wired above, because the row reads as unrecorded until it does;
   //     - an in-sheet commit reloads the SHEET's own view (`reloadView()` in
   //       components/recorder.tsx);
-  //     - this `reload()`, when the sheet closes having changed something.
+  //     - this `reload()`, when the sheet closes having changed something —
+  //       which is the ONLY repair for everything that changes the segment
+  //       without landing a take through `onSaved`: a deferred Finished
+  //       toggle, and an erase (`clearSegmentTake`, which exits dirty).
   //
   // The third is not redundant, and that is the part worth keeping: the
   // explicit toggle is DEFERRED to close (see `setFinished` in
   // hooks/use-recorder-segment.ts), so a segment marked finished without a new
   // take reaches the list through this call and no other.
+  //
+  // This inventory lives HERE and is not restated in the hooks. Both mirrors'
+  // docblocks used to carry their own partial copies, and both had drifted —
+  // one naming two repair occasions of the three, the other disagreeing about
+  // the number of mirrors (Frank R1 on #746). A second copy of a list is a
+  // second thing to keep in step, and this list has now been corrected four
+  // times. Link to it; do not re-enumerate it.
   //
   // It is correct today for one reason — the sheet is MODAL. While it is open
   // the screens behind it are `inert` (the wrapper below), so the list's mirror

@@ -226,12 +226,18 @@ export function useChapterSegments(chapterId: ChapterId) {
     }
   }, [chapterId]);
 
-  // One of the two mirrors of the stored finished flag (#160, L-10 — the
-  // writers, the mirrors and all three reconciliation points are recorded at
-  // `recorderClosedState` in `app/App.tsx`). This one patches in place after a
-  // LANDED write, so it never diverges from the store on its own; what makes
-  // it stale is a write from the sheet, and what fixes it is a `reload()` —
-  // immediately on a landed save, or on dirty close for a deferred toggle.
+  // A mirror of the stored finished flag (#160, L-10). This one patches in
+  // place after a LANDED write, so it never diverges from the store on its
+  // own; what makes it stale is a write from the sheet, and what fixes it is
+  // a `reload()`.
+  //
+  // WHICH reloads, and every writer and mirror, are enumerated once — at
+  // `recorderClosedState` in `app/App.tsx`. Deliberately not restated here.
+  // This comment used to carry its own partial list and it was wrong again
+  // (Frank R1): it named the landed save and the dirty close for a deferred
+  // toggle, and missed erase, which also leaves the list to the close reload.
+  // A second copy of an inventory is a second thing to keep in step, and this
+  // is the fourth time that copy has drifted.
   const setFinished = useCallback(
     async (segmentId: SegmentId, finished: boolean): Promise<void> => {
       // The store rejects marking a never-recorded segment finished; the row
