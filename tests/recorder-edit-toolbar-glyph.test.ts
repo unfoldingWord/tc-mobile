@@ -6,7 +6,7 @@ import {
   RecorderToolbar,
   type RecorderToolbarProps,
 } from "@/components/recorder-toolbars";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 
 import { render } from "./render";
 

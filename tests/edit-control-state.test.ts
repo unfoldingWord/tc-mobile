@@ -9,7 +9,7 @@ import {
   type EditControlReason,
 } from "@/components/edit-control-state";
 import { heldByDrag } from "@/components/recorder-stage";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 
 /**
  * #91 — a disabled edit-toolbar history control must carry its reason.

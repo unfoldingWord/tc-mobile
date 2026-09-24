@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FailureLogPanel } from "@/components/failure-log-panel";
 import { Menu } from "@/components/menu";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 
 /**
  * #468: cancelling the failure-log panel's stacked Clear confirm drops focus.

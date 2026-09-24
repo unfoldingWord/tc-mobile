@@ -3,7 +3,7 @@ import type { RefObject } from "react";
 import { Control } from "./control";
 import { editControlHint, type EditControlReason } from "./edit-control-state";
 import { heldByDrag, ZOOM_QUARTER, ZOOM_WHOLE } from "./recorder-stage";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 import type { RowHint } from "./menu-row-state";
 import { cn } from "@/lib/utils";
 

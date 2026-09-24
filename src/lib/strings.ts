@@ -7,6 +7,30 @@
  * one record keeps that layer attachable and keeps wording out of the markup,
  * where it would otherwise be edited in a dozen places. This is a table, not a
  * provider: parameterised labels are small pure functions, nothing more.
+ *
+ * WHY IT LIVES IN `lib/` and not beside the components it mostly serves: the
+ * onion rule runs one way, so `hooks/` cannot import from `components/`. While
+ * this table sat in `components/`, every sentence a hook had to produce was
+ * stranded as a literal beside the code that raised it — `use-recorder.ts` said
+ * so in a comment this move deleted, "`hooks/` cannot reach the components'
+ * string table". `lib/` is the one layer every other layer can reach, and the
+ * table is pure data and pure functions, so it costs the DOM-free core nothing:
+ * it compiles under `tsconfig.lib.json` with the rest of `lib/`. #169.
+ *
+ * WHICH sentences that is, today: `playbackFailed`, the five
+ * `classifyMicRefusal` classes, and `recordingUnsupported`. Each one IS the
+ * state its hook holds, on the far side of a `useState` that never crosses into
+ * `lib/`, so there is no domain value to route and a code would be a union with
+ * one consumer.
+ *
+ * The recorder's three CAPTURE failures took the other route and are not that
+ * argument's evidence: #700 made them codes in `lib/audio/capture-failure.ts`,
+ * worded at the screen by `components/capture-failure-copy.ts`, because
+ * `lib/takes/close-plan.ts` already reasons about that value. AGENTS.md states
+ * which route to reach for. An earlier draft of this paragraph cited those
+ * three — "typed out a second time further down the same file" — as the reason
+ * this table moved; that was true before #700 and is not the case this move
+ * rests on now.
  */
 import { plural } from "@/lib/plural";
 import { filenameSafe } from "@/lib/utils";
@@ -347,6 +371,43 @@ export const strings = {
   takeRecoverDiscardArmed: "Tap again to delete this recording for good",
   takeRecoverDiscardHint: "Tap again to delete it.",
 
+  // ── What the recorder and the audio session raise (#169) ─────────────────
+  // These sentences are read in `hooks/`, not in a component: they ride a
+  // `playbackError`, or the recorder's own `error` state, up to whichever
+  // surface is mounted. They were literals beside the code that raised them
+  // until this table moved down into `lib/` (see the file header).
+  //
+  // The recorder's CAPTURE failures took the other route and are not here:
+  // #700 made them codes (`lib/audio/capture-failure.ts`) that
+  // `components/capture-failure-copy.ts` words out of the block further down,
+  // because that value is a domain fact `lib/takes/close-plan.ts` also reasons
+  // about. The ones below never leave the hook as data — they ARE the copy the
+  // hook's state holds — so they read the table directly.
+
+  // Playback could not sound: a decode that failed, or a take whose clip the
+  // database no longer has. One sentence for both, because from where the
+  // translator stands they are the same event — the tap made no sound.
+  playbackFailed: "Could not play this recording.",
+  // The honest sentence for each `classifyMicRefusal` class (#203). The
+  // classifier itself stays UI-free; these are its words. Each names the one
+  // place the translator (or the facilitator beside them) can act, because a
+  // refusal the app cannot lift is only useful if it says who can.
+  micNoDevice: "No microphone was found on this device.",
+  micSiteBlocked:
+    "Recording is blocked for this app. Allow the microphone in your browser's site settings, then try again.",
+  micOsBlocked:
+    "Your device is not letting the app use the microphone. Check microphone access in your device settings, then try again.",
+  micPrompt:
+    "Microphone access is needed to record. Allow it when asked — or if you already allowed it, check your device settings.",
+  // The residual class: `getUserMedia` refused and said nothing usable about
+  // why, so this claims nothing about the cause.
+  micStartFailed: "Could not start recording.",
+  // Not a refusal at all — `isRecordingSupported()` is false, so there is no
+  // MediaRecorder to ask. Says the DEVICE rather than the app, and offers no
+  // remedy, because none of the mic sentences above applies: nothing in
+  // settings turns this on.
+  recordingUnsupported: "This device cannot record audio.",
+
   // ── Recorder mode split (#89) ────────────────────────────────────────────
   // Play's two aria-labels. The glyph is `pause` while sounding (wireframe), but
   // the action is stop (D4), so the label says "Stop playing".
@@ -619,19 +680,30 @@ export const strings = {
   // be included." as one gap double-counted, or as an unrelated,
   // under-counted hole (George #423 round 1 P3).
   //
-  // One missing segment is always exactly one chapter, so the
-  // `segments === 1` case can safely name that chapter's scope without
-  // misstating a count.
+  // The two halves of this sentence are counted differently on purpose, and
+  // that split is the load-bearing part.
   //
-  // That is why this branch is NOT `plural`'s `one` form, although every other
-  // count-varying string in this table now is (#169). CLDR's `one` category is
-  // not "exactly 1" — Russian selects it for 21, 31, 101 — so moving this
-  // clause into a forms table would let a second locale assert "an included
-  // chapter", singular, about twenty-one segments spread across an unknown
-  // number of them, which is the #400/#423 bug in a new place. The branch here
-  // is a claim about the count being exactly one, not an agreement with it; a
-  // locale that needs `few`/`many` inside the else branch should add the table
-  // there and leave this exactly-one branch as a branch.
+  // The SEGMENT noun goes through `plural` like every other count-varying
+  // string in this table (#169) — a CLDR category, not an English `n === 1`.
+  //
+  // The CHAPTER scope does NOT, and must not. It branches on
+  // `partialChapters > 1`, the producer's count of DISTINCT included chapters,
+  // and it stays an explicit branch rather than a forms table because CLDR's
+  // `one` is not "exactly 1" — Russian selects it for 21, 31, 101. Keying the
+  // singular "an included chapter" off a plural category would let a second
+  // locale assert one chapter about twenty-one segments spread across an
+  // unknown number of them, which is the #400/#423 bug in a new place. This
+  // branch is a claim that the count IS exactly one, not an agreement with it.
+  // A locale needing `few`/`many` for the segment noun gets it from `plural`
+  // above; the chapter-scope branch stays a branch.
+  //
+  // An earlier draft of this paragraph said the clause was "NOT `plural`'s
+  // `one` form" and described a `segments === 1` case. That case is gone —
+  // `5860fb6` routed the segment noun through `plural` and the chapter scope
+  // already keyed off `partialChapters` (#446) — so the sentence described
+  // code that is not here (Frank, round 4). Rewritten rather than patched,
+  // because the warning it carried is still right and worth keeping; only its
+  // account of the code was false.
   //
   // George round 2 caught that the first attempt at that
   // clause ("...was left out of a chapter that shipped") used maintainer
@@ -660,7 +732,7 @@ export const strings = {
     partialChapters: number
   ): string =>
     `${strings.shareBookMissing(chapters)} ${couldNotBeIncluded(
-      `${segments === 1 ? "1 segment" : `${segments} segments`} of ${
+      `${plural(segments, { one: "{n} segment", other: "{n} segments" })} of ${
         partialChapters > 1
           ? `${partialChapters} included chapters`
           : "an included chapter"
@@ -676,6 +748,48 @@ export const strings = {
   // Sanitised like shareFilename: the book name is the .zip File name and must
   // not carry a path separator or a reserved character (G3).
   shareBookFilename: (book: string): string => `${filenameSafe(book)}.zip`,
+
+  // ── The save that failed (#38) ───────────────────────────────────────────
+  // The text layer of the screen that stands between a failed save and losing
+  // the recording. Its two paths — a fresh recording, or the edited buffer of
+  // one — are a PARAMETER rather than two blocks of keys, because on the edit
+  // path the previously stored recording is untouched on disk and a line that
+  // said "recording" would misname what a discard destroys.
+  //
+  // The headline, the safety line and the attempt count are deliberately NOT
+  // here: they are `components/recovery-copy.ts`, a pure module with tests of
+  // its own, and folding a second, differently-shaped table into this one is
+  // not what #169 asks for.
+  saveFailedDialog: (editOnly: boolean): string =>
+    editOnly ? "Your changes are not saved" : "This recording is not saved",
+  // In place of the headline while a retry is in flight.
+  saveFailedSaving: "Saving",
+  // The one promise this screen makes, and the reason it can make it: the commit
+  // is ONE transaction (#38), so a failed save left the take in the RAM slot
+  // `useSaveTake` holds. Names the segment when the held take belongs to the
+  // chapter on screen, and says nothing about it when it does not.
+  saveFailedHeld: (editOnly: boolean, ordinal: number | null): string => {
+    const subject = editOnly ? "edited recording" : "recording";
+    return ordinal === null
+      ? `Your ${subject} is still here.`
+      : `Your ${subject} of segment ${ordinal} is still here.`;
+  },
+  // NOT `tryAgain` and NOT `loadRetry`: this retries a WRITE, and on an
+  // icon-only `Control` the label is the whole thing a screen reader speaks.
+  saveFailedRetry: "Try saving again",
+  // The two-tap discard, and the fainter line beneath it once armed. "for good"
+  // only on the record path — there the held take is the only copy; on the edit
+  // path the stored recording survives and only the edit goes.
+  saveFailedDiscard: (editOnly: boolean, armed: boolean): string =>
+    armed
+      ? editOnly
+        ? "Tap again to discard these changes"
+        : "Tap again to delete this recording for good"
+      : editOnly
+        ? "Discard these changes"
+        : "Delete this recording",
+  saveFailedDiscardHint: (editOnly: boolean): string =>
+    editOnly ? "Tap again to discard them." : "Tap again to delete it.",
 
   // ── Root error boundary (#167) ───────────────────────────────────────────
   // The whole text layer of the crash screen. Says that something failed and

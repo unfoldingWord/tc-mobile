@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 
 import { Control } from "./control";
 import { confirmControlAffordance } from "./control-affordance";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 
 interface NameEditProps {
   /** The name to seed the field with — the current name, the default a new book

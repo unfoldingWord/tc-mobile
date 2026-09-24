@@ -1,7 +1,7 @@
 import { Control } from "./control";
 import { Menu } from "./menu";
 import { rowHint, type RowReason } from "./menu-row-state";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 
 /**
  * The recorder sheet's ≡ menu (#160, L-1).

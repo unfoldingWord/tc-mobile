@@ -22,6 +22,7 @@ import {
 } from "@/lib/audio/playback-position";
 import { createAudioSession, type SourceKind } from "@/lib/audio/session";
 import { danglingReason, loadSegmentClip } from "@/lib/storage/segment-audio";
+import { strings } from "@/lib/strings";
 import type { SegmentId } from "@/types/domain";
 import type { SegmentRow } from "@/types/view";
 
@@ -437,7 +438,7 @@ export function useAudioSession(): UseAudioSession {
             const fault = danglingReason(audio);
             if (fault) {
               console.error("Nothing to play for this take:", fault);
-              setPlaybackError("Could not play this recording.");
+              setPlaybackError(strings.playbackFailed);
             }
             session.release(token);
             setPlaying(null);
@@ -471,7 +472,7 @@ export function useAudioSession(): UseAudioSession {
           if (session.isCurrent(token)) {
             session.release(token);
             setPlaying(null);
-            setPlaybackError("Could not play this recording.");
+            setPlaybackError(strings.playbackFailed);
           }
         }
       })();
@@ -550,7 +551,7 @@ export function useAudioSession(): UseAudioSession {
           if (session.isCurrent(token)) {
             session.release(token);
             setPlayingBuffer(false);
-            setPlaybackError("Could not play this recording.");
+            setPlaybackError(strings.playbackFailed);
           }
         }
       })();

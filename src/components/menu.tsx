@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { Control } from "./control";
 import { FOCUSABLE, wrapTab } from "./focus-trap";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 
 interface MenuProps {
   open: boolean;
