@@ -23,10 +23,10 @@ import { strings } from "./strings";
  * live take could commit-then-edit in one tap) — #857 puts Edit back in step
  * with Erase: a LIVE take now blocks Edit too, the same as the commit window
  * does, because #614 gave every take a Stop that ends and commits it without
- * Edit's help, so the one-tap "stop and edit" #134 bought is no longer the
- * only way to reach Stop, then Edit. It outranks the state reasons because it
- * is the one the translator can act on from here. Nothing in this product is
- * named "Back"; see {@link rowHint}.
+ * Edit's help — so Stop, then Edit (two taps) is now the ONLY way to reach
+ * Edit from a live take; the one-tap "stop and edit" #134 bought is gone. It
+ * outranks the state reasons because it is the one the translator can act on
+ * from here. Nothing in this product is named "Back"; see {@link rowHint}.
  */
 export type RowReason =
   | "uncommitted-take"
@@ -59,11 +59,11 @@ interface EditRowInputs {
    * A live take exists (recorder `state === "recording"`). Blocks Edit the
    * same as `committing` does (#857) — `editRowReason` treats the two as one
    * reason, `"uncommitted-take"`, since #614 gave every take a Stop that ends
-   * and commits it without Edit's help, so the #134 commit-then-edit shortcut
-   * this field used to grant is no longer the only way to reach Stop, then
-   * Edit. `RecorderState` (`hooks/use-recorder.ts`) is `"idle" | "requesting" |
-   * "recording" | "processing"` — there is no separate "paused" state to fold
-   * in here.
+   * and commits it without Edit's help, so Stop, then Edit is now the ONLY
+   * way to reach Edit from a live take — the #134 commit-then-edit shortcut
+   * this field used to grant is gone. `RecorderState`
+   * (`hooks/use-recorder.ts`) is `"idle" | "requesting" | "recording" |
+   * "processing"` — there is no separate "paused" state to fold in here.
    */
   readonly hasTake: boolean;
   /**
@@ -95,8 +95,8 @@ interface EditRowInputs {
  * `hasTake` alone through so entering Edit would commit-then-edit a live take
  * in one tap; #857 (Moto G, tester report) closes that gap — `[ ]` read as
  * openable mid-recording — now that #614's Stop ends and commits a take
- * without Edit's help, so the two-tap Stop-then-Edit path #857 leaves behind
- * is no longer the only way to reach Edit from a live take.
+ * without Edit's help, so the two-tap Stop-then-Edit path is now the ONLY
+ * way to reach Edit from a live take.
  */
 export function editRowReason(i: EditRowInputs): RowReason | null {
   if (i.starting) return "starting";
@@ -211,23 +211,44 @@ export function rowHint(reason: RowReason | null): RowHint | null {
  * The same reason, worn by a control on the record BAR rather than in the ≡
  * menu — the toolbar Edit (#315) and the bin (#592).
  *
- * Two differences from {@link rowHint}, both because the bar is not the menu:
+ * One difference from {@link rowHint}, because the bar is not the menu: no
+ * badge. The bar's controls sit in the translator's hand all session, and an
+ * `alert` mark on an empty segment's Edit or bin would read as something gone
+ * wrong on the first screen of every new segment. The reason stays in the
+ * accessible name, and the control goes `aria-disabled`, so keyboard and
+ * switch users still reach it.
  *
- * - No badge. The bar's controls sit in the translator's hand all session, and
- *   an `alert` mark on an empty segment's Edit or bin would read as something
- *   gone wrong on the first screen of every new segment. The reason stays in
- *   the accessible name, and the control goes `aria-disabled`, so keyboard and
- *   switch users still reach it.
- * - No words for `"uncommitted-take"`. `blockedByTake` sends the translator to
- *   "Close menu", then "Close recorder" — a menu the bar is not in, and during
- *   a take the bar's own Stop, beside it, is the way out. The control is
- *   plainly off instead: natively disabled while the take runs, but not while
- *   it commits. The toolbar Edit is also `busy={isClosing}` (recorder.tsx),
- *   and `Control` never natively disables a busy control, so through the
- *   commit it stays focusable and `aria-busy`, and swallows the click.
+ * `"uncommitted-take"` never gets `blockedByTake`'s words here: that sends
+ * the translator to "Close menu", then "Close recorder" — a menu the bar is
+ * not in — and during a take the bar's own Stop is the way out instead. What
+ * it DOES get is caller-specific, through `uncommittedTakeLabel`, because
+ * unlike every other reason this one names a DIFFERENT next action per
+ * control (Edit: stop, then edit; the bin: stop, then erase) — a single
+ * shared sentence would be wrong for at least one caller. The toolbar Edit
+ * control (`recorder.tsx`'s `editToolbarHint`) passes `strings.stopToEdit`
+ * (#857 round 1, Frank P2): until then this returned `null` unconditionally
+ * for `"uncommitted-take"`, so Edit went NATIVELY disabled — dropping out of
+ * the tab order with no reason attached — for the live-take half of the
+ * reason, since `busy={isClosing}` (recorder.tsx) only covers the
+ * commit-window half. Once `hasTake` joined `committing` under this one
+ * reason (`editRowReason`, above), a live take became a real,
+ * tester-reachable case of that gap, not only a narrow commit-window race.
+ * Passing a label there makes the control `aria-disabled` (`Control`'s
+ * `softDisabled`, `control.tsx`) through BOTH halves instead: focusable and
+ * named while the take is live, and `aria-busy` (unaffected by this change)
+ * once it starts committing. The bin (`rerecordHint`) omits the argument and
+ * keeps the pre-#857 `null` behaviour — its own identical native-disabled gap
+ * is real but untouched here: #857 is about Edit, and inventing bin copy
+ * nobody asked for is exactly the kind of unreviewed assumption this
+ * function's callers should not make silently.
  */
-export function barHint(reason: RowReason | null): { label: string } | null {
-  if (reason === "uncommitted-take") return null;
+export function barHint(
+  reason: RowReason | null,
+  uncommittedTakeLabel?: string
+): { label: string } | null {
+  if (reason === "uncommitted-take") {
+    return uncommittedTakeLabel ? { label: uncommittedTakeLabel } : null;
+  }
   const hint = rowHint(reason);
   return hint === null ? null : { label: hint.label };
 }

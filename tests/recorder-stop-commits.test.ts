@@ -378,34 +378,37 @@ it("a Stop whose decode failed stays in place when Try again succeeds", async ()
 // refactor is out of scope for #857, and this is a HOT file with several
 // PRs in flight), and flagged in the #857 PR body for a follow-up cleanup
 // issue. What this case pins now, instead of the destination it used to
-// prove reachable, is that the toggle itself stays inert even with a
-// recovery panel already in play — the same live-take state the pure-function
-// gate in `tests/menu-row-state.test.ts` covers, exercised here through the
-// real component.
-it("stays disabled through a held-take recovery — a live take blocks Edit-entry (#857)", async () => {
+// prove reachable, is that a live take keeps the toggle inert — the same
+// state the pure-function gate in `tests/menu-row-state.test.ts` covers,
+// exercised here through the real component.
+it("a live take keeps the Edit toggle disabled (#857)", async () => {
   const s = await setup();
-  const bytes = new Blob(["kept"]);
-  s.audio.stopRecording = vi.fn(async () => {
-    s.audio.recorderState = "idle";
-    return { samples: null, blob: bytes, error: null };
-  });
-  s.audio.retryDecode = vi
-    .fn()
-    .mockResolvedValue({ samples: captured, error: null });
-
   s.audio.recorderState = "recording";
   await s.render();
 
-  const toggle = s.button(strings.enterEdit);
+  // Round 1 (Frank P2): the toggle is `aria-disabled`, not natively
+  // `disabled` — a native attribute would drop it from the tab order with no
+  // reason attached, and #857's own bullet asks for the reason to stay
+  // reachable. `aria-label` carries it in the accessible name, so this finds
+  // the control by its live-take name rather than the plain `strings
+  // .enterEdit` the shared `button()` helper looks for elsewhere in this
+  // file (which is the idle name only, and no longer matches here).
+  const toggle = [...document.querySelectorAll("button")].find((b) =>
+    (b.getAttribute("aria-label") ?? "").startsWith(strings.enterEdit)
+  );
   expect(toggle, strings.enterEdit).toBeDefined();
-  expect(toggle!.disabled).toBe(true);
+  expect(toggle!.disabled).toBe(false);
+  expect(toggle!.getAttribute("aria-disabled")).toBe("true");
+  expect(toggle!.getAttribute("aria-label")).toBe(
+    `${strings.enterEdit}. ${strings.stopToEdit}`
+  );
   toggle!.click();
   await s.render();
 
-  // A disabled native button does not dispatch `click` — this is the
-  // behavioural half `menu-row-state.test.ts`'s pure-function assertion
-  // cannot reach: the tap never even started a stop, let alone reached the
-  // recovery panel this scenario would otherwise set up.
+  // `Control`'s activation guard swallows a click on a soft-disabled
+  // (`aria-disabled`) control the same way a native `disabled` button
+  // refuses one — this is the behavioural half `menu-row-state.test.ts`'s
+  // pure-function assertion cannot reach: the tap never even started a stop.
   expect(s.audio.stopRecording).not.toHaveBeenCalled();
   expect(document.body.textContent).not.toContain(strings.modepillEditing);
 });

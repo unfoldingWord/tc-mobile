@@ -2765,11 +2765,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // it was a THIRD control the sheet exemption newly exposed: reachable to
     // VoiceOver/switch scanning one step past Play, under the visual scrim,
     // while the menu's OWN Edit row is the correctly-scoped in-overlay
-    // affordance for the identical action. #857 makes `editReason` itself null
-    // while `hasTake`, closing that gap at the source (see the exemption's own
-    // bullet list, further down this component, for the current, now-redundant,
-    // state of this clause) — the `menuShown` OR below is kept rather than
-    // pulled.
+    // affordance for the identical action. #857 makes `editReason` itself
+    // NON-null while `hasTake`, closing that gap at the source (see the
+    // exemption's own bullet list, further down this component, for the
+    // current, now-redundant, state of this clause) — the `menuShown` OR
+    // below is kept rather than pulled.
     //
     // `editReason` alone must not gain a `menuShown` clause — that would split
     // the #135 gate the ≡ row and this control otherwise share verbatim.
@@ -2777,16 +2777,23 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const editToolbarDisabled = editReason !== null || menuShown;
     // Keep the blocked reason reachable to keyboard and switch users without
     // painting an alert badge for an empty segment or a starting microphone.
-    // The commit Notice already explains uncommitted-take; its menu-specific
-    // "Close menu" hint does not describe this toolbar. `barHint` is that rule,
-    // shared with the bin beside it (#592).
-    const editToolbarHint = barHint(editReason);
+    // The menu's own "Close menu" hint does not describe this toolbar (the bar
+    // is not in the menu), so `barHint` words `"uncommitted-take"` on its own
+    // terms here — `strings.stopToEdit`, naming the bar's own Stop control
+    // (#857 round 1, Frank P2) — rather than reusing `rowHint`'s menu-specific
+    // copy or, as before that round, saying nothing at all for this control.
+    const editToolbarHint = barHint(editReason, strings.stopToEdit);
     // The bar's bin (#592) wears the SAME gate as the ≡ menu's Erase rows —
     // `eraseReason`, one derivation — so the two entries to the one erase can
     // never disagree about when erasing is allowed. No `menuShown` clause, unlike
     // Edit above: the sheet body is reachable under the menu only during a take
     // (`inert={(overlayUp && !takeActive) || undefined}`), and a take is exactly
-    // when `eraseReason` already refuses.
+    // when `eraseReason` already refuses. No `uncommittedTakeLabel` passed to
+    // `barHint` here, unlike Edit above: the bin's own native-disabled,
+    // no-reason gap during a live take is real and structurally identical to
+    // Edit's (#857 round 1, Frank P2), but is pre-existing, unrelated to this
+    // PR's `hasTake` change, and no one has reviewed bar-appropriate erase
+    // copy — carried as a named residual rather than invented here.
     const rerecordHint = barHint(eraseReason);
 
     // A full-body panel owns the sheet body — the permission panel, the

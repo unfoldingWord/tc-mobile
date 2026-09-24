@@ -169,21 +169,39 @@ test.describe("edit mode toggle", () => {
         page.getByRole("button", { name: "Stop recording", exact: true })
       ).toBeVisible();
       await page.waitForTimeout(1200);
-      if (width === 390) {
-        // The two widths reach Edit from the two states a take can be in since
-        // #614. 320px enters edit mode from a LIVE take, which `commitTake`
-        // commits on the way in (#134). 390px ends the take first: the tap that
-        // used to be Pause now commits it in place, so the control comes back
-        // as Record and the toolbar Edit below opens over audio that is already
-        // on the waveform. Both must land the frame at the same slot, which is
-        // what this case is about.
-        await page
-          .getByRole("button", { name: "Stop recording", exact: true })
-          .click();
-        await expect(
-          page.getByRole("button", { name: "Record", exact: true })
-        ).toBeVisible();
-      }
+      // #857 (Moto G tester report): the toolbar Edit control stays inert
+      // while a take is live — asserted before Stop is tapped, at BOTH
+      // widths, since the toolbar's own layout could plausibly diverge on
+      // how it renders `aria-disabled` at a narrower breakpoint. While
+      // disabled the accessible name carries the block reason
+      // (`strings.stopToEdit`, round 1 of #857's review), so the plain,
+      // `exact: true` "Edit recording" match a few lines down only starts
+      // matching again once Stop lifts the gate.
+      const liveToggle = page
+        .locator(".recorder-toolbar")
+        .getByRole("button", { name: /^Edit recording/ });
+      await expect(liveToggle).toHaveAttribute("aria-disabled", "true");
+      await expect(liveToggle).toHaveJSProperty("disabled", false);
+      // Stop, then wait for the commit to land — the "Record" label
+      // reappearing is the aria-busy-clear signal here: `Control` never
+      // natively disables a `busy` control, so the toolbar Edit stays
+      // `aria-busy` and unreachable through the commit window itself, and
+      // "Record" replacing "Stop recording" is `recording`
+      // (`state === "recording"`) going false, which only happens once the
+      // commit settles. #857 removed the one-tap live-take entry #134 built
+      // — `commitTake("edit")` is no longer reachable from either toolbar
+      // control (`menu-row-state.ts`'s `editRowReason`) — so Stop-then-Edit
+      // is now the only path at EITHER width; the two widths still differ on
+      // layout/breakpoint, which the frame-slot assertions below are for.
+      // Inlined here rather than imported: PR #867 adds
+      // `e2e/recorder-fixtures.ts`'s `clickEditRecording` for exactly this
+      // wait, but #867 is unmerged as of this PR.
+      await page
+        .getByRole("button", { name: "Stop recording", exact: true })
+        .click();
+      await expect(
+        page.getByRole("button", { name: "Record", exact: true })
+      ).toBeVisible();
       const toggle = page
         .locator(".recorder-toolbar")
         .getByRole("button", { name: "Edit recording", exact: true });
