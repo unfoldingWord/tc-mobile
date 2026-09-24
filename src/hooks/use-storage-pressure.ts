@@ -17,8 +17,10 @@ import { reportFailure } from "./report-failure";
  * exactly the split `use-storage-persistence.ts` and `lib/storage/
  * persistence.ts` already use for `persist()`/`persisted()`. The call itself
  * is a plain async function over an injected source, so it is exercised in
- * Node against stubs; the React half below is the thin part, and is the part
- * no test in this repo reaches.
+ * Node against stubs; the React half below is the thin part. As of #843 item
+ * 2 one jsdom-mounted test reaches the effect itself (see
+ * `useStoragePressure`'s own docblock below for what it does and does not
+ * establish); it remains untouched on a real device.
  *
  * Read by the Books screen (`books-screen.tsx`, through
  * `storagePressureNotice`) — #247's wiring half, landed once #531's rewrite
@@ -300,10 +302,11 @@ export function bumpStoragePressure(): void {
  * (`books-screen.tsx:1124-1137`). **The consumer must not show this marker
  * while that slot is showing something** — `storagePressureNotice`
  * (`components/storage-pressure-notice.ts`) is where that gate now lives, as
- * an explicit `hasReclaimableAudio`/acute-trio (`loading`/`loadFailed`/
- * `deleteFailed`) parameter rather than as JSX prose in the screen (#542,
- * Frank P2-2 / George P3-5; the predicate itself was `hasContent` through
- * round 1 and is `hasReclaimableAudio` as of Part B) — a `ready` parameter on
+ * an explicit `hasReclaimableAudio`/`deleteFailed` parameter rather than as
+ * JSX prose in the screen (#542, Frank P2-2 / George P3-5; the predicate
+ * itself was `hasContent` through round 1 and is `hasReclaimableAudio` as of
+ * Part B; #843 item 4 dropped `loading` and `loadFailed`, which the screen
+ * never renders alongside reclaimable audio) — a `ready` parameter on
  * THIS hook was considered and left out: the ordering is the screen's
  * decision, the screen already holds those flags, and this file has just
  * finished removing one parameter that existed for a caller that does not
@@ -316,23 +319,34 @@ export function bumpStoragePressure(): void {
  * segment — Books unmounted the whole time — still sees no change until they
  * come back out. Open on #247.
  *
- * Not covered by any test in this repo: the effect and its cancellation
- * below. Nothing mounts this hook's effect graph (the same boundary
- * `useStoragePersistence`'s and `useEraseSegment`'s docblocks name), so they
- * are review and on-device surface. Every decision they make IS pinned in
- * Node: `storagePressure`, `storagePressureMarker`, `readStorageEstimate`,
- * `storageEstimateSourceOf`, and — new in Part A — `bumpStoragePressure`'s
- * own counter/listener contract (`tests/storage-pressure.test.ts`).
+ * **As of #843 item 2, this effect IS mounted by one test** —
+ * `tests/use-storage-pressure-mount.test.ts`, a jsdom `createRoot`/`act()`
+ * harness in the shape `tests/use-segment-editor-mount.test.ts` already uses
+ * for a different hook — which drives a real mount through a bump and pins
+ * that `estimate()` is asked again and the marker updates from the second
+ * answer. That test is what pins `generationValue` as load-bearing in the
+ * dependency array below. It does NOT independently exercise the `requestGeneration`
+ * guard's distinct reason for existing — inside `act()`, React flushes this
+ * effect's cleanup (which already sets `cancelled`) before that harness's
+ * next assertion runs, so that harness cannot tell `requestGeneration` apart
+ * from `cancelled` alone; the gap `requestGeneration` closes is a live-browser
+ * timing question between a synchronous listener notification and a React
+ * effect re-run, still review and on-device surface, not established by this
+ * or any test here. Every pure decision this effect calls into besides is
+ * pinned in Node: `storagePressure`, `storagePressureMarker`,
+ * `readStorageEstimate`, `storageEstimateSourceOf`, and
+ * `bumpStoragePressure`'s own counter/listener contract
+ * (`tests/storage-pressure.test.ts`).
  *
  * Read by `books-screen.tsx` (#247's wiring half), through
  * `storagePressureNotice`.
  */
 export function useStoragePressure(): StoragePressureMarker | null {
   const [band, setBand] = useState<StoragePressure>("unknown");
-  // Reactive purely to force the effect below to re-run on a bump — nothing
-  // reads this value directly. `useSyncExternalStore`, not a ref, so a bump
-  // that lands while this instance is mounted schedules the re-render
-  // `useEffect`'s dependency array needs to see a new value at all.
+  // `useSyncExternalStore`, not a ref, so a bump that lands while this
+  // instance is mounted schedules the re-render `useEffect`'s dependency
+  // array needs to see a new value at all. The effect below both depends on
+  // this value AND reads it (#843 item 2) — see that effect's own comment.
   const generationValue = useSyncExternalStore(
     subscribeToGeneration,
     getGeneration,
@@ -340,28 +354,45 @@ export function useStoragePressure(): StoragePressureMarker | null {
   );
 
   useEffect(() => {
+    // The generation this run is answering for, read now rather than left as
+    // a dependency nothing in the body touches (#843 item 2). Two rounds of
+    // review named the shape that used to be here a risk precisely because it
+    // wasn't a risk yet: `generationValue` sat in the dependency array only to
+    // force a re-run, with nothing reading its value, so a "this dependency is
+    // unused" cleanup — by a person or an eslint auto-fix — could delete the
+    // array entry and nothing in this file would object; before #843 nothing
+    // in the test suite mounted this effect, so nothing would have caught it
+    // either. Reading the
+    // value here, not just depending on it, is the fix: it is now an ordinary
+    // used variable, and `tests/use-storage-pressure-mount.test.ts` mounts the
+    // hook for real and asserts the re-read that depending on it produces.
+    const requestGeneration = generationValue;
     let cancelled = false;
     // `readStorageEstimate` never rejects, so there is no dropped rejection
     // here and no second channel to catch one in.
     void readStorageEstimate(storageEstimateSourceOf(globalThis)).then(
       (reading) => {
-        // A read that outlives its mount (or outlives a fresher bump's own
-        // re-run of this same effect) has nothing left to tell: with no
-        // cross-mount cache, the only thing this could still do is set stale
-        // state. (This guard carried more weight when there was a module
-        // cache behind it — Frank R1 P2-1 — and that reason is gone with the
-        // cache. It stays as the plain cleanup it always also was, and now
-        // also covers one mount's own superseded re-run.)
+        // Two staleness guards, not one, because they close two different
+        // gaps. `cancelled` catches this run's OWN cleanup — unmount, or
+        // React re-running this effect once a newer `generationValue` has
+        // actually been rendered. `requestGeneration` catches what
+        // `cancelled` cannot: `bumpStoragePressure` notifies its listeners
+        // SYNCHRONOUSLY (see that function below), before React has
+        // re-rendered and re-run this effect, so a response that resolves
+        // inside that window would otherwise still be applied even though a
+        // fresher generation — the reason for the bump — is already known.
+        // Comparing against the CURRENT generation, not just this run's own
+        // captured one, closes that window; with no cross-mount cache, the
+        // only thing applying a superseded reading could do is paint a band
+        // that the write which triggered the bump has already made stale.
         if (cancelled) return;
+        if (getGeneration() !== requestGeneration) return;
         setBand(storagePressure(reading?.usage, reading?.quota));
       }
     );
     return () => {
       cancelled = true;
     };
-    // `generationValue` is not read inside this effect; it is a dependency
-    // ONLY so that a bump — which changes it — makes this effect re-run and
-    // ask `estimate()` again without waiting for a remount (#542 Part A).
   }, [generationValue]);
 
   return storagePressureMarker(band);

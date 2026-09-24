@@ -162,10 +162,31 @@ describe("the Books screen's link in the chain (#604)", () => {
     expect(guidedStep(books({ books: [book(1, [chapter(1, 3)])] }))).toBeNull();
   });
 
-  it("stops entirely once there is more than one book", () => {
-    // The chain is first run → first recording. A second book is a person who
-    // has already done this once.
-    expect(guidedStep(books({ books: [book(1), book(2)] }))).toBeNull();
+  it("#834: the newest book's Add chapter still guides even with other books on the shelf", () => {
+    // Tim's decision (#834): "once a book is added, the blue ring goes around
+    // that book's + for adding a chapter" — whether or not other books
+    // already exist. `listBooks` sorts newest-first (`use-books.ts`), so the
+    // just-created book is always `books[0]`.
+    expect(guidedStep(books({ books: [book(1), book(2)] }))).toEqual({
+      kind: "add-chapter",
+      bookId: bookId(1),
+    });
+  });
+
+  it("stops the terminal chain (not Add chapter) once there is more than one book", () => {
+    // The chain beyond Add chapter — expand/open the book once it already has
+    // a chapter — is unaffected by #834's decision: a second book is a person
+    // who has already done this once, so that part of the walkthrough still
+    // does not run for them.
+    expect(
+      guidedStep(books({ books: [book(1, [chapter(1)]), book(2)] }))
+    ).toBeNull();
+  });
+
+  it("suppresses even the newest book's Add chapter while naming a further book", () => {
+    // The New Book dialog for a FURTHER book sits on top of the shelf, so that
+    // dialog — not the newest book's Add chapter — is what is in front of the
+    // user; #834 does not touch this case.
     expect(
       guidedStep(books({ books: [book(1), book(2)], naming: true }))
     ).toBeNull();
