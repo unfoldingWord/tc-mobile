@@ -71,7 +71,7 @@
 
 @layer components {
   :root {
-    /* Relationship levels — parts, items, blocks, sections. If a gap cannot be
+    /* Relationship levels — parts, items, blocks. If a gap cannot be
        named at one of these levels, the structure is not decided yet. */
     --c-gap-parts: var(--p-space-2);
     --c-gap-items: var(--p-space-4);
@@ -804,7 +804,7 @@
        viewport and does not inherit the body's `env(safe-area-inset-*)` padding.
        Without re-adding the top inset here the header (Back, ≡) lands under the
        status-bar clock and cannot be tapped; the bottom inset clears the home
-       indicator. Verified on iOS Simulator 2026-09-11 (Back unreachable). */
+       indicator. */
     padding: calc(var(--p-space-4) + env(safe-area-inset-top)) var(--p-space-3)
       calc(var(--p-space-4) + env(safe-area-inset-bottom));
     /* Suppress selection on recorder chrome (#556); keep this scoped to the
@@ -1047,9 +1047,12 @@
     gap: var(--c-gap-items);
     padding-bottom: var(--p-space-3);
   }
-  /* The toggle keeps its right-hand slot and vertical centre across modes. */
+  /* The toggle keeps its right-hand slot and vertical centre across modes. The
+     bin (#592) takes a matching control-width slot at the LEFT end, so Record
+     and Play keep the two shared middle columns and the toggle's column is
+     still the last `--c-control-md` of the bar, as in the edit spread. */
   .recorder-toolbar.pair {
-    grid-template-columns: 1fr 1fr var(--c-control-md);
+    grid-template-columns: var(--c-control-md) 1fr 1fr var(--c-control-md);
     gap: var(--c-gap-parts);
     height: calc(var(--c-control-xl) + var(--p-space-3));
   }

@@ -620,8 +620,27 @@ export function useBooks() {
       } catch (cause) {
         // Stale if an unrelated delete already removed this exact book and
         // already reported its own outcome — see `reportUnlessStale`. Same
-        // swallow-patches-and-reloads rule as `addChapter` above.
-        const { swallowed } = await reportUnlessStale(cause, bookId, report);
+        // swallow-patches-and-reloads rule as `addChapter` above — including
+        // the non-swallowed `else` (#732, mirroring #728's `addChapter` fix
+        // for #666): a genuinely reported failure still needs to invalidate a
+        // load already in flight, or that load's success path
+        // (`setFailure((prev) => (prev?.fromDelete ? prev : null))` in the
+        // load effect above) can resolve afterward and silently clear the
+        // Notice this failure just set. Bumping the generation — not calling
+        // `reload()`, which would also trigger a needless extra read of a
+        // book that has not changed — marks that load stale so its
+        // resolution is a no-op. The bump rides INSIDE the report callback,
+        // in the same synchronous step as the Notice: bumping after the
+        // `await` left a microtask window in which an already-resolved load
+        // continuation still read the old generation (Frank, #733 round 1).
+        const { swallowed } = await reportUnlessStale(
+          cause,
+          bookId,
+          (reported) => {
+            loadGen.current += 1;
+            report(reported);
+          }
+        );
         if (swallowed) {
           setBooks((prev) => dropBookCard(prev, bookId));
           reload();

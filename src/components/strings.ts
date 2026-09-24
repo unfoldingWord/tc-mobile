@@ -8,6 +8,7 @@
  * where it would otherwise be edited in a dozen places. This is a table, not a
  * provider: parameterised labels are small pure functions, nothing more.
  */
+import { plural } from "@/lib/plural";
 import { filenameSafe } from "@/lib/utils";
 
 /**
@@ -56,9 +57,10 @@ export const strings = {
   loadingBooks: "Loading your books.",
   tryAgain: "Try again",
   bookRow: (name: string, chapters: number, expanded: boolean): string =>
-    `${name}, ${chapters} ${chapters === 1 ? "chapter" : "chapters"}, ${
-      expanded ? "expanded" : "collapsed"
-    }`,
+    `${name}, ${plural(chapters, {
+      one: "{n} chapter",
+      other: "{n} chapters",
+    })}, ${expanded ? "expanded" : "collapsed"}`,
   addChapter: (bookName: string): string => `Add chapter to ${bookName}`,
   openChapter: (heading: string): string => `Open ${heading}`,
   chapterName: (n: number): string => `Chapter ${n}`,
@@ -396,6 +398,10 @@ export const strings = {
   vuMeterLabel: "Recording level",
   vuMeterUnavailable: "Level meter unavailable on this device",
   eraseSegment: "Erase recording",
+  // The record bar's bin (#592): the same erase and the same confirm as the
+  // menu row above, named for what the translator is doing — starting the
+  // segment over — because the sheet stays open, ready for the next take.
+  rerecord: "Erase and record again",
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
   eraseConfirmTitle: "Erase this recording?",
   eraseConfirm: "Erase",
@@ -465,7 +471,9 @@ export const strings = {
   // resolve — never-recorded, but also a dangling take or a half-missing clip —
   // so "no recording yet" would misdescribe a hole the translator never left.
   shareMissing: (n: number): string =>
-    couldNotBeIncluded(n === 1 ? "1 segment" : `${n} segments`),
+    couldNotBeIncluded(
+      plural(n, { one: "{n} segment", other: "{n} segments" })
+    ),
   // The book name is free text since #264, so sanitise it into the filename —
   // a `/` in "Mark/Luke" would otherwise split a zip entry into a folder (G3).
   // The chapter is an ordinal, always safe.
@@ -486,7 +494,9 @@ export const strings = {
   // `missing` counts whole chapters left out of the zip — a chapter with no
   // resolvable audio at all.
   shareBookMissing: (n: number): string =>
-    couldNotBeIncluded(n === 1 ? "1 chapter" : `${n} chapters`),
+    couldNotBeIncluded(
+      plural(n, { one: "{n} chapter", other: "{n} chapters" })
+    ),
   // A chapter that IS included can still be partial — one or more of its own
   // segments had no resolvable audio (`exportChapterMp3`'s own `missing`,
   // rolled up across every included chapter, #116). Distinct from
@@ -521,7 +531,19 @@ export const strings = {
   //
   // One missing segment is always exactly one chapter, so the
   // `segments === 1` case can safely name that chapter's scope without
-  // misstating a count. George round 2 caught that the first attempt at that
+  // misstating a count.
+  //
+  // That is why this branch is NOT `plural`'s `one` form, although every other
+  // count-varying string in this table now is (#169). CLDR's `one` category is
+  // not "exactly 1" — Russian selects it for 21, 31, 101 — so moving this
+  // clause into a forms table would let a second locale assert "an included
+  // chapter", singular, about twenty-one segments spread across an unknown
+  // number of them, which is the #400/#423 bug in a new place. The branch here
+  // is a claim about the count being exactly one, not an agreement with it; a
+  // locale that needs `few`/`many` inside the else branch should add the table
+  // there and leave this exactly-one branch as a branch.
+  //
+  // George round 2 caught that the first attempt at that
   // clause ("...was left out of a chapter that shipped") used maintainer
   // vocabulary that collides with two unchanged contracts: "shipped" reads as
   // past-tense send while the share menu is only `ready` (Share now — `hooks/
@@ -531,36 +553,29 @@ export const strings = {
   // choice). The fix keeps the chapter-scope disambiguation but uses the
   // table's own verb, "could not be included".
   //
-  // `segments > 1` cannot name a chapter's scope — `partialSegments` sums
-  // across an unknown number of shipped chapters, and this string does not
-  // track how many of them are distinct, so naming "a chapter" or
-  // pluralizing "chapters" off it would reintroduce the #400/#423 bug. George
-  // round 2 caught that falling back to `shareBookPartial` verbatim just
-  // re-concatenates two identically-shaped "could not be included" sentences
-  // — the exact ambiguity the n===1 clause exists to prevent. "additional"
-  // blocks that double-count reading.
-  //
-  // George round 3 then caught that "additional" alone still drops the
-  // producer invariant: `partialSegments` only ever comes from chapters that
-  // DID make it into the zip (`book.ts:105-107,130-148`), and the n===1
-  // clause says so ("of an included chapter") while the n>1 clause did not.
-  // Concrete failure: one chapter partial (two never-recorded segments,
-  // still ships) plus a second chapter never recorded at all — `missing ===
-  // 1`, `partialSegments === 2` (`tests/book-export.test.ts:238-254` pins
-  // the partial-chapter half of that shape). "2 additional segments could
-  // not be included" does not say those two segments sit in a chapter that
-  // shipped, so a translator could read both facts as about the one omitted
-  // chapter and never look at the one that actually has holes. "of included
-  // audio" is the uncounted locator: it names the scope `book.ts` guarantees
-  // without pluralizing "chapter" off `n`, which would reintroduce #400/#423.
-  shareBookMissingAndPartial: (chapters: number, segments: number): string =>
-    `${strings.shareBookMissing(chapters)} ${
-      segments === 1
-        ? couldNotBeIncluded("1 segment of an included chapter")
-        : couldNotBeIncluded(
-            `${segments} additional segments of included audio`
-          )
-    }`,
+  // `segments > 1` names the chapter scope from `partialChapters` — how many
+  // DISTINCT included chapters hold those segments, counted by the producer
+  // (`exportBookZip`, #446) — never from `segments`. `segments` is a SUM, so
+  // pluralizing or counting "chapter" off it is the #400/#423 bug: one
+  // chapter with two gaps and two chapters with one gap each both reach
+  // here as `segments === 2`. With the producer's count in hand, one chapter
+  // reads "of an included chapter" (the n===1 clause's own locator) and
+  // several read "of N included chapters", so a facilitator helping a
+  // translator knows how many chapters to go back to. "included" keeps the
+  // locator George #423 round 3 required: the segments sit in chapters that
+  // are in the zip, not in the one(s) the first sentence says were not.
+  shareBookMissingAndPartial: (
+    chapters: number,
+    segments: number,
+    partialChapters: number
+  ): string =>
+    `${strings.shareBookMissing(chapters)} ${couldNotBeIncluded(
+      `${segments === 1 ? "1 segment" : `${segments} segments`} of ${
+        partialChapters > 1
+          ? `${partialChapters} included chapters`
+          : "an included chapter"
+      }`
+    )}`,
   // The encoder went silent mid-share and was restarted (#166). Chapter and book
   // alike: the cause is the phone, not what was being shared. Try again is still
   // the first thing to do — the encoder was restarted — and the restart hint is
@@ -663,11 +678,20 @@ export const strings = {
   // a facilitator sending something to a maintainer, and the noun has to name
   // the thing they are sending, not the file format it happens to be.
   failuresMarker: (n: number): string =>
-    n === 1 ? "1 problem recorded" : `${n} problems recorded`,
+    plural(n, {
+      one: "{n} problem recorded",
+      other: "{n} problems recorded",
+    }),
   // Replaces the plain "Open menu" name while the log is non-empty, so the one
   // control that leads to the report announces that it does.
+  //
+  // Reads `failuresMarker` rather than spelling the phrase out again (#169).
+  // The two used to be byte-identical, so a later edit to one would have left
+  // the panel and the control it opens saying different things about the same
+  // number — and a count phrase is now a plural TABLE, which is a worse thing
+  // to keep two copies of than a sentence was.
   menuOpenWithFailures: (n: number): string =>
-    `Open menu. ${n === 1 ? "1 problem recorded" : `${n} problems recorded`}.`,
+    `Open menu. ${strings.failuresMarker(n)}.`,
   // Said in the menu, above the two actions. Deliberately not "the app
   // crashed": most entries are a single failed write the translator never saw,
   // and alarming a person about work that is still on the phone is its own harm.

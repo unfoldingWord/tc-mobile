@@ -17,23 +17,14 @@ import type { SegmentId } from "@/types/domain";
 import type { SegmentRow } from "@/types/view";
 
 /**
- * #650: `tests/audio-session.test.ts` covers only the pure arbiter in
- * `lib/audio/session.ts`; what it names as uncoverable there — the hook's OWN
- * use of the arbiter's answer, in `playTake`'s `onEnded` guard and its
- * `settle` branch around `playbackHandleRef` — is coverable now that a jsdom
- * mount exists in this repo (`tests/render.ts`, #197; several suites already
- * mount real components with `act`). This mounts the real `useAudioSession`
+ * #650: mounts the real `useAudioSession` with `createRoot` and `act` in
+ * jsdom to exercise `playTake`'s use of the arbiter's answer, including its
+ * `onEnded` guard and `settle` branch around `playbackHandleRef`. The pure
+ * arbiter is covered separately by `tests/audio-session.test.ts`. This runs the
  * hook over a mocked `./audio-io`, `./use-recorder` and
  * `@/lib/storage/segment-audio`, and drives the exact race #650 names: tap
  * segment A, tap segment B before A's `playSamples` has resolved, then
  * resolve A.
- *
- * Both assertions below are red-first BY MUTATION, per AGENTS.md ("where the
- * code already exists, get the same signal by mutation"): the guard already
- * exists in `use-audio-session.ts`, so there is no broken state to write this
- * test against. Verified manually, not captured in this file (AGENTS.md bars
- * a run's output from living in a comment) — see the PR body's mutation
- * table for the observed pass/fail pairs.
  */
 
 const mocks = vi.hoisted(() => ({
@@ -50,9 +41,8 @@ vi.mock("@/hooks/audio-io", () => ({
 // A STABLE object, not a fresh one per call: `useAudioSession`'s `leave`
 // depends on `recorder.cancel`'s identity (among others), and `leave`'s own
 // unmount-cleanup effect re-fires whenever `leave` changes identity. A mock
-// that hands back a new `vi.fn()` every render made every render's commit
-// look like an unmount, which called `leave()` and reset `playingId` to
-// `null` before this test ever read it.
+// that hands back a new `vi.fn()` every render would rerun that cleanup,
+// calling `leave()` and resetting `playingId` to `null`.
 const recorderMock = {
   start: vi.fn(),
   stop: vi.fn(),

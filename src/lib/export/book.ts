@@ -49,6 +49,15 @@ interface BookExport {
    * book grain at all.
    */
   readonly partialSegments: number;
+  /**
+   * How many DISTINCT included chapters hold those `partialSegments` — the
+   * chapters whose own `exportChapterMp3` `missing` was above zero (#446).
+   * `partialSegments` alone cannot say this: one chapter with two gaps and two
+   * chapters with one gap each both sum to 2, so copy built from the sum alone
+   * could not name the chapter count. Always `0` when `partialSegments` is `0`,
+   * and never more than it.
+   */
+  readonly partialChapters: number;
 }
 
 /**
@@ -106,6 +115,8 @@ export async function exportBookZip(
   // above. Chapters left out entirely contribute to `missing`, not here; a
   // chapter counts toward at most one of the two.
   let partialSegments = 0;
+  // How many of those included chapters had any gap at all (#446).
+  let partialChapters = 0;
 
   // The streaming archive. `ondata` fires synchronously from `push`/`end` for a
   // pass-through entry (nothing here is deferred to a worker), so by the time
@@ -146,11 +157,18 @@ export async function exportBookZip(
     entry.push(result.mp3, true);
     if (zipError) throw zipError;
     partialSegments += result.missing;
+    if (result.missing > 0) partialChapters++;
     written++;
   }
   if (written === 0) return null;
 
   zip.end();
   if (zipError) throw zipError;
-  return { chunks, chapters: written, missing, partialSegments };
+  return {
+    chunks,
+    chapters: written,
+    missing,
+    partialSegments,
+    partialChapters,
+  };
 }
