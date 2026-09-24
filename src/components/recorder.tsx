@@ -2667,9 +2667,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // where the terms first become available: an object literal reading
     // `editor` above the memoized callbacks makes React Compiler treat the
     // value as one that may be mutated later and skip their memoization
-    // outright, which `npm run lint` reports as six
-    // `react-hooks/preserve-manual-memoization` errors in callbacks this change
-    // never touched.
+    // outright, which surfaces as `react-hooks/preserve-manual-memoization`
+    // errors in callbacks this change never touched.
     const undoBlocked = undoReason({
       dragging,
       idleEditable,

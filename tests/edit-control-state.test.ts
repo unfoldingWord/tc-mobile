@@ -83,10 +83,10 @@ describe("the history gates are the shipped gates (#317, #91)", () => {
   //
   // It is also the ordering #317 rests on. A reason that carries a cue makes
   // `Control` render `aria-disabled` INSTEAD of the native `disabled`
-  // attribute, so swapping these lines takes the drag lock off the hard route
-  // — verified by rendering that cell under the swap. Activation stays blocked
-  // either way by `Control`'s `onClick` guard, so what is lost is the hard
-  // lock and its absence from the tab order, not click-safety.
+  // attribute, so swapping these lines takes the drag lock off the hard
+  // route; `tests/control-render.test.ts` pins that cell. Activation stays
+  // blocked either way by `Control`'s `onClick` guard, so what is lost is the
+  // hard lock and its absence from the tab order, not click-safety.
   it("a finger on the stage outranks an EMPTY history — the #317 ordering", () => {
     expect(
       undoReason({ dragging: true, idleEditable: true, canUndo: false })

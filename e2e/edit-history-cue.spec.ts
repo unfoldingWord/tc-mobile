@@ -145,7 +145,6 @@ test.describe("edit-toolbar history cue (#91)", () => {
     // version of this check unfalsifiable: a badge overflowing far enough moves
     // its own `left` PAST the control it is painting over, so the "next"
     // control resolves to the one after that and the gap comes back positive.
-    // It passed a mutation that shoved the badge 30px into its neighbour.
     const badgeGaps = await toolbar.evaluate((tb) => {
       const controls = [...tb.querySelectorAll("button")].map((b) =>
         b.getBoundingClientRect()
