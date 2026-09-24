@@ -25,10 +25,12 @@ import type { SegmentId } from "@/types/domain";
  * `useEraseSegment` is thin React glue (guard state, error state) over
  * `performErase`, which is the whole of the operation minus React. This file
  * does not mount the hook, so its `erasing` flag and double-tap guard (both
- * `useRef`/`useState`) are not exercised HERE. The mounted jsdom suites cover
- * them through the real `Recorder`: `tests/recorder-rerecord.test.ts` (the
- * busy control, and close blocked during an erase) and
- * `tests/recorder-erase-back.test.ts` (the synchronous guard). This file covers
+ * `useRef`/`useState`) are not exercised HERE. The mounted jsdom suites reach
+ * part of that through the real `Recorder`: `tests/recorder-rerecord.test.ts`
+ * (the busy control, and close blocked during an erase) and
+ * `tests/recorder-erase-back.test.ts` (the `isErasing()` close guard). No test
+ * calls `erase()` again while the first call is pending, so the double-tap
+ * guard itself is not exercised anywhere. This file covers
  * `performErase`: the call it makes to the real store, the outcome that
  * leaves, the success/failure result it returns. That is what these cover,
  * against fake-indexeddb through the real store helpers.

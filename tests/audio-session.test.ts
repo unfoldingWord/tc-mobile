@@ -10,8 +10,9 @@ import { createAudioSession, type Stoppable } from "@/lib/audio/session";
  * What is NOT covered here: everything the hook does with the result. Some
  * of that is reachable in Node. `tests/use-audio-session-supersession.test.ts`
  * (#650) mounts the real `useAudioSession` in jsdom with `audio-io`,
- * `use-recorder` and `segment-audio` mocked, and the `recorder-*.test.ts`
- * suites render the real `Recorder` the same way (#549). What stays
+ * `use-recorder` and `segment-audio` mocked, and several jsdom suites render
+ * the real `Recorder` the same way (`tests/recorder-stop-commits.test.ts` is
+ * one) (#549). What stays
  * device-only is real capture and playback, because jsdom implements neither
  * MediaRecorder nor AudioContext; `docs/progress_tracker.md` is the run
  * record. These tests model races a device pass is unlikely to hit by chance:
