@@ -82,12 +82,22 @@ describe("Zoom's disabled gate covers the leftover-preview close window (#396)",
   it("carries !idleEditable alongside the stage's inert term", () => {
     // RED-FIRST kill: on develop's pre-fix head this expression was
     // `stage.windowControlsInert` alone — no `idleEditable` term at all —
-    // so the close window above stood enabled. Both terms must be present,
-    // and joined so EITHER disables. The stage's half arrives as the
-    // `windowControlsInert` PROP since the toolbar split; the next case is
-    // what keeps that prop wired to the real thing.
-    expect(zoomDisabledExpr).toMatch(/windowControlsInert/);
-    expect(zoomDisabledExpr).toMatch(/!\s*idleEditable/);
+    // so the close window above stood enabled. The stage's half arrives as
+    // the `windowControlsInert` PROP since the toolbar split; the next case
+    // is what keeps that prop wired to the real thing.
+    //
+    // The EXACT string, not two loose matches (George R4). `/windowControls
+    // Inert/` also matches `!windowControlsInert`, so inverting the stage
+    // term — zoom ENABLED precisely during the committing window, which is
+    // #396's defect — passed this case. Proven by mutation.
+    //
+    // It is `toBe` on the WHOLE expression, not `toContain`: a containment
+    // check on the same string is still a substring match, so prepending `!`
+    // slips through it too. That was measured, not assumed — the first repair
+    // here used `toContain` and the negation mutant stayed green.
+    expect(zoomDisabledExpr.trim()).toBe(
+      "windowControlsInert || !idleEditable"
+    );
   });
 
   it("is fed the STAGE's inert flag, not something else named like it", () => {
