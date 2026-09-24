@@ -109,9 +109,10 @@ describe("RecorderMenu", () => {
     // ordinal null, `finishedState` "finished" — painted the row GREEN under a
     // "Mark finished" label numbered 0, which is a row contradicting itself.
     //
-    // The parent never sends this pair (the `ordinal` prop's docblock says a
-    // null ordinal arrives with "disabled"), so this is defensive: it pins that
-    // the component stays self-consistent without relying on its caller. That
+    // The parent never sends this pair — a null ordinal means the view has not
+    // loaded, and the `ordinal` prop's docblock traces why that always arrives
+    // greyed. So this is defensive: it pins that the component stays
+    // self-consistent without relying on its caller. That
     // is the whole reason the two expressions were collapsed into one, and
     // without this case reverting the collapse passes (George R1).
     show({ ordinal: null, finishedState: "finished" });
@@ -199,24 +200,24 @@ describe("RecorderMenu", () => {
     // `import.meta.url` is not a file: URL under this file's jsdom
     // environment, so resolve from `import.meta.dirname` — the same way
     // `tests/guided-ring.test.ts` reaches the tree.
+    // Strip comments from the WHOLE FILE before locating the element, not
+    // from the slice afterwards. This is the THIRD hole on this pin: (1) the
+    // slice ran to end of file, (2) a comment INSIDE the slice satisfied the
+    // regex, and (3) a block comment OPENING before `<RecorderMenu` leaves no
+    // `/*` inside the slice, so a slice-level strip cannot see it — `indexOf`
+    // then finds the decoy and the live handler is never read. Same read-then-
+    // strip-then-search order `tests/menu-hamburger-header.test.ts` uses.
     const sheet = readFileSync(
       path.resolve(import.meta.dirname, "..", "src/components/recorder.tsx"),
       "utf8"
-    );
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
     const open = sheet.indexOf("<RecorderMenu");
     const end = sheet.indexOf("/>", open);
     expect(open, "no <RecorderMenu in the sheet").toBeGreaterThan(-1);
     expect(end, "unterminated <RecorderMenu").toBeGreaterThan(open);
-    // Strip comments before matching. A commented-out "safe" lambda ahead of
-    // the real `onErase` otherwise satisfies the regex below while the live
-    // handler goes unchecked — proven by mutation, and this is the SECOND
-    // comment hole on this pin (the first was at end of file). Same strip
-    // `tests/menu-hamburger-header.test.ts` uses. This is the row that can
-    // destroy a recording, so the pin may not be satisfiable by prose.
-    const tag = sheet
-      .slice(open, end)
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^\s*\/\/.*$/gm, "");
+    const tag = sheet.slice(open, end);
 
     const lambda = /onErase=\{\(\)\s*=>\s*\{([^}]*)\}/.exec(tag)?.[1] ?? "";
     expect(lambda, "no onErase lambda on <RecorderMenu>").not.toBe("");

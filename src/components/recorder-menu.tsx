@@ -77,9 +77,9 @@ export function RecorderMenu({
   // paint. They were two expressions that disagreed: the label also required a
   // non-null ordinal, the class did not. A null ordinal with `finishedState`
   // "finished" therefore painted the row green under a "Mark finished" label
-  // numbered 0. The parent never sends that pair — the `ordinal` prop's
-  // docblock says so — but a component should not depend on its caller being
-  // right to stay self-consistent (George R1).
+  // numbered 0. The parent never sends that pair — see the `ordinal` prop's
+  // docblock — but a component should not depend on its caller being right to
+  // stay self-consistent (George R1).
   const marked = ordinal !== null && finishedState === "finished";
 
   return (
