@@ -169,10 +169,9 @@ function withoutComments(source: string, fileName = "source.ts"): string {
 // but say nothing about whether the helper itself is sound.
 describe("withoutComments (#789 — AST-aware, not regex-based)", () => {
   it("does not let a string's literal /* hide a later real code line up to a real comment's close", () => {
-    // Observed red on the pre-#789 regex helper: this found 0 matches
-    // instead of 1 — the glob string's `/*` opened a "comment" that the
-    // regex closed at the real `/* ... */` below, swallowing the GATE line
-    // between them.
+    // The pre-#789 regex helper treated the glob string's `/*` as opening a
+    // comment, which it closed at the real `/* ... */` below — swallowing
+    // the GATE line between them (#793).
     const source = [
       'const glob = "assets/*.css";',
       'const GATE = resolveDistGate(true, "dist/sw.js");',
@@ -185,9 +184,9 @@ describe("withoutComments (#789 — AST-aware, not regex-based)", () => {
   });
 
   it("still catches a forbidden call placed between a string's /* and a later real comment's close", () => {
-    // Observed red on the pre-#789 regex helper: `distGateDecision(` was
-    // swallowed along with the fake "comment" span, so a regression
-    // reintroducing it there would have passed `not.toMatch` silently.
+    // The pre-#789 regex helper swallowed `distGateDecision(` along with
+    // the fake "comment" span, so a regression reintroducing it there
+    // would pass `not.toMatch` silently (#793).
     const source = [
       'const glob = "assets/*.css";',
       "const bad = distGateDecision(true, true);",
