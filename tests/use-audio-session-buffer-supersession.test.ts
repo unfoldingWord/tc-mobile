@@ -1,28 +1,28 @@
 // @vitest-environment jsdom
-import {
-  act,
-  createElement,
-  createRef,
-  forwardRef,
-  useImperativeHandle,
-} from "react";
-import { createRoot, type Root } from "react-dom/client";
+import { act } from "react";
+import type { Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import {
-  useAudioSession,
-  type UseAudioSession,
-} from "@/hooks/use-audio-session";
-import type { SegmentId } from "@/types/domain";
-import type { SegmentRow } from "@/types/view";
+  deferredHandle,
+  flush,
+  makeRecorderMock,
+  mountContainer,
+  renderHarness,
+  resolvedClip,
+  row,
+  stubHandle,
+  unmountContainer,
+  type RecorderMockShape,
+} from "./use-audio-session-harness";
 
 /**
  * #650 named this hole in both copies of the playback tail; #735 closed it
  * for `playTake` (`tests/use-audio-session-supersession.test.ts`) and its own
  * docblock named `playBuffer`'s copy as the sibling left open — filed here as
- * #736. This is that coverage, for `playBuffer`'s `onEnded` guard
- * (`src/hooks/use-audio-session.ts:433`) and its `settle`/`playbackHandleRef`
- * assignment (`:449-451`).
+ * #736. This is that coverage, for `playBuffer`'s `onEnded` guard and its
+ * `settle`/`playbackHandleRef` assignment, both now in the shared
+ * `startPlayback` in `src/hooks/use-audio-session.ts`.
  *
  * `playBuffer` treats a SECOND tap while `playingBufferRef.current` is true as
  * a stop, not a new claim (there is only one working buffer) — so this test
@@ -35,6 +35,9 @@ import type { SegmentRow } from "@/types/view";
  * has been reset by the take's `claimFloor` — to give a THIRD claim something
  * live and observable (`playingBuffer === true`) for the first buffer's stale
  * `onEnded` to corrupt if the guard were missing.
+ *
+ * The mount harness itself is now the shared one from
+ * `./use-audio-session-harness` (#816).
  */
 
 const mocks = vi.hoisted(() => ({
@@ -48,26 +51,7 @@ vi.mock("@/hooks/audio-io", () => ({
   decodeMp3ToCanonical: vi.fn(),
 }));
 
-// A STABLE object, not a fresh one per call — see #735's identical note:
-// `useAudioSession`'s `leave` depends on `recorder.cancel`'s identity (among
-// others), and `leave`'s own unmount-cleanup effect re-fires whenever `leave`
-// changes identity. A mock that hands back a new `vi.fn()` every render
-// would rerun that cleanup.
-const recorderMock = {
-  start: vi.fn(),
-  stop: vi.fn(),
-  retryDecode: vi.fn(),
-  cancel: vi.fn(),
-  state: "idle",
-  error: null,
-  elapsedMs: 0,
-  supported: true,
-  readLevel: () => 0,
-  readMeterAvailable: () => true,
-  readScope: () => null,
-  peekScope: () => null,
-  meterFailed: false,
-};
+const recorderMock: RecorderMockShape = makeRecorderMock();
 vi.mock("@/hooks/use-recorder", () => ({
   useRecorder: () => recorderMock,
 }));
@@ -77,53 +61,6 @@ vi.mock("@/lib/storage/segment-audio", () => ({
   danglingReason: vi.fn().mockReturnValue(null),
 }));
 
-function row(id: string): SegmentRow {
-  return {
-    segmentId: id as SegmentId,
-    ordinal: 1,
-    label: null,
-    hasClip: true,
-    finished: false,
-    clipId: null,
-    peaks: null,
-    durationMs: null,
-  };
-}
-
-/** A resolved clip minimal enough to drive `playTake`'s pcm branch. */
-function resolvedClip(samples: Int16Array) {
-  return {
-    kind: "resolved",
-    segment: {},
-    take: {},
-    clip: { encoding: "pcm", meta: {}, samples },
-  };
-}
-
-function stubHandle(elapsedSeconds: number) {
-  return { stop: vi.fn(), elapsed: () => elapsedSeconds, duration: 10 };
-}
-
-/** A `playSamples` call this test settles from outside, on its own schedule. */
-function deferredHandle() {
-  let resolve!: (handle: ReturnType<typeof stubHandle>) => void;
-  const promise = new Promise<ReturnType<typeof stubHandle>>((res) => {
-    resolve = res;
-  });
-  return { promise, resolve };
-}
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 5; i++) await Promise.resolve();
-}
-
-// A ref, not a reassigned module-level binding — see #735's identical note.
-const Harness = forwardRef<UseAudioSession>((_props, ref) => {
-  const api = useAudioSession();
-  useImperativeHandle(ref, () => api, [api]);
-  return null;
-});
-
 let root: Root;
 let container: HTMLDivElement;
 
@@ -131,14 +68,11 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.playSamples.mockReset();
   mocks.loadSegmentClip.mockReset();
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
+  ({ root, container } = mountContainer());
 });
 
 afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
+  await unmountContainer(root, container);
   vi.unstubAllGlobals();
 });
 
@@ -151,22 +85,15 @@ it("does not adopt a superseded playBuffer handle, and its stale onEnded leaves 
   const bufferA = new Int16Array([1, 2]);
   const bufferC = new Int16Array([5, 6]);
 
-  const a = deferredHandle();
-  const x = deferredHandle();
-  const c = deferredHandle();
+  const a = deferredHandle<ReturnType<typeof stubHandle>>();
+  const x = deferredHandle<ReturnType<typeof stubHandle>>();
+  const c = deferredHandle<ReturnType<typeof stubHandle>>();
   mocks.playSamples
     .mockImplementationOnce(() => a.promise)
     .mockImplementationOnce(() => x.promise)
     .mockImplementationOnce(() => c.promise);
 
-  const ref = createRef<UseAudioSession>();
-  await act(async () => {
-    root.render(createElement(Harness, { ref }));
-  });
-  const api = () => {
-    if (!ref.current) throw new Error("Harness did not mount useAudioSession");
-    return ref.current;
-  };
+  const api = await renderHarness(root);
 
   const onEndedA = vi.fn();
 
