@@ -48,22 +48,20 @@ import type { SegmentRow } from "@/types/view";
  * exactly the import whose mocked target (`@/hooks/audio-io`) a hoisted
  * `vi.mock("@/hooks/audio-io", ...)` factory is registered against.
  *
- * A first attempt here tried to build that factory's return value by calling
- * an EXPORTED FUNCTION from this same module — `() => audioIoMock(mocks)` —
- * and it failed with `ReferenceError: Cannot access '__vi_import_1__' before
- * initialization`, observed by running the three converted suites (the PR
- * body has the output). The cause: the factory is invoked the moment
- * `@/hooks/audio-io` is first resolved, which happens WHILE this very module
- * is still mid-load (nested inside the `use-audio-session` import above) —
- * before the test file's own binding for this module's exports is live. A
- * plain top-level statement AFTER the import (`const recorderMock =
- * makeRecorderMock();`) does not hit this: it only runs once the whole
- * import has settled. Nor does a value merely CAPTURED in a closure and read
- * later (`() => ({ useRecorder: () => recorderMock })` — `recorderMock` is
- * not dereferenced until `useRecorder()` is actually called, at render time,
- * long after module load finishes). What breaks is calling an imported
- * function that lives on the same import chain the mock is standing in for,
- * DURING the factory's own synchronous execution.
+ * The requirement this harness holds to: a `vi.mock` factory must not
+ * synchronously dereference an export from the same import chain it is
+ * standing in for. The factory is invoked the moment `@/hooks/audio-io` is
+ * first resolved, which happens WHILE this very module is still mid-load
+ * (nested inside the `use-audio-session` import above) — before the test
+ * file's own binding for this module's exports is live. A plain top-level
+ * statement AFTER the import (`const recorderMock = makeRecorderMock();`)
+ * does not hit this: it only runs once the whole import has settled. Nor
+ * does a value merely CAPTURED in a closure and read later (`() => ({
+ * useRecorder: () => recorderMock })` — `recorderMock` is not dereferenced
+ * until `useRecorder()` is actually called, at render time, long after
+ * module load finishes). What breaks is calling an imported function that
+ * lives on the same import chain the mock is standing in for, DURING the
+ * factory's own synchronous execution (#832).
  *
  * So: each converted file keeps its own `vi.hoisted(...)` mocks object and
  * its own three literal `vi.mock("@/hooks/audio-io", () => ({...}))` /
