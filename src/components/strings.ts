@@ -26,6 +26,33 @@ function couldNotBeIncluded(subject: string): string {
   return `${subject} could not be included.`;
 }
 
+/**
+ * The trail at the top of a screen: where you are, outermost first.
+ *
+ * The separator is stated here and nowhere else. It used to be stated twice —
+ * once as an HTML entity inside the Segments header's JSX and once as a
+ * character in the recorder's own entry — which is two chances to answer one
+ * question, and the markup copy was a visible string living outside this table
+ * at all (#169).
+ *
+ * Joining parts is the ONE composition this table does, and what makes it
+ * allowed under #169 is that the parts are not translated fragments of a
+ * sentence: each is a whole name (a book, a chapter heading) or a number. A
+ * sentence assembled from clauses is what #169 rules out, and it stays ruled
+ * out — `shareBookMissingAndPartial` writes each of its arms as a whole
+ * sentence for exactly that reason.
+ *
+ * NOTHING HERE HANDLES RIGHT-TO-LEFT, and an earlier draft of this docblock
+ * implied otherwise (George, #698). `>` is not a mirrored glyph, no locale in
+ * this repo reads right-to-left yet, and no test asserts a direction — so a
+ * separator hard-coded here is a fact about the shipped English UI, not a
+ * property that survives translation. Whoever lands `strings[locale]` owns
+ * that question; this function is not evidence it is answered.
+ */
+function trail(...parts: readonly string[]): string {
+  return parts.join(" > ");
+}
+
 export const strings = {
   // ── Books screen (B2) ────────────────────────────────────────────────────
   newBook: "New book",
@@ -66,11 +93,26 @@ export const strings = {
   chapterName: (n: number): string => `Chapter ${n}`,
   /**
    * The chapter's display heading: the facilitator's passage label when set
-   * (#264), otherwise the default "Chapter {number}". One place both the Books
-   * row and the Segments breadcrumb resolve the name, so they never diverge.
+   * (#264), otherwise the default chapter name. One place both the Books row
+   * and the Segments breadcrumb resolve the name, so they never diverge.
+   *
+   * It CALLS `chapterName` rather than spelling the default a second time, for
+   * the reason `shareBookPartial` and `menuOpenWithFailures` both give below:
+   * the two were byte-for-byte copies, and a copy edit to one leaves the other
+   * saying the old thing. No call of either can tell a copy from an alias —
+   * they agree until the day they are meant to differ — so
+   * `tests/breadcrumb.test.ts` counts the spellings in this file instead
+   * (#169).
    */
   chapterHeading: (name: string | null, n: number): string =>
-    name ?? `Chapter ${n}`,
+    name ?? strings.chapterName(n),
+  /**
+   * The Segments screen's header trail: which book, which chapter. Takes the
+   * resolved heading rather than a name-or-number pair, so the one place that
+   * decides what an unnamed chapter is called stays `chapterHeading`.
+   */
+  chapterBreadcrumb: (book: string, chapter: string): string =>
+    trail(book, chapter),
 
   // ── Naming (#264 rename, #314 New Book, #609 Add chapter) ────────────────
   // One naming field serves all three flows, so these strings are shared: the
@@ -185,16 +227,31 @@ export const strings = {
   useLightTheme: "Switch to the light screen, for bright sunlight",
   useDarkTheme: "Switch to the dark screen, for low light",
   closeRecorder: "Close recorder",
+  /**
+   * The recorder sheet's header trail — the Segments one with the segment
+   * appended, built from the same `trail`, so the order and the separator are
+   * not decided a second time one screen deeper.
+   *
+   * It takes the chapter's resolved HEADING, not its number. Taking the number
+   * meant this trail spelled the default name itself, so a chapter the
+   * facilitator had renamed (#264) showed the label on the Segments screen and
+   * the default one tap deeper — on the surface a translator spends the whole
+   * session inside. Resolving the heading is the caller's job because only the
+   * caller knows whether a name was stored (#169).
+   *
+   * The segment part goes through `segmentHeading` for the same reason, from
+   * the other side of this merge (#591): each part of the trail is resolved by
+   * the one entry that owns it, and this function decides only the order and
+   * the separator. Neither a chapter's name nor a segment's label is spelled
+   * out here.
+   */
   recorderBreadcrumb: (
     book: string,
-    chapter: number,
+    chapter: string,
     segment: number,
     segmentLabel: string | null
   ): string =>
-    `${book} > ${strings.chapterName(chapter)} > ${strings.segmentHeading(
-      segment,
-      segmentLabel
-    )}`,
+    trail(book, chapter, strings.segmentHeading(segment, segmentLabel)),
   record: "Record",
   // The second tap on the record control ENDS the take and commits it in place
   // (#614). It was "Pause"/"Resume" while a take could be suspended and

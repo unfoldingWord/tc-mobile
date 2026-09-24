@@ -3121,7 +3121,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               {view
                 ? strings.recorderBreadcrumb(
                     view.bookName,
-                    view.chapterNumber,
+                    // Resolved here, the same way the Segments header resolves
+                    // it, so a renamed chapter (#264) reads the same on both
+                    // screens. Passing the number let this trail spell the
+                    // default name itself and ignore the label (#169). The
+                    // segment's own label rides alongside and is resolved by
+                    // `segmentHeading` inside the entry (#591).
+                    strings.chapterHeading(
+                      view.chapterName,
+                      view.chapterNumber
+                    ),
                     view.ordinal,
                     view.segmentLabel
                   )
