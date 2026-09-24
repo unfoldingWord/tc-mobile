@@ -161,66 +161,55 @@ describe("displayGain", () => {
     }
   });
 
-  it("suppresses the fit for exactly one of the four recorder states", () => {
-    // The whole of the split, in both states of both inputs. The row that
-    // earned this table is the last one: a punch-in HAS A TAKE ACTIVE, and
-    // gating on that alone un-fits the committed clip the translator is
-    // aiming at (George R2 P2).
-    const table: ReadonlyArray<[boolean, boolean, boolean]> = [
-      // takeActive, hasCommittedAudio, suppress the fit
-      [false, false, false], // idle, never recorded — the dotted rule
-      [false, true, false], // idle with a take — fitted, the #358 fix
-      [true, false, true], // FIRST take in flight — absolute, like the scope
-      [true, true, false], // punch-in over committed audio — stays fitted
+  it("computes takeActive from state and isClosing exactly as recorder.tsx does (#757)", () => {
+    // The whole of the split, over state x isClosing x hasCommittedAudio. The
+    // row that earned this table is the punch-in row: a punch-in HAS A TAKE
+    // ACTIVE, and gating on that alone un-fits the committed clip the
+    // translator is aiming at (George R2 P2). The `["idle", true, false]` row
+    // is #373's exact drift moment: `state` has already flipped to idle for
+    // the stop→decode→save wait, but the take is still in flight.
+    type State = "idle" | "requesting" | "recording" | "processing";
+    const table: ReadonlyArray<[State, boolean, boolean, boolean]> = [
+      // state, isClosing, hasCommittedAudio, suppress the fit
+      ["idle", false, false, false], // idle, never recorded — the dotted rule
+      ["idle", false, true, false], // idle with a take — fitted, the #358 fix
+      ["recording", false, false, true], // FIRST take recording — absolute
+      ["requesting", false, false, true], // FIRST take requesting the mic
+      ["processing", false, false, true], // FIRST take's #59 frozen tail
+      ["idle", true, false, true], // FIRST take's isClosing wait — #373
+      ["recording", false, true, false], // punch-in recording over committed audio
+      ["idle", true, true, false], // punch-in's own close wait — stays fitted
     ];
-    for (const [takeActive, hasCommittedAudio, expected] of table) {
+    for (const [state, isClosing, hasCommittedAudio, expected] of table) {
       expect([
-        takeActive,
+        state,
+        isClosing,
         hasCommittedAudio,
-        isFirstTakeInFlight(takeActive, hasCommittedAudio),
-      ]).toEqual([takeActive, hasCommittedAudio, expected]);
+        isFirstTakeInFlight({ state, isClosing, hasCommittedAudio }),
+      ]).toEqual([state, isClosing, hasCommittedAudio, expected]);
     }
   });
 
-  it("gives the wrong answer for the #366 R3 #2 moment if the caller passes capturing-shaped input instead of takeActive's own definition (#373)", () => {
-    // #373: `isFirstTakeInFlight`'s first parameter used to be named
-    // `capturing`, which invites a caller to pass a bare recording/capture
-    // predicate. The exact moment that breaks: Back is tapped on a
-    // first-take preview. `stop()` has already flipped `state` to "idle", but
-    // `isClosing` is still true for the stop→decode→save wait — the preview
-    // stays on stage throughout.
+  it("makes a caller that drops isClosing fail to type-check (#757, successor to #373/#738)", () => {
+    // #373/#738: the function used to take one boolean the CALLER derived
+    // (`capturing`/`takeActive`). Frank's #738 round-1 mutation replaced
+    // recorder.tsx's `takeActive` argument with `state === "recording"` and
+    // all display-gain tests still passed, because both shapes are just
+    // `boolean` to the type checker — nothing forced the caller to pass the
+    // WHOLE take-in-flight window rather than a narrower predicate.
     //
-    // This pins the function's contract for that moment. It does NOT guard
-    // the caller: both inputs are built here, and nothing observes what
-    // recorder.tsx passes, so a caller that drops `isClosing` still passes
-    // this suite. Making that a type error is #757.
-    //
-    // Premise check against the tree at this head: `RecorderState` is now
-    // `"idle" | "requesting" | "recording" | "processing"` (`use-recorder.ts`)
-    // — there is no separate `paused` state to OR in, so the #366-era
-    // `recording || paused` collapses to `recording` alone. The shape of the
-    // bug is unchanged: a state-only predicate that drops `isClosing`.
-    type RecorderState = "idle" | "requesting" | "recording" | "processing";
-    // Widened via the cast, not narrowed to the literal "idle": `state` here
-    // stands in for a runtime value, and a literal-typed const would make the
-    // `state === "recording"` comparison below a compile error rather than
-    // the always-false runtime check it must be to model the bug.
-    const state = "idle" as RecorderState;
-    const isClosing = true;
-    const hasCommittedAudio = false; // first take — nothing committed yet
-
-    // recorder.tsx's own definition of the parameter this function requires:
-    // `const takeActive = state !== "idle" || isClosing;`
-    const takeActive = state !== "idle" || isClosing;
-    expect(isFirstTakeInFlight(takeActive, hasCommittedAudio)).toBe(true);
-
-    // The capturing-shaped value the old parameter name invited — a bare
-    // capture predicate that drops isClosing — gives the OPPOSITE, wrong
-    // answer for the identical moment: the fit would wrongly re-engage
-    // mid-close and a quiet mic would look healthy for one frame, #358's own
-    // complaint reintroduced.
-    const capturingShaped = state === "recording";
-    expect(isFirstTakeInFlight(capturingShaped, hasCommittedAudio)).toBe(false);
+    // Taking `state` and `isClosing` as their own required properties removes
+    // that degree of freedom: there is no longer a single argument a caller
+    // can substitute a narrower expression for. Dropping `isClosing` is now a
+    // TYPE ERROR, not a runtime value the function silently accepts.
+    // `npm run typecheck` fails if the `@ts-expect-error` below stops being
+    // needed — that is the guarantee this test pins, not its own pass/fail.
+    // @ts-expect-error — isClosing is a required property.
+    const result = isFirstTakeInFlight({
+      state: "recording",
+      hasCommittedAudio: false,
+    });
+    expect(typeof result).toBe("boolean");
   });
 
   it("keeps committed audio fitted while a punch-in records over it", () => {

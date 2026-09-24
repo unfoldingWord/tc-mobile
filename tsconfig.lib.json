@@ -33,6 +33,24 @@
    * Deliberately not a project reference: tsconfig.app.json already includes
    * these files, and overlapping composite inputs buy complexity for nothing
    * here. It is a separate `npm run typecheck:lib` in verify and in CI.
+   *
+   * `include` covers both the .ts and .tsx extensions under each directory
+   * (#159 L-6): listing only the .ts glob let a .tsx file anywhere under
+   * src/lib or src/types skip this gate entirely — a real
+   * `tsc -p tsconfig.lib.json --listFilesOnly` run on develop confirmed such
+   * a file is invisible to the command `npm run typecheck:lib` runs (pasted
+   * in the #159 PR body), so `window` in one compiled clean where the
+   * identical .ts file does not. No .tsx file exists under either directory
+   * today (a `find` for that extension is empty), so this widens the glob
+   * rather than narrows a working set. Deliberately not a single brace-
+   * expansion glob per directory: JSON's `include` matcher accepts the
+   * pattern here as one string per extension, and a stray "star-slash" two
+   * characters apart inside this very comment block is exactly the kind of
+   * thing that silently truncates a JSONC comment, so the four extensions
+   * are spelled out as four plain strings instead of packed together. No
+   * `jsx` compiler option is added: lib/ and types/ have no reason to
+   * contain JSX, so actual JSX syntax in a .tsx file here should keep
+   * failing to compile, not be accommodated.
    */
   "compilerOptions": {
     "target": "ES2022",
@@ -48,5 +66,10 @@
     "baseUrl": ".",
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src/lib/**/*.ts", "src/types/**/*.ts"]
+  "include": [
+    "src/lib/**/*.ts",
+    "src/lib/**/*.tsx",
+    "src/types/**/*.ts",
+    "src/types/**/*.tsx"
+  ]
 }

@@ -395,7 +395,7 @@ describe("shareOverlayOwnsScreen (George r1 P2 #1/#2, #491)", () => {
   });
 });
 
-/** Source-shape reads, because there is no renderer here (#197). */
+/** Source-shape checks of wiring; these do not run hook effects or gestures. */
 const read = (rel: string) =>
   readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
 

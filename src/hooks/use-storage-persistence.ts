@@ -160,9 +160,9 @@ let resolvedAnswer: boolean | undefined = undefined;
  * repository can determine, and no run has recorded it — #12 stays open on
  * that. This code asks and reports; it does not know what the answer will be.
  *
- * Not covered by any test in this repo: everything below this line. There is no
- * jsdom or renderer here, so the effect and its gating are review and on-device
- * surface, exactly as `useEraseSegment`'s guard is. What IS pinned is
+ * Not covered by any test in this repo: everything below this line. Nothing
+ * mounts this hook's effect graph, so the effect and its gating are review and
+ * on-device surface, exactly as `useEraseSegment`'s guard is. What IS pinned is
  * `ensurePersistedStorage` and `storageMarker`.
  */
 export function useStoragePersistence(
