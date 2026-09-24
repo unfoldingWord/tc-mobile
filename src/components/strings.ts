@@ -849,4 +849,15 @@ export const strings = {
   // so the one condition a translator can act on reads the same everywhere a
   // write can hit it, not only on the take-save recovery screen.
   noRoom: "No room left on this phone.",
+
+  // ── Record-bar Edit, blocked by a live take (#857 round 1, Frank P2) ─────
+  // `barHint`'s own words for the `"uncommitted-take"` reason (`menu-row-
+  // state.ts`) — distinct from `blockedByTake`, which sends a translator to
+  // "Close menu", then "Close recorder": neither exists on the bar, and the
+  // bar's own Stop, beside the toolbar Edit control, is the way out. Names
+  // that control by its real accessible name while recording (`strings.stop`,
+  // "Stop recording"), the same rule `blockedByTake` follows for the menu.
+  // The wording itself is a coordinator assumption pending the requirements
+  // owner's sign-off — see the #857 PR body.
+  stopToEdit: "Stop recording to edit.",
 } as const;
