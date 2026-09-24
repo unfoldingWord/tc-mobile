@@ -749,6 +749,36 @@ export const strings = {
   storageNotPersisted:
     "This phone may delete what you record here if space runs low. Share your work when you can.",
 
+  // ── Storage pressure (#247) ──────────────────────────────────────────────
+  // State-in-place on the Books screen, alongside `storageNotPersisted`:
+  // `navigator.storage.estimate()` says this ORIGIN is running low, which is a
+  // different risk from durability above — the browser has not evicted
+  // anything, the device is simply filling up. No byte count or percentage in
+  // either line: the estimate is coarse and per-origin
+  // (`lib/storage/pressure.ts`), so a number here would be a precision the
+  // reading does not support.
+  //
+  // **DRI decision (Seth, 2026-09-24), replacing the original wording.** The
+  // original copy said "here" rather than naming the phone, and "when you
+  // can" / "now" for urgency — deliberately, to avoid overclaiming a
+  // per-device condition from a per-origin reading (Frank P2-1 / George
+  // P2-1, #542; `pressure.ts`'s docblock still explains that risk: the OS can
+  // hand this origin a comfortable quota while the disk is nearly full, or
+  // the reverse). The DRI judged that hedge too vague to act on: it does not
+  // say what device is at risk or what happens if nothing is done. The new
+  // copy names the phone and, for the critical band, states the concrete
+  // consequence — new recordings may not save — which is also why
+  // `storageCritical` now renders in the `alert` tone rather than `info`
+  // (`storage-pressure-notice.ts`). Both lines still name the pair
+  // `pressure.ts`'s docblock names — mark segments Finished (ADR 0009's
+  // transcode reclaims ~90%) or share the work and then remove it — not bare
+  // "share", which does not reclaim anything on its own: `lib/export/
+  // chapter.ts` decodes and re-encodes without deleting a single stored clip.
+  storageLow:
+    "This phone is running low on space. Mark the segments you're done with as finished — they take much less room.",
+  storageCritical:
+    "This phone is almost out of space, and new recordings may not save. Mark finished segments, or share your work and then remove it.",
+
   // ── The database is unreachable (#221) ───────────────────────────────────
   // Two full-screen states, one in each copy of the app, when a newer copy
   // upgrades the database. The mark on the panel carries the meaning; these

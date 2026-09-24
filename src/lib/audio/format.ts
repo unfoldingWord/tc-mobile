@@ -15,7 +15,18 @@
 export const CANONICAL_SAMPLE_RATE = 44_100;
 export const CANONICAL_CHANNELS = 1;
 
-/** Frames required by the canonical renderer, with a one-frame minimum. */
+/**
+ * Frames required by the canonical renderer, with a one-frame minimum.
+ *
+ * The multiply-then-divide by `sourceSampleRate` looks redundant, but it is
+ * not the same arithmetic as `duration * CANONICAL_SAMPLE_RATE`:
+ * `(d * R * s) / s` rounds twice and `d * R` rounds once, so for a
+ * `sourceSampleRate` that is not an integer (the type and the Web Audio spec
+ * both allow one) the two can land on opposite sides of an integer and the
+ * ceiling differs by a frame. `tests/canonical-frame-count.test.ts` pins this
+ * form's output ("preserves the existing floating-point ceiling"), so it is
+ * kept rather than simplified (#163 A-15).
+ */
 export function canonicalFrameCount(
   duration: number,
   sourceSampleRate: number

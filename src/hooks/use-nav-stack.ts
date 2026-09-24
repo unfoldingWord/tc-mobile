@@ -6,6 +6,7 @@ import {
   deferWrite,
   historyWriteDecision,
   outstandingConsume,
+  recorderExitTraversal,
   replayDecision,
   replayQueue,
   type DeferredWrite,
@@ -89,14 +90,17 @@ import { reportFailure } from "./report-failure";
  *     `beginBack("commit-close")` is REFUSED because a `goBack` is still
  *     outstanding — there it absorbs that outstanding `goBack`'s own landing
  *     rather than issue a second traversal (see the popstate handler's
- *     commit-close case). `commitCloseRecorder`'s own raw `history.back()` is a
- *     THIRD raw issuer OUTSIDE `TravelGuardState`, suppressed rather than
- *     arbitrated; it is never fed to `beginBack`.
+ *     commit-close case). `commitCloseRecorder`'s programmatic close is
+ *     arbitrated too since #763: `recorderExitTraversal` decides whether it
+ *     issues its `history.back()` (through `beginBack("commit-close")`),
+ *     absorbs a Back already in flight, defers to one, or has nothing to
+ *     consume.
  *   - `deferredWrites` — the history writes (`enterScreen`, the floor arm)
- *     requested while one of the Backs above had not yet landed (#435). No
- *     write is issued under a pending traversal; `lib/nav/history-latch.ts`
- *     decides whether it is written, deferred to the landing, or refused, and
- *     every landing replays what was deferred.
+ *     requested while one of the Backs above had not yet landed (#435), plus
+ *     the programmatic close's deferred consume (#763). No write is issued
+ *     under a pending traversal; `lib/nav/history-latch.ts` decides whether it
+ *     is written, deferred to the landing, or refused, and every landing
+ *     replays what was deferred.
  *
  * Amendment C is a centrally-owned cleanup effect (dep array `[screen,
  * recovering, databasePanel]`, primitives only — invariant 6) that clears the
@@ -514,7 +518,10 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     []
   );
   const performWrite = useCallback(
-    (write: DeferredWrite, decision: HistoryWriteDecision) => {
+    (
+      write: Exclude<DeferredWrite, "consume-recorder">,
+      decision: HistoryWriteDecision
+    ) => {
       if (decision === "defer") {
         deferredWrites.current = deferWrite(deferredWrites.current, write);
         return;
@@ -525,6 +532,44 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     },
     [enterScreen, armFloor]
   );
+  // The programmatic recorder close's history tail (#763). Its screen has
+  // already closed, so its entry must go — but never by a second
+  // `history.back()` while another is in flight. `recorderExitTraversal` has
+  // the four rows; this only performs the one it names. Replayed from the
+  // queue too, where it re-decides against the state at that landing.
+  const consumeRecorderEntry = useCallback(() => {
+    switch (
+      recorderExitTraversal(
+        suppressPop.current,
+        travelGuard.current,
+        deferredWrites.current
+      )
+    ) {
+      case "unqueue":
+        deferredWrites.current = deferredWrites.current.filter(
+          (write) => write !== "enter-recorder"
+        );
+        return;
+      case "absorb":
+        suppressPop.current = true;
+        return;
+      case "defer":
+        deferredWrites.current = deferWrite(
+          deferredWrites.current,
+          "consume-recorder"
+        );
+        return;
+      case "issue":
+        // Both guard flags are clear on this row, so `beginBack` proceeds.
+        travelGuard.current = beginBack(
+          travelGuard.current,
+          "commit-close"
+        ).next;
+        suppressPop.current = true;
+        window.history.back();
+        return;
+    }
+  }, []);
   // Called at the end of every landing. Each write is re-decided, never
   // refused (`replayDecision`), so one whose landing issued another Back of
   // its own waits for that one as well.
@@ -551,21 +596,25 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   const replayDeferredWrites = useCallback(() => {
     const queued = deferredWrites.current;
     deferredWrites.current = [];
-    const outcome = replayQueue(queued, (write) =>
+    const outcome = replayQueue(queued, (write) => {
+      if (write === "consume-recorder") {
+        consumeRecorderEntry();
+        return;
+      }
       performWrite(
         write,
         replayDecision(
           outstandingConsume(suppressPop.current, travelGuard.current)
         )
-      )
-    );
+      );
+    });
     if (outcome.ok) return;
     deferredWrites.current = outcome.pending.reduce(
       deferWrite,
       deferredWrites.current
     );
     throw outcome.cause;
-  }, [performWrite]);
+  }, [performWrite, consumeRecorderEntry]);
 
   // Amendment B (reload/bootstrap safety) — declared BEFORE the popstate effect
   // so it runs first on mount. Instead of `develop`'s unconditional
@@ -619,9 +668,10 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     // (a back() already outstanding) do NOTHING — no history.back(), no push.
     //
     // A SUPPRESSED traversal is outstanding too, and `beginBack` cannot see
-    // it: the raw issuers outside the guard (`commitCloseRecorder`,
-    // `trap-forward`'s cancel) set `suppressPop` and call `history.back()`
-    // themselves, and the header Back is disabled for exactly that window
+    // all of them: `trap-forward`'s cancel sets `suppressPop` and calls
+    // `history.back()` outside the guard (the programmatic recorder close
+    // also sets the guard since #763, so `beginBack` alone would refuse
+    // that one), and the header Back is disabled for exactly that window
     // (`recorder.tsx`) so it could never land here. The hardware Back (#374)
     // can — the plugin posts it from the Android UI thread, not behind the
     // pending `popstate` task — and a second `history.back()` before the
@@ -634,21 +684,20 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     window.history.back();
   }, []);
 
-  const commitCloseRecorder = useCallback((dirty: boolean) => {
-    // The recorder's own `onExit` — a PROGRAMMATIC close (erase), with no
-    // popstate involved. The state half runs, then the history tail: a
-    // popstate-driven close is `transitionInFlight` (the browser already popped
-    // and the handler re-armed, so leave history alone); a programmatic close
-    // still has its entry on the stack, so consume it, suppressing the popstate
-    // that back() fires. This raw back() is the THIRD issuer OUTSIDE the travel
-    // guard — suppressPop-guarded, never fed to beginBack (travel-guard.ts, the
-    // THIRD raw issuer paragraph).
-    onRecorderClosedRef.current(dirty);
-    if (!transitionInFlight.current) {
-      suppressPop.current = true;
-      window.history.back();
-    }
-  }, []);
+  const commitCloseRecorder = useCallback(
+    (dirty: boolean) => {
+      // The recorder's own `onExit`. The state half runs, then the history
+      // tail: a popstate-driven close is `transitionInFlight` (the browser
+      // already popped and the handler re-armed, and the commit-close settle
+      // consumes that entry), so leave history alone; a PROGRAMMATIC close (a
+      // failed save, erase's exits) still has its entry to account for, and
+      // `consumeRecorderEntry` does that through the latch and the travel
+      // guard (#763).
+      onRecorderClosedRef.current(dirty);
+      if (!transitionInFlight.current) consumeRecorderEntry();
+    },
+    [consumeRecorderEntry]
+  );
 
   const openChapter = useCallback(
     (id: ChapterId) => {

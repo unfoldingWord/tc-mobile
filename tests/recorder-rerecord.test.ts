@@ -22,8 +22,10 @@ import type { SegmentId } from "@/types/domain";
  * training observation (#249), not this file.
  */
 const storage = vi.hoisted(() => ({ clear: vi.fn() }));
-vi.mock("@/lib/storage/books", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/storage/books")>()),
+// `@/lib/storage/takes`, not `books`: `clearSegmentTake` moved out of the
+// repository in #160 L-16, and a mock left on the old path intercepts nothing.
+vi.mock("@/lib/storage/takes", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/storage/takes")>()),
   clearSegmentTake: storage.clear,
 }));
 

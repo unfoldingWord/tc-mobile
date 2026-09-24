@@ -9,7 +9,7 @@ import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { performClearEditedSegment } from "@/hooks/use-save-take";
 import type { SegmentEditor } from "@/hooks/use-segment-editor";
-import { setSegmentFinished } from "@/lib/storage/books";
+import { setSegmentFinished } from "@/lib/storage/takes";
 import type { SegmentId } from "@/types/domain";
 
 /**

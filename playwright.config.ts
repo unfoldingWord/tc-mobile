@@ -110,9 +110,10 @@ export default defineConfig({
       // suite and this is the only automated place they run — same reasoning
       // `failure-log.spec.ts` documents. The commit path itself running is the
       // device item the spec header names, not something this project
-      // observes.
+      // observes. `recorder-programmatic-close.spec.ts` (#763) is the same
+      // adapter with a synthetic microphone, which its own `test.use` sets.
       name: "chromium-back-navigation",
-      testMatch: /back-navigation\.spec\.ts$/,
+      testMatch: /(back-navigation|recorder-programmatic-close)\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
     },
     {

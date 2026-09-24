@@ -198,7 +198,7 @@ book, its saved recordings are gone too. The save screen then offers confirmed
 Discard instead of Try saving again: it cannot save into the deleted book or
 restore it. The problem report contains no audio.
 A screen offering Restart instead of Try saving again cannot retry the save;
-restarting abandons the work held in memory. <!-- source: src/components/save-failed.tsx (discard, stale and downgrade paths); src/lib/storage/books.ts (deleteBook, saveTake) -->
+restarting abandons the work held in memory. <!-- source: src/components/save-failed.tsx (discard, stale and downgrade paths); src/lib/storage/books.ts (deleteBook); src/lib/storage/takes.ts (saveTake) -->
 
 ### The flip side of "nothing leaves the phone"
 

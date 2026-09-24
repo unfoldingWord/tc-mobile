@@ -38,6 +38,7 @@ import {
   captureLocksPan,
   panGesture,
   recordDisabled,
+  redoCollapsesFrame,
   stageView,
 } from "./recorder-stage";
 import { SelectionOverlay } from "./selection-overlay";
@@ -62,7 +63,7 @@ import {
   resolveProvesDelivery,
   selectShareRoute,
 } from "@/hooks/share-target";
-import type { UseAudioSession } from "@/hooks/use-audio-session";
+import type { RecorderAudio } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
@@ -101,7 +102,7 @@ const ZOOM_QUARTER = 4;
 interface RecorderProps {
   segmentId: SegmentId;
   /** The single audio owner, held by App so `leave()` fires on every nav. */
-  audio: UseAudioSession;
+  audio: RecorderAudio;
   /**
    * Persist the recording as an insert/append into the segment's audio, at the
    * given Finished state. Never rejects — a failure becomes the recovery screen
@@ -319,7 +320,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * Lift the #613 collapse: the next render may seed a frame again.
      *
      * Called from every route that leaves the translator wanting one — a
-     * paste, an undo, a redo, leaving edit mode, and the lift of a stage drag
+     * paste, an undo, leaving edit mode, and the lift of a stage drag
      * (the waveform came to rest somewhere new, which is where the next span
      * is picked). It is NOT called from the cut itself, and there is no timer:
      * the collapsed state is the resting state after a cut, not a flash.
@@ -1746,8 +1747,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (redoneOp !== null) {
         setPanState((p) => panAfterRedo(p, redoneOp, length));
       }
-      reopenFrame();
-    }, [editor, stopPlaybackDroppingPan, length, reopenFrame]);
+      // A redone cut collapses to the line like a live one; a redone paste
+      // reopens the frame (#722).
+      setCutCollapsed(redoCollapsesFrame(redoneOp));
+    }, [editor, stopPlaybackDroppingPan, length]);
 
     const onCut = useCallback(() => {
       stopPlayback();

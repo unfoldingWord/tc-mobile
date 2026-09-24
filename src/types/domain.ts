@@ -115,7 +115,7 @@ export interface Segment {
    * The one take behind this segment, or `null` ⇒ never recorded.
    *
    * 1:1 per D1/A2 — there is no take history. Re-recording REPLACES the take
-   * (see `addTake` in `storage/books.ts`). A stacked `takeIds[]` was the
+   * (see `addTake` in `storage/takes.ts`). A stacked `takeIds[]` was the
    * pre-pivot model A2 removed; it leaks unreachable PCM (#2/D3).
    */
   readonly activeTakeId: TakeId | null;
@@ -125,7 +125,7 @@ export interface Segment {
 /**
  * Progress of a segment, using the vocabulary Shema Studio already ships
  * (docs/research/prior-art.md §1). The 5-value enum STAYS for Phase 2; the
- * pivot UI is binary over it (`isFinished` in `storage/books.ts`): only
+ * pivot UI is binary over it (`isFinished` in `storage/takes.ts`): only
  * "affirmed" reads as finished, and the toggle writes "affirmed"/"draft".
  */
 export type RecordingStatus =

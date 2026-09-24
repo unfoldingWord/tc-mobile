@@ -18,7 +18,7 @@
  * ordering and gap are asserted directly on samples, without decoding an MP3.
  */
 
-import { silence } from "@/lib/audio/edit";
+import { fitToFrames, silence } from "@/lib/audio/edit";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { resolveChapterClipIds } from "@/lib/storage/books";
@@ -132,10 +132,24 @@ export async function gatherChapterPcm(
       // neither may land in the chapter or push the next segment off its slot.
       fitted = fitMp3Decode(decoded, clip.mp3, frames);
     }
-    if (fitted.length === 0) {
+    // `frames` is what pass 1 reserved this clip's slot from, read via
+    // `getClipMeta` in a transaction separate from the `getClip` above.
+    // `fitMp3Decode` always returns exactly `frames` (via `fitToFrames`), so
+    // this only ever has work to do for a PCM clip's stored samples, used
+    // as-is — nothing stops the two reads from disagreeing about a clip's
+    // length. A clip that overran its slot is still counted missing: an
+    // unguarded `out.set` below would throw (S-10, #163), and there is no
+    // slot to safely fit it into. An empty buffer has no audio to recover
+    // either way. A clip that fell SHORT of its slot is fitted up to
+    // `frames` with `fitToFrames` — the same fit the MP3 path already runs
+    // its decode through inside `fitMp3Decode` — so its audio is exported
+    // and only the unused tail of the slot is left silent (DRI decision,
+    // #163, PR #812), rather than dropping the clip's audio entirely.
+    if (fitted.length === 0 || fitted.length > frames) {
       missingAudio++;
       continue;
     }
+    if (fitted.length < frames) fitted = fitToFrames(fitted, frames);
     if (segments > 0) {
       out.set(gap, written);
       written += gap.length;
