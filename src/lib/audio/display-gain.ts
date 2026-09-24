@@ -79,10 +79,10 @@ export const MAX_DISPLAY_GAIN = 20;
  * The subset of `RecorderState` (`hooks/use-recorder.ts`) this function needs.
  *
  * Redeclared, not imported: `lib/` cannot import `hooks/` (the onion rule,
- * `eslint.config.mjs`), and TypeScript's structural typing makes the real
- * `RecorderState` assignable here without a cast, so the two stay in sync by
- * construction rather than by convention. There is no separate paused state
- * to add — `RecorderState` at this head is exactly these four.
+ * `eslint.config.mjs`). The two types are declared independently. The caller
+ * passes the real `RecorderState`, which is assignable here structurally, so
+ * widening `RecorderState` with a member this union lacks stops that call site
+ * type-checking until this type and the function below are updated.
  */
 type RecorderTakeState = "idle" | "requesting" | "recording" | "processing";
 
