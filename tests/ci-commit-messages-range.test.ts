@@ -1,4 +1,12 @@
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -114,6 +122,16 @@ describe("commit-messages CI gate judges only the PR's own commits (#865 follow-
  * branching) is exactly the case `origin/develop..$HEAD_SHA` is supposed to
  * keep catching, so the conditional must apply `origin/develop`, never
  * unconditionally skip the check for a staging/main base.
+ *
+ * #901: the two `it`s below that used to live in this describe block —
+ * "diffs a staging/main base against origin/develop" and "still diffs a
+ * develop (or other) base against origin/$BASE_REF" — matched those
+ * substrings anywhere in the job body, so the assertions would still pass
+ * even if a command were moved to the wrong side of the `if`/`else`. The
+ * describe block after this one ("...executed (#901)") replaces them: it
+ * extracts the step's own `run:` block and executes it with stubbed `git`
+ * and `node`, per `$BASE_REF`, so it can only pass when each arm produces
+ * the range it is actually responsible for.
  */
 describe("commit-messages CI gate scopes staging/main PRs to commits not on develop (#891)", () => {
   it("branches the range on whether the PR's base is staging or main", () => {
@@ -125,23 +143,122 @@ describe("commit-messages CI gate scopes staging/main PRs to commits not on deve
       /\[\s*"\$BASE_REF"\s*=\s*"staging"\s*\]\s*\|\|\s*\[\s*"\$BASE_REF"\s*=\s*"main"\s*\]/
     );
   });
+});
 
-  it("diffs a staging/main base against origin/develop, not origin/$BASE_REF", () => {
-    const job = commitMessagesCode();
-    expect(job).toMatch(/git fetch origin develop/);
-    expect(job).toMatch(
-      /check-commit-messages\.mjs --range "origin\/develop\.\.\$HEAD_SHA"/
+/**
+ * Executes the `commit-messages` job's own `run:` block instead of matching
+ * substrings against it (#901, a follow-up from round 1 on #895/#891).
+ *
+ * A substring match (as the describe block above used to do, for the two
+ * `it`s removed there) finds the `staging`/`main` conditional and both
+ * `check-commit-messages.mjs --range` invocations independently of one
+ * another and independently of which side of the `if`/`else` they sit on.
+ * It would still pass if a command were moved to the wrong arm. This block
+ * instead extracts the literal script text after `run: |` and runs it with
+ * `bash`, with stub `git` and `node` executables placed first on `PATH` that
+ * record their argv instead of doing anything real, so what is asserted is
+ * the exact command each arm actually produces for a given `$BASE_REF`.
+ *
+ * Pattern reused from `tests/android-play-workflow.test.ts` (#899), which
+ * extracts a workflow step's script the same way and runs it with
+ * `spawnSync`.
+ */
+describe("commit-messages CI gate: the step's own run: block, executed (#901)", () => {
+  /** The literal shell script inside the step's `run: |` block. */
+  function commitGateScript(): string {
+    const start = workflow.indexOf(
+      "      - name: Check PR commits for a non-blank body\n"
     );
+    if (start < 0) {
+      throw new Error("Missing 'Check PR commits for a non-blank body' step");
+    }
+    const block = workflow.slice(start);
+    const run = /^ {8}run: \|\n/m.exec(block);
+    if (!run) throw new Error("Missing run block");
+    const lines = block.slice(run.index + run[0].length).split("\n");
+    const script: string[] = [];
+    for (const line of lines) {
+      if (line && !line.startsWith(" ".repeat(10))) break;
+      script.push(line.slice(10));
+    }
+    return script.join("\n");
+  }
+
+  /**
+   * Runs the extracted script with stub `git`/`node` on `PATH` and returns
+   * each stub invocation's argv, in call order, as one string per call
+   * (`"<name> <args...>"`). The stubs do nothing but log and exit 0 — this
+   * proves what the step *would* run, not that a real fetch or the real
+   * `check-commit-messages.mjs` succeeds (that script has its own tests).
+   */
+  function runCommitGate(env: {
+    BASE_REF: string;
+    HEAD_SHA: string;
+  }): string[] {
+    const dir = mkdtempSync(path.join(tmpdir(), "commit-gate-stub-"));
+    const callLog = path.join(dir, "calls.log");
+    writeFileSync(callLog, "");
+    try {
+      for (const name of ["git", "node"]) {
+        const stub = path.join(dir, name);
+        writeFileSync(
+          stub,
+          `#!/usr/bin/env bash\nprintf '${name} %s\\n' "$*" >> "$CALL_LOG"\nexit 0\n`
+        );
+        chmodSync(stub, 0o755);
+      }
+      const result = spawnSync("bash", ["-c", commitGateScript()], {
+        encoding: "utf8",
+        env: {
+          PATH: `${dir}:${process.env.PATH ?? ""}`,
+          CALL_LOG: callLog,
+          BASE_REF: env.BASE_REF,
+          HEAD_SHA: env.HEAD_SHA,
+        },
+      });
+      if (result.status !== 0) {
+        throw new Error(
+          `commit gate script exited ${result.status}: ${result.stderr}`
+        );
+      }
+      return readFileSync(callLog, "utf8").trim().split("\n").filter(Boolean);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  const HEAD_SHA = "deadbeefcafef00d";
+
+  it("is still extractable at the shape this test reads it from", () => {
+    expect(() => commitGateScript()).not.toThrow();
+    expect(commitGateScript()).toContain("check-commit-messages.mjs");
   });
 
-  it("still diffs a develop (or other) base against origin/$BASE_REF, unchanged", () => {
-    const job = commitMessagesCode();
-    // Same assertion as the #865 describe block above, re-stated here so
-    // this describe block alone proves state (c)/(d) is untouched even if
-    // the #865 block is ever removed.
-    expect(job).toMatch(/git fetch origin "\$BASE_REF"/);
-    expect(job).toMatch(
-      /check-commit-messages\.mjs --range "origin\/\$BASE_REF\.\.\$HEAD_SHA"/
-    );
+  it.each([
+    ["staging", "develop"],
+    ["main", "develop"],
+    ["develop", "develop"],
+  ])(
+    "BASE_REF=%s fetches and ranges against origin/%s, not any other ref",
+    (baseRef, expectedBase) => {
+      const calls = runCommitGate({ BASE_REF: baseRef, HEAD_SHA });
+      expect(calls).toEqual([
+        `git fetch origin ${expectedBase}`,
+        `node scripts/check-commit-messages.mjs --range origin/${expectedBase}..${HEAD_SHA}`,
+      ]);
+    }
+  );
+
+  // staging and main take the `if` arm; develop above took the `else` arm
+  // but happened to produce identical text, since $BASE_REF *is* "develop"
+  // there. A non-standard base is the case that tells the two arms apart:
+  // only the `else` arm's `origin/$BASE_REF` (not a hardcoded
+  // `origin/develop`) explains this result.
+  it("BASE_REF=a non-standard base uses $BASE_REF itself in the else arm, not a hardcoded develop", () => {
+    const calls = runCommitGate({ BASE_REF: "feature-x", HEAD_SHA });
+    expect(calls).toEqual([
+      "git fetch origin feature-x",
+      `node scripts/check-commit-messages.mjs --range origin/feature-x..${HEAD_SHA}`,
+    ]);
   });
 });
