@@ -2799,7 +2799,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // terms here — `strings.stopToEdit`, naming the bar's own Stop control
     // (#857 round 1, Frank P2) — rather than reusing `rowHint`'s menu-specific
     // copy or, as before that round, saying nothing at all for this control.
-    const editToolbarHint = barHint(editReason, strings.stopToEdit);
+    // Only while the take is LIVE (`recording`): `"uncommitted-take"` also
+    // covers the commit window (`committing`), where Stop has already been
+    // pressed and "Stop recording to edit." would name a control that is now
+    // Record (#869 round 3, George Medium). The commit window keeps the
+    // wordless bar behaviour, and `busy={isClosing}` keeps it focusable.
+    const editToolbarHint = barHint(
+      editReason,
+      recording ? strings.stopToEdit : undefined
+    );
     // The bar's bin (#592) wears the SAME gate as the ≡ menu's Erase rows —
     // `eraseReason`, one derivation — so the two entries to the one erase can
     // never disagree about when erasing is allowed. No `menuShown` clause, unlike

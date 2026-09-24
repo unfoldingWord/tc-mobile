@@ -47,28 +47,14 @@ import { expect, type Locator, type Page } from "@playwright/test";
  * (`recorder.tsx:2663`), so waiting for it to clear is waiting on the commit
  * itself, not on a proxy that can lag it.
  *
- * **#857 round 1 correction (this control is ALSO `aria-disabled` through
- * this exact window, as of `menu-row-state.ts`'s `barHint`):** the paragraph
- * above originally said `barHint` returns `null` for `"uncommitted-take"` on
- * this control "on purpose", so `hint`/`softDisabled` never turned on here.
- * That was true when this file was written, and is no longer true: #857
- * disables the SAME control while a take is live (not only while it
- * commits), and its round-1 review found the resulting native-disabled,
- * no-reason state itself a defect — `barHint` now takes a caller-supplied
- * label (`uncommittedTakeLabel`) and the toolbar passes one
- * (`strings.stopToEdit`), so through BOTH the live-take and the commit
- * window this control is `aria-disabled` with an accessible name of
- * `"Edit recording. Stop recording to edit."`, not the plain `"Edit
- * recording"` an EXACT name match asks for. A locator built with
- * `exact: true` therefore matches NOTHING during the exact window this
- * fixture exists to wait out — it would not fail loudly; `not.toHaveAttribute`
- * on a locator matching zero elements is not the same claim as "found the
- * control and its `aria-busy` is gone", and every caller here immediately
- * follows it with `.click()`, whose own actionability wait can paper over
- * the gap in practice but leaves the INTENT of this line unverified. Matched
- * by prefix instead, so the same element is tracked continuously from
- * `"Edit recording. Stop recording to edit."` (busy or live-blocked) through
- * to the plain `"Edit recording"` once the gate lifts.
+ * **#857 correction:** while a take is LIVE this control is `aria-disabled`
+ * with the accessible name `"Edit recording. Stop recording to edit."`
+ * (`recorder.tsx`'s `editToolbarHint`, which passes `strings.stopToEdit` only
+ * while `recording`; the commit window after Stop keeps the plain name). An
+ * `exact: true` locator would match NOTHING in the live-take frame, and
+ * `not.toHaveAttribute` on zero elements is not the claim "found the control
+ * and its `aria-busy` is gone". Matched by prefix instead, so the same
+ * element is tracked through every name it wears.
  */
 export function editRecordingButton(page: Page): Locator {
   return page

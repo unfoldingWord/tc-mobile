@@ -413,6 +413,35 @@ it("a live take keeps the Edit toggle disabled (#857)", async () => {
   expect(document.body.textContent).not.toContain(strings.modepillEditing);
 });
 
+// #869 round 3 (George Medium): `"uncommitted-take"` also covers the commit
+// window, after Stop, where the mic is off and the control beside Edit is
+// Record again. "Stop recording to edit." is false there, so only a live take
+// may wear it.
+it("the commit window after Stop does not tell the translator to stop (#857)", async () => {
+  const s = await setup();
+  let settle: () => void = () => {};
+  s.audio.stopRecording = vi.fn(async () => {
+    s.audio.recorderState = "idle";
+    await new Promise<void>((resolve) => (settle = resolve));
+    return { samples: captured, blob: null, error: null };
+  });
+  s.audio.recorderState = "recording";
+  await s.render();
+  await s.click(strings.stop);
+  await s.render();
+
+  const toggle = [...document.querySelectorAll("button")].find((b) =>
+    (b.getAttribute("aria-label") ?? "").startsWith(strings.enterEdit)
+  );
+  expect(toggle, strings.enterEdit).toBeDefined();
+  // Still inside the commit: the toggle is busy, not yet usable.
+  expect(toggle!.getAttribute("aria-busy")).toBe("true");
+  expect(toggle!.getAttribute("aria-label")).not.toContain(strings.stopToEdit);
+
+  await act(async () => settle());
+  await s.render();
+});
+
 it("a Back's recovery exits to Segments, unchanged", async () => {
   const s = await setup();
   const bytes = new Blob(["kept"]);

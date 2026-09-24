@@ -233,10 +233,11 @@ export function rowHint(reason: RowReason | null): RowHint | null {
  * commit-window half. Once `hasTake` joined `committing` under this one
  * reason (`editRowReason`, above), a live take became a real,
  * tester-reachable case of that gap, not only a narrow commit-window race.
- * Passing a label there makes the control `aria-disabled` (`Control`'s
- * `softDisabled`, `control.tsx`) through BOTH halves instead: focusable and
- * named while the take is live, and `aria-busy` (unaffected by this change)
- * once it starts committing. The bin (`rerecordHint`) omits the argument and
+ * The toolbar passes that label only while the take is LIVE, which makes the
+ * control `aria-disabled` (`Control`'s `softDisabled`, `control.tsx`) —
+ * focusable and named — for that half. The commit-window half gets no label
+ * (the take is already stopped, so "Stop recording to edit." would be false;
+ * #869 round 3, George Medium) and stays `aria-busy` while `isClosing`. The bin (`rerecordHint`) omits the argument and
  * keeps the pre-#857 `null` behaviour — its own identical native-disabled gap
  * is real but untouched here: #857 is about Edit, and inventing bin copy
  * nobody asked for is exactly the kind of unreviewed assumption this
