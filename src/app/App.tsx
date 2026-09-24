@@ -290,9 +290,10 @@ export function App() {
   //
   // Nothing subscribes to the store, so each mirror is repaired by an explicit
   // reload. THREE reconciliation ROUTES exist, and this one is the last, not
-  // the only. Routes, not call sites — the sheet reaches the second from more
-  // than one place, so counting `reload(` calls gives a larger number than
-  // this list does, and the two are not the same claim.
+  // the only. Routes, not call sites, and no grep lines up with them: route 2
+  // calls `reloadView()`, a DIFFERENT function from routes 1 and 3's
+  // `reload()`, and more than one call site reaches the same route. The list
+  // below is the claim; a search for either name is not.
   //     - a landed save reloads the LIST at once — `useSaveTake`'s `onSaved`,
   //       wired above, because the row reads as unrecorded until it does;
   //     - an in-sheet commit reloads the SHEET's own view (`reloadView()` in
