@@ -931,8 +931,9 @@ export function panAfterRedo(
  * A redone cut does (#722): the band is gone again and the one line left is
  * where a paste lands, the state a live cut leaves. A redone paste does not;
  * it has no collapse to make, and the frame reseeds over the audio that
- * landed, as after a live paste. `null` — nothing was redone — keeps what the
- * redo path did before #722, which is to reopen.
+ * landed, as after a live paste. `null` answers false, but `recorder.tsx`'s
+ * `onRedo` does not ask on `null` — nothing was redone, or the redo failed —
+ * and leaves the latch as it was (Frank R1 on #985).
  */
 export function redoCollapsesFrame(redoneOp: EditOp | null): boolean {
   return redoneOp?.kind === "cut";
@@ -950,8 +951,10 @@ export function redoCollapsesFrame(redoneOp: EditOp | null): boolean {
  * An undone cut does not. Its audio is back in the take, and the frame
  * reseeds where it came back, as it has since #613; the clipboard still
  * holds the phrase, so this is the one route that opens a frame over a full
- * clipboard, and it is named here rather than hidden. `null` — nothing was
- * undone, or the undo failed to apply — reopens, as before.
+ * clipboard, and it is named here rather than hidden. `null` answers false,
+ * but `recorder.tsx`'s `onUndo` does not ask on `null`: an undo that failed
+ * to apply leaves the latch as it was, so a failure cannot reopen a frame
+ * over a full clipboard (Frank R1 on #985).
  */
 export function undoCollapsesFrame(undoneOp: EditOp | null): boolean {
   return undoneOp?.kind === "paste";

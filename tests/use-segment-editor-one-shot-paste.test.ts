@@ -106,9 +106,11 @@ describe("useSegmentEditor: paste is one-shot (#489)", () => {
   it("a paste that lands empties the clipboard, and a second paste does nothing", async () => {
     const api = await mountWithCut();
 
+    let landed: boolean | null = null;
     await act(async () => {
-      api().paste(2);
+      landed = api().paste(2);
     });
+    expect(landed).toBe(true);
     expect(api().working).toEqual(SOURCE);
     expect(api().clip).toBeNull();
     expect(api().canPaste).toBe(false);
@@ -116,8 +118,9 @@ describe("useSegmentEditor: paste is one-shot (#489)", () => {
     // Nothing left to drop: the buffer is unchanged and no op was pushed, so
     // one undo steps back over the paste, not over a second one.
     await act(async () => {
-      api().paste(0);
+      landed = api().paste(0);
     });
+    expect(landed).toBe(false);
     expect(api().working).toEqual(SOURCE);
     let undone: unknown = null;
     await act(async () => {
@@ -169,9 +172,12 @@ describe("useSegmentEditor: paste is one-shot (#489)", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
 
     failNextMaterialize.value = true;
+    let landed: boolean | null = null;
     await act(async () => {
-      api().paste(2);
+      landed = api().paste(2);
     });
+    // The recorder reads this to keep the stage on the line (Frank R1 on #985).
+    expect(landed).toBe(false);
     expect(api().error).toBe(true);
     expect(api().working).toEqual(AFTER_CUT);
     expect(api().clip).toEqual(CUT);

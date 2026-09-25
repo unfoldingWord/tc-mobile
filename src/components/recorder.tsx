@@ -324,7 +324,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * Lift the #613 collapse: the next render may seed a frame again.
      *
      * Called from the routes that leave the translator wanting one — a paste
-     * calls it unconditionally, and an undo unless it undid a paste
+     * that landed, and an undo unless it undid a paste
      * (`undoCollapsesFrame`, #925). Leaving edit mode no longer calls it:
      * since #925 it sets the latch to `editor.canPaste` instead, so the next
      * entry opens on the red line while a paste is waiting. The
@@ -1790,7 +1790,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // An undone PASTE is the exception (#925): it puts the phrase back on
       // the clipboard (#489), so the stage collapses to the line and the
       // paste button, as after the cut. `undoCollapsesFrame` holds the rule.
-      setCutCollapsed(undoCollapsesFrame(undoneOp));
+      // A FAILED undo (`null`) changes nothing, the latch included: reopening
+      // there would offer a new selection while a cut is still on the
+      // clipboard, and the next Cut would replace it (Frank R1 on #985).
+      if (undoneOp !== null) setCutCollapsed(undoCollapsesFrame(undoneOp));
     }, [editor, stopPlaybackDroppingPan, length, setPanState]);
 
     const onRedo = useCallback(() => {
@@ -1800,8 +1803,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         setPanState((p) => panAfterRedo(p, redoneOp, length));
       }
       // A redone cut collapses to the line like a live one; a redone paste
-      // reopens the frame (#722).
-      setCutCollapsed(redoCollapsesFrame(redoneOp));
+      // reopens the frame (#722). A failed redo (`null`) keeps the latch as
+      // it was, for the reason `onUndo` gives (Frank R1 on #985).
+      if (redoneOp !== null) setCutCollapsed(redoCollapsesFrame(redoneOp));
     }, [editor, stopPlaybackDroppingPan, length, setPanState]);
 
     const onCut = useCallback(() => {
@@ -1826,11 +1830,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // pan. The marker is hidden while a fitted view would imply another point.
     const onPaste = useCallback(() => {
       stopPlayback();
-      editor.paste(insertionPan);
       // The paste target has been used, so the collapsed line has said what it
       // was there to say (#613) — the next render seeds a frame again, over
-      // the audio that just landed.
-      reopenFrame();
+      // the audio that just landed. Only a paste that LANDED: one that failed
+      // to allocate leaves the phrase on the clipboard and nowhere else, so
+      // the stage stays on the line rather than offering a Cut that would
+      // replace it (Frank R1 on #985).
+      if (editor.paste(insertionPan)) reopenFrame();
     }, [editor, insertionPan, stopPlayback, reopenFrame]);
 
     const onToggleFinished = useCallback(() => {

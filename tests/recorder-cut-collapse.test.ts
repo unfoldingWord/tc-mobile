@@ -305,6 +305,23 @@ describe("recorder.tsx wires the collapse (#613)", () => {
     );
   });
 
+  it("a failed edit leaves the latch alone, so no frame opens over a full clipboard (Frank R1 on #985)", () => {
+    // Source shape only; the hook half — a failed paste returns false and
+    // keeps the phrase — is in `use-segment-editor-one-shot-paste.test.ts`.
+    // Unguarded, a paste that failed to allocate reopened the frame while
+    // its phrase was on the clipboard and nowhere else, and the next Cut
+    // replaced it; a failed undo/redo (`null`) did the same.
+    expect(handlerBody("const onPaste = useCallback(")).toMatch(
+      /if \(editor\.paste\(insertionPan\)\) reopenFrame\(\)/
+    );
+    expect(handlerBody("const onUndo = useCallback(")).toMatch(
+      /if \(undoneOp !== null\) setCutCollapsed\(undoCollapsesFrame\(undoneOp\)\)/
+    );
+    expect(handlerBody("const onRedo = useCallback(")).toMatch(
+      /if \(redoneOp !== null\) setCutCollapsed\(redoCollapsesFrame\(redoneOp\)\)/
+    );
+  });
+
   it("onUndo sets the latch from the undone op, not unconditionally open (#925)", () => {
     // Source shape only: the rule itself is `undoCollapsesFrame`, pinned
     // below. Before #925 this called `reopenFrame()`, which opened a

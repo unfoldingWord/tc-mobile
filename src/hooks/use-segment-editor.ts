@@ -75,8 +75,11 @@ export interface SegmentEditor {
   readonly cut: () => SampleRange | null;
   /** Paste the clipboard at a sample offset (the centerline). One-shot
    *  (#489): a paste that lands empties the clipboard; undoing it puts the
-   *  phrase back, and redoing it empties it again. */
-  readonly paste: (atSample: number) => void;
+   *  phrase back, and redoing it empties it again. Returns whether it
+   *  landed: false when there was nothing to paste or the allocation failed,
+   *  so the clipboard still holds the phrase and the recorder must not reopen
+   *  a frame over it (Frank R1 on #985). */
+  readonly paste: (atSample: number) => boolean;
   /** Step history back one op. Returns the op that was undone (so the
    *  recorder can map the centerline through its inverse, #449), or null if
    *  there was nothing to undo or the rematerialise failed. */
@@ -271,11 +274,11 @@ export function useSegmentEditor(
   // op keeps its own reference to the samples (`op.clip`), which is what
   // `undo` below hands back to the clipboard if the paste is taken back.
   const paste = useCallback(
-    (atSample: number) => {
+    (atSample: number): boolean => {
       const clip = clipboard.clip;
-      if (!clip || clip.length === 0) return;
+      if (!clip || clip.length === 0) return false;
       const at = Math.max(0, Math.min(Math.round(atSample), working.length));
-      applyLog(pushOp(log, { kind: "paste", at, clip }), () =>
+      return applyLog(pushOp(log, { kind: "paste", at, clip }), () =>
         clipboard.set(null)
       );
     },
