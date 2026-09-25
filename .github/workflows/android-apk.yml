@@ -152,6 +152,35 @@ jobs:
       - name: Build the web bundle
         run: npm run build
 
+      # ci.yml's fourth ship-blocker, checked against THIS (web) build, before
+      # the native rebuild two steps down replaces dist/sw.js with
+      # vite-plugin-pwa's self-destroying worker (#923): that worker never
+      # precaches anything at all, by design, so this grep would trivially
+      # "pass" against it forever regardless of vite.config.ts's globPatterns
+      # — silently stop being a real gate. The OBS thumbnails must not be in
+      # the service-worker precache (ADR 0006 / #177) — ~598 files stalling
+      # the first native launch. iOS checks emitted thumbnails against the
+      # reader-gated jpg policy; Android still rejects them unconditionally.
+      - name: OBS thumbnails stay out of the precache (web build; ADR 0006 / #177)
+        run: |
+          set -euo pipefail
+          if grep -q "obs/thumbs" dist/sw.js; then
+            echo "::error::dist/sw.js precaches obs/thumbs — vite.config.ts globPatterns regressed"
+            exit 1
+          fi
+
+      # #923: the web build above validates the PWA's own artifacts, but what
+      # actually ships inside the native shell must be the NATIVE-mode build —
+      # vite.config.ts's `--mode native` swaps `dist/sw.js` for
+      # vite-plugin-pwa's self-destroying worker and ships no auto-injected
+      # registration script, so the WebView never keeps an offline precache
+      # that can go stale across an in-place upgrade. This deliberately
+      # overwrites the dist/ the previous step just checked; `cap sync` below
+      # copies whatever dist/ holds at that point, which must be this one, not
+      # the web build's.
+      - name: Rebuild and check dist/ for the native shell (self-destroying service worker, #923)
+        run: npm run test:dist:native
+
       - name: Sync dist/ into the Android project
         run: |
           npx cap sync android
@@ -166,6 +195,8 @@ jobs:
       # a missing service worker or manifest, a leaked e2e harness — plus that
       # cap sync actually copied the bundle (android/app/src/main/assets/public
       # is gitignored; a sync that exits 0 without it would install a blank view).
+      # The OBS-thumbnail policy is checked against the WEB build above, not
+      # here — see that step's comment.
       - name: Guard the synced bundle
         run: |
           set -euo pipefail
@@ -177,14 +208,6 @@ jobs:
               exit 1
             fi
           done
-          # ci.yml's fourth ship-blocker: the OBS thumbnails must not be in the
-          # service-worker precache (ADR 0006 / #177) — ~598 files stalling the
-          # first native launch. iOS checks emitted thumbnails against the
-          # reader-gated jpg policy; Android still rejects them unconditionally.
-          if grep -q "obs/thumbs" dist/sw.js; then
-            echo "::error::dist/sw.js precaches obs/thumbs — vite.config.ts globPatterns regressed"
-            exit 1
-          fi
           test -f android/app/src/main/assets/public/index.html \
             || { echo "::error::cap sync did not copy the web bundle into android/"; exit 1; }
           echo "Bundle built, clean, and synced into android/."
