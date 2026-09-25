@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { withEncoder } from "./mp3-codec";
 import {
@@ -8,6 +8,7 @@ import {
   type ShareSurface,
   useShareFlow,
 } from "./share-flow";
+import type { ShareGap, ShareProgress, ShareSettled } from "./share-progress";
 import {
   readStorageEstimate,
   storageEstimateSourceOf,
@@ -19,8 +20,88 @@ import {
   roomForExport,
 } from "@/lib/export/book";
 
+/**
+ * The gap a library share's `partial` outcome carries, in the library's own
+ * units and under the hook's own names. Deliberately NOT a {@link ShareGap}:
+ * that shape's `missing`/`partial`/`partialChapters` mean, for a book, whole
+ * chapters / segments / chapters-with-a-gap, and its one wording path
+ * (`shareGapText`) says so. Carried as its own shape, the library's counts
+ * cannot be handed to that path by mistake: it is a type error, not a false
+ * "2 chapters could not be included" when 2 BOOKS were left out.
+ */
+interface LibraryShareGap {
+  /** Whole books left out: not one of their chapters had audio. */
+  readonly missingBooks: number;
+  /** Chapters inside included books that did not ship whole. */
+  readonly incompleteChapters: number;
+  /** How many distinct included books hold those chapters. */
+  readonly incompleteBooks: number;
+}
+
+/**
+ * {@link ShareProgress} with every `gap` in {@link LibraryShareGap} units. The
+ * phases, timings and settles are the flow's own, unchanged.
+ */
+type LibraryShareProgress =
+  | Extract<ShareProgress, { phase: "hidden" }>
+  | (Omit<Extract<ShareProgress, { phase: "busy" }>, "pending"> & {
+      readonly pending: {
+        readonly settled: ShareSettled | null;
+        readonly gap?: LibraryShareGap;
+      } | null;
+    })
+  | (Omit<Extract<ShareProgress, { phase: "outcome" }>, "gap"> & {
+      readonly gap?: LibraryShareGap;
+    });
+
+function libraryGap(gap: ShareGap): LibraryShareGap {
+  return {
+    missingBooks: gap.missing,
+    incompleteChapters: gap.partial,
+    incompleteBooks: gap.partialChapters,
+  };
+}
+
+/**
+ * Re-express the flow's progress in library units. The flow is armed with the
+ * library's counts in its `missing`/`partial`/`partialChapters` slots (see the
+ * mapping in `prepare` below), so this is a rename at the one place those
+ * counts leave the hook, not a conversion.
+ */
+function toLibraryProgress(progress: ShareProgress): LibraryShareProgress {
+  switch (progress.phase) {
+    case "hidden":
+      return progress;
+    case "busy": {
+      const { pending } = progress;
+      if (pending === null) return { ...progress, pending: null };
+      const { gap, ...rest } = pending;
+      return {
+        ...progress,
+        pending: gap ? { ...rest, gap: libraryGap(gap) } : rest,
+      };
+    }
+    case "outcome": {
+      const { gap, ...rest } = progress;
+      return gap ? { ...rest, gap: libraryGap(gap) } : rest;
+    }
+    default: {
+      const unhandled: never = progress;
+      return unhandled;
+    }
+  }
+}
+
 export interface UseLibraryShare
-  extends Omit<ShareSurface, "error">, ShareGestures<ShareError | "storage"> {
+  extends
+    Omit<ShareSurface, "error" | "progress">,
+    ShareGestures<ShareError | "storage"> {
+  /**
+   * The modal timeline, as {@link ShareSurface.progress} — except that a
+   * `partial` outcome's gap is a {@link LibraryShareGap}, never a
+   * {@link ShareGap}.
+   */
+  readonly progress: LibraryShareProgress;
   /**
    * {@link ShareSurface.missing} here counts whole BOOKS left out: not one of
    * their chapters had audio. 0 until a prepare succeeds.
@@ -140,6 +221,12 @@ export function useLibraryShare(): UseLibraryShare {
           const file = new File([...result.chunks], zipFilename, {
             type: "application/zip",
           });
+          // The flow's count slots carry the LIBRARY's units here — books,
+          // chapters, books — not Share Book's chapters/segments/chapters.
+          // They leave this hook only renamed: as `missing`/
+          // `incompleteChapters`/`incompleteBooks` above, and as a
+          // `LibraryShareGap` in `progress` (`toLibraryProgress`), never as a
+          // ShareGap a book-scope wording would misread.
           return {
             file,
             missing: result.missing,
@@ -157,6 +244,13 @@ export function useLibraryShare(): UseLibraryShare {
     resetFlow();
   }, [resetFlow]);
 
+  // One object per flow transition, so a consumer comparing identities sees
+  // the same "nothing changed" the flow's own `progress` gives it.
+  const libraryProgress = useMemo(
+    () => toLibraryProgress(progress),
+    [progress]
+  );
+
   return {
     status,
     error: storageShort && flowError === "failed" ? "storage" : flowError,
@@ -167,7 +261,7 @@ export function useLibraryShare(): UseLibraryShare {
     prepare,
     send,
     reset,
-    progress,
+    progress: libraryProgress,
     ownsScreen,
     dismissProgress,
   };

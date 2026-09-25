@@ -224,3 +224,113 @@ it("fails a mid-way encode as 'failed' with one funnel entry, and arms nothing",
   expect(reportFailure).toHaveBeenCalledTimes(1);
   expect(vi.mocked(reportFailure).mock.calls[0]![1]).toBe("share-prepare");
 });
+
+/**
+ * Wait, in real time, for the modal timeline to reach a phase. The flow holds
+ * its busy phase for MIN_BUSY_MS before an outcome shows, so a send's outcome
+ * is not visible on the same tick the sheet resolves.
+ */
+async function untilPhase(phase: "outcome" | "hidden"): Promise<void> {
+  for (let i = 0; i < 100 && hook().progress.phase !== phase; i++) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+  }
+  expect(hook().progress.phase).toBe(phase);
+}
+
+it("names the partial outcome's gap in library units, never in Share Book's chapter/segment fields", async () => {
+  await bookWith("Empty", [[null]]);
+  await bookWith("Gappy", [[CANONICAL_SAMPLE_RATE, null], [null]]);
+  await prepare();
+  expect(hook().status).toBe("ready");
+
+  let sent: Promise<unknown> = Promise.resolve();
+  await act(async () => {
+    sent = hook().send();
+  });
+  const libraryGap = {
+    missingBooks: 1,
+    incompleteChapters: 2,
+    incompleteBooks: 1,
+  };
+  // The sheet resolved inside the busy hold, so the settle is still HELD as
+  // `pending` — and a caller reading it there gets the same library units.
+  const held = hook().progress;
+  if (held.phase !== "busy") throw new Error("expected the busy hold");
+  expect(held.pending?.settled).toBe("partial");
+  expect(held.pending?.gap).toEqual(libraryGap);
+
+  await untilPhase("outcome");
+
+  const progress = hook().progress;
+  if (progress.phase !== "outcome") throw new Error("expected an outcome");
+  expect(progress.settled).toBe("partial");
+  // The library's own units, under the hook's own names — and no `missing`/
+  // `partial`/`partialChapters`, which a ShareGap reader words as the
+  // chapters and segments of ONE book.
+  expect(progress.gap).toEqual(libraryGap);
+  await act(async () => {
+    hook().dismissProgress();
+    await sent;
+  });
+});
+
+it("does not let a superseded run's space refusal mark a newer run's failure as 'storage'", async () => {
+  await bookWith("Mark", [[CANONICAL_SAMPLE_RATE]]);
+  let answerA: (value: { usage: number; quota: number }) => void = () => {};
+  estimate!.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        answerA = resolve;
+      })
+  );
+
+  // Run A stops inside its storage read.
+  let runA: Promise<unknown> = Promise.resolve();
+  await act(async () => {
+    runA = hook().prepare(
+      "A.zip",
+      (name) => name,
+      (name, n) => `${name} - Chapter ${n}.mp3`
+    );
+  });
+  for (let i = 0; i < 100 && estimate!.mock.calls.length === 0; i++) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+  }
+  expect(estimate).toHaveBeenCalledTimes(1);
+  // The menu closes (which supersedes A), then run B fails for a reason that
+  // is not space.
+  await act(async () => {
+    hook().reset();
+  });
+  codec.encodeMp3.mockImplementationOnce(() =>
+    Promise.reject(new Error("encoder died"))
+  );
+  await prepare();
+  expect(hook().error).toBe("failed");
+
+  // A's reading finally answers "no room", for a run nobody is waiting on.
+  await act(async () => {
+    answerA({ usage: 100 * MB, quota: 100 * MB });
+    await runA;
+  });
+  expect(hook().error).toBe("failed");
+});
+
+it("settles 'nothing', not a silent idle, when the audio is gone by the time the build runs", async () => {
+  await bookWith("Mark", [[CANONICAL_SAMPLE_RATE]]);
+  // The estimate saw a recording; everything is erased before the build.
+  vi.mocked(withEncoder).mockImplementationOnce(async (_signal, work) => {
+    await clearAllStores();
+    return work(codec as AudioCodec);
+  });
+
+  await prepare();
+
+  expect(hook().error).toBe("nothing");
+  expect(hook().status).toBe("idle");
+  expect(reportFailure).not.toHaveBeenCalled();
+});
