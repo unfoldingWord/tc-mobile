@@ -545,10 +545,19 @@ export const SegmentsScreen = forwardRef<
     // after this must not close the menu and drop the encode we are preparing.
     chapterMenuSession.current += 1;
     setSavingName(false);
-    void share.prepare(
-      chapterId,
-      strings.shareFilename(bookName, chapterNumber)
-    );
+    // On the native route `prepare()` chains straight into `send()` (#860,
+    // `share-flow.ts`'s `chainsToSend`) and resolves to ITS outcome — so this
+    // tap alone must close the menu on `sent`/`dismissed` the same way
+    // `onSendShare` below already does for the web route's own second tap.
+    // On the web route (still `ready`, waiting for that second tap) and on
+    // every non-chained ending (nothing to share, a prepare error, a
+    // superseded run) this resolves `null`, and the guard below leaves the
+    // menu exactly as every one of those already did.
+    void share
+      .prepare(chapterId, strings.shareFilename(bookName, chapterNumber))
+      .then((outcome) => {
+        if (outcome === "sent" || outcome === "dismissed") onCloseChapterMenu();
+      });
   }, [
     focusRestore,
     audio,
@@ -557,6 +566,7 @@ export const SegmentsScreen = forwardRef<
     chapterId,
     bookName,
     chapterNumber,
+    onCloseChapterMenu,
   ]);
   // Tap 2 — hand the armed File to the OS share sheet. `send()` opens the sheet
   // as its first call inside this gesture (`navigator.share` in a browser, the

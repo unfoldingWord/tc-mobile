@@ -79,7 +79,7 @@ export interface NativeShareBridge {
   share(options: { files: string[] }): Promise<void>;
 }
 
-type ShareRoute = "native" | "web" | "unsupported";
+export type ShareRoute = "native" | "web" | "unsupported";
 
 /**
  * Which way this share goes. Called twice per share: once before the encode with

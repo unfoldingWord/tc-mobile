@@ -1,7 +1,11 @@
 import { useCallback } from "react";
 
 import { withEncoder } from "./mp3-codec";
-import { type ShareSurface, useShareFlow } from "./share-flow";
+import {
+  type ShareOutcome,
+  type ShareSurface,
+  useShareFlow,
+} from "./share-flow";
 import { exportBookZip } from "@/lib/export/book";
 import type { BookId } from "@/types/domain";
 
@@ -25,12 +29,16 @@ export interface UseBookShare extends ShareSurface {
    * File for the send gesture. `zipFilename` names the archive; `nameChapter`
    * names each MP3 inside it (both are translator-facing copy from the screen).
    * Never rejects — a reason surfaces through `error`.
+   *
+   * See {@link UseShareFlow.prepare} (`share-flow.ts`, #860): on the native
+   * route this chains straight into `send()` and resolves to its outcome; on
+   * the web route it resolves `null` and leaves the flow at `ready`.
    */
   prepare: (
     bookId: BookId,
     zipFilename: string,
     nameChapter: (chapterNumber: number) => string
-  ) => Promise<void>;
+  ) => Promise<ShareOutcome | null>;
 }
 
 /**
@@ -64,7 +72,7 @@ export function useBookShare(): UseBookShare {
       bookId: BookId,
       zipFilename: string,
       nameChapter: (chapterNumber: number) => string
-    ): Promise<void> =>
+    ): Promise<ShareOutcome | null> =>
       run((isCurrent, signal) =>
         withEncoder(signal, async (codec) => {
           const result = await exportBookZip(
