@@ -169,6 +169,23 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
     expect(edit).toMatch(/background:\s*var\(--s-well\)/);
   });
 
+  it("the edit toggle keeps its size and vertical centre across the mode flip", () => {
+    // 3-components.css gives both bars one height so the toggle (the last,
+    // key="edit-toggle" control in both) does not move when the mode flips.
+    // O4 keeps that, and keeps the toggle at the pair's 64 in the edit bar.
+    const height = (sel: string) =>
+      /(?:^|;)\s*height:\s*([^;]+);/.exec(cssRule(CSS, sel))?.[1]?.trim();
+    const pair = height(`${O4} .recorder-toolbar.pair`);
+    expect(pair).toBeDefined();
+    expect(height(`${O4} .recorder-toolbar.edit`)).toBe(pair);
+    const toggle = cssRule(
+      CSS,
+      `${O4} .recorder-toolbar.edit > .control-hinted:last-child .control`
+    );
+    expect(toggle).toMatch(/width:\s*64px/);
+    expect(toggle).toMatch(/height:\s*64px/);
+  });
+
   it("sets no ink on the transport, so the pressed toggle's is-on ink still wins", () => {
     for (const sel of [
       `${O4} .recorder-toolbar.pair .control:not(.control--record):not(.control--play)`,
@@ -395,6 +412,30 @@ describe("recorder.tsx wires the O4 look through useDesign (#945, source pin)", 
     expect(tag).toMatch(
       /className=\{design === "o4" \? "bg-playhead" : undefined\}/
     );
+  });
+
+  it("feeds recorderLook the live recording, playing, editing and audio state", () => {
+    const at = src.indexOf("recorderLook({");
+    expect(at).toBeGreaterThan(-1);
+    const call = src.slice(at, src.indexOf("})", at));
+    expect(call).toMatch(/\brecording,/);
+    expect(call).toMatch(/\bplaying: audio\.playingBuffer,/);
+    expect(call).toMatch(/\bediting: mode === "edit",/);
+    expect(call).toMatch(/\bhasAudio,?\s*$/);
+  });
+
+  it("keeps the edit toggle last in the edit bar and hint-wrapped", () => {
+    // The O4 toggle rule targets `> .control-hinted:last-child .control`,
+    // which holds only while the toggle passes `hint` (so Control wraps it)
+    // and stays the edit arm's last child.
+    const bars = stripComments(read("src/components/recorder-toolbars.tsx"));
+    const edit = bars.slice(bars.indexOf('className="recorder-toolbar edit'));
+    const last = edit.slice(
+      edit.lastIndexOf("<Control", edit.indexOf("</div>")),
+      edit.indexOf("</div>")
+    );
+    expect(last).toMatch(/key="edit-toggle"/);
+    expect(last).toMatch(/hint=\{null\}/);
   });
 
   it("mounts the stamp inside the stage with the live design and look", () => {

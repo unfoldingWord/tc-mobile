@@ -137,7 +137,9 @@
     background: var(--s-well);
   }
   /* Six controls share the edit bar, so five share what the toggle's fixed
-     64 right-hand slot (the same slot as the pair's) leaves. */
+     64 right-hand slot (the same slot as the pair's) leaves. The bar is the
+     pair's height, so the toggle keeps its vertical centre across the flip
+     and the stage does not resize (3-components.css holds the same rule). */
   [data-design="o4"] .recorder-toolbar.edit {
     container-type: inline-size;
     --o4-secondary: max(
@@ -145,7 +147,7 @@
       min(64px, calc((100cqi - 64px - 5 * var(--p-space-1)) / 5))
     );
     grid-template-columns: repeat(5, minmax(0, 1fr)) 64px;
-    height: calc(64px + var(--p-space-3));
+    height: calc(80px + var(--p-space-3));
   }
   [data-design="o4"] .recorder-toolbar.edit .control {
     justify-self: center;
@@ -153,6 +155,16 @@
     height: var(--o4-secondary);
     border-radius: 50%;
     background: var(--s-well);
+  }
+  /* The toggle is the bar's last child, always wrapped by its hint span, and
+     stays the pair's 64 in its own 64 slot rather than shrinking with the
+     five. */
+  [data-design="o4"]
+    .recorder-toolbar.edit
+    > .control-hinted:last-child
+    .control {
+    width: 64px;
+    height: 64px;
   }
 
   /* --- the edit-mode pill (12) ------------------------------------------ */
