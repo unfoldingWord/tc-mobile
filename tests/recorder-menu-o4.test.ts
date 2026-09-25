@@ -42,6 +42,9 @@ vi.mock("@/hooks/use-design", () => ({
   useDesign: () => ({ design: design.current, toggle: () => {} }),
 }));
 
+/** The part of the #927 cap's selector the component itself must satisfy. */
+const CAP_PANEL = ".menu-panel:has(.recorder-menu-tile)";
+
 let root: Root;
 let host: HTMLDivElement;
 
@@ -126,6 +129,27 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
     ]);
     expect(labels()[2]).toBe(themeTile()?.getAttribute("aria-label"));
     expect(named(strings.markFinished(3))).toBeUndefined();
+  });
+
+  it("keys the #927 half-screen cap's selector to this menu's rendered sheet, in both modes", () => {
+    // The cap in o4/menus.css matches `.menu-panel:has(.recorder-menu-tile)`;
+    // the stylesheet cases below read only the CSS, so this is the link from
+    // that selector to what the component renders.
+    for (const mode of ["record", "edit"] as const) {
+      show({ mode });
+      const panel = document.querySelector(".menu-panel");
+      expect(panel, `${mode}: no .menu-panel rendered`).not.toBeNull();
+      expect(panel?.matches(CAP_PANEL), `${mode}: cap selector misses`).toBe(
+        true
+      );
+      const actions = tiles().filter((t) => t !== themeTile());
+      expect(actions).toHaveLength(2);
+      for (const t of actions)
+        expect(
+          t.classList.contains("recorder-menu-tile"),
+          `${mode}: ${t.getAttribute("aria-label") ?? ""} lacks the cap class`
+        ).toBe(true);
+    }
   });
 
   it("shows each tile's caption as a word of its accessible name (label-in-name)", () => {
@@ -250,7 +274,7 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
 
 describe("o4/menus.css, recorder-menu section (#949 G3)", () => {
   const rules = areaRules("menus");
-  const panel = '[data-design="o4"] .menu-panel:has(.recorder-menu-tile)';
+  const panel = `[data-design="o4"] ${CAP_PANEL}`;
 
   it("keeps the recorder sheet under half the screen", () => {
     expect(declsFor(rules, panel).get("max-height")).toBe("50dvh");
