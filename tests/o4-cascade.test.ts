@@ -107,3 +107,42 @@ describe.skipIf(GATE === "skip")(
     });
   }
 );
+
+/**
+ * The ten per-area O4 stylesheets, pre-created ahead of batch 1 so its five
+ * parallel lanes (#941-#945, #946-#950) never collide on this one index —
+ * two lanes editing `o4/index.css` in the same batch is the exact defect
+ * this pre-creation exists to avoid.
+ *
+ * A SOURCE-text check, deliberately not gated behind `REQUIRE_DIST_BUILD`:
+ * unlike the cascade position above, "does the file exist and is it
+ * imported" needs no build to answer, and gating it the same way would mean
+ * this only ever runs alongside a build nobody CI-side runs before merge —
+ * `npm run test` alone should catch a lane deleting one of these on purpose
+ * or by accident.
+ */
+const O4_DIR = path.join(ROOT, "src", "app", "styles", "o4");
+const INDEX_SOURCE = readFileSync(path.join(O4_DIR, "index.css"), "utf8");
+
+const AREA_FILES = [
+  "books.css",
+  "sheets.css",
+  "segments.css",
+  "recorder.css",
+  "menus.css",
+  "controls.css",
+  "dialogs.css",
+  "share.css",
+  "errors.css",
+  "motion.css",
+];
+
+describe("the ten pre-created O4 area stylesheets exist and are wired in", () => {
+  it.each(AREA_FILES)("%s exists on disk", (name) => {
+    expect(existsSync(path.join(O4_DIR, name)), name).toBe(true);
+  });
+
+  it.each(AREA_FILES)("%s is imported from o4/index.css", (name) => {
+    expect(INDEX_SOURCE, name).toContain(`@import "./${name}";`);
+  });
+});
