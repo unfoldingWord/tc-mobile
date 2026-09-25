@@ -27,6 +27,7 @@ import {
   resolveProvesDelivery,
   selectShareRoute,
 } from "./share-target";
+import type { StepReporter } from "@/lib/export/chapter";
 
 /**
  * The two-gesture share flow, shared by Share Chapter and Share Book (B7, A4).
@@ -184,12 +185,19 @@ interface PreparedShare {
  * no count, exactly as before. The count covers the build only: on the native
  * route `prepare` stages the built file after the builder returns, so the
  * count can read `N of N` while that write is still running. The busy phase
- * stays up until it settles.
+ * stays up until it settles. That staging is left off the count on purpose
+ * (#996): for a chapter it is a handful of 384 KiB bridge writes against a
+ * seconds-long encode, an estimate from the chunk arithmetic that the phone
+ * check on #974 has to confirm or overturn.
+ *
+ * Share Chapter's count now includes the encode (#996, `withEncodeSteps`), and
+ * either share may pass a third number, `skipped`: how many of `done` finished
+ * with no audio.
  */
 type BuildShareFile = (
   isCurrent: () => boolean,
   signal: AbortSignal,
-  onStep: (done: number, total: number) => void
+  onStep: StepReporter
 ) => Promise<PreparedShare | "nothing" | null>;
 
 /**
@@ -199,13 +207,19 @@ type BuildShareFile = (
  * close, `reset` or unmount can still have a gather in flight for a moment,
  * and its late count must not land on a newer run's modal. The machine itself
  * rejects a count that is out of range or runs backward (`share-progress.ts`).
+ * A `skipped` count (#996) rides the same event when the builder gives one.
  */
 export function stepReporter(
   isCurrent: () => boolean,
   dispatch: (event: ShareProgressEvent) => void
-): (done: number, total: number) => void {
-  return (done, total) => {
-    if (isCurrent()) dispatch({ type: "step", done, total });
+): StepReporter {
+  return (done, total, skipped) => {
+    if (!isCurrent()) return;
+    dispatch(
+      skipped === undefined
+        ? { type: "step", done, total }
+        : { type: "step", done, total, skipped }
+    );
   };
 }
 
