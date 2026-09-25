@@ -45,19 +45,27 @@ const GATE = resolveDistGate(
 describe.skipIf(GATE === "skip")(
   "the native build's dist/sw.js (requires a prior `npm run build:native`)",
   () => {
-    const sw = readFileSync(SW, "utf8");
+    // A function, called inside each `it()`, NOT read at describe-body scope
+    // (#923, round-2 CI failure): `describe.skipIf` still EXECUTES this
+    // callback body to collect the `it()`s even when every case inside is
+    // skipped — a `readFileSync` sitting directly in the body runs anyway,
+    // ENOENT the moment `dist/sw.js` does not exist. A plain `npm test`
+    // (`REQUIRE_DIST_BUILD` unset, no prior build) hit exactly this in CI's
+    // Quality job. Deferring the read into each `it()` is what keeps the
+    // skip a real skip.
+    const sw = () => readFileSync(SW, "utf8");
 
     it("self-unregisters on activate, rather than precaching anything", () => {
       // The exact behaviour a phone stuck on an OLD worker needs: this is
       // what the browser's own update check swaps in when it re-fetches the
       // already-registered sw.js URL and finds different bytes (#923).
-      expect(sw).toMatch(/self\.registration\.unregister\(\)/);
-      expect(sw).toMatch(/self\.skipWaiting\(\)/);
+      expect(sw()).toMatch(/self\.registration\.unregister\(\)/);
+      expect(sw()).toMatch(/self\.skipWaiting\(\)/);
     });
 
     it("clears Cache Storage on activate", () => {
-      expect(sw).toMatch(/self\.caches\.keys\(\)/);
-      expect(sw).toMatch(/self\.caches\.delete\(/);
+      expect(sw()).toMatch(/self\.caches\.keys\(\)/);
+      expect(sw()).toMatch(/self\.caches\.delete\(/);
     });
 
     it("never precaches — no Workbox precache manifest", () => {
@@ -67,7 +75,7 @@ describe.skipIf(GATE === "skip")(
       // Workbox's generateSW output always makes when it precaches anything
       // (see the non-native block `tests/precache-manifest.test.ts` reads);
       // its absence here is the native build's whole point.
-      expect(sw).not.toMatch(/precacheAndRoute/);
+      expect(sw()).not.toMatch(/precacheAndRoute/);
     });
 
     it("never references IndexedDB", () => {
@@ -75,7 +83,7 @@ describe.skipIf(GATE === "skip")(
       // structural guarantee (its cleanup bridge has no IndexedDB access at
       // all): the emitted service-worker script itself must not name the
       // API the recordings live behind.
-      expect(sw).not.toMatch(/indexedDB/i);
+      expect(sw()).not.toMatch(/indexedDB/i);
     });
   }
 );
