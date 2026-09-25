@@ -46,6 +46,8 @@
     --p-amber-950: #3a2a0c;
 
     /* --- Green: a segment that is finished ---------------------------------- */
+    /* 700 is the words on the green wash in the light theme (#937 D3). */
+    --p-green-700: #1f6e3a;
     --p-green-600: #2e8b4c;
     --p-green-500: #3fb968;
     --p-green-400: #6fca8c;
@@ -53,24 +55,26 @@
     --p-green-950: #10331e;
 
     /* --- Red: the live recording moment, and nothing else ------------------ */
+    /* 700 and 400 are the words on the red wash, light and dark (#937 D3). */
+    --p-red-700: #a8322a;
     --p-red-600: #c8433a;
     --p-red-500: #e2564a;
+    --p-red-400: #ec7a70;
     --p-red-100: #f8d6d2;
     --p-red-950: #3a1512;
 
     /* --- Blue: the next required action, and nothing else ------------------- */
     --p-blue-500: #2e7df6;
-    /* O4 (workbench round 4) adds four more blues: the "hear this" speaker
-       pair and the Edit tile pair. That is a direct conflict with the line
-       above, which O4's own gap note G9 raises and does not settle. They are
-       added as primitives so the conflict is visible in one place; which
-       roles may read them is the open decision, not this file's. */
+    /* The "hear this" speaker pair. #937 D1 kept the speaker blue beside the
+       guide; the Edit tile moved to slate. */
     --p-blue-400: #4f93f8;
     --p-blue-600: #1f66d6;
-    --p-blue-700: #2458d8;
-    --p-blue-800: #1f4fc4;
-    /* Book cover blue (O4). Sits between 700 and 800 in lightness. */
+    /* Book cover blue (O4). #937 D1 moves covers off blue; this stays only
+       while `--s-cover-blue` is still read (see 2-semantic.css). */
     --p-blue-cover: #2450e0;
+
+    /* --- Slate: the Edit tile (#937 D1b) ----------------------------------- */
+    --p-slate-600: #475569;
 
     /* --- Warning: storage pressure ----------------------------------------- */
     --p-warn-500: #d98b3a;
@@ -85,9 +89,10 @@
     /* Violet: the Name tile and the naming pencil. */
     --p-violet-600: #7c4ddb;
     --p-violet-700: #6b35d0;
-    /* Teal: sharing. 300/500 are the progress ring, 700/750 the fill. */
+    /* Teal: sharing. 300/600 are the progress ring, 700/750 the fill. 600 is
+       the darker ring #937 D2 chose for light. */
     --p-teal-300: #2bd4bf;
-    --p-teal-500: #14a898;
+    --p-teal-600: #12a090;
     --p-teal-700: #11796d;
     --p-teal-750: #0e7468;
     /* Plum: a book cover only. */
@@ -109,6 +114,13 @@
     --p-radius-lg: 14px;
     --p-radius-xl: 18px;
     --p-radius-full: 999px;
+    /* O4's recurring radii (#937 D5), named by value: chapter rows and
+       inputs, segment rows, tiles and the recorder stage, dialogs, sheets. */
+    --p-radius-12: 12px;
+    --p-radius-16: 16px;
+    --p-radius-20: 20px;
+    --p-radius-22: 22px;
+    --p-radius-26: 26px;
 
     /* --- Type. Three sizes carry a whole screen. ---------------------------- */
     /* system-ui first: no @font-face ships (R-13, #161) — naming a face here
@@ -122,10 +134,52 @@
     --p-weight-normal: 400;
     --p-weight-medium: 500;
     --p-weight-strong: 600;
+    /* O4's type scale (#937 D4), named by value. 12 and 21 are
+       `--p-text-sm` and `--p-text-lg` above; O4 reads those. */
+    --p-text-14: 14px;
+    --p-text-15: 15px;
+    --p-text-16: 16px;
+    --p-text-17: 17px;
+    --p-text-18: 18px;
+    --p-text-19: 19px;
+    --p-text-20: 20px;
+    --p-text-22: 22px;
+    --p-text-32: 32px;
+    --p-weight-bold: 700;
+    --p-weight-heavy: 800;
 
     /* --- Motion. Two durations; anything else is noise. --------------------- */
     --p-dur-fast: 60ms;
     --p-dur-base: 140ms;
     --p-ease: cubic-bezier(0.2, 0, 0.2, 1);
+
+    /* --- Ambient motion (O4, #937 D6) ---------------------------------------
+       Animations that run on their own to draw the eye, not transitions, so
+       they are a separate group rather than more `--p-dur-*` steps. Named for
+       the workbench keyframes (`aud` is audible). Iteration counts belong to
+       the rule that runs each one. */
+    --p-ambient-mic-pulse: 1.3s;
+    --p-ambient-live-edge: 1.2s;
+    --p-ambient-blink: 1s;
+    --p-ambient-armed: 1.6s;
+    --p-ambient-guide-pulse: 1.8s;
+    --p-ambient-audible: 0.9s;
+    --p-ambient-shake: 0.35s;
+  }
+
+  /* The whole ambient group is off under reduced motion. A zero duration
+     gives an animation zero active time, so with no fill mode it paints
+     nothing. A rule that runs one still guards itself as well, the way
+     `3-components.css` guards its own animations. */
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --p-ambient-mic-pulse: 0s;
+      --p-ambient-live-edge: 0s;
+      --p-ambient-blink: 0s;
+      --p-ambient-armed: 0s;
+      --p-ambient-guide-pulse: 0s;
+      --p-ambient-audible: 0s;
+      --p-ambient-shake: 0s;
+    }
   }
 }

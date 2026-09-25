@@ -92,18 +92,28 @@
     --s-live-quiet: var(--p-red-950);
     --s-warn-quiet: var(--p-warn-950);
     --s-warn-text: var(--p-amber-400);
+    /* Words on the live and done washes (#937 D3), the way --s-warn-text is
+       the words on the warn wash. Not --s-live-ink / --s-done-ink: those are
+       the ink ON the solid fill. The live accent is just under AA on its own
+       dark wash, so it takes a lighter red; done is simply the accent here. */
+    --s-live-text: var(--p-red-400);
+    --s-done-text: var(--p-green-500);
 
-    /* Every "hear this" speaker icon. Blue: see 1-primitives.css. */
+    /* Every "hear this" speaker icon. Blue beside the guide (#937 D1). */
     --s-hear: var(--p-blue-400);
 
     /* Menu tiles. Icons on them are --s-tile-ink. */
     --s-tile-ink: var(--p-cool-000);
-    --s-edit: var(--p-blue-700);
+    /* Slate in both themes, off blue (#937 D1b). */
+    --s-edit: var(--p-slate-600);
     --s-name: var(--p-violet-600);
     --s-send: var(--p-teal-700);
     --s-send-ring: var(--p-teal-300);
 
-    /* Book covers: a user's pick, so identical in both themes. */
+    /* Book covers: a user's pick, so identical in both themes. #937 D1 takes
+       covers off blue and #957 replaces this set with a stored palette;
+       --s-cover-blue stays until then because the Tailwind bridge in
+       globals.css still aliases it. */
     --s-cover-amber: var(--p-amber-600);
     --s-cover-teal: var(--p-teal-700);
     --s-cover-plum: var(--p-plum-700);
@@ -164,16 +174,19 @@
     --s-live-quiet: var(--p-red-100);
     --s-warn-quiet: var(--p-warn-100);
     --s-warn-text: var(--p-warn-700);
+    /* The fill accents are too pale as words on their own light washes. */
+    --s-live-text: var(--p-red-700);
+    --s-done-text: var(--p-green-700);
 
     --s-hear: var(--p-blue-600);
 
     --s-tile-ink: var(--p-cool-000);
-    --s-edit: var(--p-blue-800);
+    --s-edit: var(--p-slate-600);
     --s-name: var(--p-violet-700);
     --s-send: var(--p-teal-750);
-    /* 2.96:1 on white: just under the 3:1 non-text floor. Open decision in
-       the O4 doc; not gated yet. */
-    --s-send-ring: var(--p-teal-500);
+    /* The darker teal #937 D2 chose, so the ring clears the 3:1 non-text
+       floor on white; `tests/contrast.test.ts` gates it. */
+    --s-send-ring: var(--p-teal-600);
 
     --s-cover-amber: var(--p-amber-600);
     --s-cover-teal: var(--p-teal-700);
