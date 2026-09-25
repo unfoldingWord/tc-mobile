@@ -38,10 +38,11 @@
     />
     <title>tC Mobile</title>
     <!--
-      LAUNCH INTRO — an experiment, off book (no issue, no PR; branch
-      feat/launch-intro only). Plain HTML + inline script so it plays before
-      `main.tsx` loads and covers boot time instead of adding to it: React
-      still mounts underneath as usual, on its own schedule.
+      LAUNCH INTRO. Plain HTML + inline script so it starts before
+      `main.tsx` loads: React mounts underneath as usual, on its own
+      schedule. The overlay does not wait for the app and the app does not
+      wait for it; it runs its full timeline on every page load, even when
+      the app underneath is ready sooner.
 
       This is a static overlay, not a component, so its colours are literal
       hex values with a token comment beside each — the same pattern
