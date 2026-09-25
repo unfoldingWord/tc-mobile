@@ -178,6 +178,30 @@ describe("useSegmentEditor: paste is one-shot (#489)", () => {
     expect(api().canPaste).toBe(true);
   });
 
+  it("redoing a later cut puts its phrase back on an emptied clipboard (R1 Frank/George)", async () => {
+    const api = await mountWithCut();
+    const step = async (fn: () => unknown) => {
+      await act(async () => {
+        fn();
+      });
+    };
+    await step(() => api().paste(0));
+    await step(() => api().openSelection({ start: 6, end: 8 }));
+    await step(() => api().cut());
+    const B = Int16Array.from([16, 17]);
+    const AFTER_B = Int16Array.from([12, 13, 14, 15, 10, 11, 18, 19]);
+    expect(api().clip).toEqual(B);
+    await step(() => api().paste(0));
+    for (let i = 0; i < 3; i++) await step(() => api().undo());
+    await step(() => api().redo()); // paste A: empties the clipboard
+    await step(() => api().redo()); // cut B: B leaves `working` again
+    expect(api().working).toEqual(AFTER_B);
+    expect(api().clip).toEqual(B);
+    await step(() => api().redo()); // paste B: one-shot still holds
+    expect(api().working).toEqual(Int16Array.from([16, 17, ...AFTER_B]));
+    expect(api().clip).toBeNull();
+  });
+
   it("a redo never empties a clipboard holding a different phrase", async () => {
     const api = await mountWithCut();
     await act(async () => {

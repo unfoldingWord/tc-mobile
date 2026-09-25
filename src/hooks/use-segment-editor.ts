@@ -93,6 +93,13 @@ interface History {
   readonly log: EditLog;
 }
 
+/** The clipboard holds exactly these samples (same array, or equal content). */
+function sameSamples(held: Int16Array | null, clip: Int16Array): boolean {
+  if (held === clip) return true;
+  if (held === null || held.length !== clip.length) return false;
+  return held.every((v, i) => v === clip[i]);
+}
+
 /**
  * The waveform-editing state for one recorder session (B5).
  *
@@ -293,18 +300,21 @@ export function useSegmentEditor(
   // it. Undoing a paste takes the phrase back OUT of `working`; if it did not
   // also go back on the clipboard, closing the sheet would drop the only copy
   // left (the op's own reference dies with the session log). So the undone
-  // paste's samples go back on the clipboard. What that overwrites is always
-  // also in `working`: the clipboard empties at every paste, and after that
-  // only a LATER op in this session's log can refill it (the log starts fresh
-  // with each sheet) — a cut, or the undo of a paste of that cut's phrase.
-  // This undo is reachable only after undoing that later cut too, and undoing
-  // a cut puts its audio back into `working`.
+  // paste's samples go back on the clipboard. What that overwrites is, at
+  // that instant, also in `working`: only a LATER op in this session's log
+  // can have refilled it — a cut, whose undo (reachable before this one) put
+  // its audio back into `working`.
+  //
+  // That copy is only safe until the later cut is REDONE, which takes the
+  // audio back out of `working` (Frank/George R1: cut → paste → cut → undo ×2
+  // → redo ×2 left the second cut's phrase only in the redo tail). So a redo
+  // of a cut puts its samples back on an EMPTY clipboard; a full one is left
+  // alone (a lone cut's undo/redo never emptied it).
   //
   // Redoing the paste empties it again, but only when the clipboard still
-  // holds that paste's own samples. It always should — a redo is reachable
-  // only while no new op has been pushed, and only a new op (a cut) refills
-  // the clipboard — and the identity check keeps a redo from ever discarding
-  // a phrase it did not put there.
+  // holds that paste's own samples — the same array, or the same samples a
+  // cut's redo sliced back out — so a redo never discards a phrase it did
+  // not put there.
   const undo = useCallback((): EditOp | null => {
     const undoneOp = opUndone(log);
     if (undoneOp === null) return null;
@@ -318,14 +328,28 @@ export function useSegmentEditor(
   const redo = useCallback((): EditOp | null => {
     const redoneOp = opRedone(log);
     if (redoneOp === null) return null;
-    const applied = applyLog(logRedo(log), () => {
-      clearSelection();
-      if (redoneOp.kind === "paste" && clipboard.clip === redoneOp.clip) {
-        clipboard.set(null);
-      }
+    const held = clipboard.clip;
+    // Every allocation inside the guard, as in `cut()`: the refill slice is
+    // taken from the pre-redo buffer, the one the cut's range was measured on.
+    const applied = runEdit(() => {
+      const nextLog = logRedo(log);
+      const refill =
+        redoneOp.kind === "cut" && held === null
+          ? sliceRange(working, redoneOp.range)
+          : null;
+      return {
+        next: { base, working: materialize(base, nextLog), log: nextLog },
+        after: () => {
+          clearSelection();
+          if (refill) clipboard.set(refill);
+          if (redoneOp.kind === "paste" && sameSamples(held, redoneOp.clip)) {
+            clipboard.set(null);
+          }
+        },
+      };
     });
     return applied ? redoneOp : null;
-  }, [log, applyLog, clearSelection, clipboard]);
+  }, [log, base, working, runEdit, clearSelection, clipboard]);
 
   const selectionSpan = selection
     ? clampRange(selection, working.length)

@@ -51,7 +51,7 @@ describe("useSegmentEditor.undo/redo call the shared opUndone/opRedone helpers (
       "const redo = useCallback((): EditOp | null => {"
     );
     const end = source.indexOf(
-      "}, [log, applyLog, clearSelection, clipboard]);",
+      "}, [log, base, working, runEdit, clearSelection, clipboard]);",
       start
     );
     expect(start).toBeGreaterThan(-1);
