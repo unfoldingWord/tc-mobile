@@ -1,7 +1,8 @@
 # O4 design system (from the workbench, round 4)
 
 Status: **proposed**. Extracted 2026-09-25 from the "tC Mobile O4 Workbench"
-artifact (O4 Polish current, round 4). The workbench says its colour table
+artifact (O4 Polish current, round 4), and refreshed the same day for Tim's
+update (see §8). The workbench says its colour table
 "becomes the colour section of the design system once you approve it". This
 branch does not record that approval; treat every value here as awaiting it.
 
@@ -72,14 +73,17 @@ O4's sizes and weights do **not** fit today's type primitives
 | O4 use                                      | Size | Weight |
 | ------------------------------------------- | ---- | ------ |
 | Recorder timer (tabular numerals)           | 32px | 800    |
+| Chapter title, chapter screen header        | 22px | 800    |
 | Dialog title                                | 22px | 800    |
 | Book name, "teach" prompt                   | 21px | 700    |
 | Sheet title                                 | 20px | 700    |
 | Warning banner text                         | 19px | 700    |
+| Chapter title in a Books row                | 17px | 800    |
 | Chapter number badge                        | 18px | 800    |
 | Name input                                  | 18px | 400    |
 | Segment number badge, edit pill             | 17px | 800    |
 | Big buttons (Done, pill buttons), file name | 17px | 700    |
+| Segment title in a row                      | 16px | 800    |
 | Chips, breadcrumbs                          | 16px | 700    |
 | Recorder timestamp (mono)                   | 15px | 500    |
 | Chapter name                                | 15px | 600    |
@@ -100,47 +104,51 @@ New recurring values: 12 (chapter rows, inputs), 16 (segment rows), 20
 
 Hit targets and controls:
 
-| Part                | Size                       | Shape / fill                                                                                      |
-| ------------------- | -------------------------- | ------------------------------------------------------------------------------------------------- |
-| Header              | 56px tall                  | inset 10px left, 12px right, top 14                                                               |
-| Header ghost button | 44 × 48                    | radius 12, `--s-ink-muted`                                                                        |
-| Chip / breadcrumb   | 40px tall                  | radius 10, `--s-well`; live/voice/done variants on their quiet roles; crumbs chevron-clipped 13px |
-| Book card           | —                          | radius 18, pad 10, `--s-surface`, `--s-card-edge` border                                          |
-| Book cover          | 72 × 90 (sm 52 × 64)       | radius 9 (sm 7), inset 7px spine shadow `rgba(0,0,0,.16)`                                         |
-| Chapter row         | 68px tall                  | radius 12, `--s-floor`                                                                            |
-| Chapter number      | 44 × 44                    | radius 10, `--s-well`, 18/800                                                                     |
-| Progress dot        | 13px                       | circle                                                                                            |
-| Segment row         | 90px tall                  | radius 16, `--s-surface`; selected = 2px `--s-guide` outline                                      |
-| Segment badge       | 44 × 44                    | circle, `--s-well`; done = `--s-done`                                                             |
-| Row transport       | 72 × 72                    | circle; play `--s-voice`, record `--s-live`                                                       |
-| Speaker button      | 52 × 52                    | circle, `--s-well`, glyph `--s-hear`                                                              |
-| Square button       | 56 × 56                    | radius 14, `--s-well`                                                                             |
-| Menu tile           | 76 × 76                    | radius 20, label 14px below, gap 8                                                                |
-| Bottom sheet        | inset 8                    | radius 26, pad 12/16/20, handle 56 × 5                                                            |
-| Dialog              | inset 18, top 230          | radius 22, shadow `0 24px 48px rgba(0,0,0,.35)`; buttons 76 tall, radius 14, 2-col                |
-| Recorder stage      | top 80, 632 tall           | radius 20, `--s-surface`                                                                          |
-| Recorder transport  | 64 (secondary), big button | circles                                                                                           |
-| Trim handle         | 30 × 56                    | radius 15, `--s-voice`                                                                            |
-| Big mic / OK        | 80 × 80                    | `--s-live` / `--s-done`                                                                           |
-| Share button        | 140 core in 176            | `--s-send`, ring `--s-send-ring`                                                                  |
-| Error circle        | 136 (warn 170)             | `--s-raised` (light `--s-well`)                                                                   |
-| Wide guide button   | 280 × 84                   | radius 42, `--s-guide`                                                                            |
-| Pill button         | 60 tall                    | radius 30, `--s-well`, 17/700                                                                     |
+| Part                 | Size                       | Shape / fill                                                                                                                         |
+| -------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Header               | 56px tall                  | inset 10px left, 12px right, top 14                                                                                                  |
+| Header ghost button  | 44 × 48                    | radius 12, `--s-ink-muted`                                                                                                           |
+| Chip / breadcrumb    | 40px tall                  | radius 10, `--s-well`; live/voice/done variants on their quiet roles; crumbs chevron-clipped 13px                                    |
+| Book card            | —                          | radius 18, pad 10, `--s-surface`, `--s-card-edge` border                                                                             |
+| Book cover           | 72 × 90 (sm 52 × 64)       | radius 9 (sm 7), inset 7px spine shadow `rgba(0,0,0,.16)`                                                                            |
+| Chapter row          | 68px tall                  | radius 12, `--s-floor`; middle column 44px tall = optional 20px title + dots, gap 5                                                  |
+| Chapter number       | 44 × 44                    | radius 10, `--s-well`, 18/800; when the chapter has a title it dims: transparent, `--s-ink-faint`, 2px inset `--s-well` ring         |
+| Progress dot         | 13 → 5px                   | circle; wraps, and shrinks to fit (13/6, 11/5, 9/4, 7/3, 5/2 size/gap) in a 206px column, 44px tall without a title or 19px with one |
+| Segment row          | 90px tall                  | radius 16, `--s-surface`; selected = 2px `--s-guide` outline; with a title: 22px title line over a 36px wave (56px without)          |
+| Chapter header       | top 76, 46 tall, inset 22  | title 22/800 or a 120 × 30 spoken-name wave, then a 44px speaker; pushes the progress bar from top 80 to 130                         |
+| Spoken-name wave     | 76 × 20 (header 120 × 30)  | `--s-voice` bars; stands in for a title that was only spoken                                                                         |
+| Lifted row (reorder) | —                          | scale 1.03, z 8, shadow `0 14px 30px rgba(0,0,0,.38)`; a lifted chapter row takes `--s-raised`                                       |
+| Segment badge        | 44 × 44                    | circle, `--s-well`; done = `--s-done`                                                                                                |
+| Row transport        | 72 × 72                    | circle; play `--s-voice`, record `--s-live`                                                                                          |
+| Speaker button       | 52 × 52                    | circle, `--s-well`, glyph `--s-hear`                                                                                                 |
+| Square button        | 56 × 56                    | radius 14, `--s-well`                                                                                                                |
+| Menu tile            | 76 × 76                    | radius 20, label 14px below, gap 8                                                                                                   |
+| Bottom sheet         | inset 8                    | radius 26, pad 12/16/20, handle 56 × 5                                                                                               |
+| Dialog               | inset 18, top 230          | radius 22, shadow `0 24px 48px rgba(0,0,0,.35)`; buttons 76 tall, radius 14, 2-col                                                   |
+| Recorder stage       | top 80, 632 tall           | radius 20, `--s-surface`                                                                                                             |
+| Recorder transport   | 64 (secondary), big button | circles                                                                                                                              |
+| Trim handle          | 30 × 56                    | radius 15, `--s-voice`                                                                                                               |
+| Big mic / OK         | 80 × 80                    | `--s-live` / `--s-done`                                                                                                              |
+| Share button         | 140 core in 176            | `--s-send`, ring `--s-send-ring`                                                                                                     |
+| Error circle         | 136 (warn 170)             | `--s-raised` (light `--s-well`)                                                                                                      |
+| Wide guide button    | 280 × 84                   | radius 42, `--s-guide`                                                                                                               |
+| Pill button          | 60 tall                    | radius 30, `--s-well`, 17/700                                                                                                        |
 
 Guide ring: `box-shadow: 0 0 0 5px var(--s-floor), 0 0 0 8px var(--s-guide)`
 (outset, matching the existing rule in `3-components.css`).
 
 ## 4. Motion
 
-| Name       | Duration  | Use                                 |
-| ---------- | --------- | ----------------------------------- |
-| micPulse   | 1.3s loop | Big mic while recording a name      |
-| liveEdge   | 1.2s loop | Recorder stage edge while recording |
-| blink      | 1s steps  | Recording dot beside the timer      |
-| armed      | 1.6s loop | Share ring when ready to send       |
-| guidePulse | 1.8s loop | Guide ring on the next action       |
-| aud        | 0.9s ×2   | "Audible" ping on the waveform      |
-| shake      | 0.35s ×2  | Refused action                      |
+| Name       | Duration                     | Use                                                                                                                                                                                                   |
+| ---------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| micPulse   | 1.3s loop                    | Big mic while recording a name                                                                                                                                                                        |
+| liveEdge   | 1.2s loop                    | Recorder stage edge while recording                                                                                                                                                                   |
+| blink      | 1s steps                     | Recording dot beside the timer                                                                                                                                                                        |
+| armed      | 1.6s loop                    | Share ring when ready to send                                                                                                                                                                         |
+| guidePulse | 1.8s loop                    | Guide ring on the next action                                                                                                                                                                         |
+| aud        | 0.9s ×2                      | "Audible" ping on the waveform                                                                                                                                                                        |
+| shake      | 0.35s ×2                     | Refused action                                                                                                                                                                                        |
+| reorder    | 450ms hold, then 160ms shift | Press-and-hold lifts a chapter or segment row; neighbours slide with `transform .16s ease`; 15ms haptic on lift; list auto-scrolls within 64px of an edge; moving 8px before the hold ends cancels it |
 
 All are disabled under `prefers-reduced-motion`. Today's primitives allow two
 durations (60ms, 140ms) and say "anything else is noise". These are ambient
@@ -171,11 +179,43 @@ grid, stroke 2.2 unless noted, `currentColor`). `icon.tsx` draws on a
 3. **Light quiet washes** (`live` on `live-quiet` 3.6, `done` on `done-quiet`
    3.3) are fine as fills with icons but below AA if used as small text.
 4. **Type scale and weights** (§2) and **radii** (§3) need a layer-1 decision.
-5. **Covers.** The workbench's JS also carries an older five-colour gradient
+5. **Reorder has no accessible path yet.** The workbench reorders by
+   press-and-hold only; the button labels say "Hold and drag to move" but there
+   is no keyboard or switch-control way to move a row.
+6. **Covers.** The workbench's JS also carries an older five-colour gradient
    cover set (amber, green, blue, purple, red). The screens and colour table
    use the four flat covers above; this branch follows those.
 
-## 7. Screen map (reference)
+## 7. Titles and reordering (added in Tim's update)
+
+- **Titles.** A chapter or segment "has a title" when it has a typed name or a
+  spoken one. A typed name shows as text; a name that was only spoken shows as
+  a short amber wave. Segment rows with a spoken name prefix the title with a
+  16px `--s-hear` speaker glyph. The chapter screen gets a header with the
+  title and a "hear the chapter name" button. Untitled rows look as before.
+- **Sheet headers.** The name sheet now shows what is being named: the book's
+  small cover and name, or the chapter/segment breadcrumbs. The segment menu
+  header uses the same breadcrumbs, and the segment's name moves from the
+  header into the preview row.
+- **Reorder.** Press and hold, then drag, to move a chapter (Books list) or a
+  segment (chapter screen). Chapters renumber after a move. Screen hints now
+  say so.
+
+No new colour roles: titles, headers and lifted rows use roles already in
+§1 and `2-semantic.css`.
+
+## 8. Change log
+
+- **2026-09-25, first export.** Colour roles, contrast gate, geometry, type,
+  motion, icons, open decisions.
+- **2026-09-25, Tim's update.** Diffed against the first export: the colour
+  table, gap notes (G1–G10) and icon set are unchanged, so layers 1 and 2 are
+  unchanged. Added the titled chapter and segment rows, the chapter header,
+  auto-fitting progress dots, the new name-sheet and segment-menu headers,
+  and press-and-hold reordering (§2, §3, §4, §7). The sample data gains a
+  26-segment "Mark 3" chapter to exercise dot fitting.
+
+## 9. Screen map (reference)
 
 O4 states: 01 Books empty · 02 New book · 03 Books list · 04 Book menu ·
 05 Chapter empty · 06 Chapter with segments · 07 Segment menu · 08 Recorder
