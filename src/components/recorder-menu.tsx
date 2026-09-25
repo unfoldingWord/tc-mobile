@@ -1,7 +1,10 @@
 import { Control } from "./control";
 import { Menu } from "./menu";
+import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
+import { useDesign } from "@/hooks/use-design";
 import { rowHint, type RowReason } from "./menu-row-state";
 import { strings } from "@/lib/strings";
+import { cn } from "@/lib/utils";
 import { ThemeControl } from "./theme-control";
 
 /**
@@ -82,6 +85,7 @@ export function RecorderMenu({
   // docblock — but a component should not depend on its caller being right to
   // stay self-consistent (George R1).
   const marked = ordinal !== null && finishedState === "finished";
+  const { design } = useDesign();
 
   return (
     <Menu
@@ -102,7 +106,27 @@ export function RecorderMenu({
       // keep the chevron; this drawer keeps ≡ no matter which opener it was.
       hamburger
     >
-      {mode === "record" ? (
+      {/* ONE <Menu> for both looks, so the surface — its title, the ≡
+          dismiss, focus trap and Escape — cannot differ between them; only
+          what sits inside it does. The O4 grid ends with the theme tile past
+          the spacer, last for the reason the current rows below give. */}
+      {design === "o4" && (
+        <TileGrid>
+          <RecorderMenuTiles
+            mode={mode}
+            marked={marked}
+            ordinal={ordinal}
+            markReason={markReason}
+            eraseReason={eraseReason}
+            onToggleFinished={onToggleFinished}
+            onErase={onErase}
+            onExitEdit={onExitEdit}
+          />
+          <TileSpacer />
+          <ThemeControl tile />
+        </TileGrid>
+      )}
+      {design === "o4" ? null : mode === "record" ? (
         <>
           <Control
             icon="edit"
@@ -228,5 +252,87 @@ export function RecorderMenu({
         </>
       )}
     </Menu>
+  );
+}
+
+/**
+ * The O4 look of this menu's action tiles (#949, workbench G3 and G8),
+ * mounted inside the same `<Menu>` as the current rows — focus trap, Escape,
+ * scrim, heading and ≡ dismiss unchanged — on the O4 grid, which
+ * `o4/menus.css` turns into a bottom sheet capped at half the screen, so the
+ * waveform above is meant to stay in view (#927).
+ *
+ * Each tile is the row it replaces with the same name, gate, hint and
+ * handler, read from the same props; the tone and the caption are all that
+ * is new. Two deliberate differences from the current look:
+ *
+ *   - Record mode has no Edit tile. G3 (workbench round 4) took it out
+ *     because the recorder screen carries its own edit control — the one
+ *     `recorder.tsx` gates on the same `editReason`.
+ *   - Mark's tile is the plain well until the mark will stick, then fills
+ *     green (G8), keyed on the same `marked` the current row's paint reads.
+ */
+function RecorderMenuTiles({
+  mode,
+  marked,
+  ordinal,
+  markReason,
+  eraseReason,
+  onToggleFinished,
+  onErase,
+  onExitEdit,
+}: Pick<
+  RecorderMenuProps,
+  | "mode"
+  | "ordinal"
+  | "markReason"
+  | "eraseReason"
+  | "onToggleFinished"
+  | "onErase"
+  | "onExitEdit"
+> & { marked: boolean }) {
+  return (
+    <>
+      {mode === "record" ? (
+        <Tile
+          tone="plain"
+          icon="check"
+          size={32}
+          label={
+            marked
+              ? strings.markUnfinished(ordinal ?? 0)
+              : strings.markFinished(ordinal ?? 0)
+          }
+          caption={strings.tileFinished}
+          className={cn(
+            "recorder-menu-tile recorder-menu-mark",
+            marked && "is-done"
+          )}
+          disabled={markReason !== null}
+          hint={rowHint(markReason)}
+          onClick={onToggleFinished}
+        />
+      ) : (
+        <Tile
+          tone="plain"
+          icon="check"
+          size={32}
+          label={strings.doneEditing}
+          caption={strings.tileDone}
+          className="recorder-menu-tile"
+          onClick={onExitEdit}
+        />
+      )}
+      <Tile
+        tone="erase"
+        icon="trash"
+        label={strings.eraseSegment}
+        caption={strings.tileErase}
+        className="recorder-menu-tile"
+        disabled={eraseReason !== null}
+        hint={rowHint(eraseReason)}
+        onClick={onErase}
+      />
+    </>
   );
 }

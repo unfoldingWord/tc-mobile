@@ -250,6 +250,15 @@ export const strings = {
   // the training is where that glyph is tested rather than assumed.
   useLightTheme: "Switch to the light screen, for bright sunlight",
   useDarkTheme: "Switch to the dark screen, for low light",
+  // The O4 tile captions (#949, epic #936): the short word shown under a menu
+  // tile. The tile's accessible name is unchanged from the current look, so
+  // each caption is a word OF that name (label-in-name) — which is why Mark's
+  // is "Finished", the word its name already says, and not a new word.
+  tileLight: "Light",
+  tileDark: "Dark",
+  tileFinished: "Finished",
+  tileErase: "Erase",
+  tileDone: "Done",
   // The O4 design switch (#938, epic #936). One control, `aria-pressed`
   // carrying the on/off state (`Control`'s `pressed` prop, the same
   // mechanism the zoom and level-meter toggles use) — so the label itself

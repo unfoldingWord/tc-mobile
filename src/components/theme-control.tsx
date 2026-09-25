@@ -1,4 +1,5 @@
 import { Control } from "./control";
+import { Tile } from "./o4-tile-menu";
 import { strings } from "@/lib/strings";
 import { useTheme } from "@/hooks/use-theme";
 
@@ -45,16 +46,27 @@ import { useTheme } from "@/hooks/use-theme";
  * the opposite of the toggle on both counts. #149 is the issue that owns that
  * split; it is a scope decision, not an oversight.
  */
-export function ThemeControl() {
+export function ThemeControl({ tile = false }: { tile?: boolean } = {}) {
   const theme = useTheme();
+  const dark = theme.theme === "dark";
+  const icon = dark ? "sun" : "moon";
+  const label = dark ? strings.useLightTheme : strings.useDarkTheme;
+  // `tile`: the same control as an O4 menu tile (#949) — the plain well at the
+  // far end of the grid, captioned with the destination's word, which its
+  // accessible name already contains. Same three facts as above; only the
+  // shape changes, so an O4 menu mounts this rather than a fourth copy.
+  if (tile)
+    return (
+      <Tile
+        tone="plain"
+        icon={icon}
+        size={32}
+        label={label}
+        caption={dark ? strings.tileLight : strings.tileDark}
+        onClick={theme.toggle}
+      />
+    );
   return (
-    <Control
-      icon={theme.theme === "dark" ? "sun" : "moon"}
-      label={
-        theme.theme === "dark" ? strings.useLightTheme : strings.useDarkTheme
-      }
-      variant="quiet"
-      onClick={theme.toggle}
-    />
+    <Control icon={icon} label={label} variant="quiet" onClick={theme.toggle} />
   );
 }
