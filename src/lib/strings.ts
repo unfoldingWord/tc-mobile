@@ -986,4 +986,31 @@ export const strings = {
   // The wording itself is a coordinator assumption pending the requirements
   // owner's sign-off — see the #878 PR body.
   stopToErase: "Stop recording to erase.",
+
+  // ── Cover colour picker (#957, from #937 D7/D8) ──────────────────────────
+  // The picker's group name, and one name per palette key
+  // (`lib/cover-colour.ts`'s `CoverColourKey`) — the whole accessible text
+  // layer for a screen built for people who may not read, so each swatch has
+  // to carry a real word, not just a fill colour a screen reader cannot see.
+  // Worded by `components/cover-colour-copy.ts`'s exhaustive switch, the same
+  // split `capture-failure-copy.ts` uses: the KEY is a `lib/` value, the
+  // WORDS live here.
+  coverColourLabel: "Cover colour",
+  coverColourAmber: "Amber",
+  coverColourTeal: "Teal",
+  coverColourPlum: "Plum",
+  coverColourForest: "Forest",
+  coverColourBrick: "Brick",
+  coverColourSlate: "Slate",
+  coverColourRose: "Rose",
+  coverColourOlive: "Olive",
+  coverColourRust: "Rust",
+  coverColourCocoa: "Cocoa",
+  // A swatch button's whole accessible name: the colour's name, plus its
+  // selected state — the same "whole name, plus a trailing state word" shape
+  // `bookRow` above uses for "expanded"/"collapsed". `aria-pressed` already
+  // carries this machine-readably; the word is for the same reason `pressed`
+  // is never inferred from a glyph alone (`Control`'s own `pressed` doc).
+  coverSwatchLabel: (name: string, selected: boolean): string =>
+    selected ? `${name}, selected` : name,
 } as const;

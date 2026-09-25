@@ -12,7 +12,7 @@ const DB_NAME = "tc-mobile";
 // The version `getDb` opens. Like DB_NAME, kept in sync with db.ts by hand —
 // a migration test necessarily knows the ladder it is climbing. Asserted rather
 // than assumed, so a bump that forgets to add its own case fails here first.
-const APP_VERSION = 8;
+const APP_VERSION = 9;
 
 /**
  * Delete the database outright so each test starts from a true fresh install.
@@ -145,8 +145,135 @@ async function openLegacyV6() {
   });
 }
 
+/**
+ * Stand up the v8 schema: the pivot stores, with named chapters, labelled
+ * segments and the v4/v7 clip fields all already in place. This is what a
+ * device on v0.2.x holds when #957's v9 opens it — a book row with no
+ * `coverColourKey`.
+ */
+async function openLegacyV8() {
+  return openDB(DB_NAME, 8, {
+    upgrade(db) {
+      db.createObjectStore("books", { keyPath: "id" });
+      const chapters = db.createObjectStore("chapters", { keyPath: "id" });
+      chapters.createIndex("bookId", "bookId");
+      const segments = db.createObjectStore("segments", { keyPath: "id" });
+      segments.createIndex("chapterId", "chapterId");
+      const takes = db.createObjectStore("takes", { keyPath: "id" });
+      takes.createIndex("segmentId", "segmentId");
+      db.createObjectStore("clipMeta", { keyPath: "id" });
+      db.createObjectStore("clipData");
+      db.createObjectStore("failures", { autoIncrement: true });
+    },
+  });
+}
+
 beforeEach(wipe);
 afterEach(wipe);
+
+describe("v9 book cover-colour backfill (append-only)", () => {
+  it("stamps a pre-existing colourless book with coverColourKey: null, keeping its data", async () => {
+    const v8 = await openLegacyV8();
+    await v8.put("books", {
+      id: "b1",
+      name: "Mark",
+      languageCode: null,
+      chapterIds: ["ch1"],
+      createdAt: 3,
+      updatedAt: 7,
+    });
+    v8.close();
+
+    const v9 = await getDb();
+    expect(v9.version).toBe(APP_VERSION);
+
+    const book = await v9.get("books", "b1" as never);
+    // The field is now present and null — never undefined — and every other
+    // field is untouched (name, language, chapter order, timestamps).
+    expect(book).toEqual({
+      id: "b1",
+      name: "Mark",
+      languageCode: null,
+      chapterIds: ["ch1"],
+      createdAt: 3,
+      updatedAt: 7,
+      coverColourKey: null,
+    });
+  });
+
+  it("leaves a book that already carries a colour alone", async () => {
+    // Keys on the field being ABSENT, like the v5/v8 backfills before it, so a
+    // row a newer build already coloured is not clobbered back to null.
+    const v8 = await openLegacyV8();
+    await v8.put("books", {
+      id: "b2",
+      name: "Luke",
+      languageCode: null,
+      chapterIds: [],
+      createdAt: 0,
+      updatedAt: 0,
+      coverColourKey: "forest",
+    });
+    v8.close();
+
+    const v9 = await getDb();
+    expect((await v9.get("books", "b2" as never))?.coverColourKey).toBe(
+      "forest"
+    );
+  });
+
+  it("stamps a v3 book on the way up, alongside the older backfills", async () => {
+    // A device that recorded on the v3 pivot build jumps every step in one
+    // open — the v9 backfill runs alongside v4/v5/v6/v7/v8's.
+    const v3 = await openLegacyV3();
+    await v3.put("books", {
+      id: "b1",
+      name: "Mark",
+      languageCode: null,
+      chapterIds: [],
+      createdAt: 0,
+      updatedAt: 0,
+    });
+    v3.close();
+
+    const db = await getDb();
+    expect(db.version).toBe(APP_VERSION);
+    expect((await db.get("books", "b1" as never))?.coverColourKey).toBeNull();
+  });
+
+  it("does not touch chapters, segments, takes or clips on the way up", async () => {
+    const v8 = await openLegacyV8();
+    await v8.put("books", {
+      id: "b1",
+      name: "Mark",
+      languageCode: null,
+      chapterIds: ["ch1"],
+      createdAt: 0,
+      updatedAt: 0,
+    });
+    await v8.put("chapters", {
+      id: "ch1",
+      bookId: "b1",
+      number: 1,
+      segmentIds: ["s1"],
+      name: "Mark 6",
+    });
+    await v8.put("segments", {
+      id: "s1",
+      chapterId: "ch1",
+      index: 1,
+      reference: null,
+      activeTakeId: null,
+      status: "not-started",
+      label: "verses 3-4",
+    });
+    v8.close();
+
+    const v9 = await getDb();
+    expect((await v9.get("chapters", "ch1" as never))?.name).toBe("Mark 6");
+    expect((await v9.get("segments", "s1" as never))?.label).toBe("verses 3-4");
+  });
+});
 
 describe("v8 segment-label backfill (append-only)", () => {
   it.each([6, 7])(
