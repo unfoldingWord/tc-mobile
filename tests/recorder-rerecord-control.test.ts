@@ -297,8 +297,13 @@ describe("the bar's bin does not erase during a live take (#903)", () => {
       dialog,
       "erase confirm must not open from a click during a live take"
     ).toBeNull();
-    // And the erase itself — reachable only from that confirm's own Erase
-    // button — was never called.
+    // Implied by the dialog assertion above, not an independent check
+    // (#913 item 2): erase only runs from that confirm's own Erase button,
+    // so a confirm that never opened means this can only be false already.
+    // Kept as a direct assertion on the mock anyway, so a future refactor
+    // that opens the dialog through a path other than `EraseConfirm`
+    // (defeating the assertion above) still fails here on the thing that
+    // actually matters — erase being reached.
     expect(storage.clear).not.toHaveBeenCalled();
   });
 });
