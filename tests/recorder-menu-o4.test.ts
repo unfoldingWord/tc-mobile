@@ -18,15 +18,18 @@ import { areaRules, declsFor } from "./o4-area-css";
  * component.
  *
  * The switch is read through `useDesign()`, mocked so each case picks its
- * look (`tests/segments-o4.test.ts` is the pattern). `tests/recorder-menu.test.ts`
- * runs against the real hook, which answers "current" here, and stays
- * unedited: that file is the "switch off means unchanged" half.
+ * look (`tests/segments-o4.test.ts` is the pattern). The first case below is
+ * the "switch off means unchanged" guard.
  *
  * G3 (workbench round 4) drops Edit from this menu in O4 — the recorder
  * screen carries its own edit control — so the record-mode O4 menu is Mark,
  * Erase and the theme tile. Every other row keeps the accessible name,
  * gating and hint it has in the current look; the cases below re-ask the
  * current suite's questions of the O4 branch.
+ *
+ * Marking done (G8) is #995's shared `done` / `doneoff` tile tone and the
+ * theme tile is `ThemeControl`'s shared `tile` prop — the same two mechanisms
+ * the segment menu uses, not a recorder copy of either.
  *
  * What this file does NOT cover: the cascade (whether `o4/menus.css` wins on
  * a real page, and whether the sheet really stays under half a phone's
@@ -161,10 +164,10 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
     }
   });
 
-  it("gives the tiles their tones: plain Mark and theme, the erase tile for Erase", () => {
+  it("gives the tiles their tones: doneoff Mark, plain theme, the erase tile for Erase", () => {
     show();
     expect(named(strings.markFinished(3))?.classList).toContain(
-      "o4-tile--plain"
+      "o4-tile--doneoff"
     );
     expect(named(strings.eraseSegment)?.classList).toContain("o4-tile--erase");
     expect(themeTile()?.classList).toContain("o4-tile--plain");
@@ -172,27 +175,29 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
     expect(named(strings.doneEditing)?.classList).toContain("o4-tile--plain");
   });
 
-  it("flips the Mark tile's LABEL and its green fill on the same value", () => {
+  it("flips the Mark tile's LABEL and its tone (done / doneoff) on the same value", () => {
     show({ finishedState: "finished" });
     const marked = named(strings.markUnfinished(3));
-    expect(marked?.classList).toContain("is-done");
+    expect(marked?.classList).toContain("o4-tile--done");
+    expect(marked?.classList).not.toContain("o4-tile--doneoff");
     show({ finishedState: "empty" });
     const unmarked = named(strings.markFinished(3));
-    expect(unmarked?.classList).not.toContain("is-done");
+    expect(unmarked?.classList).toContain("o4-tile--doneoff");
+    expect(unmarked?.classList).not.toContain("o4-tile--done");
   });
 
   it("keeps paint and label agreeing when the ordinal is missing", () => {
     show({ ordinal: null, finishedState: "finished" });
-    expect(startingWith(strings.markFinished(0))?.classList).not.toContain(
-      "is-done"
+    expect(startingWith(strings.markFinished(0))?.classList).toContain(
+      "o4-tile--doneoff"
     );
     expect(named(strings.markUnfinished(0))).toBeUndefined();
   });
 
   it("does NOT paint the green fill on a disabled-finished tile", () => {
     show({ finishedState: "disabled", markReason: "no-audio" });
-    expect(startingWith(strings.markFinished(3))?.classList).not.toContain(
-      "is-done"
+    expect(startingWith(strings.markFinished(3))?.classList).toContain(
+      "o4-tile--doneoff"
     );
   });
 
@@ -251,17 +256,13 @@ describe("o4/menus.css, recorder-menu section (#949 G3)", () => {
     expect(declsFor(rules, panel).get("max-height")).toBe("50dvh");
   });
 
-  it("pins the Mark tile's inks: done ink on the done fill when marked, faint when not", () => {
-    const marked = '[data-design="o4"] .recorder-menu-tile.is-done';
-    expect(declsFor(rules, marked).get("color")).toBe("var(--s-done-ink)");
-    expect(declsFor(rules, `${marked}::before`).get("background")).toBe(
-      "var(--s-done)"
+  it("paints no done fill of its own: the half-screen cap is its only rule", () => {
+    // Marking done is #995's shared tone; a recorder-keyed paint rule would
+    // be the second mechanism this section must not grow back.
+    expect(rules.length, "menus.css parsed to no rules").toBeGreaterThan(0);
+    const own = rules.filter((r) =>
+      r.selectors.some((sel) => sel.includes("recorder-menu"))
     );
-    expect(
-      declsFor(
-        rules,
-        '[data-design="o4"] .recorder-menu-mark:not(.is-done)'
-      ).get("color")
-    ).toBe("var(--s-ink-faint)");
+    expect(own.map((r) => r.selectors)).toEqual([[panel]]);
   });
 });

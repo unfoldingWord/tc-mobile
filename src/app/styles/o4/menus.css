@@ -269,28 +269,18 @@
     opacity: 0.35;
   }
 
-  /* ── Recorder menu (#949, workbench G3 and G8) ──────────────────────────
-     recorder-menu.tsx's O4 branch. Its tiles carry recorder-menu-tile, which
-     is what these rules key on, so no other menu's sheet or tiles move.
+  /* === #949: the recorder menu (G3)
+     ======================================================================
+     recorder-menu.tsx's O4 branch. Marking done (G8) and the theme tile are
+     the shared tones and ThemeControl tile above; this section holds only
+     what the recorder sheet has and no other menu does.
 
      The sheet is capped at half the screen (the requirements owner's #927
-     ask: the waveform above it should stay in view). Where the cap bites,
-     the sheet scrolls rather than climbing over the waveform.
-
-     Mark's tile (G8): the plain well with faint ink until the mark will
-     stick, then the done fill with done ink — the paint keys on is-done,
-     the same class the current look's row wears. */
+     ask: the waveform above it stays in view). Where the cap bites, the
+     sheet scrolls rather than climbing over the waveform. It keys on
+     recorder-menu-tile, which only this menu's tiles carry. */
   [data-design="o4"] .menu-panel:has(.recorder-menu-tile) {
     max-height: 50dvh;
     overflow-y: auto;
-  }
-  [data-design="o4"] .recorder-menu-mark:not(.is-done) {
-    color: var(--s-ink-faint);
-  }
-  [data-design="o4"] .recorder-menu-tile.is-done {
-    color: var(--s-done-ink);
-  }
-  [data-design="o4"] .recorder-menu-tile.is-done::before {
-    background: var(--s-done);
   }
 }

@@ -4,7 +4,6 @@ import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
 import { useDesign } from "@/hooks/use-design";
 import { rowHint, type RowReason } from "./menu-row-state";
 import { strings } from "@/lib/strings";
-import { cn } from "@/lib/utils";
 import { ThemeControl } from "./theme-control";
 
 /**
@@ -269,8 +268,12 @@ export function RecorderMenu({
  *   - Record mode has no Edit tile. G3 (workbench round 4) took it out
  *     because the recorder screen carries its own edit control — the one
  *     `recorder.tsx` gates on the same `editReason`.
- *   - Mark's tile is the plain well until the mark will stick, then fills
- *     green (G8), keyed on the same `marked` the current row's paint reads.
+ *   - Mark's tile is #995's shared marking-done tone (G8): `doneoff` until
+ *     the mark will stick, then `done`, keyed on the same `marked` the
+ *     current row's paint reads. Its caption is the shared "Done" (D17).
+ *
+ * Every tile draws at the shared tile glyph size; `recorder-menu-tile` is
+ * only the hook for this sheet's half-screen cap in `o4/menus.css`.
  */
 function RecorderMenuTiles({
   mode,
@@ -295,19 +298,15 @@ function RecorderMenuTiles({
     <>
       {mode === "record" ? (
         <Tile
-          tone="plain"
+          tone={marked ? "done" : "doneoff"}
           icon="check"
-          size={32}
           label={
             marked
               ? strings.markUnfinished(ordinal ?? 0)
               : strings.markFinished(ordinal ?? 0)
           }
           caption={strings.tileFinished}
-          className={cn(
-            "recorder-menu-tile recorder-menu-mark",
-            marked && "is-done"
-          )}
+          className="recorder-menu-tile"
           disabled={markReason !== null}
           hint={rowHint(markReason)}
           onClick={onToggleFinished}
@@ -316,7 +315,6 @@ function RecorderMenuTiles({
         <Tile
           tone="plain"
           icon="check"
-          size={32}
           label={strings.doneEditing}
           caption={strings.tileDone}
           className="recorder-menu-tile"
