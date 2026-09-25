@@ -141,10 +141,15 @@ function RestartControl({ className }: { className?: string }) {
   // screen stays, and it says why: a control that returns to idle having done
   // nothing is indistinguishable from a dead button.
   const [held, setHeld] = useState(false);
+  // O4 draws this wide button with the restart glyph, not retry's circular
+  // arrow (workbench state 18) — the same swap `PermissionPanel`'s O4 branch
+  // already makes for its own wide Restart. Presentation only: the current
+  // look keeps `retry`, unchanged.
+  const { design } = useDesign();
   return (
     <>
       <Control
-        icon="retry"
+        icon={design === "o4" ? "restart" : "retry"}
         label={restarting ? strings.appReloading : strings.appReload}
         variant="primary"
         size={className ? 34 : 30}

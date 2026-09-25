@@ -121,6 +121,12 @@ describe("crash / recovery, O4 (state 18)", () => {
 
     const restart = one(container, `[aria-label="${strings.appReload}"]`);
     expect(restart.classList.contains("o4-err-wide")).toBe(true);
+    // The restart glyph, not retry's circular-arrow-with-notch: workbench
+    // state 18 draws the restart mark on this button, and `PermissionPanel`'s
+    // O4 branch already makes the same swap for its own wide Restart.
+    expect(restart.querySelector("svg path")?.getAttribute("d")).toBe(
+      "M18.3 11a7.3 7.3 0 1 1-2.1-5.2"
+    );
     // The Send-log control is the existing one, untouched: same name, quiet.
     const send = one(container, `[aria-label="${strings.shareFailureLog}"]`);
     expect(send.classList.contains("control--quiet")).toBe(true);
