@@ -74,13 +74,32 @@ interface BookExport {
 
 /**
  * A name `taken` does not already hold, disambiguating a collision with a
- * ` (2)`, ` (3)`, … suffix placed between `stem` and `ext`.
+ * ` (2)`, ` (3)`, … suffix placed between `stem` and `ext`. `taken` holds
+ * names as `key` maps them, so a caller can widen what counts as the same
+ * name (see {@link folderKey}); the name returned is the unmapped one.
  */
-function uniqueName(taken: Set<string>, stem: string, ext: string): string {
-  if (!taken.has(`${stem}${ext}`)) return `${stem}${ext}`;
+function uniqueName(
+  taken: Set<string>,
+  stem: string,
+  ext: string,
+  key: (name: string) => string = (name) => name
+): string {
+  if (!taken.has(key(`${stem}${ext}`))) return `${stem}${ext}`;
   let n = 2;
-  while (taken.has(`${stem} (${n})${ext}`)) n++;
+  while (taken.has(key(`${stem} (${n})${ext}`))) n++;
   return `${stem} (${n})${ext}`;
+}
+
+/**
+ * What makes two folder names the SAME folder once the zip is extracted. iOS
+ * Files (APFS by default), Windows and macOS compare names without regard to
+ * case or Unicode normalization, so "Mark/" and "mark/" would merge there and
+ * one book's chapters would overwrite the other's. Lower-casing an NFC form
+ * approximates that comparison; it is deliberately wider than any one
+ * filesystem, since a spurious " (2)" costs nothing and a merge loses audio.
+ */
+function folderKey(name: string): string {
+  return name.normalize("NFC").toLowerCase();
 }
 
 /**
@@ -293,7 +312,9 @@ function folderStem(label: string, position: number): string {
  * `nameBook` names each folder and `nameChapter` each MP3 inside it, both from
  * the book's display name: copy is injected, as for `exportBookZip`. A folder
  * name is disambiguated against its siblings with ` (2)`, ` (3)`, … so two
- * books with one name keep both books' audio.
+ * books with one name keep both books' audio. Names that differ only in case
+ * count as one name here ({@link folderKey}), so they stay apart after the
+ * zip is extracted on a case-insensitive filesystem too.
  *
  * One archive for the whole run, so the peak is still one chapter's PCM, its
  * MP3 and the archive so far. `shouldContinue` is checked before each book as
@@ -322,7 +343,8 @@ export async function exportLibraryZip(
     const folder = uniqueName(
       takenFolders,
       folderStem(nameBook(book.name), index + 1),
-      ""
+      "",
+      folderKey
     );
     const added = await addChaptersToZip(
       sink,
@@ -339,7 +361,7 @@ export async function exportLibraryZip(
       missing++;
       continue;
     }
-    takenFolders.add(folder);
+    takenFolders.add(folderKey(folder));
     included++;
     const incomplete = danglingChapters + added.missing + added.partialChapters;
     incompleteChapters += incomplete;

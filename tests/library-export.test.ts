@@ -14,6 +14,7 @@ import * as chapterExport from "@/lib/export/chapter";
 import * as booksStore from "@/lib/storage/books";
 import { addChapter, addSegment, createBook } from "@/lib/storage/books";
 import { newClipId } from "@/lib/storage/clips";
+import { getDb } from "@/lib/storage/db";
 import { saveTake } from "@/lib/storage/takes";
 import { strings } from "@/lib/strings";
 import type { BookId } from "@/types/domain";
@@ -189,6 +190,54 @@ describe("exportLibraryZip", () => {
     // A folder has no extension: "1.John" disambiguates as "1.John (2)", not
     // "1 (2).John".
     expect(folders).toEqual(["1.John", "1.John (2)", "Mark", "Mark (2)"]);
+  });
+
+  it("keeps books whose names differ only in case apart too, since the phone's filesystem may not", async () => {
+    // iOS Files (APFS default), Windows and macOS extract case-insensitively,
+    // so "Mark/" and "mark/" would merge and one book's chapters clobber the
+    // other's.
+    await bookWith("Mark", [[{ n: 100, v: 100 }]]);
+    await bookWith("mark", [[{ n: 100, v: 200 }]]);
+
+    const result = await exportLibraryZip(nameBook, nameChapter, testCodec());
+    const folders = Object.keys(unzipSync(archive(result!.chunks))).map(
+      (path) => path.slice(0, path.indexOf("/")).toLowerCase()
+    );
+    expect(folders).toHaveLength(2);
+    expect(new Set(folders).size).toBe(2);
+  });
+
+  it("gives a book with no audio no folder, so its name stays free for a same-named sibling", async () => {
+    // Shelf order is newest first: the empty "Mark" is reached BEFORE the
+    // full one, so reserving its name would push the real audio to "Mark (2)".
+    let t = 1_000_000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => (t += 10));
+    await bookWith("Mark", [[{ n: 100, v: 100 }]]);
+    await bookWith("Mark", [[null]]);
+    clock.mockRestore();
+
+    const result = await exportLibraryZip(nameBook, nameChapter, testCodec());
+    expect(result!.missing).toBe(1);
+    expect(Object.keys(unzipSync(archive(result!.chunks)))).toEqual([
+      "Mark/Mark - Chapter 1.mp3",
+    ]);
+  });
+
+  it("counts a dangling chapter id among an included book's incomplete chapters", async () => {
+    const bookId = await bookWith("A", [
+      [{ n: 100, v: 100 }],
+      [{ n: 100, v: 150 }],
+      [{ n: 100, v: 200 }],
+    ]);
+    // Erase the middle chapter record; its id stays in book.chapterIds.
+    const mid = (await booksStore.resolveBookChapters(bookId)).chapters[1];
+    const db = await getDb();
+    await db.delete("chapters", mid!.id);
+
+    const result = await exportLibraryZip(nameBook, nameChapter, testCodec());
+    expect(result!.books).toBe(1);
+    expect(result!.incompleteChapters).toBe(1);
+    expect(result!.incompleteBooks).toBe(1);
   });
 
   it("never lets a book name become a path: separators are sanitised, dot-only names fall back", async () => {
