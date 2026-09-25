@@ -255,8 +255,9 @@ export async function exportChapterMp3(
  * gives that fraction whole-percent resolution. It also sets the weight the
  * encode gets against the gather — for a chapter of `n` segments the gather
  * is `n / (n + 100)` of the count. That weighting is a judgment, not a
- * measurement of any phone: the #996 PR body records an indicative Node
- * timing, and the phone check on #974 is what can say whether the split
+ * measurement of any phone: an indicative Node timing, with its harness, is
+ * at https://github.com/unfoldingWord/tc-mobile/pull/998#issuecomment-5840566858
+ * and the phone check on #974 is what can say whether the split
  * looks right. A chapter of finished (MP3) segments pays a decode per segment
  * in the gather, which gives the gather more real weight than a PCM chapter.
  */
@@ -298,27 +299,30 @@ export function withEncodeSteps<T>(
     let segments: number | null = null;
     let skipped = 0;
     let last = -1;
-    const report = (done: number): void => {
-      if (segments === null || !(done > last) || !shouldContinue()) return;
+    const report = (done: number, gatherSteps: number): void => {
+      if (!(done > last) || !shouldContinue()) return;
       last = done;
-      onStep(done, segments + ENCODE_STEPS, skipped);
+      onStep(done, gatherSteps + ENCODE_STEPS, skipped);
     };
     const gathered: StepReporter = (done, total, skippedSoFar) => {
       segments ??= total;
-      if (total !== segments) return;
       if (skippedSoFar !== undefined) skipped = skippedSoFar;
-      report(done);
+      report(done, segments);
+    };
+    /** `into` encode steps past the gather; nothing if it never reported. */
+    const encoded = (into: number): void => {
+      if (segments !== null) report(segments + into, segments);
     };
     const codec: AudioCodec = {
       decodeMp3: encoder.decodeMp3,
       encodeMp3: async (samples) => {
-        const mp3 = await encoder.encodeMp3(samples, (fraction) => {
-          if (segments === null) return;
-          const into = Math.floor(Math.max(0, fraction) * ENCODE_STEPS);
-          report(segments + Math.min(ENCODE_STEPS - 1, into));
-        });
+        const mp3 = await encoder.encodeMp3(samples, (fraction) =>
+          encoded(
+            Math.min(ENCODE_STEPS - 1, Math.floor(fraction * ENCODE_STEPS))
+          )
+        );
         // The MP3 exists: the one place the count may reach its total.
-        if (segments !== null) report(segments + ENCODE_STEPS);
+        encoded(ENCODE_STEPS);
         return mp3;
       },
     };

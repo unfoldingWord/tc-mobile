@@ -104,7 +104,8 @@ export const SHARE_SETTLED = Object.keys(
  * Book (`lib/export/chapter.ts`, `lib/export/book.ts`). A skipped item (a clip
  * that vanished, a chapter with no audio) is a finished step; a thrown one is
  * not, and nothing moves after it. No percent is stored beside these: a reader
- * derives one from the two numbers, so the two can never disagree.
+ * derives one from `done` and `total`, so the percent can never disagree with
+ * the count.
  *
  * Share Chapter's count also covers the MP3 encode (#996): after its segments
  * comes a fixed stretch of encode steps (`withEncodeSteps`,

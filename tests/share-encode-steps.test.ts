@@ -33,9 +33,10 @@ import { clearAllStores } from "./support";
  * #996: Share Chapter's count covers the MP3 encode, and every count says how
  * many of its finished items contributed no audio (`skipped`).
  *
- * #986 counted segments gathered; the encode that follows is the slow part and
- * reported nothing, so a ring drawn from that count sat full while the phone
- * was still working. `withEncodeSteps` puts the encode on the same count, as a
+ * #986 counted segments gathered; the encode that follows reported nothing and
+ * is inferred (not measured on a phone) to be the slow part, so a ring drawn
+ * from that count could sit full while the phone was still working. No ring
+ * is drawn yet (#947). `withEncodeSteps` puts the encode on the same count, as a
  * fixed stretch of `ENCODE_STEPS` after the gather, fed by the codec's encode
  * progress — and holds the last step back until the MP3 exists.
  */
@@ -223,6 +224,24 @@ describe("withEncodeSteps — the encode is on Share Chapter's count (#996)", ()
     await done;
     expect(calls.length).toBe(seen);
     expect(calls.at(-1)![0]).toBe(1 + Math.floor(0.3 * ENCODE_STEPS));
+  });
+
+  it("a build that encodes without a gather total reports no encode steps", async () => {
+    // exportChapterMp3 never encodes an empty chapter, so this drives the
+    // wrapper with a build that skips the gather: there is no scale to put the
+    // encode on, so neither its progress nor its completion may be counted.
+    const s = scriptedCodec();
+    const { calls, onStep } = recorder();
+    const done = withEncodeSteps(
+      onStep,
+      () => true,
+      (counted) => counted.encodeMp3(new Int16Array(4))
+    )(s.codec);
+    await settle();
+    s.progress(0.5);
+    s.finish();
+    await done;
+    expect(calls).toEqual([]);
   });
 
   it("an encode that rejects (the abort) reaches no final step", async () => {
