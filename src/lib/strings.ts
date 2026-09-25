@@ -250,6 +250,12 @@ export const strings = {
   // the training is where that glyph is tested rather than assumed.
   useLightTheme: "Switch to the light screen, for bright sunlight",
   useDarkTheme: "Switch to the dark screen, for low light",
+  // The O4 design switch (#938, epic #936). One control, `aria-pressed`
+  // carrying the on/off state (`Control`'s `pressed` prop, the same
+  // mechanism the zoom and level-meter toggles use) — so the label itself
+  // never has to change, unlike the theme toggle above, which names a
+  // destination because it has no `aria-pressed` state to carry that for it.
+  newLookO4: "New look (O4)",
   closeRecorder: "Close recorder",
   /**
    * The recorder sheet's header trail — the Segments one with the segment

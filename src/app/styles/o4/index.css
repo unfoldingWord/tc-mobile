@@ -1,0 +1,43 @@
+/**
+ * src/app/styles/o4/ — the O4 design's own stylesheets (#938, epic #936).
+ *
+ * Every rule any file in this folder ever adds is scoped under
+ * [data-design="o4"]. With the switch off (`lib/design.ts`,
+ * `hooks/use-design.ts`) `data-design` is absent or `"current"`, so nothing
+ * here can ever match and the current look renders exactly as it does today.
+ *
+ * One file per area, added by later O4 lanes as each screen's batch lands
+ * (`o4/books.css`, `o4/segments.css`, `o4/recorder.css`, ...), each imported
+ * from this index. Lanes never edit `3-components.css` — every O4 rule lives
+ * here instead, per AGENTS.md's "One stylesheet per lane" rule.
+ *
+ * This index is imported LAST in `styles/index.css`, after `3-components.css`,
+ * and shares that file's own `@layer components` rather than opening a new,
+ * later-declared layer — a later-declared layer would outrank `components`
+ * entirely regardless of specificity, which is a stronger and different
+ * guarantee than the one this batch's "Done when" clause asks for. Sharing
+ * the layer means an O4 rule and an unscoped component rule of EQUAL
+ * specificity are decided by source order within that one shared layer
+ * (CSS Cascade Layers, §6: cascade layers are compared first, and rules with
+ * no layer difference fall through to the ordinary cascade, where later wins
+ * ties) — so a future O4 rule only need not be LESS specific than the rule it
+ * overrides; the shared layer and this file's later position already win any
+ * tie.
+ *
+ * `tests/o4-cascade.test.ts` proves the position survives the production
+ * build. It cannot prove that with a comment alone: a plain build was checked
+ * against this exact file (`npm run build`, then reading `dist/assets/*.css`)
+ * and every comment here — including one prefixed `/*!`, the marker some
+ * minifiers preserve for license banners, and which Tailwind's own is — is
+ * stripped by this project's build. Only a real declaration survives, which is
+ * why the one below exists. It is inert: nothing reads `--o4-scope` today, it
+ * paints nothing, and it exists under the switch's own selector so it changes
+ * nothing about "byte-for-byte unchanged with the switch off". Batch 1 lanes
+ * are free to add real rules beside it; this line does not need to move for
+ * that.
+ */
+@layer components {
+  [data-design="o4"] {
+    --o4-scope: 1;
+  }
+}
