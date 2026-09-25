@@ -176,11 +176,35 @@ interface PreparedShare {
  * `null` when the run was cancelled part-way (`isCurrent()` went false). An
  * abort may also surface as a rejection — the flow ignores it once the run is
  * stale.
+ *
+ * `onStep` (#986) is how a builder reports its truthful step count — call it
+ * with `(done, total)` each time one item has really finished (a segment
+ * gathered, a chapter archived; the export functions take it directly). It
+ * is optional to call: a builder that never does leaves the busy phase with
+ * no count, exactly as before.
  */
 type BuildShareFile = (
   isCurrent: () => boolean,
-  signal: AbortSignal
+  signal: AbortSignal,
+  onStep: (done: number, total: number) => void
 ) => Promise<PreparedShare | "nothing" | null>;
+
+/**
+ * The `onStep` a prepare hands its builder (#986): each call becomes one
+ * `step` event on the progress machine, but only while this run still owns
+ * the flow. `isCurrent` is read at CALL time — a run superseded by a menu
+ * close, `reset` or unmount can still have a gather in flight for a moment,
+ * and its late count must not land on a newer run's modal. The machine itself
+ * rejects a count that is out of range or runs backward (`share-progress.ts`).
+ */
+export function stepReporter(
+  isCurrent: () => boolean,
+  dispatch: (event: ShareProgressEvent) => void
+): (done: number, total: number) => void {
+  return (done, total) => {
+    if (isCurrent()) dispatch({ type: "step", done, total });
+  };
+}
 
 /**
  * What tap 1 arms for tap 2: the File (plus its native staged copy, if any)
@@ -471,7 +495,7 @@ export interface UseShareFlow {
  * The generic two-gesture share state machine. See the file header for why one
  * gesture cannot work. The encode runs in a Web Worker (B8, #34), so `preparing`
  * no longer janks the screen and a cancel (menu close, Back) actually stops it;
- * it is still a busy state rather than a meter — nothing reports progress yet.
+ * a prepare's busy phase also carries a step count (`progress.steps`, #986).
  */
 export function useShareFlow(): UseShareFlow {
   const [status, setStatus] = useState<ShareStatus>("idle");
@@ -769,7 +793,12 @@ export function useShareFlow(): UseShareFlow {
         // cancel during the gather skips the encode and a cancel during the encode
         // stops the worker. It returns "nothing" for a genuinely empty share and
         // null when it was cancelled mid-build.
-        const prepared = await build(current, controller.signal);
+        // `stepReporter` carries the build's step count onto the modal (#986).
+        const prepared = await build(
+          current,
+          controller.signal,
+          stepReporter(current, modal.dispatch)
+        );
         if (!current()) return null;
         // "nothing" (no audio) and null (cancelled, but not yet observed as such)
         // both settle back to idle; only "nothing" is a reason to surface. A null

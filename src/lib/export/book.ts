@@ -98,12 +98,21 @@ function uniqueEntryName(taken: Set<string>, name: string): string {
  * The archive stores rather than deflates: an MP3 is already compressed, so
  * deflating it spends a second pass for ~no size gain — and storing is what
  * lets fflate pass each MP3 buffer through as-is (see header).
+ *
+ * `onStep` reports the book's truthful progress at the CHAPTER grain (#986):
+ * `(0, total)` before the first chapter, `total` being the chapters the walk
+ * found (a dangling id never enters it), then `(done, total)` after each
+ * chapter is resolved — its MP3 in the archive, or skipped for having no
+ * audio and counted missing. A cancel or a throw stops the count where it
+ * was. It is not forwarded into `exportChapterMp3`: the book counts
+ * chapters, not the segments inside them.
  */
 export async function exportBookZip(
   bookId: BookId,
   nameChapter: (chapterNumber: number) => string,
   codec: AudioCodec,
-  shouldContinue?: () => boolean
+  shouldContinue?: () => boolean,
+  onStep?: (done: number, total: number) => void
 ): Promise<BookExport | null> {
   // `missing` starts at the count of `chapterIds` whose chapter record is gone —
   // those never reach the loop below, so they must be seeded here or a book with
@@ -135,6 +144,8 @@ export async function exportBookZip(
 
   const taken = new Set<string>();
   let written = 0;
+  let done = 0;
+  if (chapters.length > 0) onStep?.(done, chapters.length);
   for (const chapter of chapters) {
     if (shouldContinue && !shouldContinue()) return null;
     const result = await exportChapterMp3(chapter.id, codec, shouldContinue);
@@ -145,6 +156,7 @@ export async function exportBookZip(
       // means stop the whole book.
       if (shouldContinue && !shouldContinue()) return null;
       missing++;
+      onStep?.(++done, chapters.length);
       continue;
     }
     const name = uniqueEntryName(taken, nameChapter(chapter.number));
@@ -159,6 +171,7 @@ export async function exportBookZip(
     partialSegments += result.missing;
     if (result.missing > 0) partialChapters++;
     written++;
+    onStep?.(++done, chapters.length);
   }
   if (written === 0) return null;
 

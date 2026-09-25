@@ -66,11 +66,20 @@ interface ChapterExport {
  * whole build — so a share the translator has already dismissed must let go
  * at the next clip, not after the last decode (round-2 George P2). Returns
  * `null` when cancelled; the partial buffer is dropped.
+ *
+ * `onStep` reports the gather's truthful progress (#986): `(0, total)` once
+ * pass 1 has fixed `total` — the segments with audio to gather — and then
+ * `(done, total)` after each of those segments is RESOLVED, whether it was
+ * copied in or skipped and counted missing. A cancel returns before the next
+ * segment and reports nothing further; a throw unwinds before its segment's
+ * step, so the count stops where it was. Not called for a chapter with
+ * nothing to gather.
  */
 export async function gatherChapterPcm(
   chapterId: ChapterId,
   codec: Pick<AudioCodec, "decodeMp3">,
-  shouldContinue?: () => boolean
+  shouldContinue?: () => boolean,
+  onStep?: (done: number, total: number) => void
 ): Promise<ChapterPcm | null> {
   const { clipIds, missing } = await resolveChapterClipIds(chapterId);
   let missingAudio = missing;
@@ -111,55 +120,66 @@ export async function gatherChapterPcm(
   const out = new Int16Array(capacity);
   let written = 0;
   let segments = 0;
+  let done = 0;
+  onStep?.(done, present.length);
   for (const { clipId, frames } of present) {
     if (shouldContinue && !shouldContinue()) return null;
-    const clip = await getClip(clipId);
-    if (!clip) {
+    const fitted = await readSlot(clipId, frames, codec);
+    if (fitted === null) {
       missingAudio++;
-      continue;
-    }
-    let fitted: Int16Array;
-    if (clip.encoding === "pcm") {
-      fitted = clip.samples;
     } else {
-      const decoded = await codec.decodeMp3(clip.mp3);
-      if (decoded.length === 0) {
-        missingAudio++;
-        continue;
+      if (segments > 0) {
+        out.set(gap, written);
+        written += gap.length;
       }
-      // Aligned to the recording (see `fitMp3Decode`): the decode carries the
-      // encoder's priming at its head and granule padding at its tail, and
-      // neither may land in the chapter or push the next segment off its slot.
-      fitted = fitMp3Decode(decoded, clip.mp3, frames);
+      out.set(fitted, written);
+      written += frames;
+      segments++;
     }
-    // `frames` is what pass 1 reserved this clip's slot from, read via
-    // `getClipMeta` in a transaction separate from the `getClip` above.
-    // `fitMp3Decode` always returns exactly `frames` (via `fitToFrames`), so
-    // this only ever has work to do for a PCM clip's stored samples, used
-    // as-is — nothing stops the two reads from disagreeing about a clip's
-    // length. A clip that overran its slot is still counted missing: an
-    // unguarded `out.set` below would throw (S-10, #163), and there is no
-    // slot to safely fit it into. An empty buffer has no audio to recover
-    // either way. A clip that fell SHORT of its slot is fitted up to
-    // `frames` with `fitToFrames` — the same fit the MP3 path already runs
-    // its decode through inside `fitMp3Decode` — so its audio is exported
-    // and only the unused tail of the slot is left silent (DRI decision,
-    // #163, PR #812), rather than dropping the clip's audio entirely.
-    if (fitted.length === 0 || fitted.length > frames) {
-      missingAudio++;
-      continue;
-    }
-    if (fitted.length < frames) fitted = fitToFrames(fitted, frames);
-    if (segments > 0) {
-      out.set(gap, written);
-      written += gap.length;
-    }
-    out.set(fitted, written);
-    written += frames;
-    segments++;
+    onStep?.(++done, present.length);
   }
 
   return { samples: out.subarray(0, written), segments, missing: missingAudio };
+}
+
+/**
+ * One segment's audio, fitted to exactly the `frames` pass 1 reserved for it,
+ * or `null` when there is none to use (the clip is gone, its decode is empty,
+ * or it overran its slot) — the caller counts that missing.
+ */
+async function readSlot(
+  clipId: ClipId,
+  frames: number,
+  codec: Pick<AudioCodec, "decodeMp3">
+): Promise<Int16Array | null> {
+  const clip = await getClip(clipId);
+  if (!clip) return null;
+  let fitted: Int16Array;
+  if (clip.encoding === "pcm") {
+    fitted = clip.samples;
+  } else {
+    const decoded = await codec.decodeMp3(clip.mp3);
+    if (decoded.length === 0) return null;
+    // Aligned to the recording (see `fitMp3Decode`): the decode carries the
+    // encoder's priming at its head and granule padding at its tail, and
+    // neither may land in the chapter or push the next segment off its slot.
+    fitted = fitMp3Decode(decoded, clip.mp3, frames);
+  }
+  // `frames` is what pass 1 reserved this clip's slot from, read via
+  // `getClipMeta` in a transaction separate from the `getClip` above.
+  // `fitMp3Decode` always returns exactly `frames` (via `fitToFrames`), so
+  // this only ever has work to do for a PCM clip's stored samples, used
+  // as-is — nothing stops the two reads from disagreeing about a clip's
+  // length. A clip that overran its slot is still counted missing: the
+  // caller's unguarded `out.set` would throw (S-10, #163), and there is no
+  // slot to safely fit it into. An empty buffer has no audio to recover
+  // either way. A clip that fell SHORT of its slot is fitted up to
+  // `frames` with `fitToFrames` — the same fit the MP3 path already runs
+  // its decode through inside `fitMp3Decode` — so its audio is exported
+  // and only the unused tail of the slot is left silent (DRI decision,
+  // #163, PR #812), rather than dropping the clip's audio entirely.
+  if (fitted.length === 0 || fitted.length > frames) return null;
+  return fitted.length < frames ? fitToFrames(fitted, frames) : fitted;
 }
 
 /**
@@ -169,13 +189,24 @@ export async function gatherChapterPcm(
  * `shouldEncode` is threaded into the gather (checked before every clip read
  * and decode) and checked again before the encode, so a share the translator
  * has dismissed stops at the next clip and never spins up a worker.
+ *
+ * `onStep` is the gather's segment count (#986), threaded straight through.
+ * The encode that follows the last segment is ONE worker call with no
+ * per-item breakdown, so it adds no step: a count reading `N of N` means every
+ * segment is gathered, not that the MP3 is already built.
  */
 export async function exportChapterMp3(
   chapterId: ChapterId,
   codec: AudioCodec,
-  shouldEncode?: () => boolean
+  shouldEncode?: () => boolean,
+  onStep?: (done: number, total: number) => void
 ): Promise<ChapterExport | null> {
-  const gathered = await gatherChapterPcm(chapterId, codec, shouldEncode);
+  const gathered = await gatherChapterPcm(
+    chapterId,
+    codec,
+    shouldEncode,
+    onStep
+  );
   if (gathered === null) return null;
   const { samples, segments, missing } = gathered;
   if (segments === 0) return null;
