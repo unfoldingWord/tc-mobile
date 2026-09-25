@@ -215,8 +215,11 @@ export const strings = {
   openSegment: (n: number, label: string | null): string =>
     `Open segment ${strings.segmentHeading(n, label)}`,
   scrubSegment: (n: number): string => `Position in segment ${n}`,
-  markFinished: (n: number): string => `Mark segment ${n} finished`,
-  markUnfinished: (n: number): string => `Mark segment ${n} not finished`,
+  // "done", not "finished" (D17, #949): the O4 tile's caption is the
+  // workbench's "Done", and the label must hold the caption (label-in-name).
+  // One string for both looks and both menus (segment row and recorder).
+  markFinished: (n: number): string => `Mark segment ${n} done`,
+  markUnfinished: (n: number): string => `Mark segment ${n} not done`,
   /**
    * The segment's display heading (#591): the ordinal, then the facilitator's
    * label when set — "3 · verses 3–4". The ordinal always stays, because it is
@@ -250,21 +253,28 @@ export const strings = {
   // the training is where that glyph is tested rather than assumed.
   useLightTheme: "Switch to the light screen, for bright sunlight",
   useDarkTheme: "Switch to the dark screen, for low light",
-  // The O4 tile captions (#949, epic #936): the short word shown under a menu
-  // tile. The tile's accessible name is unchanged from the current look, so
-  // each caption is a word OF that name (label-in-name) — which is why Mark's
-  // is "Finished", the word its name already says, and not a new word.
-  tileLight: "Light",
-  tileDark: "Dark",
-  tileFinished: "Finished",
-  tileErase: "Erase",
-  tileDone: "Done",
   // The O4 design switch (#938, epic #936). One control, `aria-pressed`
   // carrying the on/off state (`Control`'s `pressed` prop, the same
   // mechanism the zoom and level-meter toggles use) — so the label itself
   // never has to change, unlike the theme toggle above, which names a
   // destination because it has no `aria-pressed` state to carry that for it.
   newLookO4: "New look (O4)",
+  // The O4 menu tiles' visible captions (#949, `o4-tile-menu.tsx`). Shown,
+  // never announced: each tile's name is the label its current-look row
+  // already had, and every caption is a word that label holds (label-in-name,
+  // WCAG 2.5.3). Marking done says the workbench's "Done", and
+  // `markFinished`/`markUnfinished` say "done" to match (D17).
+  tileEdit: "Edit",
+  tileFinished: "Done",
+  tileRename: "Rename",
+  tileErase: "Erase",
+  tileShare: "Share",
+  tileLight: "Light",
+  tileDark: "Dark",
+  // The edit-mode recorder menu's exit tile (G3); its name is `doneEditing`.
+  // Its own key, not `tileFinished`: that one is marking done, this is leaving
+  // edit, and the two only happen to share a word in English.
+  tileDone: "Done",
   closeRecorder: "Close recorder",
   /**
    * The recorder sheet's header trail — the Segments one with the segment

@@ -1,7 +1,7 @@
 import { forwardRef, type ComponentProps, type ReactNode } from "react";
 
-import { cn } from "@/lib/utils";
 import { Control } from "./control";
+import { TILE_GLYPH, tileClass, type TileTone } from "./o4-tile-look";
 
 /**
  * The O4 tile-menu primitive (#941, epic #936): every O4 menu is a row of
@@ -19,19 +19,18 @@ import { Control } from "./control";
  * `TileGrid` the O4 bottom-sheet shell (inset 8, radius 26, a 56 × 5
  * handle) — keyed on the grid's presence, so the name sheets that share
  * `<Menu>` (#943's) are untouched by it.
+ *
+ * ADOPTED BY the chapter and segment menus (#949: G2, 07, G8), in their O4
+ * branches. The book, app ≡ and recorder menus are the rest of #949. The
+ * tones, glyph size and classes live in `o4-tile-look.ts`.
  */
 type ControlProps = ComponentProps<typeof Control>;
 
 /**
- * The tile fills O4 draws: the three coloured action roles, the erase tile
- * (live ink on the quiet red, inside a live ring, per the workbench's `del`
- * tile), and the plain well the theme and export tiles use.
- */
-type TileTone = "edit" | "name" | "send" | "erase" | "plain";
-
-/**
  * One tile. `label` is the accessible name, exactly as the `Control` it
- * replaces had it; `caption` is the short word shown under the box.
+ * replaces had it; `caption` is the short word shown under the box, and it
+ * must be a word the label already holds (label-in-name, WCAG 2.5.3), so a
+ * voice-control user can say what they see.
  */
 export const Tile = forwardRef<
   HTMLButtonElement,
@@ -39,13 +38,13 @@ export const Tile = forwardRef<
     tone: TileTone;
     caption: string;
   }
->(function Tile({ tone, className, size = 30, ...rest }, ref) {
+>(function Tile({ tone, className, size = TILE_GLYPH, ...rest }, ref) {
   return (
     <Control
       ref={ref}
       {...rest}
       size={size}
-      className={cn("o4-tile", `o4-tile--${tone}`, className)}
+      className={tileClass(tone, className)}
     />
   );
 });

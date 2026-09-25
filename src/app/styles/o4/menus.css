@@ -99,6 +99,176 @@
     background: var(--s-edge);
   }
 
+  /* === #949: the chapter menu (G2), the segment menu (07), marking done (G8)
+     ======================================================================
+     Appended, not restructured. Values from the design reference (sections 3
+     and 7) and the workbench's sheet, shead, crumb, prev and tb rules.
+
+     MARKING DONE is two more tile tones: grey on the well in faint ink until
+     the segment is done, then the whole tile the done fill in its own ink.
+
+     THE SHEET HEAD is the breadcrumb row (book, chapter, segment), chevron
+     clipped 13px. A finished segment's crumb takes the done fill and ink, the
+     pairing the done badge already uses, rather than the workbench's quiet
+     wash: done text on the light quiet wash is 3.3:1, and the darker ink the
+     D3 decision calls for is not a layer-2 role yet. While the head is there
+     the menu's own title text is hidden (kept in the layout so its close
+     stays in the corner); the dialog's name is its aria-label, not this
+     text.
+
+     THE PREVIEW is the segment's badge, name and wave on the floor. */
+  [data-design="o4"] .o4-tile--done {
+    color: var(--s-done-ink);
+  }
+  [data-design="o4"] .o4-tile--done::before {
+    background: var(--s-done);
+  }
+  [data-design="o4"] .o4-tile--doneoff {
+    color: var(--s-ink-faint);
+  }
+  [data-design="o4"] .o4-tile--doneoff::before {
+    background: var(--s-well);
+  }
+
+  [data-design="o4"] .menu-panel:has(.o4-sheet-head) .t-title {
+    visibility: hidden;
+  }
+  [data-design="o4"] .o4-sheet-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+  [data-design="o4"] .o4-crumbs {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+  [data-design="o4"] .o4-crumb {
+    display: flex;
+    align-items: center;
+    height: 40px;
+    min-width: 0;
+    margin-left: -6px;
+    padding: 0 20px 0 24px;
+    background: var(--s-well);
+    color: var(--s-ink);
+    font-size: 16px; /* #939 token */
+    font-weight: 700; /* #939 token */
+    white-space: nowrap;
+    clip-path: polygon(
+      0 0,
+      calc(100% - 13px) 0,
+      100% 50%,
+      calc(100% - 13px) 100%,
+      0 100%,
+      13px 50%
+    );
+  }
+  [data-design="o4"] .o4-crumb:first-child {
+    margin-left: 0;
+    padding-left: 12px;
+    border-radius: 10px 0 0 10px; /* #939 token */
+    clip-path: polygon(
+      0 0,
+      calc(100% - 13px) 0,
+      100% 50%,
+      calc(100% - 13px) 100%,
+      0 100%
+    );
+  }
+  [data-design="o4"] .o4-crumb > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  [data-design="o4"] .o4-crumb[data-state="recorded"] {
+    background: var(--s-voice-quiet);
+    color: var(--s-voice-text);
+  }
+  [data-design="o4"] .o4-crumb[data-state="finished"] {
+    background: var(--s-done);
+    color: var(--s-done-ink);
+  }
+
+  [data-design="o4"] .o4-menu-preview {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 78px;
+    padding: 8px 8px 8px 10px;
+    border-radius: 14px; /* #939 token */
+    background: var(--s-floor);
+  }
+  [data-design="o4"] .o4-menu-preview[data-state="finished"] {
+    --c-wave-stroke: var(--s-done);
+  }
+  [data-design="o4"] .o4-menu-badge {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--s-well);
+    color: var(--s-ink);
+    font-size: 17px; /* #939 token */
+    font-weight: 800; /* #939 token */
+  }
+  [data-design="o4"] .o4-menu-badge[data-state="finished"] {
+    background: var(--s-done);
+    color: var(--s-done-ink);
+  }
+  [data-design="o4"] .o4-menu-preview-mid {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+  }
+  [data-design="o4"] .o4-menu-title {
+    overflow: hidden;
+    color: var(--s-ink);
+    font-size: 16px; /* #939 token */
+    font-weight: 800; /* #939 token */
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* D20 (#949): the segment menu as the workbench draws 07. Rename is a
+     pencil in the head, after the crumbs (workbench `penbtn`); Play sits at
+     the end of the preview row (`tp play`, done fill on a finished segment);
+     a refused tile on a never-recorded segment is greyed (`tile.off`). */
+  [data-design="o4"] .o4-sheet-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+  }
+  [data-design="o4"] .o4-head-pen {
+    flex: none;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: var(--s-name);
+    color: var(--s-tile-ink);
+  }
+  [data-design="o4"] .o4-menu-play {
+    flex: none;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+  }
+  [data-design="o4"] .o4-menu-preview[data-state="finished"] .o4-menu-play {
+    background: var(--s-done);
+    color: var(--s-done-ink);
+  }
+  [data-design="o4"] .o4-tile[aria-disabled="true"] {
+    opacity: 0.35;
+  }
+
   /* ── Recorder menu (#949, workbench G3 and G8) ──────────────────────────
      recorder-menu.tsx's O4 branch. Its tiles carry recorder-menu-tile, which
      is what these rules key on, so no other menu's sheet or tiles move.
