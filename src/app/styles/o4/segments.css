@@ -1,0 +1,157 @@
+/* O4 — Segments (05, 06, G10). Owner: #944. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file.
+
+   Values are the design reference's (docs/design/o4-design-system.md, §2 and
+   §3). Type sizes and radii are literal px until #939 lands its primitives;
+   each one is marked for that swap. Colour comes only from layer-2 roles.
+
+   The row transport below styles the existing row controls in place. The
+   shared control wrappers #941 is building can replace these rules once they
+   land; nothing here is meant as a second copy of a shared primitive.
+
+   Kept in both looks, and so not restyled here: the guide ring (#604, #834),
+   the finished row's wash, green wave and green play (#81), and the ordinal on
+   every row (#591) — O4 carries it in the badge. */
+@layer components {
+  /* --- the chapter head (05, 06) ----------------------------------------- */
+  [data-design="o4"] .segments-head {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-inline: 18px;
+  }
+  [data-design="o4"] .segments-title {
+    margin: 0;
+    height: 46px;
+    line-height: 46px;
+    font-size: 22px; /* #939 token */
+    font-weight: 800; /* #939 token */
+    color: var(--s-ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  [data-design="o4"] .segments-progress {
+    display: flex;
+    gap: 6px;
+    height: 8px;
+  }
+  [data-design="o4"] .segments-mark {
+    display: block;
+    flex: 1;
+    border-radius: 4px; /* #939 token */
+    background: var(--s-mark-empty);
+  }
+  [data-design="o4"] .segments-mark[data-state="recorded"] {
+    background: var(--s-voice);
+  }
+  [data-design="o4"] .segments-mark[data-state="finished"] {
+    background: var(--s-done);
+  }
+
+  /* --- the empty chapter (05) -------------------------------------------- */
+  [data-design="o4"] .segments-body .t-title {
+    font-size: 21px; /* #939 token */
+    font-weight: 700; /* #939 token */
+  }
+  [data-design="o4"] .segments-body .control--primary {
+    width: 104px;
+    height: 104px;
+    background: var(--s-surface);
+    color: var(--s-ink);
+  }
+
+  /* --- adding a segment (G10): the header + as a square button ------------ */
+  [data-design="o4"] .segments-add {
+    width: 56px;
+    height: 56px;
+    border-radius: 14px; /* #939 token */
+    background: var(--s-well);
+    color: var(--s-ink);
+  }
+
+  /* --- the list and its rows (06) ---------------------------------------- */
+  [data-design="o4"] .segments-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  /* The row's `--s-surface` ground is layer 3's own `.row` background, left
+     alone here so a finished row keeps its wash (#81). */
+  [data-design="o4"] .row {
+    min-height: 90px;
+    border-radius: 16px; /* #939 token */
+    padding: 0 6px 0 10px;
+    gap: 8px;
+  }
+  [data-design="o4"] .row:not(.row--finished) {
+    border-color: var(--s-card-edge);
+  }
+  /* The row whose menu is open. */
+  [data-design="o4"] .row--selected {
+    outline: 2px solid var(--s-guide);
+    outline-offset: 0;
+  }
+  [data-design="o4"] .row-badge {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--s-well);
+    color: var(--s-ink);
+    font-size: 17px; /* #939 token */
+    font-weight: 800; /* #939 token */
+    font-variant-numeric: tabular-nums;
+  }
+  [data-design="o4"] .row--finished .row-badge {
+    background: var(--s-done);
+    color: var(--s-done-ink);
+  }
+  [data-design="o4"] .row-mid {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+    align-self: stretch;
+  }
+  [data-design="o4"] .row-title {
+    display: block;
+    height: 22px;
+    line-height: 22px;
+    font-size: 16px; /* #939 token */
+    font-weight: 800; /* #939 token */
+    color: var(--s-ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Play keeps `--s-voice` and record `--s-live` from layer 3; O4 only makes
+     them 72 circles. */
+  [data-design="o4"] .row .control--play,
+  [data-design="o4"] .row .control--record {
+    width: 72px;
+    height: 72px;
+  }
+  /* While a row plays, the wave past the playhead drops to `--s-voice-dim`.
+     The canvas paints one stroke colour, so this masks it: a mask reads only
+     the gradient's alpha, and `--s-voice-dim` is `--s-voice` at reduced alpha
+     in both themes, so masked voice bars paint exactly that role. */
+  [data-design="o4"] .scrub--playing canvas {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      black var(--row-played),
+      var(--s-voice-dim) var(--row-played)
+    );
+    mask-image: linear-gradient(
+      to right,
+      black var(--row-played),
+      var(--s-voice-dim) var(--row-played)
+    );
+  }
+}

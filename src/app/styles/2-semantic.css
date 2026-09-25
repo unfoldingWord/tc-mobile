@@ -93,7 +93,7 @@
     --s-warn-quiet: var(--p-warn-950);
     --s-warn-text: var(--p-amber-400);
     /* Words on the live and done washes (#937 D3), the way --s-warn-text is
-       the words on the warn wash. Not --s-live-ink / --s-done-ink: those are
+       the words on the warn wash. Not --s-live-ink / --s-done-ink, which are
        the ink ON the solid fill. The live accent is just under AA on its own
        dark wash, so it takes a lighter red; done is simply the accent here. */
     --s-live-text: var(--p-red-400);

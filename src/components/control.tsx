@@ -89,6 +89,14 @@ interface ControlProps {
    * up on screen at once.
    */
   guided?: boolean;
+  /**
+   * A short word shown with the glyph — the O4 tile and pill shapes (#941,
+   * `o4-tile-menu.tsx`, `o4-controls.tsx`). Shown, never announced: `label`
+   * stays the entire accessible name, so a control that gains a caption in
+   * the O4 look keeps the name it has in the current one. An omitted caption
+   * renders nothing, so no existing call site's markup changes.
+   */
+  caption?: string;
 }
 
 const VARIANT_CLASS: Record<ControlVariant, string> = {
@@ -123,6 +131,7 @@ export const Control = forwardRef<HTMLButtonElement, ControlProps>(
       hint,
       pressed,
       guided,
+      caption,
     },
     ref
   ) {
@@ -164,6 +173,11 @@ export const Control = forwardRef<HTMLButtonElement, ControlProps>(
         )}
       >
         <Icon name={icon} size={size} />
+        {caption === undefined ? null : (
+          <span className="control-caption" aria-hidden="true">
+            {caption}
+          </span>
+        )}
       </button>
     );
     // The wrapper is keyed on whether this control CAN carry a hint (the prop was

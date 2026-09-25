@@ -10,6 +10,7 @@ import { createRoot } from "react-dom/client";
 
 import { ErrorBoundary } from "@/components/error-boundary";
 import { installStoredTheme } from "@/hooks/use-theme";
+import { installStoredDesign } from "@/hooks/use-design";
 import { App } from "./App";
 import "./globals.css";
 
@@ -19,6 +20,9 @@ import "./globals.css";
 // leaves — the stylesheet has already painted its dark default by the time any
 // module body runs, and closing that last gap means an inline script.
 installStoredTheme();
+// Same reasoning, same residual, for the O4 design switch (#938): a tester who
+// chose O4 should not see one frame of the current look on every launch.
+installStoredDesign();
 
 const container = document.getElementById("root");
 if (!container) throw new Error("Missing #root element");
