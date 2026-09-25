@@ -396,7 +396,11 @@ describe("shareOverlayOwnsScreen (George r1 P2 #1/#2, #491)", () => {
   });
 });
 
-/** Source-shape checks of wiring; these do not run hook effects or gestures. */
+/**
+ * Source-shape text matches, not checks of wiring: a `readFileSync` read and
+ * a string/pattern match confirm the expected text appears in source, not
+ * that it executes. These do not run hook effects or gestures.
+ */
 const read = (rel: string) =>
   readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
 

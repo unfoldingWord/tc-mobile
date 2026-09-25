@@ -73,8 +73,9 @@ Live staging: <https://tc-mobile-staging.unfoldingword.workers.dev>
 **Cloudflare Workers Builds deploys** the PWA straight from the repo — no
 Actions workflow deploys the web app. (`.github/` holds three native lanes:
 `ios-testflight.yml` and `android-apk.yml` are manual-dispatch only;
-`android-play.yml` runs on push to `staging`/`main`, shipping a native bundle
-to Google Play, never Cloudflare — see AGENTS.md → "Cloudflare Workers Builds
+`android-play.yml` triggers on push to `staging`/`main` and uploads a native
+bundle to Google Play only when `vars.PLAY_UPLOAD_ENABLED` is `true` —
+never Cloudflare — see AGENTS.md → "Cloudflare Workers Builds
 owns deployment".)
 Workers Builds is configured per Worker, so the repo is connected twice:
 `tc-mobile` builds from `main`, `tc-mobile-staging` builds from `staging` with
@@ -97,10 +98,10 @@ and a check that the PWA service worker, manifest, and `version.json` were
 emitted. It deploys nothing. (`.github/` also holds three native lanes, none
 of which touch Cloudflare: `ios-testflight.yml` and `android-apk.yml` are
 manual-dispatch only, each gated by a `release-signing` environment with
-required reviewers (#321); `android-play.yml` runs on push to
-`staging`/`main` and uploads a signed .aab to Google Play, from a
-`play-upload` environment that has no required reviewers — branch-restricted
-instead, per the yml.)
+required reviewers (#321); `android-play.yml` triggers on push to
+`staging`/`main` and uploads a signed .aab to Google Play only when
+`vars.PLAY_UPLOAD_ENABLED` is `true`, from a `play-upload` environment that
+has no required reviewers — branch-restricted instead, per the yml.)
 
 The repo is `unfoldingWord/tc-mobile`, in the unfoldingWord org, **public since
 2026-09-13**. Keep it public: `release-signing`'s required-reviewer gate
