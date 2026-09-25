@@ -31,8 +31,8 @@ vi.mock("@/hooks/use-chapter-share", () => ({
     reset: () => {},
   }),
 }));
-vi.mock("@/lib/storage/books", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/storage/books")>()),
+vi.mock("@/lib/storage/takes", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/storage/takes")>()),
   clearSegmentTake: mocks.clear,
 }));
 

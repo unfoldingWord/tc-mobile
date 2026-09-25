@@ -4,8 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const storage = vi.hoisted(() => ({ clear: vi.fn() }));
-vi.mock("@/lib/storage/books", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/storage/books")>()),
+vi.mock("@/lib/storage/takes", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/storage/takes")>()),
   clearSegmentTake: storage.clear,
 }));
 

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
+import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import type { SegmentId } from "@/types/domain";
 
@@ -151,6 +152,13 @@ async function setup() {
       readScope: () => null,
       peekScope: () => null,
     };
+  // Resting erase: these cases never open the confirm, but the sheet reads
+  // `erase.isErasing` during render, so it cannot be absent.
+  const erase: UseEraseSegment = {
+    erase: vi.fn(async () => "ok" as const),
+    erasing: false,
+    isErasing: () => false,
+  };
   const render = async () =>
     act(async () =>
       root.render(
@@ -163,6 +171,7 @@ async function setup() {
           clipboard: null,
           onClipboardChange: vi.fn(),
           databaseUnreachable: false,
+          erase,
           onExit,
           onRequestBack: () => {
             void ref.current?.requestClose();
