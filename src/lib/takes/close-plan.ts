@@ -74,8 +74,9 @@ export interface CaptureOutcome<TBytes = unknown> {
    * A CLOSED set, and only since #169 moved the wording up to the screen.
    * Three producers write this field, and each used to mint its own sentence:
    * `use-recorder.ts`'s decode exits via `classifyStopDecode`; `stop()`'s
-   * empty-seal exit directly (silence, or after the flush executor threw,
-   * "could not finish" — #485, George R1 P3 on #500); and `stopRecording`'s
+   * empty-seal exit (silence, or after the flush executor threw, "could not
+   * finish" — #485, George R1 P3 on #500), via `classifyEmptySeal` since
+   * #745; and `stopRecording`'s
    * backstop in `use-audio-session.ts`, which typed that same "could not
    * finish" sentence out a second time. Only the first went through a
    * classifier, so `StopDecodeError` was NOT the set of stop errors and this
