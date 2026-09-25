@@ -48,7 +48,7 @@ import type { SegmentRow } from "@/types/view";
  * exactly the import whose mocked target (`@/hooks/audio-io`) a hoisted
  * `vi.mock("@/hooks/audio-io", ...)` factory is registered against.
  *
- * The requirement this harness holds to: a `vi.mock` factory must not
+ * This harness requires: a `vi.mock` factory must not
  * synchronously dereference an export from the same import chain it is
  * standing in for. The factory is invoked the moment `@/hooks/audio-io` is
  * first resolved, which happens WHILE this very module is still mid-load

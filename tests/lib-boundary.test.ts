@@ -212,8 +212,9 @@ export const b: typeof window = null as never;
  * about DOM globals: `no-restricted-imports` only sees STATIC
  * import/export declarations, the lib/ and types/ eslint blocks and
  * tsconfig.lib.json's `include` were `.ts`-only, and `src/data/` appeared in
- * no layer block at all. Each `it` below pins one of these three holes
- * closed (#815).
+ * no layer block at all. The `it`s below pin these three holes closed, plus
+ * one baseline sanity check (below) that the existing static-import ban
+ * still holds (#815).
  */
 describe("#159 L-6 — dynamic import and new URL(..., import.meta.url)", () => {
   it("still bans a STATIC upward import from lib/ (baseline sanity)", () => {
