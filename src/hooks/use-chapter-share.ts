@@ -1,7 +1,11 @@
 import { useCallback } from "react";
 
 import { withEncoder } from "./mp3-codec";
-import { type ShareSurface, useShareFlow } from "./share-flow";
+import {
+  type ShareOutcome,
+  type ShareSurface,
+  useShareFlow,
+} from "./share-flow";
 import { exportChapterMp3 } from "@/lib/export/chapter";
 import type { ChapterId } from "@/types/domain";
 
@@ -14,8 +18,15 @@ export interface UseChapterShare extends ShareSurface {
    * share hook DIFFERS in is what it takes to build the file. `missing` here
    * counts segments with no resolvable audio, left out of that file — so a
    * chapter with gaps does not export "as if whole" without saying so.
+   *
+   * See {@link UseShareFlow.prepare} (`share-flow.ts`, #860): on the native
+   * route this chains straight into `send()` and resolves to its outcome; on
+   * the web route it resolves `null` and leaves the flow at `ready`.
    */
-  prepare: (chapterId: ChapterId, filename: string) => Promise<void>;
+  prepare: (
+    chapterId: ChapterId,
+    filename: string
+  ) => Promise<ShareOutcome | null>;
 }
 
 /**
@@ -44,7 +55,7 @@ export function useChapterShare(): UseChapterShare {
   } = useShareFlow();
 
   const prepare = useCallback(
-    (chapterId: ChapterId, filename: string): Promise<void> =>
+    (chapterId: ChapterId, filename: string): Promise<ShareOutcome | null> =>
       run((isCurrent, signal) =>
         withEncoder(signal, async (codec) => {
           const result = await exportChapterMp3(chapterId, codec, isCurrent);

@@ -54,18 +54,36 @@ const source = (rel: string): string =>
   stripComments(readFileSync(path.join(ROOT, rel), "utf8"));
 
 /**
- * The same source with every run of whitespace collapsed to one space.
- *
- * For the one assertion below that reads a WINDOW of characters after a call.
- * Stripping a comment leaves its indentation behind as blank lines, so a
- * character window over the stripped text measures how much prose sat inside
- * the call rather than how much code — and it goes red when a comment grows,
- * which is not what it claims to catch. It did exactly that once here. The
- * tempting repair is a bigger number, which weakens the guard until it can no
- * longer tell an argument from a distant neighbour; collapsing first makes the
- * window mean what it says.
+ * The full text of a call starting at `at` (a source index that must point
+ * at the call's own name, immediately followed by its opening paren),
+ * bounded by that call's matching closing paren rather than a fixed
+ * character window (#764, the third repair at this spot per George's #698
+ * round 7/9 history recorded above). A window is either too narrow — cut
+ * off before a real argument, the exact way `chapterHeading(view.chapterName,
+ * view.chapterNumber)`'s comment once pushed `view.chapterName` past a
+ * 100-char width — or too wide, claiming a neighbour a few characters past
+ * the call's own close paren is "inside this call's arguments". Counting
+ * paren depth from the call's own opening paren finds the true boundary
+ * regardless of argument length, and treats a nested call
+ * (`chapterHeading(` inside `recorderBreadcrumb(`) correctly by depth
+ * rather than by guessing how far its own `)` pushes the outer close.
  */
-const compactSource = (rel: string): string => source(rel).replace(/\s+/g, " ");
+const callArguments = (text: string, at: number): string => {
+  let depth = 0;
+  let i = at;
+  for (; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") {
+      depth--;
+      if (depth === 0) {
+        i++;
+        break;
+      }
+    }
+  }
+  return text.slice(at, i);
+};
 
 describe("the trail is built in one place", () => {
   it("joins a book and a chapter heading", () => {
@@ -157,17 +175,19 @@ describe("both screens read the table", () => {
   });
 
   it("the recorder header resolves the heading before it builds the trail", () => {
-    const sheet = compactSource("src/components/recorder.tsx");
+    const sheet = source("src/components/recorder.tsx");
     expect(sheet.length, "no recorder to read").toBeGreaterThan(1000);
     // The index is what gets the floor, NOT the slice's length. `indexOf`
     // returns -1 when the call is absent and `slice(-1)` is the last character
     // of the file — length 1, so a length floor passes on a recorder that never
     // calls this at all (George, #698). A floor that cannot fail on the state
     // it names is the vacuous-assertion shape AGENTS.md keeps catching, and
-    // this one was an instance of it.
+    // this one was an instance of it. The call's own text is now bounded by
+    // paren depth (`callArguments`, #764), not a fixed character window, so
+    // whitespace and comment length in the source no longer matter here.
     const at = sheet.indexOf("strings.recorderBreadcrumb(");
     expect(at, "recorderBreadcrumb is not called").toBeGreaterThanOrEqual(0);
-    const call = sheet.slice(at, at + 200);
+    const call = callArguments(sheet, at);
     // Inside this call's own arguments, not merely somewhere later in the file.
     expect(call).toContain("strings.chapterHeading(");
     // AND the STORED NAME is what it resolves. Requiring only the call left the
@@ -184,6 +204,42 @@ describe("both screens read the table", () => {
     // the raw label and `segmentHeading` inside the table resolves it, exactly
     // as `chapterHeading` resolves the chapter half out here.
     expect(call).toContain("view.segmentLabel");
+  });
+});
+
+describe("the wiring guard is bounded by the call's own parens, not a window (#764)", () => {
+  // Proof that the fixed-window guard this replaces could be fooled in both
+  // directions, and that paren-depth is not.
+  it("still finds a real argument a 200-char window would have cut off", () => {
+    const padding = "x".repeat(190);
+    const src =
+      `wrapper(strings.recorderBreadcrumb(bookName, ` +
+      `strings.chapterHeading(view.chapterName, view.chapterNumber, "${padding}"), ` +
+      `view.ordinal, view.segmentLabel));`;
+    const at = src.indexOf("strings.recorderBreadcrumb(");
+
+    const oldWindow = src.slice(at, at + 200);
+    expect(
+      oldWindow,
+      "the fixed window must NOT already contain the argument — otherwise this case proves nothing"
+    ).not.toContain("view.segmentLabel");
+
+    const call = callArguments(src, at);
+    expect(call).toContain("view.segmentLabel");
+  });
+
+  it("does not claim a neighbour just past the call's close paren is one of its arguments", () => {
+    const src = "strings.recorderBreadcrumb(a, b, c); view.chapterName;";
+    const at = src.indexOf("strings.recorderBreadcrumb(");
+
+    const oldWindow = src.slice(at, at + 200);
+    expect(
+      oldWindow,
+      "the fixed window must reach the neighbour — otherwise this case proves nothing"
+    ).toContain("view.chapterName");
+
+    const call = callArguments(src, at);
+    expect(call).not.toContain("view.chapterName");
   });
 });
 

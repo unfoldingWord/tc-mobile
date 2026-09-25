@@ -68,7 +68,7 @@ import {
 } from "@/hooks/share-target";
 import type { FailureKey } from "@/hooks/save-failure";
 import type { RecorderAudio } from "@/hooks/use-audio-session";
-import { useEraseSegment } from "@/hooks/use-erase-segment";
+import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import { useRecorderViewport } from "@/hooks/use-recorder-viewport";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
@@ -98,6 +98,12 @@ interface RecorderProps {
   segmentId: SegmentId;
   /** The single audio owner, held by App so `leave()` fires on every nav. */
   audio: RecorderAudio;
+  /**
+   * The single erase, shared with the Segments screen (#160, L-12). One
+   * in-flight guard covers both entry points; whose failure it was is this
+   * sheet's own `eraseFailure` below.
+   */
+  erase: UseEraseSegment;
   /**
    * Persist the recording as an insert/append into the segment's audio, at the
    * given Finished state. Never rejects — a failure becomes the recovery screen
@@ -227,6 +233,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     {
       segmentId,
       audio,
+      erase,
       saveRecording,
       saveEditedSegment,
       clipboard,
@@ -1830,7 +1837,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // translator asked for, without a trip back to the chapter. It used to close
     // dirty to Segments. The ≡ rows and the bar's bin all confirm through here,
     // so there is one erase and one post-condition, whichever was tapped.
-    const erase = useEraseSegment();
+    //
+    // The hook itself is NOT constructed here: since #160 L-12 one instance is
+    // owned by App and shared with the Segments screen, and arrives as `erase`.
+    // What is local is the failure — held as the `strings`-mapped KEY it
+    // failed with (#172) — because a shared one would paint that screen's
+    // failed erase inside this sheet.
+    const [eraseFailure, setEraseFailure] = useState<FailureKey | null>(null);
+    // Bumped on a "busy" refusal to remount EraseConfirm, whose Erase tap
+    // latched an in-flight ref only an open edge resets; the refused call never
+    // closes the dialog, so without this Confirm and Cancel stay dead. The fresh
+    // mount reads `busy` (true while the other caller holds the guard), so it
+    // stays protected until that erase settles, then works again.
+    const [confirmMount, setConfirmMount] = useState(0);
     const isErasing = erase.isErasing;
     const onConfirmErase = useCallback(() => {
       // Stop any buffer playback before the delete: EraseConfirm latches its
@@ -1840,10 +1859,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // which both stop it; this is the belt to those suspenders, and matches
       // the Segments list's leave().
       stopPlayback();
+      // Clear only when this call will acquire the guard: a "busy" refusal is
+      // not an erase this sheet started, so it must not blank the flag from one
+      // it did. The ref read and the hook's own check run in the same turn.
+      if (!isErasing()) setEraseFailure(null);
       void (async () => {
         const result = await erase.erase(segmentId);
         // "ok": the stored take is gone; rebuild the sheet over the empty
-        // segment (below). "failed": keep the sheet, drop the confirm, show the
+        // segment (below). A failure: keep the sheet, drop the confirm, show the
         // notice. "busy": a double-tap's refused second call — ignore it, the
         // first call still owns the dialog (else the confirm would vanish
         // mid-erase, exposing Back and its save path over the delete).
@@ -1882,12 +1905,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // manually chosen again", requirements owner 2026-09-09).
           setFinishedIntent(null);
           setConfirmOpen(false);
-        } else if (result === "failed") {
+        } else if (result !== "busy") {
           // A failed erase leaves the take on disk, so this is not a loss — but
           // it goes through the same `clearSegmentTake`, so once the database is
           // unreachable it fails identically every time, and the confirm's
           // notice would invite a retry that cannot land (George R6 P2). Exit
           // with `false`: nothing changed, and the panel takes the screen.
+          setEraseFailure(result.failed);
           if (
             failureExit("erase", {
               databaseUnreachable,
@@ -1896,10 +1920,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           )
             onExit(false);
           else setConfirmOpen(false);
+        } else {
+          setConfirmMount((n) => n + 1);
         }
       })();
     }, [
       erase,
+      isErasing,
       segmentId,
       onExit,
       stopPlayback,
@@ -3296,12 +3323,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                   <Notice>{strings.editFailed}</Notice>
                 </div>
               )}
-              {erase.error && (
+              {eraseFailure && (
                 <div className="px-[12px] pt-[8px]">
                   {/* strings[key] (#172 part 2), not the fixed eraseFailed
                     sentence for every key — a full disk gets `noRoom`'s
                     actionable copy instead of the generic erase failure. */}
-                  <Notice>{strings[erase.error]}</Notice>
+                  <Notice>{strings[eraseFailure]}</Notice>
                 </div>
               )}
               <RecorderStatus state={state} isClosing={isClosing} />
@@ -3698,6 +3725,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           onExitEdit={onExitEdit}
         />
         <EraseConfirm
+          key={confirmMount}
           open={confirmOpen}
           title={strings.eraseConfirmTitle}
           confirmLabel={strings.eraseConfirm}

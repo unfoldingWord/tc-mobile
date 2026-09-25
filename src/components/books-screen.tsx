@@ -979,12 +979,24 @@ export function BooksScreen({
     // after this must not close the menu and drop the encode we are preparing.
     bookMenuSession.current += 1;
     setSavingName(false);
-    void bookShare.prepare(
-      shareMenuBook.bookId,
-      strings.shareBookFilename(shareMenuBook.name),
-      (n) => strings.shareFilename(shareMenuBook.name, n)
-    );
-  }, [focusRestore, bookShare, setSavingName, shareMenuBook]);
+    // On the native route `prepare()` chains straight into `send()` (#860,
+    // `share-flow.ts`'s `chainsToSend`) and resolves to ITS outcome — so this
+    // tap alone must close the menu on `sent`/`dismissed` the same way
+    // `onSendBookShare` below already does for the web route's own second
+    // tap. On the web route (still `ready`, waiting for that second tap) and
+    // on every non-chained ending (nothing to share, a prepare error, a
+    // superseded run) this resolves `null`, and the guard below leaves the
+    // menu exactly as every one of those already did.
+    void bookShare
+      .prepare(
+        shareMenuBook.bookId,
+        strings.shareBookFilename(shareMenuBook.name),
+        (n) => strings.shareFilename(shareMenuBook.name, n)
+      )
+      .then((outcome) => {
+        if (outcome === "sent" || outcome === "dismissed") onCloseShareMenu();
+      });
+  }, [focusRestore, bookShare, setSavingName, shareMenuBook, onCloseShareMenu]);
   // Tap 2 — hand the armed zip to the OS share sheet. Close the menu once the
   // flow is done, but NOT on `retry` (the File is still armed) or `failed` (its
   // error Notice lives in the menu and must stay visible).

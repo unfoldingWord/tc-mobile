@@ -23,6 +23,18 @@ import { mountInteractive, type InteractiveMount } from "./interactive-mount";
  * `recorder-rerecord.test.ts` fixture for one case, it uses the same
  * `mountInteractive` helper `recorder-edit-toolbar-glyph.test.ts` uses.
  */
+/**
+ * The erase surface `App` now owns and passes down (#160, L-12). Resting: a
+ * static render never erases, and "no erase in flight" is what the bar's own
+ * gate reads. Written here rather than mocked at the module, because the sheet
+ * takes it as a PROP now — a module mock would intercept nothing.
+ */
+const erase = {
+  erase: vi.fn(async () => "ok" as const),
+  erasing: false,
+  isErasing: () => false,
+};
+
 const boundary = vi.hoisted(() => ({ view: null as unknown }));
 vi.mock("@/hooks/use-recorder-segment", () => ({
   useRecorderSegment: () => ({
@@ -99,6 +111,7 @@ function renderBar(
     createElement(Recorder, {
       segmentId: "segment" as SegmentId,
       audio,
+      erase,
       saveRecording: async () => true,
       saveEditedSegment: async () => true,
       clipboard: null,
@@ -250,6 +263,7 @@ describe("the bar's bin does not erase during a live take (#903)", () => {
         createElement(Recorder, {
           segmentId: "segment" as SegmentId,
           audio,
+          erase,
           saveRecording: async () => true,
           saveEditedSegment: async () => true,
           clipboard: null,
@@ -283,8 +297,13 @@ describe("the bar's bin does not erase during a live take (#903)", () => {
       dialog,
       "erase confirm must not open from a click during a live take"
     ).toBeNull();
-    // And the erase itself — reachable only from that confirm's own Erase
-    // button — was never called.
+    // Implied by the dialog assertion above, not an independent check
+    // (#913 item 2): erase only runs from that confirm's own Erase button,
+    // so a confirm that never opened means this can only be false already.
+    // Kept as a direct assertion on the mock anyway, so a future refactor
+    // that opens the dialog through a path other than `EraseConfirm`
+    // (defeating the assertion above) still fails here on the thing that
+    // actually matters — erase being reached.
     expect(storage.clear).not.toHaveBeenCalled();
   });
 });

@@ -723,6 +723,55 @@ describe("isCanonicalOrigin", () => {
       false
     );
   });
+
+  // #798 item 1: a separate `/.git` path segment (the shape of a bare or
+  // mirror clone's own directory name) was being stripped by the same
+  // pattern as a real `.git` SUFFIX, so it silently collapsed to the
+  // canonical URL and passed. These pin both directions: the canonical
+  // forms above still pass (with and without a real `.git` suffix, and
+  // both the https and scp-like shapes), and the malformed `/.git` segment
+  // is now refused rather than quietly accepted.
+  it("rejects a separate /.git path segment on the https form", () => {
+    expect(
+      isCanonicalOrigin("https://github.com/unfoldingWord/tc-mobile/.git")
+    ).toBe(false);
+  });
+
+  it("rejects a separate /.git path segment on the scp-like form", () => {
+    expect(
+      isCanonicalOrigin("git@github.com:unfoldingWord/tc-mobile/.git")
+    ).toBe(false);
+  });
+
+  it("rejects a separate /.git path segment on an explicit ssh:// URL", () => {
+    expect(
+      isCanonicalOrigin("ssh://git@github.com/unfoldingWord/tc-mobile/.git")
+    ).toBe(false);
+  });
+
+  it("still accepts the canonical https URL with no .git suffix (both states, #798)", () => {
+    expect(
+      isCanonicalOrigin("https://github.com/unfoldingWord/tc-mobile")
+    ).toBe(true);
+  });
+
+  it("still accepts the canonical https URL with a real .git suffix (both states, #798)", () => {
+    expect(
+      isCanonicalOrigin("https://github.com/unfoldingWord/tc-mobile.git")
+    ).toBe(true);
+  });
+
+  it("still accepts the canonical scp-like URL with no .git suffix (both states, #798)", () => {
+    expect(isCanonicalOrigin("git@github.com:unfoldingWord/tc-mobile")).toBe(
+      true
+    );
+  });
+
+  it("still accepts the canonical scp-like URL with a real .git suffix (both states, #798)", () => {
+    expect(
+      isCanonicalOrigin("git@github.com:unfoldingWord/tc-mobile.git")
+    ).toBe(true);
+  });
 });
 
 describe("ensureRemoteRefFresh", () => {

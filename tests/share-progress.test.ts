@@ -679,6 +679,59 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
   }
 
   /**
+   * The native one-tap chain (#860): on the native route `prepare()` now
+   * resolves to `send()`'s own outcome (`share-flow.ts`'s `chainsToSend`)
+   * instead of always leaving the flow at `ready`. So `onPrepareShare`/
+   * `onPrepareBookShare` must react to THAT return value the same way
+   * `onSendShare`/`onSendBookShare` already react to a manual tap 2 —
+   * closing the menu on `sent`/`dismissed`, and leaving it alone for every
+   * other outcome the `.then` does not name (`retry`, `failed`, `unproven`,
+   * `superseded`, and the `null` a non-chained web run, an empty share, a
+   * prepare error, or a superseded run resolves to).
+   */
+  for (const [screen, prepareFn, closeFn] of [
+    [
+      "src/components/segments-screen.tsx",
+      "onPrepareShare",
+      "onCloseChapterMenu",
+    ],
+    [
+      "src/components/books-screen.tsx",
+      "onPrepareBookShare",
+      "onCloseShareMenu",
+    ],
+  ] as const) {
+    const name = screen.split("/").pop();
+
+    it(`${name}: ${prepareFn} closes the menu on a chained sent/dismissed outcome — the same set ${closeFn}'s tap-2 sibling closes on`, () => {
+      const source = read(screen);
+      const prepareAt = source.indexOf(`const ${prepareFn} = useCallback`);
+      expect(prepareAt).toBeGreaterThan(-1);
+      const prepareBody = source.slice(
+        prepareAt,
+        source.indexOf("}, [", prepareAt)
+      );
+      expect(prepareBody).toMatch(
+        new RegExp(
+          `outcome === "sent" \\|\\| outcome === "dismissed"\\)\\s*${closeFn}\\(\\);`
+        )
+      );
+    });
+
+    it(`${name}: ${prepareFn} reads prepare()'s own resolved outcome via .then, not a bare fire-and-forget`, () => {
+      const source = read(screen);
+      const prepareAt = source.indexOf(`const ${prepareFn} = useCallback`);
+      const prepareBody = source.slice(
+        prepareAt,
+        source.indexOf("}, [", prepareAt)
+      );
+      expect(prepareBody).toMatch(
+        /\.prepare\([\s\S]*?\)\s*\.then\(\(outcome\) => \{/
+      );
+    });
+  }
+
+  /**
    * The ternary's own half of the #96/#97 contract, asserted ONCE now that
    * both menus render the same rows (#160, L-15).
    *

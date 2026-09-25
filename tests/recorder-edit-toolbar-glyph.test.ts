@@ -8,6 +8,7 @@ import {
 import { Recorder } from "@/components/recorder";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
+import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import type { SegmentId } from "@/types/domain";
 
 import { render } from "./render";
@@ -247,11 +248,19 @@ describe("record mode's header opener stays ≡, and the Editing pill hides it i
       readScope: () => null,
       peekScope: () => null,
     } as unknown as UseAudioSession;
+    // Resting erase: this suite never opens the confirm, but the sheet reads
+    // `erase.isErasing` during render, so the prop cannot be absent (#160 L-12).
+    const erase: UseEraseSegment = {
+      erase: vi.fn(async () => "ok" as const),
+      erasing: false,
+      isErasing: () => false,
+    };
     await act(async () => {
       root.render(
         createElement(Recorder, {
           segmentId: "segment" as SegmentId,
           audio,
+          erase,
           saveRecording: async () => true,
           saveEditedSegment: async () => true,
           clipboard: null,
