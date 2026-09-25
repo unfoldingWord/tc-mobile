@@ -235,4 +235,37 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+
+  /* D20 (#949): the segment menu as the workbench draws 07. Rename is a
+     pencil in the head, after the crumbs (workbench `penbtn`); Play sits at
+     the end of the preview row (`tp play`, done fill on a finished segment);
+     a refused tile on a never-recorded segment is greyed (`tile.off`). */
+  [data-design="o4"] .o4-sheet-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+  }
+  [data-design="o4"] .o4-head-pen {
+    flex: none;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: var(--s-name);
+    color: var(--s-tile-ink);
+  }
+  [data-design="o4"] .o4-menu-play {
+    flex: none;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+  }
+  [data-design="o4"] .o4-menu-preview[data-state="finished"] .o4-menu-play {
+    background: var(--s-done);
+    color: var(--s-done-ink);
+  }
+  [data-design="o4"] .o4-tile[aria-disabled="true"] {
+    opacity: 0.35;
+  }
 }

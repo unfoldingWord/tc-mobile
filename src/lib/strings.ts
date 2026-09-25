@@ -215,8 +215,11 @@ export const strings = {
   openSegment: (n: number, label: string | null): string =>
     `Open segment ${strings.segmentHeading(n, label)}`,
   scrubSegment: (n: number): string => `Position in segment ${n}`,
-  markFinished: (n: number): string => `Mark segment ${n} finished`,
-  markUnfinished: (n: number): string => `Mark segment ${n} not finished`,
+  // "done", not "finished" (D17, #949): the O4 tile's caption is the
+  // workbench's "Done", and the label must hold the caption (label-in-name).
+  // One string for both looks and both menus (segment row and recorder).
+  markFinished: (n: number): string => `Mark segment ${n} done`,
+  markUnfinished: (n: number): string => `Mark segment ${n} not done`,
   /**
    * The segment's display heading (#591): the ordinal, then the facilitator's
    * label when set — "3 · verses 3–4". The ordinal always stays, because it is
@@ -259,10 +262,10 @@ export const strings = {
   // The O4 menu tiles' visible captions (#949, `o4-tile-menu.tsx`). Shown,
   // never announced: each tile's name is the label its current-look row
   // already had, and every caption is a word that label holds (label-in-name,
-  // WCAG 2.5.3) — which is why marking done says "Finished", the word
-  // `markFinished`/`markUnfinished` use, rather than the workbench's "Done".
+  // WCAG 2.5.3). Marking done says the workbench's "Done", and
+  // `markFinished`/`markUnfinished` say "done" to match (D17).
   tileEdit: "Edit",
-  tileFinished: "Finished",
+  tileFinished: "Done",
   tileRename: "Rename",
   tileErase: "Erase",
   tileShare: "Share",

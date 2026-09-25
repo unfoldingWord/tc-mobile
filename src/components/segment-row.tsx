@@ -9,6 +9,7 @@ import {
 import { Control } from "./control";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
+import { rowHint } from "./menu-row-state";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { O4SheetHead } from "./o4-crumbs";
@@ -121,7 +122,8 @@ const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
  * before anything is recorded. Its audio items — Edit / Finished / Erase — are
  * recorded-row only: a never-recorded segment has no audio to erase and, since
  * Finished lives only in that menu, cannot be marked finished — the
- * finished-invariant made structural. A never-recorded row opens the recorder
+ * finished-invariant made structural. The O4 menu (D20) shows Edit and Done on
+ * a never-recorded row too, but greyed with their reason and refusing the tap. A never-recorded row opens the recorder
  * from its record button, sized to match play (#82).
  *
  * The ordinal always shows; a label, when set, follows it ("3 · verses 3–4").
@@ -567,32 +569,44 @@ export function SegmentRow({
             {renameFailed && <Notice>{strings.renameSegmentFailed}</Notice>}
           </>
         ) : o4 ? (
-          // The O4 segment menu (#949, 07 and G8). The breadcrumb head (§7),
-          // then a preview row that now carries the segment's name, then the
-          // tiles. Both are decoration (`aria-hidden`): every tile already
-          // names its segment. The tiles are the rows below — same names,
-          // handlers, refs and DOM order, so focus lands on Edit (or Rename
-          // on a never-recorded row) in both looks and Cancel returns to
-          // Rename. Rename wears the name role and a pencil, Edit the edit
-          // role and scissors, so the two are told apart (#859). Finished is
-          // grey until the segment is done, then the whole tile green (G8).
-          // The preview's play button is not drawn: a control ahead of the
-          // grid would take the open-edge focus from Edit.
+          // The O4 segment menu (#949, 07 and G8), as the workbench draws it
+          // (D20). The head is the breadcrumb (§7, decoration) with Rename as
+          // a pencil beside it; then the preview row — badge, name and wave
+          // (decoration: every control names its segment) and the row's own
+          // Play; then the tiles. Menu's open-edge focus lands on the pencil,
+          // the sheet's first control, as it is the workbench's; Cancel on the
+          // name field comes back to it. Edit wears the edit role and
+          // scissors, the pencil the name role, so the two are told apart
+          // (#859). Done is grey until the segment is done, then the whole
+          // tile green (G8). On a never-recorded segment Edit and Done stay,
+          // greyed with their reason (#135), and there is no Play or Erase.
+          // The workbench's "Remove this segment" is not drawn: the app has
+          // no delete-segment action yet.
           <>
-            <O4SheetHead
-              book={bookName}
-              chapter={chapterNumber}
-              segment={{ ordinal, state }}
-            />
-            <div
-              className="o4-menu-preview"
-              data-state={state}
-              aria-hidden="true"
-            >
-              <span className="o4-menu-badge" data-state={state}>
+            <div className="o4-sheet-bar">
+              <O4SheetHead
+                book={bookName}
+                chapter={chapterNumber}
+                segment={{ ordinal, state }}
+              />
+              <Control
+                ref={renameControlRef}
+                icon="pencil"
+                label={strings.renameSegment}
+                size={24}
+                className="o4-head-pen"
+                onClick={() => setRenaming(true)}
+              />
+            </div>
+            <div className="o4-menu-preview" data-state={state}>
+              <span
+                className="o4-menu-badge"
+                data-state={state}
+                aria-hidden="true"
+              >
                 {ordinal}
               </span>
-              <span className="o4-menu-preview-mid">
+              <span className="o4-menu-preview-mid" aria-hidden="true">
                 {titled && <span className="o4-menu-title">{row.label}</span>}
                 <Waveform
                   peaks={hasClip ? row.peaks : null}
@@ -601,43 +615,57 @@ export function SegmentRow({
                   finished={state === "finished"}
                 />
               </span>
+              {hasClip && (
+                // The row's own Play (same label, gate and `onPlay` call), so
+                // the menu adds no second way to start audio. The menu stays
+                // open, as the workbench's does.
+                <Control
+                  icon={playing ? "pause" : "play"}
+                  label={
+                    playing
+                      ? strings.pauseSegment(ordinal)
+                      : strings.playSegment(ordinal)
+                  }
+                  variant="play"
+                  size={26}
+                  className="o4-menu-play"
+                  disabled={busy}
+                  onClick={() => onPlay(fraction * (durationMs / 1000))}
+                />
+              )}
             </div>
             <TileGrid>
-              {hasClip && (
-                <>
-                  <Tile
-                    tone="edit"
-                    icon="scissors"
-                    label={strings.editSegment(ordinal, row.label)}
-                    caption={strings.tileEdit}
-                    onClick={() => {
-                      closeMenu();
-                      onOpenRecorder();
-                    }}
-                  />
-                  <Tile
-                    tone={row.finished ? "done" : "doneoff"}
-                    icon="check"
-                    label={
-                      row.finished
-                        ? strings.markUnfinished(ordinal)
-                        : strings.markFinished(ordinal)
-                    }
-                    caption={strings.tileFinished}
-                    onClick={() => {
-                      closeMenu();
-                      onSetFinished(!row.finished);
-                    }}
-                  />
-                </>
-              )}
               <Tile
-                ref={renameControlRef}
-                tone="name"
-                icon="pencil"
-                label={strings.renameSegment}
-                caption={strings.tileRename}
-                onClick={() => setRenaming(true)}
+                tone="edit"
+                icon="scissors"
+                label={strings.editSegment(ordinal, row.label)}
+                caption={strings.tileEdit}
+                disabled={!hasClip}
+                hint={rowHint(hasClip ? null : "no-audio")}
+                onClick={() => {
+                  closeMenu();
+                  onOpenRecorder();
+                }}
+              />
+              <Tile
+                tone={row.finished ? "done" : "doneoff"}
+                icon="check"
+                label={
+                  row.finished
+                    ? strings.markUnfinished(ordinal)
+                    : strings.markFinished(ordinal)
+                }
+                caption={strings.tileFinished}
+                disabled={!hasClip}
+                hint={rowHint(hasClip ? null : "no-audio")}
+                onClick={() => {
+                  // The finished-invariant stays structural here too: the
+                  // hinted tile's click is already refused by `Control`, and
+                  // this refuses it again for a segment with no audio.
+                  if (!hasClip) return;
+                  closeMenu();
+                  onSetFinished(!row.finished);
+                }}
               />
               {hasClip && (
                 <>

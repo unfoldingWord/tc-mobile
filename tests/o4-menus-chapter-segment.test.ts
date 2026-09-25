@@ -20,10 +20,13 @@ import { areaRules, declsFor } from "./o4-area-css";
  * Mounted through the whole `SegmentsScreen`, so the row menu gets the
  * breadcrumb parts the screen hands it, and both menus are opened the way a
  * translator opens them — a tap on their ⋮. The design is picked by mocking
- * `useDesign()` (the pattern `tests/segments-o4.test.ts` uses), and every case
- * that could drift runs in BOTH looks: the switch contract is that the tiles
- * change the paint, never the names a screen reader hears, where focus lands
- * on open, or where it goes back to on close (#679 / #676 / #799 / #395).
+ * `useDesign()` (the pattern `tests/segments-o4.test.ts` uses). The chapter
+ * menu's switch contract is that the tiles change the paint, never the names
+ * a screen reader hears or where focus lands on open. The segment menu's O4
+ * branch changes both on purpose (D20: Rename in the head, Play in the
+ * preview, Edit and Done greyed on an empty segment), so each look is pinned
+ * separately there. In both menus and both looks, focus still goes back to
+ * the ⋮ on close (#679 / #676 / #799 / #395).
  *
  * What this does NOT cover: the cascade, layout and paint. jsdom has none, so
  * whether the sheet looks like the workbench's G2 and 07 is a browser and
@@ -236,39 +239,85 @@ const LOOKS = ["current", "o4"] as const;
 describe("the segment menu (07) on the tile grid", () => {
   const openRow = () => tap(strings.segmentMenu(3));
 
+  // The two looks no longer expose the same names in this menu: D20 (#949,
+  // DRI 2026-09-25) moves Rename into the O4 head, adds Play to the preview
+  // row and greys Edit and Done on a never-recorded segment. So each look is
+  // pinned on its own: the current look exactly as before, O4 as the workbench
+  // draws 07 (first focus on the head's pencil, its first control).
   it.each([
     ["recorded", recorded],
     ["finished", finished],
-    ["never recorded", empty],
     ["titled", titled],
   ] as const)(
-    "exposes the same names and lands focus on the same action in both looks (%s)",
+    "keeps the current look's names and first focus (%s)",
     async (_, row) => {
-      const seen: { names: string[]; focus: string }[] = [];
-      for (const look of LOOKS) {
-        await mount(look, row);
-        await openRow();
-        seen.push({ names: dialogNames(), focus: focusedName() });
-        await escape();
-      }
-      expect(seen[0]!.names.length).toBeGreaterThanOrEqual(2);
-      expect(seen[1]).toEqual(seen[0]);
+      await mount("current", row);
+      await openRow();
+      expect(dialogNames()).toEqual([
+        strings.menuClose,
+        strings.editSegment(3, row.label),
+        row.finished ? strings.markUnfinished(3) : strings.markFinished(3),
+        strings.renameSegment,
+        strings.eraseSegment,
+      ]);
+      expect(focusedName()).toBe(strings.editSegment(3, row.label));
     }
   );
 
-  it("draws Edit, Finished and Rename, then Erase past a gap, each told apart by colour (#859)", async () => {
+  it("keeps the current look's never-recorded menu: Rename alone, focused", async () => {
+    await mount("current", empty);
+    await openRow();
+    expect(dialogNames()).toEqual([strings.menuClose, strings.renameSegment]);
+    expect(focusedName()).toBe(strings.renameSegment);
+  });
+
+  it.each([
+    ["recorded", recorded],
+    ["finished", finished],
+    ["titled", titled],
+  ] as const)(
+    "puts Rename in the head, Play in the preview, then the tiles, and lands on Rename (o4, D20, %s)",
+    async (_, row) => {
+      await mount("o4", row);
+      await openRow();
+      expect(dialogNames()).toEqual([
+        strings.menuClose,
+        strings.renameSegment,
+        strings.playSegment(3),
+        strings.editSegment(3, row.label),
+        row.finished ? strings.markUnfinished(3) : strings.markFinished(3),
+        strings.eraseSegment,
+      ]);
+      expect(focusedName()).toBe(strings.renameSegment);
+    }
+  );
+
+  it("draws Edit and Done, then Erase past a gap, with Rename as the head's pencil (#859, D20)", async () => {
     await mount("o4", recorded);
     await openRow();
-    expect(gridOrder()).toEqual([
+    // Edit and Done carry a hint slot (#135), so each sits in its
+    // `.control-hinted` wrapper; read the grid's buttons, not its children.
+    const grid = dialog().querySelector(".o4-tiles")!;
+    expect(
+      [...grid.querySelectorAll("button, .o4-tiles-gap")].map((el) =>
+        el.classList.contains("o4-tiles-gap")
+          ? "|"
+          : el.getAttribute("aria-label")
+      )
+    ).toEqual([
       strings.editSegment(3, null),
       strings.markFinished(3),
-      strings.renameSegment,
       "|",
       strings.eraseSegment,
     ]);
     expect(tone(tile(strings.editSegment(3, null)))).toBe("edit");
-    expect(tone(tile(strings.renameSegment))).toBe("name");
     expect(tone(tile(strings.eraseSegment))).toBe("erase");
+    const pen = button(strings.renameSegment);
+    expect(pen.closest(".o4-sheet-bar"), "Rename sits in the head").not.toBe(
+      null
+    );
+    expect(pen.closest(".o4-tiles"), "Rename is not a tile").toBeNull();
+    expect(pen.classList.contains("o4-head-pen")).toBe(true);
     expectCaptionInName();
   });
 
@@ -286,10 +335,51 @@ describe("the segment menu (07) on the tile grid", () => {
     expectCaptionInName();
   });
 
-  it("offers only Rename on a never-recorded segment, as the current look does", async () => {
+  it("shows Edit and Done greyed on a never-recorded segment, each saying why (o4, D20)", async () => {
     await mount("o4", empty);
     await openRow();
-    expect(gridOrder()).toEqual([strings.renameSegment]);
+    const why = strings.nothingRecorded;
+    const edit = `${strings.editSegment(3, null)}. ${why}`;
+    const done = `${strings.markFinished(3)}. ${why}`;
+    expect(dialogNames()).toEqual([
+      strings.menuClose,
+      strings.renameSegment,
+      edit,
+      done,
+    ]);
+    for (const name of [edit, done]) {
+      const el = tile(name);
+      // The #135 convention: aria-disabled (focusable, speaks its reason),
+      // not the native attribute.
+      expect(el.getAttribute("aria-disabled"), name).toBe("true");
+      expect(el.disabled, name).toBe(false);
+    }
+    // No Play on a segment with nothing to play.
+    expect(dialogNames()).not.toContain(strings.playSegment(3));
+    expect(focusedName()).toBe(strings.renameSegment);
+  });
+
+  it("plays the segment from the preview row through the row's own play path, menu left open (o4, D20)", async () => {
+    const playTake = vi.fn();
+    Object.assign(audio, { playTake });
+    try {
+      await mount("o4", recorded);
+      await openRow();
+      // Scoped to the dialog: the row's own Play behind the scrim has the
+      // same name.
+      const play = dialog().querySelector<HTMLButtonElement>(
+        `.o4-menu-preview button[aria-label="${strings.playSegment(3)}"]`
+      );
+      expect(play).not.toBeNull();
+      await act(async () => play!.click());
+      expect(playTake).toHaveBeenCalledTimes(1);
+      expect(playTake.mock.calls[0]![0]).toMatchObject({
+        segmentId: recorded.segmentId,
+      });
+      expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    } finally {
+      Object.assign(audio, { playTake: undefined });
+    }
   });
 
   it("heads the sheet with the book, chapter and segment crumbs (§7), decoration only", async () => {
@@ -308,7 +398,16 @@ describe("the segment menu (07) on the tile grid", () => {
     await openRow();
     const preview = dialog().querySelector(".o4-menu-preview");
     expect(preview).not.toBeNull();
-    expect(preview!.getAttribute("aria-hidden")).toBe("true");
+    // D20 puts a live Play in this row, so the row itself can no longer be
+    // aria-hidden; its badge and name/wave still are.
+    expect(
+      preview!.querySelector(".o4-menu-badge")?.getAttribute("aria-hidden")
+    ).toBe("true");
+    expect(
+      preview!
+        .querySelector(".o4-menu-preview-mid")
+        ?.getAttribute("aria-hidden")
+    ).toBe("true");
     expect(preview!.querySelector(".o4-menu-badge")?.textContent).toBe("3");
     expect(preview!.querySelector(".o4-menu-title")?.textContent).toBe(
       "the sower"
@@ -407,6 +506,14 @@ describe("the chapter menu (G2) on the tile grid", () => {
   );
 });
 
+describe("marking-done copy (D17)", () => {
+  it('captions the tile "Done" and says done in the label, one string for every menu', () => {
+    expect(strings.tileFinished).toBe("Done");
+    expect(strings.markFinished(3)).toBe("Mark segment 3 done");
+    expect(strings.markUnfinished(3)).toBe("Mark segment 3 not done");
+  });
+});
+
 describe("o4/menus.css, #949's chapter and segment menu section", () => {
   const rules = areaRules("menus");
   const O4 = '[data-design="o4"]';
@@ -447,6 +554,23 @@ describe("o4/menus.css, #949's chapter and segment menu section", () => {
         "background"
       )
     ).toBe("var(--s-voice-quiet)");
+  });
+
+  it("draws the head's Rename pencil as a 52 circle on the name role, and greys a refused tile (D20)", () => {
+    const pen = declsFor(rules, `${O4} .o4-head-pen`);
+    expect(pen.get("width")).toBe("52px");
+    expect(pen.get("height")).toBe("52px");
+    expect(pen.get("background")).toBe("var(--s-name)");
+    expect(pen.get("color")).toBe("var(--s-tile-ink)");
+    expect(
+      declsFor(rules, `${O4} .o4-tile[aria-disabled="true"]`).get("opacity")
+    ).toBe("0.35");
+    expect(
+      declsFor(
+        rules,
+        `${O4} .o4-menu-preview[data-state="finished"] .o4-menu-play`
+      ).get("background")
+    ).toBe("var(--s-done)");
   });
 
   it("draws the preview row 78 tall on the floor, its badge a 44 circle", () => {
