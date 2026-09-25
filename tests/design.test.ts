@@ -11,9 +11,10 @@ import {
  * The O4 design switch (#938, batch 0 of epic #936) — the pure half, modelled
  * on `tests/theme.test.ts`'s split of the identical shape for `lib/theme.ts`.
  *
- * The DOM half — the `data-design` attribute, `localStorage`, the menu entry
- * — is `hooks/use-design.ts`, covered by `tests/use-design.test.ts`
- * (jsdom). The build-time cascade guarantee this switch exists to make
+ * The DOM half — the `data-design` attribute and `localStorage` — is
+ * `hooks/use-design.ts`, covered by `tests/use-design.test.ts` (jsdom). The
+ * menu entry, `components/design-control.tsx`, is rendered by no test. The
+ * build-time cascade guarantee this switch exists to make
  * possible is `tests/o4-cascade.test.ts`'s question, not this file's.
  */
 describe("readStoredDesign (#938)", () => {

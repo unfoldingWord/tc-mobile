@@ -1,3 +1,101 @@
-/* O4 — Tile menu primitive and screen menus onto the tile grid. Owners: #941, #949. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file. */
+/* O4 — Tile menu primitive and screen menus onto the tile grid. Owners: #941, #949. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file.
+
+   #941's half: the tile primitive (`components/o4-tile-menu.tsx`) and the
+   bottom-sheet shell a menu takes on while it holds a tile grid. #949
+   appends its per-menu rules below; it does not restructure these.
+
+   THE TILE is one `Control` button laid out as a two-row grid: the 76 x 76
+   box in row 1 (a pseudo-element, so the glyph needs no extra element), the
+   caption in row 2. The whole tile is the tap target and the focus outline,
+   as in the workbench's `tile()`. Fill per tone; the glyph takes the tile
+   ink, and the caption the muted ink.
+
+   THE SHEET is keyed on the grid's presence (`:has`), so only a menu that
+   holds tiles becomes a bottom sheet — the name sheets that share the same
+   menu surface are #943's, in sheets.css, and are untouched here. */
 @layer components {
+  [data-design="o4"] .o4-tiles {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  [data-design="o4"] .o4-tiles-gap {
+    flex: 1;
+  }
+  [data-design="o4"] .o4-tile {
+    grid-template-rows: 76px auto;
+    row-gap: 8px;
+    width: 76px;
+    height: auto;
+    border-radius: 20px; /* #939 token */
+    background: transparent;
+    color: var(--s-tile-ink);
+  }
+  [data-design="o4"] .o4-tile::before {
+    content: "";
+    grid-area: 1 / 1;
+    width: 76px;
+    height: 76px;
+    border-radius: 20px; /* #939 token */
+  }
+  [data-design="o4"] .o4-tile > svg {
+    grid-area: 1 / 1;
+  }
+  [data-design="o4"] .o4-tile > .control-caption {
+    grid-area: 2 / 1;
+    color: var(--s-ink-muted);
+    font-size: 14px; /* #939 token */
+    font-weight: 400;
+    white-space: nowrap;
+  }
+  [data-design="o4"] .o4-tile--edit::before {
+    background: var(--s-edit);
+  }
+  [data-design="o4"] .o4-tile--name::before {
+    background: var(--s-name);
+  }
+  [data-design="o4"] .o4-tile--send::before {
+    background: var(--s-send);
+  }
+  [data-design="o4"] .o4-tile--erase {
+    color: var(--s-live);
+  }
+  [data-design="o4"] .o4-tile--erase::before {
+    background: var(--s-live-quiet);
+    box-shadow: inset 0 0 0 2px var(--s-live);
+  }
+  [data-design="o4"] .o4-tile--plain {
+    color: var(--s-ink);
+  }
+  [data-design="o4"] .o4-tile--plain::before {
+    background: var(--s-well);
+  }
+
+  [data-design="o4"] .menu-scrim:has(.o4-tiles) {
+    align-items: flex-end;
+    justify-content: center;
+    padding: 8px calc(8px + env(safe-area-inset-right))
+      calc(8px + env(safe-area-inset-bottom))
+      calc(8px + env(safe-area-inset-left));
+    background: var(--s-dim);
+  }
+  [data-design="o4"] .menu-panel:has(.o4-tiles) {
+    width: 100%;
+    height: auto;
+    max-height: 100%;
+    padding: 12px 16px 20px;
+    gap: 18px;
+    border: 1px solid var(--s-card-edge);
+    border-radius: 26px; /* #939 token */
+  }
+  [data-design="o4"] .menu-panel:has(.o4-tiles)::before {
+    content: "";
+    flex: none;
+    align-self: center;
+    width: 56px;
+    height: 5px;
+    margin-bottom: -2px;
+    border-radius: 3px;
+    background: var(--s-edge);
+  }
 }

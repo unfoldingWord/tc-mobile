@@ -330,3 +330,31 @@ describe("the O4 roles clear the floors the workbench claimed for them (round 4,
     });
   }
 });
+
+describe("a Finished segment's green reads on the recorder stage (#926)", () => {
+  for (const theme of ["dark", "light"] as const) {
+    it(`${theme}: --s-done bars on --s-surface — the .recorder-stage behind the canvas`, () => {
+      const ratio = contrast(
+        resolve(theme, "--s-done"),
+        resolve(theme, "--s-surface")
+      );
+      expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT);
+    });
+
+    it(`${theme}: the --s-done Play button on --s-floor — the record toolbar`, () => {
+      const ratio = contrast(
+        resolve(theme, "--s-done"),
+        resolve(theme, "--s-floor")
+      );
+      expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT);
+    });
+
+    it(`${theme}: the --s-done-ink Play glyph on --s-done`, () => {
+      const ratio = contrast(
+        resolve(theme, "--s-done-ink"),
+        resolve(theme, "--s-done")
+      );
+      expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT);
+    });
+  }
+});

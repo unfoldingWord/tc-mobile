@@ -3173,7 +3173,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             component and does not belong in this lane. */}
         <div
           ref={sheetRef}
-          className="recorder-sheet mx-auto max-w-md"
+          // Green waveform and Play for a Finished segment (#926), on the same
+          // resolved state the menu's check reads.
+          className={cn(
+            "recorder-sheet mx-auto max-w-md",
+            finishedState === "finished" && "recorder-sheet--finished"
+          )}
           inert={(overlayUp && !takeActive) || undefined}
         >
           {/* The other half of the rule above: the header is inert under ANY
@@ -3517,6 +3522,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                         // to be told both (George R3 P2).
                         fitFrom={editor.peaks}
                         view={waveView}
+                        // Re-runs the draw when the mark toggles, so the canvas
+                        // re-reads `.recorder-sheet--finished`'s stroke (#926).
+                        finished={finishedState === "finished"}
                       />
                     </WaveformScroller>
                   )}
