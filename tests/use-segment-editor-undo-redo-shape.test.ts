@@ -35,7 +35,10 @@ describe("useSegmentEditor.undo/redo call the shared opUndone/opRedone helpers (
     const start = source.indexOf(
       "const undo = useCallback((): EditOp | null => {"
     );
-    const end = source.indexOf("}, [log, applyLog, clearSelection]);", start);
+    const end = source.indexOf(
+      "}, [log, applyLog, clearSelection, clipboard]);",
+      start
+    );
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const body = source.slice(start, end);
@@ -47,7 +50,10 @@ describe("useSegmentEditor.undo/redo call the shared opUndone/opRedone helpers (
     const start = source.indexOf(
       "const redo = useCallback((): EditOp | null => {"
     );
-    const end = source.indexOf("}, [log, applyLog, clearSelection]);", start);
+    const end = source.indexOf(
+      "}, [log, applyLog, clearSelection, clipboard]);",
+      start
+    );
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const body = source.slice(start, end);

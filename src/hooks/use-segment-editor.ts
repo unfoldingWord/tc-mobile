@@ -73,7 +73,9 @@ export interface SegmentEditor {
    *  `sliceRange` (`lib/audio/edit.ts`) act on, via `wholeSampleRange`, not
    *  the raw fractional selection — or null if nothing was cut. */
   readonly cut: () => SampleRange | null;
-  /** Paste the clipboard at a sample offset (the centerline). */
+  /** Paste the clipboard at a sample offset (the centerline). One-shot
+   *  (#489): a paste that lands empties the clipboard; undoing it puts the
+   *  phrase back, and redoing it empties it again. */
   readonly paste: (atSample: number) => void;
   /** Step history back one op. Returns the op that was undone (so the
    *  recorder can map the centerline through its inverse, #449), or null if
@@ -108,7 +110,8 @@ interface History {
  * save path made for the same OOM class.
  *
  * The clipboard is passed in rather than owned here: it must outlive the sheet
- * (G3), so it belongs to `App`. Cut writes it, paste reads it.
+ * (G3), so it belongs to `App`. Cut writes it; paste reads it and then
+ * empties it (#489), and undo/redo of a paste move it back and forth.
  *
  * `original` is the segment's loaded PCM (null until the async load resolves, or
  * on an empty segment); before it arrives the editor is an empty, no-op buffer.
@@ -249,18 +252,25 @@ export function useSegmentEditor(
     return applied ? range : null;
   }, [selection, working, log, base, runEdit, clipboard, clearSelection]);
 
+  // One-shot (#489, the requirements owner's decision of 2026-09-24): a paste
+  // that lands empties the clipboard, so the next thing the translator can do
+  // is pick a new span rather than drop the same phrase again. Only a paste
+  // that LANDED empties it — `applyLog`'s `after` runs only once the new
+  // buffer has been allocated and committed, so a paste that fails in the
+  // allocation guard leaves the phrase on the clipboard to try again.
+  //
+  // Nothing is lost by emptying it: the phrase is now in `working`, which
+  // this sheet commits on close through the never-lose save path, and the
+  // op keeps its own reference to the samples (`op.clip`), which is what
+  // `undo` below hands back to the clipboard if the paste is taken back.
   const paste = useCallback(
     (atSample: number) => {
       const clip = clipboard.clip;
       if (!clip || clip.length === 0) return;
       const at = Math.max(0, Math.min(Math.round(atSample), working.length));
-      applyLog(pushOp(log, { kind: "paste", at, clip }));
-      // The slot is NOT emptied, and nothing is told about the paste. One cut
-      // goes into several segments across a chapter (G3), and two rounds of
-      // review established that nothing derived from a paste can safely say the
-      // phrase is now somewhere else — an undo or an erase takes it back again.
-      // The upgrade guard holds on the samples themselves until the chapter
-      // changes (`lib/takes/pending-take.ts`, George R4 P2).
+      applyLog(pushOp(log, { kind: "paste", at, clip }), () =>
+        clipboard.set(null)
+      );
     },
     [clipboard, working.length, log, applyLog]
   );
@@ -278,19 +288,44 @@ export function useSegmentEditor(
   // one); `null` when there was nothing to step to, or when `applyLog`'s
   // guard reports the rematerialise failed, mirroring `cut()`'s own
   // `applied ? range : null`.
+  //
+  // A paste is one-shot (#489), so stepping over one moves the clipboard with
+  // it. Undoing a paste takes the phrase back OUT of `working`; if it did not
+  // also go back on the clipboard, closing the sheet would drop the only copy
+  // left (the op's own reference dies with the session log). So the undone
+  // paste's samples go back on the clipboard. What that overwrites is always
+  // also in `working`: the clipboard empties at every paste, and after that
+  // only a LATER op in this session's log can refill it (the log starts fresh
+  // with each sheet) — a cut, or the undo of a paste of that cut's phrase.
+  // This undo is reachable only after undoing that later cut too, and undoing
+  // a cut puts its audio back into `working`.
+  //
+  // Redoing the paste empties it again, but only when the clipboard still
+  // holds that paste's own samples. It always should — a redo is reachable
+  // only while no new op has been pushed, and only a new op (a cut) refills
+  // the clipboard — and the identity check keeps a redo from ever discarding
+  // a phrase it did not put there.
   const undo = useCallback((): EditOp | null => {
     const undoneOp = opUndone(log);
     if (undoneOp === null) return null;
-    const applied = applyLog(logUndo(log), clearSelection);
+    const applied = applyLog(logUndo(log), () => {
+      clearSelection();
+      if (undoneOp.kind === "paste") clipboard.set(undoneOp.clip);
+    });
     return applied ? undoneOp : null;
-  }, [log, applyLog, clearSelection]);
+  }, [log, applyLog, clearSelection, clipboard]);
 
   const redo = useCallback((): EditOp | null => {
     const redoneOp = opRedone(log);
     if (redoneOp === null) return null;
-    const applied = applyLog(logRedo(log), clearSelection);
+    const applied = applyLog(logRedo(log), () => {
+      clearSelection();
+      if (redoneOp.kind === "paste" && clipboard.clip === redoneOp.clip) {
+        clipboard.set(null);
+      }
+    });
     return applied ? redoneOp : null;
-  }, [log, applyLog, clearSelection]);
+  }, [log, applyLog, clearSelection, clipboard]);
 
   const selectionSpan = selection
     ? clampRange(selection, working.length)
