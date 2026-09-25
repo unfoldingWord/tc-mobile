@@ -23,12 +23,14 @@ import {
  * worth nothing lost, and not something that should make first paint wait on
  * an async open or gain a schema migration of its own.
  *
- * WHAT IS AND IS NOT COVERED. COVERED, in Node (`tests/design.test.ts`):
- * `readStoredDesign`/`nextDesign` (the pure half) and this hook's attribute
- * toggle, persistence and bad-stored-value fallback, rendered through
- * `tests/render.ts`'s narrow harness. NOT COVERED: `readDesign`'s catch path
- * (an accessor that throws on READ), and anything on a phone — this switch has
- * not been run on a device as of this PR.
+ * WHAT IS AND IS NOT COVERED. COVERED, in Node: `readStoredDesign`/
+ * `nextDesign` (the pure half) in `tests/design.test.ts`; this hook's
+ * attribute toggle, persistence, bad-stored-value fallback and
+ * `installStoredDesign` in `tests/use-design.test.ts`, mounted with
+ * `createRoot` and `act` in a manual jsdom. NOT COVERED: `readDesign`'s catch
+ * path (an accessor that throws on READ), the Books menu entry
+ * (`components/design-control.tsx`), which no test renders, and anything on
+ * a phone.
  */
 
 /**
