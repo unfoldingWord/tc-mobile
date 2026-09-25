@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 import { loadRecorderSegmentView } from "@/hooks/use-recorder-segment";
 import {
   addChapter,
@@ -140,7 +140,7 @@ describe("the default chapter name is written once", () => {
     // The assertion above passes on a COPY too — that is exactly why the copy
     // survived. This is the one that does not: restore the duplicate and the
     // count goes to two.
-    const table = source("src/components/strings.ts");
+    const table = source("src/lib/strings.ts");
     expect(table.length, "no strings table to read").toBeGreaterThan(1000);
     expect(table.match(/`Chapter \$\{/g) ?? []).toHaveLength(1);
   });

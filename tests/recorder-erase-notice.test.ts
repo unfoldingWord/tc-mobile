@@ -2,22 +2,27 @@
 import { act, createElement, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
 
-const policy = vi.hoisted(() => ({ blocks: vi.fn(), dismiss: vi.fn() }));
-vi.mock("@/lib/nav/navigation", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/nav/navigation")>();
-  policy.blocks.mockImplementation(actual.overlayBlocksClose);
-  policy.dismiss.mockImplementation(actual.overlayDismissal);
-  return {
-    ...actual,
-    overlayBlocksClose: policy.blocks,
-    overlayDismissal: policy.dismiss,
-  };
-});
+/**
+ * #172 part 2: the in-sheet erase Notice must render `strings[erase.error]`,
+ * never the fixed `strings.eraseFailed` for every key — a full disk gets the
+ * `noRoom` sentence instead of the generic erase-failure copy (Frank's
+ * advisory on #886, and the issue's own "the shared hook now emits `noRoom`
+ * ... but the existing Recorder consumer still renders `strings.eraseFailed`
+ * for every key" finding).
+ *
+ * Drives a REAL `useEraseSegment` (unmocked) through the actual confirm flow,
+ * with only the underlying store call (`clearSegmentTake`) made to reject —
+ * the same harness `tests/recorder-erase-back.test.ts` uses — so this proves
+ * the mapping `recorder.tsx` itself does at render, not `performErase`'s
+ * classification (that is `tests/use-erase-segment.test.ts`'s claim).
+ */
+
 const storage = vi.hoisted(() => ({ clear: vi.fn() }));
 vi.mock("@/lib/storage/takes", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/storage/takes")>()),
@@ -41,13 +46,13 @@ vi.mock("@/hooks/use-recorder-segment", () => ({
     setFinished: vi.fn(),
   }),
 }));
-// Paint/audio acquisition are outside this same-turn event regression. The
-// real Recorder, erase hook, confirm, editor and close policies stay mounted.
 vi.mock("@/components/waveform", () => ({ Waveform: () => null }));
 vi.mock("@/components/live-scope", () => ({ LiveScope: () => null }));
 vi.mock("@/components/vu-meter", () => ({ VuMeter: () => null }));
+
 let root: Root;
 let container: HTMLDivElement;
+
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
@@ -60,8 +65,6 @@ beforeEach(() => {
   vi.stubGlobal("requestAnimationFrame", () => 1);
   vi.stubGlobal("cancelAnimationFrame", () => {});
   storage.clear.mockReset();
-  policy.blocks.mockClear();
-  policy.dismiss.mockClear();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -71,6 +74,7 @@ afterEach(async () => {
   container.remove();
   vi.unstubAllGlobals();
 });
+
 function button(label: string) {
   const found = [...document.querySelectorAll("button")].find(
     (b) => b.getAttribute("aria-label") === label
@@ -78,6 +82,7 @@ function button(label: string) {
   expect(found, label).toBeDefined();
   return found!;
 }
+
 async function setup() {
   const ref = createRef<RecorderHandle>();
   const onExit = vi.fn();
@@ -130,54 +135,41 @@ async function setup() {
   await act(async () => button(strings.eraseSegment).click());
   return { ref, onExit, saveRecording, saveEditedSegment };
 }
-it("keeps the confirm when Back arrives in the same turn as erase, before a render", async () => {
-  let complete!: () => void;
-  storage.clear.mockImplementation(
-    () =>
-      new Promise<void>((resolve) => {
-        complete = resolve;
-      })
+
+function noticeText(): string {
+  return [...document.querySelectorAll(".notice")]
+    .map((n) => n.textContent ?? "")
+    .join(" ");
+}
+
+it("shows the no-room sentence for a quota-shaped erase failure, not the generic erase-failed copy", async () => {
+  storage.clear.mockRejectedValue(
+    Object.assign(new Error("the disk is full"), { name: "QuotaExceededError" })
   );
-  const s = await setup();
-  await act(async () => {
-    button(strings.eraseConfirm).click();
-    // Deliberately no await/render between the erase event and imperative Back.
-    const closing = s.ref.current!.requestClose();
-    expect(storage.clear).toHaveBeenCalledOnce();
-    expect(await closing).toBe(false);
-    // Both policy decisions must receive the live snapshot. Keeping only the
-    // dismissal live hides a stale close gate while confirmOpen happens to hold.
-    expect(policy.blocks).toHaveBeenLastCalledWith(false, true, true);
-    expect(policy.dismiss).toHaveBeenLastCalledWith(false, true, true);
-  });
-  expect(
-    document.querySelector(`[aria-label="${strings.eraseConfirmTitle}"]`)
-  ).not.toBeNull();
-  expect(s.onExit).not.toHaveBeenCalled();
-  expect(s.saveRecording).not.toHaveBeenCalled();
-  expect(s.saveEditedSegment).not.toHaveBeenCalled();
-  await act(async () => complete());
-  // The erase's own completion is what takes the confirm down — and since
-  // #592 it leaves the sheet open over the emptied segment rather than
-  // exiting (`tests/recorder-rerecord.test.ts` owns that post-condition).
+  await setup();
+
+  await act(async () => button(strings.eraseConfirm).click());
+
+  // The confirm drops on a "stay" failure (databaseUnreachable: false), so the
+  // sheet's own Notice is what's left to read.
   expect(
     document.querySelector(`[aria-label="${strings.eraseConfirmTitle}"]`)
   ).toBeNull();
-  expect(s.onExit).not.toHaveBeenCalled();
-  expect(s.saveRecording).not.toHaveBeenCalled();
-  expect(s.saveEditedSegment).not.toHaveBeenCalled();
+  const text = noticeText();
+  expect(text).toContain(strings.noRoom);
+  expect(text).not.toContain(strings.eraseFailed);
 });
-it("dismisses a waiting confirm, then permits ordinary idle Back", async () => {
-  const s = await setup();
-  await act(async () => {
-    expect(await s.ref.current!.requestClose()).toBe(false);
-  });
-  expect(
-    document.querySelector(`[aria-label="${strings.eraseConfirmTitle}"]`)
-  ).toBeNull();
-  expect(storage.clear).not.toHaveBeenCalled();
-  await act(async () => {
-    expect(await s.ref.current!.requestClose()).toBe(true);
-  });
-  expect(s.onExit).toHaveBeenCalledOnce();
+
+it("keeps the generic erase-failed copy for a non-quota erase failure", async () => {
+  storage.clear.mockRejectedValue(
+    new Error("UnknownError: Internal error opening backing store")
+  );
+  await setup();
+
+  await act(async () => button(strings.eraseConfirm).click());
+
+  const text = noticeText();
+  expect(text).toContain(strings.eraseFailed);
+  expect(text).not.toContain(strings.noRoom);
+  expect(text).not.toContain("UnknownError");
 });

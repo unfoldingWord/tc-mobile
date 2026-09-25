@@ -3,8 +3,8 @@ import type { RefObject } from "react";
 
 import { requestTranscodeSweep } from "./finish-transcode";
 import { reportFailure } from "./report-failure";
+import { failureKey, type FailureKey } from "./save-failure";
 import { computePeaks } from "@/lib/audio/peaks";
-import { errorMessage } from "@/lib/failure-text";
 import {
   addSegment as addSegmentToChapter,
   getBook,
@@ -165,7 +165,9 @@ export function useChapterSegments(chapterId: ChapterId) {
   // (also set by a failed append) and `loading` (never re-armed) cannot.
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // The failure KEY (#172), never the raw `cause.message` — the screen looks
+  // it up in `strings`.
+  const [error, setError] = useState<FailureKey | null>(null);
   const [staleTarget, setStaleTarget] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
   // The set of segments this hook has locally patched — a rename, a finished
@@ -251,7 +253,10 @@ export function useChapterSegments(chapterId: ChapterId) {
           setStaleTarget(true);
           setError(null);
         } else {
-          setError(errorMessage(cause));
+          setError(failureKey(cause, "loadFailed"));
+          // #172: this site had no funnel report before this PR — the raw
+          // cause reached only the screen, and only as its own text.
+          reportFailure(cause, "chapter-load");
         }
       } finally {
         if (!cancelled) {
@@ -300,7 +305,8 @@ export function useChapterSegments(chapterId: ChapterId) {
         setStaleTarget(true);
         setError(null);
       } else {
-        setError(errorMessage(cause));
+        setError(failureKey(cause, "saveFailed"));
+        reportFailure(cause, "chapter-add-segment");
       }
       return null;
     }
@@ -343,7 +349,8 @@ export function useChapterSegments(chapterId: ChapterId) {
           setStaleTarget(true);
           setError(null);
         } else {
-          setError(errorMessage(cause));
+          setError(failureKey(cause, "saveFailed"));
+          reportFailure(cause, "chapter-set-finished");
         }
       }
     },
@@ -372,7 +379,8 @@ export function useChapterSegments(chapterId: ChapterId) {
           setStaleTarget(true);
           setError(null);
         } else {
-          setError(errorMessage(cause));
+          setError(failureKey(cause, "saveFailed"));
+          reportFailure(cause, "chapter-rename");
         }
         return false;
       }

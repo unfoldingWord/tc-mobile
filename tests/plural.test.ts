@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { plural } from "@/lib/plural";
 
 /**
- * #169 — the six count-varying labels in `components/strings.ts` branched on
+ * #169 — the six count-varying labels in `lib/strings.ts` branched on
  * `n === 1` inline. These cases exist to hold `plural` to being a *rule* rather
  * than that ternary with an indirection in front of it: the Polish and Russian
  * cases below both fail against an `n === 1 ? one : other` implementation, and

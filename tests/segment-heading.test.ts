@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 
 /**
  * A segment's label rides beside its ordinal, never in place of it (#591): the

@@ -11,6 +11,23 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-24 (evening, Docker session) — v0.2.11 promoted and verified on staging
+
+v0.2.11 was cut from develop at `a3ec786f` (after #869, per the DRI's "Wait for #869"), bumped by #885 (`48f9fb86`), and promoted by #889. #889's head was `release/v0.2.11`, pinned at the bump commit, so #678, which merged to develop after the bump, is not in this cut. The promotion's Commit Messages check was red on 20 bodyless commits already on develop; the DRI's pick, verbatim, was "Merge + scope gate (Recommended)", and the gate fix is #891.
+
+### Shipped
+
+| What                                                                                                 | Evidence                                                                                                                                                                                                       |
+| ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **v0.2.11 on staging**: 91 PRs since v0.2.10 (list in #885), no schema change (`DB_VERSION` stays 8) | `npm run check:deploy` at promotion time: `Deployed: version=0.2.11 sha=9662da9 builtAt=2026-09-24T20:55:09.473Z` / `PASS: https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build.` |
+
+### Next
+
+- Re-cut the native lanes (TestFlight, APK) from `staging`, and dispatch `android-play.yml` with `build_only=true` (DRI).
+- The device checks still wait on a phone: #772 and #245.
+
+---
+
 ## 2026-09-24 — v0.2.10 staging deploy confirmed retroactively, closing a gap found by a PR audit
 
 v0.2.10 was promoted by #775 (release bump #773), but no one ran `npm run check:deploy` at promotion time, so the deploy was never confirmed in this tracker. A 2026-09-24 PR audit found the gap; this entry records the check, run after the fact against the still-current staging build.

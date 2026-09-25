@@ -86,8 +86,13 @@ describe("renameBook invalidates an in-flight load on a reported failure (#732, 
     expect(swallowedBlock).toMatch(/reload\(\)/);
 
     // Bumped in the same synchronous step that sets the Notice, and once.
+    // #172 added a `reportFailure(reported, "books-rename")` call ahead of
+    // the bump, inside the same wrapper — the pattern below was widened to
+    // admit it, not to admit a weaker guarantee: the bump is still inside
+    // the callback, still synchronous with `report`, and still exactly once
+    // (the length check below is unchanged).
     expect(catchBody).toMatch(
-      /reportUnlessStale\(\s*cause,\s*bookId,\s*\(\s*(\w+)\s*\)\s*=>\s*\{\s*loadGen\.current\s*\+=\s*1;\s*report\(\s*\1\s*\);?\s*\}\s*,?\s*\)/
+      /reportUnlessStale\(\s*cause,\s*bookId,\s*\(\s*(\w+)\s*\)\s*=>\s*\{\s*reportFailure\(\s*\1,\s*"books-rename"\s*\);\s*loadGen\.current\s*\+=\s*1;\s*report\(\s*\1\s*\);?\s*\}\s*,?\s*\)/
     );
     expect(catchBody.match(/loadGen\.current/g)).toHaveLength(1);
   });

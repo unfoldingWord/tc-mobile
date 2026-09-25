@@ -5,7 +5,7 @@ import { act, createElement, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { performClearEditedSegment } from "@/hooks/use-save-take";
 import type { SegmentEditor } from "@/hooks/use-segment-editor";

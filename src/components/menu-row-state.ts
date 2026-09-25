@@ -14,7 +14,7 @@
  */
 
 import type { IconName } from "./icon";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 
 /**
  * The reasons, most actionable first. `"uncommitted-take"` marks a take in
@@ -237,11 +237,13 @@ export function rowHint(reason: RowReason | null): RowHint | null {
  * control `aria-disabled` (`Control`'s `softDisabled`, `control.tsx`) —
  * focusable and named — for that half. The commit-window half gets no label
  * (the take is already stopped, so "Stop recording to edit." would be false;
- * #869 round 3, George Medium) and stays `aria-busy` while `isClosing`. The bin (`rerecordHint`) omits the argument and
- * keeps the pre-#857 `null` behaviour — its own identical native-disabled gap
- * is real but untouched here: #857 is about Edit, and inventing bin copy
- * nobody asked for is exactly the kind of unreviewed assumption this
- * function's callers should not make silently.
+ * #869 round 3, George Medium) and stays `aria-busy` while `isClosing`. The
+ * bin (`rerecordHint`) passes `strings.stopToErase` the same way, only while
+ * LIVE (#878): #869 left the bin's identical native-disabled, no-reason gap
+ * as a named residual on purpose — it predates #857's `hasTake` change and
+ * nobody had reviewed bar-appropriate erase copy yet — and #878 closes it
+ * once that copy existed, through this same parameter, with no change to
+ * Edit's call site.
  */
 export function barHint(
   reason: RowReason | null,

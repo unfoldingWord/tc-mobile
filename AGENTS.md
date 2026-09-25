@@ -161,6 +161,51 @@ without a browser or a microphone.
 
 If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
 
+**`lib/` also holds the one string table**, `lib/strings.ts`. It is neither audio
+nor storage, and it is down there because imports never go upward: while it sat
+in `components/` it was unreachable from `hooks/`, so every sentence a hook
+raises was a literal beside the code that raised it (#169). It is pure data and
+pure functions, so it compiles under `tsconfig.lib.json` with the rest of the
+layer.
+
+**A sentence a hook produces gets out of that one of two ways, and which one
+depends on whether the failure is a domain value.** When `lib/` also reasons
+about it, the hook emits a **code** and a component words it —
+`lib/audio/capture-failure.ts` -> `components/capture-failure-copy.ts` is the
+worked example (#700), with a `switch` and a `never` default so a new code
+cannot reach a screen wordless, and `lib/takes/close-plan.ts` carries the code
+rather than prose. When the sentence simply **is** the state the hook holds — a
+`playbackError`, the recorder's mic-refusal `error` — there is no value to
+route and no second reader to keep honest, so the hook reads the table
+directly. Reach for a code first where a `lib/` module is already in the path;
+reach for the table where adding one would mean inventing a union with a single
+consumer.
+
+`tests/strings-one-table.test.ts` keeps the literals from coming back: no
+fixed sentence in the table may appear again in `app/`, `components/` or
+`hooks/`. `lib/`'s own `Error` messages are deliberately outside that check —
+they are for whoever reads the failure log, not for the screen, and that test's
+docblock names the one pair where the two wordings overlap on purpose. The
+second check is the stronger one and the reason a base merge cannot quietly
+undo this: every fixed sentence in `app/` and `hooks/` must be one the table
+holds, so a brand-new literal fails as loudly as a re-typed one.
+`tests/capture-failure-copy.test.ts` sweeps `hooks/` and `lib/` for the three
+capture sentences, skipping the table's own file — holding a sentence is what a
+table is for; minting one beside the code that raises it is the defect.
+
+Two more slices of #169 have landed beside these, both in `lib/` and both for
+this same reason. `lib/locale.ts` puts `<html lang>`, `dir` and the manifest
+language behind one entry, so a second locale is an entry there rather than an
+edit in three files. `lib/plural.ts` makes count-varying wording a CLDR table
+keyed by category (`Intl.PluralRules`) instead of an English `n === 1` ternary,
+with each form a whole phrase carrying `{n}` — so a language with three count
+forms, or one that puts its numeral last, adds keys rather than rewriting call
+sites.
+
+What #169 still asks for beyond these is a `strings[locale]` dimension,
+sentences that are not assembled from translated fragments, and book names
+stored as numbers rather than written into IndexedDB as English data.
+
 ## Testing
 
 - `tests/` at the repo root, `*.test.ts`, run in the Node environment.
@@ -769,8 +814,40 @@ Full process, and the traps that make a failed run look like a clean pass, in
 | Tier   | Examples here                                        | Bar                                                                                                               |
 | ------ | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | **T1** | `lib/audio/*`, `lib/storage/*`, the IndexedDB schema | Tests required. Data loss or corrupted audio is unrecoverable in the field. Schema changes need a migration path. |
-| **T2** | `hooks/*`, export/share paths                        | Tests where possible + on-device check on both Android and iOS.                                                   |
+| **T2** | `hooks/*`, `lib/export/*`, export/share paths        | Tests where possible + on-device check on both Android and iOS.                                                   |
 | **T3** | `components/*`, `app/*`, copy, styling               | Review only. This layer is expected to churn.                                                                     |
+
+**This table is total over `src/`: every path resolves to exactly one tier,**
+by an explicit row above or a default below (#864, closing a residual from
+#852 where an unlisted path — `lib/nav/*`, `lib/view/*`, `types/*` — got no
+tier at all). `lib/export/*` (the MP3-building logic behind Share Chapter and
+Share Book, `lib/export/chapter.ts` / `lib/export/book.ts`) is added to T2
+above as a restatement of what "export/share paths" already meant, not a new
+policy call. Where one path matches two rows, the strictest wins (T1 over T2
+over T3).
+
+For everything else under `src/lib/` this table doesn't name by row — as of
+this writing that's `lib/a11y/*`, `lib/nav/*`, `lib/obs/*`, `lib/takes/*`,
+`lib/view/*`, and the flat files directly under `lib/` (`locale.ts`,
+`plural.ts`, `theme.ts`, `utils.ts`, `failure-text.ts`,
+`restart-after-flush.ts`) — **the default is T1.**
+**Assumption, and a policy call for the DRI to revisit, not a claim these
+carry `lib/audio`'s data-loss stakes (#864):** `lib/` is where the onion
+architecture keeps the browser-free, unit-testable logic (see "Architecture —
+onion layers" above), so an unlisted `lib/*` path reads as T1-adjacent by
+default until someone deliberately narrows it — the conservative reading, not
+an assertion that e.g. a `lib/nav/*` regression is unrecoverable data loss the
+way a `lib/audio/*` one is.
+
+`src/types/*`, any ambient `*.d.ts` under `src/` (e.g. `src/globals.d.ts`),
+and `src/data/*` carry no behavior of their own, so each **takes the
+strictest tier (T1 over T2 over T3) among the non-test surfaces that import
+it** — the same strictest-wins rule `docs/review/dual-review.md` already
+applies when one test covers two tiers. Where that importer set can't be
+determined, it is T1.
+
+Any other `src/**` path this table doesn't name by row is T1, the same
+conservative default as unlisted `lib/*` above.
 
 A test-only PR is tiered by what it covers, and a gate test is its own tier
 (Harness); the tier sets which reviewers run and how many rounds, not this

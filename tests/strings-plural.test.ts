@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 
 /**
  * The count-varying labels, pinned at the wording they render.

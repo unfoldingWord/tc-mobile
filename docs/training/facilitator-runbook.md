@@ -137,7 +137,7 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
     never classed "proven", because Android's own chooser can report
     RESULT_CANCELED as a resolve rather than a rejection once the activity has
     merely stopped, so the plugin cannot tell a real cancel from a real send);
-    src/hooks/share-flow.ts resolveSendOutcome; src/components/strings.ts
+    src/hooks/share-flow.ts resolveSendOutcome; src/lib/strings.ts
     shareDismissed ("... before anything went out."), shareUnproven ("The share sheet closed. This phone can't confirm it went
     further."); this wording was reported back near-verbatim from a real
     Android phone on gh issue #593 (2026-09-22 comment, Galaxy A36: "The share
@@ -178,7 +178,7 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 - **You can listen to the selected audio while editing.** Use Play the
   selection to hear the selected span before changing it. This plays that
   span, not a preview of how the recording will sound after removing it.
-  <!-- source: src/components/recorder.tsx; src/components/strings.ts auditionSelection -->
+  <!-- source: src/components/recorder.tsx; src/lib/strings.ts auditionSelection -->
 - **One current recording per segment.** Recording and editing can add to or
   change it; there is no version history to restore an earlier saved version.
 - **Editing a finished segment re-compresses the audio.** Once a segment is

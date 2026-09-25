@@ -100,13 +100,33 @@ jobs:
       # PR was branched from an old `develop` or has since merged `develop`
       # back in. See tests/ci-commit-messages-range.test.ts, which pins this
       # exact wiring.
+      #
+      # For a PR whose base is `staging` or `main` (a promotion, or a
+      # hotfix), `origin/$BASE_REF..$HEAD_SHA` above is every commit since
+      # the LAST promotion — commits already judged by develop's own gate,
+      # or that predate this gate entirely (#891, #889: 20 such commits on
+      # the first `develop -> staging` promotion this gate ever saw). Giving
+      # them bodies would mean rewriting develop's history, which this repo
+      # does not do, so a promotion could never pass. Diffing against
+      # `origin/develop` instead correctly excludes all of that — every
+      # commit on develop has already been judged by develop's own gate, or
+      # predates it — while still catching a hotfix commit that is NOT on
+      # develop (branched off staging directly, or added after branching):
+      # that commit is not reachable from `origin/develop` either, so it
+      # still shows up in `origin/develop..$HEAD_SHA`. A PR into develop (or
+      # anything else) is unchanged.
       - name: Check PR commits for a non-blank body
         env:
           BASE_REF: ${{ github.base_ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          git fetch origin "$BASE_REF"
-          node scripts/check-commit-messages.mjs --range "origin/$BASE_REF..$HEAD_SHA"
+          if [ "$BASE_REF" = "staging" ] || [ "$BASE_REF" = "main" ]; then
+            git fetch origin develop
+            node scripts/check-commit-messages.mjs --range "origin/develop..$HEAD_SHA"
+          else
+            git fetch origin "$BASE_REF"
+            node scripts/check-commit-messages.mjs --range "origin/$BASE_REF..$HEAD_SHA"
+          fi
 
   quality:
     name: Code Quality
