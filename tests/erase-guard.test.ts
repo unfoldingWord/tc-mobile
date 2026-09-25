@@ -69,8 +69,8 @@ describe("useEraseSegment's in-flight guard", () => {
       () => new Promise<void>((resolve) => (finish = resolve))
     );
 
-    let first!: Promise<string>;
-    let second!: string;
+    let first!: ReturnType<UseEraseSegment["erase"]>;
+    let second!: Awaited<ReturnType<UseEraseSegment["erase"]>>;
     await act(async () => {
       first = api.erase(seg(1));
       second = await api.erase(seg(2));
@@ -98,7 +98,7 @@ describe("useEraseSegment's in-flight guard", () => {
     );
 
     expect(api.isErasing()).toBe(false);
-    let running!: Promise<string>;
+    let running!: ReturnType<UseEraseSegment["erase"]>;
     act(() => {
       running = api.erase(seg(1));
       // INSIDE the act callback, before React flushes. That placement is the
@@ -126,12 +126,12 @@ describe("useEraseSegment's in-flight guard", () => {
       .mockImplementation(() => {});
     storage.clear.mockRejectedValue(new Error("no space"));
 
-    let outcome!: string;
+    let outcome!: Awaited<ReturnType<UseEraseSegment["erase"]>>;
     await act(async () => {
       outcome = await api.erase(seg(1));
     });
 
-    expect(outcome).toBe("failed");
+    expect(outcome).toEqual({ failed: "eraseFailed" });
     expect(api.isErasing()).toBe(false);
 
     storage.clear.mockResolvedValue(undefined);

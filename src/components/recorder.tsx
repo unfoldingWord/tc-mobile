@@ -101,7 +101,7 @@ interface RecorderProps {
   /**
    * The single erase, shared with the Segments screen (#160, L-12). One
    * in-flight guard covers both entry points; whose failure it was is this
-   * sheet's own `eraseFailed` below.
+   * sheet's own `eraseFailure` below.
    */
   erase: UseEraseSegment;
   /**
@@ -1840,9 +1840,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     //
     // The hook itself is NOT constructed here: since #160 L-12 one instance is
     // owned by App and shared with the Segments screen, and arrives as `erase`.
-    // What is local is the failure flag — a shared one would paint that
-    // screen's failed erase inside this sheet.
-    const [eraseFailed, setEraseFailed] = useState(false);
+    // What is local is the failure — held as the `strings`-mapped KEY it
+    // failed with (#172) — because a shared one would paint that screen's
+    // failed erase inside this sheet.
+    const [eraseFailure, setEraseFailure] = useState<FailureKey | null>(null);
     // Bumped on a "busy" refusal to remount EraseConfirm, whose Erase tap
     // latched an in-flight ref only an open edge resets; the refused call never
     // closes the dialog, so without this Confirm and Cancel stay dead. The fresh
@@ -1861,11 +1862,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // Clear only when this call will acquire the guard: a "busy" refusal is
       // not an erase this sheet started, so it must not blank the flag from one
       // it did. The ref read and the hook's own check run in the same turn.
-      if (!isErasing()) setEraseFailed(false);
+      if (!isErasing()) setEraseFailure(null);
       void (async () => {
         const result = await erase.erase(segmentId);
         // "ok": the stored take is gone; rebuild the sheet over the empty
-        // segment (below). "failed": keep the sheet, drop the confirm, show the
+        // segment (below). A failure: keep the sheet, drop the confirm, show the
         // notice. "busy": a double-tap's refused second call — ignore it, the
         // first call still owns the dialog (else the confirm would vanish
         // mid-erase, exposing Back and its save path over the delete).
@@ -1904,13 +1905,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // manually chosen again", requirements owner 2026-09-09).
           setFinishedIntent(null);
           setConfirmOpen(false);
-        } else if (result === "failed") {
+        } else if (result !== "busy") {
           // A failed erase leaves the take on disk, so this is not a loss — but
           // it goes through the same `clearSegmentTake`, so once the database is
           // unreachable it fails identically every time, and the confirm's
           // notice would invite a retry that cannot land (George R6 P2). Exit
           // with `false`: nothing changed, and the panel takes the screen.
-          setEraseFailed(true);
+          setEraseFailure(result.failed);
           if (
             failureExit("erase", {
               databaseUnreachable,
@@ -3322,9 +3323,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                   <Notice>{strings.editFailed}</Notice>
                 </div>
               )}
-              {eraseFailed && (
+              {eraseFailure && (
                 <div className="px-[12px] pt-[8px]">
-                  <Notice>{strings.eraseFailed}</Notice>
+                  {/* strings[key] (#172 part 2), not the fixed eraseFailed
+                    sentence for every key — a full disk gets `noRoom`'s
+                    actionable copy instead of the generic erase failure. */}
+                  <Notice>{strings[eraseFailure]}</Notice>
                 </div>
               )}
               <RecorderStatus state={state} isClosing={isClosing} />

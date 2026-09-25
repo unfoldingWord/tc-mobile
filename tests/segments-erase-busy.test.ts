@@ -16,6 +16,11 @@ import type { SegmentRow } from "@/types/view";
  * The Segments list's half of George's #660 finding: its erase-failed flag
  * must survive a retry the ONE shared hook refuses as "busy". The recorder's
  * half is in `tests/recorder-erase-back.test.ts`.
+ *
+ * The last case pins that the flag carries the failure's KEY (#172): since the
+ * hook no longer holds a shared `error`, the key reaches this screen only
+ * through the result of its own `erase()` call. The recorder's twin is
+ * `tests/recorder-erase-notice.test.ts`.
  */
 
 const mocks = vi.hoisted(() => ({
@@ -139,7 +144,7 @@ it("keeps its own erase-failed Notice when a retry is refused as busy", async ()
   mocks.clear.mockImplementationOnce(
     () => new Promise<void>((resolve) => (release = resolve))
   );
-  let held!: Promise<string>;
+  let held!: ReturnType<UseEraseSegment["erase"]>;
   await act(async () => {
     // Another caller takes the shared guard and this screen's retry lands in
     // the same turn, before a render passes `erasing` down to the confirm —
@@ -173,4 +178,22 @@ it("keeps its own erase-failed Notice when a retry is refused as busy", async ()
   // and neither refused tap may have dropped one (Frank r8).
   expect(mocks.eraseRow).toHaveBeenCalledTimes(1);
   expect(mocks.eraseRow).toHaveBeenCalledWith("segment");
+});
+
+it("speaks the no-room sentence for a quota-shaped erase failure, from its own call's key (#172)", async () => {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  mocks.clear.mockRejectedValueOnce(
+    Object.assign(new Error("the disk is full"), { name: "QuotaExceededError" })
+  );
+  await act(async () =>
+    root.render(createElement(Host, { onErase: (e) => (shared = e) }))
+  );
+  await openConfirm();
+  await act(async () => button(strings.eraseConfirm).click());
+
+  const text = [...document.querySelectorAll(".notice")]
+    .map((el) => el.textContent ?? "")
+    .join(" ");
+  expect(text).toContain(strings.noRoom);
+  expect(text).not.toContain(strings.eraseFailed);
 });

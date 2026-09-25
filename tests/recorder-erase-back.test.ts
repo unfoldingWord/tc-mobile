@@ -213,7 +213,7 @@ it("keeps its own erase-failed Notice when a retry is refused as busy", async ()
   storage.clear.mockImplementationOnce(
     () => new Promise<void>((resolve) => (release = resolve))
   );
-  let held!: Promise<string>;
+  let held!: ReturnType<UseEraseSegment["erase"]>;
   await act(async () => {
     // The other caller takes the guard, and this sheet's retry lands in the
     // same turn — before a render can pass `erasing` down to the confirm,

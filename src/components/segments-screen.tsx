@@ -26,6 +26,7 @@ import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import type { SegmentsAudio } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
+import type { FailureKey } from "@/hooks/save-failure";
 import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useScreenLayers } from "@/hooks/use-screen-layers";
@@ -101,7 +102,7 @@ interface SegmentsScreenProps {
   /**
    * The single erase, held by App so ONE in-flight guard covers both entry
    * points (#160, L-12). This screen keeps its own record of whether the erase
-   * IT asked for failed — see `eraseFailed` below.
+   * IT asked for failed, and with which key — see `eraseFailure` below.
    */
   erase: UseEraseSegment;
   onBack: () => void;
@@ -213,12 +214,14 @@ export const SegmentsScreen = forwardRef<
   const pendingRenameFocus = useRef(false);
   const renameChapterControlRef = useRef<HTMLButtonElement | null>(null);
   const share = useChapterShare();
-  // This screen's own record of "the erase I asked for failed". NOT the hook's:
+  // This screen's own record of "the erase I asked for failed", as the
+  // `strings`-mapped KEY it failed with (#172 — `noRoom` on a full disk). NOT
+  // the hook's:
   // one instance is shared with the recorder sheet now (#160, L-12), and a
   // shared flag would paint this screen's failure inside the sheet. The hook
   // owns the in-flight guard, which genuinely must be single; whose failure it
   // was is the caller's to remember.
-  const [eraseFailed, setEraseFailed] = useState(false);
+  const [eraseFailure, setEraseFailure] = useState<FailureKey | null>(null);
   // Bumped on a "busy" refusal to remount EraseConfirm: its Erase tap latched
   // an in-flight ref that only an open edge resets, and a refused call never
   // closes the dialog, so Confirm and Cancel would stay dead. The fresh mount
@@ -703,15 +706,15 @@ export const SegmentsScreen = forwardRef<
       // Clear only when this call will acquire the guard — the hook's "busy"
       // check reads the same ref in this same turn, so a refusal (the other
       // screen holding the one shared guard) leaves an earlier failure shown.
-      if (!erase.isErasing()) setEraseFailed(false);
+      if (!erase.isErasing()) setEraseFailure(null);
       const result = await erase.erase(eraseTarget);
       // On success patch that ONE row to never-recorded in place — NOT reload(),
       // which deadens every transport while it re-walks the chapter's PCM
-      // (George R-B6). "failed" raises this screen's own flag for the Notice; a
+      // (George R-B6). A failure records its key on this screen for the Notice; a
       // double-tap's "busy" is ignored so the confirm does not vanish under the
       // first erase, and leaves the flag alone — the first erase owns it.
       if (result === "ok") eraseRow(eraseTarget);
-      else if (result === "failed") setEraseFailed(true);
+      else if (result !== "busy") setEraseFailure(result.failed);
       // Both real outcomes take the confirm down, so both take its layer down
       // (#494 item 3 — a layer whose overlay is gone traps Back at this depth).
       // `"busy"` returns without touching either: the first erase still owns
@@ -759,11 +762,11 @@ export const SegmentsScreen = forwardRef<
   // invite CTA (the only enabled create, no Retry here) up with the error in the
   // Notice, not tear it down and strand focus on Back (George R3 P2).
   const loadFailed = error !== null && !loaded;
-  // `error` is a `strings`-mapped KEY (#172), never the raw
+  // `error` and `eraseFailure` are `strings`-mapped KEYs (#172), never the raw
   // store message a screen would otherwise speak verbatim — resolved here,
   // once, so every render site below reads the mapped copy.
   const chapterErrorText = error ? strings[error] : null;
-  const eraseErrorText = eraseFailed ? strings.eraseFailed : null;
+  const eraseErrorText = eraseFailure ? strings[eraseFailure] : null;
   // See books-screen: hide the header create + while the invite's own primary
   // CTA is up, so there is one create action, announced once.
   const showEmpty = !staleTarget && loaded && rows.length === 0;

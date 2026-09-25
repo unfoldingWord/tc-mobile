@@ -19,7 +19,7 @@ import type { SegmentId } from "@/types/domain";
  * stays presentation-free. The confirm dialog and the copy live in
  * `components/`.
  *
- * It deliberately carries no error; each screen holds its own failure flag,
+ * It deliberately carries no error; each screen holds its own failure key,
  * from the result of the call it made. The reasoning is on `useEraseSegment`
  * below, and is the point of the one-instance lift (#160, L-12).
  */
@@ -30,8 +30,8 @@ import type { SegmentId } from "@/types/domain";
  * The work lives here as a plain async function so it is exercised in Node
  * against the real store (the onion's reason for existing): the hook below is a
  * thin state wrapper over it, not a second copy of the logic. A failure is
- * caught and reported as a reason string — never swallowed, never a rejected
- * promise a tap handler drops.
+ * caught, reported, and returned as a `strings`-mapped KEY (#172) — never
+ * swallowed, never a rejected promise a tap handler drops.
  *
  * It took an `onErased` callback until #160 (L-12) and no caller ever passed
  * one — both screens learn the row changed by their own route, the recorder by
@@ -62,18 +62,23 @@ export async function performErase(
 /**
  * The outcome of a call to `erase`.
  *
- * `"busy"` is distinct from `"failed"` on purpose: a double-tap's second call is
+ * `"busy"` is distinct from a failure on purpose: a double-tap's second call is
  * refused by the in-flight guard, and a caller must NOT treat that refusal as a
  * result and dismiss its confirmation — the first call is still running and owns
  * the outcome. Conflating the two let a second tap tear the dialog down mid-erase
- * (Frank + George converged, B6). Callers act on `"ok"`/`"failed"` and ignore
- * `"busy"`.
+ * (Frank + George converged, B6). Callers act on `"ok"` and on a failure, and
+ * ignore `"busy"`.
+ *
+ * A failure carries its KEY (#172) — `eraseFailed`, or `noRoom` on a full disk
+ * — so the screen that made the call can speak the mapped copy without the
+ * hook holding a shared field for it (see `useEraseSegment`).
  */
-type EraseResult = "ok" | "failed" | "busy";
+type EraseResult = "ok" | "busy" | { failed: FailureKey };
 
 export interface UseEraseSegment {
-  /** Erase the segment's audio. `"ok"` on success, `"failed"` on a store error,
-   *  `"busy"` when another erase is already in flight (ignore it — not a result). */
+  /** Erase the segment's audio. `"ok"` on success, `{ failed: key }` on a store
+   *  error, `"busy"` when another erase is already in flight (ignore it — not a
+   *  result). */
   erase(segmentId: SegmentId): Promise<EraseResult>;
   /** True while an erase is in flight — the confirm/menu disables its Erase button on this. */
   erasing: boolean;
@@ -105,17 +110,15 @@ export interface UseEraseSegment {
  * second erase is refused wherever it is asked for.
  *
  * It carries NO error, and that is what makes one instance safe rather than a
- * regression. The old `error: string | null` looked like shared state and was
- * not: neither screen ever read its CONTENT — both rendered the constant
- * `strings.eraseFailed` and used the field only as a boolean — while SHARING
- * it would have bled, because a failed list erase leaves it set and nothing
- * clears it until the next erase starts, so opening the recorder afterwards
- * would have shown an erase-failed Notice for a segment whose erase never
- * failed there. `erase()` already returns `"failed"`, so each screen now holds
- * its own flag, from the result of the call IT made.
+ * regression. A hook-held `error` would be shared state, and SHARING it would
+ * bleed: a failed list erase leaves it set and nothing clears it until the next
+ * erase starts, so opening the recorder afterwards would show an erase-failed
+ * Notice for a segment whose erase never failed there. `erase()` returns the
+ * failure's key instead, so each screen holds its own, from the result of the
+ * call IT made.
  *
- * The reason string still reaches the durable log through `reportFailure`,
- * which is where a maintainer reads it. It was never translator-facing (#172).
+ * The raw reason still reaches the durable log through `reportFailure`, which
+ * is where a maintainer reads it. It was never translator-facing (#172).
  */
 export function useEraseSegment(): UseEraseSegment {
   const [erasing, setErasing] = useState(false);
@@ -140,7 +143,7 @@ export function useEraseSegment(): UseEraseSegment {
       setErasing(true);
       try {
         const result = await performErase(segmentId);
-        return result.ok ? "ok" : "failed";
+        return result.ok ? "ok" : { failed: result.key };
       } finally {
         // Releases the guard rather than dropping state, so it is safe in
         // `finally`; a guard left set would lock out every later erase.
