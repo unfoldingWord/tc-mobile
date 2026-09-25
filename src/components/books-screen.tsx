@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
 } from "react";
 
 import { Control } from "./control";
@@ -31,6 +32,7 @@ import type { FailureKey } from "@/hooks/save-failure";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
+import { useDesign } from "@/hooks/use-design";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useScrollToNew } from "@/hooks/use-scroll-to-new";
 import {
@@ -39,12 +41,13 @@ import {
 } from "@/hooks/use-screen-layers";
 import { useStoragePersistence } from "@/hooks/use-storage-persistence";
 import { useStoragePressure } from "@/hooks/use-storage-pressure";
+import { coverColourHex, resolveCoverKey } from "@/lib/cover-colour";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { nextChapterNumber } from "@/lib/storage/books";
 import { cn } from "@/lib/utils";
 import { hasReclaimableAudio } from "@/lib/view/book-rows";
 import type { BookId, ChapterId } from "@/types/domain";
-import type { BookCard, ChapterRow } from "@/types/view";
+import type { BookCard, ChapterRow, SegmentRowState } from "@/types/view";
 
 /**
  * Every overlay this screen can put over the shelf, as a system-Back layer
@@ -341,6 +344,12 @@ export function BooksScreen({
   // P2-1). Add-chapter is the more useful landing, one Tab further on; it is
   // not the safe one.
   const rowReveal = useScrollToNew<string>("button");
+  // The O4 look (#942): the header, the empty shelf and the rows swap their
+  // classes and gain decoration on it. Every button, its name and its order
+  // are the same in both looks, so focus hand-offs, the row registry's
+  // "first button" selector and the guided ring (#604, #834) land where they
+  // always did. With the switch off nothing here changes.
+  const o4 = useDesign().design === "o4";
 
   // ── System Back: this screen's overlays as layers (#452 PR3, #374) ────────
   //
@@ -1338,13 +1347,20 @@ export function BooksScreen({
         undefined
       }
     >
-      <header className="flex items-center justify-end gap-[6px] px-[4px] py-[2px]">
+      <header
+        className={
+          o4
+            ? "books-header"
+            : "flex items-center justify-end gap-[6px] px-[4px] py-[2px]"
+        }
+      >
         {!showEmpty && (
           <Control
             icon="plus"
             label={strings.newBook}
             variant="primary"
             size={26}
+            className={o4 ? "books-add" : undefined}
             disabled={loading || loadFailed}
             onClick={onNewBook}
           />
@@ -1373,6 +1389,7 @@ export function BooksScreen({
                 : strings.menuOpen
             }
             variant="quiet"
+            className={o4 ? "books-ghost" : undefined}
             onClick={openGlobalMenu}
           />
           {failureCount > 0 && (
@@ -1483,12 +1500,19 @@ export function BooksScreen({
           // unmounts the row that had focus, and this CTA is the only control
           // left to hand it to (#337).
           <div
-            className="h-full"
+            className={o4 ? "books-empty" : "h-full"}
             role="group"
             aria-label={strings.booksEmpty}
             tabIndex={-1}
             ref={(el) => rowReveal.setNode(EMPTY_STATE_NODE, el)}
           >
+            {o4 && (
+              // State 01's empty book: an outline of the book the CTA below
+              // will make. Decoration — the group's name already says it.
+              <span className="books-empty-outline" aria-hidden="true">
+                <Icon name="book" size={56} />
+              </span>
+            )}
             <EmptyState
               headline={strings.booksEmpty}
               teach={strings.booksEmptyTeach}
@@ -1499,11 +1523,12 @@ export function BooksScreen({
             />
           </div>
         ) : (
-          <ul className="flex flex-col gap-[10px]">
+          <ul className={o4 ? "books-list" : "flex flex-col gap-[10px]"}>
             {books.map((book) => (
               <BookItem
                 key={book.bookId}
                 book={book}
+                o4={o4}
                 expanded={expanded.has(book.bookId)}
                 onToggle={() => toggle(book.bookId)}
                 onNewChapter={() => onNewChapter(book.bookId)}
@@ -1775,6 +1800,8 @@ export function BooksScreen({
 
 interface BookItemProps {
   book: BookCard;
+  /** Draw the O4 card (#942) rather than the current row. */
+  o4: boolean;
   expanded: boolean;
   onToggle: () => void;
   onNewChapter: () => void;
@@ -1794,6 +1821,7 @@ interface BookItemProps {
 
 function BookItem({
   book,
+  o4,
   expanded,
   onToggle,
   onNewChapter,
@@ -1806,8 +1834,17 @@ function BookItem({
 }: BookItemProps) {
   const listId = `chapters-${book.bookId}`;
   return (
-    <li ref={(el) => setNode(book.bookId, el)}>
-      <div className="border-edge flex items-center gap-[8px] border-b px-[4px]">
+    <li
+      className={o4 ? "books-card" : undefined}
+      ref={(el) => setNode(book.bookId, el)}
+    >
+      <div
+        className={
+          o4
+            ? "books-card-head"
+            : "border-edge flex items-center gap-[8px] border-b px-[4px]"
+        }
+      >
         <button
           type="button"
           onClick={onToggle}
@@ -1821,22 +1858,63 @@ function BookItem({
           // The toggle carries the guide class itself, like the chapter row —
           // it is a plain button, not a `Control`.
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-[10px] border-0 bg-transparent py-[10px] text-left",
+            o4
+              ? "books-card-hit"
+              : "flex min-w-0 flex-1 items-center gap-[10px] border-0 bg-transparent py-[10px] text-left",
             guidedToggle && "is-guided"
           )}
         >
-          <span className="text-ink-muted flex-none">
-            <Icon
-              name={expanded ? "chevron-down" : "chevron-right"}
-              size={20}
-            />
-          </span>
-          <span className="t-title text-ink min-w-0 truncate">{book.name}</span>
+          {o4 ? (
+            <>
+              {/* The cover, in the book's own colour (#957): the stored key,
+                  or #957's id-derived fallback, both through
+                  `resolveCoverKey`. The hex reaches the stylesheet as a
+                  custom property set inline — the one way a per-book colour
+                  can get there, and the boundary `cover-picker.tsx` already
+                  draws for its swatches: a cover colour is the book's
+                  identity, not a themed role (`lib/cover-colour.ts`'s
+                  docblock argues it). Every other colour on the card is a
+                  layer-2 role in `o4/books.css`. */}
+              <span
+                className="books-cover"
+                aria-hidden="true"
+                style={
+                  {
+                    "--book-cover": coverColourHex(
+                      resolveCoverKey({
+                        id: book.bookId,
+                        coverColourKey: book.coverColourKey ?? null,
+                      })
+                    ),
+                  } as CSSProperties
+                }
+              >
+                <Icon
+                  name={expanded ? "book-open" : "book"}
+                  size={expanded ? 36 : 34}
+                />
+              </span>
+              <span className="books-name">{book.name}</span>
+            </>
+          ) : (
+            <>
+              <span className="text-ink-muted flex-none">
+                <Icon
+                  name={expanded ? "chevron-down" : "chevron-right"}
+                  size={20}
+                />
+              </span>
+              <span className="t-title text-ink min-w-0 truncate">
+                {book.name}
+              </span>
+            </>
+          )}
         </button>
         <Control
           icon="plus"
           label={strings.addChapter(book.name)}
           variant="quiet"
+          className={o4 ? "books-ghost" : undefined}
           guided={guidedAddChapter}
           onClick={onNewChapter}
         />
@@ -1849,16 +1927,18 @@ function BookItem({
           icon="more"
           label={strings.bookMenuOpen(book.name)}
           variant="quiet"
+          className={o4 ? "books-ghost" : undefined}
           onClick={onOpenShareMenu}
         />
       </div>
 
       {expanded && (
-        <ul id={listId} className="flex flex-col">
+        <ul id={listId} className={o4 ? "books-chapters" : "flex flex-col"}>
           {book.chapters.map((chapter) => (
             <ChapterItem
               key={chapter.chapterId}
               chapter={chapter}
+              o4={o4}
               onOpen={() => onOpenChapter(chapter.chapterId)}
               guided={chapter.chapterId === guidedChapterId}
               setNode={setNode}
@@ -1872,13 +1952,21 @@ function BookItem({
 
 interface ChapterItemProps {
   chapter: ChapterRow;
+  /** Draw the O4 row (#942) rather than the current one. */
+  o4: boolean;
   onOpen: () => void;
   /** This row is the guided step (#604). */
   guided: boolean;
   setNode: (id: string, el: HTMLElement | null) => void;
 }
 
-function ChapterItem({ chapter, onOpen, guided, setNode }: ChapterItemProps) {
+function ChapterItem({
+  chapter,
+  o4,
+  onOpen,
+  guided,
+  setNode,
+}: ChapterItemProps) {
   const { number, name, finishedCount, totalCount } = chapter;
   // The passage label the facilitator set (#264), else "Chapter {number}".
   const heading = strings.chapterHeading(name, number);
@@ -1896,22 +1984,133 @@ function ChapterItem({ chapter, onOpen, guided, setNode }: ChapterItemProps) {
         // guide class itself; the ring is drawn inside its own box, which is
         // what keeps it out of the scroll container's clip (3-components.css).
         className={cn(
-          "flex w-full items-center justify-between gap-[10px] border-0 bg-transparent py-[10px] pr-[6px] pl-[30px] text-left",
+          o4
+            ? "books-chapter"
+            : "flex w-full items-center justify-between gap-[10px] border-0 bg-transparent py-[10px] pr-[6px] pl-[30px] text-left",
           guided && "is-guided"
         )}
       >
-        <span className="text-ink min-w-0 truncate">{heading}</span>
-        {hasCounter && (
-          <span
-            // All finished glows green (--s-done) — the wordless "chapter
-            // complete" read, matching the green finished rows. Amber is now
-            // "audio exists", not "finished" (George R3 P2).
-            className={cn("t-count", "flex-none", allDone && "text-done")}
-          >
-            {finishedCount}/{totalCount}
-          </span>
+        {o4 ? (
+          <O4ChapterFace chapter={chapter} />
+        ) : (
+          <>
+            <span className="text-ink min-w-0 truncate">{heading}</span>
+            {hasCounter && (
+              <span
+                // All finished glows green (--s-done) — the wordless "chapter
+                // complete" read, matching the green finished rows. Amber is
+                // now "audio exists", not "finished" (George R3 P2).
+                className={cn("t-count", "flex-none", allDone && "text-done")}
+              >
+                {finishedCount}/{totalCount}
+              </span>
+            )}
+          </>
         )}
       </button>
     </li>
   );
+}
+
+/**
+ * The O4 chapter row's face (#942, state 03): the number in a 44 badge, an
+ * optional title line, one progress dot per segment, and a chevron.
+ *
+ * All of it is decoration — the row button's own name (`strings.openChapter`)
+ * already carries the heading, typed title included — so each part is
+ * `aria-hidden` and nothing here enters the reading order.
+ *
+ * A typed title (`Chapter.name`, #264) draws the title line and dims the
+ * badge, as the design reference's §3 and §7 describe. A title that was only
+ * spoken is tier 2 (after the training) and is not drawn here.
+ */
+function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
+  const titled = chapter.name !== null;
+  const dots = dotStates(chapter);
+  const [size, gap] = dotFit(dots.length, titled ? 19 : 44);
+  return (
+    <>
+      <span
+        className={cn("books-chapter-num", titled && "is-dim")}
+        aria-hidden="true"
+      >
+        {chapter.number}
+      </span>
+      <span className="books-chapter-mid" aria-hidden="true">
+        {titled && <span className="books-chapter-title">{chapter.name}</span>}
+        <span
+          className="books-dots"
+          style={
+            {
+              "--dot": `${size}px`,
+              "--dot-gap": `${gap}px`,
+            } as CSSProperties
+          }
+        >
+          {dots.map((state, i) => (
+            <i key={i} data-state={state} />
+          ))}
+        </span>
+      </span>
+      <span className="books-chapter-go" aria-hidden="true">
+        <Icon name="chevron-right" size={28} />
+      </span>
+    </>
+  );
+}
+
+/**
+ * One dot per segment: finished, then recorded, then empty.
+ *
+ * GROUPED, not in segment order. The shelf's row carries counts
+ * (`finishedCount`, `recordedCount`, `totalCount`, from `chapterProgress` in
+ * `lib/storage/books.ts`), not each segment's state, so the dots read as a
+ * progress bar split into segments rather than as a map of which segment is
+ * which. The workbench draws them in segment order; that needs a per-segment
+ * read the shelf does not make today.
+ *
+ * `recordedCount` counts segments holding a take, finished ones included, so
+ * the recorded-but-not-finished dots are the difference, clamped to what is
+ * left after the finished ones.
+ */
+function dotStates(chapter: ChapterRow): SegmentRowState[] {
+  const { finishedCount, recordedCount, totalCount } = chapter;
+  const finished = Math.min(finishedCount, totalCount);
+  const recorded = Math.max(
+    0,
+    Math.min(recordedCount - finishedCount, totalCount - finished)
+  );
+  return [
+    ...Array<SegmentRowState>(finished).fill("finished"),
+    ...Array<SegmentRowState>(recorded).fill("recorded"),
+    ...Array<SegmentRowState>(totalCount - finished - recorded).fill("empty"),
+  ];
+}
+
+/** The dots' column width, in px: `o4/books.css`'s `.books-dots` max-width. */
+const DOT_COLUMN = 206;
+/** Size/gap steps, largest first (the design reference, §3). */
+const DOT_STEPS: readonly (readonly [number, number])[] = [
+  [13, 6],
+  [11, 5],
+  [9, 4],
+  [7, 3],
+  [5, 2],
+];
+
+/**
+ * The size and gap of a chapter row's dots, in px: the largest step whose
+ * wrapped rows fit in `height` (44px of middle column without a title, 19px
+ * under one). Past what the smallest step can hold, the smallest step is
+ * returned anyway and the column's own overflow clips the rest. The
+ * workbench's own fit, unchanged.
+ */
+function dotFit(count: number, height: number): readonly [number, number] {
+  for (const step of DOT_STEPS) {
+    const [size, gap] = step;
+    const perRow = Math.floor((DOT_COLUMN + gap) / (size + gap));
+    const rows = Math.ceil(count / perRow);
+    if (rows * (size + gap) - gap <= height) return step;
+  }
+  return DOT_STEPS[DOT_STEPS.length - 1]!;
 }

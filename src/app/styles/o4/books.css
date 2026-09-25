@@ -1,3 +1,238 @@
-/* O4 — Books (01, 03), covers and progress dots. Owner: #942. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file. */
+/* O4 — Books (01, 03), covers and progress dots. Owner: #942. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file.
+
+   Values are the design reference's (docs/design/o4-design-system.md, §2 and
+   §3). Type sizes and radii are literal px until #939 lands its primitives;
+   each one is marked for that swap. Colour comes only from layer-2 roles,
+   with one exception the markup owns: a cover's own colour arrives as the
+   --book-cover custom property, set inline per book from lib/cover-colour.ts
+   (#957), because a cover colour is the book's identity and does not change
+   with the theme.
+
+   The guide ring (#604, #834) is layer 3's inset box-shadow on is-guided.
+   Nothing below sets a box-shadow on a control that can carry it, or the
+   more specific O4 rule would erase the ring. */
 @layer components {
+  /* --- the header (01, 03) ----------------------------------------------- */
+  [data-design="o4"] .books-header {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    height: 56px;
+    padding: 0 12px 0 10px;
+  }
+  [data-design="o4"] .books-ghost {
+    width: 44px;
+    height: 48px;
+    border-radius: 12px; /* #939 token */
+    background: transparent;
+    color: var(--s-ink-muted);
+  }
+  [data-design="o4"] .books-add {
+    width: 56px;
+    height: 56px;
+    border-radius: 14px; /* #939 token */
+    background: var(--s-well);
+    color: var(--s-ink);
+  }
+
+  /* --- the empty shelf (01) ---------------------------------------------- */
+  [data-design="o4"] .books-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    height: 100%;
+    padding-top: 24px;
+  }
+  [data-design="o4"] .books-empty-outline {
+    display: grid;
+    place-items: center;
+    flex: none;
+    align-self: center;
+    width: 130px;
+    height: 168px;
+    border: 2px dashed var(--s-edge);
+    border-radius: 12px; /* #939 token */
+    color: var(--s-ink-faint);
+  }
+  [data-design="o4"] .books-empty .t-title {
+    font-size: 21px; /* #939 token */
+    font-weight: 700; /* #939 token */
+  }
+  [data-design="o4"] .books-empty .control--primary {
+    width: 104px;
+    height: 104px;
+    background: var(--s-surface);
+    color: var(--s-ink);
+  }
+
+  /* --- the list and its book cards (03) ---------------------------------- */
+  [data-design="o4"] .books-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  [data-design="o4"] .books-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border-radius: 18px; /* #939 token */
+    padding: 10px;
+    background: var(--s-surface);
+    border: 1px solid var(--s-card-edge);
+  }
+  [data-design="o4"] .books-card-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  [data-design="o4"] .books-card-hit {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+    /* Room for the guide ring: it is drawn inset, under the button's
+       content, so a cover flush with the edge would hide its left stroke. */
+    padding: 4px;
+    border: 0;
+    border-radius: 12px; /* #939 token */
+    background: transparent;
+    color: var(--s-ink);
+    text-align: left;
+  }
+  [data-design="o4"] .books-cover {
+    position: relative;
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 72px;
+    height: 90px;
+    border-radius: 9px; /* #939 token */
+    overflow: hidden;
+    background: var(--book-cover);
+    color: var(--s-tile-ink);
+  }
+  /* The spine: a 7px strip of the cover's own colour, darkened. The design
+     reference draws it as an inset shadow of black at 16%; a brightness of
+     0.84 over the inherited fill is the same darkening without a colour
+     literal in this file. */
+  [data-design="o4"] .books-cover::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 7px;
+    background: inherit;
+    filter: brightness(0.84);
+  }
+  [data-design="o4"] .books-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 21px; /* #939 token */
+    font-weight: 700; /* #939 token */
+  }
+
+  /* --- the chapter rows (03) --------------------------------------------- */
+  [data-design="o4"] .books-chapters {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  [data-design="o4"] .books-chapter {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    height: 68px;
+    padding: 0 16px 0 12px;
+    border: 0;
+    border-radius: 12px; /* #939 token */
+    background: var(--s-floor);
+    color: var(--s-ink);
+    text-align: left;
+  }
+  [data-design="o4"] .books-chapter-num {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px; /* #939 token */
+    background: var(--s-well);
+    color: var(--s-ink);
+    font-size: 18px; /* #939 token */
+    font-weight: 800; /* #939 token */
+    font-variant-numeric: tabular-nums;
+  }
+  /* A typed title takes the row's lead, so the number steps back: no fill,
+     faint ink, and the well's colour as a 2px inset ring. The ring is on the
+     badge, never on the row button that carries the guide ring. */
+  [data-design="o4"] .books-chapter-num.is-dim {
+    background: transparent;
+    color: var(--s-ink-faint);
+    box-shadow: inset 0 0 0 2px var(--s-well);
+  }
+  [data-design="o4"] .books-chapter-mid {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    min-width: 0;
+    height: 44px;
+  }
+  [data-design="o4"] .books-chapter-title {
+    display: block;
+    height: 20px;
+    line-height: 20px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 17px; /* #939 token */
+    font-weight: 800; /* #939 token */
+    color: var(--s-ink);
+  }
+  [data-design="o4"] .books-chapter-go {
+    display: grid;
+    flex: none;
+    color: var(--s-ink-muted);
+  }
+
+  /* --- the progress dots (03) -------------------------------------------- */
+  /* The size and gap come from the row (`dotFit` in books-screen.tsx), which
+     picks the largest step whose wrapped rows fit this column's height; the
+     width here is the column that computation assumes. */
+  [data-design="o4"] .books-dots {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: center;
+    align-items: center;
+    gap: var(--dot-gap);
+    max-width: 206px;
+    min-width: 0;
+    overflow: hidden;
+  }
+  [data-design="o4"] .books-dots > i {
+    display: block;
+    flex: none;
+    width: var(--dot);
+    height: var(--dot);
+    border-radius: 50%;
+    background: var(--s-mark-empty);
+  }
+  [data-design="o4"] .books-dots > [data-state="recorded"] {
+    background: var(--s-voice);
+  }
+  [data-design="o4"] .books-dots > [data-state="finished"] {
+    background: var(--s-done);
+  }
 }

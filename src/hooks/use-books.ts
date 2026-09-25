@@ -53,6 +53,7 @@ async function loadBookCard(book: Book): Promise<BookCard> {
     bookId: book.id,
     name: book.name,
     chapters: chapters.filter((c): c is ChapterRow => c !== null),
+    coverColourKey: book.coverColourKey,
   };
 }
 
