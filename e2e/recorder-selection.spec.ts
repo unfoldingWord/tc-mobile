@@ -399,22 +399,22 @@ test.describe("edit mode toggle", () => {
         }
         await expect(startHandle).toHaveAttribute("aria-valuenow", "0");
         // The buffer is whole again after the round trip above, so dragging
-        // the end handle to the canvas's right edge selects up to whatever
-        // that current total (`aria-valuemax`) is — read fresh rather than
-        // assumed, since #835 changed how this state was reached.
-        const reenterLength = Number(
-          await endHandle.getAttribute("aria-valuemax")
+        // the end handle to the canvas's right edge selects the whole
+        // segment: both the total (`aria-valuemax`) and the end handle's
+        // value must equal the segment's original length (#897). Asserted
+        // with `toHaveAttribute` so Playwright retries (#912) — a one-shot
+        // `getAttribute` read races the drag's commit, and `Number(null)` is
+        // 0, so a missing attribute would fail as "length 0" instead of as
+        // what it is. Comparing `aria-valuenow` against the known original,
+        // not against `aria-valuemax` read a line earlier, is what keeps
+        // this able to fail for a wrong length.
+        await expect(endHandle).toHaveAttribute(
+          "aria-valuemax",
+          String(originalLength)
         );
-        // #897: the buffer is whole again (comment above), so this read
-        // should equal the segment's original length. Without this, the
-        // handle assertion right below compares `aria-valuenow` to
-        // `reenterLength` — a value read from the SAME attribute pair one
-        // line earlier — so it would hold for any length the handle drag
-        // reached, including a wrong one, and never fail.
-        expect(reenterLength).toBe(originalLength);
         await expect(endHandle).toHaveAttribute(
           "aria-valuenow",
-          String(reenterLength)
+          String(originalLength)
         );
         await page
           .getByRole("button", { name: "Cut the selection", exact: true })
@@ -422,13 +422,13 @@ test.describe("edit mode toggle", () => {
         await expect(startHandle).toHaveCount(0);
         await expect(toggle).toHaveAttribute("aria-pressed", "true");
         await page.getByRole("button", { name: "Undo", exact: true }).click();
-        expect(await expectUsableFrame()).toBe(reenterLength);
+        expect(await expectUsableFrame()).toBe(originalLength);
         await page.getByRole("button", { name: "Redo", exact: true }).click();
         await expect(startHandle).toHaveCount(0);
         await page
           .getByRole("button", { name: "Paste at the line", exact: true })
           .click();
-        expect(await expectUsableFrame()).toBe(reenterLength);
+        expect(await expectUsableFrame()).toBe(originalLength);
       }
       await page
         .getByRole("button", { name: "Done editing", exact: true })
