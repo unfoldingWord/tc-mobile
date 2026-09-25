@@ -1,33 +1,47 @@
 /* O4 — Share (14, 15, G7). Owner: #947. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file.
  *
- * WHAT THIS LANE COULD ACTUALLY REACH. The workbench's states 14 (share
- * chapter), 15 (share progress) and G7 (share a whole book) are dominated by
- * a 140/176 circular Share button — its send-ring, an animated
- * packing-progress arc, per-item chips, an armed-pulse and a tap-hint hand.
- * All of that lives inside `share-menu-section.tsx` (rendered from
- * `books-screen.tsx` / `segments-screen.tsx` through `control.tsx`), none of
- * which this lane owns or may edit (see the PR body for the ownership
- * evidence). What this lane DOES own — the full-screen busy/outcome overlay,
+ * WHAT'S BUILT HERE, AND WHAT ISN'T (corrected from an earlier revision of
+ * this comment, which wrongly said the button widget below "lives inside
+ * `share-menu-section.tsx` ... none of which this lane owns" — that file is
+ * not on the coordinator's other-lanes list, and #947 explicitly assigns
+ * "the share button ... component" to this lane). The workbench's states 14
+ * (share chapter), 15 (share progress) and G7 (share a whole book) are
+ * dominated by a 140/176 circular Share button rendered inside a bottom
+ * SHEET, not the current look's inline ≡-menu row — a UX-architecture
+ * question (sheet vs. inline menu), not a same-shape restyle — plus an
+ * animated packing-progress ring and per-item chips that need a percent/
+ * per-item field `hooks/share-progress.ts`'s `ShareProgress` type does not
+ * carry (adding one is a T2 hook change; #947 says don't touch those here).
+ * That work, and the armed-ring/pulse (#950), is tracked in #981, not
+ * silently dropped.
+ *
+ * What this lane DOES build here — the full-screen busy/outcome overlay,
  * `components/share-progress.tsx` — issue #947 names on its own separate
  * "Overlay: the share-progress overlay (#491, #850) in O4 colours" bullet:
  * colour only, no new geometry asked of the overlay itself.
  *
- * So the one real, in-scope piece of #947 today is this: recolour the busy
- * phase's spinning glyph from the current look's neutral `--s-ink-muted`
+ * So the one piece of #947 built today is this: recolour the busy phase's
+ * spinning glyph from the current look's neutral `--s-ink-muted`
  * (3-components.css, untouched) to O4's send-teal identity, `--s-send`
- * (2-semantic.css; already merged, O4-only role). The extra
+ * (2-semantic.css; already merged, O4-only role) — this lane's own read of
+ * "O4 colours" for a state the workbench has no equivalent overlay for, not
+ * a value taken from a workbench state (see the PR body). The extra
  * `[data-design="o4"]` ancestor attribute selector below is strictly more
  * specific than 3-components.css's own unscoped
  * `.share-scrim[data-outcome="busy"] .share-progress-glyph` rule, so it wins
- * regardless of cascade-layer/import order without that file needing to
- * change — `tests/share-progress.test.ts` (which slices that exact block)
- * passes unedited. Settled-outcome inks, the scrim, the panel box and the
- * glyph's 48px size are left alone: #947's colour bullet does not name them,
- * and they are not this rule's job.
+ * on specificity within the same shared `components` layer both files
+ * declare their rules in (o4/index.css's header) — not "regardless of
+ * layer order", which would be false if this file opened a layer of its
+ * own — without 3-components.css needing to change:
+ * `tests/share-progress.test.ts` (which slices that exact block) passes
+ * unedited. Settled-outcome inks, the scrim, the panel box and the glyph's
+ * 48px size are left alone: #947's colour bullet does not name them, and
+ * they are not this rule's job.
  *
  * Everything else — the button widget, its ring, the chips, the pulse
- * (assigned to the separate motion issue #950) — is deferred; see the PR
- * body for the full list and the file-ownership evidence behind it.
+ * (assigned to the separate motion issue #950) — is deferred to #981; see
+ * the PR body for the file-ownership correction and the reasoning behind
+ * each deferred piece.
  */
 @layer components {
   [data-design="o4"] .share-scrim[data-outcome="busy"] .share-progress-glyph {

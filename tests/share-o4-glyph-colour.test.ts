@@ -4,15 +4,19 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * O4's own piece of the share overlay (#947, epic #936). Everything else
- * workbench states 14/15/G7 show — the 140/176 circular Share button, its
- * send-ring, an animated packing-progress arc, the per-item chips, the armed
- * pulse (#950) — lives inside `share-menu-section.tsx` (rendered from
- * `books-screen.tsx`/`segments-screen.tsx` through `control.tsx`), none of
- * which this lane owns or may edit. The one piece reachable from this lane's
- * four owned files is colour: issue #947 itself separates a "Share button"
- * bullet (geometry, out of scope here) from a distinct "Overlay: the
- * share-progress overlay (#491, #850) in O4 colours" bullet — colour only.
+ * O4's own piece of the share overlay (#947, epic #936). The 140/176
+ * circular Share button, its send-ring, an animated packing-progress arc,
+ * the per-item chips and the armed pulse (#950) are deferred to #981 — not
+ * because `share-menu-section.tsx` is unreachable (it is not on the
+ * coordinator's other-lanes list, and #947 assigns "the share button ...
+ * component" to this lane), but because building it faithfully is a
+ * UX-architecture question (the workbench renders it inside a bottom sheet,
+ * not the current look's inline ≡-menu row) plus a T2 hook change (no
+ * percent/per-item field exists on `ShareProgress` yet) — see #981 and the
+ * PR body. The one piece this lane builds today is colour: issue #947
+ * itself separates a "Share button" bullet (geometry, deferred) from a
+ * distinct "Overlay: the share-progress overlay (#491, #850) in O4 colours"
+ * bullet — colour only.
  *
  * This mirrors `tests/share-progress.test.ts`'s own technique on
  * `3-components.css` ("the stylesheet inks busy and every settled outcome,
@@ -27,12 +31,22 @@ import { describe, expect, it } from "vitest";
  * in `o4/share.css`, under the extra `[data-design="o4"]` ancestor attribute
  * selector, which is strictly more specific than 3-components.css's own
  * `.share-scrim[data-outcome="busy"] .share-progress-glyph` rule — so it wins
- * regardless of cascade-layer/import order, and `tests/share-progress.test.ts`
- * passes unedited (confirmed by running the full suite in this same PR).
+ * on specificity within the shared `components` layer both files declare
+ * their rules in (o4/index.css's header), not "regardless of layer order",
+ * and `tests/share-progress.test.ts` passes unedited.
  */
 
 function read(relPath: string): string {
   return readFileSync(path.join(process.cwd(), relPath), "utf8");
+}
+
+/**
+ * Drops CSS block comments before selector-scanning, so a docblock that
+ * quotes a selector in prose (as this file's own header, and `share.css`'s,
+ * both do) cannot be mistaken for a rule.
+ */
+function stripComments(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, "");
 }
 
 describe("O4 share overlay colour (#947)", () => {
@@ -57,11 +71,32 @@ describe("O4 share overlay colour (#947)", () => {
     expect(value, "reaches past layer 2").not.toMatch(/--p-/);
   });
 
-  it("scopes the rule under the o4 attribute selector, not the bare .share-scrim class", () => {
-    const css = read("src/app/styles/o4/share.css");
-    // Guards against a rule that accidentally repeats 3-components.css's own
-    // unscoped selector, which would apply with the switch OFF too and break
-    // "byte-for-byte unchanged with the switch off".
-    expect(css).not.toMatch(/^\s*\.share-scrim\[data-outcome="busy"\]/m);
+  it("scopes every .share-progress-glyph rule under the o4 attribute selector", () => {
+    const css = stripComments(read("src/app/styles/o4/share.css"));
+    // Guards against ANY rule targeting `.share-progress-glyph` that is not
+    // scoped under `[data-design="o4"]` — not just a repeat of
+    // 3-components.css's own exact selector — which would apply with the
+    // switch OFF too and break "byte-for-byte unchanged with the switch
+    // off". Splitting on "{" rather than matching one fixed selector string
+    // is what catches a differently-shaped unscoped rule (e.g. a bare
+    // `.share-scrim .share-progress-glyph` descendant selector) that the
+    // single exact-string check this replaced would have missed.
+    const selectors = css
+      .split("{")
+      .slice(0, -1)
+      .map((chunk) => chunk.slice(chunk.lastIndexOf("}") + 1));
+    const glyphSelectors = selectors.filter((selector) =>
+      selector.includes(".share-progress-glyph")
+    );
+    expect(
+      glyphSelectors.length,
+      "expected at least one .share-progress-glyph selector in o4/share.css"
+    ).toBeGreaterThan(0);
+    for (const selector of glyphSelectors) {
+      expect(
+        selector,
+        `unscoped .share-progress-glyph selector: ${selector.trim()}`
+      ).toMatch(/\[data-design="o4"\]/);
+    }
   });
 });
