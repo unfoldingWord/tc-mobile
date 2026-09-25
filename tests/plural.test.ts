@@ -79,6 +79,25 @@ describe("plural", () => {
       "No chapters yet"
     );
   });
+
+  it("pins the contract for -1 and NaN, which no call site can produce today (#900)", () => {
+    // Refiled from #713 item 3 (George r4 on #673): English cardinal `one` is
+    // absolute, not "exactly the singular real-world case", so -1 selects
+    // `one` the same as 1 does — "-1 problem recorded", not the old
+    // `n === 1` ternary's "-1 problems recorded". A contract freeze, not a
+    // claim this reads well: no call site today (books-screen chapter count,
+    // failure-log entry count, share-error-copy's gap count) can pass a
+    // negative or non-finite count.
+    const forms = {
+      one: "{n} problem recorded",
+      other: "{n} problems recorded",
+    };
+    expect(plural(-1, forms)).toBe("-1 problem recorded");
+    // NaN selects `other` and must not throw — a throw would turn this
+    // cosmetic oddity into a crash.
+    expect(() => plural(NaN, forms)).not.toThrow();
+    expect(plural(NaN, forms)).toBe("NaN problems recorded");
+  });
 });
 
 /**

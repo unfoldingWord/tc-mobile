@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   type Clock,
+  chainsToSend,
   classifyShareError,
   createProgressDriver,
   resolveSendOutcome,
@@ -63,6 +64,32 @@ describe("classifyShareError", () => {
   it("treats a non-error throw as a real failure", () => {
     expect(classifyShareError("nope", false)).toBe("failed");
     expect(classifyShareError(undefined, true)).toBe("failed");
+  });
+});
+
+/**
+ * `chainsToSend` (#860) — whether `prepare()` should chain straight into
+ * `send()` once armed, rather than leaving the flow at `ready` for a second
+ * tap. Testers on Android read the ready state's checkmark as "done" and
+ * never made that second tap; the fix is to skip it entirely on the route
+ * that does not need a live gesture to open the chooser.
+ *
+ * A pure, one-line decision — like `classifyShareError` and
+ * `resolveSendOutcome` above — so the branch it drives in `prepare()` is
+ * provable without mounting the hook: flip the comparison in
+ * `chainsToSend`'s own body to `route === "web"` and every row below dies.
+ */
+describe("chainsToSend", () => {
+  it("chains on the native route — the plugin needs no user activation", () => {
+    expect(chainsToSend("native")).toBe(true);
+  });
+
+  it("does NOT chain on the web route — navigator.share needs the tap's own activation, which a continuation after the encode does not carry", () => {
+    expect(chainsToSend("web")).toBe(false);
+  });
+
+  it("does NOT chain when the route is unsupported — prepare() never reaches this call on that route, but the function must not claim otherwise", () => {
+    expect(chainsToSend("unsupported")).toBe(false);
   });
 });
 
@@ -174,7 +201,7 @@ describe("the wiring around sentGap and the reset guard (this lane's own review 
     expect(armAt).toBeGreaterThan(staleAt);
     const staleBlock = flow.slice(stageAt, armAt);
     expect(staleBlock).toMatch(
-      /if \(staged !== null\) void nativeShare\.discard\(staged\);\s*return;/
+      /if \(staged !== null\) void nativeShare\.discard\(staged\);\s*return null;/
     );
   });
 
@@ -241,6 +268,65 @@ describe("the wiring around sentGap and the reset guard (this lane's own review 
     const hole = flow.slice(holeAt, holeEnd);
     expect(hole).toMatch(/type: "begin",\s*work: "send"/);
     expect(hole).toMatch(/type: "settle",\s*settled: "failed"/);
+  });
+});
+
+/**
+ * The native one-tap chain (#860): `prepare()` calls `send()` itself once
+ * armed, on the native route only, rather than leaving the flow at `ready`
+ * for a second tap. These are source-shape pins on the exact call site —
+ * `chainsToSend`'s own describe block above pins the decision it reads; this
+ * pins that `prepare()` actually consults it, in the right spot (AFTER the
+ * ready transition, so the modal and `status` are already what every other
+ * `ready` settle leaves them, and the chain is additive rather than a
+ * parallel path) and returns what it resolves to, rather than firing it and
+ * discarding the result (which would leave a caller unable to close its menu
+ * on a chained `sent`/`dismissed` the way it already does for the web
+ * route's own second tap).
+ */
+describe("the native one-tap chain in prepare() (#860)", () => {
+  const flow = read("src/hooks/share-flow.ts");
+
+  it('prepare() checks chainsToSend(route) — not a hand-rolled route === "native" — right after the ready settle, and awaits send()', () => {
+    const readySettleAt = flow.indexOf(
+      "// Ready is not an outcome: the busy phase ends"
+    );
+    expect(readySettleAt).toBeGreaterThan(-1);
+    const chainAt = flow.indexOf("if (chainsToSend(route))", readySettleAt);
+    expect(chainAt).toBeGreaterThan(readySettleAt);
+    expect(flow.slice(chainAt, chainAt + 80)).toMatch(
+      /if \(chainsToSend\(route\)\) return await send\(\);/
+    );
+  });
+
+  it("the non-chained fallback right after it is a plain `return null;` — never a bare `return;`, which would type as `undefined`", () => {
+    const chainAt = flow.indexOf(
+      "if (chainsToSend(route)) return await send();"
+    );
+    expect(chainAt).toBeGreaterThan(-1);
+    const after = flow.slice(chainAt, chainAt + 120);
+    expect(after).toMatch(/return null;/);
+  });
+
+  it("prepare()'s declared return type is ShareOutcome | null, not void — the chained outcome must reach the caller", () => {
+    expect(flow).toMatch(
+      /async \(build: BuildShareFile\): Promise<ShareOutcome \| null> => \{/
+    );
+  });
+
+  it("prepare()'s useCallback depends on send — the value it calls from inside the native branch", () => {
+    const prepareAt = flow.indexOf("const prepare = useCallback(");
+    expect(prepareAt).toBeGreaterThan(-1);
+    const depsAt = flow.indexOf("[handoff, modal, send]", prepareAt);
+    expect(depsAt).toBeGreaterThan(prepareAt);
+  });
+
+  it("every OTHER exit from prepare()'s try/catch also returns null, not a bare return — the function has exactly one non-null return, the chained one", () => {
+    const prepareAt = flow.indexOf("const prepare = useCallback(");
+    const prepareEnd = flow.indexOf("[handoff, modal, send]", prepareAt);
+    const body = flow.slice(prepareAt, prepareEnd);
+    // Every bare `return;` inside prepare() was replaced — none should remain.
+    expect(body).not.toMatch(/\breturn;/);
   });
 });
 

@@ -189,10 +189,10 @@ jobs:
         run: npm ci
 
       # Installed here, before any Play secret reaches disk (the "Write the
-      # upload keystore and Play service-account key" step, below): a gem
-      # install hook runs arbitrary code, and neither the bundler install nor
-      # fastlane itself needs the keystore or the service-account JSON — only
-      # the upload step later does.
+      # upload keystore" and "Write the Play service-account key" steps,
+      # below): a gem install hook runs arbitrary code, and neither the
+      # bundler install nor fastlane itself needs the keystore or the
+      # service-account JSON — only the upload step later does.
       - name: Install fastlane
         if: ${{ !inputs.build_only }}
         run: |
