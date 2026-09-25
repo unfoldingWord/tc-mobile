@@ -84,7 +84,7 @@ function uniqueEntryName(taken: Set<string>, name: string): string {
 /**
  * Encode each of a book's chapters, in `book.chapterIds` order, to an MP3 and
  * archive them into one zip. Returns `null` when no chapter had resolvable audio
- * (nothing to share) or when the run was cancelled during the gather.
+ * (nothing to share) or when the run was cancelled part-way.
  *
  * `nameChapter` supplies each zip entry's filename from the chapter's number:
  * naming is translator-facing copy, so it is injected by the hook (from
@@ -103,8 +103,12 @@ function uniqueEntryName(taken: Set<string>, name: string): string {
  * `(0, total)` before the first chapter, `total` being the chapters the walk
  * found (a dangling id never enters it), then `(done, total)` after each
  * chapter is resolved — its MP3 in the archive, or skipped for having no
- * audio and counted missing. A cancel or a throw stops the count where it
- * was. It is not forwarded into `exportChapterMp3`: the book counts
+ * audio and counted missing. `shouldContinue` is re-checked after each
+ * chapter's export, before its step, so a cancel that lands while a chapter
+ * is encoding returns `null` without reporting that chapter; a throw unwinds
+ * before its step. Either way the count stops where it was. The native
+ * staging a Share caller does after this returns adds no step. It is not
+ * forwarded into `exportChapterMp3`: the book counts
  * chapters, not the segments inside them.
  */
 export async function exportBookZip(
@@ -159,6 +163,9 @@ export async function exportBookZip(
       onStep?.(++done, chapters.length);
       continue;
     }
+    // A cancel that landed during this chapter's encode must not report its
+    // step (#986); the zip is dropped with the rest of the run.
+    if (shouldContinue && !shouldContinue()) return null;
     const name = uniqueEntryName(taken, nameChapter(chapter.number));
     taken.add(name);
     // Stored entry: fflate computes the CRC over the MP3 and emits the buffer

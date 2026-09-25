@@ -70,10 +70,13 @@ interface ChapterExport {
  * `onStep` reports the gather's truthful progress (#986): `(0, total)` once
  * pass 1 has fixed `total` — the segments with audio to gather — and then
  * `(done, total)` after each of those segments is RESOLVED, whether it was
- * copied in or skipped and counted missing. A cancel returns before the next
- * segment and reports nothing further; a throw unwinds before its segment's
- * step, so the count stops where it was. Not called for a chapter with
- * nothing to gather.
+ * copied in or skipped and counted missing. `shouldContinue` is checked again
+ * after each segment's read and decode, before its step: a cancel that lands
+ * while a segment is in flight returns `null` without reporting that segment,
+ * and one that lands between segments returns before the next. Either way no
+ * step is reported after the cancel is observable. A throw unwinds before its
+ * segment's step, so the count stops where it was. Not called for a chapter
+ * with nothing to gather.
  */
 export async function gatherChapterPcm(
   chapterId: ChapterId,
@@ -125,6 +128,9 @@ export async function gatherChapterPcm(
   for (const { clipId, frames } of present) {
     if (shouldContinue && !shouldContinue()) return null;
     const fitted = await readSlot(clipId, frames, codec);
+    // Re-checked after the await: a cancel that landed during this read or
+    // decode must not report this segment's step (#986).
+    if (shouldContinue && !shouldContinue()) return null;
     if (fitted === null) {
       missingAudio++;
     } else {
@@ -193,7 +199,10 @@ async function readSlot(
  * `onStep` is the gather's segment count (#986), threaded straight through.
  * The encode that follows the last segment is ONE worker call with no
  * per-item breakdown, so it adds no step: a count reading `N of N` means every
- * segment is gathered, not that the MP3 is already built.
+ * segment is gathered, not that the MP3 is already built. A caller may have
+ * slow work of its own after this returns — Share's native route stages the
+ * built file across the bridge (`share-flow.ts`) — and that adds no step
+ * either.
  */
 export async function exportChapterMp3(
   chapterId: ChapterId,

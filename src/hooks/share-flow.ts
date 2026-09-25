@@ -181,7 +181,10 @@ interface PreparedShare {
  * with `(done, total)` each time one item has really finished (a segment
  * gathered, a chapter archived; the export functions take it directly). It
  * is optional to call: a builder that never does leaves the busy phase with
- * no count, exactly as before.
+ * no count, exactly as before. The count covers the build only: on the native
+ * route `prepare` stages the built file after the builder returns, so the
+ * count can read `N of N` while that write is still running. The busy phase
+ * stays up until it settles.
  */
 type BuildShareFile = (
   isCurrent: () => boolean,

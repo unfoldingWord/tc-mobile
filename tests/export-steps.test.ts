@@ -162,7 +162,7 @@ describe("gatherChapterPcm — segment steps (#986)", () => {
     ]);
   });
 
-  it("a cancel mid-gather reports no step past the point it stopped", async () => {
+  it("a cancel between segments reports no step past the point it stopped", async () => {
     const chapterId = await chapterWith([
       { n: 100, v: 1 },
       { n: 100, v: 2 },
@@ -184,6 +184,34 @@ describe("gatherChapterPcm — segment steps (#986)", () => {
       [0, 3],
       [1, 3],
     ]);
+  });
+
+  it("a cancel that lands while a segment is being read reports no step for it", async () => {
+    const chapterId = await chapterWith([
+      { n: 100, v: 1 },
+      { n: 100, v: 2 },
+      { n: 100, v: 3 },
+    ]);
+    const real = clips.getClip.bind(clips);
+    let cancelled = false;
+    // The cancel arrives DURING the first read: the check at the top of the
+    // loop has already passed, so only a re-check after the await can see it.
+    const spy = vi.spyOn(clips, "getClip").mockImplementation((id) => {
+      cancelled = true;
+      return real(id);
+    });
+    const { calls, onStep } = recorder();
+
+    const result = await gatherChapterPcm(
+      chapterId,
+      testCodec(),
+      () => !cancelled,
+      onStep
+    );
+    spy.mockRestore();
+
+    expect(result).toBeNull();
+    expect(calls).toEqual([[0, 3]]);
   });
 
   it("reports nothing for a chapter with nothing to gather", async () => {
@@ -237,21 +265,22 @@ describe("exportBookZip — chapter steps (#986)", () => {
 
   it("a step lands only AFTER that chapter's export has finished", async () => {
     const bookId = await bookWith([[{ n: 100, v: 1 }], [{ n: 100, v: 2 }]]);
-    const spy = vi.spyOn(chapterExport, "exportChapterMp3");
-    const exportsSeen: number[] = [];
-
-    await exportBookZip(bookId, nameChapter, testCodec(), undefined, () => {
-      exportsSeen.push(spy.mock.results.length);
+    const codec = testCodec();
+    const order: string[] = [];
+    // Each encode settles a macrotask after it starts, so a step fired once an
+    // export has STARTED but before it is awaited lands ahead of "encoded" and
+    // breaks the sequence below.
+    codec.encodeMp3.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      order.push("encoded");
+      return new Uint8Array(1);
     });
-    const settled = await Promise.allSettled(
-      spy.mock.results.map((r) => r.value)
-    );
-    spy.mockRestore();
 
-    // Step k is reported with exactly k chapter exports started…
-    expect(exportsSeen).toEqual([0, 1, 2]);
-    // …and each of them resolved (a failed one would have thrown instead).
-    expect(settled.every((s) => s.status === "fulfilled")).toBe(true);
+    await exportBookZip(bookId, nameChapter, codec, undefined, (d, t) =>
+      order.push(`${d}/${t}`)
+    );
+
+    expect(order).toEqual(["0/2", "encoded", "1/2", "encoded", "2/2"]);
   });
 
   it("a chapter with no audio is a finished step (counted missing), not a stall", async () => {
@@ -345,6 +374,34 @@ describe("exportBookZip — chapter steps (#986)", () => {
       [0, 3],
       [1, 3],
     ]);
+  });
+
+  it("a cancel that lands during a chapter's encode reports no step for it", async () => {
+    const bookId = await bookWith([
+      [{ n: 100, v: 1 }],
+      [{ n: 100, v: 2 }],
+      [{ n: 100, v: 3 }],
+    ]);
+    const codec = testCodec();
+    let cancelled = false;
+    // The first chapter's encode completes, but the cancel arrived while it
+    // ran: every check before the encode has already passed.
+    codec.encodeMp3.mockImplementation(async () => {
+      cancelled = true;
+      return new Uint8Array(1);
+    });
+    const { calls, onStep } = recorder();
+
+    const result = await exportBookZip(
+      bookId,
+      nameChapter,
+      codec,
+      () => !cancelled,
+      onStep
+    );
+
+    expect(result).toBeNull();
+    expect(calls).toEqual([[0, 3]]);
   });
 
   it("reports chapters only — segment steps are not forwarded into each chapter", async () => {
