@@ -90,9 +90,10 @@ export function Waveform({
   // Read for its subscription only: a `data-theme` switch remaps every token
   // this draw reads (`--c-wave-stroke`, `--s-voice`, `--s-ink-faint`), and a
   // painted canvas cannot see that on its own — so the draw effect lists it.
-  // Today `useTheme` is Books-only and a toggle unmounts every canvas; the
-  // moment the toggle is reachable with a row mounted (#149) this is what keeps
-  // the bars from holding the previous theme's colours (George R2 P2 on #457).
+  // Written while the toggle was Books-only, where a toggle unmounted every
+  // canvas and this cost nothing yet; #149 put the toggle in the chapter and
+  // recorder menus, so this is now what keeps the bars from holding the
+  // previous theme's colours rather than what will (George R2 P2 on #457).
   const theme = useLiveTheme();
 
   // `useLayoutEffect`, not `useEffect`: the first paint below must land BEFORE

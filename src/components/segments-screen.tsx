@@ -21,6 +21,7 @@ import { shareGapText, shareProgressText } from "./share-error-copy";
 import { ShareMenuSection } from "./share-menu-section";
 import { ShareProgress } from "./share-progress";
 import { strings } from "@/lib/strings";
+import { ThemeControl } from "./theme-control";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import type { SegmentsAudio } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
@@ -1038,6 +1039,24 @@ export const SegmentsScreen = forwardRef<
               onPrepare={onPrepareShare}
               onSend={onSendShare}
             />
+            {/* The theme toggle, the one global entry that follows you into a
+                chapter (#149). LAST on purpose: `Menu` lands focus on its
+                first actionable child, and that must stay Rename/Share — the
+                reasons you opened this menu — not a control that repaints the
+                screen. Which holds here unconditionally, unlike in the
+                recorder: Rename above carries no `disabled` and no `hint`, so
+                it is always the first actionable child. If a later change
+                gives it a hinted state, focus moves here in that state, and
+                the recorder's comment is where that trade is argued.
+
+                Books-only was right while the global menu held a
+                licence notice; it stopped being right when the menu grew a
+                control for direct sun, which arrives mid-session.
+
+                It is inside the panel's `inert` subtree above (#491), so a
+                share overlay that owns the screen covers this too, with no
+                guard of its own. */}
+            <ThemeControl />
           </>
         )}
       </Menu>

@@ -2,6 +2,7 @@ import { Control } from "./control";
 import { Menu } from "./menu";
 import { rowHint, type RowReason } from "./menu-row-state";
 import { strings } from "@/lib/strings";
+import { ThemeControl } from "./theme-control";
 
 /**
  * The recorder sheet's ≡ menu (#160, L-1).
@@ -173,6 +174,35 @@ export function RecorderMenu({
             hint={rowHint(eraseReason)}
             onClick={onErase}
           />
+          {/* The theme toggle (#149). LAST in both branches, so that WHEREVER A
+              ROW ABOVE IS ACTIONABLE the open-edge focus still lands on it —
+              Edit / Done, what the translator opened this menu for — rather than
+              on a control that repaints the screen. Where none of them is, focus
+              lands here, and that is the correct outcome rather than a regression
+              to repair by reordering: see the consequence stated below, which is
+              the half that governs (George round 1 read the two halves as
+              contradicting, and the unqualified "never" was the wrong one).
+
+              This is the site the reframing of #149 turns on: the sheet is
+              `aria-modal` over an `inert` Segments, so while it is up the Books
+              hamburger is four screens away, and direct sun is exactly the
+              condition that arrives while you are recording. The opener for this
+              menu — the header's `≡`, or the edit toolbar's `⋮` since #863 — is
+              itself closed through the close window, while `denied`,
+              and while a take is held — the panels those states raise own the
+              body — so the toggle inherits those gates rather than adding its own.
+
+              ONE CONSEQUENCE, STATED RATHER THAN GLOSSED. `Menu` lands open-edge
+              focus on the first ACTIONABLE child, skipping the `aria-disabled`
+              hinted rows (#135). On a segment with nothing recorded and an empty
+              clipboard all three rows above are hinted, so this control — always
+              actionable — is now what focus lands on, where it used to fall back
+              to Edit and its reason. That is `Menu`'s own rule applied to a menu
+              that finally has something actionable in that state, and the hinted
+              rows keep their place in the Tab order and still announce their
+              reasons; but it IS a change to what an AT user hears first there,
+              and it is #149's to own. */}
+          <ThemeControl />
         </>
       ) : (
         <>
@@ -192,6 +222,9 @@ export function RecorderMenu({
             hint={rowHint(eraseReason)}
             onClick={onErase}
           />
+          {/* Same entry, same last position, in edit mode too — see the
+              record-mode branch above for why. */}
+          <ThemeControl />
         </>
       )}
     </Menu>
