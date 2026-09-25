@@ -11,6 +11,27 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-25 (Docker session) — v0.2.12 promoted and verified on staging, with the launch intro, and the tester build released
+
+The DRI tried a launch intro on a Worker preview and asked to ship it. Their words, verbatim: "ok i LOVE that. lets ship it into staging. can we slipstream into 0.2.11 or must it be a new point release. either is fine." It shipped as a new point release, because 0.2.11 was already on staging and on tester builds. The intro merged as #917, before George's T3 round, on the DRI's call; that is recorded on #917.
+
+### Shipped
+
+| What                                                                                                                                                                                                                                    | Evidence                                                                                                                                                                                                                                                                                     |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **v0.2.12 on staging**: 17 PRs since the v0.2.11 bump (list in #918), including #917. No schema change (`DB_VERSION` stays 8). Bump #918 was merged with a merge commit so the promotion #919 carries the same bump commit, `6094205a`. | `npm run check:deploy` at promotion time: `Deployed: version=0.2.12 sha=3b066ba builtAt=2026-09-25T01:02:28.151Z` / `PASS: https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build.`                                                                               |
+| **Pre-release [`android-release-v0.2.12`](https://github.com/unfoldingWord/tc-mobile/releases/tag/android-release-v0.2.12)** at staging `3b066ba`, with `app-release.apk` from APK run 36081125693.                                     | The APK's `version.json` reads 0.2.12 at `3b066ba`, and it bundles the intro. Its v2 signing certificate SHA-256 is `eed23e1b…34baf2`, the same as v0.2.11's. The public asset URL returns 200, and its SHA-256 matches the uploaded file. A QR code of that URL decodes back to it exactly. |
+| **TestFlight** at `3b066ba`                                                                                                                                                                                                             | Run 36081310599 succeeded.                                                                                                                                                                                                                                                                   |
+| **Device checklist #920** carries every #915 row forward and adds the v0.2.12 rows.                                                                                                                                                     | #915 has a pointer comment to #920.                                                                                                                                                                                                                                                          |
+
+### Next
+
+- Run the #920 pass on a phone, including the intro's felt length. No one has timed it on a device yet.
+- After 2026-09-26 21:15 UTC: set `PLAY_UPLOAD_ENABLED` and upload to the internal track (#874).
+- The DRI decides whether to close #915 as superseded by #920.
+
+---
+
 ## 2026-09-24 (late evening, Docker session) — after the v0.2.11 cut: 14 PRs merged, the Play lane's first build_only pass, an upload-key mix-up found and reset, and an open-issue scan
 
 This follows the entry below in the same session. The DRI asked for "3-4 lanes" on the backlog, then called a stopping point: no new issues after 22:00Z, finish what is in flight, EOD.
