@@ -256,6 +256,18 @@ export const strings = {
   // never has to change, unlike the theme toggle above, which names a
   // destination because it has no `aria-pressed` state to carry that for it.
   newLookO4: "New look (O4)",
+  // The O4 menu tiles' visible captions (#949, `o4-tile-menu.tsx`). Shown,
+  // never announced: each tile's name is the label its current-look row
+  // already had, and every caption is a word that label holds (label-in-name,
+  // WCAG 2.5.3) — which is why marking done says "Finished", the word
+  // `markFinished`/`markUnfinished` use, rather than the workbench's "Done".
+  tileEdit: "Edit",
+  tileFinished: "Finished",
+  tileRename: "Rename",
+  tileErase: "Erase",
+  tileShare: "Share",
+  tileLight: "Light",
+  tileDark: "Dark",
   closeRecorder: "Close recorder",
   /**
    * The recorder sheet's header trail — the Segments one with the segment

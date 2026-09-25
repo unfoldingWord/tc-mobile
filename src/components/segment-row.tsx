@@ -11,6 +11,8 @@ import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
+import { O4SheetHead } from "./o4-crumbs";
+import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
 import { strings } from "@/lib/strings";
 import { reportFailure } from "@/hooks/report-failure";
 import { useDesign } from "@/hooks/use-design";
@@ -90,6 +92,13 @@ interface SegmentRowProps {
    * renders a Record at all; `guided-step.ts` owns that rule.
    */
   guided?: boolean;
+  /**
+   * The book and chapter this row sits in, for the O4 segment menu's
+   * breadcrumb head (#949, §7). Read only in the O4 look; absent, the head
+   * shows the segment crumb alone.
+   */
+  bookName?: string;
+  chapterNumber?: number;
 }
 
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
@@ -131,6 +140,8 @@ export function SegmentRow({
   onMenuClose,
   busy = false,
   guided = false,
+  bookName,
+  chapterNumber,
 }: SegmentRowProps) {
   const state = segmentRowState(row);
   // The O4 look (#944) branches the markup below; with the switch off every
@@ -554,6 +565,98 @@ export function SegmentRow({
                 leaves focus on the field, not on Confirm's busy mark. */}
             {savingLabel && <Notice tone="busy">{strings.savingName}</Notice>}
             {renameFailed && <Notice>{strings.renameSegmentFailed}</Notice>}
+          </>
+        ) : o4 ? (
+          // The O4 segment menu (#949, 07 and G8). The breadcrumb head (§7),
+          // then a preview row that now carries the segment's name, then the
+          // tiles. Both are decoration (`aria-hidden`): every tile already
+          // names its segment. The tiles are the rows below — same names,
+          // handlers, refs and DOM order, so focus lands on Edit (or Rename
+          // on a never-recorded row) in both looks and Cancel returns to
+          // Rename. Rename wears the name role and a pencil, Edit the edit
+          // role and scissors, so the two are told apart (#859). Finished is
+          // grey until the segment is done, then the whole tile green (G8).
+          // The preview's play button is not drawn: a control ahead of the
+          // grid would take the open-edge focus from Edit.
+          <>
+            <O4SheetHead
+              book={bookName}
+              chapter={chapterNumber}
+              segment={{ ordinal, state }}
+            />
+            <div
+              className="o4-menu-preview"
+              data-state={state}
+              aria-hidden="true"
+            >
+              <span className="o4-menu-badge" data-state={state}>
+                {ordinal}
+              </span>
+              <span className="o4-menu-preview-mid">
+                {titled && <span className="o4-menu-title">{row.label}</span>}
+                <Waveform
+                  peaks={hasClip ? row.peaks : null}
+                  recorded={hasClip}
+                  height={titled ? 32 : 40}
+                  finished={state === "finished"}
+                />
+              </span>
+            </div>
+            <TileGrid>
+              {hasClip && (
+                <>
+                  <Tile
+                    tone="edit"
+                    icon="scissors"
+                    label={strings.editSegment(ordinal, row.label)}
+                    caption={strings.tileEdit}
+                    onClick={() => {
+                      closeMenu();
+                      onOpenRecorder();
+                    }}
+                  />
+                  <Tile
+                    tone={row.finished ? "done" : "doneoff"}
+                    icon="check"
+                    label={
+                      row.finished
+                        ? strings.markUnfinished(ordinal)
+                        : strings.markFinished(ordinal)
+                    }
+                    caption={strings.tileFinished}
+                    onClick={() => {
+                      closeMenu();
+                      onSetFinished(!row.finished);
+                    }}
+                  />
+                </>
+              )}
+              <Tile
+                ref={renameControlRef}
+                tone="name"
+                icon="pencil"
+                label={strings.renameSegment}
+                caption={strings.tileRename}
+                onClick={() => setRenaming(true)}
+              />
+              {hasClip && (
+                <>
+                  <TileSpacer />
+                  <Tile
+                    tone="erase"
+                    icon="trash"
+                    label={strings.eraseSegment}
+                    caption={strings.tileErase}
+                    onClick={() => {
+                      // Erase first, then close: the same 1 -> 2 -> 1 layer
+                      // interleave as the row below (#452 PR3).
+                      onErase();
+                      closeMenu();
+                    }}
+                  />
+                </>
+              )}
+            </TileGrid>
           </>
         ) : (
           <>
