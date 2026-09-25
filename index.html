@@ -37,8 +37,248 @@
       content="black-translucent"
     />
     <title>tC Mobile</title>
+    <!--
+      LAUNCH INTRO. Plain HTML + inline script so it starts before
+      `main.tsx` loads: React mounts underneath as usual, on its own
+      schedule. The overlay does not wait for the app and the app does not
+      wait for it; it runs its full timeline on every page load, even when
+      the app underneath is ready sooner.
+
+      This is a static overlay, not a component, so its colours are literal
+      hex values with a token comment beside each — the same pattern
+      `theme-color` above already uses — rather than a `1-primitives.css` /
+      `2-semantic.css` reference (AGENTS.md's colour-primitive rule governs
+      `src/`, which this file sits outside of).
+
+      Theme match: `src/lib/theme.ts`'s `readStoredTheme` defaults to "dark"
+      on anything unset or unrecognised, and deliberately does NOT read
+      `prefers-color-scheme` (#171 — shared phones handed out by a
+      facilitator, not the translator's own OS setting). So this reads the
+      same `localStorage` key synchronously and falls back to that same
+      app default, not to the OS scheme, which would disagree with what
+      `installStoredTheme()` is about to paint on a light-OS phone with no
+      stored choice.
+    -->
+    <style>
+      #launch-intro {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        /* --p-cool-950 / dark --s-floor (2-semantic.css) — the app's own
+           default theme; overwritten inline before paint if the stored
+           theme is "light". */
+        --li-bg: #0b1016;
+        /* dark --s-ink */
+        --li-ink: #e7ecf3;
+        background: var(--li-bg);
+        pointer-events: none;
+      }
+      /* Never intercepts a tap, for the overlay's whole life — not only
+         while it is animating. */
+      #launch-intro,
+      #launch-intro * {
+        pointer-events: none;
+      }
+      .li-mark {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 14px; /* --p-space-4 */
+      }
+      .li-icon {
+        width: 120px;
+        height: 120px;
+        display: block;
+      }
+      .li-wordmark {
+        display: flex;
+        flex-wrap: wrap; /* two lines instead of overflow at 320px wide */
+        justify-content: center;
+        align-items: baseline;
+        gap: 0.35em;
+        max-width: 280px;
+      }
+      .li-word {
+        /* --p-font-ui */
+        font-family:
+          system-ui,
+          ui-sans-serif,
+          -apple-system,
+          sans-serif;
+        font-weight: 600; /* --p-weight-strong */
+        font-size: clamp(20px, 6.5vw, 30px);
+        letter-spacing: -0.01em;
+        color: var(--li-ink);
+        white-space: nowrap;
+      }
+
+      @keyframes li-in-left {
+        from {
+          opacity: 0;
+          transform: translateX(-60px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+      @keyframes li-in-right {
+        from {
+          opacity: 0;
+          transform: translateX(60px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+      /* Drop, land, one small rebound, settle. The squash on each contact is
+         what makes it read as landing rather than stopping. Each segment gets
+         its own easing: fall accelerates (ease-in), rebound decelerates
+         (ease-out). */
+      @keyframes li-drop {
+        0% {
+          opacity: 0;
+          transform: translateY(-90px) scale(1, 1);
+          animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
+        }
+        20% {
+          opacity: 1;
+        }
+        52% {
+          transform: translateY(0) scale(1.06, 0.92);
+          animation-timing-function: cubic-bezier(0, 0.55, 0.45, 1);
+        }
+        70% {
+          transform: translateY(-14px) scale(0.98, 1.02);
+          animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
+        }
+        84% {
+          transform: translateY(0) scale(1.02, 0.98);
+          animation-timing-function: cubic-bezier(0, 0.55, 0.45, 1);
+        }
+        93% {
+          transform: translateY(-3px) scale(1, 1);
+        }
+        100% {
+          opacity: 1;
+          transform: translateY(0) scale(1, 1);
+        }
+      }
+      @keyframes li-fadeout {
+        from {
+          opacity: 1;
+        }
+        to {
+          opacity: 0;
+        }
+      }
+
+      /* Three beats, one after another: translationCore, then Mobile, then
+         the icon. Beat 1 (0-600ms): translationCore flies in from the left,
+         fading in as it moves. */
+      .li-word-left {
+        animation: li-in-left 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      /* Beat 2 (700-1300ms): Mobile flies in from the right. */
+      .li-word-right {
+        animation: li-in-right 600ms cubic-bezier(0.16, 1, 0.3, 1) 700ms both;
+      }
+      /* Beat 3 (1400-2250ms): the icon drops, lands with a small squash,
+         rebounds once and settles above the words. The origin sits at the
+         icon's base so the squash happens where it touches down. */
+      .li-icon {
+        transform-origin: 50% 100%;
+        animation: li-drop 850ms linear 1400ms both;
+      }
+      /* Hold (2250ms to 2750ms), then the whole overlay fades to reveal the
+         app. Total ~3150ms. */
+      #launch-intro {
+        animation: li-fadeout 400ms ease-out 2750ms both;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .li-word-left,
+        .li-word-right,
+        .li-icon {
+          animation: none;
+          opacity: 1;
+          transform: none;
+        }
+        /* Show the final composition briefly, then fade — no motion. */
+        #launch-intro {
+          animation: li-fadeout 300ms ease-out 400ms both;
+        }
+      }
+    </style>
   </head>
   <body>
+    <div id="launch-intro" aria-hidden="true" role="presentation">
+      <div class="li-mark">
+        <img
+          class="li-icon"
+          src="/launch-intro/icon-256.png"
+          width="120"
+          height="120"
+          alt=""
+          aria-hidden="true"
+        />
+        <div class="li-wordmark">
+          <span class="li-word li-word-left">translationCore</span>
+          <span class="li-word li-word-right">Mobile</span>
+        </div>
+      </div>
+    </div>
+    <script>
+      // Runs synchronously, before `main.tsx` is even requested, and reads
+      // the exact key `src/lib/theme.ts` owns (`THEME_STORAGE_KEY`) so the
+      // overlay's background/ink match the theme `installStoredTheme()` is
+      // about to paint underneath it. Mirrors that file's default rather than
+      // importing it: this document has no build step of its own to share
+      // one.
+      (function () {
+        var THEME_KEY = "tc-mobile.theme";
+        var theme = "dark"; // src/lib/theme.ts DEFAULT_THEME
+        try {
+          var stored = window.localStorage.getItem(THEME_KEY);
+          if (stored === "light" || stored === "dark") theme = stored;
+          // No `prefers-color-scheme` fallback for anything else: #171
+          // decided these are shared, facilitator-issued phones, so the OS
+          // setting is deliberately not consulted — matching that exactly is
+          // what "the theme the app will paint" means here.
+        } catch (e) {
+          // `localStorage` throws in some engines (Safari with cookies
+          // blocked, some WebViews). `use-theme.ts`'s `readTheme()` falls
+          // back to the default for the same reason; mirrored here.
+        }
+        var overlay = document.getElementById("launch-intro");
+        if (!overlay) return;
+        if (theme === "light") {
+          overlay.style.setProperty("--li-bg", "#f6f8fa"); // --p-cool-050 / light --s-floor
+          overlay.style.setProperty("--li-ink", "#101821"); // light --s-ink
+        }
+        var done = false;
+        function cleanup() {
+          if (done) return;
+          done = true;
+          if (overlay && overlay.parentNode)
+            overlay.parentNode.removeChild(overlay);
+        }
+        // The overlay's OWN fade-out is the last animation to end; children's
+        // animationend events bubble here too, so this is filtered to the
+        // overlay element itself rather than removing on the first child to
+        // finish.
+        overlay.addEventListener("animationend", function (e) {
+          if (e.target === overlay) cleanup();
+        });
+        // Safety net: never leaves the overlay stuck, whatever the animation
+        // timeline above does or however a WebView schedules it.
+        setTimeout(cleanup, 4000);
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/app/main.tsx"></script>
   </body>
