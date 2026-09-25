@@ -13,6 +13,7 @@ import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
 import { strings } from "@/lib/strings";
 import { reportFailure } from "@/hooks/report-failure";
+import { useDesign } from "@/hooks/use-design";
 import { Waveform } from "./waveform";
 import { cn } from "@/lib/utils";
 import { segmentRowState } from "@/lib/view/segment-rows";
@@ -132,6 +133,9 @@ export function SegmentRow({
   guided = false,
 }: SegmentRowProps) {
   const state = segmentRowState(row);
+  // The O4 look (#944) branches the markup below; with the switch off every
+  // branch renders exactly what it did before.
+  const o4 = useDesign().design === "o4";
   const [menuOpen, setMenuOpen] = useState(false);
   // The menu is showing its rename field (#591) rather than its action list,
   // the rename write is in flight, and the last one did not land. All three
@@ -386,8 +390,63 @@ export function SegmentRow({
         ? strings.editSegment(ordinal, row.label)
         : strings.openSegment(ordinal, row.label);
 
+  // O4's typed title (#944): a 22px line over a 36px wave, or a 56px wave
+  // when there is no title. The current look keeps its 26px wave.
+  const titled = o4 && row.label != null && row.label !== "";
+  const waveHeight = o4 ? (titled ? 36 : 56) : 26;
+  // O4 paints the part past the playhead in `--s-voice-dim` while playing:
+  // `o4/segments.css` masks the canvas from this fraction on.
+  const o4Playing = o4 && playing;
+
+  const wave = hasClip ? (
+    <div
+      ref={trackRef}
+      role="slider"
+      tabIndex={0}
+      aria-label={strings.scrubSegment(ordinal)}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(fraction * 100)}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onKeyDown={onKeyDown}
+      className={
+        o4
+          ? cn("scrub min-w-0", o4Playing && "scrub--playing")
+          : "scrub min-w-0 flex-1"
+      }
+      style={
+        o4Playing
+          ? ({ "--row-played": `${fraction * 100}%` } as React.CSSProperties)
+          : undefined
+      }
+    >
+      <Waveform
+        peaks={row.peaks}
+        height={waveHeight}
+        finished={state === "finished"}
+      />
+      <span
+        className="scrub-dot"
+        style={{ left: `${fraction * 100}%` }}
+        aria-hidden="true"
+      />
+    </div>
+  ) : (
+    <div className={o4 ? "min-w-0" : "min-w-0 flex-1"}>
+      <Waveform peaks={null} height={waveHeight} recorded={false} />
+    </div>
+  );
+
   return (
-    <div className={cn("row", state === "finished" && "row--finished")}>
+    <div
+      className={cn(
+        "row",
+        state === "finished" && "row--finished",
+        o4 && menuOpen && "row--selected"
+      )}
+    >
       <button
         type="button"
         onClick={onOpenRecorder}
@@ -395,44 +454,35 @@ export function SegmentRow({
         aria-label={openLabel}
         className="row-open"
       >
-        <span className="row-status">
-          {state === "finished" && <Icon name="check" size={16} />}
-        </span>
-        <span className="t-ordinal row-heading">
-          {strings.segmentHeading(ordinal, row.label)}
-        </span>
+        {o4 ? (
+          // The ordinal stays on every row, finished included (#591); the
+          // finished state is the badge's done fill (#81), not a glyph in
+          // place of the number.
+          <span className="row-badge">{ordinal}</span>
+        ) : (
+          <>
+            <span className="row-status">
+              {state === "finished" && <Icon name="check" size={16} />}
+            </span>
+            <span className="t-ordinal row-heading">
+              {strings.segmentHeading(ordinal, row.label)}
+            </span>
+          </>
+        )}
       </button>
 
-      {hasClip ? (
-        <div
-          ref={trackRef}
-          role="slider"
-          tabIndex={0}
-          aria-label={strings.scrubSegment(ordinal)}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round(fraction * 100)}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onKeyDown={onKeyDown}
-          className="scrub min-w-0 flex-1"
-        >
-          <Waveform
-            peaks={row.peaks}
-            height={26}
-            finished={state === "finished"}
-          />
-          <span
-            className="scrub-dot"
-            style={{ left: `${fraction * 100}%` }}
-            aria-hidden="true"
-          />
+      {o4 ? (
+        <div className="row-mid">
+          {titled && (
+            // Visual only: the open button's name already carries the label.
+            <span className="row-title" aria-hidden="true">
+              {row.label}
+            </span>
+          )}
+          {wave}
         </div>
       ) : (
-        <div className="min-w-0 flex-1">
-          <Waveform peaks={null} height={26} recorded={false} />
-        </div>
+        wave
       )}
 
       {hasClip ? (
@@ -444,7 +494,7 @@ export function SegmentRow({
               : strings.playSegment(ordinal)
           }
           variant="play"
-          size={20}
+          size={o4 ? 30 : 20}
           className="flex-none"
           // Held with the other controls while a save refreshes the list: the
           // row still carries the pre-save durationMs, so an offset computed
@@ -457,7 +507,7 @@ export function SegmentRow({
           icon="record"
           label={strings.recordSegment(ordinal)}
           variant="record"
-          size={20}
+          size={o4 ? 28 : 20}
           className="flex-none"
           disabled={busy}
           // Never on a control held inert by a landing save: the ring would
