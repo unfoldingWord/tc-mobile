@@ -15,9 +15,11 @@ import { EraseConfirm } from "@/components/erase-confirm";
  * All three are the one `EraseConfirm`: the segment Erase, the recorder's
  * Erase-and-record-again path and the Books delete-book confirm each render
  * it with their own copy. The O4 look is CSS only, in
- * `src/app/styles/o4/dialogs.css`, and the component's markup is not touched —
- * so focus landing, the Tab trap and focus return run on the same DOM in both
- * looks by construction, and the existing EraseConfirm focus tests cover both.
+ * `src/app/styles/o4/dialogs.css`, and the component's markup is not touched.
+ * Inference, not a test result: focus landing and the Tab trap therefore run on
+ * the same DOM in both looks. The last describe below pins the two with the
+ * switch on; focus return belongs to each caller, not to this component, and
+ * is not exercised here.
  *
  * Two halves, because each alone can pass vacuously:
  *   1. the stylesheet's declarations carry the design values, every rule is
@@ -181,5 +183,35 @@ describe("o4/dialogs.css's selectors against EraseConfirm's real markup (#946)",
     // The dialog is up — so a null below is the scope, not an empty page.
     expect(document.querySelector(".confirm-panel")).not.toBeNull();
     for (const s of selectors) expect(document.querySelector(s), s).toBeNull();
+  });
+});
+
+describe("EraseConfirm's focus with the switch on (#946)", () => {
+  function tab(shiftKey = false) {
+    const e = new dom.window.KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey,
+      bubbles: true,
+      cancelable: true,
+    });
+    (document.activeElement ?? document.body).dispatchEvent(e);
+  }
+
+  it("lands on Cancel, and Tab wraps both ways inside the panel", async () => {
+    document.documentElement.setAttribute("data-design", "o4");
+    await mountConfirm();
+    const buttons = [
+      ...document.querySelectorAll<HTMLButtonElement>(".confirm-panel button"),
+    ];
+    expect(buttons).toHaveLength(2);
+    const [cancel, erase] = buttons;
+    expect(document.activeElement).toBe(cancel);
+
+    // Shift+Tab on the first control wraps to the last.
+    tab(true);
+    expect(document.activeElement).toBe(erase);
+    // Tab on the last control wraps back to the first.
+    tab();
+    expect(document.activeElement).toBe(cancel);
   });
 });
