@@ -939,6 +939,25 @@ export function redoCollapsesFrame(redoneOp: EditOp | null): boolean {
 }
 
 /**
+ * Whether an undo leaves the #613 collapse latched rather than reopening the
+ * frame — the undo half of {@link redoCollapsesFrame}.
+ *
+ * An undone paste does (#925): undoing it puts the phrase back on the
+ * clipboard (#489), and a new selection is available only once the clipboard
+ * is empty — the rule the requirements owner set on #489 and #835. So the
+ * stage shows the red line and the paste button, the state a cut leaves.
+ *
+ * An undone cut does not. Its audio is back in the take, and the frame
+ * reseeds where it came back, as it has since #613; the clipboard still
+ * holds the phrase, so this is the one route that opens a frame over a full
+ * clipboard, and it is named here rather than hidden. `null` — nothing was
+ * undone, or the undo failed to apply — reopens, as before.
+ */
+export function undoCollapsesFrame(undoneOp: EditOp | null): boolean {
+  return undoneOp?.kind === "paste";
+}
+
+/**
  * Whether the Record control is dead.
  *
  * Record is the control that LOCKS the insertion offset: `insertionOffset` is
@@ -1096,9 +1115,11 @@ export function centerlineOverlayShown(input: {
  * three of the reported symptoms are this one reseed.
  *
  * So a cut suspends it — `collapsedByCut` — until something asks for a frame
- * again: a paste, an undo, a redone paste (a redone cut re-latches it, #722),
- * leaving edit mode, or the stage coming to rest under a finger
- * (`recorder.tsx` clears the latch at each).
+ * again: a paste, an undone cut (an undone paste re-latches it, #925), a
+ * redone paste (a redone cut re-latches it, #722), or the stage coming to
+ * rest under a finger with the clipboard empty (#835). Leaving edit mode
+ * sets the latch to whether the clipboard is full, and so does opening the
+ * sheet (#925): edit mode opens on the red line while a paste is waiting.
  *
  * Three answers rather than a boolean, because the reseed block does two
  * things and only one of them is suspended: `"seed"` opens a span AND drops

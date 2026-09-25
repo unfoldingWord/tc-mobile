@@ -42,6 +42,7 @@ import {
   recordDisabled,
   redoCollapsesFrame,
   stageView,
+  undoCollapsesFrame,
   ZOOM_QUARTER,
   ZOOM_WHOLE,
 } from "./recorder-stage";
@@ -310,13 +311,24 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // because "no frame is open" is also the state the reseed EXISTS to fill;
     // only the cut knows the difference. Everything that should bring a frame
     // back clears it (`reopenFrame`).
-    const [cutCollapsed, setCutCollapsed] = useState(false);
+    //
+    // It starts from the clipboard (#925): the clipboard is chapter-wide and
+    // outlives this sheet (G3), so a sheet opened with a cut waiting enters
+    // edit mode on the red line and the paste button, not on a frame. A new
+    // selection is available only once the clipboard is empty — the rule set
+    // on #489 and #835. The latch only matters in edit mode
+    // (`selectionReseed` is inert in record mode), so starting it set costs
+    // record mode nothing.
+    const [cutCollapsed, setCutCollapsed] = useState(() => editor.canPaste);
     /**
      * Lift the #613 collapse: the next render may seed a frame again.
      *
-     * Called from every route that leaves the translator wanting one — a
-     * paste, an undo, and leaving edit mode all call it unconditionally. The
-     * lift of a stage drag is the fourth route, but since #835 it is
+     * Called from the routes that leave the translator wanting one — a paste
+     * calls it unconditionally, and an undo unless it undid a paste
+     * (`undoCollapsesFrame`, #925). Leaving edit mode no longer calls it:
+     * since #925 it sets the latch to `editor.canPaste` instead, so the next
+     * entry opens on the red line while a paste is waiting. The
+     * lift of a stage drag is the other route, but since #835 it is
      * conditional: `onPointerUp` only calls this when `liftOutcome` says
      * `reopenFrame`, which is false while the clipboard still holds a cut
      * (`editor.canPaste`) — the requirements owner's decision that a drag
@@ -1683,11 +1695,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // is the sentence that says so.
       stopPlayback();
       editor.closeSelection();
-      // Leaving edit ends the collapsed state too (#613): the next entry into
-      // edit mode opens on a frame, as it always has, rather than inheriting
-      // the last session's cut. This is also the route a translator takes to
-      // pick a second span deliberately — `[ ]` off, `[ ]` on.
-      reopenFrame();
+      // The next entry into edit mode opens on the red line and the paste
+      // button while the clipboard holds a cut, and on a frame only once it
+      // is empty (#925, the requirements owner's report on v0.2.12). Before
+      // #925 this lifted the collapse unconditionally, which made `[ ]` off,
+      // `[ ]` on a way to pick a second span with a paste still waiting; the
+      // rule set on #489 and #835 replaces that route with emptying the
+      // clipboard first — a paste (#489), or a discard once #862 lands.
+      setCutCollapsed(editor.canPaste);
       setZoom(ZOOM_WHOLE);
       // The zoom's view pan is edit-only, exactly as the zoom itself is. The
       // `viewPan` gate already makes it inert here (mode leaves "edit"), so this
@@ -1696,7 +1711,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setZoomPan(null);
       setMode("record");
       setMenuOpen(false);
-    }, [editor, stopPlayback, reopenFrame, setZoom, setZoomPan]);
+    }, [editor, stopPlayback, setZoom, setZoomPan]);
 
     // Zoom, keeping the picked span on screen (#91).
     //
@@ -1772,8 +1787,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // Undoing the cut puts the audio back, so the collapse it latched is
       // over (#613) — and so is the collapse a LATER undo steps past, since
       // the frame it reseeds is measured against the buffer that comes back.
-      reopenFrame();
-    }, [editor, stopPlaybackDroppingPan, length, reopenFrame, setPanState]);
+      // An undone PASTE is the exception (#925): it puts the phrase back on
+      // the clipboard (#489), so the stage collapses to the line and the
+      // paste button, as after the cut. `undoCollapsesFrame` holds the rule.
+      setCutCollapsed(undoCollapsesFrame(undoneOp));
+    }, [editor, stopPlaybackDroppingPan, length, setPanState]);
 
     const onRedo = useCallback(() => {
       stopPlaybackDroppingPan();
