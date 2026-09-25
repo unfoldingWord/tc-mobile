@@ -202,6 +202,32 @@ describe("useSegmentEditor: paste is one-shot (#489)", () => {
     expect(api().clip).toBeNull();
   });
 
+  it("redoing two cuts leaves the later one on the clipboard, as the forward pass did (R2 George)", async () => {
+    const api = await mountWithCut();
+    const step = async (fn: () => unknown) => {
+      await act(async () => {
+        fn();
+      });
+    };
+    await step(() => api().paste(0));
+    await step(() => api().openSelection({ start: 6, end: 8 }));
+    await step(() => api().cut()); // B = [16, 17]
+    await step(() => api().openSelection({ start: 6, end: 8 }));
+    await step(() => api().cut()); // C = [18, 19]
+    const C = Int16Array.from([18, 19]);
+    const FORWARD_END = Int16Array.from([12, 13, 14, 15, 10, 11]);
+    expect(api().working).toEqual(FORWARD_END);
+    expect(api().clip).toEqual(C);
+    for (let i = 0; i < 3; i++) await step(() => api().undo());
+    expect(api().working).toEqual(AFTER_CUT);
+    expect(api().clip).toEqual(CUT);
+    for (let i = 0; i < 3; i++) await step(() => api().redo());
+    // Round trip ends where the forward pass did: C is off `working`, so the
+    // clipboard must hold it — otherwise C lives only in the redo tail.
+    expect(api().working).toEqual(FORWARD_END);
+    expect(api().clip).toEqual(C);
+  });
+
   it("a redo never empties a clipboard holding a different phrase", async () => {
     const api = await mountWithCut();
     await act(async () => {

@@ -308,8 +308,10 @@ export function useSegmentEditor(
   // That copy is only safe until the later cut is REDONE, which takes the
   // audio back out of `working` (Frank/George R1: cut → paste → cut → undo ×2
   // → redo ×2 left the second cut's phrase only in the redo tail). So a redo
-  // of a cut puts its samples back on an EMPTY clipboard; a full one is left
-  // alone (a lone cut's undo/redo never emptied it).
+  // of a cut puts its samples on the clipboard, exactly as `cut()` did on the
+  // forward pass: the latest redone cut owns the slot. Refilling only an
+  // EMPTY slot was not enough — redoing two cuts in a row left the earlier
+  // one there and the later one nowhere (George R2).
   //
   // Redoing the paste empties it again, but only when the clipboard still
   // holds that paste's own samples — the same array, or the same samples a
@@ -334,9 +336,7 @@ export function useSegmentEditor(
     const applied = runEdit(() => {
       const nextLog = logRedo(log);
       const refill =
-        redoneOp.kind === "cut" && held === null
-          ? sliceRange(working, redoneOp.range)
-          : null;
+        redoneOp.kind === "cut" ? sliceRange(working, redoneOp.range) : null;
       return {
         next: { base, working: materialize(base, nextLog), log: nextLog },
         after: () => {
