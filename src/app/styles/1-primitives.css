@@ -63,7 +63,7 @@
     --p-red-100: #f8d6d2;
     --p-red-950: #3a1512;
 
-    /* --- Blue: the next required action, and nothing else ------------------- */
+    /* --- Blue: the next required action, the speaker, and covers until #957 - */
     --p-blue-500: #2e7df6;
     /* The "hear this" speaker pair. #937 D1 kept the speaker blue beside the
        guide; the Edit tile moved to slate. */
@@ -122,7 +122,7 @@
     --p-radius-22: 22px;
     --p-radius-26: 26px;
 
-    /* --- Type. Three sizes carry a whole screen. ---------------------------- */
+    /* --- Type: the current scale, then O4's (#937 D4) ---------------------- */
     /* system-ui first: no @font-face ships (R-13, #161) — naming a face here
        that never renders would just be wrong, not aspirational. */
     --p-font-ui: system-ui, ui-sans-serif, -apple-system, sans-serif;
