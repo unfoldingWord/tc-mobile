@@ -27,7 +27,12 @@ the tree wins, and the disagreement is worth an issue.
 ## Setup and commands
 
 Node **22.12+**, except the 23.x line (`engines` in `package.json`; a
-render-test dependency's own engine range excludes 23.x, #577).
+render-test dependency's own engine range excludes 23.x, #577). The iOS
+Xcode-selection cases in `tests/ios-workflow-gates.test.ts` exec `ruby` (with
+RubyGems for `Gem::Version`) on any platform, not only on the Mac setup in
+[`docs/native/README.md` §3](docs/native/README.md#3-one-time-mac-prerequisites).
+Without `ruby` on `PATH` those cases are skipped, not failed, so a green
+`npm test` / `npm run verify` on such a machine has not exercised them.
 
 ```bash
 npm ci
