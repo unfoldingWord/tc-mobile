@@ -263,3 +263,58 @@ describe("the guide ring is visible on every surface it is drawn on (#604)", () 
     });
   }
 });
+
+describe("the O4 roles clear the floors the workbench claimed for them (round 4, G9)", () => {
+  // Computed from token values only, like the rest of this file. These are
+  // the O4 pairs that carry an icon or text; decorative marks
+  // (`--s-mark-empty`) and the light share ring (2.96:1, an open decision in
+  // docs/design/o4-design-system.md) are deliberately not gated here.
+  const tileFills = ["--s-edit", "--s-name", "--s-send"] as const;
+  const coverFills = [
+    "--s-cover-amber",
+    "--s-cover-teal",
+    "--s-cover-plum",
+    "--s-cover-blue",
+  ] as const;
+
+  for (const theme of ["dark", "light"] as const) {
+    for (const fill of tileFills) {
+      it(`${theme}: --s-tile-ink on ${fill} clears 5:1 (G9's own claim)`, () => {
+        const ratio = contrast(
+          resolve(theme, "--s-tile-ink"),
+          resolve(theme, fill)
+        );
+        expect(ratio).toBeGreaterThanOrEqual(5);
+      });
+    }
+
+    for (const fill of coverFills) {
+      it(`${theme}: a white cover glyph on ${fill} clears the non-text floor`, () => {
+        // Amber is the weakest at 3.5:1, so covers are gated at 3:1, not 5:1.
+        const ratio = contrast(
+          resolve(theme, "--p-cool-000"),
+          resolve(theme, fill)
+        );
+        expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT);
+      });
+    }
+
+    for (const surface of ["--s-surface", "--s-well"]) {
+      it(`${theme}: --s-hear on ${surface} — the speaker glyph`, () => {
+        const ratio = contrast(
+          resolve(theme, "--s-hear"),
+          resolve(theme, surface)
+        );
+        expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT);
+      });
+    }
+
+    it(`${theme}: --s-warn-text on --s-warn-quiet — the storage banner words`, () => {
+      const ratio = contrast(
+        resolve(theme, "--s-warn-text"),
+        resolve(theme, "--s-warn-quiet")
+      );
+      expect(ratio).toBeGreaterThanOrEqual(AA_SMALL_TEXT);
+    });
+  }
+});

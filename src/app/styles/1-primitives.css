@@ -60,10 +60,38 @@
 
     /* --- Blue: the next required action, and nothing else ------------------- */
     --p-blue-500: #2e7df6;
+    /* O4 (workbench round 4) adds four more blues: the "hear this" speaker
+       pair and the Edit tile pair. That is a direct conflict with the line
+       above, which O4's own gap note G9 raises and does not settle. They are
+       added as primitives so the conflict is visible in one place; which
+       roles may read them is the open decision, not this file's. */
+    --p-blue-400: #4f93f8;
+    --p-blue-600: #1f66d6;
+    --p-blue-700: #2458d8;
+    --p-blue-800: #1f4fc4;
+    /* Book cover blue (O4). Sits between 700 and 800 in lightness. */
+    --p-blue-cover: #2450e0;
 
     /* --- Warning: storage pressure ----------------------------------------- */
     --p-warn-500: #d98b3a;
     --p-warn-950: #3a2810;
+    /* O4: the storage banner ground on light, and the warning ink on light. */
+    --p-warn-100: #fbe9d3;
+    --p-warn-700: #8a4f0f;
+
+    /* --- O4 tile and cover families (workbench round 4, G9) ------------------
+       Taken from O4's screenshots. Each clears 5:1 under a white icon except
+       where the O4 design system doc says otherwise. */
+    /* Violet: the Name tile and the naming pencil. */
+    --p-violet-600: #7c4ddb;
+    --p-violet-700: #6b35d0;
+    /* Teal: sharing. 300/500 are the progress ring, 700/750 the fill. */
+    --p-teal-300: #2bd4bf;
+    --p-teal-500: #14a898;
+    --p-teal-700: #11796d;
+    --p-teal-750: #0e7468;
+    /* Plum: a book cover only. */
+    --p-plum-700: #7a3570;
 
     /* --- Space. Doubling, so levels stay unconfusable. --------------------- */
     --p-space-1: 4px;
