@@ -1,3 +1,36 @@
-/* O4 — Share (14, 15, G7). Owner: #947. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file. */
+/* O4 — Share (14, 15, G7). Owner: #947. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file.
+ *
+ * WHAT THIS LANE COULD ACTUALLY REACH. The workbench's states 14 (share
+ * chapter), 15 (share progress) and G7 (share a whole book) are dominated by
+ * a 140/176 circular Share button — its send-ring, an animated
+ * packing-progress arc, per-item chips, an armed-pulse and a tap-hint hand.
+ * All of that lives inside `share-menu-section.tsx` (rendered from
+ * `books-screen.tsx` / `segments-screen.tsx` through `control.tsx`), none of
+ * which this lane owns or may edit (see the PR body for the ownership
+ * evidence). What this lane DOES own — the full-screen busy/outcome overlay,
+ * `components/share-progress.tsx` — issue #947 names on its own separate
+ * "Overlay: the share-progress overlay (#491, #850) in O4 colours" bullet:
+ * colour only, no new geometry asked of the overlay itself.
+ *
+ * So the one real, in-scope piece of #947 today is this: recolour the busy
+ * phase's spinning glyph from the current look's neutral `--s-ink-muted`
+ * (3-components.css, untouched) to O4's send-teal identity, `--s-send`
+ * (2-semantic.css; already merged, O4-only role). The extra
+ * `[data-design="o4"]` ancestor attribute selector below is strictly more
+ * specific than 3-components.css's own unscoped
+ * `.share-scrim[data-outcome="busy"] .share-progress-glyph` rule, so it wins
+ * regardless of cascade-layer/import order without that file needing to
+ * change — `tests/share-progress.test.ts` (which slices that exact block)
+ * passes unedited. Settled-outcome inks, the scrim, the panel box and the
+ * glyph's 48px size are left alone: #947's colour bullet does not name them,
+ * and they are not this rule's job.
+ *
+ * Everything else — the button widget, its ring, the chips, the pulse
+ * (assigned to the separate motion issue #950) — is deferred; see the PR
+ * body for the full list and the file-ownership evidence behind it.
+ */
 @layer components {
+  [data-design="o4"] .share-scrim[data-outcome="busy"] .share-progress-glyph {
+    color: var(--s-send);
+  }
 }
