@@ -130,6 +130,24 @@ export function bodyAfter(code: string, declaration: string): string {
 }
 
 /**
+ * The index of `needle` in `text`, throwing when it is absent **or occurs more
+ * than once**. `region` catches an anchor that went missing; it cannot catch
+ * one that still matches, but matches the wrong occurrence — a second
+ * `useLayoutEffect(() => {` added above the one a test names (#533, PR #531
+ * round 7). A plain `indexOf` silently means "the first"; this makes the
+ * test's assumption that there is only one fail at the moment it stops being
+ * true, rather than when the extra occurrence happens to move to the front.
+ */
+export function uniqueIndexOf(text: string, needle: string): number {
+  const at = text.indexOf(needle);
+  if (at === -1) throw new Error(`uniqueIndexOf: not found: ${needle}`);
+  if (text.indexOf(needle, at + 1) !== -1) {
+    throw new Error(`uniqueIndexOf: occurs more than once: ${needle}`);
+  }
+  return at;
+}
+
+/**
  * Slices `text.slice(from, to)`, and turns three silent-pass shapes into a
  * throw instead of a trivially-satisfied assertion:
  *
