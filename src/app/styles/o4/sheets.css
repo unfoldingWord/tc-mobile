@@ -38,6 +38,21 @@
     gap: 16px;
   }
 
+  /* While focus is in the name form, the sheet docks at the TOP instead.
+     NameEdit autofocuses its field, and nothing in the tree lifts a
+     bottom-docked sheet above the soft keyboard (no keyboard plugin, no
+     visualViewport handling, no interactive-widget in the viewport meta), so
+     at the bottom the keyboard could cover the field and Confirm. Scoped to
+     the whole form rather than the field, so a tap on Confirm, which moves
+     focus from the field to the button, does not move the sheet out from
+     under the finger. The top margin takes the inset the bottom one gave up. */
+  [data-design="o4"] .menu-scrim:has(.name-edit:focus-within) {
+    align-items: flex-start;
+  }
+  [data-design="o4"] .menu-panel:has(.name-edit:focus-within) {
+    margin-top: calc(8px + env(safe-area-inset-top));
+  }
+
   /* The handle, 56 × 5. Drawn, not a control: dismissal stays with Close, the
      scrim, Escape and Back, exactly as before. */
   [data-design="o4"] .menu-panel:has(.name-edit)::before {
@@ -86,5 +101,26 @@
     height: 80px;
     background: var(--s-done);
     color: var(--s-done-ink);
+  }
+
+  /* The guide ring (#604) cannot stay inset here: --s-guide on --s-done is
+     under the non-text floor in both themes (tests/contrast.test.ts), which
+     is the record button's reason for its outset ring too. So on this green
+     control the ring goes outside, onto the sheet's --s-surface, past a gap
+     band that clears the global focus outline (offset + its 2px width, from
+     globals.css) by 2px, so focus, gap and guide read as three separate
+     bands. The sheet's 16px side and 20px bottom padding hold the ring. */
+  [data-design="o4"] .name-edit > .control.is-guided {
+    box-shadow:
+      0 0 0 calc(var(--c-focus-offset) + 4px) var(--s-surface),
+      0 0 0 calc(var(--c-focus-offset) + 4px + var(--c-guide-ring))
+        var(--s-guide);
+  }
+
+  /* The rule above outranks 3-components.css's inert kill on specificity, so
+     a guided control nobody can tap keeps it off here too. */
+  [data-design="o4"] [inert] .name-edit > .control.is-guided,
+  [data-design="o4"] .name-edit > .control.is-guided[inert] {
+    box-shadow: none;
   }
 }

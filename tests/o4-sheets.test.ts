@@ -104,7 +104,7 @@ describe("o4/sheets.css — the name sheet (02, G4)", () => {
       for (const selector of selectors) {
         if (/\.menu-(scrim|panel)/.test(selector)) {
           expect(selector, selector).toMatch(
-            /\.menu-(scrim|panel):has\(\.name-edit\)/
+            /\.menu-(scrim|panel):has\(\.name-edit(:focus-within)?\)/
           );
         }
       }
@@ -123,6 +123,27 @@ describe("o4/sheets.css — the name sheet (02, G4)", () => {
     expect(sheet.get("margin")).toMatch(/^8px /);
     expect(sheet.get("height")).toBe("auto");
     expect(sheet.get("background")).toBe("var(--s-surface)");
+  });
+
+  it("docks the sheet at the TOP while the name form holds focus, away from the keyboard edge", () => {
+    // Nothing in the tree lifts a bottom-docked sheet above the soft keyboard
+    // (no keyboard plugin, no visualViewport handling, no interactive-widget),
+    // and NameEdit autofocuses its field. So while focus is anywhere in the
+    // form — the field or its Confirm, so tapping Confirm does not move the
+    // sheet under the finger — the sheet sits at the top, clear of the notch.
+    // Whether a given phone's keyboard then clears it is a device question
+    // this source read cannot answer.
+    const focused = `${O4} .menu-scrim:has(.name-edit:focus-within)`;
+    expect(rule(focused).get("align-items")).toBe("flex-start");
+    expect(
+      rule(`${O4} .menu-panel:has(.name-edit:focus-within)`).get("margin-top")
+    ).toBe("calc(8px + env(safe-area-inset-top))");
+    const order = (sel: string) =>
+      RULES.findIndex((r) => r.selectors.includes(sel));
+    expect(order(focused)).toBeGreaterThan(order(SCRIM));
+    expect(
+      order(`${O4} .menu-panel:has(.name-edit:focus-within)`)
+    ).toBeGreaterThan(order(SHEET));
   });
 
   it("draws a 56 × 5 handle above the header", () => {
@@ -149,6 +170,41 @@ describe("o4/sheets.css — the name sheet (02, G4)", () => {
     expect(Number.parseFloat(input.get("font-size") ?? "0")).toBeGreaterThan(
       16
     );
+  });
+
+  it("keeps the guide ring OFF the green Confirm: outset, past the focus outline (#604)", () => {
+    // The commit control is on --s-done, and --s-guide against --s-done is
+    // under the non-text floor in both themes (tests/contrast.test.ts), so the
+    // inherited inset ring would sit on a fill it cannot be told apart from.
+    // Outset, the ring sits on the sheet's --s-surface, which that test gates.
+    // The gap band runs past the global focus outline (offset + 2px width,
+    // globals.css) plus 2px, so a keyboard user sees focus, a gap, then the
+    // guide, as the record exception does.
+    const guided = rule(`${O4} .name-edit > .control.is-guided`);
+    const shadow = guided.get("box-shadow") ?? "";
+    expect(shadow).not.toMatch(/inset/);
+    expect(shadow).toBe(
+      "0 0 0 calc(var(--c-focus-offset) + 4px) var(--s-surface), " +
+        "0 0 0 calc(var(--c-focus-offset) + 4px + var(--c-guide-ring)) var(--s-guide)"
+    );
+  });
+
+  it("still drops the guide ring when the control is inert, as 3-components.css does", () => {
+    // The outset rule above outranks 3-components.css's `[inert] .is-guided`
+    // kill on specificity, so it needs its own, later in the file.
+    const kill = RULES.find((r) =>
+      r.selectors.includes(`${O4} [inert] .name-edit > .control.is-guided`)
+    );
+    expect(kill, "no inert rule for the guided Confirm").toBeDefined();
+    expect(kill!.selectors).toContain(
+      `${O4} .name-edit > .control.is-guided[inert]`
+    );
+    expect(kill!.declarations.get("box-shadow")).toBe("none");
+    const order = (sel: string) =>
+      RULES.findIndex((r) => r.selectors.includes(sel));
+    expect(
+      order(`${O4} [inert] .name-edit > .control.is-guided`)
+    ).toBeGreaterThan(order(`${O4} .name-edit > .control.is-guided`));
   });
 
   it("does not touch selection or the iOS callout (#556, #564)", () => {
