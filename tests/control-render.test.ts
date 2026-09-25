@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
 import { Control } from "@/components/control";
+import { editControlHint } from "@/components/edit-control-state";
 import { barHint, rowHint } from "@/components/menu-row-state";
 import { strings } from "@/lib/strings";
 
@@ -123,6 +124,40 @@ describe("Control's inert cells", () => {
     expect(el.getAttribute("aria-label")).toBe(
       `${strings.rerecord}. ${strings.stopToErase}`
     );
+  });
+
+  it("keeps a grey history arrow aria-disabled and spoken, with no badge painted (#924)", () => {
+    // The requirements owner read the ⚠ on a greyed Undo or Redo as an error
+    // (#924, v0.2.12): a grey arrow at either end of the edit stack is ordinary
+    // idle state, not a condition to look at — the reading #610 recorded for
+    // the toolbar Edit control and #624 answered by dropping its badge. The
+    // fix lives in `editControlHint` (no `icon`), so this reproduces the
+    // toolbar's exact call — `hint={editControlHint(undoBlocked)}`
+    // (`recorder-toolbars.tsx`) — and asserts BOTH halves the issue asks for
+    // at the markup the translator and the screen reader actually get: no
+    // `.control-hint` in the tree, and the reason still in the accessible
+    // name on a focusable, `aria-disabled` button rather than a natively
+    // disabled one Tab would skip (#135 round 2, #920's #91 row).
+    for (const [reason, label, icon, name] of [
+      ["nothing-to-undo", strings.undo, "undo", strings.nothingToUndo],
+      ["nothing-to-redo", strings.redo, "redo", strings.nothingToRedo],
+    ] as const) {
+      const container = render(
+        createElement(Control, {
+          icon,
+          label,
+          disabled: true,
+          hint: editControlHint(reason),
+        })
+      );
+      const el = one(container, "button");
+
+      expect(container.querySelector(".control-hint"), reason).toBeNull();
+      expect(one(container, ".control-hinted")).toBeTruthy();
+      expect(el.hasAttribute("disabled"), reason).toBe(false);
+      expect(el.getAttribute("aria-disabled"), reason).toBe("true");
+      expect(el.getAttribute("aria-label"), reason).toBe(`${label}. ${name}`);
+    }
   });
 
   it("keeps the bin natively disabled with no reason through the commit window, after Stop (#878)", () => {
