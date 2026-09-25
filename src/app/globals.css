@@ -40,6 +40,29 @@
   --color-done: var(--s-done);
   --color-live: var(--s-live);
   --color-warn: var(--s-warn);
+  /* O4 roles (workbench round 4). */
+  --color-well: var(--s-well);
+  --color-mark-empty: var(--s-mark-empty);
+  --color-card-edge: var(--s-card-edge);
+  --color-dim: var(--s-dim);
+  --color-voice-quiet: var(--s-voice-quiet);
+  --color-voice-dim: var(--s-voice-dim);
+  --color-playhead: var(--s-playhead);
+  --color-done-quiet: var(--s-done-quiet);
+  --color-live-quiet: var(--s-live-quiet);
+  --color-warn-quiet: var(--s-warn-quiet);
+  --color-warn-text: var(--s-warn-text);
+  --color-guide: var(--s-guide);
+  --color-hear: var(--s-hear);
+  --color-tile-ink: var(--s-tile-ink);
+  --color-edit: var(--s-edit);
+  --color-name: var(--s-name);
+  --color-send: var(--s-send);
+  --color-send-ring: var(--s-send-ring);
+  --color-cover-amber: var(--s-cover-amber);
+  --color-cover-teal: var(--s-cover-teal);
+  --color-cover-plum: var(--s-cover-plum);
+  --color-cover-blue: var(--s-cover-blue);
 }
 
 html,

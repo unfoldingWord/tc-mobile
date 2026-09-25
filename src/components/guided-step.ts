@@ -132,10 +132,9 @@ function booksStep(
     return view.namingChapter
       ? { kind: "create-chapter" }
       : { kind: "add-chapter", bookId: book.bookId };
-  // Past the newest book's first chapter, or naming a further book. Someone
-  // making a second book — or whose newest book already holds a chapter — has
-  // done this before, and the terminal chain below (expand/open that book) is
-  // not walked for them. #834's decision reaches only the Add-chapter branch
+  // Reached once the newest book has a chapter, or a further-book dialog is
+  // open. A second book, or that dialog: do not walk expand/open. A single
+  // book falls through. #834's decision reaches only the Add-chapter branch
   // above, not this one.
   if (books.length > 1 || view.naming) return null;
   // Adding a further chapter is not a first-run step, and the shelf is inert
