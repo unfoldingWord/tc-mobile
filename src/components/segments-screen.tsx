@@ -26,7 +26,8 @@ import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import type { SegmentsAudio } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
-import { useEraseSegment } from "@/hooks/use-erase-segment";
+import type { FailureKey } from "@/hooks/save-failure";
+import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useScreenLayers } from "@/hooks/use-screen-layers";
 import { useScrollToNew } from "@/hooks/use-scroll-to-new";
@@ -98,6 +99,12 @@ interface SegmentsScreenProps {
    * "only one row plays at a time" falls out of that single floor for free.
    */
   audio: SegmentsAudio;
+  /**
+   * The single erase, held by App so ONE in-flight guard covers both entry
+   * points (#160, L-12). This screen keeps its own record of whether the erase
+   * IT asked for failed, and with which key — see `eraseFailure` below.
+   */
+  erase: UseEraseSegment;
   onBack: () => void;
   onOpenRecorder: (segmentId: SegmentId, ordinal: number) => void;
   /** Register an open overlay as a Back layer. `useNavStack`'s, through App. */
@@ -117,7 +124,7 @@ export const SegmentsScreen = forwardRef<
   SegmentsScreenHandle,
   SegmentsScreenProps
 >(function SegmentsScreen(
-  { chapterId, audio, onBack, onOpenRecorder, pushLayer, popLayer },
+  { chapterId, audio, erase, onBack, onOpenRecorder, pushLayer, popLayer },
   ref
 ) {
   const {
@@ -207,7 +214,20 @@ export const SegmentsScreen = forwardRef<
   const pendingRenameFocus = useRef(false);
   const renameChapterControlRef = useRef<HTMLButtonElement | null>(null);
   const share = useChapterShare();
-  const erase = useEraseSegment();
+  // This screen's own record of "the erase I asked for failed", as the
+  // `strings`-mapped KEY it failed with (#172 — `noRoom` on a full disk). NOT
+  // the hook's:
+  // one instance is shared with the recorder sheet now (#160, L-12), and a
+  // shared flag would paint this screen's failure inside the sheet. The hook
+  // owns the in-flight guard, which genuinely must be single; whose failure it
+  // was is the caller's to remember.
+  const [eraseFailure, setEraseFailure] = useState<FailureKey | null>(null);
+  // Bumped on a "busy" refusal to remount EraseConfirm: its Erase tap latched
+  // an in-flight ref that only an open edge resets, and a refused call never
+  // closes the dialog, so Confirm and Cancel would stay dead. The fresh mount
+  // reads `busy={erase.erasing}` (true while the other caller holds the guard),
+  // so it is protected until that erase settles, then usable again.
+  const [confirmMount, setConfirmMount] = useState(0);
   // MEMBERS, never the objects — and this is #452's own open question 3,
   // answered here on this screen's evidence as the design asks PR4 to do.
   //
@@ -683,18 +703,24 @@ export const SegmentsScreen = forwardRef<
       // pause control — the same R-B6 hole. `stopBuffer`, not `leave()`: a
       // recording in progress is never ours to cancel from a list erase (#103).
       else if (audio.playingBuffer) audio.stopBuffer();
+      // Clear only when this call will acquire the guard — the hook's "busy"
+      // check reads the same ref in this same turn, so a refusal (the other
+      // screen holding the one shared guard) leaves an earlier failure shown.
+      if (!erase.isErasing()) setEraseFailure(null);
       const result = await erase.erase(eraseTarget);
       // On success patch that ONE row to never-recorded in place — NOT reload(),
       // which deadens every transport while it re-walks the chapter's PCM
-      // (George R-B6). "failed" leaves `erase.error` for the Notice; a
+      // (George R-B6). A failure records its key on this screen for the Notice; a
       // double-tap's "busy" is ignored so the confirm does not vanish under the
-      // first erase.
+      // first erase, and leaves the flag alone — the first erase owns it.
       if (result === "ok") eraseRow(eraseTarget);
+      else if (result !== "busy") setEraseFailure(result.failed);
       // Both real outcomes take the confirm down, so both take its layer down
       // (#494 item 3 — a layer whose overlay is gone traps Back at this depth).
       // `"busy"` returns without touching either: the first erase still owns
       // them, and its own settle is what closes them.
       if (result !== "busy") closeErase();
+      else setConfirmMount((n) => n + 1);
     })();
   }, [audio, closeErase, erase, eraseTarget, eraseRow]);
   // The list is hidden from AT while a dialog is up, mirroring the recorder
@@ -736,11 +762,11 @@ export const SegmentsScreen = forwardRef<
   // invite CTA (the only enabled create, no Retry here) up with the error in the
   // Notice, not tear it down and strand focus on Back (George R3 P2).
   const loadFailed = error !== null && !loaded;
-  // `error` and `erase.error` are `strings`-mapped KEYs (#172), never the raw
+  // `error` and `eraseFailure` are `strings`-mapped KEYs (#172), never the raw
   // store message a screen would otherwise speak verbatim — resolved here,
   // once, so every render site below reads the mapped copy.
   const chapterErrorText = error ? strings[error] : null;
-  const eraseErrorText = erase.error ? strings[erase.error] : null;
+  const eraseErrorText = eraseFailure ? strings[eraseFailure] : null;
   // See books-screen: hide the header create + while the invite's own primary
   // CTA is up, so there is one create action, announced once.
   const showEmpty = !staleTarget && loaded && rows.length === 0;
@@ -907,6 +933,7 @@ export const SegmentsScreen = forwardRef<
       </div>
 
       <EraseConfirm
+        key={confirmMount}
         open={eraseTarget !== null}
         title={strings.eraseConfirmTitle}
         confirmLabel={strings.eraseConfirm}

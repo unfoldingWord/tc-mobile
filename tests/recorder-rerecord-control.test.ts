@@ -23,6 +23,18 @@ import { mountInteractive, type InteractiveMount } from "./interactive-mount";
  * `recorder-rerecord.test.ts` fixture for one case, it uses the same
  * `mountInteractive` helper `recorder-edit-toolbar-glyph.test.ts` uses.
  */
+/**
+ * The erase surface `App` now owns and passes down (#160, L-12). Resting: a
+ * static render never erases, and "no erase in flight" is what the bar's own
+ * gate reads. Written here rather than mocked at the module, because the sheet
+ * takes it as a PROP now — a module mock would intercept nothing.
+ */
+const erase = {
+  erase: vi.fn(async () => "ok" as const),
+  erasing: false,
+  isErasing: () => false,
+};
+
 const boundary = vi.hoisted(() => ({ view: null as unknown }));
 vi.mock("@/hooks/use-recorder-segment", () => ({
   useRecorderSegment: () => ({
@@ -99,6 +111,7 @@ function renderBar(
     createElement(Recorder, {
       segmentId: "segment" as SegmentId,
       audio,
+      erase,
       saveRecording: async () => true,
       saveEditedSegment: async () => true,
       clipboard: null,
@@ -250,6 +263,7 @@ describe("the bar's bin does not erase during a live take (#903)", () => {
         createElement(Recorder, {
           segmentId: "segment" as SegmentId,
           audio,
+          erase,
           saveRecording: async () => true,
           saveEditedSegment: async () => true,
           clipboard: null,

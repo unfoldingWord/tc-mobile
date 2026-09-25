@@ -40,9 +40,10 @@ vi.mock("@/lib/storage/takes", async (importOriginal) => {
  * `useRef`/`useState`) are not exercised HERE. The mounted jsdom suites reach
  * part of that through the real `Recorder`: `tests/recorder-rerecord.test.ts`
  * (the busy control, and close blocked during an erase) and
- * `tests/recorder-erase-back.test.ts` (the `isErasing()` close guard). No test
- * calls `erase()` again while the first call is pending, so the double-tap
- * guard itself is not exercised anywhere. This file covers
+ * `tests/recorder-erase-back.test.ts` (the `isErasing()` close guard). The
+ * double-tap guard itself — a second `erase()` while the first is still
+ * pending — is covered by `tests/erase-guard.test.ts`, which mounts the hook
+ * in jsdom (#160, L-12). This file covers
  * `performErase`: the call it makes to the real store, the outcome that
  * leaves, the success/failure result it returns. That is what these cover,
  * against fake-indexeddb through the real store helpers.
