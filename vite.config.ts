@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 
 import react from "@vitejs/plugin-react";
@@ -13,6 +14,7 @@ import pkg from "./package.json" with { type: "json" };
 // ERR_MODULE_NOT_FOUND. `allowImportingTsExtensions` in tsconfig.node.json is
 // what lets the `.ts` be named here (Frank R1, #697).
 import { SHIPPED_LOCALE, withLocaleAttributes } from "./src/lib/locale.ts";
+import { NATIVE_TEARDOWN_SW } from "./src/lib/service-worker-policy.ts";
 
 // The exact commit a build came from, for the footer stamp (with the version).
 // git works in the Cloudflare Workers build (it clones the repo) and in local
@@ -87,6 +89,30 @@ function localeHtmlPlugin(): Plugin {
   };
 }
 
+// Native build only (#923): overwrite the `sw.js` vite-plugin-pwa's
+// `selfDestroying` branch just wrote with `NATIVE_TEARDOWN_SW`, whose teardown
+// is bound to the activate event's lifetime via `waitUntil` — the plugin's own
+// script is not (see that constant's docblock). `closeBundle` is where the
+// plugin writes its worker; `order: "post"` + `sequential` runs this after it.
+// `selfDestroying` stays on so the plugin still skips Workbox's generateSW.
+function nativeTeardownSwPlugin(): Plugin {
+  let outDir = "dist";
+  return {
+    name: "native-teardown-sw",
+    apply: "build",
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+    },
+    closeBundle: {
+      order: "post",
+      sequential: true,
+      handler() {
+        writeFileSync(path.join(outDir, "sw.js"), NATIVE_TEARDOWN_SW, "utf8");
+      },
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   // Native-only build mode (`vite build --mode native`, `npm run
   // build:native`). Capacitor's WebView loads the bundle from local files
@@ -123,6 +149,7 @@ export default defineConfig(({ mode }) => {
       react(),
       versionJsonPlugin(),
       localeHtmlPlugin(),
+      ...(isNativeBuild ? [nativeTeardownSwPlugin()] : []),
       VitePWA({
         registerType: "autoUpdate",
         // `dev-dist` lets us verify offline behaviour in `vite dev` instead of
@@ -144,11 +171,11 @@ export default defineConfig(({ mode }) => {
         // the web build's behaviour identical once `injectRegister` starts
         // varying by mode.
         injectRegister: isNativeBuild ? false : "auto",
-        // Native build only (#923): swap the emitted `dist/sw.js` for
-        // vite-plugin-pwa's own built-in self-unregistering, cache-clearing
-        // worker (`generateServiceWorker`'s `selfDestroying` branch in
-        // `node_modules/vite-plugin-pwa/dist/index.js`) instead of the normal
-        // Workbox precache worker. This is what actually reaches a phone that
+        // Native build only (#923): skip the normal Workbox precache worker.
+        // The plugin's `selfDestroying` branch writes its own teardown script,
+        // which `nativeTeardownSwPlugin` above then replaces with
+        // `NATIVE_TEARDOWN_SW` (lifetime-bound via `waitUntil`). The emitted
+        // `dist/sw.js` is what actually reaches a phone that
         // upgraded in place while still running an OLD worker: the browser's
         // OWN service-worker update check re-fetches the already-registered
         // `sw.js` script URL and byte-compares it — independent of whatever

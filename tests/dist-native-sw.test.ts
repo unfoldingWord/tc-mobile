@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { NATIVE_TEARDOWN_SW } from "@/lib/service-worker-policy";
+
 import { resolveDistGate } from "./dist-gate";
 
 /**
@@ -54,6 +56,15 @@ describe.skipIf(GATE === "skip")(
     // Quality job. Deferring the read into each `it()` is what keeps the
     // skip a real skip.
     const sw = () => readFileSync(SW, "utf8");
+
+    it("is exactly NATIVE_TEARDOWN_SW, not vite-plugin-pwa's own teardown", () => {
+      // The plugin's selfDestroying script never calls `event.waitUntil`, so
+      // its teardown can be cut short (bench round 1, Frank #1).
+      // `vite.config.ts`'s nativeTeardownSwPlugin overwrites it; the worker's
+      // lifetime behaviour is pinned in tests/service-worker-policy.test.ts.
+      expect(sw()).toBe(NATIVE_TEARDOWN_SW);
+      expect(sw()).toMatch(/event\.waitUntil\(/);
+    });
 
     it("self-unregisters on activate, rather than precaching anything", () => {
       // The exact behaviour a phone stuck on an OLD worker needs: this is

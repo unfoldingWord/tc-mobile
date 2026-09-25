@@ -14,8 +14,8 @@
  *
  * The reliable half of the fix is build-time, not runtime: `vite.config.ts`'s
  * `--mode native` swaps the native build's `dist/sw.js` for
- * `vite-plugin-pwa`'s own `selfDestroying: true` worker, which unregisters
- * itself and clears every cache on activation. A phone already running an OLD
+ * {@link NATIVE_TEARDOWN_SW}, which unregisters itself and deletes the
+ * Workbox caches on activation. A phone already running an OLD
  * worker reaches that new script through the BROWSER's own service-worker
  * update check — which re-fetches the already-registered `sw.js` URL and
  * byte-compares it — a mechanism that runs independent of whatever
@@ -69,3 +69,51 @@ export function isWorkboxCacheName(name: string): boolean {
 export function selectCachesToDelete(names: readonly string[]): string[] {
   return names.filter(isWorkboxCacheName);
 }
+
+/**
+ * The exact `dist/sw.js` the native build ships (#923), written over
+ * `vite-plugin-pwa`'s own `selfDestroying` output by `vite.config.ts`'s
+ * `nativeTeardownSwPlugin`.
+ *
+ * Why not the plugin's own script: its `activate` handler starts the
+ * unregister → navigate → cache-delete chain but never hands it to
+ * `event.waitUntil()`, and never returns the inner `caches.keys()` /
+ * `Promise.all` chain either. The Service Worker spec lets a worker be
+ * terminated once no extended lifetime promise is pending, so that teardown
+ * could stop part-way — the phone stays on the stale bundle (bench round 1,
+ * Frank #1). Here one promise covers unregistration, every cache deletion and
+ * every client navigation, and it is the one passed to `waitUntil`.
+ *
+ * Caches are deleted by the same `workbox-` prefix {@link isWorkboxCacheName}
+ * uses, so the upgrade-launch teardown and the runtime cleanup share one
+ * policy rather than one wiping every cache and the other only Workbox's. The
+ * prefix is repeated as a literal because this string runs in a worker, not in
+ * this module; `tests/service-worker-policy.test.ts` executes it against fake
+ * worker globals and pins both the lifetime binding and the prefix.
+ *
+ * Plain ES2017 with no imports: it is served as-is, never bundled.
+ */
+export const NATIVE_TEARDOWN_SW = `// tC Mobile native teardown worker (#923). Unregisters itself, deletes the
+// Workbox caches an older web-mode worker left behind, then reloads every
+// window it controlled onto the bundle the app now ships from local files.
+self.addEventListener("install", (event) => {
+  event.waitUntil(self.skipWaiting());
+});
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    self.registration.unregister()
+      .then(() => self.caches.keys())
+      .then((names) =>
+        Promise.all(
+          names
+            .filter((name) => name.startsWith("workbox-"))
+            .map((name) => self.caches.delete(name))
+        )
+      )
+      .then(() => self.clients.matchAll({ type: "window" }))
+      .then((clients) =>
+        Promise.all(clients.map((client) => client.navigate(client.url)))
+      )
+  );
+});
+`;
