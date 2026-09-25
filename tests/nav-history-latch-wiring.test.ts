@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { bodyAfter, matchingBraceClose, stripComments } from "./support";
+
 /**
  * The adapter asks the #435 latch before every history write a UI command
  * makes, and replays what it deferred at every landing.
@@ -30,34 +32,7 @@ import { describe, expect, it } from "vitest";
  */
 const sourceUrl = new URL("../src/hooks/use-nav-stack.ts", import.meta.url);
 
-const stripComments = (text: string) =>
-  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
 const code = stripComments(readFileSync(sourceUrl, "utf8"));
-
-const matchingBraceClose = (body: string, openIndex: number): number => {
-  let depth = 0;
-  for (let i = openIndex; i < body.length; i++) {
-    if (body[i] === "{") depth++;
-    else if (body[i] === "}") {
-      depth--;
-      if (depth === 0) return i;
-    }
-  }
-  return -1;
-};
-
-/** The first `{ ... }` block after `marker`, braces included. */
-const bodyAfter = (marker: string): string => {
-  const start = code.indexOf(marker);
-  if (start === -1) throw new Error(`${marker} not found — renamed or moved?`);
-  const open = code.indexOf("{", start + marker.length);
-  const close = matchingBraceClose(code, open);
-  if (open === -1 || close <= open) {
-    throw new Error(`${marker}: body braces not found`);
-  }
-  return code.slice(open, close + 1);
-};
 
 const index = (body: string, pattern: RegExp): number => {
   const at = body.search(pattern);
@@ -69,7 +44,7 @@ describe.each([
   ["openChapter", "onOpenChapterRef.current("],
   ["openRecorder", "onOpenRecorderRef.current("],
 ])("%s asks the latch before either half runs (#435)", (name, stateHalf) => {
-  const body = bodyAfter(`const ${name} = useCallback(`);
+  const body = bodyAfter(code, `const ${name} = useCallback(`);
   // Keyed by its own screen, so a repeat of this command coalesces in the
   // deferred queue and the other command's entry does not (`deferWrite`).
   const key = name === "openChapter" ? "enter-segments" : "enter-recorder";
@@ -103,7 +78,7 @@ describe.each([
 });
 
 describe("pushLayer arms the floor through the latch (#435)", () => {
-  const body = bodyAfter("const pushLayer = useCallback(");
+  const body = bodyAfter(code, "const pushLayer = useCallback(");
 
   it("isolates a real body — the one that registers the layer", () => {
     expect(body).toMatch(/layerStack\.current\s*=/);
@@ -123,14 +98,14 @@ describe("pushLayer arms the floor through the latch (#435)", () => {
 
 describe("the latch's own plumbing", () => {
   it("performWrite queues a deferral through deferWrite, which coalesces repeats", () => {
-    const performBody = bodyAfter("const performWrite = useCallback(");
+    const performBody = bodyAfter(code, "const performWrite = useCallback(");
     expect(performBody).toMatch(
       /deferredWrites\.current\s*=\s*deferWrite\(\s*deferredWrites\.current\s*,\s*write\s*\)/
     );
   });
 
   it("performWrite is the only caller of enterScreen() and armFloor()", () => {
-    const performBody = bodyAfter("const performWrite = useCallback(");
+    const performBody = bodyAfter(code, "const performWrite = useCallback(");
     expect(code.match(/\benterScreen\(\)/g) ?? []).toHaveLength(1);
     expect(code.match(/\barmFloor\(\)/g) ?? []).toHaveLength(1);
     expect(performBody).toMatch(/\benterScreen\(\)/);
@@ -138,14 +113,17 @@ describe("the latch's own plumbing", () => {
   });
 
   it("the replay re-decides through replayDecision, which cannot refuse", () => {
-    const replay = bodyAfter("const replayDeferredWrites = useCallback(");
+    const replay = bodyAfter(code, "const replayDeferredWrites = useCallback(");
     expect(replay).toMatch(/replayDecision\s*\(/);
     expect(replay).not.toMatch(/historyWriteDecision\s*\(/);
     expect(replay).toMatch(/deferredWrites\.current\s*=\s*\[\s*\]/);
   });
 
   it("the popstate listener routes the landing, THEN replays", () => {
-    const listener = bodyAfter("const onPopState = (event: PopStateEvent) =>");
+    const listener = bodyAfter(
+      code,
+      "const onPopState = (event: PopStateEvent) =>"
+    );
     const land = index(listener, /\bland\(\s*event\s*\)/);
     const replay = index(listener, /replayDeferredWrites\(\s*\)/);
     expect(land).toBeLessThan(replay);
@@ -156,7 +134,7 @@ describe("the latch's own plumbing", () => {
 });
 
 describe("replayDeferredWrites restores the unreplayed tail before it rethrows (#802)", () => {
-  const replay = bodyAfter("const replayDeferredWrites = useCallback(");
+  const replay = bodyAfter(code, "const replayDeferredWrites = useCallback(");
 
   it("walks the queue through replayQueue rather than a bare loop", () => {
     expect(replay).toMatch(/replayQueue\(\s*queued\s*,/);
@@ -185,9 +163,9 @@ describe("replayDeferredWrites restores the unreplayed tail before it rethrows (
 });
 
 describe("the programmatic recorder close is arbitrated, not a raw back() (#763)", () => {
-  const close = bodyAfter("const commitCloseRecorder = useCallback(");
-  const consume = bodyAfter("const consumeRecorderEntry = useCallback(");
-  const replay = bodyAfter("const replayDeferredWrites = useCallback(");
+  const close = bodyAfter(code, "const commitCloseRecorder = useCallback(");
+  const consume = bodyAfter(code, "const consumeRecorderEntry = useCallback(");
+  const replay = bodyAfter(code, "const replayDeferredWrites = useCallback(");
 
   it("isolates real bodies — the close runs the state half, the consume decides", () => {
     expect(close).toContain("onRecorderClosedRef.current(");
@@ -204,15 +182,48 @@ describe("the programmatic recorder close is arbitrated, not a raw back() (#763)
     expect(close).not.toMatch(/suppressPop\.current\s*=/);
   });
 
-  it('the consume issues its one back() only after beginBack("commit-close") has set the guard', () => {
-    const backs = consume.match(/window\.history\.back\s*\(\s*\)/g) ?? [];
-    expect(backs).toHaveLength(1);
-    const begin = index(
-      consume,
-      /travelGuard\.current\s*=\s*beginBack\(\s*travelGuard\.current\s*,\s*"commit-close"\s*\)\.next/
-    );
-    expect(begin).toBeLessThan(consume.search(/window\.history\.back\s*\(/));
-  });
+  it(
+    'the consume issues its one back() only when beginBack("commit-close") returns ok, ' +
+      "and arms nothing on refusal (#838 item 2, Frank r1 on #854)",
+    () => {
+      // Exactly one window.history.back() in the whole consume body — the
+      // "issue" row's ok branch — not one per row and not an unconditional
+      // call outside the ok check.
+      const backs = consume.match(/window\.history\.back\s*\(\s*\)/g) ?? [];
+      expect(backs).toHaveLength(1);
+
+      const beginIdx = index(
+        consume,
+        /const\s+begun\s*=\s*beginBack\(\s*travelGuard\.current\s*,\s*"commit-close"\s*\)/
+      );
+      const ifIdx = consume.indexOf("if", beginIdx);
+      const ifBraceOpen = consume.indexOf("{", ifIdx);
+      const ifBraceClose = matchingBraceClose(consume, ifBraceOpen);
+      expect(ifBraceOpen).toBeGreaterThan(-1);
+      expect(ifBraceClose).toBeGreaterThan(ifBraceOpen);
+      const ifBody = consume.slice(ifBraceOpen, ifBraceClose + 1);
+
+      // Everything after the ok branch up to the row's return: the refusal path.
+      const rowReturn = consume.indexOf("return", ifBraceClose);
+      expect(rowReturn).toBeGreaterThan(ifBraceClose);
+      const refusalPath = consume.slice(ifBraceClose + 1, rowReturn);
+
+      // The ok branch: sets the guard from begun.next, absorbs, THEN calls
+      // the one back() — the same order the commit-close settle's ok branch
+      // uses (`nav-commit-close-race-guards.test.ts` pins that arm).
+      expect(ifBody).toMatch(/travelGuard\.current\s*=\s*begun\.next/);
+      expect(ifBody).toMatch(/suppressPop\.current\s*=\s*true/);
+      expect(
+        ifBody.match(/window\.history\.back\s*\(\s*\)/g) ?? []
+      ).toHaveLength(1);
+
+      // The refusal path: no landing is in flight on this row, so it must
+      // neither arm suppressPop (goBack would swallow the next Back — Frank
+      // r1 on #854) nor issue a back().
+      expect(refusalPath).not.toMatch(/suppressPop\.current\s*=/);
+      expect(refusalPath).not.toMatch(/window\.history\.back\s*\(/);
+    }
+  );
 
   it("the replay hands a deferred consume back to consumeRecorderEntry, not to performWrite", () => {
     expect(replay).toMatch(

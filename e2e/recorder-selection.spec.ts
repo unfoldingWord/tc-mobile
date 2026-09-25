@@ -2,6 +2,8 @@ import { existsSync } from "node:fs";
 
 import { expect, test, type Locator } from "@playwright/test";
 
+import { clickEditRecording, editRecordingButton } from "./recorder-fixtures";
+
 // Shipped-build computed styles cover the real cascade, including Tailwind and
 // inline overrides. Chromium cannot verify the iOS callout; that is issue #564.
 async function expectSelectionSuppressed(root: Locator) {
@@ -88,10 +90,9 @@ test.describe("handle targets after a zoom fit", () => {
       await expect(
         page.getByRole("button", { name: "Record", exact: true })
       ).toBeVisible();
-      await page
-        .locator(".recorder-toolbar")
-        .getByRole("button", { name: "Edit recording", exact: true })
-        .click();
+      // #846/#848/#825: wait for the real precondition (the commit, not the
+      // Record button's label) before clicking — see recorder-fixtures.ts.
+      await clickEditRecording(page);
       const startHandle = page.getByLabel("Selection start", { exact: true });
       const endHandle = page.getByLabel("Selection end", { exact: true });
       await expect(startHandle).toBeVisible();
@@ -169,26 +170,42 @@ test.describe("edit mode toggle", () => {
         page.getByRole("button", { name: "Stop recording", exact: true })
       ).toBeVisible();
       await page.waitForTimeout(1200);
-      if (width === 390) {
-        // The two widths reach Edit from the two states a take can be in since
-        // #614. 320px enters edit mode from a LIVE take, which `commitTake`
-        // commits on the way in (#134). 390px ends the take first: the tap that
-        // used to be Pause now commits it in place, so the control comes back
-        // as Record and the toolbar Edit below opens over audio that is already
-        // on the waveform. Both must land the frame at the same slot, which is
-        // what this case is about.
-        await page
-          .getByRole("button", { name: "Stop recording", exact: true })
-          .click();
-        await expect(
-          page.getByRole("button", { name: "Record", exact: true })
-        ).toBeVisible();
-      }
-      const toggle = page
-        .locator(".recorder-toolbar")
-        .getByRole("button", { name: "Edit recording", exact: true });
+      // #857 (Moto G tester report): the toolbar Edit control stays inert
+      // while a take is live — asserted before Stop is tapped, at BOTH
+      // widths, since the toolbar's own layout could plausibly diverge on
+      // how it renders `aria-disabled` at a narrower breakpoint. While
+      // disabled the accessible name carries the block reason
+      // (`strings.stopToEdit`, round 1 of #857's review), which is why
+      // `editRecordingButton` (`recorder-fixtures.ts`) matches by prefix,
+      // not exact name.
+      const liveToggle = editRecordingButton(page);
+      await expect(liveToggle).toHaveAttribute("aria-disabled", "true");
+      await expect(liveToggle).toHaveJSProperty("disabled", false);
+      // Stop, then wait for the commit to land — "Record" reappearing pins
+      // the post-Stop render (`recorder-fixtures.ts`'s own pattern: a
+      // `not.toHaveAttribute("aria-busy", ...)` polled before that pin can
+      // pass on the pre-Stop, not-yet-busy frame), and the `aria-busy` wait a
+      // few lines down (`editRecordingButton`/`toggle`, reused from
+      // `recorder-fixtures.ts` and now matched by PREFIX rather than exact
+      // name — see that file's docblock) is what actually waits out
+      // `commitTake`'s own async tail. #857 removed the one-tap live-take
+      // entry #134 built — `commitTake("edit")` is no longer reachable from
+      // either toolbar control (`menu-row-state.ts`'s `editRowReason`) — so
+      // Stop-then-Edit is now the only path at EITHER width; the two widths
+      // still differ on layout/breakpoint, which the frame-slot assertions
+      // below are for.
+      await page
+        .getByRole("button", { name: "Stop recording", exact: true })
+        .click();
+      await expect(
+        page.getByRole("button", { name: "Record", exact: true })
+      ).toBeVisible();
+      const toggle = editRecordingButton(page);
       const before = await toggle.boundingBox();
       expect(before).not.toBeNull();
+      // #846/#848/#825: wait for the real precondition before clicking. See
+      // recorder-fixtures.ts.
+      await expect(toggle).not.toHaveAttribute("aria-busy", "true");
       await toggle.click();
       await expect(
         page.getByLabel("Selection start", { exact: true })
@@ -265,8 +282,13 @@ test.describe("edit mode toggle", () => {
       };
       // #613: a cut COLLAPSES the frame onto the centerline, which is then
       // the paste target — it does not reseed a new span the way undo, redo
-      // and paste do. Cutting twice in a row is therefore two taps plus a
-      // touch on the waveform, and this is the state in between.
+      // and paste do. Since #835, dragging the waveform does not reseed one
+      // either while the clipboard still holds the cut: the requirements
+      // owner's decision on #835 (2026-09-24) is that a new selection is
+      // available only once the clipboard is empty — today that means a
+      // paste; undo and redo already always reopen the frame regardless.
+      // Cutting twice in a row is therefore a paste in between, not a touch
+      // on the waveform.
       const canvasBounds = async () =>
         (await page.locator(".recorder-canvas").boundingBox())!;
       const expectCollapsedOntoTheLine = async () => {
@@ -285,11 +307,19 @@ test.describe("edit mode toggle", () => {
           page.getByRole("button", { name: "Paste at the line", exact: true })
         ).toBeVisible();
       };
-      // Touching the waveform is what asks for a span again without leaving
-      // edit mode (`onPointerUp` → `reopenFrame`).
-      const reopenFrameFromTheWaveform = async () => {
-        await page.locator(".recorder-canvas").click();
-        return expectUsableFrame();
+      // #835: a drag on the waveform while the clipboard holds a cut must
+      // leave the collapsed line exactly where it was — this is the reported
+      // bug (drag left or right, lift, and the selection window used to come
+      // back). `onPointerUp` still runs on the lift; `liftOutcome`'s
+      // `reopenFrame` is what now stays false while `canPaste` is true.
+      const dragStaysCollapsed = async () => {
+        const canvas = page.locator(".recorder-canvas");
+        const box = (await canvas.boundingBox())!;
+        await canvas.dragTo(canvas, {
+          sourcePosition: { x: box.width * 0.7, y: 60 },
+          targetPosition: { x: box.width * 0.3, y: 60 },
+        });
+        await expectCollapsedOntoTheLine();
       };
 
       // #613 review (jag3773 P3): the Cut row must reserve the WHOLE of what
@@ -314,26 +344,36 @@ test.describe("edit mode toggle", () => {
         .click();
       await expectCollapsedOntoTheLine();
       expect(await canvasBounds()).toEqual(canvasBeforeCut);
-      const firstCutLength = await reopenFrameFromTheWaveform();
+      // The #835 regression: dragging right after the cut must not restore
+      // the selection window while this cut is still on the clipboard.
+      await dragStaysCollapsed();
       expect(await canvasBounds()).toEqual(canvasBeforeCut);
-      expect(firstCutLength).toBeLessThan(originalLength);
+      // A second cut is reachable by pasting first (Tim's decision on #835)
+      // — not, as it was before #835, by a touch on the waveform. The cut
+      // and this paste are an exact round trip (paste re-inserts precisely
+      // what cut removed), so the reopened frame is back at `originalLength`.
+      await page
+        .getByRole("button", { name: "Paste at the line", exact: true })
+        .click();
+      expect(await expectUsableFrame()).toBe(originalLength);
       await page
         .getByRole("button", { name: "Cut the selection", exact: true })
         .click();
       await expectCollapsedOntoTheLine();
-      const secondCutLength = await reopenFrameFromTheWaveform();
-      expect(secondCutLength).toBeLessThan(firstCutLength);
+      // Same #835 assertion after the second cut.
+      await dragStaysCollapsed();
       await page.getByRole("button", { name: "Undo", exact: true }).click();
-      expect(await expectUsableFrame()).toBe(firstCutLength);
+      expect(await expectUsableFrame()).toBe(originalLength);
       // A redone cut collapses onto the line like the live one (#722); undo
       // above still reopens the frame where the audio came back.
       await page.getByRole("button", { name: "Redo", exact: true }).click();
       await expectCollapsedOntoTheLine();
-      expect(await reopenFrameFromTheWaveform()).toBe(secondCutLength);
+      // #835: the redo-collapsed frame does not reopen on a drag either.
+      await dragStaysCollapsed();
       await page
         .getByRole("button", { name: "Paste at the line", exact: true })
         .click();
-      expect(await expectUsableFrame()).toBe(firstCutLength);
+      expect(await expectUsableFrame()).toBe(originalLength);
       if (width === 320) {
         // Center the whole buffer, then drag both handles to its boundaries.
         await toggle.click();
@@ -358,9 +398,23 @@ test.describe("edit mode toggle", () => {
           await page.mouse.up();
         }
         await expect(startHandle).toHaveAttribute("aria-valuenow", "0");
+        // The buffer is whole again after the round trip above, so dragging
+        // the end handle to the canvas's right edge selects up to whatever
+        // that current total (`aria-valuemax`) is — read fresh rather than
+        // assumed, since #835 changed how this state was reached.
+        const reenterLength = Number(
+          await endHandle.getAttribute("aria-valuemax")
+        );
+        // #897: the buffer is whole again (comment above), so this read
+        // should equal the segment's original length. Without this, the
+        // handle assertion right below compares `aria-valuenow` to
+        // `reenterLength` — a value read from the SAME attribute pair one
+        // line earlier — so it would hold for any length the handle drag
+        // reached, including a wrong one, and never fail.
+        expect(reenterLength).toBe(originalLength);
         await expect(endHandle).toHaveAttribute(
           "aria-valuenow",
-          String(firstCutLength)
+          String(reenterLength)
         );
         await page
           .getByRole("button", { name: "Cut the selection", exact: true })
@@ -368,13 +422,13 @@ test.describe("edit mode toggle", () => {
         await expect(startHandle).toHaveCount(0);
         await expect(toggle).toHaveAttribute("aria-pressed", "true");
         await page.getByRole("button", { name: "Undo", exact: true }).click();
-        expect(await expectUsableFrame()).toBe(firstCutLength);
+        expect(await expectUsableFrame()).toBe(reenterLength);
         await page.getByRole("button", { name: "Redo", exact: true }).click();
         await expect(startHandle).toHaveCount(0);
         await page
           .getByRole("button", { name: "Paste at the line", exact: true })
           .click();
-        expect(await expectUsableFrame()).toBe(firstCutLength);
+        expect(await expectUsableFrame()).toBe(reenterLength);
       }
       await page
         .getByRole("button", { name: "Done editing", exact: true })
@@ -424,10 +478,9 @@ test.describe("edit toolbar keeps the ≡ off the leading edge (#370)", () => {
       await expect(
         page.getByRole("button", { name: "Record", exact: true })
       ).toBeVisible();
-      await page
-        .locator(".recorder-toolbar")
-        .getByRole("button", { name: "Edit recording", exact: true })
-        .click();
+      // #846/#848/#825: wait for the real precondition (the commit, not the
+      // Record button's label) before clicking — see recorder-fixtures.ts.
+      await clickEditRecording(page);
       await expect(
         page.getByLabel("Selection start", { exact: true })
       ).toBeVisible();
@@ -520,10 +573,10 @@ test.describe("selection handle focus ring at 0%/100% (#659)", () => {
       await page
         .getByRole("button", { name: "Stop recording", exact: true })
         .click();
-      await page
-        .locator(".recorder-toolbar")
-        .getByRole("button", { name: "Edit recording", exact: true })
-        .click();
+      // #846/#848/#825: this spec never waited for "Record" to reappear
+      // either — wait for the real precondition before clicking. See
+      // recorder-fixtures.ts.
+      await clickEditRecording(page);
       await page
         .getByRole("button", {
           name: "Zoomed to the whole segment. Zoom in to a quarter.",

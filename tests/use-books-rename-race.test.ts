@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { stripComments } from "./support";
+
 /**
  * `renameBook`'s catch had the identical race `addChapter`'s catch had before
  * PR #728 fixed it for #666: a genuine (non-stale) reported failure sets the
@@ -26,9 +28,6 @@ import { describe, expect, it } from "vitest";
  */
 describe("renameBook invalidates an in-flight load on a reported failure (#732, mirrors #728's addChapter fix)", () => {
   const sourceUrl = new URL("../src/hooks/use-books.ts", import.meta.url);
-
-  const stripComments = (text: string) =>
-    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 
   const code = stripComments(readFileSync(sourceUrl, "utf8"));
 
@@ -87,8 +86,13 @@ describe("renameBook invalidates an in-flight load on a reported failure (#732, 
     expect(swallowedBlock).toMatch(/reload\(\)/);
 
     // Bumped in the same synchronous step that sets the Notice, and once.
+    // #172 added a `reportFailure(reported, "books-rename")` call ahead of
+    // the bump, inside the same wrapper — the pattern below was widened to
+    // admit it, not to admit a weaker guarantee: the bump is still inside
+    // the callback, still synchronous with `report`, and still exactly once
+    // (the length check below is unchanged).
     expect(catchBody).toMatch(
-      /reportUnlessStale\(\s*cause,\s*bookId,\s*\(\s*(\w+)\s*\)\s*=>\s*\{\s*loadGen\.current\s*\+=\s*1;\s*report\(\s*\1\s*\);?\s*\}\s*,?\s*\)/
+      /reportUnlessStale\(\s*cause,\s*bookId,\s*\(\s*(\w+)\s*\)\s*=>\s*\{\s*reportFailure\(\s*\1,\s*"books-rename"\s*\);\s*loadGen\.current\s*\+=\s*1;\s*report\(\s*\1\s*\);?\s*\}\s*,?\s*\)/
     );
     expect(catchBody.match(/loadGen\.current/g)).toHaveLength(1);
   });

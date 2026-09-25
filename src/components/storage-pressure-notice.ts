@@ -57,18 +57,30 @@
  *   same reason `hasContent` did (no books ⇒ no chapters ⇒ no recorded
  *   segments), so that case stays covered by construction, not by keeping
  *   both predicates.
- * - **The acute trio — `loading`, `loadFailed`, `deleteFailed`.** The load/
- *   delete/loading slot above this line in `books-screen.tsx` is exclusive
- *   and acute-first; this line must retract while any of the three is live,
- *   the same way it retracts while that slot is showing something. The gate
- *   is deliberately narrower than that slot's own `noticeText`, which also
+ * - **`deleteFailed`.** The load/delete/loading slot above this line in
+ *   `books-screen.tsx` is exclusive and acute-first; this line must retract
+ *   while a delete has failed, the same way it retracts while that slot is
+ *   showing something. Narrower than that slot's own `noticeText`, which also
  *   covers a failed `addChapter` — a quota-shaped write failure, precisely
  *   the case this feature exists to warn about. Gating on the wider
  *   `noticeText` would retract the pressure warning exactly when a failed
  *   write makes it most relevant.
+ *
+ *   **`loading` and `loadFailed` were dropped from this gate (#843 item 4,
+ *   repeat of round-2 P3-3/#533).** Both were unreachable in combination with
+ *   `hasReclaimableAudio: true` from the only caller: `loadFailed` requires
+ *   `loaded === false` (`books-screen.tsx`'s `error !== null && !loaded`),
+ *   `hasReclaimableAudio` requires `loaded === true` (`loaded &&
+ *   hasReclaimableAudio(books)`), and `loading` starts `true` only while
+ *   `loaded` is still `false` and is set back to `false` in the same batched
+ *   update (`use-books.ts`'s load effect: `setLoaded(true)` on the success
+ *   path and `setLoading(false)` in that same effect's `finally`) that would
+ *   first let `loaded` — and so `hasReclaimableAudio` — read `true`. So
+ *   `!gate.hasReclaimableAudio` already retracted the line in both states;
+ *   the pair added nothing this caller could ever trigger.
  */
 
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 import type { NoticeTone } from "./notice-tone";
 import type { StoragePressureMarker } from "@/lib/storage/pressure";
 
@@ -90,10 +102,6 @@ export interface StoragePressureGate {
    * — a book or chapter with zero recordings used to still show the full
    * warning with no remediation available. */
   readonly hasReclaimableAudio: boolean;
-  /** The shelf is (re)loading. */
-  readonly loading: boolean;
-  /** The last shelf load failed. */
-  readonly loadFailed: boolean;
   /** The last delete failed. */
   readonly deleteFailed: boolean;
 }
@@ -107,7 +115,7 @@ export function storagePressureNotice(
 ): StoragePressureNotice | null {
   if (marker === null) return null;
   if (!gate.hasReclaimableAudio) return null;
-  if (gate.loading || gate.loadFailed || gate.deleteFailed) return null;
+  if (gate.deleteFailed) return null;
   return marker === "critical"
     ? { tone: "alert", text: strings.storageCritical }
     : { tone: "info", text: strings.storageLow };

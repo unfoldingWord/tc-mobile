@@ -172,10 +172,13 @@ installed APK or TestFlight bundle.
 - [ ] Patch release and `develop → staging` promotion reviewed and green.
 - [ ] Production minor-bump branch/ref strategy recorded; `0.3.0` candidate
       checked and version reconciliation back to development branches planned.
-- [ ] `check:deploy` confirms the staging version and promoted SHA.
+- [ ] `check:deploy` confirms the staging version and promoted SHA; the PASS
+      line is pasted into `docs/progress_tracker.md` (#840 R7 — v0.2.10's
+      staging deploy went unconfirmed in the tracker until a later audit).
 - [ ] Production promotion reviewed and green; previous deployment recorded.
 - [ ] `staging → main` merged; `v0.3.0` points to that merge commit.
-- [ ] `check:deploy:prod` confirms the production version and promoted SHA.
+- [ ] `check:deploy:prod` confirms the production version and promoted SHA;
+      the PASS line is pasted into `docs/progress_tracker.md` (#840 R7).
 - [ ] Native run SHAs match the release tag; versions/build numbers recorded.
 - [ ] TestFlight build processed, assigned and installable by facilitators.
 - [ ] GitHub Release on `v0.3.0` has the fresh signed APK attached and the

@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { newBookCta, seedToRecorder, seedToSegments } from "./support/seed";
+
 /**
  * The system-Back model's browser-only half (#452 PR2, `hooks/use-nav-stack.ts`),
  * against the SHIPPED `dist/` build.
@@ -40,11 +42,6 @@ import { expect, test, type Page } from "@playwright/test";
  *     — its exact end state stays a device item (see `use-nav-stack.ts`).
  */
 
-/** The Books "New book" corner/CTA — the only text layer this UI has. */
-function newBookCta(page: Page) {
-  return page.getByRole("button", { name: "New book" });
-}
-
 /**
  * The monotonic index the adapter stamps on the current history entry.
  *
@@ -61,61 +58,6 @@ function navIndex(page: Page): Promise<number | undefined> {
   return page.evaluate(
     () => (window.history.state as { index?: number } | null)?.index
   );
-}
-
-/**
- * Seed one book with one chapter and land on that chapter's Segments screen.
- * Driven through the real UI (the shipped build exposes no seeding harness).
- *
- * It goes through the New Book dialog, so since Amendment G (#452 PR3) it is
- * NOT a walk over a shelf that pushes nothing: that dialog is a floor layer, so
- * opening it ARMS the shelf's one protective entry, and closing it by creating
- * the book leaves that entry standing (case (g)). `openChapter`'s `enterScreen`
- * then RE-STAMPS the standing entry rather than stacking a second one on it
- * (case (i)) — so Segments is still exactly one Back from Books. This comment
- * used to say Books "does NOT push a history entry", which stopped being true
- * with PR3 (#536 item 4); cases (c)/(d) already moved to relative indices for
- * the same reason, and `navIndex`'s docblock has the general rule.
- */
-async function seedToSegments(page: Page) {
-  await page.goto("/");
-  // Empty shelf: the only "New book" is the empty-state CTA (the header + is
-  // hidden while empty).
-  await newBookCta(page).click();
-  await expect(
-    page.getByRole("dialog", { name: "Name your new book" })
-  ).toBeVisible();
-  // Confirm alone accepts the pre-filled placeholder name — the one-tap create.
-  await page.getByRole("button", { name: "Create book" }).click();
-
-  // The new book opens expanded; add its first chapter. Add chapter opens a
-  // naming prompt of its own (#609) — a second overlay, opened and closed
-  // inside this seed, so it arms no history entry the New Book dialog above
-  // has not already armed (`floorEntryForLayerChange`, and `popLayer` touches
-  // history not at all). The index assertions below are what prove that.
-  await page.getByRole("button", { name: /^Add chapter to/ }).click();
-  await page.getByRole("button", { name: "Create chapter" }).click();
-  // Open the chapter → Segments. This is the first transition that pushes a
-  // protective history entry.
-  await page.getByRole("button", { name: "Open Chapter 1" }).click();
-  await expect(
-    page.getByRole("button", { name: "Back to books" })
-  ).toBeVisible();
-}
-
-/** From Segments, add one segment and open its recorder sheet. */
-async function seedToRecorder(page: Page) {
-  await seedToSegments(page);
-  // Empty chapter: the only "Add segment" is the empty-state CTA.
-  await page.getByRole("button", { name: "Add segment" }).click();
-  await expect(
-    page.getByRole("button", { name: "Record segment 1" })
-  ).toBeVisible();
-  // Open the recorder sheet (Segments → Recorder) — a second protective push.
-  await page.getByRole("button", { name: "Record segment 1" }).click();
-  await expect(
-    page.getByRole("button", { name: "Close recorder" })
-  ).toBeVisible();
 }
 
 test("(a) Back from Segments returns to Books (stays on the app's own document — tab floor, see header)", async ({

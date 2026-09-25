@@ -20,7 +20,8 @@ import { segmentsListInert } from "./segments-inert";
 import { shareGapText, shareProgressText } from "./share-error-copy";
 import { ShareMenuSection } from "./share-menu-section";
 import { ShareProgress } from "./share-progress";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
+import { ThemeControl } from "./theme-control";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import type { SegmentsAudio } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
@@ -735,6 +736,11 @@ export const SegmentsScreen = forwardRef<
   // invite CTA (the only enabled create, no Retry here) up with the error in the
   // Notice, not tear it down and strand focus on Back (George R3 P2).
   const loadFailed = error !== null && !loaded;
+  // `error` and `erase.error` are `strings`-mapped KEYs (#172), never the raw
+  // store message a screen would otherwise speak verbatim — resolved here,
+  // once, so every render site below reads the mapped copy.
+  const chapterErrorText = error ? strings[error] : null;
+  const eraseErrorText = erase.error ? strings[erase.error] : null;
   // See books-screen: hide the header create + while the invite's own primary
   // CTA is up, so there is one create action, announced once.
   const showEmpty = !staleTarget && loaded && rows.length === 0;
@@ -815,9 +821,7 @@ export const SegmentsScreen = forwardRef<
             arbitrary utilities here, so the 44px floor reads the same
             `--c-control-md` every other control does. */}
         <button type="button" onClick={onBack} className="breadcrumb">
-          <span>
-            {bookName} &gt; {chapterHeading}
-          </span>
+          <span>{strings.chapterBreadcrumb(bookName, chapterHeading)}</span>
         </button>
         {!showEmpty && (
           <Control
@@ -847,10 +851,8 @@ export const SegmentsScreen = forwardRef<
           Share speaks in its own menu, not here. */}
       {staleTarget ? (
         <Notice>{strings.staleChapter}</Notice>
-      ) : (error ??
-        audio.error ??
-        (erase.error ? strings.eraseFailed : null)) ? (
-        <Notice>{error ?? audio.error ?? strings.eraseFailed}</Notice>
+      ) : (chapterErrorText ?? audio.error ?? eraseErrorText) ? (
+        <Notice>{chapterErrorText ?? audio.error ?? eraseErrorText}</Notice>
       ) : loading ? (
         // First mount: a slow chapter (sequential PCM walk) is otherwise a
         // header over a blank list with no reason given (G8).
@@ -993,8 +995,13 @@ export const SegmentsScreen = forwardRef<
                 `control-affordance.ts` names as the rule this wiring
                 follows. `renameChapter` also now clears `error` at the START
                 of the write (`use-chapter-segments.ts`); either half alone
-                still leaves the other channel wrong (George, #395). */}
-            {error && !savingChapterName && <Notice>{error}</Notice>}
+                still leaves the other channel wrong (George, #395).
+
+                `error` is a `strings`-mapped KEY (#172), never the raw store
+                message. */}
+            {chapterErrorText && !savingChapterName && (
+              <Notice>{chapterErrorText}</Notice>
+            )}
           </>
         ) : (
           <>
@@ -1032,6 +1039,24 @@ export const SegmentsScreen = forwardRef<
               onPrepare={onPrepareShare}
               onSend={onSendShare}
             />
+            {/* The theme toggle, the one global entry that follows you into a
+                chapter (#149). LAST on purpose: `Menu` lands focus on its
+                first actionable child, and that must stay Rename/Share — the
+                reasons you opened this menu — not a control that repaints the
+                screen. Which holds here unconditionally, unlike in the
+                recorder: Rename above carries no `disabled` and no `hint`, so
+                it is always the first actionable child. If a later change
+                gives it a hinted state, focus moves here in that state, and
+                the recorder's comment is where that trade is argued.
+
+                Books-only was right while the global menu held a
+                licence notice; it stopped being right when the menu grew a
+                control for direct sun, which arrives mid-session.
+
+                It is inside the panel's `inert` subtree above (#491), so a
+                share overlay that owns the screen covers this too, with no
+                guard of its own. */}
+            <ThemeControl />
           </>
         )}
       </Menu>

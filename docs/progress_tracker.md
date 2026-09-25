@@ -11,6 +11,108 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-25 (Docker session) — v0.2.12 promoted and verified on staging, with the launch intro, and the tester build released
+
+The DRI tried a launch intro on a Worker preview and asked to ship it. Their words, verbatim: "ok i LOVE that. lets ship it into staging. can we slipstream into 0.2.11 or must it be a new point release. either is fine." It shipped as a new point release, because 0.2.11 was already on staging and on tester builds. The intro merged as #917, before George's T3 round, on the DRI's call; that is recorded on #917.
+
+### Shipped
+
+| What                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Evidence                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **v0.2.12 on staging**: 17 PRs since the v0.2.11 bump (list in #918), including #917. No schema change (`DB_VERSION` stays 8). Bump #918 was merged with a merge commit so the promotion #919 carries the same bump commit, `6094205a`.                                                                                                                                                                                                                                                                                      | `npm run check:deploy` at promotion time: `Deployed: version=0.2.12 sha=3b066ba builtAt=2026-09-25T01:02:28.151Z` / `PASS: https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build.`                                                                                                                                        |
+| **Pre-release [`tester-build-v0.2.12`](https://github.com/unfoldingWord/tc-mobile/releases/tag/tester-build-v0.2.12)** at staging `3b066ba`, with `app-release.apk` from APK run 36081125693. It was first published as `android-release-v0.2.12`, then re-issued under the tester-build prefix that #629 decided (`docs/native/README.md`) and that the v0.2.11 and first v0.2.12 releases had missed. DRI pick, verbatim: "Re-issue as tester-build (Recommended)". The old page stays up as a pointer, with the same APK. | The APK's `version.json` reads 0.2.12 at `3b066ba`, and it bundles the intro. Its v2 signing certificate SHA-256 is `eed23e1b…34baf2`, the same as v0.2.11's. The public asset URL returns 200, and its SHA-256 matches the uploaded file. The tester-build asset URL returns 200 with the same hash, and a QR code of it decodes back to it exactly. |
+| **TestFlight** at `3b066ba`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Run 36081310599 succeeded.                                                                                                                                                                                                                                                                                                                            |
+| **Device checklist #920** carries every #915 row forward and adds the v0.2.12 rows.                                                                                                                                                                                                                                                                                                                                                                                                                                          | #915 has a pointer comment to #920.                                                                                                                                                                                                                                                                                                                   |
+
+### Next
+
+- Run the #920 pass on a phone, including the intro's felt length. No one has timed it on a device yet.
+- After 2026-09-26 21:15 UTC: set `PLAY_UPLOAD_ENABLED` and upload to the internal track (#874).
+- Board sweep (114 issues, 12 PRs, read-only agents, DRI picks): closed #772 and #915 (superseded by #920), and #311 and #320 (re-proved by TestFlight run 36081310599). Closed #688 and #669 (superseded by #678, with Jesse's credit kept). #629 closes with #922.
+
+---
+
+## 2026-09-24 (late evening, Docker session) — after the v0.2.11 cut: 14 PRs merged, the Play lane's first build_only pass, an upload-key mix-up found and reset, and an open-issue scan
+
+This follows the entry below in the same session. The DRI asked for "3-4 lanes" on the backlog, then called a stopping point: no new issues after 22:00Z, finish what is in flight, EOD.
+
+### Shipped (merged to develop after the v0.2.11 bump)
+
+| PR   | What                                                                                                               | Closes       |
+| ---- | ------------------------------------------------------------------------------------------------------------------ | ------------ |
+| #887 | The edit toolbar's menu opener is ⋮; ≡ only at the top right                                                       | #863         |
+| #892 | After a cut, dragging keeps the red playhead until the clipboard is empty (the requirements owner's rule on #835)  | #835         |
+| #888 | The test-tier rule covers every `src/` path; unlisted paths default to T1 (DRI: "Confirm all three (Recommended)") | #864         |
+| #886 | Books and Segments show mapped copy (`loadFailed` / `saveFailed` / `noRoom`), never raw browser text               | part of #172 |
+| #895 | The Commit Messages gate checks only commits not already on develop for staging/main PRs                           | #891         |
+| #904 | That gate's test runs the step for each base ref instead of matching substrings                                    | #901         |
+| #896 | This tracker's v0.2.11 deploy PASS line                                                                            | —            |
+| #898 | The bin says why it is unavailable during a live take ("Stop recording to erase.")                                 | #878         |
+| #902 | The glyph test renders the whole Recorder header                                                                   | #890         |
+| #899 | Play `build_only` needs only the signing secrets; README names the Play lane                                       | #893         |
+| #906 | Pins the `canPaste` dependency, fixes the 320px length check, corrects the paste comment                           | #897         |
+| #911 | Clicks the live-take bin and asserts nothing erases; tightens the glyph test's guards                              | #907         |
+
+Before these, and still this session: the v0.2.11 bump (#885) and promotion (#889). The promotion is recorded in the entry below.
+
+### v0.2.11 tester build released
+
+- **Pre-release [`android-release-v0.2.11`](https://github.com/unfoldingWord/tc-mobile/releases/tag/android-release-v0.2.11)** at staging `9662da9`, with `app-release.apk` from APK run 36066787724. The APK's own `version.json` reads 0.2.11 at `9662da9`. Its signing certificate SHA-256 is `eed23e1b…34baf2`, the same as v0.2.10's, so it installs in place. It was read from the v2 signing block with apksigtool, which was first checked against the v0.2.10 APK. The asset link needs no login, and a QR code of it decodes back to the exact URL.
+- **TestFlight** run 36066815909 succeeded at `9662da9`.
+- **The tester announcement** follows v0.2.10's shape: changed since v0.2.10, seven "what to test" steps, and known limits. The developer checklist is **#915**, which carries forward #772's open rows.
+
+### Google Play lane (#874)
+
+- The first `build_only` run from staging passed (run 36058347482): a signed .aab was built and the upload step was skipped, as intended. `keytool -printcert` on the artifact gives upload-key SHA-256 `98:E7:EF:93:…:32:53`.
+- **The Play Console listed our release key (`EE:D2:…:BA:F2`) as the upload key.** The likely cause, inferred and not checked: pepk enrollment registered no separate upload certificate. It was not the old OBS account. The DRI requested an upload key reset with the upload certificate PEM. Google's notice says the new key is valid from **2026-09-26 21:15 UTC**. `vars.PLAY_UPLOAD_ENABLED` stays unset until then.
+
+### Decisions (DRI, verbatim)
+
+- The #889 promotion's red Commit Messages check: "Merge + scope gate (Recommended)" (fixed by #895).
+- #888's tier defaults: "Confirm all three (Recommended)".
+- #886's Frank r2 P2: "Our lane fixes it (Recommended)". #886 merged before the fix landed; the fix is #905.
+- #899's docs-only change after round 1: "Merge without round 2 (Recommended)".
+- The open-issue scan: close #594 and #602 (the requirements owner's "leave as-is" calls), close #713 (refiled as #900), close #233 as superseded by Dependabot, and drop `needs-decision` from #13.
+- #904 merged with George clean and Frank not run. The exemption is recorded on the PR.
+
+### Still open at EOD
+
+- **#905** (Part of #172): quota classification never throws on a hostile cause. The review bench's fix for Frank r1's blocking finding is `2fc08574`. It needs round 2 from both reviewers.
+- **#908** (Part of #894): tests for the chapter-set-finished and chapter-rename failure keys. George is clean; Frank is still to run.
+- **#910** (Closes #172): the recorder's load and erase paths use failure keys. It needs both reviewers and, as a T2 change, a check on an Android and an iOS phone. It conflicts with #684 in `recorder.tsx`.
+- **The checks on a phone still owed:** #886 and #910 (T2), plus the usual #772 and #245.
+
+### Follow-up issues filed (P3 batches, not started)
+
+#890 (done), #893 (done), #894, #897 (done), #900, #901 (done), #903 (item 2 is the copy sign-off), #907 (done), #909, #912, #913.
+
+### Next
+
+1. After 2026-09-26 21:15 UTC: confirm the Console's pending-reset banner is gone, set `vars.PLAY_UPLOAD_ENABLED`, dispatch `android-play.yml` on staging without `build_only`, roll out the release in Internal testing, and send the join link.
+2. Finish #905, #908 and #910 through review, then cut v0.2.12 (#678 and everything above are on develop and not yet on staging).
+3. The requirements owner signs off `stopToEdit` ("Stop recording to edit.") and `stopToErase` ("Stop recording to erase."), tracked in #903.
+4. #843 item 3 is a DRI call: keep or clear the storage warning when a re-read fails.
+5. AGENTS.md's milestone table names "v0.3.0 — Oct: East Africa training", but the milestone is "v0.3.0 — Oct: training". Fix it with the next AGENTS.md change.
+
+---
+
+## 2026-09-24 (evening, Docker session) — v0.2.11 promoted and verified on staging
+
+v0.2.11 was cut from develop at `a3ec786f` (after #869, per the DRI's "Wait for #869"), bumped by #885 (`48f9fb86`), and promoted by #889. #889's head was `release/v0.2.11`, pinned at the bump commit, so #678, which merged to develop after the bump, is not in this cut. The promotion's Commit Messages check was red on 20 bodyless commits already on develop; the DRI's pick, verbatim, was "Merge + scope gate (Recommended)", and the gate fix is #891.
+
+### Shipped
+
+| What                                                                                                 | Evidence                                                                                                                                                                                                       |
+| ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **v0.2.11 on staging**: 91 PRs since v0.2.10 (list in #885), no schema change (`DB_VERSION` stays 8) | `npm run check:deploy` at promotion time: `Deployed: version=0.2.11 sha=9662da9 builtAt=2026-09-24T20:55:09.473Z` / `PASS: https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build.` |
+
+### Next
+
+- Re-cut the native lanes (TestFlight, APK) from `staging`, and dispatch `android-play.yml` with `build_only=true` (DRI).
+- The device checks still wait on a phone: #772 and #245.
+
+---
+
 ## 2026-09-24 — v0.2.10 staging deploy confirmed retroactively, closing a gap found by a PR audit
 
 v0.2.10 was promoted by #775 (release bump #773), but no one ran `npm run check:deploy` at promotion time, so the deploy was never confirmed in this tracker. A 2026-09-24 PR audit found the gap; this entry records the check, run after the fact against the still-current staging build.

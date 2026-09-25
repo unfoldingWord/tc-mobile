@@ -2,7 +2,7 @@
  * Count-varying wording, chosen by the locale's plural rule rather than by an
  * English `n === 1` ternary.
  *
- * Six labels in `components/strings.ts` used to branch on `n === 1` inline.
+ * Six labels in `lib/strings.ts` used to branch on `n === 1` inline.
  * That reads as a formatting detail and is in fact a *rule*, and an English
  * one: it says a language has exactly two count forms and that the split falls
  * between one and two. Russian has three (1, 2–4, 5+), Arabic six, Japanese

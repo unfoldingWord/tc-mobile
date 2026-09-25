@@ -10,7 +10,7 @@ import {
   markRowReason,
   rowHint,
 } from "@/components/menu-row-state";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 
 /**
  * #135 — a disabled recorder-menu row must carry its reason.
@@ -18,15 +18,15 @@ import { strings } from "@/components/strings";
  * The rows' `disabled` flags used to be inline boolean expressions in
  * `recorder.tsx`; the cue that explains a grey row has to be derived from the
  * SAME predicates, or the two drift and the row lies. These pin (1) the gate
- * each row carries — the Edit row's since #134 lets a live/paused take through
- * (commit-then-edit), so it no longer just reproduces the shipped idle-only
- * gate — (2) which reason wins when several hold, and (3) which reasons carry a
- * glyph cue.
+ * each row carries — the Edit row let a live take through once (#134,
+ * commit-then-edit); #857 blocks it again, folding `hasTake` into the same
+ * `"uncommitted-take"` reason `committing` already carried — (2) which reason
+ * wins when several hold, and (3) which reasons carry a glyph cue.
  *
  * Nothing here renders: `Control`'s badge markup is pinned separately, by
  * `tests/control-render.test.ts` through the #197 harness, and it consumes
- * `rowHint` rather than restating it. The menu's reachability — and the
- * commit-then-edit wiring itself — are still review + on-device surface.
+ * `rowHint` rather than restating it. The menu's reachability is still
+ * review + on-device surface.
  */
 
 const editOpen = {
@@ -39,7 +39,7 @@ const editOpen = {
   canPaste: false,
 };
 
-describe("editRowReason — the record-then-edit gate (#134)", () => {
+describe("editRowReason — blocked while a take is in flight (#857, #134)", () => {
   it("is enabled at idle with audio", () => {
     expect(editRowReason(editOpen)).toBeNull();
   });
@@ -56,18 +56,23 @@ describe("editRowReason — the record-then-edit gate (#134)", () => {
     ).toBe("no-audio");
   });
 
-  // The #134 fix, red-first: this asserted "uncommitted-take" (disabled) before
-  // the fix — the exact bug the requirements owner reported, Edit greyed after a
-  // take. A live or paused take now ENABLES Edit; `onEnterEdit` commits it, then
-  // edits. Reverting the `committing`/`hasTake` split (blocking on any non-idle
-  // state again) turns this red.
-  it("is ENABLED while a take is live or paused — entering Edit commits it, then edits (#134)", () => {
-    expect(editRowReason({ ...editOpen, hasTake: true })).toBeNull();
+  // #857, red-first: a tester found the `[ ]` toggle (and this row, which
+  // shares `editReason`) still openable mid-recording on a Moto G — #134 had
+  // let a live take (`hasTake`) straight through, on the theory that entering
+  // Edit would commit it first. #614 gave the sheet its own Stop since then,
+  // so #857 retires #134's one-tap "stop and edit": Stop, then Edit, is now
+  // the only way from a live take. This asserted `toBeNull()` before the fix.
+  it("is disabled while a take is LIVE — recording — same reason as committing (#857)", () => {
+    expect(editRowReason({ ...editOpen, hasTake: true })).toBe(
+      "uncommitted-take"
+    );
   });
 
-  // A FIRST take: nothing stored on disk, empty clipboard, but the paused take is
-  // the thing to edit — so `hasTake` alone must carry it past the no-audio gate.
-  it("is ENABLED on a first take with nothing stored yet (#134)", () => {
+  // A FIRST take: nothing stored on disk, empty clipboard, but a take is
+  // recording — `hasTake` alone must still block, the same as it does with
+  // stored audio above; a live take is a reason to block regardless of what
+  // is already on disk.
+  it("is disabled on a first take with nothing stored yet, while it is live (#857)", () => {
     expect(
       editRowReason({
         ...editOpen,
@@ -75,13 +80,11 @@ describe("editRowReason — the record-then-edit gate (#134)", () => {
         hasAudio: false,
         canPaste: false,
       })
-    ).toBeNull();
+    ).toBe("uncommitted-take");
   });
 
-  // The one window that still blocks Edit: the take is actually committing (the
-  // Back-tapped close, or a #59 interruption's `processing` freeze). Editing must
-  // wait for that to settle, so the row keeps its reason there.
-  it("is disabled ONLY while the take is committing — the close/processing window (#134)", () => {
+  // The close/processing window still blocks Edit, as it always has.
+  it("is disabled while the take is committing — the close/processing window", () => {
     expect(editRowReason({ ...editOpen, committing: true })).toBe(
       "uncommitted-take"
     );
@@ -238,21 +241,35 @@ describe("rowHint — which reasons carry a cue", () => {
   // way `tests/menu-hamburger-header.test.ts` pins the Books global menu's
   // wiring (#643).
   it("the recorder's own ≡-menu is the one that opts into `hamburger` (#621, #677)", () => {
-    const recorderSource = readFileSync(
-      new URL("../src/components/recorder.tsx", import.meta.url),
-      "utf8"
-    )
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^\s*\/\/.*$/gm, "");
+    // Since #160 L-1 this is a TWO-file chain: `recorder.tsx` opens
+    // `<RecorderMenu open={menuShown}>`, and `recorder-menu.tsx` is what
+    // renders the `<Menu>` that does or does not opt in. Both links are
+    // asserted — pinning only the second would let the sheet stop rendering
+    // the component at all with this still green, which is the #677 hole one
+    // file further along.
+    const read = (rel: string) =>
+      readFileSync(new URL(`../${rel}`, import.meta.url), "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
     // `(?:=>|[^>])*` in place of the plain `[^>]*` used elsewhere (e.g.
-    // `tests/menu-hamburger-header.test.ts`): this call site's `onClose`
-    // prop is an inline arrow function, `() => setMenuOpen(false)`, whose
+    // `tests/menu-hamburger-header.test.ts`): these call sites' `onClose`
+    // props are inline arrow functions, `() => setMenuOpen(false)`, whose
     // `=>` is itself a `>` — a bare `[^>]*` scan truncates there and never
-    // reaches `hamburger`. Preferring the two-char `=>` alternative first
-    // steps over it while still stopping at the tag's real closing `>`.
-    const recorderMenus = [
-      ...recorderSource.matchAll(/<Menu\b(?:=>|[^>])*>/g),
+    // reaches the prop being checked. Preferring the two-char `=>`
+    // alternative first steps over it while still stopping at the tag's real
+    // closing `>`.
+    const openers = [
+      ...read("src/components/recorder.tsx").matchAll(
+        /<RecorderMenu\b(?:=>|[^>])*>/g
+      ),
     ].filter(([tag]) => /\bopen\s*=\s*\{\s*menuShown\s*\}/.test(tag));
+    expect(openers, "the sheet no longer opens RecorderMenu").toHaveLength(1);
+
+    const recorderMenus = [
+      ...read("src/components/recorder-menu.tsx").matchAll(
+        /<Menu\b(?:=>|[^>])*>/g
+      ),
+    ];
     expect(recorderMenus).toHaveLength(1);
     expect(recorderMenus.at(0)?.[0]).toMatch(/\shamburger(?=\s|>)/);
   });

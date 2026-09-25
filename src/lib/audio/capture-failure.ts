@@ -27,7 +27,7 @@
  * false and was caught on review; what it names is the two that must choose.
  *
  * Pure and DOM-free, like every other classifier here: the words live in
- * `components/strings.ts` and are chosen by `components/capture-failure-copy.ts`.
+ * `lib/strings.ts` and are chosen by `components/capture-failure-copy.ts`.
  */
 
 export type CaptureFailure =

@@ -4,7 +4,7 @@ import {
   storagePressureNotice,
   type StoragePressureGate,
 } from "@/components/storage-pressure-notice";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 
 /**
  * What the Books shelf says for #247's storage-pressure marker.
@@ -25,9 +25,11 @@ import { strings } from "@/components/strings";
  * exclusivity gate that moved into this function: hidden when the shelf holds
  * no recorded audio (George P2-2, strengthened from `hasContent` to
  * `hasReclaimableAudio` by #542 Part B, DRI decision 2026-09-24), hidden
- * while the shelf's acute trio is live (George P2-4), and visible otherwise
- * for both bands — each in the tone the DRI decided for its band (Seth,
- * 2026-09-24): `"low"` in `info`, `"critical"` in `alert`.
+ * after a failed delete (George P2-4), and visible otherwise for both
+ * bands — each in the tone the DRI decided for its band (Seth, 2026-09-24):
+ * `"low"` in `info`, `"critical"` in `alert`. `loading` and `loadFailed` were
+ * part of this gate through #542 but are gone as of #843 item 4 — see
+ * `storage-pressure-notice.ts`'s docblock for why they were unreachable.
  *
  * **`hasReclaimableAudio`, not `hasContent`** (#542 Part B). The round-1 gate
  * asked only "does a book exist" — a book with zero chapters, or a chapter
@@ -44,8 +46,6 @@ import { strings } from "@/components/strings";
  * this and flips exactly the one thing it means to test. */
 const openGate: StoragePressureGate = {
   hasReclaimableAudio: true,
-  loading: false,
-  loadFailed: false,
   deleteFailed: false,
 };
 
@@ -112,50 +112,31 @@ describe("storagePressureNotice", () => {
     ).toBeNull();
   });
 
-  // The next two cases pair `loading: true` / `loadFailed: true` with
-  // `hasReclaimableAudio: true` (via `openGate`). That combination is one the
-  // pure function accepts and must still retract on, but the real caller
-  // (`books-screen.tsx`) can never actually construct it: `hasReclaimableAudio`
-  // requires `loaded === true` (it is `loaded && hasReclaimableAudio(books)`),
-  // `loadFailed` requires `loaded === false`
-  // (`loadFailed = error !== null && !loaded`), and `loading`
-  // (`use-books.ts`) only ever transitions back to `false` inside the same
-  // load effect that, on the success path, has already called `setLoaded
-  // (true)` moments earlier in the same batched update — so no render can
-  // observe `loading: true` once `loaded`, and therefore `hasReclaimableAudio`,
-  // could be true. These two were previously named for George P2-4 as if they
-  // pinned Books-reachable behavior; they don't, so they are named here for
-  // what they actually check: the gate FUNCTION's own contract on `loading`
-  // and `loadFailed` in isolation, not a state `books-screen.tsx` can produce.
-  it("retracts on `loading` alone, as a function contract (not a books-screen-reachable state)", () => {
-    expect(
-      storagePressureNotice("critical", { ...openGate, loading: true })
-    ).toBeNull();
-  });
-
-  it("retracts on `loadFailed` alone, as a function contract (not a books-screen-reachable state)", () => {
-    expect(
-      storagePressureNotice("critical", { ...openGate, loadFailed: true })
-    ).toBeNull();
-  });
+  // `loading`/`loadFailed` were removed from `StoragePressureGate` entirely
+  // (#843 item 4, repeat of round-2 P3-3/#533): both were unreachable in
+  // combination with `hasReclaimableAudio: true` from the only caller
+  // (`books-screen.tsx`) — see `storage-pressure-notice.ts`'s docblock for
+  // the file:line derivation — so the two tests that used to pin them here,
+  // as a function-contract-only claim rather than a books-screen-reachable
+  // one, are gone along with the fields. Nothing else in this file changes:
+  // `openGate` no longer carries them, and every remaining case is unaffected.
 
   it("says nothing after a failed delete (George P2-4, #542)", () => {
-    // Unlike the two cases above, THIS combination is reachable from
-    // `books-screen.tsx` with `hasReclaimableAudio: true`: a delete can fail
-    // while another book — with a recording on it — remains on the shelf, so
-    // `deleteFailed` and `hasReclaimableAudio` can both be true at once.
+    // Reachable from `books-screen.tsx` with `hasReclaimableAudio: true`: a
+    // delete can fail while another book — with a recording on it — remains
+    // on the shelf, so `deleteFailed` and `hasReclaimableAudio` can both be
+    // true at once (unlike `loading`/`loadFailed`, dropped in #843 item 4).
     //
-    // The acute trio, not the wider `noticeText` the sibling slot renders:
+    // `deleteFailed`, not the wider `noticeText` the sibling slot renders:
     // `noticeText` also covers a failed `addChapter`, a quota-shaped write
     // this feature exists to warn about, and gating on it would retract the
-    // warning exactly when it matters most. `deleteFailed` is part of the
-    // trio itself, so it is still checked here.
+    // warning exactly when it matters most.
     expect(
       storagePressureNotice("critical", { ...openGate, deleteFailed: true })
     ).toBeNull();
   });
 
-  it("shows the line again once the acute trio clears, with content present", () => {
+  it("shows the line again once the delete failure clears, with content present", () => {
     expect(storagePressureNotice("low", openGate)).not.toBeNull();
   });
 });

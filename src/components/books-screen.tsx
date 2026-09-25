@@ -24,9 +24,11 @@ import { shareGapText, shareProgressText } from "./share-error-copy";
 import { ShareMenuSection } from "./share-menu-section";
 import { ShareProgress } from "./share-progress";
 import { storagePressureNotice } from "./storage-pressure-notice";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
+import { ThemeControl } from "./theme-control";
 import { useFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
+import type { FailureKey } from "@/hooks/save-failure";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
@@ -38,7 +40,6 @@ import {
 } from "@/hooks/use-screen-layers";
 import { useStoragePersistence } from "@/hooks/use-storage-persistence";
 import { useStoragePressure } from "@/hooks/use-storage-pressure";
-import { useTheme } from "@/hooks/use-theme";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { nextChapterNumber } from "@/lib/storage/books";
 import { cn } from "@/lib/utils";
@@ -169,17 +170,16 @@ export function BooksScreen({
   // above, `useStoragePressure` itself is NOT gated on a loaded shelf — the
   // device can be full before this app has read anything
   // (`use-storage-pressure.ts`'s CONTRACT note) — so `storagePressureNotice`
-  // takes `hasReclaimableAudio` and the shelf's acute trio (`loading`/
-  // `loadFailed`/`deleteFailed`) as its own gate, rather than folding either
-  // into the hook the way `storage` above does. See that function's docblock
-  // for why the gate lives there now and not as JSX `&&` (#542, Frank P2-2 /
-  // George P3-5), why it is `hasReclaimableAudio` and not `hasContent`
-  // (#542 Part B), and why it is the acute trio and not the wider
-  // `noticeText` below (#542, George P2-4).
+  // takes `hasReclaimableAudio` and `deleteFailed` as its own gate, rather
+  // than folding either into the hook the way `storage` above does. See that
+  // function's docblock for why the gate lives there now and not as JSX `&&`
+  // (#542, Frank P2-2 / George P3-5), why it is `hasReclaimableAudio` and not
+  // `hasContent` (#542 Part B), why `deleteFailed` and not the wider
+  // `noticeText` below (#542, George P2-4), and why `loading`/`loadFailed`
+  // are not passed here (#843 item 4: unreachable in combination with
+  // `hasReclaimableAudio: true` from this call site).
   const pressureLine = storagePressureNotice(useStoragePressure(), {
     hasReclaimableAudio: reclaimableAudio,
-    loading,
-    loadFailed,
     deleteFailed,
   });
   const [menuOpen, setMenuOpen] = useState(false);
@@ -188,11 +188,6 @@ export function BooksScreen({
   // About closes the menu, and the About panel owns its own Menu.
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aboutViewing, setAboutViewing] = useState<LicenseText | null>(null);
-  // #171. The global menu is the only place a theme switch belongs: it is a
-  // once-per-session decision about the light you are standing in, not a
-  // per-screen action, and putting it in the header would spend a header slot
-  // on a control nobody taps twice a day.
-  const theme = useTheme();
   // The durable failure log's size (#205). Books is home, and the global menu is
   // the only surface reachable from every state this screen can be in — a failed
   // shelf read included, which is precisely when a facilitator needs the report.
@@ -228,7 +223,7 @@ export function BooksScreen({
   // announced (Notice is `role="alert"`) inside a New Book dialog that has not
   // failed at anything — on the one-tap create path, to someone who may not read
   // the words disowning it (Frank R1 P3, George R1 P2-2).
-  const [newBookError, setNewBookError] = useState<string | null>(null);
+  const [newBookError, setNewBookError] = useState<FailureKey | null>(null);
   // The in-flight latch. It stops a second Confirm, and it is what
   // `onCancelNewBook` checks: once the write is committing, dismissal is a no-op
   // rather than a promise the store cannot keep.
@@ -747,7 +742,7 @@ export function BooksScreen({
         // only here, is what makes that retry (and Cancel) work again.
         creatingBook.current = false;
         setCreatingBookBusy(false);
-        setNewBookError(outcome.message);
+        setNewBookError(outcome.key);
         return;
       }
       const { book } = outcome;
@@ -1327,7 +1322,11 @@ export function BooksScreen({
   // longer takes this line down (it would race the delete's own error off the
   // screen); what clears it is another delete, or any write that succeeds
   // (George R4 P2-2 / Frank R4 P2).
-  const noticeText = deleteFailed ? strings.deleteBookFailed : error;
+  const noticeText = deleteFailed
+    ? strings.deleteBookFailed
+    : error
+      ? strings[error]
+      : null;
 
   // The guided chain's answer for this screen (#604): one accent on the next
   // required action, and nothing once the first book has been worked in. Read
@@ -1475,8 +1474,9 @@ export function BooksScreen({
           the device can be full before this app has read anything, so the
           underlying hook is NOT gated on content) — but the gate that
           exclusivity needs now lives INSIDE `storagePressureNotice` itself
-          (`hasReclaimableAudio` plus the acute trio `loading`/`loadFailed`/
-          `deleteFailed`, passed in above), not as JSX here. #542 round 1
+          (`hasReclaimableAudio` plus `deleteFailed`, passed in above — see
+          that call site's own comment for why `loading`/`loadFailed` are not
+          part of this gate, #843 item 4), not as JSX here. #542 round 1
           (Frank P2-2 / George P3-5) found the load-bearing predicate living
           here, in a bare `&&` no test could pin — the same shape
           `encoder-notice.ts` already avoids for `encoderLine`; #542 Part B
@@ -1583,19 +1583,11 @@ export function BooksScreen({
           notice and the bundled-component attribution. Opening it closes the
           menu and hands off to the About panel, which owns its own Menu.
 
-          The toggle (#171): a complete light theme has existed in
-          `2-semantic.css` since the pivot with nothing able to select it,
-          written for the one condition that makes this app unusable — direct
-          equatorial sun on a dark screen.
-
-          ONE control that flips, not two rows or a three-state cycle: its
-          label names the DESTINATION so AT does not announce the state a user
-          already has, and `nextTheme` is an involution so the only promise a
-          text-free glyph can make — tap twice and you are back — holds. The
-          menu stays OPEN across the tap, so the translator sees the screen
-          change behind the scrim and can tap straight back if they guessed
-          wrong; that is the affordance doing the explaining, which is the
-          `state-in-place` rule this repo prefers over a message. */}
+          The toggle (#171) is `ThemeControl`, which is also mounted in the
+          chapter and recorder menus (#149) — its own docblock holds why it is
+          one shared component, why the glyph names the destination, and why
+          the tap leaves this menu open. What stays Books-only is the panel
+          above it, for the two reasons recorded there. */}
       {/* `hamburger`: the ≡ in the header above stays a ≡ inside the open
           panel too — same glyph, same corner, and no visible "Menu" title
           (#608, the requirements owner's navigation rule). The recorder's
@@ -1617,16 +1609,7 @@ export function BooksScreen({
           variant="quiet"
           onClick={openAbout}
         />
-        <Control
-          icon={theme.theme === "dark" ? "sun" : "moon"}
-          label={
-            theme.theme === "dark"
-              ? strings.useLightTheme
-              : strings.useDarkTheme
-          }
-          variant="quiet"
-          onClick={theme.toggle}
-        />
+        <ThemeControl />
       </Menu>
 
       <AboutPanel
@@ -1673,7 +1656,7 @@ export function BooksScreen({
         {/* THIS dialog's own failure channel — never the shared `error`, which
             also carries a failed addChapter or rename and would announce one
             here as if naming had gone wrong. */}
-        {newBookError && <Notice>{newBookError}</Notice>}
+        {newBookError && <Notice>{strings[newBookError]}</Notice>}
       </Menu>
 
       {/* Add chapter asks for the name before it creates anything (#609). The
@@ -1760,10 +1743,10 @@ export function BooksScreen({
                 error as the delete's, and that one already has a labelled home
                 on the shelf. Without the guard, failing a delete and then
                 opening Rename put the raw store message inside a rename field
-                nothing had submitted yet (George stand-in P3-2). The remaining
-                instances of that class — a failed create or add-chapter reaching
-                this panel the same way — are pre-existing and belong to #172,
-                which is about raw browser strings in Notices generally.
+                nothing had submitted yet (George stand-in P3-2). `error` here
+                is a `strings`-mapped KEY, not the raw store message — an
+                add-chapter failure reaching this panel now speaks the same
+                mapped copy the shelf's own Notice does (#172 part 1).
 
                 Also never while `savingBookName` (#395 item 1): a retried
                 rename flips its own busy Notice on before this one's `finally`
@@ -1775,7 +1758,7 @@ export function BooksScreen({
                 `use-books.ts`/`use-chapter-segments.ts`); either half alone
                 still leaves the other channel wrong (George, #395). */}
             {error && !deleteFailed && !savingBookName && (
-              <Notice>{error}</Notice>
+              <Notice>{strings[error]}</Notice>
             )}
           </>
         ) : (

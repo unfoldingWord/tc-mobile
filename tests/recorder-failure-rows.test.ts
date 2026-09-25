@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { bodyAfter, matchingBraceClose, stripComments } from "./support";
+
 /**
  * Three recorder-path failure rows reach the funnel (`reportFailure`) from
  * code the Node suite cannot execute:
@@ -67,40 +69,6 @@ import { describe, expect, it } from "vitest";
  * on the first still-active invocation, never reset. Assertion (4) pins
  * that scope — a declaration INSIDE the handler would reset on every call.
  */
-
-const stripComments = (text: string) =>
-  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
-/** Brace-counts from `openIndex` (the index of an opening `{`) to find its
- *  matching close, or -1. */
-const matchingBraceClose = (body: string, openIndex: number): number => {
-  let depth = 0;
-  for (let i = openIndex; i < body.length; i++) {
-    if (body[i] === "{") depth++;
-    else if (body[i] === "}") {
-      depth--;
-      if (depth === 0) return i;
-    }
-  }
-  return -1;
-};
-
-/** Slice out the `{ ... }` body that follows the first occurrence of
- *  `declaration` in `code`, throwing (not failing an assertion) when the
- *  anchor is gone — a renamed callback is a harness defect, not a finding. */
-const bodyAfter = (code: string, declaration: string): string => {
-  const declStart = code.indexOf(declaration);
-  if (declStart === -1) {
-    throw new Error(`${declaration} not found — has it been renamed or moved?`);
-  }
-  const open = code.indexOf("{", declStart);
-  if (open === -1) throw new Error(`${declaration}: opening brace not found`);
-  const close = matchingBraceClose(code, open);
-  if (close === -1 || close <= open) {
-    throw new Error(`${declaration}: closing brace not found`);
-  }
-  return code.slice(open, close + 1);
-};
 
 describe("source pins (text shape only): onInterrupted's still-active arm reports once per take (#478)", () => {
   /**

@@ -5,9 +5,9 @@ The canonical contributor guide. Read this before changing anything.
 ## Purpose
 
 tC Mobile is an offline-first PWA for oral Bible translation: record a passage,
-edit the waveform, manage the segments of a chapter, export MP3 (export is not
-wired yet, #18). It targets Android and iOS phones, frequently offline, used by
-people who may not read.
+edit the waveform, manage the segments of a chapter, and share a chapter or a
+book as MP3 through the OS share sheet. It targets Android and iOS phones,
+frequently offline, used by people who may not read.
 
 The driving deadline is the **East Africa training in the first week of
 October 2026**, with production readiness targeted for **end of September 2026**.
@@ -160,6 +160,51 @@ plain Node, and it is why the test suite can cover cut/paste/insert/export
 without a browser or a microphone.
 
 If you find yourself wanting `window` in `lib/`, the code belongs in `hooks/`.
+
+**`lib/` also holds the one string table**, `lib/strings.ts`. It is neither audio
+nor storage, and it is down there because imports never go upward: while it sat
+in `components/` it was unreachable from `hooks/`, so every sentence a hook
+raises was a literal beside the code that raised it (#169). It is pure data and
+pure functions, so it compiles under `tsconfig.lib.json` with the rest of the
+layer.
+
+**A sentence a hook produces gets out of that one of two ways, and which one
+depends on whether the failure is a domain value.** When `lib/` also reasons
+about it, the hook emits a **code** and a component words it —
+`lib/audio/capture-failure.ts` -> `components/capture-failure-copy.ts` is the
+worked example (#700), with a `switch` and a `never` default so a new code
+cannot reach a screen wordless, and `lib/takes/close-plan.ts` carries the code
+rather than prose. When the sentence simply **is** the state the hook holds — a
+`playbackError`, the recorder's mic-refusal `error` — there is no value to
+route and no second reader to keep honest, so the hook reads the table
+directly. Reach for a code first where a `lib/` module is already in the path;
+reach for the table where adding one would mean inventing a union with a single
+consumer.
+
+`tests/strings-one-table.test.ts` keeps the literals from coming back: no
+fixed sentence in the table may appear again in `app/`, `components/` or
+`hooks/`. `lib/`'s own `Error` messages are deliberately outside that check —
+they are for whoever reads the failure log, not for the screen, and that test's
+docblock names the one pair where the two wordings overlap on purpose. The
+second check is the stronger one and the reason a base merge cannot quietly
+undo this: every fixed sentence in `app/` and `hooks/` must be one the table
+holds, so a brand-new literal fails as loudly as a re-typed one.
+`tests/capture-failure-copy.test.ts` sweeps `hooks/` and `lib/` for the three
+capture sentences, skipping the table's own file — holding a sentence is what a
+table is for; minting one beside the code that raises it is the defect.
+
+Two more slices of #169 have landed beside these, both in `lib/` and both for
+this same reason. `lib/locale.ts` puts `<html lang>`, `dir` and the manifest
+language behind one entry, so a second locale is an entry there rather than an
+edit in three files. `lib/plural.ts` makes count-varying wording a CLDR table
+keyed by category (`Intl.PluralRules`) instead of an English `n === 1` ternary,
+with each form a whole phrase carrying `{n}` — so a language with three count
+forms, or one that puts its numeral last, adds keys rather than rewriting call
+sites.
+
+What #169 still asks for beyond these is a `strings[locale]` dimension,
+sentences that are not assembled from translated fragments, and book names
+stored as numbers rather than written into IndexedDB as English data.
 
 ## Testing
 
@@ -481,7 +526,11 @@ place. Decided 2026-09-02, when the repo stopped being solo.
 - **One `chore(release): vX.Y.Z` PR per `develop -> staging` promotion bumps
   the patch** — daily, whenever there is something to promote. Its body lists
   the PRs it carries (#131 is the shape). Patch numbers are not capped;
-  `0.1.30` is fine.
+  `0.1.30` is fine. **After the merge deploys, run `npm run check:deploy` and
+  paste the PASS line into `docs/progress_tracker.md`** — v0.2.10 (#775)
+  promoted without this and went unrecorded until a 2026-09-24 PR audit
+  caught it (#839, #840 R7); the confirmation belongs in the tracker at
+  promotion time, not reconstructed after the fact.
 - **The minor is the milestone.** Every GitHub milestone is named for the
   version its `staging -> main` promotion ships. That PR bumps the minor and
   tags `main` (`git tag vX.Y.0` — the first tags this repo will have). A
@@ -503,11 +552,15 @@ No Actions workflow deploys the **PWA**. The four web-deploy workflows were
 deleted to remove a real collision: Cloudflare and Actions would otherwise both
 deploy on the same triggers, to different targets — two preview deploys per PR
 and two deployments per merge. The only deploy workflows in `.github/` are the
-two **manual** native lanes — the iOS TestFlight lane (`ios-testflight.yml`, a
-native build to App Store Connect, `docs/native/README.md` §4a) and the Android
+three **native** lanes — the iOS TestFlight lane (`ios-testflight.yml`, a
+native build to App Store Connect, `docs/native/README.md` §4a), the Android
 APK lane (`android-apk.yml`, a signed release APK attached as a run artifact,
-§5a). Both are `workflow_dispatch`-only, so they never fire on push/PR and are
-not Workers Builds triggers (#262, #318). Do not add a push/PR deploy job.
+§5a), and the Google Play lane (`android-play.yml`, a signed .aab uploaded to
+a Play testing track, `docs/native/play-store.md`). The first two are
+`workflow_dispatch`-only (#262, #318). The Play lane is the one exception that
+fires on push, to `staging` and `main` only: it ships a native bundle to Google
+Play, never the PWA, and holds no Cloudflare credentials, so it cannot collide
+with Workers Builds. Do not add a push/PR job that deploys the **PWA**.
 
 Workers Builds is configured **per Worker**, so the same repository is
 connected twice:
@@ -528,8 +581,8 @@ API token lives in Cloudflare's build settings, **not** in a GitHub secret —
 Actions does not deploy the PWA, so it needs no Cloudflare credentials (the
 TestFlight lane authenticates to App Store Connect with its own secrets, and
 the Android lane signs with its own keystore secrets — neither is Cloudflare's).
-Besides `ci.yml` and `dependabot.yml`, `.github/` holds only the two manual
-native lanes, `ios-testflight.yml` and `android-apk.yml`.
+Besides `ci.yml` and `dependabot.yml`, `.github/` holds only the three native
+lanes, `ios-testflight.yml`, `android-apk.yml` and `android-play.yml`.
 
 ### Confirming a deploy and rolling one back
 
@@ -761,8 +814,45 @@ Full process, and the traps that make a failed run look like a clean pass, in
 | Tier   | Examples here                                        | Bar                                                                                                               |
 | ------ | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | **T1** | `lib/audio/*`, `lib/storage/*`, the IndexedDB schema | Tests required. Data loss or corrupted audio is unrecoverable in the field. Schema changes need a migration path. |
-| **T2** | `hooks/*`, export/share paths                        | Tests where possible + on-device check on both Android and iOS.                                                   |
+| **T2** | `hooks/*`, `lib/export/*`, export/share paths        | Tests where possible + on-device check on both Android and iOS.                                                   |
 | **T3** | `components/*`, `app/*`, copy, styling               | Review only. This layer is expected to churn.                                                                     |
+
+**This table is total over `src/`: every path resolves to exactly one tier,**
+by an explicit row above or a default below (#864, closing a residual from
+#852 where an unlisted path — `lib/nav/*`, `lib/view/*`, `types/*` — got no
+tier at all). `lib/export/*` (the MP3-building logic behind Share Chapter and
+Share Book, `lib/export/chapter.ts` / `lib/export/book.ts`) is added to T2
+above as a restatement of what "export/share paths" already meant, not a new
+policy call. Where one path matches two rows, the strictest wins (T1 over T2
+over T3).
+
+For everything else under `src/lib/` this table doesn't name by row — as of
+this writing that's `lib/a11y/*`, `lib/nav/*`, `lib/obs/*`, `lib/takes/*`,
+`lib/view/*`, and the flat files directly under `lib/` (`locale.ts`,
+`plural.ts`, `theme.ts`, `utils.ts`, `failure-text.ts`,
+`restart-after-flush.ts`) — **the default is T1.**
+**Assumption, and a policy call for the DRI to revisit, not a claim these
+carry `lib/audio`'s data-loss stakes (#864):** `lib/` is where the onion
+architecture keeps the browser-free, unit-testable logic (see "Architecture —
+onion layers" above), so an unlisted `lib/*` path reads as T1-adjacent by
+default until someone deliberately narrows it — the conservative reading, not
+an assertion that e.g. a `lib/nav/*` regression is unrecoverable data loss the
+way a `lib/audio/*` one is.
+
+`src/types/*`, any ambient `*.d.ts` under `src/` (e.g. `src/globals.d.ts`),
+and `src/data/*` carry no behavior of their own, so each **takes the
+strictest tier (T1 over T2 over T3) among the non-test surfaces that import
+it** — the same strictest-wins rule `docs/review/dual-review.md` already
+applies when one test covers two tiers. Where that importer set can't be
+determined, it is T1.
+
+Any other `src/**` path this table doesn't name by row is T1, the same
+conservative default as unlisted `lib/*` above.
+
+A test-only PR is tiered by what it covers, and a gate test is its own tier
+(Harness); the tier sets which reviewers run and how many rounds, not this
+table's on-device check — a test-only PR never gets the device check, only
+code changes do — see `docs/review/dual-review.md` ("Merge policy").
 
 ## Known open items
 
@@ -781,9 +871,14 @@ Full process, and the traps that make a failed run look like a clean pass, in
 2. **PCM storage is ~5.3 MB/minute** for segments still being worked on. **D3 is
    built** (B8, ADR 0009): a segment marked Finished is transcoded to 64 kbps
    MP3 and its PCM dropped in the same transaction, ~660 MB to ~66 MB for all 50
-   OBS stories once finished. The other two ADR 0002 mitigations are still open:
-   22 050 Hz for speech, and `navigator.storage.persist()`. #12 stays open on
-   those. **Resolve before October.**
+   OBS stories once finished. Of ADR 0002's other two mitigations,
+   `navigator.storage.persist()` **shipped** — #214 closed #12 (merged
+   2026-09-16) with the persist request and a not-persisted state-in-place
+   marker on Books. The separate nearly-full marker came later, under #247
+   (#537 the core, #542 the Books wiring). The 22 050 Hz-for-speech mitigation
+   was explicitly **deferred** on #12 (2026-09-04 decision, once D3 covered the
+   storage risk for the gate); #12's 2026-09-15 triage comment found no
+   separate tracking issue for it.
 3. **lamejs is LGPL-3.0** in an MIT repo. **Decided: keep it** — ADR 0003. The
    notice and attribution work (#36) ships in-app (**Menu → About & licenses**)
    with the verbatim licence texts precached under `public/licenses/`; the

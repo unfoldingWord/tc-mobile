@@ -695,6 +695,18 @@ export function resumesOnLift(input: {
  * FINGERS, not about which pointer owned the drag — gating it on `wasOwner`
  * leaves the frame collapsed for good when the owner lifts first and a
  * second contact lifts last.
+ *
+ * `canPaste` is a fifth term, added for #835: while the clipboard holds a
+ * cut, a drag's lift must NOT reopen the frame either, even once the stage
+ * is clear and silent. Before #835 a tap or drag on the waveform was a route
+ * back to a selection window regardless of the clipboard, which is exactly
+ * the bug reported — dragging to find a precise paste point kept swapping
+ * the red playhead back for a selection band. The requirements owner's
+ * decision on #835 is that a new selection is available only once the
+ * clipboard is empty (today, a paste — see `recorder.tsx`'s `onPaste`, which
+ * still always reopens the frame; that route, undo and redo are unaffected by
+ * this term). This is the ONLY route the decision narrows: `resumesOnLift`
+ * and the rest of this function's cases are unchanged.
  */
 export function liftOutcome(input: {
   /** This pointer owned the drag. */
@@ -710,6 +722,21 @@ export function liftOutcome(input: {
   readonly length: number;
   /** A take is live, paused, or being committed. */
   readonly takeActive: boolean;
+  /**
+   * The clipboard holds a cut (`editor.canPaste`, #835). While true, a
+   * drag's lift must not reseed a selection frame — the collapsed line stays
+   * the only thing on the stage. NOT because a paste empties the clipboard:
+   * paste is not one-shot yet (#489 is open), so `editor.canPaste` stays true
+   * across a paste, and the frame reopens instead because `recorder.tsx`'s
+   * `onPaste` calls `reopenFrame()` itself, unconditionally, as the
+   * paragraph above already says (a discard would presumably empty the
+   * clipboard for real, once #862 lands, but that is not built yet either).
+   * #489 must not route paste through this predicate — a one-shot paste that
+   * merely flips `canPaste` false would leave this term believing the stage
+   * is still owed a reseed with no `reopenFrame()` call left to satisfy it,
+   * and the frame would never come back.
+   */
+  readonly canPaste: boolean;
 }): {
   readonly dragging: boolean;
   readonly resume: boolean;
@@ -738,7 +765,7 @@ export function liftOutcome(input: {
     dragging: held,
     resume,
     keepOwed: input.interrupted && !resume && input.contactsRemaining > 0,
-    reopenFrame: !held && !resume,
+    reopenFrame: !held && !resume && !input.canPaste,
   };
 }
 
@@ -998,6 +1025,17 @@ export function heldByDrag(dragging: boolean, otherwise: boolean): boolean {
  * (this one) is the one place that does not make either import the other.
  */
 export const CENTER_FRACTION = 0.5;
+
+/**
+ * The two zoom levels: the whole clip in view, or a quarter of it (§4.4).
+ *
+ * Here rather than in `recorder.tsx` since #160's L-1 split the toolbars out:
+ * the zoom toggle reads both, the sheet reads `ZOOM_WHOLE` for its initial
+ * zoom, its edit-exit reset and the toggle's next level, and a constant two
+ * modules key their paint on should not live inside one of them.
+ */
+export const ZOOM_WHOLE = 1;
+export const ZOOM_QUARTER = 4;
 
 /**
  * Whether the fixed centerline overlay is drawn — the COMPLETE render

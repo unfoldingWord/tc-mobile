@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { matchingBraceClose } from "./support";
+
 /**
  * `ShareProgress`'s focus grab and its Escape/Tab capture listener are LAYOUT
  * effects, not passive ones (#517 item 4, George r3 P3 on #508).
@@ -42,18 +44,6 @@ describe("ShareProgress's overlay focus/keyboard effects are layout effects (#51
   )
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/\/\/.*$/gm, "");
-
-  const matchingBraceClose = (text: string, openIndex: number): number => {
-    let depth = 0;
-    for (let i = openIndex; i < text.length; i++) {
-      if (text[i] === "{") depth++;
-      else if (text[i] === "}") {
-        depth--;
-        if (depth === 0) return i;
-      }
-    }
-    return -1;
-  };
 
   function locate(guard: string) {
     const guardIndex = source.indexOf(guard);

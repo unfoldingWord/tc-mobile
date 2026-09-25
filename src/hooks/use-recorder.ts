@@ -11,7 +11,9 @@ import {
   type MicRefusal,
 } from "@/lib/audio/mic-refusal";
 import type { CaptureFailure } from "@/lib/audio/capture-failure";
-import { classifyStopDecode } from "@/lib/audio/stop-decode";
+import { decodeRetry } from "@/lib/audio/retry-decode";
+import { classifyEmptySeal, classifyStopDecode } from "@/lib/audio/stop-decode";
+import { strings } from "@/lib/strings";
 
 import {
   createLevelTap,
@@ -48,20 +50,20 @@ async function queryMicPermission(): Promise<MicPermissionState> {
   }
 }
 
-/** The honest sentence for each refusal (#203). Inline here, like the recorder's
- *  other error copy, because `hooks/` cannot reach the components' string table. */
+/** The honest sentence for each refusal (#203). The words live in the one string
+ *  table; this maps the pure classifier's verdict onto them. */
 function micRefusalMessage(refusal: MicRefusal): string {
   switch (refusal) {
     case "no-device":
-      return "No microphone was found on this device.";
+      return strings.micNoDevice;
     case "site-blocked":
-      return "Recording is blocked for this app. Allow the microphone in your browser's site settings, then try again.";
+      return strings.micSiteBlocked;
     case "os-blocked":
-      return "Your device is not letting the app use the microphone. Check microphone access in your device settings, then try again.";
+      return strings.micOsBlocked;
     case "prompt":
-      return "Microphone access is needed to record. Allow it when asked — or if you already allowed it, check your device settings.";
+      return strings.micPrompt;
     case "other":
-      return "Could not start recording.";
+      return strings.micStartFailed;
   }
 }
 
@@ -456,7 +458,7 @@ export function useRecorder(): UseRecorder {
 
   const start = useCallback(async (): Promise<boolean> => {
     if (!supported) {
-      setError("This device cannot record audio.");
+      setError(strings.recordingUnsupported);
       return false;
     }
     // Refuse to open a SECOND microphone while one is already live. Unreachable
@@ -950,9 +952,8 @@ export function useRecorder(): UseRecorder {
       return {
         samples: null,
         // An empty seal after the flush arm threw is the engine's failure,
-        // not the translator's silence — the same code `stopRecording`'s
-        // backstop uses.
-        error: current ? (flushThrew ? "unfinished" : "silence") : null,
+        // not the translator's silence — see `classifyEmptySeal` (#745).
+        error: classifyEmptySeal(flushThrew, current),
         blob: null, // nothing was captured — no bytes to keep
       };
     }
@@ -1000,21 +1001,10 @@ export function useRecorder(): UseRecorder {
       void resumeAudioContext().catch((cause: unknown) => {
         console.error("Could not resume the audio context", cause);
       });
-      try {
-        const samples = await decodeToCanonical(blob);
-        // A decode to zero samples yields no usable take. On the RETRY path this
-        // is NOT proven silence the way it is for `stop()`: the bytes are held
-        // only because the FIRST decode THREW, so a later zero-sample decode is
-        // ambiguous, and dropping the held take on it would lose the only copy
-        // (George R3 G-1). So this is just another retry failure — the caller
-        // keeps the bytes and surfaces the message; it never drops them.
-        if (samples.length === 0) {
-          return { samples: null, error: "silence" };
-        }
-        return { samples, error: null };
-      } catch {
-        return { samples: null, error: "undecodable" };
-      }
+      // The empty-vs-throw choice, and why a zero-sample re-decode is not
+      // proven silence here the way it is on `stop()`, are `decodeRetry`'s
+      // (#745). The caller keeps the bytes on every failure.
+      return decodeRetry(() => decodeToCanonical(blob));
     },
     []
   );

@@ -9,7 +9,7 @@ import {
 } from "./licenses";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 
 interface AboutPanelProps {
   open: boolean;

@@ -564,11 +564,12 @@ function probeDecode(decoded: AudioBuffer, source: ProbeSource): void {
  * injected function rather than doing it.
  *
  * NOT the clip as recorded: the decode carries the encoder's priming at its
- * head (1105 samples on a decoder that trims nothing)
- * and granule padding at its tail. EVERY consumer must pass the result through
- * `fitMp3Decode` (`lib/audio/mp3-align.ts`) with the clip's bytes and
- * `frameCount` — the chapter export, playback and the recorder's edit buffer
- * all do — or the recording plays late and, once saved, loses its last ~25 ms.
+ * head and granule padding at its tail (the exact sample counts are
+ * `lib/audio/mp3-align.ts`'s, pinned there). EVERY consumer must pass the
+ * result through `fitMp3Decode` (`lib/audio/mp3-align.ts`) with the clip's
+ * bytes and `frameCount` — the chapter export, playback and the recorder's
+ * edit buffer all do — or the recording plays late and, once saved, loses
+ * its last ~25 ms.
  */
 export async function decodeMp3ToCanonical(
   mp3: Uint8Array<ArrayBuffer>
