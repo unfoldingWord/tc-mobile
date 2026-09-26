@@ -117,6 +117,10 @@ let root: Root | null = null;
 let codec: ReturnType<typeof testCodec>;
 let share: ReturnType<typeof vi.fn>;
 let estimate: ReturnType<typeof vi.fn>;
+// The layer stack, standing in for `useNavStack` the way
+// `tests/books-delete-in-sheet-o4.test.ts` does — module-scoped so a test can
+// inspect it after mounting, not just hand it to `pushLayer`/`popLayer`.
+const layers = new Map<string, Layer>();
 
 async function bookWith(
   name: string,
@@ -140,6 +144,7 @@ async function bookWith(
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  layers.clear();
   await clearAllStores();
   design.current = "o4";
   pressure.current = "critical";
@@ -170,7 +175,6 @@ afterEach(async () => {
 async function mountBooks(): Promise<HTMLElement> {
   root = createRoot(document.getElementById("root")!);
   const r = root;
-  const layers = new Map<string, Layer>();
   await act(async () =>
     r.render(
       createElement(BooksScreen, {
@@ -183,6 +187,23 @@ async function mountBooks(): Promise<HTMLElement> {
     )
   );
   return document.getElementById("root")!;
+}
+
+/**
+ * A system Back, run the way `use-nav-stack.ts`'s adapter runs one (the same
+ * helper `tests/books-delete-in-sheet-o4.test.ts` uses): refuse when the top
+ * layer is busy, otherwise `dismiss()` it and pop it.
+ */
+async function systemBack(): Promise<string> {
+  const id = [...layers.keys()].at(-1);
+  expect(id, "a layer to go back from").toBeDefined();
+  const top = layers.get(id!)!;
+  if (top.busy()) return "refused";
+  await act(async () => {
+    top.dismiss();
+    layers.delete(id!);
+  });
+  return id!;
 }
 
 /** The shelf's own root: the element `BooksScreen` sets `inert` on. */
@@ -325,6 +346,92 @@ describe("O4: the library share owns the screen through its timeline", () => {
       "the failed outcome"
     );
     expect(overlayText()).toBe(strings.shareAllStorage);
+  });
+});
+
+describe("O4: system Back is refused while Share your work owns the screen (#1056)", () => {
+  /**
+   * Residual 3 on #1045/#1056: system Back on the Books root had no layer to
+   * consult while the library overlay owned the screen, so it could exit the
+   * app out from under a share. DRI, 2026-09-26 (verbatim): "Refuse, like
+   * Book share (Recommended)". `systemBack()` fails its own "a layer to go
+   * back from" assertion if nothing was ever registered — which is exactly
+   * the pre-fix shape (Cancel stays on the overlay's own scrim tap either
+   * way; only the SYSTEM path is under test here).
+   */
+  it("busy: a system Back is refused, the overlay stays and the shelf stays inert", async () => {
+    await bookWith("Mark", [[CANONICAL_SAMPLE_RATE]]);
+    // Hold the build open, as the "busy" case above does, so the busy phase
+    // is still up when the Back is simulated.
+    vi.mocked(withEncoder).mockImplementation(
+      (signal) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () =>
+            reject(new DOMException("Aborted", "AbortError"))
+          );
+        })
+    );
+    await mountBooks();
+    await act(async () => bannerButton().click());
+    await until(
+      () => vi.mocked(withEncoder).mock.calls.length > 0,
+      "the build"
+    );
+    expect(scrim()?.getAttribute("data-outcome")).toBe("busy");
+
+    expect(await systemBack()).toBe("refused");
+    // Refused: nothing moved — the overlay is still up and the shelf still
+    // inert, exactly as if the Back had never happened.
+    expect(scrim()?.getAttribute("data-outcome")).toBe("busy");
+    expect(shelf().hasAttribute("inert")).toBe(true);
+
+    // Cancel still works from the overlay's own control either way.
+    await act(async () => scrim()!.click());
+    expect(scrim()).toBeNull();
+    expect(shelf().hasAttribute("inert")).toBe(false);
+    // And Back is unobstructed again once the overlay has let go.
+    expect(layers.has("books:library-share")).toBe(false);
+  });
+
+  it("sent: a system Back is refused through the outcome hold too, matching Share Book", async () => {
+    await bookWith("Mark", [[CANONICAL_SAMPLE_RATE]]);
+    await mountBooks();
+    await armArchive();
+
+    await act(async () => bannerButton().click());
+    await until(
+      () => scrim()?.getAttribute("data-outcome") === "sent",
+      "the sent outcome"
+    );
+
+    expect(await systemBack()).toBe("refused");
+    expect(scrim()?.getAttribute("data-outcome")).toBe("sent");
+
+    // No tap ever closes this one — the outcome clears on its own hold, and
+    // the layer must come down with it (the auto-close effect, not a click).
+    await until(() => scrim() === null, "the outcome hold to end");
+    expect(layers.has("books:library-share")).toBe(false);
+  });
+
+  it("dismissed: after the outcome is dismissed, system Back is no longer refused", async () => {
+    await bookWith("Mark", [[CANONICAL_SAMPLE_RATE]]);
+    share.mockImplementation(() =>
+      Promise.reject(new DOMException("closed", "AbortError"))
+    );
+    await mountBooks();
+    await armArchive();
+
+    await act(async () => bannerButton().click());
+    await until(
+      () => scrim()?.getAttribute("data-outcome") === "dismissed",
+      "the dismissed outcome"
+    );
+    expect(await systemBack()).toBe("refused");
+
+    // The overlay's own Dismiss (the scrim tap) closes it and frees Back.
+    await act(async () => scrim()!.click());
+    expect(scrim()).toBeNull();
+    expect(layers.has("books:library-share")).toBe(false);
   });
 });
 
