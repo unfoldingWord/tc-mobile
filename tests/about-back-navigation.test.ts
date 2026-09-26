@@ -77,7 +77,10 @@ vi.mock("@/hooks/use-book-share", () => ({
     reset: vi.fn(),
   }),
 }));
-vi.mock("@/hooks/failure-log", () => ({ useFailureCount: () => 0 }));
+vi.mock("@/hooks/failure-log", () => ({
+  useFailureCount: () => 0,
+  useMarkedFailureCount: () => 0,
+}));
 // `BuildStamp` reads the build-time `__APP_VERSION__`/`__BUILD_SHA__` defines,
 // which are absent in the test env — mocked to nothing, as the App render test
 // does (`tests/app-save-failed-ordinal.test.ts`). This suite is about the Back
