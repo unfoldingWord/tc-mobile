@@ -582,6 +582,14 @@ export const strings = {
   // segment over — because the sheet stays open, ready for the next take.
   rerecord: "Erase and record again",
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
+  // Press-and-hold reorder on the Segments list (#953, O4 only), spoken by
+  // the list's live region: the row that was lifted, where it landed, or that
+  // it went back. Segments renumber after a move (the DRI's "Renumber" pick),
+  // so the landing is said as the segment's new number.
+  reorderLifted: (n: number): string => `Moving segment ${n}.`,
+  reorderMoved: (from: number, to: number): string =>
+    `Segment ${from} is now segment ${to}.`,
+  reorderStayed: (n: number): string => `Segment ${n} stayed where it was.`,
   eraseConfirmTitle: "Erase this recording?",
   eraseConfirm: "Erase",
   // The safe action of the shared confirm dialog (`erase-confirm.tsx`). One

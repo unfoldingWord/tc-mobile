@@ -100,6 +100,15 @@ interface SegmentRowProps {
    */
   bookName?: string;
   chapterNumber?: number;
+  /**
+   * Press-and-hold reorder (#953 PR2a): the screen's `onPointerDown` for this
+   * row's hold area. Attached in the O4 look only, and only to the number
+   * badge (the open button) and the title line (the DRI's "Badge and title"
+   * pick): never to the waveform, which takes the pointer at first touch
+   * (`onPointerDown` below), and never to the row's other buttons. A tap
+   * released before the hold still reaches the open button's click.
+   */
+  onHoldStart?: (e: React.PointerEvent) => void;
 }
 
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
@@ -144,6 +153,7 @@ export function SegmentRow({
   guided = false,
   bookName,
   chapterNumber,
+  onHoldStart,
 }: SegmentRowProps) {
   const state = segmentRowState(row);
   // The O4 look (#944) branches the markup below; with the switch off every
@@ -410,6 +420,13 @@ export function SegmentRow({
   // O4 paints the part past the playhead in `--s-voice-dim` while playing:
   // `o4/segments.css` masks the canvas from this fraction on.
   const o4Playing = o4 && playing;
+  // The hold area's handler and marker, O4 only: the switch-off look gains no
+  // gesture (#953 PR2a). `o4/segments.css` reads `data-reorder-handle` to
+  // keep a long press from selecting text or raising a callout.
+  const holdArea =
+    o4 && onHoldStart
+      ? { onPointerDown: onHoldStart, "data-reorder-handle": "" }
+      : undefined;
 
   const wave = hasClip ? (
     <div
@@ -466,6 +483,7 @@ export function SegmentRow({
         disabled={busy}
         aria-label={openLabel}
         className="row-open"
+        {...holdArea}
       >
         {o4 ? (
           // The ordinal stays on every row, finished included (#591); the
@@ -488,7 +506,7 @@ export function SegmentRow({
         <div className="row-mid">
           {titled && (
             // Visual only: the open button's name already carries the label.
-            <span className="row-title" aria-hidden="true">
+            <span className="row-title" aria-hidden="true" {...holdArea}>
               {row.label}
             </span>
           )}
