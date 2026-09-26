@@ -24,9 +24,9 @@ import { expect, test, type Page } from "@playwright/test";
  * Each segment is a phase-aligned tone (period 100 samples: 44 100 / 441 Hz)
  * at a distinct length, so it starts and ends at the same point in its cycle
  * — a segment's own edge has no discontinuity for the codec to introduce one
- * at. Three segments (two gaps) is enough to catch a join that drops a gap,
- * merges two pieces, or scrambles their order without the run time of a long
- * chapter.
+ * at. Three segments (two gaps) is enough to catch a join that drops a gap or
+ * merges two pieces without the run time of a long chapter. It does not check
+ * segment order: every piece is the same tone, and order is the unit tests'.
  *
  * What this does NOT prove: Safari/iOS decoding (`decodeAudioData` behaves
  * differently there per `hooks/audio-io.ts`'s own notes) or Android WebView.
@@ -95,10 +95,11 @@ test.describe("joined chapter MP3 decodes in a real browser (#1004 residual 4)",
     // rejects — and a non-empty decode is the rest of it.
     expect(result.decodedLength).toBeGreaterThan(0);
 
-    // (b) The decoded duration is within one MP3 frame of the segments plus
-    // gaps, per mp3-join's own timing contract (`lib/audio/mp3-join.ts`'s
-    // header: a joined segment starts within half a granule of where a single
-    // whole-chapter encode would put it, and the error does not accumulate).
+    // (b) The decoded duration is within half an MP3 granule of what a single
+    // whole-chapter encode decodes to: `MP3_TOTAL_DELAY` + segments + gaps,
+    // rounded up to a whole granule (`lib/audio/mp3-align.ts`'s header), the
+    // target `lib/audio/mp3-join.ts`'s header says the join aims at. A
+    // decode one granule long or short fails.
     expect(
       Math.abs(result.decodedLength - result.expectedTotal)
     ).toBeLessThanOrEqual(result.toleranceFrames);

@@ -37,7 +37,6 @@ import { measureLevel } from "@/lib/audio/level";
 import {
   fitMp3Decode,
   mp3GranuleCount,
-  MP3_ENCODER_DELAY,
   MP3_GRANULE,
   MP3_TOTAL_DELAY,
 } from "@/lib/audio/mp3-align";
@@ -630,7 +629,8 @@ function gapInteriorRms(channel: Float32Array, gap: GapRun): number {
     sumSq += channel[i]! ** 2;
     count++;
   }
-  return count === 0 ? 0 : Math.sqrt(sumSq / count);
+  // An empty window measured nothing; fail (c) rather than call it silent.
+  return count === 0 ? Number.POSITIVE_INFINITY : Math.sqrt(sumSq / count);
 }
 
 /** Samples either side of a detected transition to scan for a click. Wide
@@ -667,13 +667,15 @@ export interface JoinedChapterDecodeResult {
   readonly sampleRate: number;
   /** `decodeAudioData`'s own channel length: the browser decode under test. */
   readonly decodedLength: number;
-  /** `MP3_ENCODER_DELAY + Σ(recorded) + (segments - 1) × the configured gap`,
-   * rounded up to a whole `MP3_GRANULE` — what a single whole-chapter encode
-   * of the same segments would decode to, the reference the join's own header
-   * says it targets. */
+  /** `MP3_TOTAL_DELAY + Σ(recorded) + (segments - 1) × the configured gap`,
+   * rounded up to a whole `MP3_GRANULE` — what a decoder that returns every
+   * granule (`mp3-align.ts`'s header) gives for a single whole-chapter encode
+   * of the same segments, the reference the join's own header says it
+   * targets. */
   readonly expectedTotal: number;
-  /** `MP3_GRANULE` — the tolerance assertion (b) is judged against, named
-   * here so the spec need not re-import the constant to state its own claim. */
+  /** Half an `MP3_GRANULE`. A decoder that returns every granule yields whole
+   * granules, so this demands the exact granule count; one that trims its own
+   * `MP3_DECODER_DELAY` (529) still fits. One granule long or short does not. */
   readonly toleranceFrames: number;
   readonly expectedGapCount: number;
   /** Quiet runs actually found between the first and last loud block. */
@@ -692,7 +694,7 @@ export interface JoinedChapterDecodeResult {
  *
  * Each segment's PCM is a phase-aligned tone (`periodicTone`) at a distinct
  * length; `segmentFrameCounts.length` must be at least 2 for there to be a
- * gap to examine. `MP3_ENCODER_DELAY` and `SEGMENT_GAP_SECONDS` are the app's
+ * gap to examine. `MP3_TOTAL_DELAY` and `SEGMENT_GAP_SECONDS` are the app's
  * own constants — not re-declared here — so `expectedTotal` moves with the
  * production code it is judged against, rather than a copy that can drift.
  */
@@ -761,7 +763,7 @@ async function buildAndDecodeJoinedChapter(
   const expectedGapCount = segmentFrameCounts.length - 1;
   const expectedTotal =
     Math.ceil(
-      (MP3_ENCODER_DELAY + totalRecorded + expectedGapCount * gapFrames) /
+      (MP3_TOTAL_DELAY + totalRecorded + expectedGapCount * gapFrames) /
         MP3_GRANULE
     ) * MP3_GRANULE;
 
@@ -784,7 +786,7 @@ async function buildAndDecodeJoinedChapter(
     sampleRate: decoded.sampleRate,
     decodedLength: channel.length,
     expectedTotal,
-    toleranceFrames: MP3_GRANULE,
+    toleranceFrames: MP3_GRANULE / 2,
     expectedGapCount,
     gapCount: gapsFound.length,
     gapRms,
