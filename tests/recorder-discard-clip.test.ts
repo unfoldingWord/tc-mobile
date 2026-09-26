@@ -68,19 +68,21 @@ describe("the clipboard's bin (#862)", () => {
   it("every door into the dialog names the question it opens", () => {
     // A door that opened the dialog without setting `confirmFor` would ask
     // whatever the last door asked — after a Back-dismissed discard, the
-    // menu's Erase would confirm a discard and the take would stay.
+    // menu's Erase would confirm a discard and the take would stay. `"delete"`
+    // (#590) joined `"erase"`/`"clip"` as a third question the same dialog
+    // asks, through the same door-names-its-question rule.
     const opens = [...recorder.matchAll(/setConfirmOpen\(true\)/g)];
     expect(opens.length).toBeGreaterThanOrEqual(3);
     for (const open of opens) {
       const before = recorder.slice(Math.max(0, open.index - 80), open.index);
-      expect(before).toMatch(/setConfirmFor\("(erase|clip)"\);\s*$/);
+      expect(before).toMatch(/setConfirmFor\("(erase|clip|delete)"\);\s*$/);
     }
     const dialog = region(recorder, {
       from: uniqueIndexOf(recorder, "<EraseConfirm"),
       to: recorder.indexOf("/>", recorder.indexOf("<EraseConfirm")),
     });
     expect(dialog).toMatch(
-      /confirmFor === "clip" \? onConfirmDiscardClip : onConfirmErase/
+      /confirmFor === "clip"\s*\?\s*onConfirmDiscardClip\s*:\s*confirmFor === "delete"\s*\?\s*onConfirmDeleteSegment\s*:\s*onConfirmErase/
     );
   });
 });
