@@ -11,6 +11,125 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-26 (overnight) — Docker O4 session
+
+The Docker session ran O4 lanes overnight while the DRI slept, on the standing
+rules set at 05:35Z (no pickers, park at the cap, decision sheets over more
+rounds). The DRI woke twice to merge and rule on open calls; everything else
+went through the review VM (Frank = codex, George = grok).
+
+### Merged tonight
+
+| PR    | What                                                                           | Merge commit |
+| ----- | ------------------------------------------------------------------------------ | ------------ |
+| #964  | Books: store a chosen cover colour (#957)                                      | `9cace962`   |
+| #998  | Share: count the MP3 encode and skipped items in share progress (#996)         | `63ecb4ae`   |
+| #1022 | O4 Record-again confirm gets its record badge and button (G5, #979)            | `d1401f40`   |
+| #1013 | Diagnostics: a phone check screen for encode speed, storage, memory (#1009)    | `d238dca1`   |
+| #1029 | docs(tracker): EOD 2026-09-25 evening, Mac O4 session                          | `56d6d07e`   |
+| #1007 | O4 Books screen states 01/03, stored cover colour, fitted progress dots (#942) | `5537a43b`   |
+| #1024 | Editor: a bin under the line throws away a cut (#862)                          | `60ead394`   |
+| #1033 | O4 mic-denied title reads "Microphone is off" (D15)                            | `6aa05fc9`   |
+| #1034 | O4 recorder menu sheet head, and the #949 menus audit (G3)                     | `8a31cfe0`   |
+| #1036 | O4 done tiles and badge use D19's pale wash                                    | `4bf23eb7`   |
+
+**#1033, #1034 and #1036 were merged with George clean but before Frank had
+reviewed the head.** Any Frank findings that land on those heads after the
+fact go to follow-up issues, not a reopened PR.
+
+### Open and in review
+
+- **#1012** (transcode backoff, #1010): waiting on the bench to apply the
+  one-retry DRI ruling.
+- **#1019** (LGPL notice, vendored lamejs, #36): provenance check at
+  `f2e089b5`, waiting on reviewers.
+- **#1023** (O4 share progress ring and dots): Frank round 3 found an edge
+  case (positional carry can check an item the exporter never counted); bench
+  fix lane next.
+- **#1030 → #1037 → #1038**: the Books stack (in-sheet delete, storage
+  banner, book/app menu tiles on the tile grid). Merge in that order.
+
+### DRI decisions tonight (verbatim)
+
+- **One-retry** (#1012 call 2, 01:05Z): "One retry on a real reading
+  (Recommended)".
+- **Vendor lamejs** (#144 lane, 01:15Z): "Vendor into tc-mobile
+  (Recommended)".
+- **Provenance check** (#1019 cap, 03:05Z): "Build the provenance check
+  (Recommended)".
+- **Take-it-all / split / the Mac session stopped**: "Take it all
+  (Recommended)" for the O4 Books chain (03:05Z); at 04:00Z, "i will stop the
+  mac" — ownership split, with split notes posted on #1007 and #1023, and
+  Docker taking #1007, #1023, #980 and #983.
+- **Chips** (posted on #1026, 03:40Z): "Workbench chips (Recommended)".
+- **Erase-only** (posted on #1022, 03:40Z): "Erase only for now
+  (Recommended)"; the auto-start follow-up was filed as #1028.
+- **No ultracode, no self-review lanes** (04:30Z): "then lets build in
+  batches but not ulta becuase we burn a lot on the extra review cycles."
+  Batch 3 (#948 D15, #950 motion remainder, #949 menus audit) ran as plain
+  Agent lanes with the self-check stage dropped — uwreview already reviews
+  every PR, so the two-lens author self-check was pure duplication. The
+  night-notes.md append for this call was refused by the worktree guard and
+  never written; the quote is recorded in the coordinator's memory note
+  (`tc-mobile-no-self-review-lanes.md`) and in the handoff doc's restored
+  04:30Z entry.
+- **D15 always-title** (#1033, 05:00Z): "Always the title + sentence below
+  (Recommended)".
+- **The #1023 picks** (05:25Z, posted on the PR): "Bounded, scrolls
+  (Recommended)"; "No amber while skipping (Recommended)"; "Follow the
+  visible status (Recommended)".
+- **The night standing rules** (05:35Z, DRI asleep, send no pickers):
+  - Merges: "No, I'll merge in the morning (Recommended)".
+  - At the cap: "Park it, write the decision sheet (Recommended)".
+  - Design questions: "Workbench original; else park (Recommended)".
+  - Scope: "O4 only, stop new lanes by 11:00Z (Recommended)".
+- **The budget rule** (06:00Z, DRI going to bed): "89% left on our 7 day rate
+  limit, so maybe we try and stop before we get rate limited."
+
+### Morning merge list
+
+Checked against each PR's current head, by reading the latest `uw:review`
+markers for a matching sha. **None of the five open PRs are both-lenses-clean
+at their current head**, so there is no pinned merge command to hand off yet.
+
+- **#1012** — not yet: at head `6851381139f738f4fe3d7fed91039641812a1b75`,
+  Frank round 2 is clean but George round 2 is findings (the unknown-reading
+  predicate still doesn't match the DRI's one-retry ruling).
+- **#1019** — not yet: head is `f2e089b5d3cef719c5a33bf879316023ac4ef976`
+  (the provenance-check commit); no review has been posted at this head, only
+  at the prior sha `02c6cdb7a`.
+- **#1023** — not yet: at head `6783eadbb8e807512a9d41a2dcaffe4e5096521c`,
+  Frank round 3 has findings (positional carry / hollow-item edge case);
+  George has not reviewed this head.
+- **#1030** — not yet: at head `b59bfc70f6b6719ca2b67e2dab7bc4a3ea7b609d`,
+  George round 1 is clean; Frank has not reviewed this head.
+- **#1037** — not yet: at head `14321b060cf2b957b99adbfb9e39fef2cbe2d887`,
+  George round 1 has findings (the share-control focus/re-entrancy bug);
+  Frank has not reviewed this head.
+- **#1038** — not yet: head `a9425b484b4122bbe0594f57b4f16fbe31cd200a`
+  carries no review comments yet.
+
+### Follow-up issues filed
+
+#1014, #1015, #1017, #1028, #1031; plus comments on #823 (the Workbox
+Apache-vs-MIT question, and the org-transfer LGPL wording both reviewers
+flagged on #1019). The #974 tester row for the phone check is still owed with
+the next tester build.
+
+### Lessons
+
+- **The bench's conflict lane resolves DIRTY PRs on its own.** Don't race it
+  with a manual rebase.
+- **A stalled workflow stage can be skipped by marking the PR ready.** #1007's
+  Books-chain workflow had stalled inside #983's self-check; the fix was to
+  commit what was there and let the review VM take it from ready, not to debug
+  the stall.
+- **An author-side pre-PR self-check round duplicates the review VM.** It is
+  useful signal for the lane, but it never counts toward the two-lens bar —
+  only Frank and George at the current head do.
+
+---
+
 ## 2026-09-25 (evening, Mac O4 session) — O4 batches 0–2 built and merged behind the switch; the DRI's workbench-original decisions recorded; O4 handed back to the Docker session
 
 The DRI ran the O4 epic (#936) from the Mac session, starting from the Docker session's handoff (`temp/tc-mobile/o4-handoff/README.md`). Lanes were agent workflows: implement, then an author-side pre-PR check, then fix, then PR. Every Frank and George review came from the uwreview VM. The pre-PR checks are author self-checks and never counted toward the two-lens bar.
