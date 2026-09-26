@@ -13,7 +13,7 @@ import { plural } from "@/lib/plural";
  * the fallback case fails against one that indexes the table directly.
  *
  * `Intl.PluralRules` for a non-English locale needs ICU data. Node ships
- * full-icu by default from v13, and this repo's floor is Node 22.12
+ * full-icu by default from v13, and this repo's floor is Node 22.22.2
  * (AGENTS.md) — the first case asserts the data is actually there, so a
  * runtime without it fails loudly here instead of silently reducing every
  * other case to the English rule.
