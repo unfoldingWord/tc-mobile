@@ -129,11 +129,18 @@ describe("shareO4View: the core's progress bar (D22)", () => {
     });
   });
 
-  it("is not a progress bar once an outcome shows", () => {
+  it("stays a full progress bar once handed over, as the workbench's system phase does", () => {
+    expect(
+      shareO4View({ phase: "outcome", settled: "sent", since: 0 }, "book").meter
+    ).toEqual({ now: 100 });
+  });
+
+  it("is not a progress bar on any other outcome", () => {
     for (const settled of SHARE_SETTLED)
-      expect(
-        shareO4View({ phase: "outcome", settled, since: 0 }, "book").meter
-      ).toBeNull();
+      if (settled !== "sent")
+        expect(
+          shareO4View({ phase: "outcome", settled, since: 0 }, "book").meter
+        ).toBeNull();
   });
 });
 

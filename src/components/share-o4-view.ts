@@ -57,9 +57,12 @@ export function bookShareItems(chapters: readonly ChapterRow[]): ShareItem[] {
 }
 
 /**
- * A chip's state (D21). `stays`: the item does not go out, grey with its
- * number. `waiting`: goes out, not reached yet. `current`: the one being
- * packed now. `finished`: packed, or handed over, and shows a check.
+ * A chip's state (D21, as corrected on #947). `stays`: the item does not go
+ * out, grey with its number. `waiting`: goes out, not reached yet; while
+ * packing it is the same grey chip, as in the workbench's `vShare` (only the
+ * armed phase, which this overlay does not have, draws it teal). `current`:
+ * the one being packed now, amber. `finished`: packed, or handed over, and
+ * shows a check on teal.
  */
 type ShareChipState = "stays" | "waiting" | "current" | "finished";
 
@@ -75,8 +78,9 @@ export interface ShareO4View {
   readonly ring: number | null;
   /**
    * The core's progress bar (D22): `now` is the whole percent, or `null`
-   * before the first count. `null` itself means the core is not a progress
-   * bar, which is every outcome.
+   * before the first count. Handed over (`sent`) keeps it at 100, as the
+   * workbench's `system` phase does. `null` itself means the core is not a
+   * progress bar, which is every other outcome.
    */
   readonly meter: { readonly now: number | null } | null;
   /** One chip per item, in order. Empty draws no chip row. */
@@ -96,7 +100,7 @@ export function shareO4View(
     return {
       icon: sent ? "check" : shareOverlayGlyph(progress).icon,
       ring: null,
-      meter: null,
+      meter: sent ? { now: 100 } : null,
       chips: sent ? handedOver(items) : [],
     };
   }

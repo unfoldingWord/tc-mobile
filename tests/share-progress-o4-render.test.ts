@@ -127,7 +127,7 @@ describe("the core's progress bar (D22)", () => {
     expect(bar.hasAttribute("aria-valuenow")).toBe(false);
   });
 
-  it("is absent when the view has no meter (an outcome)", () => {
+  it("is absent when the view has no meter (an outcome other than handed over)", () => {
     const container = o4({ meter: null });
     expect(container.querySelector("[role='progressbar']")).toBeNull();
     expect(one(container, ".share-o4-core").hasAttribute("aria-label")).toBe(

@@ -105,9 +105,9 @@ const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
  * outcome rings D14 and D16 draw, are `o4/share.css`'s, keyed on the scrim's
  * `data-outcome`. The ring is `aria-hidden`. The core is a progress bar
  * while the view gives it a meter (D22), labelled from `strings.ts` and
- * valued 0 to 100, with no value before the first count; on an outcome it
- * is a plain box and the panel's role and text carry the state, as in the
- * current look.
+ * valued 0 to 100, with no value before the first count and 100 once
+ * handed over; on any other outcome it is a plain box and the panel's role
+ * and text carry the state, as in the current look.
  */
 function O4Circle({ view }: { view: ShareO4View }) {
   const meter = view.meter;

@@ -156,19 +156,27 @@ describe("O4 share circle stylesheet (#947)", () => {
     expect(valueFor(`${O4} .share-o4-chips`, "gap")).toBe("10px");
   });
 
-  it("chips: stays grey with faint ink, goes out on send with white ink, current amber (D21)", () => {
+  it("chips: grey with faint ink unless finished (send, white ink) or current (amber) (D21 as corrected)", () => {
     const chip = `${O4} .share-o4-chip`;
-    // The resting chip is the one that does not go out.
+    // The base chip: an item that does not go out, and, while packing, a
+    // go-out item still waiting (the workbench's vShare gives both no class).
     expect(valueFor(chip, "background")).toBe("var(--s-well)");
     expect(valueFor(chip, "color")).toBe("var(--s-ink-faint)");
-    for (const state of ["waiting", "finished"]) {
+    expect(valueFor(`${chip}[data-chip="finished"]`, "background")).toBe(
+      "var(--s-send)"
+    );
+    expect(valueFor(`${chip}[data-chip="finished"]`, "color")).toBe(
+      "var(--s-tile-ink)"
+    );
+    for (const state of ["waiting", "stays"]) {
       expect(
         valueFor(`${chip}[data-chip="${state}"]`, "background"),
         state
-      ).toBe("var(--s-send)");
-      expect(valueFor(`${chip}[data-chip="${state}"]`, "color"), state).toBe(
-        "var(--s-tile-ink)"
-      );
+      ).toBeUndefined();
+      expect(
+        valueFor(`${chip}[data-chip="${state}"]`, "color"),
+        state
+      ).toBeUndefined();
     }
     expect(valueFor(`${chip}[data-chip="current"]`, "background")).toBe(
       "var(--s-voice)"
@@ -176,8 +184,5 @@ describe("O4 share circle stylesheet (#947)", () => {
     expect(valueFor(`${chip}[data-chip="current"]`, "color")).toBe(
       "var(--s-voice-ink)"
     );
-    expect(
-      valueFor(`${chip}[data-chip="stays"]`, "background")
-    ).toBeUndefined();
   });
 });
