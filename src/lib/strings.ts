@@ -271,6 +271,10 @@ export const strings = {
   tileShare: "Share",
   tileLight: "Light",
   tileDark: "Dark",
+  // The edit-mode recorder menu's exit tile (G3); its name is `doneEditing`.
+  // Its own key, not `tileFinished`: that one is marking done, this is leaving
+  // edit, and the two only happen to share a word in English.
+  tileDone: "Done",
   closeRecorder: "Close recorder",
   /**
    * The recorder sheet's header trail — the Segments one with the segment
@@ -801,16 +805,22 @@ export const strings = {
   // The two-tap discard, and the fainter line beneath it once armed. "for good"
   // only on the record path — there the held take is the only copy; on the edit
   // path the stored recording survives and only the edit goes.
+  //
+  // The record-path arms ARE the take-recovery panel's discard copy, read from
+  // those keys rather than written out a second time (#805 item 1): both
+  // confirms destroy the only copy of a recording, and `takeRecoverDiscard`'s
+  // own comment says the two share one shape. The arrows run only after
+  // `strings` is initialised, as `menuOpenWithFailures` already relies on.
   saveFailedDiscard: (editOnly: boolean, armed: boolean): string =>
     armed
       ? editOnly
         ? "Tap again to discard these changes"
-        : "Tap again to delete this recording for good"
+        : strings.takeRecoverDiscardArmed
       : editOnly
         ? "Discard these changes"
-        : "Delete this recording",
+        : strings.takeRecoverDiscard,
   saveFailedDiscardHint: (editOnly: boolean): string =>
-    editOnly ? "Tap again to discard them." : "Tap again to delete it.",
+    editOnly ? "Tap again to discard them." : strings.takeRecoverDiscardHint,
 
   // ── Root error boundary (#167) ───────────────────────────────────────────
   // The whole text layer of the crash screen. Says that something failed and
@@ -1033,4 +1043,31 @@ export const strings = {
   phoneCheckCopied: "Copied.",
   phoneCheckSelected: "Selected. Use your phone's Copy.",
   phoneCheckClose: "Close",
+
+  // ── Cover colour picker (#957, from #937 D7/D8) ──────────────────────────
+  // The picker's group name, and one name per palette key
+  // (`lib/cover-colour.ts`'s `CoverColourKey`) — the whole accessible text
+  // layer for a screen built for people who may not read, so each swatch has
+  // to carry a real word, not just a fill colour a screen reader cannot see.
+  // Worded by `components/cover-colour-copy.ts`'s exhaustive switch, the same
+  // split `capture-failure-copy.ts` uses: the KEY is a `lib/` value, the
+  // WORDS live here.
+  coverColourLabel: "Cover colour",
+  coverColourAmber: "Amber",
+  coverColourTeal: "Teal",
+  coverColourPlum: "Plum",
+  coverColourForest: "Forest",
+  coverColourBrick: "Brick",
+  coverColourSlate: "Slate",
+  coverColourRose: "Rose",
+  coverColourOlive: "Olive",
+  coverColourRust: "Rust",
+  coverColourCocoa: "Cocoa",
+  // A swatch button's whole accessible name: the colour's name, plus its
+  // selected state — the same "whole name, plus a trailing state word" shape
+  // `bookRow` above uses for "expanded"/"collapsed". `aria-pressed` already
+  // carries this machine-readably; the word is for the same reason `pressed`
+  // is never inferred from a glyph alone (`Control`'s own `pressed` doc).
+  coverSwatchLabel: (name: string, selected: boolean): string =>
+    selected ? `${name}, selected` : name,
 } as const;

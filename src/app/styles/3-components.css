@@ -1324,4 +1324,37 @@
     background: var(--s-done);
     color: var(--s-done-ink);
   }
+
+  /* --- cover-colour picker (#957) ----------------------------------------- */
+  /* `components/cover-picker.tsx` is exported only this lane (not mounted —
+     #943/#949 do that), so nothing below paints on any screen yet.
+
+     Structural sizing only, read directly per this file's own header rule.
+     The swatch FILL is deliberately not here: it is the book's chosen palette
+     hex, set inline per swatch by the component, because a palette entry is
+     an identity colour rather than a themed role — argued in full in
+     `lib/cover-colour.ts`'s docblock, not repeated here. The selected ring IS
+     a themed role (`--s-focus`, the same token `--c-focus-ring` above draws
+     its colour from), because unlike the fill it is a UI affordance that may
+     reasonably want different contrast per theme. */
+  .cover-swatch-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--p-space-3);
+  }
+
+  .cover-swatch {
+    width: var(--p-space-8);
+    height: var(--p-space-8);
+    border-radius: var(--p-radius-full);
+    border: 2px solid transparent;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .cover-swatch[aria-pressed="true"] {
+    border-color: var(--s-focus);
+  }
 }

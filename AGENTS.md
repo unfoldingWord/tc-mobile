@@ -187,8 +187,12 @@ fixed sentence in the table may appear again in `app/`, `components/` or
 they are for whoever reads the failure log, not for the screen, and that test's
 docblock names the one pair where the two wordings overlap on purpose. The
 second check is the stronger one and the reason a base merge cannot quietly
-undo this: every fixed sentence in `app/` and `hooks/` must be one the table
-holds, so a brand-new literal fails as loudly as a re-typed one.
+undo this: every punctuated, non-composed literal in `app/` and `hooks/` must
+be one the table holds, so a brand-new sentence of that shape fails as loudly
+as a re-typed one. Short labels and parameterised entries are outside both of
+those; a third check pins them by exact whole-literal match, for the
+save-failed and take-recovery arms and every multi-word fixed label, and says
+in its docblock what it still cannot see (#805).
 `tests/capture-failure-copy.test.ts` sweeps `hooks/` and `lib/` for the three
 capture sentences, skipping the table's own file — holding a sentence is what a
 table is for; minting one beside the code that raises it is the defect.
@@ -380,7 +384,9 @@ track throwing on its own `stop()` (`hooks/audio-io.ts`,
 save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
 (`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
-segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591),
+segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
+failed book cover-colour write
+(`hooks/use-book-cover-colour.ts`, `"book-cover-colour"`, #957),
 playback's own
 resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
 `"playback-resume"`, and the fail-closed gate that still finds the context

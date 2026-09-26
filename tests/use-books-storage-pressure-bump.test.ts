@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { stripComments } from "./support";
+
 /**
  * `createBook` and `deleteBook` each call `bumpStoragePressure()` once their
  * write has committed (#542 Part A, DRI decision 2026-09-24: "build the
@@ -30,9 +32,6 @@ const sourceUrl = new URL("../src/hooks/use-books.ts", import.meta.url);
  * meant for code. This simple strip does not distinguish comments from
  * comment-like text inside string literals — none of the strings this file
  * greps for contain `//` or `/*`, so that gap does not matter here. */
-const stripComments = (text: string) =>
-  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
 const code = stripComments(readFileSync(sourceUrl, "utf8"));
 
 /** Slice out one `const <name> = useCallback(` declaration's own body, by
