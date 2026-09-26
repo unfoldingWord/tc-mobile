@@ -131,6 +131,47 @@ export default defineConfig(({ mode }) => {
       __BUILD_SHA__: JSON.stringify(buildSha),
     },
     build: {
+      // Pinned to the app's stated floor (#1017 open question 1) rather than
+      // left to Vite 8's own default, `"baseline-widely-available"` — a
+      // rolling snapshot (`ESBUILD_BASELINE_WIDELY_AVAILABLE_TARGET` in
+      // `node_modules/vite/dist/node/chunks/node.js`) that is bumped on every
+      // Vite major and today resolves to `safari16.4`/`ios16.4`, above the
+      // `IPHONEOS_DEPLOYMENT_TARGET = 15.0` floor in
+      // `ios/App/App.xcodeproj/project.pbxproj`. `chrome111`/`edge111`/
+      // `firefox114` are carried over unchanged from that same default: the
+      // Android floor (`android/variables.gradle`'s `minSdkVersion = 24`,
+      // Android 7.0) is stated everywhere (this file's own draft wording,
+      // `docs/native/system-requirements.md`) as conditional on Android
+      // System WebView being kept up to date, so nothing found this build
+      // checking called for lowering those three.
+      //
+      // This is a forward guard, not a fix for something broken today: a
+      // build-artifact scan (`tests/build-target-floor.test.ts`, gated on
+      // `dist/` the same way `tests/dist-css.test.ts` is) found no JS syntax
+      // in the current `dist/` that the OLD default wouldn't already have
+      // shipped safely to iOS 15 — but nothing pinned that, so a future
+      // dependency or source change using e.g. a class static initialization
+      // block (needs Safari/iOS 16.4 per `@babel/compat-data`'s
+      // `data/plugins.json`, `transform-class-static-block`) would have
+      // shipped untranspiled and silently broken on iOS 15–16.3. Pinning the
+      // target here means Vite's own `vite:esbuild-transpile` `renderChunk`
+      // pass (real esbuild, not just rolldown's bundler pass —
+      // `resolveEsbuildTranspileOptions` in the same vite chunk) downlevels
+      // or fails the build on such syntax instead of shipping it untouched.
+      // `build.cssTarget` (LightningCSS's `targets`, the active CSS
+      // minifier here since `cssMinify` defaults to `true` for a
+      // non-`lib` build) derives from this same value
+      // (`cssTarget: merged.cssTarget ?? merged.target`), so one setting
+      // covers both — though LightningCSS has no fallback for a CSS
+      // *selector* like `:has()` regardless of `targets` (verified: it
+      // passes `:has()` through unchanged and warning-free even when
+      // targeted at `safari 15`), so the `:has()` already shipping from
+      // `src/app/styles/o4/{menus,sheets,motion}.css` is a separate, real gap
+      // against the iOS 15.0 floor (needs Safari/iOS 15.4 per caniuse-lite's
+      // `data/features/css-has.js`) that this target has no power to close —
+      // see the #1017 comment and `docs/native/system-requirements.md` for
+      // that residual.
+      target: ["chrome111", "edge111", "firefox114", "safari15", "ios15"],
       rollupOptions: {
         // `main.tsx` dynamically imports the Playwright smoke harness (#251),
         // gated on `import.meta.env.MODE === "e2e"`. That runtime guard alone

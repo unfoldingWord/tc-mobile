@@ -25,6 +25,7 @@ const result = spawnSync(
     "tests/dist-css.test.ts",
     "tests/dist-locale.test.ts",
     "tests/precache-manifest.test.ts",
+    "tests/build-target-floor.test.ts",
   ],
   { stdio: "inherit", env: process.env }
 );
