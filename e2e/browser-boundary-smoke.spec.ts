@@ -99,6 +99,28 @@ declare global {
         deadlineMs: number;
       }>;
       workerSnapshotReady: () => boolean;
+      // Declared here (not re-declared in joined-mp3-decode.spec.ts) because
+      // `tsconfig.e2e.json` compiles every file under `e2e/` as one program:
+      // a `declare global` is ambient over that whole program, and a second,
+      // differently-shaped `Window.__e2e` here would conflict with this one
+      // rather than merge with it. See that spec for what this is for (#1004
+      // residual 4).
+      buildAndDecodeJoinedChapter: (
+        segmentFrameCounts: readonly number[]
+      ) => Promise<{
+        segments: number;
+        missing: number;
+        joined: boolean;
+        mp3ByteLength: number;
+        sampleRate: number;
+        decodedLength: number;
+        expectedTotal: number;
+        toleranceFrames: number;
+        expectedGapCount: number;
+        gapCount: number;
+        gapRms: readonly number[];
+        boundaryMaxAbsDelta: readonly number[];
+      }>;
       openDb: () => Promise<{ name: string; version: number }>;
       watchVersionChange: () => void;
       versionChangeFired?: boolean;

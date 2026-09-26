@@ -189,8 +189,9 @@ test.describe("edit mode toggle", () => {
       // `recorder-fixtures.ts` and now matched by PREFIX rather than exact
       // name — see that file's docblock) is what actually waits out
       // `commitTake`'s own async tail. #857 removed the one-tap live-take
-      // entry #134 built — `commitTake("edit")` is no longer reachable from
-      // either toolbar control (`menu-row-state.ts`'s `editRowReason`) — so
+      // entry #134 built — neither toolbar control reaches Edit during a take
+      // (`menu-row-state.ts`'s `editRowReason`), and #871 removed the
+      // commit-then-edit arm itself — so
       // Stop-then-Edit is now the only path at EITHER width; the two widths
       // still differ on layout/breakpoint, which the frame-slot assertions
       // below are for.

@@ -12,6 +12,8 @@ import {
 } from "@/components/recorder-menu";
 import { strings } from "@/lib/strings";
 
+import { stripComments } from "./support";
+
 /**
  * The recorder's ≡ menu, now that it is its own component (#160, L-1).
  *
@@ -207,12 +209,15 @@ describe("RecorderMenu", () => {
     // `/*` inside the slice, so a slice-level strip cannot see it — `indexOf`
     // then finds the decoy and the live handler is never read. Same read-then-
     // strip-then-search order `tests/menu-hamburger-header.test.ts` uses.
-    const sheet = readFileSync(
-      path.resolve(import.meta.dirname, "..", "src/components/recorder.tsx"),
-      "utf8"
-    )
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^\s*\/\/.*$/gm, "");
+    // The shared strip, because a line-anchored one keeps a comment
+    // trailing a code line, and `indexOf` would find a whole arming
+    // `<RecorderMenu … />` written there ahead of the live one (#822).
+    const sheet = stripComments(
+      readFileSync(
+        path.resolve(import.meta.dirname, "..", "src/components/recorder.tsx"),
+        "utf8"
+      )
+    );
     const open = sheet.indexOf("<RecorderMenu");
     const end = sheet.indexOf("/>", open);
     expect(open, "no <RecorderMenu in the sheet").toBeGreaterThan(-1);
@@ -244,8 +249,11 @@ describe("RecorderMenu", () => {
       }
     }
     expect(close, "unbalanced onErase braces").toBeGreaterThan(at);
+    // `setConfirmFor("erase")` (#862): the dialog also asks the clipboard's
+    // discard question, so this door names which one it opens — still only
+    // arming the confirm, never erasing.
     expect(tag.slice(at, close + 1).replace(/\s+/g, "")).toBe(
-      "onErase={()=>{setMenuOpen(false);setConfirmOpen(true);}}"
+      'onErase={()=>{setMenuOpen(false);setConfirmFor("erase");setConfirmOpen(true);}}'
     );
   });
 

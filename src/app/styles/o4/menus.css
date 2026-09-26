@@ -186,8 +186,8 @@
     color: var(--s-voice-text);
   }
   [data-design="o4"] .o4-crumb[data-state="finished"] {
-    background: var(--s-done);
-    color: var(--s-done-ink);
+    background: var(--s-done-quiet); /* D19: the pale wash */
+    color: var(--s-done-text);
   }
 
   [data-design="o4"] .o4-menu-preview {
@@ -216,8 +216,8 @@
     font-weight: 800; /* #939 token */
   }
   [data-design="o4"] .o4-menu-badge[data-state="finished"] {
-    background: var(--s-done);
-    color: var(--s-done-ink);
+    background: var(--s-done-quiet); /* D19: the pale wash */
+    color: var(--s-done-text);
   }
   [data-design="o4"] .o4-menu-preview-mid {
     display: flex;

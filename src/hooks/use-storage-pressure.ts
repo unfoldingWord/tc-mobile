@@ -24,13 +24,17 @@ import { reportFailure } from "./report-failure";
  *
  * Read by the Books screen (`books-screen.tsx`, through
  * `storagePressureNotice`) — #247's wiring half, landed once #531's rewrite
- * had settled.
+ * had settled — and by the transcode sweep (`finish-transcode.ts`, #1010),
+ * which calls `readStorageEstimate` directly to tell whether storage has
+ * freed since a segment ran out of room.
  *
- * **The marker is all that leaves this file.** `useStoragePressure` returns
+ * **Only the marker reaches a screen.** `useStoragePressure` returns
  * `"low" | "critical" | null` rather than the `usage`/`quota` pair, so
  * "nothing may render the numbers" (`pressure.ts`'s docblock: the estimate is
  * coarse and per-origin, and #247 asks for no number on screen) is a property
- * of the boundary rather than a rule a future caller has to remember.
+ * of the hook rather than a rule a future screen has to remember. The sweep
+ * is the one other reader of the raw pair; it turns it into a byte count
+ * (`freeByteCount`) for a comparison and renders nothing.
  *
  * **There is still no cross-mount CACHE here — that remains a decision, not
  * an omission — but there IS now a module-scope INVALIDATION, and the two are
@@ -387,7 +391,26 @@ export function useStoragePressure(): StoragePressureMarker | null {
         // that the write which triggered the bump has already made stale.
         if (cancelled) return;
         if (getGeneration() !== requestGeneration) return;
-        setBand(storagePressure(reading?.usage, reading?.quota));
+        // #843 item 3 (DRI pick: "Keep last-known band"). `reading === null`
+        // is `readStorageEstimate`'s "we could not ask" answer — an absent
+        // API, a rejected call, a synchronous throw, or an unusable answer,
+        // never a real reading (see that function's own docblock: it never
+        // rejects, so `null` is the only failure shape that reaches here).
+        // Before this, a failed re-read still called
+        // `storagePressure(undefined, undefined)`, which is `"unknown"`, so a
+        // transient failure on a bump-triggered re-read (book delete/create)
+        // reset an already-shown, still-genuinely-live `"low"`/`"critical"`
+        // line to nothing rather than leaving it standing. Skipping `setBand`
+        // here leaves `band` at whatever it last held instead.
+        //
+        // **When there is no last-known band yet** — the FIRST read for this
+        // mount fails — `band` is still its `useState` initial value,
+        // `"unknown"`, and this skip leaves it exactly there: today's
+        // unchanged behaviour for that case, not a new one, because there is
+        // no prior band to hold. `tests/use-storage-pressure-mount.test.ts`
+        // pins both halves.
+        if (reading === null) return;
+        setBand(storagePressure(reading.usage, reading.quota));
       }
     );
     return () => {

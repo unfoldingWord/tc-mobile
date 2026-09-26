@@ -324,6 +324,9 @@ export const strings = {
   zoomAtWhole: "Zoomed to the whole segment. Zoom in to a quarter.",
   zoomAtQuarter: "Zoomed to a quarter. Zoom out to the whole segment.",
   micNeededTitle: "Microphone access is needed to record",
+  // The O4 look's mic-denied title (D15, #948), from the O4 original. O4 only:
+  // the current look keeps `micNeededTitle` until O4 becomes the default.
+  micOffTitle: "Microphone is off",
   micRetry: "Try again",
   micBack: "Go back",
   finishedWriteFailed: "Could not save the finished mark.",
@@ -581,6 +584,14 @@ export const strings = {
   // segment over — because the sheet stays open, ready for the next take.
   rerecord: "Erase and record again",
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
+  // Press-and-hold reorder on the Segments list (#953, O4 only), spoken by
+  // the list's live region: the row that was lifted, where it landed, or that
+  // it went back. Segments renumber after a move (the DRI's "Renumber" pick),
+  // so the landing is said as the segment's new number.
+  reorderLifted: (n: number): string => `Moving segment ${n}.`,
+  reorderMoved: (from: number, to: number): string =>
+    `Segment ${from} is now segment ${to}.`,
+  reorderStayed: (n: number): string => `Segment ${n} stayed where it was.`,
   eraseConfirmTitle: "Erase this recording?",
   eraseConfirm: "Erase",
   // The safe action of the shared confirm dialog (`erase-confirm.tsx`). One
@@ -588,6 +599,18 @@ export const strings = {
   // because it is the same control on the same surface saying the same word.
   eraseCancel: "Cancel",
   eraseFailed: "Could not erase the recording. Try again.",
+  // The confirm's "Play what will be lost" row (#979 remainder, O4 "13"
+  // only): the workbench's own copy, word for word, for the Play/Pause
+  // transport beside the preview waveform.
+  eraseConfirmPreviewPlay: "Play what will be lost",
+  eraseConfirmPreviewPause: "Pause",
+  // The clipboard's bin under the line (#862): throws away a cut that was
+  // never pasted, behind the same confirm as the whole-take erase. "Cut
+  // audio", not "clipboard": the translator cut a piece of their recording,
+  // and that piece is what is lost.
+  discardClip: "Throw away the cut audio",
+  discardClipConfirmTitle: "Throw away the cut audio?",
+  discardClipConfirm: "Throw away",
 
   // ── Delete a book (#337) ─────────────────────────────────────────────────
   // The book ≡-menu row, and the two-tap confirm behind it — the same dialog
@@ -638,6 +661,12 @@ export const strings = {
   // Back after the activity stopped (`resolveProvesDelivery`). So never
   // "sent", "delivered", "shared to", or an app's name; a test pins that.
   shareHandingOver: "Opening the phone's share sheet.",
+  // The O4 share circle (#947). D22: the core is a progress bar with this
+  // label, chapter and book alike. D21: the numbered chips above it are one
+  // image with this label — how many of the items go out, of all of them.
+  sharePreparingLabel: "Preparing to share",
+  shareItemsGoOut: (out: number, all: number): string =>
+    `${out} of ${all} go out`,
   shareSent: "Handed to the phone's share sheet.",
   shareDismissed: "The share sheet was closed before anything went out.",
   // The native Android plugin can resolve on a Back after the chooser's
@@ -914,13 +943,25 @@ export const strings = {
   // copy names the phone and, for the critical band, states the concrete
   // consequence — new recordings may not save — which is also why
   // `storageCritical` now renders in the `alert` tone rather than `info`
-  // (`storage-pressure-notice.ts`). Both lines still name the pair
+  // (`storage-pressure-notice.ts`). Both lines name the pair
   // `pressure.ts`'s docblock names — mark segments Finished (ADR 0009's
   // transcode reclaims ~90%) or share the work and then remove it — not bare
   // "share", which does not reclaim anything on its own: `lib/export/
   // chapter.ts` decodes and re-encodes without deleting a single stored clip.
+  //
+  // **#843 item 1: `storageLow` gained the fallback clause `storageCritical`
+  // already had.** George's finding: the gate both bands share,
+  // `hasReclaimableAudio` (`recordedCount > 0`), stays true even when every
+  // recorded segment on the shelf is already Finished (MP3, not PCM) — a real
+  // state where "mark segments finished" recommends something already done.
+  // `storagePressureNotice` only ever sees the marker, not the
+  // finished/recorded split, so it cannot gate the clause on that state
+  // (George: "not asking for another boolean"). The fix instead matches
+  // `storageCritical`'s existing shape: state the fallback unconditionally,
+  // so the sentence holds in every state this gate can actually show, the
+  // same way `storageCritical`'s fallback already did before this change.
   storageLow:
-    "This phone is running low on space. Mark the segments you're done with as finished — they take much less room.",
+    "This phone is running low on space. Mark segments finished to free up room, or share your work and then remove it.",
   storageCritical:
     "This phone is almost out of space, and new recordings may not save. Mark finished segments, or share your work and then remove it.",
   // The O4 storage banner's own line (state 17, #983), word for word from
@@ -1057,6 +1098,32 @@ export const strings = {
   // The wording itself is a coordinator assumption pending the requirements
   // owner's sign-off — see the #878 PR body.
   stopToErase: "Stop recording to erase.",
+
+  // ── Phone check (#1009) ──────────────────────────────────────────────────
+  // A hidden tester screen, reached by five taps on the build stamp or by
+  // `?check=phone`. Its words are for a tester filling in #974, not for a
+  // translator, but they are screen copy all the same and so live here. The
+  // REPORT it produces is engineering data and is worded in
+  // `lib/phone-check/report.ts` instead — see that file's docblock.
+  phoneCheckTitle: "Phone check",
+  phoneCheckIntro:
+    "Measures this phone for a tester report. Nothing runs until you tap Start, and it never touches your books or recordings.",
+  phoneCheckStart: "Start",
+  phoneCheckRunWaiting: "Waiting for a recording to finish converting.",
+  phoneCheckRunDevice: "Reading device info.",
+  phoneCheckRunEncode: "Encoding 5 minutes of test audio.",
+  phoneCheckRunStorage: "Writing and reading 50 MB of test audio.",
+  phoneCheckDone: "Done.",
+  phoneCheckMemoryTitle: "Memory ceiling",
+  phoneCheckMemoryWarning:
+    "Run this last. It fills memory until the phone refuses, and the app may restart. If it does, open Phone check again to see how far it got.",
+  phoneCheckMemoryStart: "Start memory test",
+  phoneCheckMemoryStep: (mb: number) => `Trying ${mb} MB.`,
+  phoneCheckReportLabel: "Report for #974",
+  phoneCheckCopy: "Copy report",
+  phoneCheckCopied: "Copied.",
+  phoneCheckSelected: "Selected. Use your phone's Copy.",
+  phoneCheckClose: "Close",
 
   // ── Cover colour picker (#957, from #937 D7/D8) ──────────────────────────
   // The picker's group name, and one name per palette key

@@ -1,23 +1,32 @@
+import { useLayoutEffect, useRef } from "react";
+
 import { Control } from "./control";
 import { shareControlAffordance } from "./control-affordance";
 import { Icon } from "./icon";
 import { Notice } from "./notice";
 import { noticePresentation } from "./notice-tone";
+import { libraryShareErrorText, libraryShareGapText } from "./share-error-copy";
 import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
-import {
-  libraryShareErrorText,
-  libraryShareGapText,
-} from "./storage-banner-copy";
 import type { StoragePressureNotice } from "./storage-pressure-notice";
 import { strings } from "@/lib/strings";
+import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import { readSharePlatform } from "@/hooks/share-target";
-import { useLibraryShare } from "@/hooks/use-library-share";
+import { useFocusRestore } from "@/hooks/use-focus-restore";
+import type { UseLibraryShare } from "@/hooks/use-library-share";
 
 interface StoragePressureBannerProps {
   /** `storagePressureNotice()`'s line — whether it shows at all is decided there. */
   notice: StoragePressureNotice;
   /** Draw state 17 of the O4 workbench (#983) rather than the #247 Notice. */
   o4: boolean;
+  /**
+   * The Books screen's `useLibraryShare()` (#1045). The screen owns the flow,
+   * not this banner, because the screen is what renders the share overlay
+   * for it and makes the shelf inert while that overlay owns the screen —
+   * both in the same render the timeline changes in. The current look reads
+   * none of it.
+   */
+  share: UseLibraryShare;
 }
 
 /**
@@ -28,20 +37,41 @@ interface StoragePressureBannerProps {
  * phone icon and a "Share your work" button that shares every book at once
  * (#948's D14 — the library share #987 built, not the problem report's Send).
  *
- * The share hook lives in the O4 branch's own component, so the current look
- * mounts no share flow at all, and the flow unmounts (and cancels, through
- * `useShareFlow`'s own unmount cleanup) with the banner.
+ * The share's busy and outcome timeline is not drawn here: the Books screen
+ * renders it as the same full-screen `<ShareProgress>` Share Book uses, with
+ * the `"library"` scope (#1045).
  */
 export function StoragePressureBanner({
   notice,
   o4,
+  share,
 }: StoragePressureBannerProps) {
   if (!o4) return <Notice tone={notice.tone}>{notice.text}</Notice>;
-  return <O4StorageBanner notice={notice} />;
+  return <O4StorageBanner notice={notice} share={share} />;
 }
 
-function O4StorageBanner({ notice }: { notice: StoragePressureNotice }) {
-  const share = useLibraryShare();
+function O4StorageBanner({
+  notice,
+  share,
+}: {
+  notice: StoragePressureNotice;
+  share: UseLibraryShare;
+}) {
+  // The overlay takes focus while it owns the screen and the shelf this
+  // banner sits in goes inert, so the tapped control loses focus. Capture it
+  // in the tap itself and hand it back once the shelf's `inert` has lifted,
+  // the same #96/#97 contract Share Book keeps (`books-screen.tsx`).
+  const focusRestore = useFocusRestore();
+  const shareControlRef = useRef<HTMLButtonElement | null>(null);
+  const ownsScreen = shareOverlayOwnsScreen(share.progress);
+  useLayoutEffect(() => {
+    if (ownsScreen) return;
+    focusRestore.restore({
+      suppressed: false,
+      fallback: shareControlRef.current,
+    });
+  }, [ownsScreen, focusRestore]);
+
   // The Notice's role, on the words only: the band still decides how urgently
   // a screen reader hears it, and the button is not part of that announcement.
   const { role } = noticePresentation(notice.tone);
@@ -63,6 +93,7 @@ function O4StorageBanner({ notice }: { notice: StoragePressureNotice }) {
   const partial = shareOutcomeGlyph("partial");
 
   const onPrepare = () => {
+    focusRestore.capture();
     void share.prepare(
       strings.shareAllFilename,
       strings.shareAllFolder,
@@ -70,6 +101,7 @@ function O4StorageBanner({ notice }: { notice: StoragePressureNotice }) {
     );
   };
   const onSend = () => {
+    focusRestore.capture();
     void share.send();
   };
 
@@ -89,6 +121,7 @@ function O4StorageBanner({ notice }: { notice: StoragePressureNotice }) {
             control keeps focus. */}
         {share.status === "ready" ? (
           <Control
+            ref={shareControlRef}
             icon={affordance.icon}
             label={strings.shareSend}
             size={34}
@@ -102,6 +135,7 @@ function O4StorageBanner({ notice }: { notice: StoragePressureNotice }) {
           />
         ) : (
           <Control
+            ref={shareControlRef}
             icon={affordance.icon}
             label={
               share.status === "preparing"

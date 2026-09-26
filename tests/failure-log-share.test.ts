@@ -8,7 +8,7 @@ import {
   type LogShareCapabilities,
   selectLogShareShape,
 } from "@/hooks/use-failure-log-share";
-import { region } from "./support";
+import { region, uniqueIndexOf } from "./support";
 
 /** Reads the hook source for wiring assertions; does not execute its effects. */
 const read = (rel: string) =>
@@ -361,16 +361,24 @@ describe("failure-log-panel.tsx and send-log-control.tsx: the idle Send control 
       );
       expect(glyphAt).toBeGreaterThan(-1);
       const glyphEnd = source.indexOf(";", glyphAt);
-      expect(source.slice(glyphAt, glyphEnd)).toMatch(/"share-closed"/);
+      // region() throws on a missing `;` instead of slicing to the file's
+      // last character, where any later "share-closed" would satisfy the
+      // match (#533).
+      expect(region(source, { from: glyphAt, to: glyphEnd })).toMatch(
+        /"share-closed"/
+      );
     });
 
     it(`${name}: the idle control's label switches on sendUnconfirmed and the control is never disabled`, () => {
       const source = read(file);
-      const labelAt = source.indexOf("shareFailureLogUnconfirmed");
-      expect(labelAt).toBeGreaterThan(-1);
+      // The same walk-back `share-progress.test.ts` floors for the Share
+      // menu (#533): `uniqueIndexOf` fails if a second mention of the label
+      // appears (the walk-back would start from whichever came first), and
+      // region() throws if no `<Control` precedes it or no `/>` follows.
+      const labelAt = uniqueIndexOf(source, "shareFailureLogUnconfirmed");
       const controlStart = source.lastIndexOf("<Control", labelAt);
       const controlEnd = source.indexOf("/>", labelAt);
-      const control = source.slice(controlStart, controlEnd);
+      const control = region(source, { from: controlStart, to: controlEnd });
       expect(control).toMatch(/share\.sendUnconfirmed/);
       expect(control).not.toMatch(/disabled/);
     });

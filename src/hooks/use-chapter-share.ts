@@ -6,7 +6,7 @@ import {
   type ShareSurface,
   useShareFlow,
 } from "./share-flow";
-import { exportChapterMp3 } from "@/lib/export/chapter";
+import { exportChapterMp3, withEncodeSteps } from "@/lib/export/chapter";
 import type { ChapterId } from "@/types/domain";
 
 export interface UseChapterShare extends ShareSurface {
@@ -57,23 +57,31 @@ export function useChapterShare(): UseChapterShare {
   const prepare = useCallback(
     (chapterId: ChapterId, filename: string): Promise<ShareOutcome | null> =>
       run((isCurrent, signal, onStep) =>
-        withEncoder(signal, async (codec) => {
-          // `onStep`: segments gathered of the chapter's total (#986).
-          const result = await exportChapterMp3(
-            chapterId,
-            codec,
-            isCurrent,
-            onStep
-          );
-          // exportChapterMp3 returns null both for an empty chapter and for a run
-          // cancelled during the gather (its shouldEncode check). `isCurrent`
-          // distinguishes them: still live means genuinely nothing to share.
-          if (result === null) return isCurrent() ? "nothing" : null;
-          // No copy: the worker hands back a right-sized ArrayBuffer-backed view,
-          // which `File` accepts directly.
-          const file = new File([result.mp3], filename, { type: "audio/mpeg" });
-          return { file, missing: result.missing };
-        })
+        // `withEncodeSteps` (#996) hands the export a codec and an `onStep`
+        // that put the encode on the same count as the segments: the count
+        // reads its total only once the MP3 exists. The inner `onStep` is that
+        // wrapped reporter, deliberately shadowing the flow's own.
+        withEncoder(
+          signal,
+          withEncodeSteps(onStep, isCurrent, async (codec, onStep) => {
+            const result = await exportChapterMp3(
+              chapterId,
+              codec,
+              isCurrent,
+              onStep
+            );
+            // exportChapterMp3 returns null both for an empty chapter and for a run
+            // cancelled during the gather (its shouldEncode check). `isCurrent`
+            // distinguishes them: still live means genuinely nothing to share.
+            if (result === null) return isCurrent() ? "nothing" : null;
+            // No copy: the worker hands back a right-sized ArrayBuffer-backed view,
+            // which `File` accepts directly.
+            const file = new File([result.mp3], filename, {
+              type: "audio/mpeg",
+            });
+            return { file, missing: result.missing };
+          })
+        )
       ),
     [run]
   );

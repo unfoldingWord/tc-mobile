@@ -539,16 +539,14 @@ describe("o4/menus.css, #949's chapter and segment menu section", () => {
     );
   });
 
-  it("draws the crumbs 40 tall on the well, chevron-clipped, a finished segment on the done fill", () => {
+  it("draws the crumbs 40 tall on the well, chevron-clipped, a finished segment on the done wash (D19)", () => {
     const crumb = declsFor(rules, `${O4} .o4-crumb`);
     expect(crumb.get("height")).toBe("40px");
     expect(crumb.get("background")).toBe("var(--s-well)");
     expect(crumb.get("clip-path")).toMatch(/13px/);
-    expect(
-      declsFor(rules, `${O4} .o4-crumb[data-state="finished"]`).get(
-        "background"
-      )
-    ).toBe("var(--s-done)");
+    const finished = declsFor(rules, `${O4} .o4-crumb[data-state="finished"]`);
+    expect(finished.get("background")).toBe("var(--s-done-quiet)");
+    expect(finished.get("color")).toBe("var(--s-done-text)");
     expect(
       declsFor(rules, `${O4} .o4-crumb[data-state="recorded"]`).get(
         "background"
@@ -573,17 +571,18 @@ describe("o4/menus.css, #949's chapter and segment menu section", () => {
     ).toBe("var(--s-done)");
   });
 
-  it("draws the preview row 78 tall on the floor, its badge a 44 circle", () => {
+  it("draws the preview row 78 tall on the floor, its badge a 44 circle, a finished badge on the done wash (D19)", () => {
     const preview = declsFor(rules, `${O4} .o4-menu-preview`);
     expect(preview.get("min-height")).toBe("78px");
     expect(preview.get("background")).toBe("var(--s-floor)");
     const badge = declsFor(rules, `${O4} .o4-menu-badge`);
     expect(badge.get("width")).toBe("44px");
     expect(badge.get("height")).toBe("44px");
-    expect(
-      declsFor(rules, `${O4} .o4-menu-badge[data-state="finished"]`).get(
-        "background"
-      )
-    ).toBe("var(--s-done)");
+    const finished = declsFor(
+      rules,
+      `${O4} .o4-menu-badge[data-state="finished"]`
+    );
+    expect(finished.get("background")).toBe("var(--s-done-quiet)");
+    expect(finished.get("color")).toBe("var(--s-done-text)");
   });
 });

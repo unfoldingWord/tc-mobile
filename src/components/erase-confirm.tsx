@@ -5,6 +5,43 @@ import { createPortal } from "react-dom";
 
 import { Control } from "./control";
 import { Icon } from "./icon";
+import { Waveform } from "./waveform";
+import type { Peaks } from "@/types/audio";
+
+/**
+ * The confirm's "Play what will be lost" row (#979, the O4 13/G5 remainder
+ * after #1022): the workbench's `vConfirm()` draws a `.prev` row between the
+ * title and the two buttons — a waveform and a Play/Pause transport for the
+ * take about to be erased. Optional, and rendered only when the caller passes
+ * it, so a caller that does not — the book Delete, the failure log's Clear,
+ * and (for now) the recorder's own record-again call site — gets the same
+ * markup as before (see `EraseConfirmProps.preview`'s own docblock for why
+ * that last one is not wired yet).
+ *
+ * Presentational, like every other prop here: the caller owns the actual
+ * playback (`SegmentsAudio.playTake`/`playingId`/`playbackElapsedMs` in
+ * `segments-screen.tsx`), and hands this component only what to draw and one
+ * callback to toggle it. No audio API is touched from this file.
+ */
+export interface EraseConfirmPreview {
+  /** Peaks for the take about to be lost, or `null` for a never-recorded
+   *  segment — the confirm dialog is never opened for one, so this is
+   *  defensive, not a real path; the row disables Play rather than assume. */
+  peaks: Peaks | null;
+  /** This preview is the one currently sounding. */
+  playing: boolean;
+  /** Toggle playback of the previewed take from its start (offset 0) — this
+   *  row never scrubs, unlike the segment row it borrows `Waveform` from. */
+  onTogglePlay: () => void;
+  /** Accessible name while idle. Supplied by the integrator, like every other
+   *  label on this component (strings.ts's `eraseConfirmPreviewPlay`). */
+  playLabel: string;
+  /** Accessible name while sounding (strings.ts's `eraseConfirmPreviewPause`). */
+  pauseLabel: string;
+  /** Paints the finished (green) wash instead of the voice (amber) one,
+   *  mirroring `Waveform`'s own `finished` prop and `SegmentRow`'s row. */
+  finished?: boolean;
+}
 
 interface EraseConfirmProps {
   open: boolean;
@@ -21,12 +58,30 @@ interface EraseConfirmProps {
   busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  /** The icon in the badge. The bin by default: the segment Erase (13), the
+   *  book Delete (G6) and the failure log's Clear pass nothing and render
+   *  exactly as before. "record" is O4 G5, the record-again confirm (#979):
+   *  the workbench's record badge. The confirm BUTTON keeps the bin whatever
+   *  this says, because it erases and starts no take (#1022). The caller
+   *  decides, so this surface stays free of the design switch. */
+  badge?: "trash" | "record";
+  /**
+   * The "Play what will be lost" row (#979 remainder). Omitted entirely by
+   * default — the book Delete, the failure log's Clear, and today's segment
+   * Erase and record-again call sites, all render exactly as before. Wired
+   * from `segments-screen.tsx`'s own segment Erase (the O4 "13" dialog) only:
+   * the recorder's record-again call site (O4 G5) is not wired here, because
+   * `recorder.tsx` is owned by an open PR at the time of writing (see the PR
+   * body) — a caller-side gap, not a limit of this prop.
+   */
+  preview?: EraseConfirmPreview;
 }
 
 /**
  * The erase confirmation (B6, D-CONFIRM).
  *
- * A minimal-text dialog: a trash glyph, one line, and two choices. Destructive,
+ * A minimal-text dialog: a badge (the bin, or the record dot for O4 G5), one
+ * line, and two choices. Destructive,
  * so focus lands on Cancel — the safe action — not on Erase, and Escape or a
  * scrim tap resolves to Cancel too.
  *
@@ -43,6 +98,8 @@ export function EraseConfirm({
   busy = false,
   onConfirm,
   onCancel,
+  badge = "trash",
+  preview,
 }: EraseConfirmProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   // Read from the keydown listener without re-subscribing it. The listener is
@@ -175,8 +232,33 @@ export function EraseConfirm({
         aria-label={title}
         className="confirm-panel"
       >
-        <Icon name="trash" size={32} className="confirm-glyph" />
+        <Icon name={badge} size={32} className="confirm-glyph" />
         <span className="t-title">{title}</span>
+        {preview && (
+          <div className="confirm-preview">
+            <Waveform
+              peaks={preview.peaks}
+              height={44}
+              recorded={preview.peaks !== null}
+              finished={preview.finished}
+              className="min-w-0 flex-1"
+            />
+            <Control
+              icon={preview.playing ? "pause" : "play"}
+              label={preview.playing ? preview.pauseLabel : preview.playLabel}
+              variant="play"
+              size={26}
+              // Not tied to `busy`: playback is non-destructive, and the
+              // caller already stops it before an erase commits
+              // (`audio.leave()` in `segments-screen.tsx`'s `onConfirmErase`)
+              // — this only guards the one case where there is nothing to
+              // play.
+              disabled={preview.peaks === null}
+              onClick={preview.onTogglePlay}
+              className="confirm-preview-play"
+            />
+          </div>
+        )}
         <div className="confirm-actions">
           <Control
             icon="back"

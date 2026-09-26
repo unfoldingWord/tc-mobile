@@ -10,6 +10,7 @@ import {
 import {
   CRITICAL_PRESSURE_FREE_BYTES,
   CRITICAL_PRESSURE_FREE_PERCENT,
+  freeByteCount,
   LOW_PRESSURE_FREE_BYTES,
   LOW_PRESSURE_FREE_PERCENT,
   MAX_SAFE_BYTE_COUNT,
@@ -235,6 +236,36 @@ describe("storagePressure", () => {
       // Negative headroom is worse than none, never an unknown and never ok.
       expect(storagePressure(1_200_000_000, 1_000_000_000)).toBe("critical");
     });
+  });
+});
+
+describe("freeByteCount (#1010)", () => {
+  // The free-space figure the transcode sweep compares across two readings to
+  // decide whether storage has freed since a segment failed. It must accept
+  // exactly the readings `storagePressure` accepts, or the two would disagree
+  // about what a usable estimate is.
+  it("is quota minus usage for a usable reading", () => {
+    expect(freeByteCount(80, 100)).toBe(20);
+  });
+
+  it("is negative, not unknown, when usage exceeds quota", () => {
+    expect(freeByteCount(120, 100)).toBe(-20);
+  });
+
+  it("is undefined when either figure is missing", () => {
+    expect(freeByteCount(undefined, 100)).toBeUndefined();
+    expect(freeByteCount(100, undefined)).toBeUndefined();
+  });
+
+  it("is undefined for a zero quota, the same trap storagePressure names", () => {
+    expect(freeByteCount(0, 0)).toBeUndefined();
+  });
+
+  it("is undefined for a figure storagePressure would not judge", () => {
+    expect(freeByteCount(-1, 100)).toBeUndefined();
+    expect(freeByteCount(Number.NaN, 100)).toBeUndefined();
+    expect(freeByteCount(0, MAX_SAFE_BYTE_COUNT + 1)).toBeUndefined();
+    expect(storagePressure(0, MAX_SAFE_BYTE_COUNT + 1)).toBe("unknown");
   });
 });
 

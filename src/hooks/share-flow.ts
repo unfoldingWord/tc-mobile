@@ -10,6 +10,8 @@ import { reportFailure } from "./report-failure";
 import { createShareHandoff } from "./share-handoff";
 import {
   HIDDEN,
+  carryFromPrepare,
+  type ShareCarry,
   type ShareGap,
   type ShareProgress,
   type ShareProgressEvent,
@@ -27,6 +29,7 @@ import {
   resolveProvesDelivery,
   selectShareRoute,
 } from "./share-target";
+import type { StepReporter } from "@/lib/export/chapter";
 
 /**
  * The two-gesture share flow, shared by Share Chapter and Share Book (B7, A4).
@@ -184,12 +187,25 @@ interface PreparedShare {
  * no count, exactly as before. The count covers the build only: on the native
  * route `prepare` stages the built file after the builder returns, so the
  * count can read `N of N` while that write is still running. The busy phase
- * stays up until it settles.
+ * stays up until it settles. That staging is left off the count (#996), and
+ * how much it costs is not measured for either share — it cannot run in
+ * Node. The chunk arithmetic is all there is: at the encoder's 64 kbps, one
+ * 384 KiB bridge write holds about 0.8 minutes of audio. For a chapter that
+ * is a handful of writes after a seconds-long encode. For a BOOK zip it is
+ * about 1.2 writes per minute of the whole book (an hour of audio is about 74
+ * writes), all after the last chapter's step has already read `N of N`, and
+ * after the zip is finished; whether that is long enough to see is exactly
+ * what is unknown. The phone check on #974 is what says whether staging needs
+ * its own steps.
+ *
+ * Share Chapter's count now includes the encode (#996, `withEncodeSteps`), and
+ * either share may pass `skipped` (how many of `done` finished with no audio)
+ * and `items` (how many of `total` are items, when not all are).
  */
 type BuildShareFile = (
   isCurrent: () => boolean,
   signal: AbortSignal,
-  onStep: (done: number, total: number) => void
+  onStep: StepReporter
 ) => Promise<PreparedShare | "nothing" | null>;
 
 /**
@@ -199,13 +215,23 @@ type BuildShareFile = (
  * close, `reset` or unmount can still have a gather in flight for a moment,
  * and its late count must not land on a newer run's modal. The machine itself
  * rejects a count that is out of range or runs backward (`share-progress.ts`).
+ * A `skipped` count and an `items` count (#996), and the counted items'
+ * `keys` (#1044), ride the same event when the builder gives them.
  */
 export function stepReporter(
   isCurrent: () => boolean,
   dispatch: (event: ShareProgressEvent) => void
-): (done: number, total: number) => void {
-  return (done, total) => {
-    if (isCurrent()) dispatch({ type: "step", done, total });
+): StepReporter {
+  return (done, total, skipped, items, keys) => {
+    if (!isCurrent()) return;
+    dispatch({
+      type: "step",
+      done,
+      total,
+      ...(skipped === undefined ? {} : { skipped }),
+      ...(items === undefined ? {} : { items }),
+      ...(keys === undefined ? {} : { keys }),
+    });
   };
 }
 
@@ -535,6 +561,12 @@ export function useShareFlow(): UseShareFlow {
   // late result ignored; aborting is what stops the worker from finishing an
   // encode nobody will read. Both happen together in `reset` and on unmount.
   const abortRef = useRef<AbortController | null>(null);
+  // The armed prepare's per-item result (#1023): which items it finished with
+  // no audio, snapshotted from the modal just before the prepare settles to
+  // ready, and handed to the send's busy phase with a `carry` event right after
+  // its `begin`, so the hand-off does not check an item the prepare skipped.
+  // Cleared when a fresh prepare begins.
+  const carryRef = useRef<ShareCarry | undefined>(undefined);
   // The modal timeline (#491). The machine is `share-progress.ts`; the driver
   // below is its browser glue and nothing more, created once per hook
   // instance the way `handoffRef` is, so Books' flow and a Segments screen's
@@ -605,6 +637,10 @@ export function useShareFlow(): UseShareFlow {
     // write, not an await, so the activation contract below still holds: the
     // sheet call is still the first await in this gesture.
     modal.dispatch({ type: "begin", work: "send", now: modal.now() });
+    // The prepare's per-item result rides into the send (#1023). Synchronous,
+    // like the `begin` above, so the sheet call is still the first await.
+    const carried = carryRef.current;
+    if (carried !== undefined) modal.dispatch({ type: "carry", carried });
     // Whether activation is live at the call decides how a NotAllowedError reads
     // (see classifyShareError). Read it immediately before `share`.
     const hadActivation = navigator.userActivation?.isActive ?? false;
@@ -783,6 +819,7 @@ export function useShareFlow(): UseShareFlow {
       // A fresh attempt is itself the acknowledgment of any prior unconfirmed
       // one — see `UseShareFlow.sendUnconfirmed`'s own docblock.
       setSendUnconfirmed(false);
+      carryRef.current = undefined;
       setStatus("preparing");
       // The modal goes up with the busy status (#491). Not before the
       // unsupported gate above: a browser with no Web Share gets the error
@@ -865,6 +902,9 @@ export function useShareFlow(): UseShareFlow {
         setPartial(prepared.partial ?? 0);
         setPartialChapters(prepared.partialChapters ?? 0);
         setStatus("ready");
+        // Snapshot the prepare's per-item result while its count is still on
+        // the modal (#1023); the settle below ends the busy phase that holds it.
+        carryRef.current = carryFromPrepare(modal.state());
         // Ready is not an outcome: the busy phase ends (after its minimum
         // hold) and the primary "Share now" control is what the person sees.
         modal.dispatch({ type: "settle", settled: null, now: modal.now() });

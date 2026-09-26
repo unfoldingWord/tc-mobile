@@ -1,5 +1,6 @@
 import { Control } from "./control";
 import { Menu } from "./menu";
+import { O4SheetHead } from "./o4-crumbs";
 import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
 import { useDesign } from "@/hooks/use-design";
 import { rowHint, type RowReason } from "./menu-row-state";
@@ -60,6 +61,13 @@ export interface RecorderMenuProps {
   /** Close the menu and arm the erase confirm. */
   onErase: () => void;
   onExitEdit: () => void;
+  /**
+   * The book's name, the O4 sheet head's first crumb (workbench G3). Read
+   * only in the O4 look; absent, that crumb is left out.
+   */
+  bookName?: string;
+  /** The chapter's number, the O4 sheet head's second crumb. */
+  chapterNumber?: number;
 }
 
 export function RecorderMenu({
@@ -75,6 +83,8 @@ export function RecorderMenu({
   onToggleFinished,
   onErase,
   onExitEdit,
+  bookName,
+  chapterNumber,
 }: RecorderMenuProps) {
   // ONE answer for "this segment is marked", read by both the label and the
   // paint. They were two expressions that disagreed: the label also required a
@@ -109,6 +119,30 @@ export function RecorderMenu({
           dismiss, focus trap and Escape — cannot differ between them; only
           what sits inside it does. The O4 grid ends with the theme tile past
           the spacer, last for the reason the current rows below give. */}
+      {design === "o4" && (
+        // Workbench G3's sheet head: the book, chapter and segment crumbs
+        // (§7), decoration only, as on the chapter and segment menus. The
+        // segment crumb is tinted by the state this menu already reads: the
+        // mark that will stick is "finished", audio that will exist on close
+        // is "recorded", anything else is "empty". The workbench's "hear
+        // this" speaker is not drawn (spoken titles, #952).
+        <O4SheetHead
+          book={bookName}
+          chapter={chapterNumber}
+          segment={
+            ordinal === null
+              ? undefined
+              : {
+                  ordinal,
+                  state: marked
+                    ? "finished"
+                    : finishedState === "empty"
+                      ? "recorded"
+                      : "empty",
+                }
+          }
+        />
+      )}
       {design === "o4" && (
         <TileGrid>
           <RecorderMenuTiles

@@ -17,7 +17,7 @@ import {
   shareProgressWakeAt,
 } from "@/hooks/share-progress";
 import type { ShareOutcome } from "@/hooks/share-flow";
-import { region, uniqueIndexOf } from "./support";
+import { region, stripCssComments, uniqueIndexOf } from "./support";
 
 /**
  * The share progress timeline (#491): a busy modal held for a MINIMUM time so
@@ -1167,7 +1167,11 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
   });
 
   it("the stylesheet inks busy and every settled outcome, with layer-2 roles only", () => {
-    const css = read("src/app/styles/3-components.css");
+    // Comments stripped first (#533): a header comment naming the selector
+    // used to be found by the block search below before the rule itself was
+    // (#529 round 3), which is why the stylesheet had to spell it without its
+    // leading dot. A comment can no longer be the match.
+    const css = stripCssComments(read("src/app/styles/3-components.css"));
     for (const key of ["busy", ...SHARE_SETTLED]) {
       const rule = new RegExp(
         `\\.share-scrim\\[data-outcome="${key}"\\][^{]*\\{[^}]*color:\\s*var\\(--s-`
@@ -1177,8 +1181,15 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
     // No colour primitive anywhere in the block: every ink, fill and edge is a
     // layer-2 role, or a theme cannot switch it. Spacing and radius primitives
     // are the same ones `.confirm-panel` uses and are not the leak this guards.
-    const start = css.indexOf(".share-scrim");
-    const block = css.slice(start, css.indexOf("@layer components", start));
+    // The block runs from the scrim's own base rule to the next layer block.
+    // `uniqueIndexOf` pins the base rule as the start, so a second
+    // `.share-scrim {` rule added elsewhere fails here rather than silently
+    // moving the window; `region` throws on a missing end or an empty slice.
+    const start = uniqueIndexOf(css, ".share-scrim {");
+    const block = region(css, {
+      from: start,
+      to: css.indexOf("@layer components", start),
+    });
     const declarations = [
       ...block.matchAll(/(color|background|border(?:-color)?):\s*([^;]+);/g),
     ];

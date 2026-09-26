@@ -28,34 +28,33 @@ formula, not measured on a device.
 Existing roles are unchanged and not repeated here (see `2-semantic.css`).
 The workbench's table confirms their values match O4.
 
-| Role             | Used for                                     | Dark                   | Light                  | Primitive (dark / light)                          |
-| ---------------- | -------------------------------------------- | ---------------------- | ---------------------- | ------------------------------------------------- |
-| `--s-well`       | Chips, small round buttons, empty dots       | `#1d2632`              | `#eef1f5`              | `cool-800` / `cool-100`                           |
-| `--s-mark-empty` | Empty progress dots and bars                 | `#384454`              | `#b9c2ce`              | `cool-600` / `cool-300`                           |
-| `--s-card-edge`  | Card hairline (light only)                   | `transparent`          | `#d7dde5`              | — / `cool-200`                                    |
-| `--s-dim`        | Behind a sheet or dialog                     | `rgba(6,9,13,.72)`     | `rgba(16,24,33,.45)`   | literal                                           |
-| `--s-voice-dim`  | Waveform past the playhead                   | `rgba(230,164,68,.34)` | `rgba(184,124,34,.32)` | literal                                           |
-| `--s-playhead`   | Playhead line                                | `#ffffff`              | `#101821`              | `cool-000` / `cool-900`                           |
-| `--s-live-quiet` | Erase tiles, recording chip                  | `#3a1512`              | `#f8d6d2`              | `red-950` / `red-100`                             |
-| `--s-live-text`  | Words on the live wash (D3)                  | `#ec7a70`              | `#a8322a`              | `red-400` / `red-700`                             |
-| `--s-done-text`  | Words on the done wash (D3)                  | `#3fb968`              | `#1f6e3a`              | `green-500` / `green-700`                         |
-| `--s-warn-quiet` | Storage banner, crash icon ground            | `#3a2810`              | `#fbe9d3`              | `warn-950` / `warn-100`                           |
-| `--s-warn-text`  | Warning words and icons                      | `#f0bb6e`              | `#8a4f0f`              | `amber-400` / `warn-700`                          |
-| `--s-hear`       | Every "hear this" speaker icon (blue, D1)    | `#4f93f8`              | `#1f66d6`              | `blue-400` / `blue-600`                           |
-| `--s-tile-ink`   | Icons on coloured tiles                      | `#ffffff`              | `#ffffff`              | `cool-000`                                        |
-| `--s-edit`       | Edit tile (Slate, D1b)                       | `#475569`              | `#475569`              | `slate-600` / `slate-600`                         |
-| `--s-name`       | Name tile, naming pencil                     | `#7c4ddb`              | `#6b35d0`              | `violet-600` / `violet-700`                       |
-| `--s-send`       | Share tile and share button                  | `#11796d`              | `#0e7468`              | `teal-700` / `teal-750`                           |
-| `--s-send-ring`  | Share progress ring (D2 in light)            | `#2bd4bf`              | `#12a090`              | `teal-300` / `teal-600`                           |
-| `--s-cover-*`    | Book covers, interim set: see "Covers" below | same both themes       | same both themes       | `amber-600`, `teal-700`, `plum-700`, `blue-cover` |
+| Role             | Used for                                     | Dark                   | Light                  | Primitive (dark / light)            |
+| ---------------- | -------------------------------------------- | ---------------------- | ---------------------- | ----------------------------------- |
+| `--s-well`       | Chips, small round buttons, empty dots       | `#1d2632`              | `#eef1f5`              | `cool-800` / `cool-100`             |
+| `--s-mark-empty` | Empty progress dots and bars                 | `#384454`              | `#b9c2ce`              | `cool-600` / `cool-300`             |
+| `--s-card-edge`  | Card hairline (light only)                   | `transparent`          | `#d7dde5`              | — / `cool-200`                      |
+| `--s-dim`        | Behind a sheet or dialog                     | `rgba(6,9,13,.72)`     | `rgba(16,24,33,.45)`   | literal                             |
+| `--s-voice-dim`  | Waveform past the playhead                   | `rgba(230,164,68,.34)` | `rgba(184,124,34,.32)` | literal                             |
+| `--s-playhead`   | Playhead line                                | `#ffffff`              | `#101821`              | `cool-000` / `cool-900`             |
+| `--s-live-quiet` | Erase tiles, recording chip                  | `#3a1512`              | `#f8d6d2`              | `red-950` / `red-100`               |
+| `--s-live-text`  | Words on the live wash (D3)                  | `#ec7a70`              | `#a8322a`              | `red-400` / `red-700`               |
+| `--s-done-text`  | Words on the done wash (D3)                  | `#3fb968`              | `#1f6e3a`              | `green-500` / `green-700`           |
+| `--s-warn-quiet` | Storage banner, crash icon ground            | `#3a2810`              | `#fbe9d3`              | `warn-950` / `warn-100`             |
+| `--s-warn-text`  | Warning words and icons                      | `#f0bb6e`              | `#8a4f0f`              | `amber-400` / `warn-700`            |
+| `--s-hear`       | Every "hear this" speaker icon (blue, D1)    | `#4f93f8`              | `#1f66d6`              | `blue-400` / `blue-600`             |
+| `--s-tile-ink`   | Icons on coloured tiles                      | `#ffffff`              | `#ffffff`              | `cool-000`                          |
+| `--s-edit`       | Edit tile (Slate, D1b)                       | `#475569`              | `#475569`              | `slate-600` / `slate-600`           |
+| `--s-name`       | Name tile, naming pencil                     | `#7c4ddb`              | `#6b35d0`              | `violet-600` / `violet-700`         |
+| `--s-send`       | Share tile and share button                  | `#11796d`              | `#0e7468`              | `teal-700` / `teal-750`             |
+| `--s-send-ring`  | Share progress ring (D2 in light)            | `#2bd4bf`              | `#12a090`              | `teal-300` / `teal-600`             |
+| `--s-cover-*`    | Book covers, interim set: see "Covers" below | same both themes       | same both themes       | `amber-600`, `teal-700`, `plum-700` |
 
 `--s-live-text` and `--s-done-text` are the words that sit on a live or done
 wash (chips, crumbs, the clip pill), the way `--s-warn-text` is on the warn
 wash. They are not `--s-live-ink` / `--s-done-ink`, which are the ink on the
 solid fill.
 
-Blue marks the next action (`--s-guide`), the speaker (`--s-hear`) and, until
-#957 lands, the `--s-cover-blue` cover.
+Blue marks the next action (`--s-guide`) and the speaker (`--s-hear`).
 
 **Covers.** A book stores a cover colour its owner picks (D7), from a
 **10-colour palette: amber, teal, plum, forest, brick, slate, rose, olive,

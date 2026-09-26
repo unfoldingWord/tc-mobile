@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 
+import { region, stripComments } from "./support";
+
 /**
  * #173: the recorder OWNS its state, and nothing keeps a mirror of its own.
  *
@@ -26,17 +28,12 @@ import { readFileSync } from "node:fs";
 const audioSession = readFileSync("src/hooks/use-audio-session.ts", "utf8");
 const recorder = readFileSync("src/hooks/use-recorder.ts", "utf8");
 
-/** Strip whole-line `//` comments and docblock continuation lines before checking code. */
-function withoutComments(source: string): string {
-  return source
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith("*"))
-    .filter((line) => !line.trimStart().startsWith("//"))
-    .join("\n");
-}
-
 describe("recorder state ownership (#173)", () => {
-  const recorderCode = withoutComments(recorder);
+  // The shared strip, not the line filter this file used to carry (#822).
+  // That filter kept a docblock's opening line and any `//` comment trailing
+  // live code, so `const x = 1; // stateRef.current = next` satisfied the
+  // ref-write match below with the write itself gone.
+  const recorderCode = stripComments(recorder);
 
   it("routes EVERY rendered state write through the wrapper that writes the ref", () => {
     // The mutation this exists for: a new path calling `setRenderedState`
@@ -46,11 +43,10 @@ describe("recorder state ownership (#173)", () => {
     const writes = recorderCode.match(/setRenderedState\(/g) ?? [];
     expect(writes).toHaveLength(1);
 
-    const wrapper = recorderCode.slice(
-      recorderCode.indexOf("const setState = useCallback"),
-      recorderCode.indexOf("const readState = useCallback")
-    );
-    expect(wrapper.length).toBeGreaterThan(0);
+    const wrapper = region(recorderCode, {
+      from: recorderCode.indexOf("const setState = useCallback"),
+      to: recorderCode.indexOf("const readState = useCallback"),
+    });
     expect(wrapper).toContain("setRenderedState(");
     // The write the whole change rests on. Delete it and `readState` answers
     // "idle" for the life of the take.
@@ -75,7 +71,7 @@ describe("recorder state ownership (#173)", () => {
     // file's only live assertion (see the docblock). A mirror is a ref seeded
     // from the rendered state, however it is spelled; the two assertions above
     // and below would both survive someone calling it something else.
-    expect(withoutComments(audioSession)).not.toMatch(
+    expect(stripComments(audioSession)).not.toMatch(
       /useRef\(\s*recorderState\s*\)/
     );
 
@@ -87,7 +83,7 @@ describe("recorder state ownership (#173)", () => {
     // A second reader appearing here is what this count is for: if it is inside
     // a handler rather than an effect, it is the old bug wearing a new name.
     expect(
-      withoutComments(audioSession).match(/recorderState === /g)
+      stripComments(audioSession).match(/recorderState === /g)
     ).toHaveLength(1);
   });
 });

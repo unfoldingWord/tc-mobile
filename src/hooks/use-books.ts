@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   addChapter as addChapterToBook,
+  assertReorderTarget,
   chapterProgress,
   createBook as createBookInStore,
   deleteBook as deleteBookFromStore,
@@ -9,13 +10,15 @@ import {
   getChapter,
   isStaleBookFailure,
   listBooks,
+  moveChapter as moveChapterInStore,
+  moveToIndex,
   nextBookName,
   renameBook as renameBookInStore,
 } from "@/lib/storage/books";
 import { reportFailure } from "./report-failure";
 import { failureKey, type FailureKey } from "./save-failure";
 import { bumpStoragePressure } from "./use-storage-pressure";
-import type { Book, BookId, Chapter } from "@/types/domain";
+import type { Book, BookId, Chapter, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
 /**
@@ -268,6 +271,53 @@ export function patchRenamedBook(
   if (index === -1 || !original) return books as BookCard[]; // stale card
   if (book.name === original.name) return books as BookCard[]; // no-op rename
   return moveToFront(books, index, { ...original, name: book.name });
+}
+
+/**
+ * Move one chapter row within its card, in the same turn as the drop (#953).
+ *
+ * The optimistic half of `moveChapter` below: the row lands where the
+ * translator dropped it before the write resolves, so the list does not snap
+ * back for the length of a transaction. `toIndex` means exactly what it means
+ * to the store's `moveChapter` — an absolute position among the card's rows,
+ * which are the book's resolvable chapters (`loadBookCard` drops a dangling
+ * id) — and goes through the same `moveToIndex`, so the patch and the write
+ * cannot put the row in different places.
+ *
+ * Numbers are renumbered densely, as the store does (the DRI's "Renumber"
+ * pick): the badge a row shows is its position + 1. Names are untouched.
+ *
+ * The card does NOT move to the front of the shelf, unlike
+ * `patchNewChapter`/`patchRenamedBook`: the store leaves the book's
+ * `updatedAt` alone on a reorder (#953 scope Q4), so `listBooks` keeps the
+ * card where it is, and so does this.
+ *
+ * A move that changes nothing, or names a chapter no card holds, returns
+ * `books` itself.
+ */
+export function patchMovedChapter(
+  books: readonly BookCard[],
+  chapterId: ChapterId,
+  toIndex: number
+): BookCard[] {
+  const index = books.findIndex((card) =>
+    card.chapters.some((row) => row.chapterId === chapterId)
+  );
+  const original = books[index];
+  if (index === -1 || !original) return books as BookCard[]; // stale row
+  const from = original.chapters.findIndex(
+    (row) => row.chapterId === chapterId
+  );
+  const moved = moveToIndex(original.chapters, from, toIndex);
+  if (moved.every((row, i) => row === original.chapters[i])) {
+    return books as BookCard[]; // dropped where it started
+  }
+  const chapters = moved.map((row, i) =>
+    row.number === i + 1 ? row : { ...row, number: i + 1 }
+  );
+  const next = books.slice();
+  next[index] = { ...original, chapters };
+  return next;
 }
 
 /**
@@ -705,6 +755,64 @@ export function useBooks() {
     [reload, report]
   );
 
+  /**
+   * Move a chapter to an absolute position in its book (#953) — the storage
+   * half of press-and-hold reorder; the gesture that calls it is a later PR.
+   *
+   * Optimistic: the row moves (and the badges renumber) in THIS turn via
+   * `patchMovedChapter`, and the generation is bumped in the same step, so a
+   * load already in flight — which read the pre-move order — is discarded
+   * rather than snapping the row back over the patch (the `isLoadCurrent`
+   * rule every other patch here follows). Either outcome then `reload()`s,
+   * which is what un-wedges `loading` if that discarded load was the first
+   * one, and what reconciles the shelf with disk: on success it confirms the
+   * patch (or corrects it, if a second copy moved something too); on failure
+   * it is how the STORED order comes back, since the write rolled back whole.
+   *
+   * A failure goes to the funnel as `"chapter-reorder"` and nowhere else: the
+   * row returning to where it was is the state-in-place signal, and nothing
+   * extra appears on screen (#172). It does not touch the shared failure slot
+   * — that slot is a Notice, and a Notice here would be exactly the extra
+   * text #172 rules out. If the database is so broken that the restoring
+   * read fails as well, that load's own failure path is what speaks.
+   *
+   * A non-integer target is a caller bug: it is refused and reported before
+   * the generation or the shelf is touched, rather than thrown from inside a
+   * React updater.
+   *
+   * Resolves `true` when the move landed (a no-op move included), `false`
+   * when it failed. Not latched: two drops in quick succession queue as two
+   * transactions, and the store applies each `toIndex` to the order already
+   * COMMITTED when its transaction runs — the screen's order is never an
+   * argument. When both writes land, that is the order the screen showed
+   * when the second drop was made. When the first write fails, the second
+   * is still applied, to the rolled-back order rather than the one the
+   * translator saw (George round 1 on #953); whether a follower should fail
+   * closed instead is an open call for the author, not settled here.
+   */
+  const moveChapter = useCallback(
+    async (chapterId: ChapterId, toIndex: number): Promise<boolean> => {
+      try {
+        assertReorderTarget(toIndex);
+      } catch (cause) {
+        reportFailure(cause, "chapter-reorder");
+        return false;
+      }
+      loadGen.current += 1;
+      setBooks((prev) => patchMovedChapter(prev, chapterId, toIndex));
+      try {
+        await moveChapterInStore(chapterId, toIndex);
+        reload();
+        return true;
+      } catch (cause) {
+        reportFailure(cause, "chapter-reorder");
+        reload();
+        return false;
+      }
+    },
+    [reload]
+  );
+
   const deleteBook = useCallback(
     async (bookId: BookId): Promise<DeleteBookResult> => {
       // Refused, not failed: the first call owns the outcome, and a caller that
@@ -793,6 +901,7 @@ export function useBooks() {
     createBook,
     addChapter,
     renameBook,
+    moveChapter,
     deleteBook,
     deleting,
     isDeleting,

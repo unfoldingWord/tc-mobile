@@ -17,9 +17,19 @@ import {
   type ShareProgress,
 } from "@/hooks/share-progress";
 
-/** Source-shape reads; these assertions do not mount the hook. */
+import { stripComments, uniqueIndexOf } from "./support";
+
+/**
+ * Source-shape reads; these assertions do not mount the hook. Comments are
+ * stripped at read time, before anything is searched (#822): most cases here
+ * make a positive match against the file or a slice of it, and a comment
+ * carrying the expected line satisfies that match while the live code says
+ * something else. No anchor below may be a comment for the same reason.
+ */
 const read = (rel: string) =>
-  readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
+  stripComments(
+    readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8")
+  );
 
 /**
  * B7 Share (chapter + book) — the share-rejection classifier.
@@ -288,12 +298,19 @@ describe("the native one-tap chain in prepare() (#860)", () => {
   const flow = read("src/hooks/share-flow.ts");
 
   it('prepare() checks chainsToSend(route) — not a hand-rolled route === "native" — right after the ready settle, and awaits send()', () => {
-    const readySettleAt = flow.indexOf(
-      "// Ready is not an outcome: the busy phase ends"
-    );
-    expect(readySettleAt).toBeGreaterThan(-1);
-    const chainAt = flow.indexOf("if (chainsToSend(route))", readySettleAt);
-    expect(chainAt).toBeGreaterThan(readySettleAt);
+    // Anchored on code, not on the comment above the settle: `read` strips
+    // comments. The settle dispatch occurs twice in the file, so the chain is
+    // the unique anchor and the settle is checked as what IMMEDIATELY
+    // precedes it — stricter than the "somewhere after" this used to be.
+    const chainAt = uniqueIndexOf(flow, "if (chainsToSend(route))");
+    expect(
+      flow
+        .slice(0, chainAt)
+        .trimEnd()
+        .endsWith(
+          'modal.dispatch({ type: "settle", settled: null, now: modal.now() });'
+        )
+    ).toBe(true);
     expect(flow.slice(chainAt, chainAt + 80)).toMatch(
       /if \(chainsToSend\(route\)\) return await send\(\);/
     );

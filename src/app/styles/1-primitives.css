@@ -63,15 +63,12 @@
     --p-red-100: #f8d6d2;
     --p-red-950: #3a1512;
 
-    /* --- Blue: the next required action, the speaker, and covers until #957 - */
+    /* --- Blue: the next required action and the speaker -------------------- */
     --p-blue-500: #2e7df6;
     /* The "hear this" speaker pair. #937 D1 kept the speaker blue beside the
        guide; the Edit tile moved to slate. */
     --p-blue-400: #4f93f8;
     --p-blue-600: #1f66d6;
-    /* Book cover blue (O4). #937 D1 moves covers off blue; this stays only
-       while `--s-cover-blue` is still read (see 2-semantic.css). */
-    --p-blue-cover: #2450e0;
 
     /* --- Slate: the Edit tile (#937 D1b) ----------------------------------- */
     --p-slate-600: #475569;

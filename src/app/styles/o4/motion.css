@@ -3,13 +3,22 @@
 /*
  * The design reference's section 4 loops, on the targets that exist today:
  * the guide pulse on the guided record control (#604's outset ring), the
- * recorder stage's live edge and the recording dot's blink (#945's states).
- * The mic pulse, the armed share ring, the refusal shake and the audible
- * ping land with the screens that carry them.
+ * recorder stage's live edge, the recording dot's blink (#945's states), and
+ * the refusal shake on the book delete ask's head (#1030's markup). The mic
+ * pulse, the armed share ring, the shake's mic-denied target and the audible
+ * ping land with the screens that carry them (2026-09-26 remainder audit,
+ * issue #950).
  *
  * Each keyframe is the workbench's own, recoloured through layer-2 roles.
  * Each duration reads #967's ambient primitive, with the design value as the
- * fallback until that primitive exists.
+ * fallback until that primitive exists. The design reference
+ * (docs/design/o4-design-system.md §4) settles shake's duration (0.35s),
+ * iteration count (×2) and trigger ("refused action") but does not transcribe
+ * a transform amplitude from the workbench source — that value is parked:
+ * the keyframe below reuses the existing `--p-space-1` structural primitive
+ * (4px, as a literal, matching how this file's other keyframes hardcode their
+ * geometry) rather than inventing a new number, and is flagged here as an
+ * inference, not a workbench value.
  *
  * OFF SWITCHES. Every loop is matched, selector for selector, by an
  * `animation: none` in the reduced-motion block at the end of this file:
@@ -79,12 +88,34 @@
     }
   }
 
+  /* --- shake: the book delete ask's head, on a refused/asked action ------ */
+  /* #1030 (merged) renders the head inside `.books-delete-ask` only while
+     the ask is up (components/o4-book-delete-ask.tsx), so this rule fires on
+     mount rather than needing a trigger class of its own — the hook posted
+     on #950 (2026-09-26). */
+  [data-design="o4"] .books-delete-ask > .o4-sheet-head {
+    animation: shake var(--p-ambient-shake, 0.35s) ease-in-out 2;
+  }
+  @keyframes shake {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    25% {
+      transform: translateX(-4px);
+    }
+    75% {
+      transform: translateX(4px);
+    }
+  }
+
   /* --- the off switch --------------------------------------------------- */
   @media (prefers-reduced-motion: reduce) {
     [data-design="o4"] .control--record.is-guided,
     [data-design="o4"] .record-guide.is-guided,
     [data-design="o4"] .recorder-stage[data-o4-look="recording"]::after,
-    [data-design="o4"] .recorder-status .rec-dot {
+    [data-design="o4"] .recorder-status .rec-dot,
+    [data-design="o4"] .books-delete-ask > .o4-sheet-head {
       animation: none;
     }
   }

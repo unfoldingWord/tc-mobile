@@ -95,12 +95,11 @@ export interface CaptureOutcome<TBytes = unknown> {
 /**
  * What a stop yielded, as the one classification both commit paths read.
  *
- * `close()` and `recorder.tsx`'s shared `commitTake` — the Stop tap
- * (`commitTake("stay")`) and, before #857 gated it out during a live take,
- * Edit-entry (`onEnterEdit`'s `commitTake("edit")`, #134) — must take the same
- * four-way decision on a stop result and then do DIFFERENT things with it: one
- * exits, the other stays open (and, for an `"edit"` commit reachable before
- * #857, opened edit mode). That agreement used to be a comment ("Mirror
+ * `close()` and `recorder.tsx`'s shared `commitTake` — the Stop tap and a #59
+ * interruption — must take the same four-way decision on a stop result and
+ * then do DIFFERENT things with it: one exits, the other stays open. (An Edit
+ * entry once committed through `commitTake` too, #134; #857 blocked Edit
+ * during a take and #871 removed that arm.) That agreement used to be a comment ("Mirror
  * close()'s precedence exactly"), which is the kind of claim that rots; it is
  * now one function they both call.
  * Their write policy also agrees: a superseded capture withholds pending edits,

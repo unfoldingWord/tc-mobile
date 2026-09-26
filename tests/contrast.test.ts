@@ -285,7 +285,6 @@ describe("the O4 roles clear the floors the workbench claimed for them (round 4,
     "--s-cover-amber",
     "--s-cover-teal",
     "--s-cover-plum",
-    "--s-cover-blue",
   ] as const;
 
   for (const theme of ["dark", "light"] as const) {

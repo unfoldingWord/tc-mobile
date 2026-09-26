@@ -1,50 +1,152 @@
 /* O4 — Share (14, 15, G7). Owner: #947. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file.
  *
- * WHAT'S BUILT HERE, AND WHAT ISN'T (corrected from an earlier revision of
- * this comment, which wrongly said the button widget below "lives inside
- * `share-menu-section.tsx` ... none of which this lane owns" — that file is
- * not on the coordinator's other-lanes list, and #947 explicitly assigns
- * "the share button ... component" to this lane). The workbench's states 14
- * (share chapter), 15 (share progress) and G7 (share a whole book) are
- * dominated by a 140/176 circular Share button rendered inside a bottom
- * SHEET, not the current look's inline ≡-menu row — a UX-architecture
- * question (sheet vs. inline menu), not a same-shape restyle — plus an
- * animated packing-progress ring and per-item chips that need a percent/
- * per-item field `hooks/share-progress.ts`'s `ShareProgress` type does not
- * carry (adding one is a T2 hook change; #947 says don't touch those here).
- * That work, and the armed-ring/pulse (#950), is tracked in #981, not
- * silently dropped.
+ * THE SHARE CIRCLE, ITS FILLING RING AND ITS CHIPS (#947, D13 to D16, D21).
+ * Under O4 the share overlay's panel (share-progress-panel.tsx) draws the
+ * workbench's 140 core inside a 176 frame instead of the current look's
+ * 48px glyph, with the filling ring while a prepare reports a count, and the
+ * numbered chips above it, one per item in order (share-o4-view.ts decides
+ * what is drawn; this file only colours and sizes it). The O4 glyph carries
+ * its own class, so none of 3-components.css's per-outcome inks or its busy
+ * spin reach it.
  *
- * What this lane DOES build here — the full-screen busy/outcome overlay,
- * `components/share-progress.tsx` — issue #947 names on its own separate
- * "Overlay: the share-progress overlay (#491, #850) in O4 colours" bullet:
- * colour only, no new geometry asked of the overlay itself.
- *
- * So the one piece of #947 built today is this: recolour the busy phase's
- * spinning glyph from the current look's neutral `--s-ink-muted`
- * (3-components.css, untouched) to O4's send-teal identity, `--s-send`
- * (2-semantic.css; already merged, O4-only role) — this lane's own read of
- * "O4 colours" for a state the workbench has no equivalent overlay for, not
- * a value taken from a workbench state (see the PR body). The extra
- * `[data-design="o4"]` ancestor attribute selector below is strictly more
- * specific than 3-components.css's own unscoped
- * `.share-scrim[data-outcome="busy"] .share-progress-glyph` rule, so it wins
- * on specificity within the same shared `components` layer both files
- * declare their rules in (o4/index.css's header) — not "regardless of
- * layer order", which would be false if this file opened a layer of its
- * own — without 3-components.css needing to change:
- * `tests/share-progress.test.ts` (which slices that exact block) passes
- * unedited. Settled-outcome inks, the scrim, the panel box and the glyph's
- * 48px size are left alone: #947's colour bullet does not name them, and
- * they are not this rule's job.
- *
- * Everything else — the button widget, its ring, the chips, the pulse
- * (assigned to the separate motion issue #950) — is deferred to #981; see
- * the PR body for the file-ownership correction and the reasoning behind
- * each deferred piece.
+ * Values are the workbench's (states 15 and G7, vShare with its bigshare and
+ * schips rules): core 140, frame 176, ring radius 84 with a 7px stroke on a
+ * well track, turned to start at twelve o'clock. Chips are 38px circles,
+ * 10px apart, wrapping (capped at three rows that scroll, DRI pick (a) on
+ * #1023), 800-weight 15px numbers: grey (well, faint ink) for
+ * an item that does not go out and, while packing, for one still waiting;
+ * send with white ink and a check for a finished one; voice for the one in
+ * progress (D21 as corrected on #947). Outcome looks are D14 (handed over: check
+ * on the send core, full send-ring ring) and D16's table. Layer-2 roles
+ * only.
  */
 @layer components {
-  [data-design="o4"] .share-scrim[data-outcome="busy"] .share-progress-glyph {
-    color: var(--s-send);
+  /* --- the circle (D12 geometry, D14, D15) ------------------------------ */
+  [data-design="o4"] .share-o4-frame {
+    position: relative;
+    width: 176px;
+    height: 176px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+  }
+  [data-design="o4"] .share-o4-core {
+    width: 140px;
+    height: 140px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--s-send);
+  }
+  [data-design="o4"] .share-o4-glyph {
+    color: var(--s-tile-ink);
+  }
+
+  /* --- the filling ring (D13, D15) ------------------------------------- */
+  [data-design="o4"] .share-o4-ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+    pointer-events: none;
+  }
+  [data-design="o4"] .share-o4-track {
+    fill: none;
+    stroke: var(--s-well);
+    stroke-width: 7;
+  }
+  [data-design="o4"] .share-o4-fill {
+    fill: none;
+    stroke: var(--s-send-ring);
+    stroke-width: 7;
+    stroke-linecap: round;
+  }
+
+  /* --- outcomes (D14, D16) --------------------------------------------- */
+  [data-design="o4"] .share-scrim[data-outcome="sent"] .share-o4-frame {
+    box-shadow: inset 0 0 0 7px var(--s-send-ring);
+  }
+  [data-design="o4"] .share-scrim[data-outcome="partial"] .share-o4-frame {
+    box-shadow: inset 0 0 0 3px var(--s-warn);
+  }
+  [data-design="o4"] .share-scrim[data-outcome="nothing"] .share-o4-core,
+  [data-design="o4"] .share-scrim[data-outcome="failed"] .share-o4-core,
+  [data-design="o4"] .share-scrim[data-outcome="encoder"] .share-o4-core {
+    background: var(--s-live);
+  }
+  [data-design="o4"] .share-scrim[data-outcome="nothing"] .share-o4-glyph,
+  [data-design="o4"] .share-scrim[data-outcome="failed"] .share-o4-glyph,
+  [data-design="o4"] .share-scrim[data-outcome="encoder"] .share-o4-glyph {
+    color: var(--s-live-ink);
+  }
+  [data-design="o4"] .share-scrim[data-outcome="dismissed"] .share-o4-core,
+  [data-design="o4"] .share-scrim[data-outcome="unproven"] .share-o4-core {
+    background: var(--s-well);
+  }
+  [data-design="o4"] .share-scrim[data-outcome="dismissed"] .share-o4-glyph,
+  [data-design="o4"] .share-scrim[data-outcome="unproven"] .share-o4-glyph {
+    color: var(--s-ink-muted);
+  }
+
+  /* --- one numbered chip per item (D21) ------------------------------- */
+  /* BOUNDED, SCROLLS (DRI pick (a) on #1023): a long book (Psalms, 150
+     chapters) would otherwise wrap about 25 rows above the circle and push it
+     and the status line out of the fixed scrim. The row is capped at three
+     rows (3 x 38px chips + 2 x 10px gaps = 134px) and scrolls inside; every
+     chip is kept, and use-keep-in-view.ts keeps the current one visible. It is
+     the one child of the panel that may shrink (min-height 0), and the panel
+     never grows past the scrim, so on a short screen the row gives up height
+     before the circle or the text does. position: relative makes the row the
+     chips' offset parent, which the hook measures from. */
+  [data-design="o4"] .share-progress {
+    max-height: 100%;
+  }
+  [data-design="o4"] .share-progress-text {
+    flex: none;
+  }
+  [data-design="o4"] .share-o4-chips {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: 134px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* Keeping the current chip in view glides only when motion is welcome;
+     under reduced motion the row jumps. */
+  @media (prefers-reduced-motion: no-preference) {
+    [data-design="o4"] .share-o4-chips {
+      scroll-behavior: smooth;
+    }
+  }
+  /* The resting chip: an item that does not go out, or, while packing, one
+     that goes out and is still waiting. Grey, its number (vShare). */
+  [data-design="o4"] .share-o4-chip {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 15px;
+    background: var(--s-well);
+    color: var(--s-ink-faint);
+  }
+  [data-design="o4"] .share-o4-chip[data-chip="finished"] {
+    background: var(--s-send);
+    color: var(--s-tile-ink);
+  }
+  [data-design="o4"] .share-o4-chip[data-chip="current"] {
+    background: var(--s-voice);
+    color: var(--s-voice-ink);
   }
 }
