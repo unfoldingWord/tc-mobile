@@ -322,6 +322,9 @@ export const strings = {
   zoomAtWhole: "Zoomed to the whole segment. Zoom in to a quarter.",
   zoomAtQuarter: "Zoomed to a quarter. Zoom out to the whole segment.",
   micNeededTitle: "Microphone access is needed to record",
+  // The O4 look's mic-denied title (D15, #948), from the O4 original. O4 only:
+  // the current look keeps `micNeededTitle` until O4 becomes the default.
+  micOffTitle: "Microphone is off",
   micRetry: "Try again",
   micBack: "Go back",
   finishedWriteFailed: "Could not save the finished mark.",

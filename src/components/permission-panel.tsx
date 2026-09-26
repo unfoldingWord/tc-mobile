@@ -57,7 +57,7 @@ export function PermissionPanel({
           <Icon name="mic" size={58} />
         </span>
         <p role="alert" className="o4-err-title text-ink">
-          {message ?? strings.micNeededTitle}
+          {message ?? strings.micOffTitle}
         </p>
         <Control
           icon="restart"
