@@ -42,11 +42,47 @@ const BITRATES_KBPS = [
 /** MPEG-1 sample-rate index → Hz (index 3 is reserved). */
 const SAMPLE_RATES = [44_100, 48_000, 32_000] as const;
 
+/** What an MPEG-1 Layer III frame header at some offset says about its frame. */
+export interface Mp3FrameHeader {
+  /** The whole frame's length in bytes, header included. */
+  readonly length: number;
+  /** The frame carries a 16-bit CRC after its header (protection bit clear). */
+  readonly crc: boolean;
+  /** Channel mode: 3 is single channel (mono). */
+  readonly mode: number;
+}
+
+/**
+ * Read the MPEG-1 Layer III frame header at `at`, or `null` when the four
+ * bytes there are not one (no sync, another MPEG version or layer, a "free" or
+ * invalid bitrate, a reserved sample rate). The frame's length is fixed by its
+ * bitrate, sample rate and padding bit, so a walk over headers is exact.
+ */
+export function readMp3FrameHeader(
+  mp3: Uint8Array,
+  at: number
+): Mp3FrameHeader | null {
+  if (at < 0 || at + 4 > mp3.length) return null;
+  const b1 = mp3[at]!;
+  const b2 = mp3[at + 1]!;
+  const b3 = mp3[at + 2]!;
+  // Sync (11 bits), MPEG-1 (bits 4-3 == 11), Layer III (bits 2-1 == 01).
+  const isMpeg1Layer3 = b1 === 0xff && (b2 & 0xfe) === 0xfa;
+  const bitrate = BITRATES_KBPS[b3 >> 4];
+  const sampleRate = SAMPLE_RATES[(b3 >> 2) & 0x3];
+  if (!isMpeg1Layer3 || !bitrate || !sampleRate) return null;
+  const padding = (b3 >> 1) & 0x1;
+  return {
+    length: Math.floor((144 * bitrate * 1000) / sampleRate) + padding,
+    crc: (b2 & 0x1) === 0,
+    mode: mp3[at + 3]! >> 6,
+  };
+}
+
 /**
  * Count the MPEG-1 Layer III frames (= granules of `MP3_GRANULE` samples) in a
- * stream by walking its frame headers. Each frame's length is fixed by its
- * bitrate, sample rate and padding bit, so the walk is exact and costs one
- * header read per ~26 ms of audio. Stops at the first byte that is not a valid
+ * stream by walking its frame headers ({@link readMp3FrameHeader}), one header
+ * read per ~26 ms of audio. Stops at the first byte that is not a valid
  * MPEG-1 Layer III header — a truncated or foreign stream counts what it has.
  *
  * Multiplied by `MP3_GRANULE` this is the length a decoder that trims nothing
@@ -55,17 +91,12 @@ const SAMPLE_RATES = [44_100, 48_000, 32_000] as const;
 export function mp3GranuleCount(mp3: Uint8Array): number {
   let at = 0;
   let frames = 0;
-  while (at + 4 <= mp3.length) {
-    const b1 = mp3[at]!;
-    const b2 = mp3[at + 1]!;
-    const b3 = mp3[at + 2]!;
-    // Sync (11 bits), MPEG-1 (bits 4-3 == 11), Layer III (bits 2-1 == 01).
-    const isMpeg1Layer3 = b1 === 0xff && (b2 & 0xfe) === 0xfa;
-    const bitrate = BITRATES_KBPS[b3 >> 4];
-    const sampleRate = SAMPLE_RATES[(b3 >> 2) & 0x3];
-    if (!isMpeg1Layer3 || !bitrate || !sampleRate) break;
-    const padding = (b3 >> 1) & 0x1;
-    at += Math.floor((144 * bitrate * 1000) / sampleRate) + padding;
+  for (
+    let header = readMp3FrameHeader(mp3, at);
+    header !== null;
+    header = readMp3FrameHeader(mp3, at)
+  ) {
+    at += header.length;
     frames++;
   }
   return frames;
