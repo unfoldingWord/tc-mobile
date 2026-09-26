@@ -2,6 +2,7 @@ import { forwardRef } from "react";
 
 import { Icon, type IconName } from "./icon";
 import type { ShareO4View } from "./share-o4-view";
+import { useKeepInView } from "@/hooks/use-keep-in-view";
 import { strings } from "@/lib/strings";
 
 interface ShareProgressPanelProps {
@@ -57,7 +58,7 @@ export const ShareProgressPanel = forwardRef<
   return (
     <div ref={ref} tabIndex={-1} role={role} className="share-progress">
       {o4.chips.length > 0 && <O4Chips chips={o4.chips} />}
-      <O4Circle view={o4} />
+      <O4Circle view={o4} status={text} />
       <span className="share-progress-text">{text}</span>
     </div>
   );
@@ -72,8 +73,15 @@ export const ShareProgressPanel = forwardRef<
  */
 function O4Chips({ chips }: { chips: ShareO4View["chips"] }) {
   const out = chips.filter((c) => c.state !== "stays").length;
+  // A long book's row is capped at about three rows and scrolls inside
+  // (`o4/share.css`, DRI pick (a) on #1023); this keeps the current chip in
+  // view as the count moves.
+  const rowRef = useKeepInView<HTMLSpanElement>(
+    chips.findIndex((c) => c.state === "current")
+  );
   return (
     <span
+      ref={rowRef}
       className="share-o4-chips"
       role="img"
       aria-label={strings.shareItemsGoOut(out, chips.length)}
@@ -108,9 +116,24 @@ const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
  * valued 0 to 100, with no value before the first count and 100 once
  * handed over; on any other outcome it is a plain box and the panel's role
  * and text carry the state, as in the current look.
+ *
+ * The bar's name is "Preparing to share" while a prepare counts. At 100 on
+ * the hand-off and on `sent` (`view.meterFromStatus`) it is `status`, the
+ * same words the line under the circle shows at that moment (DRI pick (c)
+ * on #1023, "Follow the visible status"), so no new copy is needed.
  */
-function O4Circle({ view }: { view: ShareO4View }) {
+function O4Circle({
+  view,
+  status,
+}: {
+  view: ShareO4View;
+  status: string | null;
+}) {
   const meter = view.meter;
+  const name =
+    view.meterFromStatus === true && status !== null
+      ? status
+      : strings.sharePreparingLabel;
   return (
     <span className="share-o4-frame">
       {view.ring !== null && (
@@ -132,7 +155,7 @@ function O4Circle({ view }: { view: ShareO4View }) {
           ? {}
           : {
               role: "progressbar",
-              "aria-label": strings.sharePreparingLabel,
+              "aria-label": name,
               "aria-valuemin": 0,
               "aria-valuemax": 100,
               ...(meter.now === null ? {} : { "aria-valuenow": meter.now }),

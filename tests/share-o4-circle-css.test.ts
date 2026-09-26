@@ -201,3 +201,41 @@ describe("O4 share circle stylesheet (#947)", () => {
     );
   });
 });
+
+describe("a long book's chip row is bounded and scrolls (DRI pick (a) on #1023)", () => {
+  const chips = `${O4} .share-o4-chips`;
+
+  it("caps the row at three rows of chips and scrolls inside it", () => {
+    // Three 38px rows and the two 10px gaps between them.
+    expect(valueFor(chips, "max-height")).toBe("134px");
+    expect(valueFor(chips, "overflow-y")).toBe("auto");
+    // The offset parent of each chip, so the hook's offsetTop is row-relative.
+    expect(valueFor(chips, "position")).toBe("relative");
+  });
+
+  it("gives up height before the circle or the status line does", () => {
+    // The panel never grows past the scrim; inside it only the chip row
+    // shrinks (min-height 0), while the frame and the text keep their size.
+    expect(valueFor(`${O4} .share-progress`, "max-height")).toBe("100%");
+    expect(valueFor(chips, "min-height")).toBe("0");
+    expect(valueFor(chips, "flex")).toBe("0 1 auto");
+    expect(valueFor(`${O4} .share-o4-frame`, "flex")).toBe("none");
+    expect(valueFor(`${O4} .share-progress-text`, "flex")).toBe("none");
+  });
+
+  it("smooth-scrolls only when reduced motion is not asked for", () => {
+    const smooth = RULES.filter(
+      (r) => r.decls.get("scroll-behavior") === "smooth"
+    );
+    expect(smooth).toHaveLength(1);
+    expect(smooth[0]!.selectors).toEqual([chips]);
+    const media = CSS.match(
+      /@media\s*\(prefers-reduced-motion:\s*no-preference\)\s*\{([^{}]*\{[^{}]*\})\s*\}/
+    );
+    expect(media, "no no-preference media block").not.toBeNull();
+    expect(media![1]).toMatch(/scroll-behavior:\s*smooth/);
+    // Outside that block, nothing sets a scroll behaviour at all. The
+    // lookbehind keeps `overscroll-behavior` from matching.
+    expect(CSS.replace(media![0], "")).not.toMatch(/(?<![\w-])scroll-behavior/);
+  });
+});

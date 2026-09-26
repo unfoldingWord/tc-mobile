@@ -2,7 +2,8 @@ import { createElement } from "react";
 
 import { describe, expect, it } from "vitest";
 
-import type { ShareO4View } from "@/components/share-o4-view";
+import { shareProgressText } from "@/components/share-error-copy";
+import { shareO4View, type ShareO4View } from "@/components/share-o4-view";
 import { ShareProgressPanel } from "@/components/share-progress-panel";
 import { strings } from "@/lib/strings";
 
@@ -193,5 +194,88 @@ describe("the numbered chips (D21)", () => {
       strings.shareItemsGoOut(3, 4)
     );
     expect(strings.shareItemsGoOut(3, 4)).toBe("3 of 4 go out");
+  });
+});
+
+describe("the progress bar's name at 100 follows the visible status (DRI pick (c))", () => {
+  it("uses the panel's own status words when the view says so (send and sent)", () => {
+    const bar = one(
+      o4({ meter: { now: 100 }, meterFromStatus: true }),
+      "[role='progressbar']"
+    );
+    expect(bar.getAttribute("aria-label")).toBe(TEXT);
+  });
+
+  it("keeps the preparing label otherwise", () => {
+    const bar = one(o4({ meter: { now: 100 } }), "[role='progressbar']");
+    expect(bar.getAttribute("aria-label")).toBe(strings.sharePreparingLabel);
+  });
+
+  it("names the hand-off and sent meters with the words shareProgressText shows", () => {
+    for (const progress of [
+      { phase: "busy", work: "send", since: 0, pending: null } as const,
+      { phase: "outcome", settled: "sent", since: 0 } as const,
+    ]) {
+      const text = shareProgressText(progress, "book");
+      const container = render(
+        createElement(ShareProgressPanel, {
+          role: "status",
+          icon: "share",
+          text,
+          o4: shareO4View(progress, "book", []),
+        })
+      );
+      const bar = one(container, "[role='progressbar']");
+      expect(bar.getAttribute("aria-label")).toBe(text);
+      expect(bar.getAttribute("aria-label")).not.toBe(
+        strings.sharePreparingLabel
+      );
+    }
+  });
+});
+
+describe("a skipped item at the hand-off (the carried hollow snapshot)", () => {
+  it("is neither checked nor counted in 'N of M go out'", () => {
+    const container = render(
+      createElement(ShareProgressPanel, {
+        role: "status",
+        icon: "share",
+        text: TEXT,
+        o4: shareO4View(
+          {
+            phase: "busy",
+            work: "send",
+            since: 0,
+            pending: null,
+            carried: { hollow: [1] },
+          },
+          "book",
+          [1, 2, 3].map((label) => ({ label, goesOut: true }))
+        ),
+      })
+    );
+    const drawn = [...container.querySelectorAll(".share-o4-chip")];
+    expect(drawn.map((c) => c.getAttribute("data-chip"))).toEqual([
+      "finished",
+      "stays",
+      "finished",
+    ]);
+    expect(one(container, ".share-o4-chips").getAttribute("aria-label")).toBe(
+      strings.shareItemsGoOut(2, 3)
+    );
+  });
+});
+
+describe("a long book's chips (DRI pick (a), bounded and scrolling)", () => {
+  it("keeps every chip, and still draws the circle and the status line", () => {
+    const chips: ShareO4View["chips"] = Array.from({ length: 150 }, (_, i) => ({
+      label: i + 1,
+      state: i === 120 ? "current" : "waiting",
+    }));
+    const container = o4({ ring: 0.8, meter: { now: 80 }, chips });
+    const group = one(container, ".share-o4-chips");
+    expect(group.querySelectorAll(".share-o4-chip")).toHaveLength(150);
+    one(container, ".share-o4-frame .share-o4-core");
+    expect(one(container, ".share-progress-text").textContent).toBe(TEXT);
   });
 });

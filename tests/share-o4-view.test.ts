@@ -135,6 +135,20 @@ describe("shareO4View: the core's progress bar (D22)", () => {
     ).toEqual({ now: 100 });
   });
 
+  it("is named by the visible status line at 100 on send and sent, and by the preparing label while counting (DRI pick (c))", () => {
+    expect(shareO4View(busy(undefined, "send"), "book").meterFromStatus).toBe(
+      true
+    );
+    expect(
+      shareO4View({ phase: "outcome", settled: "sent", since: 0 }, "book")
+        .meterFromStatus
+    ).toBe(true);
+    expect(shareO4View(busy(), "chapter").meterFromStatus).toBeFalsy();
+    expect(
+      shareO4View(busy({ done: 4, total: 4 }), "book").meterFromStatus
+    ).toBeFalsy();
+  });
+
   it("is not a progress bar on any other outcome", () => {
     for (const settled of SHARE_SETTLED)
       if (settled !== "sent")
@@ -175,11 +189,23 @@ describe("shareO4View: one numbered chip per item, in order (D21)", () => {
     const view = (done: number) =>
       row(shareO4View(busy({ done, total: 4 }), "book", items("x.xx")).chips);
     expect(view(0)).toBe("*-oo");
-    // Chapter 1 done; chapter 2 has no audio, so chapter 3 is the next to go.
-    expect(view(1)).toBe("v-*o");
+    // Chapter 1 done; chapter 2 has no audio and its step is running, so no
+    // chip is current until chapter 3's step is (DRI pick (b) on #1023, "No
+    // amber while skipping").
+    expect(view(1)).toBe("v-oo");
     expect(view(2)).toBe("v-*o");
     expect(view(3)).toBe("v-v*");
     expect(view(4)).toBe("v-vv");
+  });
+
+  it("two empty chapters in a row: no chip is current until the cursor reaches a recorded one (DRI pick (b))", () => {
+    const view = (done: number) =>
+      row(shareO4View(busy({ done, total: 4 }), "book", items("x..x")).chips);
+    expect(view(0)).toBe("*--o");
+    expect(view(1)).toBe("v--o");
+    expect(view(2)).toBe("v--o");
+    expect(view(3)).toBe("v--*");
+    expect(view(4)).toBe("v--v");
   });
 
   it("everything that goes out shows a check at hand-over (busy send and sent)", () => {
@@ -259,6 +285,44 @@ describe("shareO4View: one numbered chip per item, in order (D21)", () => {
             skipped: 1,
             hollow: [1],
           }),
+          "chapter",
+          items("x.xx")
+        ).chips
+      )
+    ).toBe("v--v");
+  });
+
+  it("an item the prepare skipped stays grey through the hand-off (the carried hollow snapshot)", () => {
+    // Share Book: chapter 2 was recorded on the screen, but the prepare's
+    // count finished it with no audio. The send carries that snapshot.
+    const send: Busy = {
+      phase: "busy",
+      work: "send",
+      since: 0,
+      pending: null,
+      carried: { hollow: [1] },
+    };
+    expect(row(shareO4View(send, "book", items("xxx")).chips)).toBe("v-v");
+    expect(
+      row(
+        shareO4View(
+          {
+            phase: "outcome",
+            settled: "sent",
+            since: 0,
+            carried: { hollow: [1] },
+          },
+          "book",
+          items("xxx")
+        ).chips
+      )
+    ).toBe("v-v");
+    // Share Chapter: positions are among the segments that go out, so the
+    // "." segment is skipped over when placing hollow position 1.
+    expect(
+      row(
+        shareO4View(
+          { ...send, carried: { items: 3, hollow: [1] } },
           "chapter",
           items("x.xx")
         ).chips

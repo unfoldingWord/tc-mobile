@@ -20,7 +20,8 @@
  * Values are the workbench's (states 15 and G7, vShare with its bigshare and
  * schips rules): core 140, frame 176, ring radius 84 with a 7px stroke on a
  * well track, turned to start at twelve o'clock. Chips are 38px circles,
- * 10px apart, wrapping, 800-weight 15px numbers: grey (well, faint ink) for
+ * 10px apart, wrapping (capped at three rows that scroll, DRI pick (a) on
+ * #1023), 800-weight 15px numbers: grey (well, faint ink) for
  * an item that does not go out and, while packing, for one still waiting;
  * send with white ink and a check for a finished one; voice for the one in
  * progress (D21 as corrected on #947). Outcome looks are D14 (handed over: check
@@ -104,11 +105,39 @@
   }
 
   /* --- one numbered chip per item (D21) ------------------------------- */
+  /* BOUNDED, SCROLLS (DRI pick (a) on #1023): a long book (Psalms, 150
+     chapters) would otherwise wrap about 25 rows above the circle and push it
+     and the status line out of the fixed scrim. The row is capped at three
+     rows (3 x 38px chips + 2 x 10px gaps = 134px) and scrolls inside; every
+     chip is kept, and use-keep-in-view.ts keeps the current one visible. It is
+     the one child of the panel that may shrink (min-height 0), and the panel
+     never grows past the scrim, so on a short screen the row gives up height
+     before the circle or the text does. position: relative makes the row the
+     chips' offset parent, which the hook measures from. */
+  [data-design="o4"] .share-progress {
+    max-height: 100%;
+  }
+  [data-design="o4"] .share-progress-text {
+    flex: none;
+  }
   [data-design="o4"] .share-o4-chips {
+    position: relative;
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     gap: 10px;
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: 134px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* Keeping the current chip in view glides only when motion is welcome;
+     under reduced motion the row jumps. */
+  @media (prefers-reduced-motion: no-preference) {
+    [data-design="o4"] .share-o4-chips {
+      scroll-behavior: smooth;
+    }
   }
   /* The resting chip: an item that does not go out, or, while packing, one
      that goes out and is still waiting. Grey, its number (vShare). */

@@ -83,12 +83,21 @@ export interface ShareO4View {
    * progress bar, which is every other outcome.
    */
   readonly meter: { readonly now: number | null } | null;
+  /**
+   * Whether the meter's accessible name is the panel's visible status line
+   * rather than `strings.sharePreparingLabel` (DRI pick (c) on #1023, "Follow
+   * the visible status"): true at 100 on the hand-off and on `sent`, where
+   * the line under the circle no longer says the share is being prepared.
+   * Absent while a prepare counts.
+   */
+  readonly meterFromStatus?: boolean;
   /** One chip per item, in order. Empty draws no chip row. */
   readonly chips: readonly ShareChip[];
 }
 
 type VisibleProgress = Exclude<ShareProgress, { readonly phase: "hidden" }>;
 type Steps = NonNullable<Extract<ShareProgress, { phase: "busy" }>["steps"]>;
+type Carry = Extract<ShareProgress, { phase: "busy" }>["carried"];
 
 export function shareO4View(
   progress: VisibleProgress,
@@ -101,7 +110,8 @@ export function shareO4View(
       icon: sent ? "check" : shareOverlayGlyph(progress).icon,
       ring: null,
       meter: sent ? { now: 100 } : null,
-      chips: sent ? handedOver(items) : [],
+      ...(sent ? { meterFromStatus: true } : {}),
+      chips: sent ? handedOver(items, scope, progress.carried) : [],
     };
   }
   if (progress.work === "send")
@@ -109,7 +119,8 @@ export function shareO4View(
       icon: "share",
       ring: null,
       meter: { now: 100 },
-      chips: handedOver(items),
+      meterFromStatus: true,
+      chips: handedOver(items, scope, progress.carried),
     };
   const steps = progress.steps;
   if (steps === undefined)
@@ -122,12 +133,33 @@ export function shareO4View(
   };
 }
 
-/** Handed over (or being handed over): every item that goes out is done. */
-function handedOver(items: readonly ShareItem[]): ShareChip[] {
-  return items.map(({ label, goesOut }) => ({
-    label,
-    state: goesOut ? "finished" : "stays",
+/**
+ * Handed over (or being handed over): every item that goes out is done,
+ * except one the prepare finished with no audio. The send carries the
+ * prepare's `hollow` positions (#1023, `ShareCarry`), counted in the same
+ * order {@link shareChips} counts, so a skipped item stays the grey chip and
+ * the "N of M go out" label does not count it. Without a carried snapshot
+ * (a build that never reported a count) every go-out item is checked.
+ */
+function handedOver(
+  items: readonly ShareItem[],
+  scope: "chapter" | "book",
+  carried: Carry
+): ShareChip[] {
+  const counted = countedItems(items, scope);
+  const skipped = new Set((carried?.hollow ?? []).map((at) => counted[at]));
+  return items.map((item) => ({
+    label: item.label,
+    state: item.goesOut && !skipped.has(item) ? "finished" : "stays",
   }));
+}
+
+/** The items a count walks over, in order (see {@link shareChips}). */
+function countedItems(
+  items: readonly ShareItem[],
+  scope: "chapter" | "book"
+): readonly ShareItem[] {
+  return scope === "book" ? items : items.filter((i) => i.goesOut);
 }
 
 /**
@@ -141,9 +173,12 @@ function handedOver(items: readonly ShareItem[]): ShareChip[] {
  *   stretch, so step `k` is the `k`th item that goes out, and once
  *   `done >= items` every one of them is finished while the ring still fills.
  *
- * An item the count has passed is finished if it goes out. The first item
- * that goes out and has not been passed is current, while the count is still
- * on its items. The encode stretch passes no item. The count and the screen
+ * An item the count has passed is finished if it goes out. The item the
+ * count is on (position `done` among the counted items) is current while the
+ * count is still on its items, but only if it goes out: while Share Book's
+ * step is a chapter with no audio, no chip is current, and the next recorded
+ * chapter turns amber only once its own step is being worked on (DRI pick (b)
+ * on #1023, "No amber while skipping"). The encode stretch passes no item. The count and the screen
  * can disagree (a clip's record gone between the screen's read and the
  * gather's): a count longer than the screen's items stops at the last of
  * them, and a screen item beyond the count's items stays waiting, never
@@ -160,20 +195,16 @@ function shareChips(
   scope: "chapter" | "book",
   items: readonly ShareItem[]
 ): ShareChip[] {
-  const counted = scope === "book" ? items : items.filter((i) => i.goesOut);
+  const counted = countedItems(items, scope);
   const itemSteps = steps.items ?? steps.total;
   const passed = new Set(counted.slice(0, Math.min(steps.done, itemSteps)));
   const skipped = new Set((steps.hollow ?? []).map((at) => counted[at]));
-  const onItems = steps.done < itemSteps;
-  let current = onItems;
+  const current = steps.done < itemSteps ? counted[steps.done] : undefined;
   return items.map((item) => {
     if (!item.goesOut || skipped.has(item))
       return { label: item.label, state: "stays" };
     if (passed.has(item)) return { label: item.label, state: "finished" };
-    if (current) {
-      current = false;
-      return { label: item.label, state: "current" };
-    }
+    if (item === current) return { label: item.label, state: "current" };
     return { label: item.label, state: "waiting" };
   });
 }
