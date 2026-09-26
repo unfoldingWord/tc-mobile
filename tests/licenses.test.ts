@@ -223,9 +223,9 @@ describe("bundled licence texts", () => {
         "node_modules",
         lib.pinPackage ?? lib.name
       );
-      const file = readdirSync(dir).find((f) =>
-        /^licen[cs]e(\.(md|txt))?$/i.test(f)
-      );
+      const file = readdirSync(dir)
+        .filter((f) => /^licen[cs]e(\.(md|txt))?$/i.test(f))
+        .sort()[0];
       expect(file, `${lib.name} has no installed LICENSE file`).toBeDefined();
       const norm = (s: string) => s.replace(/\s+/g, " ").trim();
       const installed = readFileSync(path.join(dir, file ?? ""), "utf8");
@@ -236,10 +236,21 @@ describe("bundled licence texts", () => {
       const slices = holders.length > 0 ? holders : [norm(installed)];
       expect(slices.every((s) => s.length > 0)).toBe(true);
 
-      const section = read("/licenses/THIRD-PARTY-NOTICES.txt")
+      // Own section only: a line must START with "name version" followed by
+      // whitespace or end of line, so "foo 1.2.3" cannot match "foo 1.2.30",
+      // "foo 1.2.3-beta"; exactly one section may carry it.
+      const needle = `${lib.name} ${lib.version}`;
+      const matches = read("/licenses/THIRD-PARTY-NOTICES.txt")
         .split(/\n=+\n/)
-        .find((s) => s.includes(`${lib.name} ${lib.version}`));
-      expect(section, `${lib.name} has no section`).toBeDefined();
+        .filter((s) =>
+          s.split("\n").some((l) => {
+            const t = l.trim();
+            const rest = t.slice(needle.length);
+            return t.startsWith(needle) && /^(\s|$)/.test(rest);
+          })
+        );
+      expect(matches, `${lib.name} section count`).toHaveLength(1);
+      const section = matches[0];
       for (const slice of slices) {
         expect(
           norm(section ?? ""),
