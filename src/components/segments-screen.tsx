@@ -36,6 +36,8 @@ import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useScreenLayers } from "@/hooks/use-screen-layers";
 import { useScrollToNew } from "@/hooks/use-scroll-to-new";
+import { useSegmentReorder } from "@/hooks/use-segment-reorder";
+import { reorderShift } from "@/lib/view/reorder-gesture";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { overlayDismissal } from "@/lib/nav/navigation";
 import { firstNotFinished } from "@/lib/view/segment-rows";
@@ -148,6 +150,7 @@ export const SegmentsScreen = forwardRef<
     eraseRow,
     renameChapter,
     renameSegment,
+    moveSegment,
   } = useChapterSegments(chapterId);
   // The passage heading the breadcrumb shows: the facilitator's label, else
   // "Chapter {number}" (#264).
@@ -825,6 +828,73 @@ export const SegmentsScreen = forwardRef<
     rowReveal.reveal(false);
   }, [rows, rowReveal]);
 
+  // ── Press-and-hold reorder (#953 PR2a, O4 only) ───────────────────────────
+  //
+  // Hold a row's number badge or title for 450 ms, then drag (§4, §7; D11:
+  // drag only for the training). The gesture is `hooks/use-segment-reorder.ts`
+  // over `lib/view/reorder-gesture.ts`; this screen supplies the rows, the
+  // one write and the words.
+  //
+  // One write, on the drop: `moveSegment` (#1053) patches the rows
+  // optimistically, replays the move over a load that read the old order,
+  // and on failure puts the stored order back and reports "segment-reorder",
+  // with nothing extra on screen (#172). Every cancel writes nothing, and the
+  // rows never left the stored order, so there is nothing to restore.
+  //
+  // Off with the switch off, and whenever a row could not take a tap anyway:
+  // an overlay has the list `inert`, a save is landing (`refreshing` disables
+  // the rows' buttons), the first load has not finished, or the chapter is
+  // gone.
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [reorderStatus, setReorderStatus] = useState("");
+  const reorder = useSegmentReorder<SegmentId>({
+    enabled: o4 && !listInert && !refreshing && !loading && !staleTarget,
+    ids: rows.map((row) => row.segmentId),
+    nodeFor: rowReveal.nodeFor,
+    scrollRef,
+    onLift: (index) => {
+      const row = rows[index];
+      if (row) setReorderStatus(strings.reorderLifted(row.ordinal));
+    },
+    onDrop: (segmentId, fromIndex, toIndex) => {
+      const row = rows[fromIndex];
+      // Keep focus with the row that moved. React moves its `<li>`, and a
+      // moved node can drop focus to the document; only when focus was on
+      // that row (or already nowhere) is it handed back, so a drop never
+      // pulls focus off something else. The reveal effect above lands it on
+      // the row's open button once the reordered rows commit.
+      const active = document.activeElement;
+      const node = rowReveal.nodeFor(segmentId);
+      if (active === document.body || (node && node.contains(active))) {
+        rowReveal.armFocus(segmentId);
+      }
+      // Segments renumber after a move (the DRI's "Renumber" pick), so the
+      // row's new number is its new position.
+      if (!row) {
+        void moveSegment(segmentId, toIndex);
+        return;
+      }
+      const moved = strings.reorderMoved(row.ordinal, toIndex + 1);
+      setReorderStatus(moved);
+      // A write that did not land puts the row back (`moveSegment` resolves
+      // false, having reported it), so the spoken line must not keep saying
+      // it moved (George round 1 on #1057). Only if nothing newer has been
+      // said since.
+      void moveSegment(segmentId, toIndex).then((landed) => {
+        if (!landed) {
+          setReorderStatus((s) =>
+            s === moved ? strings.reorderStayed(row.ordinal) : s
+          );
+        }
+      });
+    },
+    onCancel: (index) => {
+      const row = rows[index];
+      if (row) setReorderStatus(strings.reorderStayed(row.ordinal));
+    },
+  });
+  const drag = o4 ? reorder.drag : null;
+
   const onAppend = useCallback(async () => {
     // Only the first append comes from the invite (the corner + is hidden while
     // empty); that CTA unmounts, so it hands focus to the new row.
@@ -939,6 +1009,7 @@ export const SegmentsScreen = forwardRef<
       )}
 
       <div
+        ref={scrollRef}
         className={
           o4 ? "segments-body flex-1 overflow-y-auto" : "flex-1 overflow-y-auto"
         }
@@ -954,11 +1025,37 @@ export const SegmentsScreen = forwardRef<
             onCta={() => void onAppend()}
           />
         ) : (
-          <ul className={o4 ? "segments-list" : "flex flex-col gap-[8px]"}>
-            {rows.map((row) => (
+          <ul
+            className={o4 ? "segments-list" : "flex flex-col gap-[8px]"}
+            data-reordering={drag ? "" : undefined}
+          >
+            {rows.map((row, index) => (
               <li
                 key={row.segmentId}
                 ref={(el) => rowReveal.setNode(row.segmentId, el)}
+                // While a row is lifted (O4 only): it follows the finger and
+                // its neighbours slide one slot to make room. Paint only;
+                // the rows' order is not touched until the drop.
+                className={
+                  drag?.fromIndex === index
+                    ? "segments-item--lifted"
+                    : undefined
+                }
+                style={
+                  drag
+                    ? ({
+                        "--reorder-y": `${
+                          drag.fromIndex === index
+                            ? drag.offset
+                            : reorderShift(
+                                index,
+                                drag.fromIndex,
+                                drag.toIndex
+                              ) * drag.pitch
+                        }px`,
+                      } as React.CSSProperties)
+                    : undefined
+                }
               >
                 <SegmentRow
                   row={row}
@@ -983,12 +1080,29 @@ export const SegmentsScreen = forwardRef<
                   onMenuClose={onRowMenuClose}
                   bookName={bookName}
                   chapterNumber={chapterNumber}
+                  onHoldStart={o4 ? reorder.holdStart(index) : undefined}
                 />
               </li>
             ))}
           </ul>
         )}
       </div>
+
+      {/* The reorder's spoken half (#953 PR2a, O4 only): which row was
+          lifted, where it landed, or that it went back. Outside the list's
+          `inert` subtree, and mounted for the screen's whole life so a
+          screen reader hears the first change. D11 leaves no keyboard or
+          switch path to move a row; this only tells what a drag did. */}
+      {o4 && (
+        <span
+          className="sr-only"
+          role="status"
+          aria-live="polite"
+          data-reorder-status=""
+        >
+          {reorderStatus}
+        </span>
+      )}
 
       <EraseConfirm
         key={confirmMount}

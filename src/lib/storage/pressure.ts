@@ -19,7 +19,9 @@
  * coarse reading can honestly support, and a band is also the only thing a
  * translator who may not read can act on. The hook that owns the browser call
  * (`hooks/use-storage-pressure.ts`) returns only this type for that reason:
- * the raw pair never leaves it.
+ * the raw pair never reaches a screen. The one other reader, the transcode
+ * sweep (#1010, through `freeByteCount`), compares free bytes across two
+ * readings to decide a retry and renders nothing.
  *
  * Pure arithmetic over two numbers — no DOM, no `navigator` — so it is pinned
  * in plain Node (`tests/storage-pressure.test.ts`) the way `storageMarker` is.
@@ -121,6 +123,27 @@ export const MAX_SAFE_BYTE_COUNT = Math.floor(Number.MAX_SAFE_INTEGER / 100);
  */
 function isByteCount(value: number | undefined): value is number {
   return value !== undefined && value >= 0 && value <= MAX_SAFE_BYTE_COUNT;
+}
+
+/**
+ * Free bytes for one `usage`/`quota` pair, or `undefined` for a reading
+ * {@link storagePressure} would call `"unknown"`.
+ *
+ * For a caller that compares two readings rather than banding one: the
+ * transcode sweep (#1010) holds out a segment that failed until a later
+ * reading shows more room than the one taken at the failure. Same guard as
+ * `storagePressure`, so the two never disagree about what a usable reading is.
+ * Negative when `usage` exceeds `quota`, for the reason given there. Like the
+ * band, the figure is for a decision and never for the screen.
+ */
+export function freeByteCount(
+  usage: number | undefined,
+  quota: number | undefined
+): number | undefined {
+  if (!isByteCount(usage) || !isByteCount(quota) || quota === 0) {
+    return undefined;
+  }
+  return quota - usage;
 }
 
 /**

@@ -100,9 +100,37 @@ interface SegmentRowProps {
    */
   bookName?: string;
   chapterNumber?: number;
+  /**
+   * Press-and-hold reorder (#953 PR2a): the screen's `onPointerDown` for this
+   * row's hold area. Attached in the O4 look only, and only to the number
+   * badge (the open button) and the title line (the DRI's "Badge and title"
+   * pick): never to the waveform, which takes the pointer at first touch
+   * (`onPointerDown` below), and never to the row's other buttons. A tap
+   * released before the hold still reaches the open button's click.
+   */
+  onHoldStart?: (e: React.PointerEvent) => void;
 }
 
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
+
+/**
+ * A Play from the dot's rest leaves at least this much of the take to sound,
+ * or it starts from the beginning instead (#606). #618 rests the dot at the
+ * start after a run-out, but a drag, the arrow keys or a Stop on the last
+ * elapsed tick (~60 ms) can still leave it at or next to the end, and a Play
+ * from there starts a source with nothing, or almost nothing, behind it:
+ * silence at best (#601's symptom). It is also the start condition #606's
+ * reporter tied a shriek to, which is not confirmed as that shriek's cause.
+ * 100 ms is under any sound a translator would play on purpose, and wider
+ * than one elapsed tick.
+ */
+const PLAY_TAIL_MS = 100;
+
+/** The offset, in seconds, a Play tap asks for from `fraction` of the take. */
+function playOffsetSeconds(fraction: number, durationMs: number): number {
+  const offsetMs = fraction * durationMs;
+  return durationMs - offsetMs < PLAY_TAIL_MS ? 0 : offsetMs / 1000;
+}
 
 /**
  * One segment, as a row (mockup 2, v0.1.2 rework):
@@ -144,6 +172,7 @@ export function SegmentRow({
   guided = false,
   bookName,
   chapterNumber,
+  onHoldStart,
 }: SegmentRowProps) {
   const state = segmentRowState(row);
   // The O4 look (#944) branches the markup below; with the switch off every
@@ -410,6 +439,13 @@ export function SegmentRow({
   // O4 paints the part past the playhead in `--s-voice-dim` while playing:
   // `o4/segments.css` masks the canvas from this fraction on.
   const o4Playing = o4 && playing;
+  // The hold area's handler and marker, O4 only: the switch-off look gains no
+  // gesture (#953 PR2a). `o4/segments.css` reads `data-reorder-handle` to
+  // keep a long press from selecting text or raising a callout.
+  const holdArea =
+    o4 && onHoldStart
+      ? { onPointerDown: onHoldStart, "data-reorder-handle": "" }
+      : undefined;
 
   const wave = hasClip ? (
     <div
@@ -466,6 +502,7 @@ export function SegmentRow({
         disabled={busy}
         aria-label={openLabel}
         className="row-open"
+        {...holdArea}
       >
         {o4 ? (
           // The ordinal stays on every row, finished included (#591); the
@@ -488,7 +525,7 @@ export function SegmentRow({
         <div className="row-mid">
           {titled && (
             // Visual only: the open button's name already carries the label.
-            <span className="row-title" aria-hidden="true">
+            <span className="row-title" aria-hidden="true" {...holdArea}>
               {row.label}
             </span>
           )}
@@ -513,7 +550,7 @@ export function SegmentRow({
           // row still carries the pre-save durationMs, so an offset computed
           // from it would seek the wrong place in the clip just written.
           disabled={busy}
-          onClick={() => onPlay(fraction * (durationMs / 1000))}
+          onClick={() => onPlay(playOffsetSeconds(fraction, durationMs))}
         />
       ) : (
         <Control
@@ -630,7 +667,9 @@ export function SegmentRow({
                   size={26}
                   className="o4-menu-play"
                   disabled={busy}
-                  onClick={() => onPlay(fraction * (durationMs / 1000))}
+                  onClick={() =>
+                    onPlay(playOffsetSeconds(fraction, durationMs))
+                  }
                 />
               )}
             </div>

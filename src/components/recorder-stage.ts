@@ -729,10 +729,14 @@ export function liftOutcome(input: {
    * `onPaste` calls `reopenFrame()` itself, unconditionally, as the
    * paragraph above already says (a discard would presumably empty the
    * clipboard for real, once #862 lands, but that is not built yet either).
-   * #489 must not route paste through this predicate — a one-shot paste that
-   * merely flips `canPaste` false would leave this term believing the stage
-   * is still owed a reseed with no `reopenFrame()` call left to satisfy it,
-   * and the frame would never come back.
+   * #489 must not route paste through this predicate: `canPaste` only
+   * withholds a reseed for the lift it is passed to, not permanently — it is
+   * not a latch. Once a one-shot paste flips it false, a later lift computed
+   * with `canPaste: false` may seed a frame again through this same
+   * `reopenFrame` term, and the paste path's own unconditional
+   * `reopenFrame()` call (above) is unaffected either way. Do not go looking
+   * for a stuck-forever state here; this function holds no memory across
+   * calls (#912 item 1).
    */
   readonly canPaste: boolean;
 }): {

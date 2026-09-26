@@ -264,6 +264,7 @@ export function useAudioSession(): UseAudioSession {
     stop: endRecording,
     retryDecode,
     cancel: cancelRecording,
+    seal: sealRecording,
     state: recorderState,
     error: recorderError,
     elapsedMs,
@@ -699,12 +700,24 @@ export function useAudioSession(): UseAudioSession {
   }, [recorderState, session]);
 
   useEffect(() => {
-    // The page may be discarded without ever unmounting. A hot microphone on a
-    // page that is going away is not arguable.
-    const onPageHide = () => leave();
+    // The page may be discarded without ever unmounting, so everything is
+    // released here, except an open take (#807, DRI decision 2026-09-24): that
+    // is sealed the way a #59 interruption seals it, and the recorder sheet
+    // commits it through the same path. The mic floor stays with the take;
+    // `stopRecording`'s `finally` hands it back. Nothing can be sounding: the
+    // session refuses playback while the mic holds the floor.
+    //
+    // Nothing here writes IndexedDB. `seal()` only sets state; the save runs
+    // after `stop()`'s flush and decode awaits, so on a page the browser keeps
+    // (bfcache) it lands after the page resumes, and on a page it discards it
+    // never runs, which loses the take exactly as the cancel did.
+    const onPageHide = () => {
+      if (sealRecording()) return;
+      leave();
+    };
     window.addEventListener("pagehide", onPageHide);
     return () => window.removeEventListener("pagehide", onPageHide);
-  }, [leave]);
+  }, [leave, sealRecording]);
 
   useEffect(() => () => leave(), [leave]);
 

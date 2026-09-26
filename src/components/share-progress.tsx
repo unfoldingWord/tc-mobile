@@ -2,25 +2,21 @@ import { useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import { noticePresentation } from "./notice-tone";
-import { shareProgressText } from "./share-error-copy";
+import {
+  libraryShareProgressText,
+  shareProgressText,
+} from "./share-error-copy";
 import { shareOverlayGlyph } from "./share-overlay-glyph";
 import { shareO4View, type ShareItem } from "./share-o4-view";
 import { ShareProgressPanel } from "./share-progress-panel";
 import type { ShareProgress as ShareProgressState } from "@/hooks/share-progress";
 import { useDesign } from "@/hooks/use-design";
+import type {
+  LibraryShareProgress,
+  UseLibraryShare,
+} from "@/hooks/use-library-share";
 
-interface ShareProgressProps {
-  /** The hook's timeline. Renders nothing while `hidden`. */
-  progress: ShareProgressState;
-  /** Picks the secondary text only — the glyphs are the same for both. */
-  scope: "chapter" | "book";
-  /**
-   * The items the share walks over, in order, from what the screen already
-   * holds: the chapter's segments, or the book's chapters. Only the O4 look
-   * reads them, for its numbered chips (#947 D21); the current look ignores
-   * them.
-   */
-  items?: readonly ShareItem[];
+interface ShareProgressCommonProps {
   /**
    * A scrim tap, or the Escape this component now captures, while BUSY.
    * Wired to `reset()` itself (George r1 P2 #1/#2), not the screen's full
@@ -37,6 +33,89 @@ interface ShareProgressProps {
   /** A tap anywhere, or the Escape this component now captures, while an
    *  OUTCOME is showing: end the flash early. */
   onDismiss: () => void;
+}
+
+/** Share Chapter and Share Book. */
+interface ItemShareProgressProps extends ShareProgressCommonProps {
+  /** The hook's timeline. Renders nothing while `hidden`. */
+  progress: ShareProgressState;
+  /** Picks the secondary text only — the glyphs are the same for both. */
+  scope: "chapter" | "book";
+  /**
+   * The items the share walks over, in order, from what the screen already
+   * holds: the chapter's segments, or the book's chapters. Only the O4 look
+   * reads them, for its numbered chips (#947 D21); the current look ignores
+   * them.
+   */
+  items?: readonly ShareItem[];
+}
+
+/**
+ * Share your work (#987, #1045): every book at once, from the O4 storage
+ * banner. Its timeline's `partial` gap is in books and chapters
+ * (`LibraryShareGap`), so it is a different type from the item scopes', and
+ * it has no items: the library export reports no step count to place chips
+ * by.
+ */
+interface LibraryShareProgressProps extends ShareProgressCommonProps {
+  /** `useLibraryShare().progress`. Renders nothing while `hidden`. */
+  progress: LibraryShareProgress;
+  scope: "library";
+  /**
+   * `useLibraryShare().error`, for the one refinement the timeline cannot
+   * carry: a `failed` settle that was a space refusal reads as `"storage"`,
+   * the same words the banner's Notice shows (`libraryShareProgressText`).
+   */
+  error: UseLibraryShare["error"];
+}
+
+type ShareProgressProps = ItemShareProgressProps | LibraryShareProgressProps;
+
+/**
+ * What the overlay draws from, whatever the scope: a timeline the glyph and
+ * O4 view can read, the secondary line, and the items. The library's
+ * timeline differs from the item scopes' only in its `partial` gap, which
+ * neither the glyph nor the O4 view reads, so it is handed on as the plain
+ * phases and the gap is spent here, on the line.
+ */
+function overlayInput(props: ShareProgressProps): {
+  progress: ShareProgressState;
+  text: string | null;
+  items: readonly ShareItem[] | undefined;
+} {
+  if (props.scope !== "library")
+    return {
+      progress: props.progress,
+      text: shareProgressText(props.progress, props.scope),
+      items: props.items,
+    };
+  return {
+    progress: withoutLibraryGap(props.progress),
+    text: libraryShareProgressText(props.progress, props.error),
+    items: undefined,
+  };
+}
+
+/** Every field kept but the library gap, which the glyph and O4 view never read. */
+function withoutLibraryGap(progress: LibraryShareProgress): ShareProgressState {
+  switch (progress.phase) {
+    case "hidden":
+      return progress;
+    case "busy":
+      return {
+        ...progress,
+        pending:
+          progress.pending === null
+            ? null
+            : { ...progress.pending, gap: undefined },
+      };
+    case "outcome":
+      return { ...progress, gap: undefined };
+    default: {
+      const unhandled: never = progress;
+      return unhandled;
+    }
+  }
 }
 
 /**
@@ -123,13 +202,9 @@ interface ShareProgressProps {
  * that keep THAT path from reaching the menu underneath. Both derive from
  * the one `shareOverlayOwnsScreen` predicate for that reason.
  */
-export function ShareProgress({
-  progress,
-  scope,
-  items,
-  onCancel,
-  onDismiss,
-}: ShareProgressProps) {
+export function ShareProgress(props: ShareProgressProps) {
+  const { scope, onCancel, onDismiss } = props;
+  const { progress, text, items } = overlayInput(props);
   const visible = progress.phase !== "hidden";
   const busy = progress.phase === "busy";
   // O4 (#947) swaps the glyph for the 140-in-176 circle, its filling ring and
@@ -261,7 +336,7 @@ export function ShareProgress({
         ref={panelRef}
         role={role}
         icon={glyph.icon}
-        text={shareProgressText(progress, scope)}
+        text={text}
         o4={design === "o4" ? shareO4View(progress, scope, items) : undefined}
       />
     </div>,

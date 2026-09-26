@@ -42,7 +42,7 @@ interface LibraryShareGap {
  * {@link ShareProgress} with every `gap` in {@link LibraryShareGap} units. The
  * phases, timings and settles are the flow's own, unchanged.
  */
-type LibraryShareProgress =
+export type LibraryShareProgress =
   | Extract<ShareProgress, { phase: "hidden" }>
   | (Omit<Extract<ShareProgress, { phase: "busy" }>, "pending"> & {
       readonly pending: {

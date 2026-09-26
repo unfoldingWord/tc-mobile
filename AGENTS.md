@@ -42,17 +42,17 @@ loader); do not read every description here as the target.
 
 ## Tech stack
 
-|         |                                                                                                                                     |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Runtime | Node `^22.12.0 \|\| >=24.0.0` (22.12 is knip's floor; Node 23.x is unsupported — jsdom 27's own engine range excludes it too, #577) |
-| Build   | Vite 8, `@vitejs/plugin-react`                                                                                                      |
-| UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons                                                                                     |
-| PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)                                                                                        |
-| Storage | IndexedDB via `idb` 8                                                                                                               |
-| Audio   | Web Audio + MediaRecorder; `@breezystack/lamejs` for MP3 (in a Web Worker)                                                          |
-| Tests   | Vitest 5, `fake-indexeddb`                                                                                                          |
-| Lint    | ESLint 9 flat config, `typescript-eslint` 8, Prettier 3                                                                             |
-| Deploy  | Cloudflare Workers static assets, Wrangler 4                                                                                        |
+|         |                                                                                                                                                                                                                                                          |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime | Node `^22.22.2 \|\| >=24.0.0` (22.22.2 is lint-staged 17.5.1's declared floor, `>=22.22.1`, already installed via #503; Node 23.x is unsupported — jsdom 27's own engine range excludes it too, #577; DRI 2026-09-26: "Raise to ^22.22.2 (Recommended)") |
+| Build   | Vite 8, `@vitejs/plugin-react`                                                                                                                                                                                                                           |
+| UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons                                                                                                                                                                                                          |
+| PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)                                                                                                                                                                                                             |
+| Storage | IndexedDB via `idb` 8                                                                                                                                                                                                                                    |
+| Audio   | Web Audio + MediaRecorder; `@breezystack/lamejs` for MP3 (in a Web Worker)                                                                                                                                                                               |
+| Tests   | Vitest 5, `fake-indexeddb`                                                                                                                                                                                                                               |
+| Lint    | ESLint 9 flat config, `typescript-eslint` 8, Prettier 3                                                                                                                                                                                                  |
+| Deploy  | Cloudflare Workers static assets, Wrangler 4                                                                                                                                                                                                             |
 
 ## Commands
 
@@ -73,6 +73,7 @@ npm run deploy:staging # wrangler deploy --env staging
 npm run deploy         # wrangler deploy (production)
 npm run check:deploy      # confirm a develop -> staging deploy; see "Confirming a deploy" below
 npm run check:deploy:prod # confirm a staging -> main deploy; requires the production origin explicitly
+npm run check:prepush  # review-bench findings on this branch's commits and added lines; runs in pre-push. Checklist: .claude/skills/tc-prepush
 ```
 
 ## Architecture — onion layers
@@ -354,6 +355,18 @@ transaction, never two; content-addressed clips so a repeated import dedupes
 instead of duplicating; append-only migrations. `ensureObsChapter` is the
 counter-example currently in the tree.
 
+**An async re-read never overwrites a known value with a stale or unknown
+one.** For each async read that writes state, ask what happens when the result
+is stale, unknown or a no-op; keep the known or landed value. #1012: a quota
+retry whose free-space re-read came back unknown erased a known baseline and
+held the segment out for the rest of the page.
+
+**A control goes busy before the first `await` in its handler, not after.**
+Otherwise a second tap, a second pointer or another control acts on
+half-finished state. #1013: the phone check's Close and Start stayed live
+while it awaited `transcodeSweepSettled()`, so a closed screen's run could
+still start measuring.
+
 **Errors have a channel before they have copy.** An unhandled rejection must
 reach an error boundary and a single sink — `console.error` is not a channel on
 a phone in a village. The channel itself is now built end to end: the boundary
@@ -388,7 +401,9 @@ save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
 failed chapter reorder (`hooks/use-books.ts`, `"chapter-reorder"`, #953), a
 failed segment reorder (`hooks/use-chapter-segments.ts`, `"segment-reorder"`,
-#953), a failed book cover-colour write
+#953), a failed segment delete
+(`hooks/use-chapter-segments.ts`, `"segment-delete"`, #590), a failed book
+cover-colour write
 (`hooks/use-book-cover-colour.ts`, `"book-cover-colour"`, #957),
 playback's own
 resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
@@ -744,7 +759,8 @@ easy to regress.
   from `develop` and merged back by PR. Never commit directly to `staging` or
   `main`; they are promoted to, not worked on.
 - **Commits:** Conventional Commits. Subject _and_ body, neither blank.
-- **Pre-commit** (fast): lint-staged, typecheck. **Pre-push** (slow): tests, build.
+- **Pre-commit** (fast): lint-staged, typecheck. **Pre-push** (slow):
+  `check:prepush`, tests, build.
 - **Never** `--no-verify`. Never suppress a lint rule or add a type suppression
   without asking first.
 - **Never** swallow an error silently. If a `catch` is genuinely empty, the

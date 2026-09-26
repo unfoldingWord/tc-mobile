@@ -154,4 +154,42 @@
       var(--s-voice-dim) var(--row-played)
     );
   }
+
+  /* --- press-and-hold reorder (#953, §3 lifted row, §4 reorder) ----------
+     The hold area is the badge (the open button) and the title line. A long
+     press there must not select text or raise the phone's callout. */
+  [data-design="o4"] .row-open[data-reorder-handle],
+  [data-design="o4"] .row-title[data-reorder-handle] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  /* While a row is lifted, every row reads its offset from --reorder-y, set
+     inline by the screen: the lifted row's follows the finger, and the rows
+     between its slot and the target slide one slot to make room. */
+  [data-design="o4"] .segments-list[data-reordering] > li {
+    transform: translateY(var(--reorder-y, 0px));
+    transition: transform 160ms ease;
+  }
+  [data-design="o4"] .segments-list[data-reordering] > .segments-item--lifted {
+    position: relative;
+    z-index: 8;
+    transform: translateY(var(--reorder-y, 0px)) scale(1.03);
+    transition: none;
+  }
+  /* The design reference's lift shadow, as dialogs.css carries its own: a
+     black shadow in both themes, so no layer-2 role applies to it. A lifted
+     segment row keeps its --s-surface ground (§3 gives --s-raised to a
+     lifted chapter row only). */
+  [data-design="o4"] .segments-item--lifted > .row {
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.38);
+  }
+
+  /* The neighbours jump rather than slide under reduced motion. The lift's
+     scale is a state, not a movement, so it stays. */
+  @media (prefers-reduced-motion: reduce) {
+    [data-design="o4"] .segments-list[data-reordering] > li {
+      transition: none;
+    }
+  }
 }
