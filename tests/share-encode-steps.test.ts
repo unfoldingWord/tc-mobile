@@ -17,6 +17,7 @@ import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { exportBookZip } from "@/lib/export/book";
 import {
   ENCODE_STEPS,
+  type StepReporter,
   exportChapterMp3,
   gatherChapterPcm,
   withEncodeSteps,
@@ -79,10 +80,17 @@ async function bookWith(chapters: Spec[][]): Promise<BookId> {
 
 function recorder() {
   const calls: Call[] = [];
-  const onStep = (done: number, total: number, skipped?: number): void => {
+  const items: Array<number | undefined> = [];
+  const onStep = (
+    done: number,
+    total: number,
+    skipped?: number,
+    itemCount?: number
+  ): void => {
     calls.push([done, total, skipped]);
+    items.push(itemCount);
   };
-  return { calls, onStep };
+  return { calls, items, onStep };
 }
 
 /** Let the gather's IndexedDB reads and the encode's start settle. */
@@ -121,7 +129,7 @@ function scriptedCodec() {
 function shareChapter(
   chapterId: ChapterId,
   codec: AudioCodec,
-  onStep: (done: number, total: number, skipped?: number) => void,
+  onStep: StepReporter,
   shouldContinue: () => boolean = () => true
 ) {
   return withEncodeSteps(onStep, shouldContinue, (counted, countedStep) =>
@@ -148,6 +156,51 @@ describe("withEncodeSteps — the encode is on Share Chapter's count (#996)", ()
       [1, total, 0],
       [2, total, 0],
     ]);
+  });
+
+  it("names the item count on every report, so a reader need not subtract the encode", async () => {
+    const chapterId = await chapterWith([
+      { n: 100, v: 1 },
+      { n: 100, v: 2 },
+      { n: 100, v: 3 },
+    ]);
+    const s = scriptedCodec();
+    const { items, onStep } = recorder();
+    const done = shareChapter(chapterId, s.codec, onStep);
+    await settle();
+    s.progress(0.5);
+    s.finish();
+    await done;
+    expect(items.length).toBeGreaterThan(4);
+    expect(new Set(items)).toEqual(new Set([3]));
+  });
+
+  it("hands the build's own onProgress the encoder's fractions too", async () => {
+    const chapterId = await chapterWith([{ n: 100, v: 1 }]);
+    const s = scriptedCodec();
+    const heard: number[] = [];
+    const { onStep } = recorder();
+    const done = withEncodeSteps(
+      onStep,
+      () => true,
+      (counted, countedStep) =>
+        exportChapterMp3(
+          chapterId,
+          {
+            ...counted,
+            encodeMp3: (pcm) =>
+              counted.encodeMp3(pcm, (fraction) => heard.push(fraction)),
+          },
+          undefined,
+          countedStep
+        )
+    )(s.codec);
+    await settle();
+    s.progress(0.25);
+    s.progress(0.75);
+    s.finish();
+    await done;
+    expect(heard).toEqual([0.25, 0.75]);
   });
 
   it("moves through the encode stretch as the codec reports progress", async () => {
@@ -369,11 +422,15 @@ const preparing = (): ShareProgress =>
 const step = (
   done: number,
   total: number,
-  skipped?: number
-): ShareProgressEvent =>
-  skipped === undefined
-    ? { type: "step", done, total }
-    : { type: "step", done, total, skipped };
+  skipped?: number,
+  items?: number
+): ShareProgressEvent => ({
+  type: "step",
+  done,
+  total,
+  ...(skipped === undefined ? {} : { skipped }),
+  ...(items === undefined ? {} : { items }),
+});
 
 const stepsOf = (state: ShareProgress) =>
   state.phase === "busy" ? state.steps : undefined;
@@ -381,7 +438,12 @@ const stepsOf = (state: ShareProgress) =>
 describe("reduceShareProgress — the skipped count (#996)", () => {
   it("records skipped beside done and total", () => {
     const state = run([step(0, 3, 0), step(1, 3, 1)], preparing());
-    expect(stepsOf(state)).toEqual({ done: 1, total: 3, skipped: 1 });
+    expect(stepsOf(state)).toEqual({
+      done: 1,
+      total: 3,
+      skipped: 1,
+      hollow: [0],
+    });
   });
 
   it("rejects skipped above done", () => {
@@ -402,11 +464,83 @@ describe("reduceShareProgress — the skipped count (#996)", () => {
 
   it("a step without skipped keeps the last skipped count", () => {
     const state = run([step(1, 3, 1), step(2, 3)], preparing());
-    expect(stepsOf(state)).toEqual({ done: 2, total: 3, skipped: 1 });
+    expect(stepsOf(state)).toEqual({
+      done: 2,
+      total: 3,
+      skipped: 1,
+      hollow: [0],
+    });
+  });
+});
+
+describe("reduceShareProgress — which items, and how many (#996)", () => {
+  it("places each skipped item at the step that finished it", () => {
+    const state = run(
+      [step(0, 4, 0), step(1, 4, 0), step(2, 4, 1), step(3, 4, 1)],
+      preparing()
+    );
+    expect(stepsOf(state)).toMatchObject({ skipped: 1, hollow: [1] });
+  });
+
+  it("keeps hollow positions ascending as more items are skipped", () => {
+    const state = run(
+      [step(0, 4, 0), step(1, 4, 1), step(2, 4, 1), step(3, 4, 2)],
+      preparing()
+    );
+    expect(stepsOf(state)).toMatchObject({ skipped: 2, hollow: [0, 2] });
+  });
+
+  it("records the item count beside a total that has non-item steps", () => {
+    const state = run([step(0, 102, 0, 2)], preparing());
+    expect(stepsOf(state)).toEqual({
+      done: 0,
+      total: 102,
+      skipped: 0,
+      items: 2,
+      hollow: [],
+    });
+  });
+
+  it("a step without items keeps the last item count", () => {
+    const state = run([step(0, 102, 0, 2), step(1, 102, 0)], preparing());
+    expect(stepsOf(state)).toMatchObject({ done: 1, items: 2 });
+  });
+
+  it("rejects an item count that changes, or that the total cannot hold", () => {
+    const at = run([step(0, 102, 0, 2)], preparing());
+    expect(reduceShareProgress(at, step(1, 102, 0, 3))).toBe(at);
+    const busy = preparing();
+    expect(reduceShareProgress(busy, step(0, 3, 0, 4))).toBe(busy);
+    expect(reduceShareProgress(busy, step(0, 3, 0, 0))).toBe(busy);
+    expect(reduceShareProgress(busy, step(0, 3, 0, 1.5))).toBe(busy);
+  });
+
+  it("rejects an item count that arrives after the scale is set without one", () => {
+    const at = run([step(0, 3, 0)], preparing());
+    expect(reduceShareProgress(at, step(1, 3, 0, 2))).toBe(at);
+  });
+
+  it("never places a hollow item past the items: skipped cannot exceed them", () => {
+    const at = run([step(0, 102, 0, 2), step(2, 102, 2)], preparing());
+    expect(stepsOf(at)).toMatchObject({ hollow: [0, 1] });
+    expect(reduceShareProgress(at, step(50, 102, 3))).toBe(at);
+  });
+
+  it("a skip reported during the encode stretch lands on the last item", () => {
+    const state = run([step(0, 102, 0, 2), step(60, 102, 1)], preparing());
+    expect(stepsOf(state)).toMatchObject({ hollow: [1] });
   });
 });
 
 describe("stepReporter forwards skipped (#996)", () => {
+  it("dispatches the item count with the step", () => {
+    const dispatch = vi.fn();
+    stepReporter(() => true, dispatch)(2, 102, 1, 2);
+    expect(dispatch.mock.calls).toEqual([
+      [{ type: "step", done: 2, total: 102, skipped: 1, items: 2 }],
+    ]);
+  });
+
   it("dispatches the skipped count with the step", () => {
     const dispatch = vi.fn();
     stepReporter(() => true, dispatch)(2, 3, 1);
@@ -417,10 +551,10 @@ describe("stepReporter forwards skipped (#996)", () => {
 });
 
 /**
- * The hook wiring. `useChapterShare` cannot run in Node (no hook renderer with
- * effects — AGENTS.md "Testing"), so, like `tests/share-progress-steps.test.ts`,
- * this reads the source. It pins only that Share Chapter runs its build through
- * `withEncodeSteps`; what that does is the behavioral cases above.
+ * The hook wiring's shape, read from the source like
+ * `tests/share-progress-steps.test.ts` does. The mounted hook's behaviour is
+ * `tests/use-chapter-share-steps.test.ts`; this pins only that Share Chapter
+ * runs its build through `withEncodeSteps`.
  */
 describe("Share Chapter builds through withEncodeSteps (#996)", () => {
   it("wraps the chapter export's codec and onStep", () => {
