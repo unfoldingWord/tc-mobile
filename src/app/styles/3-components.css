@@ -47,11 +47,12 @@
  * for the share-scrim block: it slices that block and matches declaration
  * VALUES, which a comment cannot false-hit.
  *
- * That selector is written here WITHOUT its leading dot on purpose. The test
- * finds its block with a raw `indexOf` over this whole file, so a comment
- * containing the literal selector is found first and the slice becomes comment
- * text with no declarations in it. The declaration-count floor keeps an empty
- * block from passing the value assertions vacuously.
+ * That selector is written here WITHOUT its leading dot. share-progress now
+ * strips comments before it looks for the block (#533), so it no longer needs
+ * that; other suites still slice this file with a raw `indexOf`, where a
+ * comment holding the literal selector is found first and the slice becomes
+ * comment text with no declarations in it. Keep selectors in this header
+ * undotted.
  *
  * touch-policy reads this file whole and
  * regexes the raw string — and the paragraph above names the five colour

@@ -131,13 +131,14 @@ and match `var(…)` declarations rather than the bare identifier.
 The same trap runs in the other direction, and it is observed, not theoretical:
 a **comment** that names something a test greps for can capture that test. Round
 3 of #529 wrote the share-scrim selector into `3-components.css`'s header, and
-`share-progress.test.ts` — which locates its block with a raw `indexOf` over the
-whole file — sliced the comment instead of the rule and went red. Its
+`share-progress.test.ts` — which then located its block with a raw `indexOf`
+over the whole file — sliced the comment instead of the rule and went red. Its
 `expect(declarations.length).toBeGreaterThanOrEqual(8)` floor is the only reason
 that surfaced as a failure rather than as an assertion looping over nothing.
-When a stylesheet comment must name a selector a test searches for, write it
-without its leading dot, and keep a non-emptiness floor in any test that slices
-a block out of a file.
+That test now strips comments before it searches (#533); other suites still
+slice stylesheet source with a raw `indexOf`. When a stylesheet comment must
+name a selector a test searches for, write it without its leading dot, and keep
+a non-emptiness floor in any test that slices a block out of a file.
 
 Blind spot #2 under "No sprawl" below still says nothing in this repo reads CSS
 at all; that sentence is stale and is tracked in #525, which is where it gets
