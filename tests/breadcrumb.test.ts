@@ -14,6 +14,7 @@ import {
   renameChapter,
 } from "@/lib/storage/books";
 import { closeDb, getDb } from "@/lib/storage/db";
+import { stripComments } from "./support";
 
 /**
  * One breadcrumb, built in the table, and a chapter heading that does not
@@ -46,9 +47,6 @@ import { closeDb, getDb } from "@/lib/storage/db";
  */
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-
-const stripComments = (text: string): string =>
-  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 
 const source = (rel: string): string =>
   stripComments(readFileSync(path.join(ROOT, rel), "utf8"));
