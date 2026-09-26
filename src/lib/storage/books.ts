@@ -875,17 +875,165 @@ export async function moveSegment(
     }
 
     await chapters.put({ ...chapter, segmentIds: plan.ids });
-    const renumbered: Segment[] = [];
-    for (const [position, row] of plan.order.entries()) {
-      const index = position + 1;
-      if (row.index === index) {
-        renumbered.push(row);
-        continue;
-      }
-      const updated: Segment = { ...row, index };
-      await segments.put(updated);
-      renumbered.push(updated);
+    const renumbered = await renumberSegments(segments, plan.order);
+    await tx.done;
+    return renumbered;
+  } catch (cause) {
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw cause;
+  }
+}
+
+/**
+ * Renumber `order` densely to position + 1, writing only where `index`
+ * changes. Split out of {@link moveSegment} so its renumber write and
+ * {@link deleteSegment}'s (#590) are the same code, not two copies of the
+ * loop `Segment.index`'s own docblock has always said a reorder — and now a
+ * delete — owes.
+ */
+async function renumberSegments(
+  store: { put(value: Segment): Promise<SegmentId> },
+  order: readonly Segment[]
+): Promise<Segment[]> {
+  const renumbered: Segment[] = [];
+  for (const [position, row] of order.entries()) {
+    const index = position + 1;
+    if (row.index === index) {
+      renumbered.push(row);
+      continue;
     }
+    const updated: Segment = { ...row, index };
+    await store.put(updated);
+    renumbered.push(updated);
+  }
+  return renumbered;
+}
+
+/**
+ * The stores a segment delete touches: the tree link (the chapter it hangs
+ * off), the segment itself, its take, both halves of its clip, and the book
+ * it floats (#590).
+ */
+const DELETE_SEGMENT_STORES = [
+  "books",
+  "chapters",
+  "segments",
+  "takes",
+  "clipMeta",
+  "clipData",
+] as const;
+
+/**
+ * Delete one segment — the row itself, not only its audio (#590, reversing
+ * G4's "Erase erases the audio and keeps the row" for the one entry that asks
+ * to remove the row rather than clear it). Densely renumbers the chapter's
+ * remaining segments — the renumber `Segment.index`'s own docblock has always
+ * said a delete batch owes.
+ *
+ * {@link deleteBook}'s rules, one level down, plus the reference-counted clip
+ * delete {@link clearSegmentTake} (`takes.ts`) already holds:
+ *
+ *   - **ONE readwrite transaction, strict durability.** This removes the only
+ *     copy of a take, the same bar every other write that does (#179).
+ *   - **Idempotent.** A segment that is already gone resolves without error
+ *     and writes nothing — a second tap, a retry, or a stale confirm is a true
+ *     no-op, exactly like `deleteBook`'s missing-id case.
+ *   - **Reference-counted clip.** The clip is deleted only when no OTHER take
+ *     still points at it — the identical guard `clearSegmentTake` holds:
+ *     nothing shares a clip in the shipped app, but a future
+ *     content-addressed import could dedupe, and an unconditional delete
+ *     would then punch a hole in another segment's only copy.
+ *   - **Dense renumbering**, reusing {@link renumberSegments} — the same
+ *     write `moveSegment` makes, not a second copy of it. A dangling id
+ *     already in `chapter.segmentIds` (unrelated to this delete) keeps its
+ *     stored slot and is not renumbered, exactly as `moveSegment`'s
+ *     `planReorder` leaves one.
+ *   - **Editing is activity**: the book floats to the top of the
+ *     `listBooks`-sorted shelf in the same transaction — the bump
+ *     `clearSegmentTake`/`writeTakeInTx` make for exactly this reason.
+ *     **Inference, not a recorded decision**: `moveSegment`/`moveChapter`
+ *     deliberately do NOT bump for a pure reorder (scope Q4), but a delete
+ *     also discards a recording (or the last trace of an empty row), which is
+ *     what a bump has always meant elsewhere in this file. Revisit if the DRI
+ *     says otherwise.
+ *
+ * **An in-flight transcode or a held take cannot resurrect a deleted
+ * segment — cited, not newly guarded.** The Finished-transcode sweep
+ * (`hooks/finish-transcode.ts`) loads a segment's PCM through
+ * `loadSegmentClip` before it ever holds the encoder lane; once this
+ * transaction commits, that walk (`lib/storage/segment-audio.ts`'s `walk`)
+ * finds no segment row and returns `{ kind: "no-segment" }`, which
+ * `sweepOnce`'s `audio.kind !== "resolved"` branch already treats as "not
+ * this clip's job any more" and skips — the same branch that already handles
+ * a segment "erased, re-recorded, already MP3" mid-pass. And
+ * `commitTranscode` (`lib/storage/transcode.ts`) re-checks its own target
+ * inside its own transaction: `!segment` (or, since the take goes with it,
+ * `!take`) resolves `"stale"` and writes nothing — the identical guard
+ * `tests/delete-book.test.ts`'s "does not resurrect a segment or a clip when
+ * a transcode commits after the delete" already pins for `deleteBook`. No new
+ * coordination is added here; both the sweep and the commit were already
+ * built to survive their target vanishing under them.
+ *
+ * Returns the chapter's resolvable segments in their new order, with the
+ * indexes they now hold — what a caller (the hook) patches its rows from; `[]`
+ * only when the chapter is now empty. An already-gone segment returns `null`,
+ * not `[]`: nothing was read, so there is no order to report, and a caller
+ * that took `[]` as "the chapter is empty" would overwrite a good order.
+ */
+export async function deleteSegment(
+  segmentId: SegmentId
+): Promise<Segment[] | null> {
+  const db = await getDb();
+  const tx = db.transaction(DELETE_SEGMENT_STORES, "readwrite", {
+    durability: "strict",
+  });
+  try {
+    const segments = tx.objectStore("segments");
+    const chapters = tx.objectStore("chapters");
+    const takes = tx.objectStore("takes");
+
+    const segment = await segments.get(segmentId);
+    if (!segment) {
+      await tx.done; // idempotent no-op: already gone, nothing to renumber.
+      return null;
+    }
+    const chapter = await chapters.get(segment.chapterId);
+    if (!chapter) throw new Error(`No such chapter: ${segment.chapterId}`);
+
+    // The take and its clip, reference-counted exactly as `clearSegmentTake`
+    // deletes them (takes.ts). The take row goes first so the survivor scan
+    // below sees only the takes that are left.
+    const priorTakeId = segment.activeTakeId;
+    if (priorTakeId !== null) {
+      const priorTake = await takes.get(priorTakeId);
+      await takes.delete(priorTakeId);
+      if (priorTake) {
+        const survivors = await takes.getAll();
+        const stillReferenced = survivors.some(
+          (t) => t.clipId === priorTake.clipId
+        );
+        if (!stillReferenced) {
+          await tx.objectStore("clipMeta").delete(priorTake.clipId);
+          await tx.objectStore("clipData").delete(priorTake.clipId);
+        }
+      }
+    }
+
+    await segments.delete(segmentId);
+    const nextIds = chapter.segmentIds.filter((id) => id !== segmentId);
+    await chapters.put({ ...chapter, segmentIds: nextIds });
+
+    const records = await Promise.all(nextIds.map((id) => segments.get(id)));
+    const visible = records.filter((r): r is Segment => r !== undefined);
+    const renumbered = await renumberSegments(segments, visible);
+
+    // Deleting a segment discards its recording (or its empty row) — activity
+    // on the book, the same bump `clearSegmentTake`/`writeTakeInTx` make.
+    const book = await tx.objectStore("books").get(chapter.bookId);
+    if (book) {
+      await tx.objectStore("books").put({ ...book, updatedAt: Date.now() });
+    }
+
     await tx.done;
     return renumbered;
   } catch (cause) {

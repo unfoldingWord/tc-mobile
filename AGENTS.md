@@ -388,7 +388,9 @@ save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
 failed chapter reorder (`hooks/use-books.ts`, `"chapter-reorder"`, #953), a
 failed segment reorder (`hooks/use-chapter-segments.ts`, `"segment-reorder"`,
-#953), a failed book cover-colour write
+#953), a failed segment delete
+(`hooks/use-chapter-segments.ts`, `"segment-delete"`, #590), a failed book
+cover-colour write
 (`hooks/use-book-cover-colour.ts`, `"book-cover-colour"`, #957),
 playback's own
 resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
