@@ -401,6 +401,30 @@ describe("storage freeing up retries it", () => {
     expect(encodeMp3).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps a usable baseline when a failed retry's re-read is unknown", async () => {
+    owe("s1");
+    s1HitsQuota();
+    freeSpace(1_000);
+    await requestTranscodeSweep();
+
+    // The retry's pre-attempt read is 50 000 free; the quota catch's re-read
+    // comes back unknown.
+    freeSpace(50_000);
+    vi.mocked(readStorageEstimate)
+      .mockResolvedValueOnce({ usage: 950_000, quota: 1_000_000 })
+      .mockResolvedValueOnce(null);
+    await requestTranscodeSweep();
+    expect(encodeMp3).toHaveBeenCalledTimes(2);
+
+    // Measured from the 50 000 that retried, not the stale 1 000.
+    await requestTranscodeSweep();
+    expect(encodeMp3).toHaveBeenCalledTimes(2);
+    // Not pinned for the page either: more room still buys a retry.
+    freeSpace(60_000);
+    await requestTranscodeSweep();
+    expect(encodeMp3).toHaveBeenCalledTimes(3);
+  });
+
   it("does not log a second entry when the storage retry fails the same way", async () => {
     owe("s1");
     s1HitsQuota();

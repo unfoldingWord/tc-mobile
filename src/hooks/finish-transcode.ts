@@ -439,6 +439,8 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
     if (segmentId === skip) continue;
     if ((pageStallCounts.get(clipId) ?? 0) >= PAGE_STALL_LIMIT) continue;
     const failedBefore = failedSegments.get(segmentId);
+    // The reading that let a held-out segment retry; `undefined` otherwise.
+    let freeBeforeRetry: number | undefined;
     if (failedBefore?.clipId === clipId) {
       // Out of room last time (#1010). Read per held-out segment: a reading
       // taken before an earlier segment's commit in this pass is stale.
@@ -453,6 +455,7 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
       if (!shouldRetryAfterFailure(freeNow, failedBefore.freeAtFailure)) {
         continue;
       }
+      freeBeforeRetry = freeNow;
     }
     let startedHealthy = false;
     try {
@@ -506,9 +509,13 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
       if (outOfRoom) {
         // Hold it out of later sweeps, measured from the room left NOW, so a
         // retry that fails again needs still more room before the next one.
+        // A storage retry whose re-read is unknown falls back to the known
+        // reading that let it retry, so an unknown re-read cannot erase a
+        // usable baseline and pin the segment for the page (George R1).
+        const freeAfter = await currentFreeBytes();
         failedSegments.set(segmentId, {
           clipId,
-          freeAtFailure: await currentFreeBytes(),
+          freeAtFailure: freeAfter ?? freeBeforeRetry,
         });
       } else {
         failedSegments.delete(segmentId);
