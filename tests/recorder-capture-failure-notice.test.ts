@@ -29,10 +29,9 @@ import type { SegmentId } from "@/types/domain";
  * whether bytes survive, and whether the exit is the sheet staying open or the
  * recovery panel — so each is driven through its own route rather than
  * asserted on a shared one. The second case used to be driven through
- * Edit-entry (`onEnterEdit`'s own `commitTake("edit")`), which reached the
- * identical shared `notice` verdict a Stop tap's `commitTake("stay")` does;
- * #857 disables Edit-entry while a take is live, so it now goes through Stop,
- * the trigger that remains reachable and always exercised this same code.
+ * Edit-entry, which committed a live take through the same `commitTake` a
+ * Stop tap runs (#134); #857 disabled Edit-entry while a take is live and
+ * #871 removed that arm, so it goes through Stop.
  *
  * Harness: `tests/recorder-stop-commits.test.ts`'s, which is
  * `tests/recorder-superseded-writes.test.ts`'s — the real `Recorder` with the
@@ -252,12 +251,8 @@ it("a stop-flush throw reaching commitTake's own notice site shows its sentence"
   // The engine failed to hand the capture over (#485): an empty seal, so the
   // same `notice` verdict as above but a different code and a different route
   // into the component — `commitTake`'s own stop, not `close()`'s. Driven
-  // through the Stop tap (`commitTake("stay")`), not Edit-entry: #857 disables
-  // the `[ ]`/"Edit recording" entry while a take is live, so
-  // `commitTake("edit")` is no longer UI-reachable, but Stop reaches the exact
-  // same shared verdict handling in `commitTake` (`recorder.tsx`'s
-  // `verdict.kind === "notice"` branch runs unconditionally on `after`), so
-  // this keeps the same coverage the Edit-triggered version had.
+  // through the Stop tap, the one UI route into `commitTake` since #857
+  // disabled Edit-entry during a take (#871 then removed its arm).
   const s = await setup();
   s.audio.stopRecording = vi.fn(async () => {
     s.audio.recorderState = "idle";

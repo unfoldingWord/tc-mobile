@@ -94,7 +94,7 @@ describe("the #59 interruption commit is a layout effect (George r1 pass B P2)",
     expect(braceOpen).toBeGreaterThan(openerIndex);
     expect(braceClose).toBeGreaterThan(braceOpen);
     expect(body.replace(/\s+/g, " ").trim()).toBe(
-      `{ if (${GUARD}) return; commitTake("stay"); }`
+      `{ if (${GUARD}) return; commitTake(); }`
     );
   });
 });
