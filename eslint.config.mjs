@@ -348,6 +348,9 @@ export default tseslint.config(
       // generated file inside the iOS/Android shells.
       "android",
       "ios",
+      // Vendored third-party source, kept byte-for-byte as fetched (#36,
+      // third_party/lamejs-1.2.7/PROVENANCE.md). Not this repo's code to lint.
+      "third_party",
     ],
   },
 

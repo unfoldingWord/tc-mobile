@@ -8,6 +8,8 @@ import {
   type CSSProperties,
 } from "react";
 
+import { AboutPanel } from "./about-panel";
+import type { LicenseText } from "./licenses";
 import { Control } from "./control";
 import { EMPTY_STATE_NODE, focusTargetAfterDelete } from "./delete-focus";
 import { EmptyState } from "./empty-state";
@@ -88,7 +90,9 @@ type BooksLayerId =
   | "books:new-book"
   | "books:new-chapter"
   | "books:book-menu"
-  | "books:delete-confirm";
+  | "books:delete-confirm"
+  | "books:about"
+  | "books:about-text";
 
 interface BooksScreenProps {
   /** Open a chapter's Segments screen. Owned by App (slice 4) for navigation. */
@@ -187,6 +191,11 @@ export function BooksScreen({
     deleteFailed,
   });
   const [menuOpen, setMenuOpen] = useState(false);
+  // About & licenses (#36), opened from the global menu. Kept separate from
+  // `menuOpen` so the two-level surface (menu → About panel) composes: opening
+  // About closes the menu, and the About panel owns its own Menu.
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [aboutViewing, setAboutViewing] = useState<LicenseText | null>(null);
   // The durable failure log's size (#205). Books is home, and the global menu is
   // the only surface reachable from every state this screen can be in — a failed
   // shelf read included, which is precisely when a facilitator needs the report.
@@ -586,6 +595,22 @@ export function BooksScreen({
       // and the sheet stays (#980). The current look's card is unchanged.
       dismiss: o4 ? keepDeleteState : closeDeleteConfirmState,
     },
+    // About & licenses (#36) writes nothing, so Back is never refused. Two
+    // layers so Back walks the same path Escape does: licence text → list →
+    // shelf (Frank F2, bench round 1 on #144).
+    "books:about": {
+      busy: () => false,
+      dismiss: () => {
+        setAboutViewing(null);
+        setAboutOpen(false);
+      },
+    },
+    "books:about-text": {
+      busy: () => false,
+      dismiss: () => {
+        setAboutViewing(null);
+      },
+    },
   });
 
   // The global menu's ONE open and ONE close. Every entry point — the ≡, the
@@ -616,6 +641,35 @@ export function BooksScreen({
   const onClearConfirmClose = useCallback(() => {
     layers.close("books:log-clear-confirm");
     logClearBehavior.current = null;
+  }, [layers]);
+
+  // About replaces the global menu, so the menu's layer must go with it — a
+  // raw `setMenuOpen(false)` left `books:global-menu` registered under the
+  // visible About, and Back spent itself on that hidden menu (Frank F2). The
+  // new layer registers BEFORE the menu's closes, as the delete confirm does,
+  // so the stack is never empty between the two.
+  const openAbout = useCallback(() => {
+    layers.open("books:about");
+    closeGlobalMenu();
+    setAboutViewing(null);
+    setAboutOpen(true);
+  }, [closeGlobalMenu, layers]);
+  const closeAbout = useCallback(() => {
+    setAboutViewing(null);
+    setAboutOpen(false);
+    layers.close("books:about-text");
+    layers.close("books:about");
+  }, [layers]);
+  const viewLicenseText = useCallback(
+    (text: LicenseText) => {
+      setAboutViewing(text);
+      layers.open("books:about-text");
+    },
+    [layers]
+  );
+  const closeLicenseText = useCallback(() => {
+    setAboutViewing(null);
+    layers.close("books:about-text");
   }, [layers]);
 
   useEffect(() => {
@@ -1461,6 +1515,7 @@ export function BooksScreen({
       className="flex h-full flex-col gap-[14px]"
       inert={
         menuOpen ||
+        aboutOpen ||
         shareMenuBook !== null ||
         deleteTargetId !== null ||
         newBookSeed !== null ||
@@ -1687,15 +1742,21 @@ export function BooksScreen({
         )}
       </div>
 
-      {/* The global menu: the failure-log panel, then the theme toggle.
+      {/* The global menu: the failure-log panel, then About & licenses, then
+          the theme toggle.
 
           THE PANEL COMES FIRST, and the order is load-bearing. `Menu` lands
           focus on its first actionable child on open, and while the log is
           non-empty the ≡ is named "Open menu. N problems recorded." — reaching
           the report is its whole point. So the report is what a switch/AT
-          user must land on, not a control that flips the theme (George R1 P2
-          on #457). The panel is mounted only while the log holds something,
-          so a phone that has never failed opens on the toggle, as before.
+          user must land on, not About or a control that flips the theme
+          (George R1 P2 on #457). The panel is mounted only while the log holds
+          something, so a phone that has never failed opens on About, as the
+          first actionable child.
+
+          About & licenses (#36): the reachable-on-the-phone home for the LGPL
+          notice and the bundled-component attribution. Opening it closes the
+          menu and hands off to the About panel, which owns its own Menu.
 
           The toggle (#171) is `ThemeControl`, which is also mounted in the
           chapter and recorder menus (#149) — its own docblock holds why it is
@@ -1721,9 +1782,23 @@ export function BooksScreen({
             onClearConfirmClose={onClearConfirmClose}
           />
         )}
+        <Control
+          icon="info"
+          label={strings.aboutOpen}
+          variant="quiet"
+          onClick={openAbout}
+        />
         <ThemeControl />
         <DesignControl />
       </Menu>
+
+      <AboutPanel
+        open={aboutOpen}
+        viewing={aboutViewing}
+        onView={viewLicenseText}
+        onBack={closeLicenseText}
+        onClose={closeAbout}
+      />
 
       {/* New Book asks for the name before it creates anything (#314). The same
           panel surface the rename uses — so the focus trap, Escape, the scrim
