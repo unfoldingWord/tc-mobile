@@ -36,7 +36,7 @@ import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useScreenLayers } from "@/hooks/use-screen-layers";
 import { useScrollToNew } from "@/hooks/use-scroll-to-new";
-import { useSegmentReorder } from "@/hooks/use-segment-reorder";
+import { useReorderGesture } from "@/hooks/use-reorder-gesture";
 import { reorderShift } from "@/lib/view/reorder-gesture";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { overlayDismissal } from "@/lib/nav/navigation";
@@ -831,7 +831,7 @@ export const SegmentsScreen = forwardRef<
   // ── Press-and-hold reorder (#953 PR2a, O4 only) ───────────────────────────
   //
   // Hold a row's number badge or title for 450 ms, then drag (§4, §7; D11:
-  // drag only for the training). The gesture is `hooks/use-segment-reorder.ts`
+  // drag only for the training). The gesture is `hooks/use-reorder-gesture.ts`
   // over `lib/view/reorder-gesture.ts`; this screen supplies the rows, the
   // one write and the words.
   //
@@ -847,7 +847,7 @@ export const SegmentsScreen = forwardRef<
   // gone.
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [reorderStatus, setReorderStatus] = useState("");
-  const reorder = useSegmentReorder<SegmentId>({
+  const reorder = useReorderGesture<SegmentId>({
     enabled: o4 && !listInert && !refreshing && !loading && !staleTarget,
     ids: rows.map((row) => row.segmentId),
     nodeFor: rowReveal.nodeFor,

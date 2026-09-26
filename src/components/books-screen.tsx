@@ -7,6 +7,8 @@ import {
   useState,
   useSyncExternalStore,
   type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
 } from "react";
 
 import { Control } from "./control";
@@ -43,6 +45,7 @@ import {
   useLibraryShare,
   type UseLibraryShare,
 } from "@/hooks/use-library-share";
+import { useReorderGesture } from "@/hooks/use-reorder-gesture";
 import { useScrollToNew } from "@/hooks/use-scroll-to-new";
 import {
   useScreenLayers,
@@ -55,6 +58,7 @@ import type { Layer } from "@/lib/nav/layer-stack";
 import { nextChapterNumber } from "@/lib/storage/books";
 import { cn } from "@/lib/utils";
 import { hasReclaimableAudio } from "@/lib/view/book-rows";
+import { reorderShift } from "@/lib/view/reorder-gesture";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow, SegmentRowState } from "@/types/view";
 
@@ -149,6 +153,7 @@ export function BooksScreen({
     deleting,
     isDeleting,
     deleteFailed,
+    moveChapter,
   } = useBooks();
   // A first-mount shelf-read failure leaves `books` at [] with `error` set —
   // indistinguishable from a genuinely empty shelf unless we say so. Reading it
@@ -1540,28 +1545,82 @@ export function BooksScreen({
     useSyncExternalStore(subscribeToEncoderHealth, encoderHealth, encoderHealth)
   );
 
+  // While the menu is open, take the whole shelf chrome — New Book included —
+  // out of the focus/pointer tree for AT/switch users, matching how Segments
+  // inerts behind its dialogs (G8: aria-modal alone is not trusted to hide the
+  // background). The Menu portals to <body>, so it stays live above this (#77).
+  // Named so the chapter reorder below stands down under the same overlays.
+  const shelfInert =
+    menuOpen ||
+    shareMenuBook !== null ||
+    deleteTargetId !== null ||
+    newBookSeed !== null ||
+    newChapter !== null ||
+    // The share overlay joins the shelf's inert conditions (George r1 P2
+    // #1/#2, #491): AT gesture navigation does not dispatch the `Tab`
+    // keydowns `<ShareProgress>` intercepts, so this is what keeps that
+    // path off the shelf/New Book while the overlay is up — including
+    // through the outcome hold, after `shareMenuBook` may already be null.
+    shareOverlayOwnsScreen(bookShare.progress) ||
+    shareOverlayOwnsScreen(libraryShare.progress);
+
+  // ── Press-and-hold reorder of chapters (#953 PR2b, O4 only) ───────────────
+  //
+  // Hold a chapter row for 450 ms, then drag it within its book (§4, §7; D11:
+  // drag only for the training). The whole row is the hold area: it is one
+  // button with nothing else on it, and the workbench marks the whole row
+  // (`data-reorder="ch"`). The gesture is `hooks/use-reorder-gesture.ts`, the
+  // one the Segments list uses, run per open book in `BookItem`; this screen
+  // supplies the one write, the words and the focus.
+  //
+  // One write, on the drop: `moveChapter` (#1053) patches the card
+  // optimistically, renumbers the badges (names such as "Mark 6" stay, the
+  // DRI's pick), leaves the book where it is on the shelf (#953 scope Q4),
+  // and on failure puts the stored order back and reports "chapter-reorder",
+  // with nothing extra on screen (#172). Every cancel writes nothing.
+  //
+  // Off with the switch off, while an overlay has the shelf `inert`, and
+  // before the first load has finished.
+  const shelfRef = useRef<HTMLDivElement | null>(null);
+  const [reorderStatus, setReorderStatus] = useState("");
+  const chapterReorder: ChapterReorder = {
+    enabled: o4 && !shelfInert && !loading,
+    scrollRef: shelfRef,
+    nodeFor: rowReveal.nodeFor,
+    onLift: (row) => setReorderStatus(strings.chapterReorderLifted(row.number)),
+    onDrop: (row, toIndex) => {
+      // Keep focus with the chapter that moved, as the Segments list does:
+      // only when focus was on that row (or already nowhere), so a drop never
+      // pulls focus off something else. The reveal effect lands it on the
+      // row's button once the reordered card commits.
+      const active = document.activeElement;
+      const node = rowReveal.nodeFor(row.chapterId);
+      if (active === document.body || (node && node.contains(active))) {
+        rowReveal.armFocus(row.chapterId);
+      }
+      // Chapters renumber after a move, so the row's new number is its new
+      // position among the card's rows (the ones `moveChapter` indexes).
+      const moved = strings.chapterReorderMoved(row.number, toIndex + 1);
+      setReorderStatus(moved);
+      // A write that did not land puts the row back (`moveChapter` resolves
+      // false, having reported it), so the spoken line must not keep saying
+      // it moved. Only if nothing newer has been said since.
+      void moveChapter(row.chapterId, toIndex).then((landed) => {
+        if (!landed) {
+          setReorderStatus((s) =>
+            s === moved ? strings.chapterReorderStayed(row.number) : s
+          );
+        }
+      });
+    },
+    onCancel: (row) =>
+      setReorderStatus(strings.chapterReorderStayed(row.number)),
+  };
+
   return (
-    // While the menu is open, take the whole shelf chrome — New Book included —
-    // out of the focus/pointer tree for AT/switch users, matching how Segments
-    // inerts behind its dialogs (G8: aria-modal alone is not trusted to hide the
-    // background). The Menu portals to <body>, so it stays live above this (#77).
     <div
       className="flex h-full flex-col gap-[14px]"
-      inert={
-        menuOpen ||
-        shareMenuBook !== null ||
-        deleteTargetId !== null ||
-        newBookSeed !== null ||
-        newChapter !== null ||
-        // The share overlay joins the shelf's inert conditions (George r1 P2
-        // #1/#2, #491): AT gesture navigation does not dispatch the `Tab`
-        // keydowns `<ShareProgress>` intercepts, so this is what keeps that
-        // path off the shelf/New Book while the overlay is up — including
-        // through the outcome hold, after `shareMenuBook` may already be null.
-        shareOverlayOwnsScreen(bookShare.progress) ||
-        shareOverlayOwnsScreen(libraryShare.progress) ||
-        undefined
-      }
+      inert={shelfInert || undefined}
     >
       <header
         className={
@@ -1724,7 +1783,7 @@ export function BooksScreen({
         <Notice tone={encoderLine.tone}>{encoderLine.text}</Notice>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" ref={shelfRef}>
         {showEmpty ? (
           // Registered as a focus target like a book row: deleting the last book
           // unmounts the row that had focus, and this CTA is the only control
@@ -1774,11 +1833,29 @@ export function BooksScreen({
                   guide?.kind === "open-chapter" ? guide.chapterId : null
                 }
                 setNode={rowReveal.setNode}
+                reorder={chapterReorder}
               />
             ))}
           </ul>
         )}
       </div>
+
+      {/* The chapter reorder's spoken half (#953 PR2b, O4 only), as on the
+          Segments list: which chapter was lifted, where it landed, or that it
+          went back. Outside the shelf's scroll box, and mounted for the
+          screen's whole life so a screen reader hears the first change. D11
+          leaves no keyboard or switch path to move a chapter; this only
+          tells what a drag did. */}
+      {o4 && (
+        <span
+          className="sr-only"
+          role="status"
+          aria-live="polite"
+          data-reorder-status=""
+        >
+          {reorderStatus}
+        </span>
+      )}
 
       {/* The global menu: the failure-log panel, then the theme toggle.
 
@@ -2063,6 +2140,24 @@ export function BooksScreen({
   );
 }
 
+/**
+ * The screen's half of the chapter reorder (#953 PR2b), handed to every
+ * `BookItem`: each open book runs its own gesture over its own rows, and all
+ * of them share the one write, the one live region and the focus hand-off.
+ */
+interface ChapterReorder {
+  readonly enabled: boolean;
+  /** The shelf's scrolling container. */
+  readonly scrollRef: RefObject<HTMLElement | null>;
+  /** Each chapter row's `<li>`, from the screen's row registry. */
+  readonly nodeFor: (id: string) => HTMLElement | null;
+  readonly onLift: (row: ChapterRow) => void;
+  /** The one write: `row` was released at `toIndex` among its book's rows. */
+  readonly onDrop: (row: ChapterRow, toIndex: number) => void;
+  /** A lifted row was put back without a write. */
+  readonly onCancel: (row: ChapterRow) => void;
+}
+
 interface BookItemProps {
   book: BookCard;
   /** Draw the O4 card (#942) rather than the current row. */
@@ -2082,6 +2177,7 @@ interface BookItemProps {
   /** The chapter row that is the guided step, if it is one of this book's. */
   guidedChapterId: ChapterId | null;
   setNode: (id: string, el: HTMLElement | null) => void;
+  reorder: ChapterReorder;
 }
 
 function BookItem({
@@ -2096,8 +2192,31 @@ function BookItem({
   guidedToggle,
   guidedChapterId,
   setNode,
+  reorder,
 }: BookItemProps) {
   const listId = `chapters-${book.bookId}`;
+  // This book's chapter reorder (#953 PR2b): the Segments list's gesture over
+  // this card's rows. Collapsing the book switches it off, which lets go of a
+  // row in hand without a write.
+  const gesture = useReorderGesture<ChapterId>({
+    enabled: reorder.enabled && expanded,
+    ids: book.chapters.map((chapter) => chapter.chapterId),
+    nodeFor: reorder.nodeFor,
+    scrollRef: reorder.scrollRef,
+    onLift: (index) => {
+      const row = book.chapters[index];
+      if (row) reorder.onLift(row);
+    },
+    onDrop: (chapterId, _fromIndex, toIndex) => {
+      const row = book.chapters.find((c) => c.chapterId === chapterId);
+      if (row) reorder.onDrop(row, toIndex);
+    },
+    onCancel: (index) => {
+      const row = book.chapters[index];
+      if (row) reorder.onCancel(row);
+    },
+  });
+  const drag = gesture.drag;
   return (
     <li
       className={o4 ? "books-card" : undefined}
@@ -2198,8 +2317,12 @@ function BookItem({
       </div>
 
       {expanded && (
-        <ul id={listId} className={o4 ? "books-chapters" : "flex flex-col"}>
-          {book.chapters.map((chapter) => (
+        <ul
+          id={listId}
+          className={o4 ? "books-chapters" : "flex flex-col"}
+          data-reordering={drag ? "" : undefined}
+        >
+          {book.chapters.map((chapter, index) => (
             <ChapterItem
               key={chapter.chapterId}
               chapter={chapter}
@@ -2207,6 +2330,19 @@ function BookItem({
               onOpen={() => onOpenChapter(chapter.chapterId)}
               guided={chapter.chapterId === guidedChapterId}
               setNode={setNode}
+              onHoldStart={o4 ? gesture.holdStart(index) : undefined}
+              lifted={drag?.fromIndex === index}
+              // While a row is lifted: it follows the finger and the rows
+              // between its slot and the target slide one slot to make room.
+              // Paint only; the order is not touched until the drop.
+              reorderY={
+                drag
+                  ? drag.fromIndex === index
+                    ? drag.offset
+                    : reorderShift(index, drag.fromIndex, drag.toIndex) *
+                      drag.pitch
+                  : null
+              }
             />
           ))}
         </ul>
@@ -2223,6 +2359,16 @@ interface ChapterItemProps {
   /** This row is the guided step (#604). */
   guided: boolean;
   setNode: (id: string, el: HTMLElement | null) => void;
+  /**
+   * Press-and-hold reorder (#953 PR2b): the book's `onPointerDown` for this
+   * row. O4 only. The whole row button is the hold area, as in the
+   * workbench; a tap released before the hold still opens the chapter.
+   */
+  onHoldStart?: (e: ReactPointerEvent) => void;
+  /** This row is the one lifted. */
+  lifted: boolean;
+  /** Its paint offset while a row is lifted, in px; `null` when none is. */
+  reorderY: number | null;
 }
 
 function ChapterItem({
@@ -2231,6 +2377,9 @@ function ChapterItem({
   onOpen,
   guided,
   setNode,
+  onHoldStart,
+  lifted,
+  reorderY,
 }: ChapterItemProps) {
   const { number, name, finishedCount, totalCount } = chapter;
   // The passage label the facilitator set (#264), else "Chapter {number}".
@@ -2240,10 +2389,22 @@ function ChapterItem({
   const hasCounter = totalCount > 0;
   const allDone = hasCounter && finishedCount === totalCount;
   return (
-    <li ref={(el) => setNode(chapter.chapterId, el)}>
+    <li
+      ref={(el) => setNode(chapter.chapterId, el)}
+      className={lifted ? "books-lifted" : undefined}
+      style={
+        reorderY === null
+          ? undefined
+          : ({ "--reorder-y": `${reorderY}px` } as CSSProperties)
+      }
+    >
       <button
         type="button"
         onClick={onOpen}
+        onPointerDown={onHoldStart}
+        // `o4/books.css` reads it to keep a long press from selecting text
+        // or raising the phone's callout.
+        data-reorder-handle={onHoldStart ? "" : undefined}
         aria-label={strings.openChapter(heading)}
         // The row is a plain button rather than a `Control`, so it carries the
         // guide class itself; the ring is drawn inside its own box, which is

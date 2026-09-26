@@ -14,7 +14,7 @@ import {
 /**
  * The press-and-hold reorder gesture's pure half (#953 PR2a): the hold timer,
  * the 8px slop, the target index a pointer position means, and the one drop.
- * `hooks/use-segment-reorder.ts` feeds it pointer coordinates and measures the
+ * `hooks/use-reorder-gesture.ts` feeds it pointer coordinates and measures the
  * rows; nothing here touches a DOM, so it runs in Node on fake timers.
  *
  * The numbers are the design reference's (docs/design/o4-design-system.md §4):

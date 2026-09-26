@@ -1,5 +1,6 @@
 /**
- * Press-and-hold reorder, the pure half (#953 PR2a).
+ * Press-and-hold reorder, the pure half (#953): shared by the Segments list
+ * and the Books screen's chapter lists.
  *
  * The design reference's gesture (docs/design/o4-design-system.md §4 and §7):
  * press and hold a row for 450 ms, then drag it; moving 8px before the hold
@@ -9,7 +10,7 @@
  * Everything here is arithmetic over numbers the caller hands in, so it runs
  * in plain Node: the hold timer, the slop, which index a pointer position
  * means, and the rule that a gesture ends in at most ONE drop. The caller
- * (`hooks/use-segment-reorder.ts`) owns the DOM: it listens for the pointer,
+ * (`hooks/use-reorder-gesture.ts`) owns the DOM: it listens for the pointer,
  * converts positions into the list's content coordinates, and measures the
  * rows when the hold completes.
  *
@@ -205,8 +206,8 @@ export function createReorderGesture(
 /**
  * The index a lifted row lands at when its centre is at `draggedCenter`: the
  * number of OTHER rows whose midpoint it has passed. Absolute, so it is the
- * target `moveSegment` takes as-is, and clamped to the list by construction.
- * Dropped where it started, it answers `fromIndex`.
+ * target `moveSegment` and `moveChapter` take as-is, and clamped to the list
+ * by construction. Dropped where it started, it answers `fromIndex`.
  */
 export function reorderTarget(
   midpoints: readonly number[],
