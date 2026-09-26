@@ -597,6 +597,12 @@ export const strings = {
   deleteBookConfirmTitle: (book: string): string =>
     `Delete ${book} and everything in it?`,
   deleteBookConfirm: "Delete",
+  // The O4 look asks inside the book sheet instead (#980, G6; #949 D16): the
+  // sheet's actions swap for these two, under the book's cover and name. The
+  // workbench's own labels, word for word — the DRI prefers the originals.
+  // O4 only; the current look keeps `eraseCancel`/`deleteBookConfirm` above.
+  keepBook: "Keep the book",
+  deleteBookYes: "Yes, delete the book",
   // A destructive op that did NOT happen has to say so in its own words. The
   // store's own message — a quota or connection fault, since `deleteBook` never
   // throws on a missing book — is for a maintainer; this is the line a screen

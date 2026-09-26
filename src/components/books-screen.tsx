@@ -17,6 +17,7 @@ import { FailureLogPanel } from "./failure-log-panel";
 import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
+import { O4BookDeleteAsk } from "./o4-book-delete-ask";
 import { Notice } from "./notice";
 import { SquareButton } from "./o4-controls";
 import { encoderNotice } from "./encoder-notice";
@@ -498,6 +499,41 @@ export function BooksScreen({
     setDeleteTargetId(null);
   }, [deleteTargetId, rowReveal]);
 
+  // ── O4: Delete asks inside the book sheet (#980, G6; #949 D16) ──────────
+  //
+  // With the switch on, Delete does NOT close the book sheet and open the
+  // floating `EraseConfirm`: the sheet stays up and swaps its actions for
+  // Keep and Delete (`O4BookDeleteAsk`). `deleteTargetId` still names the
+  // armed book and `"books:delete-confirm"` is still the layer over the
+  // sheet's own, so Back, `busy()` and the vanish effect below work as they
+  // do for the card. What changes is what Keep means: back to the SAME open
+  // sheet, focus on its Delete (the workbench's `bmDelNo`), not out to the
+  // shelf, which is where the card's Cancel lands because the sheet is
+  // already gone by then.
+  //
+  // Keep's button, focused when the ask appears (the safe action, as
+  // EraseConfirm lands on Cancel) and again when the delete goes in flight
+  // and Delete disables under the focus.
+  const keepDeleteRef = useRef<HTMLButtonElement | null>(null);
+  // The sheet's Delete control, focused again after Keep.
+  const deleteControlRef = useRef<HTMLButtonElement | null>(null);
+  // Set by Keep's state half, consumed by the effect that moves focus back to
+  // Delete once it has remounted. A ref, so nothing but that effect reads it.
+  const focusDeleteOnKeep = useRef(false);
+  /**
+   * Keep's STATE half, and the ask layer's `dismiss` under O4. Returns
+   * `false` while the delete is in flight, where Keep is a no-op: the store
+   * write cannot be recalled, so un-arming then would put Delete back under
+   * a book that is mid-delete. The layer's `busy()` is the same live ref
+   * (`isDeleting`), so a system Back never reaches this early return.
+   */
+  const keepDeleteState = useCallback(() => {
+    if (isDeleting()) return false;
+    focusDeleteOnKeep.current = true;
+    setDeleteTargetId(null);
+    return true;
+  }, [isDeleting]);
+
   const layers = useScreenLayers<BooksLayerId>(pushLayer, popLayer, {
     "books:global-menu": {
       // The theme toggle and the log panel's Share write nothing this screen
@@ -543,7 +579,9 @@ export function BooksScreen({
       // The same live ref `deleteBook` flips to refuse a second Confirm, so
       // Back and Confirm agree about "in flight" by construction.
       busy: isDeleting,
-      dismiss: closeDeleteConfirmState,
+      // Under O4 the ask is inside the sheet, so Back is Keep: the ask goes
+      // and the sheet stays (#980). The current look's card is unchanged.
+      dismiss: o4 ? keepDeleteState : closeDeleteConfirmState,
     },
   });
 
@@ -926,6 +964,21 @@ export function BooksScreen({
   const onCloseShareMenu = useCallback(() => {
     if (closeBookMenuState()) layers.close("books:book-menu");
   }, [closeBookMenuState, layers]);
+  // Keep, from the O4 ask's own button, and from the sheet's Escape, scrim
+  // and header control while the ask is up (through `onCloseBookSheet`
+  // below). The state half above, plus the ask's layer.
+  const onKeepDelete = useCallback(() => {
+    if (keepDeleteState()) layers.close("books:delete-confirm");
+  }, [keepDeleteState, layers]);
+  // The book sheet's `<Menu onClose>`: its Escape, its scrim and its header
+  // control. While the O4 ask is up they mean Keep, the same as a system Back
+  // does (the ask's layer above); otherwise they close the sheet exactly as
+  // before. With the switch off `deleteTargetId` plays no part here, so this
+  // is `onCloseShareMenu`.
+  const onCloseBookSheet = useCallback(() => {
+    if (o4 && deleteTargetId !== null) onKeepDelete();
+    else onCloseShareMenu();
+  }, [o4, deleteTargetId, onKeepDelete, onCloseShareMenu]);
   // Commit the typed book name (#264), then close the menu on success. A failed
   // write keeps the menu open with the reason in its own Notice — the screen's
   // Notice sits behind the scrim, so a rename needs a channel inside the panel.
@@ -1215,6 +1268,16 @@ export function BooksScreen({
     // primitive, not evidence the primitive is insufficient.
     if (shareOverlayOwnsScreen(bookShare.progress)) return;
     const bookId = shareMenuBookId;
+    if (o4) {
+      // The O4 ask stays inside the sheet (#980): the sheet is NOT closed and
+      // its share is not reset, so Keep returns to it exactly as it was. The
+      // ask's layer goes over the sheet's (1 -> 2), and the "before" shelf is
+      // captured for the same reason as below.
+      layers.open("books:delete-confirm");
+      armedShelf.current = books.map((b) => b.bookId);
+      setDeleteTargetId(bookId);
+      return;
+    }
     // Registered BEFORE the menu's own layer is unregistered, so the floor's
     // layer stack goes 1 → 2 → 1 and never passes through empty (#452 PR3).
     //
@@ -1239,7 +1302,14 @@ export function BooksScreen({
     // time it detects the vanish, `books` has already moved on without it.
     armedShelf.current = books.map((b) => b.bookId);
     setDeleteTargetId(bookId);
-  }, [books, bookShare.progress, layers, onCloseShareMenu, shareMenuBookId]);
+  }, [
+    books,
+    bookShare.progress,
+    layers,
+    o4,
+    onCloseShareMenu,
+    shareMenuBookId,
+  ]);
   const onConfirmDelete = useCallback(() => {
     if (deleteTargetId === null) return;
     // The shelf order as it is right now, captured while the row is still on
@@ -1283,8 +1353,39 @@ export function BooksScreen({
       // `"busy"` returned above the `if`s, leaving both standing — which is
       // right: the first delete still owns them.
       layers.close("books:delete-confirm");
+      // Under O4 the ask was inside the book sheet, which is still open:
+      // arming did not close it (#980). Either outcome closes it now, through
+      // the one close path, so the share resets and the sheet's layer goes.
+      // That is the end state the current look reaches, where arming closed
+      // it. The row hand-off above still decides where focus lands.
+      if (o4) onCloseShareMenu();
     })();
-  }, [books, deleteBook, deleteTargetId, layers, rowReveal]);
+  }, [
+    books,
+    deleteBook,
+    deleteTargetId,
+    layers,
+    o4,
+    onCloseShareMenu,
+    rowReveal,
+  ]);
+
+  // The O4 ask's focus (#980). On the render the ask appears, land on Keep:
+  // the sheet's `<Menu>` does not refocus, because it never closed. Again
+  // when the delete goes in flight, since Delete disables under the focus
+  // and would drop it out of the sheet's trap (EraseConfirm moves to Cancel
+  // on its own busy edge for the same reason).
+  const o4DeleteArmed = o4 && deleteTargetId !== null;
+  useEffect(() => {
+    if (o4DeleteArmed) keepDeleteRef.current?.focus();
+  }, [o4DeleteArmed, deleting]);
+  // After Keep, back to the sheet's Delete once it has remounted. Only Keep
+  // sets the flag, so a delete that closes the sheet never lands here.
+  useEffect(() => {
+    if (o4DeleteArmed || !focusDeleteOnKeep.current) return;
+    focusDeleteOnKeep.current = false;
+    deleteControlRef.current?.focus();
+  }, [o4DeleteArmed]);
 
   // `deleteFailed` only ever RELABELS the hook's current error — they are one
   // state there, so the label cannot outlive what it labels. A *reload* no
@@ -1670,7 +1771,7 @@ export function BooksScreen({
           panel because the flow keeps it open. */}
       <Menu
         open={shareMenuBook !== null}
-        onClose={onCloseShareMenu}
+        onClose={onCloseBookSheet}
         title={strings.bookMenuTitle}
         // The class-level isolation primitive (#491, the DRI's option-A pick
         // on the judgment sheet): while the overlay owns the screen, the
@@ -1695,6 +1796,25 @@ export function BooksScreen({
           )
         }
       >
+        {/* O4: Delete asks here, inside the sheet (#980, G6; #949 D16). The
+            ask takes the place of the action list below, which is not drawn
+            while it is up; rename cannot be open at the same time, because
+            Delete is only reachable from the action list. */}
+        {o4DeleteArmed && shareMenuBook && (
+          <O4BookDeleteAsk
+            name={shareMenuBook.name}
+            coverHex={coverColourHex(
+              resolveCoverKey({
+                id: shareMenuBook.bookId,
+                coverColourKey: shareMenuBook.coverColourKey ?? null,
+              })
+            )}
+            busy={deleting}
+            keepRef={keepDeleteRef}
+            onKeep={onKeepDelete}
+            onDelete={onConfirmDelete}
+          />
+        )}
         {renamingBook && shareMenuBook ? (
           <>
             {/* Rename the book in place (#264). The store seeds the field with
@@ -1738,7 +1858,7 @@ export function BooksScreen({
               <Notice>{strings[error]}</Notice>
             )}
           </>
-        ) : (
+        ) : o4DeleteArmed ? null : (
           <>
             <Control
               icon="edit"
@@ -1770,6 +1890,7 @@ export function BooksScreen({
                 Segments row menu (#80). It arms the shared two-tap confirm; it
                 never deletes on this tap. */}
             <Control
+              ref={deleteControlRef}
               icon="trash"
               label={strings.deleteBook}
               variant="quiet"
@@ -1782,8 +1903,10 @@ export function BooksScreen({
       {/* The SAME confirm the segment Erase uses — one dialog, parameterised by
           its copy, never a second one. Focus lands on Cancel, Escape and a scrim
           tap cancel, and both are no-ops once the delete is in flight. */}
+      {/* Under O4 the ask is inside the book sheet instead (#980), so this
+          card opens for the current look only. */}
       <EraseConfirm
-        open={deleteTargetId !== null}
+        open={deleteTargetId !== null && !o4}
         title={strings.deleteBookConfirmTitle(deleteTarget?.name ?? "")}
         confirmLabel={strings.deleteBookConfirm}
         cancelLabel={strings.eraseCancel}
