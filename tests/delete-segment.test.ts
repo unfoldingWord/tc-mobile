@@ -124,7 +124,7 @@ describe("deleteSegment", () => {
     expect(await getClipMeta(clipId)).toBeUndefined();
     expect(await getClip(clipId)).toBeUndefined();
     expect((await getChapter(chapterId))!.segmentIds).toEqual([s1, s3]);
-    expect(renumbered.map((r) => [r.id, r.index])).toEqual([
+    expect(renumbered?.map((r) => [r.id, r.index])).toEqual([
       [s1, 1],
       [s3, 2],
     ]);
