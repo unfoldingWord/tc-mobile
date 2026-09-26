@@ -79,6 +79,14 @@ describe("findNegatedClosures — rule (a)", () => {
     ["We cannot simply close #12", "12"],
     ["Never just fix #3", "3"],
     ["This no longer merely resolves #8", "8"],
+    // not / n't + an adverb is exempt only when an affirmation follows the
+    // issue ref in the same sentence; bare, it still negates.
+    ["This does not simply close #12.", "12"],
+    ["Please do not just close #12.", "12"],
+    ["This does not merely resolve #8.", "8"],
+    ["It doesn't only fix #6. It also adds a test.", "6"],
+    // "also" without the adverb idiom is no affirmation.
+    ["This does not close #9 and also skips a test.", "9"],
   ])("flags %j", (message, issue) => {
     expect(findNegatedClosures(message).map((h) => h.issue)).toEqual([issue]);
   });
@@ -159,6 +167,17 @@ describe("satisfies / rangeMinimum — rule (b)'s range reader", () => {
     ["v22.12.0", true],
   ])("admits 22.12.0 under %j: %s", (range, expected) => {
     expect(satisfies("22.12.0", range)).toBe(expected);
+  });
+
+  it.each([">22.12.0-rc.1", "=22.12.0-rc.1", "<=22.12.0-rc.1", "^22.12.0-0"])(
+    "treats the prerelease comparator %j as unreadable",
+    (range) => {
+      expect(satisfies("22.12.0", range)).toBe(null);
+    }
+  );
+
+  it("still reads build metadata, which semver ignores", () => {
+    expect(satisfies("22.12.0", ">=22.12.0+build.1")).toBe(true);
   });
 
   it("returns null for a range it cannot read, so the caller skips", () => {
@@ -626,6 +645,40 @@ describe("CLI entry point (real subprocess against scratch repositories)", () =>
       expect(result.status).toBe(1);
       expect(result.stdout).toContain(
         'FAIL (b) bad@1.0.0: engines.node "^22.13.0" does not admit 22.12.0'
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // (b) PRERELEASE: the reader keeps no prerelease semantics, so a
+  // prerelease comparator is unreadable and takes the NOTE path in both
+  // directions: an admitting range no longer FAILs, and an excluding one no
+  // longer PASSes silently as admitted.
+  it.each([
+    [">22.12.0-rc.1", "admits 22.12.0"],
+    ["<=22.12.0-rc.1", "excludes 22.12.0"],
+  ])("notes, never judges, the prerelease range %j (%s)", (range) => {
+    const dir = initScratchRepo();
+    try {
+      write(
+        dir,
+        "package.json",
+        JSON.stringify(
+          {
+            ...FLOOR_PKG,
+            devDependencies: { ...FLOOR_PKG.devDependencies, pre: "1.0.0" },
+          },
+          null,
+          2
+        )
+      );
+      installDep(dir, "pre", range);
+      commit(dir, "chore(deps): add pre", "Adds a dependency.");
+      const result = runCli(dir);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(
+        `NOTE (b): pre@1.0.0: engines.node "${range}" not readable, skipped`
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });

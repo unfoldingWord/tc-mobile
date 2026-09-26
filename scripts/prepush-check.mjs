@@ -49,14 +49,20 @@ const HARD_NEGATION = String.raw`(?:never|cannot|without|no\s+longer)`;
 const IDIOM_NEGATION = String.raw`(?:not|[a-z]+n['’]t)`;
 const KEYWORD = String.raw`(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)`;
 const ISSUE_REF = String.raw`(?:[\w.-]+\/[\w.-]+)?#(\d+)`;
-// "not only fixes #N (but also ...)" affirms the closure; it is not a
-// negation. The exemption follows only not / n't: "cannot simply close #N"
-// and "never just fixes #N" still negate.
-const AFFIRMING = String.raw`(?!\s+(?:only|just|merely|simply)\b)`;
 const NEGATED_CLOSE = new RegExp(
-  String.raw`\b(?:${HARD_NEGATION}|${IDIOM_NEGATION}${AFFIRMING})\s+(?:[a-z]+\s+){0,2}?${KEYWORD}\b:?\s*${ISSUE_REF}`,
+  String.raw`\b(?:${HARD_NEGATION}|${IDIOM_NEGATION})\s+(?:[a-z]+\s+){0,2}?${KEYWORD}\b:?\s*${ISSUE_REF}`,
   "gi"
 );
+// "not only fixes #N but also ..." affirms the closure. The exemption needs
+// both halves: not / n't + only|just|merely|simply before the keyword, and
+// "also" or "as well" after the issue ref in the same sentence. Bare, "does
+// not simply close #N." still negates, and "cannot simply close #N" always
+// does.
+const IDIOM_ADVERB = new RegExp(
+  String.raw`^${IDIOM_NEGATION}\s+(?:only|just|merely|simply)\b`,
+  "i"
+);
+const AFFIRMED_AFTER = /^[^.!?\n]*\b(?:also|as\s+well)\b/i;
 
 /**
  * Every negated closing phrase in a commit message, as
@@ -65,6 +71,8 @@ const NEGATED_CLOSE = new RegExp(
 export function findNegatedClosures(message) {
   const hits = [];
   for (const match of message.matchAll(NEGATED_CLOSE)) {
+    const after = message.slice(match.index + match[0].length);
+    if (IDIOM_ADVERB.test(match[0]) && AFFIRMED_AFTER.test(after)) continue;
     hits.push({ text: match[0].replace(/\s+/g, " "), issue: match[1] });
   }
   return hits;
@@ -74,8 +82,10 @@ export function findNegatedClosures(message) {
 // (b) minimal semver range reading
 
 const PART = String.raw`(\d+|[xX*])`;
+// A prerelease tag is captured so it can be refused: this reader keeps no
+// prerelease ordering, so such a range is unreadable and takes the NOTE path.
 const COMPARATOR = new RegExp(
-  String.raw`^(<=|>=|<|>|=|\^|~>?)?v?${PART}(?:\.${PART})?(?:\.${PART})?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`
+  String.raw`^(<=|>=|<|>|=|\^|~>?)?v?${PART}(?:\.${PART})?(?:\.${PART})?(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`
 );
 
 function isWild(part) {
@@ -95,7 +105,7 @@ function cmp(a, b) {
  */
 function parsePartial(token) {
   const m = COMPARATOR.exec(token);
-  if (!m) return null;
+  if (!m || m[5] !== undefined) return null;
   const parts = [m[2], m[3], m[4]];
   const fixed = [];
   for (const part of parts) {
