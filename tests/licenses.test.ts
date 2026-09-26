@@ -314,6 +314,19 @@ describe("reachability wiring (#36)", () => {
     expect(lamejs?.acknowledges?.href).toBe("https://lame.sourceforge.net");
   });
 
+  it("keeps the lamejs note to the offer, not a compliance conclusion", () => {
+    // ADR 0003 §4(d): "What this does not establish: that these links satisfy
+    // §4(d)(0) or GPL §6." The shipped note may name the offer; it may not tell
+    // the person holding the phone the obligations are met (George Medium,
+    // bench round 2 on #1019).
+    const lamejs = thirdPartyLicenses.find(
+      (l) => l.name === "@breezystack/lamejs"
+    );
+    const note = lamejs?.note ?? "";
+    expect(note.length, "lamejs note is empty").toBeGreaterThan(0);
+    expect(note).not.toMatch(/\bmet\b|satisf|complian|fulfil/i);
+  });
+
   it("keeps Workbox, which the closure walk cannot see, in the disclosure", () => {
     // Workbox is a build-time (dev) dependency injected into the service
     // worker, so the runtime-closure test above never requires it; this pins

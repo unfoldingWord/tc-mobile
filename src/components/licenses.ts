@@ -78,7 +78,7 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     // Attribution, not a © notice: the bundled LICENSE carries no copyright line,
     // so this names the package author (npm `author`) and the lineage.
     copyright: "By Alex Zhukov — a fork of lamejs, based on LAME",
-    note: "The only copyleft component. The encoder itself sits in a single Web Worker chunk (encodeMp3), but the LGPL's obligations reach the combined app — met by the licence texts and the source offer on this screen, not by that chunk boundary.",
+    note: "The only copyleft component. The encoder itself sits in a single Web Worker chunk (encodeMp3), but the LGPL's obligations reach the combined app, not just that chunk. What this screen offers for it is the licence texts and a link to the exact encoder source.",
     // The exact 1.2.7 source, vendored under third_party/ (DRI ruling on #144's
     // Frank round 6 escalation; provenance in that folder's PROVENANCE.md),
     // linked at the build's FULL commit id rather than the 7-character stamp.
