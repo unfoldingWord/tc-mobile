@@ -1,6 +1,7 @@
 /**
  * The words a Share menu shows for each `ShareError` code — for a chapter or a
- * book — as one pure function.
+ * book — as one pure function. The library scope (Share your work, #1045)
+ * has its own functions at the end of the file.
  *
  * Both screens used to map the code inline with a nested ternary that ended in
  * `: null`. That shape is exactly how a new code goes silent: widening
@@ -13,6 +14,10 @@
 import { strings } from "@/lib/strings";
 import type { ShareError } from "@/hooks/share-flow";
 import type { ShareGap, ShareProgress } from "@/hooks/share-progress";
+import type {
+  LibraryShareProgress,
+  UseLibraryShare,
+} from "@/hooks/use-library-share";
 
 /**
  * The words under the share modal's glyph (#491), for each phase of the
@@ -114,6 +119,114 @@ export function shareErrorText(
       return strings.shareEncoderStopped;
     default: {
       const unhandled: never = error;
+      return unhandled;
+    }
+  }
+}
+
+/**
+ * The library scope (#1045): what Share your work (#987, the O4 storage
+ * banner's button, #983) says, in the banner and under the share overlay's
+ * glyph. Its own functions rather than a third arm of the scope parameter
+ * above, because wording is not all that differs: the library share adds a
+ * `"storage"` refusal, and its gap is a `LibraryShareGap` in books and
+ * chapters, which `shareGapText` cannot take by type (`use-library-share.ts`).
+ */
+type LibraryShareError = UseLibraryShare["error"];
+
+/** The library share's codes, for the banner's Notice and the overlay alike. */
+export function libraryShareErrorText(error: LibraryShareError): string | null {
+  if (error === null) return null;
+  switch (error) {
+    case "nothing":
+      return strings.shareAllNothing;
+    case "failed":
+      return strings.shareAllFailed;
+    case "storage":
+      return strings.shareAllStorage;
+    // The encoder is the problem, not what was shared: the same line Share
+    // Book and Share Chapter use (#166).
+    case "encoder":
+      return strings.shareEncoderStopped;
+    default: {
+      const unhandled: never = error;
+      return unhandled;
+    }
+  }
+}
+
+/**
+ * What an armed archive left out, or `null` when it holds everything. Whole
+ * books first, then the chapters inside included books that did not ship
+ * whole, each a whole sentence from the table. One function for the banner's
+ * ready-state Notice and the overlay's `partial` line, as `shareGapText` is
+ * for the book and chapter scopes.
+ */
+export function libraryShareGapText(
+  missingBooks: number,
+  incompleteChapters: number
+): string | null {
+  const parts: string[] = [];
+  if (missingBooks > 0) parts.push(strings.shareAllMissing(missingBooks));
+  if (incompleteChapters > 0)
+    parts.push(strings.shareAllIncomplete(incompleteChapters));
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+/**
+ * {@link shareProgressText} for the library scope, following the book
+ * scope's pattern phase by phase: the library's own preparing line while tap
+ * 1 works, the shared sheet-opening line while tap 2 works, the shared
+ * sent/dismissed/unproven lines, and for `partial` the handed-over line then
+ * the SAME gap sentence the banner's ready Notice shows.
+ *
+ * A failed settle reads `error` for one refinement the progress timeline
+ * cannot carry: the flow settles a space refusal as `failed`, and only the
+ * hook knows it was `"storage"`. So the glyph's line and the banner's Notice
+ * say the same thing once the flash clears.
+ */
+export function libraryShareProgressText(
+  progress: LibraryShareProgress,
+  error: LibraryShareError
+): string | null {
+  switch (progress.phase) {
+    case "hidden":
+      return null;
+    case "busy":
+      return progress.work === "send"
+        ? strings.shareHandingOver
+        : strings.shareAllPreparing;
+    case "outcome":
+      switch (progress.settled) {
+        case "sent":
+          return strings.shareSent;
+        case "partial": {
+          const gap = libraryShareGapText(
+            progress.gap?.missingBooks ?? 0,
+            progress.gap?.incompleteChapters ?? 0
+          );
+          return gap === null
+            ? strings.shareSent
+            : `${strings.shareSent} ${gap}`;
+        }
+        case "dismissed":
+          return strings.shareDismissed;
+        case "unproven":
+          return strings.shareUnproven;
+        case "failed":
+          return libraryShareErrorText(
+            error === "storage" ? "storage" : "failed"
+          );
+        case "nothing":
+        case "encoder":
+          return libraryShareErrorText(progress.settled);
+        default: {
+          const unhandled: never = progress.settled;
+          return unhandled;
+        }
+      }
+    default: {
+      const unhandled: never = progress;
       return unhandled;
     }
   }

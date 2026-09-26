@@ -38,6 +38,7 @@ import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
 import { useDesign } from "@/hooks/use-design";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
+import { useLibraryShare } from "@/hooks/use-library-share";
 import { useScrollToNew } from "@/hooks/use-scroll-to-new";
 import {
   useScreenLayers,
@@ -323,6 +324,10 @@ export function BooksScreen({
   // time, so it sees the live value, not the one closed over at save.
   const bookMenuSession = useRef(0);
   const bookShare = useBookShare();
+  // Share your work (#987), from the O4 storage banner. Held here, not in the
+  // banner, so its overlay and the shelf's `inert` follow the timeline in the
+  // same render (#1045). Idle unless that banner's button starts it.
+  const libraryShare = useLibraryShare();
   // Per-viewer UI state, so it lives here and not on disk. Collapsed by default.
   const [expanded, setExpanded] = useState<ReadonlySet<BookId>>(new Set());
   // The row registry and the arm-then-reveal pair, shared with Segments (#160
@@ -1471,6 +1476,7 @@ export function BooksScreen({
         // path off the shelf/New Book while the overlay is up — including
         // through the outcome hold, after `shareMenuBook` may already be null.
         shareOverlayOwnsScreen(bookShare.progress) ||
+        shareOverlayOwnsScreen(libraryShare.progress) ||
         undefined
       }
     >
@@ -1625,7 +1631,11 @@ export function BooksScreen({
       {pressureLine && (
         // The same line in the current look; state 17's banner, with its
         // "Share your work" button, in O4 (#983).
-        <StoragePressureBanner notice={pressureLine} o4={o4} />
+        <StoragePressureBanner
+          notice={pressureLine}
+          o4={o4}
+          share={libraryShare}
+        />
       )}
       {encoderLine && (
         <Notice tone={encoderLine.tone}>{encoderLine.text}</Notice>
@@ -1953,6 +1963,14 @@ export function BooksScreen({
         items={shareMenuBook ? bookShareItems(shareMenuBook.chapters) : []}
         onCancel={bookShare.reset}
         onDismiss={bookShare.dismissProgress}
+      />
+      {/* Share your work's modal (#1045): the same overlay, library scope. */}
+      <ShareProgress
+        progress={libraryShare.progress}
+        scope="library"
+        error={libraryShare.error}
+        onCancel={libraryShare.reset}
+        onDismiss={libraryShare.dismissProgress}
       />
     </div>
   );
