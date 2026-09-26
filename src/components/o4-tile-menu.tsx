@@ -1,7 +1,7 @@
 import { forwardRef, type ComponentProps, type ReactNode } from "react";
 
-import { cn } from "@/lib/utils";
 import { Control } from "./control";
+import { TILE_GLYPH, tileClass, type TileTone } from "./o4-tile-look";
 
 /**
  * The O4 tile-menu primitive (#941, epic #936): every O4 menu is a row of
@@ -20,26 +20,17 @@ import { Control } from "./control";
  * handle) — keyed on the grid's presence, so the name sheets that share
  * `<Menu>` (#943's) are untouched by it.
  *
- * NOT YET ADOPTED ANYWHERE. The app ≡ menu's entries live inline in
- * `books-screen.tsx`, which the Books lane (#942) owns in batch 1, so moving
- * it onto the grid is #949's, alongside the book, chapter, segment and
- * recorder menus.
+ * ADOPTED BY the chapter and segment menus (#949: G2, 07, G8), in their O4
+ * branches. The book, app ≡ and recorder menus are the rest of #949. The
+ * tones, glyph size and classes live in `o4-tile-look.ts`.
  */
 type ControlProps = ComponentProps<typeof Control>;
 
 /**
- * The tile fills O4 draws: the three coloured action roles, the erase tile
- * (live ink on the quiet red, inside a live ring, per the workbench's `del`
- * tile), and the plain well the theme and export tiles use.
- */
-type TileTone = "edit" | "name" | "send" | "erase" | "plain";
-
-/**
  * One tile. `label` is the accessible name, exactly as the `Control` it
- * replaces had it; `caption` is the short word shown under the box.
- *
- * @pivotpending O4 batch 2 — the screen menus (#949: G1, G2, 07, G3) mount
- * it; nothing does yet.
+ * replaces had it; `caption` is the short word shown under the box, and it
+ * must be a word the label already holds (label-in-name, WCAG 2.5.3), so a
+ * voice-control user can say what they see.
  */
 export const Tile = forwardRef<
   HTMLButtonElement,
@@ -47,13 +38,13 @@ export const Tile = forwardRef<
     tone: TileTone;
     caption: string;
   }
->(function Tile({ tone, className, size = 30, ...rest }, ref) {
+>(function Tile({ tone, className, size = TILE_GLYPH, ...rest }, ref) {
   return (
     <Control
       ref={ref}
       {...rest}
       size={size}
-      className={cn("o4-tile", `o4-tile--${tone}`, className)}
+      className={tileClass(tone, className)}
     />
   );
 });
@@ -61,9 +52,6 @@ export const Tile = forwardRef<
 /**
  * The row of tiles. Its presence inside a `<Menu>` is what gives that menu
  * the bottom-sheet shell (see this file's header).
- *
- * @pivotpending O4 batch 2 — the screen menus (#949) mount it; nothing does
- * yet.
  */
 export function TileGrid({ children }: { children?: ReactNode }) {
   return <div className="o4-tiles">{children}</div>;
@@ -72,9 +60,6 @@ export function TileGrid({ children }: { children?: ReactNode }) {
 /**
  * Pushes the tiles after it to the far end of the row — where the theme tile
  * sits in every O4 menu (workbench G1, G2, G3). Decorative.
- *
- * @pivotpending O4 batch 2 — the screen menus (#949) mount it; nothing does
- * yet.
  */
 export function TileSpacer() {
   return <span className="o4-tiles-gap" aria-hidden="true" />;

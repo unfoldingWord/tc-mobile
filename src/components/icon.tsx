@@ -29,7 +29,6 @@ export type IconName =
   | "chevron-right"
   | "zoom-in"
   | "zoom-out"
-  | "selection"
   | "scissors"
   | "paste"
   | "undo"
@@ -342,20 +341,9 @@ const PATHS: Record<IconName, React.ReactNode> = {
       />
     </>
   ),
-  // Selection-frame toggle: the two brackets that frame the picked span (mockup
-  // 4). Drawn as a facing pair so the button reads as "enclose a region".
-  selection: (
-    <path
-      d="M9 5.5H6v11h3M13 5.5h3v11h-3"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  ),
   // Cut: two finger loops and crossing blades. Appears below the waveform once a
-  // selection exists (mockup 4).
+  // selection exists (mockup 4), and is the recorder toolbar's edit-mode
+  // toggle (#955).
   scissors: (
     <>
       <circle
