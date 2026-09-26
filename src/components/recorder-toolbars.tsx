@@ -249,9 +249,9 @@ export function RecorderToolbar({
         // uses, play/pause, because it is the same act: a non-reader
         // recognises the control by its shape, and a second play
         // glyph would be a second thing to learn. The name is what
-        // differs, and it names the target (`playSource`, which the
-        // sheet derives from the audition plan) so what a screen
-        // reader speaks is what sounds.
+        // differs, and it names the target (`playSource`; the sheet
+        // passes `playPlan?.source`) so what a screen reader speaks
+        // is what sounds.
         icon={playingBuffer ? "pause" : "play"}
         label={
           playingBuffer
