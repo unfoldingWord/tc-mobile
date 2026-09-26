@@ -359,8 +359,9 @@ export type ChapterCodec = AudioCodec & { readonly onJoined?: () => void };
  *
  * Every present clip is read and checked first (`parseJoinableMp3`), then
  * joined (`joinMp3`); only when both succeed are the steps reported — `(0, n)`
- * and then one per segment, in order, each carrying the running `skipped`,
- * exactly as {@link gatherChapterPcm} reports them. A clip gone since pass 1
+ * and then one per segment, in order, each carrying the running `skipped`
+ * and the counted segments' clip ids as `keys` (#1044), exactly as
+ * {@link gatherChapterPcm} reports them. A clip gone since pass 1
  * is skipped and counted missing, as there. Returns:
  *
  * - `"not-joinable"` — some clip cannot be copied safely; nothing was
@@ -402,11 +403,13 @@ async function joinFinishedChapter(
   if (pieces.length > 0 && mp3 === null) return "not-joinable";
 
   const total = plan.present.length;
+  // The counted segments by clip id (#1044), as the gather names them.
+  const keys = plan.present.map((p) => p.clipId);
   let skipped = 0;
-  onStep?.(0, total, skipped);
+  onStep?.(0, total, skipped, undefined, keys);
   skippedAt.forEach((wasSkipped, i) => {
     if (wasSkipped) skipped++;
-    onStep?.(i + 1, total, skipped);
+    onStep?.(i + 1, total, skipped, undefined, keys);
   });
   if (mp3 === null) return null;
   return { mp3, segments: pieces.length, missing };

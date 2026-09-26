@@ -1,5 +1,6 @@
 import "fake-indexeddb/auto";
 
+import { createElement } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -7,7 +8,9 @@ import {
   chapterShareItems,
   shareO4View,
   type ShareChip,
+  type ShareO4View,
 } from "@/components/share-o4-view";
+import { ShareProgressPanel } from "@/components/share-progress-panel";
 import { stepReporter } from "@/hooks/share-flow";
 import {
   HIDDEN,
@@ -18,6 +21,8 @@ import {
   type ShareProgressEvent,
 } from "@/hooks/share-progress";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import { encodeMp3 } from "@/lib/audio/mp3";
+import { computePeaks } from "@/lib/audio/peaks";
 import { exportBookZip } from "@/lib/export/book";
 import { exportChapterMp3, withEncodeSteps } from "@/lib/export/chapter";
 import {
@@ -28,9 +33,11 @@ import {
 } from "@/lib/storage/books";
 import { newClipId } from "@/lib/storage/clips";
 import { getDb } from "@/lib/storage/db";
-import { saveTake } from "@/lib/storage/takes";
+import { saveTake, setSegmentFinished } from "@/lib/storage/takes";
+import { commitTranscode } from "@/lib/storage/transcode";
 import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { ChapterRow, SegmentRow } from "@/types/view";
+import { one, render } from "./render";
 import { clearAllStores, testCodec } from "./support";
 
 /**
@@ -52,6 +59,19 @@ const samples = (n: number, value: number): Int16Array =>
 function row(chips: readonly ShareChip[]): string {
   const mark = { stays: "-", waiting: "o", finished: "v", current: "*" };
   return chips.map((c) => mark[c.state]).join("");
+}
+
+/** The chip row's accessible label, as the O4 panel renders it. */
+function goOutLabel(view: ShareO4View): string | null {
+  const container = render(
+    createElement(ShareProgressPanel, {
+      role: "status",
+      icon: "share-busy",
+      text: "status",
+      o4: view,
+    })
+  );
+  return one(container, ".share-o4-chips").getAttribute("aria-label");
 }
 
 /** A reducer the reporter dispatches into, starting from a busy prepare. */
@@ -143,6 +163,60 @@ describe("Share Chapter: a segment left out before the count (#1044)", () => {
     const send = sendCarrying(carried!);
     if (send.phase === "hidden") throw new Error("expected a busy send");
     expect(row(shareO4View(send, "chapter", screen).chips)).toBe("v-v");
+  });
+});
+
+describe("Share Chapter, all Finished (joined, #1004): a segment left out before the count", () => {
+  it("carries the keys, so the omitted segment is grey and the label counts 2 of 3", async () => {
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id);
+    // Three segments on screen; the middle one's take was gone by the time the
+    // export walked the chapter. The other two are Finished, so the chapter is
+    // all MP3 and takes the join path, not the gather.
+    const clipIds = [newClipId(), newClipId(), newClipId()];
+    for (const [i, clipId] of clipIds.entries()) {
+      const seg = await addSegment(chapter.id);
+      if (i === 1) continue;
+      const pcm = Int16Array.from({ length: 5_000 }, (_, k) => (k % 300) + i);
+      await saveTake(seg.id, clipId, pcm, CANONICAL_SAMPLE_RATE);
+      await setSegmentFinished(seg.id, true);
+      expect(
+        await commitTranscode(
+          seg.id,
+          clipId,
+          encodeMp3(pcm),
+          computePeaks(pcm, 4)
+        )
+      ).toBe("committed");
+    }
+    const screen = chapterShareItems(
+      clipIds.map((clipId, i) => segmentRow(i + 1, clipId))
+    );
+    const m = machine();
+    const codec = testCodec();
+
+    const result = await withEncodeSteps(
+      stepReporter(() => true, m.dispatch),
+      () => true,
+      (counted, inner) =>
+        exportChapterMp3(chapter.id, counted, undefined, inner)
+    )(codec);
+
+    expect(result?.segments).toBe(2);
+    // The joined path ran: no encode, no decode.
+    expect(codec.encodeMp3).not.toHaveBeenCalled();
+    expect(codec.decodeMp3).not.toHaveBeenCalled();
+    const after = m.state();
+    if (after.phase !== "busy") throw new Error("expected a busy prepare");
+    expect(after.steps?.keys).toEqual([clipIds[0], clipIds[2]]);
+    const prepareView = shareO4View(after, "chapter", screen);
+    expect(row(prepareView.chips)).toBe("v-v");
+    expect(goOutLabel(prepareView)).toBe("2 of 3 go out");
+    const send = sendCarrying(carryFromPrepare(after)!);
+    if (send.phase === "hidden") throw new Error("expected a busy send");
+    const sendView = shareO4View(send, "chapter", screen);
+    expect(row(sendView.chips)).toBe("v-v");
+    expect(goOutLabel(sendView)).toBe("2 of 3 go out");
   });
 });
 
