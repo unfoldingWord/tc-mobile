@@ -219,7 +219,7 @@ describe("the guide ring is visible on every surface it is drawn on (#604)", () 
     ],
     [
       "--s-surface",
-      "Add chapter and the segment row's red Record — `.row`'s own surface",
+      "Add chapter, the segment row's red Record — `.row`'s own surface — and outset around O4's green name-sheet Confirm",
     ],
     [
       "--s-floor",
@@ -245,6 +245,18 @@ describe("the guide ring is visible on every surface it is drawn on (#604)", () 
       // geometry (inside the shape against an outline outside it, with a gap
       // where both are outside), which `tests/guided-ring.test.ts` pins.
       expect(resolve(theme, "--s-guide")).not.toBe(resolve(theme, "--s-focus"));
+    });
+
+    it(`${theme}: the ring cannot live INSIDE O4's green Confirm — the reason it is outset (#943)`, () => {
+      // o4/sheets.css paints the name sheet's commit control on --s-done and
+      // outsets its guide ring onto the sheet's --s-surface, for the same
+      // reason the record button's is outset. If a future accent clears the
+      // floor on --s-done, that exception can go.
+      const ratio = contrast(
+        resolve(theme, "--s-guide"),
+        resolve(theme, "--s-done")
+      );
+      expect(ratio).toBeLessThan(AA_NON_TEXT);
     });
 
     it(`${theme}: the ring cannot live INSIDE the record button — the reason it is outset`, () => {
