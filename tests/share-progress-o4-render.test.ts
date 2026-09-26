@@ -10,8 +10,10 @@ import { one, render } from "./render";
  * The O4 share circle as the panel actually emits it (#947, states 15/G7):
  * the 140 core inside the 176 frame, the filling ring, and one dot per item.
  * `shareO4View` (tests/share-o4-view.test.ts) decides WHAT to draw; this
- * proves the panel draws it, and that with no `o4` view the panel's markup is
- * exactly what it was, which is how the switch-off look stays unchanged.
+ * proves the panel draws it, and that with no `o4` view the panel draws only
+ * the current look's glyph and text. It does not compare against the base
+ * branch's markup; tests/share-progress-design-switch.test.ts proves the
+ * switch is what withholds the `o4` view.
  */
 
 const TEXT = "Preparing the chapter to share";
@@ -27,7 +29,7 @@ function current() {
 }
 
 describe("ShareProgressPanel with the switch off", () => {
-  it("renders the same markup it always did, with no O4 node", () => {
+  it("renders only the current look's glyph and text, with no O4 node", () => {
     const container = current();
     const panel = one(container, ".share-progress");
     expect([...panel.children].map((c) => c.getAttribute("class"))).toEqual([

@@ -130,6 +130,16 @@ describe("O4 share circle stylesheet (#947)", () => {
     expect(valueFor(`${O4} .share-o4-frame`, "box-shadow")).toBeUndefined();
   });
 
+  it("keeps the workbench geometry: 140 core in a 176 frame, ring starting at twelve o'clock", () => {
+    for (const prop of ["width", "height"]) {
+      expect(valueFor(`${O4} .share-o4-frame`, prop), prop).toBe("176px");
+      expect(valueFor(`${O4} .share-o4-core`, prop), prop).toBe("140px");
+    }
+    expect(valueFor(`${O4} .share-o4-ring`, "transform")).toBe(
+      "rotate(-90deg)"
+    );
+  });
+
   it("the progress ring fills in the send-ring colour over a well track", () => {
     expect(valueFor(`${O4} .share-o4-track`, "stroke")).toBe("var(--s-well)");
     expect(valueFor(`${O4} .share-o4-fill`, "stroke")).toBe(

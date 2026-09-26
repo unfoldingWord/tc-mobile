@@ -21,8 +21,11 @@ import { ENCODE_STEPS } from "@/lib/export/chapter";
  */
 
 /**
- * One item's state. `hollow` is a finished item that carried no audio (a
- * clip that vanished, a chapter with nothing recorded).
+ * One item's state. `hollow` is a finished item that carried no audio: in a
+ * book, a chapter with nothing recorded; in a chapter, a segment whose clip
+ * vanished between the gather's two passes. A chapter's segment with no audio
+ * at all when the gather begins is never counted (`gatherChapterPcm` leaves
+ * it out of `total`), so it draws no dot.
  */
 type ShareDot = "filled" | "hollow" | "empty";
 
@@ -62,15 +65,17 @@ export function shareO4View(
 
 /**
  * The dot row for a count. A book counts chapters, one step each
- * (`lib/export/book.ts`). A chapter counts its segments and then a fixed
- * stretch of `ENCODE_STEPS` for the MP3 encode (`withEncodeSteps`), so its
- * items are `total - ENCODE_STEPS`, and once every segment is gathered every
- * dot is finished while the ring still fills through the encode.
+ * (`lib/export/book.ts`). A chapter counts the segments that had audio when
+ * the gather began, then a fixed stretch of `ENCODE_STEPS` for the MP3
+ * encode (`withEncodeSteps`), so its items are `total - ENCODE_STEPS`, and
+ * once every counted segment is gathered every dot is finished while the ring
+ * still fills through the encode.
  *
  * `ShareSteps` carries how MANY finished items were skipped, not WHICH ones,
  * so the hollow dots are drawn after the filled ones rather than at the
  * skipped items' own positions. That ordering is this module's choice, not a
- * DRI decision; the PR names it as open.
+ * DRI decision, and it is wrong whenever an early item is the skipped one;
+ * #1026 tracks the DRI's pick and the per-item data a fix needs.
  */
 function shareDots(steps: Steps, scope: "chapter" | "book"): ShareDot[] {
   const items = scope === "chapter" ? steps.total - ENCODE_STEPS : steps.total;

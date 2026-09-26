@@ -11,10 +11,15 @@
  * #977'S BUSY-GLYPH RULE, first in the layer below, is kept but no longer
  * paints anything: it colours share-progress-glyph, which the O4 panel no
  * longer renders. tests/share-o4-glyph-colour.test.ts pins that rule by its
- * selector and value, and this lane leaves existing tests unedited, so its
- * removal (and that test's) is a follow-up named in the PR, not done here.
- * #977's own header, which said the ring and chips were deferred to #981,
- * is replaced by this one: they are built below.
+ * selector and value, and this lane leaves existing tests unedited, so
+ * removing the rule and that test is #1025. #977's own header, which said
+ * the ring and chips were deferred to #981, is replaced by this one: the
+ * ring and a per-item row are built below.
+ *
+ * THE PER-ITEM ROW IS OPEN (#1026): the workbench draws numbered chips above
+ * the circle, this file draws dots below it, and the skipped (hollow) dots
+ * are not at their items' own places. The DRI's pick and the data it needs
+ * are tracked there.
  *
  * Values are the workbench's (states 15 and G7): core 140, frame 176, ring
  * radius 84 with a 7px stroke on a well track, turned to start at twelve
