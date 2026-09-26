@@ -7,6 +7,7 @@ import { failureKey, type FailureKey } from "./save-failure";
 import { computePeaks } from "@/lib/audio/peaks";
 import {
   addSegment as addSegmentToChapter,
+  deleteSegment as deleteSegmentInStore,
   getBook,
   getChapter,
   assertReorderTarget,
@@ -152,6 +153,23 @@ export function patchMovedSegment(
   const moved = moveToIndex(rows, from, toIndex);
   if (moved.every((row, i) => row === rows[i])) return rows as SegmentRow[];
   return moved.map((row, i) =>
+    row.ordinal === i + 1 ? row : { ...row, ordinal: i + 1 }
+  );
+}
+
+/**
+ * `rows` with `segmentId`'s row removed and the rest renumbered densely
+ * (#590) — the optimistic half of `deleteSegment` below, the delete twin of
+ * `patchMovedSegment` above. Returns `rows` itself when the row is not
+ * present (a stale call — nothing to remove or renumber).
+ */
+export function patchDeletedSegment(
+  rows: readonly SegmentRow[],
+  segmentId: SegmentId
+): SegmentRow[] {
+  const next = rows.filter((r) => r.segmentId !== segmentId);
+  if (next.length === rows.length) return rows as SegmentRow[];
+  return next.map((row, i) =>
     row.ordinal === i + 1 ? row : { ...row, ordinal: i + 1 }
   );
 }
@@ -303,14 +321,41 @@ export function useChapterSegments(chapterId: ChapterId) {
   // it wrongly (Frank round 1 on #953: [A,B,C], A->1 then B->2 is [A,C,B],
   // replayed over itself it is [C,A,B]). A load cannot tell whether its read
   // came before, between or after the moves. Instead `landedOrder` keeps the
-  // order the store returned for the last move to land and the generation
-  // current then: a load of that generation or older (it may have read any
-  // state up to that one) takes that order over its own read, and a load
-  // that started later retires it — the same rule `rowOverrides` follows.
+  // order the store returned for the last move OR DELETE to land (#590 reuses
+  // it rather than inventing a second copy) and the generation current then:
+  // a load of that generation or older (it may have read any state up to
+  // that one) takes that order over its own read, and a load that started
+  // later retires it — the same rule `rowOverrides` follows.
   // `applySegmentOrder` keeps a row the landed order does not name, so a row
-  // added in the meantime is not lost from the list.
+  // added in the meantime is not lost from the list — which is also why a
+  // landed DELETE needs `landedDeletes` below as well: the deleted id must be
+  // dropped, not kept, and `applySegmentOrder` alone only ever keeps.
   const pendingMoves = useRef<PendingMove[]>([]);
   const landedOrder = useRef<LandedOrder | null>(null);
+  // Segment ids this hook has optimistically removed (#590) whose store write
+  // is still IN FLIGHT. Unlike a reorder, a deleted row cannot be "replayed"
+  // over a racing load's read — there is nothing left to reposition — so a
+  // load that started before the write lands, or one already in flight, drops
+  // any id still in this set from its own read instead. Cleared on both
+  // outcomes: a failed delete never happened, and a landed one moves to
+  // `landedDeletes` below rather than simply vanishing from tracking, because
+  // clearing it here alone leaves exactly the gap `rowOverrides`'/
+  // `landedOrder`'s generation stamps exist to close: a load that read the
+  // PRE-delete state, holding open past the moment this set already emptied
+  // (the write landed before that load resolved), would otherwise merge the
+  // deleted row straight back in with nothing left to say it shouldn't.
+  const pendingDeletes = useRef(new Set<SegmentId>());
+  // A delete that HAS landed, and the load generation current when it did —
+  // `rowOverrides`' per-field stamp, generalised to "this id no longer
+  // exists" rather than "this field now reads differently". A load of that
+  // generation or older may have read any state up to and including the
+  // pre-delete one, so it still excludes the id; a load that started later
+  // reads the store directly and never meets the id at all, so the entry
+  // retires the same way `rowOverrides`' fields do — by generation order, not
+  // by re-checking equality (there is nothing to re-check: once deleted, an
+  // id never comes back). `chapterId` changing clears it, same as the two
+  // maps above.
+  const landedDeletes = useRef(new Map<SegmentId, number>());
   // Counts moves that landed. A failed move's restore read compares it across
   // its await: if a move landed meanwhile, that move's returned order is newer
   // than (or torn against — the read is not one transaction) the restore's.
@@ -327,6 +372,8 @@ export function useChapterSegments(chapterId: ChapterId) {
       rowOverrides.current.clear();
       pendingMoves.current = [];
       landedOrder.current = null;
+      pendingDeletes.current.clear();
+      landedDeletes.current.clear();
     }
     void (async () => {
       try {
@@ -345,12 +392,32 @@ export function useChapterSegments(chapterId: ChapterId) {
         if (landedOrder.current && gen > landedOrder.current.asOfGen) {
           landedOrder.current = null;
         }
-        let merged = view.rows.map((r) => {
-          const fields = rowOverrides.current.get(r.segmentId) ?? [];
-          const out = { ...r };
-          for (const [key, s] of fields) Object.assign(out, { [key]: s.value });
-          return out;
-        });
+        // Retire every landed delete this load started after, the same rule
+        // the loop above applies to `rowOverrides` (#590). A load of an OLDER
+        // generation may have read the pre-delete state and still needs the
+        // exclusion below; one that started later reads the store directly
+        // and the id is simply absent from `view.rows` on its own.
+        for (const [id, asOfGen] of landedDeletes.current) {
+          if (gen > asOfGen) landedDeletes.current.delete(id);
+        }
+        // A row this hook is deleting — still in flight, or landed but not
+        // yet safe to forget (see `pendingDeletes`/`landedDeletes` above) — is
+        // dropped from every load's read, not merged: there is no field to
+        // overlay onto a row that is not coming back, and a load that read
+        // stale (pre-delete) state has no way to know that on its own.
+        let merged = view.rows
+          .filter(
+            (r) =>
+              !pendingDeletes.current.has(r.segmentId) &&
+              !landedDeletes.current.has(r.segmentId)
+          )
+          .map((r) => {
+            const fields = rowOverrides.current.get(r.segmentId) ?? [];
+            const out = { ...r };
+            for (const [key, s] of fields)
+              Object.assign(out, { [key]: s.value });
+            return out;
+          });
         if (landedOrder.current) {
           merged = applySegmentOrder(merged, landedOrder.current.order);
         }
@@ -625,6 +692,76 @@ export function useChapterSegments(chapterId: ChapterId) {
     [chapterId, reload]
   );
 
+  /**
+   * Delete a segment — the row itself, not only its audio (#590, PR1: the
+   * storage and hook layer; the menu entry is a later PR).
+   *
+   * Optimistic, like every mutation here: the row is removed and the
+   * remaining rows renumbered in THIS turn (`patchDeletedSegment`), and
+   * `segmentId` is recorded in `pendingDeletes` so a load already in flight —
+   * or one that starts before the write lands — drops the row from its own
+   * read rather than repainting it back (see `pendingDeletes`'s docblock).
+   * The id leaves the set the moment the write settles, success or failure.
+   *
+   * On success the rows are reconciled against the store's own renumbered
+   * order with `applySegmentOrder` — the same reconciliation `moveSegment`
+   * makes, which carries every field of a row it is given and only realigns
+   * order and ordinal, so a local edit made to a SURVIVING row (a rename, a
+   * finished toggle) since the optimistic patch is not lost.
+   *
+   * On failure the write rolled back whole, so the segment — and its audio —
+   * is still there. Restoring the exact row would need its audio-derived
+   * fields (`hasClip`, `peaks`, `durationMs`), which a bare `Segment` read
+   * cannot supply, and a cached copy of the row this hook already had could
+   * itself be stale. Rather than either, the restore is a `reload()`: correct
+   * over cheap, for a path a two-tap confirm makes rare (unlike a reorder
+   * drag, which `moveSegment` above optimizes for exactly because it isn't).
+   * A vanished CHAPTER (the parent gone under this screen, #378) is the
+   * stale-target case, exactly like every other mutation here; anything else
+   * goes to the funnel as `"segment-delete"` and nowhere else (#172) — the
+   * row reappearing after the reload is the signal.
+   *
+   * Resolves `true` when the delete landed (an already-gone segment included
+   * — the store's own idempotency, `lib/storage/books.ts`'s `deleteSegment`),
+   * `false` otherwise.
+   */
+  const deleteSegment = useCallback(
+    async (segmentId: SegmentId): Promise<boolean> => {
+      pendingDeletes.current.add(segmentId);
+      setRows((rs) => patchDeletedSegment(rs, segmentId));
+      try {
+        const order = await deleteSegmentInStore(segmentId);
+        pendingDeletes.current.delete(segmentId);
+        // Both recorded AFTER the await, the same reason `renameSegment`/
+        // `moveSegment` stamp there: a load that began DURING the write may
+        // still read the pre-delete state, so it must keep excluding this id
+        // (`landedDeletes`) even though the in-flight guard above has already
+        // let it go, AND still take the renumbered order over its own read
+        // (`landedOrder`, shared with `moveSegment` — a stale read's surviving
+        // rows carry their PRE-delete ordinals, and `applySegmentOrder` is
+        // what corrects those; the deleted id has already been dropped by the
+        // `landedDeletes` filter above by the time this runs, so there is no
+        // leftover for `applySegmentOrder` to wrongly keep).
+        landedDeletes.current.set(segmentId, loadGen.current);
+        landedOrder.current = { order, asOfGen: loadGen.current };
+        setRows((rs) => applySegmentOrder(rs, order));
+        setError(null);
+        return true;
+      } catch (cause) {
+        pendingDeletes.current.delete(segmentId);
+        if (isMissingChapterFailure(cause, chapterId)) {
+          setStaleTarget(true);
+          setError(null);
+          return false;
+        }
+        reportFailure(cause, "segment-delete");
+        reload();
+        return false;
+      }
+    },
+    [chapterId, reload]
+  );
+
   const eraseRow = useCallback((segmentId: SegmentId) => {
     // Erase makes ONE row never-recorded and touches no other clip, so patch it
     // in place — exactly like addSegment/setFinished — rather than reload() the
@@ -670,5 +807,6 @@ export function useChapterSegments(chapterId: ChapterId) {
     renameChapter,
     renameSegment,
     moveSegment,
+    deleteSegment,
   };
 }

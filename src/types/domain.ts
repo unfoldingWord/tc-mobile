@@ -125,9 +125,10 @@ export interface Segment {
   /**
    * 1-based ordinal. A denormalised mirror of this segment's position in
    * `Chapter.segmentIds` (D-IDX): the array is the truth for order; this is
-   * the display digit. Creation appends, and a reorder (`moveSegment`, #953)
-   * renumbers to position + 1, so the invariant holds; a future delete batch
-   * must renumber or drop this field.
+   * the display digit. Creation appends, a reorder (`moveSegment`, #953)
+   * renumbers to position + 1, and so does a delete (`deleteSegment`, #590) —
+   * both share the one renumber write, `lib/storage/books.ts`'s
+   * `renumberSegments`.
    */
   readonly index: number;
   /** A1: null is the normal case. B7 (#33) is the writer. */
