@@ -25,7 +25,7 @@
     "test:dist:native": "npm run build:native && node scripts/test-dist-native.mjs",
     "test:watch": "vitest",
     "test:e2e": "npm run build && npm run build:e2e && playwright test",
-    "verify": "npm run format:check && npm run lint && npm run knip && npm run typecheck && npm run typecheck:lib && npm run test && npm run build && npm run test:dist",
+    "verify": "npm run check:prepush && npm run format:check && npm run lint && npm run knip && npm run typecheck && npm run typecheck:lib && npm run test && npm run build && npm run test:dist",
     "deploy": "npm run build && wrangler deploy",
     "deploy:staging": "npm run build && wrangler deploy --env staging",
     "prepare": "husky",
@@ -33,7 +33,8 @@
     "typecheck:lib": "tsc -p tsconfig.lib.json",
     "check:deploy": "node scripts/check-deploy.mjs",
     "check:deploy:prod": "node scripts/check-deploy.mjs --require-origin --origin=https://tc-mobile.unfoldingword.workers.dev",
-    "check:commit-msg": "node scripts/check-commit-messages.mjs"
+    "check:commit-msg": "node scripts/check-commit-messages.mjs",
+    "check:prepush": "node scripts/prepush-check.mjs"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs}": [
