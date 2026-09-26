@@ -62,7 +62,55 @@ obligations are actually met, so they are listed here rather than assumed.
    that the project is MIT with an LGPL-3.0 encoder, rather than leaving a
    reader to discover it from a lockfile.
 
-Items 3 and 5 are not done yet — tracked in #36.
+Items 3 and 5 are done (#36): the MIT / LGPL-3.0 / GPL-3.0 licence texts and the
+attribution of every bundled web-bundle component ship under `public/licenses/`
+(precached for offline) and are reachable in-app at **Menu → About & licenses**
+(`src/components/about-panel.tsx`, data in `src/components/licenses.ts`).
+`package.json` declares `"license": "MIT"` and `README.md` states the
+MIT-with-an-LGPL-3.0-encoder position in prose. The in-app surface has not yet
+been eyeballed on a device.
+
+**LGPL §4(d) — decided 2026-09-03 by the DRI; app source link confirmed
+2026-09-24 (#144); library source kept in this repository by the DRI's
+2026-09-26 ruling (#144, Frank round 6).** The boundary (items 1–2) is clean.
+tC Mobile relies on **§4(d)(0)**, and the source is offered from
+`unfoldingWord/tc-mobile`, public since **2026-09-13** (org-transfer plan D2).
+This replaces the pre-publication interim of "source on request".
+
+What the mechanism consists of, and what checks it — no more than this:
+
+- **The app's own source.** The About screen links
+  `github.com/unfoldingWord/tc-mobile/tree/<commit>`, where `<commit>` is the
+  build's full 40-character commit id (the `__BUILD_SHA_FULL__` build define,
+  `SourceOfferLink` in `src/components/about-panel.tsx`), not the 7-character
+  footer stamp.
+- **The library's source.** The source of `@breezystack/lamejs` 1.2.7 is kept
+  in this repository under `third_party/lamejs-1.2.7/`, copied without change
+  from the upstream commit npm records as that release's `gitHead`
+  (`1fb0ef5fa177413107e2e107d054a9b994e3f79c`). The folder's `PROVENANCE.md`
+  names the upstream repository, the commit, the date fetched and the files
+  left out. The About screen's lamejs row links that folder at the same full
+  commit id as the app link, so the link reaches the copy kept beside the code
+  of the build on the phone, not an upstream repository that can change.
+- **Checks.** `tests/vendored-lamejs.test.ts` fails if the folder's version
+  stops matching the lamejs version in `package-lock.json`, if its `LICENSE`
+  or type declarations stop matching the installed package, or if
+  `PROVENANCE.md` stops naming that full commit id.
+  `tests/dist-source-offer.test.ts` fails if the built bundle does not carry
+  both links with the full commit id from `dist/version.json`.
+
+What this does not establish: that these links satisfy §4(d)(0) or GPL §6.
+Constraints on the **shipped copy** (the in-app note and the README, not this
+ADR): they may name the public repository and link it, and carry no
+exercisable-relink how-to. This mechanism was selected by the DRI, not
+confirmed by qualified counsel (Frank rounds 2–3 and 6 on #144 asked; recorded
+as fact, not as a compliance opinion).
+
+The in-app notice describes the **web bundle** — which includes the
+`@capacitor/*` JavaScript packages `src/` imports (core, app, filesystem, share
+and what they pull), so those are disclosed there. The Capacitor native shell's own
+open-source attribution (#262) — the Gradle / CocoaPods / native-Capacitor tree
+— is separate, larger work, tracked in #477.
 
 ### What this closes
 
