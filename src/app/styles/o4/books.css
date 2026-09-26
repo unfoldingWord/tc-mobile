@@ -268,4 +268,62 @@
     font-weight: var(--p-weight-bold);
     color: var(--s-ink);
   }
+
+  /* --- the storage warning (17, #983) ------------------------------------ */
+  /* The workbench's warnb, ph-ic, wt and voicefill share button, value for
+     value: the warn wash with a 55% warn edge, a 72px icon ground at 28%
+     warn, the 19px bold line, and an 84px r14 button on the voice fill.
+     The workbench draws one line; the #247 reason under it is ours, since
+     its speaker button, which speaks that reason, is not built (#952). */
+  [data-design="o4"] .o4-storage {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border-radius: var(--p-radius-16);
+    background: var(--s-warn-quiet);
+    border: 1.5px solid color-mix(in srgb, var(--s-warn) 55%, transparent);
+  }
+  [data-design="o4"] .o4-storage-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  [data-design="o4"] .o4-storage-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 72px;
+    height: 72px;
+    border-radius: var(--p-radius-12);
+    background: color-mix(in srgb, var(--s-warn) 28%, transparent);
+    color: var(--s-warn-text);
+  }
+  [data-design="o4"] .o4-storage-words {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  [data-design="o4"] .o4-storage-title {
+    font-size: var(--p-text-19);
+    font-weight: var(--p-weight-bold);
+    line-height: 1.25;
+    color: var(--s-warn-text);
+  }
+  [data-design="o4"] .o4-storage-why {
+    font-size: var(--p-text-15);
+    line-height: 1.3;
+    color: var(--s-warn-text);
+  }
+  [data-design="o4"] .o4-storage-share {
+    flex-shrink: 0;
+    width: 84px;
+    height: 84px;
+    border-radius: var(--p-radius-lg);
+    background: var(--s-voice);
+    color: var(--s-voice-ink);
+  }
 }

@@ -937,6 +937,38 @@ export const strings = {
     "This phone is running low on space. Mark the segments you're done with as finished — they take much less room.",
   storageCritical:
     "This phone is almost out of space, and new recordings may not save. Mark finished segments, or share your work and then remove it.",
+  // The O4 storage banner's own line (state 17, #983), word for word from
+  // the workbench. It leads; the band's line above follows it, because the
+  // workbench speaks that reason through a speaker button this app does not
+  // have yet (#952).
+  storageShareSoon: "Share your work soon",
+
+  // ── Share your work (#987, the O4 storage banner's button, #948 D14) ──────
+  // Every book on the phone as one zip, one folder per book. The labels
+  // follow Share Book's; the gap lines speak in the library's own units
+  // (`LibraryShareGap`): whole books left out, and chapters inside included
+  // books that did not ship whole.
+  shareAll: "Share your work",
+  shareAllUnconfirmed:
+    "Share your work. The last attempt wasn't confirmed — tap to try again.",
+  shareAllPreparing: "Preparing your work to share.",
+  shareAllNothing: "Record a segment before sharing your work.",
+  shareAllFailed: "Could not share your work. Try again.",
+  // `roomForExport` said the phone has too little free space to build the
+  // archive, checked before any encode. The way out is the one the storage
+  // lines above already name: finished segments take much less room.
+  shareAllStorage:
+    "This phone does not have room to prepare your work. Mark finished segments, then try again.",
+  shareAllMissing: (n: number): string =>
+    couldNotBeIncluded(plural(n, { one: "{n} book", other: "{n} books" })),
+  shareAllIncomplete: (n: number): string =>
+    plural(n, {
+      one: "{n} chapter could not be included in full.",
+      other: "{n} chapters could not be included in full.",
+    }),
+  shareAllFilename: "My work.zip",
+  // Each book's folder inside the zip, sanitised like shareBookFilename.
+  shareAllFolder: (book: string): string => filenameSafe(book),
 
   // ── The database is unreachable (#221) ───────────────────────────────────
   // Two full-screen states, one in each copy of the app, when a newer copy
