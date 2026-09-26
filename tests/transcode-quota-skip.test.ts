@@ -365,7 +365,13 @@ describe("storage freeing up retries it", () => {
     expect(encodeMp3).toHaveBeenCalledTimes(1);
   });
 
-  it("never retries on storage when the failure-time reading was unknown", async () => {
+  it("retries once on a later known reading when the failure-time reading was unknown", async () => {
+    // DRI ruling, 2026-09-26 ("One retry on a real reading"): an unknown
+    // failure-time reading is no evidence AGAINST room either, so it does not
+    // hold the segment out forever — it gets one retry against the first
+    // known reading. The retry here fails again with a known re-read (900 000
+    // free), so the entry now carries a real `freeAtFailure` and later sweeps
+    // are held to the ordinary "strictly more free space" rule.
     owe("s1");
     s1HitsQuota();
     freeSpace(null);
@@ -373,8 +379,11 @@ describe("storage freeing up retries it", () => {
 
     freeSpace(900_000);
     await requestTranscodeSweep();
+    expect(encodeMp3).toHaveBeenCalledTimes(2);
 
-    expect(encodeMp3).toHaveBeenCalledTimes(1);
+    // Same reading again: the retry's own 900 000 is now the baseline.
+    await requestTranscodeSweep();
+    expect(encodeMp3).toHaveBeenCalledTimes(2);
   });
 
   it("never retries on storage when the later reading is unknown", async () => {
@@ -604,10 +613,13 @@ describe("shouldRetryAfterFailure", () => {
     expect(shouldRetryAfterFailure(999, 1_000)).toBe(false);
   });
 
-  it("is false when either reading is unknown", () => {
+  it("is false when the current reading is unknown, known or not at the failure", () => {
     expect(shouldRetryAfterFailure(undefined, 1_000)).toBe(false);
-    expect(shouldRetryAfterFailure(1_000, undefined)).toBe(false);
     expect(shouldRetryAfterFailure(undefined, undefined)).toBe(false);
+  });
+
+  it("allows one retry on a known reading when the failure-time reading was unknown (DRI ruling, 2026-09-26)", () => {
+    expect(shouldRetryAfterFailure(1_000, undefined)).toBe(true);
   });
 
   it("compares negative headroom the same way", () => {

@@ -121,7 +121,8 @@ interface FailedTranscode {
  *
  * Held out of later sweeps until:
  *  - a later storage estimate shows more free space than the one read at its
- *    failure ({@link shouldRetryAfterFailure});
+ *    failure — or, when that failure-time reading was itself unknown, any
+ *    known later estimate, once ({@link shouldRetryAfterFailure});
  *  - the segment holds a different clip — re-recorded or edited, new audio;
  *  - the app restarts: this is module state, and a reload is a fresh module.
  *
@@ -144,26 +145,31 @@ interface FailedTranscode {
 const failedSegments = new Map<SegmentId, FailedTranscode>();
 
 /**
- * Whether storage has freed since a held-out segment failed: only a reading
- * that shows MORE free bytes than the failure-time reading counts. An unknown
- * reading on either side is no evidence of room, so it keeps the segment held
- * out; the clip-change and restart exits still apply. Pure, so the
- * guard is pinned by a test rather than by reading the loop.
+ * Whether storage has freed since a held-out segment failed.
  *
- * The two `!== undefined` clauses are for the type system, which will not
- * compare `number | undefined`; at runtime `x > undefined` and `undefined > x`
- * are already `false`, so no test can kill a mutation of either clause alone
- * (the same equivalent mutant `pressure.ts`'s `isByteCount` records).
+ * Ordinarily this is only true for a reading that shows MORE free bytes than
+ * the failure-time reading. But when the failure-time reading was itself
+ * unknown (no `estimate()`, a rejected call, a timed-out read), that reading
+ * is no evidence AGAINST room either — so it does not hold the segment out
+ * until a restart. It gets exactly one retry against any known reading now
+ * (DRI ruling, 2026-09-26: "One retry on a real reading"). That retry's own
+ * outcome sets a real `freeAtFailure` — the failure branch's re-read, or a
+ * fallback to the reading that let the retry run — so a second failure is
+ * held to the ordinary "strictly more free space" rule below, not another
+ * free pass.
+ *
+ * A CURRENT reading that is unknown is never evidence of room, on either
+ * side, so it always keeps the segment held out; the clip-change and restart
+ * exits still apply. Pure, so the guard is pinned by a test rather than by
+ * reading the loop.
  */
 export function shouldRetryAfterFailure(
   freeNow: number | undefined,
   freeAtFailure: number | undefined
 ): boolean {
-  return (
-    freeNow !== undefined &&
-    freeAtFailure !== undefined &&
-    freeNow > freeAtFailure
-  );
+  if (freeNow === undefined) return false;
+  if (freeAtFailure === undefined) return true;
+  return freeNow > freeAtFailure;
 }
 
 /**
