@@ -70,8 +70,8 @@ async function mountToggle() {
   return dom.window.document.querySelector("button")!;
 }
 
-describe("useDesign / installStoredDesign (#938)", () => {
-  it("defaults the attribute to current with nothing stored", async () => {
+describe("useDesign / installStoredDesign (#938, default flipped #951)", () => {
+  it("defaults the attribute to o4 with nothing stored (#951)", async () => {
     // It is the mount-time RECONCILE effect (`useDesign`'s own `useEffect`)
     // that writes the attribute, not merely `useSyncExternalStore` returning
     // a value — asserting against the DOM rather than the hook's return value
@@ -79,35 +79,37 @@ describe("useDesign / installStoredDesign (#938)", () => {
     await mountToggle();
     expect(
       dom.window.document.documentElement.getAttribute("data-design")
-    ).toBe("current");
+    ).toBe("o4");
   });
 
   it("toggles the attribute on click, and involutes back on a second click", async () => {
+    // Fresh mount now starts on o4 (#951), so the first click goes to
+    // current and the second click returns to o4.
     const button = await mountToggle();
     button.click();
     expect(
       dom.window.document.documentElement.getAttribute("data-design")
-    ).toBe("o4");
+    ).toBe("current");
     button.click();
     expect(
       dom.window.document.documentElement.getAttribute("data-design")
-    ).toBe("current");
+    ).toBe("o4");
   });
 
   it("persists the choice to localStorage under the namespaced key", async () => {
     const button = await mountToggle();
     button.click();
-    expect(dom.window.localStorage.getItem(DESIGN_STORAGE_KEY)).toBe("o4");
-    button.click();
     expect(dom.window.localStorage.getItem(DESIGN_STORAGE_KEY)).toBe("current");
+    button.click();
+    expect(dom.window.localStorage.getItem(DESIGN_STORAGE_KEY)).toBe("o4");
   });
 
-  it("falls back to current when the stored value is not one this app wrote", async () => {
+  it("falls back to o4 when the stored value is not one this app wrote (#951)", async () => {
     dom.window.localStorage.setItem(DESIGN_STORAGE_KEY, "sepia");
     await mountToggle();
     expect(
       dom.window.document.documentElement.getAttribute("data-design")
-    ).toBe("current");
+    ).toBe("o4");
   });
 
   it("picks up a validly stored o4 choice on a fresh mount, with no toggle needed", async () => {
@@ -118,15 +120,34 @@ describe("useDesign / installStoredDesign (#938)", () => {
     ).toBe("o4");
   });
 
-  it("installStoredDesign applies the stored design before any component mounts", async () => {
+  it("honours a saved old-look (current) choice over the new o4 default (#951)", async () => {
+    // The user-visible change #951 makes: an existing user with NOTHING
+    // stored now gets o4. Someone who already chose the old look explicitly
+    // — the exact value `nextDesign`/the menu control writes — keeps it.
+    dom.window.localStorage.setItem(DESIGN_STORAGE_KEY, "current");
+    await mountToggle();
+    expect(
+      dom.window.document.documentElement.getAttribute("data-design")
+    ).toBe("current");
+  });
+
+  it("installStoredDesign applies o4 before any component mounts with nothing stored (#951)", async () => {
     // What `main.tsx` actually calls, synchronously, before `createRoot` — the
     // no-flash contract `installStoredTheme`'s docblock states for the theme
     // half. No React tree is mounted here at all.
-    dom.window.localStorage.setItem(DESIGN_STORAGE_KEY, "o4");
     const { installStoredDesign } = await import("@/hooks/use-design");
     installStoredDesign();
     expect(
       dom.window.document.documentElement.getAttribute("data-design")
     ).toBe("o4");
+  });
+
+  it("installStoredDesign applies a saved current choice before any component mounts", async () => {
+    dom.window.localStorage.setItem(DESIGN_STORAGE_KEY, "current");
+    const { installStoredDesign } = await import("@/hooks/use-design");
+    installStoredDesign();
+    expect(
+      dom.window.document.documentElement.getAttribute("data-design")
+    ).toBe("current");
   });
 });

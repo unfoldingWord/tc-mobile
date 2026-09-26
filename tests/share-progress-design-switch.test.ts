@@ -80,6 +80,9 @@ async function mount(progress: ShareProgressState, items = ALL_GO) {
 
 describe("ShareProgress follows the O4 switch (#947)", () => {
   it("with the switch off, draws the current look's glyph and no O4 node", async () => {
+    // #951 flipped the default to o4, so "off" now has to be written
+    // explicitly — nothing-stored no longer means the current look.
+    dom.window.localStorage.setItem(DESIGN_STORAGE_KEY, "current");
     const panel = await mount(BUSY);
     expect(panel.querySelector(".share-progress-glyph")).not.toBeNull();
     expect(panel.querySelector("[class*='share-o4']")).toBeNull();

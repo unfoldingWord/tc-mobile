@@ -23,21 +23,31 @@ describe("readStoredDesign (#938)", () => {
     expect(readStoredDesign("o4")).toBe("o4");
   });
 
-  it("defaults to current when nothing has been chosen", () => {
-    // The app ships the current look; O4 is opt-in until #951 turns it on by
-    // default for the v1.0.0 release.
-    expect(readStoredDesign(null)).toBe("current");
+  it("defaults to o4 when nothing has been chosen (#951)", () => {
+    // #951 turns O4 on by default for the v1.0.0 release. A user's saved
+    // choice still wins — see the two cases below — but a fresh install, or
+    // any device that never wrote this key, now gets the new look.
+    expect(readStoredDesign(null)).toBe("o4");
   });
 
-  it("defaults to current on a bad stored value, rather than trusting the string", () => {
+  it("honours an explicitly saved old-look choice over the new default (#951)", () => {
+    expect(readStoredDesign("current")).toBe("current");
+  });
+
+  it("honours an explicitly saved o4 choice (#951)", () => {
+    expect(readStoredDesign("o4")).toBe("o4");
+  });
+
+  it("defaults to o4 on a bad stored value, rather than trusting the string", () => {
     // `localStorage` is shared per-origin and can carry a value this app
     // never wrote (a stale key from a future design id, a corrupted write, a
     // dev-tools edit). `data-design` is a plain attribute selector, and only
-    // "o4" selects anything different from today, so the safe fallback for
-    // anything unrecognised is the look already shipping — never falling
-    // through to an unstyled screen the way a stray theme value would.
+    // "o4"/"current" select anything, so the safe fallback for anything
+    // unrecognised is the look the app now ships by default (#951) — never
+    // falling through to an unstyled screen the way a stray theme value
+    // would.
     for (const raw of ["", " ", "O4", "Current", "sepia", "null", "{}", "0"])
-      expect(readStoredDesign(raw), `readStoredDesign(${raw})`).toBe("current");
+      expect(readStoredDesign(raw), `readStoredDesign(${raw})`).toBe("o4");
   });
 
   it("takes a stored string and nothing else", () => {
