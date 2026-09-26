@@ -1652,8 +1652,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         return;
       }
       if (!hasAudio) return;
+      // No new start while the delete is in flight: `closing` only latches
+      // after a successful erase, and the failure branch closes the confirm
+      // without a stop, so a start here would sound behind the closed dialog.
+      if (erase.isErasing()) return;
       soundRange(0, editor.workingLength);
-    }, [audio, hasAudio, editor.workingLength, soundRange, stopPlayback]);
+    }, [
+      audio,
+      hasAudio,
+      erase,
+      editor.workingLength,
+      soundRange,
+      stopPlayback,
+    ]);
 
     // Enter edit mode from the record menu. Play is a record-only control, so any
     // live buffer playback is stopped first — else it would orphan itself with no

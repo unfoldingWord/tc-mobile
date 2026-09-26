@@ -251,6 +251,26 @@ describe("playback stops when the confirm closes, either button or Back (#979 re
     expect(audio.stopBuffer).toHaveBeenCalled();
   });
 
+  it("Play cannot start while the erase is in flight, so a failed erase leaves nothing sounding", async () => {
+    // Frank round 1 on #1074: `closing` latches only after a successful
+    // erase, and the failure branch closes the confirm without a stop.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    let reject!: (cause: unknown) => void;
+    storage.clear.mockReturnValue(
+      new Promise((_, rej) => {
+        reject = rej;
+      })
+    );
+    const { audio } = await setup("o4");
+    await act(async () => barRerecord().click());
+    await act(async () => button(strings.eraseConfirm).click());
+    await act(async () => button(strings.eraseConfirmPreviewPlay).click());
+    expect(audio.playBuffer).not.toHaveBeenCalled();
+    await act(async () => reject(new Error("store failed")));
+    expect(document.querySelector(".confirm-panel")).toBeNull();
+    expect(audio.playBuffer).not.toHaveBeenCalled();
+  });
+
   it("a system Back stops it", async () => {
     const { ref, audio } = await setup("o4", true);
     await act(async () => barRerecord().click());
