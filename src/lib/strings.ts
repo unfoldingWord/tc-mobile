@@ -268,7 +268,10 @@ export const strings = {
   tileFinished: "Done",
   tileRename: "Rename",
   tileErase: "Erase",
-  // The book menu's Delete tile (04); its name is `deleteBook`.
+  // The book menu's Delete tile (04); its name is `deleteBook`. Shared with
+  // the recorder menu's Delete segment tile (#590) — its name is
+  // `deleteSegment` — the same caption, on two different destructive tiles
+  // in two different menus, rather than a second key holding the same word.
   tileDelete: "Delete",
   tileShare: "Share",
   tileLight: "Light",
@@ -655,7 +658,8 @@ export const strings = {
   // strings' own pattern instead — the exact wording is a residual for the DRI
   // to confirm, not a workbench transcription.
   deleteSegment: "Delete segment",
-  tileDelete: "Delete",
+  // Caption is the shared `tileDelete` above, not a second key — same word,
+  // same tone (destructive), just a different tile.
   deleteSegmentConfirmTitle: (ordinal: number): string =>
     `Delete segment ${ordinal}?`,
   deleteSegmentConfirm: "Delete",
