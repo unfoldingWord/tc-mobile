@@ -84,7 +84,7 @@ function uniqueEntryName(taken: Set<string>, name: string): string {
 /**
  * Encode each of a book's chapters, in `book.chapterIds` order, to an MP3 and
  * archive them into one zip. Returns `null` when no chapter had resolvable audio
- * (nothing to share) or when the run was cancelled during the gather.
+ * (nothing to share) or when the run was cancelled part-way.
  *
  * `nameChapter` supplies each zip entry's filename from the chapter's number:
  * naming is translator-facing copy, so it is injected by the hook (from
@@ -98,12 +98,25 @@ function uniqueEntryName(taken: Set<string>, name: string): string {
  * The archive stores rather than deflates: an MP3 is already compressed, so
  * deflating it spends a second pass for ~no size gain — and storing is what
  * lets fflate pass each MP3 buffer through as-is (see header).
+ *
+ * `onStep` reports the book's truthful progress at the CHAPTER grain (#986):
+ * `(0, total)` before the first chapter, `total` being the chapters the walk
+ * found (a dangling id never enters it), then `(done, total)` after each
+ * chapter is resolved — its MP3 in the archive, or skipped for having no
+ * audio and counted missing. `shouldContinue` is re-checked after each
+ * chapter's export, before its step, so a cancel that lands while a chapter
+ * is encoding returns `null` without reporting that chapter; a throw unwinds
+ * before its step. Either way the count stops where it was. The native
+ * staging a Share caller does after this returns adds no step. It is not
+ * forwarded into `exportChapterMp3`: the book counts
+ * chapters, not the segments inside them.
  */
 export async function exportBookZip(
   bookId: BookId,
   nameChapter: (chapterNumber: number) => string,
   codec: AudioCodec,
-  shouldContinue?: () => boolean
+  shouldContinue?: () => boolean,
+  onStep?: (done: number, total: number) => void
 ): Promise<BookExport | null> {
   // `missing` starts at the count of `chapterIds` whose chapter record is gone —
   // those never reach the loop below, so they must be seeded here or a book with
@@ -135,6 +148,8 @@ export async function exportBookZip(
 
   const taken = new Set<string>();
   let written = 0;
+  let done = 0;
+  if (chapters.length > 0) onStep?.(done, chapters.length);
   for (const chapter of chapters) {
     if (shouldContinue && !shouldContinue()) return null;
     const result = await exportChapterMp3(chapter.id, codec, shouldContinue);
@@ -145,8 +160,12 @@ export async function exportBookZip(
       // means stop the whole book.
       if (shouldContinue && !shouldContinue()) return null;
       missing++;
+      onStep?.(++done, chapters.length);
       continue;
     }
+    // A cancel that landed during this chapter's encode must not report its
+    // step (#986); the zip is dropped with the rest of the run.
+    if (shouldContinue && !shouldContinue()) return null;
     const name = uniqueEntryName(taken, nameChapter(chapter.number));
     taken.add(name);
     // Stored entry: fflate computes the CRC over the MP3 and emits the buffer
@@ -159,6 +178,7 @@ export async function exportBookZip(
     partialSegments += result.missing;
     if (result.missing > 0) partialChapters++;
     written++;
+    onStep?.(++done, chapters.length);
   }
   if (written === 0) return null;
 

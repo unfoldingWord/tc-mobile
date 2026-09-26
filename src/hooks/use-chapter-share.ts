@@ -56,9 +56,15 @@ export function useChapterShare(): UseChapterShare {
 
   const prepare = useCallback(
     (chapterId: ChapterId, filename: string): Promise<ShareOutcome | null> =>
-      run((isCurrent, signal) =>
+      run((isCurrent, signal, onStep) =>
         withEncoder(signal, async (codec) => {
-          const result = await exportChapterMp3(chapterId, codec, isCurrent);
+          // `onStep`: segments gathered of the chapter's total (#986).
+          const result = await exportChapterMp3(
+            chapterId,
+            codec,
+            isCurrent,
+            onStep
+          );
           // exportChapterMp3 returns null both for an empty chapter and for a run
           // cancelled during the gather (its shouldEncode check). `isCurrent`
           // distinguishes them: still live means genuinely nothing to share.
