@@ -298,6 +298,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     } | null>(null);
     // The Erase Segment confirmation (D-CONFIRM), opened from the menu.
     const [confirmOpen, setConfirmOpen] = useState(false);
+    // Which question that one dialog is asking (#862). The clipboard's discard
+    // confirm is the same dialog in the same overlay slot, so Back, `inert`
+    // and the focus restore all treat it exactly as they treat the erase
+    // confirm. Every door sets it as it opens the dialog, so a Back-dismissed
+    // discard can never leave the next Erase asking the wrong question.
+    const [confirmFor, setConfirmFor] = useState<"erase" | "clip">("erase");
     // Which opener raised it: the bar's bin ("rerecord") or the ≡ Erase row
     // ("erase"). `onRerecord` sets the first and `openMenu` the second (the
     // menu is the only road to its Erase row), so it is never left over. Only
@@ -1974,8 +1980,29 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       focusRestore.capture();
       stopPlayback();
       setConfirmFrom("rerecord");
+      setConfirmFor("erase");
       setConfirmOpen(true);
     }, [focusRestore, stopPlayback]);
+
+    // The clipboard's bin (#862): throw away a cut without pasting it — a
+    // stretch of noise the translator never wants back. The cut is already
+    // out of the take, so this changes nothing in `working`; it only empties
+    // the chapter-wide clipboard, behind the same confirm as the whole-take
+    // erase (#592/#730), because after it the phrase exists nowhere. Focus is
+    // captured in the gesture, for the reason `openMenu` gives.
+    const onDiscardClip = useCallback(() => {
+      focusRestore.capture();
+      stopPlayback();
+      setConfirmFor("clip");
+      setConfirmOpen(true);
+    }, [focusRestore, stopPlayback]);
+    const onConfirmDiscardClip = useCallback(() => {
+      onClipboardChange(null);
+      // The clipboard is empty, so a new selection is available again (the
+      // rule set on #489 and #835): lift the #613 collapse, as a paste does.
+      reopenFrame();
+      setConfirmOpen(false);
+    }, [onClipboardChange, reopenFrame]);
 
     /**
      * Reopen the sheet at idle with the reason in place, rather than exiting on
@@ -3661,6 +3688,27 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                         onClick={onCut}
                       />
                     )}
+                    {/* The clipboard's bin (#862), in the same reserved row:
+                      while the stage is collapsed onto the line with a cut
+                      waiting, the line has the paste marker above it and this
+                      below it, greyed (`quiet`) as the secondary action. It
+                      is gated exactly like the paste marker, so the two come
+                      and go together, and it never shares the row with the
+                      scissors: those need an open frame, and a new frame is
+                      only available once the clipboard is empty. */}
+                    {!editor.selectionActive &&
+                      idleEditable &&
+                      editor.canPaste &&
+                      zoomPan === null &&
+                      !stage.windowControlsInert && (
+                        <Control
+                          icon="trash"
+                          label={strings.discardClip}
+                          variant="quiet"
+                          size={26}
+                          onClick={onDiscardClip}
+                        />
+                      )}
                   </div>
                 )}
                 {recording && (
@@ -3766,6 +3814,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           onToggleFinished={onToggleFinished}
           onErase={() => {
             setMenuOpen(false);
+            setConfirmFor("erase");
             setConfirmOpen(true);
           }}
           onExitEdit={onExitEdit}
@@ -3773,22 +3822,34 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         <EraseConfirm
           key={confirmMount}
           open={confirmOpen}
-          title={strings.eraseConfirmTitle}
+          title={
+            confirmFor === "clip"
+              ? strings.discardClipConfirmTitle
+              : strings.eraseConfirmTitle
+          }
           // O4 G5 (#979): from the bar's bin, the workbench's record badge.
           // The button, Keep and the title stay the 13 dialog's: the button
           // erases and starts no take, so it keeps the bin and "Erase"
           // (#1022). The workbench's "Record again" button records; here that
           // would start the mic after the erase's awaits, outside the tap
           // `use-audio-session.ts` startRecording needs. Switch off: one
-          // dialog, as before.
-          badge={g5 ? "record" : "trash"}
-          confirmLabel={strings.eraseConfirm}
+          // dialog, as before. The clipboard's discard (#862) is not the
+          // bar's bin, so it keeps the trash badge.
+          badge={g5 && confirmFor !== "clip" ? "record" : "trash"}
+          confirmLabel={
+            confirmFor === "clip"
+              ? strings.discardClipConfirm
+              : strings.eraseConfirm
+          }
           cancelLabel={strings.eraseCancel}
           // Busy through the post-erase re-read too (#592): `isClosing` is the
           // latch `onConfirmErase` holds across it, and a confirm is otherwise
-          // only reachable at idle, where `isClosing` is false.
+          // only reachable at idle, where `isClosing` is false. The discard
+          // (#862) is synchronous and holds no latch of its own.
           busy={erase.erasing || isClosing}
-          onConfirm={onConfirmErase}
+          onConfirm={
+            confirmFor === "clip" ? onConfirmDiscardClip : onConfirmErase
+          }
           onCancel={() => setConfirmOpen(false)}
         />
       </div>

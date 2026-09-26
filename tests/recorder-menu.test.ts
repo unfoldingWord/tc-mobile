@@ -244,8 +244,11 @@ describe("RecorderMenu", () => {
       }
     }
     expect(close, "unbalanced onErase braces").toBeGreaterThan(at);
+    // `setConfirmFor("erase")` (#862): the dialog also asks the clipboard's
+    // discard question, so this door names which one it opens — still only
+    // arming the confirm, never erasing.
     expect(tag.slice(at, close + 1).replace(/\s+/g, "")).toBe(
-      "onErase={()=>{setMenuOpen(false);setConfirmOpen(true);}}"
+      'onErase={()=>{setMenuOpen(false);setConfirmFor("erase");setConfirmOpen(true);}}'
     );
   });
 
