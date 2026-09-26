@@ -38,7 +38,7 @@ import { commitTranscode } from "@/lib/storage/transcode";
 import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { ChapterRow, SegmentRow } from "@/types/view";
 import { one, render } from "./render";
-import { clearAllStores, testCodec } from "./support";
+import { clearAllStores, noTrimDecode, ramp, testCodec } from "./support";
 
 /**
  * #1044: the export names the items it counted (`keys`), and that list rides
@@ -218,6 +218,141 @@ describe("Share Chapter, all Finished (joined, #1004): a segment left out before
     expect(row(sendView.chips)).toBe("v-v");
     expect(goOutLabel(sendView)).toBe("2 of 3 go out");
   });
+});
+
+/**
+ * #1004 residual 2, coordinator follow-up on PR #1068: the join path now
+ * reports progress per clip as it reads them (`joinFinishedChapter`), so a
+ * chapter whose join attempt gets partway through before a LATER clip turns
+ * out not joinable will have already reported some steps before the export
+ * falls back to `fillChapterPcm`'s own restart at `(0, n)`. #1049's progress
+ * machine fixes a run's `total` and `keys` at its FIRST step and rejects any
+ * later step that disagrees (`withStep`, `hooks/share-progress.ts`) — so this
+ * must be proven safe through the real counting caller
+ * (`withEncodeSteps`/`stepReporter`, as `use-chapter-share-steps.test.ts` and
+ * the describe above do), not just argued safe from the source.
+ *
+ * It is: `withEncodeSteps` fixes `segments` (hence `total`) and `keys` from
+ * the join attempt's own first report, and its `report()` only ever forwards
+ * a `done` that moves the count forward — the fallback's own `(0, n)` restart
+ * is silently absorbed there (dropped for not exceeding `last`) rather than
+ * reaching the reducer as a new run with a different `total`. Both `total`
+ * and `keys` are therefore identical between the join attempt's reports and
+ * the fallback's, because both come from the SAME `plan.present` list
+ * (`exportChapterMp3` builds one `plan` and hands it to both the join
+ * attempt and the fallback) — nothing here depends on `withEncodeSteps`
+ * papering over an actual disagreement.
+ */
+describe("Share Chapter, all Finished (joined, #1004): a later clip that is not joinable falls back without stalling or losing keys", () => {
+  it.each([1, 2])(
+    "reaches its total, drops no step, and the fallback's keys equal the join attempt's (clip index %i refused)",
+    async (notJoinableIndex) => {
+      const book = await createBook("b");
+      const chapter = await addChapter(book.id);
+      const clipIds = [newClipId(), newClipId(), newClipId()];
+      const pcms = [ramp(5_000, 1_000), ramp(5_000, 5_000), ramp(5_000, 9_000)];
+      for (const [i, clipId] of clipIds.entries()) {
+        const seg = await addSegment(chapter.id);
+        await saveTake(seg.id, clipId, pcms[i]!, CANONICAL_SAMPLE_RATE);
+        await setSegmentFinished(seg.id, true);
+        const encoded = encodeMp3(pcms[i]!);
+        // The refused clip's stored bytes are trailing bytes that are not an
+        // ID3v1 tag — the same shape `chapter-export.test.ts`'s "falls back
+        // to decode and encode" case uses. It is still a perfectly decodable
+        // MP3 (`noTrimDecode` below): only the JOIN refuses it, not the
+        // decoder, which is what forces the whole-chapter fallback rather
+        // than a per-segment skip.
+        const bytes =
+          i === notJoinableIndex
+            ? new Uint8Array([...encoded, 1, 2, 3])
+            : encoded;
+        expect(
+          await commitTranscode(
+            seg.id,
+            clipId,
+            bytes,
+            computePeaks(pcms[i]!, 4)
+          )
+        ).toBe("committed");
+      }
+      const screen = chapterShareItems(
+        clipIds.map((clipId, i) => segmentRow(i + 1, clipId))
+      );
+      const m = machine();
+      // Every event this run actually dispatches, so the assertions below can
+      // replay them one at a time and prove none was silently dropped by the
+      // reducer — not just check the state the run happened to land in.
+      const dispatched: ShareProgressEvent[] = [];
+      const dispatch = (event: ShareProgressEvent): void => {
+        dispatched.push(event);
+        m.dispatch(event);
+      };
+      let decodeCall = 0;
+      // The fallback decodes every segment in `plan.present` order (a
+      // sequential `for` loop, one `await` at a time), so the Nth decode
+      // call is always segment N's own bytes — no need to match on content.
+      const codec = testCodec(async (bytes) =>
+        noTrimDecode(pcms[decodeCall++]!, bytes)
+      );
+
+      const result = await withEncodeSteps(
+        stepReporter(() => true, dispatch),
+        () => true,
+        (counted, inner) =>
+          exportChapterMp3(chapter.id, counted, undefined, inner)
+      )(codec);
+
+      expect(result?.segments).toBe(3);
+      expect(result?.missing).toBe(0);
+      // The fallback ran (a stored MP3 the join refuses still decodes fine),
+      // not the join: the whole chapter is decoded and re-encoded once.
+      expect(codec.decodeMp3).toHaveBeenCalledTimes(3);
+      expect(codec.encodeMp3).toHaveBeenCalledTimes(1);
+
+      // Replay every dispatched `step` event against a fresh reducer: an
+      // ACCEPTED step always returns a new object (`withStep`'s `{...state,
+      // steps: ...}`), a REJECTED one returns the very same reference back.
+      // If the join attempt's partial progress and the fallback's restart
+      // ever disagreed on `total` or `keys`, the fallback's steps would come
+      // back rejected here and `replay.steps?.done` would stall.
+      const stepEvents = dispatched.filter(
+        (e): e is Extract<ShareProgressEvent, { type: "step" }> =>
+          e.type === "step"
+      );
+      expect(stepEvents.length).toBeGreaterThan(0);
+      let replay: ShareProgress = reduceShareProgress(HIDDEN, {
+        type: "begin",
+        work: "prepare",
+        now: 0,
+      });
+      for (const event of stepEvents) {
+        const before = replay;
+        replay = reduceShareProgress(replay, event);
+        expect(replay).not.toBe(before);
+        expect(replay.phase === "busy" && replay.steps?.done).toBe(event.done);
+      }
+
+      const after = m.state();
+      if (after.phase !== "busy") throw new Error("expected a busy prepare");
+      // The count reached its total — the 3 segments plus the encode
+      // stretch — not just some partial value from the abandoned attempt.
+      expect(after.steps?.done).toBe(after.steps?.total);
+      // The keys the fallback finished with are exactly the keys the join
+      // attempt opened with: the SAME `plan.present` list, not a second,
+      // possibly-different list `withStep` would have had to reject.
+      expect(after.steps?.keys).toEqual(clipIds);
+      const prepareView = shareO4View(after, "chapter", screen);
+      expect(row(prepareView.chips)).toBe("vvv");
+      expect(goOutLabel(prepareView)).toBe("3 of 3 go out");
+      const carried = carryFromPrepare(after);
+      expect(carried).toBeDefined();
+      const send = sendCarrying(carried!);
+      if (send.phase === "hidden") throw new Error("expected a busy send");
+      const sendView = shareO4View(send, "chapter", screen);
+      expect(row(sendView.chips)).toBe("vvv");
+      expect(goOutLabel(sendView)).toBe("3 of 3 go out");
+    }
+  );
 });
 
 describe("Share Book: a dangling chapter left out before the count (#1044)", () => {
