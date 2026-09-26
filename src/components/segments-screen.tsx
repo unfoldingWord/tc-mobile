@@ -819,8 +819,10 @@ export const SegmentsScreen = forwardRef<
   // Nothing on this screen holds the hand-off: focus is armed from one site
   // only — the empty chapter's invite — and no overlay is up over it. Books
   // passes a hold here, for a delete confirm that leaves the list `inert`.
+  // `false` is written out rather than defaulted, so a later overlay on this
+  // screen has to revisit this line to hold it.
   useEffect(() => {
-    rowReveal.reveal();
+    rowReveal.reveal(false);
   }, [rows, rowReveal]);
 
   const onAppend = useCallback(async () => {
