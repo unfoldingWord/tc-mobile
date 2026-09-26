@@ -77,6 +77,10 @@ import { useSegmentEditor } from "@/hooks/use-segment-editor";
 import { overlayFallbackLabel } from "@/lib/a11y/focus-restore";
 import { panelRecoveryFocus } from "@/lib/a11y/panel-recovery";
 import { auditionPlan } from "@/lib/audio/audition";
+import {
+  buildCaptureContext,
+  type CaptureContext,
+} from "@/lib/audio/capture-context";
 import { framesToMs, msToFrames } from "@/lib/audio/format";
 import { isFirstTakeInFlight } from "@/lib/audio/display-gain";
 import { panForZoom, playbackStrip, seedSelection } from "@/lib/audio/viewport";
@@ -382,6 +386,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const contactsRef = useRef<Set<number>>(new Set());
     /** The insertion offset captured at the idle→recording edge (fixed, F9). */
     const insertionOffset = useRef(0);
+    /**
+     * The existing clip either side of `insertionOffset`, built at the same
+     * idle→recording edge, so `LiveScope` can keep it in view while the take
+     * grows (#640). State, not a ref, because the stage reads it in render;
+     * `working` cannot change under a take, so it stays true until the next.
+     */
+    const [captureContext, setCaptureContext] = useState<CaptureContext | null>(
+      null
+    );
     /** A take was committed or the finished flag toggled — App should reload. */
     const dirty = useRef(false);
     /**
@@ -1553,6 +1566,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // splice base when it commits.
       setStopError(null);
       insertionOffset.current = win.centerlineSample;
+      setCaptureContext(
+        buildCaptureContext(editor.working, win.centerlineSample)
+      );
       audio.startRecording();
     }, [recording, view, audio, editor, win.centerlineSample, commitTake]);
 
@@ -1653,8 +1669,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // otherwise pop the drawer back up over a live recorder — a menu the
       // translator never re-opened (George, round 4).
       setMenuOpen(false);
+      // The offset stays the one the refused tap locked; the context follows it.
+      setCaptureContext(
+        buildCaptureContext(editor.working, insertionOffset.current)
+      );
       audio.startRecording();
-    }, [audio]);
+    }, [audio, editor.working]);
 
     // Open the recorder menu — shared by both openers: record mode's header
     // ≡ and, since #863, the edit toolbar's ⋮. Stops buffer playback first:
@@ -3454,6 +3474,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       peekScope={audio.peekScope}
                       active={recording}
                       headFraction={CENTER_FRACTION}
+                      context={captureContext}
                       height={200}
                       label={strings.liveWaveform}
                     />
