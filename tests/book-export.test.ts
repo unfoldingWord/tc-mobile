@@ -4,6 +4,8 @@ import { unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import { encodeMp3 } from "@/lib/audio/mp3";
+import { computePeaks } from "@/lib/audio/peaks";
 import { exportBookZip } from "@/lib/export/book";
 import * as chapterExport from "@/lib/export/chapter";
 import {
@@ -12,8 +14,10 @@ import {
   createBook,
   resolveBookChapters,
 } from "@/lib/storage/books";
-import { saveTake } from "@/lib/storage/takes";
-import { newClipId } from "@/lib/storage/clips";
+import { saveTake, setSegmentFinished } from "@/lib/storage/takes";
+import { getClip, newClipId } from "@/lib/storage/clips";
+import { resolveSegmentAudio } from "@/lib/storage/segment-audio";
+import { commitTranscode } from "@/lib/storage/transcode";
 import { getDb } from "@/lib/storage/db";
 import type { BookId } from "@/types/domain";
 import { clearAllStores, testCodec } from "./support";
@@ -372,5 +376,56 @@ describe("exportBookZip", () => {
     expect(chapterSpy).toHaveBeenCalledTimes(1); // chapter 2 never entered
     expect(codec.encodeMp3).toHaveBeenCalledTimes(1); // only chapter 1 encoded
     chapterSpy.mockRestore();
+  });
+});
+
+describe("exportBookZip — Finished chapters are joined, not re-encoded (#1004)", () => {
+  /** Mark every recorded segment of `bookId` Finished and land its transcode. */
+  async function finishAll(bookId: BookId): Promise<void> {
+    const { chapters } = await resolveBookChapters(bookId);
+    for (const chapter of chapters) {
+      for (const segmentId of chapter.segmentIds) {
+        const audio = await resolveSegmentAudio(segmentId);
+        if (audio.kind !== "resolved") continue;
+        const clip = await getClip(audio.clip.id);
+        if (clip?.encoding !== "pcm") throw new Error("expected a PCM clip");
+        await setSegmentFinished(segmentId, true);
+        expect(
+          await commitTranscode(
+            segmentId,
+            audio.clip.id,
+            encodeMp3(clip.samples),
+            computePeaks(clip.samples, 4)
+          )
+        ).toBe("committed");
+      }
+    }
+  }
+
+  it("archives each all-Finished chapter without calling the encoder", async () => {
+    const bookId = await bookWith([
+      [
+        { n: 20_000, v: 1000 },
+        { n: 9_000, v: 2000 },
+      ],
+      [{ n: 15_000, v: -1000 }],
+    ]);
+    await finishAll(bookId);
+    const codec = testCodec();
+
+    const result = await exportBookZip(bookId, nameChapter, codec);
+
+    expect(result).not.toBeNull();
+    expect(result!.chapters).toBe(2);
+    expect(codec.encodeMp3).not.toHaveBeenCalled();
+    expect(codec.decodeMp3).not.toHaveBeenCalled();
+    // Each entry is that chapter's joined MP3.
+    const entries = unzipSync(archive(result!.chunks));
+    const { chapters } = await resolveBookChapters(bookId);
+    for (const chapter of chapters) {
+      const solo = await chapterExport.exportChapterMp3(chapter.id, codec);
+      expect(entries[nameChapter(chapter.number)]).toEqual(solo!.mp3);
+    }
+    expect(codec.encodeMp3).not.toHaveBeenCalled();
   });
 });

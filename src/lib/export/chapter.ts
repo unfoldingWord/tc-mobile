@@ -19,7 +19,12 @@
  */
 
 import { fitToFrames, silence } from "@/lib/audio/edit";
-import { fitMp3Decode } from "@/lib/audio/mp3-align";
+import { MP3_ENCODER_DELAY, fitMp3Decode } from "@/lib/audio/mp3-align";
+import {
+  type JoinPiece,
+  joinMp3,
+  parseJoinableMp3,
+} from "@/lib/audio/mp3-join";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { resolveChapterClipIds } from "@/lib/storage/books";
 import { getClip, getClipMeta } from "@/lib/storage/clips";
@@ -118,42 +123,84 @@ export async function gatherChapterPcm(
   shouldContinue?: () => boolean,
   onStep?: StepReporter
 ): Promise<ChapterPcm | null> {
+  return fillChapterPcm(
+    await sizeChapter(chapterId),
+    codec,
+    shouldContinue,
+    onStep
+  );
+}
+
+/** Pass 1 of a chapter build: what there is to gather, read from metadata alone. */
+interface ChapterPlan {
+  /** Segments with audio to gather, in order, and each slot's frame count. */
+  readonly present: ReadonlyArray<{
+    readonly clipId: ClipId;
+    readonly frames: number;
+  }>;
+  /** Every present clip's metadata says it is stored as MP3 (Finished). */
+  readonly allMp3: boolean;
+  /** Frames the joined PCM needs: every slot plus the gaps between them. */
+  readonly capacity: number;
+  /** Segments already known to have no audio. */
+  readonly missing: number;
+}
+
+const GAP_FRAMES = Math.round(SEGMENT_GAP_SECONDS * CANONICAL_SAMPLE_RATE);
+
+/**
+ * Pass 1 — size from metadata. `resolveChapterClipIds` resolves through the
+ * same metadata, so a meta absent here is the "halves apart" / erased-since
+ * case and counts as no audio, exactly as the read in pass 2 does (Frank F3).
+ * `frameCount` is the ORIGINAL PCM length whatever the clip's encoding, so an
+ * MP3 clip sizes its slot the same way a PCM one does.
+ */
+async function sizeChapter(chapterId: ChapterId): Promise<ChapterPlan> {
   const { clipIds, missing } = await resolveChapterClipIds(chapterId);
   let missingAudio = missing;
-
-  // Two passes so only ONE chapter-sized PCM buffer is ever live. Building an
-  // array of clip samples and then `concat`-ing it holds every clip AND the
-  // joined result at once — ~2x peak, ~160 MB on a 15-minute chapter, enough to
-  // kill the tab on a low-end phone (George R-B7). Pass 1 reads only metadata
-  // (frame counts) to size the buffer; pass 2 copies each clip in and drops it.
-
-  // Pass 1 — size from metadata. `resolveChapterClipIds` resolves through the
-  // same metadata, so a meta absent here is the "halves apart" / erased-since
-  // case and counts as no audio, exactly as the read below does (Frank F3).
-  // `frameCount` is the ORIGINAL PCM length whatever the clip's encoding, so an
-  // MP3 clip sizes its slot the same way a PCM one does.
-  const gapFrames = Math.round(SEGMENT_GAP_SECONDS * CANONICAL_SAMPLE_RATE);
   const present: Array<{ clipId: ClipId; frames: number }> = [];
   let capacity = 0;
+  let allMp3 = true;
   for (const clipId of clipIds) {
     const meta = await getClipMeta(clipId);
     if (!meta || meta.frameCount === 0) {
       missingAudio++;
       continue;
     }
-    if (present.length > 0) capacity += gapFrames;
+    if (present.length > 0) capacity += GAP_FRAMES;
     capacity += meta.frameCount;
     present.push({ clipId, frames: meta.frameCount });
+    if (meta.encoding !== "mp3") allMp3 = false;
   }
+  return { present, allMp3, capacity, missing: missingAudio };
+}
+
+/**
+ * Pass 2 of the PCM build — see {@link gatherChapterPcm}.
+ *
+ * Two passes so only ONE chapter-sized PCM buffer is ever live. Building an
+ * array of clip samples and then `concat`-ing it holds every clip AND the
+ * joined result at once — ~2x peak, ~160 MB on a 15-minute chapter, enough to
+ * kill the tab on a low-end phone (George R-B7). Pass 1 reads only metadata
+ * (frame counts) to size the buffer; this pass copies each clip in and drops it.
+ */
+async function fillChapterPcm(
+  plan: ChapterPlan,
+  codec: Pick<AudioCodec, "decodeMp3">,
+  shouldContinue?: () => boolean,
+  onStep?: StepReporter
+): Promise<ChapterPcm | null> {
+  const { present, capacity } = plan;
+  let missingAudio = plan.missing;
   if (present.length === 0)
     return { samples: new Int16Array(0), segments: 0, missing: missingAudio };
 
-  // Pass 2 — fill the one buffer. A clip erased in the window between the two
-  // passes returns nothing from `getClip`: skip and count it, and trim the
-  // returned view to what was actually written rather than leave a silent hole.
-  // An MP3 clip is decoded here, one at a time, so at most one decoded segment
-  // is alive alongside the output buffer.
-  const gap = silence(gapFrames);
+  // A clip erased in the window between the two passes returns nothing from
+  // `getClip`: skip and count it, and trim the returned view to what was
+  // actually written rather than leave a silent hole. An MP3 clip is decoded
+  // here, one at a time, so at most one decoded segment is alive alongside the
+  // output buffer.
+  const gap = silence(GAP_FRAMES);
   const out = new Int16Array(capacity);
   let written = 0;
   let segments = 0;
@@ -241,24 +288,112 @@ async function readSlot(
  * either. To put the encode on the count, run this through
  * {@link withEncodeSteps}, which wraps both the codec and `onStep` (#996);
  * Share Book deliberately does not (it counts chapters).
+ *
+ * **A chapter whose every segment is Finished is joined, not re-encoded
+ * (#1004).** Each such segment is already stored as an MP3 by this app's own
+ * encoder, so its frames are copied into the chapter MP3 as they are, with
+ * silent frames for the gaps (`lib/audio/mp3-join.ts`): no decode, no encode,
+ * and no second lossy generation. The join reports the same per-segment steps
+ * the gather does, after every clip is read and the joined bytes exist, then
+ * calls `codec.onJoined` — so a count wrapped by {@link withEncodeSteps} still
+ * ends at its total.
+ *
+ * Everything else takes the decode-and-encode path, unchanged: a chapter with
+ * ANY segment still in PCM (a mixed chapter is decoded and encoded whole, as
+ * before), and an all-Finished chapter where a stored MP3 is not one the join
+ * can copy safely (another format, a tag it does not know, a stream that
+ * disagrees with its recorded length, a clip turned back to PCM since pass 1).
+ * That fallback is decided before any step is reported, so the count a reader
+ * sees comes from one path only.
  */
 export async function exportChapterMp3(
   chapterId: ChapterId,
-  codec: AudioCodec,
+  codec: ChapterCodec,
   shouldEncode?: () => boolean,
   onStep?: StepReporter
 ): Promise<ChapterExport | null> {
-  const gathered = await gatherChapterPcm(
-    chapterId,
-    codec,
-    shouldEncode,
-    onStep
-  );
+  const plan = await sizeChapter(chapterId);
+  if (plan.allMp3 && plan.present.length > 0) {
+    const joined = await joinFinishedChapter(plan, shouldEncode, onStep);
+    if (joined === "cancelled") return null;
+    if (joined !== "not-joinable") {
+      if (joined !== null) codec.onJoined?.();
+      return joined;
+    }
+  }
+  const gathered = await fillChapterPcm(plan, codec, shouldEncode, onStep);
   if (gathered === null) return null;
   const { samples, segments, missing } = gathered;
   if (segments === 0) return null;
   if (shouldEncode && !shouldEncode()) return null;
   return { mp3: await codec.encodeMp3(samples), segments, missing };
+}
+
+/**
+ * The codec a chapter export takes: an {@link AudioCodec}, plus an optional
+ * `onJoined` the export calls once when it has built the MP3 by joining
+ * stored frames instead of calling `encodeMp3` (#1004). {@link withEncodeSteps}
+ * fills it in so a joined chapter's count still reaches its total; a caller
+ * that does not count (Share Book) passes a plain `AudioCodec`.
+ */
+export type ChapterCodec = AudioCodec & { readonly onJoined?: () => void };
+
+/**
+ * Build an all-Finished chapter's MP3 by joining its stored frames (#1004).
+ *
+ * Every present clip is read and checked first (`parseJoinableMp3`), then
+ * joined (`joinMp3`); only when both succeed are the steps reported — `(0, n)`
+ * and then one per segment, in order, each carrying the running `skipped`,
+ * exactly as {@link gatherChapterPcm} reports them. A clip gone since pass 1
+ * is skipped and counted missing, as there. Returns:
+ *
+ * - `"not-joinable"` — some clip cannot be copied safely; nothing was
+ *   reported, and the caller builds the chapter by decode and encode instead.
+ * - `"cancelled"` — `shouldContinue` went false; checked before every read
+ *   and before the steps, and nothing is reported after it is observable.
+ * - `null` — every clip vanished: nothing to share.
+ * - the joined MP3 otherwise.
+ *
+ * Memory: the chapter's stored MP3s and the joined result, ~1 MB a minute of
+ * audio together, where the decode-and-encode path holds the chapter as PCM.
+ */
+async function joinFinishedChapter(
+  plan: ChapterPlan,
+  shouldContinue?: () => boolean,
+  onStep?: StepReporter
+): Promise<ChapterExport | "not-joinable" | "cancelled" | null> {
+  const pieces: JoinPiece[] = [];
+  /** Per present clip, in order: whether it was skipped (gone since pass 1). */
+  const skippedAt: boolean[] = [];
+  let missing = plan.missing;
+  for (const { clipId, frames } of plan.present) {
+    if (shouldContinue && !shouldContinue()) return "cancelled";
+    const clip = await getClip(clipId);
+    if (!clip) {
+      missing++;
+      skippedAt.push(true);
+      continue;
+    }
+    if (clip.encoding !== "mp3") return "not-joinable";
+    const parsed = parseJoinableMp3(clip.mp3);
+    if (parsed === null) return "not-joinable";
+    pieces.push({ frames: parsed, recorded: frames });
+    skippedAt.push(false);
+  }
+  if (shouldContinue && !shouldContinue()) return "cancelled";
+  const mp3 =
+    pieces.length === 0 ? null : joinMp3(pieces, GAP_FRAMES, MP3_ENCODER_DELAY);
+  if (pieces.length > 0 && mp3 === null) return "not-joinable";
+
+  const total = plan.present.length;
+  let skipped = 0;
+  onStep?.(0, total, skipped);
+  skippedAt.forEach((wasSkipped, i) => {
+    if (wasSkipped) skipped++;
+    onStep?.(i + 1, total, skipped);
+  });
+  if (mp3 === null) return null;
+  return { mp3, segments: pieces.length, missing };
 }
 
 /**
@@ -272,8 +407,11 @@ export async function exportChapterMp3(
  * measurement of any phone: an indicative Node timing, with its harness, is
  * at https://github.com/unfoldingWord/tc-mobile/pull/998#issuecomment-5840566858
  * and the phone check on #974 is what can say whether the split
- * looks right. A chapter of finished (MP3) segments pays a decode per segment
- * in the gather, which gives the gather more real weight than a PCM chapter.
+ * looks right. A chapter that mixes finished (MP3) and draft segments pays a
+ * decode per finished segment in the gather, which gives the gather more real
+ * weight than an all-PCM chapter. An all-Finished chapter is joined, not
+ * encoded (#1004): its reads come before its first step, and the count then
+ * runs from `0` to its total at once, when the joined MP3 exists.
  */
 export const ENCODE_STEPS = 100;
 
@@ -296,7 +434,10 @@ export const ENCODE_STEPS = 100;
  *   the encoder saying `1` is not the MP3 in hand.
  * - Only when `encodeMp3` RESOLVES — the MP3 exists — does the count read
  *   `total`. An encode that rejects (an abort terminates the worker, a stall,
- *   an encoder error) never gets there.
+ *   an encoder error) never gets there. The one other way there is the
+ *   codec's `onJoined` (#1004): a build that joined stored MP3 frames instead
+ *   of encoding calls it once the joined MP3 exists, and it moves the count to
+ *   `total` exactly as a resolved encode does.
  * - Every report checks `shouldContinue` first, so nothing moves once a cancel
  *   is observable, and a report that would not move the count forward (a
  *   repeated, lower or non-numeric fraction) is dropped here rather than sent.
@@ -308,7 +449,7 @@ export const ENCODE_STEPS = 100;
 export function withEncodeSteps<T>(
   onStep: StepReporter,
   shouldContinue: () => boolean,
-  build: (codec: AudioCodec, onStep: StepReporter) => Promise<T>
+  build: (codec: ChapterCodec, onStep: StepReporter) => Promise<T>
 ): (codec: AudioCodec) => Promise<T> {
   return (encoder) => {
     /** The gather's segment count, fixed by its first report. */
@@ -329,8 +470,10 @@ export function withEncodeSteps<T>(
     const encoded = (into: number): void => {
       if (segments !== null) report(segments + into, segments);
     };
-    const codec: AudioCodec = {
+    const codec: ChapterCodec = {
       decodeMp3: encoder.decodeMp3,
+      // Joined instead of encoded (#1004): the MP3 exists all the same.
+      onJoined: () => encoded(ENCODE_STEPS),
       encodeMp3: async (samples, onProgress) => {
         const mp3 = await encoder.encodeMp3(samples, (fraction) => {
           encoded(
