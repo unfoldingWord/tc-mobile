@@ -13,15 +13,14 @@ import type { Peaks } from "@/types/audio";
  * after #1022): the workbench's `vConfirm()` draws a `.prev` row between the
  * title and the two buttons — a waveform and a Play/Pause transport for the
  * take about to be erased. Optional, and rendered only when the caller passes
- * it, so a caller that does not — the book Delete, the failure log's Clear,
- * and (for now) the recorder's own record-again call site — gets the same
- * markup as before (see `EraseConfirmProps.preview`'s own docblock for why
- * that last one is not wired yet).
+ * it, so a caller that does not — the book Delete and the failure log's
+ * Clear — gets the same markup as before.
  *
  * Presentational, like every other prop here: the caller owns the actual
- * playback (`SegmentsAudio.playTake`/`playingId`/`playbackElapsedMs` in
- * `segments-screen.tsx`), and hands this component only what to draw and one
- * callback to toggle it. No audio API is touched from this file.
+ * playback (`SegmentsAudio.playTake`/`playingId` in `segments-screen.tsx`;
+ * `RecorderAudio.playBuffer`/`playingBuffer` in `recorder.tsx`'s own G5 call
+ * site), and hands this component only what to draw and one callback to
+ * toggle it. No audio API is touched from this file.
  */
 export interface EraseConfirmPreview {
   /** Peaks for the take about to be lost, or `null` for a never-recorded
@@ -67,12 +66,11 @@ interface EraseConfirmProps {
   badge?: "trash" | "record";
   /**
    * The "Play what will be lost" row (#979 remainder). Omitted entirely by
-   * default — the book Delete, the failure log's Clear, and today's segment
-   * Erase and record-again call sites, all render exactly as before. Wired
-   * from `segments-screen.tsx`'s own segment Erase (the O4 "13" dialog) only:
-   * the recorder's record-again call site (O4 G5) is not wired here, because
-   * `recorder.tsx` is owned by an open PR at the time of writing (see the PR
-   * body) — a caller-side gap, not a limit of this prop.
+   * default — the book Delete and the failure log's Clear render exactly as
+   * before. Wired from `segments-screen.tsx`'s own segment Erase (the O4 "13"
+   * dialog) and from `recorder.tsx`'s own G5 call site (the bar's bin, O4
+   * only — the ≡ menu's Erase and the clipboard's discard, which share this
+   * same dialog in that file, pass nothing).
    */
   preview?: EraseConfirmPreview;
 }
