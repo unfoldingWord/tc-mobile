@@ -54,7 +54,11 @@ const BUSY: ShareProgressState = {
   steps: { done: 2, total: 4, skipped: 0 },
 };
 
-const ALL_GO = [1, 2, 3, 4].map((label) => ({ label, goesOut: true }));
+const ALL_GO = [1, 2, 3, 4].map((label) => ({
+  label,
+  goesOut: true,
+  key: `c${label}`,
+}));
 
 async function mount(progress: ShareProgressState, items = ALL_GO) {
   const { ShareProgress } = await import("@/components/share-progress");
@@ -103,10 +107,10 @@ describe("ShareProgress follows the O4 switch (#947)", () => {
     const panel = await mount(
       { ...BUSY, steps: { done: 1, total: 4, skipped: 0 } },
       [
-        { label: 1, goesOut: true },
-        { label: 2, goesOut: true },
-        { label: 3, goesOut: true },
-        { label: 4, goesOut: false },
+        { label: 1, goesOut: true, key: "c1" },
+        { label: 2, goesOut: true, key: "c2" },
+        { label: 3, goesOut: true, key: "c3" },
+        { label: 4, goesOut: false, key: "c4" },
       ]
     );
     const chips = [...panel.querySelectorAll(".share-o4-chip")];

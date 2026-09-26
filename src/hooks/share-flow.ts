@@ -215,14 +215,14 @@ type BuildShareFile = (
  * close, `reset` or unmount can still have a gather in flight for a moment,
  * and its late count must not land on a newer run's modal. The machine itself
  * rejects a count that is out of range or runs backward (`share-progress.ts`).
- * A `skipped` count and an `items` count (#996) ride the same event when the
- * builder gives them.
+ * A `skipped` count and an `items` count (#996), and the counted items'
+ * `keys` (#1044), ride the same event when the builder gives them.
  */
 export function stepReporter(
   isCurrent: () => boolean,
   dispatch: (event: ShareProgressEvent) => void
 ): StepReporter {
-  return (done, total, skipped, items) => {
+  return (done, total, skipped, items, keys) => {
     if (!isCurrent()) return;
     dispatch({
       type: "step",
@@ -230,6 +230,7 @@ export function stepReporter(
       total,
       ...(skipped === undefined ? {} : { skipped }),
       ...(items === undefined ? {} : { items }),
+      ...(keys === undefined ? {} : { keys }),
     });
   };
 }

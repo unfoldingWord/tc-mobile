@@ -250,7 +250,7 @@ describe("a skipped item at the hand-off (the carried hollow snapshot)", () => {
             carried: { hollow: [1] },
           },
           "book",
-          [1, 2, 3].map((label) => ({ label, goesOut: true }))
+          [1, 2, 3].map((label) => ({ label, goesOut: true, key: `c${label}` }))
         ),
       })
     );
