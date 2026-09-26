@@ -387,7 +387,26 @@ export function useStoragePressure(): StoragePressureMarker | null {
         // that the write which triggered the bump has already made stale.
         if (cancelled) return;
         if (getGeneration() !== requestGeneration) return;
-        setBand(storagePressure(reading?.usage, reading?.quota));
+        // #843 item 3 (DRI pick: "Keep last-known band"). `reading === null`
+        // is `readStorageEstimate`'s "we could not ask" answer — an absent
+        // API, a rejected call, a synchronous throw, or an unusable answer,
+        // never a real reading (see that function's own docblock: it never
+        // rejects, so `null` is the only failure shape that reaches here).
+        // Before this, a failed re-read still called
+        // `storagePressure(undefined, undefined)`, which is `"unknown"`, so a
+        // transient failure on a bump-triggered re-read (book delete/create)
+        // reset an already-shown, still-genuinely-live `"low"`/`"critical"`
+        // line to nothing rather than leaving it standing. Skipping `setBand`
+        // here leaves `band` at whatever it last held instead.
+        //
+        // **When there is no last-known band yet** — the FIRST read for this
+        // mount fails — `band` is still its `useState` initial value,
+        // `"unknown"`, and this skip leaves it exactly there: today's
+        // unchanged behaviour for that case, not a new one, because there is
+        // no prior band to hold. `tests/use-storage-pressure-mount.test.ts`
+        // pins both halves.
+        if (reading === null) return;
+        setBand(storagePressure(reading.usage, reading.quota));
       }
     );
     return () => {

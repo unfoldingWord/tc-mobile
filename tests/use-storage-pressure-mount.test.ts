@@ -131,4 +131,47 @@ describe("useStoragePressure mounted", () => {
     expect(estimate).toHaveBeenCalledTimes(2);
     expect(api().marker).toBeNull();
   });
+
+  it("keeps the last-known band when a re-read fails, rather than resetting to unknown (#843 item 3)", async () => {
+    // First read succeeds and establishes a real band: 975 MB used of 1 GB,
+    // under both critical floors — same fixture as the test above.
+    estimate.mockResolvedValueOnce({
+      usage: 975_000_000,
+      quota: 1_000_000_000,
+    });
+    const api = await mount();
+    await flush();
+    expect(api().marker).toBe("critical");
+
+    // A bump-triggered re-read that fails outright — `readStorageEstimate`
+    // never rejects (see that function's own docblock), so this simulates
+    // the failure the way it actually reaches `useStoragePressure`: the
+    // browser call itself throws, `readStorageEstimate` catches it and
+    // resolves `null`, not a partial `{ usage, quota }` answer.
+    estimate.mockRejectedValueOnce(new Error("estimate() failed"));
+    await act(async () => {
+      bumpStoragePressure();
+    });
+    await flush();
+
+    expect(estimate).toHaveBeenCalledTimes(2);
+    // The band this pins: before #843 item 3, a failed re-read computed
+    // `storagePressure(undefined, undefined)` = `"unknown"`, so the marker
+    // went from `"critical"` to `null` even though nothing about the
+    // device's storage actually improved. The last-known band must hold.
+    expect(api().marker).toBe("critical");
+  });
+
+  it("a first read that fails leaves the marker at null — today's unchanged behaviour, since there is no last-known band yet (#843 item 3)", async () => {
+    // No last-known band exists on a fresh mount, so a failed FIRST read
+    // keeps today's behaviour: the initial `"unknown"` band, unchanged —
+    // not a new "hold the last band" case, because there is no prior band to
+    // hold.
+    estimate.mockRejectedValueOnce(new Error("estimate() failed"));
+    const api = await mount();
+    await flush();
+
+    expect(estimate).toHaveBeenCalledTimes(1);
+    expect(api().marker).toBeNull();
+  });
 });

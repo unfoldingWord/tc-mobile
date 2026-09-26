@@ -933,13 +933,25 @@ export const strings = {
   // copy names the phone and, for the critical band, states the concrete
   // consequence — new recordings may not save — which is also why
   // `storageCritical` now renders in the `alert` tone rather than `info`
-  // (`storage-pressure-notice.ts`). Both lines still name the pair
+  // (`storage-pressure-notice.ts`). Both lines name the pair
   // `pressure.ts`'s docblock names — mark segments Finished (ADR 0009's
   // transcode reclaims ~90%) or share the work and then remove it — not bare
   // "share", which does not reclaim anything on its own: `lib/export/
   // chapter.ts` decodes and re-encodes without deleting a single stored clip.
+  //
+  // **#843 item 1: `storageLow` gained the fallback clause `storageCritical`
+  // already had.** George's finding: the gate both bands share,
+  // `hasReclaimableAudio` (`recordedCount > 0`), stays true even when every
+  // recorded segment on the shelf is already Finished (MP3, not PCM) — a real
+  // state where "mark segments finished" recommends something already done.
+  // `storagePressureNotice` only ever sees the marker, not the
+  // finished/recorded split, so it cannot gate the clause on that state
+  // (George: "not asking for another boolean"). The fix instead matches
+  // `storageCritical`'s existing shape: state the fallback unconditionally,
+  // so the sentence holds in every state this gate can actually show, the
+  // same way `storageCritical`'s fallback already did before this change.
   storageLow:
-    "This phone is running low on space. Mark the segments you're done with as finished — they take much less room.",
+    "This phone is running low on space. Mark segments finished to free up room, or share your work and then remove it.",
   storageCritical:
     "This phone is almost out of space, and new recordings may not save. Mark finished segments, or share your work and then remove it.",
   // The O4 storage banner's own line (state 17, #983), word for word from
