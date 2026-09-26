@@ -225,7 +225,12 @@ export function RecorderToolbar({
       />
       <Control
         key="edit-toggle"
-        icon="selection"
+        // Scissors, not the `[ ]` brackets (#955 overturns #594), in both
+        // arms. The selection's Cut control under the band is a scissors
+        // too; the two stay apart by place and size: this one is the default
+        // 22px glyph on a raised tile in the bottom bar (pressed while
+        // editing), Cut is a bare quiet 26px glyph under the waveform.
+        icon="scissors"
         label={strings.enterEdit}
         pressed={false}
         variant="default"
@@ -244,9 +249,9 @@ export function RecorderToolbar({
         // uses, play/pause, because it is the same act: a non-reader
         // recognises the control by its shape, and a second play
         // glyph would be a second thing to learn. The name is what
-        // differs, and it names the target (`playSource`, which the
-        // sheet derives from the audition plan) so what a screen
-        // reader speaks is what sounds.
+        // differs, and it names the target (`playSource`; the sheet
+        // passes `playPlan?.source`) so what a screen reader speaks
+        // is what sounds.
         icon={playingBuffer ? "pause" : "play"}
         label={
           playingBuffer
@@ -356,7 +361,7 @@ export function RecorderToolbar({
       />
       <Control
         key="edit-toggle"
-        icon="selection"
+        icon="scissors"
         label={strings.enterEdit}
         pressed={true}
         // Not deletable, although it reads that way. Both arms pass `hint` so

@@ -1,3 +1,54 @@
 /* O4 — Mic denied, storage warning, crash (16-18). Owner: #948. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file. */
+/* Values are docs/design/o4-design-system.md §3 ("Error circle", "Wide guide
+   button"). The circle takes the well role in both themes: the reference says
+   raised in dark and well in light, and dark's well and raised are the same
+   primitive (2-semantic.css), so one role covers both without this file
+   reading the theme. The refusal shake on mic denied is #950's, not here. */
 @layer components {
+  [data-design="o4"] .o4-err {
+    gap: 22px; /* #939 token */
+  }
+  [data-design="o4"] .o4-err-circle {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 136px;
+    height: 136px;
+    border-radius: 50%;
+    background: var(--s-well);
+    color: var(--s-live);
+  }
+  [data-design="o4"] .o4-err-circle--denied {
+    color: var(--s-ink-muted);
+  }
+  /* The strike through the mic glyph: 64px long, at the workbench's angle. */
+  [data-design="o4"] .o4-err-circle--denied::after {
+    content: "";
+    position: absolute;
+    width: 64px;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--s-live);
+    transform: rotate(-41deg);
+  }
+  [data-design="o4"] .o4-err-circle--warn {
+    width: 170px;
+    height: 170px;
+    background: var(--s-warn-quiet);
+    color: var(--s-warn-text);
+  }
+  [data-design="o4"] .o4-err-title {
+    font-size: 22px; /* #939 token */
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+  [data-design="o4"] .o4-err-wide {
+    width: 280px;
+    height: 84px;
+    border-radius: 42px; /* #939 token */
+    background: var(--s-guide);
+    color: var(--s-tile-ink);
+  }
 }

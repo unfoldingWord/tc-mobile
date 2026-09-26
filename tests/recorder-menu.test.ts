@@ -219,12 +219,34 @@ describe("RecorderMenu", () => {
     expect(end, "unterminated <RecorderMenu").toBeGreaterThan(open);
     const tag = sheet.slice(open, end);
 
-    const lambda = /onErase=\{\(\)\s*=>\s*\{([^}]*)\}/.exec(tag)?.[1] ?? "";
-    expect(lambda, "no onErase lambda on <RecorderMenu>").not.toBe("");
-    expect(lambda).toContain("setConfirmOpen(true)");
-    expect(lambda).toContain("setMenuOpen(false)");
-    // The destructive call must not be reachable from here at all.
-    expect(lambda).not.toMatch(/erase|clearSegmentTake/i);
+    // An allow-list of ONE, not a denylist (#830). The earlier shape matched
+    // the body up to its first `}` and then checked it against two forbidden
+    // words, and it was fooled five ways: a trailing `//` on a code line
+    // survives the line-anchored strip above, a nested block hides whatever
+    // follows its `}`, and any destructive call not named `erase` or
+    // `clearSegmentTake` passed. Taking the WHOLE attribute to its matching
+    // brace and requiring it to equal the two arming statements exactly
+    // closes all of them: a comment, an extra statement or a renamed call
+    // each change the text. It fails closed on purpose — a harmless edit to
+    // this handler turns it red too, and on the control that erases a
+    // recording, making someone look is the point.
+    const attr = "onErase={";
+    const at = tag.indexOf(attr);
+    expect(at, "no onErase on <RecorderMenu>").toBeGreaterThan(-1);
+    expect(tag.indexOf(attr, at + 1), "a second onErase").toBe(-1);
+    let depth = 0;
+    let close = -1;
+    for (let i = at + attr.length - 1; i < tag.length; i++) {
+      if (tag[i] === "{") depth++;
+      else if (tag[i] === "}" && --depth === 0) {
+        close = i;
+        break;
+      }
+    }
+    expect(close, "unbalanced onErase braces").toBeGreaterThan(at);
+    expect(tag.slice(at, close + 1).replace(/\s+/g, "")).toBe(
+      "onErase={()=>{setMenuOpen(false);setConfirmOpen(true);}}"
+    );
   });
 
   it("does not close itself when the finished mark is toggled", () => {

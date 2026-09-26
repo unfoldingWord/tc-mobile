@@ -17,7 +17,7 @@ import {
   shareProgressWakeAt,
 } from "@/hooks/share-progress";
 import type { ShareOutcome } from "@/hooks/share-flow";
-import { region } from "./support";
+import { region, uniqueIndexOf } from "./support";
 
 /**
  * The share progress timeline (#491): a busy modal held for a MINIMUM time so
@@ -984,10 +984,20 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
     it(`${name}: restores focus from a useLayoutEffect keyed on the overlay no longer owning the screen`, () => {
       const source = read(screen);
       expect(source).toMatch(/useLayoutEffect,/); // imported from "react"
-      const restoreAt = source.indexOf("useLayoutEffect(() => {");
-      expect(restoreAt).toBeGreaterThan(-1);
-      const effectEnd = source.indexOf("}, [", restoreAt);
-      const body = source.slice(restoreAt, effectEnd);
+      // Anchor on the effect's own dependency array, which names this
+      // screen's share hook and must occur once, then walk back to the
+      // effect's opening. The file's first `useLayoutEffect(() => {` is only
+      // this effect by position: both screens declare more than one, and a
+      // new one added above it sliced the wrong effect in PR #531 round 7
+      // (#533).
+      const effectEnd = uniqueIndexOf(
+        source,
+        `}, [${hook}.progress, focusRestore]);`
+      );
+      const body = region(source, {
+        from: source.lastIndexOf("useLayoutEffect(() => {", effectEnd),
+        to: effectEnd,
+      });
       expect(body).toMatch(
         new RegExp(
           `if \\(shareOverlayOwnsScreen\\(${hook}\\.progress\\)\\) return;`

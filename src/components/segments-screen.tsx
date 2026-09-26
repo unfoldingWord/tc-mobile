@@ -14,6 +14,8 @@ import { guidedStep } from "./guided-step";
 import { EraseConfirm } from "./erase-confirm";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
+import { O4SheetHead } from "./o4-crumbs";
+import { Tile, TileSpacer } from "./o4-tile-menu";
 import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
 import { SegmentsHead } from "./segments-head";
@@ -950,6 +952,8 @@ export const SegmentsScreen = forwardRef<
                   onRename={(label) => renameSegment(row.segmentId, label)}
                   onMenuOpen={onRowMenuOpen}
                   onMenuClose={onRowMenuClose}
+                  bookName={bookName}
+                  chapterNumber={chapterNumber}
                 />
               </li>
             ))}
@@ -1054,6 +1058,52 @@ export const SegmentsScreen = forwardRef<
             {chapterErrorText && !savingChapterName && (
               <Notice>{chapterErrorText}</Notice>
             )}
+          </>
+        ) : o4 ? (
+          // The O4 chapter menu (#949, G2): the breadcrumb head, then Rename,
+          // Share and — past a gap — the theme tile. The same three controls,
+          // names, refs and order as the rows below, so the open-edge focus
+          // lands on Rename in both looks and every restore below finds the
+          // same node. Rename is a tile rather than the workbench's header
+          // pencil because a header control ahead of the grid would be a
+          // second first-focus candidate the current look does not have.
+          <>
+            <O4SheetHead book={bookName} chapter={chapterNumber} />
+            <ShareMenuSection
+              status={share.status}
+              sendUnconfirmed={share.sendUnconfirmed}
+              error={share.error}
+              scope="chapter"
+              controlRef={shareControlRef}
+              idleLabel={strings.shareChapter}
+              preparingLabel={strings.sharePreparing}
+              unconfirmedLabel={strings.shareChapterUnconfirmed}
+              hasGap={share.missing > 0}
+              gapText={shareGapText(
+                { missing: share.missing, partial: 0, partialChapters: 0 },
+                "chapter"
+              )}
+              onPrepare={onPrepareShare}
+              onSend={onSendShare}
+              tiles={{
+                before: (
+                  <Tile
+                    ref={renameChapterControlRef}
+                    tone="name"
+                    icon="pencil"
+                    label={strings.renameChapter}
+                    caption={strings.tileRename}
+                    onClick={() => setRenamingChapter(true)}
+                  />
+                ),
+                after: (
+                  <>
+                    <TileSpacer />
+                    <ThemeControl tile />
+                  </>
+                ),
+              }}
+            />
           </>
         ) : (
           <>

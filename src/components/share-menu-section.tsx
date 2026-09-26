@@ -1,6 +1,8 @@
-import type { Ref } from "react";
+import type { ReactNode, Ref } from "react";
 
 import { Control } from "./control";
+import { TileGrid } from "./o4-tile-menu";
+import { TILE_GLYPH, tileClass } from "./o4-tile-look";
 import { shareControlAffordance } from "./control-affordance";
 import { Notice } from "./notice";
 import { shareErrorText } from "./share-error-copy";
@@ -54,6 +56,14 @@ export interface ShareMenuSectionProps {
   gapText: string;
   onPrepare: () => void;
   onSend: () => void;
+  /**
+   * The O4 tile grid (#949), opted into from a menu's O4 branch: the share
+   * control becomes a send tile in one `TileGrid` with `before` ahead of it
+   * and `after` behind it, and the Notices follow the grid rather than sit in
+   * it. Same control, name, ref and two gestures either way. Absent, the
+   * current rows render exactly as before.
+   */
+  tiles?: { before?: ReactNode; after?: ReactNode };
 }
 
 export function ShareMenuSection({
@@ -69,6 +79,7 @@ export function ShareMenuSection({
   gapText,
   onPrepare,
   onSend,
+  tiles,
 }: ShareMenuSectionProps) {
   const affordance = shareControlAffordance(
     status,
@@ -79,47 +90,80 @@ export function ShareMenuSection({
   const errorText = shareErrorText(error, scope);
   const errorMark = shareErrorGlyph(error);
 
+  // The O4 grid (#949) dresses the SAME two controls as send tiles — the same
+  // element, name, ref, `busy` and `autoFocus` — so neither the two gestures
+  // nor focus change with the look. The ready mark's class still rides along;
+  // the tile's own ink rule outranks its colour, so ready reads from the
+  // check glyph `affordance.icon` swaps in.
+  const look = tiles
+    ? {
+        size: TILE_GLYPH,
+        caption: strings.tileShare,
+        className: (extra?: string) => tileClass("send", extra),
+      }
+    : {
+        size: undefined,
+        caption: undefined,
+        className: (extra?: string) => extra,
+      };
+
+  const control =
+    /* Two gestures, same spot: tap 1 encodes; once armed the control becomes
+       a primary "Share now" that hands the File to the sheet in a fresh
+       activation. autoFocus moves focus onto it as it appears, since the
+       Menu only lands focus on its open edge. */
+    status === "ready" ? (
+      <Control
+        ref={controlRef}
+        icon={affordance.icon}
+        label={strings.shareSend}
+        variant={tiles ? undefined : affordance.variant}
+        className={look.className(affordance.className)}
+        size={look.size}
+        caption={look.caption}
+        autoFocus
+        onClick={onSend}
+      />
+    ) : (
+      // `busy`, not `disabled`, while preparing: the control must stay
+      // enabled and focusable — a re-tap is already a no-op via the hook's
+      // `preparingRef`, and disabling it would drop this control out of
+      // Menu's FOCUSABLE set, breaking the Tab trap (George R-B7) — and
+      // `busy` is what paints and reads that wait (#354).
+      <Control
+        ref={controlRef}
+        icon={affordance.icon}
+        label={
+          status === "preparing"
+            ? preparingLabel
+            : sendUnconfirmed
+              ? unconfirmedLabel
+              : idleLabel
+        }
+        variant={tiles ? undefined : affordance.variant}
+        className={look.className()}
+        size={look.size}
+        caption={look.caption}
+        busy={affordance.busy}
+        onClick={onPrepare}
+      />
+    );
+
+  // Feedback rides inside the panel because the flow keeps the menu open:
+  // the busy state while encoding, a gap warning once armed (`info`, not
+  // `busy` — it is ready, this is a heads-up about what it lacks, #112), and
+  // any error code mapped above. After the grid in O4, never inside it.
   return (
     <>
-      {/* Two gestures, same spot: tap 1 encodes; once armed the control becomes
-          a primary "Share now" that hands the File to the sheet in a fresh
-          activation. autoFocus moves focus onto it as it appears, since the
-          Menu only lands focus on its open edge. */}
-      {status === "ready" ? (
-        <Control
-          ref={controlRef}
-          icon={affordance.icon}
-          label={strings.shareSend}
-          variant={affordance.variant}
-          className={affordance.className}
-          autoFocus
-          onClick={onSend}
-        />
+      {tiles ? (
+        <TileGrid>
+          {tiles.before}
+          {control}
+          {tiles.after}
+        </TileGrid>
       ) : (
-        // `busy`, not `disabled`, while preparing: the control must stay
-        // enabled and focusable — a re-tap is already a no-op via the hook's
-        // `preparingRef`, and disabling it would drop this control out of
-        // Menu's FOCUSABLE set, breaking the Tab trap (George R-B7) — and
-        // `busy` is what paints and reads that wait (#354).
-        <Control
-          ref={controlRef}
-          icon={affordance.icon}
-          label={
-            status === "preparing"
-              ? preparingLabel
-              : sendUnconfirmed
-                ? unconfirmedLabel
-                : idleLabel
-          }
-          variant={affordance.variant}
-          busy={affordance.busy}
-          onClick={onPrepare}
-        />
+        control
       )}
-      {/* Feedback rides inside the panel because the flow keeps the menu open:
-          the busy state while encoding, a gap warning once armed (`info`, not
-          `busy` — it is ready, this is a heads-up about what it lacks, #112),
-          and any error code mapped above. */}
       {status === "preparing" && <Notice tone="busy">{preparingLabel}</Notice>}
       {status === "ready" && hasGap && (
         // Its own mark, not `info`'s generic ring-and-i (#178): that glyph

@@ -85,10 +85,11 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
   recording is saved into the segment and the waveform shifts to show it —
   that shift is the sign it landed. If a save-failed screen appears instead,
   stay on it and resolve it (§4) before anything else. Tapping Record again continues from where the waveform now sits. <!-- source: src/components/recorder.tsx (Recorder docblock, "A take ends when the tap that stops it lands (#614, Option A)"; commitTake); gh PR #681 -->
-- **The `[ ]` control opens and closes editing.** One tap opens editing with
-  a span already selected, starting where the waveform sits (playback stops) and
-  reaching forward; tap `[ ]` again to leave editing and go back to
-  Record/Play. There is no separate "select, then edit" step. <!-- source: src/components/recorder.tsx (Recorder docblock, RECORD/EDIT modes); gh PR #705 (Closes #557, #554) -->
+- **The scissors in the bottom bar open and close editing.** One tap opens
+  editing with a span already selected, starting where the waveform sits
+  (playback stops) and reaching forward; tap the same scissors again to leave
+  editing and go back to Record/Play. The scissors that appear under the
+  waveform, with no tile behind them, are Cut: a different control. There is no separate "select, then edit" step. <!-- source: src/components/recorder.tsx (Recorder docblock, RECORD/EDIT modes); gh PR #705 (Closes #557, #554); src/components/recorder-toolbars.tsx edit-toggle glyph (#955) -->
 - **Rename a segment from its own `⋮` menu.** This is how a participant
   labels a segment with what it actually is (for example, the verse range)
   instead of leaving it as a number. A rejected rename leaves the old name in
