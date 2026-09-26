@@ -320,4 +320,16 @@ describe("reachability wiring (#36)", () => {
     // the hand-listed inclusion (George Low, bench round 2 on #144).
     expect(thirdPartyLicenses.map((l) => l.name)).toContain("workbox");
   });
+
+  it("keeps Vite, whose module-preload polyfill the build injects, in the disclosure", () => {
+    // The second build-time inclusion (Frank P2, bench round 1 on #1019): Vite
+    // writes its polyfill into the entry chunk unless the config turns it off,
+    // and Vite is a dev dependency the closure walk never visits. The built
+    // bundle is checked in tests/dist-source-offer.test.ts; this is the
+    // source-side pin, and it lapses only if the config disables the polyfill.
+    const vite = readSource("vite.config.ts");
+    if (!/polyfill:\s*false/.test(vite)) {
+      expect(thirdPartyLicenses.map((l) => l.name)).toContain("vite");
+    }
+  });
 });

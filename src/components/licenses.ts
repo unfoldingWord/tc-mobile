@@ -58,9 +58,12 @@ interface ThirdPartyLicense {
 
 /**
  * Everything bundled into the app: the `package.json` runtime dependencies plus
- * Workbox, which vite-plugin-pwa injects into the service worker at build time
- * (it emits `dist/workbox-*.js`, whose header varies by build, so its notice is
- * disclosed here to travel regardless). lamejs is first and carries the copyleft
+ * two build-time injections the runtime closure cannot see — Workbox, which
+ * vite-plugin-pwa injects into the service worker (it emits `dist/workbox-*.js`,
+ * whose header varies by build, so its notice is disclosed here to travel
+ * regardless), and Vite's own module-preload polyfill, which the build writes
+ * at the top of the app entry chunk (Frank P2, bench round 1 on #1019). lamejs
+ * is first and carries the copyleft
  * note; the rest are
  * permissive (MIT/ISC) and their verbatim notices ride in
  * `THIRD-PARTY-NOTICES.txt`. Versions are the installed ones — the test pins
@@ -200,6 +203,14 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     copyright: "© Google LLC",
     pinPackage: "workbox-build",
     noticeMarker: "Google",
+  },
+  {
+    name: "vite",
+    version: "8.3.0",
+    spdx: "MIT",
+    role: "module-preload polyfill, injected into the app entry at build time",
+    copyright: "© 2019-present VoidZero Inc. and Vite contributors",
+    noticeMarker: "VoidZero Inc. and Vite contributors",
   },
 ];
 

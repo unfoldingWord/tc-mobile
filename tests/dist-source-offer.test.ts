@@ -84,6 +84,16 @@ describe.skipIf(gate === "skip")(
       );
     });
 
+    it("discloses Vite whenever the build carries its module-preload polyfill", () => {
+      // Vite writes this polyfill into the entry chunk itself, from a dev
+      // dependency the runtime-closure walk in tests/licenses.test.ts never
+      // visits (Frank P2, bench round 1 on #1019). If a config change drops the
+      // polyfill this passes without Vite; while it ships, Vite is disclosed.
+      if (/\.supports\(["'`]modulepreload["'`]\)/.test(builtJs())) {
+        expect(thirdPartyLicenses.map((l) => l.name)).toContain("vite");
+      }
+    });
+
     it("does not ship the vendored folder itself", () => {
       expect(distFiles(DIST).filter((f) => f.includes("third_party"))).toEqual(
         []
