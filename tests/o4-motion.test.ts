@@ -139,6 +139,11 @@ describe("every O4 loop is scoped under the switch (#950)", () => {
       [`${O4} .recorder-status .rec-dot`],
       "blink var(--p-ambient-blink, 1s) steps(2) infinite",
     ],
+    [
+      "shake",
+      [`${O4} .books-delete-ask > .o4-sheet-head`],
+      "shake var(--p-ambient-shake, 0.35s) ease-in-out 2",
+    ],
   ])("pins %s to its target and its #967 duration", (name, sels, value) => {
     const hits = animated.filter(
       (b) => animationName(b.decls.get("animation")!) === name
