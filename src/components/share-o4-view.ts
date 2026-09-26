@@ -105,13 +105,22 @@ export interface ShareO4View {
   readonly chips: readonly ShareChip[];
 }
 
+/**
+ * Which share the overlay is drawing. Share your work (`"library"`, #1045)
+ * has no per-item chips: `exportLibraryZip` reports no step count, so there
+ * is no count to place items by, and its caller passes no items. It draws
+ * the busy share glyph with an unvalued meter, then the outcome looks, as a
+ * book share that has not counted yet does.
+ */
+export type ShareScope = "chapter" | "book" | "library";
+
 type VisibleProgress = Exclude<ShareProgress, { readonly phase: "hidden" }>;
 type Steps = NonNullable<Extract<ShareProgress, { phase: "busy" }>["steps"]>;
 type Carry = Extract<ShareProgress, { phase: "busy" }>["carried"];
 
 export function shareO4View(
   progress: VisibleProgress,
-  scope: "chapter" | "book",
+  scope: ShareScope,
   items: readonly ShareItem[] = []
 ): ShareO4View {
   if (progress.phase === "outcome") {
@@ -155,7 +164,7 @@ export function shareO4View(
  */
 function handedOver(
   items: readonly ShareItem[],
-  scope: "chapter" | "book",
+  scope: ShareScope,
   carried: Carry
 ): ShareChip[] {
   const counted = countedItems(items, scope, carried?.keys);
@@ -183,11 +192,11 @@ function handedOver(
  */
 function countedItems(
   items: readonly ShareItem[],
-  scope: "chapter" | "book",
+  scope: ShareScope,
   keys: readonly string[] | undefined
 ): readonly (ShareItem | undefined)[] {
   if (keys === undefined)
-    return scope === "book" ? items : items.filter((i) => i.goesOut);
+    return scope === "chapter" ? items.filter((i) => i.goesOut) : items;
   return keys.map((key) => items.find((item) => item.key === key));
 }
 
@@ -226,7 +235,7 @@ function countedItems(
  */
 function shareChips(
   steps: Steps,
-  scope: "chapter" | "book",
+  scope: ShareScope,
   items: readonly ShareItem[]
 ): ShareChip[] {
   const counted = countedItems(items, scope, steps.keys);

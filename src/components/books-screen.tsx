@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -38,6 +39,10 @@ import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
 import { useDesign } from "@/hooks/use-design";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
+import {
+  useLibraryShare,
+  type UseLibraryShare,
+} from "@/hooks/use-library-share";
 import { useScrollToNew } from "@/hooks/use-scroll-to-new";
 import {
   useScreenLayers,
@@ -73,18 +78,36 @@ import type { BookCard, ChapterRow, SegmentRowState } from "@/types/view";
  * a Back with it up would have dismissed the global menu UNDERNEATH it and left
  * the confirm standing over nothing.
  *
- * NOT a layer: `<ShareProgress>` (#491). It goes up and comes down on the share
- * flow's own timeline (a minimum hold, then an outcome hold) rather than on any
- * click, so registering it would mean popping a layer from a timer — an effect,
- * which invariant 6 forbids. It is folded into the book ≡ menu's `busy()`
+ * Book share's `<ShareProgress>` (#491) is NOT itself a layer. It goes up and
+ * comes down on the share flow's own timeline (a minimum hold, then an outcome
+ * hold) rather than on any click, so registering it would mean popping a layer
+ * from a timer — an effect, which invariant 6 forbids REGISTERING (never
+ * closing — see `books:library-share` below and the delete-confirm auto-close
+ * further down this file). It is folded into the book ≡ menu's `busy()`
  * instead, which is what Amendment D asks for and is also exactly right: the
  * overlay's whole lifetime is the window in which that menu's own close is a
  * no-op (`onCloseShareMenu`'s early return), so Back must refuse rather than
  * run a `dismiss()` that does nothing.
+ *
+ * `books:library-share` (#1045/#1056) is the one exception that IS a layer.
+ * Share your work has no enclosing menu to fold `ownsScreen()`'s busy check
+ * into — the O4 storage banner's button sits directly on the shelf, not
+ * behind a ≡ — so there is nothing else to guard Back with while its own
+ * `<ShareProgress>` owns the screen (DRI, 2026-09-26: "Refuse, like Book share
+ * (Recommended)"). It is opened from the SAME tap that starts `prepare()`/
+ * `send()` (`books-screen.tsx`'s wrapping of `libraryShare` before it reaches
+ * the banner), same as every other layer here — and, because the timeline
+ * still comes down on its own for a successful prepare (the "ready" settle)
+ * and for an outcome's auto-clear, with no tap to close it, it is ALSO closed
+ * by an effect once `shareOverlayOwnsScreen(libraryShare.progress)` goes
+ * false. That is invariant 6's permitted half: an effect may close a
+ * registered layer whose overlay is already gone (the delete-confirm case
+ * below is the same shape), it may just never be what opens one.
  */
 type BooksLayerId =
   | "books:global-menu"
   | "books:log-clear-confirm"
+  | "books:library-share"
   | "books:new-book"
   | "books:new-chapter"
   | "books:book-menu"
@@ -323,6 +346,10 @@ export function BooksScreen({
   // time, so it sees the live value, not the one closed over at save.
   const bookMenuSession = useRef(0);
   const bookShare = useBookShare();
+  // Share your work (#987), from the O4 storage banner. Held here, not in the
+  // banner, so its overlay and the shelf's `inert` follow the timeline in the
+  // same render (#1045). Idle unless that banner's button starts it.
+  const libraryShare = useLibraryShare();
   // Per-viewer UI state, so it lives here and not on disk. Collapsed by default.
   const [expanded, setExpanded] = useState<ReadonlySet<BookId>>(new Set());
   // The row registry and the arm-then-reveal pair, shared with Segments (#160
@@ -578,6 +605,19 @@ export function BooksScreen({
         closeBookMenuState();
       },
     },
+    "books:library-share": {
+      // No enclosing menu to fold this into (see the `BooksLayerId` docblock
+      // above) — `ownsScreen()` is the same ref-backed read `Layer.busy()`
+      // must use (`ShareSurface.ownsScreen`'s own docblock, not the rendered
+      // `progress`), read live so a Back lands against whichever tap most
+      // recently began. `dismiss()` only ever runs once that is false, i.e.
+      // once the flow has already let the screen go on its own — the same
+      // no-op window `books:book-menu`'s `dismiss` is never left facing,
+      // because the auto-close effect below keeps this layer off the stack
+      // for exactly that window.
+      busy: () => libraryShare.ownsScreen(),
+      dismiss: libraryShare.dismissProgress,
+    },
     "books:delete-confirm": {
       // The same live ref `deleteBook` flips to refuse a second Confirm, so
       // Back and Confirm agree about "in flight" by construction.
@@ -587,6 +627,54 @@ export function BooksScreen({
       dismiss: o4 ? keepDeleteState : closeDeleteConfirmState,
     },
   });
+
+  // Share your work's layer (#1056): opened from the SAME tap that starts
+  // `prepare()`/`send()` (invariant 6 — registration from a click, never an
+  // effect), guarded by `ownsScreen()` because the O4 banner's control stays
+  // enabled (never `disabled`) all through busy so it keeps focus, and a
+  // re-entrant tap on it must not push a second entry for the one flow
+  // already live. `libraryShareForBanner` below is what actually reaches the
+  // banner's `onClick`s.
+  const openLibraryShareLayer = useCallback(() => {
+    if (!libraryShare.ownsScreen()) layers.open("books:library-share");
+  }, [layers, libraryShare]);
+  // The ONE closing path, for every way the timeline ends: a tap on the
+  // overlay's own Cancel/Dismiss (`onCancel`/`onDismiss` below, unwrapped —
+  // both already end in `ownsScreen()` going false), a successful prepare's
+  // "ready" settle, and an outcome's own auto-clear (`OUTCOME_HOLD_MS`) — the
+  // last two with no tap at all. This EFFECT CLOSES the layer once
+  // `shareOverlayOwnsScreen` is false — invariant 6 forbids an effect
+  // REGISTERING a layer, not one closing a layer whose overlay is already
+  // gone (the delete-confirm auto-close further down is the same shape).
+  // `layers.close` is idempotent, so a render where the layer was never open
+  // (the common case — most renders happen with the flow idle) costs nothing.
+  const libraryShareOwnsScreenNow = shareOverlayOwnsScreen(
+    libraryShare.progress
+  );
+  useEffect(() => {
+    if (!libraryShareOwnsScreenNow) layers.close("books:library-share");
+  }, [libraryShareOwnsScreenNow, layers]);
+  // The banner never calls `libraryShare.prepare`/`send` directly — this
+  // wrapping is the one place both taps are guaranteed to open the layer
+  // before the flow can claim the screen, without duplicating the O4 banner's
+  // own click handlers. `libraryShare`'s own identity is a fresh object every
+  // render (`useLibraryShare` returns a literal, not a memoized one), so this
+  // recomputes every render too; nothing downstream keys an effect on its
+  // identity, only on `progress`/`ownsScreen`'s live reads.
+  const libraryShareForBanner = useMemo<UseLibraryShare>(
+    () => ({
+      ...libraryShare,
+      prepare: (zipFilename, nameBook, nameChapter) => {
+        openLibraryShareLayer();
+        return libraryShare.prepare(zipFilename, nameBook, nameChapter);
+      },
+      send: () => {
+        openLibraryShareLayer();
+        return libraryShare.send();
+      },
+    }),
+    [libraryShare, openLibraryShareLayer]
+  );
 
   // The global menu's ONE open and ONE close. Every entry point — the ≡, the
   // panel's Close, Escape, a scrim tap, the log panel's `onDone` — goes through
@@ -1471,6 +1559,7 @@ export function BooksScreen({
         // path off the shelf/New Book while the overlay is up — including
         // through the outcome hold, after `shareMenuBook` may already be null.
         shareOverlayOwnsScreen(bookShare.progress) ||
+        shareOverlayOwnsScreen(libraryShare.progress) ||
         undefined
       }
     >
@@ -1625,7 +1714,11 @@ export function BooksScreen({
       {pressureLine && (
         // The same line in the current look; state 17's banner, with its
         // "Share your work" button, in O4 (#983).
-        <StoragePressureBanner notice={pressureLine} o4={o4} />
+        <StoragePressureBanner
+          notice={pressureLine}
+          o4={o4}
+          share={libraryShareForBanner}
+        />
       )}
       {encoderLine && (
         <Notice tone={encoderLine.tone}>{encoderLine.text}</Notice>
@@ -1953,6 +2046,18 @@ export function BooksScreen({
         items={shareMenuBook ? bookShareItems(shareMenuBook.chapters) : []}
         onCancel={bookShare.reset}
         onDismiss={bookShare.dismissProgress}
+      />
+      {/* Share your work's modal (#1045): the same overlay, library scope.
+          No wrapping needed on Cancel/Dismiss (#1056): both end in
+          `ownsScreen()` going false, which the auto-close effect above
+          already closes the layer for — the one closing path, whether a tap
+          or the outcome's own hold ends the timeline. */}
+      <ShareProgress
+        progress={libraryShare.progress}
+        scope="library"
+        error={libraryShare.error}
+        onCancel={libraryShare.reset}
+        onDismiss={libraryShare.dismissProgress}
       />
     </div>
   );

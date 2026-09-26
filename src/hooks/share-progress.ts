@@ -541,8 +541,14 @@ export function shareProgressWakeAt(state: ShareProgress): number | null {
  * resting phase — `onCloseChapterMenu`/`onCloseShareMenu`, `listInert`/the
  * shelf's `inert`, the book menu's Rename and Delete — derives its guard from
  * this rather than repeating `progress.phase !== "hidden"` at each call site.
+ *
+ * It reads the phase alone, so it takes any timeline with this one's phases:
+ * Share your work's (`useLibraryShare().progress`, #1045), whose `partial`
+ * gap is in other units, included.
  */
-export function shareOverlayOwnsScreen(progress: ShareProgress): boolean {
+export function shareOverlayOwnsScreen<
+  P extends { readonly phase: ShareProgress["phase"] },
+>(progress: P): boolean {
   return progress.phase !== "hidden";
 }
 

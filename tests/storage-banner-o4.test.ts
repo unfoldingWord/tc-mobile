@@ -7,6 +7,7 @@ import { BooksScreen } from "@/components/books-screen";
 import { Notice } from "@/components/notice";
 import { StoragePressureBanner } from "@/components/storage-pressure-banner";
 import type { StoragePressureNotice } from "@/components/storage-pressure-notice";
+import type { UseLibraryShare } from "@/hooks/use-library-share";
 import type { Design } from "@/lib/design";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { StoragePressureMarker } from "@/lib/storage/pressure";
@@ -48,23 +49,25 @@ const share = vi.hoisted(() => ({
       nameChapter: (bookName: string, chapterNumber: number) => string
     ) => Promise<null>
   >(() => Promise.resolve(null)),
-  send: vi.fn(() => Promise.resolve("sent")),
+  send: vi.fn(() => Promise.resolve("sent" as const)),
 }));
+/** The hook's surface as the banner reads it, from the fields above. */
+const shareSurface = (): UseLibraryShare => ({
+  status: share.status,
+  error: share.error,
+  sendUnconfirmed: share.sendUnconfirmed,
+  missing: share.missing,
+  incompleteChapters: share.incompleteChapters,
+  incompleteBooks: share.incompleteBooks,
+  progress: { phase: "hidden" },
+  prepare: share.prepare,
+  send: share.send,
+  reset: vi.fn(),
+  ownsScreen: () => false,
+  dismissProgress: vi.fn(),
+});
 vi.mock("@/hooks/use-library-share", () => ({
-  useLibraryShare: () => ({
-    status: share.status,
-    error: share.error,
-    sendUnconfirmed: share.sendUnconfirmed,
-    missing: share.missing,
-    incompleteChapters: share.incompleteChapters,
-    incompleteBooks: share.incompleteBooks,
-    progress: { phase: "hidden" },
-    prepare: share.prepare,
-    send: share.send,
-    reset: vi.fn(),
-    ownsScreen: () => false,
-    dismissProgress: vi.fn(),
-  }),
+  useLibraryShare: () => shareSurface(),
 }));
 
 // The screen-level cases below mount `BooksScreen`, so its data hooks are
@@ -125,7 +128,9 @@ const critical: StoragePressureNotice = {
 };
 
 const banner = (notice: StoragePressureNotice, o4: boolean) =>
-  render(createElement(StoragePressureBanner, { notice, o4 }));
+  render(
+    createElement(StoragePressureBanner, { notice, o4, share: shareSurface() })
+  );
 
 let root: Root | null = null;
 beforeEach(() => {
@@ -272,7 +277,11 @@ describe("state 17, O4", () => {
 describe("the button runs the library share", () => {
   it("tap 1 prepares every book, named from the string table", async () => {
     const container = await mount(
-      createElement(StoragePressureBanner, { notice: low, o4: true })
+      createElement(StoragePressureBanner, {
+        notice: low,
+        o4: true,
+        share: shareSurface(),
+      })
     );
     const button = container.querySelector<HTMLButtonElement>(
       "button.o4-storage-share"
@@ -289,7 +298,11 @@ describe("the button runs the library share", () => {
   it("tap 2 hands the armed archive to the share sheet", async () => {
     share.status = "ready";
     const container = await mount(
-      createElement(StoragePressureBanner, { notice: low, o4: true })
+      createElement(StoragePressureBanner, {
+        notice: low,
+        o4: true,
+        share: shareSurface(),
+      })
     );
     const button = container.querySelector<HTMLButtonElement>(
       "button.o4-storage-share"
