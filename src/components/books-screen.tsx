@@ -35,7 +35,7 @@ import { storagePressureNotice } from "./storage-pressure-notice";
 import { strings } from "@/lib/strings";
 import { ThemeControl } from "./theme-control";
 import { DesignControl } from "./design-control";
-import { useFailureCount } from "@/hooks/failure-log";
+import { useFailureCount, useMarkedFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import type { FailureKey } from "@/hooks/save-failure";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
@@ -238,6 +238,11 @@ export function BooksScreen({
   // instead of it.
   const [failureRetryToken, setFailureRetryToken] = useState(0);
   const failureCount = useFailureCount(failureRetryToken);
+  // The rows that mark ≡: every row except informational ones, today only a
+  // take sealed at the 20-minute cap (#1005; DRI on #1076, verbatim: "Log it,
+  // don't light ≡ (Recommended)"). The panel below still keys on
+  // `failureCount`, so a log holding only that row can still be sent.
+  const markedFailureCount = useMarkedFailureCount();
   // Both halves of Try again, in one handler so a later edit cannot drop one:
   // re-read the shelf, and hand the failure count's ladder back.
   const onRetryShelf = useCallback(() => {
@@ -1736,8 +1741,9 @@ export function BooksScreen({
             />
           ))}
         {/* State-in-place on the control itself, which AGENTS.md prefers to a
-            message bubble: while the failure log is non-empty the ≡ carries an
-            alert mark and says so in its name. The `control-hinted` wrapper is
+            message bubble: while the failure log holds a row that lights it
+            (`markedFailureCount`, #1005) the ≡ carries an alert mark and says
+            so in its name. The `control-hinted` wrapper is
             rendered UNCONDITIONALLY — swapping the button's parent as a failure
             lands would remount it and destroy it while focused, the same trap
             `Control`'s own hint wrapper documents.
@@ -1754,15 +1760,15 @@ export function BooksScreen({
           <Control
             icon="menu"
             label={
-              failureCount > 0
-                ? strings.menuOpenWithFailures(failureCount)
+              markedFailureCount > 0
+                ? strings.menuOpenWithFailures(markedFailureCount)
                 : strings.menuOpen
             }
             variant="quiet"
             className={o4 ? "books-ghost" : undefined}
             onClick={openGlobalMenu}
           />
-          {failureCount > 0 && (
+          {markedFailureCount > 0 && (
             // Decorative for AT — the count is already in the button's
             // accessible name — so a screen reader hears it once.
             <span className="control-hint text-live" aria-hidden="true">

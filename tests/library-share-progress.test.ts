@@ -110,7 +110,10 @@ vi.mock("@/hooks/use-book-share", () => ({
     reset: vi.fn(),
   }),
 }));
-vi.mock("@/hooks/failure-log", () => ({ useFailureCount: () => 0 }));
+vi.mock("@/hooks/failure-log", () => ({
+  useFailureCount: () => 0,
+  useMarkedFailureCount: () => 0,
+}));
 
 const MB = 1024 * 1024;
 let root: Root | null = null;
