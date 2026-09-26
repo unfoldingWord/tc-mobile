@@ -85,10 +85,11 @@ interface MenuProps {
    * The menu's contents.
    *
    * Never empty on the global menu any more: Books always mounts the About &
-   * licenses entry (#36) and the theme toggle (#171), and ahead of them
-   * `FailureLogPanel` while the failure log has rows (#205) — that panel is
-   * deliberately absent on a phone that has never failed, so a quiet phone's
-   * menu holds About and the toggle alone. The empty case still exists for
+   * licenses entry (#36), the theme toggle (#171) and the design control
+   * (#938), and ahead of them `FailureLogPanel` while the failure log has
+   * rows (#205) — that panel is deliberately absent on a phone that has never
+   * failed, so a quiet phone's menu holds About, the toggle and the design
+   * control. The empty case still exists for
    * callers that pass nothing, but it is no longer the global menu's normal
    * state. Template Library (B7, #33) is the other consumer still to come.
    */
