@@ -54,7 +54,7 @@ vi.mock("@/hooks/use-books", () => ({
     addChapter: vi.fn(),
     renameBook: vi.fn(),
     deleteBook: (id: BookId) => state.deleteBook(id),
-    deleting: false,
+    deleting: state.deleting,
     isDeleting: () => state.deleting,
   }),
 }));
@@ -214,27 +214,48 @@ describe("O4: Delete asks inside the book sheet (#980, D16)", () => {
     expect([...layers.keys()]).toEqual(["books:book-menu"]);
   });
 
-  it("Escape while armed acts as Keep; Escape at rest closes the sheet as before", async () => {
+  it("Escape while armed closes the whole sheet, focus on the book's row; Escape at rest closes the sheet as before", async () => {
     await arm();
     await key("Escape");
-    expect(bookSheet()).not.toBeNull();
+    expect(bookSheet()).toBeNull();
     expect(buttons(strings.keepBook)).toHaveLength(0);
-    expect(document.activeElement).toBe(button(strings.deleteBook));
-    expect([...layers.keys()]).toEqual(["books:book-menu"]);
+    expect(document.querySelector(".confirm-panel")).toBeNull();
+    expect(layers.size).toBe(0);
+    expect(document.activeElement).toBe(
+      button(strings.bookRow("Mark", 0, false))
+    );
+    // Nothing was deleted.
+    expect(state.books.map((b) => b.bookId)).toEqual([mark, ruth]);
 
+    await click(strings.bookMenuOpen("Mark"));
+    expect(bookSheet()).not.toBeNull();
+    expect(button(strings.deleteBook)).toBeTruthy();
     await key("Escape");
     expect(bookSheet()).toBeNull();
     expect(layers.size).toBe(0);
   });
 
-  it("a scrim tap while armed acts as Keep", async () => {
+  it("a scrim tap while armed closes the whole sheet, as the workbench's dimmer does", async () => {
     await arm();
     const scrim = document.querySelector<HTMLElement>(".menu-scrim");
     expect(scrim).not.toBeNull();
     await act(async () => scrim!.click());
-    expect(bookSheet()).not.toBeNull();
+    expect(bookSheet()).toBeNull();
     expect(buttons(strings.keepBook)).toHaveLength(0);
-    expect([...layers.keys()]).toEqual(["books:book-menu"]);
+    expect(layers.size).toBe(0);
+    expect(document.activeElement).toBe(
+      button(strings.bookRow("Mark", 0, false))
+    );
+  });
+
+  it("the header control keeps its name and closes the whole sheet while armed", async () => {
+    await arm();
+    await click(strings.menuClose);
+    expect(bookSheet()).toBeNull();
+    expect(layers.size).toBe(0);
+    expect(document.activeElement).toBe(
+      button(strings.bookRow("Mark", 0, false))
+    );
   });
 
   it("a system Back while armed acts as Keep; the next Back closes the sheet", async () => {
@@ -297,6 +318,12 @@ describe("O4: Delete asks inside the book sheet (#980, D16)", () => {
     expect(button(strings.keepBook)).toBeTruthy();
     await key("Escape");
     expect(button(strings.keepBook)).toBeTruthy();
+    await act(async () =>
+      document.querySelector<HTMLElement>(".menu-scrim")!.click()
+    );
+    expect(button(strings.keepBook)).toBeTruthy();
+    await click(strings.menuClose);
+    expect(button(strings.keepBook)).toBeTruthy();
     expect(await systemBack()).toBe("refused");
     expect([...layers.keys()]).toEqual([
       "books:book-menu",
@@ -310,6 +337,24 @@ describe("O4: Delete asks inside the book sheet (#980, D16)", () => {
     });
     expect(bookSheet()).toBeNull();
     expect(layers.size).toBe(0);
+  });
+});
+
+describe("O4: focus when the delete goes in flight (#980)", () => {
+  it("moves focus to Keep when Delete disables under it", async () => {
+    state.deleteBook = () => {
+      state.deleting = true;
+      return new Promise(() => {});
+    };
+    await arm();
+    const yes = button(strings.deleteBookYes);
+    yes.focus();
+    expect(document.activeElement).toBe(yes);
+    await act(async () => yes.click());
+    // The hook reports `deleting` on its next render; re-render to deliver it.
+    await mount();
+    expect(button(strings.deleteBookYes).disabled).toBe(true);
+    expect(document.activeElement).toBe(button(strings.keepBook));
   });
 });
 

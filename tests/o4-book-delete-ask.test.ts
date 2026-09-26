@@ -42,13 +42,13 @@ describe("O4BookDeleteAsk markup (#980)", () => {
     expect(group.getAttribute("aria-label")).toBe(
       strings.deleteBookConfirmTitle("Mark")
     );
-    const cover = one(group, ".books-sheet-head > .books-cover.is-sm");
+    const cover = one(group, ".o4-sheet-head > .books-cover.is-sm");
     expect(cover.getAttribute("aria-hidden")).toBe("true");
     expect(cover.getAttribute("style")).toContain("--book-cover:#2a9d8f");
     expect(one(cover, "svg")).toBeTruthy();
-    expect(
-      one(group, ".books-sheet-head > .books-sheet-name").textContent
-    ).toBe("Mark");
+    expect(one(group, ".o4-sheet-head > .books-sheet-name").textContent).toBe(
+      "Mark"
+    );
   });
 
   it("puts Keep then Delete, as direct children of the confirm actions row", () => {
@@ -83,7 +83,6 @@ describe("o4/books.css: the delete ask's rules match its markup (#980)", () => {
   const rules = areaRules("books");
   const added = [
     ".books-delete-ask",
-    ".books-sheet-head",
     ".books-cover.is-sm",
     ".books-sheet-name",
   ];
@@ -110,11 +109,33 @@ describe("o4/books.css: the delete ask's rules match its markup (#980)", () => {
     expect(spine?.decls.get("width")).toBe("5px");
   });
 
-  it("hides the sheet's own title only while the ask is in it", () => {
-    const hide = rules.filter((r) =>
-      r.selectors.includes(`${O4}.menu-panel:has(.books-delete-ask) .t-title`)
+  it("adds no second copy of the menu sheets' head rules (#980)", () => {
+    // The head is o4/menus.css's `o4-sheet-head`, which also hides the
+    // sheet's own title while it is in the panel. books.css must not restate
+    // either rule under a Books-only name.
+    expect(rules.length).toBeGreaterThanOrEqual(12);
+    for (const r of rules) {
+      for (const sel of r.selectors) {
+        expect(sel, sel).not.toMatch(/sheet-head|menu-panel.*\.t-title/);
+      }
+    }
+  });
+
+  it("uses o4/menus.css's sheet head, which hides the title and lays out the row", () => {
+    const menus = areaRules("menus");
+    expect(menus.length).toBeGreaterThan(0);
+    const head = menus.filter((r) =>
+      r.selectors.includes(`${O4}.o4-sheet-head`)
+    );
+    expect(head).toHaveLength(1);
+    expect(head[0]!.decls.get("display")).toBe("flex");
+    const hide = menus.filter((r) =>
+      r.selectors.includes(`${O4}.menu-panel:has(.o4-sheet-head) .t-title`)
     );
     expect(hide).toHaveLength(1);
     expect(hide[0]!.decls.get("visibility")).toBe("hidden");
+    expect(
+      ask().querySelector(".books-delete-ask > .o4-sheet-head")
+    ).not.toBeNull();
   });
 });

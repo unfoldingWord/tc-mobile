@@ -29,7 +29,8 @@ interface O4BookDeleteAskProps {
  *
  * The two buttons reuse `EraseConfirm`'s `confirm-actions` / `confirm-cancel`
  * markup on purpose, so `o4/dialogs.css` gives them 13's shape rather than a
- * second copy of it here. The header's rules are the Books area's
+ * second copy of it here. The header reuses the menu sheets' `o4-sheet-head`
+ * row (`o4/menus.css`); the cover and name rules are the Books area's
  * (`o4/books.css`).
  *
  * Presentational: every outcome arrives by prop. O4 only — the current look
@@ -51,7 +52,7 @@ export function O4BookDeleteAsk({
       // entering the group still hears which book is about to go.
       aria-label={strings.deleteBookConfirmTitle(name)}
     >
-      <div className="books-sheet-head">
+      <div className="o4-sheet-head">
         <span
           className="books-cover is-sm"
           aria-hidden="true"

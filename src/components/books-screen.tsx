@@ -507,9 +507,10 @@ export function BooksScreen({
   // armed book and `"books:delete-confirm"` is still the layer over the
   // sheet's own, so Back, `busy()` and the vanish effect below work as they
   // do for the card. What changes is what Keep means: back to the SAME open
-  // sheet, focus on its Delete (the workbench's `bmDelNo`), not out to the
-  // shelf, which is where the card's Cancel lands because the sheet is
-  // already gone by then.
+  // sheet (the workbench's `bmDelNo`), not out to the shelf, which is where
+  // the card's Cancel lands because the sheet is already gone by then. Focus
+  // then goes to the sheet's Delete. That target is this screen's choice; the
+  // workbench does not say where focus goes.
   //
   // Keep's button, focused when the ask appears (the safe action, as
   // EraseConfirm lands on Cancel) and again when the delete goes in flight
@@ -964,21 +965,39 @@ export function BooksScreen({
   const onCloseShareMenu = useCallback(() => {
     if (closeBookMenuState()) layers.close("books:book-menu");
   }, [closeBookMenuState, layers]);
-  // Keep, from the O4 ask's own button, and from the sheet's Escape, scrim
-  // and header control while the ask is up (through `onCloseBookSheet`
-  // below). The state half above, plus the ask's layer.
+  // Keep, from the O4 ask's own button. The state half above, plus the ask's
+  // layer. A system Back reaches the state half through the layer instead.
   const onKeepDelete = useCallback(() => {
     if (keepDeleteState()) layers.close("books:delete-confirm");
   }, [keepDeleteState, layers]);
   // The book sheet's `<Menu onClose>`: its Escape, its scrim and its header
-  // control. While the O4 ask is up they mean Keep, the same as a system Back
-  // does (the ask's layer above); otherwise they close the sheet exactly as
-  // before. With the switch off `deleteTargetId` plays no part here, so this
-  // is `onCloseShareMenu`.
+  // control. At rest they close the sheet exactly as before. While the O4 ask
+  // is up they close the WHOLE sheet, ask and all, as the workbench's dimmer
+  // does during G6 (`closeSheet` clears `bmConfirm` with the sheet), and the
+  // header control's "Close menu" name stays true. Focus goes to the book's
+  // own row, where the floating card's Cancel lands. Refused while the delete
+  // is in flight, like Keep. With the switch off `deleteTargetId` plays no
+  // part here, so this is `onCloseShareMenu`.
   const onCloseBookSheet = useCallback(() => {
-    if (o4 && deleteTargetId !== null) onKeepDelete();
-    else onCloseShareMenu();
-  }, [o4, deleteTargetId, onKeepDelete, onCloseShareMenu]);
+    if (!o4 || deleteTargetId === null) {
+      onCloseShareMenu();
+      return;
+    }
+    if (isDeleting()) return;
+    if (!closeBookMenuState()) return;
+    closeDeleteConfirmState();
+    // Top layer first, so the stack goes 2 -> 1 -> 0.
+    layers.close("books:delete-confirm");
+    layers.close("books:book-menu");
+  }, [
+    o4,
+    deleteTargetId,
+    isDeleting,
+    closeBookMenuState,
+    closeDeleteConfirmState,
+    layers,
+    onCloseShareMenu,
+  ]);
   // Commit the typed book name (#264), then close the menu on success. A failed
   // write keeps the menu open with the reason in its own Notice — the screen's
   // Notice sits behind the scrim, so a rename needs a channel inside the panel.
@@ -1316,10 +1335,14 @@ export function BooksScreen({
     // screen — `focusTargetAfterDelete` needs it to name the row that will take
     // this one's place.
     const shelfBefore = books.map((b) => b.bookId);
-    // No share reset here: arming the confirm already closed the menu through
-    // `onCloseShareMenu`, which reset it. Resetting again at confirm time is what
-    // George R5 P2-2 caught — the store write is fallible, so on a failed delete
-    // it would discard a ready zip of a book that is still on disk.
+    // No share reset here. With the switch off, arming the confirm already
+    // closed the menu through `onCloseShareMenu`, which reset it. Resetting
+    // again at confirm time is what George R5 P2-2 caught — the store write is
+    // fallible, so on a failed delete it would discard a ready zip of a book
+    // that is still on disk. Under O4 arming does NOT reset the share (Keep
+    // returns to the sheet as it was), so the O4 tail below resets it when it
+    // closes the sheet, on either outcome. After a failed delete that ends
+    // where the current look ends (no zip), one step later.
     void (async () => {
       const result = await deleteBook(deleteTargetId);
       // A double-tap's second call is refused, not answered: the first delete is
