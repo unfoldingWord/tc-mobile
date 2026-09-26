@@ -10,6 +10,8 @@ import { reportFailure } from "./report-failure";
 import { createShareHandoff } from "./share-handoff";
 import {
   HIDDEN,
+  carryFromPrepare,
+  type ShareCarry,
   type ShareGap,
   type ShareProgress,
   type ShareProgressEvent,
@@ -558,6 +560,12 @@ export function useShareFlow(): UseShareFlow {
   // late result ignored; aborting is what stops the worker from finishing an
   // encode nobody will read. Both happen together in `reset` and on unmount.
   const abortRef = useRef<AbortController | null>(null);
+  // The armed prepare's per-item result (#1023): which items it finished with
+  // no audio, snapshotted from the modal just before the prepare settles to
+  // ready, and handed to the send's busy phase with a `carry` event right after
+  // its `begin`, so the hand-off does not check an item the prepare skipped.
+  // Cleared when a fresh prepare begins.
+  const carryRef = useRef<ShareCarry | undefined>(undefined);
   // The modal timeline (#491). The machine is `share-progress.ts`; the driver
   // below is its browser glue and nothing more, created once per hook
   // instance the way `handoffRef` is, so Books' flow and a Segments screen's
@@ -628,6 +636,10 @@ export function useShareFlow(): UseShareFlow {
     // write, not an await, so the activation contract below still holds: the
     // sheet call is still the first await in this gesture.
     modal.dispatch({ type: "begin", work: "send", now: modal.now() });
+    // The prepare's per-item result rides into the send (#1023). Synchronous,
+    // like the `begin` above, so the sheet call is still the first await.
+    const carried = carryRef.current;
+    if (carried !== undefined) modal.dispatch({ type: "carry", carried });
     // Whether activation is live at the call decides how a NotAllowedError reads
     // (see classifyShareError). Read it immediately before `share`.
     const hadActivation = navigator.userActivation?.isActive ?? false;
@@ -806,6 +818,7 @@ export function useShareFlow(): UseShareFlow {
       // A fresh attempt is itself the acknowledgment of any prior unconfirmed
       // one — see `UseShareFlow.sendUnconfirmed`'s own docblock.
       setSendUnconfirmed(false);
+      carryRef.current = undefined;
       setStatus("preparing");
       // The modal goes up with the busy status (#491). Not before the
       // unsupported gate above: a browser with no Web Share gets the error
@@ -888,6 +901,9 @@ export function useShareFlow(): UseShareFlow {
         setPartial(prepared.partial ?? 0);
         setPartialChapters(prepared.partialChapters ?? 0);
         setStatus("ready");
+        // Snapshot the prepare's per-item result while its count is still on
+        // the modal (#1023); the settle below ends the busy phase that holds it.
+        carryRef.current = carryFromPrepare(modal.state());
         // Ready is not an outcome: the busy phase ends (after its minimum
         // hold) and the primary "Share now" control is what the person sees.
         modal.dispatch({ type: "settle", settled: null, now: modal.now() });

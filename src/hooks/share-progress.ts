@@ -138,6 +138,21 @@ interface ShareSteps {
   readonly hollow?: readonly number[];
 }
 
+/**
+ * The prepare's per-item result, carried into the send (#1023): which items
+ * the prepare finished with no audio (`hollow`, the same positions
+ * {@link ShareSteps} holds) and, when not every step was an item, how many
+ * were (`items`). A send begins from `hidden` once the prepare's busy phase
+ * has ended, so the prepare's `steps` are gone by then. `useShareFlow` takes
+ * this snapshot with {@link carryFromPrepare} before the prepare settles and
+ * hands it to the send with a `carry` event, so a reader drawing the hand-off
+ * does not check an item the prepare skipped.
+ */
+export interface ShareCarry {
+  readonly items?: number;
+  readonly hollow: readonly number[];
+}
+
 export type ShareProgress =
   | { readonly phase: "hidden" }
   | {
@@ -160,6 +175,11 @@ export type ShareProgress =
        * {@link ShareSteps}; only a `step` event sets it, and only forward.
        */
       readonly steps?: ShareSteps;
+      /**
+       * The prepare's per-item result, on a send only, and only once a
+       * `carry` event has put it here (#1023). See {@link ShareCarry}.
+       */
+      readonly carried?: ShareCarry;
     }
   | {
       readonly phase: "outcome";
@@ -168,6 +188,8 @@ export type ShareProgress =
       readonly since: number;
       /** The gap `partial` names — present only when `settled` is `"partial"`. */
       readonly gap?: ShareGap;
+      /** The send's {@link ShareCarry}, when the busy phase carried one. */
+      readonly carried?: ShareCarry;
     };
 
 export type ShareProgressEvent =
@@ -190,6 +212,11 @@ export type ShareProgressEvent =
       readonly skipped?: number;
       /** Of `total`, the steps that are items (#996); absent means all. */
       readonly items?: number;
+    }
+  | {
+      /** The prepare's per-item result, handed to a send (#1023). */
+      readonly type: "carry";
+      readonly carried: ShareCarry;
     }
   | { readonly type: "dismiss" };
 
@@ -225,7 +252,8 @@ export const HIDDEN: ShareProgress = { phase: "hidden" };
  * `pending` for the tick; a second settle while one is held is ignored — the
  * first word stands. `tick` releases a held settle once the hold has elapsed,
  * and clears an outcome once its hold has. `dismiss` goes hidden from
- * anywhere. `step` records a prepare's count (see {@link withStep}). From
+ * anywhere. `step` records a prepare's count (see {@link withStep}); `carry`
+ * hands a send the prepare's per-item result (see {@link withCarry}). From
  * hidden, `settle`, `tick` and `step` are stale and change nothing —
  * that is what keeps a superseded run's late sheet from flashing an outcome
  * over a newer run's menu (George R-B7-book P2).
@@ -276,19 +304,26 @@ export function reduceShareProgress(
     case "settle":
       if (state.phase !== "busy" || state.pending !== null) return state;
       if (event.now - state.since >= MIN_BUSY_MS)
-        return release(event.settled, event.now, event.gap);
+        return release(event.settled, event.now, event.gap, state.carried);
       return { ...state, pending: { settled: event.settled, gap: event.gap } };
     case "tick":
       if (state.phase === "busy") {
         if (state.pending === null || event.now - state.since < MIN_BUSY_MS)
           return state;
-        return release(state.pending.settled, event.now, state.pending.gap);
+        return release(
+          state.pending.settled,
+          event.now,
+          state.pending.gap,
+          state.carried
+        );
       }
       if (state.phase === "outcome")
         return event.now - state.since >= OUTCOME_HOLD_MS ? HIDDEN : state;
       return state;
     case "step":
       return withStep(state, event);
+    case "carry":
+      return withCarry(state, event.carried);
     case "dismiss":
       return state.phase === "hidden" ? state : HIDDEN;
     default: {
@@ -376,15 +411,54 @@ function placeHollow(
   return [...hollow, ...added].sort((a, b) => a - b);
 }
 
+/**
+ * The snapshot a send carries (#1023): the prepare's `hollow` positions and
+ * `items` count, read while the prepare's busy phase still holds its count.
+ * `undefined` when there is nothing to carry: not a busy prepare, or one
+ * whose build never reported a count.
+ */
+export function carryFromPrepare(state: ShareProgress): ShareCarry | undefined {
+  if (state.phase !== "busy" || state.work !== "prepare") return undefined;
+  const steps = state.steps;
+  if (steps === undefined) return undefined;
+  const hollow = steps.hollow ?? [];
+  return steps.items === undefined
+    ? { hollow }
+    : { items: steps.items, hollow };
+}
+
+/**
+ * A `carry` event, applied only to a busy SEND whose settle has not arrived
+ * and which carries nothing yet: the first snapshot stands, as the first
+ * settle does. `hollow` must be whole, non-negative and strictly ascending,
+ * and `items`, when present, a whole number of at least 1 — the shape
+ * {@link withStep} builds. Anything else returns the same object.
+ */
+function withCarry(state: ShareProgress, carried: ShareCarry): ShareProgress {
+  if (state.phase !== "busy" || state.work !== "send") return state;
+  if (state.pending !== null || state.carried !== undefined) return state;
+  const { items, hollow } = carried;
+  if (items !== undefined && (!Number.isInteger(items) || items < 1))
+    return state;
+  for (let i = 0; i < hollow.length; i++) {
+    const at = hollow[i]!;
+    if (!Number.isInteger(at) || at < 0) return state;
+    if (i > 0 && at <= hollow[i - 1]!) return state;
+  }
+  return { ...state, carried };
+}
+
 /** The busy phase is over: an outcome to show, or nothing to say. */
 function release(
   settled: ShareSettled | null,
   now: number,
-  gap?: ShareGap
+  gap?: ShareGap,
+  carried?: ShareCarry
 ): ShareProgress {
-  return settled === null
-    ? HIDDEN
-    : { phase: "outcome", settled, since: now, gap };
+  if (settled === null) return HIDDEN;
+  return carried === undefined
+    ? { phase: "outcome", settled, since: now, gap }
+    : { phase: "outcome", settled, since: now, gap, carried };
 }
 
 /**

@@ -22,6 +22,7 @@ import { SquareButton } from "./o4-controls";
 import { encoderNotice } from "./encoder-notice";
 import { shareGapText, shareProgressText } from "./share-error-copy";
 import { ShareMenuSection } from "./share-menu-section";
+import { bookShareItems } from "./share-o4-view";
 import { ShareProgress } from "./share-progress";
 import { storagePressureNotice } from "./storage-pressure-notice";
 import { strings } from "@/lib/strings";
@@ -1800,6 +1801,7 @@ export function BooksScreen({
       <ShareProgress
         progress={bookShare.progress}
         scope="book"
+        items={shareMenuBook ? bookShareItems(shareMenuBook.chapters) : []}
         onCancel={bookShare.reset}
         onDismiss={bookShare.dismissProgress}
       />
