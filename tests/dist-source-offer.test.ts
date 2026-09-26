@@ -3,34 +3,57 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { thirdPartyLicenses } from "@/components/licenses";
+
 import { resolveDistGate } from "./dist-gate";
 
 /**
- * The About screen's source offer ships a durable link to the app's own
- * Corresponding Source in the BUILT bundle (LGPL §4(d)(0), the DRI's 2026-09-24
- * decision on #144).
+ * The About screen's source offer ships in the BUILT bundle: a link to the
+ * app's own source and a link to the lamejs source kept in this repository,
+ * both at this build's full commit id (LGPL §4(d)(0); the DRI's 2026-09-24
+ * decision on #144 for the app link, the 2026-09-26 ruling on Frank round 6
+ * for the library link and the full id).
  *
- * `tests/licenses.test.ts` pins the SOURCE wiring; this pins the emitted
- * artifact, the way `dist-locale` does for the locale attributes. A source-only
- * check would pass on a build that stripped or dead-code-eliminated the link —
- * the half-gate AGENTS.md warns about — and the whole point of the DRI decision
- * is that the link actually SHIPS on the phone. The offer is a GitHub
- * `/tree/<sha>` URL built from `__BUILD_SHA__`; the base `github.com/
- * unfoldingWord/tc-mobile` is the durable, sha-independent part to assert.
+ * `tests/licenses.test.ts` and `tests/vendored-lamejs.test.ts` pin the SOURCE
+ * wiring; this pins the emitted artifact, the way `dist-locale` does for the
+ * locale attributes. A source-only check would pass on a build that stripped
+ * or dead-code-eliminated a link, or that fed it the 7-character footer sha.
  *
  * Runs under `npm run test:dist` after a build; a bare `npm test` skips it.
  * See `tests/dist-gate.ts` for why presence of `dist/` decides nothing.
  */
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const ASSETS = path.join(ROOT, "dist", "assets");
-const VERSION = path.join(ROOT, "dist", "version.json");
+const DIST = path.join(ROOT, "dist");
+const ASSETS = path.join(DIST, "assets");
+const VERSION = path.join(DIST, "version.json");
+const REPO = "https://github.com/unfoldingWord/tc-mobile";
 
 function builtJs(): string {
   return readdirSync(ASSETS)
     .filter((f) => f.endsWith(".js"))
     .map((f) => readFileSync(path.join(ASSETS, f), "utf8"))
     .join("\n");
+}
+
+function fullSha(): string {
+  const { shaFull } = JSON.parse(readFileSync(VERSION, "utf8")) as {
+    shaFull?: string;
+  };
+  // A link that must name one commit carries all 40 hex characters (Frank
+  // round 6, #144); "dev" or a short sha here means the build had no commit.
+  expect(shaFull, "dist/version.json has no 40-hex shaFull").toMatch(
+    /^[0-9a-f]{40}$/
+  );
+  return shaFull!;
+}
+
+function distFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory()
+      ? distFiles(path.join(dir, e.name))
+      : [path.relative(DIST, path.join(dir, e.name))]
+  );
 }
 
 const gate = resolveDistGate(
@@ -41,18 +64,29 @@ const gate = resolveDistGate(
 describe.skipIf(gate === "skip")(
   "the built About surface ships the source offer",
   () => {
-    it("links the corresponding source at THIS build's exact commit", () => {
-      // Pin the actual build sha, not just the `/tree/` prefix: a link to
-      // `/tree/dev`, a bare `/tree/`, or an unrelated revision is NOT the
-      // corresponding source for this build (Frank round 4, #144). `SourceOfferLink`
-      // and `version.json` both read the same `buildSha`, so the emitted URL must
-      // carry exactly it — this fails if the two ever diverge.
-      const { sha } = JSON.parse(readFileSync(VERSION, "utf8")) as {
-        sha: string;
-      };
-      expect(sha, "no sha in dist/version.json").toBeTruthy();
+    it("links the app's source at THIS build's full commit", () => {
+      // Pin the build's own commit, not just the `/tree/` prefix: `/tree/dev`,
+      // a bare `/tree/`, or another revision is NOT this build's source (Frank
+      // round 4, #144). The closing quote or backtick ends the match, so the
+      // longer lamejs URL below cannot satisfy this one.
+      expect(builtJs()).toMatch(
+        new RegExp(`["'\`]${REPO}/tree/${fullSha()}["'\`]`)
+      );
+    });
+
+    it("links the vendored lamejs source at THIS build's full commit", () => {
+      const lamejs = thirdPartyLicenses.find(
+        (l) => l.name === "@breezystack/lamejs"
+      );
+      expect(lamejs?.source?.path, "lamejs has no source path").toBeTruthy();
       expect(builtJs()).toContain(
-        `https://github.com/unfoldingWord/tc-mobile/tree/${sha}`
+        `${REPO}/tree/${fullSha()}/${lamejs!.source!.path}`
+      );
+    });
+
+    it("does not ship the vendored folder itself", () => {
+      expect(distFiles(DIST).filter((f) => f.includes("third_party"))).toEqual(
+        []
       );
     });
   }

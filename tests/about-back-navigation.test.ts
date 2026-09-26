@@ -99,9 +99,13 @@ beforeEach(() => {
   layers.clear();
   document.body.innerHTML = "<div id='root'></div>";
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  // `SourceOfferLink` in the open About list reads the `__BUILD_SHA__` build
-  // define; provide it so the panel renders (the build injects the real value).
-  vi.stubGlobal("__BUILD_SHA__", "testsha0");
+  // `SourceOfferLink` in the open About list reads the `__BUILD_SHA_FULL__`
+  // build define; provide it so the panel renders (the build injects the real
+  // value).
+  vi.stubGlobal(
+    "__BUILD_SHA_FULL__",
+    "0123456789abcdef0123456789abcdef01234567"
+  );
   // A licence text fetches its body on mount; hold it pending so the text view
   // stays mounted (the loading Notice) with no post-`act()` state update.
   vi.stubGlobal("fetch", () => new Promise<Response>(() => {}));

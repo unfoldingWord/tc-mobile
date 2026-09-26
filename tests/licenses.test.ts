@@ -309,7 +309,7 @@ describe("reachability wiring (#36)", () => {
     // The boundary note and the library's own source are what an LGPL relinker
     // is owed on the row itself, not just in the licence text.
     expect(lamejs?.note, "lamejs lost its boundary note").toBeTruthy();
-    expect(lamejs?.source?.href, "lamejs lost its source link").toBeTruthy();
+    expect(lamejs?.source?.path, "lamejs lost its source link").toBeTruthy();
     // The LAME acknowledgement the licence asks for (George Low, bench round 2).
     expect(lamejs?.acknowledges?.href).toBe("https://lame.sourceforge.net");
   });

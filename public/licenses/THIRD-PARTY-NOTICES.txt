@@ -294,7 +294,7 @@ SOFTWARE.
 
 ========================================================================
 
-@capacitor/share 8.0.1 — MIT
+@capacitor/share 8.0.2 — MIT
 https://github.com/ionic-team/capacitor-plugins
 
 Copyright 2020-present Ionic

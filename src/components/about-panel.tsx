@@ -99,7 +99,7 @@ export function AboutPanel({
           {/* The app's own Corresponding Source (LGPL §4(d)(0)). Placed AFTER
               the licence-text buttons so the open-edge focus still lands on a
               button, not this off-phone link (George G2). `SourceOfferLink`
-              defers the `__BUILD_SHA__` read to render time, so mounting a
+              defers the `__BUILD_SHA_FULL__` read to render time, so mounting a
               closed AboutPanel (every BooksScreen test) never evaluates it. */}
           <div className="flex flex-col gap-[3px]">
             <span>{strings.aboutSourceOffer}</span>
@@ -119,12 +119,7 @@ export function AboutPanel({
                 </span>
                 {lib.note && <span className="text-ink-muted">{lib.note}</span>}
                 {lib.source && (
-                  <ExternalLink
-                    href={lib.source.href}
-                    label={strings.aboutVisitSource(lib.name)}
-                  >
-                    {lib.source.label}
-                  </ExternalLink>
+                  <KeptSourceLink name={lib.name} source={lib.source} />
                 )}
                 {lib.acknowledges && (
                   <ExternalLink
@@ -214,21 +209,41 @@ function LicenseTextView({ text }: { text: LicenseText }) {
 }
 
 /**
- * The durable link to the app's own Corresponding Source for THIS build (LGPL
- * §4(d)(0), the DRI's 2026-09-24 decision on #144). A GitHub `/tree/<sha>` URL
- * is permanent and version-specific: it resolves to the exact commit shipped,
- * so a recipient of the Combined Work can obtain the matching source. Kept a
- * component so the `__BUILD_SHA__` build define is read at render time, not when
- * a closed AboutPanel is constructed (mirrors `BuildStamp`). The built bundle
- * carries the resolved URL; `tests/dist-source-offer.test.ts` asserts it ships.
+ * The link to the app's own source for THIS build (LGPL §4(d)(0), the DRI's
+ * 2026-09-24 decision on #144): a GitHub `/tree/<commit>` URL at the build's
+ * full 40-hex commit id, not the 7-character footer sha, so the link names one
+ * commit without relying on GitHub resolving an abbreviation (Frank round 6).
+ * Kept a component so the `__BUILD_SHA_FULL__` build define is read at render
+ * time, not when a closed AboutPanel is constructed (mirrors `BuildStamp`).
+ * `tests/dist-source-offer.test.ts` checks the built bundle carries the URL.
  */
 function SourceOfferLink() {
   return (
     <ExternalLink
-      href={`https://github.com/unfoldingWord/tc-mobile/tree/${__BUILD_SHA__}`}
+      href={`https://github.com/unfoldingWord/tc-mobile/tree/${__BUILD_SHA_FULL__}`}
       label={strings.aboutVisitAppSource}
     >
       unfoldingWord/tc-mobile
+    </ExternalLink>
+  );
+}
+
+/**
+ * The link to a component's source kept in this repository (lamejs under
+ * `third_party/`, the 2026-09-26 DRI ruling on #144's Frank round 6). A
+ * component for the same reason as `SourceOfferLink`: `source.href` reads the
+ * build define, so it is read only when the open list renders.
+ */
+function KeptSourceLink({
+  name,
+  source,
+}: {
+  name: string;
+  source: NonNullable<(typeof thirdPartyLicenses)[number]["source"]>;
+}) {
+  return (
+    <ExternalLink href={source.href} label={strings.aboutVisitKeptSource(name)}>
+      {source.label}
     </ExternalLink>
   );
 }

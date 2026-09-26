@@ -2,3 +2,5 @@
 declare const __APP_VERSION__: string;
 /** Short git SHA of the build — see vite.config.ts `define`. */
 declare const __BUILD_SHA__: string;
+/** Full 40-hex git commit id of the build — see vite.config.ts `define`. */
+declare const __BUILD_SHA_FULL__: string;

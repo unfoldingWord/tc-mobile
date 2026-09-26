@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "baseUrl": ".",
+    "noEmit": true,
+    "module": "NodeNext",
+    "moduleResolution": "nodenext"
+  },
+  "include": ["src/**/*", "type.d.ts"]
+}

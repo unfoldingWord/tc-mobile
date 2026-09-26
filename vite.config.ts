@@ -41,6 +41,23 @@ const buildSha = (() => {
   }
 })();
 
+// The same commit's FULL id, for the About screen's source links (#36): a
+// link that must name one exact commit uses all 40 hex characters rather than
+// the 7-character stamp above (Frank round 6 on #144). Emitted in
+// version.json as `shaFull` so tests/dist-source-offer.test.ts can check the
+// built links against it.
+const buildShaFull = (() => {
+  try {
+    return execSync("git rev-parse HEAD", {
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .toString()
+      .trim();
+  } catch {
+    return process.env.WORKERS_CI_COMMIT_SHA ?? "dev";
+  }
+})();
+
 // A machine-checkable version signal alongside the human-read footer stamp
 // (`components/build-stamp.tsx`). Emitted at build time, not committed, so it
 // can never drift from the build that produced it — same inputs as the
@@ -59,6 +76,7 @@ function versionJsonPlugin(): Plugin {
             {
               version: pkg.version,
               sha: buildSha,
+              shaFull: buildShaFull,
               builtAt: new Date().toISOString(),
             },
             null,
@@ -91,6 +109,7 @@ export default defineConfig(({ mode }) => ({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
     __BUILD_SHA__: JSON.stringify(buildSha),
+    __BUILD_SHA_FULL__: JSON.stringify(buildShaFull),
   },
   build: {
     rollupOptions: {

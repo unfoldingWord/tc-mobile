@@ -941,9 +941,9 @@ export const strings = {
   // shipped copy itself (the README carries it too, but the installed PWA ships
   // no `*.md`). The repository went public 2026-09-13, so — per the DRI's
   // 2026-09-24 decision on #144 — the offer now links the public source for THIS
-  // build's exact commit (a durable, version-specific tree URL built from
-  // `__BUILD_SHA__` in `SourceOfferLink`), the §4(d)(0) mechanism ADR 0003
-  // records. Still no relink how-to on the shipped copy.
+  // build's exact commit (a tree URL built from the full commit id,
+  // `__BUILD_SHA_FULL__`, in `SourceOfferLink`), the §4(d)(0) mechanism ADR
+  // 0003 records. Still no relink how-to on the shipped copy.
   aboutSourceOffer:
     "The source code for this app is public. This build's source:",
   // aria-label for the source link; the visible text is the repository path.
@@ -962,6 +962,10 @@ export const strings = {
   // Spoken labels for the off-phone links (a project page, a CC deed), which
   // show terse visible text (a package name, a licence short-name).
   aboutVisitSource: (name: string): string => `Open the ${name} project page`,
+  // The lamejs source is a copy kept in this app's own repository at this
+  // build's commit (#36), not the upstream project page, so it says so.
+  aboutVisitKeptSource: (name: string): string =>
+    `Open the ${name} source kept with this build`,
   aboutVisitLicense: (name: string): string => `Open the ${name} licence`,
 
   // ── Failure log (#205) ───────────────────────────────────────────────────

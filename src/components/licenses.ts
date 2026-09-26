@@ -33,8 +33,17 @@ interface ThirdPartyLicense {
   readonly pinPackage?: string;
   /** A note the licence makes worth surfacing — e.g. the LGPL source offer. */
   readonly note?: string;
-  /** The component's own source, where the licence points recipients (lamejs). */
-  readonly source?: { readonly label: string; readonly href: string };
+  /**
+   * The component's own source, kept in THIS repository (lamejs, #36). `path`
+   * is the repo-relative folder; `href` opens it at the build's full commit,
+   * so the link reaches the copy kept beside the code the phone is running.
+   * `href` reads a build define, so read it only at render time.
+   */
+  readonly source?: {
+    readonly label: string;
+    readonly path: string;
+    readonly href: string;
+  };
   /** An upstream the licence asks be acknowledged (LAME, for lamejs). */
   readonly acknowledges?: { readonly label: string; readonly href: string };
   /**
@@ -67,9 +76,19 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     // so this names the package author (npm `author`) and the lineage.
     copyright: "By Alex Zhukov — a fork of lamejs, based on LAME",
     note: "The only copyleft component. The encoder itself sits in a single Web Worker chunk (encodeMp3), but the LGPL's obligations reach the combined app — met by the licence texts and the source offer on this screen, not by that chunk boundary.",
+    // The exact 1.2.7 source, vendored under third_party/ (DRI ruling on #144's
+    // Frank round 6 escalation; provenance in that folder's PROVENANCE.md),
+    // linked at the build's FULL commit id rather than the 7-character stamp.
+    // `href` is a getter so the `__BUILD_SHA_FULL__` define is read at render
+    // time, and one literal template so the build folds it to a single string
+    // that tests/dist-source-offer.test.ts can find. tests/vendored-lamejs
+    // pins `path` to package-lock and `href` to `path`.
     source: {
-      label: "lamejs source",
-      href: "https://github.com/shijinyu/lamejs",
+      label: "lamejs 1.2.7 source",
+      path: "third_party/lamejs-1.2.7",
+      get href() {
+        return `https://github.com/unfoldingWord/tc-mobile/tree/${__BUILD_SHA_FULL__}/third_party/lamejs-1.2.7`;
+      },
     },
     acknowledges: { label: "LAME", href: "https://lame.sourceforge.net" },
     noticeMarker: "LAME",
@@ -148,7 +167,7 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "@capacitor/share",
-    version: "8.0.1",
+    version: "8.0.2",
     spdx: "MIT",
     copyright: "© 2020-present Ionic",
     noticeMarker: "Ionic",
