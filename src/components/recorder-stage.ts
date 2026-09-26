@@ -703,10 +703,10 @@ export function resumesOnLift(input: {
  * the bug reported — dragging to find a precise paste point kept swapping
  * the red playhead back for a selection band. The requirements owner's
  * decision on #835 is that a new selection is available only once the
- * clipboard is empty (today, a paste — see `recorder.tsx`'s `onPaste`, which
- * still always reopens the frame; that route, undo and redo are unaffected by
- * this term). This is the ONLY route the decision narrows: `resumesOnLift`
- * and the rest of this function's cases are unchanged.
+ * clipboard is empty (a paste empties it, #489 — and `recorder.tsx`'s
+ * `onPaste` also reopens the frame itself; that route, undo and redo are
+ * unaffected by this term). This is the ONLY route the decision narrows:
+ * `resumesOnLift` and the rest of this function's cases are unchanged.
  */
 export function liftOutcome(input: {
   /** This pointer owned the drag. */
@@ -725,16 +725,11 @@ export function liftOutcome(input: {
   /**
    * The clipboard holds a cut (`editor.canPaste`, #835). While true, a
    * drag's lift must not reseed a selection frame — the collapsed line stays
-   * the only thing on the stage. NOT because a paste empties the clipboard:
-   * paste is not one-shot yet (#489 is open), so `editor.canPaste` stays true
-   * across a paste, and the frame reopens instead because `recorder.tsx`'s
-   * `onPaste` calls `reopenFrame()` itself, unconditionally, as the
-   * paragraph above already says (a discard would presumably empty the
-   * clipboard for real, once #862 lands, but that is not built yet either).
-   * #489 must not route paste through this predicate — a one-shot paste that
-   * merely flips `canPaste` false would leave this term believing the stage
-   * is still owed a reseed with no `reopenFrame()` call left to satisfy it,
-   * and the frame would never come back.
+   * the only thing on the stage. It only WITHHOLDS a reseed; it never latches
+   * one out. A paste empties the clipboard (#489), so this term reads false
+   * on every later lift, and `recorder.tsx`'s `onPaste` calls `reopenFrame()`
+   * directly as well, so the frame is back the moment the paste lands rather
+   * than on the next lift.
    */
   readonly canPaste: boolean;
 }): {
@@ -936,11 +931,33 @@ export function panAfterRedo(
  * A redone cut does (#722): the band is gone again and the one line left is
  * where a paste lands, the state a live cut leaves. A redone paste does not;
  * it has no collapse to make, and the frame reseeds over the audio that
- * landed, as after a live paste. `null` — nothing was redone — keeps what the
- * redo path did before #722, which is to reopen.
+ * landed, as after a live paste. `null` answers false, but `recorder.tsx`'s
+ * `onRedo` does not ask on `null` — nothing was redone, or the redo failed —
+ * and leaves the latch as it was (Frank R1 on #985).
  */
 export function redoCollapsesFrame(redoneOp: EditOp | null): boolean {
   return redoneOp?.kind === "cut";
+}
+
+/**
+ * Whether an undo leaves the #613 collapse latched rather than reopening the
+ * frame — the undo half of {@link redoCollapsesFrame}.
+ *
+ * An undone paste does (#925): undoing it puts the phrase back on the
+ * clipboard (#489), and a new selection is available only once the clipboard
+ * is empty — the rule the requirements owner set on #489 and #835. So the
+ * stage shows the red line and the paste button, the state a cut leaves.
+ *
+ * An undone cut does not. Its audio is back in the take, and the frame
+ * reseeds where it came back, as it has since #613; the clipboard still
+ * holds the phrase, so this is the one route that opens a frame over a full
+ * clipboard, and it is named here rather than hidden. `null` answers false,
+ * but `recorder.tsx`'s `onUndo` does not ask on `null`: an undo that failed
+ * to apply leaves the latch as it was, so a failure cannot reopen a frame
+ * over a full clipboard (Frank R1 on #985).
+ */
+export function undoCollapsesFrame(undoneOp: EditOp | null): boolean {
+  return undoneOp?.kind === "paste";
 }
 
 /**
@@ -1101,9 +1118,11 @@ export function centerlineOverlayShown(input: {
  * three of the reported symptoms are this one reseed.
  *
  * So a cut suspends it — `collapsedByCut` — until something asks for a frame
- * again: a paste, an undo, a redone paste (a redone cut re-latches it, #722),
- * leaving edit mode, or the stage coming to rest under a finger
- * (`recorder.tsx` clears the latch at each).
+ * again: a paste, an undone cut (an undone paste re-latches it, #925), a
+ * redone paste (a redone cut re-latches it, #722), or the stage coming to
+ * rest under a finger with the clipboard empty (#835). Leaving edit mode
+ * sets the latch to whether the clipboard is full, and so does opening the
+ * sheet (#925): edit mode opens on the red line while a paste is waiting.
  *
  * Three answers rather than a boolean, because the reseed block does two
  * things and only one of them is suspended: `"seed"` opens a span AND drops

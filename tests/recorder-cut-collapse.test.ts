@@ -8,6 +8,7 @@ import {
   panAfterRedo,
   redoCollapsesFrame,
   selectionReseed,
+  undoCollapsesFrame,
 } from "@/components/recorder-stage";
 import type { EditOp } from "@/lib/audio/edit-log";
 
@@ -286,21 +287,94 @@ describe("recorder.tsx wires the collapse (#613)", () => {
     expect(body).not.toMatch(/reopenFrame\(\)/);
   });
 
-  it("everything that should bring the frame back clears the latch", () => {
-    // Redo left this list with #722: it clears the latch for a redone paste
-    // and sets it for a redone cut (the case above).
-    for (const handler of [
-      "const onPaste = useCallback(",
-      "const onUndo = useCallback(",
-      "const onExitEdit = useCallback(",
-    ]) {
-      const at = recorder.indexOf(handler);
-      expect(at, `${handler} not found`).toBeGreaterThan(-1);
-      const body = recorder.slice(at, at + 1_200);
-      expect(body, `${handler} does not reopen the frame`).toMatch(
-        /setCutCollapsed\(false\)|reopenFrame\(\)/
-      );
-    }
+  // One handler's own body: from its declaration to the close of its
+  // `useCallback`, so a match cannot come from the handler declared after it.
+  const handlerBody = (handler: string) => {
+    const at = recorder.indexOf(handler);
+    expect(at, `${handler} not found`).toBeGreaterThan(-1);
+    const end = recorder.indexOf("}, [", at);
+    expect(end).toBeGreaterThan(at);
+    return recorder.slice(at, end);
+  };
+
+  it("a paste clears the latch", () => {
+    // Redo left this list with #722, undo and leaving edit mode with #925:
+    // each now sets the latch from a rule (the cases below).
+    expect(handlerBody("const onPaste = useCallback(")).toMatch(
+      /reopenFrame\(\)/
+    );
+  });
+
+  it("a failed edit leaves the latch alone, so no frame opens over a full clipboard (Frank R1 on #985)", () => {
+    // Source shape only; the hook half — a failed paste returns false and
+    // keeps the phrase — is in `use-segment-editor-one-shot-paste.test.ts`.
+    // Unguarded, a paste that failed to allocate reopened the frame while
+    // its phrase was on the clipboard and nowhere else, and the next Cut
+    // replaced it; a failed undo/redo (`null`) did the same.
+    expect(handlerBody("const onPaste = useCallback(")).toMatch(
+      /if \(editor\.paste\(insertionPan\)\) reopenFrame\(\)/
+    );
+    expect(handlerBody("const onUndo = useCallback(")).toMatch(
+      /if \(undoneOp !== null\) setCutCollapsed\(undoCollapsesFrame\(undoneOp\)\)/
+    );
+    expect(handlerBody("const onRedo = useCallback(")).toMatch(
+      /if \(redoneOp !== null\) setCutCollapsed\(redoCollapsesFrame\(redoneOp\)\)/
+    );
+  });
+
+  it("onUndo sets the latch from the undone op, not unconditionally open (#925)", () => {
+    // Source shape only: the rule itself is `undoCollapsesFrame`, pinned
+    // below. Before #925 this called `reopenFrame()`, which opened a
+    // selection window after undoing a paste had just refilled the clipboard.
+    const body = handlerBody("const onUndo = useCallback(");
+    expect(body).toMatch(/setCutCollapsed\(undoCollapsesFrame\(undoneOp\)\)/);
+    expect(body).not.toMatch(/reopenFrame\(\)/);
+  });
+
+  it("leaving edit mode keeps the collapse while the clipboard holds a cut (#925)", () => {
+    // The reported bug: cut, leave edit mode, enter it again, and the stage
+    // opened on a selection window. `onExitEdit` lifted the collapse
+    // unconditionally; it now sets the latch to the clipboard's fullness, so
+    // the next entry opens on the red line and the paste button until the
+    // clipboard is empty.
+    const body = handlerBody("const onExitEdit = useCallback(");
+    expect(body).toMatch(/setCutCollapsed\(editor\.canPaste\)/);
+    expect(body).not.toMatch(/reopenFrame\(\)|setCutCollapsed\(false\)/);
+  });
+
+  it("the latch starts from the clipboard, which outlives the sheet (#925)", () => {
+    // The clipboard is App's (G3), so a sheet can open with a cut waiting.
+    // Starting the latch at `false` would seed a frame on the first entry
+    // into edit mode, the same symptom as the leave-edit route above.
+    expect(recorder).toMatch(
+      /const \[cutCollapsed, setCutCollapsed\] = useState\(\s*\(\) => editor\.canPaste\s*\)/
+    );
+    // ...and `editor` exists by then, or the initializer reads undefined.
+    const editorAt = recorder.indexOf("const editor = useSegmentEditor(");
+    expect(editorAt).toBeGreaterThan(-1);
+    expect(editorAt).toBeLessThan(
+      recorder.indexOf("const [cutCollapsed, setCutCollapsed]")
+    );
+  });
+});
+
+describe("undoCollapsesFrame — an undone paste re-latches the collapse (#925)", () => {
+  it("latches it for an undone paste: the phrase is back on the clipboard", () => {
+    const paste: EditOp = {
+      kind: "paste",
+      at: 2_000,
+      clip: new Int16Array(3_000),
+    };
+    expect(undoCollapsesFrame(paste)).toBe(true);
+  });
+
+  it("does not latch it for an undone cut, or when nothing was undone", () => {
+    // An undone cut puts its audio back in the take, and the frame reseeds
+    // where it came back (#613); `e2e/recorder-selection.spec.ts` asserts a
+    // usable frame after exactly that undo.
+    const cut: EditOp = { kind: "cut", range: { start: 2_000, end: 5_000 } };
+    expect(undoCollapsesFrame(cut)).toBe(false);
+    expect(undoCollapsesFrame(null)).toBe(false);
   });
 });
 

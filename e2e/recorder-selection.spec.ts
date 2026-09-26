@@ -286,7 +286,9 @@ test.describe("edit mode toggle", () => {
       // either while the clipboard still holds the cut: the requirements
       // owner's decision on #835 (2026-09-24) is that a new selection is
       // available only once the clipboard is empty — today that means a
-      // paste; undo and redo already always reopen the frame regardless.
+      // paste (#489 makes it one-shot). An undone cut and a redone paste
+      // reopen the frame; an undone paste refills the clipboard and so
+      // collapses it again (#925), as a redone cut does (#722).
       // Cutting twice in a row is therefore a paste in between, not a touch
       // on the waveform.
       const canvasBounds = async () =>
@@ -348,6 +350,13 @@ test.describe("edit mode toggle", () => {
       // the selection window while this cut is still on the clipboard.
       await dragStaysCollapsed();
       expect(await canvasBounds()).toEqual(canvasBeforeCut);
+      // #925, the requirements owner's report on v0.2.12: leaving edit mode
+      // and entering it again with the cut still on the clipboard must open
+      // on the red line and the paste button, not on a selection window.
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-pressed", "false");
+      await toggle.click();
+      await expectCollapsedOntoTheLine();
       // A second cut is reachable by pasting first (Tim's decision on #835)
       // — not, as it was before #835, by a touch on the waveform. The cut
       // and this paste are an exact round trip (paste re-inserts precisely
@@ -355,6 +364,13 @@ test.describe("edit mode toggle", () => {
       await page
         .getByRole("button", { name: "Paste at the line", exact: true })
         .click();
+      expect(await expectUsableFrame()).toBe(originalLength);
+      // #925: undoing the paste puts the phrase back on the clipboard (#489),
+      // so the stage collapses to the line again; redoing it empties the
+      // clipboard and the frame is back.
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      await expectCollapsedOntoTheLine();
+      await page.getByRole("button", { name: "Redo", exact: true }).click();
       expect(await expectUsableFrame()).toBe(originalLength);
       await page
         .getByRole("button", { name: "Cut the selection", exact: true })
