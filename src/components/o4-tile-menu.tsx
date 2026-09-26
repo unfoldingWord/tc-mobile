@@ -21,7 +21,7 @@ import { TILE_GLYPH, tileClass, type TileTone } from "./o4-tile-look";
  * `<Menu>` (#943's) are untouched by it.
  *
  * ADOPTED BY the chapter and segment menus (#949: G2, 07, G8), in their O4
- * branches. The book, app ≡ and recorder menus are the rest of #949. The
+ * branches, and by the book, app ≡ and recorder menus. The
  * tones, glyph size and classes live in `o4-tile-look.ts`.
  */
 type ControlProps = ComponentProps<typeof Control>;

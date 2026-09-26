@@ -268,6 +268,8 @@ export const strings = {
   tileFinished: "Done",
   tileRename: "Rename",
   tileErase: "Erase",
+  // The book menu's Delete tile (04); its name is `deleteBook`.
+  tileDelete: "Delete",
   tileShare: "Share",
   tileLight: "Light",
   tileDark: "Dark",

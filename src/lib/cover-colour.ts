@@ -50,10 +50,8 @@ import type { Book } from "@/types/domain";
 /**
  * The ten final keys (#937 D8b, decided 2026-09-25).
  *
- * @pivotpending This lane (#957) exports the type and the palette for two
- * not-yet-landed readers: the sheets lane (#943, the new-book sheet's picker)
- * and the menus lane (#949, the book menu's picker). The Books lane (#942)
- * already calls {@link resolveCoverKey} and {@link coverColourHex}.
+ * The Books lane (#942) calls {@link resolveCoverKey} and
+ * {@link coverColourHex}; the O4 book menu (#949) mounts the picker.
  */
 export type CoverColourKey =
   | "amber"
@@ -87,7 +85,6 @@ const PALETTE: Record<CoverColourKey, string> = {
 /**
  * Every key, in display order.
  *
- * @pivotpending No production caller yet — see {@link CoverColourKey}'s tag.
  * The picker (`components/cover-picker.tsx`) walks this to lay out its
  * swatch row.
  */
