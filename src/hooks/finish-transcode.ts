@@ -179,6 +179,14 @@ export function resumeTranscodeSweep(reason: string): void {
 }
 
 /**
+ * The run in flight, or resolved when there is none. Under a pause, a run
+ * ends after its current segment, so this is when that turn has finished.
+ */
+export function transcodeSweepSettled(): Promise<void> {
+  return running ?? Promise.resolve();
+}
+
+/**
  * Ask for every finished-but-PCM segment to be transcoded. Returns the promise
  * of the sweep that will cover the request — the one in flight or a fresh one.
  * Never rejects: per-segment failures are reported to the failure sink and
