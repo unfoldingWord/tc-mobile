@@ -522,14 +522,23 @@ describe("exportChapterMp3 — an all-Finished chapter is joined, not re-encoded
   });
 
   /**
-   * #1004 residual 2 (PR #1050's body): on a joined chapter the ring showed no
-   * count while the stored clips were read, then jumped from 0 to its total at
-   * once — every step used to fire only after `joinMp3` had already run, in one
-   * synchronous batch. This pins the fix at the one place that regresses back
-   * to that: each clip's own step must land right after THAT clip is read, not
-   * after every clip in the chapter has been.
+   * #1004 residual 2 (PR #1050's body) first tried reporting each clip's own
+   * step live, right after that clip was read (mirroring
+   * {@link gatherChapterPcm}). Reverted at review bench round 2 on PR #1068
+   * (Frank + George): a clip already reported present here could vanish
+   * before the fallback's own re-read, and `joinMp3` could still fail after
+   * every clip individually parsed — either way, a step already sent could
+   * not be un-sent, and #1049's progress machine either misattributed the
+   * fallback's later, correct account or swallowed it outright (see
+   * `tests/share-carry-keys.test.ts`'s two bench-round-2 describes, which
+   * exercise both failures end to end through the real reducer).
+   *
+   * This pins the design that replaced it: nothing is reported until every
+   * clip is read, every one is confirmed joinable, and `joinMp3` has actually
+   * built the joined bytes. Every read happens before any step — the reverse
+   * of what a live-reporting regression would produce.
    */
-  it("advances the step count as each clip is read, not in one batch once every clip is already in hand", async () => {
+  it("reports nothing until every clip is read and the join has actually succeeded", async () => {
     const { chapterId } = await finishedChapter([5_000, 6_000, 7_000]);
     const order: string[] = [];
     const real = clips.getClip;
@@ -544,16 +553,15 @@ describe("exportChapterMp3 — an all-Finished chapter is joined, not re-encoded
     ).finally(() => spy.mockRestore());
 
     expect(result).not.toBeNull();
-    // A read for clip N+1 never happens before clip N's own step has landed —
-    // the ring only ever counts what has actually been read, never a whole
-    // chapter's worth reported at once after the last read completes.
+    // Every read happens before any step: nothing is reported speculatively,
+    // only once the join is known to have succeeded.
     expect(order).toEqual([
+      "read",
+      "read",
       "read",
       "step:0/3",
       "step:1/3",
-      "read",
       "step:2/3",
-      "read",
       "step:3/3",
     ]);
   });

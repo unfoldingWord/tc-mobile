@@ -358,39 +358,73 @@ export type ChapterCodec = AudioCodec & { readonly onJoined?: () => void };
  * Build an all-Finished chapter's MP3 by joining its stored frames (#1004).
  *
  * Every present clip is read and checked (`parseJoinableMp3`) here, one at a
- * time, and joined (`joinMp3`) once every clip is in hand. **The step count
- * advances as each clip is read (#1004 residual 2), the same way
- * {@link gatherChapterPcm} advances per segment** — not, as before, in one
- * batch after `joinMp3` had already run, which left the ring silent for the
- * whole read and then jumped straight to its total. Each step carries the
- * running `skipped` and the counted segments' clip ids as `keys` (#1044),
- * exactly as the gather reports them. A clip gone since pass 1 is skipped and
- * counted missing, as there, and still gets its own step — it is a resolved
- * clip, just one with nothing to join.
+ * time, and joined (`joinMp3`) once every clip is in hand. **Nothing is
+ * reported on `onStep` until ALL of that has happened AND `joinMp3` has
+ * actually built the joined bytes** — only then is the per-clip step
+ * sequence (`(0, n)`, then one step per clip, each carrying the running
+ * `skipped` and the counted clips' ids as `keys`, #1044) reported, in one
+ * pass over the already-known results.
  *
- * The `(0, n)` anchor is folded into the FIRST clip's own step rather than
- * fired before any read starts: a clip found not joinable is discovered by
- * reading and parsing it, the same read this reports on, so opening the count
- * before that read would report something for a chapter this function is
- * about to refuse. Deferring it this far means a chapter whose first clip is
- * not joinable still reports nothing at all, matching `"not-joinable"` below.
- * A later clip's own failure can still land after earlier clips have already
- * reported their steps — the same tradeoff the gather doesn't face, since
- * nothing there can invalidate segments already gathered; here a chapter with
- * more than one Finished clip where a later one is not joinable will show
- * partial progress before the fallback restarts the count from its own
- * `(0, n)`. No caller of this path counts more than one Finished chapter's
- * clips without also going through {@link withEncodeSteps}, whose `report`
- * only moves a count forward, so that restart is absorbed there rather than
- * shown as the ring stepping backward.
+ * This was NOT always the design (#1004 residual 2 tried reporting each
+ * clip's step live, as it was read, mirroring {@link gatherChapterPcm}) —
+ * reverted at review bench round 2 on PR #1068 (Frank + George), because live
+ * per-clip reporting here cannot be made sound against #1049's progress
+ * machine (`withStep`, `hooks/share-progress.ts`), which fixes a run's
+ * `total`/`keys` at its first step and infers a skip's POSITION from the
+ * `done`/`skipped` delta between the reports it actually receives, not from
+ * an explicit index:
+ *
+ * - **A clip already reported present here can vanish before the FALLBACK's
+ *   own, independent re-read** (`fillChapterPcm`, called after this function
+ *   returns `"not-joinable"`). Once this function's report for that clip has
+ *   reached the reducer, it cannot be un-reported; the fallback's later,
+ *   correct report that the clip is now missing either gets dropped by
+ *   {@link withEncodeSteps}'s forward-only guard, or — worse — lands on a
+ *   LATER `done` value and gets attributed to the wrong clip's position,
+ *   because `placeHollow` has no notion of "which clip", only "how far the
+ *   count has moved since the last skip." (`tests/share-carry-keys.test.ts`,
+ *   "a later clip not joinable AND an earlier clip vanishing before the
+ *   re-read".)
+ * - **`joinMp3` itself can still fail after every clip has individually
+ *   parsed** (mismatched format across pieces, or a piece whose granule
+ *   count does not cover its own recorded length — `coversRecording`). Live
+ *   per-clip reporting had already carried `done` up to this function's own
+ *   total by the time that failure is discovered, so the FALLBACK's fresh
+ *   per-clip reports — real, newly-happening decode work — arrive at `done`
+ *   values the guard had already seen and are dropped outright: the visible
+ *   count parks at wherever the doomed join attempt left it until the
+ *   encoder's own fractional progress (if any) eventually pushes past it.
+ *   (`tests/share-carry-keys.test.ts`, "joinMp3 refuses a chapter every clip
+ *   individually parsed".)
+ *
+ * Both failures share one root cause: this function's own report for a given
+ * clip is only ever correct if the chapter's join, as a WHOLE, succeeds — and
+ * that cannot be known until every clip is read, parsed and actually joined.
+ * Reporting speculatively, before that is known, risks reporting something
+ * for a chapter this function is about to refuse — the one guarantee
+ * `"not-joinable"` below exists to make. Given `hooks/share-progress.ts`'s
+ * contract cannot be changed to carry an explicit per-clip index instead of
+ * inferring one (out of scope here), holding every report until success is
+ * confirmed is what keeps the reducer's inference sound: whichever pass
+ * — this one, on success, or `fillChapterPcm`'s fallback, on failure —
+ * ends up producing the file is the ONLY account the reducer ever sees, so
+ * there is nothing for a later pass to contradict or a guard to swallow.
+ * This does mean a chapter's read is silent on the ring until the join
+ * succeeds or fails, same as before #1004 was first tried on this path —
+ * `ENCODE_STEPS`'s docblock says the same thing from the caller's side.
+ *
+ * A clip gone since pass 1 is skipped and counted missing, as there, and
+ * still gets its own step — it is a resolved clip, just one with nothing to
+ * join.
  *
  * Returns:
  *
- * - `"not-joinable"` — some clip cannot be copied safely; the caller builds
- *   the chapter by decode and encode instead.
+ * - `"not-joinable"` — some clip cannot be copied safely, or `joinMp3`
+ *   refused the whole set: nothing was reported, and the caller builds the
+ *   chapter by decode and encode instead.
  * - `"cancelled"` — `shouldContinue` went false; checked before every read
- *   and re-checked after it, so a cancel that lands during a read never
- *   reports that clip's step, and nothing is reported after it is observable.
+ *   and re-checked after it, and again once every clip is read. Nothing is
+ *   reported either way, since nothing is reported before this point at all.
  * - `null` — every clip vanished: nothing to share.
  * - the joined MP3 otherwise.
  *
@@ -406,41 +440,41 @@ async function joinFinishedChapter(
   /** Per present clip, in order: whether it was skipped (gone since pass 1). */
   const skippedAt: boolean[] = [];
   let missing = plan.missing;
-  const total = plan.present.length;
-  // The counted segments by clip id (#1044), as the gather names them.
-  const keys = plan.present.map((p) => p.clipId);
-  let skipped = 0;
-  let done = 0;
-  /** Whether the `(0, total)` anchor has gone out yet — see the docblock. */
-  let opened = false;
   for (const { clipId, frames } of plan.present) {
     if (shouldContinue && !shouldContinue()) return "cancelled";
     const clip = await getClip(clipId);
-    // Re-checked after the await: a cancel that landed during this read must
-    // not report this clip's step (#986).
+    // Re-checked after the await: a cancel that landed during this read
+    // stops here, before this clip is even added to `skippedAt` below.
     if (shouldContinue && !shouldContinue()) return "cancelled";
     if (!clip) {
       missing++;
-      skipped++;
       skippedAt.push(true);
-    } else if (clip.encoding !== "mp3") {
-      return "not-joinable";
-    } else {
-      const parsed = parseJoinableMp3(clip.mp3);
-      if (parsed === null) return "not-joinable";
-      pieces.push({ frames: parsed, recorded: frames });
-      skippedAt.push(false);
+      continue;
     }
-    if (!opened) {
-      opened = true;
-      onStep?.(0, total, 0, undefined, keys);
-    }
-    onStep?.(++done, total, skipped, undefined, keys);
+    if (clip.encoding !== "mp3") return "not-joinable";
+    const parsed = parseJoinableMp3(clip.mp3);
+    if (parsed === null) return "not-joinable";
+    pieces.push({ frames: parsed, recorded: frames });
+    skippedAt.push(false);
   }
   if (shouldContinue && !shouldContinue()) return "cancelled";
   const mp3 =
     pieces.length === 0 ? null : joinMp3(pieces, GAP_FRAMES, MP3_ENCODER_DELAY);
   if (pieces.length > 0 && mp3 === null) return "not-joinable";
+
+  // Only now — every clip read, every one either missing (counted) or
+  // joinable, and (when there was anything to join) `joinMp3` itself
+  // succeeded — report the steps. See the docblock for why nothing is
+  // reported any earlier than this.
+  const total = plan.present.length;
+  // The counted segments by clip id (#1044), as the gather names them.
+  const keys = plan.present.map((p) => p.clipId);
+  let skipped = 0;
+  onStep?.(0, total, skipped, undefined, keys);
+  skippedAt.forEach((wasSkipped, i) => {
+    if (wasSkipped) skipped++;
+    onStep?.(i + 1, total, skipped, undefined, keys);
+  });
   if (mp3 === null) return null;
   return { mp3, segments: pieces.length, missing };
 }
@@ -459,8 +493,13 @@ async function joinFinishedChapter(
  * looks right. A chapter that mixes finished (MP3) and draft segments pays a
  * decode per finished segment in the gather, which gives the gather more real
  * weight than an all-PCM chapter. An all-Finished chapter is joined, not
- * encoded (#1004): its reads come before its first step, and the count then
- * runs from `0` to its total at once, when the joined MP3 exists.
+ * encoded (#1004): its reads, per-clip validation and the join itself all
+ * happen before its first step, and the count then runs from `0` to its
+ * total at once, once the joined MP3 is confirmed to exist. This is
+ * deliberate, not a residual gap — {@link joinFinishedChapter}'s own docblock
+ * explains why reporting any earlier is unsound against #1049's progress
+ * machine (review bench round 2 on PR #1068 reverted an earlier attempt at
+ * live per-clip reporting here for exactly that reason).
  */
 export const ENCODE_STEPS = 100;
 
