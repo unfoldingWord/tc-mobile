@@ -24,6 +24,7 @@ import { encoderNotice } from "./encoder-notice";
 import { shareGapText, shareProgressText } from "./share-error-copy";
 import { ShareMenuSection } from "./share-menu-section";
 import { ShareProgress } from "./share-progress";
+import { StoragePressureBanner } from "./storage-pressure-banner";
 import { storagePressureNotice } from "./storage-pressure-notice";
 import { strings } from "@/lib/strings";
 import { ThemeControl } from "./theme-control";
@@ -1621,7 +1622,9 @@ export function BooksScreen({
         <Notice tone="info">{strings.storageNotPersisted}</Notice>
       )}
       {pressureLine && (
-        <Notice tone={pressureLine.tone}>{pressureLine.text}</Notice>
+        // The same line in the current look; state 17's banner, with its
+        // "Share your work" button, in O4 (#983).
+        <StoragePressureBanner notice={pressureLine} o4={o4} />
       )}
       {encoderLine && (
         <Notice tone={encoderLine.tone}>{encoderLine.text}</Notice>
