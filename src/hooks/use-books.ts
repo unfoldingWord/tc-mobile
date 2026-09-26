@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { errorMessage } from "@/lib/failure-text";
 import {
   addChapter as addChapterToBook,
+  assertReorderTarget,
   chapterProgress,
   createBook as createBookInStore,
   deleteBook as deleteBookFromStore,
@@ -10,11 +10,15 @@ import {
   getChapter,
   isStaleBookFailure,
   listBooks,
+  moveChapter as moveChapterInStore,
+  moveToIndex,
   nextBookName,
   renameBook as renameBookInStore,
 } from "@/lib/storage/books";
 import { reportFailure } from "./report-failure";
-import type { Book, BookId, Chapter } from "@/types/domain";
+import { failureKey, type FailureKey } from "./save-failure";
+import { bumpStoragePressure } from "./use-storage-pressure";
+import type { Book, BookId, Chapter, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
 /**
@@ -37,13 +41,14 @@ async function loadBookCard(book: Book): Promise<BookCard> {
     book.chapterIds.map(async (id): Promise<ChapterRow | null> => {
       const chapter = await getChapter(id);
       if (!chapter) return null; // drop a dangling id rather than render a blank
-      const { finished, total } = await chapterProgress(id);
+      const { finished, total, recorded } = await chapterProgress(id);
       return {
         chapterId: chapter.id,
         number: chapter.number,
         name: chapter.name,
         finishedCount: finished,
         totalCount: total,
+        recordedCount: recorded,
       };
     })
   );
@@ -51,6 +56,7 @@ async function loadBookCard(book: Book): Promise<BookCard> {
     bookId: book.id,
     name: book.name,
     chapters: chapters.filter((c): c is ChapterRow => c !== null),
+    coverColourKey: book.coverColourKey,
   };
 }
 
@@ -151,14 +157,16 @@ export function dropBookCard(
 }
 
 /**
- * The hook's single error slot: the message, and whether it came from a delete.
+ * The hook's single error slot: the failure KEY (#172 — never the raw
+ * `cause.message` a screen would otherwise speak verbatim), and whether it
+ * came from a delete.
  *
- * One state, not two, so the label and the message it labels cannot drift apart
+ * One state, not two, so the label and the key it labels cannot drift apart
  * — a delete's copy must never outlive the error it describes, and a later
  * failure from any other mutation must take the label off (George R1 P2-2).
  */
 interface Failure {
-  readonly message: string;
+  readonly key: FailureKey;
   readonly fromDelete: boolean;
 }
 
@@ -212,10 +220,11 @@ export function patchNewChapter(
         chapterId: chapter.id,
         number: chapter.number,
         name: chapter.name,
-        // A brand-new chapter has no segments, so both counts are known
+        // A brand-new chapter has no segments, so all three counts are known
         // without a read — mirrors `addSegment`'s optimistic row.
         finishedCount: 0,
         totalCount: 0,
+        recordedCount: 0,
       },
     ],
   };
@@ -265,6 +274,53 @@ export function patchRenamedBook(
 }
 
 /**
+ * Move one chapter row within its card, in the same turn as the drop (#953).
+ *
+ * The optimistic half of `moveChapter` below: the row lands where the
+ * translator dropped it before the write resolves, so the list does not snap
+ * back for the length of a transaction. `toIndex` means exactly what it means
+ * to the store's `moveChapter` — an absolute position among the card's rows,
+ * which are the book's resolvable chapters (`loadBookCard` drops a dangling
+ * id) — and goes through the same `moveToIndex`, so the patch and the write
+ * cannot put the row in different places.
+ *
+ * Numbers are renumbered densely, as the store does (the DRI's "Renumber"
+ * pick): the badge a row shows is its position + 1. Names are untouched.
+ *
+ * The card does NOT move to the front of the shelf, unlike
+ * `patchNewChapter`/`patchRenamedBook`: the store leaves the book's
+ * `updatedAt` alone on a reorder (#953 scope Q4), so `listBooks` keeps the
+ * card where it is, and so does this.
+ *
+ * A move that changes nothing, or names a chapter no card holds, returns
+ * `books` itself.
+ */
+export function patchMovedChapter(
+  books: readonly BookCard[],
+  chapterId: ChapterId,
+  toIndex: number
+): BookCard[] {
+  const index = books.findIndex((card) =>
+    card.chapters.some((row) => row.chapterId === chapterId)
+  );
+  const original = books[index];
+  if (index === -1 || !original) return books as BookCard[]; // stale row
+  const from = original.chapters.findIndex(
+    (row) => row.chapterId === chapterId
+  );
+  const moved = moveToIndex(original.chapters, from, toIndex);
+  if (moved.every((row, i) => row === original.chapters[i])) {
+    return books as BookCard[]; // dropped where it started
+  }
+  const chapters = moved.map((row, i) =>
+    row.number === i + 1 ? row : { ...row, number: i + 1 }
+  );
+  const next = books.slice();
+  next[index] = { ...original, chapters };
+  return next;
+}
+
+/**
  * Whether an Add-chapter tap for `bookId` should proceed, given the set of
  * books currently mid-create. The guard itself — not just the ref that holds
  * it — gets a red-first test: a second tap for the SAME book while the first
@@ -308,7 +364,7 @@ export function isLoadCurrent(startedAt: number, current: number): boolean {
  */
 type CreateBookOutcome =
   | { readonly ok: true; readonly book: Book }
-  | { readonly ok: false; readonly message: string };
+  | { readonly ok: false; readonly key: FailureKey };
 
 /**
  * The Books screen (B2): the book/chapter tree and its two creation actions.
@@ -392,7 +448,11 @@ export function useBooks() {
       return;
     }
     setFailure({
-      message: errorMessage(cause),
+      // Every caller here is a write (create/addChapter/rename/delete), so
+      // "saveFailed" is the fallback; `deleteBook`'s own failure never shows
+      // this key on screen regardless — `fromDelete` relabels it to
+      // `deleteBookFailed` instead (see `books-screen.tsx`'s `noticeText`).
+      key: failureKey(cause, "saveFailed"),
       fromDelete,
     });
   }, []);
@@ -429,7 +489,7 @@ export function useBooks() {
         // so `loadFailed` is false. The book is still on disk in that state, so
         // the delete's copy is the one that has to survive (George R4 P2-1).
         //
-        // `message` is extracted BEFORE the updater, not inside it: the
+        // `key` is extracted BEFORE the updater, not inside it: the
         // updater must not reference `cause` itself, only a value already
         // read from it. A nested function inside a `catch (cause)` block that
         // DOES reference `cause` silences eslint-plugin-react-hooks 7.1.1's
@@ -443,9 +503,13 @@ export function useBooks() {
         // so it is outside what eslint-plugin-react-hooks analyses at all.
         // This hoist stays inside the hook and only changes what the nested
         // closure references.)
-        const message = errorMessage(cause);
+        const key = failureKey(cause, "loadFailed");
+        // #172: this site had no funnel report before this PR. Called
+        // directly here, not inside the updater above (same reason `key` is
+        // hoisted out of it) — see the comment block above.
+        reportFailure(cause, "books-load");
         setFailure((prev) =>
-          prev?.fromDelete ? prev : { message, fromDelete: false }
+          prev?.fromDelete ? prev : { key, fromDelete: false }
         );
       } finally {
         if (!stale()) setLoading(false);
@@ -492,6 +556,15 @@ export function useBooks() {
       // independently by both lenses). Still never a silent unhandled rejection.
       try {
         const book = await createBookInStore(name);
+        // The write is durable now — a new book may hold new chapters/takes
+        // before this screen next asks `estimate()` on its own, so a live
+        // `useStoragePressure` mount must re-read rather than keep whatever
+        // it answered before this commit (#542 Part A, DRI decision
+        // 2026-09-24). Called here, after the `await` lands, never from the
+        // optimistic `setBooks` patch below — that patch can still be
+        // superseded by a stale concurrent load, but this write already
+        // committed regardless.
+        bumpStoragePressure();
         report(null); // a successful write clears the slot — see `deleteBook`
         // Put the row on the shelf in THIS turn, before `reload()`'s async read
         // lands. The New Book dialog unmounts on success, and every contract it
@@ -518,16 +591,27 @@ export function useBooks() {
         // generation itself, so the guard below still discards this read if a
         // NEWER patch lands before it resolves — the optimistic insert above
         // is never at risk, only ever reconciled or superseded.
+        // The cover key rides along (#942), so a book created with a colour
+        // shows it now rather than its id-derived fallback until the reload.
         setBooks((prev) => [
-          { bookId: book.id, name: book.name, chapters: [] },
+          {
+            bookId: book.id,
+            name: book.name,
+            chapters: [],
+            coverColourKey: book.coverColourKey,
+          },
           ...prev,
         ]);
         reload();
         return { ok: true, book };
       } catch (cause) {
+        // #172: this site had no funnel report before this PR — the reason
+        // reached only the New Book dialog's own scoped Notice, and only as
+        // the raw store string.
+        reportFailure(cause, "books-create");
         return {
           ok: false,
-          message: errorMessage(cause),
+          key: failureKey(cause, "saveFailed"),
         };
       }
     },
@@ -589,7 +673,18 @@ export function useBooks() {
         // calling `reload()`, which would also trigger a needless extra read
         // of a book that has not changed — marks that load stale so its
         // resolution is a no-op.
-        const { swallowed } = await reportUnlessStale(cause, bookId, report);
+        // #172: this site had no funnel report before this PR. The wrapper
+        // — not bare `report` — only fires on the NOT-swallowed branch,
+        // exactly where `reportUnlessStale` calls it; a stale race is not a
+        // genuine failure to log, matching `renameSegment`'s same rule.
+        const { swallowed } = await reportUnlessStale(
+          cause,
+          bookId,
+          (reported) => {
+            reportFailure(reported, "books-add-chapter");
+            report(reported);
+          }
+        );
         if (swallowed) {
           setBooks((prev) => dropBookCard(prev, bookId));
           reload();
@@ -608,6 +703,12 @@ export function useBooks() {
 
   const renameBook = useCallback(
     async (bookId: BookId, name: string): Promise<Book | null> => {
+      // Clear at the START of the op, as `deleteBook` does (#395 item 1): a
+      // Notice from a PREVIOUS failed rename must not still be standing once
+      // a retry is under way, alongside the screen's own busy Notice for
+      // THIS attempt — the exact collision `control-affordance.ts` names as
+      // the rule the busy/Notice wiring follows (George, #395).
+      report(null);
       // `reload()` follows the patch — see `createBook`'s matching comment
       // (George R7 P2). A failed write reaches the same Notice a load
       // failure does.
@@ -633,10 +734,13 @@ export function useBooks() {
         // in the same synchronous step as the Notice: bumping after the
         // `await` left a microtask window in which an already-resolved load
         // continuation still read the old generation (Frank, #733 round 1).
+        // #172: this site had no funnel report before this PR — added the
+        // same way `addChapter` above does, and for the same reason.
         const { swallowed } = await reportUnlessStale(
           cause,
           bookId,
           (reported) => {
+            reportFailure(reported, "books-rename");
             loadGen.current += 1;
             report(reported);
           }
@@ -649,6 +753,64 @@ export function useBooks() {
       }
     },
     [reload, report]
+  );
+
+  /**
+   * Move a chapter to an absolute position in its book (#953) — the storage
+   * half of press-and-hold reorder; the gesture that calls it is a later PR.
+   *
+   * Optimistic: the row moves (and the badges renumber) in THIS turn via
+   * `patchMovedChapter`, and the generation is bumped in the same step, so a
+   * load already in flight — which read the pre-move order — is discarded
+   * rather than snapping the row back over the patch (the `isLoadCurrent`
+   * rule every other patch here follows). Either outcome then `reload()`s,
+   * which is what un-wedges `loading` if that discarded load was the first
+   * one, and what reconciles the shelf with disk: on success it confirms the
+   * patch (or corrects it, if a second copy moved something too); on failure
+   * it is how the STORED order comes back, since the write rolled back whole.
+   *
+   * A failure goes to the funnel as `"chapter-reorder"` and nowhere else: the
+   * row returning to where it was is the state-in-place signal, and nothing
+   * extra appears on screen (#172). It does not touch the shared failure slot
+   * — that slot is a Notice, and a Notice here would be exactly the extra
+   * text #172 rules out. If the database is so broken that the restoring
+   * read fails as well, that load's own failure path is what speaks.
+   *
+   * A non-integer target is a caller bug: it is refused and reported before
+   * the generation or the shelf is touched, rather than thrown from inside a
+   * React updater.
+   *
+   * Resolves `true` when the move landed (a no-op move included), `false`
+   * when it failed. Not latched: two drops in quick succession queue as two
+   * transactions, and the store applies each `toIndex` to the order already
+   * COMMITTED when its transaction runs — the screen's order is never an
+   * argument. When both writes land, that is the order the screen showed
+   * when the second drop was made. When the first write fails, the second
+   * is still applied, to the rolled-back order rather than the one the
+   * translator saw (George round 1 on #953); whether a follower should fail
+   * closed instead is an open call for the author, not settled here.
+   */
+  const moveChapter = useCallback(
+    async (chapterId: ChapterId, toIndex: number): Promise<boolean> => {
+      try {
+        assertReorderTarget(toIndex);
+      } catch (cause) {
+        reportFailure(cause, "chapter-reorder");
+        return false;
+      }
+      loadGen.current += 1;
+      setBooks((prev) => patchMovedChapter(prev, chapterId, toIndex));
+      try {
+        await moveChapterInStore(chapterId, toIndex);
+        reload();
+        return true;
+      } catch (cause) {
+        reportFailure(cause, "chapter-reorder");
+        reload();
+        return false;
+      }
+    },
+    [reload]
   );
 
   const deleteBook = useCallback(
@@ -665,6 +827,13 @@ export function useBooks() {
       report(null);
       try {
         await deleteBookFromStore(bookId);
+        // The delete transaction has committed — real storage (clipMeta/
+        // clipData, `lib/storage/books.ts`) is freed now, so a live
+        // `useStoragePressure` mount must re-read `estimate()` rather than
+        // keep repainting whatever it answered before this delete (#542 Part
+        // A, DRI decision 2026-09-24). After the commit, not from the
+        // optimistic `setBooks` patch below.
+        bumpStoragePressure();
         // Drop the row in the SAME turn the store commits, THEN reload for
         // authority. `reload()` alone only bumps a token: the shelf would keep
         // rendering the deleted book until an async `loadBookCards` resolved,
@@ -724,14 +893,15 @@ export function useBooks() {
     newBookPlaceholder,
     loading,
     loaded,
-    // Derived from the one failure slot, so the message and its delete label
+    // Derived from the one failure slot, so the key and its delete label
     // are always the same failure's.
-    error: failure?.message ?? null,
+    error: failure?.key ?? null,
     deleteFailed: failure?.fromDelete ?? false,
     reload,
     createBook,
     addChapter,
     renameBook,
+    moveChapter,
     deleteBook,
     deleting,
     isDeleting,

@@ -4,10 +4,23 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { Recorder, type RecorderHandle } from "@/components/recorder";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import type { SegmentId } from "@/types/domain";
+
+/**
+ * The erase surface `App` now owns and passes down (#160, L-12). Resting: this
+ * suite never erases, and a stub that answers "no erase in flight" is what the
+ * screen's Back and confirm gates read. Written here rather than mocked at the
+ * module, because the screen takes it as a PROP now — a module mock would
+ * intercept nothing.
+ */
+const erase = {
+  erase: vi.fn(async () => "ok" as const),
+  erasing: false,
+  isErasing: () => false,
+};
 
 /**
  * The tap that ends a recording commits it, in place (#614, Option A).
@@ -164,6 +177,7 @@ async function setup() {
           clipboard: null,
           onClipboardChange: vi.fn(),
           databaseUnreachable: false,
+          erase,
           onExit,
           onRequestBack: () => {
             void ref.current?.requestClose();
@@ -220,9 +234,10 @@ it("stays in the sheet, in record mode, on the committed audio", async () => {
   // to leave (or to enter edit), which is what made "scroll the take you just
   // recorded" impossible — the reported bug.
   expect(s.onExit).not.toHaveBeenCalled();
-  // NOT edit mode either: `commitTake("stay")` and `commitTake("edit")` share
-  // one path, and passing the wrong one here would open the edit toolbar on a
-  // plain Stop. The pill is the mode marker a sighted non-reader has (D2).
+  // NOT edit mode either: until #871, `commitTake` also served an Edit entry
+  // and took an argument saying which, and passing the wrong one here would
+  // have opened the edit toolbar on a plain Stop. The pill is the mode marker
+  // a sighted non-reader has (D2).
   expect(document.body.textContent).not.toContain(strings.modepillEditing);
   // Back at idle: the control is Record again, ready to append at the line.
   expect(s.button(strings.record)).toBeDefined();
@@ -364,29 +379,75 @@ it("a Stop whose decode failed stays in place when Try again succeeds", async ()
   expect(s.button(strings.record)).toBeDefined();
 });
 
-it("an Edit-entry recovery still reaches edit mode, and a Back's still exits", async () => {
-  // The other two destinations, so the three-way discriminator is pinned in
-  // every arm rather than only the new one. Same held-bytes shape as above.
+// `recoverDestination` once had a third answer, `"edit"`, set by
+// `onEnterEdit`'s commit-then-edit arm (#134): entering Edit mid-take,
+// decode failing, then a successful Try again landed in edit mode. #857
+// disabled the `[ ]` toggle and the menu's "Edit recording" row while a take
+// is live (`editRowReason`'s `hasTake` term, `menu-row-state.ts`), which left
+// that arm unreachable, and #871 removed it (the source-shape pins for the
+// removal are in `tests/recorder-edit-entry-no-commit.test.ts`). What this
+// case pins is that a live take keeps the toggle inert — the same state the
+// pure-function gate in `tests/menu-row-state.test.ts` covers, exercised here
+// through the real component.
+it("a live take keeps the Edit toggle disabled (#857)", async () => {
   const s = await setup();
-  boundary.reloads = [{ samples: original }];
-  const bytes = new Blob(["kept"]);
-  s.audio.stopRecording = vi.fn(async () => {
-    s.audio.recorderState = "idle";
-    return { samples: null, blob: bytes, error: null };
-  });
-  s.audio.retryDecode = vi
-    .fn()
-    .mockResolvedValue({ samples: captured, error: null });
-
   s.audio.recorderState = "recording";
   await s.render();
-  await s.click(strings.enterEdit);
-  await s.render();
-  await s.click(strings.takeRecoverRetry);
+
+  // Round 1 (Frank P2): the toggle is `aria-disabled`, not natively
+  // `disabled` — a native attribute would drop it from the tab order with no
+  // reason attached, and #857's own bullet asks for the reason to stay
+  // reachable. `aria-label` carries it in the accessible name, so this finds
+  // the control by its live-take name rather than the plain `strings
+  // .enterEdit` the shared `button()` helper looks for elsewhere in this
+  // file (which is the idle name only, and no longer matches here).
+  const toggle = [...document.querySelectorAll("button")].find((b) =>
+    (b.getAttribute("aria-label") ?? "").startsWith(strings.enterEdit)
+  );
+  expect(toggle, strings.enterEdit).toBeDefined();
+  expect(toggle!.disabled).toBe(false);
+  expect(toggle!.getAttribute("aria-disabled")).toBe("true");
+  expect(toggle!.getAttribute("aria-label")).toBe(
+    `${strings.enterEdit}. ${strings.stopToEdit}`
+  );
+  toggle!.click();
   await s.render();
 
-  expect(s.onExit).not.toHaveBeenCalled();
-  expect(document.body.textContent).toContain(strings.modepillEditing);
+  // `Control`'s activation guard swallows a click on a soft-disabled
+  // (`aria-disabled`) control the same way a native `disabled` button
+  // refuses one — this is the behavioural half `menu-row-state.test.ts`'s
+  // pure-function assertion cannot reach: the tap never even started a stop.
+  expect(s.audio.stopRecording).not.toHaveBeenCalled();
+  expect(document.body.textContent).not.toContain(strings.modepillEditing);
+});
+
+// #869 round 3 (George Medium): `"uncommitted-take"` also covers the commit
+// window, after Stop, where the mic is off and the control beside Edit is
+// Record again. "Stop recording to edit." is false there, so only a live take
+// may wear it.
+it("the commit window after Stop does not tell the translator to stop (#857)", async () => {
+  const s = await setup();
+  let settle: () => void = () => {};
+  s.audio.stopRecording = vi.fn(async () => {
+    s.audio.recorderState = "idle";
+    await new Promise<void>((resolve) => (settle = resolve));
+    return { samples: captured, blob: null, error: null };
+  });
+  s.audio.recorderState = "recording";
+  await s.render();
+  await s.click(strings.stop);
+  await s.render();
+
+  const toggle = [...document.querySelectorAll("button")].find((b) =>
+    (b.getAttribute("aria-label") ?? "").startsWith(strings.enterEdit)
+  );
+  expect(toggle, strings.enterEdit).toBeDefined();
+  // Still inside the commit: the toggle is busy, not yet usable.
+  expect(toggle!.getAttribute("aria-busy")).toBe("true");
+  expect(toggle!.getAttribute("aria-label")).not.toContain(strings.stopToEdit);
+
+  await act(async () => settle());
+  await s.render();
 });
 
 it("a Back's recovery exits to Segments, unchanged", async () => {

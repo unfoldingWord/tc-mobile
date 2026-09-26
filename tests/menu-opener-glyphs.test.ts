@@ -8,10 +8,23 @@ import { BooksScreen } from "@/components/books-screen";
 import { Icon, type IconName } from "@/components/icon";
 import { SegmentRow } from "@/components/segment-row";
 import { SegmentsScreen } from "@/components/segments-screen";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { BookId, ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { BookCard, SegmentRow as Row } from "@/types/view";
+
+/**
+ * The erase surface `App` now owns and passes down (#160, L-12). Resting: this
+ * suite never erases, and a stub that answers "no erase in flight" is what the
+ * screen's Back and confirm gates read. Written here rather than mocked at the
+ * module, because the screen takes it as a PROP now — a module mock would
+ * intercept nothing.
+ */
+const erase = {
+  erase: vi.fn(async () => "ok" as const),
+  erasing: false,
+  isErasing: () => false,
+};
 
 /**
  * #589: one glyph, one meaning. ≡ opens the global menu and nothing else (#608
@@ -194,6 +207,7 @@ describe("which glyph opens which menu (#589)", () => {
         onOpenRecorder: vi.fn(),
         pushLayer: vi.fn(),
         popLayer: vi.fn(),
+        erase,
       })
     );
 

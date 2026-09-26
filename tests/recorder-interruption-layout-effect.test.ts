@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { matchingBraceClose } from "./support";
+
 /**
  * The #59 interruption commit runs in a LAYOUT effect, not a passive one
  * (George r1 pass B, P2, on PR #681).
@@ -72,18 +74,6 @@ describe("the #59 interruption commit is a layout effect (George r1 pass B P2)",
   const openerIndex = before.lastIndexOf("Effect(");
   const hook = before.slice(before.lastIndexOf("use", openerIndex));
 
-  const matchingBraceClose = (text: string, openIndex: number): number => {
-    let depth = 0;
-    for (let i = openIndex; i < text.length; i++) {
-      if (text[i] === "{") depth++;
-      else if (text[i] === "}") {
-        depth--;
-        if (depth === 0) return i;
-      }
-    }
-    return -1;
-  };
-
   const braceOpen = source.indexOf("{", openerIndex);
   const braceClose = matchingBraceClose(source, braceOpen);
   const body = source.slice(braceOpen, braceClose + 1);
@@ -104,7 +94,7 @@ describe("the #59 interruption commit is a layout effect (George r1 pass B P2)",
     expect(braceOpen).toBeGreaterThan(openerIndex);
     expect(braceClose).toBeGreaterThan(braceOpen);
     expect(body.replace(/\s+/g, " ").trim()).toBe(
-      `{ if (${GUARD}) return; commitTake("stay"); }`
+      `{ if (${GUARD}) return; commitTake(); }`
     );
   });
 });

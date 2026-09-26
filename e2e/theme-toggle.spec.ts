@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test";
 
+import { seedToRecorder, seedToSegments } from "./support/seed";
+import { DARK_FLOOR, LIGHT_FLOOR, floorOf, resolved } from "./support/theme";
+
 /**
  * The light theme, actually reached — in a real browser (#171).
  *
@@ -14,12 +17,18 @@ import { expect, test } from "@playwright/test";
  *
  * WHY IT IS ALLOWED TO DRIVE THE UI, when `browser-boundary-smoke.spec.ts`'s
  * header says that file deliberately does not. The reason given there is
- * fragile UI timing around a fake microphone and simulated audio. This has
- * neither: the hamburger is ungated on the Books screen (no book, no chapter,
- * no permission needed), the toggle is synchronous, and every assertion is a
- * computed style or an attribute. It is the one interaction in this app with no
- * audio dependency at all, which is why it can be driven honestly and the
- * recorder cannot.
+ * fragile UI timing around a fake microphone and simulated audio. The cases
+ * here need neither: the hamburger is ungated on the Books screen (no book, no
+ * chapter, no permission needed), the toggle is synchronous, and every
+ * assertion is a computed style or an attribute.
+ *
+ * This paragraph used to end "which is why it can be driven honestly and the
+ * recorder cannot". That was already untrue when written —
+ * `e2e/recorder-selection.spec.ts` drives a real take against
+ * `--use-fake-device-for-media-stream` — and `e2e/theme-mid-take.spec.ts` now
+ * toggles the theme during one. What is true is narrower and is all this file
+ * needs: none of ITS cases require a microphone, so none of them pay that
+ * timing cost.
  *
  * It runs against the real shipped `dist/` build, so what it proves is the
  * cascade users actually get — including that Tailwind's `@layer` ordering and
@@ -31,18 +40,6 @@ import { expect, test } from "@playwright/test";
  * #249 for whether the glyph is recognised). Headless Chromium on a container
  * is not a screen in Nairobi.
  */
-
-/** `--p-cool-950`, the dark floor. */
-const DARK_FLOOR = "rgb(11, 16, 22)";
-/** `--p-cool-050`, the light floor. */
-const LIGHT_FLOOR = "rgb(246, 248, 250)";
-
-const floorOf = (page: import("@playwright/test").Page) =>
-  page.evaluate(() =>
-    getComputedStyle(document.documentElement)
-      .getPropertyValue("--s-floor")
-      .trim()
-  );
 
 const themeColor = (page: import("@playwright/test").Page) =>
   page.evaluate(
@@ -77,17 +74,6 @@ const menuControl = (page: import("@playwright/test").Page) =>
  */
 const failureMarker = (page: import("@playwright/test").Page) =>
   page.locator("header .control-hint");
-
-/** The resolved rgb() of a CSS colour, so a hex token and a computed value compare. */
-const resolved = (page: import("@playwright/test").Page, value: string) =>
-  page.evaluate((v) => {
-    const probe = document.createElement("div");
-    probe.style.color = v;
-    document.body.append(probe);
-    const out = getComputedStyle(probe).color;
-    probe.remove();
-    return out;
-  }, value);
 
 test.describe("the light theme is reachable and sticks (#171)", () => {
   test("a tap flips the theme, repaints the chrome, and survives a reload", async ({
@@ -306,5 +292,119 @@ test.describe("the theme survives navigation when persistence fails (#457 QA P2)
       stored,
       "the write did not actually fail, so this proved nothing"
     ).toBeNull();
+  });
+});
+
+test.describe("the theme is reachable from the screens you work on (#149)", () => {
+  /**
+   * #149 asked whether Books-only was acceptable for the global menu. It was,
+   * while the menu's only entry was a licence notice nobody needs mid-session.
+   * The theme toggle (#171, #457) is the opposite: `2-semantic.css`'s header
+   * says the light theme exists because direct equatorial sun makes the dark
+   * screen unreadable, and that condition arrives WHILE you are recording. On
+   * a Books-only toggle the way out is back out of the recorder, back out of
+   * Segments, open the hamburger, tap, and navigate back in — four screens,
+   * in the one condition where the screen is hardest to read.
+   *
+   * So these two cases assert the toggle is reachable from the chapter's `≡`
+   * and the recorder's `≡`, and that tapping it there actually repaints. They
+   * fail on a Books-only toggle at the locator: the control is not in those
+   * menus at all.
+   *
+   * WHY NOT A SECOND HAMBURGER on those screens. Both already carry their own
+   * `≡` (`strings.chapterMenuOpen`, `strings.recorderMenuOpen`), and a second
+   * opener beside them is the worse option on a 320px header that #370 already
+   * reports wrapping — so the global entry joins the existing menu rather than
+   * arriving with an opener of its own.
+   *
+   * WHAT THIS DOES NOT COVER, and what the Books cases above still own: the
+   * `theme-color`/status-bar metas, persistence across a reload, and the
+   * failed-write path. Those are properties of `use-theme.ts`, which is one
+   * store for every caller — proving them once is the point of that store.
+   * What is new here is only REACHABILITY plus a real repaint at each site.
+   */
+  test("the chapter ≡ carries the toggle, and it repaints from there", async ({
+    page,
+  }) => {
+    await seedToSegments(page);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+    await page
+      .getByRole("button", {
+        name: "More actions for this chapter",
+        exact: true,
+      })
+      .click();
+    const menu = page.getByRole("dialog", { name: "Chapter", exact: true });
+    await expect(menu).toBeVisible();
+
+    const toLight = menu.getByRole("button", { name: /light screen/i });
+    await expect(toLight).toBeVisible();
+    await toLight.click();
+
+    // The repaint, not just the attribute: the shipped cascade is what the
+    // person in the sun actually gets.
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    expect(await resolved(page, await floorOf(page))).toBe(LIGHT_FLOOR);
+
+    // Same affordance as on Books: the menu stays open, so the control is its
+    // own undo and a wrong guess costs one more tap in the same spot.
+    await expect(menu).toBeVisible();
+    await menu.getByRole("button", { name: /dark screen/i }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    expect(await resolved(page, await floorOf(page))).toBe(DARK_FLOOR);
+  });
+
+  test("the recorder ≡ carries the toggle, and it repaints from inside the sheet", async ({
+    page,
+  }) => {
+    // The case the reframing of #149 turns on: the sheet is where a translator
+    // spends the session, and it is `aria-modal` over an `inert` Segments —
+    // so a toggle that lives anywhere else is unreachable without leaving the
+    // recording behind.
+    await seedToRecorder(page);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+    // `exact`, because the Segments `≡` behind the sheet ("More actions for
+    // this chapter") is still in the DOM and a substring match would find two.
+    await page
+      .getByRole("button", { name: "More actions", exact: true })
+      .click();
+    const menu = page.getByRole("dialog", { name: "More", exact: true });
+    await expect(menu).toBeVisible();
+
+    const toLight = menu.getByRole("button", { name: /light screen/i });
+    await expect(toLight).toBeVisible();
+
+    // The AT consequence this PR asks a reviewer to ACCEPT, pinned rather than
+    // left in prose. `Menu` lands open-edge focus on the first ACTIONABLE child,
+    // skipping `aria-disabled` hinted rows (#135); on a segment with nothing
+    // recorded and an empty clipboard every pre-existing row is hinted, so the
+    // toggle is that child. Before this control existed, focus fell back to Edit
+    // and its reason.
+    //
+    // It is asserted BEFORE the click, because clicking moves focus itself and
+    // would make this pass for the wrong reason.
+    //
+    // WHAT THIS DOES AND DOES NOT CATCH. It catches one of the GATES changing:
+    // if a pre-existing row becomes actionable in this state, it takes the
+    // first actionable position and this fails. It does NOT catch a reorder,
+    // and an earlier version of this comment wrongly said it did (George).
+    // In this state every other row is hinted, so the toggle is the only
+    // actionable child WHEREVER it sits — which also means a reorder does not
+    // change what an AT user hears first here, so there is nothing for an
+    // order-sensitive assertion to protect. The mount ORDER is held by
+    // `tests/theme.test.ts` and by the comments in `recorder-menu.tsx`.
+    await expect(toLight).toBeFocused();
+
+    await toLight.click();
+
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    expect(await resolved(page, await floorOf(page))).toBe(LIGHT_FLOOR);
+
+    await expect(menu).toBeVisible();
+    await menu.getByRole("button", { name: /dark screen/i }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    expect(await resolved(page, await floorOf(page))).toBe(DARK_FLOOR);
   });
 });

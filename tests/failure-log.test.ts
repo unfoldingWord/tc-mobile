@@ -36,12 +36,10 @@ import { clearAllStores } from "./support";
 /**
  * The durable failure log (#205) — the store, and the sink that feeds it.
  *
- * Not covered here, and not claimed: the panel and the marker. There is no
- * renderer in this suite (`vitest.config.ts` sets `environment: "node"`, and
- * this repo has declined jsdom before), so `FailureLogPanel`, the `≡` marker on
- * Books, and the share handoff are verified in a browser and recorded on the PR.
- * What IS covered is everything they read: the ring, the order, the sink's
- * ordering guarantee, and the sink's refusal to re-enter the funnel.
+ * The ring, ordering, sink sequencing and refusal to re-enter the funnel are
+ * exercised here. Static hook probes read server snapshots without effects.
+ * The panel, Books marker interactions and native share handoff need separate
+ * browser or device coverage; this suite does not exercise them.
  */
 
 /**
@@ -66,15 +64,12 @@ const entry = (over: Partial<StoredFailure> = {}): StoredFailure => ({
 });
 
 /**
- * What a screen reads on its FIRST paint — one render of the hook, no effects.
+ * Read the hook's server snapshot with one static render and no effects.
  *
- * There is no renderer in this suite, but `renderToStaticMarkup` runs a
- * component body exactly once and resolves `useSyncExternalStore` through its
- * server snapshot. That is precisely the paint at issue whenever the question is
- * "what does Books show the instant it comes back", and it is the only way to
- * read these two hooks here.
+ * This checks the snapshot supplied to `useSyncExternalStore`; it does not
+ * mount Books, run subscriptions or observe a browser paint.
  */
-function firstPaintCount(): number {
+function snapshotCount(): number {
   let seen = 0;
   renderToStaticMarkup(
     createElement(function CountProbe() {
@@ -85,7 +80,7 @@ function firstPaintCount(): number {
   return seen;
 }
 
-function firstPaintGeneration(): number {
+function snapshotGeneration(): number {
   let seen = 0;
   renderToStaticMarkup(
     createElement(function GenerationProbe() {
@@ -596,17 +591,14 @@ describe("the durable sink", () => {
 });
 
 /**
- * The count the ≡ marker reads, across the unmount `App` does on every chapter.
+ * The module-store count exposed by the hook's server snapshot.
  *
- * There is no renderer in this suite, so "first paint" is `renderToStaticMarkup`
- * — which runs the component body once, with no effects, and reads
- * `useSyncExternalStore` through its server snapshot. That is exactly the paint
- * George R2 P2-1 is about: the one Books does the instant it remounts, before
- * any `countFailures()` this hook starts could possibly have landed. A hook that
- * begins each mount at `useState(0)` renders "0" here; a hook reading the module
- * store renders the number that is actually on disk.
+ * `renderToStaticMarkup` reads that snapshot without effects. Starting each
+ * render at `useState(0)` would lose the stored count in these probes; reading
+ * the module store preserves it. Browser remount and subscription timing are
+ * outside this suite.
  */
-describe("the count a remount inherits", () => {
+describe("the count a fresh snapshot inherits", () => {
   let uninstall: (() => void) | null = null;
 
   beforeEach(async () => {
@@ -622,33 +614,33 @@ describe("the count a remount inherits", () => {
     uninstall = null;
   });
 
-  /** One mount, one paint, no effects — what Books does coming Back. */
-  const firstPaint = () =>
+  /** One static snapshot, no effects — what Books' read looks like coming Back. */
+  const snapshot = () =>
     renderToStaticMarkup(
       createElement(function CountProbe() {
         return createElement("span", null, String(useFailureCount()));
       })
     );
 
-  it("first-paints failures reported while nothing was mounted", async () => {
+  it("the first snapshot read includes failures reported while nothing was mounted", async () => {
     // Nothing has rendered yet: this is the chapter visit, with Books gone.
     reportFailure(new Error("during a chapter"), "unhandled-rejection");
     reportFailure(new Error("and another"), "uncaught-error");
     await flushFailureLog();
 
-    // Back to Books. The mark has to be there on the FIRST paint, because a
-    // facilitator who taps ≡ in the window before an async read lands gets the
-    // menu a quiet phone gets.
-    expect(firstPaint()).toBe("<span>2</span>");
+    // Back to Books. The mark has to be there on the FIRST snapshot read,
+    // because a facilitator who taps ≡ in the window before an async read
+    // lands gets the menu a quiet phone gets.
+    expect(snapshot()).toBe("<span>2</span>");
   });
 
-  it("carries the count across an unmount and back", async () => {
+  it("carries the count across repeated snapshot reads", async () => {
     reportFailure(new Error("before the chapter"), "unhandled-rejection");
     await flushFailureLog();
-    expect(firstPaint()).toBe("<span>1</span>");
+    expect(snapshot()).toBe("<span>1</span>");
 
-    // Unmount (open a chapter), remount (Back). Same number, first paint.
-    expect(firstPaint()).toBe("<span>1</span>");
+    // A second static snapshot read (as if Back happened). Same number.
+    expect(snapshot()).toBe("<span>1</span>");
   });
 
   it("drops to 0 on a clear, with nothing mounted to notice", async () => {
@@ -656,7 +648,7 @@ describe("the count a remount inherits", () => {
     await flushFailureLog();
     await clearFailureLog();
 
-    expect(firstPaint()).toBe("<span>0</span>");
+    expect(snapshot()).toBe("<span>0</span>");
   });
 
   it("advances the count when the post-write re-read fails", async () => {
@@ -682,7 +674,7 @@ describe("the count a remount inherits", () => {
     // The row really is on disk — the append is not what failed.
     expect(await countFailures()).toBe(1);
     // And the snapshot moved, which is the half that makes the mark appear.
-    expect(firstPaint()).toBe("<span>1</span>");
+    expect(snapshot()).toBe("<span>1</span>");
   });
 
   it("does not push the count past the ring's limit when the re-read fails", async () => {
@@ -690,7 +682,7 @@ describe("the count a remount inherits", () => {
       reportFailure(new Error(`filler ${i}`), "unhandled-rejection");
     }
     await flushFailureLog();
-    expect(firstPaint()).toBe(`<span>${FAILURE_LOG_LIMIT}</span>`);
+    expect(snapshot()).toBe(`<span>${FAILURE_LOG_LIMIT}</span>`);
 
     const spy = vi
       .spyOn(failuresStore, "countFailures")
@@ -704,7 +696,7 @@ describe("the count a remount inherits", () => {
     // unclamped increment would show 51 — a number the store never held, and one
     // nothing brings back down until the app is foregrounded.
     expect(await countFailures()).toBe(FAILURE_LOG_LIMIT);
-    expect(firstPaint()).toBe(`<span>${FAILURE_LOG_LIMIT}</span>`);
+    expect(snapshot()).toBe(`<span>${FAILURE_LOG_LIMIT}</span>`);
   });
 });
 
@@ -800,7 +792,7 @@ describe("every read of the log is on the write lane", () => {
     // Two rows on disk now, and a LATER generation. The read's stamp is the
     // earlier one — it describes what it returned.
     expect(await countFailures()).toBe(2);
-    expect(generation).toBeLessThan(firstPaintGeneration());
+    expect(generation).toBeLessThan(snapshotGeneration());
   });
 
   it("a clear cannot be overtaken by a count read that started before it", async () => {
@@ -827,7 +819,7 @@ describe("every read of the log is on the write lane", () => {
 
     // The count read resolved 1 while the clear was already queued behind it.
     // On the lane, the clear is the last word.
-    expect(firstPaintCount()).toBe(0);
+    expect(snapshotCount()).toBe(0);
     expect(await countFailures()).toBe(0);
   });
 
@@ -1096,41 +1088,39 @@ describe("the log's generation", () => {
       reportFailure(new Error(`filler ${i}`), "unhandled-rejection");
     }
     await flushFailureLog();
-    expect(firstPaintCount()).toBe(FAILURE_LOG_LIMIT);
-    const armed = firstPaintGeneration();
+    expect(snapshotCount()).toBe(FAILURE_LOG_LIMIT);
+    const armed = snapshotGeneration();
 
     reportFailure(new Error("the one the facilitator is sending"), "render");
     await flushFailureLog();
 
     // The count is unchanged — which is exactly why the panel cannot use it to
     // decide whether an armed File is still a true snapshot of the rows.
-    expect(firstPaintCount()).toBe(FAILURE_LOG_LIMIT);
-    expect(firstPaintGeneration()).not.toBe(armed);
+    expect(snapshotCount()).toBe(FAILURE_LOG_LIMIT);
+    expect(snapshotGeneration()).not.toBe(armed);
   });
 
   it("moves on a clear", async () => {
     reportFailure(new Error("to be discarded"), "unhandled-rejection");
     await flushFailureLog();
-    const armed = firstPaintGeneration();
+    const armed = snapshotGeneration();
 
     await clearFailureLog();
-    expect(firstPaintGeneration()).not.toBe(armed);
+    expect(snapshotGeneration()).not.toBe(armed);
   });
 
   it("the synchronous getter is current the moment a write lands", async () => {
-    // What `send`'s tap-time check reads (Frank R8 P2). The hook cannot be
-    // driven here — there is no renderer in this suite, and arming a payload
-    // needs `navigator.share`/`canShare` and a File besides — so what IS pinned
-    // is the contract `send` depends on: this getter is never a version behind
-    // the subscribed one, which is the whole reason it is read instead of the
-    // value a render captured. The tap itself is covered in the e2e suite.
+    // The tap-time getter must stay current with the hook's server snapshot,
+    // rather than return a generation captured by an earlier render. This
+    // checks that contract, not the share hook's effects or native handoff.
+    // The tap itself is covered in the e2e suite.
     const before = getLogGeneration();
 
     reportFailure(new Error("one row"), "unhandled-rejection");
     await flushFailureLog();
 
     expect(getLogGeneration()).not.toBe(before);
-    expect(getLogGeneration()).toBe(firstPaintGeneration());
+    expect(getLogGeneration()).toBe(snapshotGeneration());
   });
 
   it("does NOT move on a plain re-read", async () => {
@@ -1138,11 +1128,11 @@ describe("the log's generation", () => {
     // about the rows changed, so the snapshot in the person's hand is still true.
     reportFailure(new Error("one row"), "unhandled-rejection");
     await flushFailureLog();
-    const armed = firstPaintGeneration();
+    const armed = snapshotGeneration();
 
     await readFailureLog();
     await flushFailureLog();
 
-    expect(firstPaintGeneration()).toBe(armed);
+    expect(snapshotGeneration()).toBe(armed);
   });
 });

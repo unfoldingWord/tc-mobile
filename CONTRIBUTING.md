@@ -26,8 +26,15 @@ the tree wins, and the disagreement is worth an issue.
 
 ## Setup and commands
 
-Node **22.12+**, except the 23.x line (`engines` in `package.json`; a
-render-test dependency's own engine range excludes 23.x, #577).
+Node **22.22.2+**, except the 23.x line (`engines` in `package.json`; a
+render-test dependency's own engine range excludes 23.x, #577; the floor
+itself was raised from 22.12.0 by lint-staged 17.5.1's own declared range,
+`>=22.22.1`). The iOS
+Xcode-selection cases in `tests/ios-workflow-gates.test.ts` exec `ruby` (with
+RubyGems for `Gem::Version`) on any platform, not only on the Mac setup in
+[`docs/native/README.md` §3](docs/native/README.md#3-one-time-mac-prerequisites).
+Without `ruby` on `PATH` those cases are skipped, not failed, so a green
+`npm test` / `npm run verify` on such a machine has not exercised them.
 
 ```bash
 npm ci
@@ -78,7 +85,7 @@ the same file in the same week.
 Shared files, where collisions actually happen:
 
 - `src/components/recorder.tsx`
-- `src/components/strings.ts`
+- `src/lib/strings.ts`
 - `src/hooks/use-audio-session.ts`
 - `src/components/icon.tsx`
 - `AGENTS.md`
@@ -118,8 +125,11 @@ scripts/review/triage.sh <round> <pr>    # build the round's triage comment
   defect class: the fix approach is wrong) — and ask. Hitting the cap with
   findings open is an escalation, not an approval.
 - **A one-reviewer round is recorded as a deviation**, never as clean.
-- When both are clean, the reviewer posts a **GitHub approval**. The **author
-  merges** (squash) after that approval and green CI.
+- When both are clean, the reviewer posts a **GitHub approval**. The **DRI
+  admin-merges** after that approval and green CI, whoever wrote the PR,
+  pinned to the approved head SHA. An approval on an earlier head does not
+  count. Merges into `develop` normally use a **merge commit**; a release bump
+  must, so that its promotion carries the same bump commit (#918).
 - **Process artifacts** — `ci.yml`, `AGENTS.md`, `scripts/review/**`, deploy
   config — need both reviewers, because they are executed as instructions.
   Exempting them is allowed; the decision is recorded on the PR, never skipped

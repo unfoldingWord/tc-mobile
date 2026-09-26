@@ -6,6 +6,7 @@ import {
   resumeAudioContext,
   type PlaybackHandle,
 } from "./audio-io";
+import type { ProbeSource } from "./audio-probe";
 import { reportFailure } from "./report-failure";
 import {
   useRecorder,
@@ -21,6 +22,7 @@ import {
 } from "@/lib/audio/playback-position";
 import { createAudioSession, type SourceKind } from "@/lib/audio/session";
 import { danglingReason, loadSegmentClip } from "@/lib/storage/segment-audio";
+import { strings } from "@/lib/strings";
 import type { SegmentId } from "@/types/domain";
 import type { SegmentRow } from "@/types/view";
 
@@ -173,6 +175,71 @@ export interface UseAudioSession {
 }
 
 /**
+ * The two narrow views of {@link UseAudioSession} the screens actually take
+ * (#160, L-18).
+ *
+ * One object was drilled to both screens, which use different subsets — not
+ * disjoint ones: `error`, `playingBuffer` and `stopBuffer` are on both, and
+ * `primeAudioContext` is on neither. So the
+ * list screen's prop type admitted `startRecording` and `stopRecording` — the
+ * microphone — to a screen whose only job with audio is to play a row back.
+ * Nothing called them, and the type is what stops the next change from being
+ * able to: a list that can start the microphone has no sheet up to stop it,
+ * and the floor arbiter would be holding "mic" with nothing on screen able to
+ * release it.
+ *
+ * `Pick` rather than two hand-written interfaces, deliberately: the member
+ * lists here are an allow-list over one declaration, so a view cannot drift
+ * from the session's own types, and every member keeps the docblock it has
+ * above rather than acquiring a second, staler copy.
+ *
+ * `primeAudioContext` is on neither: App calls it itself, in the tap that
+ * opens the recorder.
+ *
+ * No membership COUNTS here, and that is not an omission. An earlier draft
+ * named three (26 members, 21 and 7) and every one of them is now wrong:
+ * #614's retirement of the paused preview took `audioNeedsGesture`,
+ * `pauseRecording`, `previewCapture` and `resumeRecording` off the interface
+ * and #601 added `playbackRanOut`, so the two views drifted out of step with
+ * it and only `tsc` noticed. `tests/audio-views.test.ts` asserts the two
+ * properties that actually matter instead — the microphone is on exactly one
+ * view, and `primeAudioContext` is the only member on neither — where a
+ * number cannot go stale unread.
+ */
+export type SegmentsAudio = Pick<
+  UseAudioSession,
+  | "error"
+  | "leave"
+  | "playTake"
+  | "playbackElapsedMs"
+  | "playbackRanOut"
+  | "playingBuffer"
+  | "playingId"
+  | "stopBuffer"
+>;
+
+export type RecorderAudio = Pick<
+  UseAudioSession,
+  | "elapsedMs"
+  | "error"
+  | "meterFailed"
+  | "peekScope"
+  | "playBuffer"
+  | "playingBuffer"
+  | "readLevel"
+  | "readMeterAvailable"
+  | "readPlaybackPosition"
+  | "readScope"
+  | "recorderError"
+  | "recorderState"
+  | "retryDecode"
+  | "startRecording"
+  | "stopBuffer"
+  | "stopRecording"
+  | "supported"
+>;
+
+/**
  * Everything on screen that can make or capture sound, under one owner.
  *
  * The arbitration lives in `lib/audio/session.ts`, which is pure; this is only
@@ -286,6 +353,52 @@ export function useAudioSession(): UseAudioSession {
     [session, setPlaying, setPlayingBuffer]
   );
 
+  /**
+   * The tail both playback paths share (#160, L-15): hand the samples to the
+   * graph, keep the handle only if this claim still owns the floor, and let the
+   * clip's own end reach the caller only while it does.
+   *
+   * `playTake` and `playBuffer` were ~80 % the same, and this is the part that
+   * was identical rather than merely similar. What stays with each caller is
+   * everything they genuinely disagree about: what a second tap means (stop the
+   * segment vs `stopBuffer`), whether a disk read and an MP3 decode come first,
+   * which optimistic state the tap sets, and — the reason `onEnded` is a
+   * parameter and not a flag — what ending means. `playTake` gives the floor
+   * back and reports a run-out (#601); `playBuffer` also notifies its caller
+   * BEFORE the state update (#416).
+   *
+   * The supersession guard IS here, because both wrote it and neither could
+   * correctly omit it: a handle or an end belonging to a claim someone else has
+   * taken over must not touch this screen's state. `settle` returning false
+   * means the handle was built for a superseded claim and has already been
+   * stopped for us.
+   */
+  const startPlayback = useCallback(
+    async (
+      samples: Int16Array,
+      token: number,
+      offsetSeconds: number,
+      source: ProbeSource,
+      onEnded: () => void
+    ): Promise<void> => {
+      const handle = await playSamples(samples, {
+        offsetSeconds,
+        source,
+        isStillCurrent: () => session.isCurrent(token),
+        onEnded: () => {
+          if (!session.isCurrent(token)) return;
+          onEnded();
+        },
+      });
+      // A `false` here means the handle was built for a claim that has since
+      // been superseded; `settle` has already stopped it.
+      if (session.settle(token, handle)) {
+        playbackHandleRef.current = handle;
+      }
+    },
+    [session]
+  );
+
   const playTake = useCallback(
     (row: SegmentRow, offsetSeconds = 0) => {
       if (playingIdRef.current === row.segmentId) {
@@ -326,7 +439,7 @@ export function useAudioSession(): UseAudioSession {
             const fault = danglingReason(audio);
             if (fault) {
               console.error("Nothing to play for this take:", fault);
-              setPlaybackError("Could not play this recording.");
+              setPlaybackError(strings.playbackFailed);
             }
             session.release(token);
             setPlaying(null);
@@ -346,21 +459,12 @@ export function useAudioSession(): UseAudioSession {
                 );
           if (!session.isCurrent(token)) return;
 
-          const handle = await playSamples(samples, {
-            offsetSeconds,
-            source: audio.clip.encoding === "pcm" ? "stored-pcm" : "stored-mp3",
-            isStillCurrent: () => session.isCurrent(token),
-            onEnded: () => {
-              if (!session.isCurrent(token)) return;
-              session.release(token);
-              setPlaying(null, true);
-            },
+          const source =
+            audio.clip.encoding === "pcm" ? "stored-pcm" : "stored-mp3";
+          await startPlayback(samples, token, offsetSeconds, source, () => {
+            session.release(token);
+            setPlaying(null, true);
           });
-          // A `false` here means the handle was built for a claim that has since
-          // been superseded; `settle` has already stopped it.
-          if (session.settle(token, handle)) {
-            playbackHandleRef.current = handle;
-          }
         } catch (cause) {
           console.error("Playing a take failed", cause);
           // Inside the guard: a failure that belongs to a superseded claim is
@@ -369,12 +473,12 @@ export function useAudioSession(): UseAudioSession {
           if (session.isCurrent(token)) {
             session.release(token);
             setPlaying(null);
-            setPlaybackError("Could not play this recording.");
+            setPlaybackError(strings.playbackFailed);
           }
         }
       })();
     },
-    [claimFloor, session, setPlaying]
+    [claimFloor, session, setPlaying, startPlayback]
   );
 
   const stopBuffer = useCallback(() => {
@@ -428,30 +532,19 @@ export function useAudioSession(): UseAudioSession {
 
       void (async () => {
         try {
-          const handle = await playSamples(samples, {
-            offsetSeconds,
-            source: "working",
-            isStillCurrent: () => session.isCurrent(token),
-            onEnded: () => {
-              if (!session.isCurrent(token)) return;
-              // The clip RAN OUT — this fires only from a source that was not
-              // stopped by hand (`audio-io.ts` guards it with its `stopped`
-              // flag) and only while this claim still owns the floor. The
-              // recorder needs that distinction and cannot infer it: the
-              // position is gone the moment the handle is cleared below, and a
-              // playback that never started looks identical from outside
-              // (Frank R2 P2, #416). Called BEFORE the state update, so a
-              // caller's flag is set by the time the re-render reads it.
-              opts?.onEnded?.();
-              session.release(token);
-              setPlayingBuffer(false);
-            },
+          await startPlayback(samples, token, offsetSeconds, "working", () => {
+            // The clip RAN OUT — `startPlayback` only calls this from a source
+            // that was not stopped by hand (`audio-io.ts` guards it with its
+            // `stopped` flag) and only while this claim still owns the floor.
+            // The recorder needs that distinction and cannot infer it: the
+            // position is gone the moment the handle is cleared, and a
+            // playback that never started looks identical from outside
+            // (Frank R2 P2, #416). Called BEFORE the state update, so a
+            // caller's flag is set by the time the re-render reads it.
+            opts?.onEnded?.();
+            session.release(token);
+            setPlayingBuffer(false);
           });
-          // A `false` here means the handle was built for a claim that has since
-          // been superseded; `settle` has already stopped it.
-          if (session.settle(token, handle)) {
-            playbackHandleRef.current = handle;
-          }
         } catch (cause) {
           console.error("Playing the buffer failed", cause);
           // Inside the guard, exactly as in `playTake`: a failure that belongs
@@ -459,12 +552,12 @@ export function useAudioSession(): UseAudioSession {
           if (session.isCurrent(token)) {
             session.release(token);
             setPlayingBuffer(false);
-            setPlaybackError("Could not play this recording.");
+            setPlaybackError(strings.playbackFailed);
           }
         }
       })();
     },
-    [claimFloor, session, setPlayingBuffer, stopBuffer]
+    [claimFloor, session, setPlayingBuffer, startPlayback, stopBuffer]
   );
 
   // The buffer-playback position, PULLED on the caller's own clock. The handle's
@@ -547,11 +640,7 @@ export function useAudioSession(): UseAudioSession {
       // beside it, not replaced.
       reportFailure(cause, "recorder-stop-backstop");
       console.error("Stopping the recorder failed", cause);
-      return {
-        samples: null,
-        error: "Could not finish this recording.",
-        blob: null,
-      };
+      return { samples: null, error: "unfinished", blob: null };
     } finally {
       // The microphone gives the floor back whether or not it produced audio —
       // but only its own. `endRecording` awaits, so by the time this runs the

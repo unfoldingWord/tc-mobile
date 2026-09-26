@@ -79,13 +79,11 @@ export interface StageState {
  * for ("the same way it renders during the first take") and what avoids the
  * pause/close swap-and-flash that gating the frozen arm on `hasAudio` caused.
  *
- * Tradeoff: while an append is in flight this shows the head-growing (then
- * frozen) live scope in place of the existing clip; the clip returns as soon as
- * the take commits, which is now the same tap that ends it. For the default
- * end-append that reads naturally; for a mid-clip insert it shows the take
- * without the surrounding clip / insert position. Preserving the existing clip
- * *and* live growth together (a composed view) is a larger change tracked
- * separately if wanted.
+ * Swapping to the live scope no longer hides the existing clip (#640): the
+ * scope draws it too, before the insertion offset to the left of the new audio
+ * and after it from the head on (`LiveScope`'s `context`,
+ * `lib/audio/capture-context.ts`). That composition lives in the drawer, not
+ * here, so this rule stays the single mount decision it was.
  */
 export function liveScopeShown(s: StageState): boolean {
   if (s.meterFailed) return false;
@@ -695,6 +693,18 @@ export function resumesOnLift(input: {
  * FINGERS, not about which pointer owned the drag — gating it on `wasOwner`
  * leaves the frame collapsed for good when the owner lifts first and a
  * second contact lifts last.
+ *
+ * `canPaste` is a fifth term, added for #835: while the clipboard holds a
+ * cut, a drag's lift must NOT reopen the frame either, even once the stage
+ * is clear and silent. Before #835 a tap or drag on the waveform was a route
+ * back to a selection window regardless of the clipboard, which is exactly
+ * the bug reported — dragging to find a precise paste point kept swapping
+ * the red playhead back for a selection band. The requirements owner's
+ * decision on #835 is that a new selection is available only once the
+ * clipboard is empty (today, a paste — see `recorder.tsx`'s `onPaste`, which
+ * still always reopens the frame; that route, undo and redo are unaffected by
+ * this term). This is the ONLY route the decision narrows: `resumesOnLift`
+ * and the rest of this function's cases are unchanged.
  */
 export function liftOutcome(input: {
   /** This pointer owned the drag. */
@@ -710,6 +720,25 @@ export function liftOutcome(input: {
   readonly length: number;
   /** A take is live, paused, or being committed. */
   readonly takeActive: boolean;
+  /**
+   * The clipboard holds a cut (`editor.canPaste`, #835). While true, a
+   * drag's lift must not reseed a selection frame — the collapsed line stays
+   * the only thing on the stage. NOT because a paste empties the clipboard:
+   * paste is not one-shot yet (#489 is open), so `editor.canPaste` stays true
+   * across a paste, and the frame reopens instead because `recorder.tsx`'s
+   * `onPaste` calls `reopenFrame()` itself, unconditionally, as the
+   * paragraph above already says (a discard would presumably empty the
+   * clipboard for real, once #862 lands, but that is not built yet either).
+   * #489 must not route paste through this predicate: `canPaste` only
+   * withholds a reseed for the lift it is passed to, not permanently — it is
+   * not a latch. Once a one-shot paste flips it false, a later lift computed
+   * with `canPaste: false` may seed a frame again through this same
+   * `reopenFrame` term, and the paste path's own unconditional
+   * `reopenFrame()` call (above) is unaffected either way. Do not go looking
+   * for a stuck-forever state here; this function holds no memory across
+   * calls (#912 item 1).
+   */
+  readonly canPaste: boolean;
 }): {
   readonly dragging: boolean;
   readonly resume: boolean;
@@ -738,7 +767,7 @@ export function liftOutcome(input: {
     dragging: held,
     resume,
     keepOwed: input.interrupted && !resume && input.contactsRemaining > 0,
-    reopenFrame: !held && !resume,
+    reopenFrame: !held && !resume && !input.canPaste,
   };
 }
 
@@ -874,34 +903,46 @@ export function panAfterUndo(
 }
 
 /**
- * Where the centerline goes when an op is REDONE — the forward half of
- * {@link panAfterUndo}'s mapping: re-applying a `cut` maps the pan the same
- * way the live cut writer does ({@link panAfterCut}), onto a buffer SHORTER
- * by what the cut removes; re-applying a `paste` maps it the way a live
- * insert does ({@link panAfterInsert}), onto a buffer LONGER by the pasted
- * clip. `preRedoLength` is the same kind of pre-op closure value
- * {@link panAfterUndo} takes, read before this redo runs.
+ * Where the centerline goes when an op is REDONE. Re-applying a `cut` writes
+ * exactly what the live cut writer does, {@link panAfterCutCollapse}: the line
+ * goes to the cut point, the paste target, whatever the pan was (#722, the
+ * DRI's call that a redone cut reproduces the cut's view as well as its
+ * buffer). Re-applying a `paste` maps the pan the way a live insert does
+ * ({@link panAfterInsert}), onto a buffer LONGER by the pasted clip — the
+ * forward half of {@link panAfterUndo}'s mapping. `preRedoLength` is the same
+ * kind of pre-op closure value {@link panAfterUndo} takes, read before this
+ * redo runs. The frame half of the same decision is
+ * {@link redoCollapsesFrame}.
  */
 export function panAfterRedo(
   pan: number | null,
   redoneOp: EditOp,
   preRedoLength: number
 ): number | null {
-  if (pan === null) return null;
+  // Before the rest check on purpose: the live cut collapses a rested `null`
+  // pan onto the cut point too (`onCut`).
   if (redoneOp.kind === "cut") {
-    // Normalised ONCE, through `wholeSampleRange` — both the length AND the
-    // range `panAfterCut` maps `pan` through, not just the length: passing
-    // `redoneOp.range` straight to `panAfterCut` here read the raw fractional
-    // bounds even after round 2 fixed `removedLen` (#473 round-3 Frank P2).
-    // See `panAfterUndo`'s cut branch, same shape, inverse direction.
-    const range = wholeSampleRange(redoneOp.range);
-    const removedLen = range.end - range.start;
-    return panOrRest(panAfterCut(pan, range), preRedoLength - removedLen);
+    return panAfterCutCollapse(redoneOp.range, preRedoLength);
   }
+  if (pan === null) return null;
   return panOrRest(
     panAfterInsert(pan, redoneOp.at, redoneOp.clip.length),
     preRedoLength + redoneOp.clip.length
   );
+}
+
+/**
+ * Whether a redo leaves the #613 collapse latched — `recorder.tsx`'s
+ * `cutCollapsed` — rather than reopening the frame.
+ *
+ * A redone cut does (#722): the band is gone again and the one line left is
+ * where a paste lands, the state a live cut leaves. A redone paste does not;
+ * it has no collapse to make, and the frame reseeds over the audio that
+ * landed, as after a live paste. `null` — nothing was redone — keeps what the
+ * redo path did before #722, which is to reopen.
+ */
+export function redoCollapsesFrame(redoneOp: EditOp | null): boolean {
+  return redoneOp?.kind === "cut";
 }
 
 /**
@@ -988,6 +1029,17 @@ export function heldByDrag(dragging: boolean, otherwise: boolean): boolean {
 export const CENTER_FRACTION = 0.5;
 
 /**
+ * The two zoom levels: the whole clip in view, or a quarter of it (§4.4).
+ *
+ * Here rather than in `recorder.tsx` since #160's L-1 split the toolbars out:
+ * the zoom toggle reads both, the sheet reads `ZOOM_WHOLE` for its initial
+ * zoom, its edit-exit reset and the toggle's next level, and a constant two
+ * modules key their paint on should not live inside one of them.
+ */
+export const ZOOM_WHOLE = 1;
+export const ZOOM_QUARTER = 4;
+
+/**
  * Whether the fixed centerline overlay is drawn — the COMPLETE render
  * decision for `recorder.tsx`'s centerline `<div>` (#418; folded together
  * with the `liveScope` term here by George round-1 / Frank round-2 P2 on
@@ -1051,8 +1103,9 @@ export function centerlineOverlayShown(input: {
  * three of the reported symptoms are this one reseed.
  *
  * So a cut suspends it — `collapsedByCut` — until something asks for a frame
- * again: a paste, an undo, a redo, leaving edit mode, or the stage coming to
- * rest under a finger (`recorder.tsx` clears the latch at each).
+ * again: a paste, an undo, a redone paste (a redone cut re-latches it, #722),
+ * leaving edit mode, or the stage coming to rest under a finger
+ * (`recorder.tsx` clears the latch at each).
  *
  * Three answers rather than a boolean, because the reseed block does two
  * things and only one of them is suspended: `"seed"` opens a span AND drops

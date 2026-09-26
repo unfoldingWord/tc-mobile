@@ -6,10 +6,10 @@ import { performErase } from "@/hooks/use-erase-segment";
 import {
   addSegment,
   addChapter,
-  addTake,
   createBook,
   getSegment,
 } from "@/lib/storage/books";
+import { addTake, clearSegmentTake } from "@/lib/storage/takes";
 import { getClip, getClipMeta, newClipId, putClip } from "@/lib/storage/clips";
 import { closeDb, getDb } from "@/lib/storage/db";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
@@ -19,18 +19,34 @@ import {
 } from "@/hooks/report-failure";
 import type { SegmentId } from "@/types/domain";
 
+// Only `clearSegmentTake` is wrapped, and only the one quota test below
+// overrides it — every other case in this file calls straight through to the
+// real store op, same as `segment-erase-reload-race.test.ts`'s identical
+// selective-mock shape for `@/lib/storage/books`.
+vi.mock("@/lib/storage/takes", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/storage/takes")>();
+  return {
+    ...actual,
+    clearSegmentTake: vi.fn(actual.clearSegmentTake),
+  };
+});
+
 /**
  * Lane E — the reusable erase hook.
  *
  * `useEraseSegment` is thin React glue (guard state, error state) over
- * `performErase`, which is the whole of the operation minus React. This repo
- * has no jsdom and no renderer — the same constraint `tests/audio-session.test.ts`
- * and `tests/save-failure.test.ts` document — so the hook's `erasing` flag and
- * its double-tap guard (both `useRef`/`useState`) are NOT exercised here; they
- * are review + on-device surface. What IS node-testable is `performErase`: the
- * call it makes to the real store, the outcome that leaves, the success/failure
- * result it returns. That is what these cover, against fake-indexeddb through
- * the real store helpers.
+ * `performErase`, which is the whole of the operation minus React. This file
+ * does not mount the hook, so its `erasing` flag and double-tap guard (both
+ * `useRef`/`useState`) are not exercised HERE. The mounted jsdom suites reach
+ * part of that through the real `Recorder`: `tests/recorder-rerecord.test.ts`
+ * (the busy control, and close blocked during an erase) and
+ * `tests/recorder-erase-back.test.ts` (the `isErasing()` close guard). The
+ * double-tap guard itself — a second `erase()` while the first is still
+ * pending — is covered by `tests/erase-guard.test.ts`, which mounts the hook
+ * in jsdom (#160, L-12). This file covers
+ * `performErase`: the call it makes to the real store, the outcome that
+ * leaves, the success/failure result it returns. That is what these cover,
+ * against fake-indexeddb through the real store helpers.
  *
  * `performErase` wraps `clearSegmentTake`, whose own atomicity/ref-counting is
  * proved in `tests/storage.test.ts`; this file asserts the hook-owned contract
@@ -98,9 +114,13 @@ describe("performErase", () => {
     expect(after?.status).toBe("not-started");
   });
 
-  it("catches a store rejection and surfaces the reason", async () => {
+  it("catches a store rejection and maps it to the eraseFailed KEY — never the raw store message (#172)", async () => {
     // A segment id with no row: `clearSegmentTake` throws "No such segment: …".
     // This is the failure path the hook maps to `error` and a `false` return.
+    // Before #172 part 1, `performErase` returned that raw string as
+    // `{ error }` and the Segments Notice spoke it verbatim — a browser/store
+    // exception a non-reader cannot act on. It now returns a small, `strings`-
+    // mapped KEY instead; the raw text must be ABSENT from the result.
     const bogus = newClipId() as unknown as SegmentId;
     const consoleError = vi
       .spyOn(console, "error")
@@ -108,12 +128,64 @@ describe("performErase", () => {
 
     const result = await performErase(bogus);
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toContain("No such segment");
+    expect(result).toEqual({ ok: false, key: "eraseFailed" });
+    if (!result.ok)
+      expect(JSON.stringify(result)).not.toContain("No such segment");
     // Never swallowed silently: this site's own message, plus `reportFailure`'s
     // own internal `console.error` (#456) — the same "kept beside it, not
     // replaced" doubling `recorder-stop-backstop` (#480) already carries.
     expect(consoleError).toHaveBeenCalledTimes(2);
+    consoleError.mockRestore();
+  });
+
+  it("maps a quota-exceeded store rejection to the noRoom KEY, not eraseFailed (#172)", async () => {
+    // `failureKey` (`hooks/save-failure.ts`) is exercised here through the
+    // real erase path: a full disk is the one condition a translator can act
+    // on, and it must read the same everywhere a write can hit it, not only
+    // on the take-save recovery screen.
+    const { segmentId } = await recordedSegment();
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    vi.mocked(clearSegmentTake).mockRejectedValueOnce(
+      Object.assign(new Error("disk full"), { name: "QuotaExceededError" })
+    );
+
+    const result = await performErase(segmentId);
+
+    expect(result).toEqual({ ok: false, key: "noRoom" });
+    consoleError.mockRestore();
+  });
+
+  it("resolves to its caught eraseFailed result, and still reports, when the rejection's own name cannot be read (Frank r2 P2, #886)", async () => {
+    // A hostile `name` getter throws instead of returning a value —
+    // `failureKey`'s own classification (`isQuotaExceeded`) would previously
+    // throw reading it, mid-`catch`, leaving `performErase` reject instead of
+    // resolving to its caught-result contract every caller relies on.
+    const { segmentId } = await recordedSegment();
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    // `Object.defineProperty`, not `Object.assign`: assigning a getter as a
+    // source property would invoke it immediately (`Object.assign` performs a
+    // real `[[Get]]`), throwing here at setup rather than where the test
+    // means to observe the throw — inside `failureKey`'s own classification.
+    const hostileCause = new Error("boom");
+    Object.defineProperty(hostileCause, "name", {
+      get(): string {
+        throw new Error("hostile getter");
+      },
+      configurable: true,
+    });
+    vi.mocked(clearSegmentTake).mockRejectedValueOnce(hostileCause);
+    const reports: FailureReport[] = [];
+    const off = subscribeToFailures((r) => reports.push(r));
+
+    const result = await performErase(segmentId);
+
+    off();
+    expect(result).toEqual({ ok: false, key: "eraseFailed" });
+    expect(reports.map((r) => r.context)).toEqual(["erase-segment"]);
     consoleError.mockRestore();
   });
 

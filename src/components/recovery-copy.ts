@@ -18,6 +18,7 @@
  */
 
 import type { SaveFailureKind } from "@/hooks/save-failure";
+import { strings } from "@/lib/strings";
 
 /**
  * The headline. `quota` is the same either way — the phone is full whether the
@@ -28,22 +29,44 @@ export function recoveryTitle(
   kind: SaveFailureKind,
   editOnly: boolean
 ): string {
-  if (kind === "quota") return "No room left on this phone.";
-  // Named as the condition it is, not as a failure that might go the other way
-  // next time: another copy of the app has moved the data past this build, so
-  // every further attempt from here fails the same way. The line says what is
-  // needed rather than what went wrong, because that is the only thing left
-  // that is true (George R1 P2-1).
-  if (kind === "downgrade") {
-    return editOnly
-      ? "Your changes need the new version of the app."
-      : "This recording needs the new version of the app.";
+  switch (kind) {
+    // `strings.noRoom` (#172), not a second literal of the same sentence: the
+    // no-room condition reads the same on this screen and on every other write
+    // that can hit it (Books, Segments) now that both exist. This was the
+    // ONE line `tests/strings-one-table.test.ts` (#678/#169) caught as a
+    // duplicate once #172 part 1 added the general vocabulary — the fix is to
+    // route through the shared word, not to weaken the gate or re-word either
+    // side into disagreement.
+    case "quota":
+      return strings.noRoom;
+    // Named as the condition it is, not as a failure that might go the other
+    // way next time: another copy of the app has moved the data past this
+    // build, so every further attempt from here fails the same way. The line
+    // says what is needed rather than what went wrong, because that is the
+    // only thing left that is true (George R1 P2-1).
+    case "downgrade":
+      return editOnly
+        ? "Your changes need the new version of the app."
+        : "This recording needs the new version of the app.";
+    case "stale":
+      return editOnly
+        ? "This book is gone. Your changes cannot be saved."
+        : "This book is gone. This recording cannot be saved.";
+    case "unknown":
+      return unknownTitle(editOnly);
+    default: {
+      // A new `SaveFailureKind` fails to compile here until it is given its
+      // own title (#777). At runtime it still gets the `unknown` line rather
+      // than a throw: this is the recovery screen, the one place a crash
+      // would cost the only copy of a recording.
+      const unhandled: never = kind;
+      void unhandled;
+      return unknownTitle(editOnly);
+    }
   }
-  if (kind === "stale") {
-    return editOnly
-      ? "This book is gone. Your changes cannot be saved."
-      : "This book is gone. This recording cannot be saved.";
-  }
+}
+
+function unknownTitle(editOnly: boolean): string {
   return editOnly
     ? "Your changes could not be saved."
     : "This recording could not be saved.";
@@ -82,16 +105,32 @@ export function recoverySafetyLine(
   // that restart. It is RAM-only and does not survive, and whether this screen
   // should say so — and whether anything can be done to rescue it first — is a
   // product question tracked on #441, not one to settle in a copy string.
-  if (kind === "downgrade") {
-    return editOnly
-      ? "This copy of the app cannot save them. Restart to get the new version."
-      : "This copy of the app cannot save it. Restart to get the new version.";
+  switch (kind) {
+    case "downgrade":
+      return editOnly
+        ? "This copy of the app cannot save them. Restart to get the new version."
+        : "This copy of the app cannot save it. Restart to get the new version.";
+    case "stale":
+      return editOnly
+        ? "This book was deleted in another copy of the app. Discard is the only exit."
+        : "This book was deleted in another copy of the app. Delete this recording to leave.";
+    case "quota":
+    case "unknown":
+    case null:
+      return heldSafetyLine(editOnly);
+    default: {
+      // A new `SaveFailureKind` fails to compile here until someone decides
+      // whether staying in the app still protects its work (#777). Until then
+      // it gets the don't-close line at runtime, which is the direction that
+      // keeps a RAM-only take alive.
+      const unhandled: never = kind;
+      void unhandled;
+      return heldSafetyLine(editOnly);
+    }
   }
-  if (kind === "stale") {
-    return editOnly
-      ? "This book was deleted in another copy of the app. Discard is the only exit."
-      : "This book was deleted in another copy of the app. Delete this recording to leave.";
-  }
+}
+
+function heldSafetyLine(editOnly: boolean): string {
   return editOnly
     ? "This screen has the only copy of your changes. Don't close the app."
     : "This screen has the only copy of your unsaved work. Don't close the app.";
@@ -134,7 +173,10 @@ export function restartLabel(
   armed: boolean,
   alsoCutAudio = false
 ): string {
-  if (!armed) return "Restart the app";
+  // `strings.appReload`, not a second literal of it (#805): the unarmed label
+  // names the same reload the crash screen's button does, and the label gate
+  // in `tests/strings-one-table.test.ts` reads every whole literal.
+  if (!armed) return strings.appReload;
   return `Tap again to restart and lose ${lossPhrase(subject, alsoCutAudio)}`;
 }
 
@@ -199,6 +241,25 @@ export function recoveryAttempts(
   kind: SaveFailureKind | null,
   attempts: number
 ): string | null {
-  if (kind === "quota" || kind === "downgrade" || kind === "stale") return null;
+  switch (kind) {
+    case "quota":
+    case "downgrade":
+    case "stale":
+      return null;
+    case "unknown":
+    case null:
+      return attemptCount(attempts);
+    default: {
+      // A new `SaveFailureKind` fails to compile here until someone decides
+      // whether a retry can clear it (#777); at runtime it is counted, as
+      // every kind outside the three above always was.
+      const unhandled: never = kind;
+      void unhandled;
+      return attemptCount(attempts);
+    }
+  }
+}
+
+function attemptCount(attempts: number): string | null {
   return attempts > 1 ? `Attempts: ${attempts}` : null;
 }

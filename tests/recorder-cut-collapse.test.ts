@@ -5,8 +5,13 @@ import { describe, expect, it } from "vitest";
 import {
   liftOutcome,
   panAfterCutCollapse,
+  panAfterRedo,
+  redoCollapsesFrame,
   selectionReseed,
 } from "@/components/recorder-stage";
+import type { EditOp } from "@/lib/audio/edit-log";
+
+import { stripComments } from "./support";
 
 /**
  * #613: after a cut, the selection band collapses to the red centerline at the
@@ -26,9 +31,6 @@ import {
  * so the truth table is a function and the wiring is read as text, the same
  * split `tests/recorder-centerline-overlay-gate.test.ts` uses.
  */
-
-const stripComments = (text: string) =>
-  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 
 const read = (rel: string) =>
   readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
@@ -90,6 +92,66 @@ describe("panAfterCutCollapse — the line lands on the cut point (#613)", () =>
   it("cutting the whole buffer rests, and a one-sample cut at the head stays at 0", () => {
     expect(panAfterCutCollapse({ start: 0, end: 10_000 }, 10_000)).toBeNull();
     expect(panAfterCutCollapse({ start: 0, end: 1 }, 10_000)).toBe(0);
+  });
+});
+
+/**
+ * #722: a REDONE cut reproduces the cut's view as well as its buffer (DRI
+ * decision on #722). Undo is unchanged, and so is a redone paste. Both inputs
+ * are built inside each case, so this pins the pure rule's contract; the
+ * wiring is the `onRedo` source-shape case below and the Redo step in
+ * `e2e/recorder-selection.spec.ts`.
+ */
+describe("a redone cut collapses to the line, like a live cut (#722)", () => {
+  const interiorCut: EditOp = {
+    kind: "cut",
+    range: { start: 5_000, end: 6_000 },
+  };
+  const preRedoLength = 10_000;
+
+  it.each([
+    ["before the cut", 2_000],
+    ["inside the cut", 5_500],
+    ["after the cut", 9_000],
+    ["resting at the end", null],
+  ] as const)(
+    "maps a pan %s onto the cut point, the same answer the live cut writes",
+    (_label, pan) => {
+      expect(panAfterRedo(pan, interiorCut, preRedoLength)).toBe(5_000);
+      expect(panAfterRedo(pan, interiorCut, preRedoLength)).toBe(
+        panAfterCutCollapse(interiorCut.range, preRedoLength)
+      );
+    }
+  );
+
+  it("rests when the redone cut ran to the end, through the same #442/#473 rule", () => {
+    const toEnd: EditOp = { kind: "cut", range: { start: 8_000, end: 10_000 } };
+    expect(panAfterRedo(2_000, toEnd, preRedoLength)).toBeNull();
+  });
+
+  it("latches the collapse for a redone cut", () => {
+    expect(redoCollapsesFrame(interiorCut)).toBe(true);
+  });
+
+  it("does not latch it for a redone paste, or when nothing was redone", () => {
+    const paste: EditOp = {
+      kind: "paste",
+      at: 2_000,
+      clip: new Int16Array(3_000),
+    };
+    expect(redoCollapsesFrame(paste)).toBe(false);
+    expect(redoCollapsesFrame(null)).toBe(false);
+  });
+
+  it("leaves a redone paste's pan mapping as it was: shifted past the insert, the rest kept", () => {
+    const paste: EditOp = {
+      kind: "paste",
+      at: 2_000,
+      clip: new Int16Array(3_000),
+    };
+    expect(panAfterRedo(1_000, paste, 6_000)).toBe(1_000);
+    expect(panAfterRedo(4_000, paste, 6_000)).toBe(7_000);
+    expect(panAfterRedo(null, paste, 6_000)).toBeNull();
   });
 });
 
@@ -213,11 +275,23 @@ describe("recorder.tsx wires the collapse (#613)", () => {
     );
   });
 
+  it("onRedo sets the latch from the redone op, not unconditionally open (#722)", () => {
+    // Source shape only: the rule itself is `redoCollapsesFrame`, pinned
+    // below. This reads that `onRedo` hands the latch that answer rather than
+    // calling `reopenFrame()`, which was the pre-#722 wiring.
+    const at = recorder.indexOf("const onRedo = useCallback(");
+    expect(at, "no onRedo in recorder.tsx").toBeGreaterThan(-1);
+    const body = recorder.slice(at, recorder.indexOf("}, [", at));
+    expect(body).toMatch(/setCutCollapsed\(redoCollapsesFrame\(redoneOp\)\)/);
+    expect(body).not.toMatch(/reopenFrame\(\)/);
+  });
+
   it("everything that should bring the frame back clears the latch", () => {
+    // Redo left this list with #722: it clears the latch for a redone paste
+    // and sets it for a redone cut (the case above).
     for (const handler of [
       "const onPaste = useCallback(",
       "const onUndo = useCallback(",
-      "const onRedo = useCallback(",
       "const onExitEdit = useCallback(",
     ]) {
       const at = recorder.indexOf(handler);
@@ -266,6 +340,7 @@ describe("a lift that resumes playback does not seed a frame (#613, Frank R1 P2)
     pan: 5_000,
     length: 10_000,
     takeActive: false,
+    canPaste: false,
   };
 
   it("reopens the frame on an ordinary lift — the #613 gesture", () => {
@@ -330,5 +405,54 @@ describe("a lift that resumes playback does not seed a frame (#613, Frank R1 P2)
     const body = recorder.slice(at, recorder.indexOf("}, [", at));
     expect(body).toMatch(/if \(outcome\.reopenFrame\) reopenFrame\(\)/);
     expect(body).not.toMatch(/if \(wasOwner\) reopenFrame\(\)/);
+  });
+
+  it("does not reopen it on an otherwise-reopening lift while the clipboard holds a cut (#835)", () => {
+    // The reported bug: after a cut, dragging the waveform to find a paste
+    // point restored the selection window on lift. `lift` here is the same
+    // ordinary #613 gesture the first test in this block reopens on — the
+    // only change is `canPaste: true`, the clipboard still holding the cut.
+    expect(liftOutcome({ ...lift, canPaste: true }).reopenFrame).toBe(false);
+  });
+
+  it("recorder.tsx passes the clipboard's fullness into liftOutcome (#835)", () => {
+    // Source-shape only, alongside the pure rule pinned above: this is what
+    // keeps `onPointerUp`'s call wired to the live clipboard rather than a
+    // stale or hardcoded value.
+    const at = recorder.indexOf("const outcome = liftOutcome({");
+    expect(at).toBeGreaterThan(-1);
+    const body = recorder.slice(at, recorder.indexOf("});", at));
+    expect(body).toMatch(/canPaste:\s*editor\.canPaste/);
+  });
+
+  it("recorder.tsx also keeps `editor.canPaste` in onPointerUp's own dependency array (#897)", () => {
+    // The previous test alone would still pass if `editor.canPaste` were
+    // dropped from `onPointerUp`'s `useCallback` dependency array (#897,
+    // George r1 on #835): the call site would still read the live prop at
+    // definition time, but the memoized callback itself would go stale on
+    // the next render where only `canPaste` changed, reopening the frame
+    // from a closure captured before the cut. Render is not an option here
+    // (AGENTS.md — the #197 harness is one component, no effects; this
+    // callback fires from a pointer event, which the harness cannot raise),
+    // so this pins the dependency array by source shape, same as the call
+    // site above.
+    const callbackAt = recorder.indexOf("const onPointerUp = useCallback(");
+    expect(callbackAt).toBeGreaterThan(-1);
+    // Anchor on the callback's own last statement rather than a bare "}, ["
+    // (which also matches later, unrelated `useCallback`/`useLayoutEffect`
+    // closings elsewhere in the file, e.g. `}, [state, commitTake]);`), and
+    // require the callback's closing `}, [` IMMEDIATELY after it (#912): the
+    // first `[` after the statement could otherwise be an index expression
+    // added to the callback's tail, and the pin would read that instead of
+    // the dependency array. A statement inserted after the reopen call fails
+    // the match loudly rather than letting the pin drift.
+    const reopenCall = "if (outcome.reopenFrame) reopenFrame();";
+    const reopenCallAt = recorder.indexOf(reopenCall, callbackAt);
+    expect(reopenCallAt).toBeGreaterThan(callbackAt);
+    const closing = /^\s*\},\s*\[([^\]]*)\]/.exec(
+      recorder.slice(reopenCallAt + reopenCall.length)
+    );
+    expect(closing).not.toBeNull();
+    expect(closing![1]).toMatch(/editor\.canPaste/);
   });
 });

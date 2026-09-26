@@ -15,7 +15,7 @@ export function newClipId(): ClipId {
  * Build a PCM clip's metadata, rejecting a 0-frame clip.
  *
  * Pure and exported so the clip-write invariant lives in one place: `putClip`
- * writes clip+meta on its own, and `saveTake` (books.ts) writes them inside the
+ * writes clip+meta on its own, and `saveTake` (takes.ts) writes them inside the
  * take's transaction for atomicity (#38) — both must reject a 0-frame clip and
  * compute duration the same way. A 0-frame clip is not a recording: it resolves
  * as playable, silent audio and can be counted finished (the ghost take

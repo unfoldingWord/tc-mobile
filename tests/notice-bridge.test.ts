@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { noticePresentation, type NoticeTone } from "@/components/notice-tone";
+import { cssRule, declarationValue } from "./support";
 
 /**
  * `notice-tone.ts` is the SPECIFICATION; `.notice` in layer 3 is the
@@ -48,42 +49,35 @@ const CSS = readFileSync(
 
 const TONES: NoticeTone[] = ["alert", "busy", "info"];
 
-/** Exact, standalone rules only; comments cannot supply a selector or value. */
-function ruleBody(selector: string): string | null {
-  const css = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const rules = [
-    ...css.matchAll(new RegExp(`^\\s*${escaped}\\s*\\{([^{}]*)\\}`, "gm")),
-  ];
-  expect(rules.length, `ambiguous rule: ${selector}`).toBeLessThanOrEqual(1);
-  const declarations = rules.at(0)?.[1];
-  if (declarations === undefined) return null;
-  const body = declarations.trim();
-  expect(body, `empty rule: ${selector}`).not.toBe("");
-  return body;
-}
-
-function requiredRule(selector: string): string {
-  const body = ruleBody(selector);
-  if (body === null) throw new Error(`missing rule: ${selector}`);
-  return body;
-}
-
+/**
+ * `cssRule` (`./support`, #533) already throws — rather than returning `""`
+ * or `null` — when a rule is absent or ambiguous, which is what closed this
+ * file's own vacuous-`info` finding (#533): `ruleBody(...) ?? ""` used to
+ * coerce a miss into an empty string that both `info` assertions below then
+ * regexed and compared to `false`, green and proving nothing. `info` has no
+ * base override BY DESIGN, so its two per-tone tests must not ask "is the
+ * override empty" (a `cssRule` throw can't answer that) — they assert the
+ * MISSING-rule throw specifically, an honest "this rule does not exist", via
+ * `toneOverride`; an ambiguous or empty `info` rule must still go red.
+ */
 function toneOverride(tone: NoticeTone): string {
   const selector = `.notice[data-tone="${tone}"]`;
-  if (tone !== "info") return requiredRule(selector);
+  if (tone !== "info") return cssRule(CSS, selector);
   // Info intentionally uses the base box; its glyph has a separate rule.
-  expect(ruleBody(selector), "info must keep the base edge and ink").toBeNull();
+  expect(
+    () => cssRule(CSS, selector),
+    "info must keep the base edge and ink"
+  ).toThrow(`cssRule: missing rule: ${selector}`);
   return "";
 }
 
 describe("the .notice rule honours the tone table (#164 L-14)", () => {
   it("has a base rule at all, which is the thing inline styles made impossible", () => {
-    const base = requiredRule(".notice");
+    const base = cssRule(CSS, ".notice");
     // The box the component used to paint on itself.
     expect(base).toMatch(/background:\s*var\(--s-surface\)/);
     expect(base).toMatch(/border:\s*1px solid var\(--s-edge\)/);
-    expect(base).toMatch(/color:\s*var\(--s-ink\)/);
+    expect(declarationValue(base, "color")).toBe("var(--s-ink)");
   });
 
   it("the component no longer paints itself, or layer 3 could not win", () => {
@@ -112,14 +106,15 @@ describe("the .notice rule honours the tone table (#164 L-14)", () => {
       // who cannot read, the colour is the second half of what tells the three
       // marks apart (George G3). That claim only means something if the
       // stylesheet actually paints it.
-      const body = requiredRule(`.notice[data-tone="${tone}"] .notice-glyph`);
-      expect(body).toMatch(
-        new RegExp(`color:\\s*${spec.glyph.replace(/[()]/g, "\\$&")}`)
-      );
+      // The `color` declaration, exactly: the pattern this replaced was also
+      // satisfied by a `background-color`, or by the first of two `color`
+      // declarations when a later one overrides it (#533).
+      const body = cssRule(CSS, `.notice[data-tone="${tone}"] .notice-glyph`);
+      expect(declarationValue(body, "color")).toBe(spec.glyph);
     });
 
     it(`${tone}: \`failure\` decides the live edge, and only for a failure`, () => {
-      expect(requiredRule(".notice")).toMatch(
+      expect(cssRule(CSS, ".notice")).toMatch(
         /(?:^|;)\s*border:\s*1px solid var\(--s-edge\)\s*;/
       );
       const body = toneOverride(tone);
@@ -131,7 +126,7 @@ describe("the .notice rule honours the tone table (#164 L-14)", () => {
     });
 
     it(`${tone}: \`muted\` decides the muted ink, and only for a wait`, () => {
-      expect(requiredRule(".notice")).toMatch(
+      expect(cssRule(CSS, ".notice")).toMatch(
         /(?:^|;)\s*color:\s*var\(--s-ink\)\s*;/
       );
       const body = toneOverride(tone);

@@ -4,19 +4,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { encodeMp3 } from "@/lib/audio/mp3";
+import { MP3_ENCODER_DELAY } from "@/lib/audio/mp3-align";
+import { joinMp3, parseJoinableMp3 } from "@/lib/audio/mp3-join";
 import { computePeaks } from "@/lib/audio/peaks";
 import {
+  ENCODE_STEPS,
   SEGMENT_GAP_SECONDS,
   exportChapterMp3,
   gatherChapterPcm,
+  withEncodeSteps,
 } from "@/lib/export/chapter";
-import {
-  addChapter,
-  addSegment,
-  createBook,
-  saveTake,
-  setSegmentFinished,
-} from "@/lib/storage/books";
+import { addChapter, addSegment, createBook } from "@/lib/storage/books";
+import { saveTake, setSegmentFinished } from "@/lib/storage/takes";
 import * as clips from "@/lib/storage/clips";
 import { newClipId } from "@/lib/storage/clips";
 import { resolveSegmentAudio } from "@/lib/storage/segment-audio";
@@ -192,6 +191,83 @@ describe("gatherChapterPcm", () => {
     expect(segments).toBe(1); // only the first segment survived the read
     expect(missing).toBe(1); // the erased one — silently 0 before the fix
     expect(pcm.length).toBe(100); // one segment, no gap
+    spy.mockRestore();
+  });
+
+  it("counts a clip whose stored PCM length disagrees with its own metadata as missing, instead of throwing (S-10)", async () => {
+    // Pass 1 sizes the output buffer from `getClipMeta().frameCount`; pass 2
+    // copies `getClip()`'s bytes into the slot that size reserved. The two
+    // reads are not one transaction, so nothing here stops them from
+    // disagreeing about a clip's length. Reproduce that disagreement directly
+    // by handing back a PCM clip one frame longer than its own metadata says:
+    // the reserved slot is a frame too small, so an unguarded
+    // `out.set(fitted, written)` throws a RangeError.
+    const { chapterId } = await chapterWith([
+      { n: 100, v: 100 },
+      { n: 100, v: 200 },
+    ]);
+    const real = clips.getClip.bind(clips);
+    let call = 0;
+    const spy = vi.spyOn(clips, "getClip").mockImplementation(async (id) => {
+      call++;
+      const clip = await real(id);
+      if (call === 2 && clip && clip.encoding === "pcm") {
+        const grown = new Int16Array(clip.samples.length + 1);
+        grown.set(clip.samples);
+        return { ...clip, samples: grown };
+      }
+      return clip;
+    });
+
+    const gathered = await gatherChapterPcm(chapterId, testCodec());
+
+    expect(gathered).not.toBeNull();
+    const { samples: pcm, segments, missing } = gathered!;
+    expect(segments).toBe(1); // only the well-formed segment survived
+    expect(missing).toBe(1); // the length-mismatched one is counted, not thrown
+    expect(pcm.length).toBe(100); // one segment, no gap
+    spy.mockRestore();
+  });
+
+  it("fits a clip whose stored PCM is one frame SHORTER than its own metadata into its slot, instead of counting it missing (DRI decision, #812)", async () => {
+    // Same two-read disagreement as S-10, run the other way: `getClip()`
+    // hands back one fewer frame than `getClipMeta()` reserved. DRI decision
+    // on #812 (Seth): fit the short clip to `frames` with `fitToFrames`, the
+    // same helper the MP3 path already runs its decode through inside
+    // `fitMp3Decode` — so the clip's own audio is exported and only the tail
+    // of its slot is silence, rather than dropping the clip.
+    const { chapterId } = await chapterWith([
+      { n: 100, v: 100 },
+      { n: 100, v: 200 },
+    ]);
+    const real = clips.getClip.bind(clips);
+    let call = 0;
+    const spy = vi.spyOn(clips, "getClip").mockImplementation(async (id) => {
+      call++;
+      const clip = await real(id);
+      if (call === 2 && clip && clip.encoding === "pcm") {
+        return {
+          ...clip,
+          samples: clip.samples.subarray(0, clip.samples.length - 1),
+        };
+      }
+      return clip;
+    });
+
+    const gathered = await gatherChapterPcm(chapterId, testCodec());
+
+    expect(gathered).not.toBeNull();
+    const { samples: pcm, segments, missing } = gathered!;
+    expect(segments).toBe(2); // the short clip is exported, not dropped
+    expect(missing).toBe(0);
+    expect(pcm.length).toBe(100 + GAP + 100); // both slots reserved in full
+    const secondSlotStart = 100 + GAP;
+    // The clip's own 99 recorded frames land at the front of its slot.
+    expect(pcm.subarray(secondSlotStart, secondSlotStart + 99)).toEqual(
+      samples(99, 200)
+    );
+    // The one frame the slot reserved beyond the stored audio is silence.
+    expect(pcm[secondSlotStart + 99]).toBe(0);
     spy.mockRestore();
   });
 
@@ -375,5 +451,209 @@ describe("exportChapterMp3", () => {
     const result = await exportChapterMp3(chapterId, testCodec(), () => true);
     expect(result).not.toBeNull();
     expect(result!.mp3.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * #1004: a chapter whose every segment is Finished is built by joining the
+ * stored MP3s (`lib/audio/mp3-join.ts`), never by decoding and re-encoding
+ * them. The stored bytes are real encodes by the app's own encoder
+ * (`transcoded`), so the join sees what a phone stores.
+ */
+describe("exportChapterMp3 — an all-Finished chapter is joined, not re-encoded", () => {
+  /** A chapter of `lengths` segments, every one Finished; their stored MP3s. */
+  async function finishedChapter(lengths: number[]) {
+    const pcm = lengths.map((n, i) => ramp(n, 1000 * (i + 1)));
+    const { chapterId, segmentIds } = await chapterWithSamples(pcm);
+    const mp3s: Uint8Array[] = [];
+    for (const [i, id] of segmentIds.entries()) {
+      mp3s.push(await transcoded(id, pcm[i]!));
+    }
+    return { chapterId, segmentIds, mp3s, lengths };
+  }
+
+  function joinedFrom(mp3s: Uint8Array[], lengths: number[]): Uint8Array {
+    const pieces = mp3s.map((mp3, i) => ({
+      frames: parseJoinableMp3(mp3)!,
+      recorded: lengths[i]!,
+    }));
+    return joinMp3(pieces, GAP, MP3_ENCODER_DELAY)!;
+  }
+
+  it("joins the stored MP3s and never calls the encoder or the decoder", async () => {
+    const { chapterId, mp3s, lengths } = await finishedChapter([
+      30_000, 7_000, 12_345,
+    ]);
+    const codec = testCodec();
+
+    const result = await exportChapterMp3(chapterId, codec);
+
+    expect(result).not.toBeNull();
+    expect(codec.encodeMp3).not.toHaveBeenCalled();
+    expect(codec.decodeMp3).not.toHaveBeenCalled();
+    expect(result!.segments).toBe(3);
+    expect(result!.missing).toBe(0);
+    // Exactly the stored frames, in segment order, gaps between.
+    expect(Array.from(result!.mp3)).toEqual(
+      Array.from(joinedFrom(mp3s, lengths))
+    );
+  });
+
+  it("reports the gather's steps, in order, and calls onJoined once the MP3 exists", async () => {
+    const { chapterId } = await finishedChapter([5_000, 6_000]);
+    const steps: Array<[number, number, number | undefined]> = [];
+    let joined = 0;
+    const codec = { ...testCodec(), onJoined: () => joined++ };
+
+    const result = await exportChapterMp3(
+      chapterId,
+      codec,
+      undefined,
+      (d, t, s) => steps.push([d, t, s])
+    );
+
+    expect(result).not.toBeNull();
+    expect(steps).toEqual([
+      [0, 2, 0],
+      [1, 2, 0],
+      [2, 2, 0],
+    ]);
+    expect(joined).toBe(1);
+  });
+
+  it("brings a counted Share Chapter to its total without an encode", async () => {
+    const { chapterId } = await finishedChapter([5_000, 6_000]);
+    const codec = testCodec();
+    const steps: Array<
+      [number, number, number | undefined, number | undefined]
+    > = [];
+    const result = await withEncodeSteps(
+      (d, t, s, i) => steps.push([d, t, s, i]),
+      () => true,
+      (counted, onStep) =>
+        exportChapterMp3(chapterId, counted, undefined, onStep)
+    )(codec);
+
+    expect(result).not.toBeNull();
+    expect(codec.encodeMp3).not.toHaveBeenCalled();
+    const total = 2 + ENCODE_STEPS;
+    expect(steps).toEqual([
+      [0, total, 0, 2],
+      [1, total, 0, 2],
+      [2, total, 0, 2],
+      [total, total, 0, 2],
+    ]);
+  });
+
+  it("skips a clip gone since pass 1 and counts it missing, at its own position", async () => {
+    const { chapterId, segmentIds, mp3s, lengths } = await finishedChapter([
+      5_000, 6_000, 7_000,
+    ]);
+    const gone = (await resolveSegmentAudio(segmentIds[1]!)) as {
+      clip: { id: string };
+    };
+    const real = clips.getClip;
+    const spy = vi
+      .spyOn(clips, "getClip")
+      .mockImplementation(async (id) =>
+        id === gone.clip.id ? undefined : real(id)
+      );
+    const steps: Array<[number, number, number | undefined]> = [];
+    const codec = testCodec();
+
+    // Restored even when the export throws, or the spy leaks into later cases.
+    const result = await exportChapterMp3(
+      chapterId,
+      codec,
+      undefined,
+      (d, t, s) => steps.push([d, t, s])
+    ).finally(() => spy.mockRestore());
+
+    expect(codec.encodeMp3).not.toHaveBeenCalled();
+    expect(result!.segments).toBe(2);
+    expect(result!.missing).toBe(1);
+    expect(steps).toEqual([
+      [0, 3, 0],
+      [1, 3, 0],
+      [2, 3, 1],
+      [3, 3, 1],
+    ]);
+    expect(Array.from(result!.mp3)).toEqual(
+      Array.from(joinedFrom([mp3s[0]!, mp3s[2]!], [lengths[0]!, lengths[2]!]))
+    );
+  });
+
+  it("stops without a step when cancelled mid-read", async () => {
+    const { chapterId } = await finishedChapter([5_000, 6_000]);
+    let reads = 0;
+    const real = clips.getClip;
+    const spy = vi.spyOn(clips, "getClip").mockImplementation(async (id) => {
+      reads++;
+      return real(id);
+    });
+    const onStep = vi.fn();
+    const codec = testCodec();
+
+    const result = await exportChapterMp3(
+      chapterId,
+      codec,
+      () => reads < 1,
+      onStep
+    ).finally(() => spy.mockRestore());
+
+    expect(result).toBeNull();
+    expect(reads).toBe(1);
+    expect(onStep).not.toHaveBeenCalled();
+    expect(codec.encodeMp3).not.toHaveBeenCalled();
+  });
+
+  it("decodes and encodes a MIXED chapter (some segments still PCM), as before", async () => {
+    const first = ramp(5_000, 100);
+    const second = ramp(6_000, 5000);
+    const { chapterId, segmentIds } = await chapterWithSamples([first, second]);
+    await transcoded(segmentIds[1]!, second);
+    const codec = testCodec(async (bytes) => noTrimDecode(second, bytes));
+
+    const result = await exportChapterMp3(chapterId, codec);
+
+    expect(result).not.toBeNull();
+    expect(codec.decodeMp3).toHaveBeenCalledTimes(1);
+    expect(codec.encodeMp3).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to decode and encode when a stored MP3 cannot be joined safely", async () => {
+    const pcm = ramp(5_000, 100);
+    const { chapterId, segmentIds } = await chapterWithSamples([pcm]);
+    await setSegmentFinished(segmentIds[0]!, true);
+    const audio = await resolveSegmentAudio(segmentIds[0]!);
+    if (audio.kind !== "resolved") throw new Error("segment has no clip");
+    // Trailing bytes that are not an ID3v1 tag: the join refuses the stream.
+    const stray = new Uint8Array([...encodeMp3(pcm), 1, 2, 3]);
+    expect(
+      await commitTranscode(
+        segmentIds[0]!,
+        audio.clip.id,
+        stray,
+        computePeaks(pcm, 4)
+      )
+    ).toBe("committed");
+    const steps: Array<[number, number, number | undefined]> = [];
+    const codec = testCodec(async (bytes) => noTrimDecode(pcm, bytes));
+
+    const result = await exportChapterMp3(
+      chapterId,
+      codec,
+      undefined,
+      (d, t, s) => steps.push([d, t, s])
+    );
+
+    expect(result).not.toBeNull();
+    expect(codec.decodeMp3).toHaveBeenCalledTimes(1);
+    expect(codec.encodeMp3).toHaveBeenCalledTimes(1);
+    // One count, from the path that ran: the refused join reported nothing.
+    expect(steps).toEqual([
+      [0, 1, 0],
+      [1, 1, 0],
+    ]);
   });
 });

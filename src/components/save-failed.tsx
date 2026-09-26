@@ -11,8 +11,9 @@ import {
   restartLabel,
 } from "./recovery-copy";
 import { SendLogControl } from "./send-log-control";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 import { flushFailureLog } from "@/hooks/failure-log";
+import { useDesign } from "@/hooks/use-design";
 import {
   pauseTranscodeSweep,
   resumeTranscodeSweep,
@@ -97,6 +98,11 @@ export function SaveFailed({
   // quietly went un-busy while nothing had changed would be a dead button
   // wearing a spinner first, the same reasoning `RestartControl` documents.
   const [restarting, setRestarting] = useState(false);
+  // The O4 paint (#948): the failed state's mark sits in the error circle and
+  // Retry/Restart becomes the wide guide button. Presentation only — every
+  // control, name, focus claim, the Send-log control (#456) and the sweep
+  // pause (#514) below are the same in both looks.
+  const o4 = useDesign().design === "o4";
 
   useEffect(() => {
     pauseTranscodeSweep(SAVE_FAILED_SWEEP_PAUSE);
@@ -130,35 +136,38 @@ export function SaveFailed({
 
   // The held work: a fresh recording, or the edited buffer of one. Every visible
   // line names it correctly, because on the edit path the previously stored
-  // recording is untouched — discarding drops only the edit.
-  const subject = editOnly ? "edited recording" : "recording";
-  const stillHere =
-    ordinal === null
-      ? `Your ${subject} is still here.`
-      : `Your ${subject} of segment ${ordinal} is still here.`;
-  const discardLabel = armed
-    ? editOnly
-      ? "Tap again to discard these changes"
-      : "Tap again to delete this recording for good"
-    : editOnly
-      ? "Discard these changes"
-      : "Delete this recording";
+  // recording is untouched — discarding drops only the edit. That `editOnly`
+  // split is a parameter of the string table's entries rather than a ternary
+  // here, so the wording of both paths sits beside every other string in the
+  // app (#169).
+  const stillHere = strings.saveFailedHeld(editOnly, ordinal);
+  const discardLabel = strings.saveFailedDiscard(editOnly, armed);
 
   return (
     <div
       role="alertdialog"
       aria-modal="true"
-      aria-label={
-        editOnly ? "Your changes are not saved" : "This recording is not saved"
+      aria-label={strings.saveFailedDialog(editOnly)}
+      className={
+        o4
+          ? "o4-err flex w-full max-w-md flex-col items-center px-[22px] text-center"
+          : "flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
       }
-      className="flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
     >
-      <span className={saving ? "text-ink-muted" : "text-live"}>
-        <Icon name={saving ? "retry" : "alert"} size={56} />
-      </span>
+      {o4 && !saving ? (
+        <span className="o4-err-circle" aria-hidden="true">
+          <Icon name="alert" size={58} />
+        </span>
+      ) : (
+        <span className={saving ? "text-ink-muted" : "text-live"}>
+          <Icon name={saving ? "retry" : "alert"} size={56} />
+        </span>
+      )}
 
-      <p className="t-title text-ink">
-        {saving ? "Saving" : recoveryTitle(kind ?? "unknown", editOnly)}
+      <p className={o4 ? "o4-err-title text-ink" : "t-title text-ink"}>
+        {saving
+          ? strings.saveFailedSaving
+          : recoveryTitle(kind ?? "unknown", editOnly)}
       </p>
 
       <p className="text-ink-muted text-[13px]">{stillHere}</p>
@@ -177,11 +186,19 @@ export function SaveFailed({
                         restartArmed,
                         holdsCutAudio
                       )
-                  : "Try saving again"
+                  : strings.saveFailedRetry
               }
               variant="primary"
-              size={30}
-              className={terminal && restartArmed ? "text-live" : undefined}
+              size={o4 ? 34 : 30}
+              className={
+                o4
+                  ? terminal && restartArmed
+                    ? "o4-err-wide text-live"
+                    : "o4-err-wide"
+                  : terminal && restartArmed
+                    ? "text-live"
+                    : undefined
+              }
               busy={terminal && restarting}
               autoFocus
               onClick={
@@ -256,9 +273,7 @@ export function SaveFailed({
             />
             {armed && (
               <p className="text-live text-[12px]">
-                {editOnly
-                  ? "Tap again to discard them."
-                  : "Tap again to delete it."}
+                {strings.saveFailedDiscardHint(editOnly)}
               </p>
             )}
           </div>

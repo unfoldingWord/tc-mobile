@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { newBookCta, seedToRecorder, seedToSegments } from "./support/seed";
+
 /**
  * The system-Back model's browser-only half (#452 PR2, `hooks/use-nav-stack.ts`),
  * against the SHIPPED `dist/` build.
@@ -40,11 +42,6 @@ import { expect, test, type Page } from "@playwright/test";
  *     — its exact end state stays a device item (see `use-nav-stack.ts`).
  */
 
-/** The Books "New book" corner/CTA — the only text layer this UI has. */
-function newBookCta(page: Page) {
-  return page.getByRole("button", { name: "New book" });
-}
-
 /**
  * The monotonic index the adapter stamps on the current history entry.
  *
@@ -61,61 +58,6 @@ function navIndex(page: Page): Promise<number | undefined> {
   return page.evaluate(
     () => (window.history.state as { index?: number } | null)?.index
   );
-}
-
-/**
- * Seed one book with one chapter and land on that chapter's Segments screen.
- * Driven through the real UI (the shipped build exposes no seeding harness).
- *
- * It goes through the New Book dialog, so since Amendment G (#452 PR3) it is
- * NOT a walk over a shelf that pushes nothing: that dialog is a floor layer, so
- * opening it ARMS the shelf's one protective entry, and closing it by creating
- * the book leaves that entry standing (case (g)). `openChapter`'s `enterScreen`
- * then RE-STAMPS the standing entry rather than stacking a second one on it
- * (case (i)) — so Segments is still exactly one Back from Books. This comment
- * used to say Books "does NOT push a history entry", which stopped being true
- * with PR3 (#536 item 4); cases (c)/(d) already moved to relative indices for
- * the same reason, and `navIndex`'s docblock has the general rule.
- */
-async function seedToSegments(page: Page) {
-  await page.goto("/");
-  // Empty shelf: the only "New book" is the empty-state CTA (the header + is
-  // hidden while empty).
-  await newBookCta(page).click();
-  await expect(
-    page.getByRole("dialog", { name: "Name your new book" })
-  ).toBeVisible();
-  // Confirm alone accepts the pre-filled placeholder name — the one-tap create.
-  await page.getByRole("button", { name: "Create book" }).click();
-
-  // The new book opens expanded; add its first chapter. Add chapter opens a
-  // naming prompt of its own (#609) — a second overlay, opened and closed
-  // inside this seed, so it arms no history entry the New Book dialog above
-  // has not already armed (`floorEntryForLayerChange`, and `popLayer` touches
-  // history not at all). The index assertions below are what prove that.
-  await page.getByRole("button", { name: /^Add chapter to/ }).click();
-  await page.getByRole("button", { name: "Create chapter" }).click();
-  // Open the chapter → Segments. This is the first transition that pushes a
-  // protective history entry.
-  await page.getByRole("button", { name: "Open Chapter 1" }).click();
-  await expect(
-    page.getByRole("button", { name: "Back to books" })
-  ).toBeVisible();
-}
-
-/** From Segments, add one segment and open its recorder sheet. */
-async function seedToRecorder(page: Page) {
-  await seedToSegments(page);
-  // Empty chapter: the only "Add segment" is the empty-state CTA.
-  await page.getByRole("button", { name: "Add segment" }).click();
-  await expect(
-    page.getByRole("button", { name: "Record segment 1" })
-  ).toBeVisible();
-  // Open the recorder sheet (Segments → Recorder) — a second protective push.
-  await page.getByRole("button", { name: "Record segment 1" }).click();
-  await expect(
-    page.getByRole("button", { name: "Close recorder" })
-  ).toBeVisible();
 }
 
 test("(a) Back from Segments returns to Books (stays on the app's own document — tab floor, see header)", async ({
@@ -776,4 +718,232 @@ test("(m) the Record control is inside the list's `inert` subtree while the chap
   await page.goBack();
   await expect(chapterMenu(page)).toHaveCount(0);
   expect(await recordIsInert()).toBe(false);
+});
+
+/**
+ * ── #435: no history write while a Back is still outstanding ─────────────
+ *
+ * `goBack` issues `history.back()` and returns; its `popstate` lands a task
+ * later. Until then the Segments screen is still showing and still live, so a
+ * Record tap in that window reaches `openRecorder`, which pushes the
+ * recorder's entry. `lib/nav/history-latch.ts` refuses that transition while
+ * the Back is outstanding, so no push is ever issued under a pending
+ * traversal; this case drives the rule through the real Segments controls.
+ *
+ * The test makes the overlap itself — both taps in one task — so it pins a
+ * defensive invariant. A real path reaches it only when a second tap beats a
+ * `popstate` (#435's inference: an automated double-tap or a slow WebView).
+ *
+ * The witness is the ORDERED LOG of history calls both taps issue in that
+ * task, before any `popstate` lands: exactly one `back()` and nothing after
+ * it. `openRecorder` without the latch pushes synchronously, so the log would
+ * carry a `"push"` after the `"back"`. The landing assertions after it are the
+ * user-visible half: the Back asked for first is the one that happens, and no
+ * recorder is left open.
+ */
+test("(n) a Record tap made before a pending Back to books lands issues no history write, and the Back lands on Books with no recorder open (#435)", async ({
+  page,
+}) => {
+  await seedToSegments(page);
+  await page.getByRole("button", { name: "Add segment" }).click();
+  await expect(
+    page.getByRole("button", { name: "Record segment 1" })
+  ).toBeVisible();
+
+  const calls = await page.evaluate(() => {
+    const log: string[] = [];
+    const history = window.history;
+    const back = history.back.bind(history);
+    const push = history.pushState.bind(history);
+    const replace = history.replaceState.bind(history);
+    // Transparent wrappers: each still performs the real call, so the landing
+    // below is the browser's own; they only record the order.
+    history.back = () => {
+      log.push("back");
+      back();
+    };
+    history.pushState = (...args: Parameters<History["pushState"]>) => {
+      log.push("push");
+      push(...args);
+    };
+    history.replaceState = (...args: Parameters<History["replaceState"]>) => {
+      log.push("replace");
+      replace(...args);
+    };
+    document
+      .querySelector<HTMLButtonElement>('[aria-label="Back to books"]')
+      ?.click();
+    // Logged, so a control already gone after the Back click cannot pass as
+    // the latch having refused the push (George round 1).
+    const record = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Record segment 1"]'
+    );
+    log.push(record ? "tap" : "no-control");
+    record?.click();
+    return log;
+  });
+  expect(calls).toEqual(["back", "tap"]);
+
+  await expect(newBookCta(page)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Close recorder" })
+  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Back to books" })).toHaveCount(
+    0
+  );
+});
+
+/**
+ * The other half of #435's latch: a Back whose landing is ABSORBED rather than
+ * routed. `trap-forward` cancels a Forward with a suppressed `history.back()`,
+ * and the screen does not change, so a Record tap before that cancel lands is
+ * still wanted afterwards — its state half runs at once and its push waits for
+ * the landing, then replays.
+ *
+ * The tap is made from a `popstate` listener added after the app's own, so it
+ * runs in the same dispatch, after the app has issued the cancel (DOM
+ * Standard: an event's listeners are invoked in the order they were added).
+ * Like (n), the test makes this overlap itself; it pins a defensive
+ * invariant, not a reproduced field failure.
+ *
+ * The ordered log is the witness: the recorder's push comes after the
+ * cancel's landing, not between the `"tap"` and `"tapped"` brackets, which is
+ * where a synchronous push from the tap itself would appear. The walk after
+ * it is the stack being whole: the recorder is one Back from Segments, and
+ * Segments one from Books.
+ */
+test("(o) a Record tap made before a Forward's cancel lands is deferred to that landing, not refused, and the recorder then sits one Back above Segments (#435)", async ({
+  page,
+}) => {
+  await seedToRecorder(page);
+  // Back from the recorder leaves its entry standing as a FORWARD entry — the
+  // commit-close re-arms above Segments and then consumes it.
+  await page.goBack();
+  await expect(
+    page.getByRole("button", { name: "Close recorder" })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Record segment 1" })
+  ).toBeVisible();
+
+  await page.evaluate(() => {
+    const log: string[] = [];
+    (window as unknown as { __log435: string[] }).__log435 = log;
+    const history = window.history;
+    const back = history.back.bind(history);
+    const push = history.pushState.bind(history);
+    const replace = history.replaceState.bind(history);
+    history.back = () => {
+      log.push("back");
+      back();
+    };
+    history.pushState = (...args: Parameters<History["pushState"]>) => {
+      log.push("push");
+      push(...args);
+    };
+    history.replaceState = (...args: Parameters<History["replaceState"]>) => {
+      log.push("replace");
+      replace(...args);
+    };
+    // Registered after the app's own listener, so each "pop" is logged after
+    // whatever the app did in response to that landing. The tap is bracketed,
+    // so a write the tap itself issues shows up between the two brackets.
+    let tapped = false;
+    window.addEventListener("popstate", () => {
+      log.push("pop");
+      if (tapped) return;
+      tapped = true;
+      log.push("tap");
+      document
+        .querySelector<HTMLButtonElement>('[aria-label="Record segment 1"]')
+        ?.click();
+      log.push("tapped");
+    });
+  });
+  await page.goForward();
+  await expect(
+    page.getByRole("button", { name: "Close recorder" })
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as unknown as { __log435: string[] }).__log435
+      )
+    )
+    .toEqual(["back", "pop", "tap", "tapped", "push", "pop"]);
+
+  await page.goBack();
+  await expect(
+    page.getByRole("button", { name: "Close recorder" })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Back to books" })
+  ).toBeVisible();
+  await page.goBack();
+  await expect(newBookCta(page)).toBeVisible();
+});
+
+/**
+ * (o) with TWO Record taps in the absorbed window (Frank round 1). Both defer
+ * the recorder's entry, and the recorder is one screen, so the replay writes
+ * one entry for it. The walk back is the witness a surplus entry cannot pass:
+ * Recorder, then Segments, then Books must end on the root entry. Like (o),
+ * the test makes this overlap itself.
+ */
+test("(p) two Record taps made before a Forward's cancel lands write one entry for the one recorder, and the walk back ends on the root entry (#435)", async ({
+  page,
+}) => {
+  await seedToRecorder(page);
+  await page.goBack();
+  await expect(
+    page.getByRole("button", { name: "Record segment 1" })
+  ).toBeVisible();
+
+  await page.evaluate(() => {
+    const log: string[] = [];
+    (window as unknown as { __log435: string[] }).__log435 = log;
+    const history = window.history;
+    const back = history.back.bind(history);
+    const push = history.pushState.bind(history);
+    history.back = () => {
+      log.push("back");
+      back();
+    };
+    history.pushState = (...args: Parameters<History["pushState"]>) => {
+      log.push("push");
+      push(...args);
+    };
+    let tapped = false;
+    window.addEventListener("popstate", () => {
+      log.push("pop");
+      if (tapped) return;
+      tapped = true;
+      const record = document.querySelector<HTMLButtonElement>(
+        '[aria-label="Record segment 1"]'
+      );
+      log.push(record ? "tap" : "no-control");
+      record?.click();
+      record?.click();
+      log.push("tapped");
+    });
+  });
+  await page.goForward();
+  await expect(
+    page.getByRole("button", { name: "Close recorder" })
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as unknown as { __log435: string[] }).__log435
+      )
+    )
+    .toEqual(["back", "pop", "tap", "tapped", "push", "pop"]);
+
+  await page.goBack();
+  await expect(
+    page.getByRole("button", { name: "Back to books" })
+  ).toBeVisible();
+  await page.goBack();
+  await expect(newBookCta(page)).toBeVisible();
+  expect(await navIndex(page)).toBe(0);
 });

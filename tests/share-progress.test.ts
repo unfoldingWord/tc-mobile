@@ -17,6 +17,7 @@ import {
   shareProgressWakeAt,
 } from "@/hooks/share-progress";
 import type { ShareOutcome } from "@/hooks/share-flow";
+import { region, stripCssComments, uniqueIndexOf } from "./support";
 
 /**
  * The share progress timeline (#491): a busy modal held for a MINIMUM time so
@@ -395,7 +396,11 @@ describe("shareOverlayOwnsScreen (George r1 P2 #1/#2, #491)", () => {
   });
 });
 
-/** Source-shape reads, because there is no renderer here (#197). */
+/**
+ * Source-shape text matches, not checks of wiring: a `readFileSync` read and
+ * a string/pattern match confirm the expected text appears in source, not
+ * that it executes. These do not run hook effects or gestures.
+ */
 const read = (rel: string) =>
   readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
 
@@ -674,6 +679,59 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
   }
 
   /**
+   * The native one-tap chain (#860): on the native route `prepare()` now
+   * resolves to `send()`'s own outcome (`share-flow.ts`'s `chainsToSend`)
+   * instead of always leaving the flow at `ready`. So `onPrepareShare`/
+   * `onPrepareBookShare` must react to THAT return value the same way
+   * `onSendShare`/`onSendBookShare` already react to a manual tap 2 —
+   * closing the menu on `sent`/`dismissed`, and leaving it alone for every
+   * other outcome the `.then` does not name (`retry`, `failed`, `unproven`,
+   * `superseded`, and the `null` a non-chained web run, an empty share, a
+   * prepare error, or a superseded run resolves to).
+   */
+  for (const [screen, prepareFn, closeFn] of [
+    [
+      "src/components/segments-screen.tsx",
+      "onPrepareShare",
+      "onCloseChapterMenu",
+    ],
+    [
+      "src/components/books-screen.tsx",
+      "onPrepareBookShare",
+      "onCloseShareMenu",
+    ],
+  ] as const) {
+    const name = screen.split("/").pop();
+
+    it(`${name}: ${prepareFn} closes the menu on a chained sent/dismissed outcome — the same set ${closeFn}'s tap-2 sibling closes on`, () => {
+      const source = read(screen);
+      const prepareAt = source.indexOf(`const ${prepareFn} = useCallback`);
+      expect(prepareAt).toBeGreaterThan(-1);
+      const prepareBody = source.slice(
+        prepareAt,
+        source.indexOf("}, [", prepareAt)
+      );
+      expect(prepareBody).toMatch(
+        new RegExp(
+          `outcome === "sent" \\|\\| outcome === "dismissed"\\)\\s*${closeFn}\\(\\);`
+        )
+      );
+    });
+
+    it(`${name}: ${prepareFn} reads prepare()'s own resolved outcome via .then, not a bare fire-and-forget`, () => {
+      const source = read(screen);
+      const prepareAt = source.indexOf(`const ${prepareFn} = useCallback`);
+      const prepareBody = source.slice(
+        prepareAt,
+        source.indexOf("}, [", prepareAt)
+      );
+      expect(prepareBody).toMatch(
+        /\.prepare\([\s\S]*?\)\s*\.then\(\(outcome\) => \{/
+      );
+    });
+  }
+
+  /**
    * The ternary's own half of the #96/#97 contract, asserted ONCE now that
    * both menus render the same rows (#160, L-15).
    *
@@ -926,10 +984,20 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
     it(`${name}: restores focus from a useLayoutEffect keyed on the overlay no longer owning the screen`, () => {
       const source = read(screen);
       expect(source).toMatch(/useLayoutEffect,/); // imported from "react"
-      const restoreAt = source.indexOf("useLayoutEffect(() => {");
-      expect(restoreAt).toBeGreaterThan(-1);
-      const effectEnd = source.indexOf("}, [", restoreAt);
-      const body = source.slice(restoreAt, effectEnd);
+      // Anchor on the effect's own dependency array, which names this
+      // screen's share hook and must occur once, then walk back to the
+      // effect's opening. The file's first `useLayoutEffect(() => {` is only
+      // this effect by position: both screens declare more than one, and a
+      // new one added above it sliced the wrong effect in PR #531 round 7
+      // (#533).
+      const effectEnd = uniqueIndexOf(
+        source,
+        `}, [${hook}.progress, focusRestore]);`
+      );
+      const body = region(source, {
+        from: source.lastIndexOf("useLayoutEffect(() => {", effectEnd),
+        to: effectEnd,
+      });
       expect(body).toMatch(
         new RegExp(
           `if \\(shareOverlayOwnsScreen\\(${hook}\\.progress\\)\\) return;`
@@ -1043,8 +1111,10 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
     expect(prepareAt).toBeGreaterThan(-1);
     const controlStart = source.lastIndexOf("<Control", prepareAt);
     const controlEnd = source.indexOf("/>", prepareAt);
-    expect(controlEnd).toBeGreaterThan(prepareAt);
-    const control = source.slice(controlStart, controlEnd);
+    // region() throws if the lastIndexOf walk-back found no preceding
+    // <Control at all (#533's "unfloored lastIndexOf" finding), not just if
+    // the forward search for the closing /> came up empty.
+    const control = region(source, { from: controlStart, to: controlEnd });
 
     // The label is a three-way: preparing, then unconfirmed, then idle.
     expect(control).toMatch(/label=\{/);
@@ -1097,7 +1167,11 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
   });
 
   it("the stylesheet inks busy and every settled outcome, with layer-2 roles only", () => {
-    const css = read("src/app/styles/3-components.css");
+    // Comments stripped first (#533): a header comment naming the selector
+    // used to be found by the block search below before the rule itself was
+    // (#529 round 3), which is why the stylesheet had to spell it without its
+    // leading dot. A comment can no longer be the match.
+    const css = stripCssComments(read("src/app/styles/3-components.css"));
     for (const key of ["busy", ...SHARE_SETTLED]) {
       const rule = new RegExp(
         `\\.share-scrim\\[data-outcome="${key}"\\][^{]*\\{[^}]*color:\\s*var\\(--s-`
@@ -1107,8 +1181,15 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
     // No colour primitive anywhere in the block: every ink, fill and edge is a
     // layer-2 role, or a theme cannot switch it. Spacing and radius primitives
     // are the same ones `.confirm-panel` uses and are not the leak this guards.
-    const start = css.indexOf(".share-scrim");
-    const block = css.slice(start, css.indexOf("@layer components", start));
+    // The block runs from the scrim's own base rule to the next layer block.
+    // `uniqueIndexOf` pins the base rule as the start, so a second
+    // `.share-scrim {` rule added elsewhere fails here rather than silently
+    // moving the window; `region` throws on a missing end or an empty slice.
+    const start = uniqueIndexOf(css, ".share-scrim {");
+    const block = region(css, {
+      from: start,
+      to: css.indexOf("@layer components", start),
+    });
     const declarations = [
       ...block.matchAll(/(color|background|border(?:-color)?):\s*([^;]+);/g),
     ];

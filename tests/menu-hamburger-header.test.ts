@@ -6,9 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Icon, type IconName } from "@/components/icon";
 import { Menu } from "@/components/menu";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 
 import { one, render as renderStatic } from "./render";
+import { stripComments } from "./support";
 
 /**
  * #608: the ≡ that opens the global menu stays a ≡ once the menu is open — same
@@ -88,12 +89,15 @@ function dismissControl(panel: Element): HTMLButtonElement {
 
 describe("the global menu's header (#608)", () => {
   it("opts the Books global menu into the hamburger header (#643)", () => {
-    const books = readFileSync(
-      new URL("../src/components/books-screen.tsx", import.meta.url),
-      "utf8"
-    )
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^\s*\/\/.*$/gm, "");
+    // The shared strip, not a line-anchored `^\s*\/\/` one: that keeps a
+    // comment trailing live code, so `open={menuOpen} // hamburger` on a tag
+    // with the prop gone would satisfy the match below (#822).
+    const books = stripComments(
+      readFileSync(
+        new URL("../src/components/books-screen.tsx", import.meta.url),
+        "utf8"
+      )
+    );
     // Check the caller as well as Menu's rendered opt-in behavior below.
     // Count matches so a missing or duplicated global menu cannot pass.
     //

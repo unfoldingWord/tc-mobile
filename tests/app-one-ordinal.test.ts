@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { stripComments } from "./support";
+
 /**
  * #160 (L-11): `App` held two state slots for one fact — `recorder.ordinal`
  * and `recordingOrdinal`, written from the same argument in the same call —
@@ -21,9 +23,6 @@ import { describe, expect, it } from "vitest";
  * comment that quotes `setRecorder(null)` in order to explain it — so a
  * whole-file regex would false-hit on the explanation instead of the code.
  */
-
-const stripComments = (text: string) =>
-  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 
 const app = stripComments(
   readFileSync(new URL("../src/app/App.tsx", import.meta.url), "utf8")

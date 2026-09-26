@@ -71,8 +71,12 @@ Each promotion is a PR. The `staging` -> `main` PR is the production gate.
 Live staging: <https://tc-mobile-staging.unfoldingword.workers.dev>
 
 **Cloudflare Workers Builds deploys** the PWA straight from the repo — no
-Actions workflow deploys the web app. (The one deploy workflow in `.github/` is
-the manual iOS TestFlight lane, run by hand — a native build, not a web deploy.)
+Actions workflow deploys the web app. (`.github/` holds three native lanes:
+`ios-testflight.yml` and `android-apk.yml` are manual-dispatch only;
+`android-play.yml` triggers on push to `staging`/`main` and uploads a native
+bundle to Google Play only when `vars.PLAY_UPLOAD_ENABLED` is `true` —
+never Cloudflare — see AGENTS.md → "Cloudflare Workers Builds
+owns deployment".)
 Workers Builds is configured per Worker, so the repo is connected twice:
 `tc-mobile` builds from `main`, `tc-mobile-staging` builds from `staging` with
 `--env staging`.
@@ -84,23 +88,25 @@ Open a deployed URL on the device. It is HTTPS, which matters —
 `http://192.168.x.x` **cannot record audio** no matter what else is correct.
 
 Add it to the home screen to exercise the installed PWA (standalone display and
-safe-area insets behave differently there than in a browser tab). There is no
-share-sheet export path yet — see #18.
+safe-area insets behave differently there than in a browser tab). Share
+Chapter and Share Book hand an MP3 (or a zip of them) to the OS share sheet.
 
 ### CI
 
 `ci.yml`: full-history secret scan, format, lint, knip, typecheck, test, build,
 and a check that the PWA service worker, manifest, and `version.json` were
-emitted. It deploys nothing. (`.github/` also holds the two manual native
-lanes, run by hand and never on push/PR: `ios-testflight.yml`, a TestFlight
-upload, and `android-apk.yml`, a signed release APK attached to the run as an
-artifact. They are the only workflows that ship a binary, and never to
-Cloudflare.)
+emitted. It deploys nothing. (`.github/` also holds three native lanes, none
+of which touch Cloudflare: `ios-testflight.yml` and `android-apk.yml` are
+manual-dispatch only, each gated by a `release-signing` environment with
+required reviewers (#321); `android-play.yml` triggers on push to
+`staging`/`main` and uploads a signed .aab to Google Play only when
+`vars.PLAY_UPLOAD_ENABLED` is `true`, from a `play-upload` environment that
+has no required reviewers — branch-restricted instead, per the yml.)
 
 The repo is `unfoldingWord/tc-mobile`, in the unfoldingWord org, **public since
-2026-09-13**. Keep it public: the native lanes' signing gate (a GitHub
-environment with required reviewers, #321) exists only on public repositories
-for this org's plan — `docs/native/README.md` §4a step 4 has the detail.
+2026-09-13**. Keep it public: `release-signing`'s required-reviewer gate
+exists only on public repositories for this org's plan —
+`docs/native/README.md` §4a step 4 has the detail.
 
 ## Architecture
 
@@ -111,8 +117,7 @@ Onion layers, enforced by ESLint `no-restricted-imports` — imports never go
 src/
 ├── types/       Domain types              (no internal imports)
 ├── lib/         Pure audio + storage core (imports: types)
-│   ├── audio/     PCM edit, peaks, WAV, MP3 — no DOM, unit-tested in Node
-│   ├── scripture/ Burrito scope-string grammar
+│   ├── audio/     PCM edit, peaks, MP3 — no DOM, unit-tested in Node
 │   └── storage/   IndexedDB repositories
 ├── hooks/       Browser boundary          (imports: lib, types)
 │                  the ONLY place MediaRecorder / Web Audio appear
@@ -132,7 +137,7 @@ MediaRecorder (webm/opus on Android, mp4/aac on iOS)
    → decodeAudioData + OfflineAudioContext resample
    → canonical mono 16-bit PCM @ 44.1 kHz     ← everything internal is this
    → edit: cut / insert / paste / concat      (pure Int16Array functions)
-   → export: MP3 (lamejs) or WAV                (encoder only — not wired, #18)
+   → export: MP3 (lamejs, in a Web Worker)      (Share Chapter / Share Book)
 ```
 
 See [ADR 0002](docs/decisions/0002-audio-storage-format.md) and
@@ -186,9 +191,9 @@ aggregation.
 > derivative work, so recordings produced against OBS content **are** CC BY-SA
 > and must not carry the unfoldingWord® trademark. The requirements owner
 > confirmed that reading on 2026-08-23 (#15 closed). **Nothing in the export
-> path implements it yet** —
-> there is no export path at all (#18) — and the data model still cannot tell an
-> OBS-derived recording from a user-authored one. ADR 0006.
+> path implements it yet**: Share Chapter and Share Book carry no attribution
+> (#252), and the data model still cannot tell an OBS-derived recording from a
+> user-authored one. ADR 0006.
 
 ## Prior art
 

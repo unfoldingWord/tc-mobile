@@ -491,11 +491,11 @@ describe("the native share session", () => {
       );
     }
     // Compared by index rather than `toEqual`, which walks 1.5M elements
-    // through the full deep-equality machinery: locally that cost ~1.7s of the
-    // test's ~1.9s, and on a CI runner it blew the 5s default timeout while
-    // asserting nothing extra (the whole encode is ~30ms). `findIndex` still
-    // names the first byte that differs, which is the only part of a diff over
-    // a megabyte and a half anyone can read.
+    // through the full deep-equality machinery — slow enough on its own to
+    // blow a CI runner's default timeout while asserting nothing extra that
+    // the encode itself doesn't already cover. `findIndex` still names the
+    // first byte that differs, which is the only part of a diff over a
+    // megabyte and a half anyone can read.
     const written = writtenBytes(calls);
     expect(written.length).toBe(size);
     expect(written.findIndex((byte, at) => byte !== source[at])).toBe(-1);

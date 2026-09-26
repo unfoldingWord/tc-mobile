@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { matchingBraceClose, stripComments } from "./support";
+
 /**
  * Three release-on-throw properties in `use-recorder.ts` (#59, PR #474,
  * #485):
@@ -109,9 +111,6 @@ describe("cancel()'s native recorder.stop() call is guarded (#59)", () => {
    * `src/hooks/use-recorder.ts` contains no `//` or `/*` inside a string
    * literal, so the strip cannot misfire on one.
    */
-  const stripComments = (text: string) =>
-    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
   const code = stripComments(readFileSync(sourceUrl, "utf8"));
 
   /**
@@ -271,23 +270,7 @@ describe("cancel()'s native recorder.stop() call is guarded (#59)", () => {
  */
 describe("stop() releases the stolen stream and the LOCAL tap in both arms, and its flush-throw path reports, seals what it has and falls through to a tail that returns to idle (#59 #474 R6, #485, panel r1, panel r2)", () => {
   const sourceUrl = new URL("../src/hooks/use-recorder.ts", import.meta.url);
-  const stripComments = (text: string) =>
-    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
   const code = stripComments(readFileSync(sourceUrl, "utf8"));
-
-  /** Brace-counts from `openIndex` (the index of an opening `{`) to find its
-   *  matching close. Shared by every isolation step below. */
-  const matchingBraceClose = (body: string, openIndex: number): number => {
-    let depth = 0;
-    for (let i = openIndex; i < body.length; i++) {
-      if (body[i] === "{") depth++;
-      else if (body[i] === "}") {
-        depth--;
-        if (depth === 0) return i;
-      }
-    }
-    return -1;
-  };
 
   /**
    * Isolate `stop()`'s own body, then BOTH arms of its `if/else` on
@@ -466,13 +449,15 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     expect(catchBody).not.toMatch(/\bthrow\b/);
   });
 
-  it('"recorder-stop-flush" is one site in the file, and the tail\'s empty-capture exit picks its sentence on flushThrew (#485, panel r1)', () => {
+  it('"recorder-stop-flush" is one site in the file, and the tail\'s empty-capture exit picks its code on flushThrew (#485, panel r1)', () => {
     // One row key, one site: a second site would double-report the same
-    // throw. The sentence: an empty seal after a throw is "Could not finish
-    // this recording." (the engine failed, and the facilitator runbook
-    // names that sentence as written down), not "No sound was recorded"
-    // (which reads as the translator's silence). `flushThrew` is declared
-    // in stop()'s body before the try, so the flag is per invocation.
+    // throw. The code: the empty-capture exit hands `flushThrew` and
+    // `current` to `classifyEmptySeal`, whose choice of member — including
+    // null on a superseded stop — is tested directly in
+    // `tests/stop-decode.test.ts` (#745). What is pinned here is only the
+    // wiring: that this exit asks the classifier, with these two flags.
+    // `flushThrew` is declared in stop()'s body before the try, so the flag
+    // is per invocation.
     const hits = code.match(/"recorder-stop-flush"/g) ?? [];
     expect(hits).toHaveLength(1);
     expect(stopBody).toMatch(/\blet\s+flushThrew\s*=\s*false\s*;/);
@@ -481,7 +466,7 @@ describe("stop() releases the stolen stream and the LOCAL tap in both arms, and 
     );
     const afterElse = stopBody.slice(elseBraceClose + 1);
     expect(afterElse).toMatch(
-      /blob\.size\s*===\s*0[\s\S]*?flushThrew\s*\?\s*"Could not finish this recording\."\s*:\s*"No sound was recorded\. Try again\."/
+      /blob\.size\s*===\s*0[\s\S]*?error:\s*classifyEmptySeal\(\s*flushThrew\s*,\s*current\s*\)/
     );
   });
 

@@ -1,0 +1,286 @@
+/* O4 — Tile menu primitive and screen menus onto the tile grid. Owners: #941, #949. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file.
+
+   #941's half: the tile primitive (`components/o4-tile-menu.tsx`) and the
+   bottom-sheet shell a menu takes on while it holds a tile grid. #949
+   appends its per-menu rules below; it does not restructure these.
+
+   THE TILE is one `Control` button laid out as a two-row grid: the 76 x 76
+   box in row 1 (a pseudo-element, so the glyph needs no extra element), the
+   caption in row 2. The whole tile is the tap target and the focus outline,
+   as in the workbench's `tile()`. Fill per tone; the glyph takes the tile
+   ink, and the caption the muted ink.
+
+   THE SHEET is keyed on the grid's presence (`:has`), so only a menu that
+   holds tiles becomes a bottom sheet — the name sheets that share the same
+   menu surface are #943's, in sheets.css, and are untouched here. */
+@layer components {
+  [data-design="o4"] .o4-tiles {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  [data-design="o4"] .o4-tiles-gap {
+    flex: 1;
+  }
+  [data-design="o4"] .o4-tile {
+    grid-template-rows: 76px auto;
+    row-gap: 8px;
+    width: 76px;
+    height: auto;
+    border-radius: 20px; /* #939 token */
+    background: transparent;
+    color: var(--s-tile-ink);
+  }
+  [data-design="o4"] .o4-tile::before {
+    content: "";
+    grid-area: 1 / 1;
+    width: 76px;
+    height: 76px;
+    border-radius: 20px; /* #939 token */
+  }
+  [data-design="o4"] .o4-tile > svg {
+    grid-area: 1 / 1;
+  }
+  [data-design="o4"] .o4-tile > .control-caption {
+    grid-area: 2 / 1;
+    color: var(--s-ink-muted);
+    font-size: 14px; /* #939 token */
+    font-weight: 400;
+    white-space: nowrap;
+  }
+  [data-design="o4"] .o4-tile--edit::before {
+    background: var(--s-edit);
+  }
+  [data-design="o4"] .o4-tile--name::before {
+    background: var(--s-name);
+  }
+  [data-design="o4"] .o4-tile--send::before {
+    background: var(--s-send);
+  }
+  [data-design="o4"] .o4-tile--erase {
+    color: var(--s-live);
+  }
+  [data-design="o4"] .o4-tile--erase::before {
+    background: var(--s-live-quiet);
+    box-shadow: inset 0 0 0 2px var(--s-live);
+  }
+  [data-design="o4"] .o4-tile--plain {
+    color: var(--s-ink);
+  }
+  [data-design="o4"] .o4-tile--plain::before {
+    background: var(--s-well);
+  }
+
+  [data-design="o4"] .menu-scrim:has(.o4-tiles) {
+    align-items: flex-end;
+    justify-content: center;
+    padding: 8px calc(8px + env(safe-area-inset-right))
+      calc(8px + env(safe-area-inset-bottom))
+      calc(8px + env(safe-area-inset-left));
+    background: var(--s-dim);
+  }
+  [data-design="o4"] .menu-panel:has(.o4-tiles) {
+    width: 100%;
+    height: auto;
+    max-height: 100%;
+    padding: 12px 16px 20px;
+    gap: 18px;
+    border: 1px solid var(--s-card-edge);
+    border-radius: 26px; /* #939 token */
+  }
+  [data-design="o4"] .menu-panel:has(.o4-tiles)::before {
+    content: "";
+    flex: none;
+    align-self: center;
+    width: 56px;
+    height: 5px;
+    margin-bottom: -2px;
+    border-radius: 3px;
+    background: var(--s-edge);
+  }
+
+  /* === #949: the chapter menu (G2), the segment menu (07), marking done (G8)
+     ======================================================================
+     Appended, not restructured. Values from the design reference (sections 3
+     and 7) and the workbench's sheet, shead, crumb, prev and tb rules.
+
+     MARKING DONE is two more tile tones: grey on the well in faint ink until
+     the segment is done, then the whole tile the done fill in its own ink.
+
+     THE SHEET HEAD is the breadcrumb row (book, chapter, segment), chevron
+     clipped 13px. A finished segment's crumb takes the done fill and ink, the
+     pairing the done badge already uses, rather than the workbench's quiet
+     wash: done text on the light quiet wash is 3.3:1, and the darker ink the
+     D3 decision calls for is not a layer-2 role yet. While the head is there
+     the menu's own title text is hidden (kept in the layout so its close
+     stays in the corner); the dialog's name is its aria-label, not this
+     text.
+
+     THE PREVIEW is the segment's badge, name and wave on the floor. */
+  [data-design="o4"] .o4-tile--done {
+    color: var(--s-done-ink);
+  }
+  [data-design="o4"] .o4-tile--done::before {
+    background: var(--s-done);
+  }
+  [data-design="o4"] .o4-tile--doneoff {
+    color: var(--s-ink-faint);
+  }
+  [data-design="o4"] .o4-tile--doneoff::before {
+    background: var(--s-well);
+  }
+
+  [data-design="o4"] .menu-panel:has(.o4-sheet-head) .t-title {
+    visibility: hidden;
+  }
+  [data-design="o4"] .o4-sheet-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+  [data-design="o4"] .o4-crumbs {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+  [data-design="o4"] .o4-crumb {
+    display: flex;
+    align-items: center;
+    height: 40px;
+    min-width: 0;
+    margin-left: -6px;
+    padding: 0 20px 0 24px;
+    background: var(--s-well);
+    color: var(--s-ink);
+    font-size: 16px; /* #939 token */
+    font-weight: 700; /* #939 token */
+    white-space: nowrap;
+    clip-path: polygon(
+      0 0,
+      calc(100% - 13px) 0,
+      100% 50%,
+      calc(100% - 13px) 100%,
+      0 100%,
+      13px 50%
+    );
+  }
+  [data-design="o4"] .o4-crumb:first-child {
+    margin-left: 0;
+    padding-left: 12px;
+    border-radius: 10px 0 0 10px; /* #939 token */
+    clip-path: polygon(
+      0 0,
+      calc(100% - 13px) 0,
+      100% 50%,
+      calc(100% - 13px) 100%,
+      0 100%
+    );
+  }
+  [data-design="o4"] .o4-crumb > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  [data-design="o4"] .o4-crumb[data-state="recorded"] {
+    background: var(--s-voice-quiet);
+    color: var(--s-voice-text);
+  }
+  [data-design="o4"] .o4-crumb[data-state="finished"] {
+    background: var(--s-done-quiet); /* D19: the pale wash */
+    color: var(--s-done-text);
+  }
+
+  [data-design="o4"] .o4-menu-preview {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 78px;
+    padding: 8px 8px 8px 10px;
+    border-radius: 14px; /* #939 token */
+    background: var(--s-floor);
+  }
+  [data-design="o4"] .o4-menu-preview[data-state="finished"] {
+    --c-wave-stroke: var(--s-done);
+  }
+  [data-design="o4"] .o4-menu-badge {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--s-well);
+    color: var(--s-ink);
+    font-size: 17px; /* #939 token */
+    font-weight: 800; /* #939 token */
+  }
+  [data-design="o4"] .o4-menu-badge[data-state="finished"] {
+    background: var(--s-done-quiet); /* D19: the pale wash */
+    color: var(--s-done-text);
+  }
+  [data-design="o4"] .o4-menu-preview-mid {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+  }
+  [data-design="o4"] .o4-menu-title {
+    overflow: hidden;
+    color: var(--s-ink);
+    font-size: 16px; /* #939 token */
+    font-weight: 800; /* #939 token */
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* D20 (#949): the segment menu as the workbench draws 07. Rename is a
+     pencil in the head, after the crumbs (workbench `penbtn`); Play sits at
+     the end of the preview row (`tp play`, done fill on a finished segment);
+     a refused tile on a never-recorded segment is greyed (`tile.off`). */
+  [data-design="o4"] .o4-sheet-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+  }
+  [data-design="o4"] .o4-head-pen {
+    flex: none;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: var(--s-name);
+    color: var(--s-tile-ink);
+  }
+  [data-design="o4"] .o4-menu-play {
+    flex: none;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+  }
+  [data-design="o4"] .o4-menu-preview[data-state="finished"] .o4-menu-play {
+    background: var(--s-done);
+    color: var(--s-done-ink);
+  }
+  [data-design="o4"] .o4-tile[aria-disabled="true"] {
+    opacity: 0.35;
+  }
+
+  /* === #949: the recorder menu (G3)
+     ======================================================================
+     recorder-menu.tsx's O4 branch. Marking done (G8) and the theme tile are
+     the shared tones and ThemeControl tile above; this section holds only
+     what the recorder sheet has and no other menu does.
+
+     The sheet is capped at half the screen (the requirements owner's #927
+     ask: the waveform above it stays in view). Where the cap bites, the
+     sheet scrolls rather than climbing over the waveform. It keys on
+     recorder-menu-tile, which only this menu's tiles carry. */
+  [data-design="o4"] .menu-panel:has(.recorder-menu-tile) {
+    max-height: 50dvh;
+    overflow-y: auto;
+  }
+}

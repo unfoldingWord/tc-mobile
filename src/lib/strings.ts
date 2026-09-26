@@ -7,7 +7,32 @@
  * one record keeps that layer attachable and keeps wording out of the markup,
  * where it would otherwise be edited in a dozen places. This is a table, not a
  * provider: parameterised labels are small pure functions, nothing more.
+ *
+ * WHY IT LIVES IN `lib/` and not beside the components it mostly serves: the
+ * onion rule runs one way, so `hooks/` cannot import from `components/`. While
+ * this table sat in `components/`, every sentence a hook had to produce was
+ * stranded as a literal beside the code that raised it — `use-recorder.ts` said
+ * so in a comment this move deleted, "`hooks/` cannot reach the components'
+ * string table". `lib/` is the one layer every other layer can reach, and the
+ * table is pure data and pure functions, so it costs the DOM-free core nothing:
+ * it compiles under `tsconfig.lib.json` with the rest of `lib/`. #169.
+ *
+ * WHICH sentences that is, today: `playbackFailed`, the five
+ * `classifyMicRefusal` classes, and `recordingUnsupported`. Each one IS the
+ * state its hook holds, on the far side of a `useState` that never crosses into
+ * `lib/`, so there is no domain value to route and a code would be a union with
+ * one consumer.
+ *
+ * The recorder's three CAPTURE failures took the other route and are not that
+ * argument's evidence: #700 made them codes in `lib/audio/capture-failure.ts`,
+ * worded at the screen by `components/capture-failure-copy.ts`, because
+ * `lib/takes/close-plan.ts` already reasons about that value. AGENTS.md states
+ * which route to reach for. An earlier draft of this paragraph cited those
+ * three — "typed out a second time further down the same file" — as the reason
+ * this table moved; that was true before #700 and is not the case this move
+ * rests on now.
  */
+import { plural } from "@/lib/plural";
 import { filenameSafe } from "@/lib/utils";
 
 /**
@@ -23,6 +48,33 @@ import { filenameSafe } from "@/lib/utils";
  */
 function couldNotBeIncluded(subject: string): string {
   return `${subject} could not be included.`;
+}
+
+/**
+ * The trail at the top of a screen: where you are, outermost first.
+ *
+ * The separator is stated here and nowhere else. It used to be stated twice —
+ * once as an HTML entity inside the Segments header's JSX and once as a
+ * character in the recorder's own entry — which is two chances to answer one
+ * question, and the markup copy was a visible string living outside this table
+ * at all (#169).
+ *
+ * Joining parts is the ONE composition this table does, and what makes it
+ * allowed under #169 is that the parts are not translated fragments of a
+ * sentence: each is a whole name (a book, a chapter heading) or a number. A
+ * sentence assembled from clauses is what #169 rules out, and it stays ruled
+ * out — `shareBookMissingAndPartial` writes each of its arms as a whole
+ * sentence for exactly that reason.
+ *
+ * NOTHING HERE HANDLES RIGHT-TO-LEFT, and an earlier draft of this docblock
+ * implied otherwise (George, #698). `>` is not a mirrored glyph, no locale in
+ * this repo reads right-to-left yet, and no test asserts a direction — so a
+ * separator hard-coded here is a fact about the shipped English UI, not a
+ * property that survives translation. Whoever lands `strings[locale]` owns
+ * that question; this function is not evidence it is answered.
+ */
+function trail(...parts: readonly string[]): string {
+  return parts.join(" > ");
 }
 
 export const strings = {
@@ -56,19 +108,35 @@ export const strings = {
   loadingBooks: "Loading your books.",
   tryAgain: "Try again",
   bookRow: (name: string, chapters: number, expanded: boolean): string =>
-    `${name}, ${chapters} ${chapters === 1 ? "chapter" : "chapters"}, ${
-      expanded ? "expanded" : "collapsed"
-    }`,
+    `${name}, ${plural(chapters, {
+      one: "{n} chapter",
+      other: "{n} chapters",
+    })}, ${expanded ? "expanded" : "collapsed"}`,
   addChapter: (bookName: string): string => `Add chapter to ${bookName}`,
   openChapter: (heading: string): string => `Open ${heading}`,
   chapterName: (n: number): string => `Chapter ${n}`,
   /**
    * The chapter's display heading: the facilitator's passage label when set
-   * (#264), otherwise the default "Chapter {number}". One place both the Books
-   * row and the Segments breadcrumb resolve the name, so they never diverge.
+   * (#264), otherwise the default chapter name. One place both the Books row
+   * and the Segments breadcrumb resolve the name, so they never diverge.
+   *
+   * It CALLS `chapterName` rather than spelling the default a second time, for
+   * the reason `shareBookPartial` and `menuOpenWithFailures` both give below:
+   * the two were byte-for-byte copies, and a copy edit to one leaves the other
+   * saying the old thing. No call of either can tell a copy from an alias —
+   * they agree until the day they are meant to differ — so
+   * `tests/breadcrumb.test.ts` counts the spellings in this file instead
+   * (#169).
    */
   chapterHeading: (name: string | null, n: number): string =>
-    name ?? `Chapter ${n}`,
+    name ?? strings.chapterName(n),
+  /**
+   * The Segments screen's header trail: which book, which chapter. Takes the
+   * resolved heading rather than a name-or-number pair, so the one place that
+   * decides what an unnamed chapter is called stays `chapterHeading`.
+   */
+  chapterBreadcrumb: (book: string, chapter: string): string =>
+    trail(book, chapter),
 
   // ── Naming (#264 rename, #314 New Book, #609 Add chapter) ────────────────
   // One naming field serves all three flows, so these strings are shared: the
@@ -107,11 +175,18 @@ export const strings = {
   newChapterTitle: "Name your new chapter",
   newChapterClose: "Close without creating a chapter",
   createChapter: "Create chapter",
-  // Shown in place of `saveName`/`createBook`/`createChapter` while the write is
-  // in flight (#383) — the same in-place busy relabel
-  // `loadRetrying`/`takeRecoverRetrying` already do, so a screen reader focused
-  // on Confirm does not read it as idle for the whole write, on any caller.
+  // Shown in place of `saveName`/`createChapter` while the write is in flight
+  // (#383) — the same in-place busy relabel `loadRetrying`/`takeRecoverRetrying`
+  // already do, so a screen reader focused on Confirm does not read it as idle
+  // for the whole write. NOT New Book any more (#395 item 2): that caller has
+  // its own busy string below, because "Saving…" implies something already
+  // existed to save back onto — exactly what `createBook`'s own comment above
+  // was written to avoid, and the generic relabel here quietly reintroduced.
   savingName: "Saving…",
+  // The New Book dialog's OWN busy relabel (#395 item 2) — used for both its
+  // Confirm control's label and its own in-panel busy Notice, so a screen
+  // reader on either hears that a book is being MADE, not saved.
+  creatingBook: "Creating your book…",
 
   // ── Segments screen (B3) ─────────────────────────────────────────────────
   backToBooks: "Back to books",
@@ -140,8 +215,11 @@ export const strings = {
   openSegment: (n: number, label: string | null): string =>
     `Open segment ${strings.segmentHeading(n, label)}`,
   scrubSegment: (n: number): string => `Position in segment ${n}`,
-  markFinished: (n: number): string => `Mark segment ${n} finished`,
-  markUnfinished: (n: number): string => `Mark segment ${n} not finished`,
+  // "done", not "finished" (D17, #949): the O4 tile's caption is the
+  // workbench's "Done", and the label must hold the caption (label-in-name).
+  // One string for both looks and both menus (segment row and recorder).
+  markFinished: (n: number): string => `Mark segment ${n} done`,
+  markUnfinished: (n: number): string => `Mark segment ${n} not done`,
   /**
    * The segment's display heading (#591): the ordinal, then the facilitator's
    * label when set — "3 · verses 3–4". The ordinal always stays, because it is
@@ -175,17 +253,54 @@ export const strings = {
   // the training is where that glyph is tested rather than assumed.
   useLightTheme: "Switch to the light screen, for bright sunlight",
   useDarkTheme: "Switch to the dark screen, for low light",
+  // The O4 design switch (#938, epic #936). One control, `aria-pressed`
+  // carrying the on/off state (`Control`'s `pressed` prop, the same
+  // mechanism the zoom and level-meter toggles use) — so the label itself
+  // never has to change, unlike the theme toggle above, which names a
+  // destination because it has no `aria-pressed` state to carry that for it.
+  newLookO4: "New look (O4)",
+  // The O4 menu tiles' visible captions (#949, `o4-tile-menu.tsx`). Shown,
+  // never announced: each tile's name is the label its current-look row
+  // already had, and every caption is a word that label holds (label-in-name,
+  // WCAG 2.5.3). Marking done says the workbench's "Done", and
+  // `markFinished`/`markUnfinished` say "done" to match (D17).
+  tileEdit: "Edit",
+  tileFinished: "Done",
+  tileRename: "Rename",
+  tileErase: "Erase",
+  tileShare: "Share",
+  tileLight: "Light",
+  tileDark: "Dark",
+  // The edit-mode recorder menu's exit tile (G3); its name is `doneEditing`.
+  // Its own key, not `tileFinished`: that one is marking done, this is leaving
+  // edit, and the two only happen to share a word in English.
+  tileDone: "Done",
   closeRecorder: "Close recorder",
+  /**
+   * The recorder sheet's header trail — the Segments one with the segment
+   * appended, built from the same `trail`, so the order and the separator are
+   * not decided a second time one screen deeper.
+   *
+   * It takes the chapter's resolved HEADING, not its number. Taking the number
+   * meant this trail spelled the default name itself, so a chapter the
+   * facilitator had renamed (#264) showed the label on the Segments screen and
+   * the default one tap deeper — on the surface a translator spends the whole
+   * session inside. Resolving the heading is the caller's job because only the
+   * caller knows whether a name was stored (#169).
+   *
+   * The segment part goes through `segmentHeading` for the same reason, from
+   * the other side of this merge (#591): each part of the trail is resolved by
+   * the one entry that owns it, and this function decides only the order and
+   * the separator. Neither a chapter's name nor a segment's label is spelled
+   * out here.
+   */
   recorderBreadcrumb: (
     book: string,
-    chapter: number,
+    chapter: string,
     segment: number,
     segmentLabel: string | null
   ): string =>
-    `${book} > ${strings.chapterName(chapter)} > ${strings.segmentHeading(
-      segment,
-      segmentLabel
-    )}`,
+    trail(book, chapter, strings.segmentHeading(segment, segmentLabel)),
   record: "Record",
   // The second tap on the record control ENDS the take and commits it in place
   // (#614). It was "Pause"/"Resume" while a take could be suspended and
@@ -207,6 +322,9 @@ export const strings = {
   zoomAtWhole: "Zoomed to the whole segment. Zoom in to a quarter.",
   zoomAtQuarter: "Zoomed to a quarter. Zoom out to the whole segment.",
   micNeededTitle: "Microphone access is needed to record",
+  // The O4 look's mic-denied title (D15, #948), from the O4 original. O4 only:
+  // the current look keeps `micNeededTitle` until O4 becomes the default.
+  micOffTitle: "Microphone is off",
   micRetry: "Try again",
   micBack: "Go back",
   finishedWriteFailed: "Could not save the finished mark.",
@@ -281,6 +399,43 @@ export const strings = {
   takeRecoverDiscardArmed: "Tap again to delete this recording for good",
   takeRecoverDiscardHint: "Tap again to delete it.",
 
+  // ── What the recorder and the audio session raise (#169) ─────────────────
+  // These sentences are read in `hooks/`, not in a component: they ride a
+  // `playbackError`, or the recorder's own `error` state, up to whichever
+  // surface is mounted. They were literals beside the code that raised them
+  // until this table moved down into `lib/` (see the file header).
+  //
+  // The recorder's CAPTURE failures took the other route and are not here:
+  // #700 made them codes (`lib/audio/capture-failure.ts`) that
+  // `components/capture-failure-copy.ts` words out of the block further down,
+  // because that value is a domain fact `lib/takes/close-plan.ts` also reasons
+  // about. The ones below never leave the hook as data — they ARE the copy the
+  // hook's state holds — so they read the table directly.
+
+  // Playback could not sound: a decode that failed, or a take whose clip the
+  // database no longer has. One sentence for both, because from where the
+  // translator stands they are the same event — the tap made no sound.
+  playbackFailed: "Could not play this recording.",
+  // The honest sentence for each `classifyMicRefusal` class (#203). The
+  // classifier itself stays UI-free; these are its words. Each names the one
+  // place the translator (or the facilitator beside them) can act, because a
+  // refusal the app cannot lift is only useful if it says who can.
+  micNoDevice: "No microphone was found on this device.",
+  micSiteBlocked:
+    "Recording is blocked for this app. Allow the microphone in your browser's site settings, then try again.",
+  micOsBlocked:
+    "Your device is not letting the app use the microphone. Check microphone access in your device settings, then try again.",
+  micPrompt:
+    "Microphone access is needed to record. Allow it when asked — or if you already allowed it, check your device settings.",
+  // The residual class: `getUserMedia` refused and said nothing usable about
+  // why, so this claims nothing about the cause.
+  micStartFailed: "Could not start recording.",
+  // Not a refusal at all — `isRecordingSupported()` is false, so there is no
+  // MediaRecorder to ask. Says the DEVICE rather than the app, and offers no
+  // remedy, because none of the mic sentences above applies: nothing in
+  // settings turns this on.
+  recordingUnsupported: "This device cannot record audio.",
+
   // ── Recorder mode split (#89) ────────────────────────────────────────────
   // Play's two aria-labels. The glyph is `pause` while sounding (wireframe), but
   // the action is stop (D4), so the label says "Stop playing".
@@ -295,8 +450,6 @@ export const strings = {
   modepillEditing: "Editing",
 
   // ── Waveform editing (B5) ────────────────────────────────────────────────
-  selectStart: "Select a span to edit",
-  selectStop: "Close the selection",
   cut: "Cut the selection",
   // Play's name says WHICH audio the tap will sound, because that changes with
   // the line and the picked span. `auditionPlan`'s `source` chooses between
@@ -314,10 +467,35 @@ export const strings = {
   paste: "Paste at the line",
   undo: "Undo",
   redo: "Redo",
+  // Why the two history arrows are grey, appended to their accessible names
+  // while they are (#91, via `edit-control-state.ts`). A grey icon-only control
+  // with no reason reads as a broken one — the #135 finding — and these two are
+  // grey the longest of any edit control.
+  //
+  // PRESENT TENSE, describing the current end of the edit stack and nothing
+  // else. Round 1 said "No edits to undo yet." and "Nothing has been undone.";
+  // both are claims about the session's PAST, while `canUndo`/`canRedo` are
+  // only `cursor > 0` and `cursor < ops.length`. George round 1 showed the gap
+  // is reachable in three taps: cut, undo — Undo now greys and "no edits yet"
+  // is false — then redo, and Redo greys while "has been undone" is false.
+  // `tests/edit-control-state.test.ts` bans the tense so this cannot drift back.
+  //
+  // Pure statements of STATE: no control is named and no gesture is described.
+  // Each way out follows from the state itself, so there is nothing to point at
+  // — and pointing is where cue copy has gone wrong here before
+  // (`menu-row-state.ts`'s `rowHint`, and #648 round 1).
+  //
+  // The shortest statement of the rule, from the bench fix this merges with:
+  // an edit undone back to the start, or an undo redone to the tip, reaches
+  // the SAME cursor as a fresh session — so the words may state only where the
+  // cursor is, never what has or has not happened.
+  nothingToUndo: "Nothing to undo.",
+  nothingToRedo: "Nothing to redo.",
   // The recorder drawer's dialog name for a screen reader — never painted
-  // there (#621, the rule #608 set for `menuTitle`): the recorder drawer
-  // opens from a ≡ that stays a ≡, so the glyph is its only visible label.
-  // This string is shared with the per-row segment menu (`segment-row.tsx`),
+  // there (#621, the rule #608 set for `menuTitle`): the drawer's own
+  // dismiss stays a ≡ regardless of which control opened it (the record-mode
+  // header's ≡, or the edit toolbar's ⋮ since #863), so the glyph is its
+  // only visible label. This string is shared with the per-row segment menu (`segment-row.tsx`),
   // which does not pass `hamburger` and still paints it as that menu's
   // visible heading — #589 owns that menu's affordances and has not
   // retitled it, so treat "never painted" as scoped to the recorder only.
@@ -327,6 +505,33 @@ export const strings = {
   selectionEndHandle: "Selection end",
   editFailed: "That edit could not be applied. Try a shorter selection.",
   clearFailed: "Could not clear the audio. Try again.",
+  // ── Why a capture produced no take (#169) ────────────────────────────────
+  // One sentence per `CaptureFailure` code; `capture-failure-copy.ts` picks
+  // which. These words used to be minted inside `hooks/use-recorder.ts` and
+  // `hooks/use-audio-session.ts` — the latter typing "could not finish" out a
+  // second time, with nothing tying the two copies together. The codes are now
+  // minted in `lib/audio/`, which never sees a sentence, and that separation is
+  // what lets a second UI language be a change to this table rather than an
+  // edit inside the recorder hook.
+  //
+  // Only this one asks for a retry, because it is the only one where retrying
+  // is what helps: the capture reached the decoder and decoded to nothing.
+  captureSilence: "No sound was recorded. Try again.",
+  // A failed decode, NOT silence — and deliberately not a second "try again".
+  // Where this reaches a screen the bytes are held and the recovery panel is
+  // up, so the retry is already there as its own control
+  // (`strings.takeRecoverRetry`); an instruction here would compete with it.
+  // An earlier draft grouped this key with the one above under "the two that
+  // name proven silence … tell the translator to try again", which is true of
+  // neither half for this key (George R5).
+  captureUndecodable: "Recording could not be decoded on this device.",
+  // The third must NOT say "no sound": the engine failed to hand the capture
+  // over (a flush that threw, #485; a `stopRecording` that rejected, #480), so
+  // the translator may well have spoken, and the silence sentence would blame
+  // them for it. It stays a statement rather than an instruction — what the
+  // sheet offers next after this code is `planClose`'s `stay`, which leaves the
+  // recorder open with this Notice in place, not a named remedy.
+  captureUnfinished: "Could not finish this recording.",
   // ── Disabled-row reasons (#135) ──────────────────────────────────────────
   // Appended to a disabled ≡-menu row's accessible name so the grey carries its
   // cause. Derived from the row's own gate in `menu-row-state.ts`, never set by
@@ -377,6 +582,14 @@ export const strings = {
   // segment over — because the sheet stays open, ready for the next take.
   rerecord: "Erase and record again",
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
+  // Press-and-hold reorder on the Segments list (#953, O4 only), spoken by
+  // the list's live region: the row that was lifted, where it landed, or that
+  // it went back. Segments renumber after a move (the DRI's "Renumber" pick),
+  // so the landing is said as the segment's new number.
+  reorderLifted: (n: number): string => `Moving segment ${n}.`,
+  reorderMoved: (from: number, to: number): string =>
+    `Segment ${from} is now segment ${to}.`,
+  reorderStayed: (n: number): string => `Segment ${n} stayed where it was.`,
   eraseConfirmTitle: "Erase this recording?",
   eraseConfirm: "Erase",
   // The safe action of the shared confirm dialog (`erase-confirm.tsx`). One
@@ -384,6 +597,18 @@ export const strings = {
   // because it is the same control on the same surface saying the same word.
   eraseCancel: "Cancel",
   eraseFailed: "Could not erase the recording. Try again.",
+  // The confirm's "Play what will be lost" row (#979 remainder, O4 "13"
+  // only): the workbench's own copy, word for word, for the Play/Pause
+  // transport beside the preview waveform.
+  eraseConfirmPreviewPlay: "Play what will be lost",
+  eraseConfirmPreviewPause: "Pause",
+  // The clipboard's bin under the line (#862): throws away a cut that was
+  // never pasted, behind the same confirm as the whole-take erase. "Cut
+  // audio", not "clipboard": the translator cut a piece of their recording,
+  // and that piece is what is lost.
+  discardClip: "Throw away the cut audio",
+  discardClipConfirmTitle: "Throw away the cut audio?",
+  discardClipConfirm: "Throw away",
 
   // ── Delete a book (#337) ─────────────────────────────────────────────────
   // The book ≡-menu row, and the two-tap confirm behind it — the same dialog
@@ -395,6 +620,12 @@ export const strings = {
   deleteBookConfirmTitle: (book: string): string =>
     `Delete ${book} and everything in it?`,
   deleteBookConfirm: "Delete",
+  // The O4 look asks inside the book sheet instead (#980, G6; #949 D16): the
+  // sheet's actions swap for these two, under the book's cover and name. The
+  // workbench's own labels, word for word — the DRI prefers the originals.
+  // O4 only; the current look keeps `eraseCancel`/`deleteBookConfirm` above.
+  keepBook: "Keep the book",
+  deleteBookYes: "Yes, delete the book",
   // A destructive op that did NOT happen has to say so in its own words. The
   // store's own message — a quota or connection fault, since `deleteBook` never
   // throws on a missing book — is for a maintainer; this is the line a screen
@@ -428,6 +659,12 @@ export const strings = {
   // Back after the activity stopped (`resolveProvesDelivery`). So never
   // "sent", "delivered", "shared to", or an app's name; a test pins that.
   shareHandingOver: "Opening the phone's share sheet.",
+  // The O4 share circle (#947). D22: the core is a progress bar with this
+  // label, chapter and book alike. D21: the numbered chips above it are one
+  // image with this label — how many of the items go out, of all of them.
+  sharePreparingLabel: "Preparing to share",
+  shareItemsGoOut: (out: number, all: number): string =>
+    `${out} of ${all} go out`,
   shareSent: "Handed to the phone's share sheet.",
   shareDismissed: "The share sheet was closed before anything went out.",
   // The native Android plugin can resolve on a Back after the chooser's
@@ -445,7 +682,9 @@ export const strings = {
   // resolve — never-recorded, but also a dangling take or a half-missing clip —
   // so "no recording yet" would misdescribe a hole the translator never left.
   shareMissing: (n: number): string =>
-    couldNotBeIncluded(n === 1 ? "1 segment" : `${n} segments`),
+    couldNotBeIncluded(
+      plural(n, { one: "{n} segment", other: "{n} segments" })
+    ),
   // The book name is free text since #264, so sanitise it into the filename —
   // a `/` in "Mark/Luke" would otherwise split a zip entry into a folder (G3).
   // The chapter is an ordinal, always safe.
@@ -466,7 +705,9 @@ export const strings = {
   // `missing` counts whole chapters left out of the zip — a chapter with no
   // resolvable audio at all.
   shareBookMissing: (n: number): string =>
-    couldNotBeIncluded(n === 1 ? "1 chapter" : `${n} chapters`),
+    couldNotBeIncluded(
+      plural(n, { one: "{n} chapter", other: "{n} chapters" })
+    ),
   // A chapter that IS included can still be partial — one or more of its own
   // segments had no resolvable audio (`exportChapterMp3`'s own `missing`,
   // rolled up across every included chapter, #116). Distinct from
@@ -499,9 +740,32 @@ export const strings = {
   // be included." as one gap double-counted, or as an unrelated,
   // under-counted hole (George #423 round 1 P3).
   //
-  // One missing segment is always exactly one chapter, so the
-  // `segments === 1` case can safely name that chapter's scope without
-  // misstating a count. George round 2 caught that the first attempt at that
+  // The two halves of this sentence are counted differently on purpose, and
+  // that split is the load-bearing part.
+  //
+  // The SEGMENT noun goes through `plural` like every other count-varying
+  // string in this table (#169) — a CLDR category, not an English `n === 1`.
+  //
+  // The CHAPTER scope does NOT, and must not. It branches on
+  // `partialChapters > 1`, the producer's count of DISTINCT included chapters,
+  // and it stays an explicit branch rather than a forms table because CLDR's
+  // `one` is not "exactly 1" — Russian selects it for 21, 31, 101. Keying the
+  // singular "an included chapter" off a plural category would let a second
+  // locale assert one chapter about twenty-one segments spread across an
+  // unknown number of them, which is the #400/#423 bug in a new place. This
+  // branch is a claim that the count IS exactly one, not an agreement with it.
+  // A locale needing `few`/`many` for the segment noun gets it from `plural`
+  // above; the chapter-scope branch stays a branch.
+  //
+  // An earlier draft of this paragraph said the clause was "NOT `plural`'s
+  // `one` form" and described a `segments === 1` case. That case is gone —
+  // `5860fb6` routed the segment noun through `plural` and the chapter scope
+  // already keyed off `partialChapters` (#446) — so the sentence described
+  // code that is not here (Frank, round 4). Rewritten rather than patched,
+  // because the warning it carried is still right and worth keeping; only its
+  // account of the code was false.
+  //
+  // George round 2 caught that the first attempt at that
   // clause ("...was left out of a chapter that shipped") used maintainer
   // vocabulary that collides with two unchanged contracts: "shipped" reads as
   // past-tense send while the share menu is only `ready` (Share now — `hooks/
@@ -528,7 +792,7 @@ export const strings = {
     partialChapters: number
   ): string =>
     `${strings.shareBookMissing(chapters)} ${couldNotBeIncluded(
-      `${segments === 1 ? "1 segment" : `${segments} segments`} of ${
+      `${plural(segments, { one: "{n} segment", other: "{n} segments" })} of ${
         partialChapters > 1
           ? `${partialChapters} included chapters`
           : "an included chapter"
@@ -544,6 +808,54 @@ export const strings = {
   // Sanitised like shareFilename: the book name is the .zip File name and must
   // not carry a path separator or a reserved character (G3).
   shareBookFilename: (book: string): string => `${filenameSafe(book)}.zip`,
+
+  // ── The save that failed (#38) ───────────────────────────────────────────
+  // The text layer of the screen that stands between a failed save and losing
+  // the recording. Its two paths — a fresh recording, or the edited buffer of
+  // one — are a PARAMETER rather than two blocks of keys, because on the edit
+  // path the previously stored recording is untouched on disk and a line that
+  // said "recording" would misname what a discard destroys.
+  //
+  // The headline, the safety line and the attempt count are deliberately NOT
+  // here: they are `components/recovery-copy.ts`, a pure module with tests of
+  // its own, and folding a second, differently-shaped table into this one is
+  // not what #169 asks for.
+  saveFailedDialog: (editOnly: boolean): string =>
+    editOnly ? "Your changes are not saved" : "This recording is not saved",
+  // In place of the headline while a retry is in flight.
+  saveFailedSaving: "Saving",
+  // The one promise this screen makes, and the reason it can make it: the commit
+  // is ONE transaction (#38), so a failed save left the take in the RAM slot
+  // `useSaveTake` holds. Names the segment when the held take belongs to the
+  // chapter on screen, and says nothing about it when it does not.
+  saveFailedHeld: (editOnly: boolean, ordinal: number | null): string => {
+    const subject = editOnly ? "edited recording" : "recording";
+    return ordinal === null
+      ? `Your ${subject} is still here.`
+      : `Your ${subject} of segment ${ordinal} is still here.`;
+  },
+  // NOT `tryAgain` and NOT `loadRetry`: this retries a WRITE, and on an
+  // icon-only `Control` the label is the whole thing a screen reader speaks.
+  saveFailedRetry: "Try saving again",
+  // The two-tap discard, and the fainter line beneath it once armed. "for good"
+  // only on the record path — there the held take is the only copy; on the edit
+  // path the stored recording survives and only the edit goes.
+  //
+  // The record-path arms ARE the take-recovery panel's discard copy, read from
+  // those keys rather than written out a second time (#805 item 1): both
+  // confirms destroy the only copy of a recording, and `takeRecoverDiscard`'s
+  // own comment says the two share one shape. The arrows run only after
+  // `strings` is initialised, as `menuOpenWithFailures` already relies on.
+  saveFailedDiscard: (editOnly: boolean, armed: boolean): string =>
+    armed
+      ? editOnly
+        ? "Tap again to discard these changes"
+        : strings.takeRecoverDiscardArmed
+      : editOnly
+        ? "Discard these changes"
+        : strings.takeRecoverDiscard,
+  saveFailedDiscardHint: (editOnly: boolean): string =>
+    editOnly ? "Tap again to discard them." : strings.takeRecoverDiscardHint,
 
   // ── Root error boundary (#167) ───────────────────────────────────────────
   // The whole text layer of the crash screen. Says that something failed and
@@ -609,6 +921,80 @@ export const strings = {
   storageNotPersisted:
     "This phone may delete what you record here if space runs low. Share your work when you can.",
 
+  // ── Storage pressure (#247) ──────────────────────────────────────────────
+  // State-in-place on the Books screen, alongside `storageNotPersisted`:
+  // `navigator.storage.estimate()` says this ORIGIN is running low, which is a
+  // different risk from durability above — the browser has not evicted
+  // anything, the device is simply filling up. No byte count or percentage in
+  // either line: the estimate is coarse and per-origin
+  // (`lib/storage/pressure.ts`), so a number here would be a precision the
+  // reading does not support.
+  //
+  // **DRI decision (Seth, 2026-09-24), replacing the original wording.** The
+  // original copy said "here" rather than naming the phone, and "when you
+  // can" / "now" for urgency — deliberately, to avoid overclaiming a
+  // per-device condition from a per-origin reading (Frank P2-1 / George
+  // P2-1, #542; `pressure.ts`'s docblock still explains that risk: the OS can
+  // hand this origin a comfortable quota while the disk is nearly full, or
+  // the reverse). The DRI judged that hedge too vague to act on: it does not
+  // say what device is at risk or what happens if nothing is done. The new
+  // copy names the phone and, for the critical band, states the concrete
+  // consequence — new recordings may not save — which is also why
+  // `storageCritical` now renders in the `alert` tone rather than `info`
+  // (`storage-pressure-notice.ts`). Both lines name the pair
+  // `pressure.ts`'s docblock names — mark segments Finished (ADR 0009's
+  // transcode reclaims ~90%) or share the work and then remove it — not bare
+  // "share", which does not reclaim anything on its own: `lib/export/
+  // chapter.ts` decodes and re-encodes without deleting a single stored clip.
+  //
+  // **#843 item 1: `storageLow` gained the fallback clause `storageCritical`
+  // already had.** George's finding: the gate both bands share,
+  // `hasReclaimableAudio` (`recordedCount > 0`), stays true even when every
+  // recorded segment on the shelf is already Finished (MP3, not PCM) — a real
+  // state where "mark segments finished" recommends something already done.
+  // `storagePressureNotice` only ever sees the marker, not the
+  // finished/recorded split, so it cannot gate the clause on that state
+  // (George: "not asking for another boolean"). The fix instead matches
+  // `storageCritical`'s existing shape: state the fallback unconditionally,
+  // so the sentence holds in every state this gate can actually show, the
+  // same way `storageCritical`'s fallback already did before this change.
+  storageLow:
+    "This phone is running low on space. Mark segments finished to free up room, or share your work and then remove it.",
+  storageCritical:
+    "This phone is almost out of space, and new recordings may not save. Mark finished segments, or share your work and then remove it.",
+  // The O4 storage banner's own line (state 17, #983), word for word from
+  // the workbench. It leads; the band's line above follows it, because the
+  // workbench speaks that reason through a speaker button this app does not
+  // have yet (#952).
+  storageShareSoon: "Share your work soon",
+
+  // ── Share your work (#987, the O4 storage banner's button, #948 D14) ──────
+  // Every book on the phone as one zip, one folder per book. The labels
+  // follow Share Book's; the gap lines speak in the library's own units
+  // (`LibraryShareGap`): whole books left out, and chapters inside included
+  // books that did not ship whole.
+  shareAll: "Share your work",
+  shareAllUnconfirmed:
+    "Share your work. The last attempt wasn't confirmed — tap to try again.",
+  shareAllPreparing: "Preparing your work to share.",
+  shareAllNothing: "Record a segment before sharing your work.",
+  shareAllFailed: "Could not share your work. Try again.",
+  // `roomForExport` said the phone has too little free space to build the
+  // archive, checked before any encode. The way out is the one the storage
+  // lines above already name: finished segments take much less room.
+  shareAllStorage:
+    "This phone does not have room to prepare your work. Mark finished segments, then try again.",
+  shareAllMissing: (n: number): string =>
+    couldNotBeIncluded(plural(n, { one: "{n} book", other: "{n} books" })),
+  shareAllIncomplete: (n: number): string =>
+    plural(n, {
+      one: "{n} chapter could not be included in full.",
+      other: "{n} chapters could not be included in full.",
+    }),
+  shareAllFilename: "My work.zip",
+  // Each book's folder inside the zip, sanitised like shareBookFilename.
+  shareAllFolder: (book: string): string => filenameSafe(book),
+
   // ── The database is unreachable (#221) ───────────────────────────────────
   // Two full-screen states, one in each copy of the app, when a newer copy
   // upgrades the database. The mark on the panel carries the meaning; these
@@ -636,11 +1022,20 @@ export const strings = {
   // a facilitator sending something to a maintainer, and the noun has to name
   // the thing they are sending, not the file format it happens to be.
   failuresMarker: (n: number): string =>
-    n === 1 ? "1 problem recorded" : `${n} problems recorded`,
+    plural(n, {
+      one: "{n} problem recorded",
+      other: "{n} problems recorded",
+    }),
   // Replaces the plain "Open menu" name while the log is non-empty, so the one
   // control that leads to the report announces that it does.
+  //
+  // Reads `failuresMarker` rather than spelling the phrase out again (#169).
+  // The two used to be byte-identical, so a later edit to one would have left
+  // the panel and the control it opens saying different things about the same
+  // number — and a count phrase is now a plural TABLE, which is a worse thing
+  // to keep two copies of than a sentence was.
   menuOpenWithFailures: (n: number): string =>
-    `Open menu. ${n === 1 ? "1 problem recorded" : `${n} problems recorded`}.`,
+    `Open menu. ${strings.failuresMarker(n)}.`,
   // Said in the menu, above the two actions. Deliberately not "the app
   // crashed": most entries are a single failed write the translator never saw,
   // and alarming a person about work that is still on the phone is its own harm.
@@ -665,4 +1060,93 @@ export const strings = {
   // which is where the thumb already is.
   clearFailureLogConfirmTitle: "Clear the problem report?",
   clearFailureLogConfirm: "Clear",
+
+  // ── Failure vocabulary (#172) ────────────────────────────────────────────
+  // What `use-books.ts`, `use-chapter-segments.ts` and `use-erase-segment.ts`
+  // map a caught failure KEY to, so a Books/Segments Notice never speaks a raw
+  // browser exception string. Deliberately generic — a message worth wording
+  // more specifically per site is a product decision for the requirements
+  // owner, not one this table invents (see the PR's residual list).
+  // `eraseFailed` already existed above and is reused rather than duplicated.
+  loadFailed: "Could not load. Try again.",
+  saveFailed: "Could not save. Try again.",
+  // Repeats `recoveryTitle`'s quota sentence (`components/recovery-copy.ts`)
+  // so the one condition a translator can act on reads the same everywhere a
+  // write can hit it, not only on the take-save recovery screen.
+  noRoom: "No room left on this phone.",
+
+  // ── Record-bar Edit, blocked by a live take (#857 round 1, Frank P2) ─────
+  // `barHint`'s own words for the `"uncommitted-take"` reason (`menu-row-
+  // state.ts`) — distinct from `blockedByTake`, which sends a translator to
+  // "Close menu", then "Close recorder": neither exists on the bar, and the
+  // bar's own Stop, beside the toolbar Edit control, is the way out. Names
+  // that control by its real accessible name while recording (`strings.stop`,
+  // "Stop recording"), the same rule `blockedByTake` follows for the menu.
+  // The wording itself is a coordinator assumption pending the requirements
+  // owner's sign-off — see the #857 PR body.
+  stopToEdit: "Stop recording to edit.",
+
+  // ── Record-bar bin, blocked by a live take (#878, sibling of #857/#869) ──
+  // `barHint`'s words for the bin's own `"uncommitted-take"` reason
+  // (`menu-row-state.ts`) — #869 round 1 fixed the toolbar Edit control's
+  // identical gap and left this one as a named residual, since it predates
+  // #857's `hasTake` change and needed its own copy no one had reviewed.
+  // Names the bar's own Stop control by its real accessible name
+  // (`strings.stop`, "Stop recording"), the same rule `stopToEdit` follows.
+  // The wording itself is a coordinator assumption pending the requirements
+  // owner's sign-off — see the #878 PR body.
+  stopToErase: "Stop recording to erase.",
+
+  // ── Phone check (#1009) ──────────────────────────────────────────────────
+  // A hidden tester screen, reached by five taps on the build stamp or by
+  // `?check=phone`. Its words are for a tester filling in #974, not for a
+  // translator, but they are screen copy all the same and so live here. The
+  // REPORT it produces is engineering data and is worded in
+  // `lib/phone-check/report.ts` instead — see that file's docblock.
+  phoneCheckTitle: "Phone check",
+  phoneCheckIntro:
+    "Measures this phone for a tester report. Nothing runs until you tap Start, and it never touches your books or recordings.",
+  phoneCheckStart: "Start",
+  phoneCheckRunWaiting: "Waiting for a recording to finish converting.",
+  phoneCheckRunDevice: "Reading device info.",
+  phoneCheckRunEncode: "Encoding 5 minutes of test audio.",
+  phoneCheckRunStorage: "Writing and reading 50 MB of test audio.",
+  phoneCheckDone: "Done.",
+  phoneCheckMemoryTitle: "Memory ceiling",
+  phoneCheckMemoryWarning:
+    "Run this last. It fills memory until the phone refuses, and the app may restart. If it does, open Phone check again to see how far it got.",
+  phoneCheckMemoryStart: "Start memory test",
+  phoneCheckMemoryStep: (mb: number) => `Trying ${mb} MB.`,
+  phoneCheckReportLabel: "Report for #974",
+  phoneCheckCopy: "Copy report",
+  phoneCheckCopied: "Copied.",
+  phoneCheckSelected: "Selected. Use your phone's Copy.",
+  phoneCheckClose: "Close",
+
+  // ── Cover colour picker (#957, from #937 D7/D8) ──────────────────────────
+  // The picker's group name, and one name per palette key
+  // (`lib/cover-colour.ts`'s `CoverColourKey`) — the whole accessible text
+  // layer for a screen built for people who may not read, so each swatch has
+  // to carry a real word, not just a fill colour a screen reader cannot see.
+  // Worded by `components/cover-colour-copy.ts`'s exhaustive switch, the same
+  // split `capture-failure-copy.ts` uses: the KEY is a `lib/` value, the
+  // WORDS live here.
+  coverColourLabel: "Cover colour",
+  coverColourAmber: "Amber",
+  coverColourTeal: "Teal",
+  coverColourPlum: "Plum",
+  coverColourForest: "Forest",
+  coverColourBrick: "Brick",
+  coverColourSlate: "Slate",
+  coverColourRose: "Rose",
+  coverColourOlive: "Olive",
+  coverColourRust: "Rust",
+  coverColourCocoa: "Cocoa",
+  // A swatch button's whole accessible name: the colour's name, plus its
+  // selected state — the same "whole name, plus a trailing state word" shape
+  // `bookRow` above uses for "expanded"/"collapsed". `aria-pressed` already
+  // carries this machine-readably; the word is for the same reason `pressed`
+  // is never inferred from a glyph alone (`Control`'s own `pressed` doc).
+  coverSwatchLabel: (name: string, selected: boolean): string =>
+    selected ? `${name}, selected` : name,
 } as const;

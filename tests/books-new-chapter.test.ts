@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { BookId, Chapter, ChapterId } from "@/types/domain";
 import type { BookCard } from "@/types/view";
@@ -49,6 +49,7 @@ const shelf = (): BookCard[] => [
         name: null,
         finishedCount: 0,
         totalCount: 0,
+        recordedCount: 0,
       },
       {
         chapterId: "chapter-0000-4000-8000-000000000002" as ChapterId,
@@ -56,6 +57,7 @@ const shelf = (): BookCard[] => [
         name: "Mark 6",
         finishedCount: 0,
         totalCount: 0,
+        recordedCount: 0,
       },
     ],
   },
@@ -77,6 +79,7 @@ function landChapter() {
           name: made.name,
           finishedCount: 0,
           totalCount: 0,
+          recordedCount: 0,
         },
       ],
     },

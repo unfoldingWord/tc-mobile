@@ -47,11 +47,12 @@
  * for the share-scrim block: it slices that block and matches declaration
  * VALUES, which a comment cannot false-hit.
  *
- * That selector is written here WITHOUT its leading dot on purpose. The test
- * finds its block with a raw `indexOf` over this whole file, so a comment
- * containing the literal selector is found first and the slice becomes comment
- * text with no declarations in it. The declaration-count floor keeps an empty
- * block from passing the value assertions vacuously.
+ * That selector is written here WITHOUT its leading dot. share-progress now
+ * strips comments before it looks for the block (#533), so it no longer needs
+ * that; other suites still slice this file with a raw `indexOf`, where a
+ * comment holding the literal selector is found first and the slice becomes
+ * comment text with no declarations in it. Keep selectors in this header
+ * undotted.
  *
  * touch-policy reads this file whole and
  * regexes the raw string — and the paragraph above names the five colour
@@ -126,9 +127,9 @@
        control. */
     --c-guide-ring: 3px;
 
-    /* The waveform stroke. Defaults to the voice accent; a finished row remaps
-       it to done (green) and the canvas reads it back — no prop drilling, and
-       the recorder's waveform (never under `.row--finished`) stays amber. */
+    /* The waveform stroke. Defaults to the voice accent; a finished row, and
+       the recorder sheet of a finished segment (#926), remap it to done
+       (green) and the canvas reads it back — no prop drilling. */
     --c-wave-stroke: var(--s-voice);
   }
 
@@ -1308,5 +1309,53 @@
   .row--finished .control--play {
     background: var(--s-done);
     color: var(--s-done-ink);
+  }
+
+  /* --- a finished segment in the recorder (#926) ------------------------- */
+  /* The row's treatment carried onto the recorder: the waveform and the
+     record toolbar's Play go green, nothing else. No surface wash — the
+     stage is the editor, not a list item. The edit toolbar's Play is a quiet
+     control with no fill, so it is left alone. The class keys on the same
+     resolved state the menu's green check reads, so an edit or a new take
+     (which demote the segment to draft) returns both to amber. */
+  .recorder-sheet--finished {
+    --c-wave-stroke: var(--s-done);
+  }
+  .recorder-sheet--finished .recorder-toolbar.pair .control--play {
+    background: var(--s-done);
+    color: var(--s-done-ink);
+  }
+
+  /* --- cover-colour picker (#957) ----------------------------------------- */
+  /* `components/cover-picker.tsx` is exported only this lane (not mounted —
+     #943/#949 do that), so nothing below paints on any screen yet.
+
+     Structural sizing only, read directly per this file's own header rule.
+     The swatch FILL is deliberately not here: it is the book's chosen palette
+     hex, set inline per swatch by the component, because a palette entry is
+     an identity colour rather than a themed role — argued in full in
+     `lib/cover-colour.ts`'s docblock, not repeated here. The selected ring IS
+     a themed role (`--s-focus`, the same token `--c-focus-ring` above draws
+     its colour from), because unlike the fill it is a UI affordance that may
+     reasonably want different contrast per theme. */
+  .cover-swatch-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--p-space-3);
+  }
+
+  .cover-swatch {
+    width: var(--p-space-8);
+    height: var(--p-space-8);
+    border-radius: var(--p-radius-full);
+    border: 2px solid transparent;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .cover-swatch[aria-pressed="true"] {
+    border-color: var(--s-focus);
   }
 }

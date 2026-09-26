@@ -28,12 +28,33 @@ export interface ChapterRow {
   readonly finishedCount: number;
   /** 0 ⇒ the UI shows NO counter (an empty chapter is not "0/0"). */
   readonly totalCount: number;
+  /**
+   * From `chapterProgress` — count of segments with `activeTakeId !== null`,
+   * i.e. segments that hold an actual recorded take, finished or not (#542
+   * Part B). Distinct from `finishedCount`: a "draft" or "refined" segment
+   * has a take (and PCM/MP3 bytes a translator could reclaim) without being
+   * `affirmed`. The Books shelf's storage-pressure gate
+   * (`lib/view/book-rows.ts`'s `hasReclaimableAudio`) sums this across every
+   * chapter, rather than `finishedCount` or `totalCount`, because the
+   * pressure copy's remedies ("mark segments finished", "share and remove")
+   * both require a recording to exist, not merely a segment.
+   */
+  readonly recordedCount: number;
 }
 
 export interface BookCard {
   readonly bookId: BookId;
   readonly name: string;
   readonly chapters: readonly ChapterRow[];
+  /**
+   * `Book.coverColourKey` (#957), carried through unresolved so the O4 cover
+   * (#942) reads it through `lib/cover-colour.ts`'s `resolveCoverKey` — the
+   * one place a missing or retired key becomes a colour. Both production
+   * builders in `hooks/use-books.ts` set it — the load and the optimistic
+   * create. It is optional so a test fixture can omit it; a card without it
+   * resolves exactly like a `null`: the id-derived fallback.
+   */
+  readonly coverColourKey?: string | null;
 }
 
 // ── Segments screen (B3) ───────────────────────────────────────────────────

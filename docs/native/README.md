@@ -5,10 +5,17 @@ installable iOS (TestFlight) + Android (APK) for the Nairobi training.
 **Decision basis:** `docs/research/native-packaging.md` (recommendation) and
 its counter-case (#86). **Status:** shell only, no product changes.
 
-Capacitor wraps the **existing PWA** in a native WebView. The same web build
-(`npm run build` → `dist/`) that Cloudflare serves is copied into a native iOS
-and Android project. There is no second codebase and no product change here —
-just the native shell and the pipeline to produce installable builds.
+Capacitor wraps the **existing PWA** in a native WebView. The same app code
+that Cloudflare serves is copied into a native iOS and Android project — but
+the native build is `npm run build:native` (`vite build --mode native`), not
+the plain `npm run build` Cloudflare Workers Builds runs for the PWA
+(#923). Both emit the same application code into `dist/`; the native build
+additionally ships a self-unregistering, cache-clearing service worker and no
+registration script at all, instead of the PWA's normal offline precache —
+see [§2](#2-the-core-loop)'s note below and `vite.config.ts`'s native-mode
+comment. There is no second codebase and no product change here — just the
+native shell, this one build-mode difference, and the pipeline to produce
+installable builds.
 
 > **What was NOT done in this repo, and why.** This integration was scaffolded
 > in a Linux CI container with **no Xcode and no Android Studio**. The native
@@ -45,7 +52,7 @@ The two platforms have very different fastest routes:
   the toolchain generates for you, so there is nothing to set up first.
 
   ```bash
-  npm run build && npx cap sync android
+  npm run build:native && npx cap sync android
   cd android && ./gradlew assembleDebug
   # → android/app/build/outputs/apk/debug/app-debug.apk
   ```
@@ -144,7 +151,7 @@ Generated project facts (evidence, from the scaffolded projects):
   build passes `-PversionCode`), `versionName` read from `package.json`'s
   `version` at build time (`0.2.3` as of this writing — was the Capacitor
   template default `"1.0"` until #410).
-- **iOS:** deployment target `15.0`, bundle id `org.unfoldingword.tcmobile`,
+- **iOS:** deployment target `15.4`, bundle id `org.unfoldingword.tcmobile`,
   `MARKETING_VERSION 1.0`, `CURRENT_PROJECT_VERSION 1`, display name `tC Mobile`.
 
 ---
@@ -154,10 +161,24 @@ Generated project facts (evidence, from the scaffolded projects):
 Any time the web app changes, the native shell needs the new bundle:
 
 ```bash
-npm run build          # emit dist/
-npx cap sync           # copy dist/ into ios/ and android/, refresh native deps
+npm run build:native   # emit dist/ — the NATIVE build mode, not `npm run build`
+npx cap sync            # copy dist/ into ios/ and android/, refresh native deps
 # then open/build the native project (Mac only) — §4 / §5
 ```
+
+**Always `npm run build:native` here, never the plain `npm run build`
+(#923).** Both emit the same application code; `build:native`
+(`vite build --mode native`) additionally swaps the service worker
+`vite-plugin-pwa` emits for a self-unregistering, cache-clearing one and
+ships no registration script, because a Workbox offline precache adds
+nothing inside a WebView that already reads its bundle from local files —
+and a stale one is exactly what left an APK upgraded in place still running
+the old build. Syncing a plain `npm run build` into a native project
+re-introduces that bug. See `vite.config.ts`'s native-mode comment and
+`src/hooks/register-service-worker.ts` for the full reasoning, and
+[§7](#7-coexistence-with-the-cloudflare-pwa-deploy) for how this keeps the
+native shell from colliding with the Cloudflare PWA deploy, which still runs
+the plain `npm run build`.
 
 `cap sync` = `cap copy` (web assets + config) + `cap update` (native deps).
 Both `cap add` and `cap sync` run **without** Xcode/Android Studio (verified in
@@ -170,8 +191,9 @@ APK, which need no Mac at all.
 
 Convenience scripts are in `package.json` (added for the Monday prep, #262):
 
-- `npm run cap:sync` → `npm run build && npx cap sync` (rebuild the web bundle
-  and copy it into both native projects — the core loop above in one command).
+- `npm run cap:sync` → `npm run build:native && npx cap sync` (rebuild the
+  native bundle and copy it into both native projects — the core loop above
+  in one command).
 - `npm run cap:ios` → `npx cap open ios`.
 - `npm run cap:android` → `npx cap open android`.
 
@@ -203,7 +225,7 @@ credentials and do not dispatch a native build.
 git clone https://github.com/unfoldingWord/tc-mobile.git
 cd tc-mobile
 npm ci
-npm run build
+npm run build:native
 npx cap sync
 ```
 
@@ -254,9 +276,13 @@ iOS TestFlight → Run workflow**, choosing the branch to build. It never runs o
 push/PR, so it does not collide with the Cloudflare PWA deploy ([§7](#7-coexistence-with-the-cloudflare-pwa-deploy))
 and adds no required check to normal PRs.
 
-**What a run does:** `npm ci` → `npm run build` → `npm run test:dist` → select
-Xcode 26 → `npx cap sync ios` → guard the synced bundle (including emitted OBS
-thumbnail policy) → archive the `App` scheme (Release) → upload to TestFlight. **A green run means the binary
+**What a run does:** `npm ci` → `npm run build` → `npm run test:dist` (the web
+build and its own artifact checks, including the OBS thumbnail policy) →
+`npm run test:dist:native` (rebuilds `dist/` in native mode — the
+self-unregistering, cache-clearing service worker, #923 — and checks that
+output) → select Xcode 26 → `npx cap sync ios` → guard the synced bundle →
+archive the `App` scheme (Release) → upload to TestFlight. **A green run means
+the binary
 uploaded, not that a tester received it:** the lane sets
 `skip_waiting_for_build_processing` (it does not hold the billed runner open for
 Apple's processing) and assigns no tester group, so it cannot observe a later
@@ -388,7 +414,8 @@ is the repeatable path. **The first green CI run is the first real verification.
 
 ## 5. Android → APK sideload
 
-Sideload only; **Play Store submission is out of scope** (#262).
+Sideload only here. Google Play distribution is its own lane and runbook:
+[`play-store.md`](play-store.md).
 
 **Microphone permission — two manifest lines, not one:** the manifest declares
 `RECORD_AUDIO` **and** `MODIFY_AUDIO_SETTINGS`
@@ -482,7 +509,10 @@ artifact. It is **manual-trigger only** (`workflow_dispatch`): run it from
 **Actions → Android APK → Run workflow**, choosing the branch to build. It
 never runs on push/PR.
 
-**What a run does:** `npm ci` → `npm run build` → `npx cap sync android` →
+**What a run does:** `npm ci` → `npm run build` (the OBS-thumbnail policy is
+checked against this web build) → `npm run test:dist:native` (rebuilds
+`dist/` in native mode — the self-unregistering, cache-clearing service
+worker, #923 — and checks that output) → `npx cap sync android` →
 `./gradlew assembleRelease -PversionCode=$(date +%s)` → upload
 `app-release.apk` as a workflow artifact (14-day retention). The APK is signed
 with the release keystore decoded from `ANDROID_KEYSTORE_BASE64`.
@@ -772,11 +802,15 @@ workflow artifact, not a Cloudflare deploy.
 
 Two operational notes:
 
-- The native build consumes the **same** `dist/` the dispatched ref built, so a
-  tester's native app runs identical web code to the PWA **at that ref** — identical
-  to staging only when the workflow is dispatched from `staging`. The lane's ref
-  guard refuses anything but `staging`/`main` unless explicitly overridden, so build
-  tester IPAs and APKs from `staging` or `main`, not `develop`.
+- The native build runs the **same application code** as the PWA at the
+  dispatched ref — identical to staging only when the workflow is dispatched
+  from `staging` — but NOT the same `dist/`: the native lanes rebuild it in
+  native mode (`npm run build:native`, #923) after the ref's plain web build
+  has already been checked, so what actually ships inside the WebView carries
+  a different service worker (self-unregistering, no offline precache)
+  from what that same ref's PWA deploy serves. The lane's ref guard refuses
+  anything but `staging`/`main` unless explicitly overridden, so build tester
+  IPAs and APKs from `staging` or `main`, not `develop`.
 - Committing `android/`/`ios/` adds source under version control. To keep a
   native-only commit from burning a Cloudflare preview build, add `android/**`
   and `ios/**` to Cloudflare's **Exclude paths** on both Workers, alongside the

@@ -2,32 +2,35 @@ import { useCallback, useEffect, useState } from "react";
 
 import { decodeMp3ToCanonical, resumeAudioContext } from "./audio-io";
 import { requestTranscodeSweep } from "./finish-transcode";
+import { reportFailure } from "./report-failure";
+import { failureKey, type FailureKey } from "./save-failure";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
-import { errorMessage } from "@/lib/failure-text";
-import {
-  getBook,
-  getChapter,
-  getSegment,
-  isFinished,
-  setSegmentFinished,
-} from "@/lib/storage/books";
+import { getBook, getChapter, getSegment } from "@/lib/storage/books";
+import { isFinished, setSegmentFinished } from "@/lib/storage/takes";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import type { SegmentId } from "@/types/domain";
 
 export interface RecorderSegmentView {
   readonly bookName: string;
   readonly chapterNumber: number;
+  /**
+   * The facilitator's passage label for this chapter (#264), or `null` when
+   * nobody has renamed it. Carried alongside the number rather than instead of
+   * it: the header resolves the two through `strings.chapterHeading`, which is
+   * the one place that decides what an unnamed chapter is called (#169).
+   */
+  readonly chapterName: string | null;
   readonly ordinal: number;
   /** The facilitator's label, shown after the ordinal (#591); null ⇒ none. */
   readonly segmentLabel: string | null;
   /**
    * The stored flag as loaded at open, and patched again by this hook's own
    * `setFinished` once that write lands — NOT a snapshot. What it never sees
-   * is a write from anywhere else; it is one of three mirrors, and none of
-   * them observes the others (#160, L-10; the seam is recorded at
-   * `recorderClosedState` in `app/App.tsx`). The sheet does not render this
-   * directly: `displayedFinished` puts the translator's un-committed intent
-   * over it.
+   * is a write from anywhere else: it is one of the mirrors, and none of them
+   * observes the others (#160, L-10). How many there are, and what repairs
+   * each, is enumerated once — at `recorderClosedState` in `app/App.tsx`. Do
+   * not restate the count here. The sheet does not render this directly:
+   * `displayedFinished` puts the translator's un-committed intent over it.
    */
   readonly finished: boolean;
   /** Playable audio is present (F3: resolved, not merely a take pointer). */
@@ -99,6 +102,7 @@ export async function loadRecorderSegmentView(
   return {
     bookName: book?.name ?? "",
     chapterNumber: chapter?.number ?? 0,
+    chapterName: chapter?.name ?? null,
     ordinal: segment.index,
     segmentLabel: segment.label,
     finished: isFinished(segment.status),
@@ -127,7 +131,7 @@ export async function loadRecorderSegmentView(
  */
 export function useRecorderSegment(segmentId: SegmentId) {
   const [view, setView] = useState<RecorderSegmentView | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FailureKey | null>(null);
   // Bumped by `retry`. The sheet is keyed on `segmentId` (App remounts it per
   // open), so a new segment resets this to 0 through the remount, not here.
   const [attempt, setAttempt] = useState(0);
@@ -153,12 +157,13 @@ export function useRecorderSegment(segmentId: SegmentId) {
         setError(null);
       } catch (cause) {
         if (cancelled) return;
-        // The message drives `error` (the panel branch); the cause itself
-        // reaches the log sink, since the panel shows translator copy, not a
-        // decoder string.
+        // The KEY (#172) drives `error` (the panel branch) — never the raw
+        // decoder/store message; the cause itself reaches the log sink via
+        // `reportFailure`, unchanged. `console.error` is kept beside it (#205).
         console.error("Could not open the segment for recording", cause);
+        reportFailure(cause, "recorder-segment-load");
         setView(null);
-        setError(errorMessage(cause));
+        setError(failureKey(cause, "loadFailed"));
       } finally {
         if (!cancelled) setRetrying(false);
       }
@@ -206,11 +211,13 @@ export function useRecorderSegment(segmentId: SegmentId) {
       setError(null);
       return next;
     } catch (cause) {
-      // Same failure channel as the load effect: the message drives the recovery
-      // panel, the cause reaches the log sink (not translator-facing).
+      // Same failure channel as the load effect: the KEY (#172) drives the
+      // recovery panel, the cause reaches the log sink via `reportFailure`
+      // under its own context (never the raw message, never translator-facing).
       console.error("Could not reload the segment after a commit", cause);
+      reportFailure(cause, "recorder-segment-reload");
       setView(null);
-      setError(errorMessage(cause));
+      setError(failureKey(cause, "loadFailed"));
       return null;
     }
   }, [segmentId]);

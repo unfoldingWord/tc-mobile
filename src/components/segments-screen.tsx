@@ -11,23 +11,33 @@ import {
 import { Control } from "./control";
 import { EmptyState } from "./empty-state";
 import { guidedStep } from "./guided-step";
-import { EraseConfirm } from "./erase-confirm";
+import { EraseConfirm, type EraseConfirmPreview } from "./erase-confirm";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
+import { O4SheetHead } from "./o4-crumbs";
+import { Tile, TileSpacer } from "./o4-tile-menu";
 import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
+import { SegmentsHead } from "./segments-head";
 import { segmentsListInert } from "./segments-inert";
 import { shareGapText, shareProgressText } from "./share-error-copy";
 import { ShareMenuSection } from "./share-menu-section";
+import { chapterShareItems } from "./share-o4-view";
 import { ShareProgress } from "./share-progress";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
+import { ThemeControl } from "./theme-control";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
-import type { UseAudioSession } from "@/hooks/use-audio-session";
+import type { SegmentsAudio } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
-import { useEraseSegment } from "@/hooks/use-erase-segment";
+import { useDesign } from "@/hooks/use-design";
+import type { FailureKey } from "@/hooks/save-failure";
+import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useScreenLayers } from "@/hooks/use-screen-layers";
+import { useScrollToNew } from "@/hooks/use-scroll-to-new";
+import { useSegmentReorder } from "@/hooks/use-segment-reorder";
+import { reorderShift } from "@/lib/view/reorder-gesture";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { overlayDismissal } from "@/lib/nav/navigation";
 import { firstNotFinished } from "@/lib/view/segment-rows";
@@ -95,7 +105,13 @@ interface SegmentsScreenProps {
    * navigation. The screen reads playback state from it and plays through it;
    * "only one row plays at a time" falls out of that single floor for free.
    */
-  audio: UseAudioSession;
+  audio: SegmentsAudio;
+  /**
+   * The single erase, held by App so ONE in-flight guard covers both entry
+   * points (#160, L-12). This screen keeps its own record of whether the erase
+   * IT asked for failed, and with which key — see `eraseFailure` below.
+   */
+  erase: UseEraseSegment;
   onBack: () => void;
   onOpenRecorder: (segmentId: SegmentId, ordinal: number) => void;
   /** Register an open overlay as a Back layer. `useNavStack`'s, through App. */
@@ -115,7 +131,7 @@ export const SegmentsScreen = forwardRef<
   SegmentsScreenHandle,
   SegmentsScreenProps
 >(function SegmentsScreen(
-  { chapterId, audio, onBack, onOpenRecorder, pushLayer, popLayer },
+  { chapterId, audio, erase, onBack, onOpenRecorder, pushLayer, popLayer },
   ref
 ) {
   const {
@@ -134,10 +150,14 @@ export const SegmentsScreen = forwardRef<
     eraseRow,
     renameChapter,
     renameSegment,
+    moveSegment,
   } = useChapterSegments(chapterId);
   // The passage heading the breadcrumb shows: the facilitator's label, else
   // "Chapter {number}" (#264).
   const chapterHeading = strings.chapterHeading(chapterName, chapterNumber);
+  // The O4 look (#944): the chapter head, the list's own classes and the
+  // header's add button branch on it; with the switch off nothing here does.
+  const o4 = useDesign().design === "o4";
 
   // Erase Segment from a row's overflow menu (B6, D-TWO-ENTRIES). One hook and
   // one confirm for the whole list — the same implementation the recorder menu
@@ -194,8 +214,31 @@ export const SegmentsScreen = forwardRef<
   // `books-screen.tsx`'s `menuFocusRestore` for why sharing the overlay's slot
   // lost the ⋮ after any share-progress cycle (Frank r1 P2 on #754).
   const menuFocusRestore = useFocusRestore();
+  // Where focus goes once leaving the chapter rename field has committed
+  // (#676 item 1). `#679`'s `menuFocusRestore` above already returns focus to
+  // the ⋮ once the WHOLE menu closes — a completed save included — but
+  // Escape/Cancel here only leaves rename mode: `chapterMenuOpen` stays true,
+  // so that effect's `if (chapterMenuOpen) return;` guard never fires, and
+  // the unmounting `NameEdit` field drops focus to `<body>` behind the still-
+  // open panel. `segment-row.tsx`'s `pendingFocus` is the same shape, applied
+  // here to the one target this screen still needs.
+  const pendingRenameFocus = useRef(false);
+  const renameChapterControlRef = useRef<HTMLButtonElement | null>(null);
   const share = useChapterShare();
-  const erase = useEraseSegment();
+  // This screen's own record of "the erase I asked for failed", as the
+  // `strings`-mapped KEY it failed with (#172 — `noRoom` on a full disk). NOT
+  // the hook's:
+  // one instance is shared with the recorder sheet now (#160, L-12), and a
+  // shared flag would paint this screen's failure inside the sheet. The hook
+  // owns the in-flight guard, which genuinely must be single; whose failure it
+  // was is the caller's to remember.
+  const [eraseFailure, setEraseFailure] = useState<FailureKey | null>(null);
+  // Bumped on a "busy" refusal to remount EraseConfirm: its Erase tap latched
+  // an in-flight ref that only an open edge resets, and a refused call never
+  // closes the dialog, so Confirm and Cancel would stay dead. The fresh mount
+  // reads `busy={erase.erasing}` (true while the other caller holds the guard),
+  // so it is protected until that erase settles, then usable again.
+  const [confirmMount, setConfirmMount] = useState(0);
   // MEMBERS, never the objects — and this is #452's own open question 3,
   // answered here on this screen's evidence as the design asks PR4 to do.
   //
@@ -513,10 +556,19 @@ export const SegmentsScreen = forwardRef<
     // after this must not close the menu and drop the encode we are preparing.
     chapterMenuSession.current += 1;
     setSavingName(false);
-    void share.prepare(
-      chapterId,
-      strings.shareFilename(bookName, chapterNumber)
-    );
+    // On the native route `prepare()` chains straight into `send()` (#860,
+    // `share-flow.ts`'s `chainsToSend`) and resolves to ITS outcome — so this
+    // tap alone must close the menu on `sent`/`dismissed` the same way
+    // `onSendShare` below already does for the web route's own second tap.
+    // On the web route (still `ready`, waiting for that second tap) and on
+    // every non-chained ending (nothing to share, a prepare error, a
+    // superseded run) this resolves `null`, and the guard below leaves the
+    // menu exactly as every one of those already did.
+    void share
+      .prepare(chapterId, strings.shareFilename(bookName, chapterNumber))
+      .then((outcome) => {
+        if (outcome === "sent" || outcome === "dismissed") onCloseChapterMenu();
+      });
   }, [
     focusRestore,
     audio,
@@ -525,6 +577,7 @@ export const SegmentsScreen = forwardRef<
     chapterId,
     bookName,
     chapterNumber,
+    onCloseChapterMenu,
   ]);
   // Tap 2 — hand the armed File to the OS share sheet. `send()` opens the sheet
   // as its first call inside this gesture (`navigator.share` in a browser, the
@@ -600,6 +653,16 @@ export const SegmentsScreen = forwardRef<
   // the scrim.
   const onSaveChapterName = useCallback(
     (name: string) => {
+      // The same synchronous ref latch New Book's `creatingBook` uses (#395
+      // item 3), mirroring `books-screen.tsx`'s `onSaveBookName`.
+      // `NameEdit`'s own `if (busy) return` in its `onSubmit` reads LAST
+      // RENDER's `busy` — a key-repeated Enter can call this a second time
+      // before the first commit's `savingChapterName` paints. Reading
+      // `savingChapterNameRef` HERE, before this call flips it, closes that
+      // gap for free: the ref already tracks the in-flight write
+      // synchronously, for `Layer.busy()`'s own sync read (see its
+      // declaration above).
+      if (savingChapterNameRef.current) return;
       // Capture the session this rename belongs to. IDB can settle after the
       // user has closed the menu or armed a share — both advance the token — so
       // close ONLY if we are still the same session (F1). Without this, the stale
@@ -632,9 +695,18 @@ export const SegmentsScreen = forwardRef<
   // showed the NEXT Rename tap's fresh Confirm as busy before it was tapped.
   const onCancelRenameChapter = useCallback(() => {
     chapterMenuSession.current += 1;
+    pendingRenameFocus.current = true;
     setRenamingChapter(false);
     setSavingName(false);
   }, [setSavingName]);
+  // Runs after the commit that brings the action list back, mirroring
+  // `segment-row.tsx`'s identical effect for the row's own rename mode.
+  useLayoutEffect(() => {
+    if (pendingRenameFocus.current && !renamingChapter) {
+      pendingRenameFocus.current = false;
+      renameChapterControlRef.current?.focus();
+    }
+  }, [renamingChapter]);
   const onConfirmErase = useCallback(() => {
     if (eraseTarget === null) return;
     void (async () => {
@@ -652,18 +724,24 @@ export const SegmentsScreen = forwardRef<
       // pause control — the same R-B6 hole. `stopBuffer`, not `leave()`: a
       // recording in progress is never ours to cancel from a list erase (#103).
       else if (audio.playingBuffer) audio.stopBuffer();
+      // Clear only when this call will acquire the guard — the hook's "busy"
+      // check reads the same ref in this same turn, so a refusal (the other
+      // screen holding the one shared guard) leaves an earlier failure shown.
+      if (!erase.isErasing()) setEraseFailure(null);
       const result = await erase.erase(eraseTarget);
       // On success patch that ONE row to never-recorded in place — NOT reload(),
       // which deadens every transport while it re-walks the chapter's PCM
-      // (George R-B6). "failed" leaves `erase.error` for the Notice; a
+      // (George R-B6). A failure records its key on this screen for the Notice; a
       // double-tap's "busy" is ignored so the confirm does not vanish under the
-      // first erase.
+      // first erase, and leaves the flag alone — the first erase owns it.
       if (result === "ok") eraseRow(eraseTarget);
+      else if (result !== "busy") setEraseFailure(result.failed);
       // Both real outcomes take the confirm down, so both take its layer down
       // (#494 item 3 — a layer whose overlay is gone traps Back at this depth).
       // `"busy"` returns without touching either: the first erase still owns
       // them, and its own settle is what closes them.
       if (result !== "busy") closeErase();
+      else setConfirmMount((n) => n + 1);
     })();
   }, [audio, closeErase, erase, eraseTarget, eraseRow]);
   // The list is hidden from AT while a dialog is up, mirroring the recorder
@@ -705,6 +783,11 @@ export const SegmentsScreen = forwardRef<
   // invite CTA (the only enabled create, no Retry here) up with the error in the
   // Notice, not tear it down and strand focus on Back (George R3 P2).
   const loadFailed = error !== null && !loaded;
+  // `error` and `eraseFailure` are `strings`-mapped KEYs (#172), never the raw
+  // store message a screen would otherwise speak verbatim — resolved here,
+  // once, so every render site below reads the mapped copy.
+  const chapterErrorText = error ? strings[error] : null;
+  const eraseErrorText = eraseFailure ? strings[eraseFailure] : null;
   // See books-screen: hide the header create + while the invite's own primary
   // CTA is up, so there is one create action, announced once.
   const showEmpty = !staleTarget && loaded && rows.length === 0;
@@ -721,19 +804,11 @@ export const SegmentsScreen = forwardRef<
   // moved into `ShareMenuSection` with the rows they paint (#160, L-15) —
   // Books derived the identical three.
 
-  const nodes = useRef(new Map<SegmentId, HTMLElement>());
   const didInitialScroll = useRef(false);
-  // What to scroll to once `rows` next includes it — a freshly appended
-  // segment. A ref, not state: `addSegment` already re-renders us.
-  const pendingScroll = useRef<SegmentId | null>(null);
-  // See books-screen: the invite CTA unmounts on the append it triggers, so
-  // hand focus to the new row rather than let it fall to Back in the header.
-  const pendingFocus = useRef<SegmentId | null>(null);
-
-  const setNode = useCallback((id: SegmentId, el: HTMLElement | null) => {
-    if (el) nodes.current.set(id, el);
-    else nodes.current.delete(id);
-  }, []);
+  // The row registry and the arm-then-reveal pair, shared with Books (#160
+  // L-15). Focus lands on the row's open/record control explicitly (not DOM
+  // order) — the right next move on a never-recorded row (George R3 P3).
+  const rowReveal = useScrollToNew<SegmentId>(".row-open");
 
   useEffect(() => {
     // Land on the first not-finished segment once the list is first loaded
@@ -741,27 +816,84 @@ export const SegmentsScreen = forwardRef<
     if (loading || didInitialScroll.current) return;
     didInitialScroll.current = true;
     const target = firstNotFinished(rows);
-    if (target)
-      nodes.current.get(target.segmentId)?.scrollIntoView({ block: "nearest" });
-  }, [loading, rows]);
+    if (target) rowReveal.scrollTo(target.segmentId);
+  }, [loading, rows, rowReveal]);
 
+  // Nothing on this screen holds the hand-off: focus is armed from one site
+  // only — the empty chapter's invite — and no overlay is up over it. Books
+  // passes a hold here, for a delete confirm that leaves the list `inert`.
+  // `false` is written out rather than defaulted, so a later overlay on this
+  // screen has to revisit this line to hold it.
   useEffect(() => {
-    const id = pendingScroll.current;
-    if (id !== null) {
-      nodes.current.get(id)?.scrollIntoView({ block: "nearest" });
-      pendingScroll.current = null;
-    }
-    const focusId = pendingFocus.current;
-    if (focusId !== null) {
-      // Target the row's open/record control explicitly (not DOM order) — the
-      // right next move on a never-recorded row (George R3 P3).
-      nodes.current
-        .get(focusId)
-        ?.querySelector<HTMLElement>(".row-open")
-        ?.focus();
-      pendingFocus.current = null;
-    }
-  }, [rows]);
+    rowReveal.reveal(false);
+  }, [rows, rowReveal]);
+
+  // ── Press-and-hold reorder (#953 PR2a, O4 only) ───────────────────────────
+  //
+  // Hold a row's number badge or title for 450 ms, then drag (§4, §7; D11:
+  // drag only for the training). The gesture is `hooks/use-segment-reorder.ts`
+  // over `lib/view/reorder-gesture.ts`; this screen supplies the rows, the
+  // one write and the words.
+  //
+  // One write, on the drop: `moveSegment` (#1053) patches the rows
+  // optimistically, replays the move over a load that read the old order,
+  // and on failure puts the stored order back and reports "segment-reorder",
+  // with nothing extra on screen (#172). Every cancel writes nothing, and the
+  // rows never left the stored order, so there is nothing to restore.
+  //
+  // Off with the switch off, and whenever a row could not take a tap anyway:
+  // an overlay has the list `inert`, a save is landing (`refreshing` disables
+  // the rows' buttons), the first load has not finished, or the chapter is
+  // gone.
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [reorderStatus, setReorderStatus] = useState("");
+  const reorder = useSegmentReorder<SegmentId>({
+    enabled: o4 && !listInert && !refreshing && !loading && !staleTarget,
+    ids: rows.map((row) => row.segmentId),
+    nodeFor: rowReveal.nodeFor,
+    scrollRef,
+    onLift: (index) => {
+      const row = rows[index];
+      if (row) setReorderStatus(strings.reorderLifted(row.ordinal));
+    },
+    onDrop: (segmentId, fromIndex, toIndex) => {
+      const row = rows[fromIndex];
+      // Keep focus with the row that moved. React moves its `<li>`, and a
+      // moved node can drop focus to the document; only when focus was on
+      // that row (or already nowhere) is it handed back, so a drop never
+      // pulls focus off something else. The reveal effect above lands it on
+      // the row's open button once the reordered rows commit.
+      const active = document.activeElement;
+      const node = rowReveal.nodeFor(segmentId);
+      if (active === document.body || (node && node.contains(active))) {
+        rowReveal.armFocus(segmentId);
+      }
+      // Segments renumber after a move (the DRI's "Renumber" pick), so the
+      // row's new number is its new position.
+      if (!row) {
+        void moveSegment(segmentId, toIndex);
+        return;
+      }
+      const moved = strings.reorderMoved(row.ordinal, toIndex + 1);
+      setReorderStatus(moved);
+      // A write that did not land puts the row back (`moveSegment` resolves
+      // false, having reported it), so the spoken line must not keep saying
+      // it moved (George round 1 on #1057). Only if nothing newer has been
+      // said since.
+      void moveSegment(segmentId, toIndex).then((landed) => {
+        if (!landed) {
+          setReorderStatus((s) =>
+            s === moved ? strings.reorderStayed(row.ordinal) : s
+          );
+        }
+      });
+    },
+    onCancel: (index) => {
+      const row = rows[index];
+      if (row) setReorderStatus(strings.reorderStayed(row.ordinal));
+    },
+  });
+  const drag = o4 ? reorder.drag : null;
 
   const onAppend = useCallback(async () => {
     // Only the first append comes from the invite (the corner + is hidden while
@@ -769,11 +901,11 @@ export const SegmentsScreen = forwardRef<
     const fromEmpty = rows.length === 0;
     const segment = await addSegment();
     if (!segment) return; // failed append surfaced through the hook's Notice
-    // The new <li> is not committed yet, so scroll once `rows` includes it —
-    // the same pending-id + effect pattern BooksScreen uses.
-    pendingScroll.current = segment.id;
-    if (fromEmpty) pendingFocus.current = segment.id;
-  }, [addSegment, rows]);
+    // The new <li> is not committed yet, so arm it and let the effect above
+    // scroll once `rows` includes it — the same hook BooksScreen uses.
+    rowReveal.armScroll(segment.id);
+    if (fromEmpty) rowReveal.armFocus(segment.id);
+  }, [addSegment, rows, rowReveal]);
 
   const onSetFinished = useCallback(
     (segmentId: SegmentId, finished: boolean) => {
@@ -785,6 +917,32 @@ export const SegmentsScreen = forwardRef<
     },
     [setFinished]
   );
+
+  // The confirm's "Play what will be lost" row (#979 remainder, O4 "13"
+  // only — the switch-off dialog stays unchanged). `rows` is short (a
+  // chapter's segments), so a plain find each render is cheap; `eraseTarget`
+  // is only ever non-null while the dialog itself is open. `undefined` (a
+  // stale target racing a reload) falls through to `eraseRowPreview` below
+  // being `undefined` too, and the O4 branch there hands `EraseConfirm` no
+  // `preview` prop at all rather than one with made-up peaks.
+  const eraseTargetRow =
+    eraseTarget !== null
+      ? rows.find((row) => row.segmentId === eraseTarget)
+      : undefined;
+  const eraseRowPreview: EraseConfirmPreview | undefined =
+    o4 && eraseTargetRow
+      ? {
+          peaks: eraseTargetRow.peaks,
+          playing: audio.playingId === eraseTargetRow.segmentId,
+          // Always from the start (offset 0): this is a preview of "what will
+          // be lost", not the scrub-and-resume transport `SegmentRow` gives
+          // the list itself.
+          onTogglePlay: () => audio.playTake(eraseTargetRow, 0),
+          playLabel: strings.eraseConfirmPreviewPlay,
+          pauseLabel: strings.eraseConfirmPreviewPause,
+          finished: eraseTargetRow.finished,
+        }
+      : undefined;
 
   return (
     <div className="flex h-full flex-col gap-[14px]">
@@ -805,15 +963,14 @@ export const SegmentsScreen = forwardRef<
             arbitrary utilities here, so the 44px floor reads the same
             `--c-control-md` every other control does. */}
         <button type="button" onClick={onBack} className="breadcrumb">
-          <span>
-            {bookName} &gt; {chapterHeading}
-          </span>
+          <span>{strings.chapterBreadcrumb(bookName, chapterHeading)}</span>
         </button>
         {!showEmpty && (
           <Control
             icon="plus"
             label={strings.addSegment}
             variant="quiet"
+            className={o4 ? "segments-add" : undefined}
             disabled={staleTarget || loading || refreshing || loadFailed}
             onClick={() => void onAppend()}
           />
@@ -831,16 +988,18 @@ export const SegmentsScreen = forwardRef<
         />
       </header>
 
+      {o4 && !staleTarget && (
+        <SegmentsHead chapterName={chapterName} rows={rows} />
+      )}
+
       {/* One line, one place: a load failure or a playback failure (a
           dangling/undecodable clip routes to audio.error) — never only the
           console. `console.error is not a channel on a phone in a village.`
           Share speaks in its own menu, not here. */}
       {staleTarget ? (
         <Notice>{strings.staleChapter}</Notice>
-      ) : (error ??
-        audio.error ??
-        (erase.error ? strings.eraseFailed : null)) ? (
-        <Notice>{error ?? audio.error ?? strings.eraseFailed}</Notice>
+      ) : (chapterErrorText ?? audio.error ?? eraseErrorText) ? (
+        <Notice>{chapterErrorText ?? audio.error ?? eraseErrorText}</Notice>
       ) : loading ? (
         // First mount: a slow chapter (sequential PCM walk) is otherwise a
         // header over a blank list with no reason given (G8).
@@ -849,7 +1008,13 @@ export const SegmentsScreen = forwardRef<
         refreshing && <Notice tone="busy">{strings.updating}</Notice>
       )}
 
-      <div className="flex-1 overflow-y-auto" inert={listInert || undefined}>
+      <div
+        ref={scrollRef}
+        className={
+          o4 ? "segments-body flex-1 overflow-y-auto" : "flex-1 overflow-y-auto"
+        }
+        inert={listInert || undefined}
+      >
         {staleTarget ? null : showEmpty ? (
           <EmptyState
             headline={strings.segmentsEmpty}
@@ -860,9 +1025,38 @@ export const SegmentsScreen = forwardRef<
             onCta={() => void onAppend()}
           />
         ) : (
-          <ul className="flex flex-col gap-[8px]">
-            {rows.map((row) => (
-              <li key={row.segmentId} ref={(el) => setNode(row.segmentId, el)}>
+          <ul
+            className={o4 ? "segments-list" : "flex flex-col gap-[8px]"}
+            data-reordering={drag ? "" : undefined}
+          >
+            {rows.map((row, index) => (
+              <li
+                key={row.segmentId}
+                ref={(el) => rowReveal.setNode(row.segmentId, el)}
+                // While a row is lifted (O4 only): it follows the finger and
+                // its neighbours slide one slot to make room. Paint only;
+                // the rows' order is not touched until the drop.
+                className={
+                  drag?.fromIndex === index
+                    ? "segments-item--lifted"
+                    : undefined
+                }
+                style={
+                  drag
+                    ? ({
+                        "--reorder-y": `${
+                          drag.fromIndex === index
+                            ? drag.offset
+                            : reorderShift(
+                                index,
+                                drag.fromIndex,
+                                drag.toIndex
+                              ) * drag.pitch
+                        }px`,
+                      } as React.CSSProperties)
+                    : undefined
+                }
+              >
                 <SegmentRow
                   row={row}
                   playing={audio.playingId === row.segmentId}
@@ -884,6 +1078,9 @@ export const SegmentsScreen = forwardRef<
                   onRename={(label) => renameSegment(row.segmentId, label)}
                   onMenuOpen={onRowMenuOpen}
                   onMenuClose={onRowMenuClose}
+                  bookName={bookName}
+                  chapterNumber={chapterNumber}
+                  onHoldStart={o4 ? reorder.holdStart(index) : undefined}
                 />
               </li>
             ))}
@@ -891,7 +1088,24 @@ export const SegmentsScreen = forwardRef<
         )}
       </div>
 
+      {/* The reorder's spoken half (#953 PR2a, O4 only): which row was
+          lifted, where it landed, or that it went back. Outside the list's
+          `inert` subtree, and mounted for the screen's whole life so a
+          screen reader hears the first change. D11 leaves no keyboard or
+          switch path to move a row; this only tells what a drag did. */}
+      {o4 && (
+        <span
+          className="sr-only"
+          role="status"
+          aria-live="polite"
+          data-reorder-status=""
+        >
+          {reorderStatus}
+        </span>
+      )}
+
       <EraseConfirm
+        key={confirmMount}
         open={eraseTarget !== null}
         title={strings.eraseConfirmTitle}
         confirmLabel={strings.eraseConfirm}
@@ -907,6 +1121,7 @@ export const SegmentsScreen = forwardRef<
         // `closeErase` is a `useCallback` over `closeEraseState` plus the
         // memoized `layers`, so it still is one.
         onCancel={closeErase}
+        preview={eraseRowPreview}
       />
 
       <Menu
@@ -971,12 +1186,73 @@ export const SegmentsScreen = forwardRef<
               <Notice tone="busy">{strings.savingName}</Notice>
             )}
             {/* A failed rename speaks here — the screen Notice is behind the
-                scrim — while the field stays up for another try. */}
-            {error && <Notice>{error}</Notice>}
+                scrim — while the field stays up for another try.
+
+                Never while `savingChapterName` (#395 item 1), mirroring
+                `books-screen.tsx`'s identical guard: a retried rename's own
+                busy Notice must not share the panel with a failure Notice
+                from the PREVIOUS attempt — the #112 collision
+                `control-affordance.ts` names as the rule this wiring
+                follows. `renameChapter` also now clears `error` at the START
+                of the write (`use-chapter-segments.ts`); either half alone
+                still leaves the other channel wrong (George, #395).
+
+                `error` is a `strings`-mapped KEY (#172), never the raw store
+                message. */}
+            {chapterErrorText && !savingChapterName && (
+              <Notice>{chapterErrorText}</Notice>
+            )}
+          </>
+        ) : o4 ? (
+          // The O4 chapter menu (#949, G2): the breadcrumb head, then Rename,
+          // Share and — past a gap — the theme tile. The same three controls,
+          // names, refs and order as the rows below, so the open-edge focus
+          // lands on Rename in both looks and every restore below finds the
+          // same node. Rename is a tile rather than the workbench's header
+          // pencil because a header control ahead of the grid would be a
+          // second first-focus candidate the current look does not have.
+          <>
+            <O4SheetHead book={bookName} chapter={chapterNumber} />
+            <ShareMenuSection
+              status={share.status}
+              sendUnconfirmed={share.sendUnconfirmed}
+              error={share.error}
+              scope="chapter"
+              controlRef={shareControlRef}
+              idleLabel={strings.shareChapter}
+              preparingLabel={strings.sharePreparing}
+              unconfirmedLabel={strings.shareChapterUnconfirmed}
+              hasGap={share.missing > 0}
+              gapText={shareGapText(
+                { missing: share.missing, partial: 0, partialChapters: 0 },
+                "chapter"
+              )}
+              onPrepare={onPrepareShare}
+              onSend={onSendShare}
+              tiles={{
+                before: (
+                  <Tile
+                    ref={renameChapterControlRef}
+                    tone="name"
+                    icon="pencil"
+                    label={strings.renameChapter}
+                    caption={strings.tileRename}
+                    onClick={() => setRenamingChapter(true)}
+                  />
+                ),
+                after: (
+                  <>
+                    <TileSpacer />
+                    <ThemeControl tile />
+                  </>
+                ),
+              }}
+            />
           </>
         ) : (
           <>
             <Control
+              ref={renameChapterControlRef}
               icon="edit"
               label={strings.renameChapter}
               variant="quiet"
@@ -1009,6 +1285,24 @@ export const SegmentsScreen = forwardRef<
               onPrepare={onPrepareShare}
               onSend={onSendShare}
             />
+            {/* The theme toggle, the one global entry that follows you into a
+                chapter (#149). LAST on purpose: `Menu` lands focus on its
+                first actionable child, and that must stay Rename/Share — the
+                reasons you opened this menu — not a control that repaints the
+                screen. Which holds here unconditionally, unlike in the
+                recorder: Rename above carries no `disabled` and no `hint`, so
+                it is always the first actionable child. If a later change
+                gives it a hinted state, focus moves here in that state, and
+                the recorder's comment is where that trade is argued.
+
+                Books-only was right while the global menu held a
+                licence notice; it stopped being right when the menu grew a
+                control for direct sun, which arrives mid-session.
+
+                It is inside the panel's `inert` subtree above (#491), so a
+                share overlay that owns the screen covers this too, with no
+                guard of its own. */}
+            <ThemeControl />
           </>
         )}
       </Menu>
@@ -1025,6 +1319,7 @@ export const SegmentsScreen = forwardRef<
       <ShareProgress
         progress={share.progress}
         scope="chapter"
+        items={chapterShareItems(rows)}
         onCancel={share.reset}
         onDismiss={share.dismissProgress}
       />

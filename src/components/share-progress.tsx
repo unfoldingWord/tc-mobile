@@ -1,17 +1,26 @@
 import { useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
-import { Icon } from "./icon";
 import { noticePresentation } from "./notice-tone";
 import { shareProgressText } from "./share-error-copy";
-import { shareSettledGlyph } from "./share-outcome-glyph";
+import { shareOverlayGlyph } from "./share-overlay-glyph";
+import { shareO4View, type ShareItem } from "./share-o4-view";
+import { ShareProgressPanel } from "./share-progress-panel";
 import type { ShareProgress as ShareProgressState } from "@/hooks/share-progress";
+import { useDesign } from "@/hooks/use-design";
 
 interface ShareProgressProps {
   /** The hook's timeline. Renders nothing while `hidden`. */
   progress: ShareProgressState;
   /** Picks the secondary text only — the glyphs are the same for both. */
   scope: "chapter" | "book";
+  /**
+   * The items the share walks over, in order, from what the screen already
+   * holds: the chapter's segments, or the book's chapters. Only the O4 look
+   * reads them, for its numbered chips (#947 D21); the current look ignores
+   * them.
+   */
+  items?: readonly ShareItem[];
   /**
    * A scrim tap, or the Escape this component now captures, while BUSY.
    * Wired to `reset()` itself (George r1 P2 #1/#2), not the screen's full
@@ -117,11 +126,16 @@ interface ShareProgressProps {
 export function ShareProgress({
   progress,
   scope,
+  items,
   onCancel,
   onDismiss,
 }: ShareProgressProps) {
   const visible = progress.phase !== "hidden";
   const busy = progress.phase === "busy";
+  // O4 (#947) swaps the glyph for the 140-in-176 circle, its filling ring and
+  // its numbered chips; the current look passes nothing and renders as it
+  // always has.
+  const { design } = useDesign();
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   // Read from the keydown listener without re-subscribing it — mirrors
@@ -222,11 +236,11 @@ export function ShareProgress({
   }, [visible]);
 
   if (progress.phase === "hidden") return null;
-  // The wait wears the same retry mark `Notice`'s `busy` tone does, spun by
-  // the stylesheet; an outcome wears the table's mark for it.
-  const glyph = busy
-    ? { icon: noticePresentation("busy").icon, tone: "busy" as const }
-    : shareSettledGlyph(progress.settled);
+  // Which mark and tone: `shareOverlayGlyph` (#850, `share-overlay-glyph
+  // .ts`) owns the busy-vs-settled choice as a plain function, so it is a
+  // behaviour a test can call directly rather than something only rendered
+  // JSX or source text could show.
+  const glyph = shareOverlayGlyph(progress);
   const { role } = noticePresentation(glyph.tone);
   // The stylesheet keys the glyph's ink on this, not on the tone: success is
   // `--s-done`, not the `info` tone's amber.
@@ -243,12 +257,13 @@ export function ShareProgress({
         } else onDismiss();
       }}
     >
-      <div ref={panelRef} tabIndex={-1} role={role} className="share-progress">
-        <Icon name={glyph.icon} size={48} className="share-progress-glyph" />
-        <span className="share-progress-text">
-          {shareProgressText(progress, scope)}
-        </span>
-      </div>
+      <ShareProgressPanel
+        ref={panelRef}
+        role={role}
+        icon={glyph.icon}
+        text={shareProgressText(progress, scope)}
+        o4={design === "o4" ? shareO4View(progress, scope, items) : undefined}
+      />
     </div>,
     document.body
   );

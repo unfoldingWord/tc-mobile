@@ -10,7 +10,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { Recorder } from "@/components/recorder";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 import {
   useAudioSession,
   type UseAudioSession,
@@ -75,6 +75,17 @@ vi.mock("@/lib/storage/segment-audio", () => ({
 
 const original = new Int16Array([1, 2, 3, 4]);
 const captured = new Int16Array([7, 8, 9]);
+
+/**
+ * The erase surface `App` now owns and passes down (#160, L-12). This suite
+ * never erases; a stub that answers "no erase in flight" is what the sheet's
+ * Back and confirm gates read (matches `tests/recorder-stop-commits.test.ts`).
+ */
+const erase = {
+  erase: vi.fn(async () => "ok" as const),
+  erasing: false,
+  isErasing: () => false,
+};
 
 const boundary = vi.hoisted(() => ({
   editor: {} as SegmentEditor,
@@ -230,6 +241,7 @@ const Screen = forwardRef<Harness>((_props, ref) => {
   return createElement(Recorder, {
     segmentId: "segment" as SegmentId,
     audio,
+    erase,
     saveRecording,
     saveEditedSegment: vi.fn().mockResolvedValue(true),
     clipboard: null,

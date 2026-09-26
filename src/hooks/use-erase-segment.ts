@@ -1,8 +1,8 @@
 import { useCallback, useRef, useState } from "react";
 
-import { errorMessage } from "@/lib/failure-text";
-import { clearSegmentTake } from "@/lib/storage/books";
+import { clearSegmentTake } from "@/lib/storage/takes";
 import { reportFailure } from "./report-failure";
+import { failureKey, type FailureKey } from "./save-failure";
 import type { SegmentId } from "@/types/domain";
 
 /**
@@ -13,9 +13,15 @@ import type { SegmentId } from "@/types/domain";
  * `clearSegmentTake`, which already deletes the take and its clip atomically,
  * reference-counts the clip, and returns the segment to "not-started" with
  * `activeTakeId` null (G4: the audio goes, the row stays). This hook adds no
- * store logic; it wraps that op with the small amount of state the two menus
- * need — a double-tap guard and a caught, surfaced error — and stays
- * presentation-free. The confirm dialog and the copy live in `components/`.
+ * store logic; it wraps that op with the one piece of state the two menus
+ * genuinely share — an in-flight guard, readable both as `erasing` for render
+ * and as `isErasing()` for the synchronous check a Back handler needs — and
+ * stays presentation-free. The confirm dialog and the copy live in
+ * `components/`.
+ *
+ * It deliberately carries no error; each screen holds its own failure key,
+ * from the result of the call it made. The reasoning is on `useEraseSegment`
+ * below, and is the point of the one-instance lift (#160, L-12).
  */
 
 /**
@@ -24,8 +30,8 @@ import type { SegmentId } from "@/types/domain";
  * The work lives here as a plain async function so it is exercised in Node
  * against the real store (the onion's reason for existing): the hook below is a
  * thin state wrapper over it, not a second copy of the logic. A failure is
- * caught and reported as a reason string — never swallowed, never a rejected
- * promise a tap handler drops.
+ * caught, reported, and returned as a `strings`-mapped KEY (#172) — never
+ * swallowed, never a rejected promise a tap handler drops.
  *
  * It took an `onErased` callback until #160 (L-12) and no caller ever passed
  * one — both screens learn the row changed by their own route, the recorder by
@@ -36,7 +42,7 @@ import type { SegmentId } from "@/types/domain";
  */
 export async function performErase(
   segmentId: SegmentId
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true } | { ok: false; key: FailureKey }> {
   try {
     await clearSegmentTake(segmentId);
   } catch (cause) {
@@ -45,7 +51,9 @@ export async function performErase(
     reportFailure(cause, "erase-segment");
     return {
       ok: false,
-      error: errorMessage(cause),
+      // The KEY (#172), never the raw store message — a full disk gets
+      // `noRoom` instead of the generic erase copy.
+      key: failureKey(cause, "eraseFailed"),
     };
   }
   return { ok: true };
@@ -54,18 +62,23 @@ export async function performErase(
 /**
  * The outcome of a call to `erase`.
  *
- * `"busy"` is distinct from `"failed"` on purpose: a double-tap's second call is
+ * `"busy"` is distinct from a failure on purpose: a double-tap's second call is
  * refused by the in-flight guard, and a caller must NOT treat that refusal as a
  * result and dismiss its confirmation — the first call is still running and owns
  * the outcome. Conflating the two let a second tap tear the dialog down mid-erase
- * (Frank + George converged, B6). Callers act on `"ok"`/`"failed"` and ignore
- * `"busy"`.
+ * (Frank + George converged, B6). Callers act on `"ok"` and on a failure, and
+ * ignore `"busy"`.
+ *
+ * A failure carries its KEY (#172) — `eraseFailed`, or `noRoom` on a full disk
+ * — so the screen that made the call can speak the mapped copy without the
+ * hook holding a shared field for it (see `useEraseSegment`).
  */
-type EraseResult = "ok" | "failed" | "busy";
+type EraseResult = "ok" | "busy" | { failed: FailureKey };
 
 export interface UseEraseSegment {
-  /** Erase the segment's audio. `"ok"` on success, `"failed"` on a store error,
-   *  `"busy"` when another erase is already in flight (ignore it — not a result). */
+  /** Erase the segment's audio. `"ok"` on success, `{ failed: key }` on a store
+   *  error, `"busy"` when another erase is already in flight (ignore it — not a
+   *  result). */
   erase(segmentId: SegmentId): Promise<EraseResult>;
   /** True while an erase is in flight — the confirm/menu disables its Erase button on this. */
   erasing: boolean;
@@ -83,18 +96,32 @@ export interface UseEraseSegment {
    * captured when the overlay opens and called much later.
    */
   isErasing: () => boolean;
-  /** The reason the last erase failed, or null. Set on failure, cleared when the next erase starts. */
-  error: string | null;
 }
 
 /**
  * Both Erase entry points (#32, D-TWO-ENTRIES) — the recorder menu and the
- * Segments-row overflow menu — call this hook, so the erase is one
- * implementation behind one confirm.
+ * Segments-row overflow menu — go through ONE instance of this hook, mounted
+ * in `App` and passed to both screens (#160, L-12).
+ *
+ * It was instantiated twice, so the in-flight guard was per-screen and "two
+ * erases of the same segment cannot overlap" held only because the recorder
+ * sheet is modal — the same unwritten premise #642 records for the finished
+ * flag. One instance makes it structural: there is one `erasingRef`, so a
+ * second erase is refused wherever it is asked for.
+ *
+ * It carries NO error, and that is what makes one instance safe rather than a
+ * regression. A hook-held `error` would be shared state, and SHARING it would
+ * bleed: a failed list erase leaves it set and nothing clears it until the next
+ * erase starts, so opening the recorder afterwards would show an erase-failed
+ * Notice for a segment whose erase never failed there. `erase()` returns the
+ * failure's key instead, so each screen holds its own, from the result of the
+ * call IT made.
+ *
+ * The raw reason still reaches the durable log through `reportFailure`, which
+ * is where a maintainer reads it. It was never translator-facing (#172).
  */
 export function useEraseSegment(): UseEraseSegment {
   const [erasing, setErasing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   /**
    * The live in-flight guard, readable synchronously.
    *
@@ -114,11 +141,9 @@ export function useEraseSegment(): UseEraseSegment {
       if (erasingRef.current) return "busy";
       erasingRef.current = true;
       setErasing(true);
-      setError(null);
       try {
         const result = await performErase(segmentId);
-        if (!result.ok) setError(result.error);
-        return result.ok ? "ok" : "failed";
+        return result.ok ? "ok" : { failed: result.key };
       } finally {
         // Releases the guard rather than dropping state, so it is safe in
         // `finally`; a guard left set would lock out every later erase.
@@ -129,5 +154,5 @@ export function useEraseSegment(): UseEraseSegment {
     []
   );
 
-  return { erase, erasing, isErasing, error };
+  return { erase, erasing, isErasing };
 }

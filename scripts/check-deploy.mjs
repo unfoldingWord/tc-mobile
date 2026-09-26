@@ -128,12 +128,16 @@ function runGitSync(cmd) {
  * Workers Builds actually deploys for that origin's promotion —
  * `origin/staging` for the staging default, `origin/main` for the production
  * Worker. For this repo's merge-PR promotion flow that tip is a merge
- * commit, not a promoter's local branch tip: `docs/progress_tracker.md:102,118`
- * recorded the v0.1.12 `develop -> staging` promotion (#202) as merge commit
- * `afdfa6e`, the staging tip, not develop's pre-merge `7152289` (round-3
- * George #1). Returns `undefined` for any other origin (a per-PR preview
- * Worker, a hand-typed URL) — there is no known branch to resolve there, so
- * the caller falls back to local `HEAD`. Pure and exported for tests.
+ * commit, not a promoter's local branch tip: `docs/progress_tracker.md`'s
+ * "2026-09-03 (evening) — v0.1.12 promoted and verified on staging; the
+ * microphone report resolved outside the app" entry (cited by heading, not
+ * line number — the log is append-only and newest-first, so a line-number
+ * citation drifts, #443 item 2) recorded the v0.1.12 `develop -> staging`
+ * promotion (#202) as merge commit `afdfa6e`, the staging tip, not develop's
+ * pre-merge `7152289` (round-3 George #1). Returns `undefined` for any other
+ * origin (a per-PR preview Worker, a hand-typed URL) — there is no known
+ * branch to resolve there, so the caller falls back to local `HEAD`. Pure
+ * and exported for tests.
  */
 export function remoteRefForOrigin(origin) {
   if (origin === DEFAULT_ORIGIN) return "origin/staging";
@@ -143,28 +147,70 @@ export function remoteRefForOrigin(origin) {
 
 /**
  * True only when `remoteUrl` is a GitHub URL (https or ssh, any of git's
- * accepted forms, with or without a trailing `.git`) that names
- * `CANONICAL_REPO`, case-insensitively. Accepts:
- *   https://github.com/unfoldingWord/tc-mobile[.git]
- *   https://<user>@github.com/unfoldingWord/tc-mobile[.git]  (https w/ userinfo)
- *   git@github.com:unfoldingWord/tc-mobile[.git]             (scp-like ssh)
- *   git@ssh.github.com:unfoldingWord/tc-mobile[.git]         (SSH-over-443 alias host)
- *   ssh://git@github.com/unfoldingWord/tc-mobile[.git]       (explicit ssh:// URL)
- * The first release of this function missed the last three — a checkout
- * cloned or repointed with any of them failed closed on a correct canonical
- * origin, a false FAIL on the gate whenever it runs with no positional
- * origin but `--sha=`/`--version=` given (which skips the fetch but not this
- * check) (round-3 George P3-2). Anything else — a fork's URL, an
- * unrepointed pre-transfer remote, `http://`, a non-GitHub host, a malformed
- * string, `undefined` — returns `false`. Pure and exported for tests.
+ * accepted forms, with or without a trailing `.git` and/or trailing
+ * slash(es)) that names `CANONICAL_REPO`, case-insensitively. Accepts:
+ *   https://github.com/unfoldingWord/tc-mobile[.git][/]
+ *   https://<user>@github.com/unfoldingWord/tc-mobile[.git][/]  (https w/ userinfo)
+ *   git@github.com:unfoldingWord/tc-mobile[.git]                (scp-like ssh)
+ *   git@ssh.github.com:unfoldingWord/tc-mobile[.git]            (SSH-over-443 alias host)
+ *   ssh://git@github.com/unfoldingWord/tc-mobile[.git]          (explicit ssh:// URL)
+ *   ssh://git@ssh.github.com/unfoldingWord/tc-mobile[.git]      (explicit ssh:// via the
+ *     SSH-over-443 alias host — #443 item 1)
+ * Every form checks the host. A `~/.ssh/config` `Host` alias fails closed,
+ * including a suffix-style one such as `git@github.com-uw:...`: the URL text
+ * says nothing about where the alias resolves, so `github.com-uw` and
+ * `github.com-evil` look alike to this function (Frank r2 P2 on #751, which
+ * dropped the suffix form #443 item 1 had added). A checkout whose origin is
+ * an alias passes `--sha=` and `--version=` explicitly. An arbitrary
+ * scp host (`git@gitlab.com:unfoldingWord/tc-mobile`) is rejected even when
+ * its owner/repo matches — a mirror is not the canonical remote.
+ *
+ * The first release of this function missed the `ssh://` and
+ * `ssh.github.com` forms — a checkout cloned or repointed with either
+ * failed closed on a correct canonical origin (round-3 George P3-2). This
+ * check runs only when `resolveExpected` calls `ensureRemoteRefFresh`, i.e.
+ * whenever at least one of `--sha=`/`--version=` was *not* given explicitly;
+ * giving both bypasses `ensureRemoteRefFresh` — and this check with it —
+ * entirely, which is intentional: there is nothing left to resolve from a
+ * ref once both halves are already known (matches AGENTS.md; #443 item 3
+ * fixed this docblock, which previously claimed the opposite — that
+ * `--sha=`/`--version=` "skips the fetch but not this check"). Anything
+ * else — a fork's URL, an unrepointed pre-transfer remote, `http://`, a
+ * non-GitHub host on any form, a malformed string,
+ * `undefined` — returns `false`. Pure and exported for tests.
  */
 export function isCanonicalOrigin(remoteUrl) {
   if (typeof remoteUrl !== "string") return false;
-  const trimmed = remoteUrl.trim().replace(/\.git$/i, "");
+  // Strip trailing slash(es), then a trailing `.git` SUFFIX, then any
+  // trailing slash(es) left behind (`.../tc-mobile.git/` or
+  // `.../tc-mobile/`) — #443 item 1: a trailing slash previously broke
+  // every form's match, since none of the patterns below allow a `/` after
+  // the repo segment.
+  //
+  // The `.git` strip is anchored with a lookbehind requiring a non-slash
+  // character immediately before it (#798 item 1, George's suggestion), so
+  // it only removes `.git` appended directly to the repo name
+  // (`tc-mobile.git`) and never a SEPARATE `/.git` path segment
+  // (`tc-mobile/.git`, the shape of a bare/mirror clone's directory name).
+  // Before this, `/\.git$/i` matched either shape, so
+  // `https://github.com/unfoldingWord/tc-mobile/.git` collapsed to the
+  // canonical `.../tc-mobile` and passed — host and owner/repo were still
+  // the canonical pair, but the URL was not one of the forms this function
+  // claims to recognise. Left unstripped, `/.git` stays as a third path
+  // segment and fails every pattern below, same as any other malformed
+  // origin.
+  const trimmed = remoteUrl
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/(?<=[^/])\.git$/i, "")
+    .replace(/\/+$/, "");
   const httpsMatch = /^https:\/\/(?:[^@/]+@)?github\.com\/([^/]+\/[^/]+)$/.exec(
     trimmed
   );
-  const sshUrlMatch = /^ssh:\/\/git@github\.com\/([^/]+\/[^/]+)$/.exec(trimmed);
+  const sshUrlMatch =
+    /^ssh:\/\/git@(?:ssh\.)?github\.com\/([^/]+\/[^/]+)$/.exec(trimmed);
+  // scp-like `git@<host>:owner/repo`: `<host>` is exactly `github.com` or
+  // `ssh.github.com`. No Host-alias suffix: see the docblock.
   const scpMatch = /^git@(?:ssh\.)?github\.com:([^/]+\/[^/]+)$/.exec(trimmed);
   const repo = httpsMatch?.[1] ?? sshUrlMatch?.[1] ?? scpMatch?.[1];
   return repo?.toLowerCase() === CANONICAL_REPO.toLowerCase();

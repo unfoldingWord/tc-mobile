@@ -55,6 +55,48 @@ and George _are_ the review. Once they are clean, merge is an admin merge.
 | Documentation and content                                                          | CI green, then admin merge                                                                                                                                            |
 | Process/meta artifacts — `ci.yml`, `AGENTS.md`, `scripts/review/**`, deploy config | Normally both reviewers, because these are _executed as instructions_. Exempting them is allowed but the **decision must be recorded on the PR**, never a silent skip |
 
+**A test-only PR takes the tier of the code it covers, not a tier of its
+own.** This rule is permanent, not freeze-specific. While the freeze-budget
+table below is in force, it governs _how many reviewers and rounds_ apply at
+that tier; after it expires, the mapping at the end of this rule does. Which
+tier a test-only PR lands on is decided here. Classify in this order, and
+stop at the first match:
+
+1. A **gate test** — one that enforces a repo-wide rule, such as the drift
+   guard, the dist gate, lint-boundary or the precache manifest — is Harness,
+   regardless of which files it happens to touch.
+2. Otherwise it takes the **strictest** tier (T1 over T2 over T3) of every
+   surface it covers, using the "Risk tiers" table in `AGENTS.md` as the set —
+   that table is total over `src/` (#864): every path resolves to a tier, by
+   an explicit row or one of that table's own defaults, so this step never
+   runs out of table to consult. The named globs are that table's own
+   strings. For example: `hooks/*` (the product hooks, not the git hooks of
+   the Harness row) or `lib/export/*` is T2; `lib/audio/*`, or
+   `lib/storage/*` including the schema in `lib/storage/db.ts`, is T1;
+   `components/*` or `app/*` is T3. An unlisted `lib/*` path — `lib/nav/*` and
+   `lib/view/*` are the ones #864 named — is T1 by that table's default, and
+   `src/types/*`, an ambient `*.d.ts` or `src/data/*` takes the strictest
+   tier of its non-test importers (T1 if that set can't be determined); any
+   other unlisted `src/**` path is T1. A test covering `hooks/*` and
+   `lib/storage/*` is T1.
+
+**The tier sets which reviewers run and how many rounds — not T2's on-device
+check.** `AGENTS.md`'s "Risk tiers" table gives T2 a bar of "tests where
+possible + on-device check on both Android and iOS"; that on-device check
+verifies a change to the hook _code_ running on a device, and does not apply
+to a PR that only adds or changes tests — there is no new code path for a
+device to exercise. A test-only PR classified T2 gets T2's reviewer bar, not
+the device check.
+
+**After the freeze, the tier maps onto the table above.** A Harness test
+takes the process/meta row, because the freeze table groups Harness with meta
+and a gate test is executed as an instruction. A T1, T2 or T3 test takes the
+application-code row.
+
+Added 2026-09-24 after the #839 audit found six test-only PRs (#797, #796,
+#792, #790, #786, #784) merged on George only; a retroactive Frank pass found
+real P2s on two of them (#845).
+
 **P1 and P2 block. P3 goes to an issue** unless the fix is trivial enough to
 just do.
 
@@ -77,6 +119,11 @@ on the harness's own tests (#547, #572), not on the product.
 | T3 (`components/*`, `app/*`, copy, styling, docs, the tracker) | George only, one round, P1/P2 only; the exemption is recorded on the PR                             |
 | Harness and meta (`scripts/**`, gate tests, `ci.yml`, hooks)   | Both reviewers, hard cap 2; residuals are accepted on the PR by the DRI, never carried into a round |
 | Any tier                                                       | A P3 never triggers a round: every P3 is batched into one follow-up issue at triage                 |
+
+How to tier a test-only PR — gate test first, then the strictest tier it
+covers, and what T2's on-device check does and does not require of one — is
+in "Merge policy" above, not repeated here: it is a standing rule, not a
+freeze-specific one.
 
 After 2026-10-04 this table is void and the merge policy above applies again
 unchanged.

@@ -219,7 +219,7 @@ describe("the guide ring is visible on every surface it is drawn on (#604)", () 
     ],
     [
       "--s-surface",
-      "Add chapter and the segment row's red Record — `.row`'s own surface",
+      "Add chapter, the segment row's red Record — `.row`'s own surface — and outset around O4's green name-sheet Confirm",
     ],
     [
       "--s-floor",
@@ -247,6 +247,18 @@ describe("the guide ring is visible on every surface it is drawn on (#604)", () 
       expect(resolve(theme, "--s-guide")).not.toBe(resolve(theme, "--s-focus"));
     });
 
+    it(`${theme}: the ring cannot live INSIDE O4's green Confirm — the reason it is outset (#943)`, () => {
+      // o4/sheets.css paints the name sheet's commit control on --s-done and
+      // outsets its guide ring onto the sheet's --s-surface, for the same
+      // reason the record button's is outset. If a future accent clears the
+      // floor on --s-done, that exception can go.
+      const ratio = contrast(
+        resolve(theme, "--s-guide"),
+        resolve(theme, "--s-done")
+      );
+      expect(ratio).toBeLessThan(AA_NON_TEXT);
+    });
+
     it(`${theme}: the ring cannot live INSIDE the record button — the reason it is outset`, () => {
       // The reason `3-components.css` gives for the one exception to the inset
       // ring, asserted here rather than quoted there. Blue on the live red is
@@ -260,6 +272,126 @@ describe("the guide ring is visible on every surface it is drawn on (#604)", () 
         resolve(theme, "--s-live")
       );
       expect(ratio).toBeLessThan(AA_NON_TEXT);
+    });
+  }
+});
+
+describe("the O4 roles clear the floors the workbench claimed for them (round 4, G9)", () => {
+  // Computed from token values only, like the rest of this file. These are
+  // the O4 pairs that carry an icon, text or a control's boundary; decorative
+  // marks (`--s-mark-empty`) are deliberately not gated here.
+  const tileFills = ["--s-edit", "--s-name", "--s-send"] as const;
+  const coverFills = [
+    "--s-cover-amber",
+    "--s-cover-teal",
+    "--s-cover-plum",
+  ] as const;
+
+  for (const theme of ["dark", "light"] as const) {
+    for (const fill of tileFills) {
+      it(`${theme}: --s-tile-ink on ${fill} clears 5:1 (G9's own claim)`, () => {
+        const ratio = contrast(
+          resolve(theme, "--s-tile-ink"),
+          resolve(theme, fill)
+        );
+        expect(ratio).toBeGreaterThanOrEqual(5);
+      });
+    }
+
+    for (const fill of coverFills) {
+      it(`${theme}: a white cover glyph on ${fill} clears the non-text floor`, () => {
+        // Amber is the weakest at 3.5:1, so covers are gated at 3:1, not 5:1.
+        const ratio = contrast(
+          resolve(theme, "--p-cool-000"),
+          resolve(theme, fill)
+        );
+        expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT);
+      });
+    }
+
+    for (const surface of ["--s-surface", "--s-well"]) {
+      it(`${theme}: --s-hear on ${surface} — the speaker glyph`, () => {
+        const ratio = contrast(
+          resolve(theme, "--s-hear"),
+          resolve(theme, surface)
+        );
+        expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT);
+      });
+    }
+
+    it(`${theme}: --s-warn-text on --s-warn-quiet — the storage banner words`, () => {
+      const ratio = contrast(
+        resolve(theme, "--s-warn-text"),
+        resolve(theme, "--s-warn-quiet")
+      );
+      expect(ratio).toBeGreaterThanOrEqual(AA_SMALL_TEXT);
+    });
+
+    // #937 D3: words may sit on the live and done washes (chips, crumbs, the
+    // clip pill). On light the fill accents are too pale for that, so each
+    // wash has a text role of its own, as the warn wash does.
+    for (const [text, quiet] of [
+      ["--s-live-text", "--s-live-quiet"],
+      ["--s-done-text", "--s-done-quiet"],
+    ] as const) {
+      it(`${theme}: ${text} on ${quiet} — words on the wash (#937 D3)`, () => {
+        const ratio = contrast(resolve(theme, text), resolve(theme, quiet));
+        expect(ratio).toBeGreaterThanOrEqual(AA_SMALL_TEXT);
+      });
+    }
+
+    // #937 D2: the share progress ring marks a control, so it takes the
+    // non-text floor on both grounds the share button can sit on.
+    for (const surface of ["--s-floor", "--s-surface"]) {
+      it(`${theme}: --s-send-ring on ${surface} — the share ring (#937 D2)`, () => {
+        const ratio = contrast(
+          resolve(theme, "--s-send-ring"),
+          resolve(theme, surface)
+        );
+        expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT);
+      });
+    }
+  }
+});
+
+describe("the O4 colour values #937 decided hold", () => {
+  // A floor alone would let either value drift back to what the decision
+  // replaced: the old blue Edit tile cleared 5:1 too.
+  for (const theme of ["dark", "light"] as const) {
+    it(`${theme}: --s-edit is Slate #475569, off blue (D1, D1b)`, () => {
+      expect(resolve(theme, "--s-edit")).toBe("#475569");
+    });
+  }
+
+  it("light: --s-send-ring is #12a090 (D2)", () => {
+    expect(resolve("light", "--s-send-ring")).toBe("#12a090");
+  });
+});
+
+describe("a Finished segment's green reads on the recorder stage (#926)", () => {
+  for (const theme of ["dark", "light"] as const) {
+    it(`${theme}: --s-done bars on --s-surface — the .recorder-stage behind the canvas`, () => {
+      const ratio = contrast(
+        resolve(theme, "--s-done"),
+        resolve(theme, "--s-surface")
+      );
+      expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT);
+    });
+
+    it(`${theme}: the --s-done Play button on --s-floor — the record toolbar`, () => {
+      const ratio = contrast(
+        resolve(theme, "--s-done"),
+        resolve(theme, "--s-floor")
+      );
+      expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT);
+    });
+
+    it(`${theme}: the --s-done-ink Play glyph on --s-done`, () => {
+      const ratio = contrast(
+        resolve(theme, "--s-done-ink"),
+        resolve(theme, "--s-done")
+      );
+      expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT);
     });
   }
 });

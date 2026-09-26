@@ -1,6 +1,6 @@
 import { Notice } from "./notice";
 import { recorderStatusKind } from "./processing-status";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 import type { RecorderState } from "@/hooks/use-recorder";
 
 /**

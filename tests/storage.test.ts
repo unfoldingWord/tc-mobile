@@ -14,15 +14,12 @@ import { closeDb, getDb } from "@/lib/storage/db";
 import {
   addChapter,
   addSegment,
-  addTake,
   chapterProgress,
-  clearSegmentTake,
   createBook,
   getBook,
   getChapter,
   getSegment,
   getSegmentsOfChapter,
-  isFinished,
   isStaleBookFailure,
   listBooks,
   nextBookName,
@@ -31,9 +28,15 @@ import {
   renameChapter,
   renameSegment,
   resolveChapterClipIds,
+  setBookCoverColour,
+} from "@/lib/storage/books";
+import {
+  addTake,
+  clearSegmentTake,
+  isFinished,
   saveTake,
   setSegmentFinished,
-} from "@/lib/storage/books";
+} from "@/lib/storage/takes";
 import {
   danglingReason,
   loadSegmentClip,
@@ -307,23 +310,34 @@ describe("book tree", () => {
     for (const status of notFinished) expect(isFinished(status)).toBe(false);
   });
 
-  it("rolls up finished/total for the chapter counter", async () => {
+  it("rolls up finished/total/recorded for the chapter counter and the storage-pressure gate", async () => {
     const book = await createBook("b");
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
-    await addSegment(chapter.id);
-    await addSegment(chapter.id);
+    const s2 = await addSegment(chapter.id);
+    await addSegment(chapter.id); // s3: never recorded
     await addTake(s1.id, await storedClip(), 100);
     await setSegmentFinished(s1.id, true);
+    // s2 is recorded but NOT finished ("draft") — the case `recorded` exists
+    // for (#542 Part B): it has reclaimable bytes behind it, but would not
+    // count as `finished`, and a mutation collapsing `recorded` back to
+    // `finished` must fail this exact assertion.
+    await addTake(s2.id, await storedClip(), 100);
 
     expect(await chapterProgress(chapter.id)).toEqual({
       finished: 1,
       total: 3,
+      recorded: 2,
     });
 
-    // An empty chapter is 0/0 — the UI hides the counter when total === 0.
+    // An empty chapter is 0/0/0 — the UI hides the counter when total === 0,
+    // and `hasReclaimableAudio` (`lib/view/book-rows.ts`) reads `recorded`.
     const empty = await addChapter(book.id);
-    expect(await chapterProgress(empty.id)).toEqual({ finished: 0, total: 0 });
+    expect(await chapterProgress(empty.id)).toEqual({
+      finished: 0,
+      total: 0,
+      recorded: 0,
+    });
   });
 
   it("replaces the take on re-record, deleting the superseded clip (1:1)", async () => {
@@ -407,7 +421,7 @@ describe("book tree", () => {
     // The pending-take retry path re-runs the save with the SAME clipId
     // (retrySave keeps it; putClip is an upsert). addTake then sees
     // prior.clipId === new clipId, and deleting "the superseded clip" would
-    // strand the take it just wrote — the guard at books.ts is the only thing
+    // strand the take it just wrote — the guard at takes.ts is the only thing
     // stopping that, and nothing else exercises it.
     const { segmentId } = await oneSegment();
     const clipId = await storedClip(1000);
@@ -843,6 +857,91 @@ describe("rename book and chapter", () => {
   it("rejects renaming an unknown chapter", async () => {
     await expect(renameChapter("nope" as never, "Mark 6")).rejects.toThrow(
       /No such chapter/
+    );
+  });
+});
+
+describe("book cover colour (#957)", () => {
+  it("gives a fresh book a null colour (the derived fallback until chosen)", async () => {
+    const book = await createBook("Mark");
+    // Present and null, never absent — the same shape `Chapter.name` and
+    // `Segment.label` hold for a fresh row, so a reader never meets
+    // `undefined`. `lib/cover-colour.ts`'s `resolveCoverKey` is what turns
+    // this into a real colour.
+    expect(book.coverColourKey).toBeNull();
+    expect((await getBook(book.id))?.coverColourKey).toBeNull();
+  });
+
+  it("sets a book's cover colour in place", async () => {
+    const book = await createBook("Mark", null, 1000);
+    const updated = await setBookCoverColour(book.id, "forest", 5000);
+
+    expect(updated.coverColourKey).toBe("forest");
+    // Choosing a colour is activity, the same rule `renameBook` follows:
+    // updatedAt bumps so the book floats up the listBooks-sorted shelf.
+    expect(updated.updatedAt).toBe(5000);
+    expect((await getBook(book.id))?.coverColourKey).toBe("forest");
+  });
+
+  it("persists a chosen colour across a fresh database connection", async () => {
+    const book = await createBook("Mark");
+    await setBookCoverColour(book.id, "teal", 2000);
+
+    await closeDb();
+    const reopened = await getDb();
+    expect((await reopened.get("books", book.id))?.coverColourKey).toBe("teal");
+  });
+
+  it("clears a chosen colour back to null", async () => {
+    const book = await createBook("Mark");
+    await setBookCoverColour(book.id, "teal", 2000);
+    const cleared = await setBookCoverColour(book.id, null, 3000);
+
+    expect(cleared.coverColourKey).toBeNull();
+    expect((await getBook(book.id))?.coverColourKey).toBeNull();
+  });
+
+  it("setting the same colour again is an idempotent no-op (safe to re-run)", async () => {
+    const book = await createBook("Mark", null, 1000);
+    await setBookCoverColour(book.id, "forest", 5000);
+
+    const again = await setBookCoverColour(book.id, "forest", 9000);
+
+    // No write on the no-op: recency is unchanged, not bumped to 9000 — a
+    // re-run of the same write must not reshuffle the shelf.
+    expect(again.updatedAt).toBe(5000);
+    expect((await getBook(book.id))?.updatedAt).toBe(5000);
+  });
+
+  it("setting null when already null is an idempotent no-op", async () => {
+    const book = await createBook("Mark", null, 1000);
+    const again = await setBookCoverColour(book.id, null, 9000);
+    expect(again.updatedAt).toBe(1000);
+  });
+
+  it("re-running the exact same write repeatedly stays safe", async () => {
+    // The idempotency bar AGENTS.md asks for: calling it three times in a row
+    // with the same value leaves the store exactly where one call did.
+    const book = await createBook("Mark", null, 1000);
+    await setBookCoverColour(book.id, "brick", 2000);
+    await setBookCoverColour(book.id, "brick", 3000);
+    const third = await setBookCoverColour(book.id, "brick", 4000);
+
+    expect(third.coverColourKey).toBe("brick");
+    expect(third.updatedAt).toBe(2000);
+    expect((await getBook(book.id))?.coverColourKey).toBe("brick");
+  });
+
+  it("does not touch the book's name or language", async () => {
+    const book = await createBook("Mark", "en", 1000);
+    const updated = await setBookCoverColour(book.id, "plum", 2000);
+    expect(updated.name).toBe("Mark");
+    expect(updated.languageCode).toBe("en");
+  });
+
+  it("rejects setting a colour on an unknown book", async () => {
+    await expect(setBookCoverColour("nope" as never, "forest")).rejects.toThrow(
+      /No such book/
     );
   });
 });

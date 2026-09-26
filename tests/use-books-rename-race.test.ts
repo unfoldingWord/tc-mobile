@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { stripComments } from "./support";
+
 /**
  * `renameBook`'s catch had the identical race `addChapter`'s catch had before
  * PR #728 fixed it for #666: a genuine (non-stale) reported failure sets the
@@ -13,17 +15,9 @@ import { describe, expect, it } from "vitest";
  * as stale-and-current and silently clears the Notice the rename failure just
  * set — #732 (this PR).
  *
- * WHY A STRUCTURAL GATE AND NOT A BEHAVIOURAL TEST. `renameBook` is a
- * `useCallback` inside `useBooks()`, entangled with `setBooks`, `reload` and
- * `report` — hook-owned React state this Node-only suite (no jsdom, no
- * renderer, no timers driving a real `useEffect`) cannot exercise. #728's own
- * PR body says exactly this of the identical `addChapter` fix: "this repo's
- * render harness (`tests/render.ts`) explicitly does not run effects ...
- * nothing here drives IndexedDB read timing against a hook's own
- * `useEffect`. The fix is verified by tracing the code paths ... not by an
- * automated red test or a device run." Same shape, same limit — this file
- * pins the source text instead, the same trade `use-books-delete-failure-gate
- * .test.ts` makes for `deleteBook`'s funnel call.
+ * This is a source-text gate. It does not mount `useBooks`, run its effects
+ * or schedule IndexedDB reads against a reported failure. The static render
+ * helper in `tests/render.ts` does not exercise those timings either.
  *
  * WHAT IT PROVES, EXACTLY: that `renameBook`'s `catch (cause)` block bumps
  * `loadGen.current` inside the callback `reportUnlessStale` reports through,
@@ -34,9 +28,6 @@ import { describe, expect, it } from "vitest";
  */
 describe("renameBook invalidates an in-flight load on a reported failure (#732, mirrors #728's addChapter fix)", () => {
   const sourceUrl = new URL("../src/hooks/use-books.ts", import.meta.url);
-
-  const stripComments = (text: string) =>
-    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 
   const code = stripComments(readFileSync(sourceUrl, "utf8"));
 
@@ -95,8 +86,13 @@ describe("renameBook invalidates an in-flight load on a reported failure (#732, 
     expect(swallowedBlock).toMatch(/reload\(\)/);
 
     // Bumped in the same synchronous step that sets the Notice, and once.
+    // #172 added a `reportFailure(reported, "books-rename")` call ahead of
+    // the bump, inside the same wrapper — the pattern below was widened to
+    // admit it, not to admit a weaker guarantee: the bump is still inside
+    // the callback, still synchronous with `report`, and still exactly once
+    // (the length check below is unchanged).
     expect(catchBody).toMatch(
-      /reportUnlessStale\(\s*cause,\s*bookId,\s*\(\s*(\w+)\s*\)\s*=>\s*\{\s*loadGen\.current\s*\+=\s*1;\s*report\(\s*\1\s*\);?\s*\}\s*,?\s*\)/
+      /reportUnlessStale\(\s*cause,\s*bookId,\s*\(\s*(\w+)\s*\)\s*=>\s*\{\s*reportFailure\(\s*\1,\s*"books-rename"\s*\);\s*loadGen\.current\s*\+=\s*1;\s*report\(\s*\1\s*\);?\s*\}\s*,?\s*\)/
     );
     expect(catchBody.match(/loadGen\.current/g)).toHaveLength(1);
   });

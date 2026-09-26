@@ -31,7 +31,8 @@ Apple's normal way to try an app before it is in the App Store.
 On Android you install tC Mobile from a download link we send you, rather than
 from the Play Store. Your phone will ask you to confirm this is okay — that is
 normal. The steps below describe the usual path; button names and settings
-vary by phone and language.
+vary by phone and language. Where a word cannot be relied on, look for the
+shape, icon, or position described instead.
 
 The app needs **Android 7.0 (2016) or newer** — an older phone cannot install
 it. <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor) -->
@@ -39,20 +40,61 @@ it. <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor)
 1. **Open the download link** we send you in your phone's web browser, or
    scan the QR code we post with it. Every tester build is listed at
    <https://github.com/unfoldingWord/tc-mobile/releases> — open the newest
-   one marked **Pre-release** and tap `app-release.apk`. <!-- source: each tester build is a pre-release tagged android-release-vX.Y.Z with app-release.apk attached, from android-release-v0.2.3 on; the repo is public so the asset link needs no login -->
-2. **Download the file.** It ends in `.apk` — that is the app.
+   one marked **Pre-release** and tap `app-release.apk`. <!-- source: each tester build is a pre-release with app-release.apk attached, tagged tester-build-vX.Y.Z from tester-build-v0.2.12 on (#629; docs/native/README.md "Keep existing"), and android-release-vX.Y.Z from android-release-v0.2.3 through android-release-v0.2.12, which stay up so shared links work; the repo is public so the asset link needs no login -->
+2. **Download the file.** It ends in `.apk` — that is the app. **Some
+   browsers warn about it, or stop it, before it even finishes downloading** —
+   an `.apk` is not a document or a picture, so the browser treats it with
+   more caution than most files. You may see a small warning banner or a
+   shield-shaped icon in the notification area, asking whether to keep a file
+   that "can harm your device." That warning is the browser being cautious
+   about any app file; it is not specific to tC Mobile. Look for the button
+   that lets the download continue or keeps the file — it is usually not the
+   first or most prominent one. **Before you choose it, read the file the
+   warning names. Choose it only if that file is `app-release.apk` from the
+   releases page in step 1.** If the warning names a different file, or the
+   file came from anywhere else, stop. Do not keep it — tell the facilitator
+   instead. If the browser removes the
+   file outright instead of just warning ("blocked"), the setting that
+   controls it may be in the browser or in the phone; tell the facilitator
+   rather than guessing which one to change. <!-- source: standard
+   Chrome/Android download-warning behaviour for .apk files — this app ships
+   no download logic of its own (the file comes straight from GitHub's own
+   release-asset link, step 1 above), so nothing in src/ controls this dialog;
+   wording, icon and button position vary by browser, browser version and
+   phone language; gh issue #248, tester report 2026-09-22, source: tester
+   ("I had to tweak several settings to be able to download and then install
+   the app... These settings might be hard to find depending on the phone's
+   language"; the exact settings were not listed and are not guessed at here) -->
 3. **Your phone will warn you** that it does not usually install apps from this
-   place. This is expected. Tap **Settings** on that warning, turn on **Allow
-   from this source**, then tap **back**.
-4. **Tap Install**, then **Open** when it finishes.
+   place. This is expected. If you cannot read the words, look for a button
+   that opens a **settings** screen (often shown with a gear icon), and on
+   that screen a switch or checkbox next to this browser or file manager's
+   name — turn that **on**, then go back to the warning. In English this is
+   **Settings** and **Allow from this source**.
+4. **Tap Install**, then **Open** when it finishes. These are usually the
+   single large button on the screen at each step.
 5. **The first time you record, your phone will ask to use the microphone.**
-   Tap **Allow** — the app needs the microphone to record, and without it
-   recording will not work.
+   Allow it — the app needs the microphone to record, and without it
+   recording will not work. In English the choice that allows it may say
+   **Allow**, **While using the app** or **Only this time**; do not choose
+   **Don't allow**. On some older Android versions the button that refuses
+   may instead say **Deny** — it means the same thing as **Don't allow**. If
+   you will be recording more than once, such as over a training day,
+   choose **Allow** or **While using the app** rather than **Only this
+   time** if you can: **Only this time** may end once you leave the app, and
+   you could be asked to grant the microphone again before a later
+   recording. <!-- inference, not repo evidence: how long an "Only this
+   time" grant lasts is Android platform behaviour, and this repo has no
+   record of testing it per OS version; confidence: medium; gh issue #248,
+   PR #870 George round 2 --> The choices may be a list, one under another,
+   and the side a button sits on changes with the phone's language, so ask
+   the facilitator rather than guessing by position.
 
 If you cannot reach Install, tell the facilitator whether the download stopped
 or the downloaded file would not open. Include the phone model, screen
-language, and a photo or exact wording of the message. Some phones have extra
-steps that are not yet documented here; do not guess which settings to change.
+language, and a photo or exact wording of the message — a photo carries across
+a language you cannot read. Some phones have extra steps that are not yet
+documented here; do not guess which settings to change.
 
 ---
 
@@ -84,5 +126,6 @@ what to write down.)
 - **What you saw** — the exact message if there was one. A **photo** of the
   screen, or a **screen recording**, is enormously helpful.
 
-Send this to **Seth** (`<placeholder: support channel>`). Thank you — every
-report you send makes the app better for the translators who will use it.
+Send this to the maintainer (`<placeholder: support channel>`). Thank you —
+every report you send makes the app better for the translators who will use
+it.
