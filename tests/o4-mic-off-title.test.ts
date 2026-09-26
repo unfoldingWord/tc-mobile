@@ -8,13 +8,17 @@ import { strings } from "@/lib/strings";
 import { one, render } from "./render";
 
 /**
- * D15 (#948): in the O4 look the mic-denied panel's generic title is its own
- * key, `strings.micOffTitle`; the current look keeps `strings.micNeededTitle`.
- * Both looks are asserted here, so a change that swaps the key in the wrong
- * branch, or in both, fails in this file.
+ * D15 (#948) and the DRI's follow-up pick on PR #1033: in the O4 look the
+ * mic-denied title is always `strings.micOffTitle`, and the recorder's refusal
+ * sentence, when there is one, is a second line under it. The current look
+ * keeps `message ?? strings.micNeededTitle`. Both looks are asserted here, so
+ * a change that swaps the key or the layout in the wrong branch fails in this
+ * file.
  *
- * Props-to-markup only, through `tests/render.ts`. The design is set by
- * mocking `useDesign()`, the same seam `tests/o4-errors.test.ts` uses.
+ * Props-to-markup only, through `tests/render.ts`: no cascade, so whether the
+ * second line LOOKS like a second line is not something this file can answer.
+ * The design is set by mocking `useDesign()`, the same seam
+ * `tests/o4-errors.test.ts` uses.
  */
 let design: Design = "o4";
 
@@ -26,7 +30,7 @@ beforeEach(() => {
   design = "o4";
 });
 
-function alertText(message: string | null): string | null {
+function alertOf(message: string | null): Element {
   const container = render(
     createElement(PermissionPanel, {
       message,
@@ -34,10 +38,18 @@ function alertText(message: string | null): string | null {
       onBack: () => {},
     })
   );
-  return one(container, '[role="alert"]').textContent;
+  return one(container, '[role="alert"]');
 }
 
-describe("mic-denied title (D15)", () => {
+/** The alert's own text, without the second line's. */
+function titleText(alert: Element): string {
+  return [...alert.childNodes]
+    .filter((node) => node.nodeType === 3)
+    .map((node) => node.textContent)
+    .join("");
+}
+
+describe("mic-denied title, O4 (D15)", () => {
   it("is a key of its own, holding the DRI's wording", () => {
     // The wording D15 picked, from the O4 original; the current look's key
     // keeps its own wording until O4 becomes the default.
@@ -47,18 +59,39 @@ describe("mic-denied title (D15)", () => {
     );
   });
 
-  it("reads the O4 key in the O4 look", () => {
-    expect(alertText(null)).toBe(strings.micOffTitle);
+  it("reads the O4 key, with no second line, when there is no sentence", () => {
+    const alert = alertOf(null);
+    expect(alert.textContent).toBe(strings.micOffTitle);
+    expect(alert.querySelector(".o4-err-sub")).toBeNull();
   });
 
-  it("keeps the existing key in the current look", () => {
-    design = "current";
-    expect(alertText(null)).toBe(strings.micNeededTitle);
+  it("keeps the title fixed when a refusal sentence is passed", () => {
+    const alert = alertOf(strings.micSiteBlocked);
+    expect(titleText(alert)).toBe(strings.micOffTitle);
   });
 
-  it("still gives way to the actual refusal sentence in both looks", () => {
-    expect(alertText(strings.micSiteBlocked)).toBe(strings.micSiteBlocked);
+  it("puts the refusal sentence on a second line inside the alert", () => {
+    const alert = alertOf(strings.micSiteBlocked);
+    const sub = one(alert, ".o4-err-sub");
+    expect(sub.textContent).toBe(strings.micSiteBlocked);
+    // Last, after the title, so it reads as the line under it.
+    expect(alert.lastChild).toBe(sub);
+    expect(alert.querySelectorAll(".o4-err-sub")).toHaveLength(1);
+  });
+});
+
+describe("mic-denied title, current look", () => {
+  beforeEach(() => {
     design = "current";
-    expect(alertText(strings.micSiteBlocked)).toBe(strings.micSiteBlocked);
+  });
+
+  it("keeps the existing key when there is no sentence", () => {
+    expect(alertOf(null).textContent).toBe(strings.micNeededTitle);
+  });
+
+  it("still lets the refusal sentence replace the title, with no second line", () => {
+    const alert = alertOf(strings.micSiteBlocked);
+    expect(alert.textContent).toBe(strings.micSiteBlocked);
+    expect(alert.querySelector(".o4-err-sub")).toBeNull();
   });
 });

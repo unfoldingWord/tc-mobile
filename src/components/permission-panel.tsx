@@ -56,8 +56,14 @@ export function PermissionPanel({
         >
           <Icon name="mic" size={58} />
         </span>
+        {/* D15 (#948): the title is always "Microphone is off", and the
+            recorder's refusal sentence, when there is one, is a second line
+            under it. The sentence sits INSIDE the alert `<p>` because it is
+            the part the async permission refine updates in place, so it must
+            stay in the live region; the buttons stay outside it (#276). */}
         <p role="alert" className="o4-err-title text-ink">
-          {message ?? strings.micOffTitle}
+          {strings.micOffTitle}
+          {message !== null && <span className="o4-err-sub">{message}</span>}
         </p>
         <Control
           icon="restart"

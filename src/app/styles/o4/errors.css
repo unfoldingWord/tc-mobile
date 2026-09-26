@@ -44,6 +44,18 @@
     font-weight: 800;
     letter-spacing: -0.02em;
   }
+  /* The refusal sentence under the mic-denied title (D15). The workbench draws
+     no such line, so it takes the workbench's secondary-text convention: the
+     muted ink, below the title's size and weight. */
+  [data-design="o4"] .o4-err-sub {
+    display: block;
+    margin-top: 10px; /* #939 token */
+    font-size: 17px; /* #939 token */
+    font-weight: 600;
+    letter-spacing: normal;
+    line-height: 1.35;
+    color: var(--s-ink-muted);
+  }
   [data-design="o4"] .o4-err-wide {
     width: 280px;
     height: 84px;
