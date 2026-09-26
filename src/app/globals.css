@@ -1,6 +1,11 @@
 @import "tailwindcss";
 @import "./styles/index.css";
 
+/* Tailwind scans every non-gitignored file in the project for class names.
+   The vendored library source under third_party/ (#36) is not app code, so a
+   word in it must not become a utility in the shipped stylesheet. */
+@source not "../../third_party";
+
 /**
  * Expose the semantic roles to Tailwind so utilities (`bg-surface`,
  * `text-ink-muted`) resolve to the same tokens the component layer uses.

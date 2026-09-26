@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 
 import { createElement } from "react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   bookShareItems,
@@ -31,6 +31,7 @@ import {
   createBook,
   resolveBookChapters,
 } from "@/lib/storage/books";
+import * as clips from "@/lib/storage/clips";
 import { newClipId } from "@/lib/storage/clips";
 import { getDb } from "@/lib/storage/db";
 import { saveTake, setSegmentFinished } from "@/lib/storage/takes";
@@ -38,7 +39,7 @@ import { commitTranscode } from "@/lib/storage/transcode";
 import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { ChapterRow, SegmentRow } from "@/types/view";
 import { one, render } from "./render";
-import { clearAllStores, testCodec } from "./support";
+import { clearAllStores, noTrimDecode, ramp, testCodec } from "./support";
 
 /**
  * #1044: the export names the items it counted (`keys`), and that list rides
@@ -217,6 +218,381 @@ describe("Share Chapter, all Finished (joined, #1004): a segment left out before
     const sendView = shareO4View(send, "chapter", screen);
     expect(row(sendView.chips)).toBe("v-v");
     expect(goOutLabel(sendView)).toBe("2 of 3 go out");
+  });
+});
+
+/**
+ * #1004 residual 2, coordinator follow-up on PR #1068: the join path now
+ * reports progress per clip as it reads them (`joinFinishedChapter`), so a
+ * chapter whose join attempt gets partway through before a LATER clip turns
+ * out not joinable will have already reported some steps before the export
+ * falls back to `fillChapterPcm`'s own restart at `(0, n)`. #1049's progress
+ * machine fixes a run's `total` and `keys` at its FIRST step and rejects any
+ * later step that disagrees (`withStep`, `hooks/share-progress.ts`) — so this
+ * must be proven safe through the real counting caller
+ * (`withEncodeSteps`/`stepReporter`, as `use-chapter-share-steps.test.ts` and
+ * the describe above do), not just argued safe from the source.
+ *
+ * It is: `withEncodeSteps` fixes `segments` (hence `total`) and `keys` from
+ * the join attempt's own first report, and its `report()` only ever forwards
+ * a `done` that moves the count forward — the fallback's own `(0, n)` restart
+ * is silently absorbed there (dropped for not exceeding `last`) rather than
+ * reaching the reducer as a new run with a different `total`. Both `total`
+ * and `keys` are therefore identical between the join attempt's reports and
+ * the fallback's, because both come from the SAME `plan.present` list
+ * (`exportChapterMp3` builds one `plan` and hands it to both the join
+ * attempt and the fallback) — nothing here depends on `withEncodeSteps`
+ * papering over an actual disagreement.
+ */
+describe("Share Chapter, all Finished (joined, #1004): a later clip that is not joinable falls back without stalling or losing keys", () => {
+  it.each([1, 2])(
+    "reaches its total, drops no step, and the fallback's keys equal the join attempt's (clip index %i refused)",
+    async (notJoinableIndex) => {
+      const book = await createBook("b");
+      const chapter = await addChapter(book.id);
+      const clipIds = [newClipId(), newClipId(), newClipId()];
+      const pcms = [ramp(5_000, 1_000), ramp(5_000, 5_000), ramp(5_000, 9_000)];
+      for (const [i, clipId] of clipIds.entries()) {
+        const seg = await addSegment(chapter.id);
+        await saveTake(seg.id, clipId, pcms[i]!, CANONICAL_SAMPLE_RATE);
+        await setSegmentFinished(seg.id, true);
+        const encoded = encodeMp3(pcms[i]!);
+        // The refused clip's stored bytes are trailing bytes that are not an
+        // ID3v1 tag — the same shape `chapter-export.test.ts`'s "falls back
+        // to decode and encode" case uses. It is still a perfectly decodable
+        // MP3 (`noTrimDecode` below): only the JOIN refuses it, not the
+        // decoder, which is what forces the whole-chapter fallback rather
+        // than a per-segment skip.
+        const bytes =
+          i === notJoinableIndex
+            ? new Uint8Array([...encoded, 1, 2, 3])
+            : encoded;
+        expect(
+          await commitTranscode(
+            seg.id,
+            clipId,
+            bytes,
+            computePeaks(pcms[i]!, 4)
+          )
+        ).toBe("committed");
+      }
+      const screen = chapterShareItems(
+        clipIds.map((clipId, i) => segmentRow(i + 1, clipId))
+      );
+      const m = machine();
+      // Every event this run actually dispatches, so the assertions below can
+      // replay them one at a time and prove none was silently dropped by the
+      // reducer — not just check the state the run happened to land in.
+      const dispatched: ShareProgressEvent[] = [];
+      const dispatch = (event: ShareProgressEvent): void => {
+        dispatched.push(event);
+        m.dispatch(event);
+      };
+      let decodeCall = 0;
+      // The fallback decodes every segment in `plan.present` order (a
+      // sequential `for` loop, one `await` at a time), so the Nth decode
+      // call is always segment N's own bytes — no need to match on content.
+      const codec = testCodec(async (bytes) =>
+        noTrimDecode(pcms[decodeCall++]!, bytes)
+      );
+
+      const result = await withEncodeSteps(
+        stepReporter(() => true, dispatch),
+        () => true,
+        (counted, inner) =>
+          exportChapterMp3(chapter.id, counted, undefined, inner)
+      )(codec);
+
+      expect(result?.segments).toBe(3);
+      expect(result?.missing).toBe(0);
+      // The fallback ran (a stored MP3 the join refuses still decodes fine),
+      // not the join: the whole chapter is decoded and re-encoded once.
+      expect(codec.decodeMp3).toHaveBeenCalledTimes(3);
+      expect(codec.encodeMp3).toHaveBeenCalledTimes(1);
+
+      // Replay every dispatched `step` event against a fresh reducer: an
+      // ACCEPTED step always returns a new object (`withStep`'s `{...state,
+      // steps: ...}`), a REJECTED one returns the very same reference back.
+      // If the join attempt's partial progress and the fallback's restart
+      // ever disagreed on `total` or `keys`, the fallback's steps would come
+      // back rejected here and `replay.steps?.done` would stall.
+      const stepEvents = dispatched.filter(
+        (e): e is Extract<ShareProgressEvent, { type: "step" }> =>
+          e.type === "step"
+      );
+      expect(stepEvents.length).toBeGreaterThan(0);
+      let replay: ShareProgress = reduceShareProgress(HIDDEN, {
+        type: "begin",
+        work: "prepare",
+        now: 0,
+      });
+      for (const event of stepEvents) {
+        const before = replay;
+        replay = reduceShareProgress(replay, event);
+        expect(replay).not.toBe(before);
+        expect(replay.phase === "busy" && replay.steps?.done).toBe(event.done);
+      }
+
+      const after = m.state();
+      if (after.phase !== "busy") throw new Error("expected a busy prepare");
+      // The count reached its total — the 3 segments plus the encode
+      // stretch — not just some partial value from the abandoned attempt.
+      expect(after.steps?.done).toBe(after.steps?.total);
+      // The keys the fallback finished with are exactly the keys the join
+      // attempt opened with: the SAME `plan.present` list, not a second,
+      // possibly-different list `withStep` would have had to reject.
+      expect(after.steps?.keys).toEqual(clipIds);
+      const prepareView = shareO4View(after, "chapter", screen);
+      expect(row(prepareView.chips)).toBe("vvv");
+      expect(goOutLabel(prepareView)).toBe("3 of 3 go out");
+      const carried = carryFromPrepare(after);
+      expect(carried).toBeDefined();
+      const send = sendCarrying(carried!);
+      if (send.phase === "hidden") throw new Error("expected a busy send");
+      const sendView = shareO4View(send, "chapter", screen);
+      expect(row(sendView.chips)).toBe("vvv");
+      expect(goOutLabel(sendView)).toBe("3 of 3 go out");
+    }
+  );
+});
+
+/**
+ * Review bench round 2 on PR #1068 (Frank, chapter.ts:438 as it stood at
+ * 39891f53): the per-clip `onStep` used to fire the moment a clip was read,
+ * BEFORE the join as a whole was known to succeed. A clip already reported
+ * present there can vanish before a later, independent re-read — and once
+ * that clip's "present" step has already reached the reducer, a re-read that
+ * discovers it missing cannot correct the record: `withStep`'s hollow
+ * placement infers a skip's POSITION from the `done`/`skipped` delta between
+ * two reports it actually received, not from an explicit index, so a
+ * dropped or delayed intermediate report makes it attribute the hollow to
+ * the wrong item. This reproduces that exact scenario end to end (through
+ * `withEncodeSteps`/`stepReporter`/`reduceShareProgress`, the real counting
+ * path) and pins the CORRECT outcome: the hollow lands on the clip that
+ * actually vanished, not a neighbour.
+ */
+describe("Share Chapter, all Finished (joined, #1004 bench round 2): a later clip not joinable AND an earlier clip vanishing before the re-read", () => {
+  it("places the hollow on the vanished clip's position, not a neighbouring one", async () => {
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id);
+    const clipIds = [newClipId(), newClipId(), newClipId()];
+    const pcms = [ramp(5_000, 1_000), ramp(5_000, 5_000), ramp(5_000, 9_000)];
+    for (const [i, clipId] of clipIds.entries()) {
+      const seg = await addSegment(chapter.id);
+      await saveTake(seg.id, clipId, pcms[i]!, CANONICAL_SAMPLE_RATE);
+      await setSegmentFinished(seg.id, true);
+      const encoded = encodeMp3(pcms[i]!);
+      // Clip 1 (the middle one) is refused by the JOIN — not missing, just
+      // not byte-joinable — which is what forces the whole-chapter fallback
+      // rather than a per-segment skip.
+      const bytes = i === 1 ? new Uint8Array([...encoded, 1, 2, 3]) : encoded;
+      expect(
+        await commitTranscode(seg.id, clipId, bytes, computePeaks(pcms[i]!, 4))
+      ).toBe("committed");
+    }
+    const screen = chapterShareItems(
+      clipIds.map((clipId, i) => segmentRow(i + 1, clipId))
+    );
+    const m = machine();
+    const dispatched: ShareProgressEvent[] = [];
+    const dispatch = (event: ShareProgressEvent): void => {
+      dispatched.push(event);
+      m.dispatch(event);
+    };
+    const real = clips.getClip.bind(clips);
+    const readsOf = new Map<string, number>();
+    // Clip 0 is present on its FIRST read (whatever pass reads it first) and
+    // gone on every read after that — "vanishes before the fallback's
+    // re-read" without assuming which pass reads it first.
+    const spy = vi.spyOn(clips, "getClip").mockImplementation(async (id) => {
+      const n = (readsOf.get(id) ?? 0) + 1;
+      readsOf.set(id, n);
+      if (id === clipIds[0] && n >= 2) return undefined;
+      return real(id);
+    });
+    let decodeCall = 0;
+    const codec = testCodec(async (bytes) =>
+      noTrimDecode(pcms[decodeCall++]!, bytes)
+    );
+
+    const result = await withEncodeSteps(
+      stepReporter(() => true, dispatch),
+      () => true,
+      (counted, inner) =>
+        exportChapterMp3(chapter.id, counted, undefined, inner)
+    )(codec).finally(() => spy.mockRestore());
+
+    // Clip 0 vanished before the fallback could decode it; the other two
+    // (clip 1's join-unsafe bytes still decode fine, clip 2 is untouched)
+    // contributed audio.
+    expect(result?.segments).toBe(2);
+    expect(result?.missing).toBe(1);
+
+    const stepEvents = dispatched.filter(
+      (e): e is Extract<ShareProgressEvent, { type: "step" }> =>
+        e.type === "step"
+    );
+    expect(stepEvents.length).toBeGreaterThan(0);
+    let replay: ShareProgress = reduceShareProgress(HIDDEN, {
+      type: "begin",
+      work: "prepare",
+      now: 0,
+    });
+    for (const event of stepEvents) {
+      const before = replay;
+      replay = reduceShareProgress(replay, event);
+      // Every dispatched step must be ACCEPTED (a fresh object), never
+      // rejected (the same reference back) — the failure mode this test
+      // pins is a MISPLACED hollow, not just a dropped step, but a dropped
+      // step is what would let a stale value stand uncorrected.
+      expect(replay).not.toBe(before);
+    }
+
+    const after = m.state();
+    if (after.phase !== "busy") throw new Error("expected a busy prepare");
+    expect(after.steps?.done).toBe(after.steps?.total);
+    expect(after.steps?.keys).toEqual(clipIds);
+    // The hollow is clip 0's position (index 0) — not clip 1's (index 1),
+    // which is what the bug produced.
+    expect(after.steps?.hollow).toEqual([0]);
+    const prepareView = shareO4View(after, "chapter", screen);
+    // Clip 0 (vanished, hollow) reads as excluded ("-"); clips 1 and 2
+    // (both contributed audio in the end) read as finished ("v").
+    expect(row(prepareView.chips)).toBe("-vv");
+    expect(goOutLabel(prepareView)).toBe("2 of 3 go out");
+    const send = sendCarrying(carryFromPrepare(after)!);
+    if (send.phase === "hidden") throw new Error("expected a busy send");
+    const sendView = shareO4View(send, "chapter", screen);
+    expect(row(sendView.chips)).toBe("-vv");
+    expect(goOutLabel(sendView)).toBe("2 of 3 go out");
+  });
+});
+
+/**
+ * Review bench round 2 on PR #1068 (George, chapter.ts:441-443 as it stood at
+ * 39891f53): the per-clip read loop could already report `done` reaching the
+ * join's own total BEFORE `joinMp3` (the byte-level join across every piece)
+ * had even run — every individual clip can parse fine
+ * (`parseJoinableMp3`) while `joinMp3` itself still refuses the set (its own,
+ * stricter checks: matching format across pieces, and each piece actually
+ * covering the length pass 1 reserved for it, `coversRecording`). Once that
+ * refusal forced the fallback, `withEncodeSteps`'s forward-only guard
+ * (`report()`'s `done > last`) swallowed every one of the fallback's own
+ * fresh reports, because `last` already sat at the join's total — so the
+ * visible count parked there until the encoder's own fractional progress
+ * (which this test's codec never sends) happened to push past it. This pins
+ * that the fallback's OWN steps — not just the final "the encode resolved"
+ * push — reach the reducer and move the count.
+ */
+describe("Share Chapter, all Finished (joined, #1004 bench round 2): joinMp3 refuses a chapter every clip individually parsed", () => {
+  it("moves the visible count through the fallback's own steps, not just the encode's final push", async () => {
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id);
+    const clipIds = [newClipId(), newClipId(), newClipId()];
+    // What each segment actually RECORDED (fixes `frameCount`/`recorded`).
+    const recorded = [
+      ramp(5_000, 1_000),
+      ramp(5_000, 5_000),
+      ramp(5_000, 9_000),
+    ];
+    // What was actually STORED as the Finished transcode: a much longer
+    // encode than the segment recorded. Every one of these still parses as a
+    // perfectly valid mono MPEG-1 stream (`parseJoinableMp3` succeeds for
+    // each), but `joinMp3`'s `coversRecording` check refuses a piece whose
+    // granule count does not cover its OWN `recorded` length — so the WHOLE
+    // join refuses, even though nothing failed a per-clip parse.
+    const stored = [
+      ramp(50_000, 1_000),
+      ramp(50_000, 5_000),
+      ramp(50_000, 9_000),
+    ];
+    for (const [i, clipId] of clipIds.entries()) {
+      const seg = await addSegment(chapter.id);
+      await saveTake(seg.id, clipId, recorded[i]!, CANONICAL_SAMPLE_RATE);
+      await setSegmentFinished(seg.id, true);
+      expect(
+        await commitTranscode(
+          seg.id,
+          clipId,
+          encodeMp3(stored[i]!),
+          computePeaks(recorded[i]!, 4)
+        )
+      ).toBe("committed");
+    }
+    const screen = chapterShareItems(
+      clipIds.map((clipId, i) => segmentRow(i + 1, clipId))
+    );
+    const m = machine();
+    const dispatched: ShareProgressEvent[] = [];
+    const dispatch = (event: ShareProgressEvent): void => {
+      dispatched.push(event);
+      m.dispatch(event);
+    };
+    let decodeCall = 0;
+    // What the machine's own `done` reads at the moment EACH decode call
+    // starts. This is the assertion that actually distinguishes the bug from
+    // the fix: if every clip parses fine (as here) the join's own per-clip
+    // reads already carry `done` up to the join's raw total before `joinMp3`
+    // even runs — so a naive value-sequence check on the FINAL dispatched
+    // events looks identical whether the fallback's reports get through or
+    // are silently dropped (the same numbers arrive either way, just from a
+    // different source). Reading the machine live, from INSIDE the decode
+    // call that is the fallback's actual work, is what tells them apart: the
+    // count must still read what the fallback ITSELF has gathered so far —
+    // not a value the doomed join attempt already claimed.
+    const doneAtDecode: number[] = [];
+    const codec = testCodec(async (bytes) => {
+      const state = m.state();
+      doneAtDecode.push(
+        state.phase === "busy" ? (state.steps?.done ?? -1) : -1
+      );
+      return noTrimDecode(stored[decodeCall++]!, bytes);
+    });
+
+    const result = await withEncodeSteps(
+      stepReporter(() => true, dispatch),
+      () => true,
+      (counted, inner) =>
+        exportChapterMp3(chapter.id, counted, undefined, inner)
+    )(codec);
+
+    expect(result?.segments).toBe(3);
+    expect(result?.missing).toBe(0);
+    // The fallback ran (decode every clip, encode once) — the join itself
+    // never got to build a file.
+    expect(codec.decodeMp3).toHaveBeenCalledTimes(3);
+    expect(codec.encodeMp3).toHaveBeenCalledTimes(1);
+
+    // The fallback decodes clip 0, 1, 2 in order (a sequential loop, one
+    // `await` at a time): at each one's OWN decode, the visible count must
+    // read only what has ACTUALLY been gathered by then (0, 1, 2 — the
+    // fallback's own progress), never the join's already-claimed 3. Reading
+    // 3 here would mean the ring showed "gather done" before the audio that
+    // sentence describes had actually been produced — the parking bug.
+    expect(doneAtDecode).toEqual([0, 1, 2]);
+
+    const stepEvents = dispatched.filter(
+      (e): e is Extract<ShareProgressEvent, { type: "step" }> =>
+        e.type === "step"
+    );
+    let replay: ShareProgress = reduceShareProgress(HIDDEN, {
+      type: "begin",
+      work: "prepare",
+      now: 0,
+    });
+    for (const event of stepEvents) {
+      const before = replay;
+      replay = reduceShareProgress(replay, event);
+      expect(replay).not.toBe(before);
+    }
+
+    const after = m.state();
+    if (after.phase !== "busy") throw new Error("expected a busy prepare");
+    expect(after.steps?.done).toBe(after.steps?.total);
+    expect(after.steps?.keys).toEqual(clipIds);
+    const prepareView = shareO4View(after, "chapter", screen);
+    expect(row(prepareView.chips)).toBe("vvv");
+    expect(goOutLabel(prepareView)).toBe("3 of 3 go out");
   });
 });
 

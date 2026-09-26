@@ -313,25 +313,36 @@ describe("O4: the Cover colour tile opens #964's picker (#937 D7)", () => {
 });
 
 describe("O4: the app ≡ menu on tiles (the workbench's G1)", () => {
-  it("puts the theme tile at the far end of a tile grid, its name holding its caption", async () => {
+  it("puts About first in the tile grid and keeps the theme tile at the far end (DRI: PR #1019 review, About becomes a tile, theme tile stays last)", async () => {
     await mount();
     await openFrom(strings.menuOpen);
     const menu = appMenu();
     expect(menu).not.toBeNull();
     const grid = menu!.querySelector(".o4-tiles");
     expect(grid).not.toBeNull();
-    const kids = [...grid!.children];
-    expect(kids[0]!.classList).toContain("o4-tiles-gap");
     const tiles = tilesIn(menu!);
-    expect(tiles).toHaveLength(1);
-    const theme = tiles[0]!;
+    expect(tiles).toHaveLength(2);
+    const [about, theme] = tiles as [HTMLButtonElement, HTMLButtonElement];
+    expect(about.getAttribute("aria-label")).toBe(strings.aboutOpen);
+    expect(about.classList).toContain("o4-tile--plain");
     expect(theme.classList).toContain("o4-tile--plain");
-    const caption = theme.querySelector(".control-caption")!.textContent!;
-    expect(theme.getAttribute("aria-label")!.toLowerCase()).toContain(
-      caption.toLowerCase()
-    );
-    // The theme tile is the first thing focus lands on, as the toggle is now.
-    expect(document.activeElement).toBe(theme);
+    for (const tile of tiles) {
+      const caption = tile.querySelector(".control-caption")?.textContent;
+      expect(caption, tile.getAttribute("aria-label") ?? "").toBeTruthy();
+      expect(tile.getAttribute("aria-label")!.toLowerCase()).toContain(
+        caption!.toLowerCase()
+      );
+    }
+    // The gap sits between the two tiles, pushing the theme tile to the far
+    // end while About stays the grid's first tile.
+    const kids = [...grid!.children];
+    expect(kids[0]).toBe(about);
+    const gapAt = kids.findIndex((k) => k.classList.contains("o4-tiles-gap"));
+    expect(gapAt).toBeGreaterThan(0);
+    expect(kids[gapAt + 1]).toBe(theme);
+    // About is the first thing focus lands on when the menu opens, per the
+    // DRI ruling: focus follows the first tile, not the theme tile.
+    expect(document.activeElement).toBe(about);
     await key("Escape");
     expect(document.activeElement).toBe(button(strings.menuOpen));
   });
