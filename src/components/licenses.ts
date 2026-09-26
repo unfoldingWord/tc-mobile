@@ -58,16 +58,16 @@ interface ThirdPartyLicense {
 
 /**
  * Everything bundled into the app: the `package.json` runtime dependencies plus
- * two build-time injections the runtime closure cannot see — Workbox, which
- * vite-plugin-pwa injects into the service worker (it emits `dist/workbox-*.js`,
- * whose header varies by build, so its notice is disclosed here to travel
- * regardless), and Vite's own module-preload polyfill, which the build writes
- * at the top of the app entry chunk (Frank P2, bench round 1 on #1019). lamejs
- * is first and carries the copyleft
- * note; the rest are
- * permissive (MIT/ISC) and their verbatim notices ride in
- * `THIRD-PARTY-NOTICES.txt`. Versions are the installed ones — the test pins
- * every entry and keeps the dependency set complete.
+ * the code the build itself writes into `dist/` from dev dependencies, which the
+ * runtime closure cannot see — e.g. Workbox's service worker, Vite's preload
+ * helpers, Rolldown's module runtime. The build records those in
+ * `dist/build-provenance.json`, and `tests/dist-source-offer.test.ts` fails when
+ * that manifest names a package this table does not cover (Frank round 3 on
+ * #1019), so the list of build-time entries is derived, not counted by hand.
+ * lamejs is first and carries the copyleft note; the rest are permissive
+ * (MIT/ISC/0BSD) and their verbatim notices ride in `THIRD-PARTY-NOTICES.txt`.
+ * Versions are the installed ones — the tests pin every entry and keep the set
+ * complete.
  */
 export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   {
@@ -208,9 +208,33 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     name: "vite",
     version: "8.3.0",
     spdx: "MIT",
-    role: "module-preload polyfill, injected into the app entry at build time",
+    role: "module-preload polyfill and preload helper, written into the app at build time",
     copyright: "© 2019-present VoidZero Inc. and Vite contributors",
     noticeMarker: "VoidZero Inc. and Vite contributors",
+  },
+  {
+    name: "rolldown",
+    version: "1.2.9",
+    spdx: "MIT",
+    role: "bundler module runtime, written into the app at build time",
+    copyright: "© 2024-present VoidZero Inc. & Contributors",
+    noticeMarker: "VoidZero Inc. & Contributors",
+  },
+  {
+    name: "tailwindcss",
+    version: "4.3.3",
+    spdx: "MIT",
+    role: "base styles and theme, written into the app's stylesheet at build time",
+    copyright: "© Tailwind Labs, Inc.",
+    noticeMarker: "Tailwind Labs, Inc.",
+  },
+  {
+    name: "vite-plugin-pwa",
+    version: "1.3.0",
+    spdx: "MIT",
+    role: "service-worker registration script, generated at build time",
+    copyright: "© 2020-present Anthony Fu",
+    noticeMarker: "Anthony Fu",
   },
 ];
 

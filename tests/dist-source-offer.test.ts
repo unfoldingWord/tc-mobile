@@ -94,6 +94,53 @@ describe.skipIf(gate === "skip")(
       }
     });
 
+    it("discloses every package the build provenance names", () => {
+      // The runtime-closure walk in tests/licenses.test.ts cannot see code the
+      // BUILD writes into dist/ from a dev dependency; three such injections
+      // were found by hand in one PR (Workbox, Vite, Rolldown — Frank round 3
+      // on #1019). vite.config.ts's build-provenance plugin records every one
+      // in dist/build-provenance.json, so the set is derived from the build.
+      const file = path.join(DIST, "build-provenance.json");
+      expect(existsSync(file), "dist/build-provenance.json is missing").toBe(
+        true
+      );
+      const entries = JSON.parse(readFileSync(file, "utf8")) as {
+        module: string;
+        package: string | null;
+        version: string | null;
+      }[];
+      // Floor: a plugin that silently records nothing must not pass. Rolldown's
+      // runtime and Vite's preload helpers are in every build of this app.
+      const packages = entries.map((e) => e.package);
+      expect(entries.length).toBeGreaterThanOrEqual(2);
+      expect(packages).toContain("rolldown");
+      expect(packages).toContain("vite");
+
+      const sections = readFileSync(
+        path.join(ROOT, "public/licenses/THIRD-PARTY-NOTICES.txt"),
+        "utf8"
+      ).split(/\n=+\n/);
+      for (const e of entries) {
+        // A null package is an injected file the plugin could not attribute.
+        expect(e.package, `${e.module} has no owning package`).not.toBeNull();
+        const row = thirdPartyLicenses.find(
+          (l) => (l.pinPackage ?? l.name) === e.package
+        );
+        expect(
+          row,
+          `${e.package} (${e.module}) ships but is not disclosed`
+        ).toBeDefined();
+        expect(
+          row!.version,
+          `${e.package} disclosed at the wrong version`
+        ).toBe(e.version);
+        expect(
+          sections.some((s) => s.includes(`${row!.name} ${row!.version}`)),
+          `${row!.name} ${row!.version} has no THIRD-PARTY-NOTICES section`
+        ).toBe(true);
+      }
+    });
+
     it("does not ship the vendored folder itself", () => {
       expect(distFiles(DIST).filter((f) => f.includes("third_party"))).toEqual(
         []
