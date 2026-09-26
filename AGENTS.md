@@ -387,7 +387,11 @@ resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
 unusable after the resume await — `"playback-resume-timeout"` when the
 1000 ms bound was what ended it, `"playback-resume-unusable"` when an
 earlier rejection did or a fresh interruption arrived during the post-fill
-yield, #469), and the log's own share and clear paths. `SaveFailed` now
+yield, #469), the tester-only phone check (`hooks/phone-check-probes.ts`,
+`"phone-check"`, #1009: a probe that throws, and a `sessionStorage`
+breadcrumb that cannot be read or written — a failed memory-ceiling
+allocation is the measurement, not a failure, and is not reported), and
+the log's own share and clear paths. `SaveFailed` now
 carries the same `SendLogControl` the crash screen does (#456, moved into
 its own module, `components/send-log-control.tsx`, so both screens share one
 implementation) — `DatabasePanel` still does not: #456 itself calls that a
