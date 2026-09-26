@@ -870,8 +870,23 @@ export const SegmentsScreen = forwardRef<
       }
       // Segments renumber after a move (the DRI's "Renumber" pick), so the
       // row's new number is its new position.
-      if (row) setReorderStatus(strings.reorderMoved(row.ordinal, toIndex + 1));
-      void moveSegment(segmentId, toIndex);
+      if (!row) {
+        void moveSegment(segmentId, toIndex);
+        return;
+      }
+      const moved = strings.reorderMoved(row.ordinal, toIndex + 1);
+      setReorderStatus(moved);
+      // A write that did not land puts the row back (`moveSegment` resolves
+      // false, having reported it), so the spoken line must not keep saying
+      // it moved (George round 1 on #1057). Only if nothing newer has been
+      // said since.
+      void moveSegment(segmentId, toIndex).then((landed) => {
+        if (!landed) {
+          setReorderStatus((s) =>
+            s === moved ? strings.reorderStayed(row.ordinal) : s
+          );
+        }
+      });
     },
     onCancel: (index) => {
       const row = rows[index];

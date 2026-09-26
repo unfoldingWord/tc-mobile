@@ -385,6 +385,75 @@ describe("the drag and the one write", () => {
     expect(moveSegment).not.toHaveBeenCalled();
   });
 
+  // Frank round 1 on #1057: a second pointer's position reached the cached
+  // coordinates the scroll path re-submits as the first pointer's.
+  it("ignores another pointer's moves, even when the list scrolls after them", async () => {
+    await mount();
+    await hold(badge(0), 45);
+    await act(async () =>
+      pointer(badge(0), "pointermove", 690, {
+        pointerId: 2,
+        isPrimary: false,
+      })
+    );
+    await act(async () => {
+      document
+        .querySelector(".segments-body")!
+        .dispatchEvent(new Event("scroll"));
+    });
+    await act(async () => pointer(badge(0), "pointerup", 45));
+    expect(moveSegment).not.toHaveBeenCalled();
+    expect(liveText()).toBe(strings.reorderStayed(1));
+  });
+
+  // Frank round 1 on #1057: the lifted row's transform grows the overflow,
+  // so an unbounded auto-scroll ran on into blank space.
+  it("stops the auto-scroll at the list's extent measured at the lift", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((run: FrameRequestCallback) => frames.push(run))
+    );
+    await mount();
+    const body = document.querySelector<HTMLElement>(".segments-body")!;
+    let scrollTop = 0;
+    let scrollHeight = 1000;
+    Object.defineProperty(body, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (v: number) => {
+        scrollTop = v;
+      },
+    });
+    Object.defineProperty(body, "scrollHeight", {
+      configurable: true,
+      get: () => scrollHeight,
+    });
+    Object.defineProperty(body, "clientHeight", {
+      configurable: true,
+      get: () => 700,
+    });
+    await hold(badge(2), 245);
+    // Held within the bottom edge band, while the overflow grows under it.
+    await act(async () => pointer(badge(2), "pointermove", 690));
+    scrollHeight = 5000;
+    for (let i = 0; i < 200 && frames.length > 0; i++) frames.shift()!(0);
+    expect(scrollTop).toBeGreaterThan(0);
+    expect(scrollTop).toBe(300);
+  });
+
+  // George round 1 on #1057: the live region kept "moved" after a write that
+  // did not land and put the row back.
+  it("says the row stayed when the write does not land", async () => {
+    moveSegment = vi.fn(() => Promise.resolve(false));
+    await mount();
+    await hold(badge(0), 45);
+    await act(async () => pointer(badge(0), "pointermove", 260));
+    await act(async () => pointer(badge(0), "pointerup", 260));
+    expect(moveSegment).toHaveBeenCalledWith("s0", 2);
+    expect(liveText()).toBe(strings.reorderStayed(1));
+  });
+
   /** Drag row 0 to the end, then apply the hook's optimistic patch. */
   async function dragFirstToLast() {
     await hold(badge(0), 45);

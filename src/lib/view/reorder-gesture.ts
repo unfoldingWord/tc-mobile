@@ -50,7 +50,8 @@ export interface ReorderCallbacks {
   /**
    * The hold completed on row `index`. Returns every row's midpoint in
    * content coordinates, measured now, or `null` to refuse the lift (nothing
-   * to measure); a refused lift ends the gesture with no callback.
+   * to measure); a refused or throwing lift ends the gesture with
+   * `cancel(false)` (nothing was lifted, so nothing is put back).
    */
   lift(index: number): readonly number[] | null;
   /** The lifted row moved. Called on every move, never writes. */
@@ -118,8 +119,20 @@ export function createReorderGesture(
     // Idle BEFORE asking: `lift` measures the DOM, and a throw or a refusal
     // there must not leave a pending gesture whose timer has already fired.
     state = { phase: "idle" };
-    const midpoints = cb.lift(index);
-    if (!midpoints || index >= midpoints.length) return;
+    // A refusal or a throw still ends the gesture through `cancel(false)`, so
+    // the caller lets go of what it holds for the press (George round 1 on
+    // #1057: a silent refusal left the DOM half's listeners attached).
+    let midpoints: readonly number[] | null;
+    try {
+      midpoints = cb.lift(index);
+    } catch (cause) {
+      cb.cancel(false);
+      throw cause;
+    }
+    if (!midpoints || index >= midpoints.length) {
+      cb.cancel(false);
+      return;
+    }
     state = {
       phase: "lifted",
       pointerId,

@@ -93,6 +93,23 @@ describe("the hold", () => {
     gesture.up(1);
     expect(cb.drag).not.toHaveBeenCalled();
     expect(cb.drop).not.toHaveBeenCalled();
+    // The refusal still ends the gesture where the caller hears it, so the
+    // DOM half lets go of its listeners (George round 1 on #1057).
+    expect(cb.cancel).toHaveBeenCalledTimes(1);
+    expect(cb.cancel).toHaveBeenCalledWith(false);
+  });
+
+  it("ends a throwing lift with cancel(false) and lets the throw through", () => {
+    const { gesture, cb } = harness();
+    const boom = new Error("measure failed");
+    vi.mocked(cb.lift).mockImplementation(() => {
+      throw boom;
+    });
+    gesture.down(1, 0, 10, 45);
+    expect(() => vi.advanceTimersByTime(REORDER_HOLD_MS)).toThrow(boom);
+    expect(cb.cancel).toHaveBeenCalledTimes(1);
+    expect(cb.cancel).toHaveBeenCalledWith(false);
+    expect(gesture.phase()).toBe("idle");
   });
 
   it("ignores a second pointer while one gesture is in progress", () => {

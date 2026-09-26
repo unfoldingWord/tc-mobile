@@ -98,6 +98,8 @@ export function useSegmentReorder<Id>(
   const handle = useRef<Element | null>(null);
   const alive = useRef(true);
   const startIndex = useRef(0);
+  /** The furthest the auto-scroll may go, measured at the lift. */
+  const scrollMax = useRef(0);
 
   /** The pointer's position in the scrolled content, from the viewport's. */
   const contentY = useCallback((clientY: number): number => {
@@ -154,7 +156,15 @@ export function useSegmentReorder<Id>(
       if (!el || gesture.current?.phase() !== "lifted") return;
       const rect = el.getBoundingClientRect();
       const step = autoScrollStep(lastClient.current.y, rect.top, rect.bottom);
-      if (step !== 0) el.scrollTop += step;
+      // Bounded by the list's extent measured at the lift, before any
+      // transform: the lifted row's own translateY adds overflow, and
+      // scrolling into it would grow it again without end (Frank round 1 on
+      // #1057).
+      const next = Math.min(
+        scrollMax.current,
+        Math.max(0, el.scrollTop + step)
+      );
+      if (next !== el.scrollTop) el.scrollTop = next;
       frame.current = window.requestAnimationFrame(scrollFrame);
     };
     return createReorderGesture({
@@ -165,6 +175,7 @@ export function useSegmentReorder<Id>(
         const nodes = ids.map((id) => nodeFor(id));
         if (nodes.some((n) => n === null)) return null;
         const top = el.getBoundingClientRect().top - el.scrollTop;
+        scrollMax.current = Math.max(0, el.scrollHeight - el.clientHeight);
         const rects = nodes.map((n) => n!.getBoundingClientRect());
         const midpoints = rects.map((r) => r.top - top + r.height / 2);
         const own = rects[index]!;
@@ -226,6 +237,10 @@ export function useSegmentReorder<Id>(
       g.down(pointerId, index, e.clientX, contentY(e.clientY));
 
       const onMove = (ev: PointerEvent) => {
+        // Another pointer's position must not reach `lastClient`: the
+        // auto-scroll and `onScroll` read it as this pointer's (Frank round 1
+        // on #1057: a second finger moved the drop target).
+        if (ev.pointerId !== pointerId) return;
         lastClient.current = { x: ev.clientX, y: ev.clientY };
         g.move(ev.pointerId, ev.clientX, contentY(ev.clientY));
       };
