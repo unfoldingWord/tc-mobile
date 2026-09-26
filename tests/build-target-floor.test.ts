@@ -66,16 +66,77 @@ const EXPECTED_TARGET = [
   "ios15",
 ];
 
-function configuredBuildTarget(): string[] {
-  const source = readFileSync(CONFIG, "utf8");
-  const match = source.match(/\btarget:\s*\[([^\]]*)\]/);
-  const body = match?.[1];
-  if (body === undefined)
-    throw new Error(
-      "could not find an explicit build.target array in vite.config.ts"
-    );
-  return [...body.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? "");
+function propName(node: ts.PropertyAssignment): string | undefined {
+  return ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)
+    ? node.name.text
+    : undefined;
 }
+
+/** Every `target: [...]` array literal that sits directly on a `build: {}`
+ *  object literal in `source`, read from the TypeScript syntax tree — so a
+ *  commented-out `target` (Frank R1 on #1051) is not a match, and an unrelated
+ *  earlier `target: [` elsewhere in the file cannot be mistaken for it. */
+function buildTargetsIn(source: string): string[][] {
+  const sourceFile = ts.createSourceFile(
+    "vite.config.ts",
+    source,
+    ts.ScriptTarget.Latest,
+    true
+  );
+  const found: string[][] = [];
+  function visit(node: ts.Node): void {
+    if (
+      ts.isPropertyAssignment(node) &&
+      propName(node) === "build" &&
+      ts.isObjectLiteralExpression(node.initializer)
+    ) {
+      for (const prop of node.initializer.properties) {
+        if (
+          ts.isPropertyAssignment(prop) &&
+          propName(prop) === "target" &&
+          ts.isArrayLiteralExpression(prop.initializer)
+        )
+          found.push(
+            prop.initializer.elements.map((e) =>
+              ts.isStringLiteral(e) ? e.text : `<non-literal ${e.getText()}>`
+            )
+          );
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return found;
+}
+
+function configuredBuildTarget(): string[] {
+  const found = buildTargetsIn(readFileSync(CONFIG, "utf8"));
+  const [only] = found;
+  if (found.length !== 1 || only === undefined)
+    throw new Error(
+      `expected exactly one build.target array literal in vite.config.ts, found ${found.length}`
+    );
+  return only;
+}
+
+describe("buildTargetsIn (AST, not raw text)", () => {
+  it("finds a live build.target array", () => {
+    const source = 'export default { build: { target: ["safari15"] } };';
+    expect(buildTargetsIn(source)).toEqual([["safari15"]]);
+  });
+
+  it("does not count a commented-out build.target as one", () => {
+    const source =
+      'export default { build: {\n  // target: ["safari15"],\n  minify: true } };';
+    expect(buildTargetsIn(source)).toEqual([]);
+  });
+
+  it("does not count a target array outside build as one", () => {
+    const source =
+      'export default { esbuild: { target: ["safari15"] }, build: {} };';
+    expect(buildTargetsIn(source)).toEqual([]);
+  });
+});
 
 describe("vite.config.ts pins build.target to the stated device floor (#1017 Q1)", () => {
   it("sets an explicit target, not Vite's rolling baseline-widely-available default", () => {
