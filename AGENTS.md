@@ -389,7 +389,7 @@ unusable after the resume await — `"playback-resume-timeout"` when the
 earlier rejection did or a fresh interruption arrived during the post-fill
 yield, #469), the tester-only phone check (`hooks/phone-check-probes.ts`,
 `"phone-check"`, #1009: a probe that throws, and a `sessionStorage`
-breadcrumb that cannot be read or written — a failed memory-ceiling
+breadcrumb or saved result that cannot be read or written — a failed memory-ceiling
 allocation is the measurement, not a failure, and is not reported), and
 the log's own share and clear paths. `SaveFailed` now
 carries the same `SendLogControl` the crash screen does (#456, moved into

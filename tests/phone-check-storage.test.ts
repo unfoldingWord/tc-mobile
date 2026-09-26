@@ -23,11 +23,15 @@ import { runAllocationSteps } from "@/lib/phone-check/allocation";
  * #1009 — the phone check never touches the app's data.
  *
  * The storage probe must use its own throwaway IndexedDB database and delete
- * it afterwards, on success and on failure; and nothing the check runs may
- * open the app's database (`"tc-mobile"`, `lib/storage/db.ts`) at all, so it
- * cannot be opened for writing. The proof is a spy on `indexedDB.open` — the
- * one door every IndexedDB connection goes through, `idb` and `getDb` alike —
- * recording every name opened while the check runs.
+ * it afterwards, on success and on failure; and the probes run here must never
+ * open a connection of their own to the app's database (`"tc-mobile"`,
+ * `lib/storage/db.ts`). The proof is a spy on `indexedDB.open` — the one door
+ * every IndexedDB connection goes through, `idb` and `getDb` alike —
+ * recording every name opened while the device, storage and allocation probes
+ * run. It does not run the worker encode, and no durable failure log is
+ * subscribed here: in the app, a probe FAILURE reaches the failure log through
+ * `reportFailure`, and that log writes to its own store in the app's database
+ * by design.
  */
 
 /** The app's database name, private to `lib/storage/db.ts`; kept in sync by hand as in db-open.test.ts. */
@@ -73,6 +77,21 @@ describe("the storage probe's throwaway database", () => {
     // about a database that existed, not one that never did.
     expect(opened).toContain(PHONE_CHECK_DB_NAME);
     expect(await databaseNames()).not.toContain(PHONE_CHECK_DB_NAME);
+  });
+
+  it("times the writes only, not building the test chunks", async () => {
+    // A clock that moves only while a chunk is being built: if building sat
+    // inside the timed region, the write time would be chunks x 1000 ms.
+    let t = 0;
+    const result = await runStorageProbe({
+      ...SMALL,
+      now: () => t,
+      onChunkFilled: () => {
+        t += 1000;
+      },
+    });
+    expect(result.writeMs).toBe(0);
+    expect(result.readMs).toBe(0);
   });
 
   it("deletes the database when the probe fails part-way", async () => {

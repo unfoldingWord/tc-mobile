@@ -8,8 +8,15 @@
  * The storage probe opens its OWN database, {@link PHONE_CHECK_DB_NAME}, with
  * `idb` directly, and deletes it before it returns — on success and on failure.
  * Nothing in this file imports `lib/storage/db.ts`, which owns the app's
- * database. `tests/phone-check-storage.test.ts` spies on `indexedDB.open` and
- * fails if any other name is opened while the check runs.
+ * database, so the check never opens a connection of its own to it.
+ * `tests/phone-check-storage.test.ts` spies on `indexedDB.open` while the
+ * device, storage and allocation probes run in Node and fails if any other
+ * name is opened; it does not run the worker encode.
+ *
+ * One path does reach the app's database, by design: a probe failure goes to
+ * `reportFailure`, and the app's durable failure log (`hooks/failure-log.ts`)
+ * writes that report into its own store in the app's database, as it does for
+ * every other failure source.
  *
  * ── Failures ──
  *
@@ -32,6 +39,11 @@ import {
   type AllocationDeps,
 } from "@/lib/phone-check/allocation";
 import { runEncodeProbe } from "@/lib/phone-check/encode-probe";
+import {
+  parseSavedChecks,
+  serializeSavedChecks,
+  type SavedChecks,
+} from "@/lib/phone-check/saved-results";
 import {
   MB,
   type DeviceInfo,
@@ -132,13 +144,17 @@ export interface StorageProbeOptions {
   readonly bytes?: number;
   readonly chunkBytes?: number;
   readonly now?: () => number;
+  /** Called after each chunk is built, before it is written: the timing test's seam. */
+  readonly onChunkFilled?: () => void;
 }
 
 /**
  * Write `bytes` of PCM to the throwaway database, one record per transaction
  * (as a take commit is), read every record back, check it, and delete the
- * database. The delete runs on every path out, including a throw, so a failed
- * run leaves nothing on the phone.
+ * database. The delete runs on every path out of this function, including a
+ * throw. A page killed mid-probe runs no `finally`, so its database (up to
+ * the full probe size) stays on the phone until the next run's leading
+ * delete below removes it.
  */
 export async function runStorageProbe(
   options: StorageProbeOptions = {}
@@ -157,14 +173,20 @@ export async function runStorageProbe(
     },
   });
   try {
-    const writeStart = now();
+    // Only the transaction is timed. Building a chunk is millions of sample
+    // writes, and counting it would under-report the write speed most on the
+    // slow phones this check exists to measure. The read side below times only
+    // `get` and two compares, so both sides measure the database alone.
+    let writeMs = 0;
     for (let c = 0; c < chunks; c++) {
       const samples = new Int16Array(chunkSamples);
       for (let i = 0; i < chunkSamples; i++) samples[i] = chunkSample(c, i);
+      options.onChunkFilled?.();
+      const writeStart = now();
       const tx = db.transaction(STORE, "readwrite");
       await Promise.all([tx.store.put(samples, c), tx.done]);
+      writeMs += now() - writeStart;
     }
-    const writeMs = now() - writeStart;
 
     const readStart = now();
     for (let c = 0; c < chunks; c++) {
@@ -232,6 +254,35 @@ export function writeAllocationBreadcrumb(
   try {
     if (crumb === null) store.removeItem(ALLOCATION_BREADCRUMB_KEY);
     else store.setItem(ALLOCATION_BREADCRUMB_KEY, serializeBreadcrumb(crumb));
+  } catch (cause) {
+    reportFailure(cause, PHONE_CHECK_CONTEXT);
+  }
+}
+
+/** Where steps 1-3 keep their results, so a reload in step 4 cannot lose them. */
+export const SAVED_CHECKS_KEY = "tc-mobile:phone-check:results";
+
+/** Steps 1-3's saved results, if any. Never throws. */
+export function readSavedChecks(
+  store: BreadcrumbStore | null
+): SavedChecks | null {
+  if (store === null) return null;
+  try {
+    return parseSavedChecks(store.getItem(SAVED_CHECKS_KEY));
+  } catch (cause) {
+    reportFailure(cause, PHONE_CHECK_CONTEXT);
+    return null;
+  }
+}
+
+/** Save steps 1-3's results. Never throws. */
+export function writeSavedChecks(
+  store: BreadcrumbStore | null,
+  checks: SavedChecks
+): void {
+  if (store === null) return;
+  try {
+    store.setItem(SAVED_CHECKS_KEY, serializeSavedChecks(checks));
   } catch (cause) {
     reportFailure(cause, PHONE_CHECK_CONTEXT);
   }

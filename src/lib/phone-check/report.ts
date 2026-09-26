@@ -7,7 +7,6 @@
  * for the translator holding the phone. That is why its labels live here beside
  * the formatter and not in `lib/strings.ts`, the same line
  * `tests/strings-one-table.test.ts` draws for `lib/`'s own `Error` messages.
- * Every word the check's SCREEN shows is in the string table.
  *
  * A failed probe carries the error's `name` only (`RangeError`,
  * `QuotaExceededError`, `EncoderStalledError`), never its message: #172 keeps

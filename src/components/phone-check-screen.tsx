@@ -107,7 +107,16 @@ export function PhoneCheckView({
         <h1 id="phone-check-title" className="t-title">
           {strings.phoneCheckTitle}
         </h1>
-        <button type="button" className={BUTTON} onClick={onClose}>
+        {/* Disabled while a probe runs: the probes cannot be cancelled, and
+            closing would put Books back on screen while the memory ceiling
+            keeps allocating or the encode keeps the encoder lane. */}
+        <button
+          type="button"
+          className={BUTTON}
+          onClick={onClose}
+          disabled={running}
+          data-phone-check="close"
+        >
           {strings.phoneCheckClose}
         </button>
       </header>

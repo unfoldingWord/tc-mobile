@@ -107,6 +107,23 @@ describe("PhoneCheckView", () => {
     expect(root.textContent).toContain(strings.phoneCheckMemoryStep(75));
   });
 
+  // Closing mid-run would put Books back on screen while the memory ceiling
+  // keeps allocating, or the 5-minute encode keeps the encoder lane, under a
+  // translator who can then start a take. So Close waits for the run.
+  it("disables Close while a probe runs, and enables it when idle", () => {
+    const close = (root: Element) =>
+      one(root, '[data-phone-check="close"]').hasAttribute("disabled");
+    expect(close(view(IDLE))).toBe(false);
+    for (const activity of [
+      { kind: "device" },
+      { kind: "encode" },
+      { kind: "storage" },
+      { kind: "memory", mb: 25 },
+    ] as const) {
+      expect(close(view({ ...IDLE, activity }))).toBe(true);
+    }
+  });
+
   it("shows a reload recovered from the breadcrumb in the report", () => {
     const root = view({
       ...IDLE,

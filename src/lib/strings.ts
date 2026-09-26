@@ -1026,7 +1026,7 @@ export const strings = {
   phoneCheckMemoryWarning:
     "Run this last. It fills memory until the phone refuses, and the app may restart. If it does, open Phone check again to see how far it got.",
   phoneCheckMemoryStart: "Start memory test",
-  phoneCheckMemoryStep: (mb: number) => `Holding ${mb} MB.`,
+  phoneCheckMemoryStep: (mb: number) => `Trying ${mb} MB.`,
   phoneCheckReportLabel: "Report for #974",
   phoneCheckCopy: "Copy report",
   phoneCheckCopied: "Copied.",
