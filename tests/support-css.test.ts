@@ -45,9 +45,21 @@ describe("declarationValue (#533)", () => {
   });
 
   it("returns the whole value, so a prefix of it cannot pass a toBe", () => {
-    expect(declarationValue("color: var(--s-live-ink);", "color")).not.toBe(
-      "var(--s-live)"
+    expect(declarationValue("color: var(--s-live-ink);", "color")).toBe(
+      "var(--s-live-ink)"
     );
+  });
+
+  it("is not satisfied by declaration-shaped text inside a string or url()", () => {
+    expect(() =>
+      declarationValue('content: "; color: var(--s-send);"; gap: 0;', "color")
+    ).toThrow("declarationValue: no color declaration");
+    expect(() =>
+      declarationValue("mask: url(data:x;color:red); gap: 0;", "color")
+    ).toThrow("declarationValue: no color declaration");
+    expect(
+      declarationValue("content: 'a;b'; color: var(--s-ink);", "color")
+    ).toBe("var(--s-ink)");
   });
 
   it("throws when a later declaration overrides the first", () => {

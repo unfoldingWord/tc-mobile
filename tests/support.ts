@@ -227,18 +227,27 @@ export function cssRule(css: string, selector: string): string {
  * 2026-09-22 notes, 1 and 4). This anchors the
  * property on a declaration boundary, and throws when it is absent or declared
  * more than once, so a caller can assert the value with `toBe` rather than a
- * pattern.
+ * pattern. Quoted strings and `url(…)` are blanked to same-length filler
+ * before the scan, so a `;` or `color:` inside `content: "…"` or a data URI
+ * is not read as a declaration; the value is sliced from the unmasked text.
+ * Still a scanner, not a tokenizer: a comment splitting an identifier
+ * (`col/* *\/or`) is glued back together by the strip.
  */
 export function declarationValue(body: string, property: string): string {
   const escaped = property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const text = stripCssComments(body);
+  const masked = text.replace(
+    /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\burl\([^)]*\)/g,
+    (m) => m[0] + "_".repeat(m.length - 2) + m.at(-1)!
+  );
   const values = [
-    ...stripCssComments(body).matchAll(
+    ...masked.matchAll(
       new RegExp(
         `(?<=^|[;{])\\s*${escaped}\\s*:\\s*([^;{}]*?)\\s*(?=;|}|$)`,
-        "g"
+        "dg"
       )
     ),
-  ].map((m) => m[1]!);
+  ].map((m) => text.slice(...m.indices![1]!));
   if (values.length > 1) {
     throw new Error(
       `declarationValue: ${property} declared ${values.length} times`
