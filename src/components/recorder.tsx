@@ -3989,6 +3989,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           }}
           onExitEdit={onExitEdit}
           bookName={view?.bookName}
+          bookCoverHex={view?.bookCoverHex ?? undefined}
           chapterNumber={view?.chapterNumber}
         />
         <EraseConfirm

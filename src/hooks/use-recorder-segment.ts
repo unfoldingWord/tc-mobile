@@ -22,12 +22,8 @@ export interface RecorderSegmentView {
    * colour" — `null` means only "this segment's book could not be read"
    * (the same race `bookName`'s `?? ""` fallback covers).
    *
-   * `recorder.tsx`'s own `<RecorderMenu>` call site does not read this field
-   * yet — out of scope for the PR that added it, since that file is owned by
-   * the concurrent #1074/#590 PR2 lane (see that PR's body). Tested here
-   * (`loadRecorderSegmentView` is exercised directly, same as every other
-   * field), and ready for a one-line `bookCoverHex={view?.bookCoverHex ??
-   * undefined}` addition once that lane's PR lands.
+   * `recorder.tsx`'s own `<RecorderMenu>` call site reads this field
+   * (`bookCoverHex={view?.bookCoverHex ?? undefined}`).
    */
   readonly bookCoverHex: string | null;
   readonly chapterNumber: number;

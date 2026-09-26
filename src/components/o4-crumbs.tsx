@@ -43,12 +43,11 @@ interface O4SheetHeadProps {
  * (`lib/cover-colour.ts`'s docblock on why a cover colour is not a layer-2
  * role), the same 24px book glyph -- rather than a second, crumb-scaled size
  * decision on top of #949's own. It draws once a caller threads both `book`
- * and `bookCoverHex`; the chapter and segment-row call sites now do
- * (`use-chapter-segments.ts`'s `bookCoverHex`, resolved the same way
- * `books-screen.tsx` resolves the shelf's own covers). The recorder SCREEN's
- * own call site (`recorder.tsx`) does not thread it yet as of this PR --
- * see that PR's body -- so the recorder menu still renders without the
- * square until it does; nothing here assumes it must.
+ * and `bookCoverHex`; the chapter, segment-row and recorder call sites all
+ * do now (`use-chapter-segments.ts`'s and `use-recorder-segment.ts`'s own
+ * `bookCoverHex`, each resolved the same way `books-screen.tsx` resolves
+ * the shelf's own covers). A caller that has not (yet) been updated to
+ * carry it still renders exactly as before this prop existed.
  *
  * Not drawn: the "hear this" speaker (spoken titles, #952, are after the
  * training).

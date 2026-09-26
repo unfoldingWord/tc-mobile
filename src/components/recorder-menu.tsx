@@ -78,9 +78,8 @@ export interface RecorderMenuProps {
   /**
    * The book's resolved cover colour (#949, #957), already a hex string —
    * see `O4SheetHead`'s own docblock for how it is resolved and why absent
-   * means "no square", not "no colour". `recorder.tsx`'s call site does not
-   * pass this yet (out of this PR's scope — see its body); the prop exists
-   * so that call site's next PR is a one-line addition, not new plumbing.
+   * means "no square", not "no colour". `recorder.tsx` passes
+   * `view?.bookCoverHex ?? undefined`.
    */
   bookCoverHex?: string;
   /** The chapter's number, the O4 sheet head's second crumb. */
