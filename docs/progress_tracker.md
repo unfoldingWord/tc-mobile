@@ -11,6 +11,72 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-25 (evening, Mac O4 session) — O4 batches 0–2 built and merged behind the switch; the DRI's workbench-original decisions recorded; O4 handed back to the Docker session
+
+The DRI ran the O4 epic (#936) from the Mac session, starting from the Docker session's handoff (`temp/tc-mobile/o4-handoff/README.md`). Lanes were agent workflows: implement, then an author-side pre-PR check, then fix, then PR. Every Frank and George review came from the uwreview VM. The pre-PR checks are author self-checks and never counted toward the two-lens bar.
+
+### Shipped (merged to `develop`)
+
+| Issue                                                     | PR                     | Notes                                                                                                                                                   |
+| --------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #938 switch, #940 icons                                   | #961, #960             | Plus #966, which corrected #961's test-coverage comments. The DRI accepted #961's ten empty area stylesheets as a named exception to the no-stubs rule. |
+| #939 primitives                                           | #967                   | The DRI accepted the D3 text inks the lane picked (`--s-live-text`, `--s-done-text`, gated at 4.5:1).                                                   |
+| #941 tile menu, #943 sheets, #944 Segments, #945 Recorder | #973, #971, #970, #972 |                                                                                                                                                         |
+| #946 dialogs (state 13)                                   | #982                   | G5 is #979, G6 is #980.                                                                                                                                 |
+| #948 errors (part)                                        | #978                   | The storage banner, state 17, is #983.                                                                                                                  |
+| #949 chapter, segment and recorder menus                  | #995, #994             | D17–D20 on #949. "Remove this segment" is deferred to T1 post-training #997.                                                                            |
+| #950 motion (part)                                        | #1011                  | Guide pulse, live edge and rec dot.                                                                                                                     |
+| #955 scissors toggle                                      | #1000                  | The icon-recognition row question is #999.                                                                                                              |
+| #957 cover colour                                         | #964                   | Merged by the DRI at `2467ee4`. The v8→v9 upgrade check is carried to #974.                                                                             |
+| #968 design reference                                     | #1006                  |                                                                                                                                                         |
+
+### Decisions recorded (DRI, verbatim where quoted)
+
+- **#947 (Share):** "i prefer the originals - even if we have to wait for the percent progress bar".
+  - D14: a plain check on hand-over.
+  - D15: the original busy look, with no interim version.
+  - D16: the six share outcomes the workbench never drew use option B, the O4 circle.
+  - D21: numbered chips, in order.
+  - D22: the core is a progress bar.
+  - A correction to D21/D22 is on #947: during packing, waiting chips are grey, and the progress bar stays at 100 on hand-over.
+- **#949 (menus):**
+  - D17: the caption is "Done".
+  - D18: no Edit tile in the recorder menu.
+  - D19: finished crumbs use the pale done wash.
+  - D20: the segment menu follows the workbench's state 07.
+- **Batch 2 ownership:** moved to the Mac session at 20:42Z, and handed back to the Docker session at this EOD.
+
+### Open at EOD
+
+- **#998** (share encode progress): both lenses clean at `36a0cdf`. Triaged, waiting on the DRI's merge.
+- **#1027** (removes the obsolete cover-blue tokens): George clean. Triaged, waiting on the DRI's merge.
+- **#1007** (#942 Books): reworked onto develop at `a2aeed0`. Needs both lenses.
+- **#1023** (#947 share ring): draft, stacked on #998. The Q1/Q3 correction is at `4e5fbad`, with CI green. Retarget it to develop and mark it ready once #998 merges.
+- **Possible flake:** one full-suite `npm run verify` run on the #1023 branch failed #998's `tests/use-chapter-share-steps.test.ts`. The test passed 5 of 5 times on its own and in the full rerun. Nobody has investigated it.
+- **#977** merged a teal busy glyph that D15 rules out. It gets replaced when #947 builds the share sheet.
+
+### Filed
+
+#958, #968, #983, #997, #999, #1018 (numeral systems research), #1020 (Settings menu, gear), #1021 (in-app Reduce motion, or rely on the OS setting).
+
+### Learnings
+
+- **Two sessions collided on #947.** A Mac lane started it minutes after the Docker session claimed it, and lost the push race. Lanes now read the issue's claim comments and `ls-remote` the branch before building.
+- **A stacked PR closes nothing until it targets the default branch.** GitHub only links "Closes #N" on a PR aimed at the default branch. It also doesn't retarget when the parent merges, unless the parent branch is deleted.
+- **A monitor that suppresses its first poll can hide events.** One watch script silently missed several merges. The fix was to diff each full status line against the previous poll.
+- **A decision's wording can drift from the source it names.** D21 said "go-out chips are teal", but the workbench draws waiting chips grey. When the DRI picks "the original", quote the source code, not a paraphrase.
+
+### Next
+
+- The Docker session resumes O4:
+  - #949's book slice: G1, the #980 delete swap and the cover tile.
+  - #983, the storage banner.
+  - #979, the record-again confirm (G5).
+  - #950's remaining slices: shake, mic pulse, armed and aud.
+  - #947's share sheet (D12).
+  - Then #951, the review, the flip to O4 by default, and the phone pass.
+- Build a tester APK with O4 and run #974, including the v8→v9 upgrade check.
+
 ## 2026-09-25 (afternoon, Docker merge-seat session) — #660, #782 and #959 merged at their approved heads; a worktree prune checked and nothing lost
 
 A separate session, run from `/workspace/approve`, merged approved PRs into `develop` by hand while the bench's automated merge lane (review-bot#1, D22) stays on hold.
