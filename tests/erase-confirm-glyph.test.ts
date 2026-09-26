@@ -8,11 +8,11 @@ import { Icon, type IconName } from "@/components/icon";
 import { render } from "./render";
 
 /**
- * EraseConfirm's `glyph` prop (#979, O4 G5 "Record again asks first").
+ * EraseConfirm's `badge` prop (#979, O4 G5 "Record again asks first").
  *
- * The workbench draws G5 as the 13 dialog with a record badge and a confirm
- * button carrying the record dot, where 13 has the bin in both places. The
- * prop picks that one icon for both spots; what it must NOT do is change the
+ * The workbench draws G5 as the 13 dialog with a record badge. The prop picks
+ * the BADGE only: the confirm button keeps the bin, because in this app that
+ * button erases and starts no take. What the prop must NOT do is change the
  * dialog for a caller that does not pass it — the book delete, the failure
  * log's Clear and the segment Erase all rely on the default.
  *
@@ -59,7 +59,7 @@ const base = {
   onCancel: () => {},
 };
 
-async function mount(extra: { glyph?: "trash" | "record" } = {}) {
+async function mount(extra: { badge?: "trash" | "record" } = {}) {
   await act(async () => {
     root.render(createElement(EraseConfirm, { ...base, ...extra }));
   });
@@ -79,26 +79,26 @@ function glyphs(panel: Element) {
   return { badge: badge!.innerHTML, confirm: confirmSvg!.innerHTML };
 }
 
-describe("EraseConfirm's glyph (#979)", () => {
+describe("EraseConfirm's badge (#979)", () => {
   it("the two reference icons differ, so the cases below can tell them apart", () => {
     expect(iconInner("record")).not.toBe(iconInner("trash"));
     expect(iconInner("record").length).toBeGreaterThan(0);
   });
 
-  it("draws the bin in the badge and on the confirm when no glyph is passed", async () => {
+  it("draws the bin in the badge and on the confirm when no badge is passed", async () => {
     const g = glyphs(await mount());
     expect(g.badge).toBe(iconInner("trash"));
     expect(g.confirm).toBe(iconInner("trash"));
   });
 
-  it("draws the record dot in the badge and on the confirm for glyph='record'", async () => {
-    const g = glyphs(await mount({ glyph: "record" }));
+  it("draws the record dot in the badge only, keeping the bin on the confirm, for badge='record'", async () => {
+    const g = glyphs(await mount({ badge: "record" }));
     expect(g.badge).toBe(iconInner("record"));
-    expect(g.confirm).toBe(iconInner("record"));
+    expect(g.confirm).toBe(iconInner("trash"));
   });
 
-  it("leaves Cancel's icon, the classes and the focus landing alone for glyph='record'", async () => {
-    const panel = await mount({ glyph: "record" });
+  it("leaves Cancel's icon, the classes and the focus landing alone for badge='record'", async () => {
+    const panel = await mount({ badge: "record" });
     const cancel = panel.querySelector<HTMLButtonElement>(".confirm-cancel");
     expect(cancel).not.toBeNull();
     expect(cancel!.querySelector("svg")!.innerHTML).toBe(iconInner("back"));
@@ -106,11 +106,11 @@ describe("EraseConfirm's glyph (#979)", () => {
     expect(panel.querySelector("svg.confirm-glyph")).not.toBeNull();
   });
 
-  it("renders byte-identical markup for glyph='trash' and for no glyph at all", async () => {
+  it("renders byte-identical markup for badge='trash' and for no badge at all", async () => {
     const without = (await mount()).outerHTML;
     await act(async () => root.unmount());
     root = createRoot(dom.window.document.getElementById("root")!);
-    const withTrash = (await mount({ glyph: "trash" })).outerHTML;
+    const withTrash = (await mount({ badge: "trash" })).outerHTML;
     expect(withTrash).toBe(without);
   });
 });

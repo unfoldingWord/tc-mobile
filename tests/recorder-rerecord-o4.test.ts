@@ -14,9 +14,14 @@ import { render } from "./render";
 
 /**
  * O4 G5, "Record again asks first" (#979): the record bar's bin opens the
- * 13 confirm with a record badge and a "Record again" button carrying the
- * record dot. The ≡ menu's Erase opens the same dialog as 13, bin and all,
- * and with the switch off both openers show today's dialog.
+ * 13 confirm with the workbench's record badge. The confirm button keeps the
+ * bin and "Erase", because that is all it does: it erases and leaves the
+ * segment empty with Record ready, and it starts no take. The workbench's
+ * "Record again" starts one; here that would call getUserMedia after the
+ * erase's awaits, outside the tap, which `use-audio-session.ts`
+ * (startRecording) says iOS treats as unprompted. The ≡ menu's Erase opens
+ * the 13 dialog, bin and all, and with the switch off both openers show
+ * today's dialog.
  *
  * The harness is `tests/recorder-rerecord.test.ts`'s — the real `Recorder`,
  * the real erase hook and the real confirm, with the store and the segment
@@ -150,6 +155,7 @@ async function setup(look: Design) {
       },
     });
   await act(async () => root.render(createElement(Host)));
+  return audio;
 }
 
 /** The one button whose accessible name is `label` or starts `label. `. */
@@ -199,26 +205,29 @@ function dialog() {
 }
 
 describe("the record-again confirm with the switch on (G5, #979)", () => {
-  it("the bar's bin opens it with the record badge and a Record again button", async () => {
+  it("the bar's bin opens it with the record badge and the bin Erase button", async () => {
     await setup("o4");
     await act(async () => barRerecord().click());
     const d = dialog();
     expect(d.badge).toBe(iconInner("record"));
-    expect(d.confirmIcon).toBe(iconInner("record"));
-    expect(d.confirm.getAttribute("aria-label")).toBe(strings.rerecordConfirm);
+    // The button names and draws what it does: it erases, it does not record.
+    expect(d.confirmIcon).toBe(iconInner("trash"));
+    expect(d.confirm.getAttribute("aria-label")).toBe(strings.eraseConfirm);
     // Keep stays the 13 control, and focus still lands on it.
     expect(d.cancel.getAttribute("aria-label")).toBe(strings.eraseCancel);
     expect(d.cancel.querySelector("svg")!.innerHTML).toBe(iconInner("back"));
     expect(document.activeElement).toBe(d.cancel);
   });
 
-  it("Record again still erases through the shared hook", async () => {
-    await setup("o4");
+  it("its Erase erases through the shared hook and starts no take", async () => {
+    const audio = await setup("o4");
     boundary.reloads = [erased];
     await act(async () => barRerecord().click());
-    await act(async () => button(strings.rerecordConfirm).click());
+    await act(async () => dialog().confirm.click());
     expect(storage.clear).toHaveBeenCalledExactlyOnceWith("segment");
     expect(document.querySelector(".confirm-panel")).toBeNull();
+    // Why the button says Erase and not Record again: nothing records.
+    expect(audio.startRecording).not.toHaveBeenCalled();
   });
 
   it("the ≡ menu's Erase still opens the 13 dialog: bin badge, Erase", async () => {

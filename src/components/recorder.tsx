@@ -301,7 +301,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // Which opener raised it: the bar's bin ("rerecord") or the ≡ Erase row
     // ("erase"). `onRerecord` sets the first and `openMenu` the second (the
     // menu is the only road to its Erase row), so it is never left over. Only
-    // O4 reads it (G5, #979: the bin's confirm wears the record dot); the
+    // O4 reads it (G5, #979: the bin's confirm wears the record badge); the
     // current look shows one dialog for both.
     const [confirmFrom, setConfirmFrom] = useState<"erase" | "rerecord">(
       "erase"
@@ -3774,11 +3774,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           key={confirmMount}
           open={confirmOpen}
           title={strings.eraseConfirmTitle}
-          // O4 G5 (#979): from the bar's bin, the workbench's record badge and
-          // a "Record again" button with the record dot. Keep and the title
-          // stay the 13 dialog's. Switch off: one dialog, as before.
-          glyph={g5 ? "record" : "trash"}
-          confirmLabel={g5 ? strings.rerecordConfirm : strings.eraseConfirm}
+          // O4 G5 (#979): from the bar's bin, the workbench's record badge.
+          // The button, Keep and the title stay the 13 dialog's: the button
+          // erases and starts no take, so it keeps the bin and "Erase"
+          // (#1022). The workbench's "Record again" button records; here that
+          // would start the mic after the erase's awaits, outside the tap
+          // `use-audio-session.ts` startRecording needs. Switch off: one
+          // dialog, as before.
+          badge={g5 ? "record" : "trash"}
+          confirmLabel={strings.eraseConfirm}
           cancelLabel={strings.eraseCancel}
           // Busy through the post-erase re-read too (#592): `isClosing` is the
           // latch `onConfirmErase` holds across it, and a confirm is otherwise

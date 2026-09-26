@@ -21,18 +21,19 @@ interface EraseConfirmProps {
   busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
-  /** The icon in the badge and on the confirm button. The bin by default:
-   *  the segment Erase (13), the book Delete (G6) and the failure log's Clear
-   *  pass nothing and render exactly as before. "record" is O4 G5, the
-   *  record-again confirm (#979): the workbench's record dot in both places.
-   *  The caller decides, so this surface stays free of the design switch. */
-  glyph?: "trash" | "record";
+  /** The icon in the badge. The bin by default: the segment Erase (13), the
+   *  book Delete (G6) and the failure log's Clear pass nothing and render
+   *  exactly as before. "record" is O4 G5, the record-again confirm (#979):
+   *  the workbench's record badge. The confirm BUTTON keeps the bin whatever
+   *  this says, because it erases and starts no take (#1022). The caller
+   *  decides, so this surface stays free of the design switch. */
+  badge?: "trash" | "record";
 }
 
 /**
  * The erase confirmation (B6, D-CONFIRM).
  *
- * A minimal-text dialog: a glyph (the bin, or the record dot for O4 G5), one
+ * A minimal-text dialog: a badge (the bin, or the record dot for O4 G5), one
  * line, and two choices. Destructive,
  * so focus lands on Cancel — the safe action — not on Erase, and Escape or a
  * scrim tap resolves to Cancel too.
@@ -50,7 +51,7 @@ export function EraseConfirm({
   busy = false,
   onConfirm,
   onCancel,
-  glyph = "trash",
+  badge = "trash",
 }: EraseConfirmProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   // Read from the keydown listener without re-subscribing it. The listener is
@@ -183,7 +184,7 @@ export function EraseConfirm({
         aria-label={title}
         className="confirm-panel"
       >
-        <Icon name={glyph} size={32} className="confirm-glyph" />
+        <Icon name={badge} size={32} className="confirm-glyph" />
         <span className="t-title">{title}</span>
         <div className="confirm-actions">
           <Control
@@ -199,7 +200,7 @@ export function EraseConfirm({
             className="confirm-cancel"
           />
           <Control
-            icon={glyph}
+            icon="trash"
             label={confirmLabel}
             variant="record"
             disabled={busy}
