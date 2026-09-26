@@ -1,3 +1,69 @@
 /* O4 — Confirm dialogs (13, G5, G6). Owner: #946. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file. */
+
+/* The one confirm dialog, EraseConfirm (components/erase-confirm.tsx), serves
+   all three states: the segment Erase (13), the recorder's Erase-and-record-
+   again path (G5) and the Books delete-book confirm (G6). Its markup is the
+   same in both looks, so the focus landing, Tab trap and focus return are the
+   same too; everything O4 changes is here.
+
+   Structural values the #939 primitives do not carry yet are literal px,
+   marked, for #939 to swap in. Colour comes only through layer-2 roles; the
+   shadow is the design reference's own literal, marked the same way.
+
+   tests/o4-dialogs.test.ts reads this file: it strips comments first, and it
+   requires every selector below to match real EraseConfirm markup with the
+   switch on. */
 @layer components {
+  /* Inset 18 from the screen edge on every side; the panel fills the rest of
+     the width. */
+  [data-design="o4"] .confirm-scrim {
+    background: var(--s-dim);
+    padding: 18px; /* #939 token */
+  }
+  [data-design="o4"] .confirm-panel {
+    width: 100%;
+    background: var(--s-surface);
+    border: 1px solid var(--s-card-edge);
+    border-radius: 22px; /* #939 token */
+    padding: 26px 20px 20px; /* #939 token */
+    gap: 18px; /* #939 token */
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.35); /* #939 token */
+  }
+  [data-design="o4"] .confirm-panel .t-title {
+    font-size: 22px; /* #939 token */
+    font-weight: 800; /* #939 token */
+    letter-spacing: normal;
+  }
+  /* The trash glyph becomes a 76px round badge on the erase wash. The glyph is
+     the badge's own content box: 76 less 21 padding a side leaves the
+     design's 34px icon. */
+  [data-design="o4"] .confirm-glyph {
+    box-sizing: border-box;
+    width: 76px; /* #939 token */
+    height: 76px; /* #939 token */
+    padding: 21px; /* #939 token */
+    border-radius: 50%;
+    background: var(--s-live-quiet);
+    color: var(--s-live);
+  }
+  /* Two equal columns across the panel: Cancel (keep) then Erase / Delete. */
+  [data-design="o4"] .confirm-actions {
+    align-self: stretch;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px; /* #939 token */
+  }
+  [data-design="o4"] .confirm-actions > .control {
+    width: auto;
+    height: 76px; /* #939 token */
+    border-radius: 14px; /* #939 token */
+  }
+  [data-design="o4"] .confirm-actions > .confirm-cancel {
+    background: var(--s-well);
+    color: var(--s-ink);
+  }
+  [data-design="o4"] .confirm-actions > .control svg {
+    width: 28px; /* #939 token */
+    height: 28px; /* #939 token */
+  }
 }
