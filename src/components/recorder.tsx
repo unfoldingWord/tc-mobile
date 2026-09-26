@@ -71,6 +71,7 @@ import type { RecorderAudio } from "@/hooks/use-audio-session";
 import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import { useRecorderViewport } from "@/hooks/use-recorder-viewport";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
+import { useDesign } from "@/hooks/use-design";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
 import { overlayFallbackLabel } from "@/lib/a11y/focus-restore";
@@ -91,6 +92,8 @@ import {
   type TailPlan,
 } from "@/lib/takes/close-plan";
 import { cn, formatDuration } from "@/lib/utils";
+import { recorderLook } from "./recorder-look";
+import { RecorderStamp } from "./recorder-o4";
 import type { SampleRange } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
 
@@ -486,6 +489,16 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const hasAudio = length > 0;
     const state = audio.recorderState;
     const recording = state === "recording";
+    // The O4 look (#945): which workbench state the stage is in. Read by
+    // `o4/recorder.css` through `data-o4-look`, which is set only under O4 so
+    // the current look's markup is unchanged.
+    const { design } = useDesign();
+    const look = recorderLook({
+      recording,
+      playing: audio.playingBuffer,
+      editing: mode === "edit",
+      hasAudio,
+    });
     const busy = state === "requesting" || state === "processing";
     // Editing is a strictly-idle activity. It is off while a take is live or
     // the sheet is committing, and off with no segment loaded.
@@ -3337,7 +3350,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 </div>
               )}
               <RecorderStatus state={state} isClosing={isClosing} />
-              <div className="recorder-stage flex-1">
+              <div
+                className="recorder-stage flex-1"
+                data-o4-look={design === "o4" ? look : undefined}
+              >
                 {mode === "edit" && (
                   <div className="recorder-paste flex justify-center">
                     {/* Always mounted in edit mode, like `.recorder-cut` below
@@ -3570,6 +3586,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     startFraction={waveView.startFraction}
                     endFraction={waveView.endFraction}
                     clampToEdge={stage.render === "inPlace"}
+                    className={design === "o4" ? "bg-playhead" : undefined}
                   />
                   {mode === "edit" &&
                     editor.selectionActive &&
@@ -3645,6 +3662,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     </span>
                   </div>
                 )}
+                {/* O4 only (#945): renders nothing under the current look. */}
+                <RecorderStamp
+                  design={design}
+                  look={look}
+                  durationMs={drawnDurationMs}
+                  readElapsedMs={readSoundingElapsed}
+                />
               </div>
 
               {mode === "record" && (
