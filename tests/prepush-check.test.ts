@@ -86,6 +86,8 @@ describe("findNegatedClosures — rule (a)", () => {
     "This is not closing #5 (closing is not a keyword)",
     "Does not touch the prefix #7 path",
     "Not a fix; see #8",
+    "This not only fixes #123 but also improves logging.",
+    "It doesn't just close #4; it also adds a test.",
   ])("does not flag the legitimate message %j", (message) => {
     expect(findNegatedClosures(message)).toEqual([]);
   });
@@ -180,6 +182,16 @@ describe("checkEngines — rule (b)", () => {
       'odd@3.0.0: engines.node "whenever" not readable, skipped',
     ]);
   });
+
+  it("fails an installed version the lockfile does not resolve, without trusting its engines", () => {
+    const locked: Record<string, string> = { good: "2.0.0", plain: "2.0.0" };
+    expect(
+      checkEngines("22.12.0", ["good", "plain"], read, (name) => locked[name])
+    ).toEqual({
+      failures: [{ name: "good", version: "1.0.0", locked: "2.0.0" }],
+      notes: [],
+    });
+  });
 });
 
 describe("changedDependencies — rule (b)'s scope", () => {
@@ -262,6 +274,21 @@ describe("parseAddedLines", () => {
       { file: "src/a.ts", line: 4, text: "const one = 1;" },
       { file: "src/a.ts", line: 5, text: "const two = 2;" },
       { file: "src/a.ts", line: 12, text: "new" },
+    ]);
+  });
+
+  it("keeps an added line whose text starts with '++ ' as an addition", () => {
+    const diff = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1,0 +2,2 @@",
+      "+++ counter",
+      "+// Verified on iOS.",
+    ].join("\n");
+    expect(parseAddedLines(diff)).toEqual([
+      { file: "src/a.ts", line: 2, text: "++ counter" },
+      { file: "src/a.ts", line: 3, text: "// Verified on iOS." },
     ]);
   });
 });
@@ -577,6 +604,43 @@ describe("CLI entry point (real subprocess against scratch repositories)", () =>
       expect(result.stdout).toContain(
         'FAIL (b) bad@1.0.0: engines.node "^22.13.0" does not admit 22.12.0'
       );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // (b) RED: a stale install whose engines admit the floor must not PASS
+  // for the version the lockfile actually resolves.
+  it("fails when the installed dependency is not the version the lockfile resolves", () => {
+    const dir = initScratchRepo();
+    try {
+      write(
+        dir,
+        "package.json",
+        JSON.stringify(
+          {
+            ...FLOOR_PKG,
+            devDependencies: { ...FLOOR_PKG.devDependencies, bad: "2.0.0" },
+          },
+          null,
+          2
+        )
+      );
+      write(
+        dir,
+        "package-lock.json",
+        JSON.stringify({
+          packages: { "node_modules/bad": { version: "2.0.0" } },
+        })
+      );
+      installDep(dir, "bad", "^20.19.0 || >=22.12.0");
+      commit(dir, "chore(deps): add bad", "Lockfile resolves 2.0.0.");
+      const result = runCli(dir);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain(
+        "FAIL (b) bad@1.0.0: installed, but package-lock.json at HEAD resolves 2.0.0"
+      );
+      expect(result.stdout).toContain("prepush-check: FAIL, 1 failure(s)");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

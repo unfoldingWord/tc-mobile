@@ -20,7 +20,9 @@
  *       re-resolved in the lockfile (all of them when the floor itself
  *       changed), so a branch is never blocked by a dependency it did not
  *       change. It reads what is installed in `node_modules`, so run
- *       `npm ci` first.
+ *       `npm ci` first; an installed version that differs from the one
+ *       package-lock.json resolves at HEAD fails rather than passing on
+ *       the wrong manifest.
  *
  * WARN (exit 0), on added lines only:
  *   (c) wording that claims verification (AGENTS.md, "Never claim
@@ -46,8 +48,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const NEGATION = String.raw`(?:not|never|cannot|without|no\s+longer|[a-z]+n['’]t)`;
 const KEYWORD = String.raw`(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)`;
 const ISSUE_REF = String.raw`(?:[\w.-]+\/[\w.-]+)?#(\d+)`;
+// "not only fixes #N (but also ...)" affirms the closure; it is not a negation.
+const AFFIRMING = String.raw`(?!\s+(?:only|just|merely|simply)\b)`;
 const NEGATED_CLOSE = new RegExp(
-  String.raw`\b${NEGATION}\s+(?:[a-z]+\s+){0,2}?${KEYWORD}\b:?\s*${ISSUE_REF}`,
+  String.raw`\b${NEGATION}${AFFIRMING}\s+(?:[a-z]+\s+){0,2}?${KEYWORD}\b:?\s*${ISSUE_REF}`,
   "gi"
 );
 
@@ -249,15 +253,24 @@ export function rangeMinimum(range) {
 /**
  * Check each direct dependency against the floor. `readManifest(name)`
  * returns the installed package.json object, or null when not installed.
- * Returns `{ failures, notes }`; notes are skips, never failures.
+ * `lockedVersion(name)`, when given, returns the version package-lock.json
+ * at HEAD resolves; an installed manifest at a different version is a
+ * failure with `locked` set, because its `engines.node` is not the one the
+ * branch ships. Returns `{ failures, notes }`; notes are skips, never
+ * failures.
  */
-export function checkEngines(floor, names, readManifest) {
+export function checkEngines(floor, names, readManifest, lockedVersion) {
   const failures = [];
   const notes = [];
   for (const name of names) {
     const manifest = readManifest(name);
     if (!manifest) {
       notes.push(`${name}: not installed, skipped (run npm ci)`);
+      continue;
+    }
+    const locked = lockedVersion?.(name);
+    if (locked !== undefined && manifest.version !== locked) {
+      failures.push({ name, version: manifest.version, locked });
       continue;
     }
     const range = manifest.engines?.node;
@@ -306,24 +319,34 @@ export function changedDependencies(basePkg, headPkg, baseLock, headLock) {
 // ---------------------------------------------------------------------------
 // (c)-(e) added-line warnings
 
-/** Added lines from `git diff --unified=0` output, as `{ file, line, text }`. */
+/**
+ * Added lines from `git diff --unified=0` output, as `{ file, line, text }`.
+ * `---`/`+++` are file headers only between `diff --git` and the first
+ * hunk, so an added line whose own text starts with `++ ` stays an addition.
+ */
 export function parseAddedLines(diff) {
   const added = [];
   let file = null;
   let line = 0;
+  let inHeader = false;
   for (const raw of diff.split("\n")) {
-    if (raw.startsWith("+++ ")) {
+    if (raw.startsWith("diff --git ")) {
+      inHeader = true;
+      file = null;
+      continue;
+    }
+    if (inHeader && raw.startsWith("+++ ")) {
       const target = raw.slice(4).replace(/^"(.*)"$/, "$1");
       file = target === "/dev/null" ? null : target.replace(/^b\//, "");
       continue;
     }
-    if (raw.startsWith("--- ")) continue;
     const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
     if (hunk) {
+      inHeader = false;
       line = Number(hunk[1]);
       continue;
     }
-    if (file && raw.startsWith("+")) {
+    if (!inHeader && file && raw.startsWith("+")) {
       added.push({ file, line, text: raw.slice(1) });
       line++;
     }
@@ -353,7 +376,8 @@ const READS_CSS_OR_CONFIG =
 
 /**
  * Warnings for rules (c)-(e). `readFile(file)` returns a test file's full
- * text at HEAD (for rule (e)'s file-level check), or null.
+ * text as it is in the working tree (for rule (e)'s file-level check), or
+ * null.
  */
 export function scanAddedLines(added, readFile) {
   const warnings = [];
@@ -464,13 +488,14 @@ export function run({ git = defaultGit, log = console.log } = {}) {
       }
     };
     const pkg = showJson("HEAD", "package.json");
+    const headLock = showJson("HEAD", "package-lock.json");
     const floor = pkg ? rangeMinimum(pkg.engines?.node) : null;
     const names = pkg
       ? changedDependencies(
           showJson(base, "package.json"),
           pkg,
           showJson(base, "package-lock.json"),
-          showJson("HEAD", "package-lock.json")
+          headLock
         )
       : [];
     if (!floor) {
@@ -486,12 +511,15 @@ export function run({ git = defaultGit, log = console.log } = {}) {
         (name) => {
           const p = path.join(root, "node_modules", name, "package.json");
           return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null;
-        }
+        },
+        (name) => lockVersion(headLock, name)
       );
       for (const note of notes) log(`NOTE (b): ${note}`);
       for (const f of engineFailures) {
         failures.push(
-          `FAIL (b) ${f.name}@${f.version}: engines.node "${f.range}" does not admit ${floor}, the floor of package.json engines.node "${pkg.engines.node}".`
+          f.locked !== undefined
+            ? `FAIL (b) ${f.name}@${f.version}: installed, but package-lock.json at HEAD resolves ${f.locked}; its engines.node was not read. Run npm ci and rerun.`
+            : `FAIL (b) ${f.name}@${f.version}: engines.node "${f.range}" does not admit ${floor}, the floor of package.json engines.node "${pkg.engines.node}".`
         );
       }
     }

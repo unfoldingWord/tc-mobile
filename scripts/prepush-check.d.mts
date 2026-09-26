@@ -21,9 +21,13 @@ export interface Manifest {
 export declare function checkEngines(
   floor: string,
   names: string[],
-  readManifest: (name: string) => Manifest | null
+  readManifest: (name: string) => Manifest | null,
+  lockedVersion?: (name: string) => string | undefined
 ): {
-  failures: Array<{ name: string; version?: string; range: string }>;
+  failures: Array<
+    | { name: string; version?: string; range: string }
+    | { name: string; version?: string; locked: string }
+  >;
   notes: string[];
 };
 
