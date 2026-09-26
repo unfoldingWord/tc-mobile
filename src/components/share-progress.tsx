@@ -4,8 +4,10 @@ import { createPortal } from "react-dom";
 import { noticePresentation } from "./notice-tone";
 import { shareProgressText } from "./share-error-copy";
 import { shareOverlayGlyph } from "./share-overlay-glyph";
+import { shareO4View } from "./share-o4-view";
 import { ShareProgressPanel } from "./share-progress-panel";
 import type { ShareProgress as ShareProgressState } from "@/hooks/share-progress";
+import { useDesign } from "@/hooks/use-design";
 
 interface ShareProgressProps {
   /** The hook's timeline. Renders nothing while `hidden`. */
@@ -122,6 +124,9 @@ export function ShareProgress({
 }: ShareProgressProps) {
   const visible = progress.phase !== "hidden";
   const busy = progress.phase === "busy";
+  // O4 (#947) swaps the glyph for the 140-in-176 circle, its filling ring and
+  // its dots; the current look passes nothing and renders as it always has.
+  const { design } = useDesign();
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   // Read from the keydown listener without re-subscribing it — mirrors
@@ -248,6 +253,7 @@ export function ShareProgress({
         role={role}
         icon={glyph.icon}
         text={shareProgressText(progress, scope)}
+        o4={design === "o4" ? shareO4View(progress, scope) : undefined}
       />
     </div>,
     document.body
