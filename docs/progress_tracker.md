@@ -11,6 +11,29 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-25 (afternoon, Docker merge-seat session) — #660, #782 and #959 merged at their approved heads; a worktree prune checked and nothing lost
+
+A separate session, run from `/workspace/approve`, merged approved PRs into `develop` by hand while the bench's automated merge lane (review-bot#1, D22) stays on hold.
+
+### Shipped
+
+| What                                                                               | Evidence                                                                                                                                                                                                                                                                                              |
+| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **#660** refactor(erase), by jag3773                                               | Merge commit `3f3bd063`, pinned to approved head `da9688c`. Round 11: Frank clean, George clean. Develop CI run 36161176203 passed. #160 is still open; the PR only references it.                                                                                                                    |
+| **#782** test(native) (#667)                                                       | Merge commit `0e19bf07`, pinned to `8810790b`. The smoke failure at `d0995066` was the pre-`33d4c089` 320px flake (#846), not this PR. The bench rebased the branch at 16:53Z, which moved the head and changed one CONTRIBUTING line. The merge waited for the bench to approve `8810790b` (17:17Z). |
+| **#959** docs(contributing): the DRI admin-merges, pinned to the approved head SHA | Merge commit `9cc828ee`, at `68b9358`. George clean; triage posted. Two low findings were deferred to **#962** (clearer wording; enforcing the pin with branch protection).                                                                                                                           |
+
+### Learnings
+
+- **Pin every merge to the full head SHA** (`--match-head-commit`, 40 characters). The pin refused two stale actions today: an update-branch on #782 after the bench had rebased it, and an earlier merge call with a truncated SHA.
+- **Re-running a job does not pick up a fix from `develop`.** A re-run tests the same merge ref. Update or rebase the branch instead.
+- **Don't run `git worktree prune` from the container.** Worktrees that Mac sessions create under `/private/tmp` look missing from inside it. A prune here removed git's records for 55 of them. A check on the Mac found all 55 folders were already gone, most likely cleared when the Mac rebooted that morning. Every committed tip is in `develop` or superseded there. Two draft chains are pinned locally under `refs/rescue/pruned-2026-09-25/`.
+
+### Next
+
+- The DRI decides on #962: branch protection for `develop`, which would also settle the D22 follow-up.
+- Review review-bot PR #1 (frank/george) before deciding whether to enable the merge lane.
+
 ## 2026-09-25 (Docker session) — v0.2.12 promoted and verified on staging, with the launch intro, and the tester build released
 
 The DRI tried a launch intro on a Worker preview and asked to ship it. Their words, verbatim: "ok i LOVE that. lets ship it into staging. can we slipstream into 0.2.11 or must it be a new point release. either is fine." It shipped as a new point release, because 0.2.11 was already on staging and on tester builds. The intro merged as #917, before George's T3 round, on the DRI's call; that is recorded on #917.

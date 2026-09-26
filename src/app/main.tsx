@@ -11,6 +11,7 @@ import { createRoot } from "react-dom/client";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { bootstrapServiceWorker } from "@/hooks/register-service-worker";
 import { installStoredTheme } from "@/hooks/use-theme";
+import { installStoredDesign } from "@/hooks/use-design";
 import { App } from "./App";
 import "./globals.css";
 
@@ -20,6 +21,9 @@ import "./globals.css";
 // leaves — the stylesheet has already painted its dark default by the time any
 // module body runs, and closing that last gap means an inline script.
 installStoredTheme();
+// Same reasoning, same residual, for the O4 design switch (#938): a tester who
+// chose O4 should not see one frame of the current look on every launch.
+installStoredDesign();
 
 // Web: a no-op — `vite-plugin-pwa`'s own injected script still registers the
 // service worker, unchanged. Native: never registers one, and tears down

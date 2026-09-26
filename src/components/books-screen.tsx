@@ -24,6 +24,7 @@ import { ShareProgress } from "./share-progress";
 import { storagePressureNotice } from "./storage-pressure-notice";
 import { strings } from "@/lib/strings";
 import { ThemeControl } from "./theme-control";
+import { DesignControl } from "./design-control";
 import { useFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import type { FailureKey } from "@/hooks/save-failure";
@@ -1538,7 +1539,11 @@ export function BooksScreen({
           chapter and recorder menus (#149) — its own docblock holds why it is
           one shared component, why the glyph names the destination, and why
           the tap leaves this menu open. What stays Books-only is the panel
-          above it, for the two reasons recorded there. */}
+          above it, for the two reasons recorded there.
+
+          `DesignControl` (#938) is Books-only too, but for a different
+          reason: it is this batch's own files-owned scope, not a deliberate
+          split — see that component's docblock. */}
       {/* `hamburger`: the ≡ in the header above stays a ≡ inside the open
           panel too — same glyph, same corner, and no visible "Menu" title
           (#608, the requirements owner's navigation rule). The recorder's
@@ -1555,6 +1560,7 @@ export function BooksScreen({
           />
         )}
         <ThemeControl />
+        <DesignControl />
       </Menu>
 
       {/* New Book asks for the name before it creates anything (#314). The same

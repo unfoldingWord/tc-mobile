@@ -215,8 +215,11 @@ export const strings = {
   openSegment: (n: number, label: string | null): string =>
     `Open segment ${strings.segmentHeading(n, label)}`,
   scrubSegment: (n: number): string => `Position in segment ${n}`,
-  markFinished: (n: number): string => `Mark segment ${n} finished`,
-  markUnfinished: (n: number): string => `Mark segment ${n} not finished`,
+  // "done", not "finished" (D17, #949): the O4 tile's caption is the
+  // workbench's "Done", and the label must hold the caption (label-in-name).
+  // One string for both looks and both menus (segment row and recorder).
+  markFinished: (n: number): string => `Mark segment ${n} done`,
+  markUnfinished: (n: number): string => `Mark segment ${n} not done`,
   /**
    * The segment's display heading (#591): the ordinal, then the facilitator's
    * label when set — "3 · verses 3–4". The ordinal always stays, because it is
@@ -250,6 +253,28 @@ export const strings = {
   // the training is where that glyph is tested rather than assumed.
   useLightTheme: "Switch to the light screen, for bright sunlight",
   useDarkTheme: "Switch to the dark screen, for low light",
+  // The O4 design switch (#938, epic #936). One control, `aria-pressed`
+  // carrying the on/off state (`Control`'s `pressed` prop, the same
+  // mechanism the zoom and level-meter toggles use) — so the label itself
+  // never has to change, unlike the theme toggle above, which names a
+  // destination because it has no `aria-pressed` state to carry that for it.
+  newLookO4: "New look (O4)",
+  // The O4 menu tiles' visible captions (#949, `o4-tile-menu.tsx`). Shown,
+  // never announced: each tile's name is the label its current-look row
+  // already had, and every caption is a word that label holds (label-in-name,
+  // WCAG 2.5.3). Marking done says the workbench's "Done", and
+  // `markFinished`/`markUnfinished` say "done" to match (D17).
+  tileEdit: "Edit",
+  tileFinished: "Done",
+  tileRename: "Rename",
+  tileErase: "Erase",
+  tileShare: "Share",
+  tileLight: "Light",
+  tileDark: "Dark",
+  // The edit-mode recorder menu's exit tile (G3); its name is `doneEditing`.
+  // Its own key, not `tileFinished`: that one is marking done, this is leaving
+  // edit, and the two only happen to share a word in English.
+  tileDone: "Done",
   closeRecorder: "Close recorder",
   /**
    * The recorder sheet's header trail — the Segments one with the segment
@@ -780,16 +805,22 @@ export const strings = {
   // The two-tap discard, and the fainter line beneath it once armed. "for good"
   // only on the record path — there the held take is the only copy; on the edit
   // path the stored recording survives and only the edit goes.
+  //
+  // The record-path arms ARE the take-recovery panel's discard copy, read from
+  // those keys rather than written out a second time (#805 item 1): both
+  // confirms destroy the only copy of a recording, and `takeRecoverDiscard`'s
+  // own comment says the two share one shape. The arrows run only after
+  // `strings` is initialised, as `menuOpenWithFailures` already relies on.
   saveFailedDiscard: (editOnly: boolean, armed: boolean): string =>
     armed
       ? editOnly
         ? "Tap again to discard these changes"
-        : "Tap again to delete this recording for good"
+        : strings.takeRecoverDiscardArmed
       : editOnly
         ? "Discard these changes"
-        : "Delete this recording",
+        : strings.takeRecoverDiscard,
   saveFailedDiscardHint: (editOnly: boolean): string =>
-    editOnly ? "Tap again to discard them." : "Tap again to delete it.",
+    editOnly ? "Tap again to discard them." : strings.takeRecoverDiscardHint,
 
   // ── Root error boundary (#167) ───────────────────────────────────────────
   // The whole text layer of the crash screen. Says that something failed and

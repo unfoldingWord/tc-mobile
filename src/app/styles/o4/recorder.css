@@ -1,0 +1,182 @@
+/* O4 — Recorder (08-12). Owner: #945. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file. */
+
+/*
+ * The five workbench states are read off one attribute, data-o4-look, which
+ * recorder.tsx sets on the stage ONLY under O4 (recorder-o4.tsx's
+ * recorderLook): idle, recording, recorded, playing, editing.
+ *
+ * Static states only. The live edge's pulse and the recording dot's blink are
+ * #950's; the edge here is its resting frame. The current look's own
+ * rec-pulse on the dot is left running, not replaced.
+ *
+ * Deliberately NOT touched, so they behave the same in both looks: opacity and
+ * filter on any control (the #857/#878 greyed states live in
+ * 3-components.css), the stage's gating (#835), and the ⋮ opener's wiring
+ * (#863) — the edit bar's ⋮ is resized with its row, nothing more.
+ *
+ * The layout values marked "#939 token" are literal until #939's type and
+ * radius primitives land; #939 swaps them.
+ */
+@layer components {
+  /* --- stage (08-12) ---------------------------------------------------- */
+  [data-design="o4"] .recorder-stage {
+    border-radius: 20px; /* #939 token */
+    background: var(--s-surface);
+  }
+  /* The hairline and the live edge are drawn on a layer ABOVE the stage's
+     children: an inset box-shadow on the stage itself paints under the
+     full-width canvas. Pointer-transparent, so it never takes the pan. */
+  [data-design="o4"] .recorder-stage::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: inset 0 0 0 1px var(--s-card-edge);
+  }
+  [data-design="o4"] .recorder-stage[data-o4-look="recording"]::after {
+    box-shadow: inset 0 0 0 2px var(--s-live);
+  }
+
+  /* --- timer and recording dot (09) ------------------------------------- */
+  [data-design="o4"] .recorder-status {
+    top: 16px;
+    left: 18px;
+    z-index: 3;
+  }
+  [data-design="o4"] .recorder-status .t-timer {
+    font-size: 32px; /* #939 token */
+    font-weight: 800; /* #939 token */
+    font-variant-numeric: tabular-nums;
+  }
+  [data-design="o4"] .recorder-status .rec-dot svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  /* --- timestamp (10 recorded, 11 playing) ------------------------------ */
+  [data-design="o4"] .recorder-stamp {
+    position: absolute;
+    top: 20px;
+    right: 18px;
+    z-index: 3;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 15px; /* #939 token */
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--s-ink-muted);
+    pointer-events: none;
+  }
+
+  /* --- playhead (11) ---------------------------------------------------- */
+  /* A scrolling play's playhead IS the fixed centerline (#415), which draws
+     with the bg-live utility; a components-layer background cannot beat a
+     utility, so the playhead colour is painted over it. The in-place
+     audition's line takes bg-playhead from recorder.tsx instead. */
+  [data-design="o4"]
+    .recorder-stage[data-o4-look="playing"]
+    [data-testid="centerline-overlay"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--s-playhead);
+  }
+
+  /* --- trim handles (12) ------------------------------------------------ */
+  /* The hit box widens to the knob, and the clamp that keeps a zoom-fitted
+     edge inside the canvas (#707) reads this same property. */
+  [data-design="o4"] .selection-handle {
+    --c-selection-hit: 30px;
+  }
+  [data-design="o4"] .selection-handle::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 30px;
+    height: 56px;
+    margin-top: -28px;
+    border-radius: 15px; /* #939 token */
+    background: var(--s-voice);
+    pointer-events: none;
+  }
+
+  /* --- transport (08-11: the pair; 12: the edit bar) -------------------- */
+  /* Sizes are capped at the design's 80 (the big pair) and 64 (secondary)
+     and shrink with the bar on a narrow phone, never below the 44 touch
+     floor. They are computed from the bar's own width (container units)
+     rather than a percentage, because Record sits inside its guide-ring span
+     and a hinted control inside its hint span, so a percentage would resolve
+     against the wrong box. */
+  [data-design="o4"] .recorder-toolbar.pair {
+    container-type: inline-size;
+    --o4-big: max(
+      44px,
+      min(80px, calc((100cqi - 128px - 3 * var(--c-gap-parts)) / 2))
+    );
+    grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr) 64px;
+    height: calc(80px + var(--p-space-3));
+  }
+  [data-design="o4"] .recorder-toolbar.pair .control--record {
+    width: var(--o4-big);
+    height: var(--o4-big);
+  }
+  [data-design="o4"] .recorder-toolbar.pair .control--play {
+    width: var(--o4-big);
+    height: var(--o4-big);
+  }
+  /* Erase and the edit toggle: the 64 secondary circle on the well. No ink
+     here or on the edit bar: the pressed toggle's green ink (is-on) and the
+     variants' own inks must keep winning. */
+  [data-design="o4"]
+    .recorder-toolbar.pair
+    .control:not(.control--record):not(.control--play) {
+    width: 64px;
+    height: 64px;
+    background: var(--s-well);
+  }
+  /* Six controls share the edit bar, so five share what the toggle's fixed
+     64 right-hand slot (the same slot as the pair's) leaves. The bar is the
+     pair's height, so the toggle keeps its vertical centre across the flip
+     and the stage does not resize (3-components.css holds the same rule). */
+  [data-design="o4"] .recorder-toolbar.edit {
+    container-type: inline-size;
+    --o4-secondary: max(
+      44px,
+      min(64px, calc((100cqi - 64px - 5 * var(--p-space-1)) / 5))
+    );
+    grid-template-columns: repeat(5, minmax(0, 1fr)) 64px;
+    height: calc(80px + var(--p-space-3));
+  }
+  [data-design="o4"] .recorder-toolbar.edit .control {
+    justify-self: center;
+    width: var(--o4-secondary);
+    height: var(--o4-secondary);
+    border-radius: 50%;
+    background: var(--s-well);
+  }
+  /* The toggle is the bar's last child, always wrapped by its hint span, and
+     stays the pair's 64 in its own 64 slot rather than shrinking with the
+     five. */
+  [data-design="o4"]
+    .recorder-toolbar.edit
+    > .control-hinted:last-child
+    .control {
+    width: 64px;
+    height: 64px;
+  }
+
+  /* --- the edit-mode pill (12) ------------------------------------------ */
+  /* The workbench's edit badge: the voice wash with its darker ink, which
+     #937 allows for text on the quiet washes. */
+  [data-design="o4"] .modepill {
+    height: 44px;
+    border-radius: 22px;
+    padding: 0 14px;
+    font-size: 17px; /* #939 token */
+    font-weight: 800; /* #939 token */
+    background: var(--s-voice-quiet);
+    color: var(--s-voice-text);
+  }
+}
