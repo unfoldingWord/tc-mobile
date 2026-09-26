@@ -28,6 +28,7 @@ import {
   renameChapter,
   renameSegment,
   resolveChapterClipIds,
+  setBookCoverColour,
 } from "@/lib/storage/books";
 import {
   addTake,
@@ -856,6 +857,91 @@ describe("rename book and chapter", () => {
   it("rejects renaming an unknown chapter", async () => {
     await expect(renameChapter("nope" as never, "Mark 6")).rejects.toThrow(
       /No such chapter/
+    );
+  });
+});
+
+describe("book cover colour (#957)", () => {
+  it("gives a fresh book a null colour (the derived fallback until chosen)", async () => {
+    const book = await createBook("Mark");
+    // Present and null, never absent — the same shape `Chapter.name` and
+    // `Segment.label` hold for a fresh row, so a reader never meets
+    // `undefined`. `lib/cover-colour.ts`'s `resolveCoverKey` is what turns
+    // this into a real colour.
+    expect(book.coverColourKey).toBeNull();
+    expect((await getBook(book.id))?.coverColourKey).toBeNull();
+  });
+
+  it("sets a book's cover colour in place", async () => {
+    const book = await createBook("Mark", null, 1000);
+    const updated = await setBookCoverColour(book.id, "forest", 5000);
+
+    expect(updated.coverColourKey).toBe("forest");
+    // Choosing a colour is activity, the same rule `renameBook` follows:
+    // updatedAt bumps so the book floats up the listBooks-sorted shelf.
+    expect(updated.updatedAt).toBe(5000);
+    expect((await getBook(book.id))?.coverColourKey).toBe("forest");
+  });
+
+  it("persists a chosen colour across a fresh database connection", async () => {
+    const book = await createBook("Mark");
+    await setBookCoverColour(book.id, "teal", 2000);
+
+    await closeDb();
+    const reopened = await getDb();
+    expect((await reopened.get("books", book.id))?.coverColourKey).toBe("teal");
+  });
+
+  it("clears a chosen colour back to null", async () => {
+    const book = await createBook("Mark");
+    await setBookCoverColour(book.id, "teal", 2000);
+    const cleared = await setBookCoverColour(book.id, null, 3000);
+
+    expect(cleared.coverColourKey).toBeNull();
+    expect((await getBook(book.id))?.coverColourKey).toBeNull();
+  });
+
+  it("setting the same colour again is an idempotent no-op (safe to re-run)", async () => {
+    const book = await createBook("Mark", null, 1000);
+    await setBookCoverColour(book.id, "forest", 5000);
+
+    const again = await setBookCoverColour(book.id, "forest", 9000);
+
+    // No write on the no-op: recency is unchanged, not bumped to 9000 — a
+    // re-run of the same write must not reshuffle the shelf.
+    expect(again.updatedAt).toBe(5000);
+    expect((await getBook(book.id))?.updatedAt).toBe(5000);
+  });
+
+  it("setting null when already null is an idempotent no-op", async () => {
+    const book = await createBook("Mark", null, 1000);
+    const again = await setBookCoverColour(book.id, null, 9000);
+    expect(again.updatedAt).toBe(1000);
+  });
+
+  it("re-running the exact same write repeatedly stays safe", async () => {
+    // The idempotency bar AGENTS.md asks for: calling it three times in a row
+    // with the same value leaves the store exactly where one call did.
+    const book = await createBook("Mark", null, 1000);
+    await setBookCoverColour(book.id, "brick", 2000);
+    await setBookCoverColour(book.id, "brick", 3000);
+    const third = await setBookCoverColour(book.id, "brick", 4000);
+
+    expect(third.coverColourKey).toBe("brick");
+    expect(third.updatedAt).toBe(2000);
+    expect((await getBook(book.id))?.coverColourKey).toBe("brick");
+  });
+
+  it("does not touch the book's name or language", async () => {
+    const book = await createBook("Mark", "en", 1000);
+    const updated = await setBookCoverColour(book.id, "plum", 2000);
+    expect(updated.name).toBe("Mark");
+    expect(updated.languageCode).toBe("en");
+  });
+
+  it("rejects setting a colour on an unknown book", async () => {
+    await expect(setBookCoverColour("nope" as never, "forest")).rejects.toThrow(
+      /No such book/
     );
   });
 });

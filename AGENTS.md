@@ -384,7 +384,9 @@ track throwing on its own `stop()` (`hooks/audio-io.ts`,
 save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
 (`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
-segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591),
+segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
+failed book cover-colour write
+(`hooks/use-book-cover-colour.ts`, `"book-cover-colour"`, #957),
 playback's own
 resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
 `"playback-resume"`, and the fail-closed gate that still finds the context
