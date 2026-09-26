@@ -151,7 +151,7 @@ Generated project facts (evidence, from the scaffolded projects):
   build passes `-PversionCode`), `versionName` read from `package.json`'s
   `version` at build time (`0.2.3` as of this writing — was the Capacitor
   template default `"1.0"` until #410).
-- **iOS:** deployment target `15.0`, bundle id `org.unfoldingword.tcmobile`,
+- **iOS:** deployment target `15.4`, bundle id `org.unfoldingword.tcmobile`,
   `MARKETING_VERSION 1.0`, `CURRENT_PROJECT_VERSION 1`, display name `tC Mobile`.
 
 ---
