@@ -26,10 +26,12 @@ the tree wins, and the disagreement is worth an issue.
 
 ## Setup and commands
 
-Node **22.22.2+**, except the 23.x line (`engines` in `package.json`; a
+Node **22.22.2+**, except the 23.x line, 24.0.0-24.14.x, and the 25.x line
+(`engines` in `package.json`: `^22.22.2 || ^24.15.0 || >=26.0.0`; a
 render-test dependency's own engine range excludes 23.x, #577; the floor
 itself was raised from 22.12.0 by lint-staged 17.5.1's own declared range,
-`>=22.22.1`). The iOS
+`>=22.22.1`; 24.0.0-24.14.x and 25.x were dropped to unblock jsdom 30 and its
+transitives, #990, DRI decision: "Drop 24.0–24.14 and 25 (Recommended)"). The iOS
 Xcode-selection cases in `tests/ios-workflow-gates.test.ts` exec `ruby` (with
 RubyGems for `Gem::Version`) on any platform, not only on the Mac setup in
 [`docs/native/README.md` §3](docs/native/README.md#3-one-time-mac-prerequisites).
