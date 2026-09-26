@@ -13,6 +13,11 @@ import {
 import type { CaptureFailure } from "@/lib/audio/capture-failure";
 import { decodeRetry } from "@/lib/audio/retry-decode";
 import { classifyEmptySeal, classifyStopDecode } from "@/lib/audio/stop-decode";
+import {
+  TAKE_CAP_MS,
+  takeCapStatus,
+  type TakeCapStatus,
+} from "@/lib/audio/take-cap";
 import { strings } from "@/lib/strings";
 
 import {
@@ -289,6 +294,14 @@ export interface UseRecorder {
    * rather than a resting-empty strip. False while it is working or idle.
    */
   meterFailed: boolean;
+  /**
+   * The live take against the length cap (#1005, "Warn at 15, seal at 20"):
+   * `nearLimit` from 15:00 and the time left, for the recorder screen's
+   * state-in-place marker. Only a `"recording"` take is ever near the limit.
+   * At 20:00 the take is sealed like a `pagehide` seal (`seal()`), so the
+   * sheet commits and saves it, and one `"recorder-take-cap"` row is logged.
+   */
+  readonly takeCap: TakeCapStatus;
 }
 
 /**
@@ -354,14 +367,6 @@ export function useRecorder(): UseRecorder {
       tickRef.current = null;
     }
   }, []);
-
-  /** Run the elapsed timer for the current span, on top of the banked total. */
-  const startTick = useCallback(() => {
-    clearTick();
-    tickRef.current = window.setInterval(() => {
-      setElapsedMs(performance.now() - startedAtRef.current);
-    }, 100);
-  }, [clearTick]);
 
   /** Close the VU tap if one is open. Safe to call when there is none. */
   const closeTap = useCallback(() => {
@@ -476,6 +481,51 @@ export function useRecorder(): UseRecorder {
     stopTracks(stream, "recorder-release-track");
     if (streamRef.current === stream) streamRef.current = null;
   }, []);
+
+  const seal = useCallback((): boolean => {
+    if (!takeOpenRef.current) return false;
+    // Already frozen by a #59 interruption: its commit is on the way, and the
+    // only thing to do is not cancel it.
+    if (!recordingRef.current) return true;
+    // `onInterrupted`'s freeze, minus the parts that belong to a lost track:
+    // the recorder is still live here, so its tracks stay up until `stop()`
+    // has the final slice, and there is no failure row (#478's constraint).
+    clearTick();
+    tapRef.current?.disconnect();
+    recordingRef.current = false;
+    setState("processing");
+    return true;
+  }, [clearTick, setState]);
+
+  /**
+   * Run the elapsed timer for the current take, and seal the take when it
+   * reaches the length cap (#1005). The cap reuses `seal()`, so the sheet's
+   * interruption commit saves the take exactly as it does after a `pagehide`.
+   * Unlike a `pagehide`, the page is staying, so the one failure-log row that
+   * says the take was cut is written here. `seal()` clears this interval, so
+   * the row is written once per take.
+   *
+   * The check runs on this 100 ms tick, so a page whose timers the browser
+   * throttles (backgrounded) seals on the first tick it is given after 20:00,
+   * which can be later than 20:00.
+   */
+  const startTick = useCallback(() => {
+    clearTick();
+    tickRef.current = window.setInterval(() => {
+      const elapsed = performance.now() - startedAtRef.current;
+      setElapsedMs(elapsed);
+      // `true`: this tick only runs while recording. Every exit from
+      // "recording" (seal, interruption, stop, cancel) clears it first.
+      if (!takeCapStatus(elapsed, true).reached) return;
+      seal();
+      reportFailure(
+        new Error(
+          `The take reached the ${TAKE_CAP_MS / 60_000}-minute cap and was sealed and saved (#1005)`
+        ),
+        "recorder-take-cap"
+      );
+    }, 100);
+  }, [clearTick, seal]);
 
   const start = useCallback(async (): Promise<boolean> => {
     if (!supported) {
@@ -1032,21 +1082,6 @@ export function useRecorder(): UseRecorder {
     []
   );
 
-  const seal = useCallback((): boolean => {
-    if (!takeOpenRef.current) return false;
-    // Already frozen by a #59 interruption: its commit is on the way, and the
-    // only thing to do is not cancel it.
-    if (!recordingRef.current) return true;
-    // `onInterrupted`'s freeze, minus the parts that belong to a lost track:
-    // the recorder is still live here, so its tracks stay up until `stop()`
-    // has the final slice, and there is no failure row (#478's constraint).
-    clearTick();
-    tapRef.current?.disconnect();
-    recordingRef.current = false;
-    setState("processing");
-    return true;
-  }, [clearTick, setState]);
-
   const cancel = useCallback(() => {
     generationRef.current++;
     takeOpenRef.current = false;
@@ -1118,5 +1153,6 @@ export function useRecorder(): UseRecorder {
     readScope,
     peekScope,
     meterFailed,
+    takeCap: takeCapStatus(elapsedMs, state === "recording"),
   };
 }
