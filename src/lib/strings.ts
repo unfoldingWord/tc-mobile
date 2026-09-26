@@ -322,6 +322,9 @@ export const strings = {
   zoomAtWhole: "Zoomed to the whole segment. Zoom in to a quarter.",
   zoomAtQuarter: "Zoomed to a quarter. Zoom out to the whole segment.",
   micNeededTitle: "Microphone access is needed to record",
+  // The O4 look's mic-denied title (D15, #948), from the O4 original. O4 only:
+  // the current look keeps `micNeededTitle` until O4 becomes the default.
+  micOffTitle: "Microphone is off",
   micRetry: "Try again",
   micBack: "Go back",
   finishedWriteFailed: "Could not save the finished mark.",
@@ -586,6 +589,18 @@ export const strings = {
   // because it is the same control on the same surface saying the same word.
   eraseCancel: "Cancel",
   eraseFailed: "Could not erase the recording. Try again.",
+  // The confirm's "Play what will be lost" row (#979 remainder, O4 "13"
+  // only): the workbench's own copy, word for word, for the Play/Pause
+  // transport beside the preview waveform.
+  eraseConfirmPreviewPlay: "Play what will be lost",
+  eraseConfirmPreviewPause: "Pause",
+  // The clipboard's bin under the line (#862): throws away a cut that was
+  // never pasted, behind the same confirm as the whole-take erase. "Cut
+  // audio", not "clipboard": the translator cut a piece of their recording,
+  // and that piece is what is lost.
+  discardClip: "Throw away the cut audio",
+  discardClipConfirmTitle: "Throw away the cut audio?",
+  discardClipConfirm: "Throw away",
 
   // ── Delete a book (#337) ─────────────────────────────────────────────────
   // The book ≡-menu row, and the two-tap confirm behind it — the same dialog
@@ -597,6 +612,12 @@ export const strings = {
   deleteBookConfirmTitle: (book: string): string =>
     `Delete ${book} and everything in it?`,
   deleteBookConfirm: "Delete",
+  // The O4 look asks inside the book sheet instead (#980, G6; #949 D16): the
+  // sheet's actions swap for these two, under the book's cover and name. The
+  // workbench's own labels, word for word — the DRI prefers the originals.
+  // O4 only; the current look keeps `eraseCancel`/`deleteBookConfirm` above.
+  keepBook: "Keep the book",
+  deleteBookYes: "Yes, delete the book",
   // A destructive op that did NOT happen has to say so in its own words. The
   // store's own message — a quota or connection fault, since `deleteBook` never
   // throws on a missing book — is for a maintainer; this is the line a screen
@@ -630,6 +651,12 @@ export const strings = {
   // Back after the activity stopped (`resolveProvesDelivery`). So never
   // "sent", "delivered", "shared to", or an app's name; a test pins that.
   shareHandingOver: "Opening the phone's share sheet.",
+  // The O4 share circle (#947). D22: the core is a progress bar with this
+  // label, chapter and book alike. D21: the numbered chips above it are one
+  // image with this label — how many of the items go out, of all of them.
+  sharePreparingLabel: "Preparing to share",
+  shareItemsGoOut: (out: number, all: number): string =>
+    `${out} of ${all} go out`,
   shareSent: "Handed to the phone's share sheet.",
   shareDismissed: "The share sheet was closed before anything went out.",
   // The native Android plugin can resolve on a Back after the chooser's
@@ -805,16 +832,22 @@ export const strings = {
   // The two-tap discard, and the fainter line beneath it once armed. "for good"
   // only on the record path — there the held take is the only copy; on the edit
   // path the stored recording survives and only the edit goes.
+  //
+  // The record-path arms ARE the take-recovery panel's discard copy, read from
+  // those keys rather than written out a second time (#805 item 1): both
+  // confirms destroy the only copy of a recording, and `takeRecoverDiscard`'s
+  // own comment says the two share one shape. The arrows run only after
+  // `strings` is initialised, as `menuOpenWithFailures` already relies on.
   saveFailedDiscard: (editOnly: boolean, armed: boolean): string =>
     armed
       ? editOnly
         ? "Tap again to discard these changes"
-        : "Tap again to delete this recording for good"
+        : strings.takeRecoverDiscardArmed
       : editOnly
         ? "Discard these changes"
-        : "Delete this recording",
+        : strings.takeRecoverDiscard,
   saveFailedDiscardHint: (editOnly: boolean): string =>
-    editOnly ? "Tap again to discard them." : "Tap again to delete it.",
+    editOnly ? "Tap again to discard them." : strings.takeRecoverDiscardHint,
 
   // ── Root error boundary (#167) ───────────────────────────────────────────
   // The whole text layer of the crash screen. Says that something failed and
@@ -909,6 +942,38 @@ export const strings = {
     "This phone is running low on space. Mark the segments you're done with as finished — they take much less room.",
   storageCritical:
     "This phone is almost out of space, and new recordings may not save. Mark finished segments, or share your work and then remove it.",
+  // The O4 storage banner's own line (state 17, #983), word for word from
+  // the workbench. It leads; the band's line above follows it, because the
+  // workbench speaks that reason through a speaker button this app does not
+  // have yet (#952).
+  storageShareSoon: "Share your work soon",
+
+  // ── Share your work (#987, the O4 storage banner's button, #948 D14) ──────
+  // Every book on the phone as one zip, one folder per book. The labels
+  // follow Share Book's; the gap lines speak in the library's own units
+  // (`LibraryShareGap`): whole books left out, and chapters inside included
+  // books that did not ship whole.
+  shareAll: "Share your work",
+  shareAllUnconfirmed:
+    "Share your work. The last attempt wasn't confirmed — tap to try again.",
+  shareAllPreparing: "Preparing your work to share.",
+  shareAllNothing: "Record a segment before sharing your work.",
+  shareAllFailed: "Could not share your work. Try again.",
+  // `roomForExport` said the phone has too little free space to build the
+  // archive, checked before any encode. The way out is the one the storage
+  // lines above already name: finished segments take much less room.
+  shareAllStorage:
+    "This phone does not have room to prepare your work. Mark finished segments, then try again.",
+  shareAllMissing: (n: number): string =>
+    couldNotBeIncluded(plural(n, { one: "{n} book", other: "{n} books" })),
+  shareAllIncomplete: (n: number): string =>
+    plural(n, {
+      one: "{n} chapter could not be included in full.",
+      other: "{n} chapters could not be included in full.",
+    }),
+  shareAllFilename: "My work.zip",
+  // Each book's folder inside the zip, sanitised like shareBookFilename.
+  shareAllFolder: (book: string): string => filenameSafe(book),
 
   // ── The database is unreachable (#221) ───────────────────────────────────
   // Two full-screen states, one in each copy of the app, when a newer copy
@@ -1052,4 +1117,57 @@ export const strings = {
   // The wording itself is a coordinator assumption pending the requirements
   // owner's sign-off — see the #878 PR body.
   stopToErase: "Stop recording to erase.",
+
+  // ── Phone check (#1009) ──────────────────────────────────────────────────
+  // A hidden tester screen, reached by five taps on the build stamp or by
+  // `?check=phone`. Its words are for a tester filling in #974, not for a
+  // translator, but they are screen copy all the same and so live here. The
+  // REPORT it produces is engineering data and is worded in
+  // `lib/phone-check/report.ts` instead — see that file's docblock.
+  phoneCheckTitle: "Phone check",
+  phoneCheckIntro:
+    "Measures this phone for a tester report. Nothing runs until you tap Start, and it never touches your books or recordings.",
+  phoneCheckStart: "Start",
+  phoneCheckRunWaiting: "Waiting for a recording to finish converting.",
+  phoneCheckRunDevice: "Reading device info.",
+  phoneCheckRunEncode: "Encoding 5 minutes of test audio.",
+  phoneCheckRunStorage: "Writing and reading 50 MB of test audio.",
+  phoneCheckDone: "Done.",
+  phoneCheckMemoryTitle: "Memory ceiling",
+  phoneCheckMemoryWarning:
+    "Run this last. It fills memory until the phone refuses, and the app may restart. If it does, open Phone check again to see how far it got.",
+  phoneCheckMemoryStart: "Start memory test",
+  phoneCheckMemoryStep: (mb: number) => `Trying ${mb} MB.`,
+  phoneCheckReportLabel: "Report for #974",
+  phoneCheckCopy: "Copy report",
+  phoneCheckCopied: "Copied.",
+  phoneCheckSelected: "Selected. Use your phone's Copy.",
+  phoneCheckClose: "Close",
+
+  // ── Cover colour picker (#957, from #937 D7/D8) ──────────────────────────
+  // The picker's group name, and one name per palette key
+  // (`lib/cover-colour.ts`'s `CoverColourKey`) — the whole accessible text
+  // layer for a screen built for people who may not read, so each swatch has
+  // to carry a real word, not just a fill colour a screen reader cannot see.
+  // Worded by `components/cover-colour-copy.ts`'s exhaustive switch, the same
+  // split `capture-failure-copy.ts` uses: the KEY is a `lib/` value, the
+  // WORDS live here.
+  coverColourLabel: "Cover colour",
+  coverColourAmber: "Amber",
+  coverColourTeal: "Teal",
+  coverColourPlum: "Plum",
+  coverColourForest: "Forest",
+  coverColourBrick: "Brick",
+  coverColourSlate: "Slate",
+  coverColourRose: "Rose",
+  coverColourOlive: "Olive",
+  coverColourRust: "Rust",
+  coverColourCocoa: "Cocoa",
+  // A swatch button's whole accessible name: the colour's name, plus its
+  // selected state — the same "whole name, plus a trailing state word" shape
+  // `bookRow` above uses for "expanded"/"collapsed". `aria-pressed` already
+  // carries this machine-readably; the word is for the same reason `pressed`
+  // is never inferred from a glyph alone (`Control`'s own `pressed` doc).
+  coverSwatchLabel: (name: string, selected: boolean): string =>
+    selected ? `${name}, selected` : name,
 } as const;

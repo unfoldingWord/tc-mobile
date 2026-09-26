@@ -6,6 +6,14 @@ import {
   withCanvasFallback,
 } from "./canvas-fallback-colors";
 import { useLiveTheme } from "@/hooks/use-theme";
+import {
+  advanceColumnRate,
+  columnsRightOfHead,
+  foldContextSide,
+  newColumnRateClock,
+  type CaptureContext,
+} from "@/lib/audio/capture-context";
+import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { captureWindow } from "@/lib/audio/viewport";
 import { cn } from "@/lib/utils";
 import type { CaptureScope } from "@/lib/audio/capture-peaks";
@@ -37,6 +45,14 @@ interface LiveScopeProps {
    * Which one ships is a deferred UX call (the requirements owner, #120) — the geometry serves both.
    */
   headFraction?: number;
+  /**
+   * The segment's existing clip either side of the take's insertion offset
+   * (#640), or `null` for a first take. Drawn left of the new audio and right
+   * of the head, at the scope's own measured column rate, so an append keeps
+   * the take before it in view and a mid-clip insert keeps the clip on both
+   * sides. Read once per paint through a ref; it is fixed for the take.
+   */
+  context?: CaptureContext | null;
   height?: number;
   /**
    * The whole accessible name. The scope is decorative status, so the canvas is
@@ -61,6 +77,15 @@ interface LiveScopeProps {
  * The zero-valued pad the ring emits before it fills is skipped via
  * `scope.count`: a `{0,0}` column is silence to a canvas, so painting it would
  * draw the unfilled head as amber "recorded silence".
+ *
+ * Where the segment already holds audio, that pad is not left blank (#640):
+ * the `context` prop carries the clip either side of the insertion offset,
+ * and the paint draws the audio before the offset in the pad, butted against
+ * the take's oldest column, and the audio after it from the head to the right
+ * edge. So an append keeps the take before it in view while the new one
+ * grows, and a mid-clip insert keeps the clip on both sides. A first take has
+ * no context, and a take at the very start has nothing before it — those are
+ * the two cases the requirements owner named where a blank left is right.
  *
  * Drawn at ABSOLUTE level, deliberately — `Waveform` fits a stored take to the
  * lane (#358, `lib/audio/display-gain.ts`) and this does not. While capture is
@@ -96,6 +121,7 @@ export function LiveScope({
   peekScope,
   active,
   headFraction = 0.5,
+  context = null,
   height = 200,
   label,
   className,
@@ -127,6 +153,22 @@ export function LiveScope({
   // safe to re-read only while no push is happening, which is exactly the
   // inactive window this ref is read in.
   const lastScopeRef = useRef<CaptureScope | null>(null);
+  // The existing clip beside the take (#640), latched like the readers above.
+  const contextRef = useRef(context);
+  useEffect(() => {
+    contextRef.current = context;
+  }, [context]);
+  // The column rate the ring actually advances at, measured from this mount's
+  // own ticks over a rolling window that a gap restarts (`advanceColumnRate`) —
+  // kept across effect re-runs so a frozen repaint draws the context at the
+  // scale the take was recorded at.
+  const rateRef = useRef(newColumnRateClock());
+  // Reused fold buffers for the context columns, grown on demand — never
+  // reallocated per frame (#102).
+  const foldRef = useRef({
+    min: new Float32Array(0),
+    max: new Float32Array(0),
+  });
 
   // `useLayoutEffect`, not `useEffect`: the first paint below must land BEFORE
   // the browser paints the freshly-mounted canvas. A remount happens on a
@@ -186,13 +228,58 @@ export function LiveScope({
       // never zero (head > 0), so no divide-by-zero guard.
       const barW = Math.max(1, w / buckets / span - 1);
       ctx.fillStyle = stroke;
+      const bar = (i: number, lo: number, hi: number) => {
+        const x = ((i / buckets - win.startFraction) / span) * w;
+        const top = mid - hi * mid;
+        const bottom = mid - lo * mid;
+        ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
+      };
+      // The existing clip (#640), in the same colour and at the same absolute
+      // scale as the take: `before` fills the not-yet pad left of the new
+      // audio, walking outward from the oldest real column, and `after` runs
+      // from the head to the right edge. Folded to the MEASURED column rate so
+      // a second of stored audio is as wide as a second of the take beside it.
+      const around = contextRef.current;
+      if (around) {
+        const bucketsPerColumn =
+          CANONICAL_SAMPLE_RATE /
+          rateRef.current.rate /
+          around.samplesPerBucket;
+        const right = columnsRightOfHead(buckets, span);
+        const need = Math.max(buckets, right);
+        if (foldRef.current.min.length < need) {
+          foldRef.current = {
+            min: new Float32Array(need),
+            max: new Float32Array(need),
+          };
+        }
+        const fold = foldRef.current;
+        const oldest = buckets - scope.count;
+        const left = foldContextSide(
+          around.before,
+          bucketsPerColumn,
+          oldest,
+          fold.min,
+          fold.max
+        );
+        for (let j = 0; j < left; j++) {
+          bar(oldest - 1 - j, fold.min[j]!, fold.max[j]!);
+        }
+        const ahead = foldContextSide(
+          around.after,
+          bucketsPerColumn,
+          right,
+          fold.min,
+          fold.max
+        );
+        for (let j = 0; j < ahead; j++) {
+          bar(buckets + j, fold.min[j]!, fold.max[j]!);
+        }
+      }
       // Paint only the real trailing columns; the leading `buckets - count` are
       // the not-yet pad (silence-valued, must not draw).
       for (let i = buckets - scope.count; i < buckets; i++) {
-        const x = ((i / buckets - win.startFraction) / span) * w;
-        const top = mid - (scope.max[i] ?? 0) * mid;
-        const bottom = mid - (scope.min[i] ?? 0) * mid;
-        ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
+        bar(i, scope.min[i] ?? 0, scope.max[i] ?? 0);
       }
       // The record head, over the audio, in the record colour.
       ctx.fillStyle = live;
@@ -246,6 +333,9 @@ export function LiveScope({
         // painted frame rather than clearing to blank: a freeze, not a flash
         // (George R1). On a real scope, remember it for a later resize-repaint.
         if (scope) {
+          // One more column pushed: fold it into the rate before painting, so
+          // the context this frame draws is at the scale the ring runs at.
+          advanceColumnRate(rateRef.current, performance.now());
           lastScopeRef.current = scope;
           paint(scope);
         }

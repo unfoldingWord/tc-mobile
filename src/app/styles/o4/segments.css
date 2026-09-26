@@ -108,8 +108,8 @@
     font-variant-numeric: tabular-nums;
   }
   [data-design="o4"] .row--finished .row-badge {
-    background: var(--s-done);
-    color: var(--s-done-ink);
+    background: var(--s-done-quiet); /* D19: the pale wash */
+    color: var(--s-done-text);
   }
   [data-design="o4"] .row-mid {
     display: flex;

@@ -79,13 +79,11 @@ export interface StageState {
  * for ("the same way it renders during the first take") and what avoids the
  * pause/close swap-and-flash that gating the frozen arm on `hasAudio` caused.
  *
- * Tradeoff: while an append is in flight this shows the head-growing (then
- * frozen) live scope in place of the existing clip; the clip returns as soon as
- * the take commits, which is now the same tap that ends it. For the default
- * end-append that reads naturally; for a mid-clip insert it shows the take
- * without the surrounding clip / insert position. Preserving the existing clip
- * *and* live growth together (a composed view) is a larger change tracked
- * separately if wanted.
+ * Swapping to the live scope no longer hides the existing clip (#640): the
+ * scope draws it too, before the insertion offset to the left of the new audio
+ * and after it from the head on (`LiveScope`'s `context`,
+ * `lib/audio/capture-context.ts`). That composition lives in the drawer, not
+ * here, so this rule stays the single mount decision it was.
  */
 export function liveScopeShown(s: StageState): boolean {
   if (s.meterFailed) return false;

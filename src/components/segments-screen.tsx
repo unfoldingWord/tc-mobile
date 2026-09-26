@@ -11,7 +11,7 @@ import {
 import { Control } from "./control";
 import { EmptyState } from "./empty-state";
 import { guidedStep } from "./guided-step";
-import { EraseConfirm } from "./erase-confirm";
+import { EraseConfirm, type EraseConfirmPreview } from "./erase-confirm";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { O4SheetHead } from "./o4-crumbs";
@@ -22,6 +22,7 @@ import { SegmentsHead } from "./segments-head";
 import { segmentsListInert } from "./segments-inert";
 import { shareGapText, shareProgressText } from "./share-error-copy";
 import { ShareMenuSection } from "./share-menu-section";
+import { chapterShareItems } from "./share-o4-view";
 import { ShareProgress } from "./share-progress";
 import { strings } from "@/lib/strings";
 import { ThemeControl } from "./theme-control";
@@ -818,8 +819,10 @@ export const SegmentsScreen = forwardRef<
   // Nothing on this screen holds the hand-off: focus is armed from one site
   // only — the empty chapter's invite — and no overlay is up over it. Books
   // passes a hold here, for a delete confirm that leaves the list `inert`.
+  // `false` is written out rather than defaulted, so a later overlay on this
+  // screen has to revisit this line to hold it.
   useEffect(() => {
-    rowReveal.reveal();
+    rowReveal.reveal(false);
   }, [rows, rowReveal]);
 
   const onAppend = useCallback(async () => {
@@ -844,6 +847,32 @@ export const SegmentsScreen = forwardRef<
     },
     [setFinished]
   );
+
+  // The confirm's "Play what will be lost" row (#979 remainder, O4 "13"
+  // only — the switch-off dialog stays unchanged). `rows` is short (a
+  // chapter's segments), so a plain find each render is cheap; `eraseTarget`
+  // is only ever non-null while the dialog itself is open. `undefined` (a
+  // stale target racing a reload) falls through to `eraseRowPreview` below
+  // being `undefined` too, and the O4 branch there hands `EraseConfirm` no
+  // `preview` prop at all rather than one with made-up peaks.
+  const eraseTargetRow =
+    eraseTarget !== null
+      ? rows.find((row) => row.segmentId === eraseTarget)
+      : undefined;
+  const eraseRowPreview: EraseConfirmPreview | undefined =
+    o4 && eraseTargetRow
+      ? {
+          peaks: eraseTargetRow.peaks,
+          playing: audio.playingId === eraseTargetRow.segmentId,
+          // Always from the start (offset 0): this is a preview of "what will
+          // be lost", not the scrub-and-resume transport `SegmentRow` gives
+          // the list itself.
+          onTogglePlay: () => audio.playTake(eraseTargetRow, 0),
+          playLabel: strings.eraseConfirmPreviewPlay,
+          pauseLabel: strings.eraseConfirmPreviewPause,
+          finished: eraseTargetRow.finished,
+        }
+      : undefined;
 
   return (
     <div className="flex h-full flex-col gap-[14px]">
@@ -978,6 +1007,7 @@ export const SegmentsScreen = forwardRef<
         // `closeErase` is a `useCallback` over `closeEraseState` plus the
         // memoized `layers`, so it still is one.
         onCancel={closeErase}
+        preview={eraseRowPreview}
       />
 
       <Menu
@@ -1175,6 +1205,7 @@ export const SegmentsScreen = forwardRef<
       <ShareProgress
         progress={share.progress}
         scope="chapter"
+        items={chapterShareItems(rows)}
         onCancel={share.reset}
         onDismiss={share.dismissProgress}
       />

@@ -32,6 +32,7 @@ const fakeBook = (): Book => ({
   chapterIds: [],
   createdAt: 0,
   updatedAt: 0,
+  coverColourKey: null,
 });
 
 // What `useBooks().createBook` actually resolves to (`use-books.ts`'s

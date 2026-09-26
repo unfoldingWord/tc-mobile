@@ -1,10 +1,22 @@
-/* O4 — Confirm dialogs (13, G5, G6). Owner: #946. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file. */
+/* O4 — Confirm dialogs (13, G5, G6). Owner: #946, #979 (the preview row). Scoped under [data-design="o4"]; see o4/index.css's header before editing this file. */
 
 /* The one confirm dialog, EraseConfirm (components/erase-confirm.tsx), serves
-   all three states: the segment Erase (13), the recorder's Erase-and-record-
-   again path (G5) and the Books delete-book confirm (G6). Its markup is the
-   same in both looks, so the focus landing, Tab trap and focus return are the
-   same too; everything O4 changes is here.
+   the segment Erase (13) and the recorder's Erase-and-record-again path (G5).
+   Its markup is the same in both looks, so the focus landing, Tab trap and
+   focus return are the same too; everything O4 changes is here. Under O4 the
+   Books delete-book ask (G6) is not this dialog: it asks inside the book
+   sheet (components/o4-book-delete-ask.tsx, #980), reusing this file's
+   confirm-actions / confirm-cancel rules for its two buttons. With the switch
+   off, the Books delete still uses EraseConfirm.
+
+   The "Play what will be lost" row (#979 remainder after #1022) is rendered
+   only when the caller passes `preview` — today that is `segments-screen.tsx`'s
+   segment Erase (13) alone; the recorder's G5 call site is not wired yet (see
+   erase-confirm.tsx). Its rules below are exercised in both mount states
+   `tests/o4-dialogs.test.ts` uses: with `preview` passed, so they can be found
+   with the switch on and confirmed absent with it off even though the markup
+   exists either way; and without it, where they simply match nothing (the
+   ordinary "not every caller passes this" case, not a switch-off assertion).
 
    Structural values the #939 primitives do not carry yet are literal px,
    marked, for #939 to swap in. Colour comes only through layer-2 roles; the
@@ -45,6 +57,27 @@
     border-radius: 50%;
     background: var(--s-live-quiet);
     color: var(--s-live);
+  }
+  /* The "Play what will be lost" row (#979): a floor-wash lane between the
+     title and the two buttons, holding the waveform and the round Play/Pause
+     transport — the workbench's `.prev`. Stretches to the panel's full width,
+     like `.confirm-actions` below it. */
+  [data-design="o4"] .confirm-preview {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    gap: 12px; /* #939 token */
+    height: 78px; /* #939 token */
+    padding: 0 10px 0 14px; /* #939 token */
+    border-radius: 14px; /* #939 token */
+    background: var(--s-floor);
+  }
+  /* The workbench's `.tp.play` 60px round transport, scoped to this row only
+     — the generic `.control--play` elsewhere in the app keeps its own size
+     (`--c-control-md`). */
+  [data-design="o4"] .confirm-preview-play {
+    width: 60px; /* #939 token */
+    height: 60px; /* #939 token */
   }
   /* Two equal columns across the panel: Cancel (keep) then Erase / Delete. */
   [data-design="o4"] .confirm-actions {

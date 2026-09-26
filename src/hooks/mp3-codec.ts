@@ -82,7 +82,9 @@ export interface EncodeRequest {
  * `progress` is a liveness HEARTBEAT (#166), throttled by the worker
  * (`mp3.worker.ts`): it carries no result and the encode keeps waiting, but each
  * one tells the client the worker is still alive so a long encode is not judged
- * stalled. `done`/`error` settle the encode.
+ * stalled. Its `fraction` is also handed to the encode's `onProgress`, which is
+ * how Share Chapter's count moves through the encode (#996). `done`/`error`
+ * settle the encode.
  */
 export type EncodeResponse =
   | { readonly kind: "ready" }
@@ -333,7 +335,8 @@ export async function withEncoder<T>(
   try {
     await untilSettled(previous, signal);
     return await work({
-      encodeMp3: (samples) => encodeInWorker(samples, signal),
+      encodeMp3: (samples, onProgress) =>
+        encodeInWorker(samples, signal, onProgress),
       decodeMp3: decodeMp3ToCanonical,
     });
   } finally {
@@ -769,7 +772,8 @@ export function warmEncoder(): void {
  */
 async function encodeInWorker(
   samples: Int16Array,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onProgress?: (fraction: number) => void
 ): Promise<Uint8Array<ArrayBuffer>> {
   if (signal?.aborted) throw abortReason(signal);
   if (typeof Worker === "undefined") {
@@ -850,7 +854,7 @@ async function encodeInWorker(
   // shadowing the first and making neither one killable by mutation. It lives
   // next to the `postMessage` it protects, where it also covers the path that
   // never handshakes at all.
-  return runEncodeOnWorker(worker, samples, signal);
+  return runEncodeOnWorker(worker, samples, signal, onProgress);
 }
 
 /**
@@ -1000,11 +1004,18 @@ function awaitWorkerReady(
   });
 }
 
-/** Run one encode on `worker`, with the silence deadline armed (#166). */
+/**
+ * Run one encode on `worker`, with the silence deadline armed (#166).
+ *
+ * `onProgress` hears each heartbeat's fraction (#996) — only while this job is
+ * live, because every message handler below is a no-op once it has settled,
+ * so an abort, a stall or a result ends the reports with the job.
+ */
 function runEncodeOnWorker(
   worker: Worker,
   samples: Int16Array,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onProgress?: (fraction: number) => void
 ): Promise<Uint8Array<ArrayBuffer>> {
   return new Promise((resolve, reject) => {
     // An abort that ALREADY fired is not delivered again, and everything below
@@ -1194,6 +1205,9 @@ function runEncodeOnWorker(
         // racing `done` over and over. Re-arming means a progressing encode
         // never reaches `onStall`, so only the final window can race at all.
         armStall(ENCODER_SILENCE_TIMEOUT_MS);
+        // Last, after the deadline bookkeeping (#996): the caller's count is
+        // advisory, and the liveness accounting above must not depend on it.
+        onProgress?.(response.fraction);
         return;
       }
       release();

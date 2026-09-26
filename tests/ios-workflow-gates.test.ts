@@ -243,7 +243,17 @@ it.each([0, 23])("propagates the artifact suite exit status %i", (status) => {
   ).toBe(status);
 });
 
-describe("the emitted iOS thumbnail precache", () => {
+// #923: this check moved out of "Guard the synced bundle" and into its own
+// step, "OBS thumbnail precache policy (web build; #177 / ADR 0006)", which
+// runs against the WEB build BEFORE "Rebuild dist/ for the native shell"
+// overwrites dist/sw.js with the native self-destroying worker — that worker
+// never precaches anything at all, so comparing IT against globPatterns would
+// either never agree once jpg is legitimately restored, or silently stop
+// meaning anything. Only the fixture files this step actually reads
+// (vite.config.ts, dist/sw.js) are written here; the step makes no claim
+// about ios/App/App/public or dist/manifest.webmanifest — those stay covered
+// by "Guard the synced bundle" itself, exercised generically below.
+describe("the OBS thumbnail precache policy (web build)", () => {
   const current = 'globPatterns: ["**/*.{js,css,html,svg,png,woff2}"]';
   const restored = 'globPatterns: ["**/*.{js,css,html,svg,png,jpg,woff2}"]';
   const disagreeAnnotation =
@@ -297,10 +307,9 @@ describe("the emitted iOS thumbnail precache", () => {
       annotation: noGlobPatternsAnnotation,
     },
   ])("$name", ({ config, thumbnails, status, annotation }) => {
-    const root = mkdtempSync(path.join(tmpdir(), "ios-bundle-gate-"));
+    const root = mkdtempSync(path.join(tmpdir(), "ios-thumbnail-gate-"));
     fixtures.push(root);
     mkdirSync(path.join(root, "dist"));
-    mkdirSync(path.join(root, "ios/App/App/public"), { recursive: true });
     writeFileSync(path.join(root, "vite.config.ts"), config);
     writeFileSync(
       path.join(root, "dist/sw.js"),
@@ -308,23 +317,102 @@ describe("the emitted iOS thumbnail precache", () => {
         (thumbnails ? ',{url:"obs/thumbs/01/01.jpg",revision:"b"}' : "") +
         "],{});"
     );
-    writeFileSync(path.join(root, "dist/manifest.webmanifest"), "{}");
-    writeFileSync(
-      path.join(root, "ios/App/App/public/index.html"),
-      "<!doctype html>"
+    const result = run(
+      step("OBS thumbnail precache policy (web build; #177 / ADR 0006)"),
+      {},
+      root
     );
-    const result = run(step("Guard the synced bundle"), {}, root);
     expect(result.status, result.stderr + result.stdout).toBe(status);
     if (status === 1) {
       expect(annotation).toEqual(expect.any(String));
       expect(annotation).not.toHaveLength(0);
       expect(result.stderr).toContain(`::error::${annotation}`);
       expect(result.stderr).not.toContain("at file:");
-      expect(result.stdout).not.toContain("Bundle built, clean, and synced");
     } else {
       expect(annotation).toBeNull();
       expect(result.stderr + result.stdout).not.toContain("::error::");
-      expect(result.stdout).toContain("Bundle built, clean, and synced");
     }
+  });
+});
+
+// The rest of "Guard the synced bundle" — existence checks and the e2e-leak
+// sweep — runs against whatever dist/ the native rebuild left behind and
+// whatever cap sync copied into ios/. Exercised generically (not per
+// OBS-thumbnail case, which no longer lives here — see the describe block
+// above) so a regression in the existence/leak checks themselves still has a
+// red state to go to.
+describe("Guard the synced bundle (existence + e2e-leak, native dist)", () => {
+  function bundleFixture({
+    swPresent = true,
+    manifestPresent = true,
+    e2eLeak = false,
+    syncedIndexPresent = true,
+  }: {
+    swPresent?: boolean;
+    manifestPresent?: boolean;
+    e2eLeak?: boolean;
+    syncedIndexPresent?: boolean;
+  } = {}) {
+    const root = mkdtempSync(path.join(tmpdir(), "ios-bundle-guard-"));
+    fixtures.push(root);
+    mkdirSync(path.join(root, "dist"));
+    mkdirSync(path.join(root, "ios/App/App/public"), { recursive: true });
+    if (swPresent) {
+      // The native build's own shape (#923) — no precache manifest.
+      writeFileSync(
+        path.join(root, "dist/sw.js"),
+        "self.addEventListener('activate', () => {});"
+      );
+    }
+    if (manifestPresent) {
+      writeFileSync(path.join(root, "dist/manifest.webmanifest"), "{}");
+    }
+    if (e2eLeak) {
+      writeFileSync(path.join(root, "dist/leak.js"), "window.__e2e = true;");
+    }
+    if (syncedIndexPresent) {
+      writeFileSync(
+        path.join(root, "ios/App/App/public/index.html"),
+        "<!doctype html>"
+      );
+    }
+    return root;
+  }
+
+  it("passes on a clean native-shaped bundle", () => {
+    const root = bundleFixture();
+    const result = run(step("Guard the synced bundle"), {}, root);
+    expect(result.status, result.stderr + result.stdout).toBe(0);
+    expect(result.stdout).toContain("Bundle built, clean, and synced");
+  });
+
+  it("fails closed when dist/sw.js is missing", () => {
+    const root = bundleFixture({ swPresent: false });
+    const result = run(step("Guard the synced bundle"), {}, root);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("::error::dist/sw.js missing");
+  });
+
+  it("fails closed when the manifest is missing", () => {
+    const root = bundleFixture({ manifestPresent: false });
+    const result = run(step("Guard the synced bundle"), {}, root);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("::error::manifest missing");
+  });
+
+  it("fails closed when the e2e harness leaked into dist/", () => {
+    const root = bundleFixture({ e2eLeak: true });
+    const result = run(step("Guard the synced bundle"), {}, root);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("e2e harness (__e2e) leaked");
+  });
+
+  it("fails closed when cap sync did not copy the bundle into ios/", () => {
+    const root = bundleFixture({ syncedIndexPresent: false });
+    const result = run(step("Guard the synced bundle"), {}, root);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      "cap sync did not copy the web bundle into ios/"
+    );
   });
 });

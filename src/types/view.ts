@@ -46,6 +46,15 @@ export interface BookCard {
   readonly bookId: BookId;
   readonly name: string;
   readonly chapters: readonly ChapterRow[];
+  /**
+   * `Book.coverColourKey` (#957), carried through unresolved so the O4 cover
+   * (#942) reads it through `lib/cover-colour.ts`'s `resolveCoverKey` — the
+   * one place a missing or retired key becomes a colour. Both production
+   * builders in `hooks/use-books.ts` set it — the load and the optimistic
+   * create. It is optional so a test fixture can omit it; a card without it
+   * resolves exactly like a `null`: the id-derived fallback.
+   */
+  readonly coverColourKey?: string | null;
 }
 
 // ── Segments screen (B3) ───────────────────────────────────────────────────

@@ -9,7 +9,10 @@ import {
   addSegment as addSegmentToChapter,
   getBook,
   getChapter,
+  assertReorderTarget,
   getSegmentsOfChapter,
+  moveSegment as moveSegmentInStore,
+  moveToIndex,
   renameChapter as renameChapterInStore,
   renameSegment as renameSegmentInStore,
 } from "@/lib/storage/books";
@@ -128,6 +131,83 @@ async function loadChapterView(chapterId: ChapterId): Promise<ChapterView> {
   };
 }
 
+/**
+ * Move one segment row to an absolute position, renumbering densely (#953).
+ *
+ * The optimistic half of `moveSegment` below, and the replay a racing load
+ * applies (see `pendingMoves`). `toIndex` means what it means to the store's
+ * `moveSegment` — a position among the rows the screen shows, which are the
+ * chapter's resolvable segments — and goes through the same `moveToIndex`,
+ * so the patch and the write cannot disagree about where the row lands.
+ * `ordinal` becomes position + 1, the DRI's "Renumber" pick, which is the
+ * `index` the store writes. Returns `rows` itself when nothing moves.
+ */
+export function patchMovedSegment(
+  rows: readonly SegmentRow[],
+  segmentId: SegmentId,
+  toIndex: number
+): SegmentRow[] {
+  const from = rows.findIndex((r) => r.segmentId === segmentId);
+  if (from === -1) return rows as SegmentRow[]; // stale row
+  const moved = moveToIndex(rows, from, toIndex);
+  if (moved.every((row, i) => row === rows[i])) return rows as SegmentRow[];
+  return moved.map((row, i) =>
+    row.ordinal === i + 1 ? row : { ...row, ordinal: i + 1 }
+  );
+}
+
+/**
+ * `rows` put into the order `segments` gives, each row's ordinal taken from
+ * the segment's stored `index` — how a reorder brings a row list back in line
+ * with what the store actually holds (after a landed move, or after a failed
+ * one rolled back). Every other field is the row's own. A row the store did
+ * not return keeps its place after the returned ones rather than vanishing:
+ * this function reorders, it is not the place a row gets dropped.
+ */
+export function applySegmentOrder(
+  rows: readonly SegmentRow[],
+  segments: readonly Pick<Segment, "id" | "index">[]
+): SegmentRow[] {
+  const byId = new Map(rows.map((r) => [r.segmentId, r] as const));
+  const ordered = segments.flatMap((s) => {
+    const row = byId.get(s.id);
+    if (!row) return [];
+    byId.delete(s.id);
+    return [row.ordinal === s.index ? row : { ...row, ordinal: s.index }];
+  });
+  return [...ordered, ...byId.values()];
+}
+
+/**
+ * A reorder this hook applied optimistically whose write has not landed yet,
+ * replayed over a racing load and over a landed move's store order (see
+ * `pendingMoves`).
+ */
+interface PendingMove {
+  readonly segmentId: SegmentId;
+  readonly toIndex: number;
+}
+
+/**
+ * The order the store returned for the most recent move that landed, and the
+ * load generation current when it did (see `landedOrder`).
+ */
+interface LandedOrder {
+  readonly order: readonly Pick<Segment, "id" | "index">[];
+  readonly asOfGen: number;
+}
+
+/** `rows` with each still-in-flight move replayed over it, in call order. */
+function replayMoves(
+  rows: SegmentRow[],
+  moves: readonly PendingMove[]
+): SegmentRow[] {
+  return moves.reduce(
+    (out, m) => patchMovedSegment(out, m.segmentId, m.toIndex),
+    rows
+  );
+}
+
 type FieldStamps = Map<keyof SegmentRow, { value: unknown; asOfGen: number }>;
 
 /** Stamp only `patch`'s own fields: a later patch never re-dates another's. */
@@ -210,6 +290,31 @@ export function useChapterSegments(chapterId: ChapterId) {
   // `chapterId` changing clears the whole map — none of its entries can apply
   // to a different chapter's segments.
   const rowOverrides = useRef(new Map<SegmentId, FieldStamps>());
+  // The same per-generation rule, for ORDER rather than a field (#953). A
+  // reorder is not a field on one row, so `rowOverrides` cannot carry it; a
+  // load already in flight when a drop lands read the pre-move order, and
+  // installing it would snap the row back. Each move is recorded here, in the
+  // order it was made, while its write is in flight: EVERY load replays it —
+  // one that starts during the write may still read the pre-move order. A
+  // failed move is withdrawn outright; it never happened.
+  //
+  // A LANDED move is not replayed: absolute moves do not commute, so
+  // replaying two landed moves over a read that already holds both reorders
+  // it wrongly (Frank round 1 on #953: [A,B,C], A->1 then B->2 is [A,C,B],
+  // replayed over itself it is [C,A,B]). A load cannot tell whether its read
+  // came before, between or after the moves. Instead `landedOrder` keeps the
+  // order the store returned for the last move to land and the generation
+  // current then: a load of that generation or older (it may have read any
+  // state up to that one) takes that order over its own read, and a load
+  // that started later retires it — the same rule `rowOverrides` follows.
+  // `applySegmentOrder` keeps a row the landed order does not name, so a row
+  // added in the meantime is not lost from the list.
+  const pendingMoves = useRef<PendingMove[]>([]);
+  const landedOrder = useRef<LandedOrder | null>(null);
+  // Counts moves that landed. A failed move's restore read compares it across
+  // its await: if a move landed meanwhile, that move's returned order is newer
+  // than (or torn against — the read is not one transaction) the restore's.
+  const landedCount = useRef(0);
   const loadGen = useRef(0);
   const rowOverridesChapter = useRef(chapterId);
 
@@ -220,6 +325,8 @@ export function useChapterSegments(chapterId: ChapterId) {
     if (rowOverridesChapter.current !== chapterId) {
       rowOverridesChapter.current = chapterId;
       rowOverrides.current.clear();
+      pendingMoves.current = [];
+      landedOrder.current = null;
     }
     void (async () => {
       try {
@@ -235,15 +342,19 @@ export function useChapterSegments(chapterId: ChapterId) {
             if (gen > s.asOfGen) fields.delete(key);
           if (fields.size === 0) rowOverrides.current.delete(id);
         }
-        setRows(
-          view.rows.map((r) => {
-            const fields = rowOverrides.current.get(r.segmentId) ?? [];
-            const out = { ...r };
-            for (const [key, s] of fields)
-              Object.assign(out, { [key]: s.value });
-            return out;
-          })
-        );
+        if (landedOrder.current && gen > landedOrder.current.asOfGen) {
+          landedOrder.current = null;
+        }
+        let merged = view.rows.map((r) => {
+          const fields = rowOverrides.current.get(r.segmentId) ?? [];
+          const out = { ...r };
+          for (const [key, s] of fields) Object.assign(out, { [key]: s.value });
+          return out;
+        });
+        if (landedOrder.current) {
+          merged = applySegmentOrder(merged, landedOrder.current.order);
+        }
+        setRows(replayMoves(merged, pendingMoves.current));
         setError(null);
         setStaleTarget(false);
         setLoaded(true);
@@ -425,6 +536,95 @@ export function useChapterSegments(chapterId: ChapterId) {
     []
   );
 
+  /**
+   * Move a segment to an absolute position in this chapter (#953) — the
+   * storage half of press-and-hold reorder; the gesture is a later PR.
+   *
+   * Optimistic, like every mutation here, and never a `reload()` on success:
+   * a reorder moves no audio, so re-walking the chapter's PCM for peaks would
+   * be the cost this hook's docblock rules out. The row moves in THIS turn
+   * (`patchMovedSegment`) and is recorded in `pendingMoves` so a load that
+   * read the pre-move order — already in flight, or started during the
+   * write — replays it rather than snapping it back. Once the write lands,
+   * the move leaves `pendingMoves` and the order the store returned becomes
+   * `landedOrder`, stamped with the generation current then (the reason
+   * `renameSegment` stamps after its await). The rows are aligned with that
+   * order, which is the truth even if a second copy had moved something, and
+   * any move still in flight is replayed on top, so an earlier move landing
+   * does not paint over a later drop (George round 1 on #953).
+   *
+   * A non-integer target is a caller bug: it is refused before any state is
+   * touched and reported, rather than thrown from inside a React updater.
+   *
+   * On failure the write rolled back whole, so the stored order is the one
+   * from before the drop: the move is withdrawn from `pendingMoves` and the
+   * rows are put back in the stored order, read from the segment rows alone
+   * (no audio), with any move still in flight replayed on top. Only if that
+   * read ALSO fails does it fall back to `reload()`,
+   * which reads the same order the expensive way. A vanished segment is the
+   * stale-target case, as for a rename; anything else goes to the funnel as
+   * `"segment-reorder"` and nowhere else — the row returning to where it was
+   * is the signal, and nothing extra appears on screen (#172).
+   *
+   * Resolves `true` when the move landed (a no-op included), `false` if not.
+   */
+  const moveSegment = useCallback(
+    async (segmentId: SegmentId, toIndex: number): Promise<boolean> => {
+      try {
+        assertReorderTarget(toIndex);
+      } catch (cause) {
+        reportFailure(cause, "segment-reorder");
+        return false;
+      }
+      const move: PendingMove = { segmentId, toIndex };
+      pendingMoves.current = [...pendingMoves.current, move];
+      setRows((rs) => patchMovedSegment(rs, segmentId, toIndex));
+      try {
+        const order = await moveSegmentInStore(segmentId, toIndex);
+        pendingMoves.current = pendingMoves.current.filter((m) => m !== move);
+        landedOrder.current = { order, asOfGen: loadGen.current };
+        landedCount.current += 1;
+        // Snapshot now: a move made after this point queues its own patch
+        // behind this updater, and must not be replayed twice.
+        const inFlight = pendingMoves.current;
+        setRows((rs) => replayMoves(applySegmentOrder(rs, order), inFlight));
+        return true;
+      } catch (cause) {
+        pendingMoves.current = pendingMoves.current.filter((m) => m !== move);
+        if (isMissingSegmentFailure(cause, segmentId)) {
+          setStaleTarget(true);
+          setError(null);
+        } else {
+          reportFailure(cause, "segment-reorder");
+        }
+      }
+      // Put the rows back in the order the store holds — the pre-drop order,
+      // since the write rolled back whole. Reached only on failure: the
+      // success path returned above.
+      const landedBefore = landedCount.current;
+      try {
+        const stored = await getSegmentsOfChapter(chapterId);
+        // A move that landed during this read already installed its own
+        // order (applySegmentOrder drops this failed drop's patch with it),
+        // and that order is newer than this read. Installing this one would
+        // paint the rows back over it (Frank round 2 on #953).
+        if (landedCount.current !== landedBefore) return false;
+        // The freshest order known: a racing load that began before this read
+        // takes it rather than an older landed order.
+        landedOrder.current = { order: stored, asOfGen: loadGen.current };
+        const inFlight = pendingMoves.current;
+        setRows((rs) => replayMoves(applySegmentOrder(rs, stored), inFlight));
+      } catch {
+        // Not swallowed: `reload()` reads the same order the expensive way,
+        // and if the database is broken enough to fail that too, the load's
+        // own failure path reports it ("chapter-load") and shows its Notice.
+        reload();
+      }
+      return false;
+    },
+    [chapterId, reload]
+  );
+
   const eraseRow = useCallback((segmentId: SegmentId) => {
     // Erase makes ONE row never-recorded and touches no other clip, so patch it
     // in place — exactly like addSegment/setFinished — rather than reload() the
@@ -469,5 +669,6 @@ export function useChapterSegments(chapterId: ChapterId) {
     eraseRow,
     renameChapter,
     renameSegment,
+    moveSegment,
   };
 }

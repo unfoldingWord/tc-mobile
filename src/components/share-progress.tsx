@@ -4,14 +4,23 @@ import { createPortal } from "react-dom";
 import { noticePresentation } from "./notice-tone";
 import { shareProgressText } from "./share-error-copy";
 import { shareOverlayGlyph } from "./share-overlay-glyph";
+import { shareO4View, type ShareItem } from "./share-o4-view";
 import { ShareProgressPanel } from "./share-progress-panel";
 import type { ShareProgress as ShareProgressState } from "@/hooks/share-progress";
+import { useDesign } from "@/hooks/use-design";
 
 interface ShareProgressProps {
   /** The hook's timeline. Renders nothing while `hidden`. */
   progress: ShareProgressState;
   /** Picks the secondary text only — the glyphs are the same for both. */
   scope: "chapter" | "book";
+  /**
+   * The items the share walks over, in order, from what the screen already
+   * holds: the chapter's segments, or the book's chapters. Only the O4 look
+   * reads them, for its numbered chips (#947 D21); the current look ignores
+   * them.
+   */
+  items?: readonly ShareItem[];
   /**
    * A scrim tap, or the Escape this component now captures, while BUSY.
    * Wired to `reset()` itself (George r1 P2 #1/#2), not the screen's full
@@ -117,11 +126,16 @@ interface ShareProgressProps {
 export function ShareProgress({
   progress,
   scope,
+  items,
   onCancel,
   onDismiss,
 }: ShareProgressProps) {
   const visible = progress.phase !== "hidden";
   const busy = progress.phase === "busy";
+  // O4 (#947) swaps the glyph for the 140-in-176 circle, its filling ring and
+  // its numbered chips; the current look passes nothing and renders as it
+  // always has.
+  const { design } = useDesign();
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   // Read from the keydown listener without re-subscribing it — mirrors
@@ -248,6 +262,7 @@ export function ShareProgress({
         role={role}
         icon={glyph.icon}
         text={shareProgressText(progress, scope)}
+        o4={design === "o4" ? shareO4View(progress, scope, items) : undefined}
       />
     </div>,
     document.body

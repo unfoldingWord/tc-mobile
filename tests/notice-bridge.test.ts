@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { noticePresentation, type NoticeTone } from "@/components/notice-tone";
-import { cssRule } from "./support";
+import { cssRule, declarationValue } from "./support";
 
 /**
  * `notice-tone.ts` is the SPECIFICATION; `.notice` in layer 3 is the
@@ -77,7 +77,7 @@ describe("the .notice rule honours the tone table (#164 L-14)", () => {
     // The box the component used to paint on itself.
     expect(base).toMatch(/background:\s*var\(--s-surface\)/);
     expect(base).toMatch(/border:\s*1px solid var\(--s-edge\)/);
-    expect(base).toMatch(/color:\s*var\(--s-ink\)/);
+    expect(declarationValue(base, "color")).toBe("var(--s-ink)");
   });
 
   it("the component no longer paints itself, or layer 3 could not win", () => {
@@ -106,10 +106,11 @@ describe("the .notice rule honours the tone table (#164 L-14)", () => {
       // who cannot read, the colour is the second half of what tells the three
       // marks apart (George G3). That claim only means something if the
       // stylesheet actually paints it.
+      // The `color` declaration, exactly: the pattern this replaced was also
+      // satisfied by a `background-color`, or by the first of two `color`
+      // declarations when a later one overrides it (#533).
       const body = cssRule(CSS, `.notice[data-tone="${tone}"] .notice-glyph`);
-      expect(body).toMatch(
-        new RegExp(`color:\\s*${spec.glyph.replace(/[()]/g, "\\$&")}`)
-      );
+      expect(declarationValue(body, "color")).toBe(spec.glyph);
     });
 
     it(`${tone}: \`failure\` decides the live edge, and only for a failure`, () => {

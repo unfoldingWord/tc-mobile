@@ -45,10 +45,8 @@ export const SpeakerButton = forwardRef<
 });
 
 /**
- * The 56 × 56 rounded square (New book, Add a segment).
- *
- * @pivotpending O4 batch 1 — the Books and Segments lanes (#942, #944) mount
- * it; nothing does yet.
+ * The 56 × 56 rounded square (New book, Add a segment). The Books header's
+ * New book (#942) mounts it.
  */
 export const SquareButton = forwardRef<
   HTMLButtonElement,

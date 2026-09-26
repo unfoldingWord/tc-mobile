@@ -131,13 +131,14 @@ and match `var(…)` declarations rather than the bare identifier.
 The same trap runs in the other direction, and it is observed, not theoretical:
 a **comment** that names something a test greps for can capture that test. Round
 3 of #529 wrote the share-scrim selector into `3-components.css`'s header, and
-`share-progress.test.ts` — which locates its block with a raw `indexOf` over the
-whole file — sliced the comment instead of the rule and went red. Its
+`share-progress.test.ts` — which then located its block with a raw `indexOf`
+over the whole file — sliced the comment instead of the rule and went red. Its
 `expect(declarations.length).toBeGreaterThanOrEqual(8)` floor is the only reason
 that surfaced as a failure rather than as an assertion looping over nothing.
-When a stylesheet comment must name a selector a test searches for, write it
-without its leading dot, and keep a non-emptiness floor in any test that slices
-a block out of a file.
+That test now strips comments before it searches (#533); other suites still
+slice stylesheet source with a raw `indexOf`. When a stylesheet comment must
+name a selector a test searches for, write it without its leading dot, and keep
+a non-emptiness floor in any test that slices a block out of a file.
 
 Blind spot #2 under "No sprawl" below still says nothing in this repo reads CSS
 at all; that sentence is stale and is tracked in #525, which is where it gets
@@ -187,8 +188,12 @@ fixed sentence in the table may appear again in `app/`, `components/` or
 they are for whoever reads the failure log, not for the screen, and that test's
 docblock names the one pair where the two wordings overlap on purpose. The
 second check is the stronger one and the reason a base merge cannot quietly
-undo this: every fixed sentence in `app/` and `hooks/` must be one the table
-holds, so a brand-new literal fails as loudly as a re-typed one.
+undo this: every punctuated, non-composed literal in `app/` and `hooks/` must
+be one the table holds, so a brand-new sentence of that shape fails as loudly
+as a re-typed one. Short labels and parameterised entries are outside both of
+those; a third check pins them by exact whole-literal match, for the
+save-failed and take-recovery arms and every multi-word fixed label, and says
+in its docblock what it still cannot see (#805).
 `tests/capture-failure-copy.test.ts` sweeps `hooks/` and `lib/` for the three
 capture sentences, skipping the table's own file — holding a sentence is what a
 table is for; minting one beside the code that raises it is the defect.
@@ -380,14 +385,22 @@ track throwing on its own `stop()` (`hooks/audio-io.ts`,
 save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
 (`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
-segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591),
+segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
+failed chapter reorder (`hooks/use-books.ts`, `"chapter-reorder"`, #953), a
+failed segment reorder (`hooks/use-chapter-segments.ts`, `"segment-reorder"`,
+#953), a failed book cover-colour write
+(`hooks/use-book-cover-colour.ts`, `"book-cover-colour"`, #957),
 playback's own
 resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
 `"playback-resume"`, and the fail-closed gate that still finds the context
 unusable after the resume await — `"playback-resume-timeout"` when the
 1000 ms bound was what ended it, `"playback-resume-unusable"` when an
 earlier rejection did or a fresh interruption arrived during the post-fill
-yield, #469), and the log's own share and clear paths. `SaveFailed` now
+yield, #469), the tester-only phone check (`hooks/phone-check-probes.ts`,
+`"phone-check"`, #1009: a probe that throws, and a `sessionStorage`
+breadcrumb or saved result that cannot be read or written — a failed memory-ceiling
+allocation is the measurement, not a failure, and is not reported), and
+the log's own share and clear paths. `SaveFailed` now
 carries the same `SendLogControl` the crash screen does (#456, moved into
 its own module, `components/send-log-control.tsx`, so both screens share one
 implementation) — `DatabasePanel` still does not: #456 itself calls that a

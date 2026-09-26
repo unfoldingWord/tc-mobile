@@ -10,7 +10,7 @@ import { recorderLook, type RecorderLook } from "@/components/recorder-look";
 import { RecorderStamp } from "@/components/recorder-o4";
 import { PlayheadOverlay } from "@/components/playhead-overlay";
 import { render } from "./render";
-import { cssRule, stripComments } from "./support";
+import { cssRule, region, stripComments, uniqueIndexOf } from "./support";
 
 /**
  * The O4 Recorder (#945, epic #936): states 08 idle, 09 recording, 10
@@ -429,11 +429,17 @@ describe("recorder.tsx wires the O4 look through useDesign (#945, source pin)", 
     // which holds only while the toggle passes `hint` (so Control wraps it)
     // and stays the edit arm's last child.
     const bars = stripComments(read("src/components/recorder-toolbars.tsx"));
-    const edit = bars.slice(bars.indexOf('className="recorder-toolbar edit'));
-    const last = edit.slice(
-      edit.lastIndexOf("<Control", edit.indexOf("</div>")),
-      edit.indexOf("</div>")
+    // region() throws on a missing anchor rather than slicing from -1
+    // (#533): the edit arm's opening tag, its closing `</div>`, and the
+    // last `<Control` before it.
+    const edit = bars.slice(
+      uniqueIndexOf(bars, 'className="recorder-toolbar edit')
     );
+    const armEnd = edit.indexOf("</div>");
+    const last = region(edit, {
+      from: edit.lastIndexOf("<Control", armEnd),
+      to: armEnd,
+    });
     expect(last).toMatch(/key="edit-toggle"/);
     expect(last).toMatch(/hint=\{null\}/);
   });
