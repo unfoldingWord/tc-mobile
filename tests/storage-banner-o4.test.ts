@@ -115,7 +115,10 @@ vi.mock("@/hooks/use-book-share", () => ({
     reset: vi.fn(),
   }),
 }));
-vi.mock("@/hooks/failure-log", () => ({ useFailureCount: () => 0 }));
+vi.mock("@/hooks/failure-log", () => ({
+  useFailureCount: () => 0,
+  useMarkedFailureCount: () => 0,
+}));
 vi.mock("@/hooks/mp3-codec", () => ({
   encoderHealth: () => "ok",
   subscribeToEncoderHealth: () => () => {},
@@ -313,6 +316,40 @@ describe("the button runs the library share", () => {
   });
 });
 
+describe("tap 1 -> tap 2 hands focus to the armed Send (#1046 item 2)", () => {
+  it("focuses the Send control once preparing becomes ready", async () => {
+    // Both branches render a `<Control>` at the same tree position with no
+    // `key`, so React updates the existing button in place rather than
+    // unmounting and remounting it. The DOM's native `autoFocus` (which is
+    // all `<Control autoFocus>` sets, `control.tsx`) is only ever applied by
+    // the renderer on a fresh insertion — an update never re-triggers it.
+    // Without a fix this stays on the "preparing" button (or nothing, if
+    // nothing was ever mounted focused), never the "ready" one.
+    share.status = "idle";
+    await mount(
+      createElement(StoragePressureBanner, {
+        notice: low,
+        o4: true,
+        share: shareSurface(),
+      })
+    );
+    share.status = "ready";
+    await act(async () =>
+      root!.render(
+        createElement(StoragePressureBanner, {
+          notice: low,
+          o4: true,
+          share: shareSurface(),
+        })
+      )
+    );
+    const button = document.querySelector<HTMLButtonElement>(
+      "button.o4-storage-share"
+    )!;
+    expect(document.activeElement).toBe(button);
+  });
+});
+
 describe("Books shows the banner where the #247 line was", () => {
   const recorded: BookCard = {
     bookId: "book-0000-4000-8000-000000000001" as BookId,
@@ -391,6 +428,41 @@ describe("o4/books.css, the banner rules", () => {
     expect(decls(".o4-storage-share")?.get("background")).toBe(
       "var(--s-voice)"
     );
+  });
+
+  // #1046 item 1: George on #1037 found this describe block checked a rule
+  // count, O4 scoping and colour, but nothing required `.o4-storage-why`,
+  // `.o4-storage-row` or `.o4-storage-words` to exist, and nothing pinned the
+  // 72/84/19/15 px sizes the PR claims (icon box, share button, title and
+  // why-line type). Both gaps are closed here, the same slice-the-rule-block
+  // way the rest of this describe already reads the stylesheet.
+  it("names .o4-storage-row, .o4-storage-why and .o4-storage-words", () => {
+    const selectors = rules.flatMap((r) => r.selectors);
+    for (const cls of [
+      ".o4-storage-row",
+      ".o4-storage-why",
+      ".o4-storage-words",
+    ])
+      expect(selectors).toContain(`[data-design="o4"] ${cls}`);
+  });
+
+  it("pins the workbench's 72/84/19/15 px sizes (state 17)", () => {
+    const decls = (sel: string) =>
+      rules.find((r) => r.selectors.includes(`[data-design="o4"] ${sel}`))
+        ?.decls;
+    expect(decls(".o4-storage-icon")?.get("width")).toBe("72px");
+    expect(decls(".o4-storage-icon")?.get("height")).toBe("72px");
+    expect(decls(".o4-storage-share")?.get("width")).toBe("84px");
+    expect(decls(".o4-storage-share")?.get("height")).toBe("84px");
+    // The title and why-line sizes are structural primitives, not literal
+    // px (AGENTS.md: "component and app-level rules read [structural
+    // primitives] directly"), so the rule cited here is the token name; a
+    // sibling suite, `tests/o4-primitives.test.ts`, pins `--p-text-19` and
+    // `--p-text-15` themselves to 19px/15px.
+    expect(decls(".o4-storage-title")?.get("font-size")).toBe(
+      "var(--p-text-19)"
+    );
+    expect(decls(".o4-storage-why")?.get("font-size")).toBe("var(--p-text-15)");
   });
 
   it("take colour only from layer-2 roles", () => {

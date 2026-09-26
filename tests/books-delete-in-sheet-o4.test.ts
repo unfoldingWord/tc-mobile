@@ -73,7 +73,10 @@ vi.mock("@/hooks/use-book-share", () => ({
     reset: vi.fn(),
   }),
 }));
-vi.mock("@/hooks/failure-log", () => ({ useFailureCount: () => 0 }));
+vi.mock("@/hooks/failure-log", () => ({
+  useFailureCount: () => 0,
+  useMarkedFailureCount: () => 0,
+}));
 vi.mock("@/hooks/mp3-codec", () => ({
   encoderHealth: () => "ok",
   subscribeToEncoderHealth: () => () => {},

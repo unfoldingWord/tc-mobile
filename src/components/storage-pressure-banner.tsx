@@ -118,9 +118,19 @@ function O4StorageBanner({
         {/* The same two gestures as the ≡ menus' Share (ShareMenuSection):
             tap 1 builds the archive, tap 2 hands it to the sheet in a fresh
             activation. `busy`, never `disabled`, while preparing, so the
-            control keeps focus. */}
+            control keeps focus.
+
+            Both branches are a `<Control>` at the same tree position, so
+            without a distinct `key` React treats a preparing -> ready swap as
+            an UPDATE of the one button, not a fresh mount — and `autoFocus`
+            (a native attribute `control.tsx` applies only on insertion) never
+            fires (#1046 item 2). The keys force the remount `Control`'s own
+            docblock describes as this prop's second, intended case: a
+            control that "has just BECOME the primary action of an
+            already-focused surface". */}
         {share.status === "ready" ? (
           <Control
+            key="ready"
             ref={shareControlRef}
             icon={affordance.icon}
             label={strings.shareSend}
@@ -135,6 +145,7 @@ function O4StorageBanner({
           />
         ) : (
           <Control
+            key="preparing"
             ref={shareControlRef}
             icon={affordance.icon}
             label={

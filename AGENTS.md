@@ -399,7 +399,9 @@ which seals the slices already in hand and rides the `StopResult`, so it
 never reaches the backstop below — and a track `stop()` that throws while the
 mic stream is released `"recorder-release-track"` #479, and a take sealed and
 saved at the 20-minute cap `"recorder-take-cap"` #1005 — not a failure, but
-the one durable record that a take was cut), the level tap's clone
+the one durable record that a take was cut, so it goes out with the report
+and does not by itself mark the Books `≡` (`lib/failure-marker.ts`; DRI on
+#1076: "Log it, don't light ≡ (Recommended)")), the level tap's clone
 track throwing on its own `stop()` (`hooks/audio-io.ts`,
 `"recorder-tap-clone-stop"`, #479), `stopRecording`'s commit-path backstop
 (`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), a failed
@@ -409,8 +411,11 @@ save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
 failed chapter reorder (`hooks/use-books.ts`, `"chapter-reorder"`, #953), a
 failed segment reorder (`hooks/use-chapter-segments.ts`, `"segment-reorder"`,
-#953), a failed segment delete
-(`hooks/use-chapter-segments.ts`, `"segment-delete"`, #590), a failed book
+#953), a failed segment delete — two call sites report under the same
+context, one op each reaches through the store's own `deleteSegment`
+(`hooks/use-chapter-segments.ts`'s optimistic list delete, PR1, and
+`hooks/use-delete-segment.ts`'s recorder-menu delete, PR2)
+(`"segment-delete"`, #590), a failed book
 cover-colour write
 (`hooks/use-book-cover-colour.ts`, `"book-cover-colour"`, #957),
 playback's own
@@ -422,7 +427,9 @@ earlier rejection did or a fresh interruption arrived during the post-fill
 yield, #469), the tester-only phone check (`hooks/phone-check-probes.ts`,
 `"phone-check"`, #1009: a probe that throws, and a `sessionStorage`
 breadcrumb or saved result that cannot be read or written — a failed memory-ceiling
-allocation is the measurement, not a failure, and is not reported), and
+allocation is the measurement, not a failure, and is not reported), a
+licence text in Menu → About & licenses that fails to load or comes back as
+HTML (`components/about-panel.tsx`, `"about-licence-text"`, #823), and
 the log's own share and clear paths. `SaveFailed` now
 carries the same `SendLogControl` the crash screen does (#456, moved into
 its own module, `components/send-log-control.tsx`, so both screens share one

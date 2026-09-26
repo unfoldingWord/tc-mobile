@@ -251,7 +251,10 @@ not assume this report carries it. Routing those to the record is follow-up
 work, not something this build does. <!-- source: src/hooks/report-failure.ts:41 -->
 
 1. On the **Books** screen (the first screen), look at the **≡** button in the
-   top corner. If something has gone wrong, it carries a small red mark. <!-- source: src/components/books-screen.tsx -->
+   top corner. If something has gone wrong, it carries a small red mark. A
+   recording the app stopped and saved at 20 minutes is written in the report
+   but does not put the mark there on its own, so open **≡** anyway if a
+   translator tells you a long recording stopped by itself. <!-- source: src/components/books-screen.tsx (the mark keys on useMarkedFailureCount, the panel on useFailureCount); src/lib/failure-marker.ts (recorder-take-cap does not light it, #1005) -->
 2. Tap **≡**. The menu says how many problems were recorded, and shows two
    buttons. Like everything else in this app they are **pictures, not words**:
    the **share** icon and the **bin** icon. <!-- source: src/components/failure-log-panel.tsx (icon-only Controls; the two Notices carry the only text) -->

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   barHint,
+  deleteRowReason,
   editRowReason,
   eraseRowReason,
   heldTakeIsBusy,
@@ -145,6 +146,41 @@ describe("eraseRowReason — reproduces the shipped gate", () => {
 
   it("is disabled with no segment loaded", () => {
     expect(eraseRowReason({ ...eraseOpen, hasView: false })).toBe("no-clip");
+  });
+});
+
+const deleteOpen = {
+  hasView: true,
+  takeActive: false,
+  starting: false,
+};
+
+describe("deleteRowReason — reaches an empty segment, unlike eraseRowReason (#590)", () => {
+  it("is enabled at idle, with or without stored audio", () => {
+    expect(deleteRowReason(deleteOpen)).toBeNull();
+  });
+
+  it("is disabled while a take is active — deleting the row out from under a live capture is nonsensical (George R-B6)", () => {
+    expect(deleteRowReason({ ...deleteOpen, takeActive: true })).toBe(
+      "uncommitted-take"
+    );
+  });
+
+  it("is disabled with no segment loaded", () => {
+    expect(deleteRowReason({ ...deleteOpen, hasView: false })).toBe(
+      "no-segment"
+    );
+  });
+});
+
+// The whole point of the narrower gate, pinned against `eraseRowReason`
+// directly: the identical inputs that grey Erase for a never-recorded
+// segment (`hasClip: false`) must NOT grey Delete (#590) — an accidentally
+// added, never-recorded segment is exactly what needs to stay deletable.
+describe("deleteRowReason vs eraseRowReason — the same segment, two different answers", () => {
+  it("Erase refuses a never-recorded segment; Delete does not", () => {
+    expect(eraseRowReason({ ...eraseOpen, hasClip: false })).toBe("no-clip");
+    expect(deleteRowReason(deleteOpen)).toBeNull();
   });
 });
 
@@ -397,7 +433,7 @@ describe("markRowReason — the third row in the same menu (round 3)", () => {
  * them abandons the in-flight start. Every row that can be seen in that window
  * must say something else.
  */
-describe("the starting race — all three rows, distinct words", () => {
+describe("the starting race — all four rows, distinct words", () => {
   it("outranks the uncommitted-take reason on every row", () => {
     expect(
       editRowReason({
@@ -417,6 +453,9 @@ describe("the starting race — all three rows, distinct words", () => {
         starting: true,
         canFinish: true,
       })
+    ).toBe("starting");
+    expect(
+      deleteRowReason({ ...deleteOpen, takeActive: true, starting: true })
     ).toBe("starting");
   });
 
