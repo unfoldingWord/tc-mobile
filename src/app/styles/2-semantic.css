@@ -111,13 +111,10 @@
     --s-send-ring: var(--p-teal-300);
 
     /* Book covers: a user's pick, so identical in both themes. #937 D1 takes
-       covers off blue and #957 replaces this set with a stored palette;
-       --s-cover-blue stays until then because the Tailwind bridge in
-       globals.css still aliases it. */
+       covers off blue. */
     --s-cover-amber: var(--p-amber-600);
     --s-cover-teal: var(--p-teal-700);
     --s-cover-plum: var(--p-plum-700);
-    --s-cover-blue: var(--p-blue-cover);
   }
 
   :root[data-theme="light"] {
@@ -191,6 +188,5 @@
     --s-cover-amber: var(--p-amber-600);
     --s-cover-teal: var(--p-teal-700);
     --s-cover-plum: var(--p-plum-700);
-    --s-cover-blue: var(--p-blue-cover);
   }
 }
