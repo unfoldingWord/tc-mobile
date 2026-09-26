@@ -136,13 +136,22 @@ interface ShareSteps {
    * `skipped` is. See {@link withStep} for how a position is placed.
    */
   readonly hollow?: readonly number[];
+  /**
+   * WHICH items the count walks, by key, in count order (#1044): a segment's
+   * clip id for Share Chapter, a chapter id for Share Book. The export leaves
+   * some items out before it fixes its count, so position `k` among the
+   * count's items is not position `k` among the items a screen holds; a
+   * reader maps positions (`done`, `hollow`) through this list instead. One
+   * per item, fixed by the run's first step. Absent until a build reports it.
+   */
+  readonly keys?: readonly string[];
 }
 
 /**
  * The prepare's per-item result, carried into the send (#1023): which items
  * the prepare finished with no audio (`hollow`, the same positions
- * {@link ShareSteps} holds) and, when not every step was an item, how many
- * were (`items`). A send begins from `hidden` once the prepare's busy phase
+ * {@link ShareSteps} holds), which items the count walked (`keys`, #1044)
+ * and, when not every step was an item, how many were (`items`). A send begins from `hidden` once the prepare's busy phase
  * has ended, so the prepare's `steps` are gone by then. `useShareFlow` takes
  * this snapshot with {@link carryFromPrepare} before the prepare settles and
  * hands it to the send with a `carry` event, so a reader drawing the hand-off
@@ -151,6 +160,7 @@ interface ShareSteps {
 export interface ShareCarry {
   readonly items?: number;
   readonly hollow: readonly number[];
+  readonly keys?: readonly string[];
 }
 
 export type ShareProgress =
@@ -212,6 +222,8 @@ export type ShareProgressEvent =
       readonly skipped?: number;
       /** Of `total`, the steps that are items (#996); absent means all. */
       readonly items?: number;
+      /** The counted items by key, in count order (#1044). */
+      readonly keys?: readonly string[];
     }
   | {
       /** The prepare's per-item result, handed to a send (#1023). */
@@ -352,6 +364,11 @@ export function reduceShareProgress(
  * out, but not change it, nor bring one to a run whose first step had none.
  * Without it every step is an item.
  *
+ * `keys` (#1044) is fixed by the run's first step too: one string per item
+ * (`items`, or `total` without it). A later step may repeat the same list or
+ * leave it out, but not change it, nor bring one to a run whose first step
+ * had none; a step that breaks that is rejected whole.
+ *
  * `hollow` places each newly skipped item. The exports report once per
  * finished item, in order (`StepReporter`, `lib/export/chapter.ts`), so the
  * item a step newly skips is the one it just finished: position `done - 1`,
@@ -378,7 +395,15 @@ function withStep(
     (!Number.isInteger(items) || items < 1 || items > total)
   )
     return state;
-  const base = items === undefined ? { done, total } : { done, total, items };
+  const keys = prev === undefined ? event.keys : prev.keys;
+  if (event.keys !== undefined && !sameKeys(event.keys, keys)) return state;
+  if (keys !== undefined && !keysFor(keys, items ?? total)) return state;
+  const base = {
+    done,
+    total,
+    ...(items === undefined ? {} : { items }),
+    ...(keys === undefined ? {} : { keys }),
+  };
   const nextSkipped = event.skipped ?? prev?.skipped;
   if (nextSkipped === undefined) return { ...state, steps: base };
   if (!Number.isInteger(nextSkipped) || nextSkipped < 0) return state;
@@ -390,6 +415,21 @@ function withStep(
   );
   if (hollow === null) return state;
   return { ...state, steps: { ...base, skipped: nextSkipped, hollow } };
+}
+
+/** Whether `a` and `b` are the same key list, element for element. */
+function sameKeys(
+  a: readonly string[],
+  b: readonly string[] | undefined
+): boolean {
+  return (
+    b !== undefined && a.length === b.length && a.every((k, i) => k === b[i])
+  );
+}
+
+/** Whether `keys` names exactly `count` items, each by a string. */
+function keysFor(keys: readonly string[], count: number): boolean {
+  return keys.length === count && keys.every((k) => typeof k === "string");
 }
 
 /**
@@ -412,8 +452,8 @@ function placeHollow(
 }
 
 /**
- * The snapshot a send carries (#1023): the prepare's `hollow` positions and
- * `items` count, read while the prepare's busy phase still holds its count.
+ * The snapshot a send carries (#1023): the prepare's `hollow` positions,
+ * `items` count and item `keys` (#1044), read while the prepare's busy phase still holds its count.
  * `undefined` when there is nothing to carry: not a busy prepare, or one
  * whose build never reported a count.
  */
@@ -421,25 +461,32 @@ export function carryFromPrepare(state: ShareProgress): ShareCarry | undefined {
   if (state.phase !== "busy" || state.work !== "prepare") return undefined;
   const steps = state.steps;
   if (steps === undefined) return undefined;
-  const hollow = steps.hollow ?? [];
-  return steps.items === undefined
-    ? { hollow }
-    : { items: steps.items, hollow };
+  return {
+    ...(steps.items === undefined ? {} : { items: steps.items }),
+    hollow: steps.hollow ?? [],
+    ...(steps.keys === undefined ? {} : { keys: steps.keys }),
+  };
 }
 
 /**
  * A `carry` event, applied only to a busy SEND whose settle has not arrived
  * and which carries nothing yet: the first snapshot stands, as the first
  * settle does. `hollow` must be whole, non-negative and strictly ascending,
- * and `items`, when present, a whole number of at least 1 — the shape
- * {@link withStep} builds. Anything else returns the same object.
+ * `items`, when present, a whole number of at least 1, and `keys`, when
+ * present, one string per item with every `hollow` position inside it — the
+ * shape {@link withStep} builds. Anything else returns the same object.
  */
 function withCarry(state: ShareProgress, carried: ShareCarry): ShareProgress {
   if (state.phase !== "busy" || state.work !== "send") return state;
   if (state.pending !== null || state.carried !== undefined) return state;
-  const { items, hollow } = carried;
+  const { items, hollow, keys } = carried;
   if (items !== undefined && (!Number.isInteger(items) || items < 1))
     return state;
+  if (keys !== undefined) {
+    if (items !== undefined && keys.length !== items) return state;
+    if (!keysFor(keys, keys.length)) return state;
+    if (hollow.some((at) => at >= keys.length)) return state;
+  }
   for (let i = 0; i < hollow.length; i++) {
     const at = hollow[i]!;
     if (!Number.isInteger(at) || at < 0) return state;

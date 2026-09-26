@@ -1,3 +1,5 @@
+import { createElement } from "react";
+
 import { describe, expect, it } from "vitest";
 
 import { shareOverlayGlyph } from "@/components/share-overlay-glyph";
@@ -7,11 +9,15 @@ import {
   shareO4View,
   type ShareChip,
   type ShareItem,
+  type ShareO4View,
 } from "@/components/share-o4-view";
+import { ShareProgressPanel } from "@/components/share-progress-panel";
 import { SHARE_SETTLED, type ShareProgress } from "@/hooks/share-progress";
 import { ENCODE_STEPS } from "@/lib/export/chapter";
-import type { ChapterId, SegmentId } from "@/types/domain";
+import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { ChapterRow, SegmentRow } from "@/types/view";
+
+import { one, render } from "./render";
 
 /**
  * What the O4 share circle draws for each overlay phase (#947, epic #936):
@@ -39,9 +45,29 @@ function busy(steps?: Busy["steps"], work: Busy["work"] = "prepare"): Busy {
     : { phase: "busy", work, since: 0, pending: null, steps };
 }
 
-/** Items from a compact pattern: `x` goes out, `.` does not; labels 1, 2, ... */
+/**
+ * Items from a compact pattern: `x` goes out, `.` does not; labels 1, 2, ...
+ * and keys `k1`, `k2`, ... (the identity the exporter reports its count in).
+ */
 function items(pattern: string): ShareItem[] {
-  return [...pattern].map((c, i) => ({ label: i + 1, goesOut: c === "x" }));
+  return [...pattern].map((c, i) => ({
+    label: i + 1,
+    goesOut: c === "x",
+    key: `k${i + 1}`,
+  }));
+}
+
+/** The chip row's accessible label, as the panel actually emits it. */
+function goOutLabel(view: ShareO4View): string | null {
+  const container = render(
+    createElement(ShareProgressPanel, {
+      role: "status",
+      icon: "share-busy",
+      text: "status",
+      o4: view,
+    })
+  );
+  return one(container, ".share-o4-chips").getAttribute("aria-label");
 }
 
 /** A chip row as a compact string: `-` stays, `o` waiting, `v` finished, `*` current. */
@@ -343,6 +369,99 @@ describe("shareO4View: one numbered chip per item, in order (D21)", () => {
   });
 });
 
+describe("an item the exporter omitted BEFORE its count (#1044)", () => {
+  // The screen shows three items that go out; the exporter left the middle
+  // one out before it fixed its count (Share Chapter: an unresolved segment,
+  // or missing/empty clip metadata in pass 1; Share Book: a dangling chapter
+  // id). It counts items 1 and 3 and names them by key. Item 2 never went out,
+  // so it is grey and the label does not count it.
+  const screen = items("xxx");
+  const keys = ["k1", "k3"];
+
+  it("Share Chapter, while the prepare counts", () => {
+    const total = 2 + ENCODE_STEPS;
+    const view = (done: number) =>
+      shareO4View(busy({ done, total, items: 2, keys }), "chapter", screen);
+    expect(row(view(0).chips)).toBe("*-o");
+    expect(row(view(1).chips)).toBe("v-*");
+    expect(row(view(2).chips)).toBe("v-v");
+    expect(goOutLabel(view(2))).toBe("2 of 3 go out");
+  });
+
+  it("Share Chapter, through the hand-off and once handed over", () => {
+    const carried = { items: 2, hollow: [], keys };
+    const send: Busy = { ...busy(undefined, "send"), carried };
+    const sendView = shareO4View(send, "chapter", screen);
+    expect(row(sendView.chips)).toBe("v-v");
+    expect(goOutLabel(sendView)).toBe("2 of 3 go out");
+    const sent = shareO4View(
+      { phase: "outcome", settled: "sent", since: 0, carried },
+      "chapter",
+      screen
+    );
+    expect(row(sent.chips)).toBe("v-v");
+    expect(goOutLabel(sent)).toBe("2 of 3 go out");
+  });
+
+  it("Share Book, while the prepare counts", () => {
+    const view = (done: number) =>
+      shareO4View(busy({ done, total: 2, keys }), "book", screen);
+    expect(row(view(0).chips)).toBe("*-o");
+    expect(row(view(1).chips)).toBe("v-*");
+    expect(row(view(2).chips)).toBe("v-v");
+    expect(goOutLabel(view(2))).toBe("2 of 3 go out");
+  });
+
+  it("Share Book, through the hand-off and once handed over", () => {
+    const carried = { hollow: [], keys };
+    const send: Busy = { ...busy(undefined, "send"), carried };
+    const sendView = shareO4View(send, "book", screen);
+    expect(row(sendView.chips)).toBe("v-v");
+    expect(goOutLabel(sendView)).toBe("2 of 3 go out");
+    const sent = shareO4View(
+      { phase: "outcome", settled: "sent", since: 0, carried },
+      "book",
+      screen
+    );
+    expect(row(sent.chips)).toBe("v-v");
+    expect(goOutLabel(sent)).toBe("2 of 3 go out");
+  });
+
+  it("a hollow position is read through the exporter's keys, not the screen's order", () => {
+    // Item 2 omitted before the count, and item 3 (count position 1) then
+    // finished with no audio: only item 1 went out.
+    const carried = { items: 2, hollow: [1], keys };
+    const send: Busy = { ...busy(undefined, "send"), carried };
+    const view = shareO4View(send, "chapter", screen);
+    expect(row(view.chips)).toBe("v--");
+    expect(goOutLabel(view)).toBe("1 of 3 go out");
+    expect(
+      row(
+        shareO4View(
+          busy({ done: 2, total: 2, skipped: 1, hollow: [1], keys }),
+          "book",
+          screen
+        ).chips
+      )
+    ).toBe("v--");
+  });
+
+  it("an item the exporter counted that the screen does not hold draws nothing extra", () => {
+    // The count's second key is not on the screen: nothing is current while
+    // the count is on it, and no screen item is checked for it.
+    const view = (done: number) =>
+      row(
+        shareO4View(
+          busy({ done, total: 2, keys: ["k1", "zz"] }),
+          "book",
+          items("xx")
+        ).chips
+      );
+    expect(view(1)).toBe("v-");
+    expect(view(2)).toBe("v-");
+  });
+});
+
 describe("the items each screen hands the chips (D21)", () => {
   function segment(ordinal: number, hasClip: boolean): SegmentRow {
     return {
@@ -352,7 +471,7 @@ describe("the items each screen hands the chips (D21)", () => {
       hasClip,
       // A finished segment with no clip: `finished` must not decide it.
       finished: !hasClip,
-      clipId: null,
+      clipId: hasClip ? (`clip${ordinal}` as ClipId) : null,
       peaks: null,
       durationMs: null,
     };
@@ -371,23 +490,23 @@ describe("the items each screen hands the chips (D21)", () => {
     };
   }
 
-  it("Share Chapter: every segment row in order, out when it has playable audio", () => {
+  it("Share Chapter: every segment row in order, out when it has playable audio, keyed by its clip (#1044)", () => {
     expect(
       chapterShareItems([segment(1, true), segment(2, false), segment(3, true)])
     ).toEqual([
-      { label: 1, goesOut: true },
-      { label: 2, goesOut: false },
-      { label: 3, goesOut: true },
+      { label: 1, goesOut: true, key: "clip1" },
+      { label: 2, goesOut: false, key: null },
+      { label: 3, goesOut: true, key: "clip3" },
     ]);
   });
 
-  it("Share Book: every chapter in order, out when it holds a recorded take", () => {
+  it("Share Book: every chapter in order, out when it holds a recorded take, keyed by its id (#1044)", () => {
     expect(
       bookShareItems([chapter(1, 2), chapter(2, 0), chapter(5, 1)])
     ).toEqual([
-      { label: 1, goesOut: true },
-      { label: 2, goesOut: false },
-      { label: 5, goesOut: true },
+      { label: 1, goesOut: true, key: "c1" },
+      { label: 2, goesOut: false, key: "c2" },
+      { label: 5, goesOut: true, key: "c5" },
     ]);
   });
 });

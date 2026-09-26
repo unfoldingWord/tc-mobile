@@ -27,32 +27,42 @@ import type { ChapterRow, SegmentRow } from "@/types/view";
  * One item the share walks over, as the screen already holds it: a segment
  * of the chapter (Share Chapter) or a chapter of the book (Share Book), in
  * order. `label` is the number the chip shows; `goesOut` is false for a
- * segment with no playable audio or a chapter with none recorded.
+ * segment with no playable audio or a chapter with none recorded. `key` is
+ * the identity the export names its counted items by (#1044, `keys` on the
+ * step count), or `null` for an item the export cannot count.
  */
 export interface ShareItem {
   readonly label: number;
   readonly goesOut: boolean;
+  readonly key: string | null;
 }
 
 /**
  * Share Chapter's items: the Segments screen's rows, in order. A segment goes
  * out when it has playable audio (`hasClip`, the same `resolveSegmentAudio`
  * check the gather's `resolveChapterClipIds` makes), and its chip shows its
- * ordinal.
+ * ordinal. Its key is that resolved clip's id, which is what the gather
+ * names each counted segment by.
  */
 export function chapterShareItems(rows: readonly SegmentRow[]): ShareItem[] {
-  return rows.map((row) => ({ label: row.ordinal, goesOut: row.hasClip }));
+  return rows.map((row) => ({
+    label: row.ordinal,
+    goesOut: row.hasClip,
+    key: row.clipId,
+  }));
 }
 
 /**
  * Share Book's items: the shared book's chapters, in `chapterIds` order as
  * the Books screen loads them. A chapter goes out when it holds a recorded
- * take (`recordedCount > 0`), and its chip shows its chapter number.
+ * take (`recordedCount > 0`), and its chip shows its chapter number. Its key
+ * is its chapter id, which is what the book export names each chapter by.
  */
 export function bookShareItems(chapters: readonly ChapterRow[]): ShareItem[] {
   return chapters.map((chapter) => ({
     label: chapter.number,
     goesOut: chapter.recordedCount > 0,
+    key: chapter.chapterId,
   }));
 }
 
@@ -138,28 +148,47 @@ export function shareO4View(
  * except one the prepare finished with no audio. The send carries the
  * prepare's `hollow` positions (#1023, `ShareCarry`), counted in the same
  * order {@link shareChips} counts, so a skipped item stays the grey chip and
- * the "N of M go out" label does not count it. Without a carried snapshot
- * (a build that never reported a count) every go-out item is checked.
+ * the "N of M go out" label does not count it. When the snapshot names the
+ * counted items (`keys`, #1044), an item the export left out before its count
+ * stays grey as well. Without a carried snapshot (a build that never reported
+ * a count) every go-out item is checked.
  */
 function handedOver(
   items: readonly ShareItem[],
   scope: "chapter" | "book",
   carried: Carry
 ): ShareChip[] {
-  const counted = countedItems(items, scope);
+  const counted = countedItems(items, scope, carried?.keys);
+  const inCount = carried?.keys === undefined ? null : new Set(counted);
   const skipped = new Set((carried?.hollow ?? []).map((at) => counted[at]));
   return items.map((item) => ({
     label: item.label,
-    state: item.goesOut && !skipped.has(item) ? "finished" : "stays",
+    state:
+      item.goesOut && !skipped.has(item) && (inCount?.has(item) ?? true)
+        ? "finished"
+        : "stays",
   }));
 }
 
-/** The items a count walks over, in order (see {@link shareChips}). */
+/**
+ * The screen item at each position of the count, in order (see
+ * {@link shareChips}); `undefined` where the count holds an item the screen
+ * does not.
+ *
+ * With the export's `keys` (#1044), position `k` is the screen item whose key
+ * is `keys[k]` (a clip id or a chapter id, each unique), so an item the
+ * export left out before it fixed its count is simply absent. Without them (a
+ * build that never named its items) positions are guessed from the screen:
+ * every item for a book, the items that go out for a chapter.
+ */
 function countedItems(
   items: readonly ShareItem[],
-  scope: "chapter" | "book"
-): readonly ShareItem[] {
-  return scope === "book" ? items : items.filter((i) => i.goesOut);
+  scope: "chapter" | "book",
+  keys: readonly string[] | undefined
+): readonly (ShareItem | undefined)[] {
+  if (keys === undefined)
+    return scope === "book" ? items : items.filter((i) => i.goesOut);
+  return keys.map((key) => items.find((item) => item.key === key));
 }
 
 /**
@@ -189,19 +218,25 @@ function countedItems(
  * number (D21), never a check, and the "N of M go out" label does not count
  * it. `hollow` holds positions among the count's items, the same order as
  * `counted`.
+ *
+ * When the count names its items (`steps.keys`, #1044), positions are read
+ * through those keys rather than guessed from the screen, and an item that
+ * goes out on the screen but is not among the count's items (the export left
+ * it out before it fixed its count) is the grey chip too.
  */
 function shareChips(
   steps: Steps,
   scope: "chapter" | "book",
   items: readonly ShareItem[]
 ): ShareChip[] {
-  const counted = countedItems(items, scope);
+  const counted = countedItems(items, scope, steps.keys);
+  const inCount = steps.keys === undefined ? null : new Set(counted);
   const itemSteps = steps.items ?? steps.total;
   const passed = new Set(counted.slice(0, Math.min(steps.done, itemSteps)));
   const skipped = new Set((steps.hollow ?? []).map((at) => counted[at]));
   const current = steps.done < itemSteps ? counted[steps.done] : undefined;
   return items.map((item) => {
-    if (!item.goesOut || skipped.has(item))
+    if (!item.goesOut || skipped.has(item) || !(inCount?.has(item) ?? true))
       return { label: item.label, state: "stays" };
     if (passed.has(item)) return { label: item.label, state: "finished" };
     if (item === current) return { label: item.label, state: "current" };

@@ -13,7 +13,7 @@ import * as clips from "@/lib/storage/clips";
 import { newClipId } from "@/lib/storage/clips";
 import { saveTake } from "@/lib/storage/takes";
 import type { AudioCodec } from "@/types/audio";
-import type { ChapterId } from "@/types/domain";
+import type { ChapterId, ClipId } from "@/types/domain";
 import { clearAllStores } from "./support";
 
 /**
@@ -50,19 +50,24 @@ const hook = () => probe.current!;
 
 let finish: () => void;
 
-async function chapterWith(segments: number): Promise<ChapterId> {
+async function chapterWith(
+  segments: number
+): Promise<{ chapterId: ChapterId; clipIds: ClipId[] }> {
   const book = await createBook("b");
   const chapter = await addChapter(book.id);
+  const clipIds: ClipId[] = [];
   for (let i = 0; i < segments; i++) {
     const seg = await addSegment(chapter.id);
+    const clipId = newClipId();
     await saveTake(
       seg.id,
-      newClipId(),
+      clipId,
       new Int16Array(100).fill(500 + i),
       CANONICAL_SAMPLE_RATE
     );
+    clipIds.push(clipId);
   }
-  return chapter.id;
+  return { chapterId: chapter.id, clipIds };
 }
 
 const settle = () =>
@@ -108,8 +113,8 @@ afterEach(async () => {
   }
 });
 
-it("the send's busy state carries the prepare's hollow positions and item count", async () => {
-  const chapterId = await chapterWith(3);
+it("the send's busy state carries the prepare's hollow positions, item count and item keys", async () => {
+  const { chapterId, clipIds } = await chapterWith(3);
   const real = clips.getClip.bind(clips);
   let call = 0;
   const spy = vi
@@ -136,5 +141,7 @@ it("the send's busy state carries the prepare's hollow positions and item count"
   expect(state.phase === "busy" ? state.carried : undefined).toEqual({
     items: 3,
     hollow: [1],
+    // The gather's counted segments by clip id (#1044).
+    keys: clipIds,
   });
 });

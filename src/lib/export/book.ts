@@ -193,7 +193,11 @@ async function addChaptersToZip(
   let written = 0;
   let done = 0;
   let skipped = 0;
-  if (chapters.length > 0) onStep?.(done, chapters.length, skipped);
+  // The counted chapters by id (#1044): a dangling id never reached
+  // `chapters`, so a count position is not a screen position.
+  const keys = chapters.map((c) => c.id);
+  if (chapters.length > 0)
+    onStep?.(done, chapters.length, skipped, undefined, keys);
   for (const chapter of chapters) {
     if (shouldContinue && !shouldContinue()) return null;
     const result = await exportChapterMp3(chapter.id, codec, shouldContinue);
@@ -205,7 +209,7 @@ async function addChaptersToZip(
       if (shouldContinue && !shouldContinue()) return null;
       missing++;
       skipped++;
-      onStep?.(++done, chapters.length, skipped);
+      onStep?.(++done, chapters.length, skipped, undefined, keys);
       continue;
     }
     // A cancel that landed during this chapter's encode must not report its
@@ -224,7 +228,7 @@ async function addChaptersToZip(
     partialSegments += result.missing;
     if (result.missing > 0) partialChapters++;
     written++;
-    onStep?.(++done, chapters.length, skipped);
+    onStep?.(++done, chapters.length, skipped, undefined, keys);
   }
   return { written, missing, partialSegments, partialChapters };
 }
