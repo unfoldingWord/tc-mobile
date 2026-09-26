@@ -64,6 +64,15 @@ fact go to follow-up issues, not a reopened PR.
 - **Chips** (posted on #1026, 03:40Z): "Workbench chips (Recommended)".
 - **Erase-only** (posted on #1022, 03:40Z): "Erase only for now
   (Recommended)"; the auto-start follow-up was filed as #1028.
+- **No ultracode, no self-review lanes** (04:30Z): "then lets build in
+  batches but not ulta becuase we burn a lot on the extra review cycles."
+  Batch 3 (#948 D15, #950 motion remainder, #949 menus audit) ran as plain
+  Agent lanes with the self-check stage dropped — uwreview already reviews
+  every PR, so the two-lens author self-check was pure duplication. The
+  night-notes.md append for this call was refused by the worktree guard and
+  never written; the quote is recorded in the coordinator's memory note
+  (`tc-mobile-no-self-review-lanes.md`) and in the handoff doc's restored
+  04:30Z entry.
 - **D15 always-title** (#1033, 05:00Z): "Always the title + sentence below
   (Recommended)".
 - **The #1023 picks** (05:25Z, posted on the PR): "Bounded, scrolls
@@ -76,11 +85,6 @@ fact go to follow-up issues, not a reopened PR.
   - Scope: "O4 only, stop new lanes by 11:00Z (Recommended)".
 - **The budget rule** (06:00Z, DRI going to bed): "89% left on our 7 day rate
   limit, so maybe we try and stop before we get rate limited."
-
-No source line in tonight's coordinator notes carries a verbatim "no
-ultracode, no self-review lanes" DRI quote; that item is not recorded here to
-avoid inventing an attribution. If that rule was set, it needs its own note
-with a source.
 
 ### Morning merge list
 
