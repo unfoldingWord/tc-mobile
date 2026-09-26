@@ -586,6 +586,13 @@ export const strings = {
   // because it is the same control on the same surface saying the same word.
   eraseCancel: "Cancel",
   eraseFailed: "Could not erase the recording. Try again.",
+  // The clipboard's bin under the line (#862): throws away a cut that was
+  // never pasted, behind the same confirm as the whole-take erase. "Cut
+  // audio", not "clipboard": the translator cut a piece of their recording,
+  // and that piece is what is lost.
+  discardClip: "Throw away the cut audio",
+  discardClipConfirmTitle: "Throw away the cut audio?",
+  discardClipConfirm: "Throw away",
 
   // ── Delete a book (#337) ─────────────────────────────────────────────────
   // The book ≡-menu row, and the two-tap confirm behind it — the same dialog
