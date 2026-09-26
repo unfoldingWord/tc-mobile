@@ -177,15 +177,67 @@ export const NOMINAL_COLUMN_RATE = 60;
  * The live scope's column rate, in columns per second, from what it has
  * actually pushed: `columns` over `elapsedMs`.
  *
- * Falls back to {@link NOMINAL_COLUMN_RATE} until there is enough to measure
- * (under a quarter second, or fewer than ten columns) — the first frames of a
- * take are the least regular — and clamps the result into [15, 240] so a
- * stalled or throttled frame clock cannot stretch the context off the stage.
+ * `null` — not measured, which is not the same as a measured 60 — until there
+ * is enough to measure (under a quarter second, or fewer than ten columns): the
+ * first frames of a window are the least regular. A measurement is clamped
+ * into [15, 240] so a throttled frame clock cannot stretch the context off the
+ * stage.
  */
-export function estimateColumnRate(columns: number, elapsedMs: number): number {
-  if (!(elapsedMs >= 250) || !(columns >= 10)) return NOMINAL_COLUMN_RATE;
+export function estimateColumnRate(
+  columns: number,
+  elapsedMs: number
+): number | null {
+  if (!(elapsedMs >= 250) || !(columns >= 10)) return null;
   const rate = columns / (elapsedMs / 1000);
   return Math.max(15, Math.min(240, rate));
+}
+
+/**
+ * A scope's running column-rate estimate, mutated in place per tick (no
+ * per-frame allocation, #102). `rate` is what the paint folds at.
+ */
+export interface ColumnRateClock {
+  /** Start of the current measuring window, ms. */
+  since: number;
+  /** The previous tick, ms. */
+  last: number;
+  /** Ticks in the current window. */
+  columns: number;
+  rate: number;
+}
+
+export function newColumnRateClock(): ColumnRateClock {
+  return { since: 0, last: 0, columns: 0, rate: NOMINAL_COLUMN_RATE };
+}
+
+/**
+ * A tick further apart than this is a discontinuity — backgrounding, a stall —
+ * not a slow frame: no column was pushed across it, so it must not count as
+ * time the ring ran (Frank/George R1 on #1042).
+ */
+const RATE_GAP_MS = 250;
+/** Windows roll over at this age, so a refresh-rate change is followed. */
+const RATE_WINDOW_MS = 2000;
+
+/**
+ * Record one pushed column at `now` (ms) and update `clock.rate` to the
+ * CURRENT cadence. A gap restarts the window and keeps the last measured rate
+ * until the new window can be measured; an old window rolls over from its
+ * last tick. {@link NOMINAL_COLUMN_RATE} holds only until a mount's first
+ * window is measurable.
+ */
+export function advanceColumnRate(clock: ColumnRateClock, now: number): void {
+  if (clock.columns === 0 || !(now - clock.last <= RATE_GAP_MS)) {
+    clock.since = now;
+    clock.columns = 0;
+  } else if (now - clock.since > RATE_WINDOW_MS) {
+    clock.since = clock.last;
+    clock.columns = 1;
+  }
+  clock.columns += 1;
+  clock.last = now;
+  const measured = estimateColumnRate(clock.columns - 1, now - clock.since);
+  if (measured !== null) clock.rate = measured;
 }
 
 /**

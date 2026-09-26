@@ -3,11 +3,14 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  advanceColumnRate,
   buildCaptureContext,
+  type ColumnRateClock,
   columnsRightOfHead,
   CONTEXT_BUCKET_SAMPLES,
   estimateColumnRate,
   foldContextSide,
+  newColumnRateClock,
   NOMINAL_COLUMN_RATE,
   type ContextSide,
 } from "@/lib/audio/capture-context";
@@ -163,11 +166,11 @@ describe("the context and the take share one time scale", () => {
 });
 
 describe("estimateColumnRate", () => {
-  it("assumes the nominal rate until it has something to measure", () => {
-    expect(estimateColumnRate(0, 0)).toBe(NOMINAL_COLUMN_RATE);
-    expect(estimateColumnRate(100, 200)).toBe(NOMINAL_COLUMN_RATE);
-    expect(estimateColumnRate(5, 1_000)).toBe(NOMINAL_COLUMN_RATE);
-    expect(estimateColumnRate(20, NaN)).toBe(NOMINAL_COLUMN_RATE);
+  it("reports not-measured until it has something to measure", () => {
+    expect(estimateColumnRate(0, 0)).toBeNull();
+    expect(estimateColumnRate(100, 200)).toBeNull();
+    expect(estimateColumnRate(5, 1_000)).toBeNull();
+    expect(estimateColumnRate(20, NaN)).toBeNull();
   });
 
   it("measures columns over elapsed time", () => {
@@ -178,6 +181,64 @@ describe("estimateColumnRate", () => {
   it("clamps a stalled or runaway frame clock", () => {
     expect(estimateColumnRate(10, 10_000)).toBe(15);
     expect(estimateColumnRate(1_000, 250)).toBe(240);
+  });
+});
+
+describe("advanceColumnRate — the current cadence, not a lifetime average", () => {
+  /** Tick `clock` `n` times at `hz`, starting `startMs`; returns the next time. */
+  function run(clock: ColumnRateClock, hz: number, n: number, startMs: number) {
+    for (let i = 0; i < n; i++)
+      advanceColumnRate(clock, startMs + (i * 1000) / hz);
+    return startMs + (n * 1000) / hz;
+  }
+
+  it("keeps the nominal prior until the first window can be measured", () => {
+    const clock = newColumnRateClock();
+    run(clock, 120, 5, 0);
+    expect(clock.rate).toBe(NOMINAL_COLUMN_RATE);
+    run(clock, 120, 60, 5000 / 120);
+    expect(clock.rate).toBeCloseTo(120, 0);
+  });
+
+  it("a long gap (background, stall) does not drag the post-gap rate to the clamp", () => {
+    const clock = newColumnRateClock();
+    const end = run(clock, 60, 60, 0);
+    // 60 s with no column, then the frame clock resumes at 60 Hz.
+    run(clock, 60, 1, end + 60_000);
+    expect(clock.rate).toBeCloseTo(60, 0);
+    run(clock, 60, 60, end + 60_000 + 1000 / 60);
+    expect(clock.rate).toBeCloseTo(60, 0);
+  });
+
+  it("a gap shorter than the window is discarded too, not averaged in", () => {
+    const clock = newColumnRateClock();
+    const end = run(clock, 60, 30, 0);
+    run(clock, 60, 30, end + 800);
+    expect(clock.rate).toBeCloseTo(60, 0);
+  });
+
+  it("keeps the last MEASURED rate across a gap, not the nominal prior", () => {
+    const clock = newColumnRateClock();
+    const end = run(clock, 120, 120, 0);
+    run(clock, 120, 3, end + 5_000);
+    expect(clock.rate).toBeCloseTo(120, 0);
+  });
+
+  it("follows a refresh-rate transition within a few seconds", () => {
+    const clock = newColumnRateClock();
+    const end = run(clock, 60, 600, 0);
+    expect(clock.rate).toBeCloseTo(60, 0);
+    run(clock, 120, 600, end);
+    expect(clock.rate).toBeCloseTo(120, 0);
+  });
+
+  it("the live scope's tick feeds the clock rather than an inline average", () => {
+    const scope = readFileSync(
+      new URL("../src/components/live-scope.tsx", import.meta.url),
+      "utf8"
+    );
+    expect(scope).toMatch(/advanceColumnRate\(\s*rateRef\.current,/);
+    expect(scope).not.toMatch(/estimateColumnRate\(/);
   });
 });
 
@@ -201,9 +262,10 @@ describe("columnsRightOfHead", () => {
 });
 
 /**
- * The recorder has no renderer in this suite, so the wiring is pinned as
- * source shape: the context is built from the SAME offset the take splices
- * at, on every path that starts the mic, and reaches the live scope.
+ * This suite does not mount the recorder (other suites do, through
+ * `react-dom/client`); keeping it Node-pure is a scope choice, so the wiring
+ * is pinned as source shape: the context is built from the SAME offset the
+ * take splices at, on every path that starts the mic, and reaches the scope.
  */
 describe("recorder wiring (#640)", () => {
   const src = readFileSync(

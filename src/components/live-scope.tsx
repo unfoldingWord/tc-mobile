@@ -7,10 +7,10 @@ import {
 } from "./canvas-fallback-colors";
 import { useLiveTheme } from "@/hooks/use-theme";
 import {
+  advanceColumnRate,
   columnsRightOfHead,
-  estimateColumnRate,
   foldContextSide,
-  NOMINAL_COLUMN_RATE,
+  newColumnRateClock,
   type CaptureContext,
 } from "@/lib/audio/capture-context";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
@@ -159,10 +159,10 @@ export function LiveScope({
     contextRef.current = context;
   }, [context]);
   // The column rate the ring actually advances at, measured from this mount's
-  // own ticks (`estimateColumnRate`): the first tick that returned a scope, how
-  // many have since, and the latest estimate — kept across effect re-runs so a
-  // frozen repaint draws the context at the scale the take was recorded at.
-  const rateRef = useRef({ since: 0, columns: 0, rate: NOMINAL_COLUMN_RATE });
+  // own ticks over a rolling window that a gap restarts (`advanceColumnRate`) —
+  // kept across effect re-runs so a frozen repaint draws the context at the
+  // scale the take was recorded at.
+  const rateRef = useRef(newColumnRateClock());
   // Reused fold buffers for the context columns, grown on demand — never
   // reallocated per frame (#102).
   const foldRef = useRef({
@@ -335,11 +335,7 @@ export function LiveScope({
         if (scope) {
           // One more column pushed: fold it into the rate before painting, so
           // the context this frame draws is at the scale the ring runs at.
-          const r = rateRef.current;
-          const now = performance.now();
-          if (r.columns === 0) r.since = now;
-          r.columns += 1;
-          r.rate = estimateColumnRate(r.columns - 1, now - r.since);
+          advanceColumnRate(rateRef.current, performance.now());
           lastScopeRef.current = scope;
           paint(scope);
         }
