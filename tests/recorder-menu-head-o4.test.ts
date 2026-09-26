@@ -57,6 +57,7 @@ const base: RecorderMenuProps = {
   onDeleteSegment: () => {},
   onExitEdit: () => {},
   bookName: "Ruth",
+  bookCoverHex: "#7a3570",
   chapterNumber: 2,
 };
 
@@ -121,6 +122,35 @@ describe("the recorder menu's O4 sheet head (G3)", () => {
   it("leaves the book and chapter crumbs out when the caller has neither", () => {
     const el = show({ bookName: undefined, chapterNumber: undefined });
     expect(crumbs(el)).toEqual([{ text: "3", state: "recorded" }]);
+  });
+
+  it("draws the book's cover-colour square before the crumbs (#949, #957)", () => {
+    const el = show({});
+    const head = el.querySelector(".o4-sheet-head")!;
+    const cover = head.querySelector(".books-cover.is-sm") as HTMLElement;
+    expect(cover).not.toBeNull();
+    expect(cover.style.getPropertyValue("--book-cover")).toBe("#7a3570");
+    expect(
+      cover.compareDocumentPosition(head.querySelector(".o4-crumbs")!) &
+        4 /* DOCUMENT_POSITION_FOLLOWING */
+    ).toBeTruthy();
+  });
+
+  it("leaves the square out when the caller has no colour to give", () => {
+    const el = show({ bookCoverHex: undefined });
+    expect(
+      el.querySelector(".o4-sheet-head")!.querySelector(".books-cover")
+    ).toBeNull();
+    // The book and chapter crumbs are unaffected.
+    expect(crumbs(el).slice(0, 2)).toEqual([
+      { text: "Ruth", state: null },
+      { text: "2", state: null },
+    ]);
+  });
+
+  it("leaves the square out when there is no book crumb either, even with a colour to give", () => {
+    const el = show({ bookName: undefined, chapterNumber: undefined });
+    expect(el.querySelector(".books-cover")).toBeNull();
   });
 
   it("adds nothing in the current look, and its markup ignores the head's props", () => {

@@ -75,6 +75,13 @@ export interface RecorderMenuProps {
    * only in the O4 look; absent, that crumb is left out.
    */
   bookName?: string;
+  /**
+   * The book's resolved cover colour (#949, #957), already a hex string —
+   * see `O4SheetHead`'s own docblock for how it is resolved and why absent
+   * means "no square", not "no colour". `recorder.tsx` passes
+   * `view?.bookCoverHex ?? undefined`.
+   */
+  bookCoverHex?: string;
   /** The chapter's number, the O4 sheet head's second crumb. */
   chapterNumber?: number;
 }
@@ -95,6 +102,7 @@ export function RecorderMenu({
   onDeleteSegment,
   onExitEdit,
   bookName,
+  bookCoverHex,
   chapterNumber,
 }: RecorderMenuProps) {
   // ONE answer for "this segment is marked", read by both the label and the
@@ -139,6 +147,7 @@ export function RecorderMenu({
         // this" speaker is not drawn (spoken titles, #952).
         <O4SheetHead
           book={bookName}
+          bookCoverHex={bookCoverHex}
           chapter={chapterNumber}
           segment={
             ordinal === null
