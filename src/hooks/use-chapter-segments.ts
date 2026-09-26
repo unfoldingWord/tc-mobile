@@ -5,6 +5,7 @@ import { requestTranscodeSweep } from "./finish-transcode";
 import { reportFailure } from "./report-failure";
 import { failureKey, type FailureKey } from "./save-failure";
 import { computePeaks } from "@/lib/audio/peaks";
+import { coverColourHex, resolveCoverKey } from "@/lib/cover-colour";
 import {
   addSegment as addSegmentToChapter,
   deleteSegment as deleteSegmentInStore,
@@ -104,13 +105,26 @@ async function loadSegmentRow(segment: Segment): Promise<SegmentRow> {
 /** The breadcrumb + rows a chapter needs, loaded together. */
 interface ChapterView {
   readonly bookName: string;
+  /**
+   * The book's resolved cover colour (#949, #957), or `null` when the
+   * chapter's book could not be read (the same race `bookName`'s `?? ""`
+   * fallback already covers). Resolved with the exact function
+   * `books-screen.tsx`'s row uses — {@link resolveCoverKey} — so a book with
+   * no chosen colour gets the same id-derived fallback the shelf shows, not
+   * an absent square: there is no "no colour" state to draw, only "no book
+   * to read one from" at all (the `null` case here, which the O4 sheet head
+   * treats as "not threaded").
+   */
+  readonly bookCoverHex: string | null;
   readonly chapterNumber: number;
   /** The facilitator's passage label, or null ⇒ show "Chapter {number}" (#264). */
   readonly chapterName: string | null;
   readonly rows: SegmentRow[];
 }
 
-async function loadChapterView(chapterId: ChapterId): Promise<ChapterView> {
+export async function loadChapterView(
+  chapterId: ChapterId
+): Promise<ChapterView> {
   const chapter = await getChapter(chapterId);
   if (!chapter) throw new Error(`No such chapter: ${chapterId}`);
   const book = await getBook(chapter.bookId);
@@ -126,6 +140,11 @@ async function loadChapterView(chapterId: ChapterId): Promise<ChapterView> {
   }
   return {
     bookName: book?.name ?? "",
+    bookCoverHex: book
+      ? coverColourHex(
+          resolveCoverKey({ id: book.id, coverColourKey: book.coverColourKey })
+        )
+      : null,
     chapterNumber: chapter.number,
     chapterName: chapter.name,
     rows,
@@ -254,6 +273,7 @@ function stamp(
  */
 export function useChapterSegments(chapterId: ChapterId) {
   const [bookName, setBookName] = useState("");
+  const [bookCoverHex, setBookCoverHex] = useState<string | null>(null);
   const [chapterNumber, setChapterNumber] = useState(0);
   const [chapterName, setChapterName] = useState<string | null>(null);
   const [rows, setRows] = useState<SegmentRow[]>([]);
@@ -380,6 +400,7 @@ export function useChapterSegments(chapterId: ChapterId) {
         const view = await loadChapterView(chapterId);
         if (cancelled) return;
         setBookName(view.bookName);
+        setBookCoverHex(view.bookCoverHex);
         setChapterNumber(view.chapterNumber);
         setChapterName(view.chapterName);
         // Retire every override this load started after — including ids it
@@ -799,6 +820,7 @@ export function useChapterSegments(chapterId: ChapterId) {
 
   return {
     bookName,
+    bookCoverHex,
     chapterNumber,
     chapterName,
     rows,

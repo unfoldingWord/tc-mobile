@@ -99,6 +99,14 @@ interface SegmentRowProps {
    * shows the segment crumb alone.
    */
   bookName?: string;
+  /**
+   * The book's resolved cover colour (#949, #957), already a hex string —
+   * `segments-screen.tsx` resolves it once, the same way `books-screen.tsx`
+   * resolves the shelf's own covers, and passes it to every row so no row
+   * repeats that lookup. Absent, the head's cover square is left out (see
+   * `O4SheetHead`'s own docblock).
+   */
+  bookCoverHex?: string;
   chapterNumber?: number;
   /**
    * Press-and-hold reorder (#953 PR2a): the screen's `onPointerDown` for this
@@ -171,6 +179,7 @@ export function SegmentRow({
   busy = false,
   guided = false,
   bookName,
+  bookCoverHex,
   chapterNumber,
   onHoldStart,
 }: SegmentRowProps) {
@@ -623,6 +632,7 @@ export function SegmentRow({
             <div className="o4-sheet-bar">
               <O4SheetHead
                 book={bookName}
+                bookCoverHex={bookCoverHex}
                 chapter={chapterNumber}
                 segment={{ ordinal, state }}
               />

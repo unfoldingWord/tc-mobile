@@ -38,10 +38,14 @@ vi.mock("@/hooks/use-design", () => ({
   useDesign: () => ({ design: design.current, toggle: () => {} }),
 }));
 
-const mocks = vi.hoisted(() => ({ rows: [] as SegmentRow[] }));
+const mocks = vi.hoisted(() => ({
+  rows: [] as SegmentRow[],
+  bookCoverHex: "#11796d" as string | null,
+}));
 vi.mock("@/hooks/use-chapter-segments", () => ({
   useChapterSegments: () => ({
     bookName: "Mark",
+    bookCoverHex: mocks.bookCoverHex,
     chapterNumber: 4,
     chapterName: null,
     rows: mocks.rows,
@@ -114,6 +118,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   document.body.innerHTML = "";
   design.current = "current";
+  mocks.bookCoverHex = "#11796d";
   vi.unstubAllGlobals();
 });
 
@@ -393,6 +398,34 @@ describe("the segment menu (07) on the tile grid", () => {
     expect(crumbs[2]!.getAttribute("data-state")).toBe("finished");
   });
 
+  it("draws the book's cover-colour square before the crumbs (#949, #957)", async () => {
+    await mount("o4", recorded);
+    await openRow();
+    const head = dialog().querySelector(".o4-sheet-head");
+    const cover = head!.querySelector(".books-cover.is-sm");
+    expect(cover).not.toBeNull();
+    expect((cover as HTMLElement).style.getPropertyValue("--book-cover")).toBe(
+      "#11796d"
+    );
+    // Before the crumb row, same as `O4BookHead`'s own cover-then-name order.
+    expect(
+      cover!.compareDocumentPosition(head!.querySelector(".o4-crumbs")!) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it("leaves the square out when the hook has no colour to give (a book race, not a design state)", async () => {
+    mocks.bookCoverHex = null;
+    await mount("o4", recorded);
+    await openRow();
+    const head = dialog().querySelector(".o4-sheet-head");
+    expect(head!.querySelector(".books-cover")).toBeNull();
+    // The crumbs themselves are unaffected — only the square is left out.
+    expect(
+      [...head!.querySelectorAll(".o4-crumb")].map((c) => c.textContent)
+    ).toEqual(["Mark", "4", "3"]);
+  });
+
   it("moves the segment's name into the preview row, beside its badge and wave", async () => {
     await mount("o4", titled);
     await openRow();
@@ -482,6 +515,25 @@ describe("the chapter menu (G2) on the tile grid", () => {
     expect(
       [...head!.querySelectorAll(".o4-crumb")].map((c) => c.textContent)
     ).toEqual(["Mark", "4"]);
+  });
+
+  it("draws the book's cover-colour square before the crumbs (#949, #957)", async () => {
+    await mount("o4");
+    await openChapter();
+    const head = dialog().querySelector(".o4-sheet-head");
+    const cover = head!.querySelector(".books-cover.is-sm");
+    expect(cover).not.toBeNull();
+    expect((cover as HTMLElement).style.getPropertyValue("--book-cover")).toBe(
+      "#11796d"
+    );
+  });
+
+  it("leaves the square out when the hook has no colour to give", async () => {
+    mocks.bookCoverHex = null;
+    await mount("o4");
+    await openChapter();
+    const head = dialog().querySelector(".o4-sheet-head");
+    expect(head!.querySelector(".books-cover")).toBeNull();
   });
 
   it("adds none of it in the current look", async () => {

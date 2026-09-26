@@ -136,6 +136,7 @@ export const SegmentsScreen = forwardRef<
 ) {
   const {
     bookName,
+    bookCoverHex,
     chapterNumber,
     chapterName,
     rows,
@@ -1079,6 +1080,7 @@ export const SegmentsScreen = forwardRef<
                   onMenuOpen={onRowMenuOpen}
                   onMenuClose={onRowMenuClose}
                   bookName={bookName}
+                  bookCoverHex={bookCoverHex ?? undefined}
                   chapterNumber={chapterNumber}
                   onHoldStart={o4 ? reorder.holdStart(index) : undefined}
                 />
@@ -1212,7 +1214,11 @@ export const SegmentsScreen = forwardRef<
           // pencil because a header control ahead of the grid would be a
           // second first-focus candidate the current look does not have.
           <>
-            <O4SheetHead book={bookName} chapter={chapterNumber} />
+            <O4SheetHead
+              book={bookName}
+              bookCoverHex={bookCoverHex ?? undefined}
+              chapter={chapterNumber}
+            />
             <ShareMenuSection
               status={share.status}
               sendUnconfirmed={share.sendUnconfirmed}
