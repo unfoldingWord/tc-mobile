@@ -75,6 +75,10 @@ describe("findNegatedClosures — rule (a)", () => {
     ["Never closes: #44", "44"],
     ["no longer fixes unfoldingWord/tc-mobile#7", "7"],
     ["DOES NOT CLOSE #5", "5"],
+    // The "not only" exemption belongs to not / n't alone; these still close.
+    ["We cannot simply close #12", "12"],
+    ["Never just fix #3", "3"],
+    ["This no longer merely resolves #8", "8"],
   ])("flags %j", (message, issue) => {
     expect(findNegatedClosures(message).map((h) => h.issue)).toEqual([issue]);
   });
@@ -107,6 +111,25 @@ describe("satisfies / rangeMinimum — rule (b)'s range reader", () => {
     expect(rangeMinimum(">=18")).toBe("18.0.0");
     expect(rangeMinimum("<20")).toBe(null);
     expect(rangeMinimum(undefined)).toBe(null);
+  });
+
+  it("keeps a strict lower bound instead of dropping its alternative", () => {
+    expect(rangeMinimum(">22.12.0 || >=24.0.0")).toBe("22.12.1");
+    expect(rangeMinimum(">=24.0.0 || >22.12.0 <23")).toBe("22.12.1");
+    expect(rangeMinimum(">22.12")).toBe("22.13.0");
+  });
+
+  it("returns null, not a higher alternative, when one has no lower bound", () => {
+    expect(rangeMinimum("<20 || >=24.0.0")).toBe(null);
+    expect(rangeMinimum("* || >=24.0.0")).toBe(null);
+    // An alternative that admits nothing is skipped, not treated as unbounded.
+    expect(rangeMinimum("<0.0.0 || >=24.0.0")).toBe("24.0.0");
+  });
+
+  it("reads an empty || alternative as unreadable, not as *", () => {
+    expect(satisfies("22.12.0", "^22.13.0 ||")).toBe(null);
+    expect(satisfies("22.12.0", "|| ^22.13.0")).toBe(null);
+    expect(rangeMinimum("^22.12.0 ||")).toBe(null);
   });
 
   it.each([

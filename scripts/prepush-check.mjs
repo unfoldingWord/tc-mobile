@@ -45,13 +45,16 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // ---------------------------------------------------------------------------
 // (a) negated closing keywords
 
-const NEGATION = String.raw`(?:not|never|cannot|without|no\s+longer|[a-z]+n['’]t)`;
+const HARD_NEGATION = String.raw`(?:never|cannot|without|no\s+longer)`;
+const IDIOM_NEGATION = String.raw`(?:not|[a-z]+n['’]t)`;
 const KEYWORD = String.raw`(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)`;
 const ISSUE_REF = String.raw`(?:[\w.-]+\/[\w.-]+)?#(\d+)`;
-// "not only fixes #N (but also ...)" affirms the closure; it is not a negation.
+// "not only fixes #N (but also ...)" affirms the closure; it is not a
+// negation. The exemption follows only not / n't: "cannot simply close #N"
+// and "never just fixes #N" still negate.
 const AFFIRMING = String.raw`(?!\s+(?:only|just|merely|simply)\b)`;
 const NEGATED_CLOSE = new RegExp(
-  String.raw`\b${NEGATION}${AFFIRMING}\s+(?:[a-z]+\s+){0,2}?${KEYWORD}\b:?\s*${ISSUE_REF}`,
+  String.raw`\b(?:${HARD_NEGATION}|${IDIOM_NEGATION}${AFFIRMING})\s+(?:[a-z]+\s+){0,2}?${KEYWORD}\b:?\s*${ISSUE_REF}`,
   "gi"
 );
 
@@ -170,10 +173,13 @@ function comparatorBounds(token) {
   }
 }
 
-/** One `||` alternative as bounds, or null if any part is unreadable. */
+/**
+ * One `||` alternative as bounds, or null if any part is unreadable. An
+ * empty alternative (`"^22.13.0 ||"`) is unreadable, not `*`.
+ */
 function alternativeBounds(alt) {
   const trimmed = alt.trim();
-  if (trimmed === "") return [];
+  if (trimmed === "") return null;
   const hyphen = /^(\S+)\s+-\s+(\S+)$/.exec(trimmed);
   if (hyphen) {
     const from = parsePartial(hyphen[1]);
@@ -234,17 +240,27 @@ export function satisfies(version, range) {
 
 /**
  * The lowest version a range admits, as `"x.y.z"` — `^22.12.0 || >=24.0.0`
- * gives `22.12.0`. Null when unreadable or when no lower bound exists.
+ * gives `22.12.0`, and a strict `>22.12.0` gives `22.12.1`. Null when
+ * unreadable or when any satisfiable alternative has no lower bound
+ * (`<20 || >=24`), rather than reporting the other alternative's minimum.
  */
 export function rangeMinimum(range) {
   const alts = parseRange(range);
   if (!alts) return null;
   let best = null;
   for (const bounds of alts) {
-    const lows = bounds.filter((b) => b.op === ">=" || b.op === "=");
-    if (lows.length === 0) continue;
-    const low = lows.reduce((a, b) => (cmp(a.v, b.v) >= 0 ? a : b)).v;
+    const lows = bounds.flatMap((b) => {
+      if (b.op === ">=" || b.op === "=") return [b.v];
+      // Releases only: the first version above x.y.z is x.y.(z+1).
+      if (b.op === ">") return [[b.v[0], b.v[1], b.v[2] + 1]];
+      return [];
+    });
+    const low =
+      lows.length === 0
+        ? [0, 0, 0]
+        : lows.reduce((a, b) => (cmp(a, b) >= 0 ? a : b));
     if (!bounds.every((b) => meets(low, b))) continue;
+    if (lows.length === 0) return null;
     if (!best || cmp(low, best) < 0) best = low;
   }
   return best ? best.join(".") : null;
