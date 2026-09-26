@@ -34,6 +34,34 @@ import type { ChapterId, ClipId } from "@/types/domain";
  */
 export const SEGMENT_GAP_SECONDS = 0.5;
 
+/**
+ * A step count as the export path reports it (#986, #996): `done` of `total`
+ * steps have really finished, and `skipped` of those `done` finished WITHOUT
+ * contributing audio — a clip that vanished, a chapter with nothing recorded —
+ * so a reader can draw them hollow while the count still completes.
+ * `skipped <= done` always.
+ *
+ * `items` is how many of the `total` steps are ITEMS (segments, chapters),
+ * when some of the total is not: Share Chapter's count ends with a stretch of
+ * encode steps ({@link withEncodeSteps}), so it passes its segment count here
+ * and a reader draws that many dots without knowing `ENCODE_STEPS` or which
+ * share is running. Absent means every step is an item.
+ *
+ * Every export here calls this once per finished item, in item order, while
+ * it walks the items. That is what lets the progress machine place each
+ * skipped item at its own position (`share-progress.ts`): the item a report
+ * newly skips is the one that report finished.
+ *
+ * `skipped` and `items` are optional only so a caller that has nothing to say
+ * about them can call `(done, total)`.
+ */
+export type StepReporter = (
+  done: number,
+  total: number,
+  skipped?: number,
+  items?: number
+) => void;
+
 interface ChapterPcm {
   /** The chapter's segments concatenated in order, gaps between. */
   readonly samples: Int16Array;
@@ -77,12 +105,18 @@ interface ChapterExport {
  * step is reported after the cancel is observable. A throw unwinds before its
  * segment's step, so the count stops where it was. Not called for a chapter
  * with nothing to gather.
+ *
+ * Each call also carries `skipped` (#996): how many of the `done` segments
+ * resolved to no audio (the clip gone, an empty decode, an overrun) — the same
+ * segments this adds to `missing` in pass 2. A segment pass 1 already found
+ * without audio is in `missing` but not in `total`, so it is not a step and
+ * not `skipped`.
  */
 export async function gatherChapterPcm(
   chapterId: ChapterId,
   codec: Pick<AudioCodec, "decodeMp3">,
   shouldContinue?: () => boolean,
-  onStep?: (done: number, total: number) => void
+  onStep?: StepReporter
 ): Promise<ChapterPcm | null> {
   const { clipIds, missing } = await resolveChapterClipIds(chapterId);
   let missingAudio = missing;
@@ -124,7 +158,8 @@ export async function gatherChapterPcm(
   let written = 0;
   let segments = 0;
   let done = 0;
-  onStep?.(done, present.length);
+  let skipped = 0;
+  onStep?.(done, present.length, skipped);
   for (const { clipId, frames } of present) {
     if (shouldContinue && !shouldContinue()) return null;
     const fitted = await readSlot(clipId, frames, codec);
@@ -133,6 +168,7 @@ export async function gatherChapterPcm(
     if (shouldContinue && !shouldContinue()) return null;
     if (fitted === null) {
       missingAudio++;
+      skipped++;
     } else {
       if (segments > 0) {
         out.set(gap, written);
@@ -142,7 +178,7 @@ export async function gatherChapterPcm(
       written += frames;
       segments++;
     }
-    onStep?.(++done, present.length);
+    onStep?.(++done, present.length, skipped);
   }
 
   return { samples: out.subarray(0, written), segments, missing: missingAudio };
@@ -202,13 +238,15 @@ async function readSlot(
  * segment is gathered, not that the MP3 is already built. A caller may have
  * slow work of its own after this returns — Share's native route stages the
  * built file across the bridge (`share-flow.ts`) — and that adds no step
- * either.
+ * either. To put the encode on the count, run this through
+ * {@link withEncodeSteps}, which wraps both the codec and `onStep` (#996);
+ * Share Book deliberately does not (it counts chapters).
  */
 export async function exportChapterMp3(
   chapterId: ChapterId,
   codec: AudioCodec,
   shouldEncode?: () => boolean,
-  onStep?: (done: number, total: number) => void
+  onStep?: StepReporter
 ): Promise<ChapterExport | null> {
   const gathered = await gatherChapterPcm(
     chapterId,
@@ -221,4 +259,91 @@ export async function exportChapterMp3(
   if (segments === 0) return null;
   if (shouldEncode && !shouldEncode()) return null;
   return { mp3: await codec.encodeMp3(samples), segments, missing };
+}
+
+/**
+ * How many steps the encode adds to a counted Share Chapter (#996).
+ *
+ * A fixed stretch rather than one per segment: the encode is one pass over
+ * the whole chapter, its progress arrives as a fraction, and a hundred steps
+ * gives that fraction whole-percent resolution. It also sets the weight the
+ * encode gets against the gather — for a chapter of `n` segments the gather
+ * is `n / (n + 100)` of the count. That weighting is a judgment, not a
+ * measurement of any phone: an indicative Node timing, with its harness, is
+ * at https://github.com/unfoldingWord/tc-mobile/pull/998#issuecomment-5840566858
+ * and the phone check on #974 is what can say whether the split
+ * looks right. A chapter of finished (MP3) segments pays a decode per segment
+ * in the gather, which gives the gather more real weight than a PCM chapter.
+ */
+export const ENCODE_STEPS = 100;
+
+/**
+ * Put a chapter's MP3 encode on its step count (#996): wraps a build's codec
+ * and `onStep` so the count the caller sees is ONE forward-only count with a
+ * fixed total — the gather's segments, then `ENCODE_STEPS` for the encode.
+ *
+ * Why one count and not a second stretch with its own total: the progress
+ * machine fixes a run's total at its first step and only moves forward
+ * (`share-progress.ts`), and a ring that jumped back to zero for a second
+ * stretch would read as work lost. So the total is fixed once, when the gather
+ * first reports: `segments + ENCODE_STEPS`.
+ *
+ * - The gather's own `(done, n, skipped)` is re-scaled to `n + ENCODE_STEPS`,
+ *   and every report names `n` as its `items`, so a reader can tell the
+ *   segments from the encode stretch.
+ * - While the encode runs, the codec's `onProgress(fraction)` moves the count
+ *   to `n + floor(fraction * ENCODE_STEPS)`, capped one short of the total:
+ *   the encoder saying `1` is not the MP3 in hand.
+ * - Only when `encodeMp3` RESOLVES — the MP3 exists — does the count read
+ *   `total`. An encode that rejects (an abort terminates the worker, a stall,
+ *   an encoder error) never gets there.
+ * - Every report checks `shouldContinue` first, so nothing moves once a cancel
+ *   is observable, and a report that would not move the count forward (a
+ *   repeated, lower or non-numeric fraction) is dropped here rather than sent.
+ *
+ * If the build never reports a gather total (a chapter with nothing to
+ * gather), the encode reports nothing either — there is no scale to put it on.
+ * Pure: the codec and reporter are injected, so this is tested in Node.
+ */
+export function withEncodeSteps<T>(
+  onStep: StepReporter,
+  shouldContinue: () => boolean,
+  build: (codec: AudioCodec, onStep: StepReporter) => Promise<T>
+): (codec: AudioCodec) => Promise<T> {
+  return (encoder) => {
+    /** The gather's segment count, fixed by its first report. */
+    let segments: number | null = null;
+    let skipped = 0;
+    let last = -1;
+    const report = (done: number, gatherSteps: number): void => {
+      if (!(done > last) || !shouldContinue()) return;
+      last = done;
+      onStep(done, gatherSteps + ENCODE_STEPS, skipped, gatherSteps);
+    };
+    const gathered: StepReporter = (done, total, skippedSoFar) => {
+      segments ??= total;
+      if (skippedSoFar !== undefined) skipped = skippedSoFar;
+      report(done, segments);
+    };
+    /** `into` encode steps past the gather; nothing if it never reported. */
+    const encoded = (into: number): void => {
+      if (segments !== null) report(segments + into, segments);
+    };
+    const codec: AudioCodec = {
+      decodeMp3: encoder.decodeMp3,
+      encodeMp3: async (samples, onProgress) => {
+        const mp3 = await encoder.encodeMp3(samples, (fraction) => {
+          encoded(
+            Math.min(ENCODE_STEPS - 1, Math.floor(fraction * ENCODE_STEPS))
+          );
+          // A build that listens to the encode itself still hears it.
+          onProgress?.(fraction);
+        });
+        // The MP3 exists: the one place the count may reach its total.
+        encoded(ENCODE_STEPS);
+        return mp3;
+      },
+    };
+    return build(codec, gathered);
+  };
 }

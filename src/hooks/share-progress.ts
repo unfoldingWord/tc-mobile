@@ -104,11 +104,38 @@ export const SHARE_SETTLED = Object.keys(
  * Book (`lib/export/chapter.ts`, `lib/export/book.ts`). A skipped item (a clip
  * that vanished, a chapter with no audio) is a finished step; a thrown one is
  * not, and nothing moves after it. No percent is stored beside these: a reader
- * derives one from the two numbers, so the two can never disagree.
+ * derives one from `done` and `total`, so the percent can never disagree with
+ * the count.
+ *
+ * Share Chapter's count also covers the MP3 encode (#996): after its segments
+ * comes a fixed stretch of encode steps (`withEncodeSteps`,
+ * `lib/export/chapter.ts`), so `done === total` means the MP3 exists, not
+ * just that every segment is gathered.
  */
 interface ShareSteps {
   readonly done: number;
   readonly total: number;
+  /**
+   * How many of the `done` steps finished with NO audio (#996) — a vanished
+   * clip, a chapter with nothing recorded — so a reader can draw them hollow
+   * while the count still completes. Absent until a build reports one;
+   * `skipped <= done` always, and it never runs backward.
+   */
+  readonly skipped?: number;
+  /**
+   * How many of the `total` steps are ITEMS — the dots a reader draws — when
+   * some of the total is not (#996): Share Chapter's total is its segments
+   * plus a fixed encode stretch, and this is the segment count. Absent means
+   * every step is an item (Share Book: one per chapter). Fixed for the run.
+   */
+  readonly items?: number;
+  /**
+   * WHICH items finished with no audio (#996): their 0-based positions among
+   * the items, ascending, one per `skipped`, so a reader draws the hollow
+   * dot where the missing segment or chapter actually is. Present whenever
+   * `skipped` is. See {@link withStep} for how a position is placed.
+   */
+  readonly hollow?: readonly number[];
 }
 
 export type ShareProgress =
@@ -159,6 +186,10 @@ export type ShareProgressEvent =
       readonly type: "step";
       readonly done: number;
       readonly total: number;
+      /** Of `done`, the steps that contributed no audio (#996). */
+      readonly skipped?: number;
+      /** Of `total`, the steps that are items (#996); absent means all. */
+      readonly items?: number;
     }
   | { readonly type: "dismiss" };
 
@@ -257,7 +288,7 @@ export function reduceShareProgress(
         return event.now - state.since >= OUTCOME_HOLD_MS ? HIDDEN : state;
       return state;
     case "step":
-      return withStep(state, event.done, event.total);
+      return withStep(state, event);
     case "dismiss":
       return state.phase === "hidden" ? state : HIDDEN;
     default: {
@@ -275,12 +306,29 @@ export function reduceShareProgress(
  * total — so the number a translator watches never passes the end, never runs
  * backward, and never jumps to a different run's scale. Anything else, and a
  * step identical to the current one, returns the same object.
+ *
+ * `skipped` (#996), when a step carries it, is a whole number with
+ * `0 <= skipped <= done` that never runs backward; a step without one keeps
+ * the last. A step whose `skipped` breaks that is rejected whole — its
+ * `done` is not taken either, since the two came from one report.
+ *
+ * `items` (#996) is fixed by the run's first step, like `total`: a whole
+ * number with `1 <= items <= total`. A later step may repeat it or leave it
+ * out, but not change it, nor bring one to a run whose first step had none.
+ * Without it every step is an item.
+ *
+ * `hollow` places each newly skipped item. The exports report once per
+ * finished item, in order (`StepReporter`, `lib/export/chapter.ts`), so the
+ * item a step newly skips is the one it just finished: position `done - 1`,
+ * or the last item once `done` is past the items. Should one step ever skip
+ * more than one, they take the latest finished positions not already hollow.
+ * A skip with no finished item left to place it on is rejected whole.
  */
 function withStep(
   state: ShareProgress,
-  done: number,
-  total: number
+  event: Extract<ShareProgressEvent, { type: "step" }>
 ): ShareProgress {
+  const { done, total } = event;
   if (state.phase !== "busy" || state.work !== "prepare") return state;
   if (state.pending !== null) return state;
   if (!Number.isInteger(done) || !Number.isInteger(total)) return state;
@@ -288,7 +336,44 @@ function withStep(
   const prev = state.steps;
   if (prev !== undefined && (prev.total !== total || done <= prev.done))
     return state;
-  return { ...state, steps: { done, total } };
+  const items = prev === undefined ? event.items : prev.items;
+  if (event.items !== undefined && event.items !== items) return state;
+  if (
+    items !== undefined &&
+    (!Number.isInteger(items) || items < 1 || items > total)
+  )
+    return state;
+  const base = items === undefined ? { done, total } : { done, total, items };
+  const nextSkipped = event.skipped ?? prev?.skipped;
+  if (nextSkipped === undefined) return { ...state, steps: base };
+  if (!Number.isInteger(nextSkipped) || nextSkipped < 0) return state;
+  if (nextSkipped > done || nextSkipped < (prev?.skipped ?? 0)) return state;
+  const hollow = placeHollow(
+    prev?.hollow ?? [],
+    nextSkipped,
+    Math.min(done, items ?? total)
+  );
+  if (hollow === null) return state;
+  return { ...state, steps: { ...base, skipped: nextSkipped, hollow } };
+}
+
+/**
+ * `hollow` grown to `skipped` positions: each new one is the latest of the
+ * first `finished` items not already hollow. `null` when none is left.
+ */
+function placeHollow(
+  hollow: readonly number[],
+  skipped: number,
+  finished: number
+): readonly number[] | null {
+  const taken = new Set(hollow);
+  const added: number[] = [];
+  for (let at = finished - 1; at >= 0; at--) {
+    if (added.length === skipped - hollow.length) break;
+    if (!taken.has(at)) added.push(at);
+  }
+  if (added.length < skipped - hollow.length) return null;
+  return [...hollow, ...added].sort((a, b) => a - b);
 }
 
 /** The busy phase is over: an outcome to show, or nothing to say. */

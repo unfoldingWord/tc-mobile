@@ -24,7 +24,11 @@
  */
 
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import { SEGMENT_GAP_SECONDS, exportChapterMp3 } from "@/lib/export/chapter";
+import {
+  SEGMENT_GAP_SECONDS,
+  type StepReporter,
+  exportChapterMp3,
+} from "@/lib/export/chapter";
 import {
   listBooks,
   resolveBookChapters,
@@ -174,7 +178,7 @@ async function addChaptersToZip(
   nameChapter: (chapterNumber: number) => string,
   codec: AudioCodec,
   shouldContinue?: () => boolean,
-  onStep?: (done: number, total: number) => void
+  onStep?: StepReporter
 ): Promise<ChaptersAdded | null> {
   let missing = 0;
   // Sum of each INCLUDED chapter's own `result.missing` — see `BookExport`
@@ -188,7 +192,8 @@ async function addChaptersToZip(
   const taken = new Set<string>();
   let written = 0;
   let done = 0;
-  if (chapters.length > 0) onStep?.(done, chapters.length);
+  let skipped = 0;
+  if (chapters.length > 0) onStep?.(done, chapters.length, skipped);
   for (const chapter of chapters) {
     if (shouldContinue && !shouldContinue()) return null;
     const result = await exportChapterMp3(chapter.id, codec, shouldContinue);
@@ -199,7 +204,8 @@ async function addChaptersToZip(
       // means stop the whole export.
       if (shouldContinue && !shouldContinue()) return null;
       missing++;
-      onStep?.(++done, chapters.length);
+      skipped++;
+      onStep?.(++done, chapters.length, skipped);
       continue;
     }
     // A cancel that landed during this chapter's encode must not report its
@@ -218,7 +224,7 @@ async function addChaptersToZip(
     partialSegments += result.missing;
     if (result.missing > 0) partialChapters++;
     written++;
-    onStep?.(++done, chapters.length);
+    onStep?.(++done, chapters.length, skipped);
   }
   return { written, missing, partialSegments, partialChapters };
 }
@@ -259,13 +265,19 @@ function finishZip(sink: ZipSink): void {
  * staging a Share caller does after this returns adds no step. It is not
  * forwarded into `exportChapterMp3`: the book counts
  * chapters, not the segments inside them.
+ *
+ * Each call also carries `skipped` (#996): how many of the `done` chapters
+ * were resolved with no audio — the chapters this adds to `missing` in the
+ * walk. A dangling id is in `missing` but not in `total`, so it is not a
+ * step and not `skipped`. A chapter that shipped with some segments missing
+ * contributed audio, so it is not `skipped` (it is in `partialChapters`).
  */
 export async function exportBookZip(
   bookId: BookId,
   nameChapter: (chapterNumber: number) => string,
   codec: AudioCodec,
   shouldContinue?: () => boolean,
-  onStep?: (done: number, total: number) => void
+  onStep?: StepReporter
 ): Promise<BookExport | null> {
   // `missing` starts at the count of `chapterIds` whose chapter record is gone —
   // those never reach the loop, so they must be added here or a book with a
