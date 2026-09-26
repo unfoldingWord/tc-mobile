@@ -1,10 +1,13 @@
 /* O4 — Confirm dialogs (13, G5, G6). Owner: #946. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file. */
 
 /* The one confirm dialog, EraseConfirm (components/erase-confirm.tsx), serves
-   all three states: the segment Erase (13), the recorder's Erase-and-record-
-   again path (G5) and the Books delete-book confirm (G6). Its markup is the
-   same in both looks, so the focus landing, Tab trap and focus return are the
-   same too; everything O4 changes is here.
+   the segment Erase (13) and the recorder's Erase-and-record-again path (G5).
+   Its markup is the same in both looks, so the focus landing, Tab trap and
+   focus return are the same too; everything O4 changes is here. Under O4 the
+   Books delete-book ask (G6) is not this dialog: it asks inside the book
+   sheet (components/o4-book-delete-ask.tsx, #980), reusing this file's
+   confirm-actions / confirm-cancel rules for its two buttons. With the switch
+   off, the Books delete still uses EraseConfirm.
 
    Structural values the #939 primitives do not carry yet are literal px,
    marked, for #939 to swap in. Colour comes only through layer-2 roles; the

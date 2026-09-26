@@ -234,4 +234,38 @@
   [data-design="o4"] .books-dots > [data-state="finished"] {
     background: var(--s-done);
   }
+
+  /* --- deleting a book, asked inside its sheet (G6, #980) ----------------- */
+  /* The workbench's shead: the small cover and the name, where the sheet's
+     own title text was. The head reuses the menu sheets' o4-sheet-head
+     class, so its row layout and the hidden title (kept in the layout so
+     the close control keeps its corner) come from o4/menus.css and are not
+     restated here. The dialog's name is its aria-label, not this text. The
+     two buttons under the head are components/o4-book-delete-ask.tsx
+     reusing the confirm dialog's actions markup, so their shape comes from
+     o4/dialogs.css. */
+  [data-design="o4"] .books-delete-ask {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  /* The workbench's cov sm: 52 x 64, r7, a 5px spine. */
+  [data-design="o4"] .books-cover.is-sm {
+    width: 52px;
+    height: 64px;
+    border-radius: 7px; /* one-off: no 7px primitive */
+  }
+  [data-design="o4"] .books-cover.is-sm::before {
+    width: 5px;
+  }
+  [data-design="o4"] .books-sheet-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--p-text-20);
+    font-weight: var(--p-weight-bold);
+    color: var(--s-ink);
+  }
 }
