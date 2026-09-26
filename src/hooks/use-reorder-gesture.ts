@@ -25,7 +25,7 @@ interface ReorderDrag {
   readonly pitch: number;
 }
 
-export interface SegmentReorderOptions<Id> {
+export interface ReorderGestureOptions<Id> {
   /** Off means a press does nothing and a gesture in progress is cancelled. */
   readonly enabled: boolean;
   /** The rows in the order the screen shows them. */
@@ -42,9 +42,9 @@ export interface SegmentReorderOptions<Id> {
   readonly onCancel: (index: number) => void;
 }
 
-export interface SegmentReorder {
+export interface ReorderGestureHandle {
   readonly drag: ReorderDrag | null;
-  /** The `onPointerDown` for row `index`'s hold area (badge and title). */
+  /** The `onPointerDown` for row `index`'s hold area (the screen picks it). */
   readonly holdStart: (index: number) => (e: ReactPointerEvent) => void;
 }
 
@@ -54,7 +54,10 @@ const CLICK_GUARD_MS = 600;
 const LIFT_HAPTIC_MS = 15;
 
 /**
- * The DOM half of press-and-hold reorder on the Segments list (#953 PR2a).
+ * The DOM half of press-and-hold reorder (#953): the Segments list (PR2a) and
+ * each open book's chapter list on the Books screen (PR2b). Generic over the
+ * row id; each screen supplies its rows, its hold area, its one write and its
+ * words.
  *
  * `lib/view/reorder-gesture.ts` decides — the hold, the slop, the target, the
  * single drop — and is tested in Node. This hook only feeds it: it turns
@@ -65,7 +68,7 @@ const LIFT_HAPTIC_MS = 15;
  * index.
  *
  * Cancelled, with no write, by: a release before the hold (a plain tap — its
- * click still lands, so the badge still opens the recorder), 8px of movement
+ * click still lands, so the hold area still opens what it opens), 8px of movement
  * before the hold, a scroll before the lift, `pointercancel`, Escape, the
  * page being hidden or losing focus, the list changing under the finger,
  * `enabled` going false, and unmounting (leaving the screen).
@@ -78,9 +81,9 @@ const LIFT_HAPTIC_MS = 15;
  * `pointercancel`, and both cancel. `contextmenu` is refused while a press is
  * in progress, for a long press on Android.
  */
-export function useSegmentReorder<Id>(
-  options: SegmentReorderOptions<Id>
-): SegmentReorder {
+export function useReorderGesture<Id>(
+  options: ReorderGestureOptions<Id>
+): ReorderGestureHandle {
   const [drag, setDrag] = useState<ReorderDrag | null>(null);
 
   // Latest options, read by listeners and the gesture's callbacks, which
@@ -120,10 +123,10 @@ export function useSegmentReorder<Id>(
   }, [stopScrolling]);
 
   /**
-   * A lifted row's release lands on its hold area, which is the badge's open
-   * button: its click would open the recorder. Swallow that one click, and
-   * only on that element, so a quick tap elsewhere right after a drop still
-   * lands.
+   * A lifted row's release lands on its hold area, which is an open button
+   * on both screens (a segment's badge, a chapter's row): its click would
+   * open the recorder or the chapter. Swallow that one click, and only on
+   * that element, so a quick tap elsewhere right after a drop still lands.
    */
   const guardClick = useCallback(() => {
     const target = handle.current;
