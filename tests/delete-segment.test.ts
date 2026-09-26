@@ -168,13 +168,13 @@ describe("deleteSegment", () => {
     await deleteSegment(s1);
     const after = await countAll();
 
-    await expect(deleteSegment(s1)).resolves.toEqual([]);
+    await expect(deleteSegment(s1)).resolves.toBeNull();
     expect(await countAll()).toEqual(after);
     expect((await getChapter(chapterId))!.segmentIds).toEqual([s2]);
 
     await expect(
       deleteSegment(crypto.randomUUID() as SegmentId)
-    ).resolves.toEqual([]);
+    ).resolves.toBeNull();
     expect(await countAll()).toEqual(after);
   });
 

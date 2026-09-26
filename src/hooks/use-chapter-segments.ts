@@ -356,8 +356,8 @@ export function useChapterSegments(chapterId: ChapterId) {
   // id never comes back). `chapterId` changing clears it, same as the two
   // maps above.
   const landedDeletes = useRef(new Map<SegmentId, number>());
-  // Counts moves that landed. A failed move's restore read compares it across
-  // its await: if a move landed meanwhile, that move's returned order is newer
+  // Counts moves and deletes that landed. A failed move's restore read
+  // compares it across its await: if one landed meanwhile, its order is newer
   // than (or torn against — the read is not one transaction) the restore's.
   const landedCount = useRef(0);
   const loadGen = useRef(0);
@@ -743,8 +743,15 @@ export function useChapterSegments(chapterId: ChapterId) {
         // `landedDeletes` filter above by the time this runs, so there is no
         // leftover for `applySegmentOrder` to wrongly keep).
         landedDeletes.current.set(segmentId, loadGen.current);
-        landedOrder.current = { order, asOfGen: loadGen.current };
-        setRows((rs) => applySegmentOrder(rs, order));
+        // `null` is the store's no-op (already gone): no order was read, so
+        // it must not replace the order an earlier landed write returned.
+        // A real delete also counts in `landedCount`, so a failed move's
+        // older restore read cannot paint over this renumbering.
+        if (order !== null) {
+          landedOrder.current = { order, asOfGen: loadGen.current };
+          landedCount.current += 1;
+          setRows((rs) => applySegmentOrder(rs, order));
+        }
         setError(null);
         return true;
       } catch (cause) {

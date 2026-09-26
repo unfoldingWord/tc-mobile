@@ -975,11 +975,14 @@ const DELETE_SEGMENT_STORES = [
  * built to survive their target vanishing under them.
  *
  * Returns the chapter's resolvable segments in their new order, with the
- * indexes they now hold — what a caller (the hook) patches its rows from. An
- * already-gone segment returns `[]`: there is nothing to renumber, and no
- * chapter to resolve it from either.
+ * indexes they now hold — what a caller (the hook) patches its rows from; `[]`
+ * only when the chapter is now empty. An already-gone segment returns `null`,
+ * not `[]`: nothing was read, so there is no order to report, and a caller
+ * that took `[]` as "the chapter is empty" would overwrite a good order.
  */
-export async function deleteSegment(segmentId: SegmentId): Promise<Segment[]> {
+export async function deleteSegment(
+  segmentId: SegmentId
+): Promise<Segment[] | null> {
   const db = await getDb();
   const tx = db.transaction(DELETE_SEGMENT_STORES, "readwrite", {
     durability: "strict",
@@ -992,7 +995,7 @@ export async function deleteSegment(segmentId: SegmentId): Promise<Segment[]> {
     const segment = await segments.get(segmentId);
     if (!segment) {
       await tx.done; // idempotent no-op: already gone, nothing to renumber.
-      return [];
+      return null;
     }
     const chapter = await chapters.get(segment.chapterId);
     if (!chapter) throw new Error(`No such chapter: ${segment.chapterId}`);

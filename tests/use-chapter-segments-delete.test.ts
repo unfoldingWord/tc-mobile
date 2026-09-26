@@ -17,6 +17,7 @@ import {
   deleteSegment,
   getChapter,
   getSegmentsOfChapter,
+  moveSegment,
 } from "@/lib/storage/books";
 import type { ChapterId, Segment, SegmentId } from "@/types/domain";
 import type { SegmentRow } from "@/types/view";
@@ -39,6 +40,7 @@ vi.mock("@/lib/storage/books", async (importOriginal) => {
     ...actual,
     getSegmentsOfChapter: vi.fn(actual.getSegmentsOfChapter),
     deleteSegment: vi.fn(actual.deleteSegment),
+    moveSegment: vi.fn(actual.moveSegment),
   };
 });
 
@@ -213,5 +215,78 @@ describe("useChapterSegments().deleteSegment (#590)", () => {
       [s1, 1],
       [s3, 2],
     ]);
+  });
+
+  it("does not let a repeated (no-op) delete replace the landed order a stale load is corrected from", async () => {
+    const { chapterId, segmentIds } = await mountChapter();
+    const [s1, s2, s3] = segmentIds as [SegmentId, SegmentId, SegmentId];
+    const stale = await getSegmentsOfChapter(chapterId);
+
+    let releaseLoad!: (segments: Segment[]) => void;
+    vi.mocked(getSegmentsOfChapter).mockImplementationOnce(
+      () => new Promise<Segment[]>((resolve) => (releaseLoad = resolve))
+    );
+    await act(async () => {
+      hook().reload();
+    });
+    await vi.waitFor(() => expect(releaseLoad).toBeDefined());
+
+    await act(async () => {
+      await hook().deleteSegment(s2);
+    });
+    let again: boolean | undefined;
+    await act(async () => {
+      again = await hook().deleteSegment(s2);
+    });
+    await act(async () => {
+      releaseLoad(stale);
+    });
+    await vi.waitFor(() => expect(hook().refreshing).toBe(false));
+
+    expect(again).toBe(true);
+    expect(rowsNow()).toEqual([
+      [s1, 1],
+      [s3, 2],
+    ]);
+  });
+
+  it("does not let a failed move's older restore read paint over a delete that landed during it", async () => {
+    const { chapterId, segmentIds } = await mountChapter();
+    const [s1, s2, s3] = segmentIds as [SegmentId, SegmentId, SegmentId];
+    const stale = await getSegmentsOfChapter(chapterId);
+
+    vi.mocked(moveSegment).mockRejectedValueOnce(new Error("aborted"));
+    let releaseRestore!: (segments: Segment[]) => void;
+    vi.mocked(getSegmentsOfChapter).mockImplementationOnce(
+      () => new Promise<Segment[]>((resolve) => (releaseRestore = resolve))
+    );
+    let moved!: Promise<boolean>;
+    await act(async () => {
+      moved = hook().moveSegment(s3, 1);
+    });
+    await vi.waitFor(() => expect(releaseRestore).toBeDefined());
+
+    await act(async () => {
+      await hook().deleteSegment(s2);
+    });
+    await act(async () => {
+      releaseRestore(stale);
+      await moved;
+    });
+
+    expect(rowsNow()).toEqual([
+      [s1, 1],
+      [s3, 2],
+    ]);
+  });
+
+  it("still ends on an empty list when the only segment is deleted", async () => {
+    const { segmentIds } = await mountChapter();
+    for (const id of segmentIds) {
+      await act(async () => {
+        await hook().deleteSegment(id);
+      });
+    }
+    expect(hook().rows).toEqual([]);
   });
 });
