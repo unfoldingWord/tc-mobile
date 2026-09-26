@@ -805,16 +805,22 @@ export const strings = {
   // The two-tap discard, and the fainter line beneath it once armed. "for good"
   // only on the record path — there the held take is the only copy; on the edit
   // path the stored recording survives and only the edit goes.
+  //
+  // The record-path arms ARE the take-recovery panel's discard copy, read from
+  // those keys rather than written out a second time (#805 item 1): both
+  // confirms destroy the only copy of a recording, and `takeRecoverDiscard`'s
+  // own comment says the two share one shape. The arrows run only after
+  // `strings` is initialised, as `menuOpenWithFailures` already relies on.
   saveFailedDiscard: (editOnly: boolean, armed: boolean): string =>
     armed
       ? editOnly
         ? "Tap again to discard these changes"
-        : "Tap again to delete this recording for good"
+        : strings.takeRecoverDiscardArmed
       : editOnly
         ? "Discard these changes"
-        : "Delete this recording",
+        : strings.takeRecoverDiscard,
   saveFailedDiscardHint: (editOnly: boolean): string =>
-    editOnly ? "Tap again to discard them." : "Tap again to delete it.",
+    editOnly ? "Tap again to discard them." : strings.takeRecoverDiscardHint,
 
   // ── Root error boundary (#167) ───────────────────────────────────────────
   // The whole text layer of the crash screen. Says that something failed and
