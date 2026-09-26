@@ -422,6 +422,102 @@ async function deleteBookInTx(tx: DeleteBookTx, bookId: BookId): Promise<void> {
   }
 }
 
+// ── Reorder (#953) ───────────────────────────────────────────────────────
+
+/**
+ * Throw a `RangeError` unless `toIndex` is an integer — the one check
+ * `moveToIndex` makes, exported so a hook can refuse a bad target before it
+ * touches any state, instead of throwing from inside a React updater.
+ */
+export function assertReorderTarget(toIndex: number): void {
+  if (!Number.isInteger(toIndex)) {
+    throw new RangeError(`A reorder target must be an integer: ${toIndex}`);
+  }
+}
+
+/**
+ * `items` with the one at `fromIndex` moved to `toIndex` — the single
+ * definition of a reorder target, shared by the two store writes below and by
+ * the hooks' optimistic patches, so the row a screen shows and the row the
+ * store writes cannot land in different places.
+ *
+ * `toIndex` is ABSOLUTE — the final position of the moved item — never a
+ * delta, so the same call made twice gives the same result. It must be an
+ * integer (a `RangeError` otherwise: a fractional or NaN target is a caller
+ * bug, not a position) and is clamped to `[0, items.length - 1]`, so a drop
+ * past either end lands on that end. Pure; the input is not mutated.
+ */
+export function moveToIndex<T>(
+  items: readonly T[],
+  fromIndex: number,
+  toIndex: number
+): T[] {
+  assertReorderTarget(toIndex);
+  const out = items.slice();
+  const [moved] = out.splice(fromIndex, 1);
+  if (moved === undefined) return items.slice(); // nothing at fromIndex
+  const to = Math.min(Math.max(toIndex, 0), out.length);
+  out.splice(to, 0, moved);
+  return out;
+}
+
+/**
+ * The plan for moving `movingId` to visible position `toIndex` within a
+ * stored ordering array, or `null` when `movingId` is not a resolvable member
+ * of it.
+ *
+ * `records[i]` is the store's answer for `storedIds[i]` (`undefined` for a
+ * dangling id). The VISIBLE rows are the resolvable ones in array order;
+ * `toIndex` is a position among those. The new stored array keeps every
+ * dangling id in its own slot and fills the remaining slots, left to right,
+ * with the visible rows in their new order — so a dangling id never moves,
+ * is never dropped, and never shifts what the target means.
+ *
+ * `changed` is false when the visible order is unchanged, which is the
+ * caller's signal to write nothing.
+ */
+function planReorder<Id extends string, R extends { readonly id: Id }>(
+  storedIds: readonly Id[],
+  records: readonly (R | undefined)[],
+  movingId: Id,
+  toIndex: number
+): { ids: Id[]; order: R[]; changed: boolean } | null {
+  const visible = records.filter((r): r is R => r !== undefined);
+  const from = visible.findIndex((r) => r.id === movingId);
+  if (from === -1) return null;
+  const order = moveToIndex(visible, from, toIndex);
+  const changed = order.some((row, i) => row !== visible[i]);
+  let next = 0;
+  const ids = storedIds.map((id, i) =>
+    records[i] === undefined ? id : order[next++]!.id
+  );
+  return { ids, order, changed };
+}
+
+/**
+ * Abort a transaction a thrown error interrupted, and observe its `done`.
+ *
+ * A THROWN error mid-transaction does not roll it back on its own: IndexedDB
+ * auto-commits an inactive transaction unless it is aborted, so the writes
+ * already issued would land without the rest. The same guard `deleteBook`
+ * holds inline above. (A failed *request* already aborts on its own; this
+ * covers the thrown case.)
+ */
+async function abortQuietly(
+  abort: () => void,
+  done: Promise<void>
+): Promise<void> {
+  try {
+    abort();
+  } catch {
+    // Already settled — aborted by a request failure, or committed. Nothing
+    // to undo; the caller rethrows the original cause.
+  }
+  // idb creates `done` eagerly and it rejects with AbortError on abort; the
+  // original cause is what the caller needs, not this.
+  await done.catch(() => {});
+}
+
 // ── Chapters ─────────────────────────────────────────────────────────────
 
 /**
@@ -562,6 +658,88 @@ export async function renameChapter(
 }
 
 /**
+ * Move one chapter to an absolute position in its book (#953 — press-and-hold
+ * reorder on the Books screen).
+ *
+ * `toIndex` counts the chapters a screen actually shows: the ids in
+ * `book.chapterIds` whose record resolves, in array order — exactly the rows
+ * `use-books.ts`'s card holds, since it drops a dangling id rather than render
+ * a blank. See {@link planReorder} for how that maps back onto the stored
+ * array; in short, a dangling id keeps its stored slot and the resolvable ids
+ * fill the other slots in their new order. An out-of-range target clamps to
+ * the first or last row ({@link moveToIndex}).
+ *
+ * The rules, and why:
+ *
+ *   - **ONE readwrite transaction** over `books` and `chapters`, get-then-put,
+ *     aborted on a thrown error (the `deleteBook` guard) — the array and the
+ *     numbers commit together or not at all. A crash between the two would
+ *     leave badges and export file names that disagree with the order.
+ *   - **Dense renumbering** (DRI pick, #953 scope Q1): every resolvable
+ *     chapter's `number` becomes its visible position + 1, so the badges read
+ *     1..N and the export's `nameChapter(number)` follows the order. Only rows
+ *     whose number changes are written. A dangling id is not numbered — it has
+ *     no record — and export still counts it as missing.
+ *   - **Names are not touched** (scope Q5): "Mark 6" stays "Mark 6"; only the
+ *     number badge and the file name follow position.
+ *   - **No shelf bump** (scope Q4): the book's `updatedAt` is left alone, so
+ *     the card a translator is dragging inside does not jump to the top of the
+ *     `listBooks`-sorted shelf. This is the one tree edit that differs from
+ *     `renameChapter` here, on purpose.
+ *   - **Idempotent.** The target is absolute, so a re-run lands in the same
+ *     state; a move that leaves the order as it was writes nothing at all.
+ *
+ * Returns the book's resolvable chapters in their new order, with the numbers
+ * they now hold — what a caller patches its rows from.
+ */
+export async function moveChapter(
+  chapterId: ChapterId,
+  toIndex: number
+): Promise<Chapter[]> {
+  const db = await getDb();
+  const tx = db.transaction(["books", "chapters"], "readwrite");
+  try {
+    const chapters = tx.objectStore("chapters");
+    const books = tx.objectStore("books");
+    const chapter = await chapters.get(chapterId);
+    if (!chapter) throw new Error(`No such chapter: ${chapterId}`);
+    const book = await books.get(chapter.bookId);
+    if (!book) throw new Error(`No such book: ${chapter.bookId}`);
+
+    const records = await Promise.all(
+      book.chapterIds.map((id) => chapters.get(id))
+    );
+    const plan = planReorder(book.chapterIds, records, chapterId, toIndex);
+    if (!plan) {
+      throw new Error(`Chapter ${chapterId} is not listed in its book`);
+    }
+    if (!plan.changed) {
+      await tx.done; // idempotent no-op: no write, no recency bump.
+      return plan.order;
+    }
+
+    // No `updatedAt`: a reorder does not float the book up the shelf.
+    await books.put({ ...book, chapterIds: plan.ids });
+    const renumbered: Chapter[] = [];
+    for (const [position, row] of plan.order.entries()) {
+      const number = position + 1;
+      if (row.number === number) {
+        renumbered.push(row);
+        continue;
+      }
+      const updated: Chapter = { ...row, number };
+      await chapters.put(updated);
+      renumbered.push(updated);
+    }
+    await tx.done;
+    return renumbered;
+  } catch (cause) {
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw cause;
+  }
+}
+
+/**
  * Resolve a book to its chapters, in `book.chapterIds` order, alongside the count
  * of ids that no longer resolve to a chapter record — the export order a Share
  * Book walks. Mirrors `resolveChapterClipIds`'s `{ …, missing }` shape: a
@@ -650,6 +828,70 @@ export async function renameSegment(
   await tx.store.put(updated);
   await tx.done;
   return updated;
+}
+
+/**
+ * Move one segment to an absolute position in its chapter (#953 — press-and-
+ * hold reorder on the Segments screen). Moves the chapter's export
+ * concatenation order with it, since `segmentIds` is that order.
+ *
+ * {@link moveChapter}'s rules, one level down: ONE readwrite transaction over
+ * `chapters` and `segments`, aborted on a thrown error; the target counts the
+ * rows the screen shows (resolvable ids), and a dangling id keeps its stored
+ * slot; `index` is renumbered densely to visible position + 1 (DRI pick, #953
+ * scope Q1 — the renumber `Segment.index`'s own docblock has always said a
+ * reorder owes), written only where it changes; a move that changes nothing
+ * writes nothing. Label, take pointer and status are not touched, and nothing
+ * above the chapter is — the book's shelf position stays where it was, as for
+ * every other segment edit.
+ *
+ * Returns the chapter's resolvable segments in their new order, with the
+ * indexes they now hold.
+ */
+export async function moveSegment(
+  segmentId: SegmentId,
+  toIndex: number
+): Promise<Segment[]> {
+  const db = await getDb();
+  const tx = db.transaction(["chapters", "segments"], "readwrite");
+  try {
+    const segments = tx.objectStore("segments");
+    const chapters = tx.objectStore("chapters");
+    const segment = await segments.get(segmentId);
+    if (!segment) throw new Error(`No such segment: ${segmentId}`);
+    const chapter = await chapters.get(segment.chapterId);
+    if (!chapter) throw new Error(`No such chapter: ${segment.chapterId}`);
+
+    const records = await Promise.all(
+      chapter.segmentIds.map((id) => segments.get(id))
+    );
+    const plan = planReorder(chapter.segmentIds, records, segmentId, toIndex);
+    if (!plan) {
+      throw new Error(`Segment ${segmentId} is not listed in its chapter`);
+    }
+    if (!plan.changed) {
+      await tx.done; // idempotent no-op: no write.
+      return plan.order;
+    }
+
+    await chapters.put({ ...chapter, segmentIds: plan.ids });
+    const renumbered: Segment[] = [];
+    for (const [position, row] of plan.order.entries()) {
+      const index = position + 1;
+      if (row.index === index) {
+        renumbered.push(row);
+        continue;
+      }
+      const updated: Segment = { ...row, index };
+      await segments.put(updated);
+      renumbered.push(updated);
+    }
+    await tx.done;
+    return renumbered;
+  } catch (cause) {
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw cause;
+  }
 }
 
 export async function getSegment(id: SegmentId): Promise<Segment | undefined> {

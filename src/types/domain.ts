@@ -98,7 +98,11 @@ export interface Book {
 export interface Chapter {
   readonly id: ChapterId;
   readonly bookId: BookId;
-  /** 1-based, unique within its book (max existing + 1 on create). */
+  /**
+   * 1-based, unique within its book (max existing + 1 on create). A reorder
+   * (`moveChapter`, #953) renumbers every chapter of the book to its position
+   * + 1, so the badge and the export file name follow the order.
+   */
   readonly number: number;
   /**
    * Optional passage label the facilitator sets in place — "Mark 6" (#264).
@@ -121,8 +125,9 @@ export interface Segment {
   /**
    * 1-based ordinal. A denormalised mirror of this segment's position in
    * `Chapter.segmentIds` (D-IDX): the array is the truth for order; this is
-   * the display digit. The invariant holds while creation is append-only; a
-   * future reorder/delete batch must renumber or drop this field.
+   * the display digit. Creation appends, and a reorder (`moveSegment`, #953)
+   * renumbers to position + 1, so the invariant holds; a future delete batch
+   * must renumber or drop this field.
    */
   readonly index: number;
   /** A1: null is the normal case. B7 (#33) is the writer. */
