@@ -77,7 +77,7 @@ export default defineConfig({
       // its own should fail to run visibly, not silently join whichever
       // project's baseURL happened to be the catch-all.
       name: "chromium-harness",
-      testMatch: /browser-boundary-smoke\.spec\.ts$/,
+      testMatch: /(browser-boundary-smoke|joined-mp3-decode)\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_E2E}` },
     },
     {

@@ -37,9 +37,17 @@ import { measureLevel } from "@/lib/audio/level";
 import {
   fitMp3Decode,
   mp3GranuleCount,
+  MP3_ENCODER_DELAY,
   MP3_GRANULE,
   MP3_TOTAL_DELAY,
 } from "@/lib/audio/mp3-align";
+import { computePeaks } from "@/lib/audio/peaks";
+import { addChapter, addSegment, createBook } from "@/lib/storage/books";
+import { newClipId } from "@/lib/storage/clips";
+import { saveTake } from "@/lib/storage/takes";
+import { commitTranscode } from "@/lib/storage/transcode";
+import { exportChapterMp3, SEGMENT_GAP_SECONDS } from "@/lib/export/chapter";
+import { ROW_PEAK_BUCKETS } from "@/lib/view/segment-rows";
 import type { IDBPDatabase } from "idb";
 
 export interface EncodeDecodeResult {
@@ -496,6 +504,294 @@ function workerSnapshotReady(): boolean {
   return encoderSnapshotTaken();
 }
 
+// ── Joined chapter MP3, decoded for real (#1004 residual 4) ────────────────
+//
+// `lib/audio/mp3-join.ts` builds a chapter's MP3 by copying stored frames
+// rather than decoding and re-encoding them. That module and
+// `lib/export/chapter.ts` are unit-tested in Node against a FAKE decoder —
+// nothing in the Node suite has ever handed the joined bytes to a real MP3
+// decoder. This is that check: real Finished segments, built the same way the
+// transcode sweep builds them (a real PCM take, encoded through the app's own
+// worker lane, landed with the real `commitTranscode`), exported through the
+// real `exportChapterMp3`, and decoded with the browser's own
+// `AudioContext.decodeAudioData` — not the app's `decodeMp3ToCanonical`
+// wrapper, so this stands on its own rather than re-exercising code the rest
+// of the suite already covers.
+
+/** 44100 / 441 — a whole number of samples, so a tone built from a multiple
+ * of it starts and ends on the same rising zero crossing. Any click at a
+ * segment's own edge is then attributable to the MP3 codec, not the PCM
+ * fixture: the source itself has no discontinuity to find. */
+const JOIN_TONE_FREQUENCY_HZ = 441;
+const JOIN_TONE_PERIOD_FRAMES = CANONICAL_SAMPLE_RATE / JOIN_TONE_FREQUENCY_HZ;
+/** Comfortably inside int16 headroom; RMS ≈ amplitude/√2 ≈ 0.13 of full scale
+ * once normalised, well clear of the loud/quiet threshold below either way. */
+const JOIN_TONE_AMPLITUDE = 6000;
+
+/** A continuous tone, phase-aligned so `frames` (a multiple of the period)
+ * starts and ends at the same point in its cycle. */
+function periodicTone(frames: number): Int16Array {
+  if (frames % JOIN_TONE_PERIOD_FRAMES !== 0) {
+    throw new Error(
+      `frame count must be a multiple of ${JOIN_TONE_PERIOD_FRAMES}`
+    );
+  }
+  const out = new Int16Array(frames);
+  for (let i = 0; i < frames; i++) {
+    out[i] = Math.round(
+      JOIN_TONE_AMPLITUDE *
+        Math.sin(
+          (2 * Math.PI * JOIN_TONE_FREQUENCY_HZ * i) / CANONICAL_SAMPLE_RATE
+        )
+    );
+  }
+  return out;
+}
+
+/** RMS window for the loud/quiet envelope below. Small next to both a
+ * segment (tens of thousands of samples) and a gap (`SEGMENT_GAP_SECONDS`,
+ * ~22 050 samples), so it locates a transition to within one block. */
+const ENVELOPE_BLOCK_FRAMES = 200;
+/** The tone's RMS is ~0.13 of full scale; real silence should read far below
+ * it. Set well between the two, not tuned to either. */
+const LOUD_RMS_THRESHOLD = 0.03;
+
+/** Per-block RMS of `channel`, non-overlapping, trailing partial block
+ * dropped. */
+function blockRms(channel: Float32Array): number[] {
+  const blocks: number[] = [];
+  for (
+    let start = 0;
+    start + ENVELOPE_BLOCK_FRAMES <= channel.length;
+    start += ENVELOPE_BLOCK_FRAMES
+  ) {
+    let sumSq = 0;
+    for (let i = start; i < start + ENVELOPE_BLOCK_FRAMES; i++) {
+      sumSq += channel[i]! ** 2;
+    }
+    blocks.push(Math.sqrt(sumSq / ENVELOPE_BLOCK_FRAMES));
+  }
+  return blocks;
+}
+
+/** One quiet stretch of blocks, as block indices (`endBlock` exclusive). */
+interface GapRun {
+  readonly startBlock: number;
+  readonly endBlock: number;
+}
+
+/**
+ * Quiet runs strictly between the first and last loud block.
+ *
+ * The very start and end of the decode are near-silent too — the first
+ * piece's own encoder priming at the head, and the last piece's own trailing
+ * padding at the tail (see `mp3-join.ts`'s header) — and neither is one of
+ * the deliberate gaps this chapter's segments were joined with. Restricting
+ * the search to between the first and last loud block excludes both, so what
+ * is left is exactly the `segments.length - 1` inserted gaps, however the
+ * decoder trimmed (or did not trim) that leading and trailing silence.
+ */
+function findInternalGaps(blocks: readonly number[]): GapRun[] {
+  const loud = blocks.map((rms) => rms > LOUD_RMS_THRESHOLD);
+  const firstLoud = loud.indexOf(true);
+  const lastLoud = loud.lastIndexOf(true);
+  const gaps: GapRun[] = [];
+  if (firstLoud === -1 || lastLoud <= firstLoud) return gaps;
+  let runStart = -1;
+  for (let i = firstLoud + 1; i <= lastLoud; i++) {
+    if (!loud[i]) {
+      if (runStart === -1) runStart = i;
+    } else if (runStart !== -1) {
+      gaps.push({ startBlock: runStart, endBlock: i });
+      runStart = -1;
+    }
+  }
+  return gaps;
+}
+
+/** RMS of a gap's interior, a few blocks in from each edge so the loud/quiet
+ * transition itself (and any decoder ringing right at it) is not counted. */
+function gapInteriorRms(channel: Float32Array, gap: GapRun): number {
+  const marginBlocks = 3;
+  const from = Math.min(
+    (gap.startBlock + marginBlocks) * ENVELOPE_BLOCK_FRAMES,
+    channel.length
+  );
+  const to = Math.max(
+    from,
+    Math.min(
+      (gap.endBlock - marginBlocks) * ENVELOPE_BLOCK_FRAMES,
+      channel.length
+    )
+  );
+  let sumSq = 0;
+  let count = 0;
+  for (let i = from; i < to; i++) {
+    sumSq += channel[i]! ** 2;
+    count++;
+  }
+  return count === 0 ? 0 : Math.sqrt(sumSq / count);
+}
+
+/** Samples either side of a detected transition to scan for a click. Wide
+ * next to the ~200-sample block that located it, so the true edge — wherever
+ * exactly the decoder put it — falls inside the window. */
+const BOUNDARY_WINDOW_FRAMES = 300;
+
+/** Largest sample-to-sample jump within `BOUNDARY_WINDOW_FRAMES` of
+ * `sampleAt`, in the decoded [-1, 1] scale. */
+function boundaryMaxAbsDelta(channel: Float32Array, sampleAt: number): number {
+  const from = Math.max(1, sampleAt - BOUNDARY_WINDOW_FRAMES);
+  const to = Math.min(channel.length, sampleAt + BOUNDARY_WINDOW_FRAMES);
+  let max = 0;
+  for (let i = from; i < to; i++) {
+    max = Math.max(max, Math.abs(channel[i]! - channel[i - 1]!));
+  }
+  return max;
+}
+
+export interface JoinedChapterDecodeResult {
+  /** Segments the export actually joined (`built.segments`). */
+  readonly segments: number;
+  /** Segments the export could not resolve (`built.missing`); 0 here. */
+  readonly missing: number;
+  /** Whether the export took the join path (`ChapterCodec.onJoined`) rather
+   * than the decode-and-re-encode fallback. False means the fixture built an
+   * all-Finished chapter that `parseJoinableMp3` still refused — this check's
+   * premise — and everything below describes the fallback's output instead. */
+  readonly joined: boolean;
+  readonly mp3ByteLength: number;
+  /** The decoding AudioContext's actual rate — `CANONICAL_SAMPLE_RATE` unless
+   * the browser refused it, in which case the length comparisons below no
+   * longer hold at face value. */
+  readonly sampleRate: number;
+  /** `decodeAudioData`'s own channel length: the browser decode under test. */
+  readonly decodedLength: number;
+  /** `MP3_ENCODER_DELAY + Σ(recorded) + (segments - 1) × the configured gap`,
+   * rounded up to a whole `MP3_GRANULE` — what a single whole-chapter encode
+   * of the same segments would decode to, the reference the join's own header
+   * says it targets. */
+  readonly expectedTotal: number;
+  /** `MP3_GRANULE` — the tolerance assertion (b) is judged against, named
+   * here so the spec need not re-import the constant to state its own claim. */
+  readonly toleranceFrames: number;
+  readonly expectedGapCount: number;
+  /** Quiet runs actually found between the first and last loud block. */
+  readonly gapCount: number;
+  /** RMS of each gap's interior, in decode order. */
+  readonly gapRms: readonly number[];
+  /** Max abs sample-to-sample delta at each detected loud/quiet transition,
+   * two per gap (entering it, leaving it), in decode order. */
+  readonly boundaryMaxAbsDelta: readonly number[];
+}
+
+/**
+ * Build a chapter of `segmentFrameCounts.length` Finished segments, export it
+ * through the real join path, and decode the result with the browser's own
+ * `AudioContext.decodeAudioData` — see the module note above.
+ *
+ * Each segment's PCM is a phase-aligned tone (`periodicTone`) at a distinct
+ * length; `segmentFrameCounts.length` must be at least 2 for there to be a
+ * gap to examine. `MP3_ENCODER_DELAY` and `SEGMENT_GAP_SECONDS` are the app's
+ * own constants — not re-declared here — so `expectedTotal` moves with the
+ * production code it is judged against, rather than a copy that can drift.
+ */
+async function buildAndDecodeJoinedChapter(
+  segmentFrameCounts: readonly number[]
+): Promise<JoinedChapterDecodeResult> {
+  const book = await createBook("");
+  const chapter = await addChapter(book.id);
+  for (const frames of segmentFrameCounts) {
+    const segment = await addSegment(chapter.id);
+    const samples = periodicTone(frames);
+    const clipId = newClipId();
+    // The take first (copies `samples`), then peaks (reads them), then the
+    // encode last — `encodeMp3` transfers and detaches its input.
+    await saveTake(segment.id, clipId, samples, CANONICAL_SAMPLE_RATE, {
+      finished: true,
+    });
+    const peaks = computePeaks(samples, ROW_PEAK_BUCKETS);
+    const mp3 = await withEncoder(undefined, (codec) =>
+      codec.encodeMp3(samples)
+    );
+    // The real storage write a Finished segment's transcode sweep makes
+    // (`hooks/finish-transcode.ts`), not a hand-rolled IndexedDB seed.
+    const outcome = await commitTranscode(segment.id, clipId, mp3, peaks);
+    if (outcome !== "committed") {
+      throw new Error(`commitTranscode did not commit: ${outcome}`);
+    }
+  }
+
+  let joined = false;
+  const built = await exportChapterMp3(chapter.id, {
+    decodeMp3: (bytes) =>
+      withEncoder(undefined, (codec) => codec.decodeMp3(bytes)),
+    encodeMp3: (samples, onProgress) =>
+      withEncoder(undefined, (codec) => codec.encodeMp3(samples, onProgress)),
+    onJoined: () => {
+      joined = true;
+    },
+  });
+  if (!built)
+    throw new Error("exportChapterMp3 returned null: nothing to share");
+
+  const Ctor = window.AudioContext;
+  let ctx: AudioContext;
+  try {
+    ctx = new Ctor({ sampleRate: CANONICAL_SAMPLE_RATE });
+  } catch {
+    // The rate was refused, not the context; see `audio-io.ts`'s own fallback.
+    ctx = new Ctor();
+  }
+  const bytes = built.mp3;
+  const arrayBuffer = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength
+  );
+  let decoded: AudioBuffer;
+  try {
+    decoded = await ctx.decodeAudioData(arrayBuffer);
+  } finally {
+    await ctx.close();
+  }
+  const channel = decoded.getChannelData(0);
+
+  const totalRecorded = segmentFrameCounts.reduce((sum, n) => sum + n, 0);
+  const gapFrames = Math.round(SEGMENT_GAP_SECONDS * CANONICAL_SAMPLE_RATE);
+  const expectedGapCount = segmentFrameCounts.length - 1;
+  const expectedTotal =
+    Math.ceil(
+      (MP3_ENCODER_DELAY + totalRecorded + expectedGapCount * gapFrames) /
+        MP3_GRANULE
+    ) * MP3_GRANULE;
+
+  const blocks = blockRms(channel);
+  const gapsFound = findInternalGaps(blocks);
+  const gapRms = gapsFound.map((gap) => gapInteriorRms(channel, gap));
+  const boundaryMaxAbsDeltaList: number[] = [];
+  for (const gap of gapsFound) {
+    boundaryMaxAbsDeltaList.push(
+      boundaryMaxAbsDelta(channel, gap.startBlock * ENVELOPE_BLOCK_FRAMES),
+      boundaryMaxAbsDelta(channel, gap.endBlock * ENVELOPE_BLOCK_FRAMES)
+    );
+  }
+
+  return {
+    segments: built.segments,
+    missing: built.missing,
+    joined,
+    mp3ByteLength: bytes.byteLength,
+    sampleRate: decoded.sampleRate,
+    decodedLength: channel.length,
+    expectedTotal,
+    toleranceFrames: MP3_GRANULE,
+    expectedGapCount,
+    gapCount: gapsFound.length,
+    gapRms,
+    boundaryMaxAbsDelta: boundaryMaxAbsDeltaList,
+  };
+}
+
 /** Open the app's real IndexedDB connection through its real singleton. */
 async function openDb(): Promise<{ name: string; version: number }> {
   const db = await getDb();
@@ -522,6 +818,7 @@ declare global {
       encodeAfterAbortRebuild: typeof encodeAfterAbortRebuild;
       measureWorkerReady: typeof measureWorkerReady;
       workerSnapshotReady: typeof workerSnapshotReady;
+      buildAndDecodeJoinedChapter: typeof buildAndDecodeJoinedChapter;
       openDb: typeof openDb;
       watchVersionChange: typeof watchVersionChange;
       db?: IDBPDatabase<TcMobileDb>;
@@ -537,6 +834,7 @@ window.__e2e = {
   encodeAfterAbortRebuild,
   measureWorkerReady,
   workerSnapshotReady,
+  buildAndDecodeJoinedChapter,
   openDb,
   watchVersionChange,
 };
