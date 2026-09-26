@@ -26,6 +26,7 @@ vi.mock("@/hooks/use-design", () => ({
 
 const view = {
   bookName: "Ruth",
+  bookCoverHex: "#11796d",
   chapterNumber: 4,
   chapterName: null,
   ordinal: 7,
@@ -154,5 +155,14 @@ describe("the recorder screen's ≡ menu head (G3)", () => {
   it("draws no head in the current look", async () => {
     const panel = await openMenu("current");
     expect(panel.querySelector(".o4-sheet-head")).toBeNull();
+  });
+
+  it("carries the view's cover colour to the head's square (#949, #957)", async () => {
+    const panel = await openMenu("o4");
+    const cover = panel.querySelector(
+      ".o4-sheet-head .books-cover.is-sm"
+    ) as HTMLElement | null;
+    expect(cover).not.toBeNull();
+    expect(cover!.style.getPropertyValue("--book-cover")).toBe("#11796d");
   });
 });
