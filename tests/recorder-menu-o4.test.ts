@@ -248,8 +248,11 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
     // requires a stored clip) is greyed, so this pins the two do not share a
     // gate.
     const deleteTile = startingWith(strings.deleteSegment);
-    expect(deleteTile?.getAttribute("aria-label")).not.toBe(
-      strings.deleteSegment
+    // The exact hinted name (#135): the reason joins the label, not just
+    // "not the bare label" — a loose negative here would pass for any wrong
+    // reason string too.
+    expect(deleteTile?.getAttribute("aria-label")).toBe(
+      `${strings.deleteSegment}. ${strings.blockedByTake}`
     );
     expect(deleteTile?.getAttribute("aria-disabled")).toBe("true");
     expect(deleteTile?.hasAttribute("disabled")).toBe(false);
