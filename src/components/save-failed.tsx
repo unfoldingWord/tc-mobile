@@ -13,6 +13,7 @@ import {
 import { SendLogControl } from "./send-log-control";
 import { strings } from "@/lib/strings";
 import { flushFailureLog } from "@/hooks/failure-log";
+import { useDesign } from "@/hooks/use-design";
 import {
   pauseTranscodeSweep,
   resumeTranscodeSweep,
@@ -97,6 +98,11 @@ export function SaveFailed({
   // quietly went un-busy while nothing had changed would be a dead button
   // wearing a spinner first, the same reasoning `RestartControl` documents.
   const [restarting, setRestarting] = useState(false);
+  // The O4 paint (#948): the failed state's mark sits in the error circle and
+  // Retry/Restart becomes the wide guide button. Presentation only — every
+  // control, name, focus claim, the Send-log control (#456) and the sweep
+  // pause (#514) below are the same in both looks.
+  const o4 = useDesign().design === "o4";
 
   useEffect(() => {
     pauseTranscodeSweep(SAVE_FAILED_SWEEP_PAUSE);
@@ -142,13 +148,23 @@ export function SaveFailed({
       role="alertdialog"
       aria-modal="true"
       aria-label={strings.saveFailedDialog(editOnly)}
-      className="flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
+      className={
+        o4
+          ? "o4-err flex w-full max-w-md flex-col items-center px-[22px] text-center"
+          : "flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
+      }
     >
-      <span className={saving ? "text-ink-muted" : "text-live"}>
-        <Icon name={saving ? "retry" : "alert"} size={56} />
-      </span>
+      {o4 && !saving ? (
+        <span className="o4-err-circle" aria-hidden="true">
+          <Icon name="alert" size={58} />
+        </span>
+      ) : (
+        <span className={saving ? "text-ink-muted" : "text-live"}>
+          <Icon name={saving ? "retry" : "alert"} size={56} />
+        </span>
+      )}
 
-      <p className="t-title text-ink">
+      <p className={o4 ? "o4-err-title text-ink" : "t-title text-ink"}>
         {saving
           ? strings.saveFailedSaving
           : recoveryTitle(kind ?? "unknown", editOnly)}
@@ -173,8 +189,16 @@ export function SaveFailed({
                   : strings.saveFailedRetry
               }
               variant="primary"
-              size={30}
-              className={terminal && restartArmed ? "text-live" : undefined}
+              size={o4 ? 34 : 30}
+              className={
+                o4
+                  ? terminal && restartArmed
+                    ? "o4-err-wide text-live"
+                    : "o4-err-wide"
+                  : terminal && restartArmed
+                    ? "text-live"
+                    : undefined
+              }
               busy={terminal && restarting}
               autoFocus
               onClick={

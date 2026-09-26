@@ -98,6 +98,19 @@ export const SHARE_SETTLED = Object.keys(
   EVERY_SETTLED
 ) as readonly ShareSettled[];
 
+/**
+ * How far a prepare has got (#986): `done` of `total` steps have REALLY
+ * finished — segments gathered for Share Chapter, chapters archived for Share
+ * Book (`lib/export/chapter.ts`, `lib/export/book.ts`). A skipped item (a clip
+ * that vanished, a chapter with no audio) is a finished step; a thrown one is
+ * not, and nothing moves after it. No percent is stored beside these: a reader
+ * derives one from the two numbers, so the two can never disagree.
+ */
+interface ShareSteps {
+  readonly done: number;
+  readonly total: number;
+}
+
 export type ShareProgress =
   | { readonly phase: "hidden" }
   | {
@@ -114,6 +127,12 @@ export type ShareProgress =
         /** Carried from the `settle` event that is being held (`partial` only). */
         readonly gap?: ShareGap;
       } | null;
+      /**
+       * The prepare's step count, absent until the build reports one (and
+       * always absent on a send, which has no per-item work). See
+       * {@link ShareSteps}; only a `step` event sets it, and only forward.
+       */
+      readonly steps?: ShareSteps;
     }
   | {
       readonly phase: "outcome";
@@ -135,6 +154,12 @@ export type ShareProgressEvent =
       readonly now: number;
     }
   | { readonly type: "tick"; readonly now: number }
+  | {
+      /** One more step of a prepare finished (#986). Never moves `since`. */
+      readonly type: "step";
+      readonly done: number;
+      readonly total: number;
+    }
   | { readonly type: "dismiss" };
 
 /**
@@ -169,7 +194,8 @@ export const HIDDEN: ShareProgress = { phase: "hidden" };
  * `pending` for the tick; a second settle while one is held is ignored — the
  * first word stands. `tick` releases a held settle once the hold has elapsed,
  * and clears an outcome once its hold has. `dismiss` goes hidden from
- * anywhere. From hidden, `settle` and `tick` are stale and change nothing —
+ * anywhere. `step` records a prepare's count (see {@link withStep}). From
+ * hidden, `settle`, `tick` and `step` are stale and change nothing —
  * that is what keeps a superseded run's late sheet from flashing an outcome
  * over a newer run's menu (George R-B7-book P2).
  */
@@ -230,6 +256,8 @@ export function reduceShareProgress(
       if (state.phase === "outcome")
         return event.now - state.since >= OUTCOME_HOLD_MS ? HIDDEN : state;
       return state;
+    case "step":
+      return withStep(state, event.done, event.total);
     case "dismiss":
       return state.phase === "hidden" ? state : HIDDEN;
     default: {
@@ -237,6 +265,30 @@ export function reduceShareProgress(
       return unhandled;
     }
   }
+}
+
+/**
+ * A `step` event, applied only where it can be true (#986): a busy PREPARE
+ * whose build is still running (`pending === null` — once a settle is held the
+ * build has returned, so a later step is stale). The count is whole numbers,
+ * `0 <= done <= total` with `total >= 1`, and it only moves forward within one
+ * total — so the number a translator watches never passes the end, never runs
+ * backward, and never jumps to a different run's scale. Anything else, and a
+ * step identical to the current one, returns the same object.
+ */
+function withStep(
+  state: ShareProgress,
+  done: number,
+  total: number
+): ShareProgress {
+  if (state.phase !== "busy" || state.work !== "prepare") return state;
+  if (state.pending !== null) return state;
+  if (!Number.isInteger(done) || !Number.isInteger(total)) return state;
+  if (total < 1 || done < 0 || done > total) return state;
+  const prev = state.steps;
+  if (prev !== undefined && (prev.total !== total || done <= prev.done))
+    return state;
+  return { ...state, steps: { done, total } };
 }
 
 /** The busy phase is over: an outcome to show, or nothing to say. */

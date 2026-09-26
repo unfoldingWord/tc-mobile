@@ -14,8 +14,11 @@ import { guidedStep } from "./guided-step";
 import { EraseConfirm } from "./erase-confirm";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
+import { O4SheetHead } from "./o4-crumbs";
+import { Tile, TileSpacer } from "./o4-tile-menu";
 import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
+import { SegmentsHead } from "./segments-head";
 import { segmentsListInert } from "./segments-inert";
 import { shareGapText, shareProgressText } from "./share-error-copy";
 import { ShareMenuSection } from "./share-menu-section";
@@ -26,6 +29,7 @@ import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import type { SegmentsAudio } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
+import { useDesign } from "@/hooks/use-design";
 import type { FailureKey } from "@/hooks/save-failure";
 import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
@@ -147,6 +151,9 @@ export const SegmentsScreen = forwardRef<
   // The passage heading the breadcrumb shows: the facilitator's label, else
   // "Chapter {number}" (#264).
   const chapterHeading = strings.chapterHeading(chapterName, chapterNumber);
+  // The O4 look (#944): the chapter head, the list's own classes and the
+  // header's add button branch on it; with the switch off nothing here does.
+  const o4 = useDesign().design === "o4";
 
   // Erase Segment from a row's overflow menu (B6, D-TWO-ENTRIES). One hook and
   // one confirm for the whole list — the same implementation the recorder menu
@@ -864,6 +871,7 @@ export const SegmentsScreen = forwardRef<
             icon="plus"
             label={strings.addSegment}
             variant="quiet"
+            className={o4 ? "segments-add" : undefined}
             disabled={staleTarget || loading || refreshing || loadFailed}
             onClick={() => void onAppend()}
           />
@@ -881,6 +889,10 @@ export const SegmentsScreen = forwardRef<
         />
       </header>
 
+      {o4 && !staleTarget && (
+        <SegmentsHead chapterName={chapterName} rows={rows} />
+      )}
+
       {/* One line, one place: a load failure or a playback failure (a
           dangling/undecodable clip routes to audio.error) — never only the
           console. `console.error is not a channel on a phone in a village.`
@@ -897,7 +909,12 @@ export const SegmentsScreen = forwardRef<
         refreshing && <Notice tone="busy">{strings.updating}</Notice>
       )}
 
-      <div className="flex-1 overflow-y-auto" inert={listInert || undefined}>
+      <div
+        className={
+          o4 ? "segments-body flex-1 overflow-y-auto" : "flex-1 overflow-y-auto"
+        }
+        inert={listInert || undefined}
+      >
         {staleTarget ? null : showEmpty ? (
           <EmptyState
             headline={strings.segmentsEmpty}
@@ -908,7 +925,7 @@ export const SegmentsScreen = forwardRef<
             onCta={() => void onAppend()}
           />
         ) : (
-          <ul className="flex flex-col gap-[8px]">
+          <ul className={o4 ? "segments-list" : "flex flex-col gap-[8px]"}>
             {rows.map((row) => (
               <li
                 key={row.segmentId}
@@ -935,6 +952,8 @@ export const SegmentsScreen = forwardRef<
                   onRename={(label) => renameSegment(row.segmentId, label)}
                   onMenuOpen={onRowMenuOpen}
                   onMenuClose={onRowMenuClose}
+                  bookName={bookName}
+                  chapterNumber={chapterNumber}
                 />
               </li>
             ))}
@@ -1039,6 +1058,52 @@ export const SegmentsScreen = forwardRef<
             {chapterErrorText && !savingChapterName && (
               <Notice>{chapterErrorText}</Notice>
             )}
+          </>
+        ) : o4 ? (
+          // The O4 chapter menu (#949, G2): the breadcrumb head, then Rename,
+          // Share and — past a gap — the theme tile. The same three controls,
+          // names, refs and order as the rows below, so the open-edge focus
+          // lands on Rename in both looks and every restore below finds the
+          // same node. Rename is a tile rather than the workbench's header
+          // pencil because a header control ahead of the grid would be a
+          // second first-focus candidate the current look does not have.
+          <>
+            <O4SheetHead book={bookName} chapter={chapterNumber} />
+            <ShareMenuSection
+              status={share.status}
+              sendUnconfirmed={share.sendUnconfirmed}
+              error={share.error}
+              scope="chapter"
+              controlRef={shareControlRef}
+              idleLabel={strings.shareChapter}
+              preparingLabel={strings.sharePreparing}
+              unconfirmedLabel={strings.shareChapterUnconfirmed}
+              hasGap={share.missing > 0}
+              gapText={shareGapText(
+                { missing: share.missing, partial: 0, partialChapters: 0 },
+                "chapter"
+              )}
+              onPrepare={onPrepareShare}
+              onSend={onSendShare}
+              tiles={{
+                before: (
+                  <Tile
+                    ref={renameChapterControlRef}
+                    tone="name"
+                    icon="pencil"
+                    label={strings.renameChapter}
+                    caption={strings.tileRename}
+                    onClick={() => setRenamingChapter(true)}
+                  />
+                ),
+                after: (
+                  <>
+                    <TileSpacer />
+                    <ThemeControl tile />
+                  </>
+                ),
+              }}
+            />
           </>
         ) : (
           <>

@@ -267,11 +267,50 @@ describe("v9 book cover-colour backfill (append-only)", () => {
       status: "not-started",
       label: "verses 3-4",
     });
+    await v8.put("takes", {
+      id: "t1",
+      segmentId: "s1",
+      clipId: "c1",
+      createdAt: 3,
+      durationMs: 1,
+    });
+    const pcm = Int16Array.from([1, 2, 3, 4]);
+    await v8.put("clipMeta", {
+      id: "c1",
+      sampleRate: 44100,
+      frameCount: 4,
+      durationMs: 1,
+      createdAt: 3,
+      encoding: "pcm",
+      generation: 0,
+      byteLength: 8,
+      peaks: null,
+      transcodeStallCount: 2,
+    });
+    await v8.put("clipData", pcm.buffer, "c1");
+    const priorChapter = await v8.get("chapters", "ch1");
+    const priorSegment = await v8.get("segments", "s1");
+    const priorTake = await v8.get("takes", "t1");
+    const priorMeta = await v8.get("clipMeta", "c1");
     v8.close();
 
     const v9 = await getDb();
-    expect((await v9.get("chapters", "ch1" as never))?.name).toBe("Mark 6");
-    expect((await v9.get("segments", "s1" as never))?.label).toBe("verses 3-4");
+    expect(v9.version).toBe(APP_VERSION);
+    // Whole-row equality: v9 opens only `books`, so every other row must come
+    // through exactly as the v8 store held it — no field added, none dropped.
+    expect(priorChapter).toBeDefined();
+    expect(priorSegment).toBeDefined();
+    expect(priorTake).toBeDefined();
+    expect(priorMeta).toBeDefined();
+    expect(await v9.get("chapters", "ch1" as never)).toEqual(priorChapter);
+    expect(await v9.get("segments", "s1" as never)).toEqual(priorSegment);
+    expect(await v9.get("takes", "t1" as never)).toEqual(priorTake);
+    expect(await v9.get("clipMeta", "c1" as never)).toEqual(priorMeta);
+    const data = await v9.get("clipData", "c1" as never);
+    expect(data).toBeInstanceOf(ArrayBuffer);
+    expect(Array.from(new Int16Array(data as ArrayBuffer))).toEqual([
+      1, 2, 3, 4,
+    ]);
   });
 });
 
