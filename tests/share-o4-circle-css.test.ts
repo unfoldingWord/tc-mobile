@@ -156,6 +156,21 @@ describe("O4 share circle stylesheet (#947)", () => {
     expect(valueFor(`${O4} .share-o4-chips`, "gap")).toBe("10px");
   });
 
+  it("a waiting chip draws exactly as a chip that stays: no rule names either state (Q1, vShare)", () => {
+    // The workbench's vShare gives a waiting go-out chip `cls = ''` while
+    // packing, the same bare span as an item that stays. So no selector in
+    // this sheet may single out either state, for ANY property: both get the
+    // base chip rule and nothing else.
+    const named = RULES.flatMap((r) => r.selectors).filter((s) =>
+      /data-chip="(waiting|stays)"/.test(s)
+    );
+    expect(named).toEqual([]);
+    // A floor, so a parse that finds no chip rule at all cannot pass above.
+    expect(
+      RULES.filter((r) => r.selectors.includes(`${O4} .share-o4-chip`))
+    ).toHaveLength(1);
+  });
+
   it("chips: grey with faint ink unless finished (send, white ink) or current (amber) (D21 as corrected)", () => {
     const chip = `${O4} .share-o4-chip`;
     // The base chip: an item that does not go out, and, while packing, a

@@ -54,14 +54,16 @@ const BUSY: ShareProgressState = {
   steps: { done: 2, total: 4, skipped: 0 },
 };
 
-async function mount(progress: ShareProgressState) {
+const ALL_GO = [1, 2, 3, 4].map((label) => ({ label, goesOut: true }));
+
+async function mount(progress: ShareProgressState, items = ALL_GO) {
   const { ShareProgress } = await import("@/components/share-progress");
   await act(async () => {
     root.render(
       createElement(ShareProgress, {
         progress,
         scope: "book",
-        items: [1, 2, 3, 4].map((label) => ({ label, goesOut: true })),
+        items,
         onCancel: () => {},
         onDismiss: () => {},
       })
@@ -92,5 +94,55 @@ describe("ShareProgress follows the O4 switch (#947)", () => {
       panel.querySelector("[role='progressbar']")?.getAttribute("aria-valuenow")
     ).toBe("50");
     expect(panel.querySelector(".share-progress-glyph")).toBeNull();
+  });
+
+  it("while packing, a go-out chip still waiting is the same bare chip as one that stays (Q1, vShare)", async () => {
+    dom.window.localStorage.setItem(DESIGN_STORAGE_KEY, "o4");
+    // One chapter into a four-chapter book whose last chapter has no audio:
+    // chip 1 finished, chip 2 current, chip 3 waiting, chip 4 stays.
+    const panel = await mount(
+      { ...BUSY, steps: { done: 1, total: 4, skipped: 0 } },
+      [
+        { label: 1, goesOut: true },
+        { label: 2, goesOut: true },
+        { label: 3, goesOut: true },
+        { label: 4, goesOut: false },
+      ]
+    );
+    const chips = [...panel.querySelectorAll(".share-o4-chip")];
+    expect(chips.map((c) => c.getAttribute("data-chip"))).toEqual([
+      "finished",
+      "current",
+      "waiting",
+      "stays",
+    ]);
+    // Same class, same content shape (its number, no check): the stylesheet
+    // names neither state (tests/share-o4-circle-css.test.ts), so both draw
+    // as the base grey chip.
+    expect(chips[2]!.getAttribute("class")).toBe(
+      chips[3]!.getAttribute("class")
+    );
+    expect(chips[2]!.textContent).toBe("3");
+    expect(chips[2]!.querySelector("svg")).toBeNull();
+  });
+
+  it("once handed over (sent), the core stays a progress bar at 100 (Q3, vShare's system phase)", async () => {
+    dom.window.localStorage.setItem(DESIGN_STORAGE_KEY, "o4");
+    const panel = await mount({ phase: "outcome", settled: "sent", since: 0 });
+    const bar = panel.querySelector(".share-o4-core[role='progressbar']");
+    expect(bar, "the handed-over core is not a progress bar").not.toBeNull();
+    expect(bar!.getAttribute("aria-valuenow")).toBe("100");
+    expect(bar!.getAttribute("aria-valuemax")).toBe("100");
+  });
+
+  it("on any other outcome the core is not a progress bar", async () => {
+    dom.window.localStorage.setItem(DESIGN_STORAGE_KEY, "o4");
+    const panel = await mount({
+      phase: "outcome",
+      settled: "failed",
+      since: 0,
+    });
+    expect(panel.querySelector(".share-o4-core")).not.toBeNull();
+    expect(panel.querySelector("[role='progressbar']")).toBeNull();
   });
 });
