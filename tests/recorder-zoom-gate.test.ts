@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { stripComments } from "./support";
+
 /**
  * Edit-mode Zoom must not fire during the committing `isClosing` window
  * (#396, George P3 on PR #345's rebase round).
@@ -44,8 +46,11 @@ describe("Zoom's disabled gate covers the leftover-preview close window (#396)",
   // Read, strip, then search, as `tests/menu-hamburger-header.test.ts` and
   // `tests/recorder-menu.test.ts` do: the ORDER is the guarantee, not the
   // regexes. Both reads get it — each one is searched and sliced.
-  const strip = (src: string) =>
-    src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  // A fourth hole was the strip itself: a line-anchored `^\s*\/\/` keeps a
+  // comment TRAILING live code, so `windowControlsInert={false} //
+  // windowControlsInert={stage.windowControlsInert}` satisfies the prop pin
+  // below (#822). The shared `stripComments` removes those too.
+  const strip = stripComments;
   const toolbars = strip(
     readFileSync(
       new URL("../src/components/recorder-toolbars.tsx", import.meta.url),
