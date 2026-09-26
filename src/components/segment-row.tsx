@@ -114,6 +114,25 @@ interface SegmentRowProps {
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
 
 /**
+ * A Play from the dot's rest leaves at least this much of the take to sound,
+ * or it starts from the beginning instead (#606). #618 rests the dot at the
+ * start after a run-out, but a drag, the arrow keys or a Stop on the last
+ * elapsed tick (~60 ms) can still leave it at or next to the end, and a Play
+ * from there starts a source with nothing, or almost nothing, behind it:
+ * silence at best (#601's symptom). It is also the start condition #606's
+ * reporter tied a shriek to, which is not confirmed as that shriek's cause.
+ * 100 ms is under any sound a translator would play on purpose, and wider
+ * than one elapsed tick.
+ */
+const PLAY_TAIL_MS = 100;
+
+/** The offset, in seconds, a Play tap asks for from `fraction` of the take. */
+function playOffsetSeconds(fraction: number, durationMs: number): number {
+  const offsetMs = fraction * durationMs;
+  return durationMs - offsetMs < PLAY_TAIL_MS ? 0 : offsetMs / 1000;
+}
+
+/**
  * One segment, as a row (mockup 2, v0.1.2 rework):
  *   [ status + ordinal ] [ waveform ] [ transport ] [ menu | spacer ]
  *
@@ -531,7 +550,7 @@ export function SegmentRow({
           // row still carries the pre-save durationMs, so an offset computed
           // from it would seek the wrong place in the clip just written.
           disabled={busy}
-          onClick={() => onPlay(fraction * (durationMs / 1000))}
+          onClick={() => onPlay(playOffsetSeconds(fraction, durationMs))}
         />
       ) : (
         <Control
@@ -648,7 +667,9 @@ export function SegmentRow({
                   size={26}
                   className="o4-menu-play"
                   disabled={busy}
-                  onClick={() => onPlay(fraction * (durationMs / 1000))}
+                  onClick={() =>
+                    onPlay(playOffsetSeconds(fraction, durationMs))
+                  }
                 />
               )}
             </div>
