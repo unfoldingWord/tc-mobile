@@ -137,9 +137,15 @@ describe("the edit toolbar's menu opener wears ⋮, not ≡ (#863)", () => {
       opener,
       "no 'More actions' control in the edit toolbar"
     ).toBeDefined();
-    const svg = opener!.querySelector("svg")!;
-    expect(svg.querySelectorAll("circle").length).toBe(3);
-    expect(svg.querySelectorAll("path").length).toBe(0);
+    const svg = opener!.querySelector("svg");
+    // #913 item 3: assert the <svg> exists, with a message, before reading
+    // path/circle counts off it — the same guard #907 item 1 added below for
+    // the record-mode opener. Without it, a kebab opener rendered with no
+    // <svg> fails here with a bare TypeError on a non-null assertion, not a
+    // named assertion.
+    expect(svg, "no <svg> in the ⋮ opener").not.toBeNull();
+    expect(svg!.querySelectorAll("circle").length).toBe(3);
+    expect(svg!.querySelectorAll("path").length).toBe(0);
   });
 
   it("keeps the same accessible name and disabled gate the ≡ opener had", () => {
