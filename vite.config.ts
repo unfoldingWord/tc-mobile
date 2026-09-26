@@ -131,6 +131,57 @@ export default defineConfig(({ mode }) => {
       __BUILD_SHA__: JSON.stringify(buildSha),
     },
     build: {
+      // Pinned to the app's stated floor (#1017 open question 1) rather than
+      // left to Vite 8's own default, `"baseline-widely-available"` — a
+      // rolling snapshot (`ESBUILD_BASELINE_WIDELY_AVAILABLE_TARGET` in
+      // `node_modules/vite/dist/node/chunks/node.js`) that is bumped on every
+      // Vite major and today resolves to `safari16.4`/`ios16.4`, above even
+      // this floor. `chrome111`/`edge111`/`firefox114` are carried over
+      // unchanged from that same default: the Android floor
+      // (`android/variables.gradle`'s `minSdkVersion = 24`, Android 7.0) is
+      // stated everywhere (this file's own draft wording,
+      // `docs/native/system-requirements.md`) as conditional on Android
+      // System WebView being kept up to date, so nothing found this build
+      // checking called for lowering those three.
+      //
+      // The Safari/iOS entries are **15.4, not the app's original 15.0**
+      // floor. #1051 found that the
+      // O4 CSS (`src/app/styles/o4/menus.css`, `sheets.css`, `motion.css`)
+      // ships a `:has()` selector that needs Safari/iOS 15.4 (caniuse-lite's
+      // `data/features/css-has.js`) — a real gap against 15.0 that no
+      // `build.target`/`cssTarget` setting can close (verified: LightningCSS
+      // passes `:has()` through unchanged and warning-free at any target;
+      // there is no downlevel transform for a CSS selector). #1052 gave the
+      // DRI two options — raise the floor, or rewrite 13 `:has()` sites — and
+      // the decision (2026-09-26, "Raise floor to 15.4 (Recommended)") was
+      // the former, so the JS/CSS build target here now matches the raised
+      // documented floor. Note: `ios/App/App.xcodeproj/project.pbxproj`'s
+      // `IPHONEOS_DEPLOYMENT_TARGET` still reads `15.0` in this tree — this
+      // change only raises what the requirements doc and this build target
+      // state; moving the actual Xcode deployment target (and the store
+      // listings) is separate, out-of-scope work for whoever picks up
+      // #1052's other side. See `docs/native/system-requirements.md` for the
+      // full resolution and that residual.
+      //
+      // This is otherwise a forward guard, not a fix for something broken
+      // today: a build-artifact scan (`tests/build-target-floor.test.ts`,
+      // gated on `dist/` the same way `tests/dist-css.test.ts` is) found no
+      // JS syntax in the current `dist/` that the OLD Vite default wouldn't
+      // already have shipped safely to iOS 15.4 — but nothing pinned that, so
+      // a future dependency or source change using e.g. a class static
+      // initialization block (needs Safari/iOS 16.4 per
+      // `@babel/compat-data`'s `data/plugins.json`,
+      // `transform-class-static-block`) would have shipped untranspiled and
+      // silently broken below 16.4. Pinning the target here means Vite's own
+      // `vite:esbuild-transpile` `renderChunk` pass (real esbuild, not just
+      // rolldown's bundler pass — `resolveEsbuildTranspileOptions` in the
+      // same vite chunk) downlevels or fails the build on such syntax instead
+      // of shipping it untouched. `build.cssTarget` (LightningCSS's
+      // `targets`, the active CSS minifier here since `cssMinify` defaults to
+      // `true` for a non-`lib` build) derives from this same value
+      // (`cssTarget: merged.cssTarget ?? merged.target`), so one setting
+      // covers both.
+      target: ["chrome111", "edge111", "firefox114", "safari15.4", "ios15.4"],
       rollupOptions: {
         // `main.tsx` dynamically imports the Playwright smoke harness (#251),
         // gated on `import.meta.env.MODE === "e2e"`. That runtime guard alone
