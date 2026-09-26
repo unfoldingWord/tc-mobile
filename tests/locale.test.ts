@@ -9,6 +9,8 @@ import {
   type Locale,
 } from "@/lib/locale";
 
+import { bodyAfter, stripComments } from "./support";
+
 /**
  * #169's fourth fix item: `<html lang>`/`dir` and the manifest language come
  * from one locale, not from three literals.
@@ -20,6 +22,10 @@ import {
  * `en` that happens to agree with it today. The wiring half is the one that
  * was red before this change: `index.html` carried no `dir` at all and
  * `vite.config.ts`'s manifest had a literal `lang: "en"`.
+ *
+ * The build config is read with its comments stripped (#822): the manifest
+ * block carries a comment right above `lang`, and a pin over raw text would
+ * be satisfied by a comment that quoted the line it looks for.
  */
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -153,8 +159,10 @@ describe("the shipped locale reaches the document and the manifest", () => {
   });
 
   it("the manifest takes its lang and dir from the locale, not a literal", () => {
-    const config = read("vite.config.ts");
-    const manifest = config.slice(config.indexOf("manifest: {"));
+    const config = stripComments(read("vite.config.ts"));
+    // Bounded to the manifest's own braces, so a `lang:` elsewhere in the
+    // config can neither satisfy nor trip the assertions below.
+    const manifest = bodyAfter(config, "manifest: {");
     expect(
       manifest.length,
       "no manifest block in vite.config.ts"
@@ -168,7 +176,7 @@ describe("the shipped locale reaches the document and the manifest", () => {
   });
 
   it("the build labels index.html through the locale module", () => {
-    const config = read("vite.config.ts");
+    const config = stripComments(read("vite.config.ts"));
     expect(config).toContain("withLocaleAttributes");
     expect(config).toContain("transformIndexHtml");
     // Defining the plugin is not running it. A `localeHtmlPlugin` that is
