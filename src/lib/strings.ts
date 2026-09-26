@@ -1018,6 +1018,32 @@ export const strings = {
   // owner's sign-off — see the #878 PR body.
   stopToErase: "Stop recording to erase.",
 
+  // ── Phone check (#1009) ──────────────────────────────────────────────────
+  // A hidden tester screen, reached by five taps on the build stamp or by
+  // `?check=phone`. Its words are for a tester filling in #974, not for a
+  // translator, but they are screen copy all the same and so live here. The
+  // REPORT it produces is engineering data and is worded in
+  // `lib/phone-check/report.ts` instead — see that file's docblock.
+  phoneCheckTitle: "Phone check",
+  phoneCheckIntro:
+    "Measures this phone for a tester report. Nothing runs until you tap Start, and it never touches your books or recordings.",
+  phoneCheckStart: "Start",
+  phoneCheckRunWaiting: "Waiting for a recording to finish converting.",
+  phoneCheckRunDevice: "Reading device info.",
+  phoneCheckRunEncode: "Encoding 5 minutes of test audio.",
+  phoneCheckRunStorage: "Writing and reading 50 MB of test audio.",
+  phoneCheckDone: "Done.",
+  phoneCheckMemoryTitle: "Memory ceiling",
+  phoneCheckMemoryWarning:
+    "Run this last. It fills memory until the phone refuses, and the app may restart. If it does, open Phone check again to see how far it got.",
+  phoneCheckMemoryStart: "Start memory test",
+  phoneCheckMemoryStep: (mb: number) => `Trying ${mb} MB.`,
+  phoneCheckReportLabel: "Report for #974",
+  phoneCheckCopy: "Copy report",
+  phoneCheckCopied: "Copied.",
+  phoneCheckSelected: "Selected. Use your phone's Copy.",
+  phoneCheckClose: "Close",
+
   // ── Cover colour picker (#957, from #937 D7/D8) ──────────────────────────
   // The picker's group name, and one name per palette key
   // (`lib/cover-colour.ts`'s `CoverColourKey`) — the whole accessible text
