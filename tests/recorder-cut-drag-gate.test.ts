@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { stripComments } from "./support";
+
 /**
  * Cut must be gated against a live drag the same way Undo/Redo are (#512
  * George R1 P2-1).
@@ -29,9 +31,15 @@ import { describe, expect, it } from "vitest";
  * inspected — only read as text.
  */
 describe("Cut's disabled gate carries the #317 drag term, the way Undo/Redo do (#512 George R1 P2-1)", () => {
-  const recorder = readFileSync(
-    new URL("../src/components/recorder.tsx", import.meta.url),
-    "utf8"
+  // Both reads are stripped before anything is searched (#822): unstripped,
+  // a comment carrying `label={strings.cut}` and the full gate ahead of the
+  // live control is what `indexOf` finds, so the live Cut could lose its
+  // drag term with every case here still green.
+  const recorder = stripComments(
+    readFileSync(
+      new URL("../src/components/recorder.tsx", import.meta.url),
+      "utf8"
+    )
   );
   // Two files, because the two controls this file talks about now live apart:
   // Cut stayed in the sheet's edit body, and #160's L-1 split moved Undo into
@@ -40,9 +48,11 @@ describe("Cut's disabled gate carries the #317 drag term, the way Undo/Redo do (
   // the old "same call shape as Undo" comparison lost its subject and is gone.
   // What is still asserted here is that Undo has not quietly gone back to an
   // inline gate, which is what would leave Cut's reference dangling.
-  const toolbars = readFileSync(
-    new URL("../src/components/recorder-toolbars.tsx", import.meta.url),
-    "utf8"
+  const toolbars = stripComments(
+    readFileSync(
+      new URL("../src/components/recorder-toolbars.tsx", import.meta.url),
+      "utf8"
+    )
   );
 
   const cutDisabledExpr = (() => {

@@ -12,6 +12,8 @@ import {
 } from "@/components/menu-row-state";
 import { strings } from "@/lib/strings";
 
+import { stripComments } from "./support";
+
 /**
  * #135 — a disabled recorder-menu row must carry its reason.
  *
@@ -214,12 +216,12 @@ describe("rowHint — which reasons carry a cue", () => {
   // dropping the prop at that call site would leave this menu on the "back"
   // branch, silently contradicting the paragraph above.
   it("the ≡-menu hint names both controls by name only, never by glyph (#620, #648 R1)", () => {
-    const menuSource = readFileSync(
-      new URL("../src/components/menu.tsx", import.meta.url),
-      "utf8"
-    )
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/\/\/.*$/gm, "");
+    const menuSource = stripComments(
+      readFileSync(
+        new URL("../src/components/menu.tsx", import.meta.url),
+        "utf8"
+      )
+    );
     const dismiss =
       /icon=\{hamburger \? "menu" : "([\w-]+)"\}\s*label=\{closeLabel\}/.exec(
         menuSource
@@ -247,10 +249,13 @@ describe("rowHint — which reasons carry a cue", () => {
     // asserted — pinning only the second would let the sheet stop rendering
     // the component at all with this still green, which is the #677 hole one
     // file further along.
+    // The shared strip (#822): a line-anchored one keeps a trailing
+    // `onClose={onClose} // hamburger`, so the drawer could drop the prop
+    // and still match on the comment.
     const read = (rel: string) =>
-      readFileSync(new URL(`../${rel}`, import.meta.url), "utf8")
-        .replace(/\/\*[\s\S]*?\*\//g, "")
-        .replace(/^\s*\/\/.*$/gm, "");
+      stripComments(
+        readFileSync(new URL(`../${rel}`, import.meta.url), "utf8")
+      );
     // `(?:=>|[^>])*` in place of the plain `[^>]*` used elsewhere (e.g.
     // `tests/menu-hamburger-header.test.ts`): these call sites' `onClose`
     // props are inline arrow functions, `() => setMenuOpen(false)`, whose
