@@ -18,6 +18,7 @@ import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { Notice } from "./notice";
+import { SquareButton } from "./o4-controls";
 import { encoderNotice } from "./encoder-notice";
 import { shareGapText, shareProgressText } from "./share-error-copy";
 import { ShareMenuSection } from "./share-menu-section";
@@ -1354,17 +1355,25 @@ export function BooksScreen({
             : "flex items-center justify-end gap-[6px] px-[4px] py-[2px]"
         }
       >
-        {!showEmpty && (
-          <Control
-            icon="plus"
-            label={strings.newBook}
-            variant="primary"
-            size={26}
-            className={o4 ? "books-add" : undefined}
-            disabled={loading || loadFailed}
-            onClick={onNewBook}
-          />
-        )}
+        {!showEmpty &&
+          (o4 ? (
+            // #941's shared 56 × 56 square, same name, same handler.
+            <SquareButton
+              icon="plus"
+              label={strings.newBook}
+              disabled={loading || loadFailed}
+              onClick={onNewBook}
+            />
+          ) : (
+            <Control
+              icon="plus"
+              label={strings.newBook}
+              variant="primary"
+              size={26}
+              disabled={loading || loadFailed}
+              onClick={onNewBook}
+            />
+          ))}
         {/* State-in-place on the control itself, which AGENTS.md prefers to a
             message bubble: while the failure log is non-empty the ≡ carries an
             alert mark and says so in its name. The `control-hinted` wrapper is
@@ -2087,8 +2096,23 @@ function dotStates(chapter: ChapterRow): SegmentRowState[] {
   ];
 }
 
-/** The dots' column width, in px: `o4/books.css`'s `.books-dots` max-width. */
-const DOT_COLUMN = 206;
+/**
+ * The dots' column on the narrowest supported phone, in px — the width the
+ * fit is computed against, so the dots never outgrow the 44px middle column
+ * at any supported width (a wider column only ever wraps onto fewer rows).
+ * The design reference's 206 is the column's cap (`.books-dots` max-width),
+ * not a width a phone is guaranteed to give: at 360px the chain below leaves
+ * 194.
+ *
+ * 320 (the narrowest width this repo supports, `e2e/edit-history-cue.spec.ts`)
+ * − 2 × 8 (`.app-shell`'s side padding, `--p-space-3`)
+ * − 2 × (10 + 1) (`.books-card`'s padding and border)
+ * − (12 + 16) (`.books-chapter`'s left and right padding)
+ * − 44 (`.books-chapter-num`) − 2 × 14 (the row's two gaps)
+ * − 28 (the chevron) = 154. `tests/books-o4.test.ts` re-derives it from the
+ * stylesheets.
+ */
+const DOT_COLUMN = 154;
 /** Size/gap steps, largest first (the design reference, §3). */
 const DOT_STEPS: readonly (readonly [number, number])[] = [
   [13, 6],
@@ -2103,7 +2127,8 @@ const DOT_STEPS: readonly (readonly [number, number])[] = [
  * wrapped rows fit in `height` (44px of middle column without a title, 19px
  * under one). Past what the smallest step can hold, the smallest step is
  * returned anyway and the column's own overflow clips the rest. The
- * workbench's own fit, unchanged.
+ * workbench's steps, fitted against {@link DOT_COLUMN} rather than the
+ * workbench's 206.
  */
 function dotFit(count: number, height: number): readonly [number, number] {
   for (const step of DOT_STEPS) {

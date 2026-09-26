@@ -32,8 +32,8 @@ import type { BookCard, ChapterRow } from "@/types/view";
  *
  * What this file does NOT cover: the cascade, and layout. jsdom computes no
  * boxes, so "the dots fit" is proved here as arithmetic over the size and gap
- * the row emits against the 206px column the stylesheet declares — not as a
- * measured box. Nothing here has been run in a browser or on a phone.
+ * the row emits against the narrowest column a supported phone gives the dots
+ * — derived below from the stylesheets' own declarations, not measured.
  */
 
 const design = vi.hoisted(() => ({ current: "current" as Design }));
@@ -170,11 +170,111 @@ function dotGeometry(row: HTMLElement): { size: number; gap: number } {
   return { size, gap };
 }
 
-/** Rows the dots wrap onto, and the height they take, in a 206px column. */
-function packed(n: number, { size, gap }: { size: number; gap: number }) {
-  const perRow = Math.floor((206 + gap) / (size + gap));
+const read = (file: string) =>
+  readFileSync(path.resolve(import.meta.dirname, "..", file), "utf8");
+/** A stylesheet with its comments stripped (AGENTS.md, the share-scrim trap). */
+const cssCode = (file: string) => read(file).replace(/\/\*[\s\S]*?\*\//g, "");
+
+/** Every `--p-*` primitive in layer 1, name → value. */
+const primitives = new Map(
+  [
+    ...cssCode("src/app/styles/1-primitives.css").matchAll(
+      /(--p-[\w-]+):\s*([^;]+);/g
+    ),
+  ].map(([, name, value]) => [name!, value!.trim()])
+);
+/** A declaration with each `var(--p-*)` replaced by the primitive's value. */
+const resolvePrimitives = (decl: string) =>
+  decl.replace(/var\((--p-[\w-]+)\)/g, (whole, name: string) => {
+    const value = primitives.get(name);
+    expect(value, `${name} is a layer-1 primitive`).toBeDefined();
+    return value ?? whole;
+  });
+
+/** One rule's declarations, `property -> value`, primitives resolved. */
+function declarations(file: string, selector: string): Map<string, string> {
+  const code = cssCode(file);
+  const hits = [...code.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) =>
+    m[1]!
+      .split(",")
+      .map((s) => s.trim())
+      .includes(selector)
+  );
+  expect(hits, `${file}: ${selector}`).toHaveLength(1);
+  return new Map(
+    hits[0]![2]!
+      .split(";")
+      .map((d) => d.replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .map((d) => {
+        const at = d.indexOf(":");
+        return [
+          d.slice(0, at).trim(),
+          resolvePrimitives(d.slice(at + 1).trim()),
+        ] as const;
+      })
+  );
+}
+const px = (value: string | undefined) => {
+  expect(value, "a px length").toMatch(/^-?\d+(\.\d+)?px$|^0$/);
+  return parseFloat(value!);
+};
+
+/**
+ * The narrowest supported viewport, in px: `e2e/edit-history-cue.spec.ts`'s
+ * docblock names 320 as the narrowest width this repo supports.
+ */
+const NARROWEST_VIEWPORT = 320;
+
+/**
+ * The dots' column on the narrowest supported phone, walked down the CSS
+ * chain from the viewport: the shell's side padding (`.app-shell`), the
+ * card's padding and border, the chapter row's own padding, the 44 badge,
+ * the row's two gaps and the chevron. The shelf's scroll box, the book list
+ * and the chapter list add no inline space (none sets a padding). The
+ * chevron's width is read from the rendered row, the rest from the
+ * stylesheets, so a change to any of them moves this number.
+ */
+function narrowestDotColumn(chevronWidth: number): number {
+  const O4 = '[data-design="o4"]';
+  const books = "src/app/styles/o4/books.css";
+  const shell = declarations("src/app/styles/3-components.css", ".app-shell")
+    .get("padding")!
+    .split(" ");
+  const shellSide = px(shell[1] ?? shell[0]);
+  const card = declarations(books, `${O4} .books-card`);
+  const cardBorder = px(card.get("border")!.split(" ")[0]);
+  const row = declarations(books, `${O4} .books-chapter`);
+  const [, rowRight, , rowLeft] = row.get("padding")!.split(" ");
+  const badge = px(
+    declarations(books, `${O4} .books-chapter-num`).get("width")
+  );
+  return (
+    NARROWEST_VIEWPORT -
+    2 * shellSide -
+    2 * (px(card.get("padding")) + cardBorder) -
+    (px(rowLeft) + px(rowRight)) -
+    badge -
+    2 * px(row.get("gap")) -
+    chevronWidth
+  );
+}
+
+/** Rows the dots wrap onto, and the height they take, in `column` px. */
+function packed(
+  n: number,
+  { size, gap }: { size: number; gap: number },
+  column: number
+) {
+  const perRow = Math.floor((column + gap) / (size + gap));
   const rows = Math.ceil(n / perRow);
   return { rows, height: rows * (size + gap) - gap };
+}
+
+/** The rendered chevron's width, in px. */
+function chevronWidth(row: HTMLElement): number {
+  const svg = only(".books-chapter-go svg", row);
+  return parseFloat(svg.getAttribute("width") ?? "NaN");
 }
 
 describe("O4 Books list, state 03 (#942)", () => {
@@ -281,7 +381,7 @@ describe("O4 Books list, state 03 (#942)", () => {
     expect(only(".books-dots", empty).children).toHaveLength(0);
   });
 
-  it("fits every chapter's dots in the column in a 26-chapter book, titled or not", async () => {
+  it("fits every chapter's dots in the narrowest supported column in a 26-chapter book, titled or not", async () => {
     const chapters = Array.from({ length: 26 }, (_, i) =>
       chapter(1, i + 1, {
         // Every size the fit has to choose between, including 26 segments —
@@ -299,6 +399,10 @@ describe("O4 Books list, state 03 (#942)", () => {
 
     const rows = all(".books-chapter");
     expect(rows).toHaveLength(26);
+    // 320 − 2×8 − 2×(10 + 1) − (12 + 16) − 44 − 2×14 − 28 = 154px. Pinned so
+    // a change anywhere in the chain is seen here, not only as a looser fit.
+    const column = narrowestDotColumn(chevronWidth(rows[0]!));
+    expect(column).toBe(154);
     const sizes = new Set<number>();
     for (const [i, row] of rows.entries()) {
       const { totalCount, name } = chapters[i]!;
@@ -309,7 +413,7 @@ describe("O4 Books list, state 03 (#942)", () => {
       // with its 5px gap (the design reference, §3).
       const room = name === null ? 44 : 19;
       expect(
-        packed(totalCount, geometry).height,
+        packed(totalCount, geometry, column).height,
         `chapter ${i + 1}: ${totalCount} dots at ${geometry.size}/${geometry.gap}`
       ).toBeLessThanOrEqual(room);
     }
@@ -382,7 +486,7 @@ describe("O4 Books list, state 03 (#942)", () => {
 });
 
 describe("O4 Books header and empty shelf, state 01 (#942)", () => {
-  it("draws the header as 56px with ghost buttons, and the empty shelf's outline", async () => {
+  it("draws the header as 56px with a ghost menu button, and the empty shelf's outline", async () => {
     await mount("o4", []);
     only(".books-header");
     expect(button(strings.menuOpen).classList.contains("books-ghost")).toBe(
@@ -397,11 +501,14 @@ describe("O4 Books header and empty shelf, state 01 (#942)", () => {
     expect(empty.contains(button(strings.newBook))).toBe(true);
   });
 
-  it("makes the header's New book a square button once the shelf has books", async () => {
+  it("makes the header's New book #941's shared square button once the shelf has books", async () => {
     await mount("o4", [
       { bookId: bookId(1), name: "Mark", coverColourKey: null, chapters: [] },
     ]);
-    expect(button(strings.newBook).classList.contains("books-add")).toBe(true);
+    const add = button(strings.newBook);
+    // The shared 56 × 56 r14 well from `o4-controls.tsx`, not a local copy.
+    expect(add.classList.contains("o4-square")).toBe(true);
+    expect(add.className).not.toMatch(/\bbooks-add\b/);
   });
 });
 
@@ -487,10 +594,11 @@ describe("o4/books.css (#942)", () => {
   }));
   const O4 = '[data-design="o4"]';
 
+  /** A rule's declarations, each `var(--p-*)` resolved to its value. */
   function block(sel: string): string[] {
     const hits = rules.filter((r) => r.selectors.includes(sel));
     expect(hits, sel).toHaveLength(1);
-    return hits[0]!.declarations;
+    return hits[0]!.declarations.map(resolvePrimitives);
   }
 
   it("holds its rules inside the components layer, every one scoped under the switch", () => {
@@ -506,8 +614,16 @@ describe("o4/books.css (#942)", () => {
   it("reads colour only through layer-2 roles, and leaves the guide ring alone", () => {
     const values = rules.flatMap((r) => r.declarations);
     expect(values.length).toBeGreaterThanOrEqual(40);
+    // Structural primitives (radius, type, space) are read directly, as
+    // `3-components.css`'s header allows; any other `--p-*` is a colour
+    // family, which only layer 2 may name. An allowlist, so a colour family
+    // added to layer 1 later is caught without editing this test.
+    const structural = /var\(--p-(radius|text|weight|space|font|dur|ease)-/;
+    expect(values.some((d) => structural.test(d))).toBe(true);
     for (const decl of values) {
-      expect(decl, decl).not.toMatch(/var\(--p-/);
+      expect(decl, decl).not.toMatch(
+        /var\(--p-(?!(radius|text|weight|space|font|dur|ease)-)/
+      );
       expect(decl, decl).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
       expect(decl, decl).not.toMatch(/rgba?\(|hsla?\(/);
     }
@@ -517,7 +633,6 @@ describe("o4/books.css (#942)", () => {
       `${O4} .books-card-hit`,
       `${O4} .books-chapter`,
       `${O4} .books-ghost`,
-      `${O4} .books-add`,
     ]) {
       expect(
         block(sel).some((d) => d.startsWith("box-shadow")),
