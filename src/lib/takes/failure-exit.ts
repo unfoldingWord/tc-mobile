@@ -18,7 +18,9 @@
  * Two rounds of review found that same shape at two different sites: the load
  * path (George R5 P3, #450) and the close tails plus erase (George R6 P2). Four
  * call sites, one cause — each site deciding for itself. So the decision is
- * taken away from the sites and made here, once.
+ * taken away from the sites and made here, once. A fifth site, the in-sheet
+ * segment delete (#590), came later and follows the same rule rather than
+ * inventing its own.
  *
  * `RecorderFailureSite` is the enumeration of those four. It does not change the
  * answer today, and that uniformity is the point rather than an oversight: the
@@ -50,7 +52,7 @@
  * transient. Hence two narrow inputs.
  */
 
-/** The four places inside the recorder that a store failure is reported from. */
+/** The five places inside the recorder that a store failure is reported from. */
 export type RecorderFailureSite =
   /** A cut-to-empty close, which clears the take (`clearSegmentTake`). */
   | "clear"
@@ -58,6 +60,15 @@ export type RecorderFailureSite =
   | "mark"
   /** The in-sheet erase (`clearSegmentTake` again, from the ≡ menu). */
   | "erase"
+  /**
+   * The in-sheet segment delete (`lib/storage/books.ts`'s `deleteSegment`,
+   * from the ≡ menu, #590) — a fifth site, named here per this file's own
+   * rule rather than folded silently into `"erase"`. Its own store call is
+   * distinct (it removes the row, not only the audio), but the same
+   * unconditional `targetMissing: false` simplification `"erase"` makes
+   * applies: the hook surfaces a result, not the cause (#378 tracks both).
+   */
+  | "delete"
   /** The segment's own load, whose panel offers a re-read (#450). */
   | "load";
 

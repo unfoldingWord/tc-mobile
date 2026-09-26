@@ -38,9 +38,11 @@ const base: RecorderMenuProps = {
   editReason: null,
   markReason: null,
   eraseReason: null,
+  deleteReason: null,
   onEnterEdit: vi.fn(),
   onToggleFinished: vi.fn(),
   onErase: vi.fn(),
+  onDeleteSegment: vi.fn(),
   onExitEdit: vi.fn(),
 };
 
@@ -74,18 +76,20 @@ describe("RecorderMenu", () => {
     expect(buttons()).toHaveLength(0);
   });
 
-  it("offers Edit, Mark finished and Erase in record mode", () => {
+  it("offers Edit, Mark finished, Erase and Delete in record mode (#590)", () => {
     show();
     expect(named(strings.enterEdit)).toBeDefined();
     expect(named(strings.markFinished(3))).toBeDefined();
     expect(named(strings.eraseSegment)).toBeDefined();
+    expect(named(strings.deleteSegment)).toBeDefined();
     expect(named(strings.doneEditing)).toBeUndefined();
   });
 
-  it("offers Done and Erase in edit mode, and no Mark", () => {
+  it("offers Done, Erase and Delete in edit mode, and no Mark (#590)", () => {
     show({ mode: "edit" });
     expect(named(strings.doneEditing)).toBeDefined();
     expect(named(strings.eraseSegment)).toBeDefined();
+    expect(named(strings.deleteSegment)).toBeDefined();
     expect(named(strings.markFinished(3))).toBeUndefined();
     expect(named(strings.enterEdit)).toBeUndefined();
   });
@@ -178,6 +182,33 @@ describe("RecorderMenu", () => {
     ).toBe("true");
   });
 
+  it("gates Delete in BOTH modes from its own reason (#590)", () => {
+    // Same shape as Erase's gate above, but its own `deleteReason` — the two
+    // rows must not share a gate (see the next case for why).
+    show({ deleteReason: "uncommitted-take" });
+    expect(
+      startingWith(strings.deleteSegment)?.getAttribute("aria-disabled")
+    ).toBe("true");
+    show({ mode: "edit", deleteReason: "uncommitted-take" });
+    expect(
+      startingWith(strings.deleteSegment)?.getAttribute("aria-disabled")
+    ).toBe("true");
+  });
+
+  it("Delete stays enabled on a never-recorded segment where Erase is greyed (#590)", () => {
+    // The whole reason `deleteRowReason` is a narrower gate than
+    // `eraseRowReason`: an accidentally added, empty segment is exactly what
+    // #590 asks to make deletable, while Erase (nothing to erase) stays
+    // refused.
+    show({ eraseReason: "no-clip" });
+    expect(
+      startingWith(strings.eraseSegment)?.getAttribute("aria-disabled")
+    ).toBe("true");
+    expect(named(strings.deleteSegment)?.getAttribute("aria-disabled")).toBe(
+      null
+    );
+  });
+
   it("hands the erase tap to its caller, from either mode", () => {
     // Named for what it pins. This component cannot see whether the tap arms a
     // confirm or erases outright — it only calls the prop, and a caller that
@@ -191,6 +222,17 @@ describe("RecorderMenu", () => {
     show({ mode: "edit", onErase });
     act(() => named(strings.eraseSegment)?.click());
     expect(onErase).toHaveBeenCalledTimes(2);
+  });
+
+  it("hands the delete tap to its caller, from either mode (#590)", () => {
+    const onDeleteSegment = vi.fn();
+    show({ onDeleteSegment });
+    act(() => named(strings.deleteSegment)?.click());
+    expect(onDeleteSegment).toHaveBeenCalledTimes(1);
+
+    show({ mode: "edit", onDeleteSegment });
+    act(() => named(strings.deleteSegment)?.click());
+    expect(onDeleteSegment).toHaveBeenCalledTimes(2);
   });
 
   it("the sheet's onErase ARMS the confirm — it does not erase", () => {
@@ -254,6 +296,45 @@ describe("RecorderMenu", () => {
     // arming the confirm, never erasing.
     expect(tag.slice(at, close + 1).replace(/\s+/g, "")).toBe(
       'onErase={()=>{setMenuOpen(false);setConfirmFor("erase");setConfirmOpen(true);}}'
+    );
+  });
+
+  it("the sheet's onDeleteSegment ARMS the confirm — it does not delete (#590)", () => {
+    // Same claim as the erase case above, for the second destructive row:
+    // deleting a segment's row is the one action in this menu that can lose a
+    // recording for good (Erase keeps the row; this does not), so the sheet
+    // must only arm the shared confirm, never call the delete itself. Same
+    // read-then-strip-then-search shape, same allow-list-of-one rigor.
+    const sheet = stripComments(
+      readFileSync(
+        path.resolve(import.meta.dirname, "..", "src/components/recorder.tsx"),
+        "utf8"
+      )
+    );
+    const open = sheet.indexOf("<RecorderMenu");
+    const end = sheet.indexOf("/>", open);
+    expect(open, "no <RecorderMenu in the sheet").toBeGreaterThan(-1);
+    expect(end, "unterminated <RecorderMenu").toBeGreaterThan(open);
+    const tag = sheet.slice(open, end);
+
+    const attr = "onDeleteSegment={";
+    const at = tag.indexOf(attr);
+    expect(at, "no onDeleteSegment on <RecorderMenu>").toBeGreaterThan(-1);
+    expect(tag.indexOf(attr, at + 1), "a second onDeleteSegment").toBe(-1);
+    let depth = 0;
+    let close = -1;
+    for (let i = at + attr.length - 1; i < tag.length; i++) {
+      if (tag[i] === "{") depth++;
+      else if (tag[i] === "}" && --depth === 0) {
+        close = i;
+        break;
+      }
+    }
+    expect(close, "unbalanced onDeleteSegment braces").toBeGreaterThan(at);
+    // `setConfirmFor("delete")`: names which question the shared dialog is
+    // asking — still only arming the confirm, never deleting.
+    expect(tag.slice(at, close + 1).replace(/\s+/g, "")).toBe(
+      'onDeleteSegment={()=>{setMenuOpen(false);setConfirmFor("delete");setConfirmOpen(true);}}'
     );
   });
 

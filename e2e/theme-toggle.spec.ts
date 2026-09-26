@@ -379,9 +379,16 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
     // The AT consequence this PR asks a reviewer to ACCEPT, pinned rather than
     // left in prose. `Menu` lands open-edge focus on the first ACTIONABLE child,
     // skipping `aria-disabled` hinted rows (#135); on a segment with nothing
-    // recorded and an empty clipboard every pre-existing row is hinted, so the
-    // toggle is that child. Before this control existed, focus fell back to Edit
-    // and its reason.
+    // recorded and an empty clipboard every pre-existing row USED TO be
+    // hinted, making the toggle that child. #590 changed that: "Delete
+    // segment" does not require stored audio (unlike Erase), so on this exact
+    // empty segment it is now actionable too — and it sits earlier in the DOM
+    // than the toggle, so IT is the first actionable child now, and the
+    // toggle is reached by Tab from there rather than by open-edge focus.
+    // This is exactly the "a pre-existing row becomes actionable" case the
+    // comment below already named as what would catch — Delete is a new row,
+    // not a pre-existing one, but the consequence for this assertion is the
+    // same: the first actionable child changed.
     //
     // It is asserted BEFORE the click, because clicking moves focus itself and
     // would make this pass for the wrong reason.
@@ -390,11 +397,14 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
     // if a pre-existing row becomes actionable in this state, it takes the
     // first actionable position and this fails. It does NOT catch a reorder,
     // and an earlier version of this comment wrongly said it did (George).
-    // In this state every other row is hinted, so the toggle is the only
-    // actionable child WHEREVER it sits — which also means a reorder does not
-    // change what an AT user hears first here, so there is nothing for an
-    // order-sensitive assertion to protect. The mount ORDER is held by
-    // `tests/theme.test.ts` and by the comments in `recorder-menu.tsx`.
+    // The mount ORDER is held by `tests/theme.test.ts` and by the comments in
+    // `recorder-menu.tsx`.
+    const toDelete = menu.getByRole("button", { name: "Delete segment" });
+    await expect(toDelete).toBeFocused();
+
+    // The toggle is still reachable by keyboard from inside the sheet — the
+    // whole point of #149 — just not as the open-edge focus target anymore.
+    await page.keyboard.press("Tab");
     await expect(toLight).toBeFocused();
 
     await toLight.click();

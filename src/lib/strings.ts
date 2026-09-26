@@ -268,7 +268,10 @@ export const strings = {
   tileFinished: "Done",
   tileRename: "Rename",
   tileErase: "Erase",
-  // The book menu's Delete tile (04); its name is `deleteBook`.
+  // The book menu's Delete tile (04); its name is `deleteBook`. Shared with
+  // the recorder menu's Delete segment tile (#590) — its name is
+  // `deleteSegment` — the same caption, on two different destructive tiles
+  // in two different menus, rather than a second key holding the same word.
   tileDelete: "Delete",
   tileShare: "Share",
   // The app ≡ menu's About tile (#36, DRI ruling on PR #1019): its name is
@@ -607,8 +610,9 @@ export const strings = {
   eraseConfirmTitle: "Erase this recording?",
   eraseConfirm: "Erase",
   // The safe action of the shared confirm dialog (`erase-confirm.tsx`). One
-  // string for both flows it now serves — segment Erase and book Delete —
-  // because it is the same control on the same surface saying the same word.
+  // string for every flow it now serves — segment Erase, book Delete and
+  // segment Delete (#590) — because it is the same control on the same
+  // surface saying the same word.
   eraseCancel: "Cancel",
   eraseFailed: "Could not erase the recording. Try again.",
   // The confirm's "Play what will be lost" row (#979 remainder, O4 "13"
@@ -645,6 +649,26 @@ export const strings = {
   // throws on a missing book — is for a maintainer; this is the line a screen
   // reader speaks to a translator. Mirrors `eraseFailed` (#80).
   deleteBookFailed: "Could not delete this book. Try again.",
+
+  // ── Delete a segment (#590) ────────────────────────────────────────────────
+  // The recorder ≡-menu row/tile that deletes the segment itself, not only its
+  // audio (reverses G4, `docs/design/pivot-plan.md`'s Gate 1, for this one
+  // entry) — behind the same confirm dialog Erase and book Delete share, not a
+  // second one. No O4 workbench wording exists for THIS location: D20
+  // (`docs/design/o4-design-system.md`) draws "Remove this segment" for the
+  // SEGMENT-ROW menu (#997, a narrower, empty-only action deferred by the DRI
+  // past the training build), not the recorder. This reuses the erase/delete
+  // strings' own pattern instead — the exact wording is a residual for the DRI
+  // to confirm, not a workbench transcription.
+  deleteSegment: "Delete segment",
+  // Caption is the shared `tileDelete` above, not a second key — same word,
+  // same tone (destructive), just a different tile.
+  deleteSegmentConfirmTitle: (ordinal: number): string =>
+    `Delete segment ${ordinal}?`,
+  deleteSegmentConfirm: "Delete",
+  // `eraseCancel`/`eraseFailed`'s own comments already say "erase" and "book
+  // Delete" share one dialog and one word; this is the third flow on both.
+  deleteSegmentFailed: "Could not delete this segment. Try again.",
 
   // ── Share (B7) ───────────────────────────────────────────────────────────
   chapterMenuOpen: "More actions for this chapter",

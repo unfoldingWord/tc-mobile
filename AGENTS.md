@@ -411,8 +411,11 @@ save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
 failed chapter reorder (`hooks/use-books.ts`, `"chapter-reorder"`, #953), a
 failed segment reorder (`hooks/use-chapter-segments.ts`, `"segment-reorder"`,
-#953), a failed segment delete
-(`hooks/use-chapter-segments.ts`, `"segment-delete"`, #590), a failed book
+#953), a failed segment delete — two call sites report under the same
+context, one op each reaches through the store's own `deleteSegment`
+(`hooks/use-chapter-segments.ts`'s optimistic list delete, PR1, and
+`hooks/use-delete-segment.ts`'s recorder-menu delete, PR2)
+(`"segment-delete"`, #590), a failed book
 cover-colour write
 (`hooks/use-book-cover-colour.ts`, `"book-cover-colour"`, #957),
 playback's own
