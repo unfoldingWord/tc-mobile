@@ -9,6 +9,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { ErrorBoundary } from "@/components/error-boundary";
+import { bootstrapServiceWorker } from "@/hooks/register-service-worker";
 import { installStoredTheme } from "@/hooks/use-theme";
 import { installStoredDesign } from "@/hooks/use-design";
 import { App } from "./App";
@@ -23,6 +24,14 @@ installStoredTheme();
 // Same reasoning, same residual, for the O4 design switch (#938): a tester who
 // chose O4 should not see one frame of the current look on every launch.
 installStoredDesign();
+
+// Web: a no-op — `vite-plugin-pwa`'s own injected script still registers the
+// service worker, unchanged. Native: never registers one, and tears down
+// anything an older build left behind (#923). See
+// `hooks/register-service-worker.ts`'s header for why this alone does not
+// cover the FIRST native launch after an in-place upgrade — that is
+// `vite.config.ts`'s native-mode `sw.js`, not this call.
+bootstrapServiceWorker();
 
 const container = document.getElementById("root");
 if (!container) throw new Error("Missing #root element");

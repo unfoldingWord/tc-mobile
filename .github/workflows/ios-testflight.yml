@@ -120,6 +120,47 @@ jobs:
       - name: Check the built artifacts
         run: npm run test:dist
 
+      # The OBS-thumbnail-vs-jpg-policy comparison below has to run against
+      # THIS (web) build, before the native rebuild two steps down replaces
+      # dist/sw.js with vite-plugin-pwa's self-destroying worker (#923) —
+      # that worker never precaches anything at all, by design, so comparing
+      # IT against globPatterns would either compare two things that can
+      # never agree once jpg is legitimately restored (Template Library,
+      # #33), or silently stop meaning anything. This is that same check,
+      # simply moved earlier; "Guard the synced bundle" below keeps the
+      # checks that are actually about what got synced into ios/.
+      - name: OBS thumbnail precache policy (web build; #177 / ADR 0006)
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const config = readFileSync('vite.config.ts', 'utf8');
+          const body = config.match(/globPatterns:\s*\[([^\]]*)\]/)?.[1];
+          const patterns = [...(body ?? '').matchAll(/"([^"]+)"/g)].map(m => m[1]);
+          if (patterns.length === 0) {
+            console.error('::error::No globPatterns found in vite.config.ts');
+            process.exit(1);
+          }
+          const jpgConfigured = patterns.some(p => /\bjpe?g\b/i.test(p));
+          const thumbnailsEmitted = readFileSync('dist/sw.js', 'utf8').includes('obs/thumbs');
+          if (thumbnailsEmitted !== jpgConfigured) {
+            console.error('::error::Emitted OBS thumbnails disagree with the reader-gated jpg policy');
+            process.exit(1);
+          }
+          NODE
+
+      # #923: the web build above (and its two checks) validate the PWA's own
+      # artifacts, but what actually ships inside the native shell must be the
+      # NATIVE-mode build — vite.config.ts's `--mode native` swaps `dist/sw.js`
+      # for vite-plugin-pwa's self-destroying worker and ships no
+      # auto-injected registration script, so the WebView never keeps an
+      # offline precache that can go stale across an in-place upgrade. This
+      # rebuild deliberately overwrites the dist/ the previous steps just
+      # validated; `cap sync` below copies whatever dist/ holds at that
+      # point, which must be this one, not the web build's.
+      - name: Rebuild and check dist/ for the native shell (self-destroying service worker, #923)
+        run: npm run test:dist:native
+
       # Select Xcode BEFORE `cap sync`: the iOS sync resolves the CapApp-SPM
       # Swift package through xcodebuild, so it must use the same toolchain gym
       # archives with, or SPM resolves against one Xcode and the archive runs on
@@ -150,30 +191,13 @@ jobs:
       # Re-assert its cheap ship-blockers here — a missing service worker or
       # manifest, or a leaked e2e harness — plus that cap sync actually copied
       # the bundle (ios/App/App/public is gitignored; a sync that exits 0 without
-      # it would archive a blank WebView).
+      # it would archive a blank WebView). The OBS-thumbnail policy is checked
+      # against the WEB build above, not here — see that step's comment.
       - name: Guard the synced bundle
         run: |
           set -euo pipefail
           test -f dist/sw.js || { echo "::error::dist/sw.js missing"; exit 1; }
           test -f dist/manifest.webmanifest || { echo "::error::manifest missing"; exit 1; }
-          # test:dist requires jpg exactly when source readers need thumbnails.
-          # Check emitted output too: includeAssets can bypass globPatterns.
-          node --input-type=module <<'NODE'
-          import { readFileSync } from 'node:fs';
-          const config = readFileSync('vite.config.ts', 'utf8');
-          const body = config.match(/globPatterns:\s*\[([^\]]*)\]/)?.[1];
-          const patterns = [...(body ?? '').matchAll(/"([^"]+)"/g)].map(m => m[1]);
-          if (patterns.length === 0) {
-            console.error('::error::No globPatterns found in vite.config.ts');
-            process.exit(1);
-          }
-          const jpgConfigured = patterns.some(p => /\bjpe?g\b/i.test(p));
-          const thumbnailsEmitted = readFileSync('dist/sw.js', 'utf8').includes('obs/thumbs');
-          if (thumbnailsEmitted !== jpgConfigured) {
-            console.error('::error::Emitted OBS thumbnails disagree with the reader-gated jpg policy');
-            process.exit(1);
-          }
-          NODE
           for tok in "e2e-harness" "__e2e"; do
             if grep -rq "$tok" dist/; then
               echo "::error::e2e harness ($tok) leaked into dist/"
