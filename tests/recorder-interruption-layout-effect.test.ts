@@ -17,8 +17,8 @@ import { matchingBraceClose } from "./support";
  * destroying a confirmed take. `cancel()` replaces that array and bumps the
  * generation.
  *
- * A PASSIVE effect flushes after paint. A `pagehide` delivered in that gap runs
- * `leave()` → `cancelRecording()` first, and the interrupted take is gone: the
+ * A PASSIVE effect flushes after paint. Before #807, a `pagehide` delivered in
+ * that gap ran `leave()` → `cancelRecording()` first, and the take was gone: the
  * late `stop()` reads the fresh empty array and reports an empty capture, or
  * React drops the stale effect and nothing commits at all. A layout effect runs
  * in the same commit as the `"processing"` render, so `stop()` has the slices
@@ -26,9 +26,9 @@ import { matchingBraceClose } from "./support";
  * `commitTake` calls `stop()` synchronously inside the click — which is exactly
  * why the interruption path needed its own fix.
  *
- * A `pagehide` that arrives BEFORE the interruption handler is a different
- * thing and not a bug: that is the existing "backgrounding abandons an
- * unconfirmed take" contract, and this gate makes no claim about it.
+ * Since #807 a `pagehide` with a take open seals it instead of reaching
+ * `cancel()` (`useRecorder`'s `seal()`), and `tests/recorder-pagehide-seal.test.ts`
+ * covers that path. This gate makes no claim about it.
  *
  * **A SOURCE gate, and this file says which.** The timing it protects is a
  * `pagehide` landing between commit and paint, and `act()` flushes layout and

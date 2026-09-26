@@ -239,6 +239,18 @@ export interface UseRecorder {
   retryDecode: (blob: Blob) => Promise<RetryDecodeResult>;
   cancel: () => void;
   /**
+   * End an open take the way a #59 interruption does, for a `pagehide` (#807):
+   * freeze at `"processing"` with the captured slices left where `stop()` will
+   * find them, so the sheet's interruption commit saves the partial take.
+   * Returns `true` when a take was open (the caller must then NOT `cancel()`),
+   * `false` when there is none.
+   *
+   * Synchronous and write-free: no `stop()`, no decode, no failure-log row.
+   * Everything that touches IndexedDB runs later, on the commit path, after
+   * `stop()`'s own awaits.
+   */
+  seal: () => boolean;
+  /**
    * The live capture level for the VU meter, in the raw amplitude domain (RMS of
    * the latest frame). A PULL read (D-LEVEL-PULL): the meter polls this on its
    * own animation clock so the recorder never re-renders per frame. Returns 0
@@ -324,6 +336,13 @@ export function useRecorder(): UseRecorder {
   const tickRef = useRef<number | null>(null);
   /** Bumped on cancel so a stop() already in flight resolves to nothing. */
   const generationRef = useRef(0);
+  /**
+   * A take whose slices no `stop()` has taken yet (#807). True from the moment
+   * `start()` has a recorder running until `stop()` snapshots the chunks or
+   * `cancel()` drops them. Covers `"recording"` and the #59 `"processing"`
+   * freeze before its commit starts, which is the window `seal()` must keep.
+   */
+  const takeOpenRef = useRef(false);
 
   const supported = isRecordingSupported();
 
@@ -675,6 +694,7 @@ export function useRecorder(): UseRecorder {
       setElapsedMs(0);
       // The ring may advance from the next rAF on — set before the state edge.
       recordingRef.current = true;
+      takeOpenRef.current = true;
       setState("recording");
 
       startTick();
@@ -733,6 +753,7 @@ export function useRecorder(): UseRecorder {
     // to the array rather than to the ref — see `start()`.
     const generation = generationRef.current;
     const chunks = chunksRef.current;
+    takeOpenRef.current = false;
     const stream = streamRef.current;
     // OWN the VU tap exactly as the stream is owned (below): steal it into a
     // local and null the ref. Two flush-window races this closes (Frank + George
@@ -1009,8 +1030,24 @@ export function useRecorder(): UseRecorder {
     []
   );
 
+  const seal = useCallback((): boolean => {
+    if (!takeOpenRef.current) return false;
+    // Already frozen by a #59 interruption: its commit is on the way, and the
+    // only thing to do is not cancel it.
+    if (!recordingRef.current) return true;
+    // `onInterrupted`'s freeze, minus the parts that belong to a lost track:
+    // the recorder is still live here, so its tracks stay up until `stop()`
+    // has the final slice, and there is no failure row (#478's constraint).
+    clearTick();
+    tapRef.current?.disconnect();
+    recordingRef.current = false;
+    setState("processing");
+    return true;
+  }, [clearTick, setState]);
+
   const cancel = useCallback(() => {
     generationRef.current++;
+    takeOpenRef.current = false;
     clearTick();
     // Stop the live-scope push before the stream is torn down (releaseStream
     // nulls the tap too, but keep the flag consistent with the other exits).
@@ -1073,6 +1110,7 @@ export function useRecorder(): UseRecorder {
     stop,
     retryDecode,
     cancel,
+    seal,
     readLevel,
     readMeterAvailable,
     readScope,
