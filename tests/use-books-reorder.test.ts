@@ -182,6 +182,30 @@ describe("useBooks().moveChapter (#953)", () => {
     );
   });
 
+  // George round 1 #2 (bench fix): a non-integer target is refused before
+  // the generation or the shelf is touched, not thrown from an updater.
+  it("refuses a non-integer target without touching the shelf", async () => {
+    const { bookId, chapterIds } = await mountShelf();
+    const [c1, c2, c3] = chapterIds as [ChapterId, ChapterId, ChapterId];
+
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await hook().moveChapter(c3, Number.NaN);
+    });
+
+    expect(ok).toBe(false);
+    expect(moveChapter).not.toHaveBeenCalled();
+    expect(reportFailure).toHaveBeenCalledWith(
+      expect.any(RangeError),
+      "chapter-reorder"
+    );
+    expect(rowsOf(bookId)).toEqual([
+      [c1, 1],
+      [c2, 2],
+      [c3, 3],
+    ]);
+  });
+
   it("reports a failed move as chapter-reorder, shows nothing, and restores the stored order", async () => {
     const { bookId, chapterIds } = await mountShelf();
     const [c1, c2, c3] = chapterIds as [ChapterId, ChapterId, ChapterId];

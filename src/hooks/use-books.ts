@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   addChapter as addChapterToBook,
+  assertReorderTarget,
   chapterProgress,
   createBook as createBookInStore,
   deleteBook as deleteBookFromStore,
@@ -775,13 +776,28 @@ export function useBooks() {
    * text #172 rules out. If the database is so broken that the restoring
    * read fails as well, that load's own failure path is what speaks.
    *
+   * A non-integer target is a caller bug: it is refused and reported before
+   * the generation or the shelf is touched, rather than thrown from inside a
+   * React updater.
+   *
    * Resolves `true` when the move landed (a no-op move included), `false`
    * when it failed. Not latched: two drops in quick succession queue as two
-   * transactions in order, each target read against the rows the previous
-   * patch already produced — the order the screen showed when it was made.
+   * transactions, and the store applies each `toIndex` to the order already
+   * COMMITTED when its transaction runs — the screen's order is never an
+   * argument. When both writes land, that is the order the screen showed
+   * when the second drop was made. When the first write fails, the second
+   * is still applied, to the rolled-back order rather than the one the
+   * translator saw (George round 1 on #953); whether a follower should fail
+   * closed instead is an open call for the author, not settled here.
    */
   const moveChapter = useCallback(
     async (chapterId: ChapterId, toIndex: number): Promise<boolean> => {
+      try {
+        assertReorderTarget(toIndex);
+      } catch (cause) {
+        reportFailure(cause, "chapter-reorder");
+        return false;
+      }
       loadGen.current += 1;
       setBooks((prev) => patchMovedChapter(prev, chapterId, toIndex));
       try {

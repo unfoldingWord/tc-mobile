@@ -319,6 +319,124 @@ describe("useChapterSegments().moveSegment (#953)", () => {
     ]);
   });
 
+  // Frank round 1 (bench fix): a load that started before two moves may read
+  // the store before, between, or after them. Replaying both absolute moves
+  // over a read that already holds them put s3 first — [s3, s1, s2] — while
+  // the store held [s1, s3, s2].
+  for (const readAt of ["before", "between", "after"] as const) {
+    it(`shows the stored order when a racing load read ${readAt} two landed moves`, async () => {
+      const { chapterId, segmentIds } = await mountChapter();
+      const [s1, s2, s3] = segmentIds as [SegmentId, SegmentId, SegmentId];
+      const real = (
+        await vi.importActual<typeof import("@/lib/storage/books")>(
+          "@/lib/storage/books"
+        )
+      ).getSegmentsOfChapter;
+      let releaseLoad!: (segments: Segment[]) => void;
+      vi.mocked(getSegmentsOfChapter).mockImplementationOnce(
+        () => new Promise<Segment[]>((resolve) => (releaseLoad = resolve))
+      );
+      await act(async () => {
+        hook().reload();
+      });
+      await vi.waitFor(() => expect(releaseLoad).toBeDefined());
+
+      let read: Segment[] | undefined;
+      if (readAt === "before") read = await real(chapterId);
+      await act(async () => {
+        await hook().moveSegment(s1, 1); // [s2, s1, s3]
+      });
+      if (readAt === "between") read = await real(chapterId);
+      await act(async () => {
+        await hook().moveSegment(s2, 2); // [s1, s3, s2]
+      });
+      if (readAt === "after") read = await real(chapterId);
+      await act(async () => {
+        releaseLoad(read!);
+      });
+      await vi.waitFor(() => expect(hook().refreshing).toBe(false));
+
+      expect((await getChapter(chapterId))!.segmentIds).toEqual([s1, s3, s2]);
+      expect(rowsNow()).toEqual([
+        [s1, 1],
+        [s3, 2],
+        [s2, 3],
+      ]);
+    });
+  }
+
+  // George round 1 #1 (bench fix): the first move landing must not paint
+  // over a second move whose write is still in flight.
+  it("keeps a still-in-flight move on screen when an earlier move lands", async () => {
+    const { segmentIds } = await mountChapter();
+    const [s1, s2, s3] = segmentIds as [SegmentId, SegmentId, SegmentId];
+    const real = (
+      await vi.importActual<typeof import("@/lib/storage/books")>(
+        "@/lib/storage/books"
+      )
+    ).moveSegment;
+    const releases: (() => void)[] = [];
+    const held = (id: SegmentId, to: number) =>
+      new Promise<Awaited<ReturnType<typeof real>>>((resolve, reject) => {
+        releases.push(() => {
+          real(id, to).then(resolve, reject);
+        });
+      });
+    vi.mocked(moveSegment)
+      .mockImplementationOnce(held)
+      .mockImplementationOnce(held);
+
+    let first!: Promise<boolean>;
+    let second!: Promise<boolean>;
+    await act(async () => {
+      first = hook().moveSegment(s3, 0); // [s3, s1, s2]
+      second = hook().moveSegment(s1, 2); // [s3, s2, s1]
+    });
+    await act(async () => {
+      releases[0]!();
+      await first;
+    });
+    expect(rowsNow()).toEqual([
+      [s3, 1],
+      [s2, 2],
+      [s1, 3],
+    ]);
+
+    await act(async () => {
+      releases[1]!();
+      await second;
+    });
+    expect(rowsNow()).toEqual([
+      [s3, 1],
+      [s2, 2],
+      [s1, 3],
+    ]);
+  });
+
+  // George round 1 #2 (bench fix): a non-integer target is refused before
+  // any state is touched, not thrown from inside a React updater.
+  it("refuses a non-integer target without touching the rows", async () => {
+    const { segmentIds } = await mountChapter();
+    const [s1, s2, s3] = segmentIds as [SegmentId, SegmentId, SegmentId];
+
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await hook().moveSegment(s3, 0.5);
+    });
+
+    expect(ok).toBe(false);
+    expect(moveSegment).not.toHaveBeenCalled();
+    expect(reportFailure).toHaveBeenCalledWith(
+      expect.any(RangeError),
+      "segment-reorder"
+    );
+    expect(rowsNow()).toEqual([
+      [s1, 1],
+      [s2, 2],
+      [s3, 3],
+    ]);
+  });
+
   it("never replays a move that failed", async () => {
     const { segmentIds } = await mountChapter();
     const [s1, s2, s3] = segmentIds as [SegmentId, SegmentId, SegmentId];

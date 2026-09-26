@@ -425,6 +425,17 @@ async function deleteBookInTx(tx: DeleteBookTx, bookId: BookId): Promise<void> {
 // ── Reorder (#953) ───────────────────────────────────────────────────────
 
 /**
+ * Throw a `RangeError` unless `toIndex` is an integer — the one check
+ * `moveToIndex` makes, exported so a hook can refuse a bad target before it
+ * touches any state, instead of throwing from inside a React updater.
+ */
+export function assertReorderTarget(toIndex: number): void {
+  if (!Number.isInteger(toIndex)) {
+    throw new RangeError(`A reorder target must be an integer: ${toIndex}`);
+  }
+}
+
+/**
  * `items` with the one at `fromIndex` moved to `toIndex` — the single
  * definition of a reorder target, shared by the two store writes below and by
  * the hooks' optimistic patches, so the row a screen shows and the row the
@@ -441,9 +452,7 @@ export function moveToIndex<T>(
   fromIndex: number,
   toIndex: number
 ): T[] {
-  if (!Number.isInteger(toIndex)) {
-    throw new RangeError(`A reorder target must be an integer: ${toIndex}`);
-  }
+  assertReorderTarget(toIndex);
   const out = items.slice();
   const [moved] = out.splice(fromIndex, 1);
   if (moved === undefined) return items.slice(); // nothing at fromIndex
