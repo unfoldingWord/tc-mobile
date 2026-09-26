@@ -69,6 +69,30 @@ export interface Book {
   readonly chapterIds: readonly ChapterId[];
   readonly createdAt: number;
   readonly updatedAt: number;
+  /**
+   * Optional cover colour the facilitator picked from the O4 palette (#957,
+   * from #937's D7/D8 — "people choose a colour", "a palette of 8–12"). The
+   * chapter-name / segment-label pattern, one field over: `null` is the
+   * default — no choice has been made — and `lib/cover-colour.ts`'s
+   * `resolveCoverKey` derives one deterministically from the book's id, so a
+   * reader never has to treat "no colour" as a real UI state.
+   *
+   * Stores a palette **key** ("forest"), never a hex value: the palette
+   * itself (`lib/cover-colour.ts`, ten keys as of #937's D8b, decided
+   * 2026-09-25) may still be retuned independently of any book already
+   * carrying a key. A key a future trim drops is not this type's problem to
+   * prevent — reading it
+   * safely, for a key that is no longer in the live palette, is
+   * `resolveCoverKey`'s job, not a constraint this field can express. Typed
+   * as a bare `string` rather than a union of the current keys for exactly
+   * that reason: the type→lib onion order means this file cannot import the
+   * palette's key union from `lib/` even if it wanted to (imports never go
+   * upward), and a bare string is also the honest shape for a value a future
+   * palette change must not require a schema migration to re-type. Every row
+   * carries the field (the v9 backfill stamps pre-#957 books `null`), so a
+   * reader never meets `undefined`.
+   */
+  readonly coverColourKey: string | null;
 }
 
 export interface Chapter {

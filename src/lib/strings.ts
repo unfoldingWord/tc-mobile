@@ -1024,4 +1024,57 @@ export const strings = {
   // The wording itself is a coordinator assumption pending the requirements
   // owner's sign-off — see the #878 PR body.
   stopToErase: "Stop recording to erase.",
+
+  // ── Phone check (#1009) ──────────────────────────────────────────────────
+  // A hidden tester screen, reached by five taps on the build stamp or by
+  // `?check=phone`. Its words are for a tester filling in #974, not for a
+  // translator, but they are screen copy all the same and so live here. The
+  // REPORT it produces is engineering data and is worded in
+  // `lib/phone-check/report.ts` instead — see that file's docblock.
+  phoneCheckTitle: "Phone check",
+  phoneCheckIntro:
+    "Measures this phone for a tester report. Nothing runs until you tap Start, and it never touches your books or recordings.",
+  phoneCheckStart: "Start",
+  phoneCheckRunWaiting: "Waiting for a recording to finish converting.",
+  phoneCheckRunDevice: "Reading device info.",
+  phoneCheckRunEncode: "Encoding 5 minutes of test audio.",
+  phoneCheckRunStorage: "Writing and reading 50 MB of test audio.",
+  phoneCheckDone: "Done.",
+  phoneCheckMemoryTitle: "Memory ceiling",
+  phoneCheckMemoryWarning:
+    "Run this last. It fills memory until the phone refuses, and the app may restart. If it does, open Phone check again to see how far it got.",
+  phoneCheckMemoryStart: "Start memory test",
+  phoneCheckMemoryStep: (mb: number) => `Trying ${mb} MB.`,
+  phoneCheckReportLabel: "Report for #974",
+  phoneCheckCopy: "Copy report",
+  phoneCheckCopied: "Copied.",
+  phoneCheckSelected: "Selected. Use your phone's Copy.",
+  phoneCheckClose: "Close",
+
+  // ── Cover colour picker (#957, from #937 D7/D8) ──────────────────────────
+  // The picker's group name, and one name per palette key
+  // (`lib/cover-colour.ts`'s `CoverColourKey`) — the whole accessible text
+  // layer for a screen built for people who may not read, so each swatch has
+  // to carry a real word, not just a fill colour a screen reader cannot see.
+  // Worded by `components/cover-colour-copy.ts`'s exhaustive switch, the same
+  // split `capture-failure-copy.ts` uses: the KEY is a `lib/` value, the
+  // WORDS live here.
+  coverColourLabel: "Cover colour",
+  coverColourAmber: "Amber",
+  coverColourTeal: "Teal",
+  coverColourPlum: "Plum",
+  coverColourForest: "Forest",
+  coverColourBrick: "Brick",
+  coverColourSlate: "Slate",
+  coverColourRose: "Rose",
+  coverColourOlive: "Olive",
+  coverColourRust: "Rust",
+  coverColourCocoa: "Cocoa",
+  // A swatch button's whole accessible name: the colour's name, plus its
+  // selected state — the same "whole name, plus a trailing state word" shape
+  // `bookRow` above uses for "expanded"/"collapsed". `aria-pressed` already
+  // carries this machine-readably; the word is for the same reason `pressed`
+  // is never inferred from a glyph alone (`Control`'s own `pressed` doc).
+  coverSwatchLabel: (name: string, selected: boolean): string =>
+    selected ? `${name}, selected` : name,
 } as const;

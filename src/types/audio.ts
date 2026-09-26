@@ -106,8 +106,18 @@ export interface AudioCodec {
    * an `EncoderFailedError` when the encoder itself failed (#166) — the browser
    * codec's typed signals, so a caller can tell an encoder failure from
    * anything else that went wrong around it.
+   *
+   * `onProgress`, when given, hears how far the encode has got as a fraction
+   * in `[0, 1]` (#996). It is advisory and may be sparse — the browser codec
+   * forwards the worker's throttled heartbeat, so it is not called once per
+   * frame and need not be called with `1` at all. The MP3 exists only when
+   * the promise resolves, never because a fraction reached `1`. It is not
+   * called after the encode settles.
    */
-  readonly encodeMp3: (samples: Int16Array) => Promise<Uint8Array<ArrayBuffer>>;
+  readonly encodeMp3: (
+    samples: Int16Array,
+    onProgress?: (fraction: number) => void
+  ) => Promise<Uint8Array<ArrayBuffer>>;
   /** MP3 bytes → canonical PCM. */
   readonly decodeMp3: (mp3: Uint8Array<ArrayBuffer>) => Promise<Int16Array>;
 }

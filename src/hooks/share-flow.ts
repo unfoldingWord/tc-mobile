@@ -27,6 +27,7 @@ import {
   resolveProvesDelivery,
   selectShareRoute,
 } from "./share-target";
+import type { StepReporter } from "@/lib/export/chapter";
 
 /**
  * The two-gesture share flow, shared by Share Chapter and Share Book (B7, A4).
@@ -184,12 +185,25 @@ interface PreparedShare {
  * no count, exactly as before. The count covers the build only: on the native
  * route `prepare` stages the built file after the builder returns, so the
  * count can read `N of N` while that write is still running. The busy phase
- * stays up until it settles.
+ * stays up until it settles. That staging is left off the count (#996), and
+ * how much it costs is not measured for either share — it cannot run in
+ * Node. The chunk arithmetic is all there is: at the encoder's 64 kbps, one
+ * 384 KiB bridge write holds about 0.8 minutes of audio. For a chapter that
+ * is a handful of writes after a seconds-long encode. For a BOOK zip it is
+ * about 1.2 writes per minute of the whole book (an hour of audio is about 74
+ * writes), all after the last chapter's step has already read `N of N`, and
+ * after the zip is finished; whether that is long enough to see is exactly
+ * what is unknown. The phone check on #974 is what says whether staging needs
+ * its own steps.
+ *
+ * Share Chapter's count now includes the encode (#996, `withEncodeSteps`), and
+ * either share may pass `skipped` (how many of `done` finished with no audio)
+ * and `items` (how many of `total` are items, when not all are).
  */
 type BuildShareFile = (
   isCurrent: () => boolean,
   signal: AbortSignal,
-  onStep: (done: number, total: number) => void
+  onStep: StepReporter
 ) => Promise<PreparedShare | "nothing" | null>;
 
 /**
@@ -199,13 +213,22 @@ type BuildShareFile = (
  * close, `reset` or unmount can still have a gather in flight for a moment,
  * and its late count must not land on a newer run's modal. The machine itself
  * rejects a count that is out of range or runs backward (`share-progress.ts`).
+ * A `skipped` count and an `items` count (#996) ride the same event when the
+ * builder gives them.
  */
 export function stepReporter(
   isCurrent: () => boolean,
   dispatch: (event: ShareProgressEvent) => void
-): (done: number, total: number) => void {
-  return (done, total) => {
-    if (isCurrent()) dispatch({ type: "step", done, total });
+): StepReporter {
+  return (done, total, skipped, items) => {
+    if (!isCurrent()) return;
+    dispatch({
+      type: "step",
+      done,
+      total,
+      ...(skipped === undefined ? {} : { skipped }),
+      ...(items === undefined ? {} : { items }),
+    });
   };
 }
 

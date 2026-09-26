@@ -304,6 +304,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // confirm. Every door sets it as it opens the dialog, so a Back-dismissed
     // discard can never leave the next Erase asking the wrong question.
     const [confirmFor, setConfirmFor] = useState<"erase" | "clip">("erase");
+    // Which opener raised it: the bar's bin ("rerecord") or the ≡ Erase row
+    // ("erase"). `onRerecord` sets the first and `openMenu` the second (the
+    // menu is the only road to its Erase row), so it is never left over. Only
+    // O4 reads it (G5, #979: the bin's confirm wears the record badge); the
+    // current look shows one dialog for both.
+    const [confirmFrom, setConfirmFrom] = useState<"erase" | "rerecord">(
+      "erase"
+    );
     // Focus back to whatever opened an overlay, once the overlay is gone (#97).
     // ONE pair for the ≡ menu and the erase confirm together, because they are
     // one `inert` scope and they chain inside it — the Erase row closes the menu
@@ -499,6 +507,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // `o4/recorder.css` through `data-o4-look`, which is set only under O4 so
     // the current look's markup is unchanged.
     const { design } = useDesign();
+    // G5 (#979): the erase confirm, raised from the bar's bin, under O4.
+    const g5 = design === "o4" && confirmFrom === "rerecord";
     const look = recorderLook({
       recording,
       playing: audio.playingBuffer,
@@ -1674,6 +1684,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // and its restore was a silent no-op for every menu in the app.
       focusRestore.capture();
       stopPlayback();
+      // The menu is the only way to its Erase row, so a confirm raised after
+      // this is the ≡ Erase's, not the bar bin's (G5, #979).
+      setConfirmFrom("erase");
       setMenuOpen(true);
     }, [focusRestore, stopPlayback]);
 
@@ -1966,6 +1979,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const onRerecord = useCallback(() => {
       focusRestore.capture();
       stopPlayback();
+      setConfirmFrom("rerecord");
       setConfirmFor("erase");
       setConfirmOpen(true);
     }, [focusRestore, stopPlayback]);
@@ -3813,6 +3827,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               ? strings.discardClipConfirmTitle
               : strings.eraseConfirmTitle
           }
+          // O4 G5 (#979): from the bar's bin, the workbench's record badge.
+          // The button, Keep and the title stay the 13 dialog's: the button
+          // erases and starts no take, so it keeps the bin and "Erase"
+          // (#1022). The workbench's "Record again" button records; here that
+          // would start the mic after the erase's awaits, outside the tap
+          // `use-audio-session.ts` startRecording needs. Switch off: one
+          // dialog, as before. The clipboard's discard (#862) is not the
+          // bar's bin, so it keeps the trash badge.
+          badge={g5 && confirmFor !== "clip" ? "record" : "trash"}
           confirmLabel={
             confirmFor === "clip"
               ? strings.discardClipConfirm

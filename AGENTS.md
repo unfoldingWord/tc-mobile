@@ -384,14 +384,20 @@ track throwing on its own `stop()` (`hooks/audio-io.ts`,
 save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
 (`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
-segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591),
+segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
+failed book cover-colour write
+(`hooks/use-book-cover-colour.ts`, `"book-cover-colour"`, #957),
 playback's own
 resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
 `"playback-resume"`, and the fail-closed gate that still finds the context
 unusable after the resume await — `"playback-resume-timeout"` when the
 1000 ms bound was what ended it, `"playback-resume-unusable"` when an
 earlier rejection did or a fresh interruption arrived during the post-fill
-yield, #469), and the log's own share and clear paths. `SaveFailed` now
+yield, #469), the tester-only phone check (`hooks/phone-check-probes.ts`,
+`"phone-check"`, #1009: a probe that throws, and a `sessionStorage`
+breadcrumb or saved result that cannot be read or written — a failed memory-ceiling
+allocation is the measurement, not a failure, and is not reported), and
+the log's own share and clear paths. `SaveFailed` now
 carries the same `SendLogControl` the crash screen does (#456, moved into
 its own module, `components/send-log-control.tsx`, so both screens share one
 implementation) — `DatabasePanel` still does not: #456 itself calls that a

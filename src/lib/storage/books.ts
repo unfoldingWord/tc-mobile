@@ -116,6 +116,9 @@ export async function createBook(
     chapterIds: [],
     createdAt: now,
     updatedAt: now,
+    // Unset by default — the facilitator has not chosen one yet (#957).
+    // `resolveCoverKey` derives a colour from the id until they do.
+    coverColourKey: null,
   };
   await tx.store.put(book);
   await tx.done;
@@ -169,6 +172,55 @@ export async function renameBook(
   }
 
   const updated: Book = { ...book, name: nextName, updatedAt: now };
+  await tx.store.put(updated);
+  await tx.done;
+  return updated;
+}
+
+/**
+ * Set a book's cover colour in place (#957 — D7/D8, "people choose a colour"
+ * from a palette).
+ *
+ * The `renameBook` rules, deliberately: get-then-put in ONE readwrite
+ * transaction — the idempotency bar. `key` is stored as given — a palette key
+ * such as `"forest"`, or `null` to clear back to the derived fallback
+ * (`lib/cover-colour.ts`'s `resolveCoverKey`). Unlike a book's name, `null` is
+ * a real, first-class value here rather than something trimming falls back
+ * to: a book is always named, but "no chosen colour" is the normal starting
+ * state for every book, so there is nothing to refuse.
+ *
+ * This function does not validate `key` against the live palette. That is a
+ * deliberate split, not an oversight, and it holds even though the ten keys
+ * are final (`lib/cover-colour.ts`): a key this store already holds must keep
+ * loading and round-tripping, never turn into a write-time error, if a later
+ * build ever renames or drops a palette entry. Do not "tighten" this by
+ * validating against the live set. `resolveCoverKey` is where an unknown
+ * key is handled — on READ, deterministically, never here on write. The one
+ * caller with an opinion about which keys are valid is the picker
+ * (`components/cover-picker.tsx`), which only ever offers the live palette in
+ * the first place.
+ *
+ * Setting a colour is activity, exactly like `renameBook`: a real change bumps
+ * `updatedAt` so the book floats up the `listBooks`-sorted shelf, and setting
+ * the SAME key again (including `null` to `null`) is an idempotent no-op —
+ * no write, no recency bump, safe to re-run.
+ */
+export async function setBookCoverColour(
+  id: BookId,
+  key: string | null,
+  now: number = Date.now()
+): Promise<Book> {
+  const db = await getDb();
+  const tx = db.transaction("books", "readwrite");
+  const book = await tx.store.get(id);
+  if (!book) throw new Error(`No such book: ${id}`);
+
+  if (key === (book.coverColourKey ?? null)) {
+    await tx.done; // idempotent no-op: no write, no recency bump.
+    return book;
+  }
+
+  const updated: Book = { ...book, coverColourKey: key, updatedAt: now };
   await tx.store.put(updated);
   await tx.done;
   return updated;
