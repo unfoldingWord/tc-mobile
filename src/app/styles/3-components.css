@@ -126,9 +126,9 @@
        control. */
     --c-guide-ring: 3px;
 
-    /* The waveform stroke. Defaults to the voice accent; a finished row remaps
-       it to done (green) and the canvas reads it back — no prop drilling, and
-       the recorder's waveform (never under `.row--finished`) stays amber. */
+    /* The waveform stroke. Defaults to the voice accent; a finished row, and
+       the recorder sheet of a finished segment (#926), remap it to done
+       (green) and the canvas reads it back — no prop drilling. */
     --c-wave-stroke: var(--s-voice);
   }
 
@@ -1306,6 +1306,21 @@
     color: var(--s-done-ink);
   }
   .row--finished .control--play {
+    background: var(--s-done);
+    color: var(--s-done-ink);
+  }
+
+  /* --- a finished segment in the recorder (#926) ------------------------- */
+  /* The row's treatment carried onto the recorder: the waveform and the
+     record toolbar's Play go green, nothing else. No surface wash — the
+     stage is the editor, not a list item. The edit toolbar's Play is a quiet
+     control with no fill, so it is left alone. The class keys on the same
+     resolved state the menu's green check reads, so an edit or a new take
+     (which demote the segment to draft) returns both to amber. */
+  .recorder-sheet--finished {
+    --c-wave-stroke: var(--s-done);
+  }
+  .recorder-sheet--finished .recorder-toolbar.pair .control--play {
     background: var(--s-done);
     color: var(--s-done-ink);
   }

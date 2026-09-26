@@ -1,5 +1,6 @@
 import { Control } from "./control";
 import { Icon } from "./icon";
+import { useDesign } from "@/hooks/use-design";
 import { strings } from "@/lib/strings";
 
 /**
@@ -40,6 +41,42 @@ export function PermissionPanel({
   onRetry: () => void;
   onBack: () => void;
 }) {
+  const { design } = useDesign();
+  if (design === "o4") {
+    // O4 state 16 (#948). The same two controls, names, focus and alert scope
+    // as the current look below; only the paint differs. The workbench's
+    // speaker button and "Ask your helper" pill are not here: neither has a
+    // behaviour in this app to wire to (no prompt-audio path, no helper
+    // action), and a control that does nothing is a stub.
+    return (
+      <div className="o4-err flex flex-1 flex-col items-center justify-center px-[22px] text-center">
+        <span
+          className="o4-err-circle o4-err-circle--denied"
+          aria-hidden="true"
+        >
+          <Icon name="mic" size={58} />
+        </span>
+        <p role="alert" className="o4-err-title text-ink">
+          {message ?? strings.micNeededTitle}
+        </p>
+        <Control
+          icon="restart"
+          label={strings.micRetry}
+          variant="primary"
+          size={34}
+          className="o4-err-wide"
+          autoFocus
+          onClick={onRetry}
+        />
+        <Control
+          icon="back"
+          label={strings.micBack}
+          variant="quiet"
+          onClick={onBack}
+        />
+      </div>
+    );
+  }
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-[18px] px-[22px] text-center">
       <span className="text-live">
