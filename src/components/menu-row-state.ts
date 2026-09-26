@@ -85,7 +85,8 @@ interface EditRowInputs {
 
 /**
  * The record-menu "Edit recording" row, and (via `recorder.tsx`'s shared
- * `editReason`) the bottom-bar `[ ]` selection toggle. Null when enabled.
+ * `editReason`) the bottom-bar edit toggle (scissors since #955; `[ ]`
+ * before). Null when enabled.
  *
  * Enabled when there is something to edit — stored audio or a full clipboard —
  * and no take is in flight. Blocked by: the mic still starting, a live take
