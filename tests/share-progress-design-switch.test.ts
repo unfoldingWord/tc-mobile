@@ -61,6 +61,7 @@ async function mount(progress: ShareProgressState) {
       createElement(ShareProgress, {
         progress,
         scope: "book",
+        items: [1, 2, 3, 4].map((label) => ({ label, goesOut: true })),
         onCancel: () => {},
         onDismiss: () => {},
       })
@@ -76,16 +77,20 @@ describe("ShareProgress follows the O4 switch (#947)", () => {
     const panel = await mount(BUSY);
     expect(panel.querySelector(".share-progress-glyph")).not.toBeNull();
     expect(panel.querySelector("[class*='share-o4']")).toBeNull();
+    expect(panel.querySelector("[role='progressbar']")).toBeNull();
   });
 
-  it("with the switch on, draws the O4 circle, its ring and its dots instead", async () => {
+  it("with the switch on, draws the O4 circle, its ring and its chips instead", async () => {
     dom.window.localStorage.setItem(DESIGN_STORAGE_KEY, "o4");
     const panel = await mount(BUSY);
     expect(
       panel.querySelector(".share-o4-frame .share-o4-core")
     ).not.toBeNull();
     expect(panel.querySelector(".share-o4-ring")).not.toBeNull();
-    expect(panel.querySelectorAll(".share-o4-dot")).toHaveLength(4);
+    expect(panel.querySelectorAll(".share-o4-chip")).toHaveLength(4);
+    expect(
+      panel.querySelector("[role='progressbar']")?.getAttribute("aria-valuenow")
+    ).toBe("50");
     expect(panel.querySelector(".share-progress-glyph")).toBeNull();
   });
 });

@@ -147,17 +147,37 @@ describe("O4 share circle stylesheet (#947)", () => {
     );
   });
 
-  it("dots: finished filled, skipped hollow in the ring's colour, waiting empty (D13)", () => {
-    const dot = `${O4} .share-o4-dot`;
-    expect(valueFor(dot, "background")).toBe("var(--s-mark-empty)");
-    expect(valueFor(`${dot}[data-dot="filled"]`, "background")).toBe(
-      "var(--s-send-ring)"
+  it("chips: 38px circles in the workbench's wrapping row (D21)", () => {
+    const chip = `${O4} .share-o4-chip`;
+    expect(valueFor(chip, "width")).toBe("38px");
+    expect(valueFor(chip, "height")).toBe("38px");
+    expect(valueFor(chip, "border-radius")).toBe("50%");
+    expect(valueFor(`${O4} .share-o4-chips`, "flex-wrap")).toBe("wrap");
+    expect(valueFor(`${O4} .share-o4-chips`, "gap")).toBe("10px");
+  });
+
+  it("chips: stays grey with faint ink, goes out on send with white ink, current amber (D21)", () => {
+    const chip = `${O4} .share-o4-chip`;
+    // The resting chip is the one that does not go out.
+    expect(valueFor(chip, "background")).toBe("var(--s-well)");
+    expect(valueFor(chip, "color")).toBe("var(--s-ink-faint)");
+    for (const state of ["waiting", "finished"]) {
+      expect(
+        valueFor(`${chip}[data-chip="${state}"]`, "background"),
+        state
+      ).toBe("var(--s-send)");
+      expect(valueFor(`${chip}[data-chip="${state}"]`, "color"), state).toBe(
+        "var(--s-tile-ink)"
+      );
+    }
+    expect(valueFor(`${chip}[data-chip="current"]`, "background")).toBe(
+      "var(--s-voice)"
     );
-    expect(valueFor(`${dot}[data-dot="hollow"]`, "background")).toBe(
-      "transparent"
+    expect(valueFor(`${chip}[data-chip="current"]`, "color")).toBe(
+      "var(--s-voice-ink)"
     );
-    expect(valueFor(`${dot}[data-dot="hollow"]`, "border")).toBe(
-      "2px solid var(--s-send-ring)"
-    );
+    expect(
+      valueFor(`${chip}[data-chip="stays"]`, "background")
+    ).toBeUndefined();
   });
 });

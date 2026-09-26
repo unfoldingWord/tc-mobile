@@ -2,6 +2,7 @@ import { forwardRef } from "react";
 
 import { Icon, type IconName } from "./icon";
 import type { ShareO4View } from "./share-o4-view";
+import { strings } from "@/lib/strings";
 
 interface ShareProgressPanelProps {
   /** From `noticePresentation(glyph.tone).role` — never a caller-chosen
@@ -55,19 +56,45 @@ export const ShareProgressPanel = forwardRef<
     );
   return (
     <div ref={ref} tabIndex={-1} role={role} className="share-progress">
+      {o4.chips.length > 0 && <O4Chips chips={o4.chips} />}
       <O4Circle view={o4} />
-      {o4.dots.length > 0 && (
-        <span className="share-o4-dots" aria-hidden="true">
-          {o4.dots.map((dot, i) => (
-            <span key={i} className="share-o4-dot" data-dot={dot} />
-          ))}
-        </span>
-      )}
       <span className="share-progress-text">{text}</span>
     </div>
   );
 });
 
+/**
+ * The workbench's numbered chips (D21, `vShare`'s `.schips`): one per item,
+ * in order, above the circle. A finished chip shows a check; every other
+ * chip shows its item's number. The row is one image labelled "N of M go
+ * out" and each chip inside it is `aria-hidden`: the chips are decorative
+ * (D22), and the label says what they add.
+ */
+function O4Chips({ chips }: { chips: ShareO4View["chips"] }) {
+  const out = chips.filter((c) => c.state !== "stays").length;
+  return (
+    <span
+      className="share-o4-chips"
+      role="img"
+      aria-label={strings.shareItemsGoOut(out, chips.length)}
+    >
+      {chips.map((chip, i) => (
+        <span
+          key={i}
+          className="share-o4-chip"
+          data-chip={chip.state}
+          aria-hidden="true"
+        >
+          {chip.state === "finished" ? (
+            <Icon name="check" size={18} />
+          ) : (
+            chip.label
+          )}
+        </span>
+      ))}
+    </span>
+  );
+}
 /** The workbench's ring: radius 84 on a 176 box, stroke 7 (states 15/G7). */
 const RING_RADIUS = 84;
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
@@ -76,13 +103,16 @@ const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
  * The O4 140-in-176 circle (#947): the filling ring, when there is a count
  * to fill it by, around the core that holds the glyph. Its colours, and the
  * outcome rings D14 and D16 draw, are `o4/share.css`'s, keyed on the scrim's
- * `data-outcome`. `aria-hidden` as a whole: the panel's role and its line of
- * text carry the state in both looks, so a screen reader hears the same
- * thing whichever look is on.
+ * `data-outcome`. The ring is `aria-hidden`. The core is a progress bar
+ * while the view gives it a meter (D22), labelled from `strings.ts` and
+ * valued 0 to 100, with no value before the first count; on an outcome it
+ * is a plain box and the panel's role and text carry the state, as in the
+ * current look.
  */
 function O4Circle({ view }: { view: ShareO4View }) {
+  const meter = view.meter;
   return (
-    <span className="share-o4-frame" aria-hidden="true">
+    <span className="share-o4-frame">
       {view.ring !== null && (
         <svg className="share-o4-ring" viewBox="0 0 176 176" aria-hidden="true">
           <circle className="share-o4-track" cx="88" cy="88" r={RING_RADIUS} />
@@ -96,7 +126,18 @@ function O4Circle({ view }: { view: ShareO4View }) {
           />
         </svg>
       )}
-      <span className="share-o4-core">
+      <span
+        className="share-o4-core"
+        {...(meter === null
+          ? {}
+          : {
+              role: "progressbar",
+              "aria-label": strings.sharePreparingLabel,
+              "aria-valuemin": 0,
+              "aria-valuemax": 100,
+              ...(meter.now === null ? {} : { "aria-valuenow": meter.now }),
+            })}
+      >
         <Icon name={view.icon} size={52} className="share-o4-glyph" />
       </span>
     </span>

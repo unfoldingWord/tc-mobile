@@ -630,6 +630,12 @@ export const strings = {
   // Back after the activity stopped (`resolveProvesDelivery`). So never
   // "sent", "delivered", "shared to", or an app's name; a test pins that.
   shareHandingOver: "Opening the phone's share sheet.",
+  // The O4 share circle (#947). D22: the core is a progress bar with this
+  // label, chapter and book alike. D21: the numbered chips above it are one
+  // image with this label — how many of the items go out, of all of them.
+  sharePreparingLabel: "Preparing to share",
+  shareItemsGoOut: (out: number, all: number): string =>
+    `${out} of ${all} go out`,
   shareSent: "Handed to the phone's share sheet.",
   shareDismissed: "The share sheet was closed before anything went out.",
   // The native Android plugin can resolve on a Back after the chooser's
