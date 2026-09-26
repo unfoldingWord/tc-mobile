@@ -16,9 +16,8 @@ import { strings } from "@/lib/strings";
 import type { CoverColourKey } from "@/lib/cover-colour";
 
 /**
- * @pivotpending No production caller yet — `components/cover-picker.tsx`
- * (also tagged, same reason) is the one caller this lane (#957) ships; #943
- * and #949 are what wire the picker itself onto a screen.
+ * Read by `components/cover-picker.tsx`, which the O4 book menu mounts
+ * (#949).
  */
 export function coverColourName(key: CoverColourKey): string {
   switch (key) {

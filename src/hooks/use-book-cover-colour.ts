@@ -11,9 +11,8 @@ import type { Book, BookId } from "@/types/domain";
  * new-book sheet) and the menus lane (#949, the book menu) each mount their
  * own instance of.
  *
- * @pivotpending Exported for #943 and #949 to wire up; this lane (#957) does
- * not mount either surface (item 6 of the issue: "nothing changes on
- * screen"), so this hook has no production caller yet.
+ * Mounted by the O4 book menu (#949, `books-screen.tsx`). The new-book sheet
+ * (#943) does not mount it yet.
  *
  * Built the way `useEraseSegment` is: the store call lives in a plain async
  * function (`performSetCoverColour`, exercised in Node against the real store
@@ -29,7 +28,6 @@ import type { Book, BookId } from "@/types/domain";
  * updated in this same PR), and returned as a `strings`-mapped
  * {@link FailureKey} (#172) — never the raw store message.
  *
- * @pivotpending No production caller yet — see this module's own docblock.
  * `tests/use-book-cover-colour.test.ts` exercises it directly, the same split
  * `use-erase-segment.ts`'s `performErase` draws.
  */
@@ -61,9 +59,6 @@ export async function performSetCoverColour(
 type SetCoverColourResult =
   { ok: true; book: Book } | "busy" | { failed: FailureKey };
 
-/**
- * @pivotpending No production caller yet — see this module's own docblock.
- */
 export interface UseBookCoverColour {
   /** Set `bookId`'s cover colour to `key` (or `null` to clear it back to the
    *  derived fallback, `lib/cover-colour.ts`'s `resolveCoverKey`). */
@@ -77,8 +72,7 @@ export interface UseBookCoverColour {
 }
 
 /**
- * @pivotpending No production caller yet — see this module's own docblock.
- * #943 and #949 are each expected to mount their own instance, the same way
+ * #943 and #949 each mount their own instance, the same way
  * `useEraseSegment` is mounted once and shared today.
  */
 export function useBookCoverColour(): UseBookCoverColour {

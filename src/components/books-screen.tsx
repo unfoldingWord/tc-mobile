@@ -18,6 +18,8 @@ import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { O4BookDeleteAsk } from "./o4-book-delete-ask";
+import { CoverTile, O4BookHead, O4CoverPick } from "./o4-book-menu";
+import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
 import { Notice } from "./notice";
 import { SquareButton } from "./o4-controls";
 import { encoderNotice } from "./encoder-notice";
@@ -33,6 +35,7 @@ import { useFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import type { FailureKey } from "@/hooks/save-failure";
 import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
+import { useBookCoverColour } from "@/hooks/use-book-cover-colour";
 import { useBookShare } from "@/hooks/use-book-share";
 import { useBooks } from "@/hooks/use-books";
 import { useDesign } from "@/hooks/use-design";
@@ -44,7 +47,11 @@ import {
 } from "@/hooks/use-screen-layers";
 import { useStoragePersistence } from "@/hooks/use-storage-persistence";
 import { useStoragePressure } from "@/hooks/use-storage-pressure";
-import { coverColourHex, resolveCoverKey } from "@/lib/cover-colour";
+import {
+  coverColourHex,
+  resolveCoverKey,
+  type CoverColourKey,
+} from "@/lib/cover-colour";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { nextChapterNumber } from "@/lib/storage/books";
 import { cn } from "@/lib/utils";
@@ -286,6 +293,13 @@ export function BooksScreen({
   // Whether the open book ≡ menu is in rename mode (the name field showing) or
   // its action list. Resets to the action list every time the menu closes.
   const [renamingBook, setRenamingBook] = useState(false);
+  // O4 only (#949, #937 D7): whether the open book sheet shows #957's cover
+  // picker in place of its tiles. A mode of the same sheet, as rename is, so
+  // it opens no layer of its own, and it resets every time the sheet closes.
+  const [pickingCover, setPickingCover] = useState(false);
+  // A failed cover write, scoped to the picker: the screen's Notice sits
+  // behind the sheet's scrim, as rename's does.
+  const [coverFailed, setCoverFailed] = useState<FailureKey | null>(null);
   // The rename write is in flight (#383) — forwarded to NameEdit's Confirm as
   // `busy`. Reset to `false` at every site that bumps `bookMenuSession` (open,
   // close, arm-a-share) as well as on settle: a still-pending rename for book
@@ -468,6 +482,8 @@ export function BooksScreen({
     bookMenuSession.current += 1;
     setShareMenuBookId(null);
     setRenamingBook(false);
+    setPickingCover(false);
+    setCoverFailed(null);
     setSavingName(false);
     bookShare.reset();
     return true;
@@ -587,13 +603,26 @@ export function BooksScreen({
     },
   });
 
+  // The ≡ that opened the global menu, handed focus back when it closes —
+  // under O4 only (#949: the app menu on tiles). The current look has never
+  // returned focus from this menu, and the switch-off rule keeps it as it is;
+  // with nothing captured, the restore below is a no-op there.
+  const globalMenuFocusRestore = useFocusRestore();
   // The global menu's ONE open and ONE close. Every entry point — the ≡, the
   // panel's Close, Escape, a scrim tap, the log panel's `onDone` — goes through
   // this pair, so no call site can forget the registration.
   const openGlobalMenu = useCallback(() => {
+    // Synchronously, in the tap's own handler: one commit later the shelf
+    // goes `inert` and the ≡ blurs (#97, #679).
+    if (o4) globalMenuFocusRestore.capture();
     setMenuOpen(true);
     layers.open("books:global-menu");
-  }, [layers]);
+  }, [globalMenuFocusRestore, layers, o4]);
+  // Once the menu is gone and the shelf's `inert` has lifted.
+  useLayoutEffect(() => {
+    if (menuOpen) return;
+    globalMenuFocusRestore.restore({ suppressed: false, fallback: null });
+  }, [menuOpen, globalMenuFocusRestore]);
   const closeGlobalMenu = useCallback(() => {
     closeGlobalMenuState();
     // The Clear confirm lives INSIDE this panel and unmounts with it, so its
@@ -892,6 +921,17 @@ export function BooksScreen({
   // The book whose ≡ menu is open, resolved from the shelf. `null` closes the
   // menu — including if the book is gone by the time this render runs.
   const shareMenuBook = books.find((b) => b.bookId === shareMenuBookId) ?? null;
+  // The open book's cover colour: its stored key, or #957's id-derived
+  // fallback. The O4 sheet head, the Cover colour tile, the picker's pressed
+  // swatch and the delete ask all read this one value.
+  const shareMenuCoverKey: CoverColourKey | null = shareMenuBook
+    ? resolveCoverKey({
+        id: shareMenuBook.bookId,
+        coverColourKey: shareMenuBook.coverColourKey ?? null,
+      })
+    : null;
+  const shareMenuCoverHex =
+    shareMenuCoverKey === null ? "" : coverColourHex(shareMenuCoverKey);
   // The teardown the vanish effect below runs, behind a latest-ref ON PURPOSE.
   // It has to reset the share, and `useBookShare()` returns a fresh object
   // literal every render (`use-book-share.ts`) — putting that in an effect's
@@ -928,6 +968,8 @@ export function BooksScreen({
       menuFocusRestore.capture();
       bookMenuSession.current += 1;
       setShareMenuBookId(bookId);
+      setPickingCover(false);
+      setCoverFailed(null);
       // A different book's still-pending rename must not show THIS book's fresh
       // Confirm as busy before it has even been tapped (Frank r1, #384).
       setSavingName(false);
@@ -1048,6 +1090,48 @@ export function BooksScreen({
     setRenamingBook(false);
     setSavingName(false);
   }, [setSavingName]);
+  // ── O4: the Cover colour tile and #957's picker (#949, #937 D7) ─────────
+  //
+  // The write is #964's hook, which reports a failure to the funnel itself
+  // and refuses a second write while one is in flight. `reload()` after a
+  // success is what carries the stored key onto the shelf's card, and so to
+  // the cover, the sheet head and the tile.
+  const { setCoverColour } = useBookCoverColour();
+  // The Cover colour tile, focused again when the picker gives way to the
+  // tiles after a choice. The flag is set only by a successful choice, so a
+  // sheet that closes from the picker never lands here.
+  const coverTileRef = useRef<HTMLButtonElement | null>(null);
+  const focusCoverTileOnReturn = useRef(false);
+  const onOpenCoverPicker = useCallback(() => {
+    setCoverFailed(null);
+    setPickingCover(true);
+  }, []);
+  const onChooseCover = useCallback(
+    (key: CoverColourKey) => {
+      if (!shareMenuBookId) return;
+      // The sheet session this choice belongs to: a close or a reopen while
+      // the write settles must not flip the next session's picker.
+      const session = bookMenuSession.current;
+      void setCoverColour(shareMenuBookId, key).then((result) => {
+        if (result === "busy") return;
+        if ("failed" in result) {
+          if (bookMenuSession.current === session)
+            setCoverFailed(result.failed);
+          return;
+        }
+        reload();
+        if (bookMenuSession.current !== session) return;
+        focusCoverTileOnReturn.current = true;
+        setPickingCover(false);
+      });
+    },
+    [reload, setCoverColour, shareMenuBookId]
+  );
+  useEffect(() => {
+    if (pickingCover || !focusCoverTileOnReturn.current) return;
+    focusCoverTileOnReturn.current = false;
+    coverTileRef.current?.focus();
+  }, [pickingCover]);
   // Whichever of "Share book"/"Preparing…"/"Share now" is currently rendered
   // — attached to every branch of the ternary below, so it survives that
   // remount and always names a live, non-destructive landmark for
@@ -1245,6 +1329,8 @@ export function BooksScreen({
       bookMenuSession.current += 1;
       setShareMenuBookId(null);
       setRenamingBook(false);
+      setPickingCover(false);
+      setCoverFailed(null);
       setSavingName(false);
       resetBookShare();
       layers.close("books:book-menu");
@@ -1720,7 +1806,18 @@ export function BooksScreen({
             onClearConfirmClose={onClearConfirmClose}
           />
         )}
-        <ThemeControl />
+        {o4 ? (
+          // The workbench's G1: the theme tile at the far end of the row,
+          // where it sits in every O4 menu. The report panel above stays as
+          // it is (its Export tile's words are a DRI call), and so does the
+          // O4 switch below, which the workbench does not draw.
+          <TileGrid>
+            <TileSpacer />
+            <ThemeControl tile />
+          </TileGrid>
+        ) : (
+          <ThemeControl />
+        )}
         <DesignControl />
       </Menu>
 
@@ -1829,12 +1926,7 @@ export function BooksScreen({
         {o4DeleteArmed && shareMenuBook && (
           <O4BookDeleteAsk
             name={shareMenuBook.name}
-            coverHex={coverColourHex(
-              resolveCoverKey({
-                id: shareMenuBook.bookId,
-                coverColourKey: shareMenuBook.coverColourKey ?? null,
-              })
-            )}
+            coverHex={shareMenuCoverHex}
             busy={deleting}
             keepRef={keepDeleteRef}
             onKeep={onKeepDelete}
@@ -1884,7 +1976,75 @@ export function BooksScreen({
               <Notice>{strings[error]}</Notice>
             )}
           </>
-        ) : o4DeleteArmed ? null : (
+        ) : o4DeleteArmed ? null : o4 && shareMenuCoverKey !== null ? (
+          // The O4 book menu (#949, state 04), as the workbench draws it: the
+          // book's small cover and name in the head with Rename as its
+          // pencil; then Share, the Cover colour tile (#937 D7) and, past a
+          // gap, Delete. The same Rename, Share and Delete handlers, names
+          // and refs as the rows below, so the open-edge focus lands on
+          // Rename in both looks, Keep returns to Delete, and the share
+          // restore finds the same node. The Cover colour tile swaps the
+          // tiles for #957's picker in the same sheet; a choice writes and
+          // comes back here.
+          <>
+            <O4BookHead
+              name={shareMenuBook?.name ?? ""}
+              coverHex={shareMenuCoverHex}
+            >
+              {!pickingCover && (
+                <Control
+                  icon="pencil"
+                  label={strings.renameBook}
+                  size={24}
+                  className="o4-head-pen"
+                  onClick={() => setRenamingBook(true)}
+                />
+              )}
+            </O4BookHead>
+            {pickingCover ? (
+              <O4CoverPick
+                selected={shareMenuCoverKey}
+                onSelect={onChooseCover}
+                error={coverFailed ? strings[coverFailed] : null}
+              />
+            ) : (
+              <ShareMenuSection
+                status={bookShare.status}
+                sendUnconfirmed={bookShare.sendUnconfirmed}
+                error={bookShare.error}
+                scope="book"
+                controlRef={shareControlRef}
+                idleLabel={strings.shareBook}
+                preparingLabel={strings.shareBookPreparing}
+                unconfirmedLabel={strings.shareBookUnconfirmed}
+                hasGap={bookShareHasGap}
+                gapText={bookShareGapText}
+                onPrepare={onPrepareBookShare}
+                onSend={onSendBookShare}
+                tiles={{
+                  after: (
+                    <>
+                      <CoverTile
+                        ref={coverTileRef}
+                        coverHex={shareMenuCoverHex}
+                        onClick={onOpenCoverPicker}
+                      />
+                      <TileSpacer />
+                      <Tile
+                        ref={deleteControlRef}
+                        tone="erase"
+                        icon="trash"
+                        label={strings.deleteBook}
+                        caption={strings.tileDelete}
+                        onClick={onArmDelete}
+                      />
+                    </>
+                  ),
+                }}
+              />
+            )}
+          </>
+        ) : (
           <>
             <Control
               icon="edit"

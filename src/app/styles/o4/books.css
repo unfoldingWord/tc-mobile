@@ -326,4 +326,35 @@
     background: var(--s-voice);
     color: var(--s-voice-ink);
   }
+  /* --- the book menu (04, #949) and its Cover colour tile (#937 D7) ------
+     The sheet's head reuses the delete ask's small cover and name, laid out
+     by menus.css's shared head row; the name takes the space the Rename
+     pencil leaves. The Cover colour tile's box and the picker are here, not
+     in menus.css, because the tile is filled with the book's own colour
+     (--book-cover, set inline), which is this file's one exception to
+     layer-2 colour. The swatches are the workbench's new-book swatches: 56
+     square, radius 9, 12 apart, the chosen one ringed in ink over a gap of
+     the sheet's own surface. */
+  [data-design="o4"] .books-menu-head {
+    flex: 1;
+  }
+  [data-design="o4"] .o4-tile--cover::before {
+    background: var(--book-cover);
+  }
+  [data-design="o4"] .books-cover-pick {
+    flex: 1;
+    min-width: 0;
+  }
+  [data-design="o4"] .books-cover-pick .cover-swatch-row {
+    gap: 12px;
+  }
+  [data-design="o4"] .books-cover-pick .cover-swatch {
+    border-radius: 9px; /* one-off: no 9px primitive */
+  }
+  [data-design="o4"] .books-cover-pick .cover-swatch[aria-pressed="true"] {
+    border-color: transparent;
+    box-shadow:
+      0 0 0 3px var(--s-surface),
+      0 0 0 6px var(--s-ink);
+  }
 }
