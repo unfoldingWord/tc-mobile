@@ -139,4 +139,22 @@ describe("storagePressureNotice", () => {
   it("shows the line again once the delete failure clears, with content present", () => {
     expect(storagePressureNotice("low", openGate)).not.toBeNull();
   });
+
+  it("low band's copy holds a fallback for when everything reclaimable is already Finished (#843 item 1)", () => {
+    // George's #843 finding: the gate is `hasReclaimableAudio`
+    // (`recordedCount > 0`), which stays true even when every recorded
+    // segment on the shelf is already Finished (MP3, not PCM) — a real state
+    // where "mark segments finished" recommends something already done. This
+    // function only ever sees the marker, not the finished/recorded split
+    // (`hasReclaimableAudio`'s own docblock), so it cannot gate on that state
+    // directly — George: "not asking for another boolean". The fix instead
+    // matches `storageCritical`'s existing pattern: state the fallback
+    // ("share your work and then remove it") unconditionally, so the
+    // sentence holds in every state this gate can actually show, the same
+    // way critical's fallback already does. Before the fix, `storageLow`
+    // names only "mark segments finished" and neither assertion below holds.
+    const text = storagePressureNotice("low", openGate)?.text ?? "";
+    expect(text).toMatch(/share your work/i);
+    expect(text).toMatch(/remove it/i);
+  });
 });
