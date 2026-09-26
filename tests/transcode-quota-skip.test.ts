@@ -119,6 +119,10 @@ type Reporter = typeof import("@/hooks/report-failure");
 type Pressure = typeof import("@/hooks/use-storage-pressure");
 
 let requestTranscodeSweep: Sweep["requestTranscodeSweep"];
+let pauseTranscodeSweep: Sweep["pauseTranscodeSweep"];
+let resumeTranscodeSweep: Sweep["resumeTranscodeSweep"];
+let quiesceTranscodeSweep: Sweep["quiesceTranscodeSweep"];
+let STORAGE_ESTIMATE_TIMEOUT_MS: Sweep["STORAGE_ESTIMATE_TIMEOUT_MS"];
 let subscribeToFailures: Reporter["subscribeToFailures"];
 let StalledError: typeof import("@/hooks/mp3-codec").EncoderStalledError;
 let listPcmFinishedSegments: Storage["listPcmFinishedSegments"];
@@ -191,7 +195,13 @@ async function loadSweep(): Promise<void> {
   stopCapture = subscribeToFailures((r) =>
     reports.push({ context: r.context, cause: r.cause })
   );
-  ({ requestTranscodeSweep } = await import("@/hooks/finish-transcode"));
+  ({
+    requestTranscodeSweep,
+    pauseTranscodeSweep,
+    resumeTranscodeSweep,
+    quiesceTranscodeSweep,
+    STORAGE_ESTIMATE_TIMEOUT_MS,
+  } = await import("@/hooks/finish-transcode"));
 }
 
 beforeEach(async () => {
@@ -282,12 +292,30 @@ describe("a segment that failed is attempted once per session (#1010)", () => {
     freeSpace(50_000);
     vi.mocked(commitTranscode).mockRejectedValue(new Error("not quota"));
     await requestTranscodeSweep();
+    // A different reason is a new failure, and it gets its own row: the
+    // dedup is for running out of room AGAIN, not for any retry.
+    expect(segmentReports("s1")).toBe(2);
     // Less room than at the quota failure: only the entry being gone lets
     // this sweep retry it.
     freeSpace(500);
     await requestTranscodeSweep();
 
     expect(encodeMp3).toHaveBeenCalledTimes(3);
+    expect(segmentReports("s1")).toBe(3);
+  });
+
+  it("logs a stall on a held-out segment's storage retry", async () => {
+    owe("s1");
+    s1HitsQuota();
+    freeSpace(1_000);
+    await requestTranscodeSweep();
+
+    freeSpace(50_000);
+    encodeMp3.mockRejectedValue(new StalledError(15_000));
+    await requestTranscodeSweep();
+
+    expect(encodeMp3).toHaveBeenCalledTimes(2);
+    expect(segmentReports("s1")).toBe(2);
   });
 
   it("does not re-load the held-out segment's PCM", async () => {
@@ -473,6 +501,75 @@ describe("stalls keep their own handling", () => {
     expect(encodesOf(2)).toBe(2);
     // Every stall is still reported: the stall branch is not deduplicated.
     expect(segmentReports("s2")).toBe(2);
+  });
+});
+
+describe("the storage read does not outlive a pause or hang the sweep", () => {
+  it("does not start a held-out retry when the sweep is paused during the read", async () => {
+    owe("s1");
+    s1HitsQuota();
+    freeSpace(1_000);
+    await requestTranscodeSweep();
+
+    vi.mocked(commitTranscode).mockResolvedValue("committed");
+    vi.mocked(readStorageEstimate).mockImplementation(async () => {
+      pauseTranscodeSweep("test");
+      return { usage: 950_000, quota: 1_000_000 };
+    });
+    await requestTranscodeSweep();
+    expect(encodeMp3).toHaveBeenCalledTimes(1);
+
+    // The request is handed to the resume, not lost.
+    freeSpace(50_000);
+    resumeTranscodeSweep("test");
+    // Awaited by polling, not by joining with another request: a join would
+    // itself ask for one more pass.
+    await vi.waitFor(() => expect(encodeMp3).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not start a held-out retry when the sweep is quiesced during the read", async () => {
+    owe("s1");
+    s1HitsQuota();
+    freeSpace(1_000);
+    await requestTranscodeSweep();
+
+    vi.mocked(readStorageEstimate).mockImplementation(async () => {
+      quiesceTranscodeSweep();
+      return { usage: 950_000, quota: 1_000_000 };
+    });
+    await requestTranscodeSweep();
+
+    expect(encodeMp3).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives up on an estimate that never settles, as an unknown reading", async () => {
+    vi.useFakeTimers();
+    try {
+      owe("s1");
+      s1HitsQuota();
+      vi.mocked(readStorageEstimate).mockReturnValue(new Promise(() => {}));
+
+      // The quota catch's read.
+      let settled = false;
+      void requestTranscodeSweep().then(() => (settled = true));
+      await vi.advanceTimersByTimeAsync(STORAGE_ESTIMATE_TIMEOUT_MS);
+      expect(settled).toBe(true);
+
+      // The skip guard's read: unknown keeps s1 held out, and the run ends.
+      settled = false;
+      void requestTranscodeSweep().then(() => (settled = true));
+      await vi.advanceTimersByTimeAsync(STORAGE_ESTIMATE_TIMEOUT_MS);
+      expect(settled).toBe(true);
+      expect(encodeMp3).toHaveBeenCalledTimes(1);
+
+      // Nothing is left joined to a dead run: a later sweep still works.
+      freeSpace(null);
+      clipOf.set("s1", cid("c1-edited"));
+      await requestTranscodeSweep();
+      expect(encodeMp3).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -166,12 +166,38 @@ export function shouldRetryAfterFailure(
   );
 }
 
-/** Free bytes now, or `undefined`. `readStorageEstimate` never rejects. */
+/**
+ * How long the sweep waits on `navigator.storage.estimate()` before it treats
+ * the reading as unknown. `readStorageEstimate` catches a rejection but has
+ * no bound of its own, and the sweep holds the module-wide `running` lock
+ * while it waits: an `estimate()` that never settled would leave every later
+ * request joined to a run that never ends, and nothing would be transcoded
+ * until a reload. Unknown is already the fail-closed answer — it keeps a
+ * held-out segment held out — so giving up costs only the storage-freed exit
+ * for that one read. 1000 ms, the same bound the recorder and playback put
+ * on `resume()`.
+ */
+export const STORAGE_ESTIMATE_TIMEOUT_MS = 1000;
+
+/**
+ * Free bytes now, or `undefined`. Never rejects: `readStorageEstimate` never
+ * does, and a read that outlasts {@link STORAGE_ESTIMATE_TIMEOUT_MS} is
+ * `undefined` too.
+ */
 async function currentFreeBytes(): Promise<number | undefined> {
-  const reading = await readStorageEstimate(
-    storageEstimateSourceOf(globalThis)
-  );
-  return freeByteCount(reading?.usage, reading?.quota);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), STORAGE_ESTIMATE_TIMEOUT_MS);
+  });
+  try {
+    const reading = await Promise.race([
+      readStorageEstimate(storageEstimateSourceOf(globalThis)),
+      timedOut,
+    ]);
+    return freeByteCount(reading?.usage, reading?.quota);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -417,6 +443,13 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
       // Out of room last time (#1010). Read per held-out segment: a reading
       // taken before an earlier segment's commit in this pass is stale.
       const freeNow = await currentFreeBytes();
+      // The read is an `await`, so the per-segment check above is stale: a
+      // crash screen or `SaveFailed` may have stopped the sweep meanwhile,
+      // and a retry must not start a new encoder turn after that.
+      if (quiesced || paused()) {
+        if (paused()) requestedDuringPause = true;
+        return null;
+      }
       if (!shouldRetryAfterFailure(freeNow, failedBefore.freeAtFailure)) {
         continue;
       }
