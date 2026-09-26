@@ -61,14 +61,23 @@ export const SEGMENT_GAP_SECONDS = 0.5;
  * skipped item at its own position (`share-progress.ts`): the item a report
  * newly skips is the one that report finished.
  *
- * `skipped` and `items` are optional only so a caller that has nothing to say
- * about them can call `(done, total)`.
+ * `keys` names the counted items, in count order (#1044): a Share Chapter
+ * segment by its clip id, a Share Book chapter by its chapter id. An export
+ * leaves some items out BEFORE it fixes its count (a segment with no
+ * resolvable audio, a clip with no metadata, a dangling chapter id), so a
+ * reader cannot map count positions onto the items it holds by position
+ * alone; it maps them through these keys. One per item (`items`, or `total`
+ * when every step is an item), and the same list on every report of a run.
+ *
+ * `skipped`, `items` and `keys` are optional only so a caller that has
+ * nothing to say about them can call `(done, total)`.
  */
 export type StepReporter = (
   done: number,
   total: number,
   skipped?: number,
-  items?: number
+  items?: number,
+  keys?: readonly string[]
 ) => void;
 
 interface ChapterPcm {
@@ -210,7 +219,10 @@ async function fillChapterPcm(
   let segments = 0;
   let done = 0;
   let skipped = 0;
-  onStep?.(done, present.length, skipped);
+  // The counted segments by clip id (#1044): pass 1 and the clip walk have
+  // already left some out, so a count position is not a screen position.
+  const keys = present.map((p) => p.clipId);
+  onStep?.(done, present.length, skipped, undefined, keys);
   for (const { clipId, frames } of present) {
     if (shouldContinue && !shouldContinue()) return null;
     const fitted = await readSlot(clipId, frames, codec);
@@ -229,7 +241,7 @@ async function fillChapterPcm(
       written += frames;
       segments++;
     }
-    onStep?.(++done, present.length, skipped);
+    onStep?.(++done, present.length, skipped, undefined, keys);
   }
 
   return { samples: out.subarray(0, written), segments, missing: missingAudio };
@@ -432,7 +444,8 @@ export const ENCODE_STEPS = 100;
  *
  * - The gather's own `(done, n, skipped)` is re-scaled to `n + ENCODE_STEPS`,
  *   and every report names `n` as its `items`, so a reader can tell the
- *   segments from the encode stretch.
+ *   segments from the encode stretch. The gather's `keys` (#1044) ride every
+ *   report unchanged, the encode stretch's included.
  * - While the encode runs, the codec's `onProgress(fraction)` moves the count
  *   to `n + floor(fraction * ENCODE_STEPS)`, capped one short of the total:
  *   the encoder saying `1` is not the MP3 in hand.
@@ -459,15 +472,18 @@ export function withEncodeSteps<T>(
     /** The gather's segment count, fixed by its first report. */
     let segments: number | null = null;
     let skipped = 0;
+    /** The gather's counted segments by key (#1044), forwarded unchanged. */
+    let keys: readonly string[] | undefined;
     let last = -1;
     const report = (done: number, gatherSteps: number): void => {
       if (!(done > last) || !shouldContinue()) return;
       last = done;
-      onStep(done, gatherSteps + ENCODE_STEPS, skipped, gatherSteps);
+      onStep(done, gatherSteps + ENCODE_STEPS, skipped, gatherSteps, keys);
     };
-    const gathered: StepReporter = (done, total, skippedSoFar) => {
+    const gathered: StepReporter = (done, total, skippedSoFar, _, keysOf) => {
       segments ??= total;
       if (skippedSoFar !== undefined) skipped = skippedSoFar;
+      keys ??= keysOf;
       report(done, segments);
     };
     /** `into` encode steps past the gather; nothing if it never reported. */

@@ -5,7 +5,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { exportBookZip } from "@/lib/export/book";
 import * as chapterExport from "@/lib/export/chapter";
-import { exportChapterMp3, gatherChapterPcm } from "@/lib/export/chapter";
+import {
+  exportChapterMp3,
+  gatherChapterPcm,
+  type StepReporter,
+} from "@/lib/export/chapter";
 import {
   addChapter,
   addSegment,
@@ -16,7 +20,7 @@ import * as clips from "@/lib/storage/clips";
 import { newClipId } from "@/lib/storage/clips";
 import { getDb } from "@/lib/storage/db";
 import { saveTake } from "@/lib/storage/takes";
-import type { BookId, ChapterId } from "@/types/domain";
+import type { BookId, ChapterId, ClipId } from "@/types/domain";
 import { clearAllStores, testCodec } from "./support";
 
 /**
@@ -430,5 +434,79 @@ describe("exportBookZip — chapter steps (#986)", () => {
     const { calls, onStep } = recorder();
     await exportBookZip(bookId, nameChapter, testCodec(), undefined, onStep);
     expect(calls).toEqual([]);
+  });
+});
+
+describe("the export names its counted items by key (#1044)", () => {
+  /** A chapter of recorded (`true`) and unrecorded segments, and its clip ids. */
+  async function keyedChapter(recorded: boolean[]) {
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id);
+    const clipIds: ClipId[] = [];
+    for (const [i, has] of recorded.entries()) {
+      const seg = await addSegment(chapter.id);
+      if (!has) continue;
+      const clipId = newClipId();
+      await saveTake(
+        seg.id,
+        clipId,
+        samples(100, i + 1),
+        CANONICAL_SAMPLE_RATE
+      );
+      clipIds.push(clipId);
+    }
+    return { chapterId: chapter.id, clipIds };
+  }
+
+  function keyRecorder() {
+    const keys: Array<readonly string[] | undefined> = [];
+    const onStep: StepReporter = (_d, _t, _s, _i, k) => {
+      keys.push(k);
+    };
+    return { keys, onStep };
+  }
+
+  it("Share Chapter: a segment with no resolvable audio is not among the keys", async () => {
+    const { chapterId, clipIds } = await keyedChapter([true, false, true]);
+    const { keys, onStep } = keyRecorder();
+
+    await gatherChapterPcm(chapterId, testCodec(), undefined, onStep);
+
+    expect(keys).toHaveLength(3);
+    for (const k of keys) expect(k).toEqual(clipIds);
+  });
+
+  it("Share Chapter: a clip pass 1 finds no metadata for is not among the keys", async () => {
+    const { chapterId, clipIds } = await keyedChapter([true, true, true]);
+    const real = clips.getClipMeta.bind(clips);
+    const spy = vi
+      .spyOn(clips, "getClipMeta")
+      .mockImplementation((id) =>
+        id === clipIds[1] ? Promise.resolve(undefined) : real(id)
+      );
+    const { keys, onStep } = keyRecorder();
+
+    await gatherChapterPcm(chapterId, testCodec(), undefined, onStep);
+    spy.mockRestore();
+
+    expect(keys).toHaveLength(3);
+    for (const k of keys) expect(k).toEqual([clipIds[0], clipIds[2]]);
+  });
+
+  it("Share Book: a dangling chapter id is not among the keys", async () => {
+    const bookId = await bookWith([
+      [{ n: 100, v: 1 }],
+      [{ n: 100, v: 2 }],
+      [{ n: 100, v: 3 }],
+    ]);
+    const chapters = (await resolveBookChapters(bookId)).chapters;
+    const db = await getDb();
+    await db.delete("chapters", chapters[1]!.id);
+    const { keys, onStep } = keyRecorder();
+
+    await exportBookZip(bookId, nameChapter, testCodec(), undefined, onStep);
+
+    expect(keys).toHaveLength(3);
+    for (const k of keys) expect(k).toEqual([chapters[0]!.id, chapters[2]!.id]);
   });
 });
