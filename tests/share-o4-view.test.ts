@@ -235,6 +235,37 @@ describe("shareO4View: one numbered chip per item, in order (D21)", () => {
     ).toBe("vvo");
   });
 
+  it("an item the count skipped (hollow) stays grey, never a check", () => {
+    // Share Book: chapter 2 was recorded on the screen but its export found
+    // no audio, so the count reports it skipped at position 1.
+    expect(
+      row(
+        shareO4View(
+          busy({ done: 2, total: 3, skipped: 1, hollow: [1] }),
+          "book",
+          items("xxx")
+        ).chips
+      )
+    ).toBe("v-*");
+    // Share Chapter: the second segment that goes out vanished in the gather.
+    // Its position is among the count's items, which skip the "." segment.
+    expect(
+      row(
+        shareO4View(
+          busy({
+            done: 3,
+            total: 3 + ENCODE_STEPS,
+            items: 3,
+            skipped: 1,
+            hollow: [1],
+          }),
+          "chapter",
+          items("x.xx")
+        ).chips
+      )
+    ).toBe("v--v");
+  });
+
   it("a count longer than the items the screen holds never runs past them", () => {
     expect(
       row(

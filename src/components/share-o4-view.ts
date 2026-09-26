@@ -148,6 +148,12 @@ function handedOver(items: readonly ShareItem[]): ShareChip[] {
  * gather's): a count longer than the screen's items stops at the last of
  * them, and a screen item beyond the count's items stays waiting, never
  * current, until the hand-over checks every item that goes out.
+ *
+ * An item the count finished WITHOUT audio (`steps.hollow`, #996: a clip or
+ * chapter the export skipped) did not go out, so it is the grey chip with its
+ * number (D21), never a check, and the "N of M go out" label does not count
+ * it. `hollow` holds positions among the count's items, the same order as
+ * `counted`.
  */
 function shareChips(
   steps: Steps,
@@ -157,10 +163,12 @@ function shareChips(
   const counted = scope === "book" ? items : items.filter((i) => i.goesOut);
   const itemSteps = steps.items ?? steps.total;
   const passed = new Set(counted.slice(0, Math.min(steps.done, itemSteps)));
+  const skipped = new Set((steps.hollow ?? []).map((at) => counted[at]));
   const onItems = steps.done < itemSteps;
   let current = onItems;
   return items.map((item) => {
-    if (!item.goesOut) return { label: item.label, state: "stays" };
+    if (!item.goesOut || skipped.has(item))
+      return { label: item.label, state: "stays" };
     if (passed.has(item)) return { label: item.label, state: "finished" };
     if (current) {
       current = false;
