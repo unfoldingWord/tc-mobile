@@ -25,9 +25,13 @@
  * takes the lane before it loads a clip. Peaks are computed before the encode
  * because the encode CONSUMES the buffer (transferred to the worker).
  *
- * A failed segment is left as PCM — no state is lost, the list keeps drawing it,
- * and the next sweep retries. ONE failure still says nothing to the translator:
- * from where they stand nothing has changed, and there is no action to offer.
+ * A failed segment is left as PCM — no state is lost, the list keeps drawing it
+ * and it still plays. ONE failure still says nothing to the translator: from
+ * where they stand nothing has changed, and there is no action to offer. The
+ * next sweep retries it — except a segment that failed because the phone is
+ * out of room (#1010): every Finished tap starts a sweep, and on a full phone
+ * each would re-decode and re-encode that segment and log it again. See
+ * {@link failedSegments} for what brings such a segment back.
  *
  * Every failure here goes to the app's single failure sink (`report-failure.ts`,
  * #167) rather than to `console.error`, which AGENTS.md is explicit is "not a
@@ -38,6 +42,11 @@
  */
 
 import { reportFailure } from "./report-failure";
+import { isQuotaExceeded } from "./save-failure";
+import {
+  readStorageEstimate,
+  storageEstimateSourceOf,
+} from "./use-storage-pressure";
 import {
   EncoderStalledError,
   encoderHealth,
@@ -45,6 +54,7 @@ import {
   withEncoder,
 } from "./mp3-codec";
 import { computePeaks } from "@/lib/audio/peaks";
+import { freeByteCount } from "@/lib/storage/pressure";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import {
   commitTranscode,
@@ -97,6 +107,104 @@ type OwedClipId = Awaited<
  */
 const PAGE_STALL_LIMIT = 2;
 const pageStallCounts = new Map<OwedClipId, number>();
+
+interface FailedTranscode {
+  /** The clip that failed. A different clip on the segment is new audio. */
+  readonly clipId: OwedClipId;
+  /** Free bytes read just after the failure; `undefined` when unknown. */
+  readonly freeAtFailure: number | undefined;
+}
+
+/**
+ * Segments whose last transcode failed because the phone is out of room — a
+ * quota error, as `isQuotaExceeded` reads one — in this page (#1010).
+ *
+ * Held out of later sweeps until:
+ *  - a later storage estimate shows more free space than the one read at its
+ *    failure — or, when that failure-time reading was itself unknown, any
+ *    known later estimate, once ({@link shouldRetryAfterFailure});
+ *  - the segment holds a different clip — re-recorded or edited, new audio;
+ *  - the app restarts: this is module state, and a reload is a fresh module.
+ *
+ * The entry outlives a storage retry, so a retry that runs out of room again
+ * does not log again: one failure-log row per segment and clip per page, not
+ * one per tap. It is removed when a turn for the segment completes or fails
+ * any other way.
+ *
+ * Only quota, not every failure that is not a stall. "Storage freed" is the
+ * exit that makes the hold-out safe, and it says nothing about any other
+ * cause. An encode that fails in the worker already has `mp3-codec.ts`'s
+ * health store and the recovery sweep below; holding it out here would hide
+ * the segment from that recovery. Other failures keep today's retry on the
+ * next sweep. Stalls never land here either; they keep
+ * {@link stalledSegmentIds} and {@link pageStallCounts}.
+ *
+ * Nothing is lost by holding out: the PCM is untouched, the segment keeps
+ * drawing and playing from it, and the next launch tries it again.
+ */
+const failedSegments = new Map<SegmentId, FailedTranscode>();
+
+/**
+ * Whether storage has freed since a held-out segment failed.
+ *
+ * Ordinarily this is only true for a reading that shows MORE free bytes than
+ * the failure-time reading. But when the failure-time reading was itself
+ * unknown (no `estimate()`, a rejected call, a timed-out read), that reading
+ * is no evidence AGAINST room either — so it does not hold the segment out
+ * until a restart. It gets exactly one retry against any known reading now
+ * (DRI ruling, 2026-09-26: "One retry on a real reading"). That retry's own
+ * outcome sets a real `freeAtFailure` — the failure branch's re-read, or a
+ * fallback to the reading that let the retry run — so a second failure is
+ * held to the ordinary "strictly more free space" rule below, not another
+ * free pass.
+ *
+ * A CURRENT reading that is unknown is never evidence of room, on either
+ * side, so it always keeps the segment held out; the clip-change and restart
+ * exits still apply. Pure, so the guard is pinned by a test rather than by
+ * reading the loop.
+ */
+export function shouldRetryAfterFailure(
+  freeNow: number | undefined,
+  freeAtFailure: number | undefined
+): boolean {
+  if (freeNow === undefined) return false;
+  if (freeAtFailure === undefined) return true;
+  return freeNow > freeAtFailure;
+}
+
+/**
+ * How long the sweep waits on `navigator.storage.estimate()` before it treats
+ * the reading as unknown. `readStorageEstimate` catches a rejection but has
+ * no bound of its own, and the sweep holds the module-wide `running` lock
+ * while it waits: an `estimate()` that never settled would leave every later
+ * request joined to a run that never ends, and nothing would be transcoded
+ * until a reload. Unknown is already the fail-closed answer — it keeps a
+ * held-out segment held out — so giving up costs only the storage-freed exit
+ * for that one read. 1000 ms, the same bound the recorder and playback put
+ * on `resume()`.
+ */
+export const STORAGE_ESTIMATE_TIMEOUT_MS = 1000;
+
+/**
+ * Free bytes now, or `undefined`. Never rejects: `readStorageEstimate` never
+ * does, and a read that outlasts {@link STORAGE_ESTIMATE_TIMEOUT_MS} is
+ * `undefined` too.
+ */
+async function currentFreeBytes(): Promise<number | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), STORAGE_ESTIMATE_TIMEOUT_MS);
+  });
+  try {
+    const reading = await Promise.race([
+      readStorageEstimate(storageEstimateSourceOf(globalThis)),
+      timedOut,
+    ]);
+    return freeByteCount(reading?.usage, reading?.quota);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Stop sweeping, for the life of this page. One-way (George R5 P2-3).
@@ -344,6 +452,25 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
     }
     if (segmentId === skip) continue;
     if ((pageStallCounts.get(clipId) ?? 0) >= PAGE_STALL_LIMIT) continue;
+    const failedBefore = failedSegments.get(segmentId);
+    // The reading that let a held-out segment retry; `undefined` otherwise.
+    let freeBeforeRetry: number | undefined;
+    if (failedBefore?.clipId === clipId) {
+      // Out of room last time (#1010). Read per held-out segment: a reading
+      // taken before an earlier segment's commit in this pass is stale.
+      const freeNow = await currentFreeBytes();
+      // The read is an `await`, so the per-segment check above is stale: a
+      // crash screen or `SaveFailed` may have stopped the sweep meanwhile,
+      // and a retry must not start a new encoder turn after that.
+      if (quiesced || paused()) {
+        if (paused()) requestedDuringPause = true;
+        return null;
+      }
+      if (!shouldRetryAfterFailure(freeNow, failedBefore.freeAtFailure)) {
+        continue;
+      }
+      freeBeforeRetry = freeNow;
+    }
     let startedHealthy = false;
     try {
       // Inside the encoder lane from the LOAD onward, not just the encode: the
@@ -373,18 +500,40 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
       // deprioritised. Cleared on ANY completed turn: a skip proves nothing
       // about the clip, but it does mean the head of the queue moved on.
       stalledSegmentIds.delete(segmentId);
+      failedSegments.delete(segmentId);
     } catch (cause) {
+      const outOfRoom = isQuotaExceeded(cause);
       // To the app's ONE sink, not the console alone (#167). The segment id
       // rides in a wrapper rather than in the context, because `context` is the
       // sink's dedup key and has to stay a short, stable name for the SITE —
       // one key per segment id would be an unbounded set of them (#188).
-      reportFailure(
-        new Error(
-          `Transcoding finished segment ${segmentId} failed; its PCM is kept`,
-          { cause }
-        ),
-        "transcode-segment"
-      );
+      // Running out of room again on a clip already logged this page is not
+      // logged again (#1010).
+      const alreadyLogged =
+        outOfRoom && failedSegments.get(segmentId)?.clipId === clipId;
+      if (!alreadyLogged) {
+        reportFailure(
+          new Error(
+            `Transcoding finished segment ${segmentId} failed; its PCM is kept`,
+            { cause }
+          ),
+          "transcode-segment"
+        );
+      }
+      if (outOfRoom) {
+        // Hold it out of later sweeps, measured from the room left NOW, so a
+        // retry that fails again needs still more room before the next one.
+        // A storage retry whose re-read is unknown falls back to the known
+        // reading that let it retry, so an unknown re-read cannot erase a
+        // usable baseline and pin the segment for the page (George R1).
+        const freeAfter = await currentFreeBytes();
+        failedSegments.set(segmentId, {
+          clipId,
+          freeAtFailure: freeAfter ?? freeBeforeRetry,
+        });
+      } else {
+        failedSegments.delete(segmentId);
+      }
       // A STALLED encoder is not a per-segment failure — it is the whole worker
       // being wedged (#166), and the next segment would only re-arm the same
       // silence deadline and stall again: N segments × the timeout, blocking

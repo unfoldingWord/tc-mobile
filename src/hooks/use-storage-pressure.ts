@@ -24,13 +24,17 @@ import { reportFailure } from "./report-failure";
  *
  * Read by the Books screen (`books-screen.tsx`, through
  * `storagePressureNotice`) — #247's wiring half, landed once #531's rewrite
- * had settled.
+ * had settled — and by the transcode sweep (`finish-transcode.ts`, #1010),
+ * which calls `readStorageEstimate` directly to tell whether storage has
+ * freed since a segment ran out of room.
  *
- * **The marker is all that leaves this file.** `useStoragePressure` returns
+ * **Only the marker reaches a screen.** `useStoragePressure` returns
  * `"low" | "critical" | null` rather than the `usage`/`quota` pair, so
  * "nothing may render the numbers" (`pressure.ts`'s docblock: the estimate is
  * coarse and per-origin, and #247 asks for no number on screen) is a property
- * of the boundary rather than a rule a future caller has to remember.
+ * of the hook rather than a rule a future screen has to remember. The sweep
+ * is the one other reader of the raw pair; it turns it into a byte count
+ * (`freeByteCount`) for a comparison and renders nothing.
  *
  * **There is still no cross-mount CACHE here — that remains a decision, not
  * an omission — but there IS now a module-scope INVALIDATION, and the two are
