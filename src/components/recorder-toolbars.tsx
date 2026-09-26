@@ -225,7 +225,12 @@ export function RecorderToolbar({
       />
       <Control
         key="edit-toggle"
-        icon="selection"
+        // Scissors, not the `[ ]` brackets (#955 overturns #594), in both
+        // arms. The selection's Cut control under the band is a scissors
+        // too; the two stay apart by place and size: this one is the default
+        // 22px glyph on a raised tile in the bottom bar (pressed while
+        // editing), Cut is a bare quiet 26px glyph under the waveform.
+        icon="scissors"
         label={strings.enterEdit}
         pressed={false}
         variant="default"
@@ -356,7 +361,7 @@ export function RecorderToolbar({
       />
       <Control
         key="edit-toggle"
-        icon="selection"
+        icon="scissors"
         label={strings.enterEdit}
         pressed={true}
         // Not deletable, although it reads that way. Both arms pass `hint` so
