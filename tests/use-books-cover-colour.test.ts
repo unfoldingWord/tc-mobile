@@ -16,11 +16,38 @@ import { closeDb, getDb } from "@/lib/storage/db";
  * fake-indexeddb — the harness `tests/use-books-failure-key.test.ts` uses —
  * so the load path (`loadBookCard`) is the real code.
  *
- * The optimistic card a create inserts carries no key: a fresh book has
- * never chosen one, and a card without the field resolves exactly like a
- * `null` one (`types/view.ts`), so the reload that follows is what brings the
- * stored value in.
+ * The optimistic card a create inserts carries the key the store returned
+ * too, so a book created with a colour (#943's picker) does not show its
+ * id-derived fallback until the reload lands.
  */
+
+/**
+ * Two seams on the real store, both off unless a case turns them on:
+ * `holdLoads` parks every shelf load so a case can read the optimistic card
+ * before the reload replaces it, and `createAs` makes `createBook` store and
+ * return a chosen key — no production create does that yet, so without it
+ * the optimistic card's key would be `null` either way.
+ */
+const seams = vi.hoisted(() => ({
+  holdLoads: null as Promise<void> | null,
+  createAs: null as string | null,
+}));
+vi.mock("@/lib/storage/books", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/storage/books")>();
+  return {
+    ...actual,
+    listBooks: async () => {
+      if (seams.holdLoads) await seams.holdLoads;
+      return actual.listBooks();
+    },
+    createBook: async (name: string) => {
+      const book = await actual.createBook(name);
+      if (seams.createAs === null) return book;
+      await actual.setBookCoverColour(book.id, seams.createAs);
+      return { ...book, coverColourKey: seams.createAs };
+    },
+  };
+});
 
 let dom: JSDOM;
 let root: Root;
@@ -53,6 +80,8 @@ beforeEach(async () => {
   root = createRoot(dom.window.document.getElementById("root")!);
 });
 afterEach(async () => {
+  seams.holdLoads = null;
+  seams.createAs = null;
   await act(async () => root.unmount());
   dom.window.close();
   vi.unstubAllGlobals();
@@ -74,4 +103,23 @@ it("loads each book's stored cover key onto its card, and null where none was ch
   const byId = new Map(hook().books.map((card) => [card.bookId, card]));
   expect(byId.get(chosen.id)?.coverColourKey).toBe("plum");
   expect(byId.get(unchosen.id)?.coverColourKey).toBeNull();
+});
+
+it("puts the created book's key on its optimistic card, before the reload lands", async () => {
+  await mount();
+  let release!: () => void;
+  seams.holdLoads = new Promise((resolve) => (release = resolve));
+  seams.createAs = "teal";
+
+  await act(async () => {
+    const outcome = await hook().createBook("Mark");
+    expect(outcome.ok).toBe(true);
+  });
+  // The reload is parked, so this is the optimistic card.
+  const [card] = hook().books;
+  expect(card?.name).toBe("Mark");
+  expect(card?.coverColourKey).toBe("teal");
+
+  seams.holdLoads = null;
+  await act(async () => release());
 });

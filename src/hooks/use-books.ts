@@ -541,8 +541,15 @@ export function useBooks() {
         // generation itself, so the guard below still discards this read if a
         // NEWER patch lands before it resolves — the optimistic insert above
         // is never at risk, only ever reconciled or superseded.
+        // The cover key rides along (#942), so a book created with a colour
+        // shows it now rather than its id-derived fallback until the reload.
         setBooks((prev) => [
-          { bookId: book.id, name: book.name, chapters: [] },
+          {
+            bookId: book.id,
+            name: book.name,
+            chapters: [],
+            coverColourKey: book.coverColourKey,
+          },
           ...prev,
         ]);
         reload();
