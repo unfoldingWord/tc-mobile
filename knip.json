@@ -7,7 +7,7 @@
     "scripts/*.mjs",
     "e2e/**/*.ts"
   ],
-  "ignoreDependencies": ["tailwindcss"],
+  "ignoreDependencies": ["tailwindcss", "@oxc-project/runtime"],
   "vitest": { "entry": ["tests/**/*.test.ts"] },
   "tags": ["-@pivotpending"]
 }

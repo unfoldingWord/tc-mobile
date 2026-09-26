@@ -221,6 +221,14 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     noticeMarker: "VoidZero Inc. & Contributors",
   },
   {
+    name: "@oxc-project/runtime",
+    version: "0.150.0",
+    spdx: "MIT",
+    role: "Oxc's helpers (copied from Babel's), written into the app at build time",
+    copyright: "© 2024-present VoidZero Inc. & Contributors; © 2023 Boshen",
+    noticeMarker: "Copyright (c) 2023 Boshen",
+  },
+  {
     name: "tailwindcss",
     version: "4.3.3",
     spdx: "MIT",

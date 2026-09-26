@@ -96,10 +96,12 @@ describe.skipIf(gate === "skip")(
 
     it("discloses every package the build provenance names", () => {
       // The runtime-closure walk in tests/licenses.test.ts cannot see code the
-      // BUILD writes into dist/ from a dev dependency; three such injections
+      // BUILD writes into dist/ from a dev dependency; four such injections
       // were found by hand in one PR (Workbox, Vite, Rolldown — Frank round 3
-      // on #1019). vite.config.ts's build-provenance plugin records every one
-      // in dist/build-provenance.json, so the set is derived from the build.
+      // on #1019 — then Oxc, round 5). vite.config.ts's build-provenance plugin
+      // records every one in dist/build-provenance.json, attributing virtual
+      // ids by the rule tests/build-provenance.test.ts pins, so the set is
+      // derived from the build.
       const file = path.join(DIST, "build-provenance.json");
       expect(existsSync(file), "dist/build-provenance.json is missing").toBe(
         true
@@ -108,6 +110,7 @@ describe.skipIf(gate === "skip")(
         module: string;
         package: string | null;
         version: string | null;
+        license: string | null;
       }[];
       // Floor: a plugin that silently records nothing must not pass. Rolldown's
       // runtime and Vite's preload helpers are in every build of this app.
@@ -134,6 +137,10 @@ describe.skipIf(gate === "skip")(
           row!.version,
           `${e.package} disclosed at the wrong version`
         ).toBe(e.version);
+        expect(
+          row!.spdx,
+          `${e.package} disclosed under a licence its package.json does not name`
+        ).toBe(e.license);
         expect(
           sections.some((s) => s.includes(`${row!.name} ${row!.version}`)),
           `${row!.name} ${row!.version} has no THIRD-PARTY-NOTICES section`

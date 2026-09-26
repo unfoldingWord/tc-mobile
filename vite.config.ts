@@ -13,6 +13,12 @@ import pkg from "./package.json" with { type: "json" };
 // resolve it, and `vite build --configLoader native` fails outright with
 // ERR_MODULE_NOT_FOUND. `allowImportingTsExtensions` in tsconfig.node.json is
 // what lets the `.ts` be named here (Frank R1, #697).
+import {
+  type Manifest,
+  type Owner,
+  packageOf as pkgOf,
+  virtualModuleOwner,
+} from "./src/lib/build-provenance.ts";
 import { SHIPPED_LOCALE, withLocaleAttributes } from "./src/lib/locale.ts";
 import { NATIVE_TEARDOWN_SW } from "./src/lib/service-worker-policy.ts";
 
@@ -116,16 +122,22 @@ function localeHtmlPlugin(): Plugin {
 // version.json); tests/dist-source-offer.test.ts fails when it names a package
 // the disclosure does not cover. Recorded:
 // - every bundled module (app and worker builds) whose id is virtual (`\0…`,
-//   owned by its first path segment's package) or resolves into a dev package,
+//   attributed from the id by `virtualModuleOwner` in src/lib/build-provenance.ts:
+//   `\0<pkg>@<version>/…` names both, `\0vite/…` names the package) or
+//   resolves into a dev package,
 // - every bare `@import`/`@plugin` a bundled stylesheet pulls from a dev
 //   package (PostCSS inlines Tailwind's CSS outside the module graph),
 // - every emitted `.js` no chunk accounts for and public/ did not supply
 //   (vite-plugin-pwa's generateSW step), attributed by GENERATED_JS. An
 //   unrecognised one gets a null package, which the gate fails on.
-interface Provenance {
+// Each entry carries the owner's installed version and `license`; a package
+// that is not installed, or names no licence, is recorded with nulls.
+// `@oxc-project/runtime` is an exact dev dependency only so its package.json
+// and LICENSE are on disk for this lookup and the notices: Rolldown inlines
+// the helpers from its own binary, and the pin must equal the version in the
+// ids it emits, or the entry records nulls and the gate fails.
+interface Provenance extends Owner {
   module: string;
-  package: string | null;
-  version: string | null;
 }
 
 const GENERATED_JS: readonly (readonly [RegExp, string])[] = [
@@ -141,20 +153,20 @@ function buildProvenancePlugins(): { app: Plugin; worker: () => Plugin[] } {
   ) as { packages: Record<string, { dev?: boolean }> };
   const found = new Map<string, Provenance>();
   const chunks = new Set<string>();
-  const pkgOf = (spec: string) =>
-    spec
-      .split("/")
-      .slice(0, spec.startsWith("@") ? 2 : 1)
-      .join("/");
+  const readManifest = (dir: string): Manifest | null => {
+    const file = path.join(root, dir, "package.json");
+    return existsSync(file)
+      ? (JSON.parse(readFileSync(file, "utf8")) as Manifest)
+      : null;
+  };
   const record = (module: string, pkg: string | null, dir?: string) => {
-    const file =
-      pkg && path.join(root, dir ?? `node_modules/${pkg}`, "package.json");
-    const version =
-      file && existsSync(file)
-        ? (JSON.parse(readFileSync(file, "utf8")) as { version: string })
-            .version
-        : null;
-    found.set(module, { module, package: version ? pkg : null, version });
+    const m = pkg ? readManifest(dir ?? `node_modules/${pkg}`) : null;
+    found.set(
+      module,
+      m?.version && m.license
+        ? { module, package: pkg, version: m.version, license: m.license }
+        : { module, package: null, version: null, license: null }
+    );
   };
   const recordCss = (file: string, seen: Set<string>) => {
     if (seen.has(file) || !existsSync(file)) return;
@@ -175,7 +187,11 @@ function buildProvenancePlugins(): { app: Plugin; worker: () => Plugin[] } {
   };
   const recordModule = (rawId: string) => {
     if (rawId.startsWith("\0")) {
-      record(rawId.replace("\0", "\\0"), pkgOf(rawId.slice(1)));
+      const module = rawId.replace("\0", "\\0");
+      const owner = virtualModuleOwner(rawId, (pkg) =>
+        readManifest(`node_modules/${pkg}`)
+      );
+      found.set(module, { module, ...owner });
       return;
     }
     const id = rawId.split("?")[0]!;
