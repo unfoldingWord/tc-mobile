@@ -171,8 +171,9 @@ Every issue carries a **milestone**, **labels** from the existing set, and an
 | Milestone                        | Means                                                             |
 | -------------------------------- | ----------------------------------------------------------------- |
 | `v0.2.0 — Sept: production gate` | must be true before production. Due 2026-09-30                    |
-| `v0.3.0 — Oct: training`         | matters for the training, can land after the gate. Due 2026-10-09 |
-| `v1.0.0 — Post-training`         | deliberately parked until after October. No due date              |
+| `v0.3.0 — Training essentials`   | matters for the training, can land after the gate. Due 2026-10-09 |
+| `v1.0.0 — Training stretch`      | v0.3.0's scope plus the O4 UI; on phones by 2026-10-02            |
+| `v1.1.0 — Post-training`         | deliberately parked until after October. No due date              |
 
 Body shape — four headings, in this order:
 

@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import react from "@vitejs/plugin-react";
@@ -13,6 +13,12 @@ import pkg from "./package.json" with { type: "json" };
 // resolve it, and `vite build --configLoader native` fails outright with
 // ERR_MODULE_NOT_FOUND. `allowImportingTsExtensions` in tsconfig.node.json is
 // what lets the `.ts` be named here (Frank R1, #697).
+import {
+  type Manifest,
+  type Owner,
+  packageOf as pkgOf,
+  virtualModuleOwner,
+} from "./src/lib/build-provenance.ts";
 import { SHIPPED_LOCALE, withLocaleAttributes } from "./src/lib/locale.ts";
 import { NATIVE_TEARDOWN_SW } from "./src/lib/service-worker-policy.ts";
 
@@ -43,6 +49,23 @@ const buildSha = (() => {
   }
 })();
 
+// The same commit's FULL id, for the About screen's source links (#36): a
+// link that must name one exact commit uses all 40 hex characters rather than
+// the 7-character stamp above (Frank round 6 on #144). Emitted in
+// version.json as `shaFull` so tests/dist-source-offer.test.ts can check the
+// built links against it.
+const buildShaFull = (() => {
+  try {
+    return execSync("git rev-parse HEAD", {
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .toString()
+      .trim();
+  } catch {
+    return process.env.WORKERS_CI_COMMIT_SHA ?? "dev";
+  }
+})();
+
 // A machine-checkable version signal alongside the human-read footer stamp
 // (`components/build-stamp.tsx`). Emitted at build time, not committed, so it
 // can never drift from the build that produced it — same inputs as the
@@ -61,6 +84,7 @@ function versionJsonPlugin(): Plugin {
             {
               version: pkg.version,
               sha: buildSha,
+              shaFull: buildShaFull,
               builtAt: new Date().toISOString(),
             },
             null,
@@ -88,6 +112,149 @@ function localeHtmlPlugin(): Plugin {
     },
   };
 }
+
+// Build provenance (#36; Frank round 3 on #1019). The licence disclosure's
+// completeness test walks the package-lock runtime closure, which cannot see
+// code the BUILD writes into `dist/` from a dev dependency — a bundler
+// runtime, a polyfill, a generated service worker. This records every such
+// piece that lands in the output, with its owning package, in
+// `dist/build-provenance.json` (outside the precache globPatterns, like
+// version.json); tests/dist-source-offer.test.ts fails when it names a package
+// the disclosure does not cover. Recorded:
+// - every bundled module (app and worker builds) whose id is virtual (`\0…`,
+//   attributed from the id by `virtualModuleOwner` in src/lib/build-provenance.ts:
+//   `\0<pkg>@<version>/…` names both, `\0vite/…` names the package) or
+//   resolves into a dev package,
+// - every bare `@import`/`@plugin` a bundled stylesheet pulls from a dev
+//   package (PostCSS inlines Tailwind's CSS outside the module graph),
+// - every emitted `.js` no chunk accounts for and public/ did not supply
+//   (vite-plugin-pwa's generateSW step), attributed by GENERATED_JS. An
+//   unrecognised one gets a null package, which the gate fails on.
+// Each entry carries the owner's installed version and `license`; a package
+// that is not installed, or names no licence, is recorded with nulls.
+// `@oxc-project/runtime` is an exact dev dependency only so its package.json
+// and LICENSE are on disk for this lookup and the notices: Rolldown inlines
+// the helpers from its own binary, and the pin must equal the version in the
+// ids it emits, or the entry records nulls and the gate fails.
+interface Provenance extends Owner {
+  module: string;
+}
+
+const GENERATED_JS: readonly (readonly [RegExp, string])[] = [
+  [/^sw\.js$/, "workbox-build"],
+  [/^workbox-[\w-]+\.js$/, "workbox-build"],
+  [/^registerSW\.js$/, "vite-plugin-pwa"],
+];
+
+function buildProvenancePlugins(): { app: Plugin; worker: () => Plugin[] } {
+  const root = import.meta.dirname;
+  const lock = JSON.parse(
+    readFileSync(path.join(root, "package-lock.json"), "utf8")
+  ) as { packages: Record<string, { dev?: boolean }> };
+  const found = new Map<string, Provenance>();
+  const chunks = new Set<string>();
+  const readManifest = (dir: string): Manifest | null => {
+    const file = path.join(root, dir, "package.json");
+    return existsSync(file)
+      ? (JSON.parse(readFileSync(file, "utf8")) as Manifest)
+      : null;
+  };
+  const record = (module: string, pkg: string | null, dir?: string) => {
+    const m = pkg ? readManifest(dir ?? `node_modules/${pkg}`) : null;
+    found.set(
+      module,
+      m?.version && m.license
+        ? { module, package: pkg, version: m.version, license: m.license }
+        : { module, package: null, version: null, license: null }
+    );
+  };
+  const recordCss = (file: string, seen: Set<string>) => {
+    if (seen.has(file) || !existsSync(file)) return;
+    seen.add(file);
+    const css = readFileSync(file, "utf8");
+    for (const [, spec] of css.matchAll(
+      /@(?:import|plugin)\s+["']([^"']+)["']/g
+    )) {
+      if (spec!.startsWith(".")) {
+        recordCss(path.resolve(path.dirname(file), spec!), seen);
+      } else if (lock.packages[`node_modules/${pkgOf(spec!)}`]?.dev) {
+        record(
+          `@import "${spec}" in ${path.relative(root, file)}`,
+          pkgOf(spec!)
+        );
+      }
+    }
+  };
+  const recordModule = (rawId: string) => {
+    if (rawId.startsWith("\0")) {
+      const module = rawId.replace("\0", "\\0");
+      const owner = virtualModuleOwner(rawId, (pkg) =>
+        readManifest(`node_modules/${pkg}`)
+      );
+      found.set(module, { module, ...owner });
+      return;
+    }
+    const id = rawId.split("?")[0]!;
+    const rel = path.relative(root, id);
+    if (!path.isAbsolute(id) || rel.startsWith("..")) return record(id, null);
+    const at = rel.lastIndexOf("node_modules/");
+    if (at === -1) {
+      if (id.endsWith(".css")) recordCss(id, new Set());
+      return;
+    }
+    const pkg = pkgOf(rel.slice(at + "node_modules/".length));
+    const dir = rel.slice(0, at) + `node_modules/${pkg}`;
+    if (lock.packages[dir]?.dev) record(rel, pkg, dir);
+  };
+  const collect = (name: string): Plugin => ({
+    name,
+    apply: "build",
+    generateBundle(_options, bundle) {
+      for (const out of Object.values(bundle)) {
+        if (out.type !== "chunk") continue;
+        chunks.add(out.fileName);
+        out.moduleIds.forEach(recordModule);
+      }
+    },
+  });
+  let outDir = "";
+  let publicDir = "";
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory()
+        ? walk(path.join(dir, e.name))
+        : [path.relative(outDir, path.join(dir, e.name))]
+    );
+  const app: Plugin = {
+    ...collect("build-provenance"),
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+      publicDir = config.publicDir;
+    },
+    // After vite-plugin-pwa's own closeBundle, which runs generateSW.
+    closeBundle: {
+      order: "post",
+      sequential: true,
+      handler() {
+        for (const file of walk(outDir)) {
+          if (!/\.m?js$/.test(file) || chunks.has(file)) continue;
+          if (publicDir && existsSync(path.join(publicDir, file))) continue;
+          record(file, GENERATED_JS.find(([re]) => re.test(file))?.[1] ?? null);
+        }
+        const entries = [...found.values()].sort((a, b) =>
+          a.module.localeCompare(b.module)
+        );
+        writeFileSync(
+          path.join(outDir, "build-provenance.json"),
+          JSON.stringify(entries, null, 2) + "\n"
+        );
+      },
+    },
+  };
+  return { app, worker: () => [collect("build-provenance-worker")] };
+}
+
+const provenance = buildProvenancePlugins();
 
 // Native build only (#923): overwrite the `sw.js` vite-plugin-pwa's
 // `selfDestroying` branch just wrote with `NATIVE_TEARDOWN_SW`, whose teardown
@@ -129,6 +296,7 @@ export default defineConfig(({ mode }) => {
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
       __BUILD_SHA__: JSON.stringify(buildSha),
+      __BUILD_SHA_FULL__: JSON.stringify(buildShaFull),
     },
     build: {
       // Pinned to the app's stated floor (#1017 open question 1) rather than
@@ -196,10 +364,12 @@ export default defineConfig(({ mode }) => {
         external: mode === "e2e" ? [] : [/\/e2e-harness(\.tsx?)?$/],
       },
     },
+    worker: { plugins: provenance.worker },
     plugins: [
       react(),
       versionJsonPlugin(),
       localeHtmlPlugin(),
+      provenance.app,
       ...(isNativeBuild ? [nativeTeardownSwPlugin()] : []),
       VitePWA({
         registerType: "autoUpdate",
@@ -253,7 +423,12 @@ export default defineConfig(({ mode }) => {
           // 0006 rejected for its stranding risk. See #177;
           // tests/precache-manifest.test.ts pins the allowlist so `jpg` (and any
           // broader glob) cannot return unnoticed.
-          globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
+          //
+          // `txt` precaches the licence texts under `public/licenses/` (#36) so
+          // the LGPL notice resolves offline in the field, same as the app shell
+          // — small files (the largest is the ~42 KB LGPL text), unrelated to the
+          // thumbnail exclusion above.
+          globPatterns: ["**/*.{js,css,html,svg,png,woff2,txt}"],
           // No single precached asset exceeds the 2 MiB default (the largest is
           // the ~552 KB entry chunk); the former 4 MiB override existed only for
           // the now-excluded thumbnails, which were individually tiny anyway.
@@ -280,7 +455,11 @@ export default defineConfig(({ mode }) => {
           // that merely starts the same way (`/version.jsonfoo`).
           // tests/precache-manifest.test.ts pins that behaviour against this
           // literal.
-          navigateFallbackDenylist: [/^\/version\.json(\?|$)/],
+          // The licence texts (#36) are real files, not app routes: keep the SPA
+          // navigate-fallback from answering a `/licenses/*.txt` miss with the app
+          // shell instead of the licence (George G1). The About panel reads them
+          // by fetch, not navigation, so this only hardens the edge.
+          navigateFallbackDenylist: [/^\/version\.json(\?|$)/, /\.txt$/],
           cleanupOutdatedCaches: true,
           // Explicit rather than left to `injectRegister === "auto"`'s side
           // effect (see the comment above `injectRegister`) — `true` either
