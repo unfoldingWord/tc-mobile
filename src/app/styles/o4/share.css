@@ -9,14 +9,6 @@
  * its own class, so none of 3-components.css's per-outcome inks or its busy
  * spin reach it.
  *
- * #977'S BUSY-GLYPH RULE, first in the layer below, is kept but no longer
- * paints anything: it colours share-progress-glyph, which the O4 panel no
- * longer renders. tests/share-o4-glyph-colour.test.ts pins that rule by its
- * selector and value, and this lane leaves that test unedited, so removing
- * the rule and that test is #1025. #977's own header, which said the ring
- * and chips were deferred to #981, is replaced by this one: both are built
- * below.
- *
  * Values are the workbench's (states 15 and G7, vShare with its bigshare and
  * schips rules): core 140, frame 176, ring radius 84 with a 7px stroke on a
  * well track, turned to start at twelve o'clock. Chips are 38px circles,
@@ -29,10 +21,6 @@
  * only.
  */
 @layer components {
-  [data-design="o4"] .share-scrim[data-outcome="busy"] .share-progress-glyph {
-    color: var(--s-send);
-  }
-
   /* --- the circle (D12 geometry, D14, D15) ------------------------------ */
   [data-design="o4"] .share-o4-frame {
     position: relative;
