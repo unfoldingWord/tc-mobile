@@ -703,10 +703,10 @@ export function resumesOnLift(input: {
  * the bug reported — dragging to find a precise paste point kept swapping
  * the red playhead back for a selection band. The requirements owner's
  * decision on #835 is that a new selection is available only once the
- * clipboard is empty (today, a paste — see `recorder.tsx`'s `onPaste`, which
- * still always reopens the frame; that route, undo and redo are unaffected by
- * this term). This is the ONLY route the decision narrows: `resumesOnLift`
- * and the rest of this function's cases are unchanged.
+ * clipboard is empty (a paste empties it, #489 — and `recorder.tsx`'s
+ * `onPaste` also reopens the frame itself; that route, undo and redo are
+ * unaffected by this term). This is the ONLY route the decision narrows:
+ * `resumesOnLift` and the rest of this function's cases are unchanged.
  */
 export function liftOutcome(input: {
   /** This pointer owned the drag. */
@@ -725,16 +725,11 @@ export function liftOutcome(input: {
   /**
    * The clipboard holds a cut (`editor.canPaste`, #835). While true, a
    * drag's lift must not reseed a selection frame — the collapsed line stays
-   * the only thing on the stage. NOT because a paste empties the clipboard:
-   * paste is not one-shot yet (#489 is open), so `editor.canPaste` stays true
-   * across a paste, and the frame reopens instead because `recorder.tsx`'s
-   * `onPaste` calls `reopenFrame()` itself, unconditionally, as the
-   * paragraph above already says (a discard would presumably empty the
-   * clipboard for real, once #862 lands, but that is not built yet either).
-   * #489 must not route paste through this predicate — a one-shot paste that
-   * merely flips `canPaste` false would leave this term believing the stage
-   * is still owed a reseed with no `reopenFrame()` call left to satisfy it,
-   * and the frame would never come back.
+   * the only thing on the stage. It only WITHHOLDS a reseed; it never latches
+   * one out. A paste empties the clipboard (#489), so this term reads false
+   * on every later lift, and `recorder.tsx`'s `onPaste` calls `reopenFrame()`
+   * directly as well, so the frame is back the moment the paste lands rather
+   * than on the next lift.
    */
   readonly canPaste: boolean;
 }): {
