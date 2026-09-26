@@ -311,6 +311,10 @@ export function useChapterSegments(chapterId: ChapterId) {
   // added in the meantime is not lost from the list.
   const pendingMoves = useRef<PendingMove[]>([]);
   const landedOrder = useRef<LandedOrder | null>(null);
+  // Counts moves that landed. A failed move's restore read compares it across
+  // its await: if a move landed meanwhile, that move's returned order is newer
+  // than (or torn against — the read is not one transaction) the restore's.
+  const landedCount = useRef(0);
   const loadGen = useRef(0);
   const rowOverridesChapter = useRef(chapterId);
 
@@ -579,6 +583,7 @@ export function useChapterSegments(chapterId: ChapterId) {
         const order = await moveSegmentInStore(segmentId, toIndex);
         pendingMoves.current = pendingMoves.current.filter((m) => m !== move);
         landedOrder.current = { order, asOfGen: loadGen.current };
+        landedCount.current += 1;
         // Snapshot now: a move made after this point queues its own patch
         // behind this updater, and must not be replayed twice.
         const inFlight = pendingMoves.current;
@@ -596,8 +601,14 @@ export function useChapterSegments(chapterId: ChapterId) {
       // Put the rows back in the order the store holds — the pre-drop order,
       // since the write rolled back whole. Reached only on failure: the
       // success path returned above.
+      const landedBefore = landedCount.current;
       try {
         const stored = await getSegmentsOfChapter(chapterId);
+        // A move that landed during this read already installed its own
+        // order (applySegmentOrder drops this failed drop's patch with it),
+        // and that order is newer than this read. Installing this one would
+        // paint the rows back over it (Frank round 2 on #953).
+        if (landedCount.current !== landedBefore) return false;
         // The freshest order known: a racing load that began before this read
         // takes it rather than an older landed order.
         landedOrder.current = { order: stored, asOfGen: loadGen.current };

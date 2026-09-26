@@ -437,6 +437,44 @@ describe("useChapterSegments().moveSegment (#953)", () => {
     ]);
   });
 
+  // Frank round 2 (bench fix): a failed move's restore read that began
+  // before a later move landed must not paint the rows back over that move.
+  it("does not let a failed move's restore overwrite a move that landed during it", async () => {
+    const { chapterId, segmentIds } = await mountChapter();
+    const [s1, s2, s3] = segmentIds as [SegmentId, SegmentId, SegmentId];
+    vi.mocked(moveSegment).mockRejectedValueOnce(new Error("aborted"));
+    // The restore reads [s1, s2, s3] and is held there.
+    const stale = await getSegmentsOfChapter(chapterId);
+    let releaseRestore!: () => void;
+    vi.mocked(getSegmentsOfChapter).mockImplementationOnce(
+      () =>
+        new Promise<Segment[]>((resolve) => {
+          releaseRestore = () => resolve(stale);
+        })
+    );
+
+    let failed!: Promise<boolean>;
+    await act(async () => {
+      failed = hook().moveSegment(s3, 0);
+    });
+    await vi.waitFor(() => expect(releaseRestore).toBeDefined());
+
+    // A later move lands while the restore is held: [s2, s3, s1].
+    await act(async () => {
+      expect(await hook().moveSegment(s1, 2)).toBe(true);
+    });
+    await act(async () => {
+      releaseRestore();
+      expect(await failed).toBe(false);
+    });
+
+    expect(rowsNow()).toEqual([
+      [s2, 1],
+      [s3, 2],
+      [s1, 3],
+    ]);
+  });
+
   it("never replays a move that failed", async () => {
     const { segmentIds } = await mountChapter();
     const [s1, s2, s3] = segmentIds as [SegmentId, SegmentId, SegmentId];
