@@ -521,6 +521,51 @@ describe("exportChapterMp3 — an all-Finished chapter is joined, not re-encoded
     expect(joined).toBe(1);
   });
 
+  /**
+   * #1004 residual 2 (PR #1050's body) first tried reporting each clip's own
+   * step live, right after that clip was read (mirroring
+   * {@link gatherChapterPcm}). Reverted at review bench round 2 on PR #1068
+   * (Frank + George): a clip already reported present here could vanish
+   * before the fallback's own re-read, and `joinMp3` could still fail after
+   * every clip individually parsed — either way, a step already sent could
+   * not be un-sent, and #1049's progress machine either misattributed the
+   * fallback's later, correct account or swallowed it outright (see
+   * `tests/share-carry-keys.test.ts`'s two bench-round-2 describes, which
+   * exercise both failures end to end through the real reducer).
+   *
+   * This pins the design that replaced it: nothing is reported until every
+   * clip is read, every one is confirmed joinable, and `joinMp3` has actually
+   * built the joined bytes. Every read happens before any step — the reverse
+   * of what a live-reporting regression would produce.
+   */
+  it("reports nothing until every clip is read and the join has actually succeeded", async () => {
+    const { chapterId } = await finishedChapter([5_000, 6_000, 7_000]);
+    const order: string[] = [];
+    const real = clips.getClip;
+    const spy = vi.spyOn(clips, "getClip").mockImplementation(async (id) => {
+      order.push("read");
+      return real(id);
+    });
+    const codec = testCodec();
+
+    const result = await exportChapterMp3(chapterId, codec, undefined, (d, t) =>
+      order.push(`step:${d}/${t}`)
+    ).finally(() => spy.mockRestore());
+
+    expect(result).not.toBeNull();
+    // Every read happens before any step: nothing is reported speculatively,
+    // only once the join is known to have succeeded.
+    expect(order).toEqual([
+      "read",
+      "read",
+      "read",
+      "step:0/3",
+      "step:1/3",
+      "step:2/3",
+      "step:3/3",
+    ]);
+  });
+
   it("brings a counted Share Chapter to its total without an encode", async () => {
     const { chapterId } = await finishedChapter([5_000, 6_000]);
     const codec = testCodec();
