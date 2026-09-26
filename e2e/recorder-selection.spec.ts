@@ -1,8 +1,22 @@
 import { existsSync } from "node:fs";
 
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { clickEditRecording, editRecordingButton } from "./recorder-fixtures";
+
+/**
+ * Pin the current look before the app boots (`lib/design.ts`'s key). #951
+ * flipped the default to o4, and the cases below assert current-look
+ * structure — `.confirm-panel` (O4 draws G6's Keep/Delete tiles in the book
+ * sheet instead, #1030) and the edit toolbar's DOM order (O4's toolbar
+ * differs, #949) — so they opt out of the new default explicitly, the same
+ * way `recorder-menu-half-screen.spec.ts` opts INTO o4.
+ */
+async function pinCurrentLook(page: Page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("tc-mobile.design", "current");
+  });
+}
 
 // Shipped-build computed styles cover the real cascade, including Tailwind and
 // inline overrides. Chromium cannot verify the iOS callout; that is issue #564.
@@ -22,6 +36,7 @@ async function expectSelectionSuppressed(root: Locator) {
 test("selection stays scoped to recorder and panels, with editable names", async ({
   page,
 }) => {
+  await pinCurrentLook(page);
   await page.goto("/");
   await expect(page.locator("body")).not.toHaveCSS("user-select", "none");
   await expect(page.locator("#root")).not.toHaveCSS("user-select", "none");
@@ -463,6 +478,7 @@ test.describe("edit toolbar keeps the ≡ off the leading edge (#370)", () => {
       page,
     }) => {
       await page.setViewportSize({ width, height: 740 });
+      await pinCurrentLook(page);
       await page.goto("/");
       await page.getByRole("button", { name: "New book" }).click();
       await page.getByRole("button", { name: "Create book" }).click();

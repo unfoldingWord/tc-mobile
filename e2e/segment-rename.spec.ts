@@ -11,6 +11,21 @@ import { expect, test, type Page } from "@playwright/test";
  * setting a chapter up, before anything is recorded.
  */
 
+/**
+ * Pin the current look before the app boots (`lib/design.ts`'s key). #951
+ * flipped the default to o4, and the case below asserts the current look's
+ * visible row heading ("1 · verses 3–4") and recorder breadcrumb text
+ * ("Book 001 > Chapter 1 > …") — O4 draws the label differently (the row
+ * heading stays the bare ordinal, and the breadcrumb is `O4SheetHead`'s
+ * aria-hidden decoration, #949) — so it opts out of the new default
+ * explicitly, the same way `recorder-menu-half-screen.spec.ts` opts INTO o4.
+ */
+async function pinCurrentLook(page: Page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("tc-mobile.design", "current");
+  });
+}
+
 async function seedOneSegment(page: Page) {
   await page.goto("/");
   await page.getByRole("button", { name: "New book" }).click();
@@ -46,6 +61,7 @@ async function renameTo(page: Page, label: string) {
 test("a segment's label shows after its ordinal on the row and in the recorder, clears back to the ordinal, and survives a reload", async ({
   page,
 }) => {
+  await pinCurrentLook(page);
   await seedOneSegment(page);
 
   await renameTo(page, "verses 3–4");
