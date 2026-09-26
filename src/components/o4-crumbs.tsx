@@ -21,9 +21,11 @@ interface O4SheetHeadProps {
  * ("Edit segment 3", "Share chapter"). The screen reader hears the same menu
  * in both looks.
  *
- * Not drawn: the book's cover square (the cover colour is #957/#942's, not
- * on this base) and the "hear this" speaker (spoken titles, #952, are after
- * the training).
+ * Used by the chapter, segment and recorder menus.
+ *
+ * Not drawn: the book's cover square (the book stores its cover colour since
+ * #957, but no chapter or recorder view carries it to a menu) and the "hear
+ * this" speaker (spoken titles, #952, are after the training).
  */
 export function O4SheetHead({ book, chapter, segment }: O4SheetHeadProps) {
   return (
