@@ -79,7 +79,7 @@ describe("mic denied, O4 (state 16)", () => {
   it("keeps the alert on the title, and both controls with their names", () => {
     const container = panel();
     const alert = one(container, '[role="alert"]');
-    expect(alert.textContent).toBe(strings.micNeededTitle);
+    expect(alert.textContent).toBe(strings.micOffTitle);
     expect(alert.classList.contains("o4-err-title")).toBe(true);
     const buttons = [...container.querySelectorAll("button")];
     expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual([
