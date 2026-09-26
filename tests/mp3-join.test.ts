@@ -302,6 +302,24 @@ describe("parseJoinableMp3", () => {
     expect(parseJoinableMp3(borrows)).toBeNull();
   });
 
+  it("refuses a later frame that reaches back before the piece's first frame", () => {
+    // Two silent frames: the first holds 187 main-data bytes (208 - 4 header
+    // - 17 side info), so the second may borrow at most that many. 188 would
+    // read a byte from before the piece — the previous piece, after a join.
+    const silent = silentMp3Frame(parsed(mp3).header);
+    const pair = concatBytes(silent, silent);
+    const slot = silent.length - 4 - 17;
+    expect(parsed(pair).granules).toBe(2);
+    const within = new Uint8Array(pair);
+    within[silent.length + 4] = slot >> 1; // main_data_begin = slot
+    within[silent.length + 5] = (slot & 1) << 7;
+    expect(parsed(within).granules).toBe(2);
+    const past = new Uint8Array(pair);
+    past[silent.length + 4] = (slot + 1) >> 1; // main_data_begin = slot + 1
+    past[silent.length + 5] = ((slot + 1) & 1) << 7;
+    expect(parseJoinableMp3(past)).toBeNull();
+  });
+
   it("refuses a stream with no audio frames", () => {
     expect(parseJoinableMp3(new Uint8Array(0))).toBeNull();
     expect(parseJoinableMp3(Uint8Array.of(1, 2, 3, 4, 5))).toBeNull();

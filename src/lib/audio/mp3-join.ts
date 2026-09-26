@@ -18,8 +18,12 @@
  * - **The bit reservoir never crosses a join.** A frame's `main_data_begin` may
  *   point BACK into earlier frames' bytes, never forward. A stream's first
  *   frame has nothing behind it, so an encoder writes `main_data_begin = 0`
- *   there; this module checks that it did, and refuses a piece whose first
- *   audio frame borrows. Nothing before a join is then read by what follows it.
+ *   there. This module checks every audio frame, not just the first: its
+ *   `main_data_begin` (a count of main-data bytes, headers and side
+ *   information excluded) must not exceed the main-data bytes the piece's own
+ *   earlier frames hold, so the first frame must be 0 and no later frame may
+ *   reach back past the piece's start. A piece that breaks this is refused.
+ *   Nothing before a join is then read by what follows it.
  * - **No tag survives into the middle.** A leading ID3v2 tag, a trailing ID3v1
  *   tag and a leading Xing/Info/VBRI metadata frame are dropped; any other
  *   trailing bytes refuse the piece. The joined stream carries no tag at all,
@@ -128,8 +132,9 @@ function formatOf(mp3: Uint8Array, at: number): number {
  *
  * Refused: anything that is not mono MPEG-1 Layer III; a stream whose frames
  * change bitrate, sample rate or mode (not constant bitrate); a truncated last
- * frame; bytes after the last frame other than one ID3v1 tag; a first audio
- * frame that borrows from a bit reservoir it no longer has; and a stream with
+ * frame; bytes after the last frame other than one ID3v1 tag; any audio frame
+ * whose `main_data_begin` reaches back before the piece's first audio frame
+ * (a bit reservoir the joined stream no longer has); and a stream with
  * no audio frames at all. Fail-closed on purpose: a refused piece costs a
  * re-encode, a wrongly accepted one costs a broken share.
  */
@@ -142,6 +147,9 @@ export function parseJoinableMp3(mp3: Uint8Array): Mp3Frames | null {
   let first = -1;
   let format = -1;
   let granules = 0;
+  // Main-data bytes the piece's audio frames so far hold: the most any frame's
+  // `main_data_begin` may reach back without leaving the piece.
+  let reservoir = 0;
   while (at < end) {
     const header = readMp3FrameHeader(mp3, at);
     if (header === null || header.mode !== MONO) return null;
@@ -153,12 +161,15 @@ export function parseJoinableMp3(mp3: Uint8Array): Mp3Frames | null {
         at += header.length;
         continue;
       }
-      if (mainDataBegin(mp3, at, header.crc) !== 0) return null;
       first = at;
       format = formatOf(mp3, at);
     } else if (formatOf(mp3, at) !== format) {
       return null;
     }
+    // 0 on the first audio frame; on every later one, within this piece.
+    if (mainDataBegin(mp3, at, header.crc) > reservoir) return null;
+    reservoir +=
+      header.length - 4 - (header.crc ? 2 : 0) - MONO_SIDE_INFO_BYTES;
     granules++;
     at += header.length;
   }
