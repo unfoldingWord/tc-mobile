@@ -581,6 +581,10 @@ export const strings = {
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
   eraseConfirmTitle: "Erase this recording?",
   eraseConfirm: "Erase",
+  // O4 G5 (#979): the same confirm, opened from the record bar's bin, names
+  // its action for what the translator is doing, as the workbench does.
+  // Switch-on only; the current look keeps `eraseConfirm`.
+  rerecordConfirm: "Record again",
   // The safe action of the shared confirm dialog (`erase-confirm.tsx`). One
   // string for both flows it now serves — segment Erase and book Delete —
   // because it is the same control on the same surface saying the same word.

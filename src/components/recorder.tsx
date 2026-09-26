@@ -298,6 +298,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     } | null>(null);
     // The Erase Segment confirmation (D-CONFIRM), opened from the menu.
     const [confirmOpen, setConfirmOpen] = useState(false);
+    // Which opener raised it: the bar's bin ("rerecord") or the ≡ Erase row
+    // ("erase"). `onRerecord` sets the first and `openMenu` the second (the
+    // menu is the only road to its Erase row), so it is never left over. Only
+    // O4 reads it (G5, #979: the bin's confirm wears the record dot); the
+    // current look shows one dialog for both.
+    const [confirmFrom, setConfirmFrom] = useState<"erase" | "rerecord">(
+      "erase"
+    );
     // Focus back to whatever opened an overlay, once the overlay is gone (#97).
     // ONE pair for the ≡ menu and the erase confirm together, because they are
     // one `inert` scope and they chain inside it — the Erase row closes the menu
@@ -493,6 +501,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // `o4/recorder.css` through `data-o4-look`, which is set only under O4 so
     // the current look's markup is unchanged.
     const { design } = useDesign();
+    // G5 (#979): the erase confirm, raised from the bar's bin, under O4.
+    const g5 = design === "o4" && confirmFrom === "rerecord";
     const look = recorderLook({
       recording,
       playing: audio.playingBuffer,
@@ -1668,6 +1678,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // and its restore was a silent no-op for every menu in the app.
       focusRestore.capture();
       stopPlayback();
+      // The menu is the only way to its Erase row, so a confirm raised after
+      // this is the ≡ Erase's, not the bar bin's (G5, #979).
+      setConfirmFrom("erase");
       setMenuOpen(true);
     }, [focusRestore, stopPlayback]);
 
@@ -1960,6 +1973,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const onRerecord = useCallback(() => {
       focusRestore.capture();
       stopPlayback();
+      setConfirmFrom("rerecord");
       setConfirmOpen(true);
     }, [focusRestore, stopPlayback]);
 
@@ -3760,7 +3774,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           key={confirmMount}
           open={confirmOpen}
           title={strings.eraseConfirmTitle}
-          confirmLabel={strings.eraseConfirm}
+          // O4 G5 (#979): from the bar's bin, the workbench's record badge and
+          // a "Record again" button with the record dot. Keep and the title
+          // stay the 13 dialog's. Switch off: one dialog, as before.
+          glyph={g5 ? "record" : "trash"}
+          confirmLabel={g5 ? strings.rerecordConfirm : strings.eraseConfirm}
           cancelLabel={strings.eraseCancel}
           // Busy through the post-erase re-read too (#592): `isClosing` is the
           // latch `onConfirmErase` holds across it, and a confirm is otherwise
