@@ -36,6 +36,7 @@
  */
 
 import { getDb } from "./db";
+import { lightsFailureMarker } from "@/lib/failure-marker";
 import type { StoredFailure } from "@/types/failure";
 
 /**
@@ -138,6 +139,20 @@ export async function readFailures(): Promise<StoredFailure[]> {
 export async function countFailures(): Promise<number> {
   const db = await getDb();
   return db.count("failures");
+}
+
+/**
+ * How many entries light the Books ≡ marker: every row except the
+ * informational ones `lightsFailureMarker` names (#1005).
+ *
+ * Reads the rows rather than counting an index, because the store has no
+ * index on `context` and adding one would be a schema migration for a store
+ * of at most {@link FAILURE_LOG_LIMIT} short rows.
+ */
+export async function countMarkedFailures(): Promise<number> {
+  const db = await getDb();
+  const rows = await db.getAll("failures");
+  return rows.filter((row) => lightsFailureMarker(row.context)).length;
 }
 
 /**

@@ -66,6 +66,7 @@ vi.mock("@/hooks/use-storage-persistence", () => ({
 vi.mock("@/hooks/failure-log", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/failure-log")>()),
   useFailureCount: () => 0,
+  useMarkedFailureCount: () => 0,
 }));
 vi.mock("@/hooks/use-chapter-segments", () => ({
   useChapterSegments: mocks.chapter,

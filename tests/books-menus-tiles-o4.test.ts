@@ -85,6 +85,7 @@ vi.mock("@/hooks/use-book-cover-colour", () => ({
 }));
 vi.mock("@/hooks/failure-log", () => ({
   useFailureCount: () => state.failures,
+  useMarkedFailureCount: () => state.failures,
 }));
 // The panel's own share and clear are `tests/failure-log*.test.ts`'s. Here it
 // stands in as its first control, so the test can see where it sits.
