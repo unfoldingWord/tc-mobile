@@ -50,11 +50,10 @@ import type { Book } from "@/types/domain";
 /**
  * The ten final keys (#937 D8b, decided 2026-09-25).
  *
- * @pivotpending No production caller yet — this lane (#957) exports the type,
- * the palette and {@link resolveCoverKey} for three not-yet-landed readers:
- * the Books lane (#942, a book row's own resolved colour), the sheets lane
- * (#943, the new-book sheet's picker) and the menus lane (#949, the book
- * menu's picker).
+ * @pivotpending This lane (#957) exports the type and the palette for two
+ * not-yet-landed readers: the sheets lane (#943, the new-book sheet's picker)
+ * and the menus lane (#949, the book menu's picker). The Books lane (#942)
+ * already calls {@link resolveCoverKey} and {@link coverColourHex}.
  */
 export type CoverColourKey =
   | "amber"
@@ -99,8 +98,8 @@ export const COVER_COLOUR_KEYS: readonly CoverColourKey[] = Object.keys(
 /**
  * The hex a key paints.
  *
- * @pivotpending No production caller yet — see {@link CoverColourKey}'s tag.
- * The picker reads this straight into a swatch's inline fill style.
+ * The Books screen's cover (#942) reads it into an inline custom property;
+ * the picker reads it straight into a swatch's inline fill style.
  */
 export function coverColourHex(key: CoverColourKey): string {
   return PALETTE[key];
@@ -166,10 +165,9 @@ function fallbackKey(bookId: string): CoverColourKey {
  * building one (a fresh row not yet round-tripped through storage) or a test
  * does not need to construct a complete record.
  *
- * @pivotpending No production caller yet — see {@link CoverColourKey}'s tag.
- * This is the one function #942's book rows, #943's new-book sheet and
- * #949's book menu are each expected to call for "which colour does this
- * book show."
+ * This is the one function #942's book rows call for "which colour does
+ * this book show", and the one #943's new-book sheet and #949's book menu
+ * are each expected to call.
  */
 export function resolveCoverKey(
   book: Pick<Book, "id" | "coverColourKey">
