@@ -9,6 +9,7 @@ import {
 } from "./licenses";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
+import { reportFailure } from "@/hooks/report-failure";
 import { strings } from "@/lib/strings";
 
 interface AboutPanelProps {
@@ -163,29 +164,50 @@ export function AboutPanel({
  * is the one scroll container (`flex-1`), focusable so the Menu's `focusKey`
  * refocus lands on it. The file is precached, so the fetch resolves offline.
  * Back is the Menu header, not a control here.
+ *
+ * A failed fetch reaches the failure log as `"about-licence-text"`, not only
+ * `console.error` (#823). A 200 that is HTML counts as a failure: a host that
+ * answers a missing `/licenses/*.txt` with the app shell would otherwise show
+ * the shell's markup as a licence. The navigate-fallback denylist covers
+ * navigations only, never this `fetch`.
+ *
+ * The result is held with the `href` it was fetched for, so a mounted `href`
+ * change renders loading until its own result lands rather than the previous
+ * text's body or failure, and the fetch it replaces is aborted.
  */
 function LicenseTextView({ text }: { text: LicenseText }) {
-  const [body, setBody] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [result, setResult] = useState<{
+    href: string;
+    body: string | null;
+  } | null>(null);
   const preRef = useRef<HTMLPreElement>(null);
+  const current = result?.href === text.href ? result : null;
+  const body = current?.body ?? null;
+  const failed = current !== null && current.body === null;
 
   useEffect(() => {
-    let live = true;
-    fetch(text.href)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status}`);
-        return r.text();
+    const controller = new AbortController();
+    const href = text.href;
+    fetch(href, { signal: controller.signal })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`licence text ${href}: HTTP ${r.status}`);
+        const t = await r.text();
+        if (isHtml(r.headers.get("content-type"), t))
+          throw new Error(`licence text ${href}: answered with HTML`);
+        return t;
       })
       .then((t) => {
-        if (live) setBody(t);
+        if (!controller.signal.aborted) setResult({ href, body: t });
       })
       .catch((cause: unknown) => {
-        if (live) setFailed(true);
+        // An abort is this effect's own cleanup (unmount, or a newer `href`),
+        // not a failure: nothing is shown and nothing is logged.
+        if (controller.signal.aborted) return;
+        setResult({ href, body: null });
         console.error("Could not load a licence text", cause);
+        reportFailure(cause, "about-licence-text");
       });
-    return () => {
-      live = false;
-    };
+    return () => controller.abort();
   }, [text.href]);
 
   // Land focus on the body once it arrives: while it loads a Notice shows (not
@@ -201,11 +223,22 @@ function LicenseTextView({ text }: { text: LicenseText }) {
     <pre
       ref={preRef}
       tabIndex={0}
-      className="text-ink min-h-0 flex-1 overflow-auto text-[13px] leading-normal whitespace-pre-wrap"
+      className="text-ink min-h-0 min-w-0 flex-1 overflow-auto text-[13px] leading-normal whitespace-pre-wrap"
     >
       {body}
     </pre>
   );
+}
+
+/**
+ * Whether a licence-text response is an HTML page rather than the plain text
+ * asked for: by its declared type, or by a body that opens like a document
+ * (a host may serve the shell with a generic type).
+ */
+function isHtml(contentType: string | null, body: string): boolean {
+  if (contentType?.toLowerCase().includes("text/html")) return true;
+  const head = body.trimStart().slice(0, 15).toLowerCase();
+  return head.startsWith("<!doctype") || head.startsWith("<html");
 }
 
 /**

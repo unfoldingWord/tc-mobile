@@ -458,8 +458,10 @@ export default defineConfig(({ mode }) => {
           // The licence texts (#36) are real files, not app routes: keep the SPA
           // navigate-fallback from answering a `/licenses/*.txt` miss with the app
           // shell instead of the licence (George G1). The About panel reads them
-          // by fetch, not navigation, so this only hardens the edge.
-          navigateFallbackDenylist: [/^\/version\.json(\?|$)/, /\.txt$/],
+          // by fetch, not navigation, so this only hardens the edge. `(\?|$)` for
+          // the same query-string reason as the version.json entry above (#823);
+          // tests/about-licence-text.test.ts pins it.
+          navigateFallbackDenylist: [/^\/version\.json(\?|$)/, /\.txt(\?|$)/],
           cleanupOutdatedCaches: true,
           // Explicit rather than left to `injectRegister === "auto"`'s side
           // effect (see the comment above `injectRegister`) — `true` either

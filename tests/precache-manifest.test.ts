@@ -52,7 +52,7 @@ function globPatterns(): string[] {
 // The `navigateFallbackDenylist`'s version.json entry, lifted out of
 // vite.config.ts as a live RegExp rather than retyped here — a copy would pass
 // while the config's own pattern regressed, which is exactly the class of bug
-// this pins. The denylist holds a second entry too (`/\.txt$/`, the offline
+// this pins. The denylist holds a second entry too (`/\.txt(\?|$)/`, the offline
 // licence texts, #36), so this grabs the FIRST entry (version.json), tolerating
 // a trailing `,` before the next entry rather than requiring the array to end.
 function navigateFallbackDenylist(): RegExp {
