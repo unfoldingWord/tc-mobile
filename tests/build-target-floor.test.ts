@@ -8,17 +8,27 @@ import { resolveDistGate } from "./dist-gate";
 
 /**
  * #1017 open question 1: does Vite's `build.target` (and the CSS target it
- * derives, `build.cssTarget`) produce output that runs on the stated iOS 15.0
+ * derives, `build.cssTarget`) produce output that runs on the stated iOS
  * floor (`ios/App/App.xcodeproj/project.pbxproj`,
- * `IPHONEOS_DEPLOYMENT_TARGET = 15.0`)?
+ * `IPHONEOS_DEPLOYMENT_TARGET`)?
+ *
+ * **The floor is 15.4, not 15.0** — raised there by the #1052 DRI decision
+ * (2026-09-26, "Raise floor to 15.4 (Recommended)"), because the O4 CSS
+ * (`src/app/styles/o4/{menus,sheets,motion}.css`) uses the `:has()` selector,
+ * which needs Safari/iOS 15.4 (caniuse-lite's `data/features/css-has.js`) and
+ * has no fallback `build.target`/`build.cssTarget` can provide (verified
+ * directly: LightningCSS passes `:has()` through unchanged and warning-free
+ * at any target — there is no downlevel transform for a CSS selector the way
+ * there is for JS syntax). See `docs/native/system-requirements.md` for the
+ * full resolution; this file only pins the resulting `build.target` value.
  *
  * Vite 8's own default, when `build.target` is unset, is the string
  * `"baseline-widely-available"` — a rolling snapshot bumped on every Vite
  * major release (`ESBUILD_BASELINE_WIDELY_AVAILABLE_TARGET` in
  * `node_modules/vite/dist/node/chunks/node.js`) that, at the vite@8.3.0
  * pinned here, resolves to `["chrome111","edge111","firefox114","safari16.4",
- * "ios16.4"]` — a Safari/iOS floor above the app's stated 15.0. Nothing in
- * `vite.config.ts` overrode it before this change.
+ * "ios16.4"]` — still above 15.4. Nothing in `vite.config.ts` overrode it
+ * before PR #1051.
  *
  * This file has two independent halves:
  *
@@ -31,23 +41,11 @@ import { resolveDistGate } from "./dist-gate";
  *      is, that the actually-shipped `dist/` JS contains no class static
  *      initialization block — the one concrete syntax feature this repo's
  *      research (see the #1017 comment and `docs/native/system-requirements.md`)
- *      found needs newer than iOS 15: `@babel/compat-data`'s
+ *      found needs newer than 15.4: `@babel/compat-data`'s
  *      `data/plugins.json` (`transform-class-static-block`) puts it at
  *      `ios: "16.4"`. It is not used anywhere in `src/` today (checked by
  *      grep), so this is a regression guard against a future dependency or
  *      change introducing one silently, not a fix for something broken now.
- *
- * What this file deliberately does NOT check: CSS. `src/app/styles/o4/
- * {menus,sheets,motion}.css` already ship a `:has()` selector into
- * `dist/assets/*.css`, and `:has()` needs Safari/iOS 15.4 (caniuse-lite's
- * `data/features/css-has.js`) — a real gap against the 15.0 floor that
- * `build.target`/`build.cssTarget` has no power to close (verified directly:
- * LightningCSS passes `:has()` through unchanged and warning-free even
- * targeted at Safari 15 — there is no fallback for a CSS selector the way
- * there is for JS syntax). Gating on its absence here would fail on the
- * CURRENT, otherwise-legitimate build and is someone else's fix to make (the
- * O4 CSS it lives in is out of this change's scope) — recorded as a residual
- * on the #1017 comment and in the doc instead of enforced here.
  */
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -57,13 +55,17 @@ const CONFIG = path.join(ROOT, "vite.config.ts");
  *  (no evidence found that those need lowering — the stated Android floor,
  *  `android/variables.gradle`'s `minSdkVersion = 24`, is conditioned
  *  everywhere on Android System WebView being kept up to date), with the
- *  Safari-family entries corrected to the app's actual iOS floor. */
+ *  Safari-family entries at the app's actual iOS floor — **15.4, not 15.0**,
+ *  since #1052's DRI decision (2026-09-26, "Raise floor to 15.4
+ *  (Recommended)"): the O4 CSS's `:has()` usage needs Safari/iOS 15.4, and
+ *  the floor moved up to match it rather than the 13 `:has()` rules being
+ *  rewritten. See `docs/native/system-requirements.md` for the resolution. */
 const EXPECTED_TARGET = [
   "chrome111",
   "edge111",
   "firefox114",
-  "safari15",
-  "ios15",
+  "safari15.4",
+  "ios15.4",
 ];
 
 function propName(node: ts.PropertyAssignment): string | undefined {
@@ -146,7 +148,7 @@ describe("vite.config.ts pins build.target to the stated device floor (#1017 Q1)
     expect(configuredBuildTarget()).toEqual(EXPECTED_TARGET);
   });
 
-  it("does not regress to a Safari/iOS entry newer than 15 (the iOS floor)", () => {
+  it("does not regress to a Safari/iOS entry newer than 15.4 (the iOS floor, #1052)", () => {
     const target = configuredBuildTarget();
     const safariEntry = target.find((t) => /^safari/.test(t));
     const iosEntry = target.find((t) => /^ios/.test(t));
@@ -154,15 +156,15 @@ describe("vite.config.ts pins build.target to the stated device floor (#1017 Q1)
     expect(iosEntry, "no ios* entry in build.target").toBeDefined();
     const safariVersion = parseFloat((safariEntry ?? "safari0").slice(6));
     const iosVersion = parseFloat((iosEntry ?? "ios0").slice(3));
-    expect(safariVersion).toBeLessThanOrEqual(15);
-    expect(iosVersion).toBeLessThanOrEqual(15);
+    expect(safariVersion).toBeLessThanOrEqual(15.4);
+    expect(iosVersion).toBeLessThanOrEqual(15.4);
   });
 });
 
 /** Whether `source` contains a class static initialization block
  *  (`class C { static { ... } }`) anywhere in its syntax tree — the one
  *  syntax feature this repo's #1017 research confirmed needs newer than
- *  iOS 15 (`ios: "16.4"` in `@babel/compat-data`'s
+ *  the 15.4 floor (`ios: "16.4"` in `@babel/compat-data`'s
  *  `data/plugins.json`). Parsed with the real TypeScript grammar
  *  (`ts.createSourceFile`), the same tool `tests/precache-manifest.test.ts`
  *  already uses for this class of check — not a text/regex scan, so a
@@ -240,7 +242,7 @@ const files = distJsFiles();
 const GATE = resolveDistGate(files.length > 0, "dist/assets/*.js");
 
 describe.skipIf(GATE === "skip")(
-  "the built JS (dist/, requires a prior `npm run build`) ships no syntax above the iOS 15 floor",
+  "the built JS (dist/, requires a prior `npm run build`) ships no syntax above the iOS 15.4 floor",
   () => {
     // Non-empty, or an empty listing would vacuously pass every case below —
     // the same trap `tests/precache-manifest.test.ts` names for its own
