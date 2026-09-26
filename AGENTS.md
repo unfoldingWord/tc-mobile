@@ -572,11 +572,12 @@ place. Decided 2026-09-02, when the repo stopped being solo.
   tags `main` (`git tag vX.Y.0` — the first tags this repo will have). A
   production hotfix between milestones is a patch on the shipped minor.
 
-  | Milestone                        | Due        | Ships                                       |
-  | -------------------------------- | ---------- | ------------------------------------------- |
-  | `v0.2.0 — Sept: production gate` | 2026-09-30 | the first `staging -> main` since the pivot |
-  | `v0.3.0 — Oct: training`         | 2026-10-09 | what facilitators run at the training       |
-  | `v1.0.0 — Post-training`         | —          | the first field-validated release           |
+  | Milestone                        | Due        | Ships                                                  |
+  | -------------------------------- | ---------- | ------------------------------------------------------ |
+  | `v0.2.0 — Sept: production gate` | 2026-09-30 | the first `staging -> main` since the pivot            |
+  | `v0.3.0 — Training essentials`   | 2026-10-09 | training-essential scope, promoted to `main` as 0.3.0  |
+  | `v1.0.0 — Training stretch`      | 2026-10-02 | v0.3.0's scope plus the O4 UI; on phones by 2026-10-02 |
+  | `v1.1.0 — Post-training`         | —          | the first field-validated release                      |
 
 - **Every open issue carries a milestone.** File new issues into one. A
   milestone closes when its promotion PR merges, and anything still open in it
