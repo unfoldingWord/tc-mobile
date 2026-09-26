@@ -2,6 +2,7 @@
   "name": "tc-mobile",
   "version": "0.2.12",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "translationCore Mobile — offline-first audio notebook/editor PWA for oral Bible translation",
   "scripts": {

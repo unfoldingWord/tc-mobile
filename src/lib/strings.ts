@@ -927,6 +927,43 @@ export const strings = {
   dbOutOfDate: "This copy is out of date.",
   dbOutOfDateTeach: "Restart to use the new version.",
 
+  // ── About & licenses (#36) ───────────────────────────────────────────────
+  // The global-menu entry, and the panel it opens. lamejs is LGPL-3.0 (ADR
+  // 0003); this surface is what makes its notice and licence text reachable on
+  // the phone. A text screen by necessity — a legal notice has no wordless
+  // form — so every link carries a full spoken label.
+  aboutOpen: "About and licenses",
+  aboutTitle: "About & licenses",
+  aboutBlurb:
+    "A free and open-source app. Everything you record stays on this phone.",
+  aboutAppLicense: "This app is offered under the MIT licence.",
+  // The LGPL/GPL written offer for the app's own Corresponding Source, on the
+  // shipped copy itself (the README carries it too, but the installed PWA ships
+  // no `*.md`). The repository went public 2026-09-13, so — per the DRI's
+  // 2026-09-24 decision on #144 — the offer now links the public source for THIS
+  // build's exact commit (a durable, version-specific tree URL built from
+  // `__BUILD_SHA__` in `SourceOfferLink`), the §4(d)(0) mechanism ADR 0003
+  // records. Still no relink how-to on the shipped copy.
+  aboutSourceOffer:
+    "The source code for this app is public. This build's source:",
+  // aria-label for the source link; the visible text is the repository path.
+  aboutVisitAppSource: "Open this build's source on GitHub",
+  aboutThirdParty: "Open-source components",
+  aboutTexts: "Licence texts",
+  aboutContent: "Bundled content",
+  // The licence texts open in-drawer (no new tab), so their controls are
+  // buttons: this is the spoken action, and the two states while it loads.
+  aboutReadText: (name: string): string => `Read ${name}`,
+  // While a licence text is open the Menu header goes back to the list rather
+  // than closing, so it says so (George G1, round 3).
+  aboutBack: "Back to the list",
+  aboutTextLoading: "Loading the licence text.",
+  aboutTextFailed: "Could not load the licence text.",
+  // Spoken labels for the off-phone links (a project page, a CC deed), which
+  // show terse visible text (a package name, a licence short-name).
+  aboutVisitSource: (name: string): string => `Open the ${name} project page`,
+  aboutVisitLicense: (name: string): string => `Open the ${name} licence`,
+
   // ── Failure log (#205) ───────────────────────────────────────────────────
   // The durable destination for reported failures, reachable from the global
   // menu on Books. None of this is copy a non-reader depends on — the marker on

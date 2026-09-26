@@ -62,7 +62,39 @@ obligations are actually met, so they are listed here rather than assumed.
    that the project is MIT with an LGPL-3.0 encoder, rather than leaving a
    reader to discover it from a lockfile.
 
-Items 3 and 5 are not done yet — tracked in #36.
+Items 3 and 5 are done (#36): the MIT / LGPL-3.0 / GPL-3.0 licence texts and the
+attribution of every bundled web-bundle component ship under `public/licenses/`
+(precached for offline) and are reachable in-app at **Menu → About & licenses**
+(`src/components/about-panel.tsx`, data in `src/components/licenses.ts`).
+`package.json` declares `"license": "MIT"` and `README.md` states the
+MIT-with-an-LGPL-3.0-encoder position in prose. The in-app surface has not yet
+been eyeballed on a device.
+
+**LGPL §4(d) — decided 2026-09-03 by the DRI; source-link mechanism confirmed
+2026-09-24 (#144): §4(d)(0), the Corresponding Source is the repository.** The
+boundary (items 1–2) is clean; §4(d)(0) also asks that a recipient be _able_ to
+relink, which it satisfies by providing the Corresponding Application Code in a
+form that permits recombination with a modified library. tC Mobile relies on
+**§4(d)(0)**: the Corresponding Source is `unfoldingWord/tc-mobile` itself, made
+public **2026-09-13** (org-transfer plan D2). The shipped About screen carries a
+durable, version-specific link to it — a GitHub `/tree/<sha>` URL for the exact
+build commit (`src/components/about-panel.tsx`, `SourceOfferLink`) — so a
+recipient of the Combined Work is directed to the matching source, and
+`tests/dist-source-offer.test.ts` asserts that link ships in the built bundle.
+**This is the §4(d)(0) mechanism, and it supersedes the pre-publication interim
+of "source on request":** the repository is public and the link is live, so the
+obligation is met by the link rather than a request channel. Constraints on the
+**shipped copy** (the in-app note and the README, not this ADR): they may name
+the public repository as the Corresponding Source and link it, and carry no
+exercisable-relink how-to. This mechanism was selected by the DRI, not confirmed
+by qualified counsel (Frank rounds 2–3 on #144 asked; recorded as fact, not as a
+compliance opinion).
+
+The in-app notice describes the **web bundle** — which includes the
+`@capacitor/*` JavaScript packages `src/` imports (core, app, filesystem, share
+and what they pull), so those are disclosed there. The Capacitor native shell's own
+open-source attribution (#262) — the Gradle / CocoaPods / native-Capacitor tree
+— is separate, larger work, tracked in #477.
 
 ### What this closes
 
