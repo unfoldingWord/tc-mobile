@@ -7,7 +7,7 @@ import {
   useImperativeHandle,
 } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Recorder } from "@/components/recorder";
 import { strings } from "@/lib/strings";
@@ -20,7 +20,10 @@ import type { SegmentId } from "@/types/domain";
 
 /**
  * A `pagehide` during a live take seals it the way a #59 interruption does
- * (#807, DRI decision 2026-09-24), instead of cancelling it.
+ * (#807, DRI decision 2026-09-24), instead of cancelling it. So does the page
+ * becoming hidden (`visibilitychange` to `"hidden"`: an app switch, a lock),
+ * per the requirements owner's decision on #836 (2026-09-24): "Yes, switching
+ * apps ends the recording. User can always append to it later if desired."
  *
  * The harness is the real sheet over the real audio hooks: `Recorder`,
  * `useAudioSession` and `useRecorder` all run, and only the browser boundary is
@@ -164,8 +167,13 @@ let container: HTMLDivElement;
 let track: FakeTrack;
 const saveRecording = vi.fn();
 
-/** True only while `window.dispatchEvent(pagehide)` is on the stack. */
+/**
+ * True only while a lifecycle event (`pagehide`, or `visibilitychange`) is
+ * being dispatched.
+ */
 let insidePageHide = false;
+/** What `document.visibilityState` reads; the #836 cases flip it. */
+let visibility: DocumentVisibilityState = "visible";
 const writesInsidePageHide: string[] = [];
 
 beforeEach(() => {
@@ -203,6 +211,11 @@ beforeEach(() => {
   });
   writesInsidePageHide.length = 0;
   insidePageHide = false;
+  visibility = "visible";
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => visibility,
+  });
   boundary.view = {
     bookName: "Book",
     chapterNumber: 1,
@@ -307,6 +320,20 @@ function firePageHide(persisted: boolean) {
   insidePageHide = true;
   try {
     window.dispatchEvent(event);
+  } finally {
+    insidePageHide = false;
+  }
+}
+
+/**
+ * Set the page's visibility and dispatch `visibilitychange` on `document`, the
+ * target the platform fires it on.
+ */
+function fireVisibility(state: DocumentVisibilityState) {
+  visibility = state;
+  insidePageHide = true;
+  try {
+    document.dispatchEvent(new Event("visibilitychange"));
   } finally {
     insidePageHide = false;
   }
@@ -486,3 +513,214 @@ it.each(["committed", "cancelled"] as const)(
     expect(ref.current?.audio.playingBuffer).toBe(false);
   }
 );
+
+describe("the page becoming hidden mid-take (#836)", () => {
+  it("seals the take at processing without cancelling it, and writes nothing during the dispatch", async () => {
+    const { ref, recorder } = await recordATake();
+
+    await act(async () => {
+      fireVisibility("hidden");
+    });
+
+    expect(ref.current?.audio.recorderState).toBe("processing");
+    expect(saveRecording).not.toHaveBeenCalled();
+    expect(writesInsidePageHide).toEqual([]);
+    // The commit path's own `stop()` asked the recorder to flush, once.
+    expect(recorder.stopCalls).toBe(1);
+
+    await act(async () => {
+      recorder.deliverFinal();
+      await settle();
+    });
+    await drain();
+  });
+
+  it("saves the sealed take as a segment once the final slice lands, as an interruption does", async () => {
+    const { recorder } = await recordATake();
+
+    await act(async () => {
+      fireVisibility("hidden");
+    });
+    await act(async () => {
+      recorder.deliverFinal();
+      await settle();
+    });
+    await drain();
+
+    expect(saveRecording).toHaveBeenCalledOnce();
+    expect(saveRecording).toHaveBeenCalledWith(
+      "segment",
+      original,
+      captured,
+      original.length,
+      false
+    );
+    const blob = mocks.decodeToCanonical.mock.calls[0]?.[0] as Blob;
+    expect(blob.size).toBe("onetwofinal".length);
+    // Not recording in the background: the microphone is released once the
+    // flush is done.
+    expect(track.stopped).toBe(true);
+    expect(mocks.reportFailure).not.toHaveBeenCalled();
+    expect(writesInsidePageHide).toEqual([]);
+  });
+
+  it("seals once when a pagehide follows the hidden change", async () => {
+    const { ref, recorder } = await recordATake();
+
+    await act(async () => {
+      fireVisibility("hidden");
+      firePageHide(true);
+    });
+
+    // The pagehide found the take already sealed and did not cancel it.
+    expect(ref.current?.audio.recorderState).toBe("processing");
+    expect(recorder.stopCalls).toBe(1);
+
+    await act(async () => {
+      recorder.deliverFinal();
+      await settle();
+    });
+    await drain();
+
+    expect(saveRecording).toHaveBeenCalledOnce();
+    const blob = mocks.decodeToCanonical.mock.calls[0]?.[0] as Blob;
+    expect(blob.size).toBe("onetwofinal".length);
+    expect(writesInsidePageHide).toEqual([]);
+  });
+
+  it("keeps an interrupted take when hidden lands before its commit", async () => {
+    const { ref, recorder } = await recordATake();
+
+    await act(async () => {
+      recorder.state = "inactive";
+      recorder.slice("final");
+      track.onended?.(new Event("ended"));
+      fireVisibility("hidden");
+      await settle();
+    });
+    await drain();
+
+    expect(ref.current?.audio.recorderState).not.toBe("recording");
+    expect(saveRecording).toHaveBeenCalledOnce();
+    const blob = mocks.decodeToCanonical.mock.calls[0]?.[0] as Blob;
+    expect(blob.size).toBe("onetwofinal".length);
+    expect(writesInsidePageHide).toEqual([]);
+  });
+
+  it("does nothing on a visibilitychange that leaves the page visible", async () => {
+    const { ref, recorder } = await recordATake();
+
+    await act(async () => {
+      fireVisibility("visible");
+    });
+
+    expect(ref.current?.audio.recorderState).toBe("recording");
+    expect(recorder.stopCalls).toBe(0);
+  });
+
+  it("starts nothing when the page becomes visible again after the seal", async () => {
+    const { ref, recorder } = await recordATake();
+
+    await act(async () => {
+      fireVisibility("hidden");
+    });
+    await act(async () => {
+      recorder.deliverFinal();
+      await settle();
+    });
+    await drain();
+
+    await act(async () => {
+      fireVisibility("visible");
+      await settle();
+    });
+
+    expect(ref.current?.audio.recorderState).toBe("idle");
+    expect(FakeMediaRecorder.last).toBe(recorder);
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce();
+    expect(saveRecording).toHaveBeenCalledOnce();
+  });
+
+  it("seals a take whose microphone was granted after the page went hidden", async () => {
+    // Hidden while `start()` is still waiting on `getUserMedia`: no take is
+    // open yet, so the hidden change itself has nothing to seal. The take
+    // that opens afterwards must not go on recording in the background.
+    let grant: (stream: unknown) => void = () => {};
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(
+          () =>
+            new Promise((resolve) => {
+              grant = resolve;
+            })
+        ),
+      },
+    });
+    const ref = createRef<Harness>();
+    await act(async () => {
+      root.render(createElement(Screen, { ref }));
+    });
+    const record = [...document.querySelectorAll("button")].find(
+      (b) => b.getAttribute("aria-label") === strings.record
+    );
+    await act(async () => {
+      record!.click();
+      await settle();
+    });
+    expect(ref.current?.audio.recorderState).toBe("requesting");
+
+    await act(async () => {
+      fireVisibility("hidden");
+    });
+    await act(async () => {
+      grant({ getTracks: () => [track] });
+      await settle();
+    });
+
+    const recorder = FakeMediaRecorder.last;
+    if (!recorder) throw new Error("start() opened no MediaRecorder");
+    expect(ref.current?.audio.recorderState).toBe("processing");
+    expect(recorder.stopCalls).toBe(1);
+
+    await act(async () => {
+      recorder.deliverFinal();
+      await settle();
+    });
+    await drain();
+
+    expect(saveRecording).toHaveBeenCalledOnce();
+    expect(track.stopped).toBe(true);
+  });
+
+  it("does nothing while idle", async () => {
+    const ref = createRef<Harness>();
+    await act(async () => {
+      root.render(createElement(Screen, { ref }));
+    });
+
+    await act(async () => {
+      fireVisibility("hidden");
+    });
+
+    expect(ref.current?.audio.recorderState).toBe("idle");
+    expect(FakeMediaRecorder.last).toBeNull();
+    expect(saveRecording).not.toHaveBeenCalled();
+  });
+
+  it("leaves playback alone: a sounding buffer is not stopped", async () => {
+    const ref = createRef<Harness>();
+    await act(async () => {
+      root.render(createElement(Screen, { ref }));
+    });
+    const handle = await playSomething(ref);
+
+    await act(async () => {
+      fireVisibility("hidden");
+    });
+
+    expect(handle.stop).not.toHaveBeenCalled();
+    expect(ref.current?.audio.playingBuffer).toBe(true);
+    expect(ref.current?.audio.recorderState).toBe("idle");
+  });
+});
