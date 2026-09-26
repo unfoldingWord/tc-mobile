@@ -357,17 +357,40 @@ export type ChapterCodec = AudioCodec & { readonly onJoined?: () => void };
 /**
  * Build an all-Finished chapter's MP3 by joining its stored frames (#1004).
  *
- * Every present clip is read and checked first (`parseJoinableMp3`), then
- * joined (`joinMp3`); only when both succeed are the steps reported — `(0, n)`
- * and then one per segment, in order, each carrying the running `skipped`
- * and the counted segments' clip ids as `keys` (#1044), exactly as
- * {@link gatherChapterPcm} reports them. A clip gone since pass 1
- * is skipped and counted missing, as there. Returns:
+ * Every present clip is read and checked (`parseJoinableMp3`) here, one at a
+ * time, and joined (`joinMp3`) once every clip is in hand. **The step count
+ * advances as each clip is read (#1004 residual 2), the same way
+ * {@link gatherChapterPcm} advances per segment** — not, as before, in one
+ * batch after `joinMp3` had already run, which left the ring silent for the
+ * whole read and then jumped straight to its total. Each step carries the
+ * running `skipped` and the counted segments' clip ids as `keys` (#1044),
+ * exactly as the gather reports them. A clip gone since pass 1 is skipped and
+ * counted missing, as there, and still gets its own step — it is a resolved
+ * clip, just one with nothing to join.
  *
- * - `"not-joinable"` — some clip cannot be copied safely; nothing was
- *   reported, and the caller builds the chapter by decode and encode instead.
+ * The `(0, n)` anchor is folded into the FIRST clip's own step rather than
+ * fired before any read starts: a clip found not joinable is discovered by
+ * reading and parsing it, the same read this reports on, so opening the count
+ * before that read would report something for a chapter this function is
+ * about to refuse. Deferring it this far means a chapter whose first clip is
+ * not joinable still reports nothing at all, matching `"not-joinable"` below.
+ * A later clip's own failure can still land after earlier clips have already
+ * reported their steps — the same tradeoff the gather doesn't face, since
+ * nothing there can invalidate segments already gathered; here a chapter with
+ * more than one Finished clip where a later one is not joinable will show
+ * partial progress before the fallback restarts the count from its own
+ * `(0, n)`. No caller of this path counts more than one Finished chapter's
+ * clips without also going through {@link withEncodeSteps}, whose `report`
+ * only moves a count forward, so that restart is absorbed there rather than
+ * shown as the ring stepping backward.
+ *
+ * Returns:
+ *
+ * - `"not-joinable"` — some clip cannot be copied safely; the caller builds
+ *   the chapter by decode and encode instead.
  * - `"cancelled"` — `shouldContinue` went false; checked before every read
- *   and before the steps, and nothing is reported after it is observable.
+ *   and re-checked after it, so a cancel that lands during a read never
+ *   reports that clip's step, and nothing is reported after it is observable.
  * - `null` — every clip vanished: nothing to share.
  * - the joined MP3 otherwise.
  *
@@ -383,34 +406,41 @@ async function joinFinishedChapter(
   /** Per present clip, in order: whether it was skipped (gone since pass 1). */
   const skippedAt: boolean[] = [];
   let missing = plan.missing;
+  const total = plan.present.length;
+  // The counted segments by clip id (#1044), as the gather names them.
+  const keys = plan.present.map((p) => p.clipId);
+  let skipped = 0;
+  let done = 0;
+  /** Whether the `(0, total)` anchor has gone out yet — see the docblock. */
+  let opened = false;
   for (const { clipId, frames } of plan.present) {
     if (shouldContinue && !shouldContinue()) return "cancelled";
     const clip = await getClip(clipId);
+    // Re-checked after the await: a cancel that landed during this read must
+    // not report this clip's step (#986).
+    if (shouldContinue && !shouldContinue()) return "cancelled";
     if (!clip) {
       missing++;
+      skipped++;
       skippedAt.push(true);
-      continue;
+    } else if (clip.encoding !== "mp3") {
+      return "not-joinable";
+    } else {
+      const parsed = parseJoinableMp3(clip.mp3);
+      if (parsed === null) return "not-joinable";
+      pieces.push({ frames: parsed, recorded: frames });
+      skippedAt.push(false);
     }
-    if (clip.encoding !== "mp3") return "not-joinable";
-    const parsed = parseJoinableMp3(clip.mp3);
-    if (parsed === null) return "not-joinable";
-    pieces.push({ frames: parsed, recorded: frames });
-    skippedAt.push(false);
+    if (!opened) {
+      opened = true;
+      onStep?.(0, total, 0, undefined, keys);
+    }
+    onStep?.(++done, total, skipped, undefined, keys);
   }
   if (shouldContinue && !shouldContinue()) return "cancelled";
   const mp3 =
     pieces.length === 0 ? null : joinMp3(pieces, GAP_FRAMES, MP3_ENCODER_DELAY);
   if (pieces.length > 0 && mp3 === null) return "not-joinable";
-
-  const total = plan.present.length;
-  // The counted segments by clip id (#1044), as the gather names them.
-  const keys = plan.present.map((p) => p.clipId);
-  let skipped = 0;
-  onStep?.(0, total, skipped, undefined, keys);
-  skippedAt.forEach((wasSkipped, i) => {
-    if (wasSkipped) skipped++;
-    onStep?.(i + 1, total, skipped, undefined, keys);
-  });
   if (mp3 === null) return null;
   return { mp3, segments: pieces.length, missing };
 }

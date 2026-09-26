@@ -521,6 +521,43 @@ describe("exportChapterMp3 — an all-Finished chapter is joined, not re-encoded
     expect(joined).toBe(1);
   });
 
+  /**
+   * #1004 residual 2 (PR #1050's body): on a joined chapter the ring showed no
+   * count while the stored clips were read, then jumped from 0 to its total at
+   * once — every step used to fire only after `joinMp3` had already run, in one
+   * synchronous batch. This pins the fix at the one place that regresses back
+   * to that: each clip's own step must land right after THAT clip is read, not
+   * after every clip in the chapter has been.
+   */
+  it("advances the step count as each clip is read, not in one batch once every clip is already in hand", async () => {
+    const { chapterId } = await finishedChapter([5_000, 6_000, 7_000]);
+    const order: string[] = [];
+    const real = clips.getClip;
+    const spy = vi.spyOn(clips, "getClip").mockImplementation(async (id) => {
+      order.push("read");
+      return real(id);
+    });
+    const codec = testCodec();
+
+    const result = await exportChapterMp3(chapterId, codec, undefined, (d, t) =>
+      order.push(`step:${d}/${t}`)
+    ).finally(() => spy.mockRestore());
+
+    expect(result).not.toBeNull();
+    // A read for clip N+1 never happens before clip N's own step has landed —
+    // the ring only ever counts what has actually been read, never a whole
+    // chapter's worth reported at once after the last read completes.
+    expect(order).toEqual([
+      "read",
+      "step:0/3",
+      "step:1/3",
+      "read",
+      "step:2/3",
+      "read",
+      "step:3/3",
+    ]);
+  });
+
   it("brings a counted Share Chapter to its total without an encode", async () => {
     const { chapterId } = await finishedChapter([5_000, 6_000]);
     const codec = testCodec();
