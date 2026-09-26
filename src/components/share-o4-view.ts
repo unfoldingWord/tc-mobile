@@ -142,7 +142,15 @@ export function shareO4View(
       chips: handedOver(items, scope, progress.carried),
     };
   const steps = progress.steps;
-  if (steps === undefined)
+  // A zero (or otherwise non-positive) total would make both `done / total`
+  // divisions NaN below. Not observed reachable: `withStep`
+  // (share-progress.ts) already rejects a reported `total < 1` before it
+  // ever reaches `steps`, and Share Book's own reporter skips the call
+  // entirely when it has no chapter to count (`chapters.length > 0` guard,
+  // lib/export/book.ts). Guarded here anyway, cheaply, as the same "no count
+  // yet" look the `steps === undefined` branch already draws (D15), rather
+  // than trust every future caller of `shareO4View` to uphold that invariant.
+  if (steps === undefined || steps.total <= 0)
     return { icon: "share", ring: null, meter: { now: null }, chips: [] };
   return {
     icon: "share",

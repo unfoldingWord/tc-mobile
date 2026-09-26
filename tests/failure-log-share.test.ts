@@ -8,11 +8,21 @@ import {
   type LogShareCapabilities,
   selectLogShareShape,
 } from "@/hooks/use-failure-log-share";
-import { region, uniqueIndexOf } from "./support";
+import { region, stripComments, uniqueIndexOf } from "./support";
 
-/** Reads the hook source for wiring assertions; does not execute its effects. */
-const read = (rel: string) =>
+/** Reads a source file as written, comments included. Only for a pin whose
+ *  subject IS a comment (the stale-comment check below); every other pin
+ *  reads through `read`. */
+const readRaw = (rel: string) =>
   readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
+
+/** Reads a source file with its comments stripped, for wiring assertions; does
+ *  not execute its effects. The pins below are positive matches on live code,
+ *  and an unstripped read lets a comment carrying the expected line satisfy a
+ *  pin while the live code says otherwise (#822). `stripComments` is not
+ *  string-aware; the three files read here hold no `//` or `/*` inside a
+ *  string literal. */
+const read = (rel: string) => stripComments(readRaw(rel));
 
 /**
  * #205 — which shape the durable failure log leaves the phone in.
@@ -196,8 +206,7 @@ describe("use-failure-log-share.ts: an unconfirmed native resolve settles unprov
       'return settled === "unproven" ? "unproven" : "sent";',
       successAt
     );
-    expect(returnAt).toBeGreaterThan(successAt);
-    const body = hook.slice(successAt, returnAt);
+    const body = region(hook, { from: successAt, to: returnAt });
     expect(body).toMatch(
       /const proven = resolveProvesDelivery\(\s*payload\.kind === "native" \? "native" : "web",\s*readSharePlatform\(\)\s*\);/
     );
@@ -217,7 +226,11 @@ describe("use-failure-log-share.ts: an unconfirmed native resolve settles unprov
   });
 
   it("the stale comment claiming this is unconditionally safe 'for the reason it is safe for Share Chapter' is gone", () => {
-    expect(hook).not.toMatch(/that is safe HERE for the reason it is safe/);
+    // Raw, not stripped: the subject is a comment, and a negated match over
+    // stripped source would pass whatever the comments said.
+    expect(readRaw("src/hooks/use-failure-log-share.ts")).not.toMatch(
+      /that is safe HERE for the reason it is safe/
+    );
   });
 });
 
@@ -266,9 +279,9 @@ describe("use-failure-log-share.ts: sendUnconfirmed reaches both idle Send contr
     expect(prepareClearAt).toBeGreaterThan(prepareAt);
     expect(prepareClearAt).toBeLessThan(prepareStatusAt);
 
-    const resetAt = hook.indexOf("const reset = useCallback(() => {");
+    const resetAt = uniqueIndexOf(hook, "const reset = useCallback(() => {");
     const resetEnd = hook.indexOf("}, []);", resetAt);
-    expect(hook.slice(resetAt, resetEnd)).toMatch(
+    expect(region(hook, { from: resetAt, to: resetEnd })).toMatch(
       /setSendUnconfirmed\(false\);/
     );
   });
@@ -300,7 +313,7 @@ describe("use-failure-log-share.ts and failure-log-panel.tsx: terminal DB refusa
       hook.indexOf("const prepare = useCallback")
     );
     const finallyAt = hook.indexOf("} finally {", catchAt);
-    const catchBody = hook.slice(catchAt, finallyAt);
+    const catchBody = region(hook, { from: catchAt, to: finallyAt });
     expect(catchBody).toMatch(
       /const classified = classifyFailureLogOpenError\(cause\);/
     );
@@ -319,10 +332,11 @@ describe("use-failure-log-share.ts and failure-log-panel.tsx: terminal DB refusa
 
     it(`${name}: maps the failure-log restart error to restart copy, not the Try again line`, () => {
       const source = read(file);
-      const errorTextAt = source.indexOf("const errorText =");
-      expect(errorTextAt).toBeGreaterThan(-1);
-      const errorTextEnd = source.indexOf(";", errorTextAt);
-      const errorText = source.slice(errorTextAt, errorTextEnd);
+      const errorTextAt = uniqueIndexOf(source, "const errorText =");
+      const errorText = region(source, {
+        from: errorTextAt,
+        to: source.indexOf(";", errorTextAt),
+      });
       expect(errorText).toMatch(/share\.error === "restart"/);
       expect(errorText).toMatch(/strings\.shareFailureLogRestart/);
     });

@@ -180,8 +180,10 @@
   /* The design reference's lift shadow, as dialogs.css carries its own: a
      black shadow in both themes, so no layer-2 role applies to it. A lifted
      segment row keeps its --s-surface ground (§3 gives --s-raised to a
-     lifted chapter row only). */
-  [data-design="o4"] .segments-item--lifted > .row {
+     lifted chapter row only). The Books screen's lifted chapter item shares
+     this one rule (#953 PR2b): o4/books.css keeps colour literals out. */
+  [data-design="o4"] .segments-item--lifted > .row,
+  [data-design="o4"] .books-lifted {
     box-shadow: 0 14px 30px rgba(0, 0, 0, 0.38);
   }
 

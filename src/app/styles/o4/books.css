@@ -205,6 +205,45 @@
     color: var(--s-ink-muted);
   }
 
+  /* --- press-and-hold reorder (#953, §3 lifted row, §4 reorder) ----------
+     The same lift as o4/segments.css gives a segment row. The hold area is
+     the whole chapter row; a long press there must not select text or raise
+     the phone's callout. */
+  [data-design="o4"] .books-chapter[data-reorder-handle] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  /* While a row is lifted, every row reads its offset from --reorder-y, set
+     inline by the screen: the lifted row's follows the finger, and the rows
+     between its slot and the target slide one slot to make room. */
+  [data-design="o4"] .books-chapters[data-reordering] > li {
+    transform: translateY(var(--reorder-y, 0px));
+    transition: transform 160ms ease;
+  }
+  /* The lift shadow is on the item, not the row button: the button can carry
+     the guide ring (the header above). Its value is a colour literal, which
+     this file keeps out, so it is o4/segments.css's one lift-shadow rule,
+     shared; the radius here is what rounds it to the row. */
+  [data-design="o4"] .books-chapters[data-reordering] > .books-lifted {
+    position: relative;
+    z-index: 8;
+    border-radius: var(--p-radius-12);
+    transform: translateY(var(--reorder-y, 0px)) scale(1.03);
+    transition: none;
+  }
+  /* §3: a lifted chapter row takes --s-raised. */
+  [data-design="o4"] .books-lifted > .books-chapter {
+    background: var(--s-raised);
+  }
+  /* The neighbours jump rather than slide under reduced motion. The lift's
+     scale is a state, not a movement, so it stays. */
+  @media (prefers-reduced-motion: reduce) {
+    [data-design="o4"] .books-chapters[data-reordering] > li {
+      transition: none;
+    }
+  }
+
   /* --- the progress dots (03) -------------------------------------------- */
   /* The size and gap come from the row (`dotFit` in books-screen.tsx), which
      picks the largest step whose wrapped rows fit this column's height at the
@@ -325,5 +364,36 @@
     border-radius: var(--p-radius-lg);
     background: var(--s-voice);
     color: var(--s-voice-ink);
+  }
+  /* --- the book menu (04, #949) and its Cover colour tile (#937 D7) ------
+     The sheet's head reuses the delete ask's small cover and name, laid out
+     by menus.css's shared head row; the name takes the space the Rename
+     pencil leaves. The Cover colour tile's box and the picker are here, not
+     in menus.css, because the tile is filled with the book's own colour
+     (--book-cover, set inline), which is this file's one exception to
+     layer-2 colour. The swatches are the workbench's new-book swatches: 56
+     square, radius 9, 12 apart, the chosen one ringed in ink over a gap of
+     the sheet's own surface. */
+  [data-design="o4"] .books-menu-head {
+    flex: 1;
+  }
+  [data-design="o4"] .o4-tile--cover::before {
+    background: var(--book-cover);
+  }
+  [data-design="o4"] .books-cover-pick {
+    flex: 1;
+    min-width: 0;
+  }
+  [data-design="o4"] .books-cover-pick .cover-swatch-row {
+    gap: 12px;
+  }
+  [data-design="o4"] .books-cover-pick .cover-swatch {
+    border-radius: 9px; /* one-off: no 9px primitive */
+  }
+  [data-design="o4"] .books-cover-pick .cover-swatch[aria-pressed="true"] {
+    border-color: transparent;
+    box-shadow:
+      0 0 0 3px var(--s-surface),
+      0 0 0 6px var(--s-ink);
   }
 }

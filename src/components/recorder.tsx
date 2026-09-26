@@ -14,7 +14,7 @@ import { CenterlineOverlay } from "./centerline-overlay";
 import { Control } from "./control";
 import { shareControlGlyph } from "./control-affordance";
 import { redoReason, undoReason } from "./edit-control-state";
-import { EraseConfirm } from "./erase-confirm";
+import { EraseConfirm, type EraseConfirmPreview } from "./erase-confirm";
 import { guidedRecordShown, guidedStep } from "./guided-step";
 import { Icon } from "./icon";
 import { Notice } from "./notice";
@@ -1634,6 +1634,38 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       soundRange(playPlan.range.start, playPlan.range.end);
     }, [audio, playPlan, idleEditable, soundRange, stopPlayback]);
 
+    /**
+     * G5's "Play what will be lost" preview (#979 remainder). One more toggle
+     * over the same `soundRange`/`stopPlayback` pair as `onPlayButton` and
+     * `onAuditionButton` above — the working buffer, from its start (`0`),
+     * mirroring the "preview of what will be lost" contract
+     * `EraseConfirmPreview.onTogglePlay` documents (`segments-screen.tsx`'s
+     * `playTake(row, 0)` is the same offset for the same reason). `hasAudio`
+     * guards a never-recorded segment defensively — the confirm's own Play
+     * control already disables on `peaks === null`, which is the same
+     * condition, so this is belt-and-braces, not a real path.
+     */
+    const onTogglePreviewPlay = useCallback(() => {
+      if (closing.current) return;
+      if (audio.playingBuffer) {
+        stopPlayback();
+        return;
+      }
+      if (!hasAudio) return;
+      // No new start while the delete is in flight: `closing` only latches
+      // after a successful erase, and the failure branch closes the confirm
+      // without a stop, so a start here would sound behind the closed dialog.
+      if (erase.isErasing()) return;
+      soundRange(0, editor.workingLength);
+    }, [
+      audio,
+      hasAudio,
+      erase,
+      editor.workingLength,
+      soundRange,
+      stopPlayback,
+    ]);
+
     // Enter edit mode from the record menu. Play is a record-only control, so any
     // live buffer playback is stopped first — else it would orphan itself with no
     // control to stop it.
@@ -2016,6 +2048,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setConfirmOpen(false);
     }, [onClipboardChange, reopenFrame]);
 
+    // Cancel/Escape/scrim — the confirm's own "do not erase" answer (#979
+    // remainder). The preview row can have started buffer playback while the
+    // dialog was up; `stopPlayback` is the sheet's one stop path and a no-op
+    // with nothing sounding, so calling it unconditionally is safe for the
+    // ≡ menu's Erase and the clipboard's discard too, neither of which starts
+    // playback of its own. A system Back reaches the same answer through
+    // `close()`'s own `dismiss.closeConfirm` branch, which stops playback the
+    // same way.
+    const onCancelConfirm = useCallback(() => {
+      stopPlayback();
+      setConfirmOpen(false);
+    }, [stopPlayback]);
+
     /**
      * Reopen the sheet at idle with the reason in place, rather than exiting on
      * audio that cannot be recorded again.
@@ -2207,7 +2252,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // erase is only ever reachable at idle, so R4-1 still holds exactly.
         const dismiss = overlayDismissal(menuOpen, confirmOpen, erasing);
         if (dismiss.closeMenu) setMenuOpen(false);
-        if (dismiss.closeConfirm) setConfirmOpen(false);
+        if (dismiss.closeConfirm) {
+          // Back dismissing the confirm is the same "do not erase" answer as
+          // Cancel (#979 remainder): the preview row can have started buffer
+          // playback while the dialog was up, and Back must not leave it
+          // sounding behind the closed dialog. `stopPlayback` is the sheet's
+          // one stop path and a no-op with nothing sounding, so this is safe
+          // for the non-G5 dialogs too — they never start playback of their
+          // own.
+          stopPlayback();
+          setConfirmOpen(false);
+        }
         return Promise.resolve(false);
       }
       closing.current = true;
@@ -3119,6 +3174,26 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       meterFailed: audio.meterFailed,
     });
 
+    // The bin's own confirm gets the "Play what will be lost" row (#979
+    // remainder, G5 only — the ≡ menu's Erase and the clipboard's discard
+    // keep the plain 13 dialog, matching `badge`'s own `confirmFor !== "clip"`
+    // gate just below). `RecorderAudio`'s `playBuffer`/`playingBuffer` stand in
+    // for `SegmentsAudio`'s `playTake`/`playingId` — this sheet has one take in
+    // memory, not a list of rows, so there is no id to compare against.
+    // `undefined` outside G5 hands `EraseConfirm` no `preview` prop at all,
+    // exactly as the switch-off and non-G5 dialogs render today.
+    const g5Preview: EraseConfirmPreview | undefined =
+      g5 && confirmFor !== "clip"
+        ? {
+            peaks: editor.peaks,
+            playing: audio.playingBuffer,
+            onTogglePlay: onTogglePreviewPlay,
+            playLabel: strings.eraseConfirmPreviewPlay,
+            pauseLabel: strings.eraseConfirmPreviewPause,
+            finished: finishedState === "finished",
+          }
+        : undefined;
+
     return (
       <div
         className="recorder-scrim"
@@ -3861,7 +3936,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           onConfirm={
             confirmFor === "clip" ? onConfirmDiscardClip : onConfirmErase
           }
-          onCancel={() => setConfirmOpen(false)}
+          onCancel={onCancelConfirm}
+          preview={g5Preview}
         />
       </div>
     );

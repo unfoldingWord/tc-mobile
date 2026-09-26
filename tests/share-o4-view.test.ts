@@ -128,6 +128,34 @@ describe("shareO4View: the filling ring", () => {
   });
 });
 
+describe("shareO4View: a zero total is guarded, not left to divide into NaN", () => {
+  it("draws the same 'no count yet' look (D15) as steps === undefined, not a NaN ring or meter", () => {
+    const view = shareO4View(busy({ done: 0, total: 0 }), "chapter");
+    expect(view.ring).toBeNull();
+    expect(view.meter).toEqual({ now: null });
+    expect(view.chips).toEqual([]);
+  });
+
+  it("never lets aria-valuenow read NaN through the panel", () => {
+    const view = shareO4View(busy({ done: 0, total: 0 }), "book");
+    const container = render(
+      createElement(ShareProgressPanel, {
+        role: "status",
+        icon: "share-busy",
+        text: "status",
+        o4: view,
+      })
+    );
+    // The same "no count yet" bar the `steps === undefined` case draws
+    // (share-progress-o4-render.test.ts, "carries no value before the first
+    // count"): the core is still a progress bar, just with no
+    // `aria-valuenow` — never the `NaN` an unguarded `steps.total === 0`
+    // would have produced.
+    const bar = one(container, "[role='progressbar']");
+    expect(bar.hasAttribute("aria-valuenow")).toBe(false);
+  });
+});
+
 describe("shareO4View: the core's progress bar (D22)", () => {
   it("reads done over total as a whole percent while a prepare counts", () => {
     expect(shareO4View(busy({ done: 1, total: 3 }), "book").meter).toEqual({

@@ -42,17 +42,17 @@ loader); do not read every description here as the target.
 
 ## Tech stack
 
-|         |                                                                                                                                                                                                                                                          |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runtime | Node `^22.22.2 \|\| >=24.0.0` (22.22.2 is lint-staged 17.5.1's declared floor, `>=22.22.1`, already installed via #503; Node 23.x is unsupported — jsdom 27's own engine range excludes it too, #577; DRI 2026-09-26: "Raise to ^22.22.2 (Recommended)") |
-| Build   | Vite 8, `@vitejs/plugin-react`                                                                                                                                                                                                                           |
-| UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons                                                                                                                                                                                                          |
-| PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)                                                                                                                                                                                                             |
-| Storage | IndexedDB via `idb` 8                                                                                                                                                                                                                                    |
-| Audio   | Web Audio + MediaRecorder; `@breezystack/lamejs` for MP3 (in a Web Worker)                                                                                                                                                                               |
-| Tests   | Vitest 5, `fake-indexeddb`                                                                                                                                                                                                                               |
-| Lint    | ESLint 9 flat config, `typescript-eslint` 8, Prettier 3                                                                                                                                                                                                  |
-| Deploy  | Cloudflare Workers static assets, Wrangler 4                                                                                                                                                                                                             |
+|         |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime | Node `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0` (22.22.2 is lint-staged 17.5.1's declared floor, `>=22.22.1`, already installed via #503; 23.x and 25.x unsupported — 23.x because jsdom 27's own engine range excludes it too, #577, and 24.0.0-24.14.x plus 25.x because jsdom 30.1.1 and its transitives (@asamuzakjp/css-color, dom-selector, w3c-xmlserializer, undici) require `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0`, unblocking Dependabot PR #990; DRI 2026-09-26: "Raise to ^22.22.2 (Recommended)", then same day: "Drop 24.0–24.14 and 25 (Recommended)") |
+| Build   | Vite 8, `@vitejs/plugin-react`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Storage | IndexedDB via `idb` 8                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Audio   | Web Audio + MediaRecorder; `@breezystack/lamejs` for MP3 (in a Web Worker)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Tests   | Vitest 5, `fake-indexeddb`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Lint    | ESLint 9 flat config, `typescript-eslint` 8, Prettier 3                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Deploy  | Cloudflare Workers static assets, Wrangler 4                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 ## Commands
 
@@ -235,6 +235,12 @@ stored as numbers rather than written into IndexedDB as English data.
   reached interruption or background capture (#245), so #59 and #58 (pagehide)
   remain open for Android. The two cases above (sub-timeslice take,
   background right after Stop) are also still unrun. iOS version not recorded.
+- **Background capture is no longer the intended behaviour (#836).** The
+  requirements owner decided on 2026-09-24 that switching apps ends the
+  recording, so the page becoming hidden (an app switch, a lock) now seals an
+  open take the way an interruption does, and nothing restarts on return. The
+  two runs above describe earlier builds, where capture continued. The seal on
+  hidden has not been run on a device (#245).
 - **The export path exists (B7) and the encoder runs in a Web Worker (B8).**
   Share Chapter / Share Book, the worker round-trip (`hooks/mp3.worker.ts`,
   `hooks/mp3-codec.ts`), `decodeAudioData` of a stored MP3, and the
@@ -391,7 +397,9 @@ recorder still active `"recorder-interrupted-active"` #478, and a native
 `stop()` throwing inside `stop()`'s own flush `"recorder-stop-flush"` #485 —
 which seals the slices already in hand and rides the `StopResult`, so it
 never reaches the backstop below — and a track `stop()` that throws while the
-mic stream is released `"recorder-release-track"` #479), the level tap's clone
+mic stream is released `"recorder-release-track"` #479, and a take sealed and
+saved at the 20-minute cap `"recorder-take-cap"` #1005 — not a failure, but
+the one durable record that a take was cut), the level tap's clone
 track throwing on its own `stop()` (`hooks/audio-io.ts`,
 `"recorder-tap-clone-stop"`, #479), `stopRecording`'s commit-path backstop
 (`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), a failed
@@ -564,11 +572,12 @@ place. Decided 2026-09-02, when the repo stopped being solo.
   tags `main` (`git tag vX.Y.0` — the first tags this repo will have). A
   production hotfix between milestones is a patch on the shipped minor.
 
-  | Milestone                        | Due        | Ships                                       |
-  | -------------------------------- | ---------- | ------------------------------------------- |
-  | `v0.2.0 — Sept: production gate` | 2026-09-30 | the first `staging -> main` since the pivot |
-  | `v0.3.0 — Oct: training`         | 2026-10-09 | what facilitators run at the training       |
-  | `v1.0.0 — Post-training`         | —          | the first field-validated release           |
+  | Milestone                        | Due        | Ships                                                  |
+  | -------------------------------- | ---------- | ------------------------------------------------------ |
+  | `v0.2.0 — Sept: production gate` | 2026-09-30 | the first `staging -> main` since the pivot            |
+  | `v0.3.0 — Training essentials`   | 2026-10-09 | training-essential scope, promoted to `main` as 0.3.0  |
+  | `v1.0.0 — Training stretch`      | 2026-10-02 | v0.3.0's scope plus the O4 UI; on phones by 2026-10-02 |
+  | `v1.1.0 — Post-training`         | —          | the first field-validated release                      |
 
 - **Every open issue carries a milestone.** File new issues into one. A
   milestone closes when its promotion PR merges, and anything still open in it

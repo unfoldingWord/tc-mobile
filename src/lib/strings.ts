@@ -268,7 +268,12 @@ export const strings = {
   tileFinished: "Done",
   tileRename: "Rename",
   tileErase: "Erase",
+  // The book menu's Delete tile (04); its name is `deleteBook`.
+  tileDelete: "Delete",
   tileShare: "Share",
+  // The app ≡ menu's About tile (#36, DRI ruling on PR #1019): its name is
+  // `aboutOpen` ("About and licenses"), which already holds this word.
+  tileAbout: "About",
   tileLight: "Light",
   tileDark: "Dark",
   // The edit-mode recorder menu's exit tile (G3); its name is `doneEditing`.
@@ -590,6 +595,15 @@ export const strings = {
   reorderMoved: (from: number, to: number): string =>
     `Segment ${from} is now segment ${to}.`,
   reorderStayed: (n: number): string => `Segment ${n} stayed where it was.`,
+  // The same three lines for a chapter on the Books screen (#953 PR2b). Said
+  // by the chapter's number, which is what renumbers: a typed name such as
+  // "Mark 6" stays as it is (the DRI's pick), so it would not say where the
+  // chapter landed.
+  chapterReorderLifted: (n: number): string => `Moving chapter ${n}.`,
+  chapterReorderMoved: (from: number, to: number): string =>
+    `${strings.chapterName(from)} is now chapter ${to}.`,
+  chapterReorderStayed: (n: number): string =>
+    `${strings.chapterName(n)} stayed where it was.`,
   eraseConfirmTitle: "Erase this recording?",
   eraseConfirm: "Erase",
   // The safe action of the shared confirm dialog (`erase-confirm.tsx`). One

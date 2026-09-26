@@ -7,9 +7,6 @@ import { strings } from "@/lib/strings";
 import { coverColourName } from "./cover-colour-copy";
 import { Icon } from "./icon";
 
-/**
- * @pivotpending No production caller yet — see {@link CoverPicker}'s own tag.
- */
 export interface CoverPickerProps {
   /** The book's resolved colour (`lib/cover-colour.ts`'s `resolveCoverKey`) —
    *  always one live palette key, never `null`: a book always shows SOME
@@ -27,10 +24,8 @@ export interface CoverPickerProps {
 /**
  * A row of cover-colour swatches (#957, from #937's D7/D8).
  *
- * @pivotpending Exported only — this lane does not mount it (item 6 of #957:
- * "nothing changes on screen"). The sheets lane (#943) mounts it in the
- * new-book sheet and the menus lane (#949) mounts it in the book menu; until
- * one of them lands, this component has no production caller.
+ * Mounted in the O4 book menu (#949, `o4-book-menu.tsx`'s `O4CoverPick`).
+ * The new-book sheet (#943) does not mount it yet.
  *
  * Each swatch is a real `<button>`, not a coloured `<div>` with a click
  * handler: `aria-pressed` is the machine-readable half of its selected state
