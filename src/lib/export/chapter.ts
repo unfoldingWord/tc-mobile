@@ -16,6 +16,10 @@
  *
  * `gatherChapterPcm` is split out from `exportChapterMp3` so the concatenation,
  * ordering and gap are asserted directly on samples, without decoding an MP3.
+ *
+ * A chapter whose every segment is Finished skips the codec altogether: its
+ * stored MP3 frames are joined as they are (#1004, `lib/audio/mp3-join.ts`;
+ * see `exportChapterMp3`).
  */
 
 import { fitToFrames, silence } from "@/lib/audio/edit";

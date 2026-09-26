@@ -280,8 +280,19 @@ describe("parseJoinableMp3", () => {
   });
 
   it("refuses a stream that is not mono", () => {
+    // Every frame re-marked channel mode 0 (stereo): the headers still walk
+    // and agree with each other, so only the mono check can refuse it.
     const stereo = new Uint8Array(mp3);
-    stereo[3] = stereo[3]! & 0x3f; // channel mode 0: stereo
+    let at = 0;
+    for (
+      let header = readMp3FrameHeader(stereo, at);
+      header !== null;
+      header = readMp3FrameHeader(stereo, at)
+    ) {
+      stereo[at + 3] = stereo[at + 3]! & 0x3f;
+      at += header.length;
+    }
+    expect(at).toBe(stereo.length);
     expect(parseJoinableMp3(stereo)).toBeNull();
   });
 

@@ -561,13 +561,13 @@ describe("exportChapterMp3 — an all-Finished chapter is joined, not re-encoded
     const steps: Array<[number, number, number | undefined]> = [];
     const codec = testCodec();
 
+    // Restored even when the export throws, or the spy leaks into later cases.
     const result = await exportChapterMp3(
       chapterId,
       codec,
       undefined,
       (d, t, s) => steps.push([d, t, s])
-    );
-    spy.mockRestore();
+    ).finally(() => spy.mockRestore());
 
     expect(codec.encodeMp3).not.toHaveBeenCalled();
     expect(result!.segments).toBe(2);
@@ -599,8 +599,7 @@ describe("exportChapterMp3 — an all-Finished chapter is joined, not re-encoded
       codec,
       () => reads < 1,
       onStep
-    );
-    spy.mockRestore();
+    ).finally(() => spy.mockRestore());
 
     expect(result).toBeNull();
     expect(reads).toBe(1);
