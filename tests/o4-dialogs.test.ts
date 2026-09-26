@@ -72,7 +72,7 @@ function decl(selector: string): Record<string, string> {
 
 describe("o4/dialogs.css — the confirm dialog's O4 values (#946)", () => {
   it("has rules at all (non-emptiness floor)", () => {
-    expect(RULES.length).toBeGreaterThanOrEqual(6);
+    expect(RULES.length).toBeGreaterThanOrEqual(8);
   });
 
   it("scopes every rule under the switch, so switch-off is unchanged", () => {
@@ -105,6 +105,17 @@ describe("o4/dialogs.css — the confirm dialog's O4 values (#946)", () => {
     expect(glyph.width).toBe("76px");
     expect(glyph.height).toBe("76px");
     expect(glyph["border-radius"]).toBe("50%");
+  });
+
+  it("floats the preview row on --s-floor, with a 60px round Play/Pause transport (#979)", () => {
+    const preview = decl(`${SCOPE} .confirm-preview`);
+    expect(preview.background).toBe("var(--s-floor)");
+    expect(preview.height).toBe("78px");
+    expect(preview["border-radius"]).toBe("14px");
+    expect(preview["align-self"]).toBe("stretch");
+    const play = decl(`${SCOPE} .confirm-preview-play`);
+    expect(play.width).toBe("60px");
+    expect(play.height).toBe("60px");
   });
 
   it("lays the two buttons out in two columns, 76 tall, radius 14", () => {
@@ -166,22 +177,70 @@ async function mountConfirm() {
   });
 }
 
-describe("o4/dialogs.css's selectors against EraseConfirm's real markup (#946)", () => {
-  const selectors = RULES.flatMap((r) => r.selectors);
+/**
+ * The bare mount above, plus `preview` (#979) — used only by the selector
+ * checks below, never by the focus-trap describe further down: that one
+ * stays on the bare `mountConfirm()` so its "two buttons" assertions are
+ * exactly what they were before this row existed (the focus trap unchanged,
+ * per #979's Done-when).
+ */
+async function mountConfirmWithPreview() {
+  // jsdom has no canvas 2D context; `Waveform`'s draw effect already bails
+  // out on a null one (its own early return), so this only silences the
+  // "not implemented" noise.
+  vi.spyOn(
+    dom.window.HTMLCanvasElement.prototype,
+    "getContext"
+  ).mockReturnValue(null);
+  await act(async () => {
+    root.render(
+      createElement(EraseConfirm, {
+        open: true,
+        title: "Erase this recording?",
+        confirmLabel: "Erase",
+        cancelLabel: "Cancel",
+        onConfirm: vi.fn(),
+        onCancel: vi.fn(),
+        preview: {
+          peaks: null,
+          playing: false,
+          onTogglePlay: vi.fn(),
+          playLabel: "Play what will be lost",
+          pauseLabel: "Pause",
+        },
+      })
+    );
+  });
+}
 
-  it("every selector matches with the switch on", async () => {
+describe("o4/dialogs.css's selectors against EraseConfirm's real markup (#946, #979)", () => {
+  const selectors = RULES.flatMap((r) => r.selectors);
+  const isPreview = (s: string) => s.includes(".confirm-preview");
+
+  it("every non-preview selector matches with the switch on, no preview passed", async () => {
     document.documentElement.setAttribute("data-design", "o4");
     await mountConfirm();
-    expect(selectors.length).toBeGreaterThanOrEqual(6);
-    for (const s of selectors)
+    const rest = selectors.filter((s) => !isPreview(s));
+    expect(rest.length).toBeGreaterThanOrEqual(6);
+    for (const s of rest) expect(document.querySelector(s), s).not.toBeNull();
+  });
+
+  it("the preview row's selectors match with the switch on, once preview is passed", async () => {
+    document.documentElement.setAttribute("data-design", "o4");
+    await mountConfirmWithPreview();
+    const previewSelectors = selectors.filter(isPreview);
+    expect(previewSelectors.length).toBeGreaterThanOrEqual(2);
+    for (const s of previewSelectors)
       expect(document.querySelector(s), s).not.toBeNull();
   });
 
-  it("no selector matches with the switch off", async () => {
+  it("no selector matches with the switch off, even with preview passed", async () => {
     document.documentElement.setAttribute("data-design", "current");
-    await mountConfirm();
-    // The dialog is up — so a null below is the scope, not an empty page.
+    await mountConfirmWithPreview();
+    // The dialog, and the preview row itself, are up — so a null below is the
+    // scope prefix doing its job, not an empty page or an unrendered row.
     expect(document.querySelector(".confirm-panel")).not.toBeNull();
+    expect(document.querySelector(".confirm-preview")).not.toBeNull();
     for (const s of selectors) expect(document.querySelector(s), s).toBeNull();
   });
 });

@@ -589,6 +589,11 @@ export const strings = {
   // because it is the same control on the same surface saying the same word.
   eraseCancel: "Cancel",
   eraseFailed: "Could not erase the recording. Try again.",
+  // The confirm's "Play what will be lost" row (#979 remainder, O4 "13"
+  // only): the workbench's own copy, word for word, for the Play/Pause
+  // transport beside the preview waveform.
+  eraseConfirmPreviewPlay: "Play what will be lost",
+  eraseConfirmPreviewPause: "Pause",
   // The clipboard's bin under the line (#862): throws away a cut that was
   // never pasted, behind the same confirm as the whole-take erase. "Cut
   // audio", not "clipboard": the translator cut a piece of their recording,
