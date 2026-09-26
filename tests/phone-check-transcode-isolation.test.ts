@@ -152,7 +152,8 @@ describe("the phone check holds the transcode sweep off its measurements", () =>
         listedDuringRun.push(
           vi.mocked(listPcmFinishedSegments).mock.calls.length
         );
-      })
+      }),
+      () => {}
     );
 
     expect(listedDuringRun).toEqual([0, 0]);
@@ -200,7 +201,10 @@ describe("the phone check holds the transcode sweep off its measurements", () =>
     });
 
     // Direct entry into step 4 while the turn is still committing.
-    const run = runMemoryCheck(memoryDeps(() => log.push("allocate")));
+    const run = runMemoryCheck(
+      memoryDeps(() => log.push("allocate")),
+      () => {}
+    );
     await settle();
     expect(log).toEqual([]);
 
@@ -236,5 +240,60 @@ describe("the phone check holds the transcode sweep off its measurements", () =>
     turn.finish();
     await run;
     expect(log).toEqual(["sweep-commit-done", "storage"]);
+  });
+
+  // Frank R2 P1 / George R2 High: the screen keys Close and both Starts off
+  // `activity !== null`, so a run that is still waiting on an in-flight turn
+  // must already read as busy — from the synchronous tap, before any await.
+  it("marks the memory run busy before it waits on an in-flight sweep turn", async () => {
+    vi.mocked(listPcmFinishedSegments).mockResolvedValue(OWED);
+    const log: string[] = [];
+    const turn = holdNextCommit(log);
+    void requestTranscodeSweep();
+    await vi.waitFor(() => {
+      expect(commitTranscode).toHaveBeenCalledTimes(1);
+    });
+
+    const busy: unknown[] = [];
+    const run = runMemoryCheck(
+      memoryDeps(() => log.push("allocate")),
+      (activity) => busy.push(activity)
+    );
+    // Synchronously, with no await between the call and this line.
+    expect(busy).toEqual([{ kind: "waiting" }]);
+    await settle();
+    expect(log).toEqual([]);
+    expect(busy.at(-1)).not.toBeNull();
+
+    turn.finish();
+    await run;
+  });
+
+  it("marks steps 1-3 busy before they wait on an in-flight sweep turn", async () => {
+    vi.mocked(listPcmFinishedSegments).mockResolvedValue(OWED);
+    const log: string[] = [];
+    const turn = holdNextCommit(log);
+    void requestTranscodeSweep();
+    await vi.waitFor(() => {
+      expect(commitTranscode).toHaveBeenCalledTimes(1);
+    });
+
+    const busy: unknown[] = [];
+    const run = runPhoneChecks(
+      {
+        device: async () => ok(DEVICE),
+        encode: async () => ok(ENCODE),
+        storage: async () => ok(STORAGE),
+      },
+      () => {},
+      (activity) => busy.push(activity)
+    );
+    expect(busy).toEqual([{ kind: "waiting" }]);
+    await settle();
+    expect(busy).toEqual([{ kind: "waiting" }]);
+
+    turn.finish();
+    await run;
+    expect(busy[0]).toEqual({ kind: "waiting" });
   });
 });

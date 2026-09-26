@@ -40,6 +40,8 @@ export function PhoneCheckScreen({ onClose }: { onClose: () => void }) {
 function activityLine(activity: PhoneCheckActivity): string | null {
   if (activity === null) return null;
   switch (activity.kind) {
+    case "waiting":
+      return strings.phoneCheckRunWaiting;
     case "device":
       return strings.phoneCheckRunDevice;
     case "encode":

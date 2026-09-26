@@ -115,6 +115,7 @@ describe("PhoneCheckView", () => {
       one(root, '[data-phone-check="close"]').hasAttribute("disabled");
     expect(close(view(IDLE))).toBe(false);
     for (const activity of [
+      { kind: "waiting" },
       { kind: "device" },
       { kind: "encode" },
       { kind: "storage" },

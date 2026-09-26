@@ -32,8 +32,13 @@ import type {
 } from "@/lib/phone-check/report";
 import type { SavedChecks } from "@/lib/phone-check/saved-results";
 
-/** What the checks are doing right now. `null` is idle. */
+/**
+ * What the checks are doing right now. `null` is idle. `waiting` is a run
+ * that holds the claim but is still waiting for a transcode turn already in
+ * flight to finish: busy, so Close and both Starts stay disabled through it.
+ */
 export type PhoneCheckActivity =
+  | { readonly kind: "waiting" }
   | { readonly kind: "device" }
   | { readonly kind: "encode" }
   | { readonly kind: "storage" }
@@ -111,8 +116,17 @@ const PHONE_CHECK_SWEEP_PAUSE = "phone-check";
  * made meanwhile is held by the pause, not dropped, and the resume in the
  * `finally` carries it out when the run ends — the same reversible pause
  * `SaveFailed` holds (#514).
+ *
+ * `busyWith({ kind: "waiting" })` is called synchronously, before the first
+ * `await`: the wait can last a whole transcode turn, and a screen that read as
+ * idle through it would let Close unmount a run that then starts measuring
+ * under Books (Frank R2 P1 / George R2 High on #1013).
  */
-async function withTranscodeHeld<T>(work: () => Promise<T>): Promise<T> {
+async function withTranscodeHeld<T>(
+  busyWith: (activity: PhoneCheckActivity) => void,
+  work: () => Promise<T>
+): Promise<T> {
+  busyWith({ kind: "waiting" });
   pauseTranscodeSweep(PHONE_CHECK_SWEEP_PAUSE);
   try {
     await transcodeSweepSettled();
@@ -132,7 +146,7 @@ export function runPhoneChecks(
   land: (next: Partial<SavedChecks>) => void,
   busyWith: (activity: PhoneCheckActivity) => void
 ): Promise<void> {
-  return withTranscodeHeld(async () => {
+  return withTranscodeHeld(busyWith, async () => {
     // A new run replaces the last one whole, never a mix of the two.
     land({ device: null, encode: null, storage: null });
     busyWith({ kind: "device" });
@@ -144,11 +158,16 @@ export function runPhoneChecks(
   });
 }
 
-/** Step 4, the memory ceiling, with the transcode sweep held off it. */
+/**
+ * Step 4, the memory ceiling, with the transcode sweep held off it. `busyWith`
+ * marks the run busy while it waits on the sweep; the steps themselves report
+ * through `deps`.
+ */
 export function runMemoryCheck(
-  deps: AllocationDeps
+  deps: AllocationDeps,
+  busyWith: (activity: PhoneCheckActivity) => void
 ): Promise<AllocationResult> {
-  return withTranscodeHeld(() => runAllocationSteps(deps));
+  return withTranscodeHeld(busyWith, () => runAllocationSteps(deps));
 }
 
 /**
@@ -217,20 +236,22 @@ export function usePhoneCheck(): {
   const runMemory = useCallback(() => {
     const release = claimPhoneCheckRun();
     if (release === null) return;
+    const busyWith = (activity: PhoneCheckActivity) =>
+      setState((prev) => ({ ...prev, activity }));
     const deps = browserAllocationDeps(crumbStore, (mb) =>
-      setState((prev) => ({ ...prev, activity: { kind: "memory", mb } }))
+      busyWith({ kind: "memory", mb })
     );
     // No catch: a failed ALLOCATION is a result, returned by the loop, and
     // anything else that rejects here is a defect for the app-wide
     // unhandled-rejection listener, which reports it to the funnel.
     void (async () => {
       try {
-        const allocation = await runMemoryCheck(deps);
+        const allocation = await runMemoryCheck(deps, busyWith);
         setState((prev) => ({ ...prev, allocation }));
       } finally {
         deps.release();
         release();
-        setState((prev) => ({ ...prev, activity: null }));
+        busyWith(null);
       }
     })();
   }, [crumbStore]);
