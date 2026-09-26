@@ -276,7 +276,8 @@ Round 1 was answered by the requirements owner
   Keep and Delete, with the book's small cover and name in the header
   (`o4-book-delete-ask.tsx`, #980). Under O4 the book-delete path no longer
   uses the floating `EraseConfirm` card; with the switch off it still does.
-  The resting sheet's tiles are G1's work. That comment labels
+  At rest the sheet is state 04 on tiles (Share, Cover colour, Delete),
+  with Rename as the head's pencil. The #949 comment labels
   this answer "D16 → B", a different question from #947's D16 above
   ([#949 round 3][949-r3]).
 - **D17, marking done:** the tile caption is the workbench's "Done". The
