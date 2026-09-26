@@ -18,6 +18,16 @@ import { describe, expect, it } from "vitest";
 // (`^22.22.2`, dependabot #990) are cited as the same class of reason in the
 // PR that raised this, but neither is installed yet, so only lint-staged's
 // range is checked here mechanically.
+//
+// 2026-09-26 (later same day, #990 unblock): jsdom 30.1.1 (Dependabot PR
+// #990, not merged yet — package-lock.json still locks jsdom 27.4.0) and its
+// transitive dependencies (@asamuzakjp/css-color, dom-selector,
+// w3c-xmlserializer, undici) require Node `^22.22.2 || ^24.15.0 || >=26.0.0`.
+// DRI decision (verbatim): "Drop 24.0–24.14 and 25 (Recommended)". This
+// range is adopted here ahead of #990 landing, so the range no longer agrees
+// with jsdom 27's own currently-locked, wider range (`^20.19.0 || ^22.12.0 ||
+// >=24.0.0`) at every version — only a subset holds now (see the "agrees
+// with jsdom" test below, rewritten to a one-directional check).
 const ROOT = path.join(import.meta.dirname, "..");
 
 const packageJson: { engines?: { node?: string } } = JSON.parse(
@@ -85,16 +95,41 @@ describe("declared engines.node range (#577, floor raise 2026-09-26)", () => {
     expect(satisfiesRange(ENGINE_RANGE!, "22.99.99")).toBe(true);
   });
 
-  it("admits Node 24, the next supported line", () => {
-    expect(satisfiesRange(ENGINE_RANGE!, "24.0.0")).toBe(true);
-    expect(satisfiesRange(ENGINE_RANGE!, "24.5.0")).toBe(true);
+  it("excludes Node 24.0.0-24.14.x, dropped per the DRI decision (jsdom 30 / #990)", () => {
+    expect(satisfiesRange(ENGINE_RANGE!, "24.0.0")).toBe(false);
+    expect(satisfiesRange(ENGINE_RANGE!, "24.5.0")).toBe(false);
+    expect(satisfiesRange(ENGINE_RANGE!, "24.14.0")).toBe(false);
+  });
+
+  it("admits Node 24.15.0 and the rest of the 24.x line", () => {
+    expect(satisfiesRange(ENGINE_RANGE!, "24.15.0")).toBe(true);
+    expect(satisfiesRange(ENGINE_RANGE!, "24.99.99")).toBe(true);
+  });
+
+  it("excludes Node 25.x, dropped per the DRI decision", () => {
+    expect(satisfiesRange(ENGINE_RANGE!, "25.0.0")).toBe(false);
+    expect(satisfiesRange(ENGINE_RANGE!, "25.9.9")).toBe(false);
+  });
+
+  it("admits Node 26, the next supported line", () => {
+    expect(satisfiesRange(ENGINE_RANGE!, "26.0.0")).toBe(true);
+    expect(satisfiesRange(ENGINE_RANGE!, "26.5.0")).toBe(true);
   });
 
   it("this environment's own Node satisfies the declared range", () => {
     expect(satisfiesRange(ENGINE_RANGE!, process.versions.node)).toBe(true);
   });
 
-  it("agrees with jsdom's own declared engine range at every version tested here", () => {
+  it("is at least as strict as jsdom's own currently-locked engine range (jsdom 27, pre-#990)", () => {
+    // #990 (jsdom 30.1.1) is not merged yet, so package-lock.json still locks
+    // jsdom 27.4.0, whose own range (`^20.19.0 || ^22.12.0 || >=24.0.0`) is
+    // wider than ours: it still admits plain 24.0.0-24.14.x, which our range
+    // now excludes. This is deliberate — ENGINE_RANGE pre-adopts the range
+    // jsdom 30 and its transitives (@asamuzakjp/css-color, dom-selector,
+    // w3c-xmlserializer, undici) will require, so #990 can rebase and merge
+    // without a second engines change. So the relationship is one-directional
+    // now, not equality: every version ENGINE_RANGE admits must also satisfy
+    // jsdom 27's currently-locked range.
     expect(JSDOM_RANGE).toBeTruthy();
     for (const version of [
       "22.22.2",
@@ -102,11 +137,15 @@ describe("declared engines.node range (#577, floor raise 2026-09-26)", () => {
       "23.0.0",
       "23.6.0",
       "24.0.0",
-      "24.5.0",
+      "24.14.0",
+      "24.15.0",
+      "24.99.99",
+      "25.0.0",
+      "26.0.0",
     ]) {
-      expect(satisfiesRange(ENGINE_RANGE!, version)).toBe(
-        satisfiesRange(JSDOM_RANGE!, version)
-      );
+      if (satisfiesRange(ENGINE_RANGE!, version)) {
+        expect(satisfiesRange(JSDOM_RANGE!, version)).toBe(true);
+      }
     }
   });
 
