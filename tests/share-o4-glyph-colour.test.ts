@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { cssRule, declarationValue, stripCssComments } from "./support";
+
 /**
  * O4's own piece of the share overlay (#947, epic #936). The 140/176
  * circular Share button, its send-ring, an animated packing-progress arc,
@@ -40,29 +42,18 @@ function read(relPath: string): string {
   return readFileSync(path.join(process.cwd(), relPath), "utf8");
 }
 
-/**
- * Drops CSS block comments before selector-scanning, so a docblock that
- * quotes a selector in prose (as this file's own header, and `share.css`'s,
- * both do) cannot be mistaken for a rule.
- */
-function stripComments(css: string): string {
-  return css.replace(/\/\*[\s\S]*?\*\//g, "");
-}
-
 describe("O4 share overlay colour (#947)", () => {
   it('inks the busy glyph with the send-teal role, scoped under [data-design="o4"]', () => {
-    const css = read("src/app/styles/o4/share.css");
-    const start = css.indexOf(
-      '[data-design="o4"] .share-scrim[data-outcome="busy"]'
+    // `cssRule` strips comments before it searches, so `share.css`'s header
+    // quoting this selector in prose can never be the block read (#529's
+    // trap), and `declarationValue` reads the `color` DECLARATION, which a
+    // `background-color` or a second, overriding `color` cannot satisfy
+    // (#533).
+    const block = cssRule(
+      read("src/app/styles/o4/share.css"),
+      '[data-design="o4"] .share-scrim[data-outcome="busy"] .share-progress-glyph'
     );
-    expect(
-      start,
-      "no O4 busy-glyph rule found in o4/share.css"
-    ).toBeGreaterThan(-1);
-    const block = css.slice(start, css.indexOf("}", start) + 1);
-    const colourMatch = block.match(/color:\s*([^;]+);/);
-    expect(colourMatch, `no color declaration in: ${block}`).not.toBeNull();
-    const value = colourMatch![1]!.trim();
+    const value = declarationValue(block, "color");
     // A layer-2 role, and specifically the send-teal identity the O4 design
     // gives Share (D2/#937) — not merely "some --s- role", and never a
     // --p- primitive reaching past layer 2 (the same guard
@@ -72,7 +63,7 @@ describe("O4 share overlay colour (#947)", () => {
   });
 
   it("scopes every .share-progress-glyph rule under the o4 attribute selector", () => {
-    const css = stripComments(read("src/app/styles/o4/share.css"));
+    const css = stripCssComments(read("src/app/styles/o4/share.css"));
     // Guards against ANY rule targeting `.share-progress-glyph` that is not
     // scoped under `[data-design="o4"]` — not just a repeat of
     // 3-components.css's own exact selector — which would apply with the
