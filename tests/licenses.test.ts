@@ -207,6 +207,49 @@ describe("bundled licence texts", () => {
   );
 
   it.each(thirdPartyLicenses)(
+    "carries $name's installed LICENSE attribution in its section",
+    (lib) => {
+      // The marker check above passes while any copy of the marker survives in
+      // the section — lamejs's `LAME` recurs throughout its notice — and it
+      // never reads node_modules, so a bumped package can keep a stale notice
+      // and stay green. This oracle reads the INSTALLED licence file: each of
+      // its copyright-holder lines must appear in this package's section, or,
+      // for a licence with none (lamejs), the whole file must (#823 item 5).
+      // Whitespace is normalised so indentation and line endings do not count;
+      // some sections omit a heading such as "MIT License", so a whole-file
+      // match is not required where holder lines exist.
+      const dir = path.join(
+        REPO_ROOT,
+        "node_modules",
+        lib.pinPackage ?? lib.name
+      );
+      const file = readdirSync(dir).find((f) =>
+        /^licen[cs]e(\.(md|txt))?$/i.test(f)
+      );
+      expect(file, `${lib.name} has no installed LICENSE file`).toBeDefined();
+      const norm = (s: string) => s.replace(/\s+/g, " ").trim();
+      const installed = readFileSync(path.join(dir, file ?? ""), "utf8");
+      const holders = installed
+        .split("\n")
+        .filter((l) => /^\s*copyright\b/i.test(l))
+        .map(norm);
+      const slices = holders.length > 0 ? holders : [norm(installed)];
+      expect(slices.every((s) => s.length > 0)).toBe(true);
+
+      const section = read("/licenses/THIRD-PARTY-NOTICES.txt")
+        .split(/\n=+\n/)
+        .find((s) => s.includes(`${lib.name} ${lib.version}`));
+      expect(section, `${lib.name} has no section`).toBeDefined();
+      for (const slice of slices) {
+        expect(
+          norm(section ?? ""),
+          `${lib.name}'s section lacks "${slice.slice(0, 60)}"`
+        ).toContain(slice);
+      }
+    }
+  );
+
+  it.each(thirdPartyLicenses)(
     "labels $name with the licence its notice section carries",
     (lib) => {
       // The panel shows `lib.spdx`; the notices file shows a `name version —
