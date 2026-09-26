@@ -66,6 +66,14 @@ vi.mock("@/hooks/audio-io", () => ({
   raceAudioResume: vi.fn().mockResolvedValue(false),
   RESUME_TIMEOUT_MS: 1000,
   resumeAudioContext: vi.fn().mockResolvedValue(undefined),
+  // A minimal stand-in for the real helper (develop's extraction of the
+  // track-release loop out of use-recorder.ts, #479): stop every track on
+  // the stream it is given. This suite is about the pagehide/seal path, not
+  // stopTracks's own per-track throw handling — see
+  // tests/use-recorder-release-refs.test.ts for the same pattern.
+  stopTracks: vi.fn((stream: { getTracks: () => { stop: () => void }[] }) => {
+    stream.getTracks().forEach((track) => track.stop());
+  }),
 }));
 
 vi.mock("@/lib/storage/segment-audio", () => ({
