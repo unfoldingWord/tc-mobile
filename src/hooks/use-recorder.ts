@@ -239,11 +239,13 @@ export interface UseRecorder {
   retryDecode: (blob: Blob) => Promise<RetryDecodeResult>;
   cancel: () => void;
   /**
-   * End an open take the way a #59 interruption does, for a `pagehide` (#807):
-   * freeze at `"processing"` with the captured slices left where `stop()` will
-   * find them, so the sheet's interruption commit saves the partial take.
-   * Returns `true` when a take was open (the caller must then NOT `cancel()`),
-   * `false` when there is none.
+   * End an open take the way a #59 interruption does, for a `pagehide` (#807)
+   * or the page becoming hidden (#836): freeze at `"processing"` with the
+   * captured slices left where `stop()` will find them, so the sheet's
+   * interruption commit saves the partial take. Returns `true` when a take was
+   * open (the caller must then NOT `cancel()`), `false` when there is none.
+   * Idempotent: a second call before `stop()` takes the slices returns `true`
+   * and changes nothing.
    *
    * Synchronous and write-free: no `stop()`, no decode, no failure-log row.
    * Everything that touches IndexedDB runs later, on the commit path, after

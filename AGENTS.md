@@ -235,6 +235,12 @@ stored as numbers rather than written into IndexedDB as English data.
   reached interruption or background capture (#245), so #59 and #58 (pagehide)
   remain open for Android. The two cases above (sub-timeslice take,
   background right after Stop) are also still unrun. iOS version not recorded.
+- **Background capture is no longer the intended behaviour (#836).** The
+  requirements owner decided on 2026-09-24 that switching apps ends the
+  recording, so the page becoming hidden (an app switch, a lock) now seals an
+  open take the way an interruption does, and nothing restarts on return. The
+  two runs above describe earlier builds, where capture continued. The seal on
+  hidden has not been run on a device (#245).
 - **The export path exists (B7) and the encoder runs in a Web Worker (B8).**
   Share Chapter / Share Book, the worker round-trip (`hooks/mp3.worker.ts`,
   `hooks/mp3-codec.ts`), `decodeAudioData` of a stored MP3, and the
