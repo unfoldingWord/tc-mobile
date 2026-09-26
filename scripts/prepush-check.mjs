@@ -15,10 +15,12 @@
  *       `#N` inside a negation ("does not close #N"). GitHub ignores the
  *       negation and closes the issue on merge (#470).
  *   (b) a direct dependency whose installed `engines.node` does not admit
- *       the minimum of this repo's own `engines.node` (#989/#990). Runs only
- *       when the range touches `package.json` or `package-lock.json`, so a
- *       branch is never blocked by a dependency it did not change. It reads
- *       what is installed in `node_modules`, so run `npm ci` first.
+ *       the minimum of this repo's own `engines.node` (#989/#990). Checks
+ *       only the direct dependencies the range added, re-specified or
+ *       re-resolved in the lockfile (all of them when the floor itself
+ *       changed), so a branch is never blocked by a dependency it did not
+ *       change. It reads what is installed in `node_modules`, so run
+ *       `npm ci` first.
  *
  * WARN (exit 0), on added lines only:
  *   (c) wording that claims verification (AGENTS.md, "Never claim
@@ -272,6 +274,35 @@ export function checkEngines(floor, names, readManifest) {
   return { failures, notes };
 }
 
+function directDependencies(pkg) {
+  return { ...(pkg?.dependencies ?? {}), ...(pkg?.devDependencies ?? {}) };
+}
+
+function lockVersion(lock, name) {
+  return lock?.packages?.[`node_modules/${name}`]?.version;
+}
+
+/**
+ * The direct dependencies this range changed: added, re-specified in
+ * package.json, or resolved to a different version in package-lock.json.
+ * Every direct dependency when the `engines.node` floor itself changed, or
+ * when there is no base package.json to compare with. Any argument may be
+ * null (file absent at that revision).
+ */
+export function changedDependencies(basePkg, headPkg, baseLock, headLock) {
+  const head = directDependencies(headPkg);
+  const names = Object.keys(head);
+  if (!basePkg || basePkg.engines?.node !== headPkg?.engines?.node) {
+    return names;
+  }
+  const base = directDependencies(basePkg);
+  return names.filter(
+    (name) =>
+      base[name] !== head[name] ||
+      lockVersion(baseLock, name) !== lockVersion(headLock, name)
+  );
+}
+
 // ---------------------------------------------------------------------------
 // (c)-(e) added-line warnings
 
@@ -421,22 +452,34 @@ export function run({ git = defaultGit, log = console.log } = {}) {
 
   // (b)
   const changed = git(["diff", "--name-only", range]).split("\n");
-  const pkgPath = path.join(root, "package.json");
   if (
     changed.includes("package.json") ||
     changed.includes("package-lock.json")
   ) {
-    const pkg = existsSync(pkgPath)
-      ? JSON.parse(readFileSync(pkgPath, "utf8"))
-      : null;
+    const showJson = (rev, file) => {
+      try {
+        return JSON.parse(git(["show", `${rev}:${file}`]));
+      } catch {
+        return null;
+      }
+    };
+    const pkg = showJson("HEAD", "package.json");
     const floor = pkg ? rangeMinimum(pkg.engines?.node) : null;
+    const names = pkg
+      ? changedDependencies(
+          showJson(base, "package.json"),
+          pkg,
+          showJson(base, "package-lock.json"),
+          showJson("HEAD", "package-lock.json")
+        )
+      : [];
     if (!floor) {
       log("NOTE (b): no readable engines.node floor in package.json; skipped.");
+    } else if (names.length === 0) {
+      log(
+        "NOTE (b): no direct dependency or engines floor changed in range; skipped."
+      );
     } else {
-      const names = [
-        ...Object.keys(pkg.dependencies ?? {}),
-        ...Object.keys(pkg.devDependencies ?? {}),
-      ];
       const { failures: engineFailures, notes } = checkEngines(
         floor,
         names,

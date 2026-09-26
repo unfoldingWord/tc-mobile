@@ -27,6 +27,23 @@ export declare function checkEngines(
   notes: string[];
 };
 
+export interface PackageJson {
+  engines?: { node?: string };
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+}
+
+export interface PackageLock {
+  packages?: Record<string, { version?: string }>;
+}
+
+export declare function changedDependencies(
+  basePkg: PackageJson | null,
+  headPkg: PackageJson | null,
+  baseLock: PackageLock | null,
+  headLock: PackageLock | null
+): string[];
+
 export interface AddedLine {
   file: string;
   line: number;

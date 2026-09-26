@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  changedDependencies,
   checkEngines,
   findNegatedClosures,
   isMainEntry,
@@ -178,6 +179,63 @@ describe("checkEngines — rule (b)", () => {
       "missing: not installed, skipped (run npm ci)",
       'odd@3.0.0: engines.node "whenever" not readable, skipped',
     ]);
+  });
+});
+
+describe("changedDependencies — rule (b)'s scope", () => {
+  const pkg = (
+    deps: Record<string, string>,
+    floor = "^22.12.0 || >=24.0.0"
+  ) => ({ engines: { node: floor }, devDependencies: deps });
+  const lock = (versions: Record<string, string>) => ({
+    packages: Object.fromEntries(
+      Object.entries(versions).map(([n, v]) => [
+        `node_modules/${n}`,
+        { version: v },
+      ])
+    ),
+  });
+
+  it("returns added and re-specified dependencies only", () => {
+    expect(
+      changedDependencies(
+        pkg({ a: "1.0.0", b: "1.0.0" }),
+        pkg({ a: "1.0.0", b: "1.1.0", c: "1.0.0" }),
+        null,
+        null
+      )
+    ).toEqual(["b", "c"]);
+  });
+
+  it("returns a dependency whose lockfile resolution moved under the same spec", () => {
+    expect(
+      changedDependencies(
+        pkg({ a: "^1.0.0", b: "^1.0.0" }),
+        pkg({ a: "^1.0.0", b: "^1.0.0" }),
+        lock({ a: "1.0.0", b: "1.0.0" }),
+        lock({ a: "1.0.0", b: "1.2.0" })
+      )
+    ).toEqual(["b"]);
+  });
+
+  it("returns every dependency when the floor changes or there is no base", () => {
+    const head = pkg({ a: "1.0.0", b: "1.0.0" }, ">=24");
+    expect(
+      changedDependencies(pkg({ a: "1.0.0", b: "1.0.0" }), head, null, null)
+    ).toEqual(["a", "b"]);
+    expect(changedDependencies(null, head, null, null)).toEqual(["a", "b"]);
+  });
+
+  it("returns nothing when neither dependencies nor the floor changed", () => {
+    const same = pkg({ a: "1.0.0" });
+    expect(
+      changedDependencies(
+        same,
+        same,
+        lock({ a: "1.0.0" }),
+        lock({ a: "1.0.0" })
+      )
+    ).toEqual([]);
   });
 });
 
@@ -524,20 +582,76 @@ describe("CLI entry point (real subprocess against scratch repositories)", () =>
     }
   });
 
-  // (b) GREEN: an admitting dep and a dep with no engines field.
-  it("passes when package.json changes and every dependency admits the floor", () => {
+  // (b) GREEN: an admitting dep and a dep with no engines field, both
+  // re-specified so rule (b) checks them.
+  it("passes when the changed dependencies admit the floor", () => {
     const dir = initScratchRepo();
     try {
       write(
         dir,
         "package.json",
+        JSON.stringify(
+          {
+            ...FLOOR_PKG,
+            devDependencies: { good: "1.0.1", plain: "2.0.1" },
+          },
+          null,
+          2
+        )
+      );
+      commit(dir, "chore(deps): bump good and plain", "Triggers rule (b).");
+      const result = runCli(dir);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toMatch(
+        /^prepush-check: PASS, 0 failure\(s\), 0 warning\(s\) in [0-9a-f]{7}\.\.HEAD\.\n$/
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // (b) RED: changing the floor re-checks every dependency, including one
+  // the range did not touch.
+  it("fails an untouched dependency when the floor itself changes", () => {
+    const dir = initScratchRepo();
+    try {
+      installDep(dir, "good", "^22.13.0");
+      write(
+        dir,
+        "package.json",
+        JSON.stringify(
+          { ...FLOOR_PKG, engines: { node: "^22.12.0 || >=24.1.0" } },
+          null,
+          2
+        )
+      );
+      commit(dir, "chore: move the floor", "Re-checks every dependency.");
+      const result = runCli(dir);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain(
+        'FAIL (b) good@1.0.0: engines.node "^22.13.0" does not admit 22.12.0'
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // (b) SCOPE: package.json changed, but no dependency or floor did, so an
+  // installed dependency that already excluded the floor does not block.
+  it("skips rule (b) when package.json changes but no dependency does", () => {
+    const dir = initScratchRepo();
+    try {
+      installDep(dir, "good", "^22.13.0");
+      write(
+        dir,
+        "package.json",
         JSON.stringify({ ...FLOOR_PKG, description: "changed" }, null, 2)
       );
-      commit(dir, "chore: touch package.json", "Triggers rule (b).");
+      commit(dir, "chore: touch package.json", "No dependency change.");
       const result = runCli(dir);
       expect(result.status).toBe(0);
       expect(result.stdout).toContain(
-        "prepush-check: PASS, 0 failure(s), 0 warning(s)"
+        "NOTE (b): no direct dependency or engines floor changed in range; skipped."
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });
