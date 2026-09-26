@@ -7,9 +7,7 @@ import type { CoverColourKey } from "@/lib/cover-colour";
 import type { Book, BookId } from "@/types/domain";
 
 /**
- * Set a book's cover colour — the reusable hook the sheets lane (#943, the
- * new-book sheet) and the menus lane (#949, the book menu) each mount their
- * own instance of.
+ * Set a book's cover colour. Reusable: each caller mounts its own instance.
  *
  * Mounted by the O4 book menu (#949, `books-screen.tsx`). The new-book sheet
  * (#943) does not mount it yet.
