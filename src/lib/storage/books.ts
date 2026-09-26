@@ -190,10 +190,11 @@ export async function renameBook(
  * state for every book, so there is nothing to refuse.
  *
  * This function does not validate `key` against the live palette. That is a
- * deliberate split, not an oversight: the palette itself is still open (D8b's
- * round-2 pick) and will be retuned over the life of a build, so a value this
- * store already holds must keep loading rather than becoming a write-time
- * error the day the palette is trimmed. `resolveCoverKey` is where an unknown
+ * deliberate split, not an oversight, and it holds even though the ten keys
+ * are final (`lib/cover-colour.ts`): a key this store already holds must keep
+ * loading and round-tripping, never turn into a write-time error, if a later
+ * build ever renames or drops a palette entry. Do not "tighten" this by
+ * validating against the live set. `resolveCoverKey` is where an unknown
  * key is handled — on READ, deterministically, never here on write. The one
  * caller with an opinion about which keys are valid is the picker
  * (`components/cover-picker.tsx`), which only ever offers the live palette in
