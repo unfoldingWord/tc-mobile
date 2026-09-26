@@ -271,6 +271,10 @@ export const strings = {
   tileShare: "Share",
   tileLight: "Light",
   tileDark: "Dark",
+  // The edit-mode recorder menu's exit tile (G3); its name is `doneEditing`.
+  // Its own key, not `tileFinished`: that one is marking done, this is leaving
+  // edit, and the two only happen to share a word in English.
+  tileDone: "Done",
   closeRecorder: "Close recorder",
   /**
    * The recorder sheet's header trail — the Segments one with the segment

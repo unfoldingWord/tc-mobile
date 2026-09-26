@@ -268,4 +268,19 @@
   [data-design="o4"] .o4-tile[aria-disabled="true"] {
     opacity: 0.35;
   }
+
+  /* === #949: the recorder menu (G3)
+     ======================================================================
+     recorder-menu.tsx's O4 branch. Marking done (G8) and the theme tile are
+     the shared tones and ThemeControl tile above; this section holds only
+     what the recorder sheet has and no other menu does.
+
+     The sheet is capped at half the screen (the requirements owner's #927
+     ask: the waveform above it stays in view). Where the cap bites, the
+     sheet scrolls rather than climbing over the waveform. It keys on
+     recorder-menu-tile, which only this menu's tiles carry. */
+  [data-design="o4"] .menu-panel:has(.recorder-menu-tile) {
+    max-height: 50dvh;
+    overflow-y: auto;
+  }
 }
