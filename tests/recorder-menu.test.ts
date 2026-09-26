@@ -14,6 +14,14 @@ import { strings } from "@/lib/strings";
 
 import { stripComments } from "./support";
 
+// This file asserts the CURRENT look's menu rows (plain items, the `is-done`
+// class), not O4's tile grid (#949). #951 flipped the design default to o4,
+// so pin the current look explicitly here rather than rely on
+// nothing-stored — the O4 shape of this menu is `tests/recorder-menu-o4.test.ts`'s.
+vi.mock("@/hooks/use-design", () => ({
+  useDesign: () => ({ design: "current" as const, toggle: () => {} }),
+}));
+
 /**
  * The recorder's ≡ menu, now that it is its own component (#160, L-1).
  *
