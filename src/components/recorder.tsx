@@ -3818,6 +3818,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             setConfirmOpen(true);
           }}
           onExitEdit={onExitEdit}
+          bookName={view?.bookName}
+          chapterNumber={view?.chapterNumber}
         />
         <EraseConfirm
           key={confirmMount}
