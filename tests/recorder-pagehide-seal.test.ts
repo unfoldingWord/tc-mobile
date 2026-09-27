@@ -69,6 +69,10 @@ vi.mock("@/hooks/audio-io", () => ({
   raceAudioResume: vi.fn().mockResolvedValue(false),
   RESUME_TIMEOUT_MS: 1000,
   resumeAudioContext: vi.fn().mockResolvedValue(undefined),
+  // #1111: use-recorder.ts's start() calls this before getUserMedia. This
+  // suite is about the pagehide/seal path, not the session-type call — see
+  // tests/use-recorder-audio-session.test.ts for that wiring.
+  setRecordAudioSession: vi.fn(),
   // A minimal stand-in for the real helper (develop's extraction of the
   // track-release loop out of use-recorder.ts, #479): stop every track on
   // the stream it is given. This suite is about the pagehide/seal path, not

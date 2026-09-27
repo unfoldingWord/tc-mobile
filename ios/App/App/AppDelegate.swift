@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import AVFoundation
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -7,7 +8,29 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // #1111: declare this app's baseline audio session as `.playback` so
+        // the WKWebView content is audible through the iPhone silent/ring
+        // switch, the way a music or podcast app is — the DRI's decision on
+        // #1111 ("Yes, play through silent"). This is the native-process
+        // floor beneath `navigator.audioSession` (`hooks/audio-io.ts`),
+        // which does the same declaration at the WebKit/JS layer and is the
+        // layer that additionally switches to `.playAndRecord` for the life
+        // of a take; both surfaces share that one JS module, since the
+        // native and PWA builds ship the same application code
+        // (`capacitor.config.ts`). Best-effort: a thrown `setCategory` here
+        // leaves the platform default in place rather than failing launch —
+        // there is no failure funnel yet at this point, before the WebView
+        // (and its JS) exists, so nothing is reported; `navigator.audioSession`
+        // still runs once the page loads regardless of whether this call
+        // succeeded.
+        // Not yet run on a device (#1111) — see the PR body.
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback)
+        } catch {
+            // See the comment above: no channel exists this early to report
+            // through, and the JS-level declaration is not blocked by this
+            // catch being empty.
+        }
         return true
     }
 
