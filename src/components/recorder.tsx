@@ -101,6 +101,7 @@ import {
 import { cn, formatDuration } from "@/lib/utils";
 import { recorderLook } from "./recorder-look";
 import { RecorderStamp } from "./recorder-o4";
+import { TakeCapMarker } from "./take-cap-marker";
 import type { SampleRange } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
 
@@ -3933,6 +3934,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                   <div
                     className="recorder-status flex items-center gap-[8px]"
                     role="status"
+                    // #1005 ("Warn at 15, seal at 20"): the readout itself is
+                    // the state-in-place marker — CSS tints the whole cluster
+                    // to the warn role off this attribute (3-components.css,
+                    // o4/recorder.css). `TakeCapMarker` below only supplies
+                    // the remaining-minutes word that rides inside it.
+                    data-near-limit={audio.takeCap.nearLimit || undefined}
                   >
                     <span className={cn("text-live", recording && "rec-dot")}>
                       <Icon name="record" size={14} />
@@ -3940,6 +3947,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     <span className="t-timer">
                       {formatDuration(audio.elapsedMs)}
                     </span>
+                    <TakeCapMarker takeCap={audio.takeCap} />
                   </div>
                 )}
                 {/* O4 only (#945): renders nothing under the current look. */}
