@@ -972,10 +972,12 @@ export const SegmentsScreen = forwardRef<
             does not need its decoration read a second time — so the button
             keeps its accessible name explicit (`aria-label`) rather than
             losing it when the chip text is hidden from the accessibility
-            tree. The name is the SAME `chapterBreadcrumb` trail this button
-            has always exposed (both looks rendered identically here before
-            this fix, so this is the one name every existing caller already
-            expects) — deliberately NOT `strings.backToBooks`, the plain Back
+            tree. The name is the `chapterBreadcrumb` trail built from the
+            SAME chapter NUMBER the visible chip shows, not `chapterHeading`:
+            a name fed the typed title would say one chapter while the chip
+            says another, and the visible text must sit inside the name
+            (WCAG 2.5.3, George round 2) — and deliberately NOT
+            `strings.backToBooks`, the plain Back
             control's own name: giving the two the same name produced two
             controls named "Back to books" on the one screen, which broke
             every `getByRole("button", { name: "Back to books" })` lookup in
@@ -990,7 +992,9 @@ export const SegmentsScreen = forwardRef<
           onClick={onBack}
           className="breadcrumb"
           aria-label={
-            o4 ? strings.chapterBreadcrumb(bookName, chapterHeading) : undefined
+            o4
+              ? strings.chapterBreadcrumb(bookName, String(chapterNumber))
+              : undefined
           }
         >
           {o4 ? (

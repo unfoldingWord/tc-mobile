@@ -3445,11 +3445,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             />
             {design === "o4" && view ? (
               // #1105: the same chips the O4 menus show, not a restyled
-              // reading of the text trail below. `aria-hidden` because the
-              // Back control just above already carries the header's
-              // accessible name (`closeRecorder`); these chips are decoration
-              // exactly the way `O4SheetHead`'s are on the menu (see that
-              // component's own docblock). Chapter is the plain NUMBER, never
+              // reading of the text trail below. NOT `aria-hidden`: unlike the
+              // menu, where `O4SheetHead`'s chips sit under a dialog title, no
+              // other element here names the place — the Back control's
+              // `closeRecorder` names the action — so the chip text is the one
+              // place book, chapter and segment reach assistive tech, as the
+              // plain-text trail did before (George round 2). Chapter is the
+              // plain NUMBER, never
               // `chapterHeading`'s resolved name — that mismatch (a renamed
               // chapter reading one way in this header and another way on the
               // menu chip) is what #1105 reported; `o4-crumbs.tsx` explains
@@ -3458,7 +3460,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               // (recorder-menu.tsx) from the same `finishedState` this
               // component already computes — duplicated rather than shared
               // because that file belongs to a parallel PR (#1104/#1103).
-              <div aria-hidden="true" className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1">
                 <O4Crumbs
                   className="min-w-0"
                   book={view.bookName}

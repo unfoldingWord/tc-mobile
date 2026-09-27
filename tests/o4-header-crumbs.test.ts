@@ -231,10 +231,13 @@ describe("the recorder header (#1105)", () => {
     expect(header().textContent).not.toContain("2:1-4");
   });
 
-  it("marks the chips aria-hidden, decoration on top of the Back control's own accessible name", async () => {
+  it("exposes the chips to assistive tech: the only thing in the header naming the place", async () => {
     await mount("o4");
     const row = header().querySelector(".o4-crumbs")!;
-    expect(row.closest('[aria-hidden="true"]')).not.toBeNull();
+    // Not hidden: `closeRecorder` names the action, not the take, so hiding
+    // the chips would drop book/chapter/segment from the tree (George R2).
+    expect(row.closest('[aria-hidden="true"]')).toBeNull();
+    expect(header().querySelectorAll(".o4-crumbs")).toHaveLength(1);
     // The Back control is untouched by this fix: still there, still named.
     expect(() => button(header(), strings.closeRecorder)).not.toThrow();
   });
@@ -323,17 +326,19 @@ describe("the segments header (#1105)", () => {
     expect(
       btn.querySelector(".o4-crumbs")?.closest('[aria-hidden="true"]')
     ).not.toBeNull();
-    // The SAME trail this button has always exposed (both looks rendered
-    // identically here before #1105) — NOT `strings.backToBooks`. A first
+    // The same `chapterBreadcrumb` trail shape — NOT `strings.backToBooks`. A first
     // version of this fix reused that string and put two controls named
     // "Back to books" on this one screen (the plain Control beside it, and
     // this button), which broke every `getByRole(button, { name:
     // "Back to books" })` lookup in the e2e suite with a strict-mode
     // ambiguity error — caught by CI, not by this file, until this guard
     // was added. The exact-name test below is the guard.
+    // Built from the chapter NUMBER the visible chip shows, never the typed
+    // name the chip does not show (WCAG 2.5.3 label-in-name, George R2).
     expect(btn.getAttribute("aria-label")).toBe(
-      strings.chapterBreadcrumb("Book Mine", "2:1-4")
+      strings.chapterBreadcrumb("Book Mine", "1")
     );
+    expect(btn.getAttribute("aria-label")).not.toContain("2:1-4");
 
     await act(async () => breadcrumbButton().click());
     expect(onBack).toHaveBeenCalledTimes(1);
