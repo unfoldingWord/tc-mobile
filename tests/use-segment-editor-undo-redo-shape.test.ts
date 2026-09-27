@@ -42,7 +42,10 @@ describe("useSegmentEditor.undo/redo call the shared opUndone/opRedone helpers (
     const start = source.indexOf(
       "const undo = useCallback((): EditOp | null => {"
     );
-    const end = source.indexOf("}, [log, applyLog, clearSelection]);", start);
+    const end = source.indexOf(
+      "}, [log, applyLog, clearSelection, clipboard]);",
+      start
+    );
     const body = region(source, { from: start, to: end });
     expect(body).toMatch(/opUndone\(log\)/);
     expect(body).not.toMatch(/log\.ops\[log\.cursor - 1\]/);
@@ -52,7 +55,10 @@ describe("useSegmentEditor.undo/redo call the shared opUndone/opRedone helpers (
     const start = source.indexOf(
       "const redo = useCallback((): EditOp | null => {"
     );
-    const end = source.indexOf("}, [log, applyLog, clearSelection]);", start);
+    const end = source.indexOf(
+      "}, [log, base, working, runEdit, clearSelection, clipboard]);",
+      start
+    );
     const body = region(source, { from: start, to: end });
     expect(body).toMatch(/opRedone\(log\)/);
     expect(body).not.toMatch(/log\.ops\[log\.cursor\]/);

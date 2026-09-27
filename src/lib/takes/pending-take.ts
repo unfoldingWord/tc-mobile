@@ -248,9 +248,9 @@ export function discardSave(current: PendingTake | null): {
  *
  * **A full slot is held work, full stop — there is deliberately no "but it has
  * been pasted" arm.** One existed for two rounds and cost two more findings, and
- * this is the reasoning that removed it. "Pasted" cannot be observed; it can
- * only be tracked, because `paste()` does not empty the slot (G3 lets one cut go
- * into several segments). Tracking it meant a flag, and the flag was wrong in
+ * this is the reasoning that removed it. "Pasted" could not be observed then;
+ * it could only be tracked, because `paste()` did not empty the slot (G3 let one
+ * cut go into several segments). Tracking it meant a flag, and the flag was wrong in
  * the losing direction every time the unchanged tree moved underneath it: set at
  * the paste, it survived an undo that wrote nothing (Frank R5 P1); set at the
  * write, it survived an erase of the segment written to (George R4 P2). Both
@@ -258,8 +258,14 @@ export function discardSave(current: PendingTake | null): {
  * yielded, and a restart takes the only copy. Nothing derived can be right here,
  * because what it is derived from is what keeps changing; what the slot holds
  * cannot go stale. The price is that another copy's upgrade may wait out the
- * rest of a chapter after a cut, which costs a person time — the side of this
- * trade the whole rule exists to take.
+ * rest of a chapter after a cut that is never pasted, which costs a person
+ * time — the side of this trade the whole rule exists to take.
+ *
+ * Since #489 a paste is one-shot: it empties the slot, and undoing it puts the
+ * phrase back (`useSegmentEditor`). That changes nothing here, and is why no
+ * flag is needed now either — the slot itself empties when the phrase lands in
+ * the open sheet, where the `recorderOpen` arm holds it until the close commits
+ * it, and refills when an undo takes it back out.
  *
  * What is deliberately NOT held work: a name being typed, and an armed share.
  * Both are re-doable in seconds from what is still on disk, and holding another

@@ -701,10 +701,10 @@ export function resumesOnLift(input: {
  * the bug reported — dragging to find a precise paste point kept swapping
  * the red playhead back for a selection band. The requirements owner's
  * decision on #835 is that a new selection is available only once the
- * clipboard is empty (today, a paste — see `recorder.tsx`'s `onPaste`, which
- * still always reopens the frame; that route, undo and redo are unaffected by
- * this term). This is the ONLY route the decision narrows: `resumesOnLift`
- * and the rest of this function's cases are unchanged.
+ * clipboard is empty (a paste empties it, #489 — and `recorder.tsx`'s
+ * `onPaste` also reopens the frame itself; that route, undo and redo are
+ * unaffected by this term). This is the ONLY route the decision narrows:
+ * `resumesOnLift` and the rest of this function's cases are unchanged.
  */
 export function liftOutcome(input: {
   /** This pointer owned the drag. */
@@ -723,20 +723,11 @@ export function liftOutcome(input: {
   /**
    * The clipboard holds a cut (`editor.canPaste`, #835). While true, a
    * drag's lift must not reseed a selection frame — the collapsed line stays
-   * the only thing on the stage. NOT because a paste empties the clipboard:
-   * paste is not one-shot yet (#489 is open), so `editor.canPaste` stays true
-   * across a paste, and the frame reopens instead because `recorder.tsx`'s
-   * `onPaste` calls `reopenFrame()` itself, unconditionally, as the
-   * paragraph above already says (a discard would presumably empty the
-   * clipboard for real, once #862 lands, but that is not built yet either).
-   * #489 must not route paste through this predicate: `canPaste` only
-   * withholds a reseed for the lift it is passed to, not permanently — it is
-   * not a latch. Once a one-shot paste flips it false, a later lift computed
-   * with `canPaste: false` may seed a frame again through this same
-   * `reopenFrame` term, and the paste path's own unconditional
-   * `reopenFrame()` call (above) is unaffected either way. Do not go looking
-   * for a stuck-forever state here; this function holds no memory across
-   * calls (#912 item 1).
+   * the only thing on the stage. It only WITHHOLDS a reseed; it never latches
+   * one out. A paste empties the clipboard (#489), so this term reads false
+   * on every later lift, and `recorder.tsx`'s `onPaste` calls `reopenFrame()`
+   * directly as well, so the frame is back the moment the paste lands rather
+   * than on the next lift.
    */
   readonly canPaste: boolean;
 }): {
