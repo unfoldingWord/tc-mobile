@@ -98,6 +98,23 @@ export function stripComments(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 }
 
+/** `stripComments`' two patterns, but each comment is overwritten with spaces
+ *  (its newlines kept) instead of removed, so every index and line number in
+ *  the result is the same as in `text`. For a sweep that reports `file:line`
+ *  from a match (#822). Same string-blindness as `stripComments`. */
+export function blankComments(text: string): string {
+  const blank = (comment: string) => comment.replace(/[^\n]/g, " ");
+  return text.replace(/\/\*[\s\S]*?\*\//g, blank).replace(/\/\/.*$/gm, blank);
+}
+
+/** Strips YAML `#` comments: a `#` at the start of a line or after a space or
+ *  tab, to the end of that line, as YAML itself reads one (#822). Not
+ *  quote-aware, so a ` #` inside a quoted string or a `run:` script also cuts
+ *  the rest of that line. Callers check that no line they assert on holds one. */
+export function stripYamlComments(yaml: string): string {
+  return yaml.replace(/(^|[ \t])#.*$/gm, "$1");
+}
+
 /** Brace-counts from `openIndex` (the index of an opening `{`) to find its
  *  matching close, or -1. */
 export function matchingBraceClose(text: string, openIndex: number): number {

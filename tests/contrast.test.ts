@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { stripCssComments } from "./support";
+
 /**
  * The AA gate for the roles that paint SMALL TEXT (#164 R-9, and the contrast
  * caveat #171 asked to land with the light theme).
@@ -20,8 +22,15 @@ import { describe, expect, it } from "vitest";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const STYLES = path.join(ROOT, "src", "app", "styles");
 
-const primitives = readFileSync(path.join(STYLES, "1-primitives.css"), "utf8");
-const semantic = readFileSync(path.join(STYLES, "2-semantic.css"), "utf8");
+// Comments stripped before anything is parsed: `declarations` keeps the LAST
+// `--name: value;` it meets, so a commented-out declaration after the live one
+// would be scored in its place, and a failing live value could pass (#822).
+const primitives = stripCssComments(
+  readFileSync(path.join(STYLES, "1-primitives.css"), "utf8")
+);
+const semantic = stripCssComments(
+  readFileSync(path.join(STYLES, "2-semantic.css"), "utf8")
+);
 
 /** Every `--name: value;` declaration in a block of CSS text. */
 function declarations(css: string): Map<string, string> {
