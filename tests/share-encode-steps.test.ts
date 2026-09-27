@@ -28,7 +28,8 @@ import { newClipId } from "@/lib/storage/clips";
 import { saveTake } from "@/lib/storage/takes";
 import type { AudioCodec } from "@/types/audio";
 import type { BookId, ChapterId } from "@/types/domain";
-import { clearAllStores } from "./support";
+
+import { clearAllStores, stripComments } from "./support";
 
 /**
  * #996: Share Chapter's count covers the MP3 encode, and every count says how
@@ -558,9 +559,17 @@ describe("stepReporter forwards skipped (#996)", () => {
  */
 describe("Share Chapter builds through withEncodeSteps (#996)", () => {
   it("wraps the chapter export's codec and onStep", () => {
-    const s = readFileSync(
-      path.resolve(import.meta.dirname, "..", "src/hooks/use-chapter-share.ts"),
-      "utf8"
+    // Stripped first (#822): a comment quoting the call would otherwise
+    // satisfy the match with the live build bypassing withEncodeSteps.
+    const s = stripComments(
+      readFileSync(
+        path.resolve(
+          import.meta.dirname,
+          "..",
+          "src/hooks/use-chapter-share.ts"
+        ),
+        "utf8"
+      )
     );
     expect(s).toMatch(
       /withEncoder\(\s*signal,\s*withEncodeSteps\(\s*onStep,\s*isCurrent,\s*async \(codec, onStep\) =>/
