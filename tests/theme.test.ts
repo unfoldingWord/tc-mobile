@@ -10,6 +10,8 @@ import {
   type Theme,
 } from "@/lib/theme";
 
+import { matchingBraceClose, stripComments } from "./support";
+
 /**
  * The theme decision (#171), as a table rather than a phone.
  *
@@ -116,7 +118,11 @@ describe("the light theme is reachable (#171)", () => {
 
   /**
    * The same file with its comments removed - block and line - so an assertion
-   * about the CODE cannot be satisfied by prose (George round 12, #623).
+   * about the CODE cannot be satisfied by prose (George round 12, #623). Every
+   * positive match on a `.ts`/`.tsx` file below reads through this; `read` is
+   * kept for the CSS and HTML reads, for the raw half of the subscriber sweep,
+   * and for the one case that pins a comment on purpose (`data-theme` in the
+   * canvases' draw comment).
    *
    * AGENTS.md records the capture-by-comment trap in one direction: a comment
    * naming a string a test greps for can CAPTURE that test (#529 round 3).
@@ -126,19 +132,19 @@ describe("the light theme is reachable (#171)", () => {
    * that string today, so the counts were honest as written; this closes the
    * shape before it can become true.
    *
-   * What each pass removes, since the two are not symmetric. The block pass is
-   * unanchored, so a block-comment opener inside a string literal would start a
-   * cut. The line pass is anchored to the start of a line, so it removes only a
-   * line whose first non-whitespace is a line-comment marker: one TRAILING code
-   * on the same line survives, and so does a marker inside a string. Trailing
-   * comments do occur in the counted files; none of them names a mount, which
-   * is the same fact the paragraph above rests on. A real parser would be more
-   * code than the thing it protects.
+   * This is `tests/support.ts`'s shared `stripComments` (#822). The local
+   * strip it replaces removed a line comment only at the start of a line, so a
+   * comment TRAILING live code survived it and could stand in for the code it
+   * sat beside. The shared strip is not string-aware: a `//` or a block-comment
+   * opener inside a string literal starts a cut. None of the files the
+   * positive matches below read holds one; `vite.config.ts` does (its precache
+   * glob), which is why the manifest case strips only the manifest's own
+   * object. The subscriber sweep reads all of `src/` through this too, and
+   * there an over-cut can only drop a file from the stripped set: an allowed
+   * file dropped fails the sweep, and a new subscriber dropped is still caught
+   * by the raw half of the same sweep.
    */
-  const code = (rel: string) =>
-    read(rel)
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^[ \t]*\/\/.*$/gm, "");
+  const code = (rel: string) => stripComments(read(rel));
 
   /** Every file under `dir`, recursively. Used by the subscriber sweep below. */
   const walk = (dir: string): string[] =>
@@ -160,10 +166,10 @@ describe("the light theme is reachable (#171)", () => {
   it("something in src actually writes data-theme", () => {
     // The literal grep from #171's evidence, which returned no hits.
     const hits = ["src/hooks/use-theme.ts", "src/lib/theme.ts"]
-      .map(read)
+      .map(code)
       .filter((source) => source.includes("data-theme"));
     expect(hits.length).toBeGreaterThan(0);
-    expect(read("src/hooks/use-theme.ts")).toMatch(
+    expect(code("src/hooks/use-theme.ts")).toMatch(
       /setAttribute\(\s*["']data-theme["']/
     );
   });
@@ -183,7 +189,7 @@ describe("the light theme is reachable (#171)", () => {
     // The hook could exist and be called by nothing. Since #149 the control
     // itself is `ThemeControl` — one component mounted in three menus — so the
     // wiring lives in that file and the MOUNT is what each screen shows.
-    const control = read("src/components/theme-control.tsx");
+    const control = code("src/components/theme-control.tsx");
     expect(control).toMatch(/useTheme\(\)/);
     expect(control).toMatch(/onClick=\{theme\.toggle\}/);
     const screen = code("src/components/books-screen.tsx");
@@ -389,7 +395,7 @@ describe("the light theme is reachable (#171)", () => {
   it("is applied before React renders, not in an effect", () => {
     // An effect runs after the first paint: a translator who chose light would
     // see a dark frame on every launch. The call must sit above `createRoot`.
-    const main = read("src/app/main.tsx");
+    const main = code("src/app/main.tsx");
     const install = main.indexOf("installStoredTheme()");
     const render = main.indexOf("createRoot(");
     expect(
@@ -404,16 +410,13 @@ describe("the light theme is reachable (#171)", () => {
     // `--s-floor` (#0b1016) — so a light-theme user kept a dark status bar over
     // a white screen. Reading the computed token is what keeps the OS chrome
     // and the body the same colour by construction.
-    const hook = read("src/hooks/use-theme.ts");
+    const hook = code("src/hooks/use-theme.ts");
     expect(hook).toMatch(/getPropertyValue\(["']--s-floor["']\)/);
     expect(hook).toMatch(/meta\[name="theme-color"\]/);
     // And no second copy of a floor hex in the CODE to drift out of step. The
     // comments name the old drifted pair on purpose, as the record of why this
     // reads a token — so they are stripped rather than matched.
-    const code = hook
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^\s*\/\/.*$/gm, "");
-    expect(code).not.toMatch(/#[0-9a-f]{6}/i);
+    expect(hook).not.toMatch(/#[0-9a-f]{6}/i);
   });
 
   it("the manifest's dark hex is the floor token, not a third value", () => {
@@ -426,9 +429,17 @@ describe("the light theme is reachable (#171)", () => {
       read("src/app/styles/1-primitives.css")
     );
     expect(floor?.[1], "no --p-cool-950 primitive found").toBeTruthy();
+    // Only the manifest's own object, comments stripped. The whole file cannot
+    // go through `code`: its precache glob is a string holding a block-comment
+    // opener, and the strip would cut from there.
     const config = read("vite.config.ts");
-    expect(config).toContain(`theme_color: "${floor![1]}"`);
-    expect(config).toContain(`background_color: "${floor![1]}"`);
+    const at = config.indexOf("manifest: {");
+    expect(at, "no manifest object in vite.config.ts").toBeGreaterThan(-1);
+    const close = matchingBraceClose(config, config.indexOf("{", at));
+    expect(close, "the manifest object does not close").toBeGreaterThan(at);
+    const manifest = stripComments(config.slice(at, close + 1));
+    expect(manifest).toContain(`theme_color: "${floor![1]}"`);
+    expect(manifest).toContain(`background_color: "${floor![1]}"`);
   });
 
   it("index.html's own theme-color is the floor token too, for the pre-JS bar", () => {
@@ -464,7 +475,7 @@ describe("the light theme is reachable (#171)", () => {
     // (#197) and no way to render the hook and observe the attribute between
     // the store write and the subscriber's render. `e2e/theme-toggle.spec.ts`
     // waits on the attribute, so it cannot see an intermediate frame either.
-    const hook = read("src/hooks/use-theme.ts");
+    const hook = code("src/hooks/use-theme.ts");
     const setter = /function setLiveTheme\([^)]*\)[^{]*\{([\s\S]*?)\n\}/.exec(
       hook
     );
@@ -506,13 +517,13 @@ describe("the light theme is reachable (#171)", () => {
     // the bars would keep the previous theme's amber/faint until
     // `peaks`/`finished`/`active` happened to change (George R2 P2 on #457).
     // So both draw effects subscribe to the live theme and list it.
-    const hook = read("src/hooks/use-theme.ts");
+    const hook = code("src/hooks/use-theme.ts");
     expect(hook).toMatch(/export function useLiveTheme\(\)/);
     for (const rel of [
       "src/components/waveform.tsx",
       "src/components/live-scope.tsx",
     ]) {
-      const source = read(rel);
+      const source = code(rel);
       expect(source, `${rel} does not subscribe to the live theme`).toMatch(
         /useLiveTheme\(\)/
       );
@@ -529,8 +540,9 @@ describe("the light theme is reachable (#171)", () => {
       ).toContain("theme");
       // And the invariant comment names `data-theme`, so the next reader does
       // not "simplify" it back out on the grounds that tokens never change.
+      // This one reads the raw file: the comment is what it pins.
       expect(
-        source,
+        read(rel),
         `${rel}: the draw comment does not name data-theme`
       ).toMatch(/data-theme/);
     }
@@ -554,7 +566,7 @@ describe("the light theme is reachable (#171)", () => {
     // Source-shape, not behaviour: no DOM runner in the Node suite (#197), and
     // the scenario needs a theme control on a screen that keeps `LiveScope`
     // mounted (#149), which does not exist yet.
-    const source = read("src/components/live-scope.tsx");
+    const source = code("src/components/live-scope.tsx");
     const draw =
       /useLayoutEffect\(\(\) => \{([\s\S]*?)\n    return \(\) => \{/.exec(
         source
@@ -577,12 +589,10 @@ describe("the light theme is reachable (#171)", () => {
       "no guarded frozen repaint between the observer bind and the active branch"
     ).toMatch(/^\s*if \(!active\) paint\(lastScopeRef\.current\);\s*$/m);
     // The comment beside the repaint names `readScope` as the thing NOT to
-    // call, so strip comment lines before the negative match — code only.
-    const frozenCode = frozen.replace(/^\s*\/\/.*$/gm, "");
-    expect(
-      frozenCode,
-      "the frozen repaint must not advance the ring"
-    ).not.toMatch(/readScope/);
+    // call; `source` is already stripped, so this matches code only.
+    expect(frozen, "the frozen repaint must not advance the ring").not.toMatch(
+      /readScope/
+    );
   });
 
   it("a theme READ fallback is not a translator-facing failure; a failed WRITE still is", () => {
@@ -602,7 +612,7 @@ describe("the light theme is reachable (#171)", () => {
     // not survive a relaunch — that row stays, and `e2e/theme-toggle.spec.ts`
     // asserts it through the ≡ name and mark. Both halves are pinned here so
     // neither is "tidied" into the other.
-    const hook = read("src/hooks/use-theme.ts");
+    const hook = code("src/hooks/use-theme.ts");
     const readFn = /function readTheme\(\)[^{]*\{([\s\S]*?)\n\}/.exec(hook);
     expect(readFn?.[1], "no readTheme in use-theme.ts").toBeTruthy();
     const readBody = readFn?.[1] ?? "";
