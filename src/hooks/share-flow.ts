@@ -435,7 +435,7 @@ export interface UseShareFlow {
    * also by `reset()` (menu close), alongside `error`/`missing`/`partial`.
    *
    * `reset()` clears it, not just `prepare()`, for a reason specific to
-   * Share Book: `useBookShare` is ONE hook instance shared by every row's ≡
+   * Share Book: `useBookShare` is ONE hook instance shared by every row's ⋮
    * menu (`shareMenuBookId` just tracks which book is open), so a flag that
    * survived `reset()` would leak an unconfirmed send from book A onto book
    * B's freshly opened, never-tried Share control the moment the shelf moves

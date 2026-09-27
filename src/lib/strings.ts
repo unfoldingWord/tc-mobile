@@ -140,7 +140,7 @@ export const strings = {
 
   // ── Naming (#264 rename, #314 New Book, #609 Add chapter) ────────────────
   // One naming field serves all three flows, so these strings are shared: the
-  // rename reached from a ≡ menu, the New Book dialog the corner + now opens,
+  // rename reached from a ⋮ menu, the New Book dialog the corner + now opens,
   // and the Add-chapter prompt a book row's + opens.
   renameBook: "Rename book",
   renameChapter: "Rename chapter",
@@ -629,7 +629,7 @@ export const strings = {
   discardClipConfirm: "Throw away",
 
   // ── Delete a book (#337) ─────────────────────────────────────────────────
-  // The book ≡-menu row, and the two-tap confirm behind it — the same dialog
+  // The book ⋮-menu row, and the two-tap confirm behind it — the same dialog
   // the segment Erase uses, not a second one.
   deleteBook: "Delete book",
   // Names the book, because this dialog's title is also its accessible name and
@@ -729,7 +729,7 @@ export const strings = {
   shareFilename: (book: string, chapter: number): string =>
     `${filenameSafe(book)} - Chapter ${chapter}.mp3`,
 
-  // Share Book — the book-level ≡ menu and its zip-of-chapter-MP3s share. Names
+  // Share Book — the book-level ⋮ menu and its zip-of-chapter-MP3s share. Names
   // each book so AT users can tell one shelf row's menu from the next.
   bookMenuOpen: (book: string): string => `More actions for ${book}`,
   bookMenuTitle: "Book",

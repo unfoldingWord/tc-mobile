@@ -13,7 +13,7 @@
  * is not a rendering nit — it is that argument silently becoming false.
  *
  * Inline in the JSX it had no Node-testable surface at all, and the only
- * automated evidence was one headless case that opens the chapter ≡ menu — so
+ * automated evidence was one headless case that opens the chapter ⋮ menu — so
  * the `eraseConfirmOpen` term the decision actually turns on could have been
  * deleted with every gate green. Here each term is one row.
  *
@@ -32,7 +32,7 @@ export interface SegmentsOverlayState {
   readonly eraseConfirmOpen: boolean;
   /** A row's overflow menu is open (only one ever is). */
   readonly rowMenuOpen: boolean;
-  /** The chapter ≡ menu is open, in either its action-list or rename mode. */
+  /** The chapter ⋮ menu is open, in either its action-list or rename mode. */
   readonly chapterMenuOpen: boolean;
   /**
    * The share modal owns the screen — its whole timeline, busy hold and outcome
