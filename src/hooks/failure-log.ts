@@ -1,11 +1,13 @@
 import { useEffect, useSyncExternalStore } from "react";
 
+import { lightsFailureMarker } from "@/lib/failure-marker";
 import { boundText, describeCause } from "@/lib/failure-text";
 import { isTerminalOpenRefusal } from "@/lib/storage/db";
 import {
   appendFailure,
   clearFailures,
   countFailures,
+  countMarkedFailures,
   FAILURE_LOG_LIMIT,
   readFailures,
 } from "@/lib/storage/failures";
@@ -124,6 +126,15 @@ function enqueue<T>(op: () => Promise<T>): Promise<T> {
  */
 let logCount = 0;
 let logGeneration = 0;
+/**
+ * How many of those rows light the Books ≡ marker (#1005): all of them except
+ * the informational contexts `lightsFailureMarker` names, today only
+ * `"recorder-take-cap"`. The DRI's decision on #1076, verbatim: "Log it, don't
+ * light ≡ (Recommended)". `logCount` still gates the menu's problem report, so
+ * a log holding only that row can still be sent. Kept beside `logCount` and
+ * moved at every one of its write sites, so the two cannot drift apart.
+ */
+let markedCount = 0;
 
 /**
  * Subscribers to the two numbers above, in the `useSyncExternalStore` shape.
@@ -150,6 +161,10 @@ function subscribeToLog(onChange: () => void): () => void {
  */
 function getFailureCount(): number {
   return logCount;
+}
+
+function getMarkedFailureCount(): number {
+  return markedCount;
 }
 
 /**
@@ -213,7 +228,7 @@ function notifyLog(): void {
  * doing that, not an equality guard here, and the difference matters: a guard
  * here would also have suppressed the generation the panel needs.
  */
-async function markLogWritten(): Promise<void> {
+async function markLogWritten(context: string): Promise<void> {
   try {
     logCount = await countFailures();
   } catch {
@@ -221,6 +236,15 @@ async function markLogWritten(): Promise<void> {
     // ring's limit, past which the same append also pruned. Not routed through
     // `refreshCount()`: that enqueues, and this already runs inside a lane op.
     logCount = Math.min(logCount + 1, FAILURE_LOG_LIMIT);
+  }
+  try {
+    markedCount = await countMarkedFailures();
+  } catch {
+    // The same floor for the marker, but only when the row that landed is one
+    // that lights it: an informational row must not mark ≡ by the back door.
+    if (lightsFailureMarker(context)) {
+      markedCount = Math.min(markedCount + 1, logCount);
+    }
   }
   logGeneration += 1;
   notifyLog();
@@ -234,6 +258,7 @@ async function markLogWritten(): Promise<void> {
  */
 function markLogCleared(): void {
   logCount = 0;
+  markedCount = 0;
   logGeneration += 1;
   notifyLog();
 }
@@ -247,8 +272,10 @@ function markLogCleared(): void {
  */
 async function readCountIntoStore(): Promise<void> {
   const next = await countFailures();
-  if (next === logCount) return;
+  const nextMarked = await countMarkedFailures();
+  if (next === logCount && nextMarked === markedCount) return;
   logCount = next;
+  markedCount = nextMarked;
   notifyLog();
 }
 
@@ -466,7 +493,7 @@ async function writeEntry(entry: StoredFailure): Promise<void> {
     // Awaited, so the store update stays inside the op that caused it — which
     // is also what makes `flushFailureLog` cover the count and the generation,
     // not just the row.
-    await markLogWritten();
+    await markLogWritten(entry.context);
   } catch (writeFailure) {
     // Recorded before the swallow, so the crash screen can tell a refused write
     // from a settled lane. The swallow itself stays: this function IS the
@@ -684,4 +711,21 @@ export function useFailureCount(recoveryToken = 0): number {
   }, [recoveryToken]);
 
   return count;
+}
+
+/**
+ * How many rows light the Books ≡ marker, kept current as rows land (#1005).
+ *
+ * Read-only: it reads the same module store {@link useFailureCount} keeps, and
+ * it relies on that hook being mounted beside it to run the disk reads and
+ * their retry ladder. Books mounts both. The ≡ control's mark and accessible
+ * name key on this; the menu's problem report keys on `useFailureCount`, so a
+ * log holding only informational rows is still sendable.
+ */
+export function useMarkedFailureCount(): number {
+  return useSyncExternalStore(
+    subscribeToLog,
+    getMarkedFailureCount,
+    getMarkedFailureCount
+  );
 }

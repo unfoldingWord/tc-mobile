@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { blankComments } from "./support";
+
 /**
  * Every dialog in the tree has an accessible name (#198, #164 R-19).
  *
@@ -25,6 +27,11 @@ import { describe, expect, it } from "vitest";
  * It reads JSX text, not an AST (#280 tracks that trade-off for the precache
  * guard). The `role=` and the naming attribute must therefore be within the
  * same JSX opening tag, which is where both belong anyway.
+ *
+ * Comments are blanked before the sweep (#822). JSX allows a comment between
+ * attributes, so an `aria-label=` parked in one would otherwise name a dialog
+ * that has no name. Blanked rather than removed, so the line numbers in the
+ * case names still point at the file.
  */
 const COMPONENTS = path.resolve(import.meta.dirname, "..", "src", "components");
 
@@ -36,10 +43,9 @@ function dialogTags(source: string): { line: number; tag: string }[] {
   for (const match of source.matchAll(/<[A-Za-z][^<]*?>/gs)) {
     const tag = match[0];
     if (!/role=["'](?:alert)?dialog["']/.test(tag)) continue;
-    // A comment mentioning `role="alertdialog"` in prose is not a tag; those
-    // live in /* */ or // and never inside a JSX opening tag's attribute list,
-    // but `error-boundary.tsx:66` proves they exist in this tree, so the match
-    // is confirmed to be a real element by requiring at least one attribute.
+    // Prose that mentions `role="alertdialog"` outside a comment (a string, a
+    // JSX text node) is not a tag either, so the match must carry at least
+    // one attribute to count as a real element.
     if (!/\s[a-zA-Z-]+=/.test(tag)) continue;
     found.push({
       line: source.slice(0, match.index).split("\n").length,
@@ -53,7 +59,7 @@ const files = readdirSync(COMPONENTS)
   .filter((name) => name.endsWith(".tsx"))
   .map((name) => ({
     name,
-    source: readFileSync(path.join(COMPONENTS, name), "utf8"),
+    source: blankComments(readFileSync(path.join(COMPONENTS, name), "utf8")),
   }));
 
 describe("every dialog carries an accessible name (#198, #164 R-19)", () => {

@@ -108,8 +108,14 @@ None of these block the move; siblings mostly lack them too.
 - **D5c — Name the technical lead** in `AGENTS.md` (feeds D1).
 - CODEOWNERS / PR / issue templates: **above** org norm (no sibling has them).
   Skip unless wanted.
-- **lamejs LGPL attribution (#36)** — the one open licensing item; unrelated to
-  the org move but should close before a public release.
+- **lamejs LGPL attribution (#36)** — the in-app notice and licence texts ship
+  (**Menu → About & licenses**, precached under `public/licenses/`). The DRI
+  selected this repository as the source offer under LGPL §4(d)(0); that is a
+  DRI-selected mechanism, not a legal determination that it satisfies §4(d)(0)
+  (ADR 0003 §4(d)). The repo went public **2026-09-13**, and the About screen
+  now links it for the exact build commit (#144), so this no longer ties to the
+  org move. The
+  native-shell (Capacitor) attribution is separate, #477.
 
 ## Already done (don't redo)
 

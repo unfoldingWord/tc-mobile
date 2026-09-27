@@ -73,13 +73,15 @@ export function useBookShare(): UseBookShare {
       zipFilename: string,
       nameChapter: (chapterNumber: number) => string
     ): Promise<ShareOutcome | null> =>
-      run((isCurrent, signal) =>
+      run((isCurrent, signal, onStep) =>
         withEncoder(signal, async (codec) => {
+          // `onStep`: chapters archived of the book's total (#986).
           const result = await exportBookZip(
             bookId,
             nameChapter,
             codec,
-            isCurrent
+            isCurrent,
+            onStep
           );
           // exportBookZip returns null for a book with no audio AND for a run
           // cancelled during the gather. `isCurrent` distinguishes them: still live

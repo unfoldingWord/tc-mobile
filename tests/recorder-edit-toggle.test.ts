@@ -198,7 +198,7 @@ describe("the edit toggle (#557) opens the forward seed (#554)", () => {
       container.querySelector('[data-testid="centerline-overlay"]')
     ).not.toBeNull();
 
-    // `[ ]` off and on — the route out of the collapsed state that needs no
+    // The edit toggle off and on — the route out of the collapsed state that needs no
     // pointer geometry. (`e2e/recorder-selection.spec.ts` covers the other
     // one, a touch on the waveform.)
     await act(async () => toggle().click());

@@ -22,3 +22,7 @@ ios
 fastlane
 Gemfile
 Gemfile.lock
+
+# Vendored third-party source (#36), kept byte-for-byte as fetched — see
+# third_party/lamejs-1.2.7/PROVENANCE.md. Formatting it would modify it.
+third_party

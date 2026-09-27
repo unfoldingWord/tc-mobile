@@ -2,17 +2,24 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { region, stripComments } from "./support";
+
 /**
  * `useSegmentEditor` is a hook this file exercises only as source text, not
  * mounted: nothing here invokes its returned `undo`/`redo` directly. It is
- * a source-shape gate, in the same comment-stripping-free, indexOf-isolated
- * idiom `tests/nav-commit-close-race-guards.test.ts` and
- * `tests/recorder-resume-race.test.ts`'s "the wiring, not just the helper"
- * section use.
+ * a source-shape gate, indexOf-isolated like
+ * `tests/nav-commit-close-race-guards.test.ts`.
+ *
+ * Comments are stripped BEFORE anything is searched (#822): every case below
+ * makes a positive match, and unstripped, a comment naming `opUndone(log)`
+ * inside `undo()` satisfies it while the live read goes back to an inline
+ * index the `not.toMatch` beside it does not happen to spell.
  */
-const source = readFileSync(
-  new URL("../src/hooks/use-segment-editor.ts", import.meta.url),
-  "utf8"
+const source = stripComments(
+  readFileSync(
+    new URL("../src/hooks/use-segment-editor.ts", import.meta.url),
+    "utf8"
+  )
 );
 
 /**
@@ -39,9 +46,7 @@ describe("useSegmentEditor.undo/redo call the shared opUndone/opRedone helpers (
       "}, [log, applyLog, clearSelection, clipboard]);",
       start
     );
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    const body = source.slice(start, end);
+    const body = region(source, { from: start, to: end });
     expect(body).toMatch(/opUndone\(log\)/);
     expect(body).not.toMatch(/log\.ops\[log\.cursor - 1\]/);
   });
@@ -54,9 +59,7 @@ describe("useSegmentEditor.undo/redo call the shared opUndone/opRedone helpers (
       "}, [log, base, working, runEdit, clearSelection, clipboard]);",
       start
     );
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    const body = source.slice(start, end);
+    const body = region(source, { from: start, to: end });
     expect(body).toMatch(/opRedone\(log\)/);
     expect(body).not.toMatch(/log\.ops\[log\.cursor\]/);
   });

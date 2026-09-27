@@ -264,6 +264,7 @@ export function useAudioSession(): UseAudioSession {
     stop: endRecording,
     retryDecode,
     cancel: cancelRecording,
+    seal: sealRecording,
     state: recorderState,
     error: recorderError,
     elapsedMs,
@@ -608,7 +609,15 @@ export function useAudioSession(): UseAudioSession {
     // task as the tap, or iOS treats the prompt as unprompted.
     void beginRecording()
       .then((started) => {
-        if (started || token === null) return;
+        if (started) {
+          // The page can go hidden while `start()` waits on the microphone,
+          // when there is no take for the hidden change to seal yet. The take
+          // that opens afterwards would record in the background, so it is
+          // sealed here instead (#836).
+          if (document.visibilityState === "hidden") sealRecording();
+          return;
+        }
+        if (token === null) return;
         // The floor is handed back HERE, on the completion path, rather than
         // left to the effect below. A denied permission takes the recorder
         // idle -> requesting -> idle, and nothing guarantees a consumer ever
@@ -620,7 +629,7 @@ export function useAudioSession(): UseAudioSession {
       .catch((cause: unknown) => {
         console.error("Starting the recorder failed", cause);
       });
-  }, [beginRecording, claimFloor, session, supported]);
+  }, [beginRecording, claimFloor, sealRecording, session, supported]);
 
   const stopRecording = useCallback(async (): Promise<StopResult> => {
     // Snapshot BEFORE the await. `startRecording` writes every new claim into
@@ -699,12 +708,39 @@ export function useAudioSession(): UseAudioSession {
   }, [recorderState, session]);
 
   useEffect(() => {
-    // The page may be discarded without ever unmounting. A hot microphone on a
-    // page that is going away is not arguable.
-    const onPageHide = () => leave();
+    // The page may be discarded without ever unmounting, so everything is
+    // released here, except an open take (#807, DRI decision 2026-09-24): that
+    // is sealed the way a #59 interruption seals it, and the recorder sheet
+    // commits it through the same path. The mic floor stays with the take;
+    // `stopRecording`'s `finally` hands it back. Nothing can be sounding: the
+    // session refuses playback while the mic holds the floor.
+    //
+    // Nothing here writes IndexedDB. `seal()` only sets state; the save runs
+    // after `stop()`'s flush and decode awaits, so on a page the browser keeps
+    // (bfcache) it lands after the page resumes, and on a page it discards it
+    // never runs, which loses the take exactly as the cancel did.
+    //
+    // The page becoming hidden (an app switch, a lock) seals an open take the
+    // same way (#836, requirements owner 2026-09-24: "Yes, switching apps ends
+    // the recording. User can always append to it later if desired."). It does
+    // nothing else: a hidden page with no take open keeps its playback and its
+    // screen, and becoming visible again restarts nothing. `seal()` is
+    // idempotent, so a `pagehide` after the hidden change finds the take
+    // already sealed and returns `true` without cancelling it.
+    const onPageHide = () => {
+      if (sealRecording()) return;
+      leave();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") sealRecording();
+    };
     window.addEventListener("pagehide", onPageHide);
-    return () => window.removeEventListener("pagehide", onPageHide);
-  }, [leave]);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [leave, sealRecording]);
 
   useEffect(() => () => leave(), [leave]);
 

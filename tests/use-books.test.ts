@@ -185,6 +185,7 @@ const book = (overrides: Partial<Book> = {}): Book => ({
   chapterIds: [],
   createdAt: 0,
   updatedAt: 0,
+  coverColourKey: null,
   ...overrides,
 });
 

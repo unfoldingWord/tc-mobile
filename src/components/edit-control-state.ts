@@ -28,7 +28,6 @@
  * the gates these reproduce, in plain Node, against `heldByDrag` itself.
  */
 
-import type { IconName } from "./icon";
 import { strings } from "@/lib/strings";
 
 /**
@@ -89,21 +88,40 @@ export function redoReason(
   return null;
 }
 
-/** A disabled control's cue: a visible state mark, and the reason in words. */
+/**
+ * A disabled control's cue: the reason in words, and nothing painted.
+ *
+ * No `icon`, and that is the point rather than an omission (#924). This is
+ * the same shape `menu-row-state.ts`'s `barHint` returns for the record bar's
+ * Edit and bin, and for the same reason: a bar control sits in the
+ * translator's hand all session, and a badge on one reads as something gone
+ * wrong. `Control` paints a badge only when a hint carries an `icon`
+ * (`control.tsx`), so a shape without the field cannot grow one back by
+ * accident — the field would have to be re-added here first.
+ */
 export interface EditControlHint {
-  /**
-   * A small badge on the control. `"alert"` — a STATE mark meaning "blocked,
-   * look here" — never a glyph that names a control, for the reason
-   * `menu-row-state.ts`'s `rowHint` records at length: a control glyph in a
-   * cue points somewhere, and the place it points is not always reachable.
-   */
-  readonly icon?: IconName;
   /** Appended to the control's accessible name while disabled. */
   readonly label: string;
 }
 
 /**
- * Which reasons get a cue, what it shows, and what it says.
+ * Which reasons get a cue, and what it says.
+ *
+ * **The cue is words only — no badge (#924).** #703 shipped both history cues
+ * wearing `rowHint`'s `alert` mark, and the requirements owner, on v0.2.12,
+ * read a ⚠ sitting on a greyed Redo — and moving to Undo once an undo emptied
+ * the history — as an error. It is not one: a grey arrow at either end of the
+ * stack is the ordinary idle state of an edit session, and the ≡ row that mark
+ * was borrowed from is a different case, a control blocked by something ELSE
+ * (an uncommitted take, a starting mic) that the translator can act on. #610
+ * recorded the same reading for the toolbar Edit control and #624 answered it
+ * the same way: the reason stays in the accessible name, the control stays
+ * `aria-disabled` rather than natively disabled (so keyboard and switch users
+ * still reach the words, #135 round 2), and nothing is painted. `Control`
+ * paints a badge only when a hint carries an `icon`, so a label-only hint is
+ * exactly that. What the sighted non-reader loses is the mark #135 round 2
+ * added for the ≡ rows; what they keep is the grey itself, which for these two
+ * arrows is the whole message.
  *
  * **The words describe the CURRENT END OF THE STACK, never the session's
  * past**, because that is the only thing `canUndo`/`canRedo` know: they are
@@ -120,15 +138,18 @@ export interface EditControlHint {
  * out on different grounds:
  *
  * - `"held-by-drag"` lasts exactly as long as the translator's own finger is
- *   on the stage, and the control is live again on lift. A badge that appears
+ *   on the stage, and the control is live again on lift. A cue that appears
  *   and clears on every pan is not state-in-place, it is flicker — and it
  *   would fire on the gesture least likely to be a reach for Undo.
  *
- *   **A pan therefore REMOVES an explanation that was already on screen, and
- *   that is accepted** (George round 3 asked for this sentence by name). On a
- *   fresh edit session both arrows read "Nothing to undo." / "Nothing to redo.";
- *   the first scrub clears both cues until pointer-up, then restores them.
- *   Scrubbing is the gesture edit mode exists for, so the blink is frequent.
+ *   **A pan therefore REMOVES an explanation that was already in the
+ *   control's name, and that is accepted** (George round 3 asked for this
+ *   sentence by name). On a fresh edit session both arrows read "Nothing to
+ *   undo." / "Nothing to redo."; the first scrub clears both cues until
+ *   pointer-up, then restores them. Scrubbing is the gesture edit mode exists
+ *   for, so the blink is frequent — though since #924 it is a blink in the
+ *   accessible name and the tab order only, with nothing on screen to see
+ *   come and go.
  *
  *   **Do not repair it by attaching a hint while `dragging` is true.** A
  *   non-null hint moves `Control` from the native `disabled` attribute onto
@@ -136,8 +157,8 @@ export interface EditControlHint {
  *   HARD disable — `tests/control-render.test.ts` pins that cell precisely so
  *   this cannot be softened by accident. The cue is worth less than the lock.
  *   If the blink is ever judged worth fixing, the fix is to teach `Control` to
- *   paint a badge on a natively disabled button, which is `Control`'s contract
- *   and not this module's.
+ *   carry a reason on a natively disabled button, which is `Control`'s
+ *   contract and not this module's.
  * - `"sheet-busy"` is, in edit mode, `isClosing` and essentially nothing else:
  *   `idleEditable` is `view !== null && state === "idle" && !isClosing`, a
  *   null `view` puts `LoadErrorPanel` over the body so no toolbar is rendered,
@@ -161,9 +182,9 @@ export function editControlHint(
 ): EditControlHint | null {
   switch (reason) {
     case "nothing-to-undo":
-      return { icon: "alert", label: strings.nothingToUndo };
+      return { label: strings.nothingToUndo };
     case "nothing-to-redo":
-      return { icon: "alert", label: strings.nothingToRedo };
+      return { label: strings.nothingToRedo };
     case "held-by-drag":
     case "sheet-busy":
     case null:

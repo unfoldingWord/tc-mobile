@@ -165,12 +165,9 @@ async function setup() {
 }
 
 it.each(["edit", "clear", "finished"])(
-  // Driven through Stop (`commitTake("stay")`), not Edit-entry
-  // (`commitTake("edit")`): #857 disables the `[ ]`/"Edit recording" entry
-  // while a take is live, so it is no longer UI-reachable. The superseded
-  // verdict this pins runs unconditionally on `commitTake`'s `after` argument
-  // (`recorder.tsx`'s `verdict.kind === "superseded"` branch), so Stop
-  // exercises the identical shared code the Edit-triggered version did.
+  // Driven through Stop, the one UI route into `commitTake` since #857
+  // disabled the `[ ]`/"Edit recording" entry while a take is live (#871
+  // removed the commit-then-edit arm that entry used).
   "withholds pending %s after a superseded capture and idle Back follows",
   async (kind) => {
     const s = await setup();
@@ -215,7 +212,7 @@ it("still saves an ordinary idle edit", async () => {
   expect(s.saveEditedSegment).toHaveBeenCalledWith("segment", original, false);
 });
 
-// Both stops below are driven through Stop (`commitTake("stay")`), not
+// Both stops below are driven through Stop (`commitTake`), not
 // Edit-entry — #857 disables Edit-entry while a take is live, and neither
 // assertion here cares which mode the sheet lands in, only that a superseded
 // stop is followed by a real capture and idle writes still land afterward.

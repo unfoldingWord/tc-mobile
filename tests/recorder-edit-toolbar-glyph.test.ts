@@ -5,6 +5,7 @@ import {
   RecorderToolbar,
   type RecorderToolbarProps,
 } from "@/components/recorder-toolbars";
+import { Icon } from "@/components/icon";
 import { Recorder } from "@/components/recorder";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
@@ -136,9 +137,15 @@ describe("the edit toolbar's menu opener wears ⋮, not ≡ (#863)", () => {
       opener,
       "no 'More actions' control in the edit toolbar"
     ).toBeDefined();
-    const svg = opener!.querySelector("svg")!;
-    expect(svg.querySelectorAll("circle").length).toBe(3);
-    expect(svg.querySelectorAll("path").length).toBe(0);
+    const svg = opener!.querySelector("svg");
+    // #913 item 3: assert the <svg> exists, with a message, before reading
+    // path/circle counts off it — the same guard #907 item 1 added below for
+    // the record-mode opener. Without it, a kebab opener rendered with no
+    // <svg> fails here with a bare TypeError on a non-null assertion, not a
+    // named assertion.
+    expect(svg, "no <svg> in the ⋮ opener").not.toBeNull();
+    expect(svg!.querySelectorAll("circle").length).toBe(3);
+    expect(svg!.querySelectorAll("path").length).toBe(0);
   });
 
   it("keeps the same accessible name and disabled gate the ≡ opener had", () => {
@@ -340,4 +347,44 @@ describe("record mode's header opener stays ≡, and the Editing pill hides it i
     // to confuse with either opener glyph.
     expect(pill!.querySelector("svg")).toBeNull();
   });
+});
+
+describe("the edit-mode toggle wears the scissors in both toolbars (#955)", () => {
+  // #955 (the requirements owner, 2026-09-25) overturns #594: the toggle that
+  // enters and leaves edit mode (`key="edit-toggle"`) shows the scissors, not
+  // the `[ ]` selection brackets. Compared against a rendered `<Icon
+  // name="scissors">` rather than a count of shapes, so ANY other glyph fails,
+  // not only the brackets.
+  //
+  // The selection's own Cut control (`recorder.tsx`, under the band) is also
+  // a scissors. The toolbar half of keeping the two apart is pinned here: the
+  // toggle keeps the default 22px glyph on the raised `default` tile in the
+  // bottom bar, where Cut is a bare `quiet` 26px glyph under the waveform.
+  const scissorsMarkup = render(
+    createElement(Icon, { name: "scissors" })
+  ).querySelector("svg")!.innerHTML;
+
+  function editToggle(mode: "record" | "edit"): HTMLButtonElement {
+    const container = render(createElement(RecorderToolbar, baseProps(mode)));
+    const toggles = [...container.querySelectorAll("button")].filter(
+      (button) => button.getAttribute("aria-label") === strings.enterEdit
+    );
+    expect(toggles, `edit toggles in the ${mode} toolbar`).toHaveLength(1);
+    return toggles[0] as HTMLButtonElement;
+  }
+
+  for (const [mode, pressed] of [
+    ["record", "false"],
+    ["edit", "true"],
+  ] as const) {
+    it(`${mode} toolbar: scissors glyph on the default tile at 22px, aria-pressed=${pressed}`, () => {
+      const toggle = editToggle(mode);
+      const svg = toggle.querySelector("svg");
+      expect(svg, `no <svg> in the ${mode} edit toggle`).not.toBeNull();
+      expect(svg!.innerHTML).toBe(scissorsMarkup);
+      expect(svg!.getAttribute("width")).toBe("22");
+      expect(toggle.classList.contains("control--quiet")).toBe(false);
+      expect(toggle.getAttribute("aria-pressed")).toBe(pressed);
+    });
+  }
 });
