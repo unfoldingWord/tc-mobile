@@ -71,9 +71,16 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 - Jesse's #965, #985 and #1097 are with the bench. #965 and #985 conflict with develop.
 - No O4 PRs are open.
 
+### Phone report after the cut (v0.2.13, iPhone 18 Pro Max, iOS 27.0, developer/DRI)
+
+- The O4 UI looks right in dark and light, and the theme choice persists after close.
+- **#1099:** the new book, new chapter and rename dialogs close with no change and no error.
+- **#1100:** no audio on playback, on existing or new recordings. Related to #555 and #269; an evidence comment is on #555.
+- Both are v1-required, in v0.3.0 — Training essentials. Pre-checks are listed in each issue: TestFlight or browser, the ≡ red mark and log, the old look, silent mode, capture vs playback.
+
 ### Next
 
-1. The v0.2.13 developer device-pass checklist issue, #920 style. It's drafted and waits on the DRI.
+1. **#1099 and #1100 first**, both training blockers. Run the pre-checks in each issue, then a fix lane. The v0.2.13 device-pass checklist issue is drafted and waits on the DRI.
 2. Tim's #951 staging review.
 3. The #974 phone pass, including the **v8 → v9 upgrade on a phone that holds v0.2.12 data**.
 4. Then v1.0.0 (#951 step 3). #1094 rides the next promotion. The 15-minute take marker is the #1076 residual.
