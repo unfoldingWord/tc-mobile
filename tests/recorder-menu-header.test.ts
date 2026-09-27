@@ -123,6 +123,7 @@ async function openMenu(): Promise<Element> {
     error: null,
     recorderError: null,
     meterFailed: false,
+    takeCap: { nearLimit: false, remainingMs: 20 * 60_000, reached: false },
     playTake: vi.fn(),
     playBuffer: vi.fn(),
     stopBuffer: vi.fn(),

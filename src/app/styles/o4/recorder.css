@@ -54,6 +54,14 @@
     width: 12px;
     height: 12px;
   }
+  /* #1005's remaining-minutes word, sized down from the O4 32px timer next to
+     it — proposed here, not a workbench-signed state (docs/design/
+     o4-design-system.md's screen map names no near-limit variant for 09
+     Recording); see the PR body. */
+  [data-design="o4"] .recorder-status .recorder-take-warn {
+    font-size: 15px; /* #939 token */
+    font-weight: 500;
+  }
 
   /* --- timestamp (10 recorded, 11 playing) ------------------------------ */
   [data-design="o4"] .recorder-stamp {
