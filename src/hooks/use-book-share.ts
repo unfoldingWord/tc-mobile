@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 
+import { spoolArchive } from "./archive-spool";
 import { withEncoder } from "./mp3-codec";
 import {
   type ShareOutcome,
@@ -75,27 +76,33 @@ export function useBookShare(): UseBookShare {
     ): Promise<ShareOutcome | null> =>
       run((isCurrent, signal, onStep) =>
         withEncoder(signal, async (codec) => {
-          // `onStep`: chapters archived of the book's total (#986).
-          const result = await exportBookZip(
-            bookId,
-            nameChapter,
-            codec,
-            isCurrent,
-            onStep
+          // The zip streams into a spool as it is built (#1003): an OPFS file
+          // where the browser has one, memory where it does not
+          // (`archive-spool.ts`). `onStep`: chapters archived of the book's
+          // total (#986).
+          const spooled = await spoolArchive(
+            (sink) =>
+              exportBookZip(
+                bookId,
+                nameChapter,
+                codec,
+                sink,
+                isCurrent,
+                onStep
+              ),
+            zipFilename,
+            "application/zip"
           );
           // exportBookZip returns null for a book with no audio AND for a run
           // cancelled during the gather. `isCurrent` distinguishes them: still live
           // means genuinely nothing to share.
-          if (result === null) return isCurrent() ? "nothing" : null;
-          // The archive arrives as fflate's stream chunks and goes to `File` as
-          // parts — the browser assembles the Blob, so no archive-sized buffer is
-          // ever allocated here (B8; the ~2x peak George flagged on #114). The
-          // spread copies the list of references, not the bytes.
-          const file = new File([...result.chunks], zipFilename, {
-            type: "application/zip",
-          });
+          if (spooled === null) return isCurrent() ? "nothing" : null;
+          const { result, file, release } = spooled;
+          // `release` goes to the flow with the File: the flow drops the spool
+          // once the File is staged, shared, dismissed or abandoned.
           return {
             file,
+            release,
             missing: result.missing,
             partial: result.partialSegments,
             partialChapters: result.partialChapters,

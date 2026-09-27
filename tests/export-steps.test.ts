@@ -3,7 +3,7 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import { exportBookZip } from "@/lib/export/book";
+import { exportBookZip, memoryArchiveSink } from "@/lib/export/book";
 import * as chapterExport from "@/lib/export/chapter";
 import {
   exportChapterMp3,
@@ -257,7 +257,14 @@ describe("exportBookZip — chapter steps (#986)", () => {
     ]);
     const { calls, onStep } = recorder();
 
-    await exportBookZip(bookId, nameChapter, testCodec(), undefined, onStep);
+    await exportBookZip(
+      bookId,
+      nameChapter,
+      testCodec(),
+      memoryArchiveSink(),
+      undefined,
+      onStep
+    );
 
     expect(calls).toEqual([
       [0, 3],
@@ -280,8 +287,13 @@ describe("exportBookZip — chapter steps (#986)", () => {
       return new Uint8Array(1);
     });
 
-    await exportBookZip(bookId, nameChapter, codec, undefined, (d, t) =>
-      order.push(`${d}/${t}`)
+    await exportBookZip(
+      bookId,
+      nameChapter,
+      codec,
+      memoryArchiveSink(),
+      undefined,
+      (d, t) => order.push(`${d}/${t}`)
     );
 
     expect(order).toEqual(["0/2", "encoded", "1/2", "encoded", "2/2"]);
@@ -299,6 +311,7 @@ describe("exportBookZip — chapter steps (#986)", () => {
       bookId,
       nameChapter,
       testCodec(),
+      memoryArchiveSink(),
       undefined,
       onStep
     );
@@ -323,7 +336,14 @@ describe("exportBookZip — chapter steps (#986)", () => {
     await db.delete("chapters", second!.id);
     const { calls, onStep } = recorder();
 
-    await exportBookZip(bookId, nameChapter, testCodec(), undefined, onStep);
+    await exportBookZip(
+      bookId,
+      nameChapter,
+      testCodec(),
+      memoryArchiveSink(),
+      undefined,
+      onStep
+    );
 
     expect(calls).toEqual([
       [0, 2],
@@ -347,7 +367,14 @@ describe("exportBookZip — chapter steps (#986)", () => {
     const { calls, onStep } = recorder();
 
     await expect(
-      exportBookZip(bookId, nameChapter, codec, undefined, onStep)
+      exportBookZip(
+        bookId,
+        nameChapter,
+        codec,
+        memoryArchiveSink(),
+        undefined,
+        onStep
+      )
     ).rejects.toThrow("encode failed");
 
     expect(calls).toEqual([
@@ -369,6 +396,7 @@ describe("exportBookZip — chapter steps (#986)", () => {
       bookId,
       nameChapter,
       testCodec(),
+      memoryArchiveSink(),
       shouldContinue,
       onStep
     );
@@ -400,6 +428,7 @@ describe("exportBookZip — chapter steps (#986)", () => {
       bookId,
       nameChapter,
       codec,
+      memoryArchiveSink(),
       () => !cancelled,
       onStep
     );
@@ -418,7 +447,14 @@ describe("exportBookZip — chapter steps (#986)", () => {
     const spy = vi.spyOn(chapterExport, "exportChapterMp3");
     const { calls, onStep } = recorder();
 
-    await exportBookZip(bookId, nameChapter, testCodec(), undefined, onStep);
+    await exportBookZip(
+      bookId,
+      nameChapter,
+      testCodec(),
+      memoryArchiveSink(),
+      undefined,
+      onStep
+    );
     const forwarded = spy.mock.calls.map((args) => args[3]);
     spy.mockRestore();
 
@@ -432,7 +468,14 @@ describe("exportBookZip — chapter steps (#986)", () => {
   it("reports nothing for a book with no chapters", async () => {
     const bookId = await bookWith([]);
     const { calls, onStep } = recorder();
-    await exportBookZip(bookId, nameChapter, testCodec(), undefined, onStep);
+    await exportBookZip(
+      bookId,
+      nameChapter,
+      testCodec(),
+      memoryArchiveSink(),
+      undefined,
+      onStep
+    );
     expect(calls).toEqual([]);
   });
 });
@@ -504,7 +547,14 @@ describe("the export names its counted items by key (#1044)", () => {
     await db.delete("chapters", chapters[1]!.id);
     const { keys, onStep } = keyRecorder();
 
-    await exportBookZip(bookId, nameChapter, testCodec(), undefined, onStep);
+    await exportBookZip(
+      bookId,
+      nameChapter,
+      testCodec(),
+      memoryArchiveSink(),
+      undefined,
+      onStep
+    );
 
     expect(keys).toHaveLength(3);
     for (const k of keys) expect(k).toEqual([chapters[0]!.id, chapters[2]!.id]);
