@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 
+import { spoolArchive } from "./archive-spool";
 import { withEncoder } from "./mp3-codec";
 import {
   type ShareError,
@@ -207,20 +208,18 @@ export function useLibraryShare(): UseLibraryShare {
           throw new InsufficientStorageError(bytes, usage, quota);
         }
         return withEncoder(signal, async (codec) => {
-          const result = await exportLibraryZip(
-            nameBook,
-            nameChapter,
-            codec,
-            isCurrent
+          // Spooled as it is built, as Share Book is (#1003,
+          // `archive-spool.ts`).
+          const spooled = await spoolArchive(
+            (sink) =>
+              exportLibraryZip(nameBook, nameChapter, codec, sink, isCurrent),
+            zipFilename,
+            "application/zip"
           );
           // null for a library with no resolvable audio AND for a run
           // cancelled part-way; `isCurrent` tells them apart.
-          if (result === null) return isCurrent() ? "nothing" : null;
-          // Stream chunks straight into `File` as parts, as Share Book does:
-          // no archive-sized buffer is assembled here.
-          const file = new File([...result.chunks], zipFilename, {
-            type: "application/zip",
-          });
+          if (spooled === null) return isCurrent() ? "nothing" : null;
+          const { result, file, release } = spooled;
           // The flow's count slots carry the LIBRARY's units here — books,
           // chapters, books — not Share Book's chapters/segments/chapters.
           // They leave this hook only renamed: as `missing`/
@@ -229,6 +228,7 @@ export function useLibraryShare(): UseLibraryShare {
           // ShareGap a book-scope wording would misread.
           return {
             file,
+            release,
             missing: result.missing,
             partial: result.incompleteChapters,
             partialChapters: result.incompleteBooks,

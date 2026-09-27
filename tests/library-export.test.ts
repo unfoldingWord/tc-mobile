@@ -8,6 +8,7 @@ import {
   estimateLibraryZipBytes,
   exportBookZip,
   exportLibraryZip,
+  memoryArchiveSink,
   roomForExport,
 } from "@/lib/export/book";
 import * as chapterExport from "@/lib/export/chapter";
@@ -82,11 +83,17 @@ describe("exportLibraryZip", () => {
       [{ n: CANONICAL_SAMPLE_RATE, v: 500 }],
     ]);
 
-    const result = await exportLibraryZip(nameBook, nameChapter, testCodec());
+    const sink = memoryArchiveSink();
+    const result = await exportLibraryZip(
+      nameBook,
+      nameChapter,
+      testCodec(),
+      sink
+    );
     expect(result).not.toBeNull();
     expect(result!.books).toBe(2);
     expect(result!.missing).toBe(0);
-    const entries = unzipSync(archive(result!.chunks));
+    const entries = unzipSync(archive(sink.chunks));
 
     // The book loop must reach BOTH books — a loop that stops after the first
     // (or only ever reads one) leaves a folder out and fails here.
@@ -100,12 +107,15 @@ describe("exportLibraryZip", () => {
       [mark, "Mark"],
       [luke, "Luke"],
     ] as const) {
+      const soloSink = memoryArchiveSink();
       const solo = await exportBookZip(
         bookId,
         (n) => nameChapter(name, n),
-        testCodec()
+        testCodec(),
+        soloSink
       );
-      const soloEntries = unzipSync(archive(solo!.chunks));
+      expect(solo).not.toBeNull();
+      const soloEntries = unzipSync(archive(soloSink.chunks));
       const folder = Object.fromEntries(
         Object.entries(entries)
           .filter(([path]) => path.startsWith(`${name}/`))
@@ -117,7 +127,9 @@ describe("exportLibraryZip", () => {
 
   it("is a clean no-op for an empty library: null, and no encode", async () => {
     const codec = testCodec();
-    expect(await exportLibraryZip(nameBook, nameChapter, codec)).toBeNull();
+    expect(
+      await exportLibraryZip(nameBook, nameChapter, codec, memoryArchiveSink())
+    ).toBeNull();
     expect(codec.encodeMp3).not.toHaveBeenCalled();
   });
 
@@ -125,7 +137,12 @@ describe("exportLibraryZip", () => {
     await bookWith("A", [[null], []]);
     await bookWith("B", []);
     expect(
-      await exportLibraryZip(nameBook, nameChapter, testCodec())
+      await exportLibraryZip(
+        nameBook,
+        nameChapter,
+        testCodec(),
+        memoryArchiveSink()
+      )
     ).toBeNull();
   });
 
@@ -140,11 +157,17 @@ describe("exportLibraryZip", () => {
     await bookWith("Later", [[{ n: 100, v: 200 }]]);
     clock.mockRestore();
 
-    const result = await exportLibraryZip(nameBook, nameChapter, testCodec());
+    const sink = memoryArchiveSink();
+    const result = await exportLibraryZip(
+      nameBook,
+      nameChapter,
+      testCodec(),
+      sink
+    );
     expect(result).not.toBeNull();
     expect(result!.books).toBe(2);
     expect(result!.missing).toBe(1);
-    expect(Object.keys(unzipSync(archive(result!.chunks)))).toEqual([
+    expect(Object.keys(unzipSync(archive(sink.chunks)))).toEqual([
       "Later/Later - Chapter 1.mp3",
       "Earlier/Earlier - Chapter 1.mp3",
     ]);
@@ -161,7 +184,12 @@ describe("exportLibraryZip", () => {
     await bookWith("B", [[{ n: 100, v: 200 }]]);
     await bookWith("C", [[{ n: 100, v: 300 }, null, null]]);
 
-    const result = await exportLibraryZip(nameBook, nameChapter, testCodec());
+    const result = await exportLibraryZip(
+      nameBook,
+      nameChapter,
+      testCodec(),
+      memoryArchiveSink()
+    );
     expect(result).not.toBeNull();
     expect(result!.books).toBe(3);
     expect(result!.missing).toBe(0);
@@ -172,7 +200,12 @@ describe("exportLibraryZip", () => {
   it("reports no gap for a library whose included books are whole", async () => {
     await bookWith("A", [[{ n: 100, v: 100 }]]);
     await bookWith("B", [[{ n: 100, v: 200 }], [{ n: 100, v: 250 }]]);
-    const result = await exportLibraryZip(nameBook, nameChapter, testCodec());
+    const result = await exportLibraryZip(
+      nameBook,
+      nameChapter,
+      testCodec(),
+      memoryArchiveSink()
+    );
     expect(result!.incompleteChapters).toBe(0);
     expect(result!.incompleteBooks).toBe(0);
   });
@@ -183,8 +216,15 @@ describe("exportLibraryZip", () => {
     await bookWith("1.John", [[{ n: 100, v: 300 }]]);
     await bookWith("1.John", [[{ n: 100, v: 400 }]]);
 
-    const result = await exportLibraryZip(nameBook, nameChapter, testCodec());
-    const folders = Object.keys(unzipSync(archive(result!.chunks)))
+    const sink = memoryArchiveSink();
+    const result = await exportLibraryZip(
+      nameBook,
+      nameChapter,
+      testCodec(),
+      sink
+    );
+    expect(result).not.toBeNull();
+    const folders = Object.keys(unzipSync(archive(sink.chunks)))
       .map((path) => path.slice(0, path.indexOf("/")))
       .sort();
     // A folder has no extension: "1.John" disambiguates as "1.John (2)", not
@@ -199,9 +239,16 @@ describe("exportLibraryZip", () => {
     await bookWith("Mark", [[{ n: 100, v: 100 }]]);
     await bookWith("mark", [[{ n: 100, v: 200 }]]);
 
-    const result = await exportLibraryZip(nameBook, nameChapter, testCodec());
-    const folders = Object.keys(unzipSync(archive(result!.chunks))).map(
-      (path) => path.slice(0, path.indexOf("/")).toLowerCase()
+    const sink = memoryArchiveSink();
+    const result = await exportLibraryZip(
+      nameBook,
+      nameChapter,
+      testCodec(),
+      sink
+    );
+    expect(result).not.toBeNull();
+    const folders = Object.keys(unzipSync(archive(sink.chunks))).map((path) =>
+      path.slice(0, path.indexOf("/")).toLowerCase()
     );
     expect(folders).toHaveLength(2);
     expect(new Set(folders).size).toBe(2);
@@ -216,9 +263,15 @@ describe("exportLibraryZip", () => {
     await bookWith("Mark", [[null]]);
     clock.mockRestore();
 
-    const result = await exportLibraryZip(nameBook, nameChapter, testCodec());
+    const sink = memoryArchiveSink();
+    const result = await exportLibraryZip(
+      nameBook,
+      nameChapter,
+      testCodec(),
+      sink
+    );
     expect(result!.missing).toBe(1);
-    expect(Object.keys(unzipSync(archive(result!.chunks)))).toEqual([
+    expect(Object.keys(unzipSync(archive(sink.chunks)))).toEqual([
       "Mark/Mark - Chapter 1.mp3",
     ]);
   });
@@ -234,7 +287,12 @@ describe("exportLibraryZip", () => {
     const db = await getDb();
     await db.delete("chapters", mid!.id);
 
-    const result = await exportLibraryZip(nameBook, nameChapter, testCodec());
+    const result = await exportLibraryZip(
+      nameBook,
+      nameChapter,
+      testCodec(),
+      memoryArchiveSink()
+    );
     expect(result!.books).toBe(1);
     expect(result!.incompleteChapters).toBe(1);
     expect(result!.incompleteBooks).toBe(1);
@@ -244,8 +302,15 @@ describe("exportLibraryZip", () => {
     await bookWith("Mark/Luke", [[{ n: 100, v: 100 }]]);
     await bookWith("..", [[{ n: 100, v: 200 }]]);
 
-    const result = await exportLibraryZip(nameBook, nameChapter, testCodec());
-    const paths = Object.keys(unzipSync(archive(result!.chunks)));
+    const sink = memoryArchiveSink();
+    const result = await exportLibraryZip(
+      nameBook,
+      nameChapter,
+      testCodec(),
+      sink
+    );
+    expect(result).not.toBeNull();
+    const paths = Object.keys(unzipSync(archive(sink.chunks)));
     const folders = paths.map((p) => p.slice(0, p.indexOf("/")));
     expect(folders).toContain("Mark Luke");
     expect(folders).not.toContain("..");
@@ -266,7 +331,7 @@ describe("exportLibraryZip", () => {
       .mockImplementationOnce(() => Promise.reject(new Error("encoder died")));
 
     await expect(
-      exportLibraryZip(nameBook, nameChapter, codec)
+      exportLibraryZip(nameBook, nameChapter, codec, memoryArchiveSink())
     ).rejects.toThrow("encoder died");
     expect(codec.encodeMp3).toHaveBeenCalledTimes(2);
   });
@@ -293,6 +358,7 @@ describe("exportLibraryZip", () => {
       nameBook,
       nameChapter,
       codec,
+      memoryArchiveSink(),
       () => !firstDone
     );
 
@@ -326,8 +392,15 @@ describe("estimateLibraryZipBytes", () => {
     await bookWith("B", [[{ n: fiveSeconds, v: 700 }]]);
 
     const estimate = await estimateLibraryZipBytes();
-    const result = await exportLibraryZip(nameBook, nameChapter, testCodec());
-    const actual = archive(result!.chunks).length;
+    const sink = memoryArchiveSink();
+    const result = await exportLibraryZip(
+      nameBook,
+      nameChapter,
+      testCodec(),
+      sink
+    );
+    expect(result).not.toBeNull();
+    const actual = archive(sink.chunks).length;
 
     expect(estimate).not.toBeNull();
     expect(estimate!).toBeGreaterThanOrEqual(actual);
