@@ -411,11 +411,15 @@ save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
 failed chapter reorder (`hooks/use-books.ts`, `"chapter-reorder"`, #953), a
 failed segment reorder (`hooks/use-chapter-segments.ts`, `"segment-reorder"`,
-#953), a failed segment delete — two call sites report under the same
-context, one op each reaches through the store's own `deleteSegment`
-(`hooks/use-chapter-segments.ts`'s optimistic list delete, PR1, and
-`hooks/use-delete-segment.ts`'s recorder-menu delete, PR2)
-(`"segment-delete"`, #590), a failed book
+#953), a failed segment delete, through the store's own `deleteSegment`
+(`hooks/use-chapter-segments.ts`'s optimistic list delete, called from
+`segments-screen.tsx`'s row menu — the chapter view, #1104's placement)
+(`"segment-delete"`, #590 — this briefly had a second call site,
+`hooks/use-delete-segment.ts`'s recorder-menu delete, PR2 of #590/#1080; #1104
+(the requirements owner's 2026-09-26 decision, "the menu inside the segment
+editor (recorder) shows Erase only") pulled Delete back out of the recorder's
+≡ menu entirely, so that hook and its call site are gone, and this context is
+back to one caller), a failed book
 cover-colour write
 (`hooks/use-book-cover-colour.ts`, `"book-cover-colour"`, #957),
 playback's own

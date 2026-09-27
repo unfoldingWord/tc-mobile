@@ -269,7 +269,7 @@ export const strings = {
   tileRename: "Rename",
   tileErase: "Erase",
   // The book menu's Delete tile (04); its name is `deleteBook`. Shared with
-  // the recorder menu's Delete segment tile (#590) — its name is
+  // the chapter view's segment-menu Delete tile (#590/#1104) — its name is
   // `deleteSegment` — the same caption, on two different destructive tiles
   // in two different menus, rather than a second key holding the same word.
   tileDelete: "Delete",
@@ -651,15 +651,23 @@ export const strings = {
   deleteBookFailed: "Could not delete this book. Try again.",
 
   // ── Delete a segment (#590) ────────────────────────────────────────────────
-  // The recorder ≡-menu row/tile that deletes the segment itself, not only its
-  // audio (reverses G4, `docs/design/pivot-plan.md`'s Gate 1, for this one
-  // entry) — behind the same confirm dialog Erase and book Delete share, not a
-  // second one. No O4 workbench wording exists for THIS location: D20
-  // (`docs/design/o4-design-system.md`) draws "Remove this segment" for the
-  // SEGMENT-ROW menu (#997, a narrower, empty-only action deferred by the DRI
-  // past the training build), not the recorder. This reuses the erase/delete
-  // strings' own pattern instead — the exact wording is a residual for the DRI
-  // to confirm, not a workbench transcription.
+  // The chapter view's segment-row menu tile/row that deletes the segment
+  // itself, not only its audio (reverses G4, `docs/design/pivot-plan.md`'s
+  // Gate 1, for this one entry) — behind the same confirm dialog Erase and
+  // book Delete share, not a second one.
+  //
+  // #590/#1080 first shipped this in the RECORDER's ≡ menu; #1104 (the
+  // requirements owner's 2026-09-26 decision) moved it here instead: "the
+  // menu inside the segment editor (recorder) shows Erase only. Delete
+  // (removing the whole segment) belongs to the chapter view." The strings
+  // below are unchanged by that move — only their call site is.
+  //
+  // No O4 workbench wording exists for this exact tile: D20
+  // (`docs/design/o4-design-system.md`) draws "Remove this segment" for
+  // #997's narrower, empty-only action (deferred by the DRI past the
+  // training build), not this one. This reuses the erase/delete strings'
+  // own pattern instead — the exact wording is a residual for the DRI to
+  // confirm, not a workbench transcription.
   deleteSegment: "Delete segment",
   // Caption is the shared `tileDelete` above, not a second key — same word,
   // same tone (destructive), just a different tile.

@@ -64,6 +64,7 @@ function rowProps(row: Row, extra: Record<string, unknown> = {}) {
     onOpenRecorder: () => {},
     onSetFinished: () => {},
     onErase: () => {},
+    onDeleteSegment: () => {},
     onRename: () => Promise.resolve(true),
     ...extra,
   };

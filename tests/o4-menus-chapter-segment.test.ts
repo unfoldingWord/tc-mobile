@@ -258,21 +258,32 @@ describe("the segment menu (07) on the tile grid", () => {
     async (_, row) => {
       await mount("current", row);
       await openRow();
+      // Delete (#590, moved here by #1104) is last, beside Erase — see this
+      // menu's own docblock for why the current look keeps that placement
+      // rather than the O4 tile grid's Done/Edit/Delete/Erase order (#1103).
       expect(dialogNames()).toEqual([
         strings.menuClose,
         strings.editSegment(3, row.label),
         row.finished ? strings.markUnfinished(3) : strings.markFinished(3),
         strings.renameSegment,
         strings.eraseSegment,
+        strings.deleteSegment,
       ]);
       expect(focusedName()).toBe(strings.editSegment(3, row.label));
     }
   );
 
-  it("keeps the current look's never-recorded menu: Rename alone, focused", async () => {
+  it("keeps the current look's never-recorded menu: Rename then Delete, focused on Rename (#590/#1104)", async () => {
     await mount("current", empty);
     await openRow();
-    expect(dialogNames()).toEqual([strings.menuClose, strings.renameSegment]);
+    // Delete is reachable here too, unconditionally — the whole point of
+    // #590's narrower gate: an accidentally added, never-recorded segment is
+    // exactly what it exists to remove.
+    expect(dialogNames()).toEqual([
+      strings.menuClose,
+      strings.renameSegment,
+      strings.deleteSegment,
+    ]);
     expect(focusedName()).toBe(strings.renameSegment);
   });
 
@@ -285,23 +296,30 @@ describe("the segment menu (07) on the tile grid", () => {
     async (_, row) => {
       await mount("o4", row);
       await openRow();
+      // Tile order is Done, Edit, Delete, Erase (#1103, the requirements
+      // owner's 2026-09-27 pick) — NOT the Edit-then-Done order the workbench
+      // itself draws, and Delete (#590, moved here by #1104) is new since D20
+      // was drawn.
       expect(dialogNames()).toEqual([
         strings.menuClose,
         strings.renameSegment,
         strings.playSegment(3),
-        strings.editSegment(3, row.label),
         row.finished ? strings.markUnfinished(3) : strings.markFinished(3),
+        strings.editSegment(3, row.label),
+        strings.deleteSegment,
         strings.eraseSegment,
       ]);
       expect(focusedName()).toBe(strings.renameSegment);
     }
   );
 
-  it("draws Edit and Done, then Erase past a gap, with Rename as the head's pencil (#859, D20)", async () => {
+  it("draws Done, Edit, Delete and Erase, with Rename as the head's pencil (#859, D20; order per #1103)", async () => {
     await mount("o4", recorded);
     await openRow();
     // Edit and Done carry a hint slot (#135), so each sits in its
     // `.control-hinted` wrapper; read the grid's buttons, not its children.
+    // Order is Done, Edit, then a gap that pushes Delete and Erase to the far
+    // end together (#1103: "Erase far right", Delete immediately left of it).
     const grid = dialog().querySelector(".o4-tiles")!;
     expect(
       [...grid.querySelectorAll("button, .o4-tiles-gap")].map((el) =>
@@ -310,12 +328,14 @@ describe("the segment menu (07) on the tile grid", () => {
           : el.getAttribute("aria-label")
       )
     ).toEqual([
-      strings.editSegment(3, null),
       strings.markFinished(3),
+      strings.editSegment(3, null),
       "|",
+      strings.deleteSegment,
       strings.eraseSegment,
     ]);
     expect(tone(tile(strings.editSegment(3, null)))).toBe("edit");
+    expect(tone(tile(strings.deleteSegment))).toBe("erase");
     expect(tone(tile(strings.eraseSegment))).toBe("erase");
     const pen = button(strings.renameSegment);
     expect(pen.closest(".o4-sheet-bar"), "Rename sits in the head").not.toBe(
@@ -340,17 +360,21 @@ describe("the segment menu (07) on the tile grid", () => {
     expectCaptionInName();
   });
 
-  it("shows Edit and Done greyed on a never-recorded segment, each saying why (o4, D20)", async () => {
+  it("shows Edit and Done greyed on a never-recorded segment, each saying why, and keeps Delete reachable (o4, D20, #590/#1104)", async () => {
     await mount("o4", empty);
     await openRow();
     const why = strings.nothingRecorded;
     const edit = `${strings.editSegment(3, null)}. ${why}`;
     const done = `${strings.markFinished(3)}. ${why}`;
+    // Done, Edit — greyed, hinted — then Delete, UNGREYED (#590's own
+    // field-tester ask: an accidentally added, never-recorded segment is
+    // exactly what Delete exists to remove). No Erase: nothing to erase.
     expect(dialogNames()).toEqual([
       strings.menuClose,
       strings.renameSegment,
-      edit,
       done,
+      edit,
+      strings.deleteSegment,
     ]);
     for (const name of [edit, done]) {
       const el = tile(name);
@@ -359,8 +383,12 @@ describe("the segment menu (07) on the tile grid", () => {
       expect(el.getAttribute("aria-disabled"), name).toBe("true");
       expect(el.disabled, name).toBe(false);
     }
-    // No Play on a segment with nothing to play.
+    const del = tile(strings.deleteSegment);
+    expect(del.getAttribute("aria-disabled")).toBeNull();
+    expect(del.disabled).toBe(false);
+    // No Play or Erase on a segment with nothing to play or erase.
     expect(dialogNames()).not.toContain(strings.playSegment(3));
+    expect(dialogNames()).not.toContain(strings.eraseSegment);
     expect(focusedName()).toBe(strings.renameSegment);
   });
 
