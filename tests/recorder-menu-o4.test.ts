@@ -205,15 +205,18 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
     expect(named(strings.doneEditing)?.classList).toContain("o4-tile--plain");
   });
 
-  it("flips the Mark tile's LABEL and its tone (done / doneoff) on the same value", () => {
+  it("keeps the Mark tile's label fixed and flips its tone (done / doneoff) and aria-pressed on the same value (#351)", () => {
     show({ finishedState: "finished" });
-    const marked = named(strings.markUnfinished(3));
+    const marked = named(strings.markFinished(3));
     expect(marked?.classList).toContain("o4-tile--done");
     expect(marked?.classList).not.toContain("o4-tile--doneoff");
+    expect(marked?.getAttribute("aria-pressed")).toBe("true");
+    expect(named(strings.markUnfinished(3))).toBeUndefined();
     show({ finishedState: "empty" });
     const unmarked = named(strings.markFinished(3));
     expect(unmarked?.classList).toContain("o4-tile--doneoff");
     expect(unmarked?.classList).not.toContain("o4-tile--done");
+    expect(unmarked?.getAttribute("aria-pressed")).toBe("false");
   });
 
   it("keeps paint and label agreeing when the ordinal is missing", () => {
