@@ -5,6 +5,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+**This section is not maintained.** It still reads as the initial-scaffold
+day entry and was never updated for the pivot (`docs/design/pivot-plan.md`)
+or any batch since. At least three of its own claims are now wrong: it says
+Vite 7 (`package.json` pins `^8.3.0`), it describes a WAV writer that no
+longer exists under `src/lib/`, and it says the MP3 encoder has "nothing
+wires it to an export (#18)" even though Share Chapter / Share Book (B7) and
+the transcode pipeline (B8) wire it. Treat AGENTS.md as the current source of
+truth for what has shipped; this list is left below as a historical record of
+the pre-pivot scaffold, not a live changelog (#838).
+
 ### Added
 
 - Initial scaffold: Vite 7 + React 19 + TypeScript strict + Tailwind 4, with

@@ -94,3 +94,27 @@ export function classifyStopDecode(
     keepBlob: true,
   };
 }
+
+/**
+ * The code `stop()` reports when the seal holds no bytes at all — before any
+ * decode is attempted, so {@link classifyStopDecode} never sees it.
+ *
+ * Two facts decide it, and each has a costly wrong answer:
+ *
+ * - `flushThrew`: an empty seal after the flush executor threw (#485) is the
+ *   engine's failure, so it is `"unfinished"`. Reporting `"silence"` there
+ *   tells a translator who did speak that nothing was heard.
+ * - `current`: a superseded stop says nothing (null), the same rule as the
+ *   decode exits — a newer recording owns the screen.
+ *
+ * Extracted from an inline ternary in `use-recorder.ts` (#745), where only a
+ * source-text regex could reach it, and that regex still matched with the
+ * superseded `: null` arm deleted.
+ */
+export function classifyEmptySeal(
+  flushThrew: boolean,
+  current: boolean
+): CaptureFailure | null {
+  if (!current) return null;
+  return flushThrew ? "unfinished" : "silence";
+}

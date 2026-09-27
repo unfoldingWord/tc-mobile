@@ -32,6 +32,7 @@ const fakeBook = (): Book => ({
   chapterIds: [],
   createdAt: 0,
   updatedAt: 0,
+  coverColourKey: null,
 });
 
 // What `useBooks().createBook` actually resolves to (`use-books.ts`'s
@@ -82,7 +83,10 @@ vi.mock("@/hooks/use-book-share", () => ({
     reset: vi.fn(),
   }),
 }));
-vi.mock("@/hooks/failure-log", () => ({ useFailureCount: () => 0 }));
+vi.mock("@/hooks/failure-log", () => ({
+  useFailureCount: () => 0,
+  useMarkedFailureCount: () => 0,
+}));
 vi.mock("@/hooks/mp3-codec", () => ({
   encoderHealth: () => "ok",
   subscribeToEncoderHealth: () => () => {},

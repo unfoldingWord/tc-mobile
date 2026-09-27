@@ -130,6 +130,24 @@ export function bodyAfter(code: string, declaration: string): string {
 }
 
 /**
+ * The index of `needle` in `text`, throwing when it is absent **or occurs more
+ * than once**. `region` catches an anchor that went missing; it cannot catch
+ * one that still matches, but matches the wrong occurrence — a second
+ * `useLayoutEffect(() => {` added above the one a test names (#533, PR #531
+ * round 7). A plain `indexOf` silently means "the first"; this makes the
+ * test's assumption that there is only one fail at the moment it stops being
+ * true, rather than when the extra occurrence happens to move to the front.
+ */
+export function uniqueIndexOf(text: string, needle: string): number {
+  const at = text.indexOf(needle);
+  if (at === -1) throw new Error(`uniqueIndexOf: not found: ${needle}`);
+  if (text.indexOf(needle, at + 1) !== -1) {
+    throw new Error(`uniqueIndexOf: occurs more than once: ${needle}`);
+  }
+  return at;
+}
+
+/**
  * Slices `text.slice(from, to)`, and turns three silent-pass shapes into a
  * throw instead of a trivially-satisfied assertion:
  *
@@ -163,6 +181,13 @@ export function region(
   return slice;
 }
 
+/** Strips CSS block comments — and ONLY block comments. CSS has no `//`
+ *  comment, and `stripComments`' line strip would eat the rest of a line
+ *  holding a `url(https://…)`, closing brace included. */
+export function stripCssComments(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
 /**
  * Finds an exact, standalone CSS rule for `selector` and returns its
  * declaration body, trimmed. Strips CSS block comments first, so a comment
@@ -177,7 +202,7 @@ export function region(
  * `toThrow()` would also accept an ambiguous or empty rule.
  */
 export function cssRule(css: string, selector: string): string {
-  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const stripped = stripCssComments(css);
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const rules = [
     ...stripped.matchAll(new RegExp(`^\\s*${escaped}\\s*\\{([^{}]*)\\}`, "gm")),
@@ -192,4 +217,45 @@ export function cssRule(css: string, selector: string): string {
   const trimmed = body.trim();
   if (trimmed === "") throw new Error(`cssRule: empty rule: ${selector}`);
   return trimmed;
+}
+
+/**
+ * The value of the ONE `property` declaration in a rule `body` (what `cssRule`
+ * returns), trimmed. A bare `/color:\s*X/` over a body is satisfied by
+ * `background-color: X` or `border-color: X`, and by the first of two
+ * declarations when a later one in the same rule overrides it (#533's
+ * 2026-09-22 notes, 1 and 4). This anchors the
+ * property on a declaration boundary, and throws when it is absent or declared
+ * more than once, so a caller can assert the value with `toBe` rather than a
+ * pattern. Quoted strings and `url(…)` are blanked to same-length filler
+ * before the scan, so a `;` or `color:` inside `content: "…"` or a data URI
+ * is not read as a declaration; the value is sliced from the unmasked text.
+ * Still a scanner, not a tokenizer: a comment splitting an identifier
+ * (`col/* *\/or`) is glued back together by the strip.
+ */
+export function declarationValue(body: string, property: string): string {
+  const escaped = property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const text = stripCssComments(body);
+  const masked = text.replace(
+    /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\burl\([^)]*\)/g,
+    (m) => m[0] + "_".repeat(m.length - 2) + m.at(-1)!
+  );
+  const values = [
+    ...masked.matchAll(
+      new RegExp(
+        `(?<=^|[;{])\\s*${escaped}\\s*:\\s*([^;{}]*?)\\s*(?=;|}|$)`,
+        "dg"
+      )
+    ),
+  ].map((m) => text.slice(...m.indices![1]!));
+  if (values.length > 1) {
+    throw new Error(
+      `declarationValue: ${property} declared ${values.length} times`
+    );
+  }
+  const value = values.at(0);
+  if (value === undefined || value === "") {
+    throw new Error(`declarationValue: no ${property} declaration`);
+  }
+  return value;
 }

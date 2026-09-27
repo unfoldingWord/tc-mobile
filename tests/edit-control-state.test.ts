@@ -22,10 +22,11 @@ import { strings } from "@/lib/strings";
  * cell of the input space. A gate rewritten in one place and not the other
  * fails there, which a table of expected reasons would not catch.
  *
- * Nothing here renders. `Control`'s badge markup and its `aria-disabled`
- * routing are pinned by `tests/control-render.test.ts` through the #197
- * harness, and that file consumes a hint rather than restating one. What a
- * translator makes of the badge is still on-device surface, and #91 is
+ * Nothing here renders. `Control`'s `aria-disabled` routing for a hint with
+ * no glyph — the shape these two cues take since #924 — is pinned by
+ * `tests/control-render.test.ts` through the #197 harness, and that file
+ * consumes a hint rather than restating one. What a translator makes of a
+ * grey arrow that says nothing visibly is still on-device surface, and #91 is
  * explicit that only real non-reader testing answers it.
  */
 
@@ -130,14 +131,18 @@ describe("the history gates are the shipped gates (#317, #91)", () => {
   });
 });
 
-describe("the cue (#91, #135)", () => {
-  it("speaks the two history reasons with the alert state mark", () => {
-    expect(editControlHint("nothing-to-undo")).toEqual({
-      icon: "alert",
+describe("the cue (#91, #135, #924)", () => {
+  // The words, and ONLY the words (#924). `toStrictEqual`, not `toEqual`: the
+  // looser matcher treats `{ icon: undefined, label }` as equal to `{ label }`,
+  // and an `icon` key that is present-but-undefined is the shape a half-done
+  // revert of #924 would leave behind. The requirements owner read the badge on
+  // a grey arrow as an error, so this pins its absence as hard as the earlier
+  // round pinned its presence.
+  it("speaks the two history reasons, with no visible badge", () => {
+    expect(editControlHint("nothing-to-undo")).toStrictEqual({
       label: strings.nothingToUndo,
     });
-    expect(editControlHint("nothing-to-redo")).toEqual({
-      icon: "alert",
+    expect(editControlHint("nothing-to-redo")).toStrictEqual({
       label: strings.nothingToRedo,
     });
   });
@@ -193,11 +198,16 @@ describe("the cue (#91, #135)", () => {
     expect(editControlHint(null)).toBeNull();
   });
 
-  // The glyph must be a STATE mark, never a control glyph — round 1 of #135
-  // shipped `back`, which named a control the overlay had made untappable.
-  // Asserted over the whole reason union rather than the two cases above, so a
-  // reason added later cannot quietly arrive wearing a control's glyph.
-  it("no reason ever wears a control glyph", () => {
+  // No reason wears a glyph at all (#924). #703 shipped the two history cues
+  // with the `alert` state mark that `rowHint` puts on a ≡-menu row, and the
+  // requirements owner read it on a grey arrow as an error — the same reading
+  // #610 recorded for the toolbar Edit control, which #624 answered the same
+  // way: words in the accessible name, nothing painted. A grey Undo or Redo is
+  // ordinary idle state, not a condition to look at. Asserted over the whole
+  // reason union rather than the two cued cases, so a reason added later
+  // cannot quietly arrive wearing a badge — the earlier form of this test
+  // allowed `alert` through, and that allowance is what #924 removes.
+  it("no reason ever wears a badge", () => {
     const reasons: readonly (EditControlReason | null)[] = [
       "held-by-drag",
       "sheet-busy",
@@ -206,8 +216,8 @@ describe("the cue (#91, #135)", () => {
       null,
     ];
     for (const reason of reasons) {
-      const icon = editControlHint(reason)?.icon;
-      if (icon !== undefined) expect(icon).toBe("alert");
+      const hint = editControlHint(reason);
+      if (hint !== null) expect(hint, `${reason}`).not.toHaveProperty("icon");
     }
   });
 

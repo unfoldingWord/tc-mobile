@@ -57,10 +57,14 @@ export interface ShareControlAffordance {
  * size as every other quiet control on the row. `preparing`: the retry glyph
  * — the same wait mark `Notice`'s `busy` tone already wears — spinning,
  * `aria-busy`, box size UNCHANGED (#164, #351: a size change on tap reflows
- * the row around it). `ready`: the check glyph — the "yes, this is so" mark
- * `is-done`/`is-on` already wear — on the existing primary/XL variant. Only
- * `idle` varies by platform: the wait and the "yes" are the same on every
- * phone.
+ * the row around it). `ready`: the share glyph (#860, O1) — not the check
+ * that used to read `is-done`/`is-on`'s "yes, this is so" here: testers on
+ * Android read that checkmark as "done" and never made the second tap that
+ * opens the sheet. `ready`'s own primary/XL variant and `.control-ready`
+ * tint are still what set it apart from `idle`'s plain, quiet tray/dots —
+ * the glyph no longer has to. Only `idle` varies by platform: `ready`'s
+ * glyph is the same on every phone (and, on iOS and web, the same shape
+ * `idle` already draws — the size and tint are the tell there).
  *
  * `unconfirmed` (George r2 P2-2, #491) — {@link UseShareFlow.sendUnconfirmed}
  * — overrides the `idle` cell only: `preparing` and `ready` already speak for
@@ -96,8 +100,13 @@ export function shareControlAffordance(
         className: undefined,
       };
     case "ready":
+      // The share mark, not the check (#860, O1): testers on Android read
+      // the checkmark as "done" and never made the second tap that opens the
+      // sheet. Native no longer lingers here at all (`prepare()` chains
+      // straight into `send()`, `share-flow.ts`'s `chainsToSend`) — this is
+      // what the web route's still-live second tap rests on while it waits.
       return {
-        icon: "check",
+        icon: "share",
         variant: "primary",
         busy: false,
         className: "control-ready",

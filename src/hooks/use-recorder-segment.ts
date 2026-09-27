@@ -5,6 +5,7 @@ import { requestTranscodeSweep } from "./finish-transcode";
 import { reportFailure } from "./report-failure";
 import { failureKey, type FailureKey } from "./save-failure";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
+import { coverColourHex, resolveCoverKey } from "@/lib/cover-colour";
 import { getBook, getChapter, getSegment } from "@/lib/storage/books";
 import { isFinished, setSegmentFinished } from "@/lib/storage/takes";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
@@ -12,6 +13,19 @@ import type { SegmentId } from "@/types/domain";
 
 export interface RecorderSegmentView {
   readonly bookName: string;
+  /**
+   * The book's resolved cover colour (#949, #957), already a hex string —
+   * resolved the same way `books-screen.tsx`'s row and
+   * `use-chapter-segments.ts`'s `bookCoverHex` are, through
+   * {@link resolveCoverKey}, so a book with no chosen colour still resolves
+   * to its id-derived fallback rather than `null` here meaning "no
+   * colour" — `null` means only "this segment's book could not be read"
+   * (the same race `bookName`'s `?? ""` fallback covers).
+   *
+   * `recorder.tsx`'s own `<RecorderMenu>` call site reads this field
+   * (`bookCoverHex={view?.bookCoverHex ?? undefined}`).
+   */
+  readonly bookCoverHex: string | null;
   readonly chapterNumber: number;
   /**
    * The facilitator's passage label for this chapter (#264), or `null` when
@@ -101,6 +115,11 @@ export async function loadRecorderSegmentView(
           );
   return {
     bookName: book?.name ?? "",
+    bookCoverHex: book
+      ? coverColourHex(
+          resolveCoverKey({ id: book.id, coverColourKey: book.coverColourKey })
+        )
+      : null,
     chapterNumber: chapter?.number ?? 0,
     chapterName: chapter?.name ?? null,
     ordinal: segment.index,

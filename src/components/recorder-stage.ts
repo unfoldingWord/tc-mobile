@@ -79,13 +79,11 @@ export interface StageState {
  * for ("the same way it renders during the first take") and what avoids the
  * pause/close swap-and-flash that gating the frozen arm on `hasAudio` caused.
  *
- * Tradeoff: while an append is in flight this shows the head-growing (then
- * frozen) live scope in place of the existing clip; the clip returns as soon as
- * the take commits, which is now the same tap that ends it. For the default
- * end-append that reads naturally; for a mid-clip insert it shows the take
- * without the surrounding clip / insert position. Preserving the existing clip
- * *and* live growth together (a composed view) is a larger change tracked
- * separately if wanted.
+ * Swapping to the live scope no longer hides the existing clip (#640): the
+ * scope draws it too, before the insertion offset to the left of the new audio
+ * and after it from the head on (`LiveScope`'s `context`,
+ * `lib/audio/capture-context.ts`). That composition lives in the drawer, not
+ * here, so this rule stays the single mount decision it was.
  */
 export function liveScopeShown(s: StageState): boolean {
   if (s.meterFailed) return false;
@@ -731,10 +729,14 @@ export function liftOutcome(input: {
    * `onPaste` calls `reopenFrame()` itself, unconditionally, as the
    * paragraph above already says (a discard would presumably empty the
    * clipboard for real, once #862 lands, but that is not built yet either).
-   * #489 must not route paste through this predicate — a one-shot paste that
-   * merely flips `canPaste` false would leave this term believing the stage
-   * is still owed a reseed with no `reopenFrame()` call left to satisfy it,
-   * and the frame would never come back.
+   * #489 must not route paste through this predicate: `canPaste` only
+   * withholds a reseed for the lift it is passed to, not permanently — it is
+   * not a latch. Once a one-shot paste flips it false, a later lift computed
+   * with `canPaste: false` may seed a frame again through this same
+   * `reopenFrame` term, and the paste path's own unconditional
+   * `reopenFrame()` call (above) is unaffected either way. Do not go looking
+   * for a stuck-forever state here; this function holds no memory across
+   * calls (#912 item 1).
    */
   readonly canPaste: boolean;
 }): {

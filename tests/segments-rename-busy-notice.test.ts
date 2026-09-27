@@ -7,6 +7,7 @@ import { SegmentsScreen } from "@/components/segments-screen";
 import { strings } from "@/lib/strings";
 import type { FailureKey } from "@/hooks/save-failure";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
+import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { ChapterId } from "@/types/domain";
 
@@ -82,6 +83,15 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+// Resting erase: this suite never opens the erase confirm, but SegmentsScreen
+// reads `erase.isErasing` during render, so the prop cannot be absent
+// (#160 L-12 lifted the single instance up to App).
+const erase: UseEraseSegment = {
+  erase: vi.fn(async () => "ok" as const),
+  erasing: false,
+  isErasing: () => false,
+};
+
 async function mount() {
   await act(async () =>
     root.render(
@@ -92,6 +102,7 @@ async function mount() {
         onOpenRecorder: vi.fn(),
         pushLayer,
         popLayer,
+        erase,
       })
     )
   );

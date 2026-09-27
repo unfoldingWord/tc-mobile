@@ -181,14 +181,28 @@ export function remoteRefForOrigin(origin) {
  */
 export function isCanonicalOrigin(remoteUrl) {
   if (typeof remoteUrl !== "string") return false;
-  // Strip trailing slash(es), then a trailing `.git`, then any trailing
-  // slash(es) left behind (`.../tc-mobile.git/` or `.../tc-mobile/`) —
-  // #443 item 1: a trailing slash previously broke every form's match,
-  // since none of the patterns below allow a `/` after the repo segment.
+  // Strip trailing slash(es), then a trailing `.git` SUFFIX, then any
+  // trailing slash(es) left behind (`.../tc-mobile.git/` or
+  // `.../tc-mobile/`) — #443 item 1: a trailing slash previously broke
+  // every form's match, since none of the patterns below allow a `/` after
+  // the repo segment.
+  //
+  // The `.git` strip is anchored with a lookbehind requiring a non-slash
+  // character immediately before it (#798 item 1, George's suggestion), so
+  // it only removes `.git` appended directly to the repo name
+  // (`tc-mobile.git`) and never a SEPARATE `/.git` path segment
+  // (`tc-mobile/.git`, the shape of a bare/mirror clone's directory name).
+  // Before this, `/\.git$/i` matched either shape, so
+  // `https://github.com/unfoldingWord/tc-mobile/.git` collapsed to the
+  // canonical `.../tc-mobile` and passed — host and owner/repo were still
+  // the canonical pair, but the URL was not one of the forms this function
+  // claims to recognise. Left unstripped, `/.git` stays as a third path
+  // segment and fails every pattern below, same as any other malformed
+  // origin.
   const trimmed = remoteUrl
     .trim()
     .replace(/\/+$/, "")
-    .replace(/\.git$/i, "")
+    .replace(/(?<=[^/])\.git$/i, "")
     .replace(/\/+$/, "");
   const httpsMatch = /^https:\/\/(?:[^@/]+@)?github\.com\/([^/]+\/[^/]+)$/.exec(
     trimmed

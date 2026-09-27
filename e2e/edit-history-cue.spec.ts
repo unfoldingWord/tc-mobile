@@ -6,10 +6,10 @@ import { clickEditRecording } from "./recorder-fixtures";
 
 /**
  * The grey Undo/Redo arrows carry their reason, and saying so does not move the
- * toolbar (#91).
+ * toolbar (#91) — and since #924 they carry it in words alone, with no badge.
  *
- * TWO things are observed here that no Node test can reach, and both were named
- * as unverified by a reviewer on #703:
+ * THREE things are observed here that no Node test can reach; the first two
+ * were named as unverified by a reviewer on #703, the third is #924's:
  *
  *  1. **The cue is true at every stack position.** George round 1 found the
  *     first copy claimed the session's PAST ("No edits to undo yet.") while
@@ -26,9 +26,15 @@ import { clickEditRecording } from "./recorder-fixtures";
  *     exactly this check at 320px. Here the real cascade answers: each hinted
  *     wrapper is measured against the button inside it, within one render, and
  *     neither its position nor its size may differ.
+ *  3. **No badge is painted on either grey arrow, in the real build.** The
+ *     requirements owner read the ⚠ on a greyed Redo — and on Undo once an
+ *     undo emptied the history — as an error (#924, v0.2.12). The Node tests
+ *     pin `editControlHint`'s shape and `Control`'s markup for it; this is the
+ *     one place the two are seen together on a real edit stack, at the two
+ *     positions the report named.
  *
  * 320px because that is the narrowest width this repo supports and the one
- * where a 2px badge overflow into a 4px gap would show first.
+ * where a wrapper that displaced its button by a pixel would show first.
  */
 
 /** Record one take on a fresh segment and open edit mode over it. */
@@ -129,52 +135,17 @@ test.describe("edit-toolbar history cue (#91)", () => {
         false
       );
     }
-    // The sighted half of the cue: #135 round 2 found the words alone were
-    // invisible to the very tester who reported the defect.
-    expect(await toolbar.locator(".control-hint").count()).toBe(2);
+    // Nothing painted on either grey arrow (#924). Until #924 this asserted
+    // TWO badges here — the sighted half #135 round 2 added for the ≡ rows,
+    // borrowed by #703 — and measured each one's overflow into the next
+    // control. Both arrows are grey and both wrappers are present (asserted
+    // below), so this is the cell where a badge would show if the hint grew
+    // its `icon` back; a count of zero over the whole toolbar also catches it
+    // arriving on any other control in the bar.
+    expect(await toolbar.locator(".control-hint").count()).toBe(0);
 
-    // ── George round 4: the badge's OWN box, which nothing here measured. ──
-    //
-    // This file's header claims a 2px overflow into a 4px gap would show at
-    // 320px. It would not have: `.control-hint` is `position: absolute` at
-    // `right: -2px; bottom: -2px`, so it paints OUTSIDE its wrapper, and
-    // `getBoundingClientRect` on the wrapper or the button does not include
-    // overflow. Every assertion below this point could pass while the badge
-    // painted over the neighbouring control. Measured rather than dropped,
-    // because the claim is worth keeping if it is true.
-    // The neighbour is found from the OWNING WRAPPER's right edge, never from
-    // the badge's own left. Anchoring on the badge is what made the first
-    // version of this check unfalsifiable: a badge overflowing far enough moves
-    // its own `left` PAST the control it is painting over, so the "next"
-    // control resolves to the one after that and the gap comes back positive.
-    const badgeGaps = await toolbar.evaluate((tb) => {
-      const controls = [...tb.querySelectorAll("button")].map((b) =>
-        b.getBoundingClientRect()
-      );
-      return [...tb.querySelectorAll(".control-hint")].map((hint) => {
-        const owner = hint.closest(".control-hinted")!.getBoundingClientRect();
-        const next = controls
-          .filter((c) => c.left >= owner.right)
-          .sort((a, b) => a.left - b.left)[0];
-        // `null`, never Infinity: a sentinel that satisfies `> 0` is how this
-        // check would go back to passing while measuring nothing (George r6).
-        return next ? next.left - hint.getBoundingClientRect().right : null;
-      });
-    });
-    expect(badgeGaps).toHaveLength(2);
-    for (const [i, gap] of badgeGaps.entries()) {
-      // Finite FIRST. Both badges have a control to their right in this
-      // toolbar; if a reorder ever removes it, that must fail here rather than
-      // quietly measure nothing.
-      expect(
-        gap,
-        `badge ${i} has no neighbour to measure against`
-      ).not.toBeNull();
-      expect(gap, `badge ${i} paints into the next control`).toBeGreaterThan(0);
-    }
-
-    const badged = await toolbarBoxes(page);
-    expect(badged.length).toBeGreaterThanOrEqual(5);
+    const initial = await toolbarBoxes(page);
+    expect(initial.length).toBeGreaterThanOrEqual(5);
 
     // ── Position 2: after a cut. Undo lives; Redo still has nothing. ──
     // Cut is not in this toolbar — it sits under the selection frame, in
@@ -220,14 +191,14 @@ test.describe("edit-toolbar history cue (#91)", () => {
       ).toBeLessThanOrEqual(0.5);
     }
 
-    // And the badge appearing or clearing must not reflow the row either —
-    // Undo has just lost its badge, so this is where a toggle-driven shift
-    // would show. Complementary to the within-render check above, not a
-    // substitute for it.
+    // And a cue arriving or clearing must not reflow the row either — Undo has
+    // just gone from `aria-disabled` to live and lost its hint, so this is
+    // where a toggle-driven shift would show. Complementary to the
+    // within-render check above, not a substitute for it.
     const afterCut = await toolbarBoxes(page);
-    expect(afterCut.length).toBe(badged.length);
+    expect(afterCut.length).toBe(initial.length);
     for (const [i, box] of afterCut.entries()) {
-      const was = badged[i]!;
+      const was = initial[i]!;
       expect(
         Math.abs(box.x - was.x),
         `control ${i} moved in x`
@@ -252,6 +223,9 @@ test.describe("edit-toolbar history cue (#91)", () => {
     expect(
       await undoByName().evaluate((el) => el.hasAttribute("disabled"))
     ).toBe(false);
+    // The second position #924's report named: the badge "moves to the greyed
+    // Undo after an undo empties the history". Nothing moves anywhere now.
+    expect(await toolbar.locator(".control-hint").count()).toBe(0);
     await expect(redoByName()).toHaveAccessibleName("Redo");
     await expect(redoByName()).not.toHaveAttribute("aria-disabled", "true");
 
@@ -272,7 +246,7 @@ test.describe("edit-toolbar history cue (#91)", () => {
     // And the columns are still where they started, after four stack moves.
     const settled = await toolbarBoxes(page);
     for (const [i, box] of settled.entries()) {
-      const was = badged[i]!;
+      const was = initial[i]!;
       expect(
         Math.abs(box.x - was.x),
         `control ${i} drifted in x`

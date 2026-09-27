@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -51,6 +52,85 @@ afterEach(() => {
     rmSync(fixture, { recursive: true, force: true });
 });
 
+// The workflow's "Select Xcode" step pipes into `ruby -e` (Gem::Version
+// numeric sort), so the "iOS Xcode selection" block below execs the real
+// `ruby` on this machine. #667: that made the block fail, not skip, on a
+// Linux dev box without ruby on PATH, and the pre-push hook runs the whole
+// suite regardless of what the branch touches.
+function rubyAvailable(env: NodeJS.ProcessEnv): boolean {
+  return spawnSync("ruby", ["-v"], { env }).status === 0;
+}
+
+const hasRuby = rubyAvailable(process.env);
+
+describe("ruby availability detection", () => {
+  it("is true when ruby resolves on PATH", () => {
+    const bin = mkdtempSync(path.join(tmpdir(), "ruby-present-"));
+    fixtures.push(bin);
+    writeFileSync(path.join(bin, "ruby"), "#!/bin/bash\nexit 0\n", {
+      mode: 0o755,
+    });
+    expect(rubyAvailable({ PATH: bin })).toBe(true);
+  });
+
+  it("is false when ruby is not on PATH", () => {
+    const bin = mkdtempSync(path.join(tmpdir(), "ruby-absent-"));
+    fixtures.push(bin);
+    expect(rubyAvailable({ PATH: bin })).toBe(false);
+  });
+});
+
+// Independent of whether THIS machine has ruby: builds a PATH with a real
+// bash but no ruby anywhere on it, and runs the workflow's own extracted
+// script against it. This is the #667 incident reproduced verbatim (down to
+// the "ruby: command not found" text and the resulting exit status), so it
+// stays red-provable without needing a ruby-less CI runner and without
+// depending on the skip guard below.
+it("reproduces the reported failure: Select Xcode needs ruby on PATH", () => {
+  const stubBin = mkdtempSync(
+    path.join(tmpdir(), "ios-xcode-gate-noruby-stubs-")
+  );
+  fixtures.push(stubBin);
+  writeFileSync(
+    path.join(stubBin, "ls"),
+    '#!/bin/bash\nprintf "%s\\n" "/Applications/Xcode_26.9.app"\n',
+    { mode: 0o755 }
+  );
+  writeFileSync(
+    path.join(stubBin, "sudo"),
+    '#!/bin/bash\nprintf "SELECTED:%s\\n" "$*"\n',
+    { mode: 0o755 }
+  );
+  writeFileSync(
+    path.join(stubBin, "xcodebuild"),
+    '#!/bin/bash\necho "fixture xcodebuild"\n',
+    { mode: 0o755 }
+  );
+
+  const bashOnlyBin = mkdtempSync(
+    path.join(tmpdir(), "ios-xcode-gate-noruby-bash-")
+  );
+  fixtures.push(bashOnlyBin);
+  // Resolve the host's bash rather than hard-coding a path: macOS ships it
+  // at /bin/bash only, and a dangling symlink makes the spawn ENOENT.
+  const hostBash = spawnSync("bash", ["-c", "command -v bash"], {
+    encoding: "utf8",
+  }).stdout.trim();
+  expect(path.isAbsolute(hostBash), hostBash).toBe(true);
+  symlinkSync(hostBash, path.join(bashOnlyBin, "bash"));
+
+  // run() inherits the parent environment, and bash translates "command not
+  // found" under a non-English locale; pin C so the stderr check below holds.
+  const result = run(step("Select Xcode"), {
+    PATH: `${stubBin}:${bashOnlyBin}`,
+    LANG: "C",
+    LC_ALL: "C",
+  });
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain("ruby: command not found");
+});
+
 describe("iOS dispatch ref gate", () => {
   it("takes the branch/tag type from GitHub", () => {
     expect(workflow).toContain("REF_TYPE: ${{ github.ref_type }}");
@@ -77,58 +157,64 @@ describe("iOS dispatch ref gate", () => {
   });
 });
 
-describe("iOS Xcode selection", () => {
-  function select(versions: string[]) {
-    const bin = mkdtempSync(path.join(tmpdir(), "ios-xcode-gate-"));
-    fixtures.push(bin);
-    writeFileSync(
-      path.join(bin, "ls"),
-      '#!/bin/bash\nif [ -n "$XCODE_FIXTURE" ]; then printf "%s\\n" "$XCODE_FIXTURE"; else exit 1; fi\n',
-      { mode: 0o755 }
-    );
-    writeFileSync(
-      path.join(bin, "sudo"),
-      '#!/bin/bash\nprintf "SELECTED:%s\\n" "$*"\n',
-      { mode: 0o755 }
-    );
-    writeFileSync(
-      path.join(bin, "xcodebuild"),
-      '#!/bin/bash\necho "fixture xcodebuild"\n',
-      { mode: 0o755 }
-    );
-    return run(step("Select Xcode"), {
-      PATH: `${bin}:${process.env.PATH}`,
-      XCODE_FIXTURE: versions
-        .map((v) => `/Applications/Xcode_${v}.app`)
-        .join("\n"),
-    });
-  }
-  it.each([
-    [["26.9", "26.10"], "26.10"],
-    [["26.10.2", "26.10.10", "26.9"], "26.10.10"],
-    [["26", "26.0.1"], "26.0.1"],
-    [["26.1"], "26.1"],
-    [["260.1", "26.9", "26.10_beta"], "26.9"],
-  ])("selects the newest stable Xcode from %j", (versions, expected) => {
-    const result = select(versions);
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain(
-      `SELECTED:xcode-select -s /Applications/Xcode_${expected}.app/Contents/Developer`
-    );
-  });
-  it.each([
-    { name: "no installed candidates", versions: [] },
-    { name: "only unsupported candidates", versions: ["260.1", "26.10_beta"] },
-  ])(
-    "fails closed without a stable Xcode 26 candidate: $name",
-    ({ versions }) => {
-      const result = select(versions);
-      expect(result.status).toBe(1);
-      expect(result.stdout).toContain("Xcode 26 not found");
-      expect(result.stdout).not.toContain("SELECTED:");
+describe.skipIf(!hasRuby)(
+  "iOS Xcode selection (requires ruby on PATH; skipped without it — see the reproduction above)",
+  () => {
+    function select(versions: string[]) {
+      const bin = mkdtempSync(path.join(tmpdir(), "ios-xcode-gate-"));
+      fixtures.push(bin);
+      writeFileSync(
+        path.join(bin, "ls"),
+        '#!/bin/bash\nif [ -n "$XCODE_FIXTURE" ]; then printf "%s\\n" "$XCODE_FIXTURE"; else exit 1; fi\n',
+        { mode: 0o755 }
+      );
+      writeFileSync(
+        path.join(bin, "sudo"),
+        '#!/bin/bash\nprintf "SELECTED:%s\\n" "$*"\n',
+        { mode: 0o755 }
+      );
+      writeFileSync(
+        path.join(bin, "xcodebuild"),
+        '#!/bin/bash\necho "fixture xcodebuild"\n',
+        { mode: 0o755 }
+      );
+      return run(step("Select Xcode"), {
+        PATH: `${bin}:${process.env.PATH}`,
+        XCODE_FIXTURE: versions
+          .map((v) => `/Applications/Xcode_${v}.app`)
+          .join("\n"),
+      });
     }
-  );
-});
+    it.each([
+      [["26.9", "26.10"], "26.10"],
+      [["26.10.2", "26.10.10", "26.9"], "26.10.10"],
+      [["26", "26.0.1"], "26.0.1"],
+      [["26.1"], "26.1"],
+      [["260.1", "26.9", "26.10_beta"], "26.9"],
+    ])("selects the newest stable Xcode from %j", (versions, expected) => {
+      const result = select(versions);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain(
+        `SELECTED:xcode-select -s /Applications/Xcode_${expected}.app/Contents/Developer`
+      );
+    });
+    it.each([
+      { name: "no installed candidates", versions: [] },
+      {
+        name: "only unsupported candidates",
+        versions: ["260.1", "26.10_beta"],
+      },
+    ])(
+      "fails closed without a stable Xcode 26 candidate: $name",
+      ({ versions }) => {
+        const result = select(versions);
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain("Xcode 26 not found");
+        expect(result.stdout).not.toContain("SELECTED:");
+      }
+    );
+  }
+);
 
 it("runs the canonical artifact checks after build and before sync", () => {
   const name = "Check the built artifacts";
@@ -157,51 +243,73 @@ it.each([0, 23])("propagates the artifact suite exit status %i", (status) => {
   ).toBe(status);
 });
 
-describe("the emitted iOS thumbnail precache", () => {
+// #923: this check moved out of "Guard the synced bundle" and into its own
+// step, "OBS thumbnail precache policy (web build; #177 / ADR 0006)", which
+// runs against the WEB build BEFORE "Rebuild dist/ for the native shell"
+// overwrites dist/sw.js with the native self-destroying worker — that worker
+// never precaches anything at all, so comparing IT against globPatterns would
+// either never agree once jpg is legitimately restored, or silently stop
+// meaning anything. Only the fixture files this step actually reads
+// (vite.config.ts, dist/sw.js) are written here; the step makes no claim
+// about ios/App/App/public or dist/manifest.webmanifest — those stay covered
+// by "Guard the synced bundle" itself, exercised generically below.
+describe("the OBS thumbnail precache policy (web build)", () => {
   const current = 'globPatterns: ["**/*.{js,css,html,svg,png,woff2}"]';
   const restored = 'globPatterns: ["**/*.{js,css,html,svg,png,jpg,woff2}"]';
+  const disagreeAnnotation =
+    "Emitted OBS thumbnails disagree with the reader-gated jpg policy";
+  const noGlobPatternsAnnotation = "No globPatterns found in vite.config.ts";
+  // #667: each row states the annotation the gate must emit, instead of a
+  // shared block deriving it from `config`'s string shape — a fixture row
+  // added later with a config the deriving check doesn't recognize can no
+  // longer silently inherit the wrong expectation.
   it.each([
     {
       name: "current policy without thumbnails",
       config: current,
       thumbnails: false,
       status: 0,
+      annotation: null,
     },
     {
       name: "rogue includeAssets or additionalManifestEntries thumbnail",
       config: current,
       thumbnails: true,
       status: 1,
+      annotation: disagreeAnnotation,
     },
     {
       name: "restored jpg policy with thumbnails",
       config: restored,
       thumbnails: true,
       status: 0,
+      annotation: null,
     },
     {
       name: "restored jpg policy missing thumbnails",
       config: restored,
       thumbnails: false,
       status: 1,
+      annotation: disagreeAnnotation,
     },
     {
       name: "missing config declaration",
       config: "",
       thumbnails: false,
       status: 1,
+      annotation: noGlobPatternsAnnotation,
     },
     {
       name: "empty config declaration",
       config: "globPatterns: []",
       thumbnails: false,
       status: 1,
+      annotation: noGlobPatternsAnnotation,
     },
-  ])("$name", ({ config, thumbnails, status }) => {
-    const root = mkdtempSync(path.join(tmpdir(), "ios-bundle-gate-"));
+  ])("$name", ({ config, thumbnails, status, annotation }) => {
+    const root = mkdtempSync(path.join(tmpdir(), "ios-thumbnail-gate-"));
     fixtures.push(root);
     mkdirSync(path.join(root, "dist"));
-    mkdirSync(path.join(root, "ios/App/App/public"), { recursive: true });
     writeFileSync(path.join(root, "vite.config.ts"), config);
     writeFileSync(
       path.join(root, "dist/sw.js"),
@@ -209,24 +317,102 @@ describe("the emitted iOS thumbnail precache", () => {
         (thumbnails ? ',{url:"obs/thumbs/01/01.jpg",revision:"b"}' : "") +
         "],{});"
     );
-    writeFileSync(path.join(root, "dist/manifest.webmanifest"), "{}");
-    writeFileSync(
-      path.join(root, "ios/App/App/public/index.html"),
-      "<!doctype html>"
+    const result = run(
+      step("OBS thumbnail precache policy (web build; #177 / ADR 0006)"),
+      {},
+      root
     );
-    const result = run(step("Guard the synced bundle"), {}, root);
     expect(result.status, result.stderr + result.stdout).toBe(status);
     if (status === 1) {
-      const message =
-        config === "" || config === "globPatterns: []"
-          ? "No globPatterns found in vite.config.ts"
-          : "Emitted OBS thumbnails disagree with the reader-gated jpg policy";
-      expect(result.stderr).toContain(`::error::${message}`);
+      expect(annotation).toEqual(expect.any(String));
+      expect(annotation).not.toHaveLength(0);
+      expect(result.stderr).toContain(`::error::${annotation}`);
       expect(result.stderr).not.toContain("at file:");
-      expect(result.stdout).not.toContain("Bundle built, clean, and synced");
     } else {
+      expect(annotation).toBeNull();
       expect(result.stderr + result.stdout).not.toContain("::error::");
-      expect(result.stdout).toContain("Bundle built, clean, and synced");
     }
+  });
+});
+
+// The rest of "Guard the synced bundle" — existence checks and the e2e-leak
+// sweep — runs against whatever dist/ the native rebuild left behind and
+// whatever cap sync copied into ios/. Exercised generically (not per
+// OBS-thumbnail case, which no longer lives here — see the describe block
+// above) so a regression in the existence/leak checks themselves still has a
+// red state to go to.
+describe("Guard the synced bundle (existence + e2e-leak, native dist)", () => {
+  function bundleFixture({
+    swPresent = true,
+    manifestPresent = true,
+    e2eLeak = false,
+    syncedIndexPresent = true,
+  }: {
+    swPresent?: boolean;
+    manifestPresent?: boolean;
+    e2eLeak?: boolean;
+    syncedIndexPresent?: boolean;
+  } = {}) {
+    const root = mkdtempSync(path.join(tmpdir(), "ios-bundle-guard-"));
+    fixtures.push(root);
+    mkdirSync(path.join(root, "dist"));
+    mkdirSync(path.join(root, "ios/App/App/public"), { recursive: true });
+    if (swPresent) {
+      // The native build's own shape (#923) — no precache manifest.
+      writeFileSync(
+        path.join(root, "dist/sw.js"),
+        "self.addEventListener('activate', () => {});"
+      );
+    }
+    if (manifestPresent) {
+      writeFileSync(path.join(root, "dist/manifest.webmanifest"), "{}");
+    }
+    if (e2eLeak) {
+      writeFileSync(path.join(root, "dist/leak.js"), "window.__e2e = true;");
+    }
+    if (syncedIndexPresent) {
+      writeFileSync(
+        path.join(root, "ios/App/App/public/index.html"),
+        "<!doctype html>"
+      );
+    }
+    return root;
+  }
+
+  it("passes on a clean native-shaped bundle", () => {
+    const root = bundleFixture();
+    const result = run(step("Guard the synced bundle"), {}, root);
+    expect(result.status, result.stderr + result.stdout).toBe(0);
+    expect(result.stdout).toContain("Bundle built, clean, and synced");
+  });
+
+  it("fails closed when dist/sw.js is missing", () => {
+    const root = bundleFixture({ swPresent: false });
+    const result = run(step("Guard the synced bundle"), {}, root);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("::error::dist/sw.js missing");
+  });
+
+  it("fails closed when the manifest is missing", () => {
+    const root = bundleFixture({ manifestPresent: false });
+    const result = run(step("Guard the synced bundle"), {}, root);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("::error::manifest missing");
+  });
+
+  it("fails closed when the e2e harness leaked into dist/", () => {
+    const root = bundleFixture({ e2eLeak: true });
+    const result = run(step("Guard the synced bundle"), {}, root);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("e2e harness (__e2e) leaked");
+  });
+
+  it("fails closed when cap sync did not copy the bundle into ios/", () => {
+    const root = bundleFixture({ syncedIndexPresent: false });
+    const result = run(step("Guard the synced bundle"), {}, root);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      "cap sync did not copy the web bundle into ios/"
+    );
   });
 });

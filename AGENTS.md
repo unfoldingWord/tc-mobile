@@ -42,17 +42,17 @@ loader); do not read every description here as the target.
 
 ## Tech stack
 
-|         |                                                                                                                                     |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Runtime | Node `^22.12.0 \|\| >=24.0.0` (22.12 is knip's floor; Node 23.x is unsupported — jsdom 27's own engine range excludes it too, #577) |
-| Build   | Vite 8, `@vitejs/plugin-react`                                                                                                      |
-| UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons                                                                                     |
-| PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)                                                                                        |
-| Storage | IndexedDB via `idb` 8                                                                                                               |
-| Audio   | Web Audio + MediaRecorder; `@breezystack/lamejs` for MP3 (in a Web Worker)                                                          |
-| Tests   | Vitest 5, `fake-indexeddb`                                                                                                          |
-| Lint    | ESLint 9 flat config, `typescript-eslint` 8, Prettier 3                                                                             |
-| Deploy  | Cloudflare Workers static assets, Wrangler 4                                                                                        |
+|         |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime | Node `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0` (22.22.2 is lint-staged 17.5.1's declared floor, `>=22.22.1`, already installed via #503; 23.x and 25.x unsupported — 23.x because jsdom 27's own engine range excludes it too, #577, and 24.0.0-24.14.x plus 25.x because jsdom 30.1.1 and its transitives (@asamuzakjp/css-color, dom-selector, w3c-xmlserializer, undici) require `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0`, unblocking Dependabot PR #990; DRI 2026-09-26: "Raise to ^22.22.2 (Recommended)", then same day: "Drop 24.0–24.14 and 25 (Recommended)") |
+| Build   | Vite 8, `@vitejs/plugin-react`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| UI      | React 19, Tailwind CSS 4, hand-rolled SVG icons                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| PWA     | `vite-plugin-pwa` 1.3 (Workbox `generateSW`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Storage | IndexedDB via `idb` 8                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Audio   | Web Audio + MediaRecorder; `@breezystack/lamejs` for MP3 (in a Web Worker)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Tests   | Vitest 5, `fake-indexeddb`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Lint    | ESLint 9 flat config, `typescript-eslint` 8, Prettier 3                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Deploy  | Cloudflare Workers static assets, Wrangler 4                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 ## Commands
 
@@ -73,6 +73,7 @@ npm run deploy:staging # wrangler deploy --env staging
 npm run deploy         # wrangler deploy (production)
 npm run check:deploy      # confirm a develop -> staging deploy; see "Confirming a deploy" below
 npm run check:deploy:prod # confirm a staging -> main deploy; requires the production origin explicitly
+npm run check:prepush  # review-bench findings on this branch's commits and added lines; runs in pre-push. Checklist: .claude/skills/tc-prepush
 ```
 
 ## Architecture — onion layers
@@ -131,13 +132,14 @@ and match `var(…)` declarations rather than the bare identifier.
 The same trap runs in the other direction, and it is observed, not theoretical:
 a **comment** that names something a test greps for can capture that test. Round
 3 of #529 wrote the share-scrim selector into `3-components.css`'s header, and
-`share-progress.test.ts` — which locates its block with a raw `indexOf` over the
-whole file — sliced the comment instead of the rule and went red. Its
+`share-progress.test.ts` — which then located its block with a raw `indexOf`
+over the whole file — sliced the comment instead of the rule and went red. Its
 `expect(declarations.length).toBeGreaterThanOrEqual(8)` floor is the only reason
 that surfaced as a failure rather than as an assertion looping over nothing.
-When a stylesheet comment must name a selector a test searches for, write it
-without its leading dot, and keep a non-emptiness floor in any test that slices
-a block out of a file.
+That test now strips comments before it searches (#533); other suites still
+slice stylesheet source with a raw `indexOf`. When a stylesheet comment must
+name a selector a test searches for, write it without its leading dot, and keep
+a non-emptiness floor in any test that slices a block out of a file.
 
 Blind spot #2 under "No sprawl" below still says nothing in this repo reads CSS
 at all; that sentence is stale and is tracked in #525, which is where it gets
@@ -187,8 +189,12 @@ fixed sentence in the table may appear again in `app/`, `components/` or
 they are for whoever reads the failure log, not for the screen, and that test's
 docblock names the one pair where the two wordings overlap on purpose. The
 second check is the stronger one and the reason a base merge cannot quietly
-undo this: every fixed sentence in `app/` and `hooks/` must be one the table
-holds, so a brand-new literal fails as loudly as a re-typed one.
+undo this: every punctuated, non-composed literal in `app/` and `hooks/` must
+be one the table holds, so a brand-new sentence of that shape fails as loudly
+as a re-typed one. Short labels and parameterised entries are outside both of
+those; a third check pins them by exact whole-literal match, for the
+save-failed and take-recovery arms and every multi-word fixed label, and says
+in its docblock what it still cannot see (#805).
 `tests/capture-failure-copy.test.ts` sweeps `hooks/` and `lib/` for the three
 capture sentences, skipping the table's own file — holding a sentence is what a
 table is for; minting one beside the code that raises it is the defect.
@@ -229,6 +235,12 @@ stored as numbers rather than written into IndexedDB as English data.
   reached interruption or background capture (#245), so #59 and #58 (pagehide)
   remain open for Android. The two cases above (sub-timeslice take,
   background right after Stop) are also still unrun. iOS version not recorded.
+- **Background capture is no longer the intended behaviour (#836).** The
+  requirements owner decided on 2026-09-24 that switching apps ends the
+  recording, so the page becoming hidden (an app switch, a lock) now seals an
+  open take the way an interruption does, and nothing restarts on return. The
+  two runs above describe earlier builds, where capture continued. The seal on
+  hidden has not been run on a device (#245).
 - **The export path exists (B7) and the encoder runs in a Web Worker (B8).**
   Share Chapter / Share Book, the worker round-trip (`hooks/mp3.worker.ts`,
   `hooks/mp3-codec.ts`), `decodeAudioData` of a stored MP3, and the
@@ -349,6 +361,18 @@ transaction, never two; content-addressed clips so a repeated import dedupes
 instead of duplicating; append-only migrations. `ensureObsChapter` is the
 counter-example currently in the tree.
 
+**An async re-read never overwrites a known value with a stale or unknown
+one.** For each async read that writes state, ask what happens when the result
+is stale, unknown or a no-op; keep the known or landed value. #1012: a quota
+retry whose free-space re-read came back unknown erased a known baseline and
+held the segment out for the rest of the page.
+
+**A control goes busy before the first `await` in its handler, not after.**
+Otherwise a second tap, a second pointer or another control acts on
+half-finished state. #1013: the phone check's Close and Start stayed live
+while it awaited `transcodeSweepSettled()`, so a closed screen's run could
+still start measuring.
+
 **Errors have a channel before they have copy.** An unhandled rejection must
 reach an error boundary and a single sink — `console.error` is not a channel on
 a phone in a village. The channel itself is now built end to end: the boundary
@@ -373,21 +397,40 @@ recorder still active `"recorder-interrupted-active"` #478, and a native
 `stop()` throwing inside `stop()`'s own flush `"recorder-stop-flush"` #485 —
 which seals the slices already in hand and rides the `StopResult`, so it
 never reaches the backstop below — and a track `stop()` that throws while the
-mic stream is released `"recorder-release-track"` #479), the level tap's clone
+mic stream is released `"recorder-release-track"` #479, and a take sealed and
+saved at the 20-minute cap `"recorder-take-cap"` #1005 — not a failure, but
+the one durable record that a take was cut, so it goes out with the report
+and does not by itself mark the Books `≡` (`lib/failure-marker.ts`; DRI on
+#1076: "Log it, don't light ≡ (Recommended)")), the level tap's clone
 track throwing on its own `stop()` (`hooks/audio-io.ts`,
 `"recorder-tap-clone-stop"`, #479), `stopRecording`'s commit-path backstop
 (`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), a failed
 save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
 (`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
-segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591),
+segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
+failed chapter reorder (`hooks/use-books.ts`, `"chapter-reorder"`, #953), a
+failed segment reorder (`hooks/use-chapter-segments.ts`, `"segment-reorder"`,
+#953), a failed segment delete — two call sites report under the same
+context, one op each reaches through the store's own `deleteSegment`
+(`hooks/use-chapter-segments.ts`'s optimistic list delete, PR1, and
+`hooks/use-delete-segment.ts`'s recorder-menu delete, PR2)
+(`"segment-delete"`, #590), a failed book
+cover-colour write
+(`hooks/use-book-cover-colour.ts`, `"book-cover-colour"`, #957),
 playback's own
 resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
 `"playback-resume"`, and the fail-closed gate that still finds the context
 unusable after the resume await — `"playback-resume-timeout"` when the
 1000 ms bound was what ended it, `"playback-resume-unusable"` when an
 earlier rejection did or a fresh interruption arrived during the post-fill
-yield, #469), and the log's own share and clear paths. `SaveFailed` now
+yield, #469), the tester-only phone check (`hooks/phone-check-probes.ts`,
+`"phone-check"`, #1009: a probe that throws, and a `sessionStorage`
+breadcrumb or saved result that cannot be read or written — a failed memory-ceiling
+allocation is the measurement, not a failure, and is not reported), a
+licence text in Menu → About & licenses that fails to load or comes back as
+HTML (`components/about-panel.tsx`, `"about-licence-text"`, #823), and
+the log's own share and clear paths. `SaveFailed` now
 carries the same `SendLogControl` the crash screen does (#456, moved into
 its own module, `components/send-log-control.tsx`, so both screens share one
 implementation) — `DatabasePanel` still does not: #456 itself calls that a
@@ -536,11 +579,12 @@ place. Decided 2026-09-02, when the repo stopped being solo.
   tags `main` (`git tag vX.Y.0` — the first tags this repo will have). A
   production hotfix between milestones is a patch on the shipped minor.
 
-  | Milestone                            | Due        | Ships                                       |
-  | ------------------------------------ | ---------- | ------------------------------------------- |
-  | `v0.2.0 — Sept: production gate`     | 2026-09-30 | the first `staging -> main` since the pivot |
-  | `v0.3.0 — Oct: East Africa training` | 2026-10-09 | what facilitators run at the training       |
-  | `v1.0.0 — Post-training`             | —          | the first field-validated release           |
+  | Milestone                        | Due        | Ships                                                  |
+  | -------------------------------- | ---------- | ------------------------------------------------------ |
+  | `v0.2.0 — Sept: production gate` | 2026-09-30 | the first `staging -> main` since the pivot            |
+  | `v0.3.0 — Training essentials`   | 2026-10-09 | training-essential scope, promoted to `main` as 0.3.0  |
+  | `v1.0.0 — Training stretch`      | 2026-10-02 | v0.3.0's scope plus the O4 UI; on phones by 2026-10-02 |
+  | `v1.1.0 — Post-training`         | —          | the first field-validated release                      |
 
 - **Every open issue carries a milestone.** File new issues into one. A
   milestone closes when its promotion PR merges, and anything still open in it
@@ -731,7 +775,8 @@ easy to regress.
   from `develop` and merged back by PR. Never commit directly to `staging` or
   `main`; they are promoted to, not worked on.
 - **Commits:** Conventional Commits. Subject _and_ body, neither blank.
-- **Pre-commit** (fast): lint-staged, typecheck. **Pre-push** (slow): tests, build.
+- **Pre-commit** (fast): lint-staged, typecheck. **Pre-push** (slow):
+  `check:prepush`, tests, build.
 - **Never** `--no-verify`. Never suppress a lint rule or add a type suppression
   without asking first.
 - **Never** swallow an error silently. If a `catch` is genuinely empty, the
@@ -865,8 +910,9 @@ code changes do — see `docs/review/dual-review.md` ("Merge policy").
    worker is exercised in real Chromium by the #251 smoke, which simulates the
    purge and fails without the fix; the real purge chain, and any non-Chromium
    engine, are still unverified, so it carries a fallback to the direct chunk
-   URL. What remains from ADR
-   0003 is the notice and attribution work, #36. Not yet run on a phone.
+   URL. The ADR 0003 notice and attribution work (#36) ships in-app under
+   **Menu → About & licenses**, precached under `public/licenses/`. Not yet run
+   on a phone.
 2. **PCM storage is ~5.3 MB/minute** for segments still being worked on. **D3 is
    built** (B8, ADR 0009): a segment marked Finished is transcoded to 64 kbps
    MP3 and its PCM dropped in the same transaction, ~660 MB to ~66 MB for all 50
@@ -878,8 +924,11 @@ code changes do — see `docs/review/dual-review.md` ("Merge policy").
    was explicitly **deferred** on #12 (2026-09-04 decision, once D3 covered the
    storage risk for the gate); #12's 2026-09-15 triage comment found no
    separate tracking issue for it.
-3. **lamejs is LGPL-3.0** in an MIT repo. **Decided: keep it** — ADR 0003.
-   What remains is the notice and attribution work, #36, not a product call.
+3. **lamejs is LGPL-3.0** in an MIT repo. **Decided: keep it** — ADR 0003. The
+   notice and attribution work (#36) ships in-app (**Menu → About & licenses**)
+   with the verbatim licence texts precached under `public/licenses/`; the
+   in-app notice covers the web bundle, the Capacitor native shell's own
+   attribution is separate (#477). Not a product call.
 4. **The division-scheme question.** **Decided 2026-08-22 by Tim: no** to the
    broad half — one generic taxonomy, ADR 0004.
 5. **Scripture Burrito export is out of Phase 1** — not pending, not blocked.

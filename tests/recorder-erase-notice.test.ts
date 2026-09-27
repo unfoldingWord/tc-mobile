@@ -5,11 +5,12 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import { strings } from "@/lib/strings";
+import { useEraseSegment } from "@/hooks/use-erase-segment";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
 
 /**
- * #172 part 2: the in-sheet erase Notice must render `strings[erase.error]`,
+ * #172 part 2: the in-sheet erase Notice must render the failure's own key,
  * never the fixed `strings.eraseFailed` for every key — a full disk gets the
  * `noRoom` sentence instead of the generic erase-failure copy (Frank's
  * advisory on #886, and the issue's own "the shared hook now emits `noRoom`
@@ -113,24 +114,28 @@ async function setup() {
     readScope: () => null,
     peekScope: () => null,
   };
-  await act(async () =>
-    root.render(
-      createElement(Recorder, {
-        ref,
-        segmentId: "segment" as SegmentId,
-        audio,
-        saveRecording,
-        saveEditedSegment,
-        clipboard: null,
-        onClipboardChange: vi.fn(),
-        databaseUnreachable: false,
-        onExit,
-        onRequestBack: () => {
-          void ref.current?.requestClose();
-        },
-      })
-    )
-  );
+  // `erase` is a prop since #160 (L-12): App owns the one instance. A host
+  // that calls the REAL hook keeps this test about the sheet's own mapping of
+  // the key the hook's result carries, not about a stub's.
+  function Host() {
+    const erase = useEraseSegment();
+    return createElement(Recorder, {
+      ref,
+      segmentId: "segment" as SegmentId,
+      audio,
+      erase,
+      saveRecording,
+      saveEditedSegment,
+      clipboard: null,
+      onClipboardChange: vi.fn(),
+      databaseUnreachable: false,
+      onExit,
+      onRequestBack: () => {
+        void ref.current?.requestClose();
+      },
+    });
+  }
+  await act(async () => root.render(createElement(Host)));
   await act(async () => button(strings.recorderMenuOpen).click());
   await act(async () => button(strings.eraseSegment).click());
   return { ref, onExit, saveRecording, saveEditedSegment };

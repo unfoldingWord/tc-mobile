@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
+import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import type { SegmentId } from "@/types/domain";
 import { strings } from "@/lib/strings";
@@ -139,6 +140,13 @@ async function setup() {
       readScope: () => null,
       peekScope: () => null,
     };
+  // Resting erase: this suite never opens the confirm, but the sheet reads
+  // `erase.isErasing` during render, so the prop cannot be absent (#160 L-12).
+  const erase: UseEraseSegment = {
+    erase: vi.fn(async () => "ok" as const),
+    erasing: false,
+    isErasing: () => false,
+  };
   const render = async () =>
     act(async () =>
       root.render(
@@ -148,6 +156,7 @@ async function setup() {
           audio,
           saveRecording,
           saveEditedSegment,
+          erase,
           clipboard: null,
           onClipboardChange: vi.fn(),
           databaseUnreachable: false,
@@ -187,11 +196,9 @@ it("still saves and exits on a fresh close-path capture after an earlier superse
   // `supersededCapture.current = true`. That verdict does not exit or enter
   // edit mode, so the sheet stays mounted with the latch left true — the
   // same trigger `recorder-superseded-writes.test.ts` uses for its withhold
-  // cases. Driven through Stop (`commitTake("stay")`), not Edit-entry
-  // (`commitTake("edit")`, #134): #857 disables Edit-entry while a take is
-  // live, and the superseded verdict this sets up runs unconditionally on
-  // `commitTake`'s `after` argument, so Stop reaches the identical shared code
-  // the Edit-triggered version did.
+  // cases. Driven through Stop, the one UI route into `commitTake` since #857
+  // disabled Edit-entry during a take (#134's commit-then-edit arm went with
+  // #871).
   s.audio.recorderState = "recording";
   await s.render();
   await s.click(strings.stop);

@@ -55,9 +55,23 @@ async function ringOf(page: Page): Promise<string> {
   return found[0]!.shadow;
 }
 
+/**
+ * Pin the current look before the app boots (`lib/design.ts`'s key). #951
+ * flipped the default to o4, and the cases below assert the current look's
+ * guide-ring accent (`rgb(46, 125, 246)`) — O4's guide ring is a different
+ * token — so they opt out of the new default explicitly, the same way
+ * `recorder-menu-half-screen.spec.ts` opts INTO o4.
+ */
+async function pinCurrentLook(page: Page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("tc-mobile.design", "current");
+  });
+}
+
 test("the ring moves through the chain and marks exactly one control at a time", async ({
   page,
 }) => {
+  await pinCurrentLook(page);
   await page.goto("/");
 
   // Step 1 — an empty shelf. The header + is hidden here, so the invite's own
@@ -297,6 +311,7 @@ test.describe("disabled recorder guide", () => {
             });
         };
       });
+      await pinCurrentLook(page);
       await page.goto("/");
       await page.evaluate((value) => {
         document.documentElement.dataset.theme = value;

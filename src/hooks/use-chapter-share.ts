@@ -1,8 +1,12 @@
 import { useCallback } from "react";
 
 import { withEncoder } from "./mp3-codec";
-import { type ShareSurface, useShareFlow } from "./share-flow";
-import { exportChapterMp3 } from "@/lib/export/chapter";
+import {
+  type ShareOutcome,
+  type ShareSurface,
+  useShareFlow,
+} from "./share-flow";
+import { exportChapterMp3, withEncodeSteps } from "@/lib/export/chapter";
 import type { ChapterId } from "@/types/domain";
 
 export interface UseChapterShare extends ShareSurface {
@@ -14,8 +18,15 @@ export interface UseChapterShare extends ShareSurface {
    * share hook DIFFERS in is what it takes to build the file. `missing` here
    * counts segments with no resolvable audio, left out of that file — so a
    * chapter with gaps does not export "as if whole" without saying so.
+   *
+   * See {@link UseShareFlow.prepare} (`share-flow.ts`, #860): on the native
+   * route this chains straight into `send()` and resolves to its outcome; on
+   * the web route it resolves `null` and leaves the flow at `ready`.
    */
-  prepare: (chapterId: ChapterId, filename: string) => Promise<void>;
+  prepare: (
+    chapterId: ChapterId,
+    filename: string
+  ) => Promise<ShareOutcome | null>;
 }
 
 /**
@@ -44,19 +55,33 @@ export function useChapterShare(): UseChapterShare {
   } = useShareFlow();
 
   const prepare = useCallback(
-    (chapterId: ChapterId, filename: string): Promise<void> =>
-      run((isCurrent, signal) =>
-        withEncoder(signal, async (codec) => {
-          const result = await exportChapterMp3(chapterId, codec, isCurrent);
-          // exportChapterMp3 returns null both for an empty chapter and for a run
-          // cancelled during the gather (its shouldEncode check). `isCurrent`
-          // distinguishes them: still live means genuinely nothing to share.
-          if (result === null) return isCurrent() ? "nothing" : null;
-          // No copy: the worker hands back a right-sized ArrayBuffer-backed view,
-          // which `File` accepts directly.
-          const file = new File([result.mp3], filename, { type: "audio/mpeg" });
-          return { file, missing: result.missing };
-        })
+    (chapterId: ChapterId, filename: string): Promise<ShareOutcome | null> =>
+      run((isCurrent, signal, onStep) =>
+        // `withEncodeSteps` (#996) hands the export a codec and an `onStep`
+        // that put the encode on the same count as the segments: the count
+        // reads its total only once the MP3 exists. The inner `onStep` is that
+        // wrapped reporter, deliberately shadowing the flow's own.
+        withEncoder(
+          signal,
+          withEncodeSteps(onStep, isCurrent, async (codec, onStep) => {
+            const result = await exportChapterMp3(
+              chapterId,
+              codec,
+              isCurrent,
+              onStep
+            );
+            // exportChapterMp3 returns null both for an empty chapter and for a run
+            // cancelled during the gather (its shouldEncode check). `isCurrent`
+            // distinguishes them: still live means genuinely nothing to share.
+            if (result === null) return isCurrent() ? "nothing" : null;
+            // No copy: the worker hands back a right-sized ArrayBuffer-backed view,
+            // which `File` accepts directly.
+            const file = new File([result.mp3], filename, {
+              type: "audio/mpeg",
+            });
+            return { file, missing: result.missing };
+          })
+        )
       ),
     [run]
   );

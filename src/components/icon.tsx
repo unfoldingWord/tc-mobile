@@ -29,7 +29,6 @@ export type IconName =
   | "chevron-right"
   | "zoom-in"
   | "zoom-out"
-  | "selection"
   | "scissors"
   | "paste"
   | "undo"
@@ -42,7 +41,26 @@ export type IconName =
   | "share-sent"
   | "share-closed"
   | "share-android"
-  | "share-busy";
+  | "share-busy"
+  // The O4 batch (#940, part of #936): the 13 icons the O4 screens use,
+  // redrawn from the 24-unit, stroke-2.2 reference sprite
+  // (docs/design/o4/o4-icons.svg, landing with #935) onto this file's
+  // 22-unit grid at a proportionally scaled stroke. No screen wires any of
+  // these yet — that is a later O4 batch under #936 — so today's only
+  // consumer is this file's own render tests.
+  | "hear"
+  | "hear-large"
+  | "mic"
+  | "tap-hand"
+  | "pencil"
+  | "restart"
+  | "phone"
+  | "file-zip"
+  | "file-audio"
+  | "book"
+  | "book-open"
+  | "person"
+  | "open";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   back: (
@@ -323,20 +341,9 @@ const PATHS: Record<IconName, React.ReactNode> = {
       />
     </>
   ),
-  // Selection-frame toggle: the two brackets that frame the picked span (mockup
-  // 4). Drawn as a facing pair so the button reads as "enclose a region".
-  selection: (
-    <path
-      d="M9 5.5H6v11h3M13 5.5h3v11h-3"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  ),
   // Cut: two finger loops and crossing blades. Appears below the waveform once a
-  // selection exists (mockup 4).
+  // selection exists (mockup 4), and is the recorder toolbar's edit-mode
+  // toggle (#955).
   scissors: (
     <>
       <circle
@@ -617,6 +624,299 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <circle cx="5.77" cy="16.23" r="1.5" fill="currentColor" opacity="0.28" />
       <circle cx="3.6" cy="11" r="1.5" fill="currentColor" opacity="0.18" />
       <circle cx="5.77" cy="5.77" r="1.5" fill="currentColor" opacity="0.12" />
+    </>
+  ),
+  // The speaker glyph — "hear the name/title" buttons. A filled speaker cone
+  // with two sound-wave arcs, redrawn from o4-icons.svg's `hear` symbol.
+  hear: (
+    <>
+      <path
+        d="M3.7 8.7 3.7 13.3 6.9 13.3 11 17 11 5 6.9 8.7Z"
+        fill="currentColor"
+      />
+      <path
+        d="M14.2 8.3a3.7 3.7 0 0 1 0 5.5M16.5 6a6.9 6.9 0 0 1 0 10.1"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </>
+  ),
+  // The same speaker, drawn with wider wave spacing for the large "hear this"
+  // controls (the recorder stage, the sheet header) — o4-icons.svg's
+  // `hear-large` symbol.
+  "hear-large": (
+    <>
+      <path
+        d="M3.2 8.3 3.2 13.8 6.9 13.8 11.5 17.9 11.5 4.1 6.9 8.3Z"
+        fill="currentColor"
+      />
+      <path
+        d="M14.2 7.8a4.6 4.6 0 0 1 0 6.4M17 5a8.3 8.3 0 0 1 0 11.9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </>
+  ),
+  // Microphone body, capsule outline over the stand — the record-permission
+  // and name-recording glyph, redrawn from o4-icons.svg's `mic` symbol. Not
+  // to be confused with `record` (the filled dot the transport wears).
+  mic: (
+    <>
+      <rect
+        x="8.3"
+        y="2.8"
+        width="5.5"
+        height="10.1"
+        rx="2.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+      <path
+        d="M4.6 10.1a6.4 6.4 0 0 0 12.8 0M11 16.5v2.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </>
+  ),
+  // A hand tapping — the guided "tap here" affordance. Redrawn from
+  // o4-icons.svg's `tap-hand` symbol; the most detailed path in this batch
+  // (four fingers over a palm), kept as one path since the original draws it
+  // as continuous strokes.
+  "tap-hand": (
+    <path
+      d="M7.3 11.9V5a1.4 1.4 0 0 1 2.8 0V10.1M10.1 9.6V3.7a1.4 1.4 0 0 1 2.7 0V9.6M12.8 9.6V5a1.4 1.4 0 0 1 2.8 0V11M15.6 8.7a1.4 1.4 0 0 1 2.7 0V13.8a5.5 5.5 0 0 1-5.5 5.5h-1.3a5.5 5.5 0 0 1-4.3-2.1L4.6 14.2a1.5 1.5 0 0 1 2.2-1.9L7.3 12.8"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  ),
+  // A pencil, tip to the lower-left — the segment/book rename affordance.
+  // Redrawn from o4-icons.svg's `pencil` symbol. Distinct from the existing
+  // `edit` glyph (the row-menu "Edit" entry that reopens the recorder);
+  // this one is the O4 screens' own rename control.
+  pencil: (
+    <>
+      <path
+        d="M3.7 18.3H7.3L17.4 8.3 13.8 4.6 3.7 14.7Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12.4 6l3.6 3.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </>
+  ),
+  // A refresh arc with its arrowhead — "try again" / "start again", redrawn
+  // from o4-icons.svg's `restart` symbol. Distinct from the existing `retry`
+  // glyph (a smaller, differently proportioned arc already in use elsewhere).
+  restart: (
+    <>
+      <path
+        d="M18.3 11a7.3 7.3 0 1 1-2.1-5.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M18.3 3.7V8.3H13.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </>
+  ),
+  // A phone outline with a home indicator — "ask your helper", redrawn from
+  // o4-icons.svg's `phone` symbol.
+  phone: (
+    <>
+      <rect
+        x="6.4"
+        y="2.3"
+        width="9.2"
+        height="17.4"
+        rx="2.3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M10.1 16.5h1.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </>
+  ),
+  // An arrow leaving an open bracket — "open" (a book, a file), redrawn from
+  // o4-icons.svg's `open` symbol. Not `chevron-right` (a disclosure caret)
+  // and not `share` (the OS tray).
+  open: (
+    <>
+      <path
+        d="M12.8 4.6l5.5 5.5-5.5 5.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M18.3 10.1H9.2a5.5 5.5 0 0 0-5.5 5.5v1.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </>
+  ),
+  // An open book, two facing pages over a shared spine — redrawn from
+  // o4-icons.svg's `book-open` symbol (a closed-path cubic-bezier outline).
+  // Distinct from the plain `book` cover glyph below.
+  "book-open": (
+    <>
+      <path
+        d="M2.3 5.5C5 4 8.1 4 11 6.1 13.9 4 17 4 19.7 5.5V17.4C17 16 13.9 16 11 18 8.1 16 5 16 2.3 17.4Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M11 6.1v11.9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </>
+  ),
+  // A head and shoulders — "ask your helper", redrawn from o4-icons.svg's
+  // `person` symbol.
+  person: (
+    <>
+      <circle
+        cx="11"
+        cy="7.3"
+        r="3.7"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M3.7 19.3a7.3 7.3 0 0 1 14.6 0"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </>
+  ),
+  // A closed book, spine at the bottom — a book's cover/list glyph, redrawn
+  // from o4-icons.svg's `book` symbol.
+  book: (
+    <>
+      <rect
+        x="4.6"
+        y="2.8"
+        width="12.8"
+        height="16.5"
+        rx="1.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+      <path
+        d="M4.6 15.6h12.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </>
+  ),
+  // A zip archive: a file outline, a dashed fold, and a zipper pull —
+  // "Share Book" (a zip of chapter MP3s, per B7/#33), redrawn from
+  // o4-icons.svg's `file-zip` symbol.
+  "file-zip": (
+    <>
+      <path
+        d="M5.5 2.8H13.8L17.4 6.4V19.3H5.5Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M13.8 2.8V6.4H17.4M10.1 2.8V4.6M10.1 6.4V8.3M10.1 10.1V11.9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <rect
+        x="8.7"
+        y="12.8"
+        width="2.8"
+        height="3.7"
+        rx="0.9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+    </>
+  ),
+  // An audio file: the same file outline and fold, with waveform bars in
+  // place of the zip pull — "Share Chapter" (one concatenated MP3),
+  // redrawn from o4-icons.svg's `file-audio` symbol.
+  "file-audio": (
+    <>
+      <path
+        d="M5.5 2.8H13.8L17.4 6.4V19.3H5.5Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M13.8 2.8V6.4H17.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M8.3 14.7V11.9M11 16.5V10.1M13.8 14.7V11.9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
     </>
   ),
 };

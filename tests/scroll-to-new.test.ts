@@ -180,7 +180,7 @@ describe("arm, then reveal", () => {
   it("scrolls the armed row into view, nearest, and spends the arm", () => {
     act(() => {
       api().armScroll("b");
-      api().reveal();
+      api().reveal(false);
     });
 
     expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
@@ -188,12 +188,12 @@ describe("arm, then reveal", () => {
     expect(scrolled).toEqual(["b"]);
 
     // Spent: a second reveal with nothing newly armed does nothing.
-    act(() => api().reveal());
+    act(() => api().reveal(false));
     expect(scrolled).toEqual(["b"]);
   });
 
   it("does nothing when nothing is armed", () => {
-    act(() => api().reveal());
+    act(() => api().reveal(false));
     expect(scrollIntoView).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(document.body);
   });
@@ -213,13 +213,13 @@ describe("arm, then reveal", () => {
     // reasoning this lane applies to Segments' missing `inert` hold.
     act(() => {
       api().armScroll("never-added");
-      api().reveal();
+      api().reveal(false);
     });
     expect(scrollIntoView).not.toHaveBeenCalled();
 
     // The arm is gone, not waiting for the row to show up later.
     act(() => api().setNode("never-added", document.createElement("li")));
-    act(() => api().reveal());
+    act(() => api().reveal(false));
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
@@ -241,7 +241,7 @@ describe("arm, then reveal", () => {
 
     act(() => {
       api().armFocus("bare");
-      api().reveal();
+      api().reveal(false);
     });
     expect(document.activeElement).toBe(document.body);
 
@@ -249,14 +249,14 @@ describe("arm, then reveal", () => {
     const late = document.createElement("button");
     late.id = "bare-open";
     bare.appendChild(late);
-    act(() => api().reveal());
+    act(() => api().reveal(false));
     expect(document.activeElement).toBe(document.body);
   });
 
   it("hands focus to the armed row's control", () => {
     act(() => {
       api().armFocus("a");
-      api().reveal();
+      api().reveal(false);
     });
     expect(document.activeElement?.id).toBe("a-open");
   });
@@ -275,7 +275,7 @@ describe("arm, then reveal", () => {
     // whatever `nodes.get(null)` misses.
     act(() => {
       api().armFocus(null);
-      api().reveal();
+      api().reveal(false);
     });
     expect(document.activeElement).toBe(document.body);
   });
@@ -313,7 +313,7 @@ describe("arm, then reveal", () => {
     act(() => api().scrollTo("a"));
     expect(scrolled).toEqual(["a"]);
 
-    act(() => api().reveal());
+    act(() => api().reveal(false));
     expect(scrolled).toEqual(["a"]);
   });
 });

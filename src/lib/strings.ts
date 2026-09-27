@@ -215,8 +215,11 @@ export const strings = {
   openSegment: (n: number, label: string | null): string =>
     `Open segment ${strings.segmentHeading(n, label)}`,
   scrubSegment: (n: number): string => `Position in segment ${n}`,
-  markFinished: (n: number): string => `Mark segment ${n} finished`,
-  markUnfinished: (n: number): string => `Mark segment ${n} not finished`,
+  // "done", not "finished" (D17, #949): the O4 tile's caption is the
+  // workbench's "Done", and the label must hold the caption (label-in-name).
+  // One string for both looks and both menus (segment row and recorder).
+  markFinished: (n: number): string => `Mark segment ${n} done`,
+  markUnfinished: (n: number): string => `Mark segment ${n} not done`,
   /**
    * The segment's display heading (#591): the ordinal, then the facilitator's
    * label when set — "3 · verses 3–4". The ordinal always stays, because it is
@@ -250,6 +253,36 @@ export const strings = {
   // the training is where that glyph is tested rather than assumed.
   useLightTheme: "Switch to the light screen, for bright sunlight",
   useDarkTheme: "Switch to the dark screen, for low light",
+  // The O4 design switch (#938, epic #936). One control, `aria-pressed`
+  // carrying the on/off state (`Control`'s `pressed` prop, the same
+  // mechanism the zoom and level-meter toggles use) — so the label itself
+  // never has to change, unlike the theme toggle above, which names a
+  // destination because it has no `aria-pressed` state to carry that for it.
+  newLookO4: "New look (O4)",
+  // The O4 menu tiles' visible captions (#949, `o4-tile-menu.tsx`). Shown,
+  // never announced: each tile's name is the label its current-look row
+  // already had, and every caption is a word that label holds (label-in-name,
+  // WCAG 2.5.3). Marking done says the workbench's "Done", and
+  // `markFinished`/`markUnfinished` say "done" to match (D17).
+  tileEdit: "Edit",
+  tileFinished: "Done",
+  tileRename: "Rename",
+  tileErase: "Erase",
+  // The book menu's Delete tile (04); its name is `deleteBook`. Shared with
+  // the recorder menu's Delete segment tile (#590) — its name is
+  // `deleteSegment` — the same caption, on two different destructive tiles
+  // in two different menus, rather than a second key holding the same word.
+  tileDelete: "Delete",
+  tileShare: "Share",
+  // The app ≡ menu's About tile (#36, DRI ruling on PR #1019): its name is
+  // `aboutOpen` ("About and licenses"), which already holds this word.
+  tileAbout: "About",
+  tileLight: "Light",
+  tileDark: "Dark",
+  // The edit-mode recorder menu's exit tile (G3); its name is `doneEditing`.
+  // Its own key, not `tileFinished`: that one is marking done, this is leaving
+  // edit, and the two only happen to share a word in English.
+  tileDone: "Done",
   closeRecorder: "Close recorder",
   /**
    * The recorder sheet's header trail — the Segments one with the segment
@@ -297,6 +330,9 @@ export const strings = {
   zoomAtWhole: "Zoomed to the whole segment. Zoom in to a quarter.",
   zoomAtQuarter: "Zoomed to a quarter. Zoom out to the whole segment.",
   micNeededTitle: "Microphone access is needed to record",
+  // The O4 look's mic-denied title (D15, #948), from the O4 original. O4 only:
+  // the current look keeps `micNeededTitle` until O4 becomes the default.
+  micOffTitle: "Microphone is off",
   micRetry: "Try again",
   micBack: "Go back",
   finishedWriteFailed: "Could not save the finished mark.",
@@ -554,13 +590,43 @@ export const strings = {
   // segment over — because the sheet stays open, ready for the next take.
   rerecord: "Erase and record again",
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
+  // Press-and-hold reorder on the Segments list (#953, O4 only), spoken by
+  // the list's live region: the row that was lifted, where it landed, or that
+  // it went back. Segments renumber after a move (the DRI's "Renumber" pick),
+  // so the landing is said as the segment's new number.
+  reorderLifted: (n: number): string => `Moving segment ${n}.`,
+  reorderMoved: (from: number, to: number): string =>
+    `Segment ${from} is now segment ${to}.`,
+  reorderStayed: (n: number): string => `Segment ${n} stayed where it was.`,
+  // The same three lines for a chapter on the Books screen (#953 PR2b). Said
+  // by the chapter's number, which is what renumbers: a typed name such as
+  // "Mark 6" stays as it is (the DRI's pick), so it would not say where the
+  // chapter landed.
+  chapterReorderLifted: (n: number): string => `Moving chapter ${n}.`,
+  chapterReorderMoved: (from: number, to: number): string =>
+    `${strings.chapterName(from)} is now chapter ${to}.`,
+  chapterReorderStayed: (n: number): string =>
+    `${strings.chapterName(n)} stayed where it was.`,
   eraseConfirmTitle: "Erase this recording?",
   eraseConfirm: "Erase",
   // The safe action of the shared confirm dialog (`erase-confirm.tsx`). One
-  // string for both flows it now serves — segment Erase and book Delete —
-  // because it is the same control on the same surface saying the same word.
+  // string for every flow it now serves — segment Erase, book Delete and
+  // segment Delete (#590) — because it is the same control on the same
+  // surface saying the same word.
   eraseCancel: "Cancel",
   eraseFailed: "Could not erase the recording. Try again.",
+  // The confirm's "Play what will be lost" row (#979 remainder, O4 "13"
+  // only): the workbench's own copy, word for word, for the Play/Pause
+  // transport beside the preview waveform.
+  eraseConfirmPreviewPlay: "Play what will be lost",
+  eraseConfirmPreviewPause: "Pause",
+  // The clipboard's bin under the line (#862): throws away a cut that was
+  // never pasted, behind the same confirm as the whole-take erase. "Cut
+  // audio", not "clipboard": the translator cut a piece of their recording,
+  // and that piece is what is lost.
+  discardClip: "Throw away the cut audio",
+  discardClipConfirmTitle: "Throw away the cut audio?",
+  discardClipConfirm: "Throw away",
 
   // ── Delete a book (#337) ─────────────────────────────────────────────────
   // The book ≡-menu row, and the two-tap confirm behind it — the same dialog
@@ -572,11 +638,37 @@ export const strings = {
   deleteBookConfirmTitle: (book: string): string =>
     `Delete ${book} and everything in it?`,
   deleteBookConfirm: "Delete",
+  // The O4 look asks inside the book sheet instead (#980, G6; #949 D16): the
+  // sheet's actions swap for these two, under the book's cover and name. The
+  // workbench's own labels, word for word — the DRI prefers the originals.
+  // O4 only; the current look keeps `eraseCancel`/`deleteBookConfirm` above.
+  keepBook: "Keep the book",
+  deleteBookYes: "Yes, delete the book",
   // A destructive op that did NOT happen has to say so in its own words. The
   // store's own message — a quota or connection fault, since `deleteBook` never
   // throws on a missing book — is for a maintainer; this is the line a screen
   // reader speaks to a translator. Mirrors `eraseFailed` (#80).
   deleteBookFailed: "Could not delete this book. Try again.",
+
+  // ── Delete a segment (#590) ────────────────────────────────────────────────
+  // The recorder ≡-menu row/tile that deletes the segment itself, not only its
+  // audio (reverses G4, `docs/design/pivot-plan.md`'s Gate 1, for this one
+  // entry) — behind the same confirm dialog Erase and book Delete share, not a
+  // second one. No O4 workbench wording exists for THIS location: D20
+  // (`docs/design/o4-design-system.md`) draws "Remove this segment" for the
+  // SEGMENT-ROW menu (#997, a narrower, empty-only action deferred by the DRI
+  // past the training build), not the recorder. This reuses the erase/delete
+  // strings' own pattern instead — the exact wording is a residual for the DRI
+  // to confirm, not a workbench transcription.
+  deleteSegment: "Delete segment",
+  // Caption is the shared `tileDelete` above, not a second key — same word,
+  // same tone (destructive), just a different tile.
+  deleteSegmentConfirmTitle: (ordinal: number): string =>
+    `Delete segment ${ordinal}?`,
+  deleteSegmentConfirm: "Delete",
+  // `eraseCancel`/`eraseFailed`'s own comments already say "erase" and "book
+  // Delete" share one dialog and one word; this is the third flow on both.
+  deleteSegmentFailed: "Could not delete this segment. Try again.",
 
   // ── Share (B7) ───────────────────────────────────────────────────────────
   chapterMenuOpen: "More actions for this chapter",
@@ -605,6 +697,12 @@ export const strings = {
   // Back after the activity stopped (`resolveProvesDelivery`). So never
   // "sent", "delivered", "shared to", or an app's name; a test pins that.
   shareHandingOver: "Opening the phone's share sheet.",
+  // The O4 share circle (#947). D22: the core is a progress bar with this
+  // label, chapter and book alike. D21: the numbered chips above it are one
+  // image with this label — how many of the items go out, of all of them.
+  sharePreparingLabel: "Preparing to share",
+  shareItemsGoOut: (out: number, all: number): string =>
+    `${out} of ${all} go out`,
   shareSent: "Handed to the phone's share sheet.",
   shareDismissed: "The share sheet was closed before anything went out.",
   // The native Android plugin can resolve on a Back after the chooser's
@@ -780,16 +878,22 @@ export const strings = {
   // The two-tap discard, and the fainter line beneath it once armed. "for good"
   // only on the record path — there the held take is the only copy; on the edit
   // path the stored recording survives and only the edit goes.
+  //
+  // The record-path arms ARE the take-recovery panel's discard copy, read from
+  // those keys rather than written out a second time (#805 item 1): both
+  // confirms destroy the only copy of a recording, and `takeRecoverDiscard`'s
+  // own comment says the two share one shape. The arrows run only after
+  // `strings` is initialised, as `menuOpenWithFailures` already relies on.
   saveFailedDiscard: (editOnly: boolean, armed: boolean): string =>
     armed
       ? editOnly
         ? "Tap again to discard these changes"
-        : "Tap again to delete this recording for good"
+        : strings.takeRecoverDiscardArmed
       : editOnly
         ? "Discard these changes"
-        : "Delete this recording",
+        : strings.takeRecoverDiscard,
   saveFailedDiscardHint: (editOnly: boolean): string =>
-    editOnly ? "Tap again to discard them." : "Tap again to delete it.",
+    editOnly ? "Tap again to discard them." : strings.takeRecoverDiscardHint,
 
   // ── Root error boundary (#167) ───────────────────────────────────────────
   // The whole text layer of the crash screen. Says that something failed and
@@ -875,15 +979,59 @@ export const strings = {
   // copy names the phone and, for the critical band, states the concrete
   // consequence — new recordings may not save — which is also why
   // `storageCritical` now renders in the `alert` tone rather than `info`
-  // (`storage-pressure-notice.ts`). Both lines still name the pair
+  // (`storage-pressure-notice.ts`). Both lines name the pair
   // `pressure.ts`'s docblock names — mark segments Finished (ADR 0009's
   // transcode reclaims ~90%) or share the work and then remove it — not bare
   // "share", which does not reclaim anything on its own: `lib/export/
   // chapter.ts` decodes and re-encodes without deleting a single stored clip.
+  //
+  // **#843 item 1: `storageLow` gained the fallback clause `storageCritical`
+  // already had.** George's finding: the gate both bands share,
+  // `hasReclaimableAudio` (`recordedCount > 0`), stays true even when every
+  // recorded segment on the shelf is already Finished (MP3, not PCM) — a real
+  // state where "mark segments finished" recommends something already done.
+  // `storagePressureNotice` only ever sees the marker, not the
+  // finished/recorded split, so it cannot gate the clause on that state
+  // (George: "not asking for another boolean"). The fix instead matches
+  // `storageCritical`'s existing shape: state the fallback unconditionally,
+  // so the sentence holds in every state this gate can actually show, the
+  // same way `storageCritical`'s fallback already did before this change.
   storageLow:
-    "This phone is running low on space. Mark the segments you're done with as finished — they take much less room.",
+    "This phone is running low on space. Mark segments finished to free up room, or share your work and then remove it.",
   storageCritical:
     "This phone is almost out of space, and new recordings may not save. Mark finished segments, or share your work and then remove it.",
+  // The O4 storage banner's own line (state 17, #983), word for word from
+  // the workbench. It leads; the band's line above follows it, because the
+  // workbench speaks that reason through a speaker button this app does not
+  // have yet (#952).
+  storageShareSoon: "Share your work soon",
+
+  // ── Share your work (#987, the O4 storage banner's button, #948 D14) ──────
+  // Every book on the phone as one zip, one folder per book. The labels
+  // follow Share Book's; the gap lines speak in the library's own units
+  // (`LibraryShareGap`): whole books left out, and chapters inside included
+  // books that did not ship whole.
+  shareAll: "Share your work",
+  shareAllUnconfirmed:
+    "Share your work. The last attempt wasn't confirmed — tap to try again.",
+  shareAllPreparing: "Preparing your work to share.",
+  shareAllNothing: "Record a segment before sharing your work.",
+  shareAllFailed: "Could not share your work. Try again.",
+  // `roomForExport` said the phone has too little free space to build the
+  // archive, checked before any encode. The way out is the one the storage
+  // lines above already name: finished segments take much less room.
+  shareAllStorage:
+    "This phone does not have room to prepare your work. Mark finished segments, then try again.",
+  shareAllMissing: (n: number): string =>
+    couldNotBeIncluded(plural(n, { one: "{n} book", other: "{n} books" })),
+  shareAllIncomplete: (n: number): string =>
+    plural(n, {
+      one: "{n} chapter could not be included in full.",
+      other: "{n} chapters could not be included in full.",
+    }),
+  shareAllFilename: "My work.zip",
+  // Each book's folder inside the zip, sanitised like shareBookFilename.
+  shareAllFolder: (book: string): string => filenameSafe(book),
 
   // ── The database is unreachable (#221) ───────────────────────────────────
   // Two full-screen states, one in each copy of the app, when a newer copy
@@ -901,6 +1049,47 @@ export const strings = {
   dbBlockedTeach: "Close the other one to carry on.",
   dbOutOfDate: "This copy is out of date.",
   dbOutOfDateTeach: "Restart to use the new version.",
+
+  // ── About & licenses (#36) ───────────────────────────────────────────────
+  // The global-menu entry, and the panel it opens. lamejs is LGPL-3.0 (ADR
+  // 0003); this surface is what makes its notice and licence text reachable on
+  // the phone. A text screen by necessity — a legal notice has no wordless
+  // form — so every link carries a full spoken label.
+  aboutOpen: "About and licenses",
+  aboutTitle: "About & licenses",
+  aboutBlurb:
+    "A free and open-source app. Everything you record stays on this phone.",
+  aboutAppLicense: "This app is offered under the MIT licence.",
+  // The LGPL/GPL written offer for the app's own Corresponding Source, on the
+  // shipped copy itself (the README carries it too, but the installed PWA ships
+  // no `*.md`). The repository went public 2026-09-13, so — per the DRI's
+  // 2026-09-24 decision on #144 — the offer now links the public source for THIS
+  // build's exact commit (a tree URL built from the full commit id,
+  // `__BUILD_SHA_FULL__`, in `SourceOfferLink`), the §4(d)(0) mechanism ADR
+  // 0003 records. Still no relink how-to on the shipped copy.
+  aboutSourceOffer:
+    "The source code for this app is public. This build's source:",
+  // aria-label for the source link; the visible text is the repository path.
+  aboutVisitAppSource: "Open this build's source on GitHub",
+  aboutThirdParty: "Open-source components",
+  aboutTexts: "Licence texts",
+  aboutContent: "Bundled content",
+  // The licence texts open in-drawer (no new tab), so their controls are
+  // buttons: this is the spoken action, and the two states while it loads.
+  aboutReadText: (name: string): string => `Read ${name}`,
+  // While a licence text is open the Menu header goes back to the list rather
+  // than closing, so it says so (George G1, round 3).
+  aboutBack: "Back to the list",
+  aboutTextLoading: "Loading the licence text.",
+  aboutTextFailed: "Could not load the licence text.",
+  // Spoken labels for the off-phone links (a project page, a CC deed), which
+  // show terse visible text (a package name, a licence short-name).
+  aboutVisitSource: (name: string): string => `Open the ${name} project page`,
+  // The lamejs source is a copy kept in this app's own repository at this
+  // build's commit (#36), not the upstream project page, so it says so.
+  aboutVisitKeptSource: (name: string): string =>
+    `Open the ${name} source kept with this build`,
+  aboutVisitLicense: (name: string): string => `Open the ${name} licence`,
 
   // ── Failure log (#205) ───────────────────────────────────────────────────
   // The durable destination for reported failures, reachable from the global
@@ -986,4 +1175,57 @@ export const strings = {
   // The wording itself is a coordinator assumption pending the requirements
   // owner's sign-off — see the #878 PR body.
   stopToErase: "Stop recording to erase.",
+
+  // ── Phone check (#1009) ──────────────────────────────────────────────────
+  // A hidden tester screen, reached by five taps on the build stamp or by
+  // `?check=phone`. Its words are for a tester filling in #974, not for a
+  // translator, but they are screen copy all the same and so live here. The
+  // REPORT it produces is engineering data and is worded in
+  // `lib/phone-check/report.ts` instead — see that file's docblock.
+  phoneCheckTitle: "Phone check",
+  phoneCheckIntro:
+    "Measures this phone for a tester report. Nothing runs until you tap Start, and it never touches your books or recordings.",
+  phoneCheckStart: "Start",
+  phoneCheckRunWaiting: "Waiting for a recording to finish converting.",
+  phoneCheckRunDevice: "Reading device info.",
+  phoneCheckRunEncode: "Encoding 5 minutes of test audio.",
+  phoneCheckRunStorage: "Writing and reading 50 MB of test audio.",
+  phoneCheckDone: "Done.",
+  phoneCheckMemoryTitle: "Memory ceiling",
+  phoneCheckMemoryWarning:
+    "Run this last. It fills memory until the phone refuses, and the app may restart. If it does, open Phone check again to see how far it got.",
+  phoneCheckMemoryStart: "Start memory test",
+  phoneCheckMemoryStep: (mb: number) => `Trying ${mb} MB.`,
+  phoneCheckReportLabel: "Report for #974",
+  phoneCheckCopy: "Copy report",
+  phoneCheckCopied: "Copied.",
+  phoneCheckSelected: "Selected. Use your phone's Copy.",
+  phoneCheckClose: "Close",
+
+  // ── Cover colour picker (#957, from #937 D7/D8) ──────────────────────────
+  // The picker's group name, and one name per palette key
+  // (`lib/cover-colour.ts`'s `CoverColourKey`) — the whole accessible text
+  // layer for a screen built for people who may not read, so each swatch has
+  // to carry a real word, not just a fill colour a screen reader cannot see.
+  // Worded by `components/cover-colour-copy.ts`'s exhaustive switch, the same
+  // split `capture-failure-copy.ts` uses: the KEY is a `lib/` value, the
+  // WORDS live here.
+  coverColourLabel: "Cover colour",
+  coverColourAmber: "Amber",
+  coverColourTeal: "Teal",
+  coverColourPlum: "Plum",
+  coverColourForest: "Forest",
+  coverColourBrick: "Brick",
+  coverColourSlate: "Slate",
+  coverColourRose: "Rose",
+  coverColourOlive: "Olive",
+  coverColourRust: "Rust",
+  coverColourCocoa: "Cocoa",
+  // A swatch button's whole accessible name: the colour's name, plus its
+  // selected state — the same "whole name, plus a trailing state word" shape
+  // `bookRow` above uses for "expanded"/"collapsed". `aria-pressed` already
+  // carries this machine-readably; the word is for the same reason `pressed`
+  // is never inferred from a glyph alone (`Control`'s own `pressed` doc).
+  coverSwatchLabel: (name: string, selected: boolean): string =>
+    selected ? `${name}, selected` : name,
 } as const;

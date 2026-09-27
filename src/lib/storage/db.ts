@@ -76,6 +76,16 @@
  * row, so a reader never meets `undefined`. Additive like v5: no store dropped,
  * no other field touched, and the takes and clips behind a segment are never
  * read.
+ *
+ * ── v9 (#957): book cover colour — append-only ──
+ *
+ * `Book` gained an optional `coverColourKey` (a palette key like `"forest"`,
+ * never a hex), the book twin of v5's chapter name and v8's segment label. The
+ * v9 step stamps `coverColourKey: null` on every pre-existing book row, so a
+ * reader never meets `undefined` — `lib/cover-colour.ts`'s `resolveCoverKey`
+ * derives a colour from the book's id for exactly that row shape. Additive
+ * like v5 and v8: no store dropped, no other field touched, and the chapters,
+ * segments, takes and clips behind a book are never read.
  */
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
@@ -95,7 +105,7 @@ import type { ClipMeta } from "@/types/audio";
 import type { StoredFailure } from "@/types/failure";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 8;
+const DB_VERSION = 9;
 
 /**
  * The v3 shape of a `clipMeta` row, before the B8 fields existed. Only the v4
@@ -569,6 +579,24 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
             const legacy = cursor.value as Segment & { label?: string | null };
             if (legacy.label === undefined) {
               await cursor.update({ ...legacy, label: null });
+            }
+            cursor = await cursor.continue();
+          }
+        }
+
+        // v9 (#957): stamp every pre-existing book with `coverColourKey: null`.
+        // The same shape as v5/v8 above: only the missing field is added, and
+        // keying on it being ABSENT leaves a row a newer build already gave a
+        // colour to alone.
+        if (oldVersion < 9) {
+          const store = tx.objectStore("books");
+          let cursor = await store.openCursor();
+          while (cursor) {
+            const legacy = cursor.value as Book & {
+              coverColourKey?: string | null;
+            };
+            if (legacy.coverColourKey === undefined) {
+              await cursor.update({ ...legacy, coverColourKey: null });
             }
             cursor = await cursor.continue();
           }

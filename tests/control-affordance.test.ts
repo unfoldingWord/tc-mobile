@@ -24,11 +24,12 @@ const read = (rel: string) =>
 const SHARE_STATUSES = ["idle", "preparing", "ready"] as const;
 
 describe("shareControlAffordance", () => {
-  it("gives every status its own glyph — preparing must never wear idle's or ready's", () => {
-    const icons = SHARE_STATUSES.map(
+  it("preparing wears neither idle's nor ready's glyph (#860: idle and ready can now coincide on web/iOS, told apart by variant/className, not icon)", () => {
+    const [idleIcon, preparingIcon, readyIcon] = SHARE_STATUSES.map(
       (s) => shareControlAffordance(s, "web").icon
     );
-    expect(new Set(icons).size).toBe(SHARE_STATUSES.length);
+    expect(preparingIcon).not.toBe(idleIcon);
+    expect(preparingIcon).not.toBe(readyIcon);
   });
 
   it("only preparing sets aria-busy", () => {
@@ -47,8 +48,8 @@ describe("shareControlAffordance", () => {
     expect(shareControlAffordance("preparing", "web").icon).toBe("retry");
   });
 
-  it("ready reuses the check glyph — the 'yes, this is so' mark, never the plain share glyph", () => {
-    expect(shareControlAffordance("ready", "web").icon).toBe("check");
+  it("ready wears the share glyph, not the check that used to read 'done' (#860, O1)", () => {
+    expect(shareControlAffordance("ready", "web").icon).toBe("share");
     expect(shareControlAffordance("idle", "web").icon).toBe("share");
   });
 
@@ -84,8 +85,10 @@ describe("confirmControlAffordance", () => {
 /**
  * The Share control's idle glyph is the platform's own (#490, decided
  * 2026-09-19): Android's three joined dots on the Android build, the tray
- * everywhere else. Only `idle` — `preparing` and `ready` are the wait and the
- * "yes" marks, which are the same on every phone.
+ * everywhere else. Only `idle` — `preparing`'s wait mark and `ready`'s share
+ * mark (#860, O1) are each the same on every phone; `ready`'s icon happens to
+ * equal `idle`'s on iOS and web (both draw the tray), which is why the two
+ * are told apart by variant/size/tint there, not by glyph.
  */
 describe("shareControlAffordance is platform-native at idle only (#490)", () => {
   const PLATFORMS = ["android", "ios", "web"] as const;
@@ -107,12 +110,24 @@ describe("shareControlAffordance is platform-native at idle only (#490)", () => 
     }
   });
 
-  it("every status still has its own glyph on every platform", () => {
+  it("preparing's glyph is distinct from idle's and ready's on every platform; idle and ready may now coincide (#860, O1)", () => {
     for (const platform of PLATFORMS) {
-      const icons = SHARE_STATUSES.map(
+      const [idleIcon, preparingIcon, readyIcon] = SHARE_STATUSES.map(
         (s) => shareControlAffordance(s, platform).icon
       );
-      expect(new Set(icons).size).toBe(SHARE_STATUSES.length);
+      expect(preparingIcon).not.toBe(idleIcon);
+      expect(preparingIcon).not.toBe(readyIcon);
+    }
+  });
+
+  it("android's idle glyph (the three dots) still differs from ready's (the share mark) — only iOS and web share one shape for both", () => {
+    expect(shareControlAffordance("idle", "android").icon).not.toBe(
+      shareControlAffordance("ready", "android").icon
+    );
+    for (const platform of ["ios", "web"] as const) {
+      expect(shareControlAffordance("idle", platform).icon).toBe(
+        shareControlAffordance("ready", platform).icon
+      );
     }
   });
 

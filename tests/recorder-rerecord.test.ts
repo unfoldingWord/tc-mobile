@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
+import { useEraseSegment } from "@/hooks/use-erase-segment";
 import type { SegmentId } from "@/types/domain";
 
 /**
@@ -14,6 +15,10 @@ import type { SegmentId } from "@/types/domain";
  * The real `Recorder`, the real erase hook, the real confirm and the real
  * editor are mounted; the store's `clearSegmentTake` and the segment loader
  * are replaced at their boundary, as `tests/recorder-erase-back.test.ts` does.
+ * Since #160 L-12 the sheet does not construct the erase hook — `App` owns one
+ * instance and passes it down — so `Host` below calls `useEraseSegment()` in
+ * App's place and hands the result over as a prop. Still the real hook, just
+ * built one level up, which is where the app builds it.
  * `reloads` stands in for the store after the erase: the loader hands back the
  * empty segment the erase left, so the sheet has to rebuild itself over it.
  *
@@ -148,25 +153,23 @@ async function setup() {
       readScope: () => null,
       peekScope: () => null,
     };
-  const render = async () =>
-    act(async () =>
-      root.render(
-        createElement(Recorder, {
-          ref,
-          segmentId: "segment" as SegmentId,
-          audio,
-          saveRecording,
-          saveEditedSegment,
-          clipboard: null,
-          onClipboardChange: vi.fn(),
-          databaseUnreachable: false,
-          onExit,
-          onRequestBack: () => {
-            void ref.current?.requestClose();
-          },
-        })
-      )
-    );
+  const Host = () =>
+    createElement(Recorder, {
+      ref,
+      segmentId: "segment" as SegmentId,
+      audio,
+      erase: useEraseSegment(),
+      saveRecording,
+      saveEditedSegment,
+      clipboard: null,
+      onClipboardChange: vi.fn(),
+      databaseUnreachable: false,
+      onExit,
+      onRequestBack: () => {
+        void ref.current?.requestClose();
+      },
+    });
+  const render = async () => act(async () => root.render(createElement(Host)));
   await render();
   return { ref, audio, render, saveRecording, saveEditedSegment, onExit };
 }

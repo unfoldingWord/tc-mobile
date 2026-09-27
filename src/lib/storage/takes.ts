@@ -97,9 +97,13 @@ export function isFinished(status: RecordingStatus): boolean {
  * is no longer the audio that would be exported — and then deletes the
  * superseded take row and its clip.
  *
- * All of it is one atomic transaction spanning the take, segment, and clip
- * stores, so the delete of the old audio cannot land without the new audio and
- * pointer landing too: an interrupted replace never strands the new recording.
+ * The caller's transaction spans the take, segment, and clip stores, so the
+ * delete of the old audio cannot land without the new audio and pointer
+ * landing too: an interrupted replace never strands the new recording. That
+ * atomicity is a property of the transaction `addTake`/`saveTake` open around
+ * this call, not of this helper alone — see the "Does NOT open or close the
+ * transaction" note below.
+ *
  * The prior clip is deleted only when it differs from the new one, so a retry
  * that reuses a clip id (the pending-take upsert path) never deletes the audio
  * it just committed.
@@ -369,7 +373,15 @@ export async function setSegmentFinished(
   finished: boolean
 ): Promise<void> {
   const db = await getDb();
-  const tx = db.transaction("segments", "readwrite");
+  const tx = db.transaction(
+    "segments",
+    "readwrite",
+    // Strict durability: this flips the bit an export trusts to decide what
+    // ships. Same bar `openTakeTx` and `clearSegmentTake` hold, though the
+    // blast radius here is the finished mark, not the recording itself
+    // (#179, #829).
+    { durability: "strict" }
+  );
   const segment = await tx.store.get(segmentId);
   if (!segment) throw new Error(`No such segment: ${segmentId}`);
 

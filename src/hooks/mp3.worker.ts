@@ -21,8 +21,10 @@
  * truncated on a statement boundary is valid JS with no `message` listener, and
  * that one is silent forever. Waiting for `ready` before handing over a
  * chapter's PCM is what lets the client fall back to the chunk URL with the
- * audio still in its hands. The heartbeat is not a UI meter (nothing consumes a
- * meter yet); it is the client's liveness signal — `hooks/mp3-codec.ts` bounds
+ * audio still in its hands. The heartbeat's `fraction` also moves Share
+ * Chapter's step count through the encode (#996, `withEncodeSteps` in
+ * `lib/export/chapter.ts`), but its first job is the client's liveness
+ * signal — `hooks/mp3-codec.ts` bounds
  * every encode by how long the worker stays SILENT, and each heartbeat resets
  * that window so a long encode is not judged stalled while a wedged one still is
  * (#166). `hooks/mp3-codec.ts` keeps ONE worker warm and reuses it across

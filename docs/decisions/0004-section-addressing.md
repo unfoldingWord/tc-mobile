@@ -15,6 +15,13 @@ Audio Project Manager splits Ruth 2 into `"2:1-13"` and `"2:14-22"`. tC Mobile's
 section granularity is therefore already legal burrito. Adopting the grammar
 now costs nothing; retrofitting it later is a data migration.
 
+**Amended 2026-09-25 (reversal of this rationale, not a deletion):** the
+"costs nothing" premise assumed the grammar would stay live in `src/`. It did
+not — #818/#159 (2026-09-24) found no `src/` caller had ever used it and
+moved it to `tests/scope.ts` per AGENTS.md's dead-export rule (see below).
+Retrofitting is therefore back on the table as a real cost if #253 needs the
+grammar in `src/` again, exactly what adopting it early was meant to avoid.
+
 The grammar is parsed in one place and unit-tested, because a malformed scope
 must fail loudly rather than become a plausible-looking wrong reference. It
 lived at `src/lib/scripture/scope.ts` until #818/#159 (2026-09-24): no `src/`

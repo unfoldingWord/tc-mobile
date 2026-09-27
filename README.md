@@ -73,8 +73,9 @@ Live staging: <https://tc-mobile-staging.unfoldingword.workers.dev>
 **Cloudflare Workers Builds deploys** the PWA straight from the repo — no
 Actions workflow deploys the web app. (`.github/` holds three native lanes:
 `ios-testflight.yml` and `android-apk.yml` are manual-dispatch only;
-`android-play.yml` runs on push to `staging`/`main`, shipping a native bundle
-to Google Play, never Cloudflare — see AGENTS.md → "Cloudflare Workers Builds
+`android-play.yml` triggers on push to `staging`/`main` and uploads a native
+bundle to Google Play only when `vars.PLAY_UPLOAD_ENABLED` is `true` —
+never Cloudflare — see AGENTS.md → "Cloudflare Workers Builds
 owns deployment".)
 Workers Builds is configured per Worker, so the repo is connected twice:
 `tc-mobile` builds from `main`, `tc-mobile-staging` builds from `staging` with
@@ -97,10 +98,10 @@ and a check that the PWA service worker, manifest, and `version.json` were
 emitted. It deploys nothing. (`.github/` also holds three native lanes, none
 of which touch Cloudflare: `ios-testflight.yml` and `android-apk.yml` are
 manual-dispatch only, each gated by a `release-signing` environment with
-required reviewers (#321); `android-play.yml` runs on push to
-`staging`/`main` and uploads a signed .aab to Google Play, from a
-`play-upload` environment that has no required reviewers — branch-restricted
-instead, per the yml.)
+required reviewers (#321); `android-play.yml` triggers on push to
+`staging`/`main` and uploads a signed .aab to Google Play only when
+`vars.PLAY_UPLOAD_ENABLED` is `true`, from a `play-upload` environment that
+has no required reviewers — branch-restricted instead, per the yml.)
 
 The repo is `unfoldingWord/tc-mobile`, in the unfoldingWord org, **public since
 2026-09-13**. Keep it public: `release-signing`'s required-reviewer gate
@@ -215,5 +216,21 @@ exact stack** — Vite + PWA + IndexedDB — on low-end Android inside uW.
 ## Licence
 
 MIT — see [`LICENSE`](LICENSE). One LGPL-3.0 dependency, lamejs: **settled
-2026-08-23, keep it** — [ADR 0003](docs/decisions/0003-mp3-encoder.md). The
-notice and attribution obligations that come with keeping it are #36.
+2026-08-23, keep it** — [ADR 0003](docs/decisions/0003-mp3-encoder.md).
+
+Every bundled open-source component is disclosed **inside the app**, reachable
+on the phone under **Menu → About & licenses** (#36): each web-bundle dependency
+and Workbox with its licence and copyright, and the verbatim licence texts (MIT,
+the collected third-party notices, GNU LGPL v3, GNU GPL v3) read in-drawer. Those
+texts also ship and precache for offline under
+[`public/licenses/`](public/licenses/), so a translator in the field is not sent
+to `node_modules` to find them. The About screen links this repository at the
+build's full commit id, and the exact source of lamejs 1.2.7 is kept in it
+under [`third_party/lamejs-1.2.7/`](third_party/lamejs-1.2.7/) (where it came
+from is in that folder's `PROVENANCE.md`); the lamejs row links that folder at
+the same commit. That is the LGPL §4(d)(0) mechanism the DRI selected
+([ADR 0003](docs/decisions/0003-mp3-encoder.md)); it has not had qualified legal
+review. The in-app notice
+covers the web bundle, including the `@capacitor/*` JavaScript packages the app
+imports; the Capacitor native shell's own attribution (the Gradle / CocoaPods /
+native tree) is tracked separately (#477).

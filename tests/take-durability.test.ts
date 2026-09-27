@@ -10,7 +10,11 @@ import {
   createBook,
   deleteBook,
 } from "@/lib/storage/books";
-import { clearSegmentTake, saveTake } from "@/lib/storage/takes";
+import {
+  clearSegmentTake,
+  saveTake,
+  setSegmentFinished,
+} from "@/lib/storage/takes";
 import { newClipId } from "@/lib/storage/clips";
 import { getDb } from "@/lib/storage/db";
 import { clearAllStores } from "./support";
@@ -116,6 +120,23 @@ describe("take writes ask for strict durability", () => {
 
     const options = await transactionOptionsDuring(async () => {
       await deleteBook(book.id);
+    });
+
+    expect(options).toEqual([{ durability: "strict" }]);
+  });
+
+  it("setSegmentFinished opens its transaction with durability: strict", async () => {
+    // The finished mark is what an export trusts to decide what ships (#829).
+    const segmentId = await emptySegment();
+    await saveTake(
+      segmentId,
+      newClipId(),
+      samples(1000),
+      CANONICAL_SAMPLE_RATE
+    );
+
+    const options = await transactionOptionsDuring(async () => {
+      await setSegmentFinished(segmentId, true);
     });
 
     expect(options).toEqual([{ durability: "strict" }]);

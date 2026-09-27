@@ -11,7 +11,13 @@ import {
   type MicRefusal,
 } from "@/lib/audio/mic-refusal";
 import type { CaptureFailure } from "@/lib/audio/capture-failure";
-import { classifyStopDecode } from "@/lib/audio/stop-decode";
+import { decodeRetry } from "@/lib/audio/retry-decode";
+import { classifyEmptySeal, classifyStopDecode } from "@/lib/audio/stop-decode";
+import {
+  TAKE_CAP_MS,
+  takeCapStatus,
+  type TakeCapStatus,
+} from "@/lib/audio/take-cap";
 import { strings } from "@/lib/strings";
 
 import {
@@ -238,6 +244,20 @@ export interface UseRecorder {
   retryDecode: (blob: Blob) => Promise<RetryDecodeResult>;
   cancel: () => void;
   /**
+   * End an open take the way a #59 interruption does, for a `pagehide` (#807)
+   * or the page becoming hidden (#836): freeze at `"processing"` with the
+   * captured slices left where `stop()` will find them, so the sheet's
+   * interruption commit saves the partial take. Returns `true` when a take was
+   * open (the caller must then NOT `cancel()`), `false` when there is none.
+   * Idempotent: a second call before `stop()` takes the slices returns `true`
+   * and changes nothing.
+   *
+   * Synchronous and write-free: no `stop()`, no decode, no failure-log row.
+   * Everything that touches IndexedDB runs later, on the commit path, after
+   * `stop()`'s own awaits.
+   */
+  seal: () => boolean;
+  /**
    * The live capture level for the VU meter, in the raw amplitude domain (RMS of
    * the latest frame). A PULL read (D-LEVEL-PULL): the meter polls this on its
    * own animation clock so the recorder never re-renders per frame. Returns 0
@@ -274,6 +294,14 @@ export interface UseRecorder {
    * rather than a resting-empty strip. False while it is working or idle.
    */
   meterFailed: boolean;
+  /**
+   * The live take against the length cap (#1005, "Warn at 15, seal at 20"):
+   * `nearLimit` from 15:00 and the time left, for the recorder screen's
+   * state-in-place marker. Only a `"recording"` take is ever near the limit.
+   * At 20:00 the take is sealed like a `pagehide` seal (`seal()`), so the
+   * sheet commits and saves it, and one `"recorder-take-cap"` row is logged.
+   */
+  readonly takeCap: TakeCapStatus;
 }
 
 /**
@@ -323,6 +351,13 @@ export function useRecorder(): UseRecorder {
   const tickRef = useRef<number | null>(null);
   /** Bumped on cancel so a stop() already in flight resolves to nothing. */
   const generationRef = useRef(0);
+  /**
+   * A take whose slices no `stop()` has taken yet (#807). True from the moment
+   * `start()` has a recorder running until `stop()` snapshots the chunks or
+   * `cancel()` drops them. Covers `"recording"` and the #59 `"processing"`
+   * freeze before its commit starts, which is the window `seal()` must keep.
+   */
+  const takeOpenRef = useRef(false);
 
   const supported = isRecordingSupported();
 
@@ -332,14 +367,6 @@ export function useRecorder(): UseRecorder {
       tickRef.current = null;
     }
   }, []);
-
-  /** Run the elapsed timer for the current span, on top of the banked total. */
-  const startTick = useCallback(() => {
-    clearTick();
-    tickRef.current = window.setInterval(() => {
-      setElapsedMs(performance.now() - startedAtRef.current);
-    }, 100);
-  }, [clearTick]);
 
   /** Close the VU tap if one is open. Safe to call when there is none. */
   const closeTap = useCallback(() => {
@@ -454,6 +481,51 @@ export function useRecorder(): UseRecorder {
     stopTracks(stream, "recorder-release-track");
     if (streamRef.current === stream) streamRef.current = null;
   }, []);
+
+  const seal = useCallback((): boolean => {
+    if (!takeOpenRef.current) return false;
+    // Already frozen by a #59 interruption: its commit is on the way, and the
+    // only thing to do is not cancel it.
+    if (!recordingRef.current) return true;
+    // `onInterrupted`'s freeze, minus the parts that belong to a lost track:
+    // the recorder is still live here, so its tracks stay up until `stop()`
+    // has the final slice, and there is no failure row (#478's constraint).
+    clearTick();
+    tapRef.current?.disconnect();
+    recordingRef.current = false;
+    setState("processing");
+    return true;
+  }, [clearTick, setState]);
+
+  /**
+   * Run the elapsed timer for the current take, and seal the take when it
+   * reaches the length cap (#1005). The cap reuses `seal()`, so the sheet's
+   * interruption commit saves the take exactly as it does after a `pagehide`.
+   * Unlike a `pagehide`, the page is staying, so the one failure-log row that
+   * says the take was cut is written here. `seal()` clears this interval, so
+   * the row is written once per take.
+   *
+   * The check runs on this 100 ms tick, so a page whose timers the browser
+   * throttles (backgrounded) seals on the first tick it is given after 20:00,
+   * which can be later than 20:00.
+   */
+  const startTick = useCallback(() => {
+    clearTick();
+    tickRef.current = window.setInterval(() => {
+      const elapsed = performance.now() - startedAtRef.current;
+      setElapsedMs(elapsed);
+      // `true`: this tick only runs while recording. Every exit from
+      // "recording" (seal, interruption, stop, cancel) clears it first.
+      if (!takeCapStatus(elapsed, true).reached) return;
+      seal();
+      reportFailure(
+        new Error(
+          `The take reached the ${TAKE_CAP_MS / 60_000}-minute cap and was sealed and saved (#1005)`
+        ),
+        "recorder-take-cap"
+      );
+    }, 100);
+  }, [clearTick, seal]);
 
   const start = useCallback(async (): Promise<boolean> => {
     if (!supported) {
@@ -674,6 +746,7 @@ export function useRecorder(): UseRecorder {
       setElapsedMs(0);
       // The ring may advance from the next rAF on — set before the state edge.
       recordingRef.current = true;
+      takeOpenRef.current = true;
       setState("recording");
 
       startTick();
@@ -732,6 +805,7 @@ export function useRecorder(): UseRecorder {
     // to the array rather than to the ref — see `start()`.
     const generation = generationRef.current;
     const chunks = chunksRef.current;
+    takeOpenRef.current = false;
     const stream = streamRef.current;
     // OWN the VU tap exactly as the stream is owned (below): steal it into a
     // local and null the ref. Two flush-window races this closes (Frank + George
@@ -951,9 +1025,8 @@ export function useRecorder(): UseRecorder {
       return {
         samples: null,
         // An empty seal after the flush arm threw is the engine's failure,
-        // not the translator's silence — the same code `stopRecording`'s
-        // backstop uses.
-        error: current ? (flushThrew ? "unfinished" : "silence") : null,
+        // not the translator's silence — see `classifyEmptySeal` (#745).
+        error: classifyEmptySeal(flushThrew, current),
         blob: null, // nothing was captured — no bytes to keep
       };
     }
@@ -1001,27 +1074,17 @@ export function useRecorder(): UseRecorder {
       void resumeAudioContext().catch((cause: unknown) => {
         console.error("Could not resume the audio context", cause);
       });
-      try {
-        const samples = await decodeToCanonical(blob);
-        // A decode to zero samples yields no usable take. On the RETRY path this
-        // is NOT proven silence the way it is for `stop()`: the bytes are held
-        // only because the FIRST decode THREW, so a later zero-sample decode is
-        // ambiguous, and dropping the held take on it would lose the only copy
-        // (George R3 G-1). So this is just another retry failure — the caller
-        // keeps the bytes and surfaces the message; it never drops them.
-        if (samples.length === 0) {
-          return { samples: null, error: "silence" };
-        }
-        return { samples, error: null };
-      } catch {
-        return { samples: null, error: "undecodable" };
-      }
+      // The empty-vs-throw choice, and why a zero-sample re-decode is not
+      // proven silence here the way it is on `stop()`, are `decodeRetry`'s
+      // (#745). The caller keeps the bytes on every failure.
+      return decodeRetry(() => decodeToCanonical(blob));
     },
     []
   );
 
   const cancel = useCallback(() => {
     generationRef.current++;
+    takeOpenRef.current = false;
     clearTick();
     // Stop the live-scope push before the stream is torn down (releaseStream
     // nulls the tap too, but keep the flag consistent with the other exits).
@@ -1084,10 +1147,12 @@ export function useRecorder(): UseRecorder {
     stop,
     retryDecode,
     cancel,
+    seal,
     readLevel,
     readMeterAvailable,
     readScope,
     peekScope,
     meterFailed,
+    takeCap: takeCapStatus(elapsedMs, state === "recording"),
   };
 }

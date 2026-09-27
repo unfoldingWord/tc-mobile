@@ -59,8 +59,15 @@ export function mountInteractive(): InteractiveMount {
     root,
     container,
     teardown() {
-      dom.window.close();
-      vi.unstubAllGlobals();
+      // try/finally: the same leak #907 item 2 closed for the caller's own
+      // unmount, one frame down. If `dom.window.close()` throws, the globals
+      // this mount stubbed must still be unstubbed, or they leak into the
+      // next test in the same worker (#913 item 1).
+      try {
+        dom.window.close();
+      } finally {
+        vi.unstubAllGlobals();
+      }
     },
   };
 }

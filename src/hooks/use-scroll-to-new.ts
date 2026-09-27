@@ -60,8 +60,11 @@ export interface ScrollToNew<Id> {
    *   screen has an overlay up and the list is `inert` beneath it. The armed
    *   target is KEPT for the commit that lifts it; see `lib/a11y/pending-reveal`
    *   for why spending it instead is the #364 defect rather than a small bug.
+   *   Required, not defaulted: a default of `false` would make the #364
+   *   failure the result of writing less code, so each screen states its
+   *   hold policy at its own call site.
    */
-  reveal: (focusHeld?: boolean) => void;
+  reveal: (focusHeld: boolean) => void;
 }
 
 /**
@@ -139,7 +142,7 @@ export function useScrollToNew<Id>(focusSelector: string): ScrollToNew<Id> {
   );
 
   const reveal = useCallback(
-    (focusHeld = false) => {
+    (focusHeld: boolean) => {
       const plan = planReveal(pending.current, focusHeld);
       pending.current = plan.rest;
       // Through the two accessors above, not a second hand-written

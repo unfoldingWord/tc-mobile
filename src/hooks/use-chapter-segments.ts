@@ -5,11 +5,16 @@ import { requestTranscodeSweep } from "./finish-transcode";
 import { reportFailure } from "./report-failure";
 import { failureKey, type FailureKey } from "./save-failure";
 import { computePeaks } from "@/lib/audio/peaks";
+import { coverColourHex, resolveCoverKey } from "@/lib/cover-colour";
 import {
   addSegment as addSegmentToChapter,
+  deleteSegment as deleteSegmentInStore,
   getBook,
   getChapter,
+  assertReorderTarget,
   getSegmentsOfChapter,
+  moveSegment as moveSegmentInStore,
+  moveToIndex,
   renameChapter as renameChapterInStore,
   renameSegment as renameSegmentInStore,
 } from "@/lib/storage/books";
@@ -100,13 +105,26 @@ async function loadSegmentRow(segment: Segment): Promise<SegmentRow> {
 /** The breadcrumb + rows a chapter needs, loaded together. */
 interface ChapterView {
   readonly bookName: string;
+  /**
+   * The book's resolved cover colour (#949, #957), or `null` when the
+   * chapter's book could not be read (the same race `bookName`'s `?? ""`
+   * fallback already covers). Resolved with the exact function
+   * `books-screen.tsx`'s row uses — {@link resolveCoverKey} — so a book with
+   * no chosen colour gets the same id-derived fallback the shelf shows, not
+   * an absent square: there is no "no colour" state to draw, only "no book
+   * to read one from" at all (the `null` case here, which the O4 sheet head
+   * treats as "not threaded").
+   */
+  readonly bookCoverHex: string | null;
   readonly chapterNumber: number;
   /** The facilitator's passage label, or null ⇒ show "Chapter {number}" (#264). */
   readonly chapterName: string | null;
   readonly rows: SegmentRow[];
 }
 
-async function loadChapterView(chapterId: ChapterId): Promise<ChapterView> {
+export async function loadChapterView(
+  chapterId: ChapterId
+): Promise<ChapterView> {
   const chapter = await getChapter(chapterId);
   if (!chapter) throw new Error(`No such chapter: ${chapterId}`);
   const book = await getBook(chapter.bookId);
@@ -122,10 +140,109 @@ async function loadChapterView(chapterId: ChapterId): Promise<ChapterView> {
   }
   return {
     bookName: book?.name ?? "",
+    bookCoverHex: book
+      ? coverColourHex(
+          resolveCoverKey({ id: book.id, coverColourKey: book.coverColourKey })
+        )
+      : null,
     chapterNumber: chapter.number,
     chapterName: chapter.name,
     rows,
   };
+}
+
+/**
+ * Move one segment row to an absolute position, renumbering densely (#953).
+ *
+ * The optimistic half of `moveSegment` below, and the replay a racing load
+ * applies (see `pendingMoves`). `toIndex` means what it means to the store's
+ * `moveSegment` — a position among the rows the screen shows, which are the
+ * chapter's resolvable segments — and goes through the same `moveToIndex`,
+ * so the patch and the write cannot disagree about where the row lands.
+ * `ordinal` becomes position + 1, the DRI's "Renumber" pick, which is the
+ * `index` the store writes. Returns `rows` itself when nothing moves.
+ */
+export function patchMovedSegment(
+  rows: readonly SegmentRow[],
+  segmentId: SegmentId,
+  toIndex: number
+): SegmentRow[] {
+  const from = rows.findIndex((r) => r.segmentId === segmentId);
+  if (from === -1) return rows as SegmentRow[]; // stale row
+  const moved = moveToIndex(rows, from, toIndex);
+  if (moved.every((row, i) => row === rows[i])) return rows as SegmentRow[];
+  return moved.map((row, i) =>
+    row.ordinal === i + 1 ? row : { ...row, ordinal: i + 1 }
+  );
+}
+
+/**
+ * `rows` with `segmentId`'s row removed and the rest renumbered densely
+ * (#590) — the optimistic half of `deleteSegment` below, the delete twin of
+ * `patchMovedSegment` above. Returns `rows` itself when the row is not
+ * present (a stale call — nothing to remove or renumber).
+ */
+export function patchDeletedSegment(
+  rows: readonly SegmentRow[],
+  segmentId: SegmentId
+): SegmentRow[] {
+  const next = rows.filter((r) => r.segmentId !== segmentId);
+  if (next.length === rows.length) return rows as SegmentRow[];
+  return next.map((row, i) =>
+    row.ordinal === i + 1 ? row : { ...row, ordinal: i + 1 }
+  );
+}
+
+/**
+ * `rows` put into the order `segments` gives, each row's ordinal taken from
+ * the segment's stored `index` — how a reorder brings a row list back in line
+ * with what the store actually holds (after a landed move, or after a failed
+ * one rolled back). Every other field is the row's own. A row the store did
+ * not return keeps its place after the returned ones rather than vanishing:
+ * this function reorders, it is not the place a row gets dropped.
+ */
+export function applySegmentOrder(
+  rows: readonly SegmentRow[],
+  segments: readonly Pick<Segment, "id" | "index">[]
+): SegmentRow[] {
+  const byId = new Map(rows.map((r) => [r.segmentId, r] as const));
+  const ordered = segments.flatMap((s) => {
+    const row = byId.get(s.id);
+    if (!row) return [];
+    byId.delete(s.id);
+    return [row.ordinal === s.index ? row : { ...row, ordinal: s.index }];
+  });
+  return [...ordered, ...byId.values()];
+}
+
+/**
+ * A reorder this hook applied optimistically whose write has not landed yet,
+ * replayed over a racing load and over a landed move's store order (see
+ * `pendingMoves`).
+ */
+interface PendingMove {
+  readonly segmentId: SegmentId;
+  readonly toIndex: number;
+}
+
+/**
+ * The order the store returned for the most recent move that landed, and the
+ * load generation current when it did (see `landedOrder`).
+ */
+interface LandedOrder {
+  readonly order: readonly Pick<Segment, "id" | "index">[];
+  readonly asOfGen: number;
+}
+
+/** `rows` with each still-in-flight move replayed over it, in call order. */
+function replayMoves(
+  rows: SegmentRow[],
+  moves: readonly PendingMove[]
+): SegmentRow[] {
+  return moves.reduce(
+    (out, m) => patchMovedSegment(out, m.segmentId, m.toIndex),
+    rows
+  );
 }
 
 type FieldStamps = Map<keyof SegmentRow, { value: unknown; asOfGen: number }>;
@@ -156,6 +273,7 @@ function stamp(
  */
 export function useChapterSegments(chapterId: ChapterId) {
   const [bookName, setBookName] = useState("");
+  const [bookCoverHex, setBookCoverHex] = useState<string | null>(null);
   const [chapterNumber, setChapterNumber] = useState(0);
   const [chapterName, setChapterName] = useState<string | null>(null);
   const [rows, setRows] = useState<SegmentRow[]>([]);
@@ -210,6 +328,58 @@ export function useChapterSegments(chapterId: ChapterId) {
   // `chapterId` changing clears the whole map — none of its entries can apply
   // to a different chapter's segments.
   const rowOverrides = useRef(new Map<SegmentId, FieldStamps>());
+  // The same per-generation rule, for ORDER rather than a field (#953). A
+  // reorder is not a field on one row, so `rowOverrides` cannot carry it; a
+  // load already in flight when a drop lands read the pre-move order, and
+  // installing it would snap the row back. Each move is recorded here, in the
+  // order it was made, while its write is in flight: EVERY load replays it —
+  // one that starts during the write may still read the pre-move order. A
+  // failed move is withdrawn outright; it never happened.
+  //
+  // A LANDED move is not replayed: absolute moves do not commute, so
+  // replaying two landed moves over a read that already holds both reorders
+  // it wrongly (Frank round 1 on #953: [A,B,C], A->1 then B->2 is [A,C,B],
+  // replayed over itself it is [C,A,B]). A load cannot tell whether its read
+  // came before, between or after the moves. Instead `landedOrder` keeps the
+  // order the store returned for the last move OR DELETE to land (#590 reuses
+  // it rather than inventing a second copy) and the generation current then:
+  // a load of that generation or older (it may have read any state up to
+  // that one) takes that order over its own read, and a load that started
+  // later retires it — the same rule `rowOverrides` follows.
+  // `applySegmentOrder` keeps a row the landed order does not name, so a row
+  // added in the meantime is not lost from the list — which is also why a
+  // landed DELETE needs `landedDeletes` below as well: the deleted id must be
+  // dropped, not kept, and `applySegmentOrder` alone only ever keeps.
+  const pendingMoves = useRef<PendingMove[]>([]);
+  const landedOrder = useRef<LandedOrder | null>(null);
+  // Segment ids this hook has optimistically removed (#590) whose store write
+  // is still IN FLIGHT. Unlike a reorder, a deleted row cannot be "replayed"
+  // over a racing load's read — there is nothing left to reposition — so a
+  // load that started before the write lands, or one already in flight, drops
+  // any id still in this set from its own read instead. Cleared on both
+  // outcomes: a failed delete never happened, and a landed one moves to
+  // `landedDeletes` below rather than simply vanishing from tracking, because
+  // clearing it here alone leaves exactly the gap `rowOverrides`'/
+  // `landedOrder`'s generation stamps exist to close: a load that read the
+  // PRE-delete state, holding open past the moment this set already emptied
+  // (the write landed before that load resolved), would otherwise merge the
+  // deleted row straight back in with nothing left to say it shouldn't.
+  const pendingDeletes = useRef(new Set<SegmentId>());
+  // A delete that HAS landed, and the load generation current when it did —
+  // `rowOverrides`' per-field stamp, generalised to "this id no longer
+  // exists" rather than "this field now reads differently". A load of that
+  // generation or older may have read any state up to and including the
+  // pre-delete one, so it still excludes the id; a load that started later
+  // reads the store directly and never meets the id at all, so the entry
+  // retires the same way `rowOverrides`' fields do — by generation order, not
+  // by re-checking equality (there is nothing to re-check: once deleted, an
+  // id never comes back). `chapterId` changing clears it, same as the two
+  // maps above.
+  const landedDeletes = useRef(new Map<SegmentId, number>());
+  // Counts moves and deletes that landed. A failed move's restore read
+  // compares it across its await: if one landed meanwhile, its order is newer
+  // than (or torn against — the read is not one transaction) the restore's.
+  const landedCount = useRef(0);
   const loadGen = useRef(0);
   const rowOverridesChapter = useRef(chapterId);
 
@@ -220,12 +390,17 @@ export function useChapterSegments(chapterId: ChapterId) {
     if (rowOverridesChapter.current !== chapterId) {
       rowOverridesChapter.current = chapterId;
       rowOverrides.current.clear();
+      pendingMoves.current = [];
+      landedOrder.current = null;
+      pendingDeletes.current.clear();
+      landedDeletes.current.clear();
     }
     void (async () => {
       try {
         const view = await loadChapterView(chapterId);
         if (cancelled) return;
         setBookName(view.bookName);
+        setBookCoverHex(view.bookCoverHex);
         setChapterNumber(view.chapterNumber);
         setChapterName(view.chapterName);
         // Retire every override this load started after — including ids it
@@ -235,15 +410,39 @@ export function useChapterSegments(chapterId: ChapterId) {
             if (gen > s.asOfGen) fields.delete(key);
           if (fields.size === 0) rowOverrides.current.delete(id);
         }
-        setRows(
-          view.rows.map((r) => {
+        if (landedOrder.current && gen > landedOrder.current.asOfGen) {
+          landedOrder.current = null;
+        }
+        // Retire every landed delete this load started after, the same rule
+        // the loop above applies to `rowOverrides` (#590). A load of an OLDER
+        // generation may have read the pre-delete state and still needs the
+        // exclusion below; one that started later reads the store directly
+        // and the id is simply absent from `view.rows` on its own.
+        for (const [id, asOfGen] of landedDeletes.current) {
+          if (gen > asOfGen) landedDeletes.current.delete(id);
+        }
+        // A row this hook is deleting — still in flight, or landed but not
+        // yet safe to forget (see `pendingDeletes`/`landedDeletes` above) — is
+        // dropped from every load's read, not merged: there is no field to
+        // overlay onto a row that is not coming back, and a load that read
+        // stale (pre-delete) state has no way to know that on its own.
+        let merged = view.rows
+          .filter(
+            (r) =>
+              !pendingDeletes.current.has(r.segmentId) &&
+              !landedDeletes.current.has(r.segmentId)
+          )
+          .map((r) => {
             const fields = rowOverrides.current.get(r.segmentId) ?? [];
             const out = { ...r };
             for (const [key, s] of fields)
               Object.assign(out, { [key]: s.value });
             return out;
-          })
-        );
+          });
+        if (landedOrder.current) {
+          merged = applySegmentOrder(merged, landedOrder.current.order);
+        }
+        setRows(replayMoves(merged, pendingMoves.current));
         setError(null);
         setStaleTarget(false);
         setLoaded(true);
@@ -425,6 +624,172 @@ export function useChapterSegments(chapterId: ChapterId) {
     []
   );
 
+  /**
+   * Move a segment to an absolute position in this chapter (#953) — the
+   * storage half of press-and-hold reorder; the gesture is a later PR.
+   *
+   * Optimistic, like every mutation here, and never a `reload()` on success:
+   * a reorder moves no audio, so re-walking the chapter's PCM for peaks would
+   * be the cost this hook's docblock rules out. The row moves in THIS turn
+   * (`patchMovedSegment`) and is recorded in `pendingMoves` so a load that
+   * read the pre-move order — already in flight, or started during the
+   * write — replays it rather than snapping it back. Once the write lands,
+   * the move leaves `pendingMoves` and the order the store returned becomes
+   * `landedOrder`, stamped with the generation current then (the reason
+   * `renameSegment` stamps after its await). The rows are aligned with that
+   * order, which is the truth even if a second copy had moved something, and
+   * any move still in flight is replayed on top, so an earlier move landing
+   * does not paint over a later drop (George round 1 on #953).
+   *
+   * A non-integer target is a caller bug: it is refused before any state is
+   * touched and reported, rather than thrown from inside a React updater.
+   *
+   * On failure the write rolled back whole, so the stored order is the one
+   * from before the drop: the move is withdrawn from `pendingMoves` and the
+   * rows are put back in the stored order, read from the segment rows alone
+   * (no audio), with any move still in flight replayed on top. Only if that
+   * read ALSO fails does it fall back to `reload()`,
+   * which reads the same order the expensive way. A vanished segment is the
+   * stale-target case, as for a rename; anything else goes to the funnel as
+   * `"segment-reorder"` and nowhere else — the row returning to where it was
+   * is the signal, and nothing extra appears on screen (#172).
+   *
+   * Resolves `true` when the move landed (a no-op included), `false` if not.
+   */
+  const moveSegment = useCallback(
+    async (segmentId: SegmentId, toIndex: number): Promise<boolean> => {
+      try {
+        assertReorderTarget(toIndex);
+      } catch (cause) {
+        reportFailure(cause, "segment-reorder");
+        return false;
+      }
+      const move: PendingMove = { segmentId, toIndex };
+      pendingMoves.current = [...pendingMoves.current, move];
+      setRows((rs) => patchMovedSegment(rs, segmentId, toIndex));
+      try {
+        const order = await moveSegmentInStore(segmentId, toIndex);
+        pendingMoves.current = pendingMoves.current.filter((m) => m !== move);
+        landedOrder.current = { order, asOfGen: loadGen.current };
+        landedCount.current += 1;
+        // Snapshot now: a move made after this point queues its own patch
+        // behind this updater, and must not be replayed twice.
+        const inFlight = pendingMoves.current;
+        setRows((rs) => replayMoves(applySegmentOrder(rs, order), inFlight));
+        return true;
+      } catch (cause) {
+        pendingMoves.current = pendingMoves.current.filter((m) => m !== move);
+        if (isMissingSegmentFailure(cause, segmentId)) {
+          setStaleTarget(true);
+          setError(null);
+        } else {
+          reportFailure(cause, "segment-reorder");
+        }
+      }
+      // Put the rows back in the order the store holds — the pre-drop order,
+      // since the write rolled back whole. Reached only on failure: the
+      // success path returned above.
+      const landedBefore = landedCount.current;
+      try {
+        const stored = await getSegmentsOfChapter(chapterId);
+        // A move that landed during this read already installed its own
+        // order (applySegmentOrder drops this failed drop's patch with it),
+        // and that order is newer than this read. Installing this one would
+        // paint the rows back over it (Frank round 2 on #953).
+        if (landedCount.current !== landedBefore) return false;
+        // The freshest order known: a racing load that began before this read
+        // takes it rather than an older landed order.
+        landedOrder.current = { order: stored, asOfGen: loadGen.current };
+        const inFlight = pendingMoves.current;
+        setRows((rs) => replayMoves(applySegmentOrder(rs, stored), inFlight));
+      } catch {
+        // Not swallowed: `reload()` reads the same order the expensive way,
+        // and if the database is broken enough to fail that too, the load's
+        // own failure path reports it ("chapter-load") and shows its Notice.
+        reload();
+      }
+      return false;
+    },
+    [chapterId, reload]
+  );
+
+  /**
+   * Delete a segment — the row itself, not only its audio (#590, PR1: the
+   * storage and hook layer; the menu entry is a later PR).
+   *
+   * Optimistic, like every mutation here: the row is removed and the
+   * remaining rows renumbered in THIS turn (`patchDeletedSegment`), and
+   * `segmentId` is recorded in `pendingDeletes` so a load already in flight —
+   * or one that starts before the write lands — drops the row from its own
+   * read rather than repainting it back (see `pendingDeletes`'s docblock).
+   * The id leaves the set the moment the write settles, success or failure.
+   *
+   * On success the rows are reconciled against the store's own renumbered
+   * order with `applySegmentOrder` — the same reconciliation `moveSegment`
+   * makes, which carries every field of a row it is given and only realigns
+   * order and ordinal, so a local edit made to a SURVIVING row (a rename, a
+   * finished toggle) since the optimistic patch is not lost.
+   *
+   * On failure the write rolled back whole, so the segment — and its audio —
+   * is still there. Restoring the exact row would need its audio-derived
+   * fields (`hasClip`, `peaks`, `durationMs`), which a bare `Segment` read
+   * cannot supply, and a cached copy of the row this hook already had could
+   * itself be stale. Rather than either, the restore is a `reload()`: correct
+   * over cheap, for a path a two-tap confirm makes rare (unlike a reorder
+   * drag, which `moveSegment` above optimizes for exactly because it isn't).
+   * A vanished CHAPTER (the parent gone under this screen, #378) is the
+   * stale-target case, exactly like every other mutation here; anything else
+   * goes to the funnel as `"segment-delete"` and nowhere else (#172) — the
+   * row reappearing after the reload is the signal.
+   *
+   * Resolves `true` when the delete landed (an already-gone segment included
+   * — the store's own idempotency, `lib/storage/books.ts`'s `deleteSegment`),
+   * `false` otherwise.
+   */
+  const deleteSegment = useCallback(
+    async (segmentId: SegmentId): Promise<boolean> => {
+      pendingDeletes.current.add(segmentId);
+      setRows((rs) => patchDeletedSegment(rs, segmentId));
+      try {
+        const order = await deleteSegmentInStore(segmentId);
+        pendingDeletes.current.delete(segmentId);
+        // Both recorded AFTER the await, the same reason `renameSegment`/
+        // `moveSegment` stamp there: a load that began DURING the write may
+        // still read the pre-delete state, so it must keep excluding this id
+        // (`landedDeletes`) even though the in-flight guard above has already
+        // let it go, AND still take the renumbered order over its own read
+        // (`landedOrder`, shared with `moveSegment` — a stale read's surviving
+        // rows carry their PRE-delete ordinals, and `applySegmentOrder` is
+        // what corrects those; the deleted id has already been dropped by the
+        // `landedDeletes` filter above by the time this runs, so there is no
+        // leftover for `applySegmentOrder` to wrongly keep).
+        landedDeletes.current.set(segmentId, loadGen.current);
+        // `null` is the store's no-op (already gone): no order was read, so
+        // it must not replace the order an earlier landed write returned.
+        // A real delete also counts in `landedCount`, so a failed move's
+        // older restore read cannot paint over this renumbering.
+        if (order !== null) {
+          landedOrder.current = { order, asOfGen: loadGen.current };
+          landedCount.current += 1;
+          setRows((rs) => applySegmentOrder(rs, order));
+        }
+        setError(null);
+        return true;
+      } catch (cause) {
+        pendingDeletes.current.delete(segmentId);
+        if (isMissingChapterFailure(cause, chapterId)) {
+          setStaleTarget(true);
+          setError(null);
+          return false;
+        }
+        reportFailure(cause, "segment-delete");
+        reload();
+        return false;
+      }
+    },
+    [chapterId, reload]
+  );
+
   const eraseRow = useCallback((segmentId: SegmentId) => {
     // Erase makes ONE row never-recorded and touches no other clip, so patch it
     // in place — exactly like addSegment/setFinished — rather than reload() the
@@ -455,6 +820,7 @@ export function useChapterSegments(chapterId: ChapterId) {
 
   return {
     bookName,
+    bookCoverHex,
     chapterNumber,
     chapterName,
     rows,
@@ -469,5 +835,7 @@ export function useChapterSegments(chapterId: ChapterId) {
     eraseRow,
     renameChapter,
     renameSegment,
+    moveSegment,
+    deleteSegment,
   };
 }

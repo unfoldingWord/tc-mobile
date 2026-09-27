@@ -134,6 +134,12 @@ describe("consumeRecorderEntry's \"issue\" row honours beginBack's refusal (#838
       handle.commitCloseRecorder(false);
     });
     control.refuse = false;
+    // Count only the traversal goBack() itself issues (George r3 on #838
+    // item 5, #854): a cumulative count since mount could pass on a
+    // compensating pair of bugs — an errant back() from the refused row
+    // above plus a stale latch swallowing this goBack() — so the count is
+    // taken fresh right before the step under test.
+    backSpy.mockClear();
     await act(async () => {
       handle.goBack();
     });

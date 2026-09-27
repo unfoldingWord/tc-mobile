@@ -40,7 +40,7 @@ it. <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor)
 1. **Open the download link** we send you in your phone's web browser, or
    scan the QR code we post with it. Every tester build is listed at
    <https://github.com/unfoldingWord/tc-mobile/releases> — open the newest
-   one marked **Pre-release** and tap `app-release.apk`. <!-- source: each tester build is a pre-release tagged android-release-vX.Y.Z with app-release.apk attached, from android-release-v0.2.3 on; the repo is public so the asset link needs no login -->
+   one marked **Pre-release** and tap `app-release.apk`. <!-- source: each tester build is a pre-release with app-release.apk attached, tagged tester-build-vX.Y.Z from tester-build-v0.2.12 on (#629; docs/native/README.md "Keep existing"), and android-release-vX.Y.Z from android-release-v0.2.3 through android-release-v0.2.12, which stay up so shared links work; the repo is public so the asset link needs no login -->
 2. **Download the file.** It ends in `.apk` — that is the app. **Some
    browsers warn about it, or stop it, before it even finishes downloading** —
    an `.apk` is not a document or a picture, so the browser treats it with

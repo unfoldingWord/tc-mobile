@@ -173,7 +173,10 @@ export function restartLabel(
   armed: boolean,
   alsoCutAudio = false
 ): string {
-  if (!armed) return "Restart the app";
+  // `strings.appReload`, not a second literal of it (#805): the unarmed label
+  // names the same reload the crash screen's button does, and the label gate
+  // in `tests/strings-one-table.test.ts` reads every whole literal.
+  if (!armed) return strings.appReload;
   return `Tap again to restart and lose ${lossPhrase(subject, alsoCutAudio)}`;
 }
 

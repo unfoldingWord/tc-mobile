@@ -100,7 +100,12 @@ export function saveFailureKind(cause: unknown): SaveFailureKind {
  * these keys select live in `strings.ts` — the keys themselves are a hooks
  * concern, same split `SaveFailureKind` already follows.
  */
-export type FailureKey = "loadFailed" | "saveFailed" | "eraseFailed" | "noRoom";
+export type FailureKey =
+  | "loadFailed"
+  | "saveFailed"
+  | "eraseFailed"
+  | "deleteSegmentFailed"
+  | "noRoom";
 
 /**
  * Map a caught failure to one of {@link FailureKey}: `"noRoom"` whenever

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -115,6 +115,39 @@ describe("the light theme is reachable (#171)", () => {
     readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
 
   /**
+   * The same file with its comments removed - block and line - so an assertion
+   * about the CODE cannot be satisfied by prose (George round 12, #623).
+   *
+   * AGENTS.md records the capture-by-comment trap in one direction: a comment
+   * naming a string a test greps for can CAPTURE that test (#529 round 3).
+   * This is the other direction, and the mount tripwire had it. Comments are
+   * part of the file, so a later edit that parked the JSX inside a JSX comment
+   * would still have been counted as a mount. No comment in the tree contains
+   * that string today, so the counts were honest as written; this closes the
+   * shape before it can become true.
+   *
+   * What each pass removes, since the two are not symmetric. The block pass is
+   * unanchored, so a block-comment opener inside a string literal would start a
+   * cut. The line pass is anchored to the start of a line, so it removes only a
+   * line whose first non-whitespace is a line-comment marker: one TRAILING code
+   * on the same line survives, and so does a marker inside a string. Trailing
+   * comments do occur in the counted files; none of them names a mount, which
+   * is the same fact the paragraph above rests on. A real parser would be more
+   * code than the thing it protects.
+   */
+  const code = (rel: string) =>
+    read(rel)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^[ \t]*\/\/.*$/gm, "");
+
+  /** Every file under `dir`, recursively. Used by the subscriber sweep below. */
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(dir, entry.name);
+      return entry.isDirectory() ? walk(full) : [full];
+    });
+
+  /**
    * The global menu's opening tag, matched by the props this file is actually
    * about — `open={menuOpen}` and a close handler of some kind — rather than by
    * one exact expression. The two cases below both need to FIND that tag; what
@@ -147,12 +180,14 @@ describe("the light theme is reachable (#171)", () => {
   });
 
   it("the toggle is mounted in the global menu, not just written", () => {
-    // The hook could exist and be called by nothing. `books-screen.tsx` holds
-    // the only global menu (its reachability from the Segments screen is a
-    // separate question, #149).
-    const screen = read("src/components/books-screen.tsx");
-    expect(screen).toMatch(/useTheme\(\)/);
-    expect(screen).toMatch(/onClick=\{theme\.toggle\}/);
+    // The hook could exist and be called by nothing. Since #149 the control
+    // itself is `ThemeControl` — one component mounted in three menus — so the
+    // wiring lives in that file and the MOUNT is what each screen shows.
+    const control = read("src/components/theme-control.tsx");
+    expect(control).toMatch(/useTheme\(\)/);
+    expect(control).toMatch(/onClick=\{theme\.toggle\}/);
+    const screen = code("src/components/books-screen.tsx");
+    expect(screen).toMatch(/<ThemeControl\s*\/>/);
     // A `<Menu>` with CHILDREN — before this it was a self-closing empty panel.
     //
     // The close handler is matched loosely on purpose (#452 PR3): it was the
@@ -173,12 +208,15 @@ describe("the light theme is reachable (#171)", () => {
     // switch/AT user who activates what they landed on flips the theme
     // instead (George R1 P2 on #457). The panel is mounted only while
     // `failureCount > 0`, so on a quiet phone the toggle is still first.
-    const screen = read("src/components/books-screen.tsx");
+    const screen = code("src/components/books-screen.tsx");
     const menu = screen.search(new RegExp(GLOBAL_MENU_OPEN_TAG));
     expect(menu).toBeGreaterThan(-1);
     const body = screen.slice(menu);
     const panel = body.indexOf("<FailureLogPanel");
-    const toggle = body.indexOf("onClick={theme.toggle}");
+    // `<ThemeControl`, with the angle bracket, so a prose mention of the
+    // component in a nearby comment can never stand in for the mount — the
+    // capture-by-comment trap AGENTS.md records from #529 round 3.
+    const toggle = body.indexOf("<ThemeControl");
     expect(panel, "FailureLogPanel is not in the global menu").toBeGreaterThan(
       -1
     );
@@ -187,6 +225,165 @@ describe("the light theme is reachable (#171)", () => {
       panel,
       "the theme toggle is mounted ahead of the failure-log panel"
     ).toBeLessThan(toggle);
+  });
+
+  it("follows the translator into a chapter and into the recorder (#149)", () => {
+    // WHAT THIS IS AND IS NOT. The behavioural claim — that the toggle is
+    // reachable from the chapter `≡` and the recorder `≡` and repaints the
+    // shipped cascade from each — is `e2e/theme-toggle.spec.ts`, in real
+    // Chromium against `dist/`. This is the cheap Node companion that fails
+    // fast when a mount is DELETED, which is the way this regresses: both
+    // screens are large, and neither reviewer's eye is a gate.
+    //
+    // COUNTED, not merely present. The recorder menu has two mutually
+    // exclusive branches — record mode and edit mode — and each mounts the
+    // toggle, so a `toMatch` over the file passes with one of them deleted:
+    // the first draft of this case was mutated that way and survived. The
+    // e2e spec drives the sheet in RECORD mode only, so the edit-mode mount
+    // has no other gate at all.
+    //
+    // Matched as `<ThemeControl`, never as the bare identifier, for the
+    // comment-capture reason above.
+    const mounts = (file: string) =>
+      code(file).match(/<ThemeControl\s*\/>/g)?.length ?? 0;
+    // The chapter `≡`'s one action branch (the stale and rename branches are
+    // transient sub-states with no action list of their own).
+    expect(mounts("src/components/segments-screen.tsx")).toBe(1);
+    // Record mode and edit mode — in `recorder-menu.tsx` since #662 lifted the
+    // recorder's `≡` out of `recorder.tsx` into its own component. The count
+    // follows the menu rather than the screen, and `recorder.tsx` is asserted
+    // to hold NONE, so a half-finished move that leaves one mount behind in
+    // the screen fails here instead of silently double-mounting.
+    expect(mounts("src/components/recorder-menu.tsx")).toBe(2);
+    expect(mounts("src/components/recorder.tsx")).toBe(0);
+
+    // ORDER, not just presence (George, this head). The e2e focus assertion
+    // cannot catch a reorder — in the empty state the toggle is the only
+    // actionable row wherever it sits — and an earlier version of this file's
+    // companion comment credited THIS test with holding order when it only
+    // counted. It holds it now.
+    //
+    // Last is the position that matters: `Menu` lands open-edge focus on the
+    // first ACTIONABLE child, so while Edit/Done and the chapter's Rename are
+    // actionable they must come first, and the toggle must not displace them.
+    // The Books case below already pins its own order this way.
+    // Checked per BRANCH, which took three tries and two failed mutations to
+    // get right, both recorded on the PR. `lastIndexOf` over the whole file
+    // passed with the record branch's mount above Edit. So did a per-`</Menu>`
+    // check, because `recorder-menu.tsx` is ONE `<Menu>` holding a ternary —
+    // its two row sets share a single closing tag.
+    //
+    // So each mount is checked against the end of ITS OWN branch: the first
+    // of `) : (`, `)}` or `</Menu>` that follows it. No row may open in
+    // between. `Menu` lands open-edge focus on the first ACTIONABLE child, so
+    // while Edit/Done and the chapter's Rename are actionable they must come
+    // first and the toggle must not displace them.
+    const toggleClosesEveryBranch = (file: string) => {
+      const body = code(file);
+      const mounts = [...body.matchAll(/<ThemeControl\b/g)].map((m) => m.index);
+      expect(mounts.length, `no ThemeControl mount in ${file}`).toBeGreaterThan(
+        0
+      );
+      return mounts.every((mount) => {
+        const rest = body.slice(mount);
+        const ends = [") : (", ")}", "</Menu>"]
+          .map((token) => rest.indexOf(token))
+          .filter((at) => at !== -1);
+        expect(
+          ends.length,
+          `no branch end after a mount in ${file}`
+        ).toBeGreaterThan(0);
+        // `<ThemeControl` is not a substring of `<Control`, so the mount
+        // itself cannot satisfy this.
+        return rest.slice(0, Math.min(...ends)).indexOf("<Control") === -1;
+      });
+    };
+    expect(toggleClosesEveryBranch("src/components/recorder-menu.tsx")).toBe(
+      true
+    );
+    expect(toggleClosesEveryBranch("src/components/segments-screen.tsx")).toBe(
+      true
+    );
+
+    // And the other half of the claim, which the counts alone do NOT pin
+    // (George round 10, #623). The whole argument for mounting this control
+    // on a live take is that the SUBSCRIPTION stays in the leaf: a toggle
+    // re-renders that button, not the screen hosting the menu. Counting
+    // mounts cannot see a regression there — a later `useTheme()` in any of
+    // these screens would re-render that tree on every toggle and still leave
+    // every count above correct. The books case used to pin this incidentally,
+    // by requiring `useTheme()` in `books-screen.tsx`; that assertion left
+    // with the inline control it was written for, and nothing replaced it.
+    //
+    // So the absence is pinned directly — and SWEPT, not listed (George round
+    // 11, #623). A four-file ban was narrower than the sentence it sat under:
+    // `useLiveTheme(` does not match `/useTheme\(/`, and a subscription added
+    // in any file outside the list — a shared hook the recorder already calls,
+    // a new component — would re-render that tree on every toggle and leave
+    // every count and every named file green. A list cannot say "the one file
+    // allowed"; only a sweep with an allow-list can.
+    //
+    // So: walk all of `src/`, find every call site of either hook, and require
+    // the set to be exactly the allow-list. Adding a subscriber is then a
+    // deliberate edit to this list with a reason, which is the point — the
+    // canvases are allowed BECAUSE they must repaint on a token change
+    // (`waveform.tsx`, `live-scope.tsx`, George R2 P2 on #457); a screen or a
+    // menu is not, because that is the blast radius this control was factored
+    // to avoid.
+    //
+    // The sweep runs TWICE, over the same allow-list, because the two readings
+    // fail closed in opposite directions and neither covers both (George
+    // rounds 14 and 17 each named one half, and they conflict if you have to
+    // pick one).
+    //
+    //   raw  — catches an ADDED subscriber even in a file whose call the
+    //          comment stripper would have eaten. Were the sweep stripped-only,
+    //          a new subscriber that the stripper swallowed would drop out of
+    //          the set, the set would still match, and the gate would go green
+    //          on the thing it exists to catch.
+    //   code — catches a REMOVED subscriber whose call text survives in a
+    //          comment. Were the sweep raw-only, commenting out the only
+    //          `useLiveTheme()` in `live-scope.tsx` would leave it on the list
+    //          and the gate would stay green while the canvas silently stopped
+    //          repainting on a token change. Observed, not reasoned: that exact
+    //          mutation passed 21/21 before this second assertion existed.
+    //
+    // Both directions are a false GREEN, which is why neither reading is
+    // enough on its own and why this is two assertions rather than a choice.
+    const sweep = (source: (rel: string) => string) =>
+      walk(path.resolve(import.meta.dirname, "..", "src"))
+        .filter((file) => /\.tsx?$/.test(file))
+        // Normalised FIRST, so everything below compares forward slashes:
+        // `walk` joins with `path.sep` and `path.relative` yields `\` on
+        // win32. The previous version normalised only at the end, which left
+        // the exclusion below matching nothing there — `use-theme.ts` stayed
+        // in the set, its own `export function useTheme()` matched, and the
+        // gate failed on a correct tree (George, this head, catching the half
+        // of his own earlier win32 note that the first fix missed).
+        .map((file) =>
+          path
+            .relative(path.resolve(import.meta.dirname, ".."), file)
+            .split(path.sep)
+            .join("/")
+        )
+        // The hook module DEFINES both; its own `export function useTheme()` is
+        // not a subscription.
+        .filter((rel) => rel !== "src/hooks/use-theme.ts")
+        .filter((rel) =>
+          /\buseLiveTheme\(|\buseTheme\(/.test(
+            source(path.resolve(import.meta.dirname, "..", rel))
+          )
+        )
+        .sort();
+
+    const allowed = [
+      "src/components/live-scope.tsx",
+      "src/components/theme-control.tsx",
+      "src/components/waveform.tsx",
+    ];
+
+    expect(sweep(read)).toEqual(allowed);
+    expect(sweep(code)).toEqual(allowed);
   });
 
   it("is applied before React renders, not in an effect", () => {
@@ -301,11 +498,13 @@ describe("the light theme is reachable (#171)", () => {
     // A canvas painted once cannot observe a CSS-variable change — which is
     // exactly why `finished` sits in `Waveform`'s draw deps. `data-theme` is
     // a CSS-variable change of the same class (`--c-wave-stroke`, `--s-voice`,
-    // `--s-ink-faint`). Today `useTheme` is Books-only and `App` renders Books
-    // XOR Segments, so a toggle unmounts every canvas — but the moment the
-    // toggle is reachable from a screen with a `Waveform` or `LiveScope`
-    // mounted (#149), the bars keep the previous theme's amber/faint until
-    // `peaks`/`finished`/`active` happen to change (George R2 P2 on #457).
+    // `--s-ink-faint`). This used to be anticipatory — while the toggle was
+    // Books-only, `App` rendered Books XOR Segments, so a toggle unmounted
+    // every canvas and the subscription cost nothing yet. #149 made the
+    // toggle reachable from the chapter and recorder menus, so the case it
+    // was written for is now the ordinary one: without these subscriptions
+    // the bars would keep the previous theme's amber/faint until
+    // `peaks`/`finished`/`active` happened to change (George R2 P2 on #457).
     // So both draw effects subscribe to the live theme and list it.
     const hook = read("src/hooks/use-theme.ts");
     expect(hook).toMatch(/export function useLiveTheme\(\)/);

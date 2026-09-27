@@ -10,6 +10,8 @@ import { reportFailure } from "./report-failure";
 import { createShareHandoff } from "./share-handoff";
 import {
   HIDDEN,
+  carryFromPrepare,
+  type ShareCarry,
   type ShareGap,
   type ShareProgress,
   type ShareProgressEvent,
@@ -19,6 +21,7 @@ import {
   shareProgressWakeAt,
 } from "./share-progress";
 import {
+  type ShareRoute,
   type StagedShare,
   nativeShare,
   readShareEnvironment,
@@ -26,6 +29,7 @@ import {
   resolveProvesDelivery,
   selectShareRoute,
 } from "./share-target";
+import type { StepReporter } from "@/lib/export/chapter";
 
 /**
  * The two-gesture share flow, shared by Share Chapter and Share Book (B7, A4).
@@ -175,11 +179,61 @@ interface PreparedShare {
  * `null` when the run was cancelled part-way (`isCurrent()` went false). An
  * abort may also surface as a rejection — the flow ignores it once the run is
  * stale.
+ *
+ * `onStep` (#986) is how a builder reports its truthful step count — call it
+ * with `(done, total)` each time one item has really finished (a segment
+ * gathered, a chapter archived; the export functions take it directly). It
+ * is optional to call: a builder that never does leaves the busy phase with
+ * no count, exactly as before. The count covers the build only: on the native
+ * route `prepare` stages the built file after the builder returns, so the
+ * count can read `N of N` while that write is still running. The busy phase
+ * stays up until it settles. That staging is left off the count (#996), and
+ * how much it costs is not measured for either share — it cannot run in
+ * Node. The chunk arithmetic is all there is: at the encoder's 64 kbps, one
+ * 384 KiB bridge write holds about 0.8 minutes of audio. For a chapter that
+ * is a handful of writes after a seconds-long encode. For a BOOK zip it is
+ * about 1.2 writes per minute of the whole book (an hour of audio is about 74
+ * writes), all after the last chapter's step has already read `N of N`, and
+ * after the zip is finished; whether that is long enough to see is exactly
+ * what is unknown. The phone check on #974 is what says whether staging needs
+ * its own steps.
+ *
+ * Share Chapter's count now includes the encode (#996, `withEncodeSteps`), and
+ * either share may pass `skipped` (how many of `done` finished with no audio)
+ * and `items` (how many of `total` are items, when not all are).
  */
 type BuildShareFile = (
   isCurrent: () => boolean,
-  signal: AbortSignal
+  signal: AbortSignal,
+  onStep: StepReporter
 ) => Promise<PreparedShare | "nothing" | null>;
+
+/**
+ * The `onStep` a prepare hands its builder (#986): each call becomes one
+ * `step` event on the progress machine, but only while this run still owns
+ * the flow. `isCurrent` is read at CALL time — a run superseded by a menu
+ * close, `reset` or unmount can still have a gather in flight for a moment,
+ * and its late count must not land on a newer run's modal. The machine itself
+ * rejects a count that is out of range or runs backward (`share-progress.ts`).
+ * A `skipped` count and an `items` count (#996), and the counted items'
+ * `keys` (#1044), ride the same event when the builder gives them.
+ */
+export function stepReporter(
+  isCurrent: () => boolean,
+  dispatch: (event: ShareProgressEvent) => void
+): StepReporter {
+  return (done, total, skipped, items, keys) => {
+    if (!isCurrent()) return;
+    dispatch({
+      type: "step",
+      done,
+      total,
+      ...(skipped === undefined ? {} : { skipped }),
+      ...(items === undefined ? {} : { items }),
+      ...(keys === undefined ? {} : { keys }),
+    });
+  };
+}
 
 /**
  * What tap 1 arms for tap 2: the File (plus its native staged copy, if any)
@@ -223,6 +277,26 @@ export function classifyShareError(
       return hadActivation ? "failed" : "retry";
   }
   return "failed";
+}
+
+/**
+ * Whether `prepare()` should chain straight into `send()` once armed, rather
+ * than leaving the flow at `ready` for a second tap (#860). True only on the
+ * native route: the plugin opens the chooser as an Android Intent / a
+ * `UIActivityViewController`, which needs no user activation
+ * (`NativeShareSession.send`'s own docblock in `share-target.ts`), so a
+ * continuation with no live gesture can still open it. The web route keeps
+ * the two-gesture flow on purpose — `navigator.share` needs the transient
+ * activation a continuation after the encode does not carry, which is what
+ * `send()`'s own `retry` outcome exists to recover from.
+ *
+ * A pure, parameterised decision — the same shape `classifyShareError` and
+ * `resolveSendOutcome` below already use — so the branch it drives in
+ * `prepare()` is provable in Node without mounting the hook: flip the
+ * comparison and a wiring test in `share-flow.test.ts` dies.
+ */
+export function chainsToSend(route: ShareRoute): boolean {
+  return route === "native";
 }
 
 /**
@@ -386,8 +460,20 @@ export interface UseShareFlow {
   /**
    * Tap 1: run `build` to encode and stash the File for the send gesture. Never
    * rejects — a reason surfaces through `error`.
+   *
+   * On the NATIVE route this chains straight into `send()` once armed (#860,
+   * {@link chainsToSend}): the plugin needs no user activation, so one tap
+   * starts the busy overlay and ends in the outcome glyph, with no `ready`
+   * step and no second tap in between. Resolves to that chained `send()`'s
+   * outcome, so a caller can react to it the same way it already reacts to
+   * `send()`'s own return (e.g. close its menu on `sent`/`dismissed`).
+   *
+   * On the WEB route — and on any run that ends before arming (nothing to
+   * share, a prepare error, a superseded/cancelled run) — resolves `null`:
+   * nothing chained, and there is nothing for a caller to do beyond what
+   * `error`/`status` already say.
    */
-  prepare: (build: BuildShareFile) => Promise<void>;
+  prepare: (build: BuildShareFile) => Promise<ShareOutcome | null>;
   /**
    * Tap 2: hand what tap 1 armed to the OS share sheet. MUST be called straight
    * from a user gesture: the sheet call — `navigator.share` in a browser, the
@@ -438,7 +524,7 @@ export interface UseShareFlow {
  * The generic two-gesture share state machine. See the file header for why one
  * gesture cannot work. The encode runs in a Web Worker (B8, #34), so `preparing`
  * no longer janks the screen and a cancel (menu close, Back) actually stops it;
- * it is still a busy state rather than a meter — nothing reports progress yet.
+ * a prepare's busy phase also carries a step count (`progress.steps`, #986).
  */
 export function useShareFlow(): UseShareFlow {
   const [status, setStatus] = useState<ShareStatus>("idle");
@@ -475,6 +561,12 @@ export function useShareFlow(): UseShareFlow {
   // late result ignored; aborting is what stops the worker from finishing an
   // encode nobody will read. Both happen together in `reset` and on unmount.
   const abortRef = useRef<AbortController | null>(null);
+  // The armed prepare's per-item result (#1023): which items it finished with
+  // no audio, snapshotted from the modal just before the prepare settles to
+  // ready, and handed to the send's busy phase with a `carry` event right after
+  // its `begin`, so the hand-off does not check an item the prepare skipped.
+  // Cleared when a fresh prepare begins.
+  const carryRef = useRef<ShareCarry | undefined>(undefined);
   // The modal timeline (#491). The machine is `share-progress.ts`; the driver
   // below is its browser glue and nothing more, created once per hook
   // instance the way `handoffRef` is, so Books' flow and a Segments screen's
@@ -512,141 +604,6 @@ export function useShareFlow(): UseShareFlow {
     [handoff, modal]
   );
 
-  const prepare = useCallback(
-    async (build: BuildShareFile): Promise<void> => {
-      // Already encoding, already armed, or a chooser is still up: ignore. (The
-      // screen hides the prepare control while `ready`, so this is a re-entry
-      // backstop.) `handoff.isBusy()` covers all three: `send` takes ownership
-      // synchronously when it starts (Frank R6 P2), so "armed" alone no longer
-      // covers the window in which a share is in flight — and a `reset()` while
-      // the sheet is open drops the flow to idle, putting tap 1 back on screen
-      // (George R6 P2). Without this, a tap there would start a second encode
-      // behind a live chooser.
-      if (preparingRef.current || handoff.isBusy()) return;
-      // Fail before the encode, not after: a browser with no Web Share should not
-      // pay for a whole encode only to be told it cannot share it. The file-level
-      // check still runs post-encode (it needs the File), but the capability
-      // itself is knowable now (George R-B7). Inside the native shell there is
-      // nothing to fail on — the plugin needs no Web Share (#336).
-      if (selectShareRoute(readShareEnvironment(), null) === "unsupported") {
-        setError("failed");
-        return;
-      }
-      preparingRef.current = true;
-      // Claim this run. A later `reset` (menu close) or unmount bumps the token,
-      // and every resumption below bails when its captured id is stale.
-      const runId = (runIdRef.current += 1);
-      const current = () => runId === runIdRef.current;
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setError(null);
-      setMissing(0);
-      setPartial(0);
-      setPartialChapters(0);
-      // A fresh attempt is itself the acknowledgment of any prior unconfirmed
-      // one — see `UseShareFlow.sendUnconfirmed`'s own docblock.
-      setSendUnconfirmed(false);
-      setStatus("preparing");
-      // The modal goes up with the busy status (#491). Not before the
-      // unsupported gate above: a browser with no Web Share gets the error
-      // Notice, not a busy flash for work that never starts.
-      modal.dispatch({ type: "begin", work: "prepare", now: modal.now() });
-      // Yield once so `preparing` paints before the gather starts (its awaits
-      // also yield, but a tiny share can return before the browser paints).
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      try {
-        // `build` threads `current` and the signal through to the export so a
-        // cancel during the gather skips the encode and a cancel during the encode
-        // stops the worker. It returns "nothing" for a genuinely empty share and
-        // null when it was cancelled mid-build.
-        const prepared = await build(current, controller.signal);
-        if (!current()) return;
-        // "nothing" (no audio) and null (cancelled, but not yet observed as such)
-        // both settle back to idle; only "nothing" is a reason to surface. A null
-        // here with the run still current is unreachable — a cancel bumps the token,
-        // so the `!current()` bail above would have caught it — but it is folded in
-        // rather than left to narrow to `PreparedShare` on a wrong assumption.
-        if (prepared === null || prepared === "nothing") {
-          if (prepared === "nothing") setError("nothing");
-          setStatus("idle");
-          // "nothing" is an outcome the modal shows (the empty tray); a null
-          // has nothing to say, so the busy phase just ends.
-          modal.dispatch({
-            type: "settle",
-            settled: prepared === "nothing" ? "nothing" : null,
-            now: modal.now(),
-          });
-          return;
-        }
-        const { file } = prepared;
-        // The browser may still refuse this particular File — Android Chrome's
-        // Web Share allowlist has no `application/zip`, which is #272. The native
-        // route does not consult that gate at all; see `selectShareRoute`.
-        const route = selectShareRoute(readShareEnvironment(), file);
-        if (route === "unsupported") {
-          setError("failed");
-          setStatus("idle");
-          modal.dispatch({
-            type: "settle",
-            settled: "failed",
-            now: modal.now(),
-          });
-          return;
-        }
-        // The native write happens HERE, on tap 1, not in `send` (George R5 P2).
-        // It is the slow half — a book zip crosses the bridge in 384 KiB chunks —
-        // and this is the gesture that already has a busy state for slow work.
-        // Doing it in `send` left the menu reading `ready` with no sign anything
-        // was happening, and made "hands the file to the sheet in this gesture"
-        // false on native. The same `controller.signal` that stops the encode
-        // stops the write, so closing the menu mid-write cancels it and takes the
-        // partial file with it.
-        const staged =
-          route === "native"
-            ? await nativeShare.stage(file, controller.signal)
-            : null;
-        if (!current()) {
-          // Cancelled while staging, but the write finished first: the File is
-          // nobody's now, so do not leave it in the cache. Fire-and-forget — the
-          // run is over and a cleanup failure is not this screen's news.
-          if (staged !== null) void nativeShare.discard(staged);
-          return;
-        }
-        handoff.arm({
-          file,
-          staged,
-          missing: prepared.missing,
-          partial: prepared.partial ?? 0,
-          partialChapters: prepared.partialChapters ?? 0,
-        });
-        setMissing(prepared.missing);
-        setPartial(prepared.partial ?? 0);
-        setPartialChapters(prepared.partialChapters ?? 0);
-        setStatus("ready");
-        // Ready is not an outcome: the busy phase ends (after its minimum
-        // hold) and the primary "Share now" control is what the person sees.
-        modal.dispatch({ type: "settle", settled: null, now: modal.now() });
-      } catch (cause) {
-        // A stale run's rejection — including the AbortError its own cancel
-        // produced — is not this screen's news.
-        if (!current()) return;
-        const settled = settlePrepareFailure(cause);
-        setError(settled);
-        setStatus("idle");
-        modal.dispatch({ type: "settle", settled, now: modal.now() });
-      } finally {
-        // Only clear the guard for the run that still owns it. A stale run whose
-        // token was bumped by `reset` must NOT release a newer run's guard, or a
-        // further tap would start a third full encode over the same source.
-        if (current()) {
-          preparingRef.current = false;
-          if (abortRef.current === controller) abortRef.current = null;
-        }
-      }
-    },
-    [handoff, modal]
-  );
-
   const send = useCallback(async (): Promise<ShareOutcome> => {
     // A share is already in flight: ignore this tap and leave the File armed, so
     // a double-tap cannot open a second share whose rejection drops the File.
@@ -680,6 +637,10 @@ export function useShareFlow(): UseShareFlow {
     // write, not an await, so the activation contract below still holds: the
     // sheet call is still the first await in this gesture.
     modal.dispatch({ type: "begin", work: "send", now: modal.now() });
+    // The prepare's per-item result rides into the send (#1023). Synchronous,
+    // like the `begin` above, so the sheet call is still the first await.
+    const carried = carryRef.current;
+    if (carried !== undefined) modal.dispatch({ type: "carry", carried });
     // Whether activation is live at the call decides how a NotAllowedError reads
     // (see classifyShareError). Read it immediately before `share`.
     const hadActivation = navigator.userActivation?.isActive ?? false;
@@ -823,6 +784,163 @@ export function useShareFlow(): UseShareFlow {
       handoff.finishSending();
     }
   }, [handoff, modal]);
+
+  const prepare = useCallback(
+    async (build: BuildShareFile): Promise<ShareOutcome | null> => {
+      // Already encoding, already armed, or a chooser is still up: ignore. (The
+      // screen hides the prepare control while `ready`, so this is a re-entry
+      // backstop.) `handoff.isBusy()` covers all three: `send` takes ownership
+      // synchronously when it starts (Frank R6 P2), so "armed" alone no longer
+      // covers the window in which a share is in flight — and a `reset()` while
+      // the sheet is open drops the flow to idle, putting tap 1 back on screen
+      // (George R6 P2). Without this, a tap there would start a second encode
+      // behind a live chooser.
+      if (preparingRef.current || handoff.isBusy()) return null;
+      // Fail before the encode, not after: a browser with no Web Share should not
+      // pay for a whole encode only to be told it cannot share it. The file-level
+      // check still runs post-encode (it needs the File), but the capability
+      // itself is knowable now (George R-B7). Inside the native shell there is
+      // nothing to fail on — the plugin needs no Web Share (#336).
+      if (selectShareRoute(readShareEnvironment(), null) === "unsupported") {
+        setError("failed");
+        return null;
+      }
+      preparingRef.current = true;
+      // Claim this run. A later `reset` (menu close) or unmount bumps the token,
+      // and every resumption below bails when its captured id is stale.
+      const runId = (runIdRef.current += 1);
+      const current = () => runId === runIdRef.current;
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setError(null);
+      setMissing(0);
+      setPartial(0);
+      setPartialChapters(0);
+      // A fresh attempt is itself the acknowledgment of any prior unconfirmed
+      // one — see `UseShareFlow.sendUnconfirmed`'s own docblock.
+      setSendUnconfirmed(false);
+      carryRef.current = undefined;
+      setStatus("preparing");
+      // The modal goes up with the busy status (#491). Not before the
+      // unsupported gate above: a browser with no Web Share gets the error
+      // Notice, not a busy flash for work that never starts.
+      modal.dispatch({ type: "begin", work: "prepare", now: modal.now() });
+      // Yield once so `preparing` paints before the gather starts (its awaits
+      // also yield, but a tiny share can return before the browser paints).
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      try {
+        // `build` threads `current` and the signal through to the export so a
+        // cancel during the gather skips the encode and a cancel during the encode
+        // stops the worker. It returns "nothing" for a genuinely empty share and
+        // null when it was cancelled mid-build.
+        // `stepReporter` carries the build's step count onto the modal (#986).
+        const prepared = await build(
+          current,
+          controller.signal,
+          stepReporter(current, modal.dispatch)
+        );
+        if (!current()) return null;
+        // "nothing" (no audio) and null (cancelled, but not yet observed as such)
+        // both settle back to idle; only "nothing" is a reason to surface. A null
+        // here with the run still current is unreachable — a cancel bumps the token,
+        // so the `!current()` bail above would have caught it — but it is folded in
+        // rather than left to narrow to `PreparedShare` on a wrong assumption.
+        if (prepared === null || prepared === "nothing") {
+          if (prepared === "nothing") setError("nothing");
+          setStatus("idle");
+          // "nothing" is an outcome the modal shows (the empty tray); a null
+          // has nothing to say, so the busy phase just ends.
+          modal.dispatch({
+            type: "settle",
+            settled: prepared === "nothing" ? "nothing" : null,
+            now: modal.now(),
+          });
+          return null;
+        }
+        const { file } = prepared;
+        // The browser may still refuse this particular File — Android Chrome's
+        // Web Share allowlist has no `application/zip`, which is #272. The native
+        // route does not consult that gate at all; see `selectShareRoute`.
+        const route = selectShareRoute(readShareEnvironment(), file);
+        if (route === "unsupported") {
+          setError("failed");
+          setStatus("idle");
+          modal.dispatch({
+            type: "settle",
+            settled: "failed",
+            now: modal.now(),
+          });
+          return null;
+        }
+        // The native write happens HERE, on tap 1, not in `send` (George R5 P2).
+        // It is the slow half — a book zip crosses the bridge in 384 KiB chunks —
+        // and this is the gesture that already has a busy state for slow work.
+        // Doing it in `send` left the menu reading `ready` with no sign anything
+        // was happening, and made "hands the file to the sheet in this gesture"
+        // false on native. The same `controller.signal` that stops the encode
+        // stops the write, so closing the menu mid-write cancels it and takes the
+        // partial file with it.
+        const staged =
+          route === "native"
+            ? await nativeShare.stage(file, controller.signal)
+            : null;
+        if (!current()) {
+          // Cancelled while staging, but the write finished first: the File is
+          // nobody's now, so do not leave it in the cache. Fire-and-forget — the
+          // run is over and a cleanup failure is not this screen's news.
+          if (staged !== null) void nativeShare.discard(staged);
+          return null;
+        }
+        handoff.arm({
+          file,
+          staged,
+          missing: prepared.missing,
+          partial: prepared.partial ?? 0,
+          partialChapters: prepared.partialChapters ?? 0,
+        });
+        setMissing(prepared.missing);
+        setPartial(prepared.partial ?? 0);
+        setPartialChapters(prepared.partialChapters ?? 0);
+        setStatus("ready");
+        // Snapshot the prepare's per-item result while its count is still on
+        // the modal (#1023); the settle below ends the busy phase that holds it.
+        carryRef.current = carryFromPrepare(modal.state());
+        // Ready is not an outcome: the busy phase ends (after its minimum
+        // hold) and the primary "Share now" control is what the person sees.
+        modal.dispatch({ type: "settle", settled: null, now: modal.now() });
+        // Native chains straight into the send gesture from here (#860,
+        // `chainsToSend`): the plugin needs no user activation, so this
+        // continuation — with no live tap behind it — can still open the
+        // chooser. `send()` never rejects (see its own docblock above), so
+        // this needs no extra try/catch, and awaiting it here — rather than
+        // firing it and returning — is what keeps `prepare()`'s own promise
+        // settled only once the whole chain is done: a caller reacting to
+        // this return value never observes the `ready` step this route
+        // exists to skip. The web route falls through to the plain `null`
+        // below and leaves the flow at `ready` for the second tap.
+        if (chainsToSend(route)) return await send();
+        return null;
+      } catch (cause) {
+        // A stale run's rejection — including the AbortError its own cancel
+        // produced — is not this screen's news.
+        if (!current()) return null;
+        const settled = settlePrepareFailure(cause);
+        setError(settled);
+        setStatus("idle");
+        modal.dispatch({ type: "settle", settled, now: modal.now() });
+        return null;
+      } finally {
+        // Only clear the guard for the run that still owns it. A stale run whose
+        // token was bumped by `reset` must NOT release a newer run's guard, or a
+        // further tap would start a third full encode over the same source.
+        if (current()) {
+          preparingRef.current = false;
+          if (abortRef.current === controller) abortRef.current = null;
+        }
+      }
+    },
+    [handoff, modal, send]
+  );
 
   const reset = useCallback(() => {
     // A send is irreversibly in flight: tap 2's activation is spent and the

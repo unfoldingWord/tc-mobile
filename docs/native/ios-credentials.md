@@ -437,7 +437,7 @@ intentional.
 mid-September expires in mid-December, which covers the October training — but a
 build made now is not the one you hand out in January.
 
-Testers' devices must be on **iOS 15 or later** (the project's deployment
+Testers' devices must be on **iOS 15.4 or later** (the project's deployment
 target).
 
 ---

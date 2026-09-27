@@ -14,7 +14,7 @@ facilitators**. The milestone's October 9 date is the training date, not the
 handoff deadline. Leave time for TestFlight processing, installation and a
 failed-build recovery.
 
-`v1-required` means required for **v0.3.0**, not the literal `v1.0.0`
+`v1-required` means required for **v0.3.0**, not the literal `v1.1.0`
 post-training milestone. `v1-desired` work is optional for training. A parked
 PR does not waive a required outcome, and a merged PR does not establish
 on-device acceptance.
@@ -24,7 +24,7 @@ from an earlier tracker entry:
 
 ```sh
 gh issue list --repo unfoldingWord/tc-mobile \
-  --milestone 'v0.3.0 — Oct: training' --state open --limit 1000 \
+  --milestone 'v0.3.0 — Training essentials' --state open --limit 1000 \
   --json number,title,labels,assignees,url
 ```
 

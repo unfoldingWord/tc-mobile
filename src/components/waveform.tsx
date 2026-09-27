@@ -54,9 +54,10 @@ interface WaveformProps {
    */
   fitFrom?: Peaks | null;
   /**
-   * A finished row repaints in the green (`--s-done`) role. The stroke colour
-   * still comes from the inherited `--c-wave-stroke` (remapped by
-   * `.row--finished`); this flag exists only so the draw effect RE-RUNS when
+   * A finished row, or the recorder of a finished segment (#926), repaints in
+   * the green (`--s-done`) role. The stroke colour still comes from the
+   * inherited `--c-wave-stroke` (remapped by `.row--finished` and
+   * `.recorder-sheet--finished`); this flag exists only so the draw effect RE-RUNS when
    * finished toggles — a canvas painted once cannot observe a CSS-variable
    * change on its own (Frank/George R1 P2, the converged finding). A
    * `data-theme` switch is a CSS-variable change of the same class, which is
@@ -90,9 +91,10 @@ export function Waveform({
   // Read for its subscription only: a `data-theme` switch remaps every token
   // this draw reads (`--c-wave-stroke`, `--s-voice`, `--s-ink-faint`), and a
   // painted canvas cannot see that on its own — so the draw effect lists it.
-  // Today `useTheme` is Books-only and a toggle unmounts every canvas; the
-  // moment the toggle is reachable with a row mounted (#149) this is what keeps
-  // the bars from holding the previous theme's colours (George R2 P2 on #457).
+  // Written while the toggle was Books-only, where a toggle unmounted every
+  // canvas and this cost nothing yet; #149 put the toggle in the chapter and
+  // recorder menus, so this is now what keeps the bars from holding the
+  // previous theme's colours rather than what will (George R2 P2 on #457).
   const theme = useLiveTheme();
 
   // `useLayoutEffect`, not `useEffect`: the first paint below must land BEFORE
@@ -228,8 +230,9 @@ export function Waveform({
       ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
     }
     // `finished` is in the deps for its side effect only: it changes with the
-    // `.row--finished` class, so listing it re-runs this draw (which re-reads
-    // the now-green `--c-wave-stroke`) on the toggle. Not referenced above.
+    // `.row--finished` / `.recorder-sheet--finished` class, so listing it
+    // re-runs this draw (which re-reads the now-green `--c-wave-stroke`) on the
+    // toggle. Not referenced above.
     // `theme` is the same shape for the same reason: a `data-theme` switch
     // remaps the tokens read above, and only a re-run re-reads them.
     // `firstTakeInFlight` IS referenced, in the gain above, and it toggles on
