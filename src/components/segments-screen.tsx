@@ -195,6 +195,16 @@ export const SegmentsScreen = forwardRef<
   // `use-chapter-segments.ts`) and restores the row with its own `reload()`,
   // so this is only what the screen shows, not a second copy of the cause.
   const [deleteFailure, setDeleteFailure] = useState(false);
+  // The armed row's ordinal, snapshotted when the confirm opens. The title
+  // cannot read it from `rows`: `deleteSegment` patches the row out
+  // optimistically while `busy` still holds the dialog up, which read back
+  // as "Delete segment 0?" (Frank r2 F3 on #1119).
+  const [deleteOrdinal, setDeleteOrdinal] = useState(0);
+  // The row registry and the arm-then-reveal pair, shared with Books (#160
+  // L-15). Focus lands on the row's open/record control explicitly (not DOM
+  // order) — the right next move on a never-recorded row (George R3 P3).
+  // Declared up here because the delete confirm's close arms it.
+  const rowReveal = useScrollToNew<SegmentId>(".row-open");
   // A row's overflow menu is open. Lifted here so the list can go `inert` behind
   // it for AT/switch users (the menu itself is portalled out, so it stays live);
   // only one is ever open at a time — the open menu's scrim blocks reaching a
@@ -381,8 +391,18 @@ export const SegmentsScreen = forwardRef<
    * Cancel / Escape / scrim / a system Back take the delete confirm down. The
    * row it was armed for is untouched — same "do not delete" answer as
    * `closeEraseState` above.
+   *
+   * Focus goes back to that row once the list's `inert` lifts (Frank r2 F2
+   * on #1119: Escape left it on `<body>`, so the next Tab reached Back). The
+   * row menu that armed this is already gone, so the row itself is the
+   * landing, held by `rowReveal.reveal(listInert)` below until the commit
+   * that un-inerts the list. After a landed delete the row is gone and the
+   * arm is spent with nothing to focus.
    */
-  const closeDeleteState = useCallback(() => setDeleteTarget(null), []);
+  const closeDeleteState = useCallback(() => {
+    if (deleteTarget !== null) rowReveal.armFocus(deleteTarget);
+    setDeleteTarget(null);
+  }, [deleteTarget, rowReveal]);
 
   const layers = useScreenLayers<SegmentsLayerId>(pushLayer, popLayer, {
     "segments:chapter-menu": {
@@ -519,8 +539,9 @@ export const SegmentsScreen = forwardRef<
   // BEFORE that menu closes itself, same 1 → 2 → 1 interleave `armErase` uses
   // (`segment-row.tsx` has the ordering comment).
   const armDelete = useCallback(
-    (segmentId: SegmentId) => {
+    (segmentId: SegmentId, ordinal: number) => {
       layers.open("segments:delete-confirm");
+      setDeleteOrdinal(ordinal);
       setDeleteTarget(segmentId);
     },
     [layers]
@@ -928,10 +949,6 @@ export const SegmentsScreen = forwardRef<
   // Books derived the identical three.
 
   const didInitialScroll = useRef(false);
-  // The row registry and the arm-then-reveal pair, shared with Books (#160
-  // L-15). Focus lands on the row's open/record control explicitly (not DOM
-  // order) — the right next move on a never-recorded row (George R3 P3).
-  const rowReveal = useScrollToNew<SegmentId>(".row-open");
 
   useEffect(() => {
     // Land on the first not-finished segment once the list is first loaded
@@ -942,14 +959,13 @@ export const SegmentsScreen = forwardRef<
     if (target) rowReveal.scrollTo(target.segmentId);
   }, [loading, rows, rowReveal]);
 
-  // Nothing on this screen holds the hand-off: focus is armed from one site
-  // only — the empty chapter's invite — and no overlay is up over it. Books
-  // passes a hold here, for a delete confirm that leaves the list `inert`.
-  // `false` is written out rather than defaulted, so a later overlay on this
-  // screen has to revisit this line to hold it.
+  // Held while the list is `inert`, the way Books holds for its own delete
+  // confirm: the delete confirm's close (`closeDeleteState`) arms its row in
+  // the same commit that lifts `inert`, so the hand-off must survive to that
+  // commit, and `listInert` is a dependency so the lift itself re-runs this.
   useEffect(() => {
-    rowReveal.reveal(false);
-  }, [rows, rowReveal]);
+    rowReveal.reveal(listInert);
+  }, [rows, listInert, rowReveal]);
 
   // ── Press-and-hold reorder (#953 PR2a, O4 only) ───────────────────────────
   //
@@ -1051,15 +1067,6 @@ export const SegmentsScreen = forwardRef<
   const eraseTargetRow =
     eraseTarget !== null
       ? rows.find((row) => row.segmentId === eraseTarget)
-      : undefined;
-  // The delete confirm's title names the segment's ordinal (#590's
-  // `deleteSegmentConfirmTitle`). Read the same way `eraseTargetRow` is:
-  // `rows` is short, `deleteTarget` is only ever non-null while its own
-  // dialog is open, and `undefined` (a stale target racing a reload) falls
-  // through to the `?? 0` fallback below rather than a made-up ordinal.
-  const deleteTargetRow =
-    deleteTarget !== null
-      ? rows.find((row) => row.segmentId === deleteTarget)
       : undefined;
   const eraseRowPreview: EraseConfirmPreview | undefined =
     o4 && eraseTargetRow
@@ -1212,7 +1219,7 @@ export const SegmentsScreen = forwardRef<
                     guide.segmentId === row.segmentId
                   }
                   onErase={() => armErase(row.segmentId)}
-                  onDeleteSegment={() => armDelete(row.segmentId)}
+                  onDeleteSegment={() => armDelete(row.segmentId, row.ordinal)}
                   onRename={(label) => renameSegment(row.segmentId, label)}
                   onMenuOpen={onRowMenuOpen}
                   onMenuClose={onRowMenuClose}
@@ -1274,7 +1281,7 @@ export const SegmentsScreen = forwardRef<
           a whole-row delete, not a "what will be lost" scrub. */}
       <EraseConfirm
         open={deleteTarget !== null}
-        title={strings.deleteSegmentConfirmTitle(deleteTargetRow?.ordinal ?? 0)}
+        title={strings.deleteSegmentConfirmTitle(deleteOrdinal)}
         confirmLabel={strings.deleteSegmentConfirm}
         cancelLabel={strings.eraseCancel}
         busy={deleting}

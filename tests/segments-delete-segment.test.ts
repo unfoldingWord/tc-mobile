@@ -208,6 +208,43 @@ it("one delete in flight at a time: Confirm disables while pending, and a second
   expect(dialogTitle()).toBeNull();
 });
 
+it("Cancel hands focus back to the row it was armed for, not <body> (Frank r2 F2 on #1119)", async () => {
+  await act(async () => root.render(createElement(Host)));
+  await openDeleteConfirm();
+  await act(async () => button(strings.eraseCancel).click());
+  expect(dialogTitle()).toBeNull();
+  const rowOpen = document.querySelector(".row-open");
+  expect(rowOpen).not.toBeNull();
+  expect(document.activeElement).toBe(rowOpen);
+});
+
+it("the title keeps the armed ordinal while the optimistic patch has already removed the row (Frank r2 F3 on #1119)", async () => {
+  let release!: (ok: boolean) => void;
+  mocks.deleteSegment.mockImplementationOnce(
+    () => new Promise<boolean>((resolve) => (release = resolve))
+  );
+  await act(async () => root.render(createElement(Host)));
+  await openDeleteConfirm();
+  await act(async () => {
+    button(strings.deleteSegmentConfirm).click();
+  });
+  // The hook's optimistic patch: the row is gone from `rows` while the
+  // store call is still pending and `busy` holds the dialog up.
+  mocks.chapter.mockReturnValue({ ...mocks.chapter(), rows: [] });
+  await act(async () => root.render(createElement(Host)));
+  expect(dialogTitle()).not.toBeNull();
+  expect(
+    document.querySelector(
+      `[aria-label="${strings.deleteSegmentConfirmTitle(0)}"]`
+    )
+  ).toBeNull();
+  await act(async () => {
+    release(true);
+    await Promise.resolve();
+  });
+  expect(dialogTitle()).toBeNull();
+});
+
 it("wires the CURRENT look's own Delete row to the same confirm (not only the O4 tile above)", async () => {
   // Every case above runs O4 (the app's default, #951) end to end through
   // `strings.deleteSegment` — which is also the O4 tile's accessible name, so
