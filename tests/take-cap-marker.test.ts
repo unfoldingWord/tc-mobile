@@ -50,17 +50,16 @@ describe("the take-cap marker", () => {
     );
   });
 
-  it("rounds a mid-minute remainder UP, not down", () => {
-    // 15:30 in: 4:30 left. Flooring would read "4 min left" — the wrong
-    // direction for a warning, which should never claim MORE time is left
-    // than there actually is.
+  it("rounds a mid-minute remainder DOWN, not up", () => {
+    // 15:30 in: 4:30 left. Rounding up would read "5 min left" — more time
+    // than there actually is, the wrong direction for a warning.
     expect(markerText(markerFor(15 * 60_000 + 30_000, true))).toBe(
-      strings.takeCapWarning(5)
+      strings.takeCapWarning(4)
     );
   });
 
   it("counts down past 15:00, up to just under the cap", () => {
-    // 19:01 in: 0:59 left, which rounds up to 1, never down to 0 — "0 min
+    // 19:01 in: 0:59 left, which floors to 0 and is clamped to 1 — "0 min
     // left" reads as already over.
     expect(markerText(markerFor(19 * 60_000 + 1000, true))).toBe(
       strings.takeCapWarning(1)

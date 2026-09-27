@@ -19,9 +19,12 @@ import type { TakeCapStatus } from "@/lib/audio/take-cap";
  * carries `role="status"`, so screen readers already hear it re-announced as
  * the ticking timer's text changes underneath it (that behaviour predates
  * this component and is unchanged here). Rounding to whole minutes
- * (`Math.ceil`, floored at 1) means THIS span's own text changes once a
- * minute rather than every tick, so it does not add a second re-announcement
- * cadence on top of the one the timer already has.
+ * (`Math.floor`, clamped to at least 1) means THIS span's own text changes
+ * once a minute rather than every tick, so it does not add a second
+ * re-announcement cadence on top of the one the timer already has. Floor,
+ * not ceil: a warning never claims more whole minutes than are left. The
+ * clamp means the last minute (and the cap itself) reads "1 min left" rather
+ * than "0", a deliberate tradeoff, not a claim that a full minute remains.
  *
  * **Not an O4 workbench state.** `docs/design/o4-design-system.md`'s screen
  * map (09 Recording) names no near-limit variant, and #1005 scoped drawing
@@ -29,12 +32,10 @@ import type { TakeCapStatus } from "@/lib/audio/take-cap";
  * settling its look. This is a proposal for the requirements owner, not a
  * spec the workbench already signed off — see the PR body.
  *
- * Lifted out of `recorder.tsx` for the same reason `RecorderStatus` and
- * `RecorderStamp` were (#197/#945): that component mounts the whole audio
- * hook graph, so nothing in `tests/` renders it directly, and a prop-to-markup
- * guarantee living inline there is reachable by no test. This module is pure
- * props in, markup out, so `tests/take-cap-marker.test.ts` can render it with
- * `tests/render.ts` and read what it produced.
+ * Lifted out of `recorder.tsx` the way `RecorderStatus` and `RecorderStamp`
+ * were (#197/#945): this module is pure props in, markup out, so
+ * `tests/take-cap-marker.test.ts` can render it with `tests/render.ts` and
+ * read what it produced without mocking the recorder's hook graph.
  *
  * Takes only `takeCap`, not a separate `recording` flag. `takeCapStatus`
  * (`lib/audio/take-cap.ts`) already answers "is this a live take" itself —
@@ -52,7 +53,7 @@ export function TakeCapMarker({
   readonly takeCap: TakeCapStatus;
 }) {
   if (!takeCap.nearLimit) return null;
-  const minutesLeft = Math.max(1, Math.ceil(takeCap.remainingMs / 60_000));
+  const minutesLeft = Math.max(1, Math.floor(takeCap.remainingMs / 60_000));
   return (
     <span className="recorder-take-warn" data-testid="take-cap-marker">
       {strings.takeCapWarning(minutesLeft)}
