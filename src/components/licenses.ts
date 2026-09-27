@@ -65,7 +65,8 @@ interface ThirdPartyLicense {
  * that manifest names a package this table does not cover (Frank round 3 on
  * #1019), so the list of build-time entries is derived, not counted by hand.
  * lamejs is first and carries the copyleft note; the rest are permissive
- * (MIT/ISC/0BSD) and their verbatim notices ride in `THIRD-PARTY-NOTICES.txt`.
+ * (MIT/ISC/0BSD/Apache-2.0) and their verbatim notices ride in
+ * `THIRD-PARTY-NOTICES.txt`.
  * Versions are the installed ones — the tests pin every entry and keep the set
  * complete.
  */
@@ -203,6 +204,16 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     copyright: "© Google LLC",
     pinPackage: "workbox-build",
     noticeMarker: "Google",
+  },
+  {
+    // Written outside Vite's module graph, so build-provenance.json cannot
+    // record it; tests/dist-source-offer.test.ts pins it from dist/sw.js (#823).
+    name: "@trickfilm400/rollup-plugin-off-main-thread",
+    version: "3.0.0-pre1",
+    spdx: "Apache-2.0",
+    role: "the service worker's module loader, written into it by Workbox at build time",
+    copyright: "© 2018 Google Inc.",
+    noticeMarker: "Copyright 2018 Google Inc.",
   },
   {
     name: "vite",
