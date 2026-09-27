@@ -2398,6 +2398,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             bytes: result.blob,
             error: result.error,
           };
+          // Back's own stop can come back superseded just as a Stop's can, so
+          // it sets the same latch `commitTake` does. `executeTail` is then
+          // the one place that decides a superseded exit writes nothing and
+          // puts a landed paste's phrase back on the clipboard (#489, Frank R1
+          // on #1110), whichever control ended the capture.
+          if (classifyCapture(capture).kind === "superseded") {
+            supersededCapture.current = true;
+          }
         }
         // Which of the exits this close takes is decided in ONE place, enumerated
         // in `tests/close-plan.test.ts` (#180). At most one of save-take /
@@ -2425,6 +2433,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               plan.finished
             );
             dirty.current = true;
+            // A fresh take ends an earlier superseded Stop's latch, just as it
+            // does in `commitTake`. This take was spliced into `working`, so
+            // it already carries a landed paste's phrase (or its held take
+            // does, on a failed save). Putting that phrase back as well would
+            // duplicate it.
+            supersededCapture.current = false;
             // A committed take owes nothing else, so the tail only has to exit —
             // and it exits through the SAME `onExit(dirty)` every other path takes.
             return executeTail({ action: "close" });

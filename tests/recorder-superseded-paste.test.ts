@@ -65,7 +65,9 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("a superseded exit after a landed paste puts the phrase back on the clipboard", async () => {
+type Drive = "stop-then-back" | "back-during-capture";
+
+async function mountAfterPaste() {
   const phrase = new Int16Array([7, 8, 9]);
   const ref = createRef<RecorderHandle>();
   const saveEditedSegment = vi.fn().mockResolvedValue(true);
@@ -138,28 +140,77 @@ it("a superseded exit after a landed paste puts the phrase back on the clipboard
       button!.click();
     });
 
+  const back = async () =>
+    act(async () => {
+      await ref.current!.requestClose();
+    });
+  const record = async () => {
+    await click(strings.record);
+    audio.recorderState = "recording";
+    await render();
+  };
+
   await render();
   await click(strings.enterEdit);
   await click(strings.paste);
   // The paste landed: the phrase is in the take and off the clipboard.
   expect(clipboard.current).toBeNull();
   await click(strings.doneEditing);
+  return {
+    phrase,
+    audio,
+    clipboard,
+    onExit,
+    saveRecording,
+    saveEditedSegment,
+    render,
+    click,
+    back,
+    record,
+  };
+}
 
-  await click(strings.record);
-  expect(audio.startRecording).toHaveBeenCalledOnce();
-  audio.recorderState = "recording";
-  await render();
-  await click(strings.stop);
-  expect(audio.stopRecording).toHaveBeenCalledOnce();
-  await render();
-  await act(async () => {
-    await ref.current!.requestClose();
+// A capture can come back superseded in two ways, and both end in the same
+// exit: a Stop followed by Back, or a Back that lands during the capture and
+// runs the stop itself (Frank R1 on #1110). Neither may write, and both must
+// put the phrase back.
+it.each<Drive>(["stop-then-back", "back-during-capture"])(
+  "a superseded exit after a landed paste puts the phrase back on the clipboard (%s)",
+  async (drive) => {
+    const t = await mountAfterPaste();
+    await t.record();
+    expect(t.audio.startRecording).toHaveBeenCalledOnce();
+    if (drive === "stop-then-back") {
+      await t.click(strings.stop);
+      await t.render();
+    }
+    await t.back();
+    expect(t.audio.stopRecording).toHaveBeenCalledOnce();
+
+    // The superseded exit still writes nothing (#527)...
+    expect(t.onExit).toHaveBeenCalledOnce();
+    expect(t.saveRecording).not.toHaveBeenCalled();
+    expect(t.saveEditedSegment).not.toHaveBeenCalled();
+    // ...and the phrase it dropped from `working` is back where it came from.
+    expect(t.clipboard.current).toBe(t.phrase);
+  }
+);
+
+it("a take saved by Back after a superseded Stop does not put the phrase back a second time", async () => {
+  const t = await mountAfterPaste();
+  await t.record();
+  await t.click(strings.stop);
+  await t.render();
+  // A second take, committed by a Back during capture. Its splice base is
+  // `working`, which holds the pasted phrase, so the phrase is saved with it.
+  vi.mocked(t.audio.stopRecording).mockImplementationOnce(async () => {
+    t.audio.recorderState = "idle";
+    return { samples: new Int16Array([5, 5]), blob: null, error: null };
   });
+  await t.record();
+  await t.back();
 
-  // The superseded exit still writes nothing (#527)...
-  expect(onExit).toHaveBeenCalledOnce();
-  expect(saveRecording).not.toHaveBeenCalled();
-  expect(saveEditedSegment).not.toHaveBeenCalled();
-  // ...and the phrase it dropped from `working` is back where it came from.
-  expect(clipboard.current).toBe(phrase);
+  expect(t.saveRecording).toHaveBeenCalledOnce();
+  expect(t.onExit).toHaveBeenCalledOnce();
+  expect(t.clipboard.current).toBeNull();
 });
