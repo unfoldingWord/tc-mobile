@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { stripYamlComments } from "./support";
+
 const fixtures: string[] = [];
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -52,7 +54,11 @@ it.each([
 });
 
 it("connects the opt-in to both sync and release build without changing signing", () => {
-  const workflow = readFileSync(".github/workflows/android-apk.yml", "utf8");
+  // Comments stripped, so a commented-out line cannot stand in for a live
+  // one (#822).
+  const workflow = stripYamlComments(
+    readFileSync(".github/workflows/android-apk.yml", "utf8")
+  );
   expect(workflow).toMatch(
     /diagnostic:\n\s+description:.*\n\s+type: boolean\n\s+default: false/
   );
@@ -76,7 +82,10 @@ it("connects the opt-in to both sync and release build without changing signing"
   expect(workflow).toContain(
     "node scripts/check-android-diagnostic.mjs android/app/src/main/assets/capacitor.config.json"
   );
-  expect(workflow).toContain("environment: release-signing");
+  // Anchored to the job key's own line: the same words also sit inside an
+  // `echo` in the secrets check, which kept a bare `toContain` green with the
+  // key deleted (#822).
+  expect(workflow).toMatch(/^    environment: release-signing$/m);
   expect(workflow).toContain(
     './gradlew assembleRelease -PversionCode="$(date +%s)" --no-daemon'
   );

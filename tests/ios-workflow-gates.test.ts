@@ -12,10 +12,17 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { stripYamlComments } from "./support";
+
 const workflow = readFileSync(
   new URL("../.github/workflows/ios-testflight.yml", import.meta.url),
   "utf8"
 );
+// The same file without comments, for the assertions that read the YAML as
+// text, so a commented-out key or step cannot satisfy them (#822). `step()`
+// keeps reading `workflow` itself: it runs a step's script, and a `#` inside
+// that script is the script's business.
+const workflowCode = stripYamlComments(workflow);
 const fixtures: string[] = [];
 
 function step(name: string): string {
@@ -133,7 +140,7 @@ it("reproduces the reported failure: Select Xcode needs ruby on PATH", () => {
 
 describe("iOS dispatch ref gate", () => {
   it("takes the branch/tag type from GitHub", () => {
-    expect(workflow).toContain("REF_TYPE: ${{ github.ref_type }}");
+    expect(workflowCode).toContain("REF_TYPE: ${{ github.ref_type }}");
   });
   it.each([
     ["staging", "branch", "false", 0],
@@ -219,12 +226,10 @@ describe.skipIf(!hasRuby)(
 it("runs the canonical artifact checks after build and before sync", () => {
   const name = "Check the built artifacts";
   expect(step(name)).toBe("npm run test:dist");
-  expect(workflow.indexOf(`- name: ${name}`)).toBeGreaterThan(
-    workflow.indexOf("- name: Build the web bundle")
-  );
-  expect(workflow.indexOf(`- name: ${name}`)).toBeLessThan(
-    workflow.indexOf("- name: Sync dist/ into the iOS project")
-  );
+  const at = (step: string) => workflowCode.indexOf(`- name: ${step}`);
+  expect(at("Build the web bundle")).toBeGreaterThan(-1);
+  expect(at(name)).toBeGreaterThan(at("Build the web bundle"));
+  expect(at(name)).toBeLessThan(at("Sync dist/ into the iOS project"));
 });
 
 it.each([0, 23])("propagates the artifact suite exit status %i", (status) => {
