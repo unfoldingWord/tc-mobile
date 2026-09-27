@@ -11,6 +11,8 @@ import {
 import { heldByDrag } from "@/components/recorder-stage";
 import { strings } from "@/lib/strings";
 
+import { stripComments } from "./support";
+
 /**
  * #91 — a disabled edit-toolbar history control must carry its reason.
  *
@@ -272,9 +274,9 @@ function toolbarsCode(): string {
     new URL("../src/components/recorder-toolbars.tsx", import.meta.url),
     "utf8"
   );
-  const stripped = raw
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^[ \t]*\/\/.*$/gm, "");
+  // The shared strip, which also removes a `//` trailing live code; the
+  // line-anchored copy that stood here kept one (#822).
+  const stripped = stripComments(raw);
   expect(
     stripped.length,
     "recorder-toolbars.tsx stripped to nothing"
