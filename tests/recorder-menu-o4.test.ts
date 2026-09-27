@@ -211,7 +211,7 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
     expect(marked?.classList).toContain("o4-tile--done");
     expect(marked?.classList).not.toContain("o4-tile--doneoff");
     expect(marked?.getAttribute("aria-pressed")).toBe("true");
-    expect(named(strings.markUnfinished(3))).toBeUndefined();
+    expect(named("Mark segment 3 not done")).toBeUndefined();
     show({ finishedState: "empty" });
     const unmarked = named(strings.markFinished(3));
     expect(unmarked?.classList).toContain("o4-tile--doneoff");
@@ -224,7 +224,7 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
     expect(startingWith(strings.markFinished(0))?.classList).toContain(
       "o4-tile--doneoff"
     );
-    expect(named(strings.markUnfinished(0))).toBeUndefined();
+    expect(named("Mark segment 0 not done")).toBeUndefined();
   });
 
   it("does NOT paint the green fill on a disabled-finished tile", () => {
