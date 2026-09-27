@@ -244,7 +244,7 @@ export function SegmentRow({
   // Deliberately NOT folded into `closeMenu` itself: every action item below
   // (Edit, Finished, Erase, a landed rename) also calls `closeMenu` directly,
   // and Edit hands off to `onOpenRecorder` right after — forcing focus back
-  // onto this row's ≡ there would race the recorder screen taking over the
+  // onto this row's ⋮ there would race the recorder screen taking over the
   // page. Setting the target here, one call site up, keeps every OTHER
   // `closeMenu` caller exactly as focus-silent as it already was (the landed-
   // rename path already sets its own "menu" target, just below, for the same
@@ -297,7 +297,7 @@ export function SegmentRow({
       if (menuSession.current !== session) return;
       setSavingLabel(false);
       if (ok) {
-        // Back to the ≡ that opened the menu, so the next move starts from
+        // Back to the ⋮ that opened the menu, so the next move starts from
         // this row rather than from the top of the page.
         pendingFocus.current = "menu";
         closeMenu();

@@ -12,7 +12,7 @@ import { readSharePlatform } from "@/hooks/share-target";
 import type { ShareError, ShareStatus } from "@/hooks/share-flow";
 
 /**
- * The Share rows inside a ≡ menu — the two-gesture control and the three
+ * The Share rows inside a ⋮ menu — the two-gesture control and the three
  * things it can have to say (#160, L-15).
  *
  * Books and Segments each carried this, the same shape with a different noun:

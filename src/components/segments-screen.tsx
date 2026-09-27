@@ -49,7 +49,7 @@ import type { ChapterId, SegmentId } from "@/types/domain";
  * total — a row added here with no behaviour, or a behaviour for an id that no
  * longer exists, is a `tsc` error rather than a Back that silently does nothing.
  *
- * Three, matching the design's "PR4 — Segments' overlays" (the chapter ≡ menu
+ * Three, matching the design's "PR4 — Segments' overlays" (the chapter ⋮ menu
  * and its rename mode are ONE overlay: rename is a mode inside the same panel,
  * so it opens no second layer and Back from the rename field closes the menu,
  * just as the panel's own Close does).
@@ -63,7 +63,7 @@ import type { ChapterId, SegmentId } from "@/types/domain";
  * NOT a layer: `<ShareProgress>` (#491), exactly as on Books. It goes up and
  * comes down on the share flow's own timeline rather than on any click, so
  * registering it would mean popping a layer from a timer — an effect, which
- * invariant 6 forbids. It is folded into the chapter ≡ menu's `busy()` instead
+ * invariant 6 forbids. It is folded into the chapter ⋮ menu's `busy()` instead
  * (Amendment D), which is also exactly right: the overlay's whole lifetime is
  * the window in which that menu's own close is a no-op
  * (`closeChapterMenuState`'s early return), so Back must refuse rather than run
@@ -171,10 +171,10 @@ export const SegmentsScreen = forwardRef<
   // only one is ever open at a time — the open menu's scrim blocks reaching a
   // second row's trigger. (George R-B6.)
   const [rowMenuOpen, setRowMenuOpen] = useState(false);
-  // The chapter-level ≡ menu (B7) — holds Share chapter, and the home for future
+  // The chapter-level ⋮ menu (B7) — holds Share chapter, and the home for future
   // chapter actions. Like the row menu, the list goes inert behind it.
   const [chapterMenuOpen, setChapterMenuOpen] = useState(false);
-  // Whether the chapter ≡ menu is showing its rename field (#264) or its action
+  // Whether the chapter ⋮ menu is showing its rename field (#264) or its action
   // list. Resets to the action list whenever the menu closes.
   const [renamingChapter, setRenamingChapter] = useState(false);
   // The rename write is in flight (#383) — forwarded to NameEdit's Confirm as
@@ -187,7 +187,7 @@ export const SegmentsScreen = forwardRef<
   // The same flag as a live ref (#452 PR4, the design's F4 — the Segments twin
   // of `books-screen.tsx`'s `savingBookNameRef`). `savingChapterName` above is
   // last render's answer and drives NameEdit's `busy`; this is what the chapter
-  // ≡ menu's `Layer.busy()` reads, because the system-Back handler calls it from
+  // ⋮ menu's `Layer.busy()` reads, because the system-Back handler calls it from
   // a `popstate` with no render in between (invariant 4).
   const savingChapterNameRef = useRef(false);
   // The two always move together, through one setter, so the Confirm a
@@ -300,7 +300,7 @@ export const SegmentsScreen = forwardRef<
   // #374's original complaint.
 
   /**
-   * Closing the chapter ≡ menu (scrim, Escape, close button, a system Back)
+   * Closing the chapter ⋮ menu (scrim, Escape, close button, a system Back)
    * ends the flow: drop any armed File so a stale "ready" cannot linger behind
    * a closed menu.
    *
@@ -396,11 +396,11 @@ export const SegmentsScreen = forwardRef<
     },
   });
 
-  // The chapter ≡ menu's ONE open and ONE close. Every entry point — the ≡, the
+  // The chapter ⋮ menu's ONE open and ONE close. Every entry point — the ⋮, the
   // panel's Close, Escape, a scrim tap, a completed send — goes through this
   // pair, so no call site can forget the registration.
   //
-  // Open the chapter ≡ menu, starting a fresh session so a rename still in
+  // Open the chapter ⋮ menu, starting a fresh session so a rename still in
   // flight from a prior open cannot close this one.
   const openChapterMenu = useCallback(() => {
     // Remember the ⋮ that opened this menu, HERE — synchronously, in the
@@ -502,7 +502,7 @@ export const SegmentsScreen = forwardRef<
    *     term this decision rests on being deleted with every gate green, which
    *     it could have been while the predicate was four inline `||`s.
    *   - `e2e/back-navigation.spec.ts` case (m) proves the value REACHES the
-   *     DOM, in real Chromium, in both states — but through the chapter ≡ menu,
+   *     DOM, in real Chromium, in both states — but through the chapter ⋮ menu,
    *     because the erase confirm needs a RECORDED row and this spec has no
    *     microphone.
    *
@@ -798,7 +798,7 @@ export const SegmentsScreen = forwardRef<
   const guide = guidedStep({ screen: "segments", loaded, segments: rows });
 
   // Share (B7) speaks inside its own menu, not the screen Notice: the two-gesture
-  // flow keeps the ≡ menu open across prepare → ready → send, so the panel is
+  // flow keeps the ⋮ menu open across prepare → ready → send, so the panel is
   // what the translator is looking at. Its error code is mapped to copy by
   // `shareErrorText` inside `ShareMenuSection` (#670) and rendered in the menu
   // below. The Share control's own glyph, the gap mark and the error mark all

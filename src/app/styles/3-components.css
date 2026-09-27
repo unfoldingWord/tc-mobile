@@ -613,7 +613,7 @@
   }
 
   /* --- inline name edit (#264) ------------------------------------------- */
-  /* The rename field + its commit control, shown inside a ≡ menu. The input
+  /* The rename field + its commit control, shown inside a ⋮ menu. The input
      sits on the raised surface with an edged outline so it reads as a fillable
      field against the menu panel, and gains the focus ring every control uses. */
   .name-edit {

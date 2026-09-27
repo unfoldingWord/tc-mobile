@@ -63,7 +63,7 @@ interface NameEditProps {
 /**
  * The app's ONE naming field: rename a book or a chapter in place (#264), and
  * name a book (#314) or a chapter (#609) at creation. One text field and a
- * commit control, shared by the Books and Segments ≡ menus and both creation
+ * commit control, shared by the Books and Segments ⋮ menus and both creation
  * prompts, so the affordance, the strings and the validation are written once.
  *
  * Enter commits, Escape abandons — the two keys a facilitator on a hardware
