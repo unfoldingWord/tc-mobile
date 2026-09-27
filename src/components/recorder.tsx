@@ -18,6 +18,7 @@ import { EraseConfirm, type EraseConfirmPreview } from "./erase-confirm";
 import { guidedRecordShown, guidedStep } from "./guided-step";
 import { Icon } from "./icon";
 import { Notice } from "./notice";
+import { O4Crumbs } from "./o4-crumbs";
 import { PermissionPanel } from "./permission-panel";
 import { RecorderMenu } from "./recorder-menu";
 import { PlayheadOverlay } from "./playhead-overlay";
@@ -3442,25 +3443,60 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               disabled={heldTake !== null || isClosing}
               onClick={onRequestBack}
             />
-            <span className="text-ink min-w-0 flex-1 truncate">
-              {view
-                ? strings.recorderBreadcrumb(
-                    view.bookName,
-                    // Resolved here, the same way the Segments header resolves
-                    // it, so a renamed chapter (#264) reads the same on both
-                    // screens. Passing the number let this trail spell the
-                    // default name itself and ignore the label (#169). The
-                    // segment's own label rides alongside and is resolved by
-                    // `segmentHeading` inside the entry (#591).
-                    strings.chapterHeading(
-                      view.chapterName,
-                      view.chapterNumber
-                    ),
-                    view.ordinal,
-                    view.segmentLabel
-                  )
-                : ""}
-            </span>
+            {design === "o4" && view ? (
+              // #1105: the same chips the O4 menus show, not a restyled
+              // reading of the text trail below. NOT `aria-hidden`: unlike the
+              // menu, where `O4SheetHead`'s chips sit under a dialog title, no
+              // other element here names the place — the Back control's
+              // `closeRecorder` names the action — so the chip text is the one
+              // place book, chapter and segment reach assistive tech, as the
+              // plain-text trail did before (George round 2). Chapter is the
+              // plain NUMBER, never
+              // `chapterHeading`'s resolved name — that mismatch (a renamed
+              // chapter reading one way in this header and another way on the
+              // menu chip) is what #1105 reported; `o4-crumbs.tsx` explains
+              // why the number is the one both paths keep. The segment state
+              // mirrors `RecorderMenu`'s own `marked`/`state` derivation
+              // (recorder-menu.tsx) from the same `finishedState` this
+              // component already computes — duplicated rather than shared
+              // because that file belongs to a parallel PR (#1104/#1103).
+              <div className="min-w-0 flex-1">
+                <O4Crumbs
+                  className="min-w-0"
+                  book={view.bookName}
+                  chapter={view.chapterNumber}
+                  segment={{
+                    ordinal: view.ordinal,
+                    state:
+                      finishedState === "finished"
+                        ? "finished"
+                        : finishedState === "empty"
+                          ? "recorded"
+                          : "empty",
+                  }}
+                />
+              </div>
+            ) : (
+              <span className="text-ink min-w-0 flex-1 truncate">
+                {view
+                  ? strings.recorderBreadcrumb(
+                      view.bookName,
+                      // Resolved here, the same way the Segments header resolves
+                      // it, so a renamed chapter (#264) reads the same on both
+                      // screens. Passing the number let this trail spell the
+                      // default name itself and ignore the label (#169). The
+                      // segment's own label rides alongside and is resolved by
+                      // `segmentHeading` inside the entry (#591).
+                      strings.chapterHeading(
+                        view.chapterName,
+                        view.chapterNumber
+                      ),
+                      view.ordinal,
+                      view.segmentLabel
+                    )
+                  : ""}
+              </span>
+            )}
             {mode === "record" ? (
               // The menu opener lives in the header in record mode (the toolbar
               // is the bin + Record + Play + Edit, #315/#592). Same gate the old
