@@ -248,3 +248,105 @@ describe("useSegmentEditor: paste is one-shot (#489)", () => {
     expect(api().clip).toBe(other);
   });
 });
+
+/**
+ * `rollBackClipboard` (#965 R3): an exit that drops this session's edits
+ * unsaved first puts back the phrase the clipboard held at the base. This
+ * harness opens the sheet the way a paste into a SECOND segment does — the
+ * clipboard already holds a phrase cut elsewhere — and lets a case swap the
+ * base, which is what a successful save does.
+ */
+const RollBackHarness = forwardRef<
+  HarnessHandle,
+  { readonly original: Int16Array; readonly initialClip: Int16Array | null }
+>(function RollBackHarness({ original, initialClip }, ref) {
+  const [clip, setClip] = useState<Int16Array | null>(initialClip);
+  const editor = useSegmentEditor(original, { clip, set: setClip });
+  const handle: HarnessHandle = { ...editor, clip, setClip };
+  useImperativeHandle(ref, () => handle);
+  return null;
+});
+
+describe("useSegmentEditor.rollBackClipboard (#965 R3)", () => {
+  const PHRASE = Int16Array.from([7, 8, 9]);
+
+  async function mount(initialClip: Int16Array | null): Promise<{
+    api: () => HarnessHandle;
+    rebase: (o: Int16Array) => Promise<void>;
+  }> {
+    const ref = createRef<HarnessHandle>();
+    const render = (original: Int16Array) =>
+      act(async () => {
+        root.render(
+          createElement(RollBackHarness, { ref, original, initialClip })
+        );
+      });
+    await render(SOURCE);
+    const api = () => {
+      if (!ref.current) throw new Error("Harness did not mount");
+      return ref.current;
+    };
+    return { api, rebase: render };
+  }
+
+  it("puts back a phrase a landed paste took off the clipboard", async () => {
+    const { api } = await mount(PHRASE);
+    await act(async () => {
+      api().paste(0);
+    });
+    expect(api().clip).toBeNull();
+
+    await act(async () => {
+      api().rollBackClipboard();
+    });
+    expect(api().clip).toBe(PHRASE);
+  });
+
+  it("puts it back over a later cut of this segment's own audio", async () => {
+    const { api } = await mount(PHRASE);
+    await act(async () => {
+      api().paste(0);
+    });
+    await act(async () => {
+      api().openSelection({ start: 5, end: 7 });
+    });
+    await act(async () => {
+      api().cut();
+    });
+    expect(api().clip).not.toBe(PHRASE);
+
+    await act(async () => {
+      api().rollBackClipboard();
+    });
+    expect(api().clip).toBe(PHRASE);
+  });
+
+  it("leaves the clipboard alone when it was empty at the base", async () => {
+    const { api } = await mount(null);
+    await act(async () => {
+      api().openSelection({ start: 2, end: 6 });
+    });
+    await act(async () => {
+      api().cut();
+    });
+
+    await act(async () => {
+      api().rollBackClipboard();
+    });
+    expect(api().clip).toEqual(CUT);
+  });
+
+  it("does not put back a phrase once a save has moved the base past it", async () => {
+    const { api, rebase } = await mount(PHRASE);
+    await act(async () => {
+      api().paste(0);
+    });
+    // A successful save re-reads the segment, whose stored audio now holds
+    // the pasted phrase: the base moves while the clipboard is empty.
+    await rebase(Int16Array.from(api().working));
+    await act(async () => {
+      api().rollBackClipboard();
+    });
+    expect(api().clip).toBeNull();
+  });
+});

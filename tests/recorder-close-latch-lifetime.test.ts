@@ -95,6 +95,7 @@ beforeEach(() => {
     paste: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),
+    rollBackClipboard: vi.fn(),
   };
   container = document.createElement("div");
   document.body.append(container);

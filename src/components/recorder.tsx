@@ -2153,7 +2153,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       async (plan: TailPlan): Promise<boolean> => {
         // Shared by idle Back and held-take discard. Do not let either turn a
         // superseded Stop-commit into a delayed write against the old take.
+        // Dropping the edits unsaved would drop a landed paste's phrase with
+        // them, since a paste empties the clipboard (#489), so the clipboard
+        // rolls back with them first.
         if (supersededCapture.current) {
+          editor.rollBackClipboard();
           onExit(dirty.current);
           return true;
         }
