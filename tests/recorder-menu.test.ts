@@ -116,7 +116,7 @@ describe("RecorderMenu", () => {
     expect(marked).toBeDefined();
     expect(marked?.getAttribute("aria-pressed")).toBe("true");
     expect(marked?.className).toContain("is-done");
-    expect(named(strings.markUnfinished(3))).toBeUndefined();
+    expect(named("Mark segment 3 not done")).toBeUndefined();
 
     show({ finishedState: "empty" });
     const unmarked = named(strings.markFinished(3));
@@ -160,7 +160,7 @@ describe("RecorderMenu", () => {
       "the unmarked label is what a null ordinal shows"
     ).toBeDefined();
     expect(row?.className).not.toContain("is-done");
-    expect(named(strings.markUnfinished(0))).toBeUndefined();
+    expect(named("Mark segment 0 not done")).toBeUndefined();
   });
 
   it("does NOT paint the green mark on a disabled-finished row", () => {
