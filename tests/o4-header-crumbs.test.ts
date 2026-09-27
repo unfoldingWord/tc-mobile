@@ -323,10 +323,30 @@ describe("the segments header (#1105)", () => {
     expect(
       btn.querySelector(".o4-crumbs")?.closest('[aria-hidden="true"]')
     ).not.toBeNull();
-    expect(btn.getAttribute("aria-label")).toBe(strings.backToBooks);
+    // The SAME trail this button has always exposed (both looks rendered
+    // identically here before #1105) — NOT `strings.backToBooks`. A first
+    // version of this fix reused that string and put two controls named
+    // "Back to books" on this one screen (the plain Control beside it, and
+    // this button), which broke every `getByRole(button, { name:
+    // "Back to books" })` lookup in the e2e suite with a strict-mode
+    // ambiguity error — caught by CI, not by this file, until this guard
+    // was added. The exact-name test below is the guard.
+    expect(btn.getAttribute("aria-label")).toBe(
+      strings.chapterBreadcrumb("Book Mine", "2:1-4")
+    );
 
     await act(async () => breadcrumbButton().click());
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("never shares an accessible name with the plain Back control beside it", async () => {
+    await mount("o4");
+    const named = (name: string) =>
+      [...document.querySelectorAll("button")].filter(
+        (el) => el.getAttribute("aria-label") === name
+      );
+    expect(named(strings.backToBooks)).toHaveLength(1);
+    expect(named(strings.backToBooks)[0]).not.toBe(breadcrumbButton());
   });
 
   it("agrees with the chapter menu's own crumbs, chip for chip", async () => {

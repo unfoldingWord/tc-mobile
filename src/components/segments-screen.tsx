@@ -970,18 +970,28 @@ export const SegmentsScreen = forwardRef<
             not the text trail. The chips carry `aria-hidden` — the same rule
             `O4SheetHead` states in its own docblock, that a labelled control
             does not need its decoration read a second time — so the button
-            keeps its accessible name explicitly (`aria-label`, same string
-            as the plain Back control beside it) rather than losing it when
-            the chip text is hidden from the accessibility tree. Chapter is
-            the plain NUMBER (`chapterNumber`), never `chapterHeading`'s
-            resolved name: see `o4-crumbs.tsx`'s `O4Crumbs` docblock for why
-            that resolved name is what made this header and the menu chip
-            disagree (#1105). */}
+            keeps its accessible name explicit (`aria-label`) rather than
+            losing it when the chip text is hidden from the accessibility
+            tree. The name is the SAME `chapterBreadcrumb` trail this button
+            has always exposed (both looks rendered identically here before
+            this fix, so this is the one name every existing caller already
+            expects) — deliberately NOT `strings.backToBooks`, the plain Back
+            control's own name: giving the two the same name produced two
+            controls named "Back to books" on the one screen, which broke
+            every `getByRole("button", { name: "Back to books" })` lookup in
+            this repo's e2e suite (strict-mode: ambiguous) — caught by CI on
+            this PR's first push, not by a local run of any single spec.
+            Chapter is the plain NUMBER (`chapterNumber`) in the VISIBLE
+            chip, never `chapterHeading`'s resolved name: see
+            `o4-crumbs.tsx`'s `O4Crumbs` docblock for why that resolved name
+            is what made this header and the menu chip disagree (#1105). */}
         <button
           type="button"
           onClick={onBack}
           className="breadcrumb"
-          aria-label={o4 ? strings.backToBooks : undefined}
+          aria-label={
+            o4 ? strings.chapterBreadcrumb(bookName, chapterHeading) : undefined
+          }
         >
           {o4 ? (
             <div aria-hidden="true" className="min-w-0">
