@@ -59,6 +59,25 @@ export function AboutPanel({
   // close the whole drawer — so the list is always the state a fresh open sees.
   const handleClose = viewing ? onBack : onClose;
 
+  // Back from a licence text lands on the button that opened it, not the first
+  // one (#823 item 7). The list unmounts while a text is read, so the opener is
+  // remembered by `href` and found again when the list remounts. This effect
+  // runs after the Menu's own `focusKey` landing (a child's effects run before
+  // its parent's), so it has the last word. Closing the drawer forgets the
+  // opener, so a fresh open still lands on the first button.
+  const returnTo = useRef<string | null>(null);
+  const listButtons = useRef(new Map<string, HTMLButtonElement>());
+  useEffect(() => {
+    if (!open) {
+      returnTo.current = null;
+      return;
+    }
+    if (viewing) return;
+    const href = returnTo.current;
+    returnTo.current = null;
+    if (href) listButtons.current.get(href)?.focus();
+  }, [open, viewing]);
+
   return (
     <Menu
       open={open}
@@ -87,8 +106,15 @@ export function AboutPanel({
             {licenseTexts.map((text) => (
               <button
                 key={text.href}
+                ref={(el) => {
+                  if (el) listButtons.current.set(text.href, el);
+                  else listButtons.current.delete(text.href);
+                }}
                 type="button"
-                onClick={() => onView(text)}
+                onClick={() => {
+                  returnTo.current = text.href;
+                  onView(text);
+                }}
                 aria-label={strings.aboutReadText(text.label)}
                 className="text-ink flex min-h-[40px] w-fit items-center border-0 bg-transparent p-0 text-left text-[13px] underline"
               >
