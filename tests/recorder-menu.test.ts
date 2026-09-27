@@ -102,19 +102,43 @@ describe("RecorderMenu", () => {
     expect(named(strings.enterEdit)).toBeUndefined();
   });
 
-  it("flips the Mark row's LABEL and its green mark on the same value", () => {
-    // George R1: the paint and the label both key on `finishedState` — the
+  it("keeps the Mark row's label fixed and says its state with aria-pressed and the green mark (#351)", () => {
+    // George R1: the paint and the state both key on `finishedState` — the
     // state the store will actually write — never on the displayed intent,
     // which can still read "finished" for a segment that was emptied.
+    //
+    // #351: the label no longer flips to "not done". With `aria-pressed`
+    // beside it, a flipped label announces "Mark segment 3 not done, pressed",
+    // naming the opposite of the state; one fixed label is the pattern
+    // `DesignControl` already follows.
     show({ finishedState: "finished" });
-    const marked = named(strings.markUnfinished(3));
+    const marked = named(strings.markFinished(3));
     expect(marked).toBeDefined();
+    expect(marked?.getAttribute("aria-pressed")).toBe("true");
     expect(marked?.className).toContain("is-done");
+    expect(named(strings.markUnfinished(3))).toBeUndefined();
 
     show({ finishedState: "empty" });
     const unmarked = named(strings.markFinished(3));
     expect(unmarked).toBeDefined();
+    // "false", not absent: an absent `aria-pressed` is a plain button, and
+    // this row is a toggle in both states.
+    expect(unmarked?.getAttribute("aria-pressed")).toBe("false");
     expect(unmarked?.className).not.toContain("is-done");
+  });
+
+  it("carries aria-pressed beside aria-disabled on a greyed, marked row (#351)", () => {
+    // The pair #351 asked to check: a marked row frozen while its take commits
+    // (`markRowReason`'s "uncommitted-take", which has a hint, #135)
+    // is `aria-disabled` AND still says it is pressed, and its name is the
+    // fixed label with the reason joined on.
+    show({ finishedState: "finished", markReason: "uncommitted-take" });
+    const row = startingWith(strings.markFinished(3));
+    expect(row?.getAttribute("aria-disabled")).toBe("true");
+    expect(row?.getAttribute("aria-pressed")).toBe("true");
+    expect(row?.getAttribute("aria-label")).toBe(
+      `${strings.markFinished(3)}. ${strings.blockedByTake}`
+    );
   });
 
   it("keeps the paint and the label agreeing when the ordinal is missing", () => {

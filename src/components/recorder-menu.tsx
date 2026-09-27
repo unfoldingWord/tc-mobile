@@ -219,11 +219,13 @@ export function RecorderMenu({
             // keying the paint on it would show a green, "Unmark finished" row
             // that lies until close (George R1). `finishedState === "finished"`
             // is true only when the mark will stick.
-            label={
-              marked
-                ? strings.markUnfinished(ordinal)
-                : strings.markFinished(ordinal ?? 0)
-            }
+            //
+            // One fixed label, and `pressed` says the state (#351) — the
+            // `DesignControl` pattern. The label used to flip to "Mark segment
+            // N not done", and beside `aria-pressed` that flip would announce
+            // "not done, pressed", naming the opposite of the state.
+            label={strings.markFinished(ordinal ?? 0)}
+            pressed={marked}
             variant="quiet"
             // Same `onToggleFinished`/`finishedIntent` semantics the header
             // checkbox carried (D1) — only the trigger moved. It does NOT close
@@ -381,11 +383,11 @@ function RecorderMenuTiles({
         <Tile
           tone={marked ? "done" : "doneoff"}
           icon="check"
-          label={
-            marked
-              ? strings.markUnfinished(ordinal ?? 0)
-              : strings.markFinished(ordinal ?? 0)
-          }
+          // Fixed label, state on `pressed` — as the current look's row (#351).
+          // The tile's `is-on` ink loses to the tone's own ink: equal
+          // specificity, and `o4/` is imported after `3-components.css`.
+          label={strings.markFinished(ordinal ?? 0)}
+          pressed={marked}
           caption={strings.tileFinished}
           className="recorder-menu-tile"
           disabled={markReason !== null}
