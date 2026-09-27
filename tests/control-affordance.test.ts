@@ -9,9 +9,15 @@ import {
   shareControlGlyph,
 } from "@/components/control-affordance";
 
-/** Source-shape reads: what the JSX SAYS, where no render would show it. */
+import { stripComments } from "./support";
+
+/** Source-shape reads: what the JSX SAYS, where no render would show it.
+ *  Comments stripped so a positive match reads code, not a comment carrying
+ *  the pinned text (#822). */
 const read = (rel: string) =>
-  readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
+  stripComments(
+    readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8")
+  );
 
 /**
  * #354 / #383 — a busy `Control` and a ready `Control` must each look and

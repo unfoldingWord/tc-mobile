@@ -15,9 +15,15 @@ import { SHARE_SETTLED, type ShareSettled } from "@/hooks/share-progress";
 import type { ShareError } from "@/hooks/share-flow";
 import { noticePresentation } from "@/components/notice-tone";
 
-/** Source-shape reads: these check source text, not rendered markup (#197). */
+import { stripComments } from "./support";
+
+/** Source-shape reads: these check source text, not rendered markup (#197).
+ *  Comments stripped so a positive match reads code, not a comment carrying
+ *  the pinned text (#822). */
 const read = (rel: string) =>
-  readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
+  stripComments(
+    readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8")
+  );
 
 /**
  * The share outcomes must be tellable apart WITHOUT reading (#178).

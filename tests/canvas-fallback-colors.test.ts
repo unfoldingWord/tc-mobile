@@ -10,6 +10,8 @@ import {
   withCanvasFallback,
 } from "@/components/canvas-fallback-colors";
 
+import { stripComments } from "./support";
+
 /**
  * #506 item 1 — the canvas fallback hexes `waveform.tsx` and `live-scope.tsx`
  * paint when a themed token read comes back empty.
@@ -28,13 +30,13 @@ import {
 const ROOT = path.resolve(import.meta.dirname, "..");
 const COMPONENTS = path.join(ROOT, "src", "components");
 
-const waveformSource = readFileSync(
-  path.join(COMPONENTS, "waveform.tsx"),
-  "utf8"
+// Comments stripped so a positive match reads code, not a comment carrying
+// the pinned text (#822).
+const waveformSource = stripComments(
+  readFileSync(path.join(COMPONENTS, "waveform.tsx"), "utf8")
 );
-const liveScopeSource = readFileSync(
-  path.join(COMPONENTS, "live-scope.tsx"),
-  "utf8"
+const liveScopeSource = stripComments(
+  readFileSync(path.join(COMPONENTS, "live-scope.tsx"), "utf8")
 );
 
 describe("withCanvasFallback", () => {
