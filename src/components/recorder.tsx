@@ -13,6 +13,7 @@ import { captureFailureText } from "./capture-failure-copy";
 import { CenterlineOverlay } from "./centerline-overlay";
 import { Control } from "./control";
 import { shareControlGlyph } from "./control-affordance";
+import { CutAnchor } from "./cut-anchor";
 import { redoReason, undoReason } from "./edit-control-state";
 import { EraseConfirm, type EraseConfirmPreview } from "./erase-confirm";
 import { guidedRecordShown, guidedStep } from "./guided-step";
@@ -3895,17 +3896,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       the cut's own write. Cut does not clear `dragging` on
                       its own, so the gate is what has to. */}
                     {editor.selectionActive && (
-                      <Control
-                        icon="scissors"
-                        label={strings.cut}
-                        variant="quiet"
-                        size={26}
-                        disabled={heldByDrag(
-                          dragging,
-                          !idleEditable || !editor.canCut
-                        )}
-                        onClick={onCut}
-                      />
+                      <CutAnchor selection={editor.selection} win={win}>
+                        <Control
+                          icon="scissors"
+                          label={strings.cut}
+                          variant="quiet"
+                          size={26}
+                          disabled={heldByDrag(
+                            dragging,
+                            !idleEditable || !editor.canCut
+                          )}
+                          onClick={onCut}
+                        />
+                      </CutAnchor>
                     )}
                     {/* The clipboard's bin (#862), in the same reserved row:
                       while the stage is collapsed onto the line with a cut

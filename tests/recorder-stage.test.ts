@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   centerlineOverlayShown,
+  cutAnchorPercent,
   dragOriginAfterInterrupt,
   frozenPan,
   heldByDrag,
@@ -33,6 +34,7 @@ import {
   effectivePan,
   panAfterCut,
   viewportWindow,
+  type WaveformViewport,
 } from "@/lib/audio/viewport";
 
 /**
@@ -1817,5 +1819,50 @@ describe("centerlineOverlayShown", () => {
         liveScope: true,
       })
     ).toBe(false);
+  });
+});
+
+/**
+ * #1102: the Cut affordance centers on the selection's own midpoint, in the
+ * same percentage coordinate space `SelectionOverlay` draws the band and
+ * handles in (`sampleToViewportX(sample, 100, win)`), not the stage's fixed
+ * centre. `tests/cut-anchor.test.ts` pins the same table one layer up, at the
+ * `CutAnchor` component's actual rendered `--o4-cut-left`.
+ */
+describe("cutAnchorPercent", () => {
+  // The #705 fixture `tests/selection-overlay-hit.test.ts` already uses: L =
+  // 1000 at quarter zoom, window 750..1000.
+  const FITTED: WaveformViewport = {
+    start: 750,
+    end: 1000,
+    visibleSamples: 250,
+    centerlineSample: 875,
+  };
+
+  it("returns null with no selection — the bin (#862) has nothing to center under", () => {
+    expect(cutAnchorPercent(null, FITTED)).toBeNull();
+  });
+
+  it("sits at the midpoint of a span entirely inside the window", () => {
+    // 800..900 inside 750..1000: midpoint 850, (850-750)/250 = 40%.
+    expect(cutAnchorPercent({ start: 800, end: 900 }, FITTED)).toBe(40);
+  });
+
+  it("agrees on a reversed selection — the midpoint of [a, b] and [b, a] is the same number", () => {
+    expect(cutAnchorPercent({ start: 900, end: 800 }, FITTED)).toBe(40);
+  });
+
+  it("sits at 50% for a span fitted edge to edge (the whole window)", () => {
+    expect(cutAnchorPercent({ start: 750, end: 1000 }, FITTED)).toBe(50);
+  });
+
+  it("clamps to the viewport's own edges when the midpoint falls outside it", () => {
+    // A span entirely to the left of the window: midpoint well under 0%.
+    expect(cutAnchorPercent({ start: 0, end: 100 }, FITTED)).toBe(0);
+    // A span entirely to the right: midpoint well over 100%.
+    expect(cutAnchorPercent({ start: 1_100, end: 1_300 }, FITTED)).toBe(100);
+    // A span wider than the window, centred on it: midpoint still lands
+    // inside — this is not the same case as the two above.
+    expect(cutAnchorPercent({ start: 500, end: 1_250 }, FITTED)).toBe(50);
   });
 });
