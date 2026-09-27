@@ -218,6 +218,42 @@ it("Cancel hands focus back to the row it was armed for, not <body> (Frank r2 F2
   expect(document.activeElement).toBe(rowOpen);
 });
 
+it("a landed delete hands focus to the row that takes its place, not <body> (Frank r3 on #1119)", async () => {
+  const second: SegmentRow = {
+    ...row,
+    segmentId: "second" as SegmentId,
+    ordinal: 2,
+  };
+  mocks.chapter.mockReturnValue({ ...mocks.chapter(), rows: [row, second] });
+  mocks.deleteSegment.mockImplementationOnce(async () => {
+    // The hook's own patch: the row goes, and the rest renumber.
+    mocks.chapter.mockReturnValue({
+      ...mocks.chapter(),
+      rows: [{ ...second, ordinal: 1 }],
+    });
+    return true;
+  });
+  await act(async () => root.render(createElement(Host)));
+  await openDeleteConfirm();
+  await act(async () => button(strings.deleteSegmentConfirm).click());
+  expect(dialogTitle()).toBeNull();
+  const rowOpen = document.querySelector(".row-open");
+  expect(rowOpen).not.toBeNull();
+  expect(document.activeElement).toBe(rowOpen);
+});
+
+it("deleting the only segment hands focus to the empty chapter's invite (Frank r3 on #1119)", async () => {
+  mocks.deleteSegment.mockImplementationOnce(async () => {
+    mocks.chapter.mockReturnValue({ ...mocks.chapter(), rows: [] });
+    return true;
+  });
+  await act(async () => root.render(createElement(Host)));
+  await openDeleteConfirm();
+  await act(async () => button(strings.deleteSegmentConfirm).click());
+  expect(dialogTitle()).toBeNull();
+  expect(document.activeElement).toBe(button(strings.addSegment));
+});
+
 it("the title keeps the armed ordinal while the optimistic patch has already removed the row (Frank r2 F3 on #1119)", async () => {
   let release!: (ok: boolean) => void;
   mocks.deleteSegment.mockImplementationOnce(

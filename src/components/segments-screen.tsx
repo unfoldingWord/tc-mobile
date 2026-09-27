@@ -189,6 +189,8 @@ export const SegmentsScreen = forwardRef<
   const [deleteTarget, setDeleteTarget] = useState<SegmentId | null>(null);
   const [deleting, setDeleting] = useState(false);
   const deletingRef = useRef(false);
+  // A landed delete that emptied the chapter hands focus to the invite.
+  const focusInviteRef = useRef(false);
   // This screen's own record of "the delete I asked for failed" — mirrors
   // `eraseFailure` below, and for the same reason: the hook itself already
   // reports the cause to the funnel (`"segment-delete"`,
@@ -396,8 +398,8 @@ export const SegmentsScreen = forwardRef<
    * on #1119: Escape left it on `<body>`, so the next Tab reached Back). The
    * row menu that armed this is already gone, so the row itself is the
    * landing, held by `rowReveal.reveal(listInert)` below until the commit
-   * that un-inerts the list. After a landed delete the row is gone and the
-   * arm is spent with nothing to focus.
+   * that un-inerts the list. After a landed delete the row is gone, so
+   * `onConfirmDelete` replaces this arm with the row's neighbour.
    */
   const closeDeleteState = useCallback(() => {
     if (deleteTarget !== null) rowReveal.armFocus(deleteTarget);
@@ -865,6 +867,10 @@ export const SegmentsScreen = forwardRef<
    */
   const onConfirmDelete = useCallback(() => {
     if (deleteTarget === null || deletingRef.current) return;
+    // The list order as it is now, while the row is still in it: the hook's
+    // optimistic patch removes the row during the await below, so the
+    // neighbour that takes its place has to be read before that.
+    const orderBefore = rows.map((r) => r.segmentId);
     void (async () => {
       // Stop playback first if THIS row is the one sounding — same reasoning
       // as `onConfirmErase` above.
@@ -877,9 +883,21 @@ export const SegmentsScreen = forwardRef<
       deletingRef.current = false;
       setDeleting(false);
       if (!ok) setDeleteFailure(true);
+      // Arms the row itself — right after a failure, where the row survives.
       closeDelete();
+      if (ok) {
+        // Frank r3 on #1119: the row is gone, so arming it hands focus to
+        // nothing and it falls to <body>. Books' rule (`delete-focus.ts`):
+        // the row below, else the row above, else the empty chapter's
+        // invite — the only control left. Overrides the arm above.
+        const at = orderBefore.indexOf(deleteTarget);
+        let next: SegmentId | null = null;
+        if (at >= 0) next = orderBefore[at + 1] ?? orderBefore[at - 1] ?? null;
+        rowReveal.armFocus(next);
+        focusInviteRef.current = next === null;
+      }
     })();
-  }, [audio, closeDelete, deleteTarget, deleteSegment]);
+  }, [audio, closeDelete, deleteTarget, deleteSegment, rows, rowReveal]);
   // The list is hidden from AT while a dialog is up, mirroring the recorder
   // sheet (G8: aria-modal alone is not trusted to hide the background). The
   // share overlay joins the list (George r1 P2 #1/#2, #491): a screen
@@ -1033,6 +1051,15 @@ export const SegmentsScreen = forwardRef<
     },
   });
   const drag = o4 ? reorder.drag : null;
+
+  // The empty-chapter half of the delete hand-off (`onConfirmDelete`). The
+  // invite is not a row, so `rowReveal` cannot reach it. It is held the same
+  // way, until `inert` lifts.
+  useEffect(() => {
+    if (!focusInviteRef.current || listInert) return;
+    focusInviteRef.current = false;
+    if (showEmpty) scrollRef.current?.querySelector("button")?.focus();
+  }, [listInert, showEmpty]);
 
   const onAppend = useCallback(async () => {
     // Only the first append comes from the invite (the corner + is hidden while
