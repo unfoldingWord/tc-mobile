@@ -313,7 +313,7 @@ describe("useSegmentEditor.rollBackClipboard (#965 R3)", () => {
     await act(async () => {
       api().cut();
     });
-    expect(api().clip).not.toBe(PHRASE);
+    expect(api().clip).toEqual(Int16Array.from([12, 13]));
 
     await act(async () => {
       api().rollBackClipboard();
