@@ -346,7 +346,11 @@ describe("the segments header (#1105)", () => {
         (el) => el.getAttribute("aria-label") === name
       );
     expect(named(strings.backToBooks)).toHaveLength(1);
-    expect(named(strings.backToBooks)[0]).not.toBe(breadcrumbButton());
+    // Exact identity, not a loose negative: the ONE control named
+    // "Back to books" is the plain Control, not the breadcrumb button.
+    expect(named(strings.backToBooks)[0]).toBe(
+      header().querySelector('button[title="Back to books"]')
+    );
   });
 
   it("agrees with the chapter menu's own crumbs, chip for chip", async () => {
