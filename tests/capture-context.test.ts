@@ -16,6 +16,8 @@ import {
 } from "@/lib/audio/capture-context";
 import { CANONICAL_SAMPLE_RATE, INT16_MAX } from "@/lib/audio/format";
 
+import { stripComments } from "./support";
+
 /** A ramp: sample i holds i * 1000, so every bucket's extremes name its span. */
 function ramp(n: number): Int16Array {
   return Int16Array.from({ length: n }, (_, i) => i * 1000);
@@ -233,9 +235,13 @@ describe("advanceColumnRate — the current cadence, not a lifetime average", ()
   });
 
   it("the live scope's tick feeds the clock rather than an inline average", () => {
-    const scope = readFileSync(
-      new URL("../src/components/live-scope.tsx", import.meta.url),
-      "utf8"
+    // Stripped first (#822): a comment quoting the call would otherwise
+    // satisfy the positive match with the live tick averaging inline.
+    const scope = stripComments(
+      readFileSync(
+        new URL("../src/components/live-scope.tsx", import.meta.url),
+        "utf8"
+      )
     );
     expect(scope).toMatch(/advanceColumnRate\(\s*rateRef\.current,/);
     expect(scope).not.toMatch(/estimateColumnRate\(/);
@@ -268,9 +274,13 @@ describe("columnsRightOfHead", () => {
  * take splices at, on every path that starts the mic, and reaches the scope.
  */
 describe("recorder wiring (#640)", () => {
-  const src = readFileSync(
-    new URL("../src/components/recorder.tsx", import.meta.url),
-    "utf8"
+  // Stripped first (#822): unstripped, a comment carrying the wiring could
+  // satisfy each positive match below while the live code said otherwise.
+  const src = stripComments(
+    readFileSync(
+      new URL("../src/components/recorder.tsx", import.meta.url),
+      "utf8"
+    )
   );
 
   it("the Record tap builds the context at the offset it locks", () => {

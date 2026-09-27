@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { cssRule } from "./support";
+import { cssRule, stripComments } from "./support";
 
 /**
  * A Finished segment's waveform and Play button turn green in the recorder,
@@ -22,9 +22,10 @@ const components = readFileSync(
   path.join(ROOT, "src", "app", "styles", "3-components.css"),
   "utf8"
 );
-const recorder = readFileSync(
-  path.join(ROOT, "src", "components", "recorder.tsx"),
-  "utf8"
+// Stripped first (#822): a comment carrying either pinned expression would
+// otherwise satisfy its match while the live wiring keyed on something else.
+const recorder = stripComments(
+  readFileSync(path.join(ROOT, "src", "components", "recorder.tsx"), "utf8")
 );
 
 describe("the recorder's Finished paint (#926)", () => {
