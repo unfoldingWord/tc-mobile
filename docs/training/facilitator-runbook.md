@@ -42,6 +42,41 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    and recorded before anyone taps it. <!-- source: gh issue #248, tester
    report 2026-09-22 (contributing developer, source: tester) -->
 
+   **In short:** an Android phone opens `app-release.apk` from the newest
+   pre-release on <https://github.com/unfoldingWord/tc-mobile/releases> and
+   taps through the "install from this source" warning; an iPhone accepts a
+   TestFlight invitation, installs the free TestFlight app, then installs
+   and opens tC Mobile through it — from the home screen afterward, not
+   from TestFlight itself. `tester-install.md` has the full steps; this is
+   only the shape of it. <!-- source: docs/tester-install.md "Android
+   (download link)" and "iPhone or iPad (TestFlight)" sections;
+   docs/native/README.md §5 step 4, §4 -->
+
+   **Updating an installed phone to a newer build works the same way —
+   install the new APK, or update through TestFlight, directly over the
+   version already there. Never uninstall to update: uninstalling wipes
+   the app's data, and every recording lives in that data, so uninstalling
+   deletes every recording on that phone.** <!-- source: gh issue #923,
+   observed on Android 2026-09-25: "Uninstall v0.2.10, then install v0.2.12:
+   the app shows 0.2.12, but all data from 0.2.10 is gone"; see also
+   [the flip side of "nothing leaves the phone"](#the-flip-side-of-nothing-leaves-the-phone)
+   --> A fix that stopped an in-place Android update from silently
+   continuing to run the old build (#934) has merged but has not been
+   confirmed on a phone as of this writing — it has not been checked on
+   iOS at all. <!-- source: gh issue #923, comment 2026-09-27 ("the fix is
+   in v0.2.13 ... Only the phone check is left: on an Android phone holding
+   v0.2.12 recordings, install the v0.2.13 APK over it (don't uninstall),
+   relaunch twice, and confirm the footer reads 0.2.13 and every recording
+   is still there. This issue closes once that's reported."); PR #934
+   merged 2026-09-26 (merge e5218643), confirmed an ancestor of this branch
+   --> After installing over an old build, reopen the app and check the
+   build stamp — the small text at the bottom of every screen reading
+   something like `v0.2.1 · a1b2c3d` (more on it in
+   [section 5](#5-reporting-a-problem)) — to confirm it now shows the new
+   version before assuming the update took. <!-- source:
+   src/components/build-stamp.tsx; rendered on every screen via
+   src/app/App.tsx -->
+
 2. **Allow the microphone when asked.** The first time someone taps record,
    the phone will ask for microphone access. Tap **Allow**. Without it,
    recording will not work at all.
