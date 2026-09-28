@@ -4,7 +4,8 @@
  * Pulled out of `save-failed.tsx` for the reason this repo lifts copy and state
  * decisions into a tested, DOM-free module (see `lib/takes/pending-take.ts` and
  * `hooks/save-failure.ts`, lifted for exactly this): the wording here is
- * load-bearing, and this project has no renderer to test the component with.
+ * load-bearing, and testing it here means the assertions need not depend on
+ * rendering `save-failed.tsx` at all.
  *
  * Why it is load-bearing (#38): since the commit write became ONE transaction, a
  * FAILED save leaves nothing on disk — the recording is held only in the RAM slot

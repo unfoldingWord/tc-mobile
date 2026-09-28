@@ -22,10 +22,10 @@ vi.mock("@/hooks/use-design", () => ({
  * What this can and cannot prove.
  *
  * There is no renderer here — `vitest.config.ts` sets `environment: "node"`,
- * and this repo has no jsdom and no testing-library. So React's own catching is
+ * and this suite does not mount in jsdom. So React's own catching is
  * NOT exercised below: `renderToStaticMarkup` rethrows a child's error rather
- * than routing it to the boundary (checked, at this commit), and nothing in
- * Node can mount a tree and break it. **That a render throw reaches this
+ * than routing it to the boundary, and nothing in Node can mount a tree and
+ * break it. **That a render throw reaches this
  * boundary at all is verified in a browser, by hand, and is recorded on the
  * PR — not here.** The same goes for the focus move: `renderToStaticMarkup`
  * never attaches a ref, so `focusOnMount` is markup here and behaviour only in
