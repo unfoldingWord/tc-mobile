@@ -95,9 +95,8 @@ describe("the O4 icon batch renders through the app's icon set (#940)", () => {
  * `Icon({ name: "hear" })` was a type error, and forcing it through at
  * runtime rendered an empty `<svg></svg>` (`PATHS[name]` reading
  * `undefined`), which is exactly what the "drew nothing" and "no shapes"
- * assertions above exist to catch. That failure was observed directly on
- * this branch before the batch above was added — see this PR's body for the
- * command and output — and is not re-asserted as a runtime test here since
- * the fix makes the premise (a missing name) impossible to construct without
- * a type-level workaround.
+ * assertions above exist to catch. Red-first evidence for this batch is in
+ * #940, not restated here, and the failure is not re-asserted as a runtime
+ * test here since the fix makes the premise (a missing name) impossible to
+ * construct without a type-level workaround.
  */

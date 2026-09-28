@@ -282,10 +282,8 @@ describe("CLI entry point against a real server serving a malformed version.json
   // event loop. `execFileSync` — used by the other CLI-subprocess describe
   // block above — blocks that event loop synchronously until the child
   // exits, which means the in-process `http.Server` below can never
-  // dequeue the child's incoming connection: every run hung until
-  // `execFileSync`'s own timeout SIGTERM'd it (observed directly: status
-  // `null`, signal `SIGTERM`, no stderr — reproduced live while writing
-  // this test, not theorized). `execFile` (async, promisified) yields
+  // dequeue the child's incoming connection, so the child would sit until
+  // its own timeout SIGTERM'd it. `execFile` (async, promisified) yields
   // control back to the event loop while the child runs, so the server can
   // actually answer it.
   const execFileAsync = promisify(execFile);

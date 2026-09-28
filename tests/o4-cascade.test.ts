@@ -36,8 +36,8 @@ import { stripCssComments } from "./support";
  * declaration survives, which is why
  * `o4/index.css` carries the one inert `--o4-scope` custom property this test
  * locates. That is a narrower reading of this batch's "empty apart from a
- * header comment" done-when clause than the literal text — recorded as a
- * deliberate, evidence-based deviation, not an oversight, in this PR's body.
+ * header comment" done-when clause than the literal text — a deliberate,
+ * evidence-based deviation, not an oversight.
  *
  * WHAT THIS DOES NOT PROVE. It does not run a browser or compute an actual
  * cascade winner — like `tests/focus-offset-cascade.test.ts`, it reads
