@@ -9,6 +9,7 @@ import {
   toPosixPath,
   virtualModuleOwner,
 } from "@/lib/build-provenance";
+import { stripComments } from "./support";
 
 /**
  * The attribution rule behind `dist/build-provenance.json` (#36). Rolldown
@@ -189,9 +190,11 @@ describe("nodeModulesEntry", () => {
  * at import time.
  */
 describe("vite.config.ts routes its native-path comparisons through the POSIX helpers (#1083)", () => {
-  const CONFIG = readFileSync(
-    path.join(import.meta.dirname, "..", "vite.config.ts"),
-    "utf8"
+  // stripComments (tests/support.ts) so a comment naming the old shape (as
+  // this file's own docblocks above do) cannot false-match either
+  // assertion — the exact trap AGENTS.md names for a whole-file source read.
+  const CONFIG = stripComments(
+    readFileSync(path.join(import.meta.dirname, "..", "vite.config.ts"), "utf8")
   );
 
   it("the walked-file vs. known-chunk comparison uses toPosixPath", () => {
