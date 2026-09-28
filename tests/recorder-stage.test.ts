@@ -153,8 +153,7 @@ describe("liveScopeShown — the stage-owning states win", () => {
  * leaving it to be rediscovered (George R6 P3).
  *
  * There is deliberately no test here pinning "always visible": that claim lives
- * in JSX and CSS, which this repo's convention treats as review-only (see this
- * PR's body for what is and is not verified).
+ * in JSX and CSS, which this repo's convention treats as review-only.
  */
 
 const base = {
