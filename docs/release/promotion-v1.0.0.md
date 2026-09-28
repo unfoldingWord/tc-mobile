@@ -10,9 +10,10 @@ signing and installation.
 
 The [delivery decision on issue 262](https://github.com/unfoldingWord/tc-mobile/issues/262#issuecomment-5765506100)
 sets October 1 as the planned promotion and **October 4, 2026 as handoff to
-facilitators**. The milestone's October 9 date is the training date, not the
-handoff deadline. Leave time for TestFlight processing, installation and a
-failed-build recovery.
+facilitators**. The milestone's due date, 2026-10-02, is when the build must
+be on phones for the training — not the handoff deadline above. Training
+itself is the first week of October 2026 (AGENTS.md, "Purpose"). Leave time
+for TestFlight processing, installation and a failed-build recovery.
 
 `v1-required` means required for **v1.0.0**, not the literal `v1.1.0`
 post-training milestone. `v1-desired` work is optional for training. A parked
