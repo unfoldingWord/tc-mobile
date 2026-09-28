@@ -187,6 +187,18 @@ function allocationLines(allocation: AllocationResult | null): string[] {
 }
 
 /**
+ * Stated once, here, rather than on every "MB" the sections below print
+ * (#1014 item 2): {@link MB} is 1024 × 1024 bytes, so every size in this
+ * report is a mebibyte printed as "MB", not the decimal megabyte a reader
+ * comparing it with an OS storage figure might assume — about 4.9% apart at
+ * these sizes. Restating the unit on every line would touch every call site
+ * in this file; one line in the header, read once, closes the gap the report
+ * itself computes correctly but never explained.
+ */
+export const UNITS_NOTE =
+  'Sizes below are MiB (1024×1024 bytes), printed as "MB".';
+
+/**
  * The report a tester pastes into #974, as plain text.
  *
  * Opens with the two lines #974's "How to report" asks every comment to carry
@@ -198,6 +210,7 @@ function allocationLines(allocation: AllocationResult | null): string[] {
 export function formatPhoneCheckReport(input: PhoneCheckReportInput): string {
   const lines = [
     `**Phone check** (#1009) — build v${input.version} · ${input.sha}`,
+    UNITS_NOTE,
     "Tester (role): ",
     "Device and OS version: ",
     "",

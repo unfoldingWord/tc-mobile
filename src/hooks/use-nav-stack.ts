@@ -321,6 +321,30 @@ export function attachNativeBack(
   };
 }
 
+/**
+ * Drop `?check=phone` from the current history entry's URL (#1014 item 4), so
+ * a later reload of the same tab does not read it again and reopen the phone
+ * check. Not a screen transition and not an overlay dismiss — the check never
+ * pushes a nav layer of its own (`App` opens it by state alone, and this file
+ * never sees `phoneCheckOpen`) — so this is a `replaceState` on the entry
+ * already there, carrying `state` through unchanged rather than the `{ tc,
+ * index }` shape the rest of this file writes. It lives here regardless, next
+ * to `attachNativeBack`, rather than in `App.tsx`, because invariant 1 bans
+ * `window.history` anywhere else (the lint rule enforcing it does not
+ * distinguish a depth-changing call from a same-entry rewrite). A no-op when
+ * the param is already gone, so a second call after the first costs nothing.
+ */
+export function clearPhoneCheckQueryParam(): void {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("check")) return;
+  url.searchParams.delete("check");
+  window.history.replaceState(
+    window.history.state,
+    "",
+    `${url.pathname}${url.search}${url.hash}`
+  );
+}
+
 export interface UseNavStackParams {
   /** `chapterId !== null` — the popstate handler and Amendment C read this. */
   readonly hasChapter: boolean;

@@ -6,6 +6,7 @@ import {
   ALLOCATION_BREADCRUMB_KEY,
   PHONE_CHECK_CONTEXT,
   PHONE_CHECK_DB_NAME,
+  browserAllocationDeps,
   readAllocationBreadcrumb,
   readDeviceInfo,
   runStorageProbe,
@@ -13,6 +14,7 @@ import {
   writeAllocationBreadcrumb,
   type BreadcrumbStore,
 } from "@/hooks/phone-check-probes";
+import { MB } from "@/lib/phone-check/report";
 import {
   subscribeToFailures,
   type FailureReport,
@@ -205,5 +207,53 @@ describe("the allocation breadcrumb store", () => {
       unsubscribe();
       error.mockRestore();
     }
+  });
+});
+
+describe("browserAllocationDeps touches every 4 KB page (#1014 item 1)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /**
+   * `allocate` must COMMIT the block, not merely reserve it: on some engines
+   * an untouched `Int16Array` of this size can be granted virtual address
+   * space without the OS backing every page yet, which would under-report a
+   * device's real ceiling. The proof needs to see inside the block `allocate`
+   * builds, which `browserAllocationDeps` holds in a closure and never
+   * returns — so this stubs the global `Int16Array` constructor with a
+   * subclass that records every instance, the one seam available without
+   * changing the module under test.
+   */
+  it("writes a marker on each page's first element, not only the block's", () => {
+    const instances: Int16Array[] = [];
+    class TrackingInt16Array extends Int16Array {
+      constructor(length: number) {
+        super(length);
+        instances.push(this);
+      }
+    }
+    vi.stubGlobal("Int16Array", TrackingInt16Array);
+
+    const deps = browserAllocationDeps(null, () => {});
+    deps.allocate(1); // 1 MB, in the same unit `MB` computes it in.
+    deps.release();
+
+    expect(instances).toHaveLength(1);
+    const block = instances[0]!;
+    expect(block.length).toBe((1 * MB) / 2);
+
+    const PAGE_ELEMENTS = 4096 / 2; // 4 KB pages; Int16 elements are 2 bytes.
+    const expectedPages = Math.ceil(block.length / PAGE_ELEMENTS);
+    expect(expectedPages).toBeGreaterThan(1);
+    let pagesTouched = 0;
+    for (let i = 0; i < block.length; i += PAGE_ELEMENTS) {
+      if (block[i] === 1) pagesTouched += 1;
+    }
+    expect(pagesTouched).toBe(expectedPages);
+    // And only the page's first element — a loop that filled the whole block
+    // (or wrote nothing) would still pass a coarser "some element is 1" check.
+    expect(block[1]).toBe(0);
+    expect(block[PAGE_ELEMENTS - 1]).toBe(0);
   });
 });

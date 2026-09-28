@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { runEncodeProbe } from "@/lib/phone-check/encode-probe";
@@ -6,14 +6,37 @@ import { ENCODE_PROBE_SECONDS, speechLikePcm } from "@/lib/phone-check/speech";
 
 import { testCodec } from "./support";
 
+const seam = vi.hoisted(() => ({
+  calls: [] as Array<AbortSignal | undefined>,
+  encodeMp3: vi.fn(async (samples: Int16Array): Promise<Uint8Array> => {
+    void samples; // typed so the wiring test below can read what was passed
+    return new Uint8Array(10);
+  }),
+}));
+
+vi.mock("@/hooks/mp3-codec", () => ({
+  withEncoder: (
+    signal: AbortSignal | undefined,
+    work: (codec: { encodeMp3: typeof seam.encodeMp3 }) => Promise<unknown>
+  ) => {
+    seam.calls.push(signal);
+    return work({ encodeMp3: seam.encodeMp3 });
+  },
+}));
+
 /**
  * #1009 — the encode probe's fixture and its timing.
  *
- * The browser half (`runWorkerEncodeProbe`, through `withEncoder` and the
- * worker) is not exercised here: Node has no worker for it. What is pinned is
- * that the fixture is five minutes of non-silent, non-constant PCM, and that
- * the probe reports the codec's real output and a wall time read from the
- * clock around the encode.
+ * The real Worker (`withEncoder`'s `encodeMp3` going through
+ * `hooks/mp3.worker.ts`) is not exercised here: Node has no worker for it.
+ * What IS pinned, since #1014 item 1, is the wiring one level up —
+ * `runWorkerEncodeProbe` reaches `runEncodeProbe` only by calling
+ * `withEncoder`, so it waits its turn on the app's one encoder lane and
+ * counts toward encoder health like any other encode (`withEncoder` itself is
+ * mocked below; its own contract is `mp3-codec.test.ts`'s). What is pinned
+ * elsewhere is that the fixture is five minutes of non-silent, non-constant
+ * PCM, and that the probe reports the codec's real output and a wall time
+ * read from the clock around the encode.
  */
 
 describe("speechLikePcm", () => {
@@ -85,5 +108,24 @@ describe("runEncodeProbe", () => {
     );
     expect(samples.length).toBe(0);
     expect(result.audioSeconds).toBe(1);
+  });
+});
+
+describe("runWorkerEncodeProbe (#1014 item 1)", () => {
+  it("runs the probe through withEncoder, not the codec directly", async () => {
+    seam.calls.length = 0;
+    seam.encodeMp3.mockClear();
+    const { runWorkerEncodeProbe } = await import("@/hooks/phone-check-probes");
+
+    const result = await runWorkerEncodeProbe();
+
+    // No AbortSignal: the phone check never cancels its own encode.
+    expect(seam.calls).toEqual([undefined]);
+    expect(seam.encodeMp3).toHaveBeenCalledTimes(1);
+    const samples = seam.encodeMp3.mock.calls[0]?.[0];
+    if (samples === undefined) throw new Error("encodeMp3 was never called");
+    expect(samples.length).toBe(ENCODE_PROBE_SECONDS * CANONICAL_SAMPLE_RATE);
+    expect(result.audioSeconds).toBe(ENCODE_PROBE_SECONDS);
+    expect(result.mp3Bytes).toBe(10);
   });
 });
