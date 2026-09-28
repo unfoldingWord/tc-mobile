@@ -352,6 +352,42 @@ describe("the segment menu (07) on the tile grid", () => {
     expectCaptionInName();
   });
 
+  // The DRI's 2026-09-28 Clear/Delete ruling (#1119): Clear removes only the
+  // audio and Delete removes the whole segment, so the two must not look
+  // alike. Clear wears the eraser on a neutral fill; only Delete keeps the
+  // bin and the destructive (red) fill.
+  describe("Clear and Delete look different (#1119, DRI 2026-09-28)", () => {
+    /** The drawn glyph inside a control, as markup. */
+    function glyphOf(el: Element): string {
+      const svg = el.querySelector("svg");
+      expect(svg, "a glyph").not.toBeNull();
+      return svg!.innerHTML;
+    }
+
+    it.each(LOOKS)(
+      "never gives Clear and Delete the same glyph (%s)",
+      async (look) => {
+        await mount(look, recorded);
+        await openRow();
+        const clear = button(strings.eraseSegment);
+        const del = button(strings.deleteSegment);
+        expect(glyphOf(clear)).not.toBe(glyphOf(del));
+      }
+    );
+
+    it("gives the destructive fill to Delete alone in the O4 segment menu", async () => {
+      await mount("o4", recorded);
+      await openRow();
+      const tiles = [...dialog().querySelectorAll(".o4-tiles button.o4-tile")];
+      expect(tiles.length).toBe(4);
+      const red = tiles.filter((el) => tone(el) === "erase");
+      expect(red.map((el) => el.getAttribute("aria-label"))).toEqual([
+        strings.deleteSegment,
+      ]);
+      expect(tone(tile(strings.eraseSegment))).toBe("plain");
+    });
+  });
+
   it("marks done grey until it is done, then the whole tile green (G8)", async () => {
     await mount("o4", recorded);
     await openRow();
