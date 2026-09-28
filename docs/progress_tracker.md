@@ -47,7 +47,7 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ### Process notes
 
-- **The same fix line in two PRs duplicated on merge.** #1116 and #1127 added one `takeCap` line one row apart, and the merge produced TS1117. The bench caught it. A develop fix now lives in one PR only.
+- **The same fix line in two PRs duplicated on merge.** This is a second incident, after the #1118/#1122 collision above. #1116 carried its own copy of #1127's `takeCap` fixture fix, one row apart, and merging develop into #1116 produced TS1117. The bench caught it. #1116 took develop's copy of the file (`7b8a4dc8`), so the line on develop is #1127's alone. Rule: a develop fix lives in one PR only.
 - **Merges after 21:00 ET** had a pre-merge gate: both lenses clean at the current head, CI green, no bench hold, no design/styles/components files for the overnight allowlist, and a scratch merge into develop running tsc, eslint and vitest.
 
 ### Not run
