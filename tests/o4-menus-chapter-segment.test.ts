@@ -261,7 +261,7 @@ describe("the segment menu (07) on the tile grid", () => {
       expect(dialogNames()).toEqual([
         strings.menuClose,
         strings.editSegment(3, row.label),
-        row.finished ? strings.markUnfinished(3) : strings.markFinished(3),
+        strings.markFinished(3),
         strings.renameSegment,
         strings.eraseSegment,
       ]);
@@ -290,7 +290,7 @@ describe("the segment menu (07) on the tile grid", () => {
         strings.renameSegment,
         strings.playSegment(3),
         strings.editSegment(3, row.label),
-        row.finished ? strings.markUnfinished(3) : strings.markFinished(3),
+        strings.markFinished(3),
         strings.eraseSegment,
       ]);
       expect(focusedName()).toBe(strings.renameSegment);
@@ -336,9 +336,34 @@ describe("the segment menu (07) on the tile grid", () => {
 
     await mount("o4", finished);
     await openRow();
-    expect(tone(tile(strings.markUnfinished(3)))).toBe("done");
+    expect(tone(tile(strings.markFinished(3)))).toBe("done");
     expectCaptionInName();
   });
+
+  // #351: the Done control keeps one label and says its state with
+  // `aria-pressed`, as the recorder menu's does. "false", not absent: an
+  // absent `aria-pressed` is a plain button, and this is a toggle both ways.
+  it.each(LOOKS)(
+    "keeps the Done label fixed and carries the state on aria-pressed (%s, #351)",
+    async (look) => {
+      await mount(look, recorded);
+      await openRow();
+      expect(button(strings.markFinished(3)).getAttribute("aria-pressed")).toBe(
+        "false"
+      );
+      await escape();
+      await act(async () => root.unmount());
+      root = createRoot(document.getElementById("root")!);
+
+      await mount(look, finished);
+      await openRow();
+      const done = button(strings.markFinished(3));
+      expect(done.getAttribute("aria-pressed")).toBe("true");
+      expect(dialogNames().some((name) => name.includes("not done"))).toBe(
+        false
+      );
+    }
+  );
 
   it("shows Edit and Done greyed on a never-recorded segment, each saying why (o4, D20)", async () => {
     await mount("o4", empty);
@@ -562,7 +587,6 @@ describe("marking-done copy (D17)", () => {
   it('captions the tile "Done" and says done in the label, one string for every menu', () => {
     expect(strings.tileFinished).toBe("Done");
     expect(strings.markFinished(3)).toBe("Mark segment 3 done");
-    expect(strings.markUnfinished(3)).toBe("Mark segment 3 not done");
   });
 });
 

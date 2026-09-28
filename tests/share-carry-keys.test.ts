@@ -23,7 +23,7 @@ import {
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { encodeMp3 } from "@/lib/audio/mp3";
 import { computePeaks } from "@/lib/audio/peaks";
-import { exportBookZip } from "@/lib/export/book";
+import { exportBookZip, memoryArchiveSink } from "@/lib/export/book";
 import { exportChapterMp3, withEncodeSteps } from "@/lib/export/chapter";
 import {
   addChapter,
@@ -623,6 +623,7 @@ describe("Share Book: a dangling chapter left out before the count (#1044)", () 
       book.id,
       (n) => `Chapter ${n}.mp3`,
       testCodec(),
+      memoryArchiveSink(),
       undefined,
       stepReporter(() => true, m.dispatch)
     );
