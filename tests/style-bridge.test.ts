@@ -243,3 +243,50 @@ describe("the batch-one pixel bridge stays mapped (#460)", () => {
     expect(primitiveValue(primitives, "--p-text-sm")).toBe("12px");
   });
 });
+
+/**
+ * The pixel half of the arbitrary-value bridge, batch two (#460).
+ *
+ * Batch two covers `error-boundary.tsx`, unlocked now that #1160 (which held
+ * its own test file, `tests/error-boundary.test.ts`) has merged.
+ * `playhead-overlay.tsx` — unlocked by #1158 — was checked too: it carries
+ * exactly one arbitrary-pixel utility, `w-[2px]`, and no declared primitive
+ * resolves to 2px (`--p-space-1`, the smallest spacing step, is 4px), so
+ * nothing in that file changed — there is no swap for this sweep to guard,
+ * and it is not part of `SWEPT_FILES` below. See the PR body for the full
+ * accounting of both files.
+ *
+ * One exact match existed in `error-boundary.tsx`: `text-[13px]`, the same
+ * `--p-text-md` mapping batch one used (2 occurrences, one per design
+ * branch). `gap-[18px]` and `px-[22px]` — both already shown to have no
+ * exact token in batch one's sibling files — recur here for the same
+ * reason and are left as-is.
+ */
+describe("the batch-two pixel bridge stays mapped (#460)", () => {
+  const name = "error-boundary.tsx";
+  const code = stripCssComments(
+    readFileSync(path.join(COMPONENTS, name), "utf8")
+  );
+
+  it("sees the swept file", () => {
+    // Vacuity guard: an empty read (renamed or moved file) would otherwise
+    // make every assertion below pass on nothing.
+    expect(code.length).toBeGreaterThan(0);
+  });
+
+  it(`${name} does not carry the bare text-[13px] this batch replaced`, () => {
+    expect(code).not.toMatch(/text-\[13px\]/);
+  });
+
+  it("text-[length:var(--p-text-md)] is used at least twice in the swept file", () => {
+    // Both design branches (current look and O4) carry the teach line this
+    // batch converted, so the floor is 2, not 1.
+    const uses = (code.match(/text-\[length:var\(--p-text-md\)\]/g) ?? [])
+      .length;
+    expect(uses).toBeGreaterThanOrEqual(2);
+  });
+
+  it("--p-text-md still resolves to the 13px text-[13px] used to mean", () => {
+    expect(primitiveValue(primitives, "--p-text-md")).toBe("13px");
+  });
+});
