@@ -109,7 +109,8 @@ describe("THEME_STORAGE_KEY (#171)", () => {
  * So this asserts the chain end to end in source: the attribute is written,
  * the stylesheet has a block keyed on it, the toggle is mounted in the global
  * menu, and the theme is applied before React renders. Source-shape, not
- * behaviour — there is no DOM runner (#197) and none of this has been seen on
+ * behaviour — the render harness (#197) has no cascade, so it cannot say
+ * whether the CSS actually applies, and none of this has been seen on
  * a phone.
  */
 describe("the light theme is reachable (#171)", () => {
@@ -471,10 +472,11 @@ describe("the light theme is reachable (#171)", () => {
     // must move together: `setLiveTheme` applies BEFORE it notifies, and the
     // effect is left as a mount-time reconcile only.
     //
-    // Source-shape, not behaviour: there is no DOM runner in the Node suite
-    // (#197) and no way to render the hook and observe the attribute between
-    // the store write and the subscriber's render. `e2e/theme-toggle.spec.ts`
-    // waits on the attribute, so it cannot see an intermediate frame either.
+    // Source-shape, not behaviour: the render harness (#197) renders once,
+    // after `setLiveTheme` returns, so it has no way to observe the attribute
+    // between the store write and the subscriber's render mid-call.
+    // `e2e/theme-toggle.spec.ts` waits on the attribute, so it cannot see an
+    // intermediate frame either.
     const hook = code("src/hooks/use-theme.ts");
     const setter = /function setLiveTheme\([^)]*\)[^{]*\{([\s\S]*?)\n\}/.exec(
       hook
@@ -563,9 +565,10 @@ describe("the light theme is reachable (#171)", () => {
     // `readScope`, which advances the ring (the extra-column defect George R3
     // found on the peek path).
     //
-    // Source-shape, not behaviour: no DOM runner in the Node suite (#197), and
-    // the scenario needs a theme control on a screen that keeps `LiveScope`
-    // mounted (#149), which does not exist yet.
+    // Source-shape, not behaviour: the render harness (#197) runs no effects,
+    // so the draw effect never fires there, and the scenario needs a theme
+    // control on a screen that keeps `LiveScope` mounted (#149), which does
+    // not exist yet.
     const source = code("src/components/live-scope.tsx");
     const draw =
       /useLayoutEffect\(\(\) => \{([\s\S]*?)\n    return \(\) => \{/.exec(

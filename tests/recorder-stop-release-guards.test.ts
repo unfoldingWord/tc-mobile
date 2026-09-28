@@ -45,7 +45,8 @@ import { matchingBraceClose, stripComments } from "./support";
  *      blob is sealed (#485 finding 2).
  *
  * WHY A TEXTUAL GATE AND NOT A BEHAVIOURAL TEST. There is no `MediaRecorder`
- * and no renderer in this Node-only suite, so `cancel()` and `stop()` — both
+ * in this Node-only suite, and the render harness (#197) runs no effects and
+ * does not `act()`, so `cancel()` and `stop()` — both
  * `useCallback`s inside `useRecorder()` — cannot be exercised at all, and a
  * throw from either native teardown call cannot be simulated. Removing
  * either guard leaves every other test in the repo green. That is precisely
