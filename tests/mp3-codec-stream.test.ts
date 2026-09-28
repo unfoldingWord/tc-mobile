@@ -46,7 +46,14 @@ class FakeWorker {
     if (type === "message")
       this.messageListeners = this.messageListeners.filter((f) => f !== fn);
   }
+  /** Thrown, once, by the next `postMessage` — the worker itself stays alive. */
+  failNextPost: Error | null = null;
   postMessage(message: unknown, transfer?: unknown): void {
+    const failure = this.failNextPost;
+    if (failure) {
+      this.failNextPost = null;
+      throw failure;
+    }
     this.posted.push({ message, transfer });
   }
   terminate(): void {
@@ -213,6 +220,21 @@ describe("codec.openMp3Stream — the client half (#1003 b)", () => {
     expect(codecModule.encoderHealth()).toBe("failing");
   });
 
+  it("a chunk whose postMessage throws still lets the live worker's session go: cancel posts stream-cancel (#1132 George R1 #1)", async () => {
+    const { stream, release, turn } = await openStream();
+    const worker = nth(0);
+    worker.failNextPost = new DOMException("detached", "DataCloneError");
+    await expect(stream.write(Int16Array.of(1))).rejects.toThrow(/detached/);
+    // The message failed, not the worker: it is still the warm one.
+    expect(worker.terminated).toBe(false);
+    await expect(stream.write(Int16Array.of(2))).rejects.toThrow(/closed/);
+    stream.cancel();
+    stream.cancel();
+    expect(worker.kinds()).toEqual(["stream-open", "stream-cancel"]);
+    release();
+    await turn;
+  });
+
   it("a worker that died BETWEEN writes is not written to: the next write rejects, and the replacement sees nothing", async () => {
     const { stream, release, turn } = await openStream();
     // Idle between chunks, the worker dies; the durable listener drops it.
@@ -376,6 +398,50 @@ describe("mp3.worker — the worker half (#1003 b)", () => {
     posted.length = 0;
     send({ v: 1, kind: "stream-cancel" });
     expect(posted).toEqual([]);
+    send({ v: 1, kind: "stream-chunk", ...pcm(tone, 0, 10) });
+    expect(posted).toEqual([
+      {
+        kind: "error",
+        message: expect.stringMatching(/No MP3 stream is open/),
+      },
+    ]);
+  });
+
+  it("a whole encode drops a session left behind: its bytes are unchanged and a chunk after it is refused (#1132 George R1 #1)", () => {
+    send({ v: 1, kind: "stream-open" });
+    send({ v: 1, kind: "stream-chunk", ...pcm(tone, 0, 20_000) });
+    posted.length = 0;
+    send(pcm(tone, 0, tone.length));
+    const done = posted.filter((m) => (m as { kind: string }).kind === "done");
+    expect(done).toHaveLength(1);
+    expect(
+      Buffer.from((done[0] as { mp3: ArrayBuffer }).mp3).equals(
+        Buffer.from(encodeMp3(tone.slice()))
+      )
+    ).toBe(true);
+    posted.length = 0;
+    send({ v: 1, kind: "stream-chunk", ...pcm(tone, 0, 10) });
+    expect(posted).toEqual([
+      {
+        kind: "error",
+        message: expect.stringMatching(/No MP3 stream is open/),
+      },
+    ]);
+  });
+
+  it("an unknown kind is a typed error answer and ends the session (#1132 George R1 #3)", () => {
+    send({ v: 1, kind: "stream-open" });
+    posted.length = 0;
+    send({ v: 1, kind: "stream-rewind" });
+    expect(posted).toEqual([
+      {
+        kind: "error",
+        message: expect.stringMatching(
+          /Unknown MP3 stream request: stream-rewind/
+        ),
+      },
+    ]);
+    posted.length = 0;
     send({ v: 1, kind: "stream-chunk", ...pcm(tone, 0, 10) });
     expect(posted).toEqual([
       {

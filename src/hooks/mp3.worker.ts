@@ -90,6 +90,11 @@ type Answer = {
 
 function answer(request: EncodeRequest): Answer {
   if (!("kind" in request)) {
+    // A whole encode is never part of an open stream (one lane turn streams or
+    // encodes whole, never both), so a session still here was left behind by
+    // a client that could not tell the worker to let it go. Drop it now rather
+    // than hold it until the next `open` (#1132 George R1 #1).
+    stream = null;
     const mp3 = encodeMp3(
       new Int16Array(request.buffer, request.byteOffset, request.length),
       { onProgress: heartbeat() }
@@ -128,6 +133,12 @@ function answer(request: EncodeRequest): Answer {
     case "stream-cancel":
       stream = null;
       return null;
+    default: {
+      // Inside the handler's `catch`, so an unknown kind is the same typed
+      // `error` answer as an unknown version, and ends the session.
+      const kind: unknown = (request as { kind: unknown }).kind;
+      throw new Error(`Unknown MP3 stream request: ${String(kind)}`);
+    }
   }
 }
 

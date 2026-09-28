@@ -860,7 +860,9 @@ function mp3From(result: ArrayBuffer | null): Uint8Array<ArrayBuffer> {
  *
  * `write` CONSUMES its samples (transferred), as `encodeMp3` does. `cancel`
  * posts a `stream-cancel` so the worker lets the session go; after a
- * `finish`, a failure or another `cancel` it does nothing.
+ * `finish` or another `cancel` it does nothing. A failed step still leaves it
+ * to post while `bound` is the shared worker, because a message that failed
+ * to post left that worker, and its session, alive.
  */
 async function openStreamInWorker(signal?: AbortSignal): Promise<Mp3Stream> {
   const { worker: bound } = await requestOnWorker(
@@ -868,7 +870,13 @@ async function openStreamInWorker(signal?: AbortSignal): Promise<Mp3Stream> {
     [],
     signal
   );
+  // Two different facts, kept apart (#1132 George R1 #1). `closed`: no more
+  // audio may be sent. `released`: the worker has been told, or never needs
+  // telling, that the session is over. A failed step sets only the first — a
+  // `postMessage` that throws fails the message, not the worker, which still
+  // holds the session — so `cancel` still posts while `bound` is current.
   let closed = false;
+  let released = false;
   const onBound = async (
     request: StreamRequest,
     transfer: Transferable[]
@@ -898,11 +906,13 @@ async function openStreamInWorker(signal?: AbortSignal): Promise<Mp3Stream> {
     finish: async () => {
       const result = await onBound({ v: 1, kind: "stream-finish" }, []);
       closed = true;
+      released = true;
       return mp3From(result);
     },
     cancel: () => {
-      if (closed) return;
+      if (released) return;
       closed = true;
+      released = true;
       if (sharedWorker !== bound) return;
       const request: StreamRequest = { v: 1, kind: "stream-cancel" };
       try {
