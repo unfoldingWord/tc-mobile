@@ -55,8 +55,9 @@ function installedVersion(name: string): string {
  * `@capacitor/*` package IS walked — `src/hooks/` imports `@capacitor/core`,
  * `/app`, `/filesystem` and `/share`, so Vite bundles their web code (Frank F1,
  * bench round 1 on #144: a blanket `@capacitor/*` exclusion hid them). The
- * native app's own attribution — the full Gradle / CocoaPods / native-Capacitor
- * tree — is still a separate deliverable (#477). Workbox is injected from a
+ * native app's own attribution — the Gradle / Swift Package Manager /
+ * native-Capacitor tree — is each native build's own notice, which
+ * `tests/native-licenses.test.ts` checks (#477). Workbox is injected from a
  * build-time (dev) dependency, so it is not in this closure and is disclosed as
  * a hand-listed inclusion.
  */

@@ -109,8 +109,10 @@ as fact, not as a compliance opinion).
 The in-app notice describes the **web bundle** — which includes the
 `@capacitor/*` JavaScript packages `src/` imports (core, app, filesystem, share
 and what they pull), so those are disclosed there. The Capacitor native shell's own
-open-source attribution (#262) — the Gradle / CocoaPods / native-Capacitor tree
-— is separate, larger work, tracked in #477.
+open-source attribution (#262) — the Gradle / Swift Package Manager /
+native-Capacitor tree — is a separate notice per native build
+(`public/licenses/ANDROID-NOTICES.txt`, `public/licenses/IOS-NOTICES.txt`),
+listed in the same screen on that build only (#477).
 
 ### What this closes
 
