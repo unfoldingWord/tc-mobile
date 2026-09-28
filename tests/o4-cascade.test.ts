@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { resolveDistGate } from "./dist-gate";
+import { stripCssComments } from "./support";
 
 /**
  * The O4 stylesheet folder's position in the built cascade (#938, batch 0 of
@@ -122,7 +123,12 @@ describe.skipIf(GATE === "skip")(
  * or by accident.
  */
 const O4_DIR = path.join(ROOT, "src", "app", "styles", "o4");
-const INDEX_SOURCE = readFileSync(path.join(O4_DIR, "index.css"), "utf8");
+// Read without its comments (#822): a commented-out `@import` still holds the
+// exact text the assertion below looks for, so a raw read passed with an area
+// file no longer wired in.
+const INDEX_SOURCE = stripCssComments(
+  readFileSync(path.join(O4_DIR, "index.css"), "utf8")
+);
 
 const AREA_FILES = [
   "books.css",

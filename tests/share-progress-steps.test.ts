@@ -199,7 +199,7 @@ describe("the step count is threaded from prepare() to the exports (#986)", () =
     const s = src("src/hooks/use-book-share.ts");
     expect(s).toMatch(/run\(\(isCurrent, signal, onStep\) =>/);
     expect(s).toMatch(
-      /exportBookZip\(\s*bookId,\s*nameChapter,\s*codec,\s*isCurrent,\s*onStep\s*\)/
+      /exportBookZip\(\s*bookId,\s*nameChapter,\s*codec,\s*sink,\s*isCurrent,\s*onStep\s*\)/
     );
   });
 });
