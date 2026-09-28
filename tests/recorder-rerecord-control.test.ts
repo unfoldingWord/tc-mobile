@@ -8,6 +8,7 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
 import { one, render } from "./render";
 import { mountInteractive, type InteractiveMount } from "./interactive-mount";
+import { restingErase } from "./support";
 
 /**
  * The record bar's "erase and record again" control (#592), as the JSX emits
@@ -27,13 +28,10 @@ import { mountInteractive, type InteractiveMount } from "./interactive-mount";
  * The erase surface `App` now owns and passes down (#160, L-12). Resting: a
  * static render never erases, and "no erase in flight" is what the bar's own
  * gate reads. Written here rather than mocked at the module, because the sheet
- * takes it as a PROP now — a module mock would intercept nothing.
+ * takes it as a PROP now — a module mock would intercept nothing. Shared
+ * fixture (#856 item 3, `tests/support.ts`).
  */
-const erase = {
-  erase: vi.fn(async () => "ok" as const),
-  erasing: false,
-  isErasing: () => false,
-};
+const erase = restingErase();
 
 const boundary = vi.hoisted(() => ({ view: null as unknown }));
 vi.mock("@/hooks/use-recorder-segment", () => ({

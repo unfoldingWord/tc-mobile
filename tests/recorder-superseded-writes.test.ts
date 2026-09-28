@@ -7,6 +7,7 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import type { SegmentId } from "@/types/domain";
 import { strings } from "@/lib/strings";
+import { restingErase } from "./support";
 
 const boundary = vi.hoisted(() => ({
   setFinished: vi.fn().mockResolvedValue(undefined),
@@ -128,12 +129,9 @@ async function setup() {
           audio,
           // A prop now (#160, L-12). This file never exercises erase, so a
           // resting stub is honest: a real hook here would only add a guard
-          // nothing in these cases touches.
-          erase: {
-            erase: vi.fn(async () => "ok" as const),
-            erasing: false,
-            isErasing: () => false,
-          },
+          // nothing in these cases touches. Shared fixture (#856 item 3,
+          // `tests/support.ts`).
+          erase: restingErase(),
           saveRecording,
           saveEditedSegment,
           clipboard: null,

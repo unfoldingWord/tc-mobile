@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { clearSegmentTake } from "@/lib/storage/takes";
 import { reportFailure } from "./report-failure";
@@ -154,5 +154,15 @@ export function useEraseSegment(): UseEraseSegment {
     []
   );
 
-  return { erase, erasing, isErasing };
+  // Memoised (#856 item 2): the hook now lives in `App`, beside the audio
+  // session, so an unmemoised object here would change identity on every
+  // session-driven re-render, not just on erase — churning any effect or
+  // `useCallback` in a screen that depends on `erase` as a whole. `erase`
+  // and `isErasing` are already identity-stable (`useCallback([])`); only
+  // `erasing` changes across the hook's own lifetime, so it is the one real
+  // dependency.
+  return useMemo(
+    () => ({ erase, erasing, isErasing }),
+    [erase, erasing, isErasing]
+  );
 }

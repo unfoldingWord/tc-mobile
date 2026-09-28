@@ -28,13 +28,12 @@ import { stripCssComments } from "./support";
  * see.
  *
  * WHY A REAL DECLARATION, NOT A COMMENT. `o4/index.css`'s own header records
- * this: a build was run against a comment-only version of that file (a plain
- * `/**` block, and separately one prefixed `/*!`, the marker some minifiers
- * preserve for license banners and which Tailwind's own banner in this same
- * built file survives as) and neither comment appeared anywhere in
- * `dist/assets/*.css` afterward — an empty `@layer components {}` compiles
- * away to zero bytes in this project's build, indistinguishable from the file
- * not existing. Only a real declaration survives, which is why
+ * this: this project's build strips CSS comments — a plain `/**` block, and
+ * separately one prefixed `/*!`, the marker some minifiers preserve for
+ * license banners and which Tailwind's own banner in this same built file
+ * survives as — so an empty `@layer components {}` compiles away to zero
+ * bytes, indistinguishable from the file not existing. Only a real
+ * declaration survives, which is why
  * `o4/index.css` carries the one inert `--o4-scope` custom property this test
  * locates. That is a narrower reading of this batch's "empty apart from a
  * header comment" done-when clause than the literal text — recorded as a

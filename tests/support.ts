@@ -7,6 +7,7 @@ import {
   mp3GranuleCount,
 } from "@/lib/audio/mp3-align";
 import { closeDb, getDb } from "@/lib/storage/db";
+import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import type { AudioCodec, Clip, Mp3Stream } from "@/types/audio";
 
 /**
@@ -48,6 +49,28 @@ export function samplesOf(clip: Clip | undefined): Int16Array {
   if (clip.encoding !== "pcm")
     throw new Error(`expected a PCM clip, got ${clip.encoding}`);
   return clip.samples;
+}
+
+/**
+ * A resting `UseEraseSegment` — never erasing, for a suite that must mount a
+ * screen or menu taking `erase` as a prop but never exercises erase itself.
+ * Since #160 (L-12) lifted the one hook instance up to `App`, both entry
+ * points take `erase` as a real prop, not a module import — so a `vi.mock`
+ * of `@/hooks/use-erase-segment` intercepts nothing there and silently tests
+ * the wrong thing (the #631 hazard). This stays a real value a caller passes
+ * in, and is annotated `UseEraseSegment` so a shape change to the hook's
+ * return fails every call site at `tsc`, not silently (#856 item 3).
+ *
+ * A fresh object per call, not a shared singleton: each suite still gets its
+ * own `vi.fn()` identity, matching the one-per-module-scope shape these sites
+ * had before extraction, and no suite can observe another's mock calls.
+ */
+export function restingErase(): UseEraseSegment {
+  return {
+    erase: vi.fn(async () => "ok" as const),
+    erasing: false,
+    isErasing: () => false,
+  };
 }
 
 /**
