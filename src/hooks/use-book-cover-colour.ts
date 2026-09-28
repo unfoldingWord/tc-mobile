@@ -50,9 +50,11 @@ export async function performSetCoverColour(
 
 /**
  * The outcome of a call to `setCoverColour`. `"busy"` mirrors
- * `useEraseSegment`'s `EraseResult`: a second call while the first is still
- * in flight is REFUSED, not a result, so a caller must not treat it as an
- * answer about the colour it just tried to set.
+ * `useEraseSegment`'s `EraseResult`: a second call for the SAME book while
+ * its first write is still in flight is REFUSED, not a result, so a caller
+ * must not treat it as an answer about the colour it just tried to set. A
+ * call for a DIFFERENT book proceeds regardless (#1046 item 4) — the guard
+ * is per-book, not per hook instance.
  */
 type SetCoverColourResult =
   { ok: true; book: Book } | "busy" | { failed: FailureKey };
@@ -64,33 +66,45 @@ export interface UseBookCoverColour {
     bookId: BookId,
     key: CoverColourKey | null
   ): Promise<SetCoverColourResult>;
-  /** True while a write is in flight — a picker disables its swatches on this,
-   *  the same shape `useEraseSegment`'s `erasing` disables its Erase button. */
+  /** True while ANY write is in flight, across every book — a picker could
+   *  disable its swatches on this, the same shape `useEraseSegment`'s
+   *  `erasing` disables its Erase button, though the O4 picker
+   *  (`o4-book-menu.tsx`'s `O4CoverPick`) deliberately does not: see that
+   *  component's own docblock for why it relies on the per-book `"busy"`
+   *  refusal instead. */
   settingCoverColour: boolean;
 }
 
 /**
- * #943 and #949 each mount their own instance, the same way
- * `useEraseSegment` is mounted once and shared today.
+ * `books-screen.tsx` (#949) is the only production caller today, mounting
+ * one instance for the whole shelf — so the in-flight guard below is keyed
+ * by `bookId`, not a single flag, or a write for one book in flight would
+ * spuriously refuse an unrelated write for a different book as `"busy"`.
+ * The new-book sheet (#943) does not mount this hook (see the docblock
+ * above); if a second caller ever does, each `useBookCoverColour()` call
+ * gets its own React state and its own guard, same as any other hook.
  */
 export function useBookCoverColour(): UseBookCoverColour {
   const [settingCoverColour, setSettingCoverColour] = useState(false);
-  const settingRef = useRef(false);
+  const inFlight = useRef<Set<BookId>>(new Set());
 
   const setCoverColour = useCallback(
     async (
       bookId: BookId,
       key: CoverColourKey | null
     ): Promise<SetCoverColourResult> => {
-      if (settingRef.current) return "busy";
-      settingRef.current = true;
+      // Marked busy before the first `await`, not after (AGENTS.md), so a
+      // second call for the SAME book made in the same tick is refused
+      // rather than racing this one.
+      if (inFlight.current.has(bookId)) return "busy";
+      inFlight.current.add(bookId);
       setSettingCoverColour(true);
       try {
         const result = await performSetCoverColour(bookId, key);
         return result.ok ? result : { failed: result.key };
       } finally {
-        settingRef.current = false;
-        setSettingCoverColour(false);
+        inFlight.current.delete(bookId);
+        setSettingCoverColour(inFlight.current.size > 0);
       }
     },
     []

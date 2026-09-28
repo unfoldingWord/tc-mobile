@@ -299,6 +299,25 @@ describe("O4: the Cover colour tile opens #964's picker (#937 D7)", () => {
     expect(sheet.textContent).toContain(strings.saveFailed);
   });
 
+  // #1046 item 4 (George Low, #1038): a second swatch tapped while a write
+  // is already in flight comes back `"busy"` from the hook. The screen's own
+  // handling of that outcome — silently doing nothing, rather than treating
+  // it as either a success or a failure — was previously unpinned by any
+  // test in this file; `tests/use-book-cover-colour-concurrency.test.ts`
+  // covers the hook's own guard, this covers the call site's reaction.
+  it("silently absorbs a busy refusal: no reload, no error, stays on the picker", async () => {
+    cover.result = () => Promise.resolve("busy");
+    await mount();
+    await openFrom(strings.bookMenuOpen("Mark"));
+    await click(strings.coverColourLabel);
+    await act(async () => swatch(strings.coverColourForest).click());
+    expect(cover.calls).toEqual([[mark, "forest"]]);
+    expect(reloads).toBe(0);
+    const sheet = bookSheet()!;
+    expect(sheet.querySelector(".cover-swatch-row")).not.toBeNull();
+    expect(sheet.textContent).not.toContain(strings.saveFailed);
+  });
+
   it("closing the sheet from the picker ends it: the next open shows the tiles", async () => {
     await mount();
     await openFrom(strings.bookMenuOpen("Mark"));
