@@ -110,21 +110,32 @@ async function auditionALongSpan(page: Page) {
     name: "Stop playing",
     exact: true,
   });
+  // The clock starts BEFORE the tap, so time spent getting Stop on screen
+  // counts as span already used up. A zero taken after that would let a span
+  // that ran out by itself pass for a stop.
+  const playAt = Date.now();
   await toolbar
     .getByRole("button", { name: "Play the selection", exact: true })
     .click();
   await expect(stopPlaying).toBeVisible();
-  const soundingSince = Date.now();
-  return { startHandle, stopPlaying, spanMs, soundingSince };
+  return { startHandle, stopPlaying, spanMs, playAt };
+}
+
+/** Before the edit: enough span is left that running out cannot pass for a stop. */
+function expectRoomForTheStop(playAt: number, spanMs: number) {
+  expect(
+    spanMs - (Date.now() - playAt),
+    "not enough span left to tell a stop from the audition ending"
+  ).toBeGreaterThan(STOP_WITHIN_MS);
 }
 
 /**
- * The stop has to be seen before the span could have run out on its own, or
- * the case proves nothing.
+ * After the edit: the stop was seen before the span could have run out on its
+ * own, or the case proves nothing.
  */
-function expectInsideTheSpan(soundingSince: number, spanMs: number) {
+function expectInsideTheSpan(playAt: number, spanMs: number) {
   expect(
-    Date.now() - soundingSince,
+    Date.now() - playAt,
     "the audition could have ended by itself: the check did not run inside the span"
   ).toBeLessThan(spanMs);
 }
@@ -132,17 +143,21 @@ function expectInsideTheSpan(soundingSince: number, spanMs: number) {
 test("a handle move while the span sounds stops the audition (#361)", async ({
   page,
 }) => {
-  const { startHandle, stopPlaying, spanMs, soundingSince } =
+  const { startHandle, stopPlaying, spanMs, playAt } =
     await auditionALongSpan(page);
+  const before = await valueOf(startHandle);
+  expectRoomForTheStop(playAt, spanMs);
   await startHandle.press("ArrowRight");
   await expect(stopPlaying).toHaveCount(0, { timeout: STOP_WITHIN_MS });
-  expectInsideTheSpan(soundingSince, spanMs);
+  expectInsideTheSpan(playAt, spanMs);
+  // The press was a handle move: the start edge went right.
+  await expect.poll(() => valueOf(startHandle)).toBeGreaterThan(before);
 });
 
 test("a cut while the span sounds stops the audition (#361)", async ({
   page,
 }) => {
-  const { stopPlaying, spanMs, soundingSince } = await auditionALongSpan(page);
+  const { stopPlaying, spanMs, playAt } = await auditionALongSpan(page);
   const cut = page.getByRole("button", {
     name: "Cut the selection",
     exact: true,
@@ -150,9 +165,10 @@ test("a cut while the span sounds stops the audition (#361)", async ({
   // The premise: Scissors is live during an audition, so the tap reaches
   // `onCut` rather than a disabled control.
   await expect(cut).toBeEnabled();
+  expectRoomForTheStop(playAt, spanMs);
   await cut.click();
   await expect(stopPlaying).toHaveCount(0, { timeout: STOP_WITHIN_MS });
-  expectInsideTheSpan(soundingSince, spanMs);
+  expectInsideTheSpan(playAt, spanMs);
   // The tap was the cut: the clipboard holds it. Checked after the stop,
   // because the marker only mounts once nothing is sounding.
   await expect(
