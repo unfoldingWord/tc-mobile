@@ -404,3 +404,21 @@ describe("a Finished segment's green reads on the recorder stage (#926)", () => 
     });
   }
 });
+
+describe("the SaveFailed armed Restart glyph reads on its own fill (#1088 S9)", () => {
+  // The fix for S9 ("reads red on blue"): `.o4-err-wide--armed`
+  // (o4/errors.css) swaps the wide guide button's fill from `--s-guide` to
+  // `--s-live`/`--s-live-ink` while armed, instead of layering red TEXT on
+  // top of the still-blue fill. The glyph is a non-text mark (an icon, no
+  // label), so it takes the same floor `--s-done-ink` on `--s-done` does
+  // above, not the small-text floor.
+  for (const theme of ["dark", "light"] as const) {
+    it(`${theme}: --s-live-ink on --s-live — the armed wide guide button`, () => {
+      const ratio = contrast(
+        resolve(theme, "--s-live-ink"),
+        resolve(theme, "--s-live")
+      );
+      expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT);
+    });
+  }
+});

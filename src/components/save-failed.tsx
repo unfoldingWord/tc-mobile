@@ -10,6 +10,7 @@ import {
   restartConsequence,
   restartLabel,
 } from "./recovery-copy";
+import { restartWideButtonClass } from "./save-failed-armed";
 import { SendLogControl } from "./send-log-control";
 import { strings } from "@/lib/strings";
 import { flushFailureLog } from "@/hooks/failure-log";
@@ -190,15 +191,7 @@ export function SaveFailed({
               }
               variant="primary"
               size={o4 ? 34 : 30}
-              className={
-                o4
-                  ? terminal && restartArmed
-                    ? "o4-err-wide text-live"
-                    : "o4-err-wide"
-                  : terminal && restartArmed
-                    ? "text-live"
-                    : undefined
-              }
+              className={restartWideButtonClass(o4, terminal && restartArmed)}
               busy={terminal && restarting}
               autoFocus
               onClick={
