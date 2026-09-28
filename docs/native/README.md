@@ -216,10 +216,15 @@ Capacitor 8:
 - `git clone` the repo, then `npm ci` at the repo root.
 
 **Local workflow tests:** `tests/ios-workflow-gates.test.ts` runs extracted Bash
-steps with real Node and Ruby executables. `ruby` (with RubyGems for
-`Gem::Version`) must be on `PATH` when running `npm test` or `npm run verify`,
-including in a devcontainer. These tests do not require Xcode or signing
-credentials and do not dispatch a native build.
+steps with real Node and Ruby executables. Ruby is not required to get a green
+`npm test` / `npm run verify` — without `ruby` (with RubyGems for
+`Gem::Version`) on `PATH`, the iOS Xcode-selection cases in that file are
+skipped, not failed (`describe.skipIf(!hasRuby)`,
+`tests/ios-workflow-gates.test.ts:167`), so a run on such a machine, including
+a devcontainer, has not exercised them — see
+[`../../CONTRIBUTING.md`](../../CONTRIBUTING.md#setup-and-commands). These
+tests do not require Xcode or signing credentials and do not dispatch a native
+build.
 
 ```bash
 git clone https://github.com/unfoldingWord/tc-mobile.git
