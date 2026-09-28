@@ -134,6 +134,42 @@ describe("PhoneCheckView", () => {
       "- Last succeeded: 150 MB\n- The page reloaded while trying 175 MB"
     );
   });
+
+  // #1014 item 7: "Done" must mean all three of steps 1-3 landed, not that
+  // the first one did. A reload mid-run restores whichever of `device`,
+  // `encode` and `storage` `readSavedChecks` found, and leaves the rest
+  // `null` — the shape a restore leaves things in, checked directly rather
+  // than through `usePhoneCheck` (its own tests own that wiring).
+  const FAILED_DEVICE = { status: "failed", errorName: "X" } as const;
+
+  it("does not say Done from device alone — the pre-#1014 P3", () => {
+    const status = one(
+      view({ ...IDLE, device: FAILED_DEVICE }),
+      '[data-phone-check="status"]'
+    );
+    expect(status.textContent).toBe("");
+  });
+
+  it("does not say Done with only two of the three landed", () => {
+    const status = one(
+      view({ ...IDLE, device: FAILED_DEVICE, encode: FAILED_DEVICE }),
+      '[data-phone-check="status"]'
+    );
+    expect(status.textContent).toBe("");
+  });
+
+  it("says Done once all three have landed, failed or not", () => {
+    const status = one(
+      view({
+        ...IDLE,
+        device: FAILED_DEVICE,
+        encode: FAILED_DEVICE,
+        storage: FAILED_DEVICE,
+      }),
+      '[data-phone-check="status"]'
+    );
+    expect(status.textContent).toBe(strings.phoneCheckDone);
+  });
 });
 
 describe("copyText", () => {

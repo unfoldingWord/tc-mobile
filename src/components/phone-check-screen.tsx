@@ -69,6 +69,12 @@ export interface PhoneCheckViewProps {
   onClose: () => void;
 }
 
+/** A copy's outcome, keyed to the report text that copy wrote. */
+interface CopiedReport {
+  readonly report: string;
+  readonly outcome: CopyOutcome;
+}
+
 /** The screen itself, from props — what the render tests read. */
 export function PhoneCheckView({
   state,
@@ -79,7 +85,7 @@ export function PhoneCheckView({
   onClose,
 }: PhoneCheckViewProps) {
   const reportRef = useRef<HTMLTextAreaElement>(null);
-  const [copied, setCopied] = useState<CopyOutcome | null>(null);
+  const [copied, setCopied] = useState<CopiedReport | null>(null);
   const running = state.activity !== null;
   const report = formatPhoneCheckReport({
     version,
@@ -90,14 +96,29 @@ export function PhoneCheckView({
     allocation: state.allocation,
   });
   const status = activityLine(state.activity);
+  // "Done" means all three ordered steps landed, not merely that the first
+  // one did (#1014 item 7). A reload mid-run restores whichever of the three
+  // `readSavedChecks` found and nothing marks the rest `null` again, so
+  // checking `state.device` alone read a partial restore as complete.
+  const allStepsLanded = Boolean(state.device && state.encode && state.storage);
+
+  // The report changing under a "Copied." label is stale the moment it
+  // happens (#1014 item 8): a tester who copies mid-run, then watches a later
+  // step land, would otherwise paste a report the button never actually put
+  // on the clipboard. So the outcome is stored WITH the text that copy wrote,
+  // and shown only while that text is still the report on screen. That also
+  // covers a write that settles after the report has already moved on: its
+  // outcome arrives keyed to the old text and is never shown.
+  const shownCopy = copied?.report === report ? copied.outcome : null;
 
   const onCopy = () => {
+    const text = report;
     // No `await` before `copyText` reaches `writeText`: the tap's activation
     // is what the Clipboard API needs (see `hooks/copy-text.ts`).
-    void copyText(report, navigator.clipboard, () => {
+    void copyText(text, navigator.clipboard, () => {
       reportRef.current?.focus();
       reportRef.current?.select();
-    }).then(setCopied);
+    }).then((outcome) => setCopied({ report: text, outcome }));
   };
 
   return (
@@ -134,8 +155,12 @@ export function PhoneCheckView({
         {strings.phoneCheckStart}
       </button>
 
-      <p className="text-ink-muted text-[13px]" role="status">
-        {status ?? (state.device ? strings.phoneCheckDone : "")}
+      <p
+        className="text-ink-muted text-[13px]"
+        role="status"
+        data-phone-check="status"
+      >
+        {status ?? (allStepsLanded ? strings.phoneCheckDone : "")}
       </p>
 
       <div className="border-edge flex flex-col gap-2 rounded-2xl border p-3">
@@ -177,10 +202,14 @@ export function PhoneCheckView({
       >
         {strings.phoneCheckCopy}
       </button>
-      <p className="text-ink-muted text-[13px]" role="status">
-        {copied === "copied"
+      <p
+        className="text-ink-muted text-[13px]"
+        role="status"
+        data-phone-check="copy-status"
+      >
+        {shownCopy === "copied"
           ? strings.phoneCheckCopied
-          : copied === "selected"
+          : shownCopy === "selected"
             ? strings.phoneCheckSelected
             : ""}
       </p>

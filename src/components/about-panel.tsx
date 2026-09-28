@@ -3,13 +3,14 @@ import { useEffect, useRef, useState } from "react";
 import { BuildStamp } from "./build-stamp";
 import {
   contentAttribution,
-  licenseTexts,
+  licenseTextsFor,
   thirdPartyLicenses,
   type LicenseText,
 } from "./licenses";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
 import { reportFailure } from "@/hooks/report-failure";
+import { readSharePlatform } from "@/hooks/share-target";
 import { strings } from "@/lib/strings";
 
 interface AboutPanelProps {
@@ -30,7 +31,10 @@ interface AboutPanelProps {
  * The app is MIT with one copyleft dependency, lamejs (LGPL-3.0, ADR 0003). The
  * LGPL and the MIT/ISC clauses of the other bundled dependencies all require
  * their licence text and copyright to travel with the app; this makes them
- * reachable by someone holding the phone, not just in `node_modules`.
+ * reachable by someone holding the phone, not just in `node_modules`. On a
+ * native build the list also names that shell's own notice (#477,
+ * `licenseTextsFor`), since the Capacitor runtime and the Android or iOS
+ * libraries it is built with ship in the app too.
  *
  * It owns its own `Menu` so the two-level view (the list, and a licence text
  * read in-drawer) composes with the modal contract: Close / Escape / a scrim
@@ -59,6 +63,25 @@ export function AboutPanel({
   // close the whole drawer — so the list is always the state a fresh open sees.
   const handleClose = viewing ? onBack : onClose;
 
+  // Back from a licence text lands on the button that opened it, not the first
+  // one (#823 item 7). The list unmounts while a text is read, so the opener is
+  // remembered by `href` and found again when the list remounts. This effect
+  // runs after the Menu's own `focusKey` landing (a child's effects run before
+  // its parent's), so it has the last word. Closing the drawer forgets the
+  // opener, so a fresh open still lands on the first button.
+  const returnTo = useRef<string | null>(null);
+  const listButtons = useRef(new Map<string, HTMLButtonElement>());
+  useEffect(() => {
+    if (!open) {
+      returnTo.current = null;
+      return;
+    }
+    if (viewing) return;
+    const href = returnTo.current;
+    returnTo.current = null;
+    if (href) listButtons.current.get(href)?.focus();
+  }, [open, viewing]);
+
   return (
     <Menu
       open={open}
@@ -84,11 +107,18 @@ export function AboutPanel({
               never on an off-phone link (George G2). */}
           <section className="flex flex-col gap-[6px]">
             <h3 className="t-title">{strings.aboutTexts}</h3>
-            {licenseTexts.map((text) => (
+            {licenseTextsFor(readSharePlatform()).map((text) => (
               <button
                 key={text.href}
+                ref={(el) => {
+                  if (el) listButtons.current.set(text.href, el);
+                  else listButtons.current.delete(text.href);
+                }}
                 type="button"
-                onClick={() => onView(text)}
+                onClick={() => {
+                  returnTo.current = text.href;
+                  onView(text);
+                }}
                 aria-label={strings.aboutReadText(text.label)}
                 className="text-ink flex min-h-[40px] w-fit items-center border-0 bg-transparent p-0 text-left text-[13px] underline"
               >

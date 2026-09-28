@@ -142,6 +142,41 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
     expect(knob).toMatch(/background:\s*var\(--s-voice\)/);
   });
 
+  it("12 editing: the knob sits at the bar's bottom, not its vertical middle (#1102)", () => {
+    // The reported bug: `top: 50%; margin-top: -28px` centred the knob over
+    // the waveform. Anchored to `bottom: 0` instead — the bar itself still
+    // spans the handle's full `top: 0; bottom: 0` (3-components.css), so this
+    // sits at the canvas's own bottom edge.
+    const knob = cssRule(CSS, `${O4} .selection-handle::after`);
+    expect(knob).toMatch(/(?:^|;)\s*bottom:\s*0(?:px)?\s*;/);
+    // The vertical-middle rule this replaces, named so a partial revert (only
+    // one of the two declarations restored) still fails.
+    expect(knob).not.toMatch(/(?:^|;)\s*top:\s*50%/);
+    expect(knob).not.toMatch(/margin-top:\s*-28px/);
+  });
+
+  it("12 editing: the Cut row spans the canvas width, so its percentage lines up with the waveform (#1102)", () => {
+    const row = cssRule(CSS, `${O4} .recorder-cut`);
+    expect(row).toMatch(/(?:^|;)\s*width:\s*100%\s*;/);
+    expect(row).toMatch(/(?:^|;)\s*position:\s*relative\s*;/);
+  });
+
+  it("12 editing: the Cut wrapper centers on the selection's midpoint, clamped to stay on screen (#1102)", () => {
+    const anchor = cssRule(CSS, `${O4} .recorder-cut .cut-anchor`);
+    expect(anchor).toMatch(/(?:^|;)\s*position:\s*absolute\s*;/);
+    // The clamp mirrors `.selection-handle`'s own edge clamp: half the
+    // button's own box (`--c-control-sm`, what `.control--quiet` — the
+    // scissors — is sized by) on either side, so the button's whole 40px box
+    // stays inside the canvas even when the selection runs to an edge.
+    expect(anchor).toMatch(
+      /left:\s*clamp\(\s*calc\(var\(--c-control-sm\)\s*\/\s*2\),\s*var\(--o4-cut-left,\s*50%\),\s*calc\(100%\s*-\s*var\(--c-control-sm\)\s*\/\s*2\)\s*\)/
+    );
+    // Falls back to dead centre when nothing overrides it (the bin, #862,
+    // which never sets --o4-cut-left).
+    expect(anchor).toMatch(/var\(--o4-cut-left,\s*50%\)/);
+    expect(anchor).toMatch(/transform:\s*translateX\(-50%\)/);
+  });
+
   it("the big transport buttons are 80 × 80, shrinking no lower than the 44 floor", () => {
     const pair = cssRule(CSS, `${O4} .recorder-toolbar.pair`);
     expect(pair).toMatch(/container-type:\s*inline-size/);

@@ -11,6 +11,8 @@ import { licenseTexts, type LicenseText } from "@/components/licenses";
 import { reportFailure } from "@/hooks/report-failure";
 import { strings } from "@/lib/strings";
 
+import { stripComments } from "./support";
+
 /**
  * #823 items 1, 2, 3 and 6: the About panel's licence-text fetch.
  *
@@ -179,9 +181,14 @@ it("aborts an in-flight fetch on unmount without reporting it (#823 item 6)", as
 });
 
 it("keeps a /licenses/*.txt navigation with a query string off the SPA fallback (#823 item 3)", () => {
-  const source = readFileSync(
-    path.join(__dirname, "..", "vite.config.ts"),
-    "utf8"
+  // Read without its comments (#822): a commented-out copy of the line ahead
+  // of the live one was the first match, so a raw read passed with the live
+  // entry un-anchored. `stripComments` is string-blind, and this file holds
+  // one string with a `/*` in it (the `**/*` precache glob). It survives today
+  // because no `*/` follows it; if one ever does, the strip eats through the
+  // denylist line and the throw below fires, rather than a pass.
+  const source = stripComments(
+    readFileSync(path.join(__dirname, "..", "vite.config.ts"), "utf8")
   );
   const entries = source.match(/navigateFallbackDenylist:\s*\[([^\n]*)\],/);
   if (!entries?.[1])

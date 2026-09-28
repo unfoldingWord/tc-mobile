@@ -18,6 +18,8 @@ import {
 import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import type { SegmentId } from "@/types/domain";
 
+import { restingErase } from "./support";
+
 /**
  * A `pagehide` during a live take seals it the way a #59 interruption does
  * (#807, DRI decision 2026-09-24), instead of cancelling it. So does the page
@@ -69,6 +71,10 @@ vi.mock("@/hooks/audio-io", () => ({
   raceAudioResume: vi.fn().mockResolvedValue(false),
   RESUME_TIMEOUT_MS: 1000,
   resumeAudioContext: vi.fn().mockResolvedValue(undefined),
+  // #1111: use-recorder.ts's start() calls this before getUserMedia. This
+  // suite is about the pagehide/seal path, not the session-type call — see
+  // tests/use-recorder-audio-session.test.ts for that wiring.
+  setRecordAudioSession: vi.fn(),
   // A minimal stand-in for the real helper (develop's extraction of the
   // track-release loop out of use-recorder.ts, #479): stop every track on
   // the stream it is given. This suite is about the pagehide/seal path, not
@@ -91,12 +97,9 @@ const captured = new Int16Array([7, 8, 9]);
  * The erase surface `App` now owns and passes down (#160, L-12). This suite
  * never erases; a stub that answers "no erase in flight" is what the sheet's
  * Back and confirm gates read (matches `tests/recorder-stop-commits.test.ts`).
+ * Shared fixture (#856 item 3, `tests/support.ts`).
  */
-const erase = {
-  erase: vi.fn(async () => "ok" as const),
-  erasing: false,
-  isErasing: () => false,
-};
+const erase = restingErase();
 
 const boundary = vi.hoisted(() => ({
   editor: {} as SegmentEditor,

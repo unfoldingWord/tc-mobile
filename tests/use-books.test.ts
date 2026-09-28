@@ -138,8 +138,8 @@ describe("dropBookCard", () => {
 });
 
 /**
- * `useBooks`'s Add-chapter and optimistic-patch paths, minus React (no
- * jsdom, no renderer — the same constraint `tests/use-erase-segment.test.ts`
+ * `useBooks`'s Add-chapter and optimistic-patch paths, minus React (this file
+ * does not mount the hook — the same scope `tests/use-erase-segment.test.ts`
  * documents). What is Node-testable here is three pure decisions the hook's
  * `addChapter`/`createBook`/load effect were missing:
  *

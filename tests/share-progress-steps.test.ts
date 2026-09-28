@@ -13,6 +13,8 @@ import {
   shareProgressWakeAt,
 } from "@/hooks/share-progress";
 
+import { stripComments } from "./support";
+
 /**
  * #986: the busy phase of a PREPARE carries a truthful step count — segments
  * gathered for a chapter, chapters archived for a book — as `{ done, total }`.
@@ -172,8 +174,12 @@ describe("reduceShareProgress — the step event (#986)", () => {
  * cases above and in `tests/export-steps.test.ts`.
  */
 describe("the step count is threaded from prepare() to the exports (#986)", () => {
+  // Comments stripped so a positive match reads code, not a comment carrying
+  // the pinned text (#822).
   const src = (rel: string): string =>
-    readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
+    stripComments(
+      readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8")
+    );
 
   it("prepare() hands its build a stepReporter over this run's current() and the modal", () => {
     expect(src("src/hooks/share-flow.ts")).toMatch(
@@ -193,7 +199,7 @@ describe("the step count is threaded from prepare() to the exports (#986)", () =
     const s = src("src/hooks/use-book-share.ts");
     expect(s).toMatch(/run\(\(isCurrent, signal, onStep\) =>/);
     expect(s).toMatch(
-      /exportBookZip\(\s*bookId,\s*nameChapter,\s*codec,\s*isCurrent,\s*onStep\s*\)/
+      /exportBookZip\(\s*bookId,\s*nameChapter,\s*codec,\s*sink,\s*isCurrent,\s*onStep\s*\)/
     );
   });
 });

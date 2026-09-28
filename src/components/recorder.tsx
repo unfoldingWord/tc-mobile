@@ -13,11 +13,13 @@ import { captureFailureText } from "./capture-failure-copy";
 import { CenterlineOverlay } from "./centerline-overlay";
 import { Control } from "./control";
 import { shareControlGlyph } from "./control-affordance";
+import { CutAnchor } from "./cut-anchor";
 import { redoReason, undoReason } from "./edit-control-state";
 import { EraseConfirm, type EraseConfirmPreview } from "./erase-confirm";
 import { guidedRecordShown, guidedStep } from "./guided-step";
 import { Icon } from "./icon";
 import { Notice } from "./notice";
+import { O4Crumbs } from "./o4-crumbs";
 import { PermissionPanel } from "./permission-panel";
 import { RecorderMenu } from "./recorder-menu";
 import { PlayheadOverlay } from "./playhead-overlay";
@@ -42,6 +44,7 @@ import {
   recordDisabled,
   redoCollapsesFrame,
   stageView,
+  undoCollapsesFrame,
   ZOOM_QUARTER,
   ZOOM_WHOLE,
 } from "./recorder-stage";
@@ -50,7 +53,6 @@ import { strings } from "@/lib/strings";
 import { LiveScope } from "./live-scope";
 import {
   barHint,
-  deleteRowReason,
   editRowReason,
   eraseRowReason,
   heldTakeIsBusy,
@@ -70,7 +72,6 @@ import {
 import type { FailureKey } from "@/hooks/save-failure";
 import type { RecorderAudio } from "@/hooks/use-audio-session";
 import type { UseEraseSegment } from "@/hooks/use-erase-segment";
-import { useDeleteSegment } from "@/hooks/use-delete-segment";
 import { useRecorderViewport } from "@/hooks/use-recorder-viewport";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useDesign } from "@/hooks/use-design";
@@ -100,6 +101,7 @@ import {
 import { cn, formatDuration } from "@/lib/utils";
 import { recorderLook } from "./recorder-look";
 import { RecorderStamp } from "./recorder-o4";
+import { TakeCapMarker } from "./take-cap-marker";
 import type { SampleRange } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
 
@@ -305,15 +307,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     } | null>(null);
     // The Erase Segment confirmation (D-CONFIRM), opened from the menu.
     const [confirmOpen, setConfirmOpen] = useState(false);
-    // Which question that one dialog is asking (#862, "delete" added #590).
-    // The clipboard's discard confirm and the segment-delete confirm are the
-    // SAME dialog in the same overlay slot, so Back, `inert` and the focus
-    // restore all treat them exactly as they treat the erase confirm. Every
-    // door sets it as it opens the dialog, so a Back-dismissed discard or
-    // delete can never leave the next Erase asking the wrong question.
-    const [confirmFor, setConfirmFor] = useState<"erase" | "clip" | "delete">(
-      "erase"
-    );
+    // Which question that one dialog is asking (#862). The clipboard's
+    // discard confirm and the whole-take erase confirm are the SAME dialog in
+    // the same overlay slot, so Back, `inert` and the focus restore all treat
+    // them exactly alike. Every door sets it as it opens the dialog, so a
+    // Back-dismissed discard can never leave the next Erase asking the wrong
+    // question.
+    //
+    // A third value, `"delete"`, lived here from #590/#1080 until #1104 (the
+    // requirements owner's 2026-09-26 decision) pulled the whole-segment
+    // delete back out of this sheet's ≡ menu — it belongs to the chapter view
+    // now (`segment-row.tsx`, `segments-screen.tsx`), which owns its own
+    // confirm rather than sharing this one.
+    const [confirmFor, setConfirmFor] = useState<"erase" | "clip">("erase");
     // Which opener raised it: the bar's bin ("rerecord") or the ≡ Erase row
     // ("erase"). `onRerecord` sets the first and `openMenu` the second (the
     // menu is the only road to its Erase row), so it is never left over. Only
@@ -337,13 +343,25 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // because "no frame is open" is also the state the reseed EXISTS to fill;
     // only the cut knows the difference. Everything that should bring a frame
     // back clears it (`reopenFrame`).
-    const [cutCollapsed, setCutCollapsed] = useState(false);
+    //
+    // It starts from the clipboard (#925): the clipboard is chapter-wide and
+    // outlives this sheet (G3), so a sheet opened with a cut waiting enters
+    // edit mode on the red line and the paste button, not on a frame. A new
+    // selection is available only once the clipboard is empty — the rule set
+    // on #489 and #835. The latch only matters in edit mode
+    // (`selectionReseed` is inert in record mode), so starting it set costs
+    // record mode nothing.
+    const [cutCollapsed, setCutCollapsed] = useState(() => editor.canPaste);
     /**
      * Lift the #613 collapse: the next render may seed a frame again.
      *
-     * Called from every route that leaves the translator wanting one — a
-     * paste, an undo, and leaving edit mode all call it unconditionally. The
-     * lift of a stage drag is the fourth route, but since #835 it is
+     * Called from the routes that leave the translator wanting one — a paste
+     * that landed, and a discard (#862); an undo sets the latch from
+     * `undoCollapsesFrame` instead, which is the clipboard's state after it
+     * (#925). Leaving edit mode no longer calls it: since #925 it sets the
+     * latch to `editor.canPaste` instead, so the next entry opens on the red
+     * line while a paste is waiting. The
+     * lift of a stage drag is the other route, but since #835 it is
      * conditional: `onPointerUp` only calls this when `liftOutcome` says
      * `reopenFrame`, which is false while the clipboard still holds a cut
      * (`editor.canPaste`) — the requirements owner's decision that a drag
@@ -1764,11 +1782,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // is the sentence that says so.
       stopPlayback();
       editor.closeSelection();
-      // Leaving edit ends the collapsed state too (#613): the next entry into
-      // edit mode opens on a frame, as it always has, rather than inheriting
-      // the last session's cut. This is also the route a translator takes to
-      // pick a second span deliberately — `[ ]` off, `[ ]` on.
-      reopenFrame();
+      // The next entry into edit mode opens on the red line and the paste
+      // button while the clipboard holds a cut, and on a frame only once it
+      // is empty (#925, the requirements owner's report on v0.2.12). Before
+      // #925 this lifted the collapse unconditionally, which made `[ ]` off,
+      // `[ ]` on a way to pick a second span with a paste still waiting; the
+      // rule set on #489 and #835 replaces that route with emptying the
+      // clipboard first — a paste (#489) or a discard (#862).
+      setCutCollapsed(editor.canPaste);
       setZoom(ZOOM_WHOLE);
       // The zoom's view pan is edit-only, exactly as the zoom itself is. The
       // `viewPan` gate already makes it inert here (mode leaves "edit"), so this
@@ -1777,7 +1798,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setZoomPan(null);
       setMode("record");
       setMenuOpen(false);
-    }, [editor, stopPlayback, reopenFrame, setZoom, setZoomPan]);
+    }, [editor, stopPlayback, setZoom, setZoomPan]);
 
     // Zoom, keeping the picked span on screen (#91).
     //
@@ -1850,11 +1871,23 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (undoneOp !== null) {
         setPanState((p) => panAfterUndo(p, undoneOp, length));
       }
-      // Undoing the cut puts the audio back, so the collapse it latched is
-      // over (#613) — and so is the collapse a LATER undo steps past, since
-      // the frame it reseeds is measured against the buffer that comes back.
-      reopenFrame();
-    }, [editor, stopPlaybackDroppingPan, length, reopenFrame, setPanState]);
+      // The latch follows the clipboard the undo leaves behind (#925, the
+      // DRI's decision of 2026-09-26): a new selection is available only once
+      // the clipboard is empty (#489/#835). An undone PASTE puts the phrase
+      // back on the clipboard (#489), so the stage collapses to the line and
+      // the paste button, as after the cut. An undone CUT puts its audio back
+      // but leaves the clipboard as it was, so the frame comes back only when
+      // that clipboard was already empty — a discard (#862) before the undo —
+      // and the collapse stays while the phrase is still waiting.
+      // `undoCollapsesFrame` holds the rule; `editor.canPaste` here is the
+      // pre-undo closure value, which is what it asks for. A FAILED undo
+      // (`null`) changes nothing, the latch included: reopening there would
+      // offer a new selection while a cut is still on the clipboard, and the
+      // next Cut would replace it (Frank R1 on #985).
+      if (undoneOp !== null) {
+        setCutCollapsed(undoCollapsesFrame(undoneOp, editor.canPaste));
+      }
+    }, [editor, stopPlaybackDroppingPan, length, setPanState]);
 
     const onRedo = useCallback(() => {
       stopPlaybackDroppingPan();
@@ -1863,8 +1896,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         setPanState((p) => panAfterRedo(p, redoneOp, length));
       }
       // A redone cut collapses to the line like a live one; a redone paste
-      // reopens the frame (#722).
-      setCutCollapsed(redoCollapsesFrame(redoneOp));
+      // reopens the frame (#722). A failed redo (`null`) keeps the latch as
+      // it was, for the reason `onUndo` gives (Frank R1 on #985).
+      if (redoneOp !== null) setCutCollapsed(redoCollapsesFrame(redoneOp));
     }, [editor, stopPlaybackDroppingPan, length, setPanState]);
 
     const onCut = useCallback(() => {
@@ -1889,11 +1923,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // pan. The marker is hidden while a fitted view would imply another point.
     const onPaste = useCallback(() => {
       stopPlayback();
-      editor.paste(insertionPan);
       // The paste target has been used, so the collapsed line has said what it
       // was there to say (#613) — the next render seeds a frame again, over
-      // the audio that just landed.
-      reopenFrame();
+      // the audio that just landed. Only a paste that LANDED: one that failed
+      // to allocate leaves the phrase on the clipboard and nowhere else, so
+      // the stage stays on the line rather than offering a Cut that would
+      // replace it (Frank R1 on #985).
+      if (editor.paste(insertionPan)) reopenFrame();
     }, [editor, insertionPan, stopPlayback, reopenFrame]);
 
     const onToggleFinished = useCallback(() => {
@@ -2021,62 +2057,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setPanState,
     ]);
 
-    // Delete segment (#590): the row itself, not only its audio — reverses G4
-    // for this one entry. Unlike `erase`, this hook is NOT shared via App:
-    // the recorder ≡ menu is the only entry point today (`#997`'s
-    // segment-row "Remove this segment" is a narrower, different action, on
-    // an empty segment only), so it is called directly here rather than
-    // lifted — see `use-delete-segment.ts`'s own docblock for the reasoning
-    // and for when to lift it.
-    const del = useDeleteSegment();
-    // Held locally, the same reason `eraseFailure` is: a shared error would
-    // paint the wrong screen's failure inside this sheet.
-    const [deleteFailure, setDeleteFailure] = useState<FailureKey | null>(null);
-    const isDeletingSegment = del.isDeleting;
-    const onConfirmDeleteSegment = useCallback(() => {
-      // Belt to `openMenu`'s suspenders, matching `onConfirmErase` above.
-      stopPlayback();
-      if (!isDeletingSegment()) setDeleteFailure(null);
-      void (async () => {
-        const result = await del.deleteSegment(segmentId);
-        if (result === "ok") {
-          // Unlike Erase (#592), there is no segment left to rebuild the
-          // sheet over — the row itself is gone. The only correct
-          // post-condition is leaving: `onExit(true)` is what closes the
-          // sheet (`App`'s `commitCloseRecorder` -> `recorderClosedState`)
-          // and reloads Segments, where the row is gone and the rest
-          // renumbered — already true in the store, `deleteSegment`'s own
-          // atomic renumber (#590). No second await follows the store call
-          // resolving, so — mirroring `onConfirmErase`'s own reasoning for
-          // its pre-latch window — no event can land between the delete
-          // landing and this exit.
-          dirty.current = true;
-          onExit(true);
-          return;
-        }
-        // A failed delete leaves the row on disk (the transaction never
-        // committed), so nothing is lost — mirrors `onConfirmErase`'s own
-        // failure arm exactly, including its `targetMissing: false`
-        // simplification (#378): the hook surfaces a result, not the cause.
-        setDeleteFailure(result.failed);
-        if (
-          failureExit("delete", {
-            databaseUnreachable,
-            targetMissing: false,
-          }) === "exit"
-        )
-          onExit(false);
-        else setConfirmOpen(false);
-      })();
-    }, [
-      del,
-      isDeletingSegment,
-      segmentId,
-      onExit,
-      stopPlayback,
-      databaseUnreachable,
-    ]);
-
     // The record bar's bin (#592): straight to the SAME confirm the ≡ row opens,
     // with no menu in between. Focus is captured here, in the gesture, for the
     // reason `openMenu` gives; the restore effect below lands it on Record once
@@ -2153,7 +2133,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       async (plan: TailPlan): Promise<boolean> => {
         // Shared by idle Back and held-take discard. Do not let either turn a
         // superseded Stop-commit into a delayed write against the old take.
+        // Dropping the edits unsaved would drop a landed paste's phrase with
+        // them, since a paste empties the clipboard (#489), so the clipboard
+        // rolls back with them first.
         if (supersededCapture.current) {
+          editor.rollBackClipboard();
           onExit(dirty.current);
           return true;
         }
@@ -2298,12 +2282,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // screen, the Back must dismiss IT and stay, never commit over an in-flight
       // erase (the R-B6 last-writer race) or a menu selection. Resolve false so
       // App keeps the sheet's protective history entry and the sheet itself.
-      // `erasing` folds in the delete's own in-flight guard too (#590): the
-      // shared confirm dialog can be committing either destructive op, and
-      // Back must not tear it down over either one — same reasoning, second
-      // guard, one boolean into the same (unrenamed) `overlayBlocksClose`/
-      // `overlayDismissal` parameter.
-      const erasing = isErasing() || isDeletingSegment();
+      const erasing = isErasing();
       if (overlayBlocksClose(menuOpen, confirmOpen, erasing)) {
         // Dismiss the overlay the Back landed on — but NOT the erase-confirm while
         // its delete is in flight (Frank R4-1): clearing `confirmOpen` mid-erase
@@ -2394,6 +2373,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             bytes: result.blob,
             error: result.error,
           };
+          // Back's own stop can come back superseded just as a Stop's can, so
+          // it sets the same latch `commitTake` does. `executeTail` is then
+          // the one place that decides a superseded exit writes nothing and
+          // puts a landed paste's phrase back on the clipboard (#489, Frank R1
+          // on #1110), whichever control ended the capture.
+          if (classifyCapture(capture).kind === "superseded") {
+            supersededCapture.current = true;
+          }
         }
         // Which of the exits this close takes is decided in ONE place, enumerated
         // in `tests/close-plan.test.ts` (#180). At most one of save-take /
@@ -2421,6 +2408,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               plan.finished
             );
             dirty.current = true;
+            // A fresh take ends an earlier superseded Stop's latch, just as it
+            // does in `commitTake`. This take was spliced into `working`, so
+            // it already carries a landed paste's phrase (or its held take
+            // does, on a failed save). Putting that phrase back as well would
+            // duplicate it.
+            supersededCapture.current = false;
             // A committed take owes nothing else, so the tail only has to exit —
             // and it exits through the SAME `onExit(dirty)` every other path takes.
             return executeTail({ action: "close" });
@@ -2491,7 +2484,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       menuOpen,
       confirmOpen,
       isErasing,
-      isDeletingSegment,
       heldTake,
     ]);
 
@@ -2908,13 +2900,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       starting,
       hasClip: view?.hasClip ?? false,
     });
-    // #590: unlike `eraseReason`, does NOT require `hasClip` — deleting the
-    // row is exactly what an empty, accidentally added segment needs.
-    const deleteReason = deleteRowReason({
-      hasView: view !== null,
-      takeActive,
-      starting,
-    });
 
     // Why the edit toolbar's two history arrows are grey, derived from the same
     // predicates that grey them (#91, `edit-control-state.ts`) — the ≡ rows'
@@ -2999,11 +2984,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     }
 
     // Any overlay owns the screen: the ≡ menu, the erase confirm, or the erase
-    // (or, since #590, the delete) itself still committing after the confirm
-    // flag was cleared out from under it. One flag, because these chain
-    // within a single `inert` scope and both the inert gate below and the
-    // focus restore have to see the CHAIN, not the individual dialogs.
-    const overlayUp = menuShown || confirmOpen || erase.erasing || del.deleting;
+    // itself still committing after the confirm flag was cleared out from
+    // under it. One flag, because these chain within a single `inert` scope
+    // and both the inert gate below and the focus restore have to see the
+    // CHAIN, not the individual dialogs.
+    const overlayUp = menuShown || confirmOpen || erase.erasing;
 
     // The bottom-bar Edit control's own gate (#315 round 1, George P2-2) — the
     // toolbar-only surface-availability check the sheet `inert` exemption below
@@ -3056,12 +3041,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // native-disabled, no-reason gap and left the bin's as a named residual —
     // pre-existing, unrelated to #857's `hasTake` change, and nobody had
     // reviewed bar-appropriate erase copy yet. #878 closes it the same way
-    // Edit was closed: `strings.stopToErase` ("Stop recording to erase."),
+    // Edit was closed: `strings.stopToErase` ("Stop recording to clear."),
     // naming the bar's own Stop control, only while the take is LIVE
     // (`recording`) — the same split `editToolbarHint` above uses. The commit
     // window (`committing` half of `"uncommitted-take"`, Stop already
     // pressed) gets no label and stays natively `disabled` with no reason,
-    // same as Edit's commit-window half: "Stop recording to erase." would
+    // same as Edit's commit-window half: "Stop recording to clear." would
     // name a control that is now Record.
     const rerecordHint = barHint(
       eraseReason,
@@ -3424,25 +3409,60 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               disabled={heldTake !== null || isClosing}
               onClick={onRequestBack}
             />
-            <span className="text-ink min-w-0 flex-1 truncate">
-              {view
-                ? strings.recorderBreadcrumb(
-                    view.bookName,
-                    // Resolved here, the same way the Segments header resolves
-                    // it, so a renamed chapter (#264) reads the same on both
-                    // screens. Passing the number let this trail spell the
-                    // default name itself and ignore the label (#169). The
-                    // segment's own label rides alongside and is resolved by
-                    // `segmentHeading` inside the entry (#591).
-                    strings.chapterHeading(
-                      view.chapterName,
-                      view.chapterNumber
-                    ),
-                    view.ordinal,
-                    view.segmentLabel
-                  )
-                : ""}
-            </span>
+            {design === "o4" && view ? (
+              // #1105: the same chips the O4 menus show, not a restyled
+              // reading of the text trail below. NOT `aria-hidden`: unlike the
+              // menu, where `O4SheetHead`'s chips sit under a dialog title, no
+              // other element here names the place — the Back control's
+              // `closeRecorder` names the action — so the chip text is the one
+              // place book, chapter and segment reach assistive tech, as the
+              // plain-text trail did before (George round 2). Chapter is the
+              // plain NUMBER, never
+              // `chapterHeading`'s resolved name — that mismatch (a renamed
+              // chapter reading one way in this header and another way on the
+              // menu chip) is what #1105 reported; `o4-crumbs.tsx` explains
+              // why the number is the one both paths keep. The segment state
+              // mirrors `RecorderMenu`'s own `marked`/`state` derivation
+              // (recorder-menu.tsx) from the same `finishedState` this
+              // component already computes — duplicated rather than shared
+              // because that file belongs to a parallel PR (#1104/#1103).
+              <div className="min-w-0 flex-1">
+                <O4Crumbs
+                  className="min-w-0"
+                  book={view.bookName}
+                  chapter={view.chapterNumber}
+                  segment={{
+                    ordinal: view.ordinal,
+                    state:
+                      finishedState === "finished"
+                        ? "finished"
+                        : finishedState === "empty"
+                          ? "recorded"
+                          : "empty",
+                  }}
+                />
+              </div>
+            ) : (
+              <span className="text-ink min-w-0 flex-1 truncate">
+                {view
+                  ? strings.recorderBreadcrumb(
+                      view.bookName,
+                      // Resolved here, the same way the Segments header resolves
+                      // it, so a renamed chapter (#264) reads the same on both
+                      // screens. Passing the number let this trail spell the
+                      // default name itself and ignore the label (#169). The
+                      // segment's own label rides alongside and is resolved by
+                      // `segmentHeading` inside the entry (#591).
+                      strings.chapterHeading(
+                        view.chapterName,
+                        view.chapterNumber
+                      ),
+                      view.ordinal,
+                      view.segmentLabel
+                    )
+                  : ""}
+              </span>
+            )}
             {mode === "record" ? (
               // The menu opener lives in the header in record mode (the toolbar
               // is the bin + Record + Play + Edit, #315/#592). Same gate the old
@@ -3545,12 +3565,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     sentence for every key — a full disk gets `noRoom`'s
                     actionable copy instead of the generic erase failure. */}
                   <Notice>{strings[eraseFailure]}</Notice>
-                </div>
-              )}
-              {deleteFailure && (
-                <div className="px-[12px] pt-[8px]">
-                  {/* Same #172 mapping as `eraseFailure` above (#590). */}
-                  <Notice>{strings[deleteFailure]}</Notice>
                 </div>
               )}
               <RecorderStatus state={state} isClosing={isClosing} />
@@ -3840,17 +3854,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                       the cut's own write. Cut does not clear `dragging` on
                       its own, so the gate is what has to. */}
                     {editor.selectionActive && (
-                      <Control
-                        icon="scissors"
-                        label={strings.cut}
-                        variant="quiet"
-                        size={26}
-                        disabled={heldByDrag(
-                          dragging,
-                          !idleEditable || !editor.canCut
-                        )}
-                        onClick={onCut}
-                      />
+                      <CutAnchor selection={editor.selection} win={win}>
+                        <Control
+                          icon="scissors"
+                          label={strings.cut}
+                          variant="quiet"
+                          size={26}
+                          disabled={heldByDrag(
+                            dragging,
+                            !idleEditable || !editor.canCut
+                          )}
+                          onClick={onCut}
+                        />
+                      </CutAnchor>
                     )}
                     {/* The clipboard's bin (#862), in the same reserved row:
                       while the stage is collapsed onto the line with a cut
@@ -3879,6 +3895,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                   <div
                     className="recorder-status flex items-center gap-[8px]"
                     role="status"
+                    // #1005 ("Warn at 15, seal at 20"): the readout itself is
+                    // the state-in-place marker — CSS tints the whole cluster
+                    // to the warn role off this attribute (3-components.css,
+                    // o4/recorder.css). `TakeCapMarker` below only supplies
+                    // the remaining-minutes word that rides inside it.
+                    data-near-limit={audio.takeCap.nearLimit || undefined}
                   >
                     <span className={cn("text-live", recording && "rec-dot")}>
                       <Icon name="record" size={14} />
@@ -3886,6 +3908,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     <span className="t-timer">
                       {formatDuration(audio.elapsedMs)}
                     </span>
+                    <TakeCapMarker takeCap={audio.takeCap} />
                   </div>
                 )}
                 {/* O4 only (#945): renders nothing under the current look. */}
@@ -3974,17 +3997,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           editReason={editReason}
           markReason={markReason}
           eraseReason={eraseReason}
-          deleteReason={deleteReason}
           onEnterEdit={onEnterEdit}
           onToggleFinished={onToggleFinished}
           onErase={() => {
             setMenuOpen(false);
             setConfirmFor("erase");
-            setConfirmOpen(true);
-          }}
-          onDeleteSegment={() => {
-            setMenuOpen(false);
-            setConfirmFor("delete");
             setConfirmOpen(true);
           }}
           onExitEdit={onExitEdit}
@@ -3998,43 +4015,32 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           title={
             confirmFor === "clip"
               ? strings.discardClipConfirmTitle
-              : confirmFor === "delete"
-                ? strings.deleteSegmentConfirmTitle(view?.ordinal ?? 0)
-                : strings.eraseConfirmTitle
+              : strings.eraseConfirmTitle
           }
-          // O4 G5 (#979): from the bar's bin, the workbench's record badge.
+          // Clear wears the eraser (#1119, DRI 2026-09-28); the clipboard's
+          // discard (#862) throws a cut away, so it keeps the bin.
+          glyph={confirmFor === "clip" ? "trash" : "eraser"}
+          // O4 G5 (#979): from the bar's Clear, the workbench's record badge.
           // The button, Keep and the title stay the 13 dialog's: the button
-          // erases and starts no take, so it keeps the bin and "Erase"
+          // clears and starts no take, so it keeps the eraser and "Clear"
           // (#1022). The workbench's "Record again" button records; here that
-          // would start the mic after the erase's awaits, outside the tap
+          // would start the mic after the clear's awaits, outside the tap
           // `use-audio-session.ts` startRecording needs. Switch off: one
-          // dialog, as before. The clipboard's discard (#862) and the
-          // segment delete (#590) are neither one the bar's bin, so both
-          // keep the trash badge — `g5` is also false for `"delete"`
-          // unconditionally, since `confirmFrom` never becomes `"rerecord"`
-          // through the delete door.
-          badge={g5 && confirmFor !== "clip" ? "record" : "trash"}
+          // dialog, as before, badged with `glyph`.
+          badge={g5 && confirmFor !== "clip" ? "record" : undefined}
           confirmLabel={
             confirmFor === "clip"
               ? strings.discardClipConfirm
-              : confirmFor === "delete"
-                ? strings.deleteSegmentConfirm
-                : strings.eraseConfirm
+              : strings.eraseConfirm
           }
           cancelLabel={strings.eraseCancel}
           // Busy through the post-erase re-read too (#592): `isClosing` is the
           // latch `onConfirmErase` holds across it, and a confirm is otherwise
           // only reachable at idle, where `isClosing` is false. The discard
-          // (#862) is synchronous and holds no latch of its own. The delete
-          // (#590) has no post-op re-read to latch across (`onConfirmDeleteSegment`'s
-          // own comment), so its own in-flight flag is enough.
-          busy={erase.erasing || isClosing || del.deleting}
+          // (#862) is synchronous and holds no latch of its own.
+          busy={erase.erasing || isClosing}
           onConfirm={
-            confirmFor === "clip"
-              ? onConfirmDiscardClip
-              : confirmFor === "delete"
-                ? onConfirmDeleteSegment
-                : onConfirmErase
+            confirmFor === "clip" ? onConfirmDiscardClip : onConfirmErase
           }
           onCancel={onCancelConfirm}
           preview={g5Preview}

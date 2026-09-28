@@ -20,7 +20,7 @@ interface O4BookDeleteAskProps {
 /**
  * The O4 book sheet asking before it deletes (#980, G6; #949 D16 → B).
  *
- * The book ≡ sheet's own contents while a delete is armed: the book's small
+ * The book ⋮ sheet's own contents while a delete is armed: the book's small
  * cover and name as the header, then 13's two equal-size buttons, Keep and
  * Delete — as the O4 workbench draws G6. It renders inside the SAME `<Menu>`
  * the Rename / Share / Delete actions were in, so the sheet's focus trap,

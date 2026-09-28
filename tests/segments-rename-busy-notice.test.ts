@@ -7,9 +7,10 @@ import { SegmentsScreen } from "@/components/segments-screen";
 import { strings } from "@/lib/strings";
 import type { FailureKey } from "@/hooks/save-failure";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
-import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { ChapterId } from "@/types/domain";
+
+import { restingErase } from "./support";
 
 /**
  * #395 items 1 and 3, the Segments (chapter rename) twins of
@@ -47,13 +48,12 @@ vi.mock("@/hooks/use-chapter-share", () => ({
     reset: () => {},
   }),
 }));
-vi.mock("@/hooks/use-erase-segment", () => ({
-  useEraseSegment: () => ({
-    error: null,
-    erasing: false,
-    isErasing: () => false,
-  }),
-}));
+// No `vi.mock` of `@/hooks/use-erase-segment` here: since #160 (L-12) lifted
+// the one hook instance up to `App`, `SegmentsScreen` takes `erase` as a real
+// prop (below), so a module mock would intercept nothing — the #631 hazard.
+// #856's thread found this factory already dead (still naming the `error`
+// field the hook dropped) before this file was touched; removed rather than
+// kept as inert weight.
 
 let root: Root;
 const layers = new Map<string, Layer>();
@@ -85,12 +85,9 @@ afterEach(async () => {
 
 // Resting erase: this suite never opens the erase confirm, but SegmentsScreen
 // reads `erase.isErasing` during render, so the prop cannot be absent
-// (#160 L-12 lifted the single instance up to App).
-const erase: UseEraseSegment = {
-  erase: vi.fn(async () => "ok" as const),
-  erasing: false,
-  isErasing: () => false,
-};
+// (#160 L-12 lifted the single instance up to App). Shared fixture (#856
+// item 3, `tests/support.ts`).
+const erase = restingErase();
 
 async function mount() {
   await act(async () =>

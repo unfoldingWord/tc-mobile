@@ -379,16 +379,19 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
     // The AT consequence this PR asks a reviewer to ACCEPT, pinned rather than
     // left in prose. `Menu` lands open-edge focus on the first ACTIONABLE child,
     // skipping `aria-disabled` hinted rows (#135); on a segment with nothing
-    // recorded and an empty clipboard every pre-existing row USED TO be
-    // hinted, making the toggle that child. #590 changed that: "Delete
-    // segment" does not require stored audio (unlike Erase), so on this exact
-    // empty segment it is now actionable too — and it sits earlier in the DOM
-    // than the toggle, so IT is the first actionable child now, and the
-    // toggle is reached by Tab from there rather than by open-edge focus.
-    // This is exactly the "a pre-existing row becomes actionable" case the
-    // comment below already named as what would catch — Delete is a new row,
-    // not a pre-existing one, but the consequence for this assertion is the
-    // same: the first actionable child changed.
+    // recorded and an empty clipboard every row is hinted (Edit: no audio and
+    // no clipboard to paste; Mark: no audio; Clear: no clip), making the
+    // toggle that child.
+    //
+    // #590/#1080 briefly changed this: "Delete segment" (once a row in this
+    // same menu) did not require stored audio, so on this exact empty segment
+    // it was actionable ahead of the toggle, and this assertion named IT as
+    // the open-edge target instead. #1104 (the requirements owner's
+    // 2026-09-26 decision) removed Delete from this menu entirely — it
+    // belongs to the chapter view's own segment-row menu now — so this is
+    // back to its original shape: no row ahead of the toggle is ever
+    // actionable on an empty segment, and open-edge focus lands directly on
+    // the toggle again.
     //
     // It is asserted BEFORE the click, because clicking moves focus itself and
     // would make this pass for the wrong reason.
@@ -399,12 +402,6 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
     // and an earlier version of this comment wrongly said it did (George).
     // The mount ORDER is held by `tests/theme.test.ts` and by the comments in
     // `recorder-menu.tsx`.
-    const toDelete = menu.getByRole("button", { name: "Delete segment" });
-    await expect(toDelete).toBeFocused();
-
-    // The toggle is still reachable by keyboard from inside the sheet — the
-    // whole point of #149 — just not as the open-edge focus target anymore.
-    await page.keyboard.press("Tab");
     await expect(toLight).toBeFocused();
 
     await toLight.click();

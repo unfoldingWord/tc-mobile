@@ -92,7 +92,10 @@ export function DatabasePanel({ status, holdsCutAudio }: DatabasePanelProps) {
         {blocked ? strings.dbBlocked : strings.dbOutOfDate}
       </p>
 
-      <p id={TEACH_ID} className="text-ink-muted text-[13px]">
+      <p
+        id={TEACH_ID}
+        className="text-ink-muted text-[length:var(--p-text-md)]"
+      >
         {blocked ? strings.dbBlockedTeach : strings.dbOutOfDateTeach}
       </p>
 
@@ -114,7 +117,7 @@ export function DatabasePanel({ status, holdsCutAudio }: DatabasePanelProps) {
       />
 
       {restartArmed && (
-        <p className="text-live text-[12px]">
+        <p className="text-live text-[length:var(--p-text-sm)]">
           {restartConsequence("cutAudio")}
         </p>
       )}

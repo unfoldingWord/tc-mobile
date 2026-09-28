@@ -14,7 +14,7 @@ import {
 } from "@/hooks/share-progress";
 import { encodeMp3 } from "@/lib/audio/mp3";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import { exportBookZip } from "@/lib/export/book";
+import { exportBookZip, memoryArchiveSink } from "@/lib/export/book";
 import {
   ENCODE_STEPS,
   type StepReporter,
@@ -28,7 +28,8 @@ import { newClipId } from "@/lib/storage/clips";
 import { saveTake } from "@/lib/storage/takes";
 import type { AudioCodec } from "@/types/audio";
 import type { BookId, ChapterId } from "@/types/domain";
-import { clearAllStores } from "./support";
+
+import { clearAllStores, stripComments } from "./support";
 
 /**
  * #996: Share Chapter's count covers the MP3 encode, and every count says how
@@ -401,7 +402,14 @@ describe("skipped — items that finished but contributed no audio (#996)", () =
       decodeMp3: () => Promise.reject(new Error("no MP3 clip expected")),
     };
     const { calls, onStep } = recorder();
-    await exportBookZip(bookId, nameChapter, codec, undefined, onStep);
+    await exportBookZip(
+      bookId,
+      nameChapter,
+      codec,
+      memoryArchiveSink(),
+      undefined,
+      onStep
+    );
     expect(calls).toEqual([
       [0, 3, 0],
       [1, 3, 0],
@@ -558,9 +566,17 @@ describe("stepReporter forwards skipped (#996)", () => {
  */
 describe("Share Chapter builds through withEncodeSteps (#996)", () => {
   it("wraps the chapter export's codec and onStep", () => {
-    const s = readFileSync(
-      path.resolve(import.meta.dirname, "..", "src/hooks/use-chapter-share.ts"),
-      "utf8"
+    // Stripped first (#822): a comment quoting the call would otherwise
+    // satisfy the match with the live build bypassing withEncodeSteps.
+    const s = stripComments(
+      readFileSync(
+        path.resolve(
+          import.meta.dirname,
+          "..",
+          "src/hooks/use-chapter-share.ts"
+        ),
+        "utf8"
+      )
     );
     expect(s).toMatch(
       /withEncoder\(\s*signal,\s*withEncodeSteps\(\s*onStep,\s*isCurrent,\s*async \(codec, onStep\) =>/

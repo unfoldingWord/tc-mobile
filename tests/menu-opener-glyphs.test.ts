@@ -225,6 +225,7 @@ describe("which glyph opens which menu (#589)", () => {
         onOpenRecorder: vi.fn(),
         onSetFinished: vi.fn(),
         onErase: vi.fn(),
+        onDeleteSegment: vi.fn(),
         onRename: vi.fn(),
         onMenuOpen: vi.fn(),
         onMenuClose: vi.fn(),

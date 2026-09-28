@@ -448,6 +448,13 @@
     text-align: left;
     cursor: pointer;
     border-radius: var(--c-breadcrumb-radius);
+    /* Extends #559's opt-out to the Segments header (#563): a control-only
+       surface in the same sense the recorder sheet, the menu drawer and the
+       erase confirm already are, and the exact long-pressable element the
+       reported screenshot selected text in. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   .breadcrumb > span {
     min-width: 0;
@@ -473,6 +480,16 @@
     padding: var(--p-space-3);
     border: 1px solid transparent;
     transition: background var(--p-dur-base) var(--p-ease);
+    /* Extends #559's opt-out to the Segments rows (#563), the control-only
+       surface #556 itself named as a reasonable second target. Shared by
+       both looks (segment-row.tsx always carries "row"), and inheritance
+       reaches the ordinal, the title and the scrub track the same way it
+       reaches the recorder sheet's chrome — no rename field or other text
+       input lives inside a row, so there is no opt-back-in to pair with
+       .name-input's. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
 
   /* --- type roles -------------------------------------------------------- */
@@ -613,7 +630,7 @@
   }
 
   /* --- inline name edit (#264) ------------------------------------------- */
-  /* The rename field + its commit control, shown inside a ≡ menu. The input
+  /* The rename field + its commit control, shown inside a ⋮ menu. The input
      sits on the raised surface with an edged outline so it reads as a fillable
      field against the menu panel, and gains the focus ring every control uses. */
   .name-edit {
@@ -714,6 +731,13 @@
     justify-content: center;
     padding: var(--p-space-5);
     z-index: 90;
+    /* Extends #559's opt-out to the ShareProgress portal (#563): it portals
+       to document.body the same way .menu-panel and .confirm-panel do, and
+       its content — a glyph and one line of outcome text — is presentational
+       only, with no control and no text input to opt back in. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   .share-progress {
     width: min(320px, 84vw);
@@ -1043,6 +1067,25 @@
     top: var(--p-space-3);
     left: var(--p-space-3);
     color: var(--s-ink);
+  }
+  /* #1005 ("Warn at 15, seal at 20"): from 15:00 of a live take, the whole
+     cluster (the rec dot, the elapsed readout, and the remaining-minutes word
+     below) tints to the warn role — the same colour `.notice[data-tone="info"]
+     .notice-glyph` and `.vu-meter__fill[data-zone="yellow"]` already use as
+     ink/fill directly on this app's surfaces, not a new pairing. Higher
+     specificity than the plain `.recorder-status` rule above (an attribute
+     selector added), so it wins in the same `@layer components` regardless of
+     source order. */
+  .recorder-status[data-near-limit="true"] {
+    color: var(--s-warn);
+  }
+  /* The remaining-minutes word `TakeCapMarker` renders (`take-cap-marker.tsx`).
+     No colour of its own — it inherits the warn tint from the container
+     above, the same way the rec dot and the timer do. */
+  .recorder-take-warn {
+    font-size: var(--p-text-xs);
+    font-weight: var(--p-weight-strong);
+    font-variant-numeric: tabular-nums;
   }
   .recorder-toolbar {
     gap: var(--c-gap-items);

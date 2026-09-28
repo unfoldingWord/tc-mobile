@@ -6,9 +6,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
-import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import type { SegmentId } from "@/types/domain";
+
+import { restingErase } from "./support";
 
 /**
  * A `CaptureFailure` code reaches the screen as its sentence, on each of the
@@ -106,6 +107,7 @@ beforeEach(() => {
     paste: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),
+    rollBackClipboard: vi.fn(),
   };
   container = document.createElement("div");
   document.body.append(container);
@@ -134,6 +136,7 @@ async function setup() {
       error: null,
       recorderError: null,
       meterFailed: false,
+      takeCap: { nearLimit: false, remainingMs: 20 * 60_000, reached: false },
       playTake: vi.fn(),
       playBuffer: vi.fn(),
       stopBuffer: vi.fn(),
@@ -152,12 +155,9 @@ async function setup() {
       peekScope: () => null,
     };
   // Resting erase: these cases never open the confirm, but the sheet reads
-  // `erase.isErasing` during render, so it cannot be absent.
-  const erase: UseEraseSegment = {
-    erase: vi.fn(async () => "ok" as const),
-    erasing: false,
-    isErasing: () => false,
-  };
+  // `erase.isErasing` during render, so it cannot be absent (#856 item 3:
+  // shared fixture, `tests/support.ts`).
+  const erase = restingErase();
   const render = async () =>
     act(async () =>
       root.render(

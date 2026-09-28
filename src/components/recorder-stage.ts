@@ -9,9 +9,11 @@
  * the whole reason the two coexist.
  */
 
-import { panAfterCut } from "@/lib/audio/viewport";
+import { panAfterCut, sampleToViewportX } from "@/lib/audio/viewport";
+import type { WaveformViewport } from "@/lib/audio/viewport";
 import { wholeSampleRange } from "@/lib/audio/edit";
 import type { EditOp } from "@/lib/audio/edit-log";
+import type { SampleRange } from "@/types/audio";
 
 /** The record-stage inputs this decision reads, all already-derived booleans. */
 export interface StageState {
@@ -701,10 +703,10 @@ export function resumesOnLift(input: {
  * the bug reported — dragging to find a precise paste point kept swapping
  * the red playhead back for a selection band. The requirements owner's
  * decision on #835 is that a new selection is available only once the
- * clipboard is empty (today, a paste — see `recorder.tsx`'s `onPaste`, which
- * still always reopens the frame; that route, undo and redo are unaffected by
- * this term). This is the ONLY route the decision narrows: `resumesOnLift`
- * and the rest of this function's cases are unchanged.
+ * clipboard is empty (a paste empties it, #489 — and `recorder.tsx`'s
+ * `onPaste` also reopens the frame itself; that route, undo and redo are
+ * unaffected by this term). This is the ONLY route the decision narrows:
+ * `resumesOnLift` and the rest of this function's cases are unchanged.
  */
 export function liftOutcome(input: {
   /** This pointer owned the drag. */
@@ -723,20 +725,11 @@ export function liftOutcome(input: {
   /**
    * The clipboard holds a cut (`editor.canPaste`, #835). While true, a
    * drag's lift must not reseed a selection frame — the collapsed line stays
-   * the only thing on the stage. NOT because a paste empties the clipboard:
-   * paste is not one-shot yet (#489 is open), so `editor.canPaste` stays true
-   * across a paste, and the frame reopens instead because `recorder.tsx`'s
-   * `onPaste` calls `reopenFrame()` itself, unconditionally, as the
-   * paragraph above already says (a discard would presumably empty the
-   * clipboard for real, once #862 lands, but that is not built yet either).
-   * #489 must not route paste through this predicate: `canPaste` only
-   * withholds a reseed for the lift it is passed to, not permanently — it is
-   * not a latch. Once a one-shot paste flips it false, a later lift computed
-   * with `canPaste: false` may seed a frame again through this same
-   * `reopenFrame` term, and the paste path's own unconditional
-   * `reopenFrame()` call (above) is unaffected either way. Do not go looking
-   * for a stuck-forever state here; this function holds no memory across
-   * calls (#912 item 1).
+   * the only thing on the stage. It only WITHHOLDS a reseed; it never latches
+   * one out. A paste empties the clipboard (#489), so this term reads false
+   * on every later lift, and `recorder.tsx`'s `onPaste` calls `reopenFrame()`
+   * directly as well, so the frame is back the moment the paste lands rather
+   * than on the next lift.
    */
   readonly canPaste: boolean;
 }): {
@@ -938,11 +931,41 @@ export function panAfterRedo(
  * A redone cut does (#722): the band is gone again and the one line left is
  * where a paste lands, the state a live cut leaves. A redone paste does not;
  * it has no collapse to make, and the frame reseeds over the audio that
- * landed, as after a live paste. `null` — nothing was redone — keeps what the
- * redo path did before #722, which is to reopen.
+ * landed, as after a live paste. `null` answers false, but `recorder.tsx`'s
+ * `onRedo` does not ask on `null` — nothing was redone, or the redo failed —
+ * and leaves the latch as it was (Frank R1 on #985).
  */
 export function redoCollapsesFrame(redoneOp: EditOp | null): boolean {
   return redoneOp?.kind === "cut";
+}
+
+/**
+ * Whether an undo leaves the #613 collapse latched rather than reopening the
+ * frame — the undo half of {@link redoCollapsesFrame}.
+ *
+ * The signal is the clipboard AFTER the undo, not the kind of op undone: a
+ * new selection is available only once the clipboard is empty — the rule the
+ * requirements owner set on #489 and #835, and held to for undo on #985 (the
+ * DRI's decision, 2026-09-26). So the stage shows the red line and the paste
+ * button, the state a cut leaves, whenever the undo leaves a phrase waiting.
+ *
+ * An undone paste always does: undoing it puts the phrase back on the
+ * clipboard (#489). An undone cut leaves the clipboard as it was
+ * (`useSegmentEditor.undo` writes it only for a paste), so `clipboardFull` —
+ * `editor.canPaste` read BEFORE the undo, the same pre-op closure value
+ * `panAfterUndo` takes its length from — is the answer: the phrase is still
+ * waiting, unless a discard (#862) emptied the slot first, in which case the
+ * audio is back in the take and the frame reseeds where it came back (#613).
+ * `null` answers false, but `recorder.tsx`'s `onUndo` does not ask on
+ * `null`: an undo that failed to apply leaves the latch as it was, so a
+ * failure cannot reopen a frame over a full clipboard (Frank R1 on #985).
+ */
+export function undoCollapsesFrame(
+  undoneOp: EditOp | null,
+  clipboardFull: boolean
+): boolean {
+  if (undoneOp === null) return false;
+  return undoneOp.kind === "paste" || clipboardFull;
 }
 
 /**
@@ -1103,9 +1126,12 @@ export function centerlineOverlayShown(input: {
  * three of the reported symptoms are this one reseed.
  *
  * So a cut suspends it — `collapsedByCut` — until something asks for a frame
- * again: a paste, an undo, a redone paste (a redone cut re-latches it, #722),
- * leaving edit mode, or the stage coming to rest under a finger
- * (`recorder.tsx` clears the latch at each).
+ * again: a paste, a discard (#862), an undo that leaves the clipboard empty
+ * (one that leaves a phrase on it re-latches it, #925), a redone paste (a
+ * redone cut re-latches it, #722), or the stage coming to rest under a
+ * finger with the clipboard empty (#835). Leaving edit mode sets the latch
+ * to whether the clipboard is full, and so does opening the sheet (#925):
+ * edit mode opens on the red line while a paste is waiting.
  *
  * Three answers rather than a boolean, because the reseed block does two
  * things and only one of them is suspended: `"seed"` opens a span AND drops
@@ -1138,6 +1164,36 @@ export function selectionReseed(input: {
   }
   if (input.length <= 0 || input.collapsedByCut) return "clear";
   return "seed";
+}
+
+/**
+ * Where the Cut affordance (#1102) sits, as a percentage of the canvas
+ * viewport's width — the same coordinate space {@link SelectionOverlay} draws
+ * the band and handles in (`sampleToViewportX(sample, 100, win)`).
+ *
+ * `null` with no selection: `CutAnchor` reads that as "leave the child where
+ * it was" (the bin, #862, which never has a selection to center under).
+ *
+ * The midpoint can fall outside the visible window — a zoom-fitted selection
+ * wider than the viewport, or one panned partway off screen — so the raw
+ * percentage is clamped to `[0, 100]` here, the viewport's own edges. That is
+ * a COARSER clamp than the CSS `clamp()` in `o4/recorder.css`, which further
+ * narrows it to keep the button's own half-width on screen; the two compose
+ * rather than duplicate — this one is what a render test can assert without a
+ * browser's layout engine, that one is what a phone actually draws.
+ */
+export function cutAnchorPercent(
+  selection: SampleRange | null,
+  win: WaveformViewport
+): number | null {
+  if (!selection) return null;
+  // The midpoint of `[start, end]` and of `[end, start]` are the same
+  // number — `(a + b) / 2` needs no `min`/`max` ordering first, unlike
+  // `SelectionOverlay`'s `leftPct`/`widthPct`, which do (a width must be
+  // positive).
+  const mid = (selection.start + selection.end) / 2;
+  const raw = sampleToViewportX(mid, 100, win);
+  return Math.min(100, Math.max(0, raw));
 }
 
 export function stageView(input: StageInput): StageView {

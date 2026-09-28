@@ -54,3 +54,55 @@ export function virtualModuleOwner(
   if (versioned && manifest.version !== versioned[3]) return UNATTRIBUTED;
   return { package: pkg, version: manifest.version, license: manifest.license };
 }
+
+/**
+ * Normalizes a path-shaped identifier — a `node_modules/`-relative module
+ * path, an emitted file's path from a directory walk — to the one
+ * convention every such value is compared or looked up under, here and in
+ * `vite.config.ts`'s build-provenance plugin: forward slashes. Rollup's own
+ * chunk `fileName`s and `package-lock.json`'s own keys are always
+ * POSIX-style, even in a build run on Windows; `node:path`'s OS-native
+ * `relative`/`join` are not (#1083, a follow-up from #1019: the plugin's
+ * `node_modules/` search and its emitted-file-vs-known-chunk comparison each
+ * compared a POSIX literal, or a `Set` of POSIX chunk names, against a
+ * native-separator path, so every known chunk silently lost its attribution
+ * — `package: null` — on a Windows build, and the artifact gate rejected an
+ * otherwise-valid bundle).
+ *
+ * A bare backslash replace rather than a `path.sep`-driven split: it is a
+ * no-op on an already-POSIX string, so it is safe to call unconditionally on
+ * any host, and it is what lets a test on a POSIX host exercise the Windows
+ * path shape directly — `path.win32.join`/`.relative` build a
+ * backslash-separated string on any OS; only the OS-native
+ * `path.relative`/`path.join` this function's callers use actually vary by
+ * host.
+ */
+export function toPosixPath(p: string): string {
+  return p.replace(/\\/g, "/");
+}
+
+/**
+ * Where a `node_modules/`-relative module path names its owning package,
+ * after normalizing to the convention `toPosixPath` states above — or
+ * `null` when `rel` names no `node_modules` segment at all (an in-repo
+ * source file, which must keep failing attribution regardless of host path
+ * convention). `dir` is the exact `package-lock.json` key for that install
+ * (that file's own keys are always POSIX, per npm's own convention); `pkg`
+ * is what a manifest lookup needs; `rel` is the normalized identifier to
+ * record the entry under. Handles a nested (non-root) `node_modules` the
+ * same as a root one, by keeping whatever prefix `rel` carries before the
+ * matched segment.
+ */
+export function nodeModulesEntry(
+  rel: string
+): { pkg: string; dir: string; rel: string } | null {
+  const posixRel = toPosixPath(rel);
+  const at = posixRel.lastIndexOf("node_modules/");
+  if (at === -1) return null;
+  const pkg = packageOf(posixRel.slice(at + "node_modules/".length));
+  return {
+    pkg,
+    dir: posixRel.slice(0, at) + `node_modules/${pkg}`,
+    rel: posixRel,
+  };
+}

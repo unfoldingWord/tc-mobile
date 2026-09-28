@@ -94,6 +94,25 @@ describe.skipIf(gate === "skip")(
       }
     });
 
+    it("discloses the Apache-2.0 module loader Workbox writes into sw.js", () => {
+      // workbox-build bundles the service worker through
+      // @trickfilm400/rollup-plugin-off-main-thread, whose AMD loader
+      // (loader.ejs, Apache-2.0, Google) opens dist/sw.js. That file is written
+      // outside Vite's module graph, so build-provenance.json never records it
+      // and the provenance check below cannot see it (#823). The loader's own
+      // error string identifies it after minification.
+      const sw = path.join(DIST, "sw.js");
+      expect(existsSync(sw), "dist/sw.js is missing").toBe(true);
+      if (readFileSync(sw, "utf8").includes("didn’t register its module")) {
+        const row = thirdPartyLicenses.find(
+          (l) => l.name === "@trickfilm400/rollup-plugin-off-main-thread"
+        );
+        expect(row, "sw.js carries the loader but it is not disclosed").toEqual(
+          expect.objectContaining({ spdx: "Apache-2.0" })
+        );
+      }
+    });
+
     it("discloses every package the build provenance names", () => {
       // The runtime-closure walk in tests/licenses.test.ts cannot see code the
       // BUILD writes into dist/ from a dev dependency; four such injections

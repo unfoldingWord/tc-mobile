@@ -9,18 +9,16 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import type { SegmentId } from "@/types/domain";
 
+import { restingErase } from "./support";
+
 /**
  * The erase surface `App` now owns and passes down (#160, L-12). Resting: this
  * suite never erases, and a stub that answers "no erase in flight" is what the
  * screen's Back and confirm gates read. Written here rather than mocked at the
  * module, because the screen takes it as a PROP now — a module mock would
- * intercept nothing.
+ * intercept nothing. Shared fixture (#856 item 3, `tests/support.ts`).
  */
-const erase = {
-  erase: vi.fn(async () => "ok" as const),
-  erasing: false,
-  isErasing: () => false,
-};
+const erase = restingErase();
 
 /**
  * The tap that ends a recording commits it, in place (#614, Option A).
@@ -117,6 +115,7 @@ beforeEach(() => {
     paste: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),
+    rollBackClipboard: vi.fn(),
   };
   container = document.createElement("div");
   document.body.append(container);
@@ -148,6 +147,7 @@ async function setup() {
       error: null,
       recorderError: null,
       meterFailed: false,
+      takeCap: { nearLimit: false, remainingMs: 20 * 60_000, reached: false },
       playTake: vi.fn(),
       playBuffer: vi.fn(),
       stopBuffer: vi.fn(),
@@ -448,6 +448,15 @@ it("the commit window after Stop does not tell the translator to stop (#857)", a
 
   await act(async () => settle());
   await s.render();
+
+  // #869 item 3 (George r5 L3): the commit window is not the whole story —
+  // once `commitTake`'s reload settles (`recorder.tsx`'s `setIsClosing(false)`
+  // in its success arm), Edit is usable again. `Control` (`control.tsx`) never
+  // renders `aria-busy` once `busy` is false, and with `editReason` back to
+  // `null` the toggle is neither natively `disabled` nor soft-`aria-disabled`.
+  expect(toggle!.getAttribute("aria-busy")).toBeNull();
+  expect(toggle!.disabled).toBe(false);
+  expect(toggle!.getAttribute("aria-disabled")).toBeNull();
 });
 
 it("a Back's recovery exits to Segments, unchanged", async () => {

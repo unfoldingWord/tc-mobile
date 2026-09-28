@@ -23,9 +23,15 @@ import { areaRules, declsFor } from "./o4-area-css";
  *
  * G3 (workbench round 4) drops Edit from this menu in O4 — the recorder
  * screen carries its own edit control — so the record-mode O4 menu is Mark,
- * Erase, Delete (#590) and the theme tile. Every other row keeps the
- * accessible name, gating and hint it has in the current look; the cases
- * below re-ask the current suite's questions of the O4 branch.
+ * Erase and the theme tile. Every other row keeps the accessible name, gating
+ * and hint it has in the current look; the cases below re-ask the current
+ * suite's questions of the O4 branch.
+ *
+ * Delete segment (#590) lived here too, from #1080 until #1104 (the
+ * requirements owner's 2026-09-26 decision) pulled it back out of this menu
+ * entirely — it belongs to the chapter view's own segment menu now
+ * (`tests/segments-o4.test.ts` and `tests/segment-row-*.test.ts` cover that
+ * one). The negative case near the end of this file pins the removal.
  *
  * Marking done (G8) is #995's shared `done` / `doneoff` tile tone and the
  * theme tile is `ThemeControl`'s shared `tile` prop — the same two mechanisms
@@ -57,11 +63,9 @@ const base: RecorderMenuProps = {
   editReason: null,
   markReason: null,
   eraseReason: null,
-  deleteReason: null,
   onEnterEdit: vi.fn(),
   onToggleFinished: vi.fn(),
   onErase: vi.fn(),
-  onDeleteSegment: vi.fn(),
   onExitEdit: vi.fn(),
 };
 
@@ -69,10 +73,11 @@ function show(over: Partial<RecorderMenuProps> = {}, look: Design = "o4") {
   design.current = look;
   act(() => root.render(createElement(RecorderMenu, { ...base, ...over })));
   // A floor for every O4 case: a case that loops over the tiles, or asks a
-  // row question, must be asking it of the tile grid and not of rows. Four
-  // since #590 added the Delete tile: Mark, Erase, Delete, theme.
+  // row question, must be asking it of the tile grid and not of rows. Three:
+  // Mark, Erase, theme (#1104 removed the fourth, Delete — see the negative
+  // case near the end of this file).
   if (look === "o4" && (over.open ?? true))
-    expect(tiles().length, "no O4 tiles rendered").toBe(4);
+    expect(tiles().length, "no O4 tiles rendered").toBe(3);
 }
 const buttons = () => [...document.querySelectorAll("button")];
 const named = (label: string) =>
@@ -107,33 +112,42 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
     expect(named(strings.enterEdit)).toBeDefined();
   });
 
-  it("lays record mode out as Mark, Erase, Delete, then the theme tile past a spacer (#590)", () => {
+  it("lays record mode out as Mark, Erase, then the theme tile past a spacer", () => {
     show();
     const grid = document.querySelector(".o4-tiles");
     expect(grid).not.toBeNull();
-    expect(labels().slice(0, 3)).toEqual([
+    expect(labels().slice(0, 2)).toEqual([
       strings.markFinished(3),
       strings.eraseSegment,
-      strings.deleteSegment,
     ]);
-    expect(labels()[3]).toBe(themeTile()?.getAttribute("aria-label"));
+    expect(labels()[2]).toBe(themeTile()?.getAttribute("aria-label"));
     // Every action is a tile inside the one grid, the spacer before theme.
-    expect(grid?.querySelectorAll("button.o4-tile")).toHaveLength(4);
+    expect(grid?.querySelectorAll("button.o4-tile")).toHaveLength(3);
     const kids = [...(grid?.children ?? [])];
-    expect(kids[3]?.classList.contains("o4-tiles-gap")).toBe(true);
+    expect(kids[2]?.classList.contains("o4-tiles-gap")).toBe(true);
     // G3 round 4: Edit is on the recorder screen, not in this menu.
     expect(startingWith(strings.enterEdit)).toBeUndefined();
   });
 
-  it("lays edit mode (the ⋮ menu, #863) out as Done, Erase, Delete, then theme (#590)", () => {
+  it("lays edit mode (the ⋮ menu, #863) out as Done, Erase, then theme", () => {
     show({ mode: "edit" });
-    expect(labels().slice(0, 3)).toEqual([
+    expect(labels().slice(0, 2)).toEqual([
       strings.doneEditing,
       strings.eraseSegment,
-      strings.deleteSegment,
     ]);
-    expect(labels()[3]).toBe(themeTile()?.getAttribute("aria-label"));
+    expect(labels()[2]).toBe(themeTile()?.getAttribute("aria-label"));
     expect(named(strings.markFinished(3))).toBeUndefined();
+  });
+
+  it("never renders a Delete segment tile, in either mode (#1104 — Delete moved to the chapter view)", () => {
+    // #590/#1080 first shipped a Delete tile here; the requirements owner's
+    // 2026-09-26 decision on #1104 pulled it back out: "the menu inside the
+    // segment editor (recorder) shows Erase only." A red run of this exact
+    // case (against the pre-#1104 tree) failed on both modes.
+    show();
+    expect(named(strings.deleteSegment)).toBeUndefined();
+    show({ mode: "edit" });
+    expect(named(strings.deleteSegment)).toBeUndefined();
   });
 
   it("keys the #927 half-screen cap's selector to this menu's rendered sheet, in both modes", () => {
@@ -148,7 +162,7 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
         true
       );
       const actions = tiles().filter((t) => t !== themeTile());
-      expect(actions).toHaveLength(3);
+      expect(actions).toHaveLength(2);
       for (const t of actions)
         expect(
           t.classList.contains("recorder-menu-tile"),
@@ -193,27 +207,34 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
     }
   });
 
-  it("gives the tiles their tones: doneoff Mark, plain theme, the erase tone for Erase and Delete (#590)", () => {
+  it("gives the tiles their tones: doneoff Mark, plain theme, plain Clear (#1119)", () => {
     show();
     expect(named(strings.markFinished(3))?.classList).toContain(
       "o4-tile--doneoff"
     );
-    expect(named(strings.eraseSegment)?.classList).toContain("o4-tile--erase");
-    expect(named(strings.deleteSegment)?.classList).toContain("o4-tile--erase");
+    // Clear removes only the audio, so it takes the neutral well; the red
+    // erase tone is kept for Delete, which lives in the chapter view.
+    expect(named(strings.eraseSegment)?.classList).toContain("o4-tile--plain");
+    expect(named(strings.eraseSegment)?.classList).not.toContain(
+      "o4-tile--erase"
+    );
     expect(themeTile()?.classList).toContain("o4-tile--plain");
     show({ mode: "edit" });
     expect(named(strings.doneEditing)?.classList).toContain("o4-tile--plain");
   });
 
-  it("flips the Mark tile's LABEL and its tone (done / doneoff) on the same value", () => {
+  it("keeps the Mark tile's label fixed and flips its tone (done / doneoff) and aria-pressed on the same value (#351)", () => {
     show({ finishedState: "finished" });
-    const marked = named(strings.markUnfinished(3));
+    const marked = named(strings.markFinished(3));
     expect(marked?.classList).toContain("o4-tile--done");
     expect(marked?.classList).not.toContain("o4-tile--doneoff");
+    expect(marked?.getAttribute("aria-pressed")).toBe("true");
+    expect(named("Mark segment 3 not done")).toBeUndefined();
     show({ finishedState: "empty" });
     const unmarked = named(strings.markFinished(3));
     expect(unmarked?.classList).toContain("o4-tile--doneoff");
     expect(unmarked?.classList).not.toContain("o4-tile--done");
+    expect(unmarked?.getAttribute("aria-pressed")).toBe("false");
   });
 
   it("keeps paint and label agreeing when the ordinal is missing", () => {
@@ -221,7 +242,7 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
     expect(startingWith(strings.markFinished(0))?.classList).toContain(
       "o4-tile--doneoff"
     );
-    expect(named(strings.markUnfinished(0))).toBeUndefined();
+    expect(named("Mark segment 0 not done")).toBeUndefined();
   });
 
   it("does NOT paint the green fill on a disabled-finished tile", () => {
@@ -235,7 +256,6 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
     show({
       eraseReason: "no-clip",
       markReason: "no-audio",
-      deleteReason: "uncommitted-take",
     });
     for (const label of [strings.eraseSegment, strings.markFinished(3)]) {
       const tile = startingWith(label);
@@ -243,41 +263,10 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
       expect(tile?.getAttribute("aria-disabled")).toBe("true");
       expect(tile?.hasAttribute("disabled")).toBe(false);
     }
-    // Delete (#590): its own reason, distinct from Erase's `no-clip` — a
-    // never-recorded segment must still show Delete enabled while Erase (which
-    // requires a stored clip) is greyed, so this pins the two do not share a
-    // gate.
-    const deleteTile = startingWith(strings.deleteSegment);
-    // The exact hinted name (#135): the reason joins the label, not just
-    // "not the bare label" — a loose negative here would pass for any wrong
-    // reason string too.
-    expect(deleteTile?.getAttribute("aria-label")).toBe(
-      `${strings.deleteSegment}. ${strings.blockedByTake}`
-    );
-    expect(deleteTile?.getAttribute("aria-disabled")).toBe("true");
-    expect(deleteTile?.hasAttribute("disabled")).toBe(false);
     show({ mode: "edit", eraseReason: "no-clip" });
     expect(
       startingWith(strings.eraseSegment)?.getAttribute("aria-disabled")
     ).toBe("true");
-    // With no `deleteReason` override this time, Delete stays enabled in edit
-    // mode even though Erase (gated on a stored clip) is greyed.
-    expect(named(strings.deleteSegment)?.getAttribute("aria-disabled")).toBe(
-      null
-    );
-  });
-
-  it("Delete stays enabled with no stored clip, unlike Erase (#590)", () => {
-    // The whole point of `deleteRowReason`'s narrower gate: an accidentally
-    // added, never-recorded segment must still be deletable.
-    show({ eraseReason: "no-clip" });
-    expect(
-      startingWith(strings.eraseSegment)?.getAttribute("aria-disabled")
-    ).toBe("true");
-    expect(named(strings.deleteSegment)?.getAttribute("aria-disabled")).toBe(
-      null
-    );
-    expect(named(strings.deleteSegment)?.hasAttribute("disabled")).toBe(false);
   });
 
   it("HARD-disables a tile whose reason has nothing to say", () => {
@@ -289,21 +278,17 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
 
   it("hands each tap to the same prop the current look does", () => {
     const onErase = vi.fn();
-    const onDeleteSegment = vi.fn();
     const onToggleFinished = vi.fn();
     const onExitEdit = vi.fn();
     const onClose = vi.fn();
-    show({ onErase, onDeleteSegment, onToggleFinished, onClose });
+    show({ onErase, onToggleFinished, onClose });
     act(() => named(strings.markFinished(3))?.click());
     act(() => named(strings.eraseSegment)?.click());
-    act(() => named(strings.deleteSegment)?.click());
-    show({ mode: "edit", onErase, onDeleteSegment, onExitEdit, onClose });
+    show({ mode: "edit", onErase, onExitEdit, onClose });
     act(() => named(strings.doneEditing)?.click());
     act(() => named(strings.eraseSegment)?.click());
-    act(() => named(strings.deleteSegment)?.click());
     expect(onToggleFinished).toHaveBeenCalledTimes(1);
     expect(onErase).toHaveBeenCalledTimes(2);
-    expect(onDeleteSegment).toHaveBeenCalledTimes(2);
     expect(onExitEdit).toHaveBeenCalledTimes(1);
     // Marking does not close the sheet: the tile turns green under the thumb.
     expect(onClose).not.toHaveBeenCalled();

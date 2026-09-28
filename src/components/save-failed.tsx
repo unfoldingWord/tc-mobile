@@ -10,6 +10,7 @@ import {
   restartConsequence,
   restartLabel,
 } from "./recovery-copy";
+import { restartWideButtonClass } from "./save-failed-armed";
 import { SendLogControl } from "./send-log-control";
 import { strings } from "@/lib/strings";
 import { flushFailureLog } from "@/hooks/failure-log";
@@ -170,7 +171,9 @@ export function SaveFailed({
           : recoveryTitle(kind ?? "unknown", editOnly)}
       </p>
 
-      <p className="text-ink-muted text-[13px]">{stillHere}</p>
+      <p className="text-ink-muted text-[length:var(--p-text-md)]">
+        {stillHere}
+      </p>
 
       {!saving && (
         <>
@@ -190,15 +193,7 @@ export function SaveFailed({
               }
               variant="primary"
               size={o4 ? 34 : 30}
-              className={
-                o4
-                  ? terminal && restartArmed
-                    ? "o4-err-wide text-live"
-                    : "o4-err-wide"
-                  : terminal && restartArmed
-                    ? "text-live"
-                    : undefined
-              }
+              className={restartWideButtonClass(o4, terminal && restartArmed)}
               busy={terminal && restarting}
               autoFocus
               onClick={
@@ -222,7 +217,7 @@ export function SaveFailed({
           )}
 
           {terminal && restartArmed && !restarting && (
-            <p className="text-live text-[12px]">
+            <p className="text-live text-[length:var(--p-text-sm)]">
               {restartConsequence(
                 editOnly ? "changes" : "recording",
                 holdsCutAudio
@@ -255,11 +250,15 @@ export function SaveFailed({
           {!terminal && <SendLogControl />}
 
           {safetyLine && (
-            <p className="text-ink-muted text-[13px]">{safetyLine}</p>
+            <p className="text-ink-muted text-[length:var(--p-text-md)]">
+              {safetyLine}
+            </p>
           )}
 
           {attemptsLine && (
-            <p className="text-ink-faint text-[12px]">{attemptsLine}</p>
+            <p className="text-ink-faint text-[length:var(--p-text-sm)]">
+              {attemptsLine}
+            </p>
           )}
 
           <div className="mt-[10px] flex flex-col items-center gap-[8px]">
@@ -272,7 +271,7 @@ export function SaveFailed({
               onClick={() => (armed ? onDiscard() : setArmedAt(attempts))}
             />
             {armed && (
-              <p className="text-live text-[12px]">
+              <p className="text-live text-[length:var(--p-text-sm)]">
                 {strings.saveFailedDiscardHint(editOnly)}
               </p>
             )}

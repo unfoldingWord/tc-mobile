@@ -167,6 +167,16 @@ interface PreparedShare {
    * cannot recover it, so copy that names the chapter count needs it here.
    */
   readonly partialChapters?: number;
+  /**
+   * Drop whatever backs `file` (#1003: Share Book's and Share your work's
+   * archive spool, `archive-spool.ts`). Omitted when nothing does. From the
+   * moment the builder returns, the flow owns this and calls it exactly when
+   * the File is done with: once it is staged to the native cache, once the
+   * sheet call settles for good, or when the run is abandoned (a reset, an
+   * unmount, a cancel that lands after the build). A web `retry` keeps it,
+   * because the same File is armed again. Must never reject.
+   */
+  readonly release?: () => Promise<void>;
 }
 
 /**
@@ -248,6 +258,8 @@ export function stepReporter(
 interface ArmedShare {
   readonly file: File;
   readonly staged: StagedShare | null;
+  /** {@link PreparedShare.release}, while the armed File still needs it. */
+  readonly release?: () => Promise<void>;
   readonly missing: number;
   readonly partial: number;
   readonly partialChapters: number;
@@ -435,7 +447,7 @@ export interface UseShareFlow {
    * also by `reset()` (menu close), alongside `error`/`missing`/`partial`.
    *
    * `reset()` clears it, not just `prepare()`, for a reason specific to
-   * Share Book: `useBookShare` is ONE hook instance shared by every row's ≡
+   * Share Book: `useBookShare` is ONE hook instance shared by every row's ⋮
    * menu (`shareMenuBookId` just tracks which book is open), so a flag that
    * survived `reset()` would leak an unconfirmed send from book A onto book
    * B's freshly opened, never-tried Share control the moment the shelf moves
@@ -600,6 +612,8 @@ export function useShareFlow(): UseShareFlow {
       // reach into it.
       const armed = handoff.dropArmed();
       if (armed?.staged != null) void nativeShare.discard(armed.staged);
+      // Its spool, likewise (#1003). `release` never rejects.
+      void armed?.release?.();
     },
     [handoff, modal]
   );
@@ -644,6 +658,10 @@ export function useShareFlow(): UseShareFlow {
     // Whether activation is live at the call decides how a NotAllowedError reads
     // (see classifyShareError). Read it immediately before `share`.
     const hadActivation = navigator.userActivation?.isActive ?? false;
+    // Whether the armed File is put back for another tap (a web `retry`). Every
+    // other way out of this send is the File's last use, so the `finally`
+    // below releases its spool (#1003).
+    let rearmed = false;
     // Which route this is was settled at prepare time and is carried by the
     // armed value, so the two gestures cannot disagree about it — and no
     // environment probe happens in the gesture. Either way exactly ONE call
@@ -744,6 +762,7 @@ export function useShareFlow(): UseShareFlow {
         // File is nobody's and is simply dropped.
         if (current()) {
           handoff.restore(armed);
+          rearmed = true;
           modal.dispatch({ type: "settle", settled: null, now: modal.now() });
           await modal.hidden();
         }
@@ -782,6 +801,10 @@ export function useShareFlow(): UseShareFlow {
       return outcome;
     } finally {
       handoff.finishSending();
+      // After the sheet call has settled, never during it: the File the sheet
+      // was reading is backed by the spool. Fire-and-forget, like `discard`;
+      // `release` never rejects.
+      if (!rearmed) void armed.release?.();
     }
   }, [handoff, modal]);
 
@@ -828,6 +851,12 @@ export function useShareFlow(): UseShareFlow {
       // Yield once so `preparing` paints before the gather starts (its awaits
       // also yield, but a tiny share can return before the browser paints).
       await new Promise((resolve) => setTimeout(resolve, 0));
+      // The built File's `release` while nobody else owns it (#1003): set when
+      // the build returns, cleared the moment the handoff takes it or it is
+      // called. Whatever leaves this function with it still set — a cancel
+      // after the build, an unsupported File, a failed stage — releases it in
+      // the `finally` below.
+      let unowned: (() => Promise<void>) | undefined;
       try {
         // `build` threads `current` and the signal through to the export so a
         // cancel during the gather skips the encode and a cancel during the encode
@@ -839,6 +868,10 @@ export function useShareFlow(): UseShareFlow {
           controller.signal,
           stepReporter(current, modal.dispatch)
         );
+        // Claimed BEFORE the stale-run bail below: a cancel that lands after
+        // the build finished still leaves a spool behind (#1003).
+        if (prepared !== null && prepared !== "nothing")
+          unowned = prepared.release;
         if (!current()) return null;
         // "nothing" (no audio) and null (cancelled, but not yet observed as such)
         // both settle back to idle; only "nothing" is a reason to surface. A null
@@ -884,6 +917,13 @@ export function useShareFlow(): UseShareFlow {
           route === "native"
             ? await nativeShare.stage(file, controller.signal)
             : null;
+        // Staged, the cache copy is what the chooser offers and nothing reads
+        // `file` again (a native send never re-arms it), so its spool goes now
+        // rather than after the chooser (#1003).
+        if (staged !== null && unowned !== undefined) {
+          void unowned();
+          unowned = undefined;
+        }
         if (!current()) {
           // Cancelled while staging, but the write finished first: the File is
           // nobody's now, so do not leave it in the cache. Fire-and-forget — the
@@ -891,13 +931,17 @@ export function useShareFlow(): UseShareFlow {
           if (staged !== null) void nativeShare.discard(staged);
           return null;
         }
+        // `unowned` is still the spool only on the web route; the send owns it
+        // from here.
         handoff.arm({
           file,
           staged,
           missing: prepared.missing,
           partial: prepared.partial ?? 0,
           partialChapters: prepared.partialChapters ?? 0,
+          ...(unowned === undefined ? {} : { release: unowned }),
         });
+        unowned = undefined;
         setMissing(prepared.missing);
         setPartial(prepared.partial ?? 0);
         setPartialChapters(prepared.partialChapters ?? 0);
@@ -930,6 +974,7 @@ export function useShareFlow(): UseShareFlow {
         modal.dispatch({ type: "settle", settled, now: modal.now() });
         return null;
       } finally {
+        void unowned?.();
         // Only clear the guard for the run that still owns it. A stale run whose
         // token was bumped by `reset` must NOT release a newer run's guard, or a
         // further tap would start a third full encode over the same source.
@@ -973,6 +1018,8 @@ export function useShareFlow(): UseShareFlow {
     // owns it calls `finishSending()`.
     const armed = handoff.dropArmed();
     if (armed?.staged != null) void nativeShare.discard(armed.staged);
+    // The abandoned File's spool too (#1003); `release` never rejects.
+    void armed?.release?.();
     preparingRef.current = false;
     setStatus("idle");
     setError(null);

@@ -106,7 +106,7 @@ explicitly accepted, recorded on the PR.
 
 ## Freeze budget — 2026-09-21 to 2026-10-04
 
-Decided by the DRI on 2026-09-21 for the run-up to the v0.3.0 handoff, and
+Decided by the DRI on 2026-09-21 for the run-up to the v1.0.0 handoff, and
 expiring with it. The reasoning: the harness's machine cost is small (about
 18 s for `npm run verify` locally, about 2 min in CI), and the cost that was
 eating the week was rounds — every documented five-round chain that week was
@@ -127,6 +127,40 @@ freeze-specific one.
 
 After 2026-10-04 this table is void and the merge policy above applies again
 unchanged.
+
+## Gate comment template
+
+Added 2026-09-28 after the #839 audit (#840 R2). Auditing 40 merged PRs found
+the freeze exemption recorded on some T3 gate comments (#803, #819) and
+missing on others (#769, #762, #759, #768, #785, #794, #787) — same bar,
+inconsistent record — and found gate comments citing `docs/review-policy.md`
+and "RULINGS D6–D16", neither of which exists anywhere in this repo.
+
+Every gate comment — the comment on a PR that records which tier and review
+bar it was assigned — states, in one place, on one comment:
+
+1. **The tier**: T1, T2, T3, or Harness/meta, per the "Risk tiers" table in
+   `AGENTS.md` and the classify order in "Merge policy" above.
+2. **The bar that applies**, naming the section of this file it comes from —
+   "Merge policy" or, while it is in force, "Freeze budget" — by heading, not
+   only by line number. A bare line number drifts: the exemption line quoted
+   in #839 cited `dual-review.md:77`, and at this file's current head that
+   line falls inside the "Merge policy" classify list, not the freeze table,
+   because the file has been edited since. Cite the heading first; a line
+   number may be added alongside it as a same-day convenience, never as the
+   only anchor.
+3. **Any exemption taken**, in the same comment, never a silent skip — for
+   example:
+
+   > Freeze exemption: T3, George only, one round, P1/P2 ("Freeze budget"
+   > table, `docs/review/dual-review.md`).
+
+A gate comment may cite only a document that is either committed in this repo
+(this file, `AGENTS.md`, `CONTRIBUTING.md`) or linked by URL. Naming a policy
+document or a ruling series that is not in the tree and not linked — a
+`review-policy.md`, a "RULINGS Dn" this repo has no record of — is itself a
+defect in the gate comment, on the same footing as a missing tier or a missing
+exemption line.
 
 ## Merging multiple lanes
 

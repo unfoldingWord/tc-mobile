@@ -34,6 +34,7 @@ import { bookShareItems } from "./share-o4-view";
 import { ShareProgress } from "./share-progress";
 import { StoragePressureBanner } from "./storage-pressure-banner";
 import { storagePressureNotice } from "./storage-pressure-notice";
+import { shelfNoticeText } from "./shelf-notice-text";
 import { strings } from "@/lib/strings";
 import { ThemeControl } from "./theme-control";
 import { DesignControl } from "./design-control";
@@ -81,7 +82,7 @@ import type { BookCard, ChapterRow, SegmentRowState } from "@/types/view";
  * The design's "PR3 — Books' overlays" listed five; `books:new-chapter` is the
  * sixth, added with the Add-chapter prompt (#609) for the same reason
  * `books:new-book` exists — a naming dialog Back must close rather than walk
- * out of the app from. The book ≡ menu and its rename mode remain ONE overlay:
+ * out of the app from. The book ⋮ menu and its rename mode remain ONE overlay:
  * rename is a mode inside the same panel, so it opens no second layer and Back
  * from the rename field closes the menu, just as the panel's own Close does.
  *
@@ -96,7 +97,7 @@ import type { BookCard, ChapterRow, SegmentRowState } from "@/types/view";
  * hold) rather than on any click, so registering it would mean popping a layer
  * from a timer — an effect, which invariant 6 forbids REGISTERING (never
  * closing — see `books:library-share` below and the delete-confirm auto-close
- * further down this file). It is folded into the book ≡ menu's `busy()`
+ * further down this file). It is folded into the book ⋮ menu's `busy()`
  * instead, which is what Amendment D asks for and is also exactly right: the
  * overlay's whole lifetime is the window in which that menu's own close is a
  * no-op (`onCloseShareMenu`'s early return), so Back must refuse rather than
@@ -105,7 +106,7 @@ import type { BookCard, ChapterRow, SegmentRowState } from "@/types/view";
  * `books:library-share` (#1045/#1056) is the one exception that IS a layer.
  * Share your work has no enclosing menu to fold `ownsScreen()`'s busy check
  * into — the O4 storage banner's button sits directly on the shelf, not
- * behind a ≡ — so there is nothing else to guard Back with while its own
+ * behind a ⋮ — so there is nothing else to guard Back with while its own
  * `<ShareProgress>` owns the screen (DRI, 2026-09-26: "Refuse, like Book share
  * (Recommended)"). It is opened from the SAME tap that starts `prepare()`/
  * `send()` (`books-screen.tsx`'s wrapping of `libraryShare` before it reaches
@@ -328,12 +329,12 @@ export function BooksScreen({
   // cannot delete. It also undid the armed scroll that had just brought the
   // new row into view, by focusing the row above it.
   const newChapterReturnFocus = useRef<HTMLElement | null>(null);
-  // Share Book (B7): the per-book ≡ menu. Which book's menu is open, and one
+  // Share Book (B7): the per-book ⋮ menu. Which book's menu is open, and one
   // share flow for the screen — only one menu is open at a time (its scrim blocks
   // reaching a second row's trigger), so a single flow is enough. `shareMenuBook`
   // resolves the id back to a row, auto-closing the menu if that book vanishes.
   const [shareMenuBookId, setShareMenuBookId] = useState<BookId | null>(null);
-  // Whether the open book ≡ menu is in rename mode (the name field showing) or
+  // Whether the open book ⋮ menu is in rename mode (the name field showing) or
   // its action list. Resets to the action list every time the menu closes.
   const [renamingBook, setRenamingBook] = useState(false);
   // O4 only (#949, #937 D7): whether the open book sheet shows #957's cover
@@ -346,7 +347,7 @@ export function BooksScreen({
   // The rename write is in flight (#383) — forwarded to NameEdit's Confirm as
   // `busy`. Reset to `false` at every site that bumps `bookMenuSession` (open,
   // close, arm-a-share) as well as on settle: a still-pending rename for book
-  // A left this `true` across a menu close, so opening book B's ≡ showed B's
+  // A left this `true` across a menu close, so opening book B's ⋮ showed B's
   // FRESH Confirm as busy before B's own Save was ever tapped (Frank r1,
   // #384) — a session-token comparison would fix it too, but reading
   // `bookMenuSession.current` (a ref) during render to compare against is
@@ -355,7 +356,7 @@ export function BooksScreen({
   const [savingBookName, setSavingBookName] = useState(false);
   // The same flag as a live ref (#452 PR3, the design's F4). `savingBookName`
   // above is last render's answer and drives NameEdit's `busy`; this is what
-  // the book-≡ menu's `Layer.busy()` reads, because the system-Back handler
+  // the book-⋮ menu's `Layer.busy()` reads, because the system-Back handler
   // calls it from a `popstate` with no render in between (invariant 4).
   const savingBookNameRef = useRef(false);
   // The two always move together, through one setter, so the Confirm a
@@ -367,7 +368,7 @@ export function BooksScreen({
     setSavingBookName(value);
   }, []);
   // Which book the Delete confirm is armed for (#337), held apart from
-  // `shareMenuBookId` because tapping Delete closes the ≡ menu — mirroring the
+  // `shareMenuBookId` because tapping Delete closes the ⋮ menu — mirroring the
   // Segments row menu, where Erase closes the row menu and the screen holds the
   // target. `null` means no confirm is up.
   const [deleteTargetId, setDeleteTargetId] = useState<BookId | null>(null);
@@ -492,7 +493,7 @@ export function BooksScreen({
   }, []);
 
   /**
-   * Closing the book ≡ menu (scrim, Escape, close button, a system Back) ends
+   * Closing the book ⋮ menu (scrim, Escape, close button, a system Back) ends
    * the flow: drop any armed File so a stale "ready" cannot linger behind a
    * closed menu (mirrors Segments).
    *
@@ -847,7 +848,7 @@ export function BooksScreen({
   // read, so the dialog opens in the SAME commit as the tap. An `await` here
   // would leave the shelf live and un-`inert` for that window — `inert` keys on
   // `newBookSeed`, which cannot be set until the await resolves — and the
-  // hamburger or a row's ≡ sits one tap away, which is how two `aria-modal`
+  // hamburger or a row's ⋮ sits one tap away, which is how two `aria-modal`
   // panels end up stacked on `document.body` (George R1 P2-1).
   const onNewBook = useCallback(() => {
     // Remember the trigger so Cancel can hand focus back to it.
@@ -957,7 +958,7 @@ export function BooksScreen({
   // Synchronous, for the reason `onNewBook` is: the ordinal is already in hand
   // from the loaded shelf, so the prompt opens in the SAME commit as the tap
   // and the shelf is never left live and un-`inert` across an await, with a
-  // row's ≡ one tap from stacking a second `aria-modal` panel.
+  // row's ⋮ one tap from stacking a second `aria-modal` panel.
   //
   // `nextChapterNumber` is the same pure function `addChapter`'s own write
   // transaction calls, so the name the field offers is the ordinal the write
@@ -1072,7 +1073,7 @@ export function BooksScreen({
     [addChapter, layers, newChapter, rowReveal]
   );
 
-  // The book whose ≡ menu is open, resolved from the shelf. `null` closes the
+  // The book whose ⋮ menu is open, resolved from the shelf. `null` closes the
   // menu — including if the book is gone by the time this render runs.
   const shareMenuBook = books.find((b) => b.bookId === shareMenuBookId) ?? null;
   // The open book's cover colour: its stored key, or #957's id-derived
@@ -1111,7 +1112,7 @@ export function BooksScreen({
   // effect below consume the ⋮ capture while the menu stayed open, so a later
   // Close/Escape found nothing to restore (Frank r1 P2 on #754).
   const menuFocusRestore = useFocusRestore();
-  // Open a book's ≡ menu, ending any prior menu session so a rename still in
+  // Open a book's ⋮ menu, ending any prior menu session so a rename still in
   // flight from the previous one cannot close this one.
   const onOpenShareMenu = useCallback(
     (bookId: BookId) => {
@@ -1247,7 +1248,7 @@ export function BooksScreen({
   // ── O4: the Cover colour tile and #957's picker (#949, #937 D7) ─────────
   //
   // The write is #964's hook, which reports a failure to the funnel itself
-  // and refuses a second write while one is in flight. `reload()` after a
+  // and queues a second tap while one is in flight. `reload()` after a
   // success is what carries the stored key onto the shelf's card, and so to
   // the cover, the sheet head and the tile.
   const { setCoverColour } = useBookCoverColour();
@@ -1266,9 +1267,16 @@ export function BooksScreen({
       // The sheet session this choice belongs to: a close or a reopen while
       // the write settles must not flip the next session's picker.
       const session = bookMenuSession.current;
+      // "queued" (#1046 item 4, DRI: "Last tap wins"): this tap was coalesced
+      // into the in-flight chain and has no outcome of its own. The promise
+      // that STARTED the chain resolves later with the last write's
+      // { ok } / { failed } — that handler must still run the branches below.
       void setCoverColour(shareMenuBookId, key).then((result) => {
-        if (result === "busy") return;
+        if (result === "queued") return;
         if ("failed" in result) {
+          // An earlier write in the chain committed before the last one
+          // failed: the stored colour changed, so the shelf re-reads it.
+          if (result.committed) reload();
           if (bookMenuSession.current === session)
             setCoverFailed(result.failed);
           return;
@@ -1452,7 +1460,7 @@ export function BooksScreen({
       layers.close("books:delete-confirm");
     });
   }, [deleteTarget, deleteTargetId, layers, rowReveal]);
-  // The SAME class for the book ≡ menu (George R1 P3-2). `<Menu>` is open on
+  // The SAME class for the book ⋮ menu (George R1 P3-2). `<Menu>` is open on
   // `shareMenuBook !== null`, which is resolved from the shelf — so when
   // another tab deletes the open book the panel unmounts on its own, while
   // `shareMenuBookId` and the registered layer stay behind. The next Back then
@@ -1490,10 +1498,10 @@ export function BooksScreen({
       layers.close("books:book-menu");
     });
   }, [shareMenuBook, shareMenuBookId, layers, setSavingName, resetBookShare]);
-  // Arm the confirm from the ≡ menu, closing the menu first — the same shape as
+  // Arm the confirm from the ⋮ menu, closing the menu first — the same shape as
   // the Segments row menu, where Erase closes the row menu and the screen owns
   // the target. `shareMenuBookId` is read BEFORE the close clears it.
-  // Arm the confirm from the ≡ menu, closing the menu through the ONE close path
+  // Arm the confirm from the ⋮ menu, closing the menu through the ONE close path
   // — which resets the share.
   //
   // Round 4 tried to keep an armed zip alive across the confirm, so Cancel would
@@ -1501,7 +1509,7 @@ export function BooksScreen({
   // unchanged share hook is written on: `useBookShare` is one screen-level flow
   // with NO owning bookId, and its `preparing`/`ready` state is only ever safe
   // because every menu close resets it. With it kept alive, opening ANOTHER
-  // book's ≡ rendered that book's menu off the first book's flow — "Share now"
+  // book's ⋮ rendered that book's menu off the first book's flow — "Share now"
   // there would hand Practice's archive to the share sheet from Mark's menu
   // (Frank R5 P2 and George R5 P2-1, raised independently), and resetting at
   // confirm-time instead threw away a ready zip of a book still on disk whenever
@@ -1655,12 +1663,9 @@ export function BooksScreen({
   // state there, so the label cannot outlive what it labels. A *reload* no
   // longer takes this line down (it would race the delete's own error off the
   // screen); what clears it is another delete, or any write that succeeds
-  // (George R4 P2-2 / Frank R4 P2).
-  const noticeText = deleteFailed
-    ? strings.deleteBookFailed
-    : error
-      ? strings[error]
-      : null;
+  // (George R4 P2-2 / Frank R4 P2). A delete that failed on a full disk
+  // speaks `noRoom`, as every other write does (#894).
+  const noticeText = shelfNoticeText(error, deleteFailed);
 
   // The guided chain's answer for this screen (#604): one accent on the next
   // required action, and nothing once the first book has been worked in. Read
@@ -2157,7 +2162,7 @@ export function BooksScreen({
         />
       </Menu>
 
-      {/* The per-book ≡ menu. Mirrors the Segments chapter menu: two gestures in
+      {/* The per-book ⋮ menu. Mirrors the Segments chapter menu: two gestures in
           the same spot — "Share book" encodes + zips (tap 1), then a primary
           "Share now" hands the File to the sheet in a fresh activation (tap 2) —
           with the busy state, a gap warning, and any error riding inside the

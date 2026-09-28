@@ -8,6 +8,7 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
 import { one, render } from "./render";
 import { mountInteractive, type InteractiveMount } from "./interactive-mount";
+import { restingErase } from "./support";
 
 /**
  * The record bar's "erase and record again" control (#592), as the JSX emits
@@ -27,13 +28,10 @@ import { mountInteractive, type InteractiveMount } from "./interactive-mount";
  * The erase surface `App` now owns and passes down (#160, L-12). Resting: a
  * static render never erases, and "no erase in flight" is what the bar's own
  * gate reads. Written here rather than mocked at the module, because the sheet
- * takes it as a PROP now — a module mock would intercept nothing.
+ * takes it as a PROP now — a module mock would intercept nothing. Shared
+ * fixture (#856 item 3, `tests/support.ts`).
  */
-const erase = {
-  erase: vi.fn(async () => "ok" as const),
-  erasing: false,
-  isErasing: () => false,
-};
+const erase = restingErase();
 
 const boundary = vi.hoisted(() => ({ view: null as unknown }));
 vi.mock("@/hooks/use-recorder-segment", () => ({
@@ -89,6 +87,7 @@ function renderBar(
     playbackRanOut: false,
     recorderState,
     elapsedMs: 0,
+    takeCap: { nearLimit: false, remainingMs: 20 * 60_000, reached: false },
     supported: true,
     error: null,
     recorderError: null,
@@ -134,10 +133,10 @@ describe("the record bar's re-record control", () => {
     // An action, not a toggle: an absent aria-pressed and a false one say
     // different things (`Control`'s `pressed` docblock).
     expect(control.hasAttribute("aria-pressed")).toBe(false);
-    // The bin — the one glyph ADR 0010's ten already test for "throw away",
-    // and the one the confirm it opens wears — drawn exactly as `Icon` draws it.
-    const bin = one(render(createElement(Icon, { name: "trash" })), "svg");
-    expect(one(control, "svg").outerHTML).toBe(bin.outerHTML);
+    // The eraser, Clear's glyph everywhere (#1119, DRI 2026-09-28), drawn
+    // exactly as `Icon` draws it. Not the bin: that is Delete's.
+    const eraser = one(render(createElement(Icon, { name: "eraser" })), "svg");
+    expect(one(control, "svg").outerHTML).toBe(eraser.outerHTML);
   });
 
   it("sits left of Record and leaves the edit toggle at the right-hand end", () => {
@@ -239,6 +238,7 @@ describe("the bar's bin does not erase during a live take (#903)", () => {
       playbackRanOut: false,
       recorderState: "recording",
       elapsedMs: 0,
+      takeCap: { nearLimit: false, remainingMs: 20 * 60_000, reached: false },
       supported: true,
       error: null,
       recorderError: null,

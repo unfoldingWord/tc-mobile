@@ -3,6 +3,67 @@ import type { CSSProperties } from "react";
 import { Icon } from "./icon";
 import type { SegmentRowState } from "@/types/view";
 
+export interface O4CrumbsProps {
+  /** The book's name, the first crumb. */
+  book?: string;
+  /** The chapter's number, the second crumb (the workbench's `crumbs()`). */
+  chapter?: number;
+  /** The segment crumb, on the segment menu and the recorder header only. */
+  segment?: { ordinal: number; state: SegmentRowState };
+  /**
+   * Extra classes for the row itself (`.o4-crumbs` is always applied) — a
+   * header threads its own flex-shrink utilities (`min-w-0 flex-1`) here so
+   * the chips truncate the same way the menu's own row does, without this
+   * component needing to know it sits in a header rather than a sheet head.
+   */
+  className?: string;
+}
+
+/**
+ * The breadcrumb CHIPS on their own (#1105): chevron-clipped `.o4-crumb`
+ * spans, book then chapter then (if given) the segment, the segment's own
+ * crumb tinted by its state. Split out of `O4SheetHead` below so the
+ * segments and recorder headers (`segments-screen.tsx`, `recorder.tsx`) can
+ * render the exact same markup the O4 menus do, rather than a second
+ * hand-written reading of `.o4-crumb`'s chevron clip-path.
+ *
+ * Always the chapter's plain NUMBER, never a resolved name or title — this
+ * is what made the menu chip and the old text-trail header disagree (#1105):
+ * the header read `strings.chapterHeading`, which prefers a renamed
+ * chapter's typed name, while this row (like the workbench's own `crumbs()`)
+ * has only ever taken a number. The design record settles it (§7,
+ * `docs/design/o4-design-system.md`) — this component's own `chapter` prop
+ * has been typed `number` since #949, and the fix is the header's job of
+ * resolving a name that this crumb was never built to show.
+ *
+ * Decoration only wherever it renders (no own `aria-hidden`, no own
+ * `role`) — a caller in a menu wraps it in `O4SheetHead`'s `aria-hidden`
+ * div; a caller in a screen header wraps it itself and supplies whatever
+ * accessible name the surrounding control needs, because a plain header
+ * (unlike a `<Menu>`) has no dialog title standing in for it.
+ */
+export function O4Crumbs({ book, chapter, segment, className }: O4CrumbsProps) {
+  return (
+    <div className={className ? `o4-crumbs ${className}` : "o4-crumbs"}>
+      {book !== undefined && (
+        <span className="o4-crumb">
+          <span>{book}</span>
+        </span>
+      )}
+      {chapter !== undefined && (
+        <span className="o4-crumb">
+          <span>{chapter}</span>
+        </span>
+      )}
+      {segment && (
+        <span className="o4-crumb" data-state={segment.state}>
+          <span>{segment.ordinal}</span>
+        </span>
+      )}
+    </div>
+  );
+}
+
 interface O4SheetHeadProps {
   /** The book's name, the first crumb. */
   book?: string;
@@ -68,23 +129,7 @@ export function O4SheetHead({
           <Icon name="book" size={24} />
         </span>
       )}
-      <div className="o4-crumbs">
-        {book !== undefined && (
-          <span className="o4-crumb">
-            <span>{book}</span>
-          </span>
-        )}
-        {chapter !== undefined && (
-          <span className="o4-crumb">
-            <span>{chapter}</span>
-          </span>
-        )}
-        {segment && (
-          <span className="o4-crumb" data-state={segment.state}>
-            <span>{segment.ordinal}</span>
-          </span>
-        )}
-      </div>
+      <O4Crumbs book={book} chapter={chapter} segment={segment} />
     </div>
   );
 }

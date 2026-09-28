@@ -11,6 +11,144 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-27 (afternoon to midnight; Docker 0.2.14 lanes) — v0.2.13 tester bugs fixed, #1003 streaming landed, O4 safety sweep
+
+### Shipped (merged to develop)
+
+- **v0.2.13 tester fixes:**
+  - #1115: the new book, new chapter and rename dialogs no longer close with no change on iOS (#1099). Confirm now keeps focus in the form.
+  - #1116: playback plays through the iPhone silent switch (#1111). Native `.playAndRecord` at launch, and `navigator.audioSession` switches type for recording and playback.
+- **O4:**
+  - #1117: the trim knob moves to the bar's bottom and Cut is centred under the selection (#1102).
+  - #1122: the segments and recorder header breadcrumbs now match the menu chips (#1105).
+- **Recorder:** #1118 forwards takeCap and draws the 15:00 warning (#1005).
+- **Share (#1003):**
+  - #1120: Share Book's zip streams to an OPFS spool (part a).
+  - #1132: a long chapter's MP3 encode streams (part b). This follows the DRI pick "B: stream only long chapters". The 48 MiB PCM threshold is provisional, and the meter is coarse above it.
+- **Hygiene and tests:**
+  - #1127: fixed develop's typecheck; #1118 and #1122 had collided on `takeCap`.
+  - #1126: #575 slice.
+  - #1128: #856.
+  - #1129: #719 slice.
+  - #1130: #838 lint boundary.
+  - #1133: #866 item 2.
+  - #1134: #833 item 3.
+- **Contributor merges tonight:** #1101, #1106–#1110, #1112–#1114, #1121, #1123, #1135.
+
+### O4 safety sweep (at the DRI's request, develop `4fc35dab`)
+
+- No open PR and no merge tonight touches `src/lib/design.ts`.
+- No merge edited only old-look code for a behaviour O4 needs.
+- **Held:**
+  - #1119: its 64px compact tile departs from the pinned 76×76 token (`docs/design/o4-design-system.md:152`), the requirements owner hasn't confirmed where Delete sits, and D20 goes stale. There's a BLOCKED note on the PR.
+  - #684, #685 and #701: pre-O4 drafts where a rebase risks dropping O4 strings and branches.
+- **For the requirements owner:** #1118's 15:00 warning tint now shows in O4 without a design sign-off.
+- **Close or narrow candidates, as recommendations:** #859, #927, #997 (re-scope after #1119), #286 (item 2 only). The #248 runbook still calls the O4 sheet "the drawer".
+
+### Process notes
+
+- **The same fix line in two PRs duplicated on merge.** This is a second incident, after the #1118/#1122 collision above. #1116 carried its own copy of #1127's `takeCap` fixture fix, one row apart, and merging develop into #1116 produced TS1117. The bench caught it. #1116 took develop's copy of the file (`7b8a4dc8`), so the line on develop is #1127's alone. Rule: a develop fix lives in one PR only.
+- **Merges after 21:00 ET** had a pre-merge gate: both lenses clean at the current head, CI green, no bench hold, no design/styles/components files for the overnight allowlist, and a scratch merge into develop running tsc, eslint and vitest.
+
+### Not run
+
+- No phone has run #1115, #1116 or #1132.
+- #1003's low-end phone measurement is still open.
+
+### Next
+
+1. The DRI rules on #1119's three O4 points, then it's rebased.
+2. #1131 follows #1119.
+3. #974 phone pass: #1099, silent mode and #923.
+4. The requirements owner looks at #1118's warning state and the #866 item 3 ring question.
+5. #838's remaining residual, #869 item 3.
+6. Cut v0.2.14 from develop.
+
+---
+
+## 2026-09-27 (early; the 2026-09-26 day and evening Docker O4 session) — O4 flipped to default, #951 gate met, v0.2.13 on staging and published to testers
+
+### Shipped
+
+- **O4 is the default design** (#1085, merged 2026-09-26 23:27Z, `7224f625`). `DEFAULT_DESIGN` in `src/lib/design.ts` is `"o4"`. A saved choice still wins. Seven e2e call sites and five unit suites were pinned to the current look rather than loosened.
+- **#951 gate met.** #947, #948 and #950 were closed by DRI picks, with residuals in #1087, #1088 and #1089. #949 was closed by #1090 (the book cover square in the chapter, segment-row and recorder crumbs).
+- **Also merged today (O4 and recorder):**
+  - #1076 take cap: seal at 20:00, `nearLimit` from 15:00; the marker itself is not drawn yet.
+  - #1079: the take-cap row stays off the Books ≡ marker.
+  - #1080 Delete segment in the recorder menu (closes #590).
+  - #1071 visibilitychange seal (#836).
+  - #1070 chapter reorder (#953).
+  - #1074 record-again "Play what will be lost" (#979).
+  - #1019 LGPL notice and the About tile (#36).
+  - #1084 storage-banner pins and the armed Send remount (#1046).
+  - #1081 share hand-off test (#1031).
+  - #1068 joined-chapter step tests (#1004); read progress moved to #1078.
+  - #1072 zero-total guard.
+- **Tooling:** #1075 Node `^22.22.2 || ^24.15.0 || >=26.0.0`, then #990 jsdom 30. #1077 milestone renames in the docs.
+- Jesse's #1082, #1086, #1091 and #1094 merged.
+
+### v0.2.13 promotion (the run record)
+
+- Release #1095 was squash-merged as `3f7c6e81`, cut at develop `7224f625`. Promotion #1096 was merged into staging at 01:00Z, merge `7823830850c1f69f912004cdc51596c465fa5d34`. #1094 merged after the cut and waits for the next promotion.
+- 107 first-parent merges in `6094205a..7224f625`, one of them #918 itself.
+- **Schema: `DB_VERSION` 8 → 9** (#964, the `coverColourKey` backfill; tests in `tests/db-migration.test.ts`). This is the first cut since v8 that migrates field data. **It has not been run on a phone.**
+- `npm run check:deploy` at 01:03:19Z:
+  - `Deployed: version=0.2.13 sha=7823830 builtAt=2026-09-27T01:02:45.168Z`
+  - `PASS: https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build.`
+- Native builds, dispatched from staging by the DRI, with signing approved in `release-signing`:
+  - iOS TestFlight run 36284277947: success (upload only; Apple processing not tracked).
+  - Android APK run 36284279075: success.
+  - The Play lane ran on the staging push (success). Whether it uploaded was not checked.
+- `tester-build-v0.2.13` is published as a pre-release at `7823830`, with the asset `app-release.apk` (6,488,357 bytes). The signer SHA-256 `eed23e1b…baf2` was extracted from the APK and matches v0.2.12. The QR code decodes to `…/releases/download/tester-build-v0.2.13/app-release.apk`. The notes were corrected after publishing: no 15-minute warning is drawn yet.
+
+### DRI decisions (verbatim)
+
+- Milestones: "lets change 0.3.0 to training essentials and 1.0.0 to training stretch. and post training can be 1.1". Now #2 v0.3.0 — Training essentials, #4 v1.0.0 — Training stretch, #3 v1.1.0 — Post-training.
+- #1076, the cap row: "Log it, don't light ≡ (Recommended)". #1079, the panel copy: "Leave it (Recommended)".
+- #1068: "Retitle as tests, new issue (Recommended)"; the new issue is #1078.
+- #1080 copy: "Ship lane copy, Tim reviews (Recommended)". The copy review was requested on #590.
+- #1046 item 4: "Leave it: first wins (Recommended)".
+- #951 gate:
+  - #947: "Close; defer Armed (Recommended)"
+  - #948: "Close; residuals to v1.1.0 (Recommended)"
+  - #949: "Build it now (Recommended)"
+  - #950: "Close; defer the rest (Recommended)"
+- Standing: "lets grab o4 from anyone else that hasnt touched a PR or issue in 24 hours".
+- #1085: "Yes, after #1090 merges (Recommended)".
+- Build: "v0.2.13 now, v1.0.0 later (Recommended)" and "Cut without it (Recommended)" (#1094), then "no worries if it missed the release".
+
+### Filed
+
+#1078 (read-phase share progress), #1087 (the armed ring phase), #1088 (#948 residuals), #1089 (#950 motion residuals).
+
+### Open
+
+- Jesse's #965, #985 and #1097 are with the bench. #965 and #985 conflict with develop.
+- No O4 PRs are open.
+
+### Phone report after the cut (v0.2.13, iPhone 18 Pro Max, iOS 27.0, developer/DRI)
+
+- The O4 UI looks right in dark and light, and the theme choice persists after close.
+- **#1099:** the new book, new chapter and rename dialogs close with no change and no error.
+- **#1100:** no audio on playback, on existing or new recordings. Related to #555 and #269; an evidence comment is on #555.
+- Both are v1-required, in v0.3.0 — Training essentials. Pre-checks are listed in each issue: TestFlight or browser, the ≡ red mark and log, the old look, silent mode, capture vs playback.
+
+### Next
+
+1. **#1099 and #1100 first**, both training blockers. Run the pre-checks in each issue, then a fix lane. The v0.2.13 device-pass checklist issue is drafted and waits on the DRI.
+2. Tim's #951 staging review.
+3. The #974 phone pass, including the **v8 → v9 upgrade on a phone that holds v0.2.12 data**.
+4. Then v1.0.0 (#951 step 3). #1094 rides the next promotion. The 15-minute take marker is the #1076 residual.
+
+### Lessons
+
+- **Issue audit comments went stale within hours.** Two lanes, #949 D19 and #948 D15, found their "ready now" items merged earlier that day. Verify each item against develop before starting a lane.
+- **The bench merges develop into PR branches.** A pinned merge command goes stale when that happens, so re-read the head from gh before handing one over.
+- **Semantic merge conflict.** Suites that landed after #1079 branched mocked `@/hooks/failure-log` without its new export. The files merged cleanly, but the tests went red after the develop merge.
+- **A lane's hand-back gave a wrong full SHA** past the first eight characters. Read SHAs from gh.
+- **Unit pins don't cover e2e.** #1085's first CI run failed 12 smoke cases, so run the e2e suite against a fresh build for any default change.
+- **Check every tester-facing claim in release notes against merged code.** The first notes promised a 15-minute warning that isn't drawn.
+
 ## 2026-09-26 (overnight) — Docker O4 session
 
 The Docker session ran O4 lanes overnight while the DRI slept, on the standing

@@ -94,6 +94,18 @@ describe("recoverySafetyLine", () => {
     }
   });
 
+  it("says plainly that the held take does not survive the restart (#441)", () => {
+    // #441's DRI pick (2026-09-28): the screen already offers Restart only
+    // (#427) for a downgrade; what was missing was saying, before the control
+    // is even armed, that the RAM-only take is lost across that restart, not
+    // only that this build cannot write it right now.
+    for (const editOnly of [false, true]) {
+      const line = recoverySafetyLine(editOnly, "downgrade").toLowerCase();
+      expect(line).toContain("cannot save");
+      expect(line).toMatch(/restart(ing)? will lose (it|them)/);
+    }
+  });
+
   it("does not tell a stale-target save to retry", () => {
     expect(recoverySafetyLine(false, "stale")).toBe(
       "This book was deleted in another copy of the app. Delete this recording to leave."

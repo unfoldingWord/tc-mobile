@@ -7,8 +7,12 @@
  * `: null`. That shape is exactly how a new code goes silent: widening
  * `ShareError` (#166 added `encoder`) compiles cleanly and the menu simply shows
  * nothing. A `switch` with a `never` default makes the compiler name every code,
- * and the table below pins what each says, since this repo has no DOM runner to
- * pin the JSX.
+ * and the table below pins what each says as a pure function. The render
+ * harness (#197) mounts one component with one prop set per call; several
+ * screens (`share-progress.tsx`, `share-menu-section.tsx`, `notice.tsx`,
+ * `books-screen.tsx`, `segments-screen.tsx`, `storage-pressure-banner.tsx`) read
+ * this table, so pinning the mapping here — once, as data in, string out — is
+ * cheaper than mounting each of them per code.
  */
 
 import { strings } from "@/lib/strings";

@@ -357,8 +357,7 @@ that session's next step was the first Android pass.
 
 **Idempotency is a property, not a policy.** Every write is safely re-runnable
 or documented as to why not. In practice that means: get-or-create in **one**
-transaction, never two; content-addressed clips so a repeated import dedupes
-instead of duplicating; append-only migrations. `ensureObsChapter` is the
+transaction, never two; append-only migrations. `ensureObsChapter` is the
 counter-example currently in the tree.
 
 **An async re-read never overwrites a known value with a stale or unknown
@@ -388,7 +387,9 @@ this file will not blur the two.** What reaches the funnel today is: uncaught
 errors and unhandled rejections (`app/install-failure-listeners.ts`), render
 throws (`components/error-boundary.tsx`), encoder health and recovery
 (`hooks/mp3-codec.ts`), the transcode sweep (`hooks/finish-transcode.ts`),
-share _prepare_ (`hooks/share-flow.ts`), the recorder's own guards and bounds
+share _prepare_ (`hooks/share-flow.ts`), a share's zip spool that could not
+be deleted afterwards (`hooks/archive-spool.ts`, `"share-spool-release"`,
+#1003), the recorder's own guards and bounds
 (`hooks/use-recorder.ts`: `cancel()`'s native `stop()` guard
 `"recorder-cancel-stop"` #474, `start()`'s resume rejection
 `"recorder-start-resume"` #470 and its 1000 ms bound firing
@@ -411,11 +412,15 @@ save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
 failed chapter reorder (`hooks/use-books.ts`, `"chapter-reorder"`, #953), a
 failed segment reorder (`hooks/use-chapter-segments.ts`, `"segment-reorder"`,
-#953), a failed segment delete — two call sites report under the same
-context, one op each reaches through the store's own `deleteSegment`
-(`hooks/use-chapter-segments.ts`'s optimistic list delete, PR1, and
-`hooks/use-delete-segment.ts`'s recorder-menu delete, PR2)
-(`"segment-delete"`, #590), a failed book
+#953), a failed segment delete, through the store's own `deleteSegment`
+(`hooks/use-chapter-segments.ts`'s optimistic list delete, called from
+`segments-screen.tsx`'s row menu — the chapter view, #1104's placement)
+(`"segment-delete"`, #590 — this briefly had a second call site,
+`hooks/use-delete-segment.ts`'s recorder-menu delete, PR2 of #590/#1080; #1104
+(the requirements owner's 2026-09-26 decision, "the menu inside the segment
+editor (recorder) shows Erase only") pulled Delete back out of the recorder's
+≡ menu entirely, so that hook and its call site are gone, and this context is
+back to one caller), a failed book
 cover-colour write
 (`hooks/use-book-cover-colour.ts`, `"book-cover-colour"`, #957),
 playback's own
@@ -582,8 +587,7 @@ place. Decided 2026-09-02, when the repo stopped being solo.
   | Milestone                        | Due        | Ships                                                  |
   | -------------------------------- | ---------- | ------------------------------------------------------ |
   | `v0.2.0 — Sept: production gate` | 2026-09-30 | the first `staging -> main` since the pivot            |
-  | `v0.3.0 — Training essentials`   | 2026-10-09 | training-essential scope, promoted to `main` as 0.3.0  |
-  | `v1.0.0 — Training stretch`      | 2026-10-02 | v0.3.0's scope plus the O4 UI; on phones by 2026-10-02 |
+  | `v1.0.0 — Training build`        | 2026-10-02 | the training build, at the `staging -> main` promotion |
   | `v1.1.0 — Post-training`         | —          | the first field-validated release                      |
 
 - **Every open issue carries a milestone.** File new issues into one. A
@@ -789,7 +793,7 @@ easy to regress.
   and the rationale in the body; they are not scheduled until they are
   reviewed against the plan after the training. Where a tester ask matches an
   issue already open, it lands as an evidence comment on that issue, not as a
-  new one. `v1-required` means V1 = the v0.3.0 training build.
+  new one. `v1-required` means V1 = the v1.0.0 training build.
 
 ## Review — every PR, both reviewers
 
@@ -818,7 +822,7 @@ again**. The cap prompts a decision; it is not a gate the loop closes on its
 own. Hitting it with findings open is an **escalation, not an approval**: name
 the residual findings on the PR and have them explicitly accepted.
 
-**Freeze budget (decided 2026-09-21, expires 2026-10-04).** Until the v0.3.0
+**Freeze budget (decided 2026-09-21, expires 2026-10-04).** Until the v1.0.0
 handoff, T3 and docs changes take one George round (P1/P2 only), harness and
 meta PRs cap at two rounds with residuals accepted on the PR, and a P3 never
 triggers a round on any tier — it is batched into one follow-up issue at
@@ -927,8 +931,8 @@ code changes do — see `docs/review/dual-review.md` ("Merge policy").
 3. **lamejs is LGPL-3.0** in an MIT repo. **Decided: keep it** — ADR 0003. The
    notice and attribution work (#36) ships in-app (**Menu → About & licenses**)
    with the verbatim licence texts precached under `public/licenses/`; the
-   in-app notice covers the web bundle, the Capacitor native shell's own
-   attribution is separate (#477). Not a product call.
+   in-app notice covers the web bundle, and on a native build it also lists
+   that shell's own notice (#477). Not a product call.
 4. **The division-scheme question.** **Decided 2026-08-22 by Tim: no** to the
    broad half — one generic taxonomy, ADR 0004.
 5. **Scripture Burrito export is out of Phase 1** — not pending, not blocked.

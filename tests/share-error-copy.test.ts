@@ -19,9 +19,14 @@ import {
 } from "@/hooks/share-progress";
 import { classifyPrepareError, settlePrepareFailure } from "@/hooks/share-flow";
 
-/** Source-shape reads, because there is no renderer here (#197). */
+import { stripComments } from "./support";
+
+/** Source-shape reads. Comments stripped so a positive match reads code, not
+ *  a comment carrying the pinned text (#822). */
 const read = (rel: string) =>
-  readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
+  stripComments(
+    readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8")
+  );
 
 /**
  * A stalled or failing encoder during Share says so where the translator is

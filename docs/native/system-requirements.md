@@ -2,22 +2,26 @@
 
 **Status: partial.** This is the single source of truth #1017 calls for, but
 it is not yet the finished requirements statement for the store listings and
-web page. Only #1017's open question 1 (below) is answered here. The other
-open questions — the RAM floor, whether Android 7 is worth keeping, the long-take
-guidance — are **not** answered in this file yet: the RAM tiers in particular
-stay blocked on real phone reports landing on #974 (#1002 §6), and are
-deliberately not restated here until they are. Read #1017 and #1002 for the
-full picture; this file will grow into the final wording once every open
-question is closed.
+web page. Only #1017's open question 1 (below) is answered here, and a
+2026-09-28 note under "Open question 4" adds new evidence without closing it.
+The other open questions — the RAM floor, whether Android 7 is worth keeping,
+and the long-take listing wording — are **not** answered in this file yet:
+the RAM tiers in particular stay blocked on real phone reports landing on
+#974 (#1002 §6), and are deliberately not restated here until they are. Read
+#1017 and #1002 for the full picture; this file will grow into the final
+wording once every open question is closed.
 
 **The iOS floor is 15.4, not 15.0 — raised 2026-09-26 (#1052).** The reason is
 below (open question 1's CSS section): the O4 CSS uses `:has()`, which needs
 Safari/iOS 15.4, and the DRI decided to raise the documented floor to match it
-rather than rewrite the 13 `:has()` sites. **This doc and `vite.config.ts`'s
-`build.target` reflect 15.4 already; the Xcode project
-(`ios/App/App.xcodeproj/project.pbxproj`'s `IPHONEOS_DEPLOYMENT_TARGET`) and
-the store listings do not yet** — see "What this does not answer" at the
-bottom.
+rather than rewrite the 13 `:has()` sites. **This doc, `vite.config.ts`'s
+`build.target`, and the Xcode project now all state 15.4.** The Xcode project
+(`ios/App/App.xcodeproj/project.pbxproj`'s `IPHONEOS_DEPLOYMENT_TARGET`, all
+four occurrences at lines 241, 292, 309 and 331 in the tree at this doc's
+head) was raised from `15.0` to `15.4` by #1055 (merged 2026-09-26), which
+also updated `ios/App/CapApp-SPM/Package.swift`,
+`docs/native/README.md`, and `docs/native/ios-credentials.md`. **The store
+listings still do not** — see "What this does not answer" at the bottom.
 
 ## Open question 1 — build target vs. the device floor (answered 2026-09-26; iOS floor updated 2026-09-26 per #1052)
 
@@ -25,9 +29,9 @@ bottom.
 LightningCSS targets it derives, the PWA plugin, Workbox's `sw.js` output, the
 MP3 Web Worker chunk, and Capacitor's WebView floor) produce output that runs
 on the stated iOS floor (`ios/App/App.xcodeproj/project.pbxproj`,
-`IPHONEOS_DEPLOYMENT_TARGET`, **15.0 in the tree, 15.4 as documented — see
-above**) and the stated Android floor (`android/variables.gradle`,
-`minSdkVersion = 24`, Android 7.0)?
+`IPHONEOS_DEPLOYMENT_TARGET`, **15.4 in the tree and as documented — both
+raised to match by #1052/#1055, see above**) and the stated Android floor
+(`android/variables.gradle`, `minSdkVersion = 24`, Android 7.0)?
 
 **Short answer:** the JS side was a latent risk, now closed by pinning
 `vite.config.ts`'s `build.target` explicitly. The CSS side had one real,
@@ -138,14 +142,15 @@ Android's practical floor for a WebView-based feature (as opposed to the API
 wording's "kept up to date" caveat was taken as the standing product decision
 for that question, not re-litigated.
 
-**Raising the floor here is a documentation and build-config change only.**
-Two places #1052/#1017's "Done when" checklist also names are **not** updated
-by this change, and are residual work:
+**Raising the floor here was originally a documentation and build-config
+change only; the native project has since caught up.** One of the two places
+#1052/#1017's "Done when" checklist named as not yet updated is now done:
 
-- `ios/App/App.xcodeproj/project.pbxproj`'s `IPHONEOS_DEPLOYMENT_TARGET` still
-  reads `15.0` in this tree. Raising it to `15.4` (or confirming 15.0 should
-  stay the Xcode floor while only the _documented_/build-target floor moves)
-  is native-project work this change does not touch.
+- `ios/App/App.xcodeproj/project.pbxproj`'s `IPHONEOS_DEPLOYMENT_TARGET` was
+  raised from `15.0` to `15.4` at all four occurrences (lines 241, 292, 309, 331) by #1055, which also raised `ios/App/CapApp-SPM/Package.swift`'s
+  platform floor and updated `docs/native/README.md` and
+  `docs/native/ios-credentials.md`. This is native-project work this doc's
+  original change did not touch, and it has landed since.
 - The Play listing, the App Store listing, and the web page / facilitator
   runbook (#248) still need the "iOS 15.4" wording pasted in once the full
   requirements statement is finished — not done here, since this file is
@@ -153,3 +158,24 @@ by this change, and are residual work:
 
 Whether the "kept up to date" WebView caveat is sufficient, and the other
 three open questions in #1017, are unchanged by this section.
+
+## Open question 4 — long takes (evidence added 2026-09-28; still open)
+
+**Question (from #1017):** "Until the take cap (#1005) lands, a single take
+over about 20 minutes may fail on low-RAM phones (#1002 §3). Should the
+listing say 'record in segments of under 20 minutes'?"
+
+**Status: still open, but the premise has changed.** The take cap has since
+landed. `src/lib/audio/take-cap.ts:20` defines
+`TAKE_CAP_MS = 20 * 60_000` (20 minutes), and `src/hooks/use-recorder.ts:521`
+seals and saves a live take once `takeCapStatus(elapsed, true).reached` is
+true (checked on the 100 ms tick started at `src/hooks/use-recorder.ts:513`),
+logging a `"recorder-take-cap"` failure-log row
+(`src/hooks/use-recorder.ts:522-527`, #1005) that records the take was cut
+rather than lost. So the question's own "until the take cap lands" condition
+no longer holds: the app itself now prevents a take from running past 20
+minutes, rather than relying on listing wording to keep a user under that
+length. Whether the listing should still mention a 20-minute recording rhythm
+(as a UX expectation rather than a failure-avoidance warning) is a wording
+call this file does not make; it is left open for whoever finishes the "Done
+when" wording pass.

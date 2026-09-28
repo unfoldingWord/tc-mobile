@@ -1,4 +1,4 @@
-# Promotion plan: v0.3.0 training build
+# Promotion plan: v1.0.0 training build
 
 This is a release checklist, not authorization to promote, dispatch signing
 jobs, publish artifacts, or accept a remaining defect. The DRI records those
@@ -10,11 +10,12 @@ signing and installation.
 
 The [delivery decision on issue 262](https://github.com/unfoldingWord/tc-mobile/issues/262#issuecomment-5765506100)
 sets October 1 as the planned promotion and **October 4, 2026 as handoff to
-facilitators**. The milestone's October 9 date is the training date, not the
-handoff deadline. Leave time for TestFlight processing, installation and a
-failed-build recovery.
+facilitators**. The milestone's due date, 2026-10-02, is when the build must
+be on phones for the training — not the handoff deadline above. Training
+itself is the first week of October 2026 (AGENTS.md, "Purpose"). Leave time
+for TestFlight processing, installation and a failed-build recovery.
 
-`v1-required` means required for **v0.3.0**, not the literal `v1.1.0`
+`v1-required` means required for **v1.0.0**, not the literal `v1.1.0`
 post-training milestone. `v1-desired` work is optional for training. A parked
 PR does not waive a required outcome, and a merged PR does not establish
 on-device acceptance.
@@ -24,7 +25,7 @@ from an earlier tracker entry:
 
 ```sh
 gh issue list --repo unfoldingWord/tc-mobile \
-  --milestone 'v0.3.0 — Training essentials' --state open --limit 1000 \
+  --milestone 'v1.0.0 — Training build' --state open --limit 1000 \
   --json number,title,labels,assignees,url
 ```
 
@@ -72,7 +73,7 @@ issue's priority in this checklist.
 
 1. Prepare the candidate through `develop`. Routine `develop → staging`
    releases bump the patch; the `staging → main` milestone promotion owns
-   the `0.3.0` minor bump, per AGENTS.md. Keep `package.json` and its lockfile
+   the `1.0.0` minor bump, per AGENTS.md. Keep `package.json` and its lockfile
    consistent. List carried PRs and acceptance evidence in the promotion bodies.
 2. Promote `develop → staging` by PR. Complete the applicable checks and
    reviews, then confirm the deployed staging version and promoted SHA:
@@ -81,7 +82,7 @@ issue's priority in this checklist.
    npm run check:deploy
    ```
 
-3. Prepare the `staging → main` promotion with the `0.3.0` minor bump. Before
+3. Prepare the `staging → main` promotion with the `1.0.0` minor bump. Before
    execution, the DRI records the release branch/ref carrying that bump and
    how the version change will return to `develop`/`staging` through PRs; this
    plan does not authorize direct commits to protected branches. Validate the
@@ -89,7 +90,7 @@ issue's priority in this checklist.
    to preserve the promotion history. This is the production gate. Record any explicitly
    accepted residuals before merging; an unresolved required issue is not
    waived merely by moving its milestone.
-4. Fetch `main` and tag the production merge commit `v0.3.0`; push that tag.
+4. Fetch `main` and tag the production merge commit `v1.0.0`; push that tag.
    If the tag already exists, inspect it and stop on a different target;
    never overwrite a published release tag.
 5. Confirm the production origin with the production-specific command:
@@ -118,7 +119,7 @@ Read the workflow files **on the dispatched ref** and follow their
 [iOS](../../.github/workflows/ios-testflight.yml) and
 [Android](../../.github/workflows/android-apk.yml) lanes from the `main` branch
 at the tagged release commit. Record each run's resolved SHA and require it
-to equal `v0.3.0` before accepting its artifact. If `main` moved, stop and
+to equal `v1.0.0` before accepting its artifact. If `main` moved, stop and
 select an explicitly approved ref strategy; do not label a different build
 as the tagged release.
 
@@ -139,7 +140,7 @@ names a test APK that expires October 5, immediately after handoff. Do not
 reuse that test artifact as the training release.
 
 The [DRI's delivery decision](https://github.com/unfoldingWord/tc-mobile/issues/262#issuecomment-5770487585)
-requires a GitHub Release on `v0.3.0`, with the fresh signed APK from the tagged
+requires a GitHub Release on `v1.0.0`, with the fresh signed APK from the tagged
 commit attached and the TestFlight build number noted. Record the APK's
 SHA-256 and workflow-run URL, verify the download matches, and test
 the actual facilitator download/install route. Update
@@ -170,23 +171,23 @@ installed APK or TestFlight bundle.
 - [ ] A1–A4 results recorded on the candidate builds for both phone platforms.
 - [ ] Distribution obligations reviewed, with web/native scope kept explicit.
 - [ ] Patch release and `develop → staging` promotion reviewed and green.
-- [ ] Production minor-bump branch/ref strategy recorded; `0.3.0` candidate
+- [ ] Production minor-bump branch/ref strategy recorded; `1.0.0` candidate
       checked and version reconciliation back to development branches planned.
 - [ ] `check:deploy` confirms the staging version and promoted SHA; the PASS
       line is pasted into `docs/progress_tracker.md` (#840 R7 — v0.2.10's
       staging deploy went unconfirmed in the tracker until a later audit).
 - [ ] Production promotion reviewed and green; previous deployment recorded.
-- [ ] `staging → main` merged; `v0.3.0` points to that merge commit.
+- [ ] `staging → main` merged; `v1.0.0` points to that merge commit.
 - [ ] `check:deploy:prod` confirms the production version and promoted SHA;
       the PASS line is pasted into `docs/progress_tracker.md` (#840 R7).
 - [ ] Native run SHAs match the release tag; versions/build numbers recorded.
 - [ ] TestFlight build processed, assigned and installable by facilitators.
-- [ ] GitHub Release on `v0.3.0` has the fresh signed APK attached and the
+- [ ] GitHub Release on `v1.0.0` has the fresh signed APK attached and the
       TestFlight build number noted; downloaded bytes and installation checked;
       installation guide updated.
 - [ ] Handoff complete by October 4, including candidate acceptance evidence.
 - [ ] Remaining milestone issues explicitly reconciled under AGENTS.md;
-      close `v0.3.0` with its promotion, leaving delivery evidence on #262 and
+      close `v1.0.0` with its promotion, leaving delivery evidence on #262 and
       the promotion PR until handoff is complete.
 
 Execution results belong in the promotion PR and linked issues, where their

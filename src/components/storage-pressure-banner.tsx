@@ -115,7 +115,7 @@ function O4StorageBanner({
           <span className="o4-storage-title">{strings.storageShareSoon}</span>
           <span className="o4-storage-why">{notice.text}</span>
         </span>
-        {/* The same two gestures as the ≡ menus' Share (ShareMenuSection):
+        {/* The same two gestures as the ⋮ menus' Share (ShareMenuSection):
             tap 1 builds the archive, tap 2 hands it to the sheet in a fresh
             activation. `busy`, never `disabled`, while preparing, so the
             control keeps focus.

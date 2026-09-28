@@ -63,8 +63,15 @@ export interface ScrollToNew<Id> {
    *   Required, not defaulted: a default of `false` would make the #364
    *   failure the result of writing less code, so each screen states its
    *   hold policy at its own call site.
+   * @param fallback where a focus hand-off lands when it is due on this commit
+   *   but did not take: the armed row is gone, or its control refused focus
+   *   (disabled). Consulted only when focus is actually lost — on `<body>` or
+   *   nowhere — so it rescues a hand-off and never pulls focus off a control
+   *   that has it. Not consulted while the hand-off is held, and not consulted
+   *   when nothing was armed. Omitted, a missed hand-off is simply spent, as
+   *   before (#1124).
    */
-  reveal: (focusHeld: boolean) => void;
+  reveal: (focusHeld: boolean, fallback?: () => HTMLElement | null) => void;
 }
 
 /**
@@ -142,7 +149,7 @@ export function useScrollToNew<Id>(focusSelector: string): ScrollToNew<Id> {
   );
 
   const reveal = useCallback(
-    (focusHeld: boolean) => {
+    (focusHeld: boolean, fallback?: () => HTMLElement | null) => {
       const plan = planReveal(pending.current, focusHeld);
       pending.current = plan.rest;
       // Through the two accessors above, not a second hand-written
@@ -158,7 +165,14 @@ export function useScrollToNew<Id>(focusSelector: string): ScrollToNew<Id> {
       // deliberately: changing it is a behaviour change, which a no-change
       // extraction is the wrong place for. Filed rather than decided here
       // (George round 1 finding 2, #800).
-      if (plan.focus !== null) controlIn(plan.focus)?.focus();
+      if (plan.focus === null) return;
+      controlIn(plan.focus)?.focus();
+      // If the hand-off did not take (no row, or a control that refused
+      // focus), focus is still where the unmount that armed it left it:
+      // `<body>`. Only then does the fallback run (#1124).
+      if (!fallback) return;
+      const active = document.activeElement;
+      if (active === null || active === document.body) fallback()?.focus();
     },
     // Both are stable (`scrollTo` has no deps, `controlIn` keys on the same
     // `focusSelector` this used to read directly), so `reveal`'s own identity

@@ -449,9 +449,9 @@ export function useBooks() {
     }
     setFailure({
       // Every caller here is a write (create/addChapter/rename/delete), so
-      // "saveFailed" is the fallback; `deleteBook`'s own failure never shows
-      // this key on screen regardless — `fromDelete` relabels it to
-      // `deleteBookFailed` instead (see `books-screen.tsx`'s `noticeText`).
+      // "saveFailed" is the fallback; `deleteBook`'s own failure shows this
+      // key on screen only when it is `noRoom` — otherwise `fromDelete`
+      // relabels it to `deleteBookFailed` (`shelf-notice-text.ts`, #894).
       key: failureKey(cause, "saveFailed"),
       fromDelete,
     });
