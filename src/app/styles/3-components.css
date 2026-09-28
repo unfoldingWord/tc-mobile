@@ -448,6 +448,13 @@
     text-align: left;
     cursor: pointer;
     border-radius: var(--c-breadcrumb-radius);
+    /* Extends #559's opt-out to the Segments header (#563): a control-only
+       surface in the same sense the recorder sheet, the menu drawer and the
+       erase confirm already are, and the exact long-pressable element the
+       reported screenshot selected text in. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   .breadcrumb > span {
     min-width: 0;
@@ -473,6 +480,16 @@
     padding: var(--p-space-3);
     border: 1px solid transparent;
     transition: background var(--p-dur-base) var(--p-ease);
+    /* Extends #559's opt-out to the Segments rows (#563), the control-only
+       surface #556 itself named as a reasonable second target. Shared by
+       both looks (segment-row.tsx always carries "row"), and inheritance
+       reaches the ordinal, the title and the scrub track the same way it
+       reaches the recorder sheet's chrome — no rename field or other text
+       input lives inside a row, so there is no opt-back-in to pair with
+       .name-input's. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
 
   /* --- type roles -------------------------------------------------------- */
@@ -714,6 +731,13 @@
     justify-content: center;
     padding: var(--p-space-5);
     z-index: 90;
+    /* Extends #559's opt-out to the ShareProgress portal (#563): it portals
+       to document.body the same way .menu-panel and .confirm-panel do, and
+       its content — a glyph and one line of outcome text — is presentational
+       only, with no control and no text input to opt back in. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   .share-progress {
     width: min(320px, 84vw);
