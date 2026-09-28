@@ -24,9 +24,9 @@ vi.mock("@/hooks/use-design", () => ({
  * This suite does not mount in jsdom, so React's own catching is
  * NOT exercised below: `renderToStaticMarkup` rethrows a child's error rather
  * than routing it to the boundary. The render harness (#197, `tests/render.ts`)
- * doesn't close that gap either — it runs no effects and does not `act()`, and
- * neither does an actual client mount, which is what catching a render throw
- * needs. **That a render throw reaches this
+ * is the same static render, so it does not close that gap: catching a render
+ * throw takes a client mount (`tests/interactive-mount.ts`), and this suite
+ * does not do one. **That a render throw reaches this
  * boundary at all is verified in a browser, by hand, and is recorded on the
  * PR — not here.** The same goes for the focus move: `renderToStaticMarkup`
  * never attaches a ref, so `focusOnMount` is markup here and behaviour only in
