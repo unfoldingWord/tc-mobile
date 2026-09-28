@@ -17,13 +17,17 @@ import { clearAllStores } from "./support";
  * reload that follows it; a new book still lands first.
  *
  * The hook is mounted for real over fake-indexeddb, the harness
- * `tests/use-books-cover-colour.test.ts` uses. The one seam, `holdLoads`,
- * parks `listBooks` so a case can read the patched shelf before the reload
- * replaces it.
+ * `tests/use-books-cover-colour.test.ts` uses. The seam wraps `listBooks`:
+ * `holdLoads` parks it so a case can read the patched shelf before the
+ * reload replaces it, and `listed` records the order each call returned, so
+ * a case can tell the reload's read has happened. The patched shelf already
+ * matches the expected order, so waiting on the shelf alone would pass
+ * before the reload lands.
  */
 
 const seams = vi.hoisted(() => ({
   holdLoads: null as Promise<void> | null,
+  listed: [] as string[][],
 }));
 vi.mock("@/lib/storage/books", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/storage/books")>();
@@ -31,7 +35,9 @@ vi.mock("@/lib/storage/books", async (importOriginal) => {
     ...actual,
     listBooks: async () => {
       if (seams.holdLoads) await seams.holdLoads;
-      return actual.listBooks();
+      const books = await actual.listBooks();
+      seams.listed.push(books.map((book) => book.id));
+      return books;
     },
   };
 });
@@ -64,6 +70,7 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   seams.holdLoads = null;
+  seams.listed = [];
   await act(async () => root.unmount());
   dom.window.close();
   vi.unstubAllGlobals();
@@ -76,13 +83,20 @@ async function mount(): Promise<void> {
   await vi.waitFor(() => expect(hook().loaded).toBe(true));
 }
 
-/** Parks every shelf load until the returned function is called. */
-function holdLoads(): () => Promise<void> {
+/**
+ * Parks every shelf load until the returned function is called. That
+ * function releases them, waits for a `listBooks` read made after the
+ * release, and returns the order that read returned.
+ */
+function holdLoads(): () => Promise<string[]> {
   let release!: () => void;
   seams.holdLoads = new Promise((resolve) => (release = resolve));
+  const before = seams.listed.length;
   return async () => {
     seams.holdLoads = null;
     await act(async () => release());
+    await vi.waitFor(() => expect(seams.listed.length).toBeGreaterThan(before));
+    return seams.listed.at(-1)!;
   };
 }
 
@@ -108,7 +122,8 @@ it("an add chapter keeps the card in place, in the patch and after the reload", 
   expect(order()).toEqual(shelf);
   expect(hook().books[1]?.chapters).toHaveLength(1);
 
-  await release();
+  // The reload read the store in the same order, and the shelf shows it.
+  expect(await release()).toEqual(shelf);
   await vi.waitFor(() => expect(order()).toEqual(shelf));
 });
 
@@ -123,7 +138,8 @@ it("a real rename keeps the card in place, in the patch and after the reload", a
   expect(order()).toEqual(shelf);
   expect(hook().books[2]?.name).toBe("Mark");
 
-  await release();
+  // The reload read the store in the same order, and the shelf shows it.
+  expect(await release()).toEqual(shelf);
   await vi.waitFor(() => expect(order()).toEqual(shelf));
 });
 
@@ -182,6 +198,6 @@ it("a new book lands first, in the patch and after the reload", async () => {
   expect(created).toBeDefined();
   expect(order()).toEqual([created, ...shelf]);
 
-  await release();
+  expect(await release()).toEqual([created, ...shelf]);
   await vi.waitFor(() => expect(order()).toEqual([created, ...shelf]));
 });
