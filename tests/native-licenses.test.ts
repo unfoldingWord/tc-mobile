@@ -29,6 +29,9 @@ import { licenseTexts, licenseTextsFor } from "@/components/licenses";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8");
+/** Gradle or Swift source with its whole-line `//` comments removed, so a
+ * commented-out declaration is not read as a live one. */
+const code = (rel: string) => read(rel).replace(/^\s*\/\/.*$/gm, "");
 const installedVersion = (pkg: string) =>
   (JSON.parse(read(`node_modules/${pkg}/package.json`)) as { version: string })
     .version;
@@ -67,7 +70,7 @@ function expectSection(all: Section[], name: string, version: string) {
 
 /** `android/variables.gradle`: the root `ext` every module reads first. */
 function rootExt(): Map<string, string> {
-  const src = read("android/variables.gradle");
+  const src = code("android/variables.gradle");
   return new Map(
     [...src.matchAll(/^\s*(\w+)\s*=\s*'([^']+)'/gm)].map((m) => [m[1]!, m[2]!])
   );
@@ -110,7 +113,7 @@ function declaredCoordinates(gradle: string): string[] {
 
 /** The `:capacitor-*` projects `android/capacitor.settings.gradle` includes. */
 function capacitorProjects(): { dir: string; pkg: string }[] {
-  const src = read("android/capacitor.settings.gradle");
+  const src = code("android/capacitor.settings.gradle");
   return [
     ...src.matchAll(
       /projectDir = new File\('\.\.\/node_modules\/(@capacitor\/[^/']+)\/([^']+)'\)/g
@@ -120,9 +123,9 @@ function capacitorProjects(): { dir: string; pkg: string }[] {
 
 function androidDeclared(): string[] {
   return [
-    ...declaredCoordinates(read("android/app/build.gradle")),
+    ...declaredCoordinates(code("android/app/build.gradle")),
     ...capacitorProjects().flatMap((p) =>
-      declaredCoordinates(read(`${p.dir}/build.gradle`))
+      declaredCoordinates(code(`${p.dir}/build.gradle`))
     ),
   ];
 }
@@ -144,7 +147,7 @@ function swiftDeclared(
   packageDir: string,
   seen = new Set<string>()
 ): { remote: SwiftDependency[]; local: string[] } {
-  const src = read(`${packageDir}/Package.swift`);
+  const src = code(`${packageDir}/Package.swift`);
   const remote: SwiftDependency[] = [
     ...src.matchAll(
       /\.package\(url:\s*"([^"]+)",\s*(exact|from):\s*"([^"]+)"\)/g
@@ -291,8 +294,11 @@ describe("which licence texts the About screen lists", () => {
       expect(texts.slice(0, licenseTexts.length)).toEqual(licenseTexts);
       const added = texts.slice(licenseTexts.length);
       expect(added).toHaveLength(1);
-      const other = platform === "android" ? IOS : ANDROID;
-      expect(added[0]?.href).not.toBe(other);
+      expect(added[0]?.href).toBe(
+        platform === "android"
+          ? "/licenses/ANDROID-NOTICES.txt"
+          : "/licenses/IOS-NOTICES.txt"
+      );
       const file = path.join(ROOT, "public", added[0]!.href);
       expect(existsSync(file), `${added[0]?.href} is not in public/`).toBe(
         true
