@@ -14,6 +14,7 @@ import type { SegmentRow } from "@/types/view";
 
 import { areaRules, declsFor } from "./o4-area-css";
 import { render } from "./render";
+import { restingErase } from "./support";
 
 /**
  * #949's first slice: the chapter menu (G2), the segment menu (07) and
@@ -102,11 +103,7 @@ const audio = {
   playingId: null,
   playbackElapsedMs: 0,
 } as UseAudioSession;
-const erase = {
-  erase: vi.fn(async () => "ok" as const),
-  erasing: false,
-  isErasing: () => false,
-};
+const erase = restingErase();
 
 beforeEach(() => {
   layers.clear();

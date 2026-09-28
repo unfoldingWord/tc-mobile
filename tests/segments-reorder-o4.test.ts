@@ -11,11 +11,11 @@ import { SegmentsScreen } from "@/components/segments-screen";
 import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
-import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
 
 import { render } from "./render";
+import { restingErase } from "./support";
 
 /**
  * Press-and-hold reorder on the Segments list (#953 PR2a), wired: the real
@@ -72,11 +72,7 @@ let onOpenRecorder: ReturnType<
   typeof vi.fn<(segmentId: SegmentId, ordinal: number) => void>
 >;
 
-const erase = {
-  erasing: false,
-  isErasing: () => false,
-  erase: vi.fn(),
-} as unknown as UseEraseSegment;
+const erase = restingErase();
 const audio = {
   error: null,
   playingId: null,
