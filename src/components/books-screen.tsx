@@ -1267,8 +1267,15 @@ export function BooksScreen({
       // The sheet session this choice belongs to: a close or a reopen while
       // the write settles must not flip the next session's picker.
       const session = bookMenuSession.current;
+      // "queued" (#1046 item 4, DRI: "Last tap wins") means this tap landed
+      // while an earlier write for the same book was still in flight — the
+      // hook coalesces it internally and only the ORIGINAL caller's promise
+      // (this tap's, if it started the write, or an earlier tap's if this
+      // one got queued behind it) resolves with the real outcome once the
+      // whole chain settles. A no-op here is correct either way: it is never
+      // this call's own answer to react to.
       void setCoverColour(shareMenuBookId, key).then((result) => {
-        if (result === "busy") return;
+        if (result === "queued") return;
         if ("failed" in result) {
           if (bookMenuSession.current === session)
             setCoverFailed(result.failed);

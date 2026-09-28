@@ -69,7 +69,7 @@ vi.mock("@/hooks/use-book-share", () => ({
   }),
 }));
 type CoverResult =
-  { ok: true; book: unknown } | "busy" | { failed: "saveFailed" | "noRoom" };
+  { ok: true; book: unknown } | "queued" | { failed: "saveFailed" | "noRoom" };
 const cover = vi.hoisted(() => ({
   calls: [] as [BookId, CoverColourKey | null][],
   result: null as unknown as () => Promise<CoverResult>,
@@ -299,14 +299,16 @@ describe("O4: the Cover colour tile opens #964's picker (#937 D7)", () => {
     expect(sheet.textContent).toContain(strings.saveFailed);
   });
 
-  // #1046 item 4 (George Low, #1038): a second swatch tapped while a write
-  // is already in flight comes back `"busy"` from the hook. The screen's own
-  // handling of that outcome — silently doing nothing, rather than treating
-  // it as either a success or a failure — was previously unpinned by any
+  // #1046 item 4 (George Low, #1038; DRI 2026-09-28: "Last tap wins"): a
+  // second swatch tapped while a write is already in flight is QUEUED, not
+  // refused — the hook coalesces it and resolves the outcome through the
+  // ORIGINAL caller's promise once the whole chain settles. This screen's
+  // reaction to a `"queued"` result (the mock stands in for that) — no
+  // reload, no error, stay on the picker — was previously unpinned by any
   // test in this file; `tests/use-book-cover-colour-concurrency.test.ts`
-  // covers the hook's own guard, this covers the call site's reaction.
-  it("silently absorbs a busy refusal: no reload, no error, stays on the picker", async () => {
-    cover.result = () => Promise.resolve("busy");
+  // covers the hook's own queue, this covers the call site's reaction.
+  it("silently ignores a queued result: no reload, no error, stays on the picker", async () => {
+    cover.result = () => Promise.resolve("queued");
     await mount();
     await openFrom(strings.bookMenuOpen("Mark"));
     await click(strings.coverColourLabel);

@@ -96,7 +96,8 @@ export const CoverTile = forwardRef<
  *
  * The swatches are never disabled while a write is in flight. A disabled
  * swatch under the focus would drop it out of the sheet's trap; the hook
- * refuses a second write instead (`useBookCoverColour`'s `"busy"`).
+ * queues a second tap for the same book instead, coalescing to the last one
+ * (`useBookCoverColour`'s `"queued"`; #1046 item 4, DRI: "Last tap wins").
  */
 export function O4CoverPick({
   selected,
