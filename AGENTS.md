@@ -929,8 +929,8 @@ code changes do — see `docs/review/dual-review.md` ("Merge policy").
 3. **lamejs is LGPL-3.0** in an MIT repo. **Decided: keep it** — ADR 0003. The
    notice and attribution work (#36) ships in-app (**Menu → About & licenses**)
    with the verbatim licence texts precached under `public/licenses/`; the
-   in-app notice covers the web bundle, the Capacitor native shell's own
-   attribution is separate (#477). Not a product call.
+   in-app notice covers the web bundle, and on a native build it also lists
+   that shell's own notice (#477). Not a product call.
 4. **The division-scheme question.** **Decided 2026-08-22 by Tim: no** to the
    broad half — one generic taxonomy, ADR 0004.
 5. **Scripture Burrito export is out of Phase 1** — not pending, not blocked.

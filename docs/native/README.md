@@ -829,3 +829,35 @@ eviction. **Record → background → interruption must be re-tested inside the
 Capacitor build on a real iPhone and a real Android device** before this is
 called shippable. That spike is tracked separately (see #262 → the
 audio-revalidation issue), not closed by this scaffold.
+
+---
+
+## 9. Native licence notices
+
+Each native build ships the web app's licence texts plus its own notice
+(#477): `public/licenses/ANDROID-NOTICES.txt` and
+`public/licenses/IOS-NOTICES.txt`. They cover what the shell adds — the
+Capacitor runtime and plugins' native code, and the Android (Gradle) or iOS
+(Swift Package Manager) libraries they are built with. **Menu → About &
+licenses** lists the matching one on that build only (`licenseTextsFor` in
+`src/components/licenses.ts`); the PWA lists neither.
+
+`tests/native-licenses.test.ts` reads the dependencies the native projects
+declare (`android/app/build.gradle`, `android/variables.gradle`, each
+Capacitor plugin's `build.gradle`, `ios/App/CapApp-SPM/Package.swift` and
+the plugin packages it points at) and fails when one has no section at its declared
+version. It cannot see the transitive Gradle graph, so when that test fails
+after a Capacitor, plugin or `variables.gradle` change, regenerate the Android
+list from a resolved graph:
+
+```bash
+npx cap sync android
+cd android && ./gradlew :app:dependencies --configuration releaseRuntimeClasspath
+```
+
+Every module in that output gets a section (`group:artifact version — SPDX`,
+the licence from the module's published POM), except a `-bom` platform, which
+ships no code. The iOS remote packages are the `.package(url:)` entries the
+test lists; `ion-ios-filesystem` is declared with a floor, not an exact
+version, and no `Package.resolved` is committed, so its section names the
+major (`1.x`) rather than a resolved release.
