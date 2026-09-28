@@ -212,6 +212,32 @@ it("an earlier write's failure does not stop the queued write from running", asy
   expect(seams.calls).toEqual(["teal"]);
 });
 
+it("a failed LAST write after a committed earlier one says so: the stored colour changed", async () => {
+  await mount();
+  const bookA = await createBook("Mark");
+  seams.hold = deferred();
+  seams.failKeys.add("plum");
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+  let firstResult: SetCoverColourResult;
+  await act(async () => {
+    const first = hook()
+      .setCoverColour(bookA.id, "forest")
+      .then((r) => (firstResult = r));
+    const second = hook().setCoverColour(bookA.id, "plum");
+    seams.hold!.release();
+    await Promise.all([first, second]);
+  });
+  consoleError.mockRestore();
+
+  // "forest" committed, then the queued "plum" failed: the caller gets the
+  // failure AND `committed: true`, so it can re-read the shelf rather than
+  // keep showing the colour from before the chain.
+  expect(firstResult!).toEqual({ failed: "saveFailed", committed: true });
+  expect((await getBook(bookA.id))?.coverColourKey).toBe("forest");
+  expect(seams.calls).toEqual(["forest"]);
+});
+
 it("does NOT refuse a write for a DIFFERENT book while another book's write is in flight (#1046 item 4)", async () => {
   await mount();
   const bookA = await createBook("Mark");

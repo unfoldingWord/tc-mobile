@@ -69,7 +69,9 @@ vi.mock("@/hooks/use-book-share", () => ({
   }),
 }));
 type CoverResult =
-  { ok: true; book: unknown } | "queued" | { failed: "saveFailed" | "noRoom" };
+  | { ok: true; book: unknown }
+  | "queued"
+  | { failed: "saveFailed" | "noRoom"; committed?: true };
 const cover = vi.hoisted(() => ({
   calls: [] as [BookId, CoverColourKey | null][],
   result: null as unknown as () => Promise<CoverResult>,
@@ -284,6 +286,19 @@ describe("O4: the Cover colour tile opens #964's picker (#937 D7)", () => {
     expect(reloads).toBe(1);
     expect(document.querySelector(".cover-swatch-row")).toBeNull();
     expect(document.activeElement).toBe(button(strings.coverColourLabel));
+  });
+
+  // Frank round 2 P2: an earlier queued write committed before the last one
+  // failed, so the stored colour changed — the shelf must re-read it.
+  it("reloads the shelf on a failure that still committed an earlier write, and says so", async () => {
+    cover.result = () =>
+      Promise.resolve({ failed: "saveFailed", committed: true });
+    await mount();
+    await openFrom(strings.bookMenuOpen("Mark"));
+    await click(strings.coverColourLabel);
+    await act(async () => swatch(strings.coverColourForest).click());
+    expect(reloads).toBe(1);
+    expect(bookSheet()!.textContent).toContain(strings.saveFailed);
   });
 
   it("stays on the picker and says so when the write fails", async () => {

@@ -18,8 +18,9 @@ import type { Book, BookId } from "@/types/domain";
  * in-flight guard plus a one-slot coalescing queue (#1046 item 4; DRI
  * 2026-09-28: "Last tap wins"), nothing else. There is no shared error state
  * to bleed between screens, for the same reason `useEraseSegment`'s docblock
- * gives: each caller gets the outcome of the call IT made and holds its own
- * Notice.
+ * gives: each caller holds its own Notice. What a call's promise resolves to
+ * (a queued call gets `"queued"`; the call that started the chain gets the
+ * last write's outcome) is `SetCoverColourResult`'s docblock below.
  */
 
 /**
@@ -74,13 +75,18 @@ export async function performSetCoverColour(
  * with the return value (AGENTS.md's failure-funnel list), and the user's
  * most recently tapped colour still deserves its own attempt rather than
  * being abandoned because an earlier, now-superseded write failed. Only the
- * LAST attempted write's outcome is returned to the original caller.
+ * LAST attempted write's outcome is returned to the original caller. When
+ * that last write failed but an earlier one in the same chain committed, the
+ * failure carries `committed: true`: the stored colour did change, so the
+ * caller must re-read the store as well as show the failure.
  *
  * A call for a DIFFERENT book proceeds regardless — the guard and the queue
  * are both keyed per book, not per hook instance.
  */
 type SetCoverColourResult =
-  { ok: true; book: Book } | "queued" | { failed: FailureKey };
+  | { ok: true; book: Book }
+  | "queued"
+  | { failed: FailureKey; committed?: true };
 
 export interface UseBookCoverColour {
   /** Set `bookId`'s cover colour to `key` (or `null` to clear it back to the
@@ -133,6 +139,10 @@ export function useBookCoverColour(): UseBookCoverColour {
       try {
         let writeKey = key;
         let outcome = await performSetCoverColour(bookId, writeKey);
+        // Whether ANY write in the chain reached the store: a success followed
+        // by a failed queued write still changed the stored colour, so the
+        // caller must re-read it rather than keep showing the old one.
+        let committed = outcome.ok;
         // Coalescing loop: after each write settles, check whether a later
         // call queued a newer colour while this one was in flight. If so,
         // write THAT next (the write that just finished is what gets
@@ -143,8 +153,12 @@ export function useBookCoverColour(): UseBookCoverColour {
           writeKey = pending.current.get(bookId)!;
           pending.current.delete(bookId);
           outcome = await performSetCoverColour(bookId, writeKey);
+          committed ||= outcome.ok;
         }
-        return outcome.ok ? outcome : { failed: outcome.key };
+        if (outcome.ok) return outcome;
+        return committed
+          ? { failed: outcome.key, committed: true }
+          : { failed: outcome.key };
       } finally {
         inFlight.current.delete(bookId);
         pending.current.delete(bookId);
