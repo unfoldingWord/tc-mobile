@@ -77,6 +77,26 @@ function trail(...parts: readonly string[]): string {
   return parts.join(" > ");
 }
 
+/**
+ * An entry that reuses another entry calls it through this binding:
+ * `chapterHeading` falls back to `strings.chapterName`, `shareBookPartial`
+ * returns `strings.shareMissing`, and the rest follow the same pattern
+ * (`grep -n "strings\." src/lib/strings.ts` finds them, along with comments
+ * that mention an entry). With one table, that is correct, and it is the
+ * reason the aliases exist. Byte-for-byte copies drifted, and an alias cannot.
+ *
+ * It is also what breaks when `strings[locale]` lands (#169). A second
+ * locale's entry that still calls through `strings` formats its embedded part
+ * from THIS table. The result is a heading that is half English.
+ *
+ * The existing tests cannot see that. `tests/breadcrumb.test.ts`'s
+ * `chapterHeading(null, n) === chapterName(n)` stays green while the bug is
+ * live, because both sides resolve through the same wrong table and agree.
+ * Whoever adds a second table needs each alias to resolve within its own table
+ * (through `this`, an explicit table parameter, or a factory that closes over
+ * the right one). They also need a test that a locale's entry never reaches the
+ * default table, which is a different assertion from the equality ones.
+ */
 export const strings = {
   // ── Books screen (B2) ────────────────────────────────────────────────────
   newBook: "New book",
