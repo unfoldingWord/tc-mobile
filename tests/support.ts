@@ -147,6 +147,12 @@ export function stripYamlComments(yaml: string): string {
   return yaml.replace(/(^|[ \t])#.*$/gm, "$1");
 }
 
+/** Strips HTML `<!-- ... -->` comments, so a commented-out element cannot be
+ *  the first match a source pin reads from an `.html` file (#822). */
+export function stripHtmlComments(html: string): string {
+  return html.replace(/<!--[\s\S]*?-->/g, "");
+}
+
 /** Brace-counts from `openIndex` (the index of an opening `{`) to find its
  *  matching close, or -1. */
 export function matchingBraceClose(text: string, openIndex: number): number {

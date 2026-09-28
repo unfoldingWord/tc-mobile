@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { stripComments, stripCssComments, stripHtmlComments } from "./support";
+
 /**
  * The two zoom/touch policies #164 found wrong, gated so they cannot drift
  * back: R-11 (pinch zoom must stay available) and R-10 (touch targets stay
@@ -18,10 +20,16 @@ import { describe, expect, it } from "vitest";
  * layout or cascade.
  */
 const ROOT = path.resolve(import.meta.dirname, "..");
-const html = readFileSync(path.join(ROOT, "index.html"), "utf8");
-const components = readFileSync(
-  path.join(ROOT, "src", "app", "styles", "3-components.css"),
-  "utf8"
+// Every source below is read with its comments stripped, so a commented-out
+// rule, element or attribute cannot be the match an assertion reads (#822).
+const html = stripHtmlComments(
+  readFileSync(path.join(ROOT, "index.html"), "utf8")
+);
+const components = stripCssComments(
+  readFileSync(
+    path.join(ROOT, "src", "app", "styles", "3-components.css"),
+    "utf8"
+  )
 );
 
 describe("the viewport does not forbid pinch zoom (#164 R-11)", () => {
@@ -102,9 +110,13 @@ describe("the breadcrumb is a control-sized target (#164 R-10)", () => {
   // where the component layer could not see it. If the class comes off the
   // button, the rule above is dead and this gate would pass on nothing.
   it("is the class the Segments header actually uses", () => {
-    const screen = readFileSync(
-      path.join(ROOT, "src", "components", "segments-screen.tsx"),
-      "utf8"
+    // `stripComments` is string-blind: a `//` or `/*` inside a string literal
+    // in segments-screen.tsx would cut real code from what this reads.
+    const screen = stripComments(
+      readFileSync(
+        path.join(ROOT, "src", "components", "segments-screen.tsx"),
+        "utf8"
+      )
     );
     expect(screen).toMatch(/className="breadcrumb"/);
     expect(screen, "the p-0 hit area is back").not.toMatch(
