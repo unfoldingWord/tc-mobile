@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   deleteClip,
@@ -16,6 +16,7 @@ import {
   addSegment,
   chapterProgress,
   createBook,
+  deleteSegment,
   getBook,
   getChapter,
   getSegment,
@@ -1268,5 +1269,99 @@ describe("segment audio resolution", () => {
     // the audio under the id the take already names is enough.
     await putClip(clipId, samples(40), CANONICAL_SAMPLE_RATE);
     expect((await loadSegmentClip(segmentId)).kind).toBe("resolved");
+  });
+});
+
+describe("shelf order: books stay put (#1185)", () => {
+  // A strictly increasing clock, so every write gets its own timestamp and no
+  // order below is left to a tie.
+  let clock = 1_000;
+  beforeEach(() => {
+    clock = 1_000;
+    vi.spyOn(Date, "now").mockImplementation(() => (clock += 10));
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** One book with one chapter and one recorded segment, built in full
+   *  before the next book starts. */
+  const recordedBook = async (name: string) => {
+    const book = await createBook(name);
+    const chapter = await addChapter(book.id);
+    const segment = await addSegment(chapter.id);
+    await addTake(segment.id, await storedClip(), 100);
+    return { bookId: book.id, chapterId: chapter.id, segmentId: segment.id };
+  };
+
+  type Tree = Awaited<ReturnType<typeof recordedBook>>;
+
+  it.each<[string, (tree: Tree) => Promise<unknown>]>([
+    ["adding a chapter", (t) => addChapter(t.bookId)],
+    ["a real book rename", (t) => renameBook(t.bookId, "Renamed")],
+    ["a cover colour change", (t) => setBookCoverColour(t.bookId, "forest")],
+    ["a chapter rename", (t) => renameChapter(t.chapterId, "Mark 6")],
+    ["deleting a segment", (t) => deleteSegment(t.segmentId)],
+    [
+      "recording a take",
+      async (t) => addTake(t.segmentId, await storedClip(), 100),
+    ],
+    ["clearing a take", (t) => clearSegmentTake(t.segmentId)],
+  ])("%s leaves the listBooks order unchanged", async (_label, write) => {
+    const oldest = await recordedBook("oldest");
+    await recordedBook("middle");
+    await recordedBook("newest");
+    const before = (await listBooks()).map((b) => b.id);
+    // The book written to is the LAST one on the shelf, so any float moves it.
+    expect(before[2]).toBe(oldest.bookId);
+    const stamped = (await getBook(oldest.bookId))!.updatedAt;
+
+    await write(oldest);
+
+    // The write still bumps `updatedAt` — it is activity, it just does not
+    // order the shelf — so an unchanged order below is not a skipped write.
+    expect((await getBook(oldest.bookId))!.updatedAt).toBeGreaterThan(stamped);
+    expect((await listBooks()).map((b) => b.id)).toEqual(before);
+  });
+
+  it("puts a new book first, above a book written to after it was made", async () => {
+    const older = await recordedBook("older");
+    const fresh = await createBook("fresh");
+    // `older` is now the most recently written book on the shelf; `fresh`
+    // is still first because it was created last.
+    await addChapter(older.bookId);
+
+    expect((await listBooks()).map((b) => b.id)).toEqual([
+      fresh.id,
+      older.bookId,
+    ]);
+  });
+
+  it("keeps the order across a fresh database connection", async () => {
+    const oldest = await recordedBook("oldest");
+    const newest = await recordedBook("newest");
+    await addChapter(oldest.bookId);
+
+    await closeDb();
+    await getDb();
+
+    expect((await listBooks()).map((b) => b.id)).toEqual([
+      newest.bookId,
+      oldest.bookId,
+    ]);
+  });
+
+  it("orders books created in the same millisecond by id, ascending", async () => {
+    // Pins the tie rule; no line in `listBooks` implements it. `getAll`
+    // returns rows in primary-key order (IndexedDB 3.0, "retrieve multiple
+    // values from an object store") and `Array.prototype.sort` is stable
+    // (ECMA-262 since ES2019), so a `createdAt` tie keeps id order.
+    const a = await createBook("a", null, 5_000);
+    const b = await createBook("b", null, 5_000);
+    const c = await createBook("c", null, 5_000);
+
+    expect((await listBooks()).map((book) => book.id)).toEqual(
+      [a.id, b.id, c.id].sort()
+    );
   });
 });
