@@ -44,6 +44,22 @@ import type { ChapterId, ClipId } from "@/types/domain";
 export const SEGMENT_GAP_SECONDS = 0.5;
 
 /**
+ * Above this much PCM, Share Chapter streams (#1003 part b): the chapter is
+ * fed to one continuing encode segment by segment and never held as one PCM
+ * buffer. At or under it, the chapter is gathered whole and encoded once, as
+ * it always was. 16-bit mono, so bytes are frames x 2, gaps included.
+ *
+ * DRI pick on the #1003(b) park, verbatim: "B: stream only long chapters
+ * (Recommended)". Two paths because streaming costs the progress meter its
+ * encode stretch (see `streamChapterMp3`), and that trade is only worth it
+ * where holding the whole chapter is the risk.
+ *
+ * PROVISIONAL until #1003's phone measurement (the allocation ceiling on a
+ * low-end phone) exists: the number is a starting point, not a measurement.
+ */
+export const STREAMING_PCM_THRESHOLD_BYTES = 48 * 1024 * 1024;
+
+/**
  * A step count as the export path reports it (#986, #996): `done` of `total`
  * steps have really finished, and `skipped` of those `done` finished WITHOUT
  * contributing audio — a clip that vanished, a chapter with nothing recorded —
@@ -321,12 +337,22 @@ async function readSlot(
  * disagrees with its recorded length, a clip turned back to PCM since pass 1).
  * That fallback is decided before any step is reported, so the count a reader
  * sees comes from one path only.
+ *
+ * **A chapter over `streamAbovePcmBytes` of PCM streams (#1003 part b)**
+ * when the codec can open a stream: {@link streamChapterMp3}. Same MP3, byte
+ * for byte, and the same `segments` and `missing`, without the chapter-sized
+ * buffer; its count is coarser (see there). The default is
+ * {@link STREAMING_PCM_THRESHOLD_BYTES}; tests pass a small one so a long
+ * chapter can be a few seconds of audio. A codec without `openMp3Stream`
+ * takes the single-buffer path at any size. An all-Finished chapter that
+ * joins is never streamed: the join holds no PCM at all.
  */
 export async function exportChapterMp3(
   chapterId: ChapterId,
   codec: ChapterCodec,
   shouldEncode?: () => boolean,
-  onStep?: StepReporter
+  onStep?: StepReporter,
+  streamAbovePcmBytes: number = STREAMING_PCM_THRESHOLD_BYTES
 ): Promise<ChapterExport | null> {
   const plan = await sizeChapter(chapterId);
   if (plan.allMp3 && plan.present.length > 0) {
@@ -337,12 +363,87 @@ export async function exportChapterMp3(
       return joined;
     }
   }
+  const openStream = codec.openMp3Stream;
+  if (openStream && plan.capacity * 2 > streamAbovePcmBytes)
+    return streamChapterMp3(plan, codec, openStream, shouldEncode, onStep);
   const gathered = await fillChapterPcm(plan, codec, shouldEncode, onStep);
   if (gathered === null) return null;
   const { samples, segments, missing } = gathered;
   if (segments === 0) return null;
   if (shouldEncode && !shouldEncode()) return null;
   return { mp3: await codec.encodeMp3(samples), segments, missing };
+}
+
+/**
+ * A long chapter, encoded as it is read (#1003 part b): each segment is read
+ * (and, if Finished, decoded) exactly as {@link fillChapterPcm} reads it,
+ * then handed to one open encode — the gap first when it is not the first —
+ * and dropped. The page holds one segment's PCM at a time, never the
+ * chapter's; the browser codec transfers each write to the worker, which
+ * keeps lamejs's own state between writes, not the PCM
+ * (`createMp3StreamEncoder`). Because the encoder is fed the same samples in
+ * the same order, the MP3 is byte-identical to encoding the gathered chapter
+ * whole (`tests/chapter-stream.test.ts`).
+ *
+ * THE COUNT IS COARSER, and that is the trade the DRI picked (see
+ * {@link STREAMING_PCM_THRESHOLD_BYTES}). `(0, n)` first, then each segment's
+ * step once its PCM is IN THE ENCODER — the read, the decode and the encode
+ * of that segment are all behind it — so no step waits on a later one and a
+ * vanished clip is still placed at its own position. What is lost is the
+ * encode stretch's fraction: there is no whole-chapter encode left to report
+ * one, so a count wrapped by {@link withEncodeSteps} reads `n` of
+ * `n + ENCODE_STEPS` once the last segment is in, then its total when
+ * `finish` resolves and the MP3 exists. Same total, same items, same keys,
+ * forward-only — only the encode stretch has no steps in between.
+ *
+ * Cancel: `shouldContinue` is checked before the stream opens, before and
+ * after every read, after every write and before `finish`; a cancel returns
+ * `null` with no further step. A write or `finish` that rejects (the worker
+ * died, stalled or was aborted) rejects the export with that error, and
+ * reports nothing after the last whole segment. Either way the stream is
+ * cancelled on the way out unless `finish` produced the MP3.
+ */
+async function streamChapterMp3(
+  plan: ChapterPlan,
+  codec: Pick<AudioCodec, "decodeMp3">,
+  openStream: NonNullable<AudioCodec["openMp3Stream"]>,
+  shouldContinue?: () => boolean,
+  onStep?: StepReporter
+): Promise<ChapterExport | null> {
+  const live = () => !shouldContinue || shouldContinue();
+  if (!live()) return null;
+  const stream = await openStream();
+  let finished = false;
+  try {
+    const { present } = plan;
+    let missing = plan.missing;
+    let segments = 0;
+    let done = 0;
+    let skipped = 0;
+    const keys = present.map((p) => p.clipId);
+    onStep?.(done, present.length, skipped, undefined, keys);
+    for (const { clipId, frames } of present) {
+      if (!live()) return null;
+      const fitted = await readSlot(clipId, frames, codec);
+      if (!live()) return null;
+      if (fitted === null) {
+        missing++;
+        skipped++;
+      } else {
+        if (segments > 0) await stream.write(silence(GAP_FRAMES));
+        await stream.write(fitted);
+        segments++;
+        if (!live()) return null;
+      }
+      onStep?.(++done, present.length, skipped, undefined, keys);
+    }
+    if (segments === 0 || !live()) return null;
+    const mp3 = await stream.finish();
+    finished = true;
+    return { mp3, segments, missing };
+  } finally {
+    if (!finished) stream.cancel();
+  }
 }
 
 /**
@@ -526,7 +627,9 @@ export const ENCODE_STEPS = 100;
  *   an encoder error) never gets there. The one other way there is the
  *   codec's `onJoined` (#1004): a build that joined stored MP3 frames instead
  *   of encoding calls it once the joined MP3 exists, and it moves the count to
- *   `total` exactly as a resolved encode does.
+ *   `total` exactly as a resolved encode does. A streamed chapter (#1003 part
+ *   b) gets there when its stream's `finish` resolves; it reports no encode
+ *   fraction, so its count goes from the last segment straight to `total`.
  * - Every report checks `shouldContinue` first, so nothing moves once a cancel
  *   is observable, and a report that would not move the count forward (a
  *   repeated, lower or non-numeric fraction) is dropped here rather than sent.
@@ -562,8 +665,26 @@ export function withEncodeSteps<T>(
     const encoded = (into: number): void => {
       if (segments !== null) report(segments + into, segments);
     };
+    const openStream = encoder.openMp3Stream;
     const codec: ChapterCodec = {
       decodeMp3: encoder.decodeMp3,
+      // A streamed chapter (#1003 part b) has no encode fraction to report;
+      // its count reaches total when `finish` resolves, as a resolved
+      // `encodeMp3` does, and never on a finish that rejects.
+      ...(openStream && {
+        openMp3Stream: async () => {
+          const stream = await openStream();
+          return {
+            write: stream.write,
+            cancel: stream.cancel,
+            finish: async () => {
+              const mp3 = await stream.finish();
+              encoded(ENCODE_STEPS);
+              return mp3;
+            },
+          };
+        },
+      }),
       // Joined instead of encoded (#1004): the MP3 exists all the same.
       onJoined: () => encoded(ENCODE_STEPS),
       encodeMp3: async (samples, onProgress) => {

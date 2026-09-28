@@ -210,6 +210,19 @@ the lane for the page's life (round-1 R1). So "terminates on every exit" is
 superseded by "terminates on abort or a worker error; on abort it re-warms,
 otherwise it is kept warm and reused."
 
+**Amended again (#1003 part b):** "stateless" now holds for a whole encode
+only. A Share Chapter over `STREAMING_PCM_THRESHOLD_BYTES` of PCM
+(`lib/export/chapter.ts`) is encoded as a stream — a versioned
+`stream-open`, `stream-chunk`s, then `stream-finish` or `stream-cancel`, each
+step acked before the next is posted — so the worker keeps one lamejs session
+between those messages. The original whole-encode message is unchanged and
+unversioned. The session never outlives the `withEncoder` turn that opened it:
+the client binds the stream to the worker that answered `open` and refuses to
+post into any other, a later `open` replaces a session a cancelled share left
+behind, and abort, stall and crash still `terminate()` the worker and take the
+session with it. Each step runs under the same silence deadline and error
+handling as a whole encode. Not yet run on a phone.
+
 **Why #166 matters more, not less.** A warm worker that _hangs_ — answers
 neither a message nor an `error` — blocks every later encode until the page is
 reloaded, for the life of the page, where one-per-encode contained a hang to the

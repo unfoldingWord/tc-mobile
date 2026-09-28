@@ -14,7 +14,7 @@ import { guidedStep } from "./guided-step";
 import { EraseConfirm, type EraseConfirmPreview } from "./erase-confirm";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
-import { O4SheetHead } from "./o4-crumbs";
+import { O4Crumbs, O4SheetHead } from "./o4-crumbs";
 import { Tile, TileSpacer } from "./o4-tile-menu";
 import { Notice } from "./notice";
 import { SegmentRow } from "./segment-row";
@@ -1147,9 +1147,52 @@ export const SegmentsScreen = forwardRef<
             adjacent ways to do one thing should not be two different sizes to
             a thumb. Geometry lives in `.breadcrumb` (layer 3) rather than in
             arbitrary utilities here, so the 44px floor reads the same
-            `--c-control-md` every other control does. */}
-        <button type="button" onClick={onBack} className="breadcrumb">
-          <span>{strings.chapterBreadcrumb(bookName, chapterHeading)}</span>
+            `--c-control-md` every other control does.
+
+            #1105: under O4 this stays the same interactive Back control (its
+            action, and its hit area, are unchanged) but its content becomes
+            the same chevron chips the chapter menu's `O4SheetHead` shows,
+            not the text trail. The chips carry `aria-hidden` — the same rule
+            `O4SheetHead` states in its own docblock, that a labelled control
+            does not need its decoration read a second time — so the button
+            keeps its accessible name explicit (`aria-label`) rather than
+            losing it when the chip text is hidden from the accessibility
+            tree. The name is the `chapterBreadcrumb` trail built from the
+            SAME chapter NUMBER the visible chip shows, not `chapterHeading`:
+            a name fed the typed title would say one chapter while the chip
+            says another, and the visible text must sit inside the name
+            (WCAG 2.5.3, George round 2) — and deliberately NOT
+            `strings.backToBooks`, the plain Back
+            control's own name: giving the two the same name produced two
+            controls named "Back to books" on the one screen, which broke
+            every `getByRole("button", { name: "Back to books" })` lookup in
+            this repo's e2e suite (strict-mode: ambiguous) — caught by CI on
+            this PR's first push, not by a local run of any single spec.
+            Chapter is the plain NUMBER (`chapterNumber`) in the VISIBLE
+            chip, never `chapterHeading`'s resolved name: see
+            `o4-crumbs.tsx`'s `O4Crumbs` docblock for why that resolved name
+            is what made this header and the menu chip disagree (#1105). */}
+        <button
+          type="button"
+          onClick={onBack}
+          className="breadcrumb"
+          aria-label={
+            o4
+              ? strings.chapterBreadcrumb(bookName, String(chapterNumber))
+              : undefined
+          }
+        >
+          {o4 ? (
+            <div aria-hidden="true" className="min-w-0">
+              <O4Crumbs
+                className="min-w-0"
+                book={bookName}
+                chapter={chapterNumber}
+              />
+            </div>
+          ) : (
+            <span>{strings.chapterBreadcrumb(bookName, chapterHeading)}</span>
+          )}
         </button>
         {!showEmpty && (
           <Control

@@ -4,10 +4,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
-import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import type { SegmentId } from "@/types/domain";
 import { strings } from "@/lib/strings";
+
+import { restingErase } from "./support";
 
 /**
  * #586 item 2. #585 added a `supersededCapture` ref latch in
@@ -124,6 +125,7 @@ async function setup() {
       error: null,
       recorderError: null,
       meterFailed: false,
+      takeCap: { nearLimit: false, remainingMs: 20 * 60_000, reached: false },
       playTake: vi.fn(),
       playBuffer: vi.fn(),
       stopBuffer: vi.fn(),
@@ -142,12 +144,9 @@ async function setup() {
       peekScope: () => null,
     };
   // Resting erase: this suite never opens the confirm, but the sheet reads
-  // `erase.isErasing` during render, so the prop cannot be absent (#160 L-12).
-  const erase: UseEraseSegment = {
-    erase: vi.fn(async () => "ok" as const),
-    erasing: false,
-    isErasing: () => false,
-  };
+  // `erase.isErasing` during render, so the prop cannot be absent (#160 L-12;
+  // shared fixture, #856 item 3, `tests/support.ts`).
+  const erase = restingErase();
   const render = async () =>
     act(async () =>
       root.render(

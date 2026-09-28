@@ -132,31 +132,46 @@ const BROWSER_ONLY_GLOBALS = [
  * `hooks/mp3-codec.ts` and `app/e2e-harness.ts` already use for their own
  * Worker construction) (#815).
  *
- * `no-restricted-syntax` closes both holes with esquery selectors:
+ * `no-restricted-syntax` closes both holes with esquery selectors. They
+ * read the specifier's SPELLING, not a resolved path — there is no import
+ * resolver in this config — so each one is written to leave no spelling it
+ * cannot read (#838):
  *
+ *   - `NON_LITERAL_DYNAMIC_IMPORT` requires every dynamic `import()` to take
+ *     a string literal or a substitution-free template literal. A
+ *     concatenated (`"@/hooks/" + "y"`), substituted or variable specifier is
+ *     banned outright, so the spelling match below always has a spelling to
+ *     read. No `src/` file imports a non-literal today, and Vite cannot
+ *     bundle one without a glob anyway. It reaches every layer, since each
+ *     has a dynamic deny it would otherwise bypass.
  *   - `dynamicImportDeny(layer, message)` bans a dynamic `import()` whose
- *     source is the `@/<layer>/...` alias OR a relative `../<layer>/...`
- *     path (any depth of `../`) — the same two spellings `deny()` already
- *     covers for the static form, as a string or a substitution-free
- *     template literal. A block never bans its own layer (a SIBLING import
- *     is not an onion violation), and lib/ never bans `data`:
- *     `src/lib/obs/catalog.ts`'s `await import("@/data/obs-catalog.json")`
- *     must stay legal. Every OTHER layer bans a dynamic `data` import —
- *     types/ via its own list below, hooks/components/app via
- *     `NON_HISTORY_SYNTAX_SELECTORS` — matching their static `data` deny.
- *   - `NEW_URL_IMPORT_META_SELECTOR` bans `new URL(..., import.meta.url)`
- *     outright in lib/ and types/, regardless of its first argument. It has
- *     no legitimate use in either — `grep -rn "new URL(" src/lib src/types`
- *     returns zero hits on develop — so there is nothing to carve out, unlike
- *     the dynamic-import selectors above.
+ *     specifier contains `<layer>` as a whole path SEGMENT anywhere — the
+ *     same reading the static `**` patterns in `deny()` give. That covers
+ *     `@/<layer>/`, any mix of `../` and `./` (`.././`, `./../`), a detour
+ *     through another directory (`../audio/../../<layer>/`, `@/lib/../`) and
+ *     a root-absolute `/src/<layer>/`. Like the static rule it can over-match
+ *     (a lib/ subdirectory literally named `hooks`); none exists. A block
+ *     never bans its own layer (a SIBLING import is not an onion violation),
+ *     and lib/ never bans `data`: `src/lib/obs/catalog.ts`'s
+ *     `await import("@/data/obs-catalog.json")` must stay legal. Every OTHER
+ *     layer bans a dynamic `data` import — types/ via its own list below,
+ *     hooks/components/app via `NON_HISTORY_SYNTAX_SELECTORS` — matching
+ *     their static `data` deny.
+ *   - `IMPORT_META_SELECTOR` bans `import.meta` itself in lib/ and types/,
+ *     not only the `new URL(..., import.meta.url)` shape. Matching that one
+ *     shape left `URL(...)` without `new`, `import.meta["url"]`, and a base
+ *     read into a variable or destructured first. Neither layer uses
+ *     `import.meta` for anything, and plain Node has no `import.meta.env`, so
+ *     there is nothing to carve out. `new URL(href)` and
+ *     `new URL(href, base)` stay legal: `URL` itself is not restricted.
  *
- * Applied only to the lib/ and types/ blocks below (#159 L-6's ask): hooks/,
- * components/ and app/ are exactly where a Worker's own
- * `new URL(..., import.meta.url)` legitimately lives, so this selector set is
- * never added to those blocks.
+ * Applied only to the lib/ and types/ blocks below (#159 L-6's ask), except
+ * `NON_LITERAL_DYNAMIC_IMPORT`: hooks/, components/ and app/ are exactly
+ * where a Worker's own `new URL(..., import.meta.url)` legitimately lives,
+ * so the `import.meta` ban is never added to those blocks.
  */
 const dynamicImportDeny = (layer, message) => {
-  const re = `/^(@\\/|(\\.\\.\\/)+)${layer}(\\/|$)/`;
+  const re = `/(^|\\/)${layer}(\\/|$)/`;
   // A string literal, or a template literal with no `${}` substitution
   // (import(`@/hooks/y`) is as static as the quoted form; Frank round 1).
   return {
@@ -167,29 +182,40 @@ const dynamicImportDeny = (layer, message) => {
   };
 };
 
-const NEW_URL_IMPORT_META_SELECTOR = {
+const NON_LITERAL_DYNAMIC_IMPORT = {
   selector:
-    "NewExpression[callee.name='URL'][arguments.1.object.type='MetaProperty'][arguments.1.property.name='url']",
+    "ImportExpression:not([source.type='Literal'], " +
+    "[source.type='TemplateLiteral'][source.expressions.length=0])",
   message:
-    "new URL(..., import.meta.url) is a bundler asset-URL escape hatch that " +
-    "no-restricted-imports cannot see. It has no legitimate use in the " +
-    "DOM-free core — the Worker construction that needs it belongs in " +
-    "hooks/ (hooks/mp3-codec.ts) or app/ (app/e2e-harness.ts). See AGENTS.md.",
+    "A dynamic import() must take a string literal (or a template with no " +
+    "${}), so the onion-layer rule can read where it points (#838). " +
+    "Concatenated and variable specifiers are banned in every layer.",
+};
+
+const IMPORT_META_SELECTOR = {
+  selector: "MetaProperty[meta.name='import'][property.name='meta']",
+  message:
+    "import.meta is banned in lib/ and types/: new URL(..., import.meta.url) " +
+    "is a bundler asset-URL escape hatch that no-restricted-imports cannot " +
+    "see, and plain Node has no import.meta.env. The Worker construction " +
+    "that needs it belongs in hooks/ (hooks/mp3-codec.ts) or app/ " +
+    "(app/e2e-harness.ts). See AGENTS.md.",
 };
 
 /**
- * The full dynamic-import + `new URL` `no-restricted-syntax` set for one
- * inner layer: denies a dynamic `import()` of each name in `upwardLayers`,
- * plus the `new URL(..., import.meta.url)` ban.
+ * The full dynamic-import + `import.meta` `no-restricted-syntax` set for one
+ * inner layer: requires a literal dynamic specifier, denies a dynamic
+ * `import()` of each name in `upwardLayers`, and bans `import.meta`.
  */
 const dynamicBoundarySyntax = (fromLayer, upwardLayers) => [
+  NON_LITERAL_DYNAMIC_IMPORT,
   ...upwardLayers.map((layer) =>
     dynamicImportDeny(
       layer,
       `${fromLayer} cannot dynamically import ${layer} (onion architecture)`
     )
   ),
-  NEW_URL_IMPORT_META_SELECTOR,
+  IMPORT_META_SELECTOR,
 ];
 
 /**
@@ -237,6 +263,9 @@ const HISTORY_POPSTATE_SELECTOR = {
  * `no-restricted-syntax: "off"` would drop it (George R3 P3-4).
  */
 const NON_HISTORY_SYNTAX_SELECTORS = [
+  // #838: without it, a concatenated or variable specifier skips the `data`
+  // deny below.
+  NON_LITERAL_DYNAMIC_IMPORT,
   // #159 L-6: the dynamic half of the static `data` deny in each of the three
   // boundary blocks — data/ is reachable only from lib/ (Frank round 1).
   dynamicImportDeny(

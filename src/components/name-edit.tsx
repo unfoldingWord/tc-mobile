@@ -107,6 +107,19 @@ export function NameEdit({
         if (busy) return;
         onSave(value);
       }}
+      // Keep focus in the form through a press on Confirm (#1099). Safari and
+      // the iOS WebView do not focus a button on press; they clear focus
+      // instead, unless the mousedown is cancelled. The O4 sheet docks at the
+      // top only while `.name-edit:focus-within` holds (`o4/sheets.css`), so
+      // that cleared focus dropped the sheet to the bottom mid-press, the
+      // release landed on the scrim, and the click closed the sheet with
+      // nothing saved. Cancelling the mousedown leaves focus where it was; the
+      // click still fires. The field itself is exempt so a press there still
+      // places the caret.
+      onMouseDown={(e) => {
+        if (e.target instanceof HTMLInputElement) return;
+        e.preventDefault();
+      }}
     >
       <input
         className="name-input"

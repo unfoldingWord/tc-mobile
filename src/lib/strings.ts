@@ -217,9 +217,9 @@ export const strings = {
   scrubSegment: (n: number): string => `Position in segment ${n}`,
   // "done", not "finished" (D17, #949): the O4 tile's caption is the
   // workbench's "Done", and the label must hold the caption (label-in-name).
-  // One string for both looks and both menus (segment row and recorder).
+  // One string for both looks and both menus (segment row and recorder). It
+  // does not flip to "not done": `aria-pressed` carries the state (#351).
   markFinished: (n: number): string => `Mark segment ${n} done`,
-  markUnfinished: (n: number): string => `Mark segment ${n} not done`,
   /**
    * The segment's display heading (#591): the ordinal, then the facilitator's
    * label when set — "3 · verses 3–4". The ordinal always stays, because it is
@@ -263,7 +263,7 @@ export const strings = {
   // never announced: each tile's name is the label its current-look row
   // already had, and every caption is a word that label holds (label-in-name,
   // WCAG 2.5.3). Marking done says the workbench's "Done", and
-  // `markFinished`/`markUnfinished` say "done" to match (D17).
+  // `markFinished` says "done" to match (D17).
   tileEdit: "Edit",
   tileFinished: "Done",
   tileRename: "Rename",
@@ -349,6 +349,14 @@ export const strings = {
   // control: say what the control LOOKS LIKE as well as what AT calls it, since
   // an icon-only `Control`'s accessible name is not a word anyone can see.
   recorderSaving: "Saving…",
+
+  // ── Take-length warning (#1005, "Warn at 15, seal at 20") ────────────────
+  // Rides inside the recorder's own elapsed-time readout once it tints to the
+  // warn role, from 15:00 of a live take (`components/take-cap-marker.tsx`).
+  // Parameterised, so it is outside `tests/strings-one-table.test.ts`'s
+  // fixed-literal check the way `chapterName` and the other `(n) =>` entries
+  // above are.
+  takeCapWarning: (n: number): string => `${n} min left`,
 
   // ── Recorder load failure (#137) ──────────────────────────────────────────
   // A finished segment's stored MP3 could not be decoded when the sheet opened

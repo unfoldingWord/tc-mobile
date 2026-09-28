@@ -1,13 +1,14 @@
 import { vi } from "vitest";
 
-import { encodeMp3 } from "@/lib/audio/mp3";
+import { createMp3StreamEncoder, encodeMp3 } from "@/lib/audio/mp3";
 import {
   MP3_GRANULE,
   MP3_TOTAL_DELAY,
   mp3GranuleCount,
 } from "@/lib/audio/mp3-align";
 import { closeDb, getDb } from "@/lib/storage/db";
-import type { AudioCodec, Clip } from "@/types/audio";
+import type { UseEraseSegment } from "@/hooks/use-erase-segment";
+import type { AudioCodec, Clip, Mp3Stream } from "@/types/audio";
 
 /**
  * Shared test plumbing for the storage and export suites.
@@ -30,6 +31,15 @@ export function testCodec(
   return {
     encodeMp3: vi.fn(async (samples: Int16Array) => encodeMp3(samples)),
     decodeMp3: vi.fn(decodeMp3),
+    // The same synchronous encoder, fed in pieces (#1003 part b).
+    openMp3Stream: vi.fn(async (): Promise<Mp3Stream> => {
+      const stream = createMp3StreamEncoder();
+      return {
+        write: async (samples) => stream.write(samples),
+        finish: async () => stream.finish(),
+        cancel: () => {},
+      };
+    }),
   };
 }
 
@@ -39,6 +49,28 @@ export function samplesOf(clip: Clip | undefined): Int16Array {
   if (clip.encoding !== "pcm")
     throw new Error(`expected a PCM clip, got ${clip.encoding}`);
   return clip.samples;
+}
+
+/**
+ * A resting `UseEraseSegment` — never erasing, for a suite that must mount a
+ * screen or menu taking `erase` as a prop but never exercises erase itself.
+ * Since #160 (L-12) lifted the one hook instance up to `App`, both entry
+ * points take `erase` as a real prop, not a module import — so a `vi.mock`
+ * of `@/hooks/use-erase-segment` intercepts nothing there and silently tests
+ * the wrong thing (the #631 hazard). This stays a real value a caller passes
+ * in, and is annotated `UseEraseSegment` so a shape change to the hook's
+ * return fails every call site at `tsc`, not silently (#856 item 3).
+ *
+ * A fresh object per call, not a shared singleton: each suite still gets its
+ * own `vi.fn()` identity, matching the one-per-module-scope shape these sites
+ * had before extraction, and no suite can observe another's mock calls.
+ */
+export function restingErase(): UseEraseSegment {
+  return {
+    erase: vi.fn(async () => "ok" as const),
+    erasing: false,
+    isErasing: () => false,
+  };
 }
 
 /**
@@ -113,6 +145,12 @@ export function blankComments(text: string): string {
  *  the rest of that line. Callers check that no line they assert on holds one. */
 export function stripYamlComments(yaml: string): string {
   return yaml.replace(/(^|[ \t])#.*$/gm, "$1");
+}
+
+/** Strips HTML `<!-- ... -->` comments, so a commented-out element cannot be
+ *  the first match a source pin reads from an `.html` file (#822). */
+export function stripHtmlComments(html: string): string {
+  return html.replace(/<!--[\s\S]*?-->/g, "");
 }
 
 /** Brace-counts from `openIndex` (the index of an opening `{`) to find its
