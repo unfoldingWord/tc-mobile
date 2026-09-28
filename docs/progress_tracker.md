@@ -11,6 +11,64 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-28 (day to late evening) — milestones merged, v0.2.14 cut and published, headless and phone smoke passed, books stay put (#1185), release freeze for 1.0.0
+
+### Milestones and versions
+
+- The DRI retired 0.3.0. Open v0.3.0 items moved to **v1.0.0 — Training build**, due 2026-10-02. Its closed items moved to v0.2.0, and the v0.3.0 milestone was deleted. The version path is now 0.2.x → 1.0.0 (at staging → main) → 1.1.0. #1182 (closed #1181) removed 0.3.0 from the living instructions and renamed the runbook to `docs/release/promotion-v1.0.0.md`.
+- Release candidates are named **`1.0.0-rc.N`** in `package.json`, tagged `tester-build-v1.0.0-rc.N` (DRI). The first will be `1.0.0-rc.1`. The published v0.2.14 release was retitled so it no longer reads "RC1".
+
+### v0.2.14 cut and published
+
+- The bump (#1172) was squashed at `8435f3f5`. Promotion #1183 merged to staging at `2493ac1974da0bdb22ed1aff283449ee34b04396`.
+- `check:deploy`: **PASS**. Staging served `0.2.14` at `2493ac1`. The run used explicit `--sha`/`--version`, so it skipped the script's own fetch of the canonical origin.
+- A release red team checked the build and the announcement before publishing. It found no blocker. It found three false claims in the draft announcement, which were removed, and several omissions, which were added.
+- **Android APK** (run 36474205089):
+  - the only artifact is `app-release.apk`, with no diagnostic build;
+  - the v2 signing certificate SHA-256 is `eed23e1bccf9fbad8b69f2f9598fd8d97e094d23e544b71b9e91dd21c934baf2`, the same as v0.2.13;
+  - the embedded `version.json` reads 0.2.14 / `2493ac1`, and web debugging is off.
+- **TestFlight** run 36474207665 succeeded.
+- **Published:** `tester-build-v0.2.14`, a pre-release at `2493ac19` with the APK attached.
+- **Google Play:** the first build-only bundle was built by run 36476824983 (versionCode `1790626016`). Its signer is the upload key (`98:E7:…:32:53`) and its version is 0.2.14. The DRI set `PLAY_UPLOAD_ENABLED=true`. The first manual upload to Play Console is the DRI's step.
+
+### Smoke and runbook
+
+- **iPhone (TestFlight):** the DRI reported "looks good on iphone".
+- **Headless Chromium against staging** (a fake microphone and a stubbed `navigator.share`; not a device pass):
+  - record, play, Clear and record again, and play from the chapter screen;
+  - Share chapter (the MP3 decodes) and Share book (the zip passes its CRC check and its MP3 is identical);
+  - reopening in a new tab keeps every recording.
+  - The #974 browser-testable rows all passed: #1119, #1115, #925, #927, #452 via browser history, #1021, #1031 at 320×640, and #1118, including a real 20-minute take.
+  - Results: #974 comment 5878859695.
+- Cut, then undo, then paste inserts the phrase twice. The DRI left it as it is, because it is standard editor behaviour.
+- **Android APK, on a phone (DRI):** the core flows, book and chapter edits, lock-screen seal, Done, Share Book, Clear, Delete, the light theme and About all passed: "pretty solid release". Results: #974 comment 5879880308.
+
+### Shipped after the cut
+
+- **#1187 (closes #1185), books stay put.**
+  - `listBooks` sorts by `createdAt`. The Books-hook patches keep each card at its index.
+  - No storage format change: every book row is written by `createBook`, and the v3 recreate means no pre-pivot row became a book.
+  - Merged at `b889506c`. It is the one change approved during the freeze.
+  - On an existing install, the first launch reorders the shelf once, into creation order.
+- **#1186** was filed in v1.1.0: user-controlled book reordering.
+
+### Release freeze
+
+- The DRI froze develop until `v1.0.0` is tagged. The only merges allowed are fixes for smoke-test and #974 findings, each picked by the DRI. The open contributor PRs carry a freeze note.
+- 1.0.0 goes develop → staging → main with a version-only bump, then the `v1.0.0` tag.
+
+### Not run
+
+- The Android APK's native Back button, the iPhone edge swipe, #555 loudness and speaker, the #1015 full-phone retry and the #558 listening test. Tester-build users will cover these.
+
+### Next
+
+- The requirements owner's follow-up issues (the DRI will bring them tomorrow). Scope each one: rc.1 or v1.1.0.
+- Then cut `1.0.0-rc.1`: the bump PR, the promotion, `check:deploy`, native builds, a re-smoke that includes the books-stay-put check, and `tester-build-v1.0.0-rc.1`.
+- Tester invitations, then the thumbs-up, then the 1.0.0 promotion per `docs/release/promotion-v1.0.0.md`.
+
+---
+
 ## 2026-09-27 (afternoon to midnight; Docker 0.2.14 lanes) — v0.2.13 tester bugs fixed, #1003 streaming landed, O4 safety sweep
 
 ### Shipped (merged to develop)
