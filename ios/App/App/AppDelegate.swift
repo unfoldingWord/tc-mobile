@@ -8,28 +8,53 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // #1111: declare this app's baseline audio session as `.playback` so
-        // the WKWebView content is audible through the iPhone silent/ring
-        // switch, the way a music or podcast app is — the DRI's decision on
-        // #1111 ("Yes, play through silent"). This is the native-process
-        // floor beneath `navigator.audioSession` (`hooks/audio-io.ts`),
-        // which does the same declaration at the WebKit/JS layer and is the
-        // layer that additionally switches to `.playAndRecord` for the life
-        // of a take; both surfaces share that one JS module, since the
-        // native and PWA builds ship the same application code
-        // (`capacitor.config.ts`). Best-effort: a thrown `setCategory` here
-        // leaves the platform default in place rather than failing launch —
-        // there is no failure funnel yet at this point, before the WebView
-        // (and its JS) exists, so nothing is reported; `navigator.audioSession`
-        // still runs once the page loads regardless of whether this call
-        // succeeded.
-        // Not yet run on a device (#1111) — see the PR body.
+        // #1111/#1116: declare this app's baseline audio session as
+        // `.playAndRecord` — DRI decision on #1116's George r1 finding,
+        // verbatim: "Native .playAndRecord (Recommended)". The prior
+        // `.playback`-only baseline was flagged High/UNSAFE: this repo's
+        // JS-level floor, `navigator.audioSession` (`hooks/audio-io.ts`),
+        // does not exist on iOS 15.4–16.3 (it shipped in 16.4), so the JS
+        // switch to `"play-and-record"` before `getUserMedia`
+        // (`use-recorder.ts`'s `start()`) is silently skipped on those
+        // versions — leaving the native category at `.playback`, which is
+        // documented for playback only, while the mic is live. A take could
+        // be captured silent under it. Setting `.playAndRecord` here, once,
+        // at launch, makes recording work on every iOS version this app
+        // supports, with no runtime category flip and no dependency on the
+        // WebKit version.
+        //
+        // `.defaultToSpeaker` routes output to the speaker rather than the
+        // much quieter earpiece receiver when no headset/Bluetooth device is
+        // attached — the right default for a translator holding the phone in
+        // hand, not to their ear. `.allowBluetooth` (classic/HFP) and
+        // `.allowBluetoothA2DP` let a paired Bluetooth mic or headset
+        // participate rather than being silently excluded by the category.
+        // This is now the app's one native session configuration;
+        // `navigator.audioSession` (`hooks/audio-io.ts`) still runs its own
+        // `"playback"`/`"play-and-record"` switch on top of it for Safari
+        // 16.4+ and WKWebView — see that file — but recording no longer
+        // depends on it.
+        //
+        // Setting the category alone does NOT activate the audio session or
+        // request microphone permission (Apple: `setCategory` configures the
+        // session; activation is the separate `setActive(true)` call, which
+        // this code never makes, and the mic permission prompt is raised by
+        // `getUserMedia`/`AVAudioSession.requestRecordPermission`, not by
+        // `setCategory`) — so this call does not prompt for the microphone
+        // or keep it hot at launch. Not yet run on a device (#1111/#1116) —
+        // see the PR body.
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback)
+            try AVAudioSession.sharedInstance().setCategory(
+                .playAndRecord,
+                mode: .default,
+                options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
+            )
         } catch {
-            // See the comment above: no channel exists this early to report
-            // through, and the JS-level declaration is not blocked by this
-            // catch being empty.
+            // No failure funnel exists this early, before the WebView (and
+            // its JS reporter) exists — NSLog is the one channel available
+            // at this point in the native shell, so the failure is at least
+            // visible in a device log rather than silently swallowed.
+            NSLog("tC Mobile: AVAudioSession.setCategory(.playAndRecord) failed at launch (#1111/#1116): %@", String(describing: error))
         }
         return true
     }

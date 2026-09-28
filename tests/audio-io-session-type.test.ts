@@ -100,13 +100,23 @@ describe("setRecordAudioSession", () => {
 class FakeBufferSource {
   buffer: unknown = null;
   onended: (() => void) | null = null;
+  constructor(private readonly onStart: () => void) {}
   connect(): void {}
-  start(): void {}
+  start(): void {
+    // The test's whole claim lives here: read the session type at the exact
+    // moment the source starts, not after `playSamples` has returned. Reading
+    // `audioSession.type` only from the OUTSIDE, after the `await` below, would
+    // pass even if `setPlaybackAudioSession` ran after `start()` — nothing
+    // else changes the type afterward, so an end-state assertion cannot tell
+    // "before" from "after" (Frank R1 P3 on #1116).
+    this.onStart();
+  }
   stop(): void {}
 }
 
 class FakeAudioContext {
   state = "running";
+  constructor(private readonly onSourceStart: () => void) {}
   get currentTime(): number {
     return 0;
   }
@@ -120,17 +130,20 @@ class FakeAudioContext {
     return { duration: length / sampleRate, copyToChannel(): void {} };
   }
   createBufferSource(): FakeBufferSource {
-    return new FakeBufferSource();
+    return new FakeBufferSource(this.onSourceStart);
   }
 }
 
 describe("playSamples — declares playback on every Play (#1111)", () => {
-  it("sets navigator.audioSession.type to playback before the source starts", async () => {
+  it("has already set navigator.audioSession.type to playback by the time the source starts", async () => {
     vi.resetModules();
     const audioSession = { type: "play-and-record" };
+    let typeAtSourceStart: string | undefined;
     vi.stubGlobal("window", {
       AudioContext: function () {
-        return new FakeAudioContext();
+        return new FakeAudioContext(() => {
+          typeAtSourceStart = audioSession.type;
+        });
       },
     });
     vi.stubGlobal("navigator", { audioSession });
@@ -140,6 +153,6 @@ describe("playSamples — declares playback on every Play (#1111)", () => {
       isStillCurrent: () => true,
     });
 
-    expect(audioSession.type).toBe("playback");
+    expect(typeAtSourceStart).toBe("playback");
   });
 });
