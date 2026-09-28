@@ -63,7 +63,7 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
      finished, and so on.
    - **≡** (three stacked lines) — only in the top corner of the Books screen
      (settings and the problem report) and inside the recorder (the drawer
-     with Edit, Mark finished, and Erase for the segment that is open).
+     with Edit, Mark finished, and Clear for the segment that is open).
      Rename and delete stay on the item's **⋮**.
 
    Point this out once, early: a participant who has only ever seen one of
@@ -74,12 +74,14 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 
 - **Recording and editing work offline.** No signal is needed at any point.
 - **Starting a segment over.** A translator who wants to say the whole
-  segment again does not need to edit it: in the recorder, the **bin** at the
-  left end of the bottom bar erases the recording. A small panel asks once
-  more (the bin there confirms, the back arrow cancels). The recorder stays
-  open with the segment empty, ready for Record. The bin is greyed while
-  recording and when the segment has nothing saved yet. There is no undo for
-  an erase. <!-- source: src/components/recorder.tsx onRerecord / onConfirmErase (#592), src/components/erase-confirm.tsx; not device-verified -->
+  segment again does not need to edit it: in the recorder, the **eraser** at
+  the left end of the bottom bar ("Clear and record again") clears the
+  recording. A small panel asks once more (the eraser there confirms, the back
+  arrow cancels). The recorder stays open with the segment empty, ready for
+  Record. The eraser is greyed while recording and when the segment has
+  nothing saved yet. There is no undo for a clear. Clear keeps the segment;
+  **Delete** (the bin, in the segment's **⋮** on the chapter screen) removes
+  the whole segment. <!-- source: src/components/recorder-toolbars.tsx (rerecord icon="eraser"), src/components/recorder.tsx onRerecord / onConfirmErase (#592), src/components/erase-confirm.tsx (glyph), src/components/segment-row.tsx (Clear and Delete tiles, #1119); not device-verified -->
 - **Tapping the square ends and saves a recording in one step.** There is no
   in-between "paused" state anymore — the moment the square is tapped, that
   recording is saved into the segment and the waveform shifts to show it —
