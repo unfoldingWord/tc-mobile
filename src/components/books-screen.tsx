@@ -1248,7 +1248,7 @@ export function BooksScreen({
   // ── O4: the Cover colour tile and #957's picker (#949, #937 D7) ─────────
   //
   // The write is #964's hook, which reports a failure to the funnel itself
-  // and refuses a second write while one is in flight. `reload()` after a
+  // and queues a second tap while one is in flight. `reload()` after a
   // success is what carries the stored key onto the shelf's card, and so to
   // the cover, the sheet head and the tile.
   const { setCoverColour } = useBookCoverColour();
@@ -1267,9 +1267,16 @@ export function BooksScreen({
       // The sheet session this choice belongs to: a close or a reopen while
       // the write settles must not flip the next session's picker.
       const session = bookMenuSession.current;
+      // "queued" (#1046 item 4, DRI: "Last tap wins"): this tap was coalesced
+      // into the in-flight chain and has no outcome of its own. The promise
+      // that STARTED the chain resolves later with the last write's
+      // { ok } / { failed } — that handler must still run the branches below.
       void setCoverColour(shareMenuBookId, key).then((result) => {
-        if (result === "busy") return;
+        if (result === "queued") return;
         if ("failed" in result) {
+          // An earlier write in the chain committed before the last one
+          // failed: the stored colour changed, so the shelf re-reads it.
+          if (result.committed) reload();
           if (bookMenuSession.current === session)
             setCoverFailed(result.failed);
           return;
