@@ -16,7 +16,9 @@ import pkg from "./package.json" with { type: "json" };
 import {
   type Manifest,
   type Owner,
+  nodeModulesEntry,
   packageOf as pkgOf,
+  toPosixPath,
   virtualModuleOwner,
 } from "./src/lib/build-provenance.ts";
 import { SHIPPED_LOCALE, withLocaleAttributes } from "./src/lib/locale.ts";
@@ -179,7 +181,7 @@ function buildProvenancePlugins(): { app: Plugin; worker: () => Plugin[] } {
         recordCss(path.resolve(path.dirname(file), spec!), seen);
       } else if (lock.packages[`node_modules/${pkgOf(spec!)}`]?.dev) {
         record(
-          `@import "${spec}" in ${path.relative(root, file)}`,
+          `@import "${spec}" in ${toPosixPath(path.relative(root, file))}`,
           pkgOf(spec!)
         );
       }
@@ -197,14 +199,14 @@ function buildProvenancePlugins(): { app: Plugin; worker: () => Plugin[] } {
     const id = rawId.split("?")[0]!;
     const rel = path.relative(root, id);
     if (!path.isAbsolute(id) || rel.startsWith("..")) return record(id, null);
-    const at = rel.lastIndexOf("node_modules/");
-    if (at === -1) {
+    const entry = nodeModulesEntry(rel);
+    if (!entry) {
       if (id.endsWith(".css")) recordCss(id, new Set());
       return;
     }
-    const pkg = pkgOf(rel.slice(at + "node_modules/".length));
-    const dir = rel.slice(0, at) + `node_modules/${pkg}`;
-    if (lock.packages[dir]?.dev) record(rel, pkg, dir);
+    if (lock.packages[entry.dir]?.dev) {
+      record(entry.rel, entry.pkg, entry.dir);
+    }
   };
   const collect = (name: string): Plugin => ({
     name,
@@ -219,11 +221,16 @@ function buildProvenancePlugins(): { app: Plugin; worker: () => Plugin[] } {
   });
   let outDir = "";
   let publicDir = "";
+  // Rollup's own chunk `fileName`s (recorded into `chunks` in `collect`
+  // above) are always POSIX-style, even on a Windows build; `path.relative`
+  // here is the OS-native one, so the comparison below (`chunks.has(file)`)
+  // needs both sides normalized to the same convention (#1083) — done once,
+  // here, rather than at every call site that reads a walked path.
   const walk = (dir: string): string[] =>
     readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
       e.isDirectory()
         ? walk(path.join(dir, e.name))
-        : [path.relative(outDir, path.join(dir, e.name))]
+        : [toPosixPath(path.relative(outDir, path.join(dir, e.name)))]
     );
   const app: Plugin = {
     ...collect("build-provenance"),
