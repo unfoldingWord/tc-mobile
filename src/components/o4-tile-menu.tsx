@@ -2,6 +2,7 @@ import { forwardRef, type ComponentProps, type ReactNode } from "react";
 
 import { Control } from "./control";
 import { TILE_GLYPH, tileClass, type TileTone } from "./o4-tile-look";
+import { cn } from "@/lib/utils";
 
 /**
  * The O4 tile-menu primitive (#941, epic #936): every O4 menu is a row of
@@ -52,9 +53,23 @@ export const Tile = forwardRef<
 /**
  * The row of tiles. Its presence inside a `<Menu>` is what gives that menu
  * the bottom-sheet shell (see this file's header).
+ *
+ * `className` is an escape hatch for a row that cannot fit at the pinned
+ * 76 × 76 token (`docs/design/o4-design-system.md`'s "Menu tile" row) — today
+ * that is only the segment menu's four-real-tile case (Done, Edit, Delete,
+ * Erase, #1119 round 5, George Medium 1): `o4-tiles--compact` in
+ * `o4/menus.css` shrinks the tile box and the row gap for that one grid,
+ * scoped by class rather than by tile COUNT, so a three-tile row (this same
+ * menu with no stored clip) is untouched and stays at the documented size.
  */
-export function TileGrid({ children }: { children?: ReactNode }) {
-  return <div className="o4-tiles">{children}</div>;
+export function TileGrid({
+  children,
+  className,
+}: {
+  children?: ReactNode;
+  className?: string;
+}) {
+  return <div className={cn("o4-tiles", className)}>{children}</div>;
 }
 
 /**

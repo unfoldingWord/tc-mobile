@@ -313,14 +313,21 @@ describe("the segment menu (07) on the tile grid", () => {
     }
   );
 
-  it("draws Done, Edit, Delete and Erase, with Rename as the head's pencil (#859, D20; order per #1103)", async () => {
+  it("draws Done, Edit, Delete and Erase with no gap, compact, with Rename as the head's pencil (#859, D20; order per #1103; compact per #1119 round 5)", async () => {
     await mount("o4", recorded);
     await openRow();
     // Edit and Done carry a hint slot (#135), so each sits in its
     // `.control-hinted` wrapper; read the grid's buttons, not its children.
-    // Order is Done, Edit, then a gap that pushes Delete and Erase to the far
-    // end together (#1103: "Erase far right", Delete immediately left of it).
+    // Order is Done, Edit, Delete, Erase, contiguous — NO gap. Four real
+    // tiles (this `recorded` fixture's hasClip case) do not fit the pinned
+    // 76 x 76 token at 320-360px (#1119 round 5, George Medium 1: Frank
+    // measured Erase clipped past the panel edge), so this grid drops the
+    // spacer entirely and goes `o4-tiles--compact` (`o4/menus.css`) instead
+    // of pushing Delete/Erase to the far end — there is no room left to push
+    // into. The three-tile, no-clip case below (`never-recorded segment`)
+    // still fits at full size and keeps its spacer.
     const grid = dialog().querySelector(".o4-tiles")!;
+    expect(grid.classList.contains("o4-tiles--compact")).toBe(true);
     expect(
       [...grid.querySelectorAll("button, .o4-tiles-gap")].map((el) =>
         el.classList.contains("o4-tiles-gap")
@@ -330,7 +337,6 @@ describe("the segment menu (07) on the tile grid", () => {
     ).toEqual([
       strings.markFinished(3),
       strings.editSegment(3, null),
-      "|",
       strings.deleteSegment,
       strings.eraseSegment,
     ]);
@@ -390,6 +396,15 @@ describe("the segment menu (07) on the tile grid", () => {
     expect(dialogNames()).not.toContain(strings.playSegment(3));
     expect(dialogNames()).not.toContain(strings.eraseSegment);
     expect(focusedName()).toBe(strings.renameSegment);
+    // Three real tiles (no Erase) already fit the pinned 76 x 76 token
+    // (#1119 round 5's arithmetic): this row keeps its spacer and stays at
+    // full size, unlike the four-tile `recorded` case above.
+    const grid = dialog().querySelector(".o4-tiles")!;
+    expect(grid.classList.contains("o4-tiles--compact")).toBe(false);
+    expect(
+      grid.querySelector(".o4-tiles-gap"),
+      "the 3-tile row keeps its spacer"
+    ).not.toBeNull();
   });
 
   it("plays the segment from the preview row through the row's own play path, menu left open (o4, D20)", async () => {

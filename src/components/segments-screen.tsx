@@ -34,6 +34,7 @@ import { useDesign } from "@/hooks/use-design";
 import type { FailureKey } from "@/hooks/save-failure";
 import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
+import { reportFailure } from "@/hooks/report-failure";
 import { useScreenLayers } from "@/hooks/use-screen-layers";
 import { useScrollToNew } from "@/hooks/use-scroll-to-new";
 import { useReorderGesture } from "@/hooks/use-reorder-gesture";
@@ -864,6 +865,18 @@ export const SegmentsScreen = forwardRef<
    * path); either way this screen's own `deleteFailure` only means "my
    * delete did not land", and the `staleTarget` Notice above it in the
    * render order (below) already covers the other case (see `<Notice>`).
+   *
+   * The `await` is wrapped in `try`/`finally` (George Medium 2, #1119 round
+   * 5): `deleteSegment` catches its own store failure and always resolves,
+   * never rejects (its own docblock says so), so this is a backstop against a
+   * future change to that contract or an injected rejection in a test — not
+   * an observed path today. Without it, a reject would skip the two lines
+   * that clear `deletingRef`/`deleting`, and this dialog's own `busy()` layer
+   * gate reads `deletingRef.current`, so the confirm would stay open and
+   * uncloseable and Back would be trapped at this depth for the rest of the
+   * page's life. A rejection also goes to the same `"segment-delete"` funnel
+   * context the hook's own catch uses, and the row keeps `deleteFailure`'s
+   * Notice, same as any other failed delete.
    */
   const onConfirmDelete = useCallback(() => {
     if (deleteTarget === null || deletingRef.current) return;
@@ -879,9 +892,16 @@ export const SegmentsScreen = forwardRef<
       setDeleteFailure(false);
       deletingRef.current = true;
       setDeleting(true);
-      const ok = await deleteSegment(deleteTarget);
-      deletingRef.current = false;
-      setDeleting(false);
+      let ok = false;
+      try {
+        ok = await deleteSegment(deleteTarget);
+      } catch (cause) {
+        reportFailure(cause, "segment-delete");
+        ok = false;
+      } finally {
+        deletingRef.current = false;
+        setDeleting(false);
+      }
       if (!ok) setDeleteFailure(true);
       // Arms the row itself — right after a failure, where the row survives.
       closeDelete();

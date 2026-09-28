@@ -281,6 +281,45 @@ it("the title keeps the armed ordinal while the optimistic patch has already rem
   expect(dialogTitle()).toBeNull();
 });
 
+it("a REJECTING deleteSegment does not leave the confirm stuck: it still closes, reports, and Cancel/Back work on the next attempt (George Medium 2, #1119 round 5)", async () => {
+  // `useChapterSegments().deleteSegment` never actually rejects (its own
+  // docblock: every store failure is caught and resolved to `false`), so
+  // this is a defensive case, not an observed path — see
+  // `onConfirmDelete`'s own docblock in `segments-screen.tsx` for why the
+  // guard exists anyway: without the `try`/`finally` there, an unhandled
+  // rejection would skip the two lines that clear `deletingRef`/`deleting`,
+  // and BOTH `EraseConfirm`'s own `busyRef` gate (which every one of its
+  // cancel paths — Cancel, Escape, scrim tap — checks) and this screen's
+  // system-Back layer (`busy: () => deletingRef.current`) read that same
+  // ref, so the dialog would refuse every exit forever.
+  mocks.deleteSegment.mockRejectedValueOnce(new Error("store unavailable"));
+  await act(async () => root.render(createElement(Host)));
+  await openDeleteConfirm();
+  await act(async () => {
+    button(strings.deleteSegmentConfirm).click();
+    // Flush the microtask queue so the rejection is caught and the
+    // `finally` runs before the assertions below read the result.
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  // The dialog does not get stuck open: a rejection takes the same closing
+  // path as any other failed delete (`closeDelete()` runs unconditionally,
+  // after the `finally`).
+  expect(dialogTitle()).toBeNull();
+  expect(failureNotice()).toBe(true);
+  expect(mocks.deleteSegment).toHaveBeenCalledTimes(1);
+  // The proof that neither gate is left stuck at `true`: opening a FRESH
+  // confirm and cancelling it must still work. Under the unfixed code (no
+  // `finally`), `deletingRef.current` stays `true` forever after the
+  // rejection above, so `EraseConfirm`'s own cancel-path guard
+  // (`inFlightRef.current || busyRef.current`) would refuse this Cancel tap
+  // too, and the assertion below would find the dialog still open.
+  await openDeleteConfirm();
+  expect(dialogTitle()).not.toBeNull();
+  await act(async () => button(strings.eraseCancel).click());
+  expect(dialogTitle()).toBeNull();
+});
+
 it("wires the CURRENT look's own Delete row to the same confirm (not only the O4 tile above)", async () => {
   // Every case above runs O4 (the app's default, #951) end to end through
   // `strings.deleteSegment` — which is also the O4 tile's accessible name, so

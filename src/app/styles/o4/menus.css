@@ -48,6 +48,47 @@
     font-weight: 400;
     white-space: nowrap;
   }
+
+  /* #1119 round 5, George Medium 1: four REAL tiles (Done, Edit, Delete,
+     Erase — the segment menu's own hasClip case), at the pinned 76 × 76
+     token with the base 10px gap, do not reliably fit the panel's content
+     width at 320-360px. Frank measured it directly: at a 320px-wide
+     viewport, Erase — the row's last tile — had its centre at 331px, past
+     the visible edge. `e2e/segment-menu-tile-fit.spec.ts` pins that exact
+     measurement (it fails on the pre-round-5 tree at 320px for the same
+     reason) and is green at both 320 and 360 with the rule below.
+
+     What is NOT claimed here: a precise account of how much of that overflow
+     the browser's own flex-shrink already absorbs versus how much reaches
+     the screen — an earlier draft of this comment asserted a specific
+     "four 76px boxes plus gaps" total and a "content-based flex-shrink
+     floor" as the mechanism, and a follow-up check (shrinking only the gap,
+     leaving the tile box at 76px) rendered WITHOUT clipping at either
+     width in real Chromium, which that theory did not predict. So this rule
+     is sized empirically, verified by the e2e spec above, not derived from
+     an exact box-model proof.
+
+     `o4-tiles--compact` is scoped to that one grid, not to every TileGrid: a
+     three-tile row (no stored clip, Erase absent) already fits and stays at
+     the pinned token (`tests/o4-menus-chapter-segment.test.ts` asserts it
+     keeps its spacer and does NOT get this class). 64px tiles — still well
+     above the repo's 44px touch-target floor, `tests/touch-policy.test.ts`
+     — with a 6px gap is comfortably inside both 288px (320-wide) and 328px
+     (360-wide) content width by simple arithmetic (4 × 64 + 3 × 6 = 274),
+     with margin left for a real device's `env(safe-area-inset)`, which a
+     Playwright viewport carries as 0. */
+  [data-design="o4"] .o4-tiles--compact {
+    gap: 6px;
+  }
+  [data-design="o4"] .o4-tiles--compact .o4-tile {
+    grid-template-rows: 64px auto;
+    width: 64px;
+  }
+  [data-design="o4"] .o4-tiles--compact .o4-tile::before {
+    width: 64px;
+    height: 64px;
+  }
+
   [data-design="o4"] .o4-tile--edit::before {
     background: var(--s-edit);
   }

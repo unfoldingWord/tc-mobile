@@ -711,7 +711,17 @@ export function SegmentRow({
                 />
               )}
             </div>
-            <TileGrid>
+            {/* `hasClip` puts FOUR real tiles in this row (Done, Edit,
+                Delete, Erase) — the case that does not fit the pinned 76 ×
+                76 token at 320-360px (#1119 round 5, George Medium 1;
+                `o4-tiles--compact` in `o4/menus.css` has the arithmetic).
+                Compact there, and drop the spacer: with no room to push
+                Delete/Erase to the far end, the four tiles simply run
+                left-to-right in order, which is what #1103 asks for anyway
+                ("Done, Edit, Delete, Erase"). The three-tile case (no stored
+                clip) keeps the original spacer-pushed layout at full size —
+                it already fits. */}
+            <TileGrid className={hasClip ? "o4-tiles--compact" : undefined}>
               <Tile
                 tone={row.finished ? "done" : "doneoff"}
                 icon="check"
@@ -744,12 +754,13 @@ export function SegmentRow({
                   onOpenRecorder();
                 }}
               />
-              <TileSpacer />
+              {!hasClip && <TileSpacer />}
               {/* Delete is unconditional — reachable on a never-recorded row,
                   unlike Erase just after it (#590's own field-tester ask).
-                  The spacer above pushes both destructive tiles to the far
-                  end of the row (#1103: "Erase far right", Delete next to
-                  it). */}
+                  On the 3-tile (no-clip) row the spacer above still pushes it
+                  to the far end (#1103: "Erase far right", Delete next to
+                  it); on the 4-tile (hasClip) row above there is no spacer,
+                  so it simply falls next in the compact, unpadded run. */}
               <Tile
                 tone="erase"
                 icon="trash"
