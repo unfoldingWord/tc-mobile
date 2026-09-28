@@ -587,9 +587,11 @@ place. Decided 2026-09-02, when the repo stopped being solo.
   | Milestone                        | Due        | Ships                                                  |
   | -------------------------------- | ---------- | ------------------------------------------------------ |
   | `v0.2.0 — Sept: production gate` | 2026-09-30 | the first `staging -> main` since the pivot            |
-  | `v0.3.0 — Training essentials`   | 2026-10-09 | training-essential scope, promoted to `main` as 0.3.0  |
-  | `v1.0.0 — Training stretch`      | 2026-10-02 | v0.3.0's scope plus the O4 UI; on phones by 2026-10-02 |
+  | `v1.0.0 — Training build`        | 2026-10-02 | the training build, at the `staging -> main` promotion |
   | `v1.1.0 — Post-training`         | —          | the first field-validated release                      |
+
+  `v0.3.0 — Training essentials` was merged into `v1.0.0` on 2026-09-28 (DRI
+  call) and is closed; everything it held now lives in `v1.0.0`.
 
 - **Every open issue carries a milestone.** File new issues into one. A
   milestone closes when its promotion PR merges, and anything still open in it
@@ -794,7 +796,7 @@ easy to regress.
   and the rationale in the body; they are not scheduled until they are
   reviewed against the plan after the training. Where a tester ask matches an
   issue already open, it lands as an evidence comment on that issue, not as a
-  new one. `v1-required` means V1 = the v0.3.0 training build.
+  new one. `v1-required` means V1 = the v1.0.0 training build.
 
 ## Review — every PR, both reviewers
 
@@ -823,7 +825,7 @@ again**. The cap prompts a decision; it is not a gate the loop closes on its
 own. Hitting it with findings open is an **escalation, not an approval**: name
 the residual findings on the PR and have them explicitly accepted.
 
-**Freeze budget (decided 2026-09-21, expires 2026-10-04).** Until the v0.3.0
+**Freeze budget (decided 2026-09-21, expires 2026-10-04).** Until the v1.0.0
 handoff, T3 and docs changes take one George round (P1/P2 only), harness and
 meta PRs cap at two rounds with residuals accepted on the PR, and a P3 never
 triggers a round on any tier — it is batched into one follow-up issue at
