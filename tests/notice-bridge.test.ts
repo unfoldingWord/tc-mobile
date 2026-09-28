@@ -1,9 +1,12 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
+import { Notice } from "@/components/notice";
 import { noticePresentation, type NoticeTone } from "@/components/notice-tone";
+import { one, render } from "./render";
 import { cssRule, declarationValue } from "./support";
 
 /**
@@ -80,23 +83,23 @@ describe("the .notice rule honours the tone table (#164 L-14)", () => {
     expect(declarationValue(base, "color")).toBe("var(--s-ink)");
   });
 
-  it("the component no longer paints itself, or layer 3 could not win", () => {
-    const notice = readFileSync(
-      path.resolve(
-        import.meta.dirname,
-        "..",
-        "src",
-        "components",
-        "notice.tsx"
-      ),
-      "utf8"
-    );
-    // The whole reason this lane exists. An inline `style` beats every layer,
-    // so one reintroduced here silently voids every assertion above.
-    expect(notice).not.toMatch(/style=\{\{/);
-    expect(notice).toMatch(/className="notice"/);
-    expect(notice).toMatch(/data-tone=\{tone\}/);
-  });
+  // Rendered, not read as text (#822): a comment in `notice.tsx` carrying
+  // `className="notice"` kept the old source pin green over a live element
+  // that no longer had the class. The markup cannot be satisfied by prose.
+  for (const tone of TONES) {
+    it(`${tone}: the component no longer paints itself, or layer 3 could not win`, () => {
+      const box = one(
+        render(createElement(Notice, { tone, children: "said once" })),
+        '[role="alert"], [role="status"]'
+      );
+      // The whole reason this lane exists. An inline `style` beats every
+      // layer, so one reintroduced here silently voids every assertion above.
+      expect(box.hasAttribute("style")).toBe(false);
+      expect(box.getAttribute("class")).toBe("notice");
+      // The attribute every tone override below is keyed on.
+      expect(box.getAttribute("data-tone")).toBe(tone);
+    });
+  }
 
   for (const tone of TONES) {
     const spec = noticePresentation(tone);

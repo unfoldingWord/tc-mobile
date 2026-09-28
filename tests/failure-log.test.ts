@@ -31,7 +31,7 @@ import {
   readFailures,
 } from "@/lib/storage/failures";
 import type { StoredFailure } from "@/types/failure";
-import { clearAllStores } from "./support";
+import { clearAllStores, stripComments } from "./support";
 
 /**
  * The durable failure log (#205) — the store, and the sink that feeds it.
@@ -860,11 +860,15 @@ describe("every read of the log is on the write lane", () => {
         return /\.tsx?$/.test(found.name) ? [full] : [];
       });
 
+    // Comments stripped (#822): a comment naming either reader kept a file in
+    // the set after its live use was gone. The strip is string-blind (the
+    // class #789 names): a `//` or `/*` inside a string literal anywhere in
+    // `src/` would remove real code from what this sweep sees with it.
     const consumers = walk(root)
       .filter((file) => file !== join(root, "hooks/failure-log.ts"))
       .filter((file) =>
         /\b(useLogGeneration|getLogGeneration)\b/.test(
-          readFileSync(file, "utf8")
+          stripComments(readFileSync(file, "utf8"))
         )
       )
       .map((file) => file.slice(root.length))
@@ -882,9 +886,12 @@ describe("every read of the log is on the write lane", () => {
         return /\.tsx?$/.test(found.name) ? [full] : [];
       });
 
+    // Comments stripped, as above (#822).
     const importers = walk(root)
       .filter((file) =>
-        /from "[^"]*storage\/failures"/.test(readFileSync(file, "utf8"))
+        /from "[^"]*storage\/failures"/.test(
+          stripComments(readFileSync(file, "utf8"))
+        )
       )
       .map((file) => file.slice(root.length))
       .sort();
