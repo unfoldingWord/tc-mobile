@@ -590,9 +590,6 @@ place. Decided 2026-09-02, when the repo stopped being solo.
   | `v1.0.0 — Training build`        | 2026-10-02 | the training build, at the `staging -> main` promotion |
   | `v1.1.0 — Post-training`         | —          | the first field-validated release                      |
 
-  `v0.3.0 — Training essentials` was merged into `v1.0.0` on 2026-09-28 (DRI
-  call) and is closed; everything it held now lives in `v1.0.0`.
-
 - **Every open issue carries a milestone.** File new issues into one. A
   milestone closes when its promotion PR merges, and anything still open in it
   moves to the next one explicitly, never silently.
