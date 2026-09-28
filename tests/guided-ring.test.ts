@@ -352,6 +352,7 @@ describe("the mark reaches the control it is given to (#604)", () => {
           onOpenRecorder: () => {},
           onSetFinished: () => {},
           onErase: () => {},
+          onDeleteSegment: () => {},
           onRename: () => Promise.resolve(true),
           guided,
         })

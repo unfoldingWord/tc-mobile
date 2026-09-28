@@ -36,7 +36,7 @@ The workbench's table confirms their values match O4.
 | `--s-dim`        | Behind a sheet or dialog                     | `rgba(6,9,13,.72)`     | `rgba(16,24,33,.45)`   | literal                             |
 | `--s-voice-dim`  | Waveform past the playhead                   | `rgba(230,164,68,.34)` | `rgba(184,124,34,.32)` | literal                             |
 | `--s-playhead`   | Playhead line                                | `#ffffff`              | `#101821`              | `cool-000` / `cool-900`             |
-| `--s-live-quiet` | Erase tiles, recording chip                  | `#3a1512`              | `#f8d6d2`              | `red-950` / `red-100`               |
+| `--s-live-quiet` | Delete tiles, recording chip                 | `#3a1512`              | `#f8d6d2`              | `red-950` / `red-100`               |
 | `--s-live-text`  | Words on the live wash (D3)                  | `#ec7a70`              | `#a8322a`              | `red-400` / `red-700`               |
 | `--s-done-text`  | Words on the done wash (D3)                  | `#3fb968`              | `#1f6e3a`              | `green-500` / `green-700`           |
 | `--s-warn-quiet` | Storage banner, crash icon ground            | `#3a2810`              | `#fbe9d3`              | `warn-950` / `warn-100`             |
@@ -131,35 +131,36 @@ are 10 (chips, crumbs), 14 (square buttons, previews) and 18 (book card).
 
 Hit targets and controls:
 
-| Part                 | Size                       | Shape / fill                                                                                                                         |
-| -------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Header               | 56px tall                  | inset 10px left, 12px right, top 14                                                                                                  |
-| Header ghost button  | 44 × 48                    | radius 12, `--s-ink-muted`                                                                                                           |
-| Chip / breadcrumb    | 40px tall                  | radius 10, `--s-well`; live/voice/done variants on their quiet roles; crumbs chevron-clipped 13px                                    |
-| Book card            | —                          | radius 18, pad 10, `--s-surface`, `--s-card-edge` border                                                                             |
-| Book cover           | 72 × 90 (sm 52 × 64)       | radius 9 (sm 7), inset 7px spine shadow `rgba(0,0,0,.16)`                                                                            |
-| Chapter row          | 68px tall                  | radius 12, `--s-floor`; middle column 44px tall = optional 20px title + dots, gap 5                                                  |
-| Chapter number       | 44 × 44                    | radius 10, `--s-well`, 18/800; when the chapter has a title it dims: transparent, `--s-ink-faint`, 2px inset `--s-well` ring         |
-| Progress dot         | 13 → 5px                   | circle; wraps, and shrinks to fit (13/6, 11/5, 9/4, 7/3, 5/2 size/gap) in a 206px column, 44px tall without a title or 19px with one |
-| Segment row          | 90px tall                  | radius 16, `--s-surface`; selected = 2px `--s-guide` outline; with a title: 22px title line over a 36px wave (56px without)          |
-| Chapter header       | top 76, 46 tall, inset 22  | title 22/800 or a 120 × 30 spoken-name wave, then a 44px speaker; pushes the progress bar from top 80 to 130                         |
-| Spoken-name wave     | 76 × 20 (header 120 × 30)  | `--s-voice` bars; stands in for a title that was only spoken                                                                         |
-| Lifted row (reorder) | —                          | scale 1.03, z 8, shadow `0 14px 30px rgba(0,0,0,.38)`; a lifted chapter row takes `--s-raised`                                       |
-| Segment badge        | 44 × 44                    | circle, `--s-well`; done = `--s-done-quiet` with `--s-done-text` (D19)                                                               |
-| Row transport        | 72 × 72                    | circle; play `--s-voice`, record `--s-live`                                                                                          |
-| Speaker button       | 52 × 52                    | circle, `--s-well`, glyph `--s-hear`                                                                                                 |
-| Square button        | 56 × 56                    | radius 14, `--s-well`                                                                                                                |
-| Menu tile            | 76 × 76                    | radius 20, label 14px below, gap 8                                                                                                   |
-| Bottom sheet         | inset 8                    | radius 26, pad 12/16/20, handle 56 × 5                                                                                               |
-| Dialog               | inset 18, top 230          | radius 22, shadow `0 24px 48px rgba(0,0,0,.35)`; buttons 76 tall, radius 14, 2-col                                                   |
-| Recorder stage       | top 80, 632 tall           | radius 20, `--s-surface`                                                                                                             |
-| Recorder transport   | 64 (secondary), big button | circles                                                                                                                              |
-| Trim handle          | 30 × 56                    | radius 15, `--s-voice`                                                                                                               |
-| Big mic / OK         | 80 × 80                    | `--s-live` / `--s-done`                                                                                                              |
-| Share button         | 140 core in 176            | `--s-send`, ring `--s-send-ring`; outcome looks in §6 (D14–D16)                                                                      |
-| Error circle         | 136 (warn 170)             | `--s-raised` (light `--s-well`)                                                                                                      |
-| Wide guide button    | 280 × 84                   | radius 42, `--s-guide`                                                                                                               |
-| Pill button          | 60 tall                    | radius 30, `--s-well`, 17/700                                                                                                        |
+| Part                      | Size                       | Shape / fill                                                                                                                         |
+| ------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Header                    | 56px tall                  | inset 10px left, 12px right, top 14                                                                                                  |
+| Header ghost button       | 44 × 48                    | radius 12, `--s-ink-muted`                                                                                                           |
+| Chip / breadcrumb         | 40px tall                  | radius 10, `--s-well`; live/voice/done variants on their quiet roles; crumbs chevron-clipped 13px                                    |
+| Book card                 | —                          | radius 18, pad 10, `--s-surface`, `--s-card-edge` border                                                                             |
+| Book cover                | 72 × 90 (sm 52 × 64)       | radius 9 (sm 7), inset 7px spine shadow `rgba(0,0,0,.16)`                                                                            |
+| Chapter row               | 68px tall                  | radius 12, `--s-floor`; middle column 44px tall = optional 20px title + dots, gap 5                                                  |
+| Chapter number            | 44 × 44                    | radius 10, `--s-well`, 18/800; when the chapter has a title it dims: transparent, `--s-ink-faint`, 2px inset `--s-well` ring         |
+| Progress dot              | 13 → 5px                   | circle; wraps, and shrinks to fit (13/6, 11/5, 9/4, 7/3, 5/2 size/gap) in a 206px column, 44px tall without a title or 19px with one |
+| Segment row               | 90px tall                  | radius 16, `--s-surface`; selected = 2px `--s-guide` outline; with a title: 22px title line over a 36px wave (56px without)          |
+| Chapter header            | top 76, 46 tall, inset 22  | title 22/800 or a 120 × 30 spoken-name wave, then a 44px speaker; pushes the progress bar from top 80 to 130                         |
+| Spoken-name wave          | 76 × 20 (header 120 × 30)  | `--s-voice` bars; stands in for a title that was only spoken                                                                         |
+| Lifted row (reorder)      | —                          | scale 1.03, z 8, shadow `0 14px 30px rgba(0,0,0,.38)`; a lifted chapter row takes `--s-raised`                                       |
+| Segment badge             | 44 × 44                    | circle, `--s-well`; done = `--s-done-quiet` with `--s-done-text` (D19)                                                               |
+| Row transport             | 72 × 72                    | circle; play `--s-voice`, record `--s-live`                                                                                          |
+| Speaker button            | 52 × 52                    | circle, `--s-well`, glyph `--s-hear`                                                                                                 |
+| Square button             | 56 × 56                    | radius 14, `--s-well`                                                                                                                |
+| Menu tile                 | 76 × 76                    | radius 20, label 14px below, gap 8                                                                                                   |
+| Menu tile, compact (4-up) | 64 × 64                    | gap 6; a row of four real tiles, the segment menu with a recording (#1119)                                                           |
+| Bottom sheet              | inset 8                    | radius 26, pad 12/16/20, handle 56 × 5                                                                                               |
+| Dialog                    | inset 18, top 230          | radius 22, shadow `0 24px 48px rgba(0,0,0,.35)`; buttons 76 tall, radius 14, 2-col                                                   |
+| Recorder stage            | top 80, 632 tall           | radius 20, `--s-surface`                                                                                                             |
+| Recorder transport        | 64 (secondary), big button | circles                                                                                                                              |
+| Trim handle               | 30 × 56                    | radius 15, `--s-voice`                                                                                                               |
+| Big mic / OK              | 80 × 80                    | `--s-live` / `--s-done`                                                                                                              |
+| Share button              | 140 core in 176            | `--s-send`, ring `--s-send-ring`; outcome looks in §6 (D14–D16)                                                                      |
+| Error circle              | 136 (warn 170)             | `--s-raised` (light `--s-well`)                                                                                                      |
+| Wide guide button         | 280 × 84                   | radius 42, `--s-guide`                                                                                                               |
+| Pill button               | 60 tall                    | radius 30, `--s-well`, 17/700                                                                                                        |
 
 Guide ring: `box-shadow: 0 0 0 5px var(--s-floor), 0 0 0 8px var(--s-guide)`
 (outset, matching the existing rule in `3-components.css`).
@@ -292,9 +293,22 @@ Round 1 was answered by the requirements owner
   empty segment shows Edit and Done greyed. First focus under O4 goes where
   the workbench puts it; focus return to the ⋮ holds in both looks
   ([#949 D17–D20][949-d17]).
-  The workbench's **"Remove this segment"** tile is deferred to after the
-  training by the DRI: the app has no single-segment delete, and #997 builds
-  the action and the tile together ([#997][997]).
+  **Delete segment** lives in this menu (#1104): it removes the whole
+  segment, recorded or not. The workbench's narrower **"Remove this
+  segment"** (an empty segment only) is still deferred to after the training
+  by the DRI ([#997][997]).
+- **D21, Clear and Delete (2026-09-28).** The segment menu offers both, and
+  they must not look alike: Clear removes only the recording and keeps the
+  segment; Delete removes the segment. DRI picks, verbatim
+  ([#1119][1119-d21]): label **"Clear"**, icon **"Eraser"** ("The classic
+  'clear' glyph. Neutral fill."), order **"Done, Edit, Clear, Delete
+  (Recommended)"**, scope **"Everywhere (Recommended)"** (the chapter menu,
+  the recorder menu's single tile, the confirm dialog, and the record bar's
+  "Clear and record again"). So Clear draws the eraser on the plain well
+  everywhere; among a segment's actions the bin and the red fill are
+  Delete's alone. With no recording the segment menu has three tiles, Done,
+  Edit and Delete, with Delete at the far end. Four tiles use the compact tile above, accepted with these picks
+  (as the coordinator recorded it on [#1119][1119-hold]).
 
 [937-d1]: https://github.com/unfoldingWord/tc-mobile/issues/937#issuecomment-5836825393
 [937-r1]: https://github.com/unfoldingWord/tc-mobile/issues/937#issuecomment-5837137316
@@ -307,6 +321,8 @@ Round 1 was answered by the requirements owner
 [949-r3]: https://github.com/unfoldingWord/tc-mobile/issues/949#issuecomment-5839615892
 [949-d17]: https://github.com/unfoldingWord/tc-mobile/issues/949#issuecomment-5840320510
 [997]: https://github.com/unfoldingWord/tc-mobile/issues/997
+[1119-hold]: https://github.com/unfoldingWord/tc-mobile/pull/1119#issuecomment-5870885308
+[1119-d21]: https://github.com/unfoldingWord/tc-mobile/pull/1119#issuecomment-5870926236
 
 ## 7. Titles and reordering (added in Tim's update)
 

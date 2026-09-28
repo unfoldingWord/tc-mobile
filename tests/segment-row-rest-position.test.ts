@@ -79,6 +79,7 @@ async function show(
         onOpenRecorder: vi.fn(),
         onSetFinished: vi.fn(),
         onErase: vi.fn(),
+        onDeleteSegment: vi.fn(),
         onRename: vi.fn(),
       })
     );

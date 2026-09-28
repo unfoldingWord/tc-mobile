@@ -13,7 +13,7 @@ the result decides is [ADR 0010](../decisions/0010-icon-recognition.md).
   participant sits down:
   - **Chapter 1** with three segment rows: **segment 1 recorded** and left
     unfinished (kept — it is the one marked Finished in row 4),
-    **segment 2 recorded** (expendable — it is the one erased in row 5), and
+    **segment 2 recorded** (expendable — it is the one cleared in row 5), and
     **segment 3 empty** (tap `+` at the top of the Segments screen to add it)
     so the red Record disc is showing on a row.
   - **Chapter 2** with **one short segment recorded by you**, nothing else.
@@ -70,8 +70,8 @@ table says so, and it is never a control that has not been asked yet.
 | 2   | **Play** — triangle              | Segments screen, on the row they just recorded (segment 3)                                                                                                                                                                                               | "Listen to what you just recorded."                                                                                                                                                                                                                                             |
 | 3   | **Menu** — three dots (⋮)        | Segments screen, top corner                                                                                                                                                                                                                              | "Show me what else this screen can do." Close it afterwards (Back).                                                                                                                                                                                                             |
 | 4   | **Finished** — tick              | Segment 1's row menu: **you** open it (its glyph is the same three dots as row 3, already asked), then point at the tick                                                                                                                                 | "Tell the app this recording is done."                                                                                                                                                                                                                                          |
-| 5   | **Erase** — bin                  | Segment 2's row menu (you open it), last entry. Erase asks once more on a small panel; the bin there is the same control, so that second tap does not count against them                                                                                 | "Throw this recording away."                                                                                                                                                                                                                                                    |
-| 6   | **Edit** — scissors              | Recorder, on the participant's own recording: **you** open it by tapping segment 3's row (the sound picture, not a button). Ask on the **first** toolbar, the four under the sound picture (bin, disc, triangle, scissors)                               | "Open the tool for changing part of this recording." — say it as **open editing**; "it lets me change/edit the recording" counts as **Knew it**; the tap opens the editing toolbar, where the same control sits in the same spot, now shown pressed, and a second tap closes it |
+| 5   | **Clear** — eraser               | Segment 2's row menu (you open it), the tile before Delete. Clear asks once more on a small panel; the eraser there is the same control, so that second tap does not count against them                                                                  | "Throw this recording away."                                                                                                                                                                                                                                                    |
+| 6   | **Edit** — scissors              | Recorder, on the participant's own recording: **you** open it by tapping segment 3's row (the sound picture, not a button). Ask on the **first** toolbar, the four under the sound picture (eraser, disc, triangle, scissors)                            | "Open the tool for changing part of this recording." — say it as **open editing**; "it lets me change/edit the recording" counts as **Knew it**; the tap opens the editing toolbar, where the same control sits in the same spot, now shown pressed, and a second tap closes it |
 | 7   | **Zoom** — magnifier with a plus | Recorder, editing toolbar (on screen after row 6)                                                                                                                                                                                                        | "Look closer at one small part of the recording."                                                                                                                                                                                                                               |
 | 8   | **Cut** — scissors               | Recorder, under the sound picture, once a piece is chosen                                                                                                                                                                                                | "Take out the piece you chose."                                                                                                                                                                                                                                                 |
 | 9   | **Paste** — arrow onto a line    | Recorder, just above the sound picture, once something is cut and no piece is chosen                                                                                                                                                                     | "Put the cut piece back."                                                                                                                                                                                                                                                       |
@@ -100,9 +100,10 @@ the Android share glyph (three joined dots, [#490](https://github.com/unfoldingW
 point at that glyph instead and write **which glyph the phone showed** in
 Notes; the sheet draws the tray.
 
-Controls 1, 2, 5 and 7 are drawn from things in the world (a tape deck, a bin,
-a lens); 3, 4, 6, 8, 9 and 10 are software conventions. ADR 0010's claim is
-that the first group is recognised and the second is not — do not tell the
+Controls 1, 2, 5 and 7 are drawn from things in the world (a tape deck, an
+eraser, a lens); 3, 4, 6, 8, 9 and 10 are software conventions. ADR 0010's
+claim is that the first group is recognised and the second is not — do not
+tell the
 participant that, and do not skip a control because you expect the answer.
 
 Pause (two bars) replaces the red disc while recording and the triangle while
@@ -124,7 +125,7 @@ Two sites is so that one room's habits do not settle it.
   of the filled sheet.
 - What the participant records during the tasks stays in the throwaway book
   on that phone. Do not share it from the app (row 10 runs on chapter 2, which
-  holds only your own recording); erase it afterwards.
+  holds only your own recording); delete it afterwards.
 
 This follows the repo's privacy rule (`CONTRIBUTING.md`, "Privacy and public
 readiness"): the repository is public, and nothing that identifies a person

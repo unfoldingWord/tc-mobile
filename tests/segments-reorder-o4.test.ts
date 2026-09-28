@@ -517,6 +517,7 @@ describe("the switch-off look does not gain the gesture", () => {
       onOpenRecorder: () => {},
       onSetFinished: () => {},
       onErase: () => {},
+      onDeleteSegment: () => {},
       onRename: () => Promise.resolve(true),
       onHoldStart: () => {},
     };

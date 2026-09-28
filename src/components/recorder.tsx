@@ -52,7 +52,6 @@ import { strings } from "@/lib/strings";
 import { LiveScope } from "./live-scope";
 import {
   barHint,
-  deleteRowReason,
   editRowReason,
   eraseRowReason,
   heldTakeIsBusy,
@@ -72,7 +71,6 @@ import {
 import type { FailureKey } from "@/hooks/save-failure";
 import type { RecorderAudio } from "@/hooks/use-audio-session";
 import type { UseEraseSegment } from "@/hooks/use-erase-segment";
-import { useDeleteSegment } from "@/hooks/use-delete-segment";
 import { useRecorderViewport } from "@/hooks/use-recorder-viewport";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
 import { useDesign } from "@/hooks/use-design";
@@ -308,15 +306,19 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     } | null>(null);
     // The Erase Segment confirmation (D-CONFIRM), opened from the menu.
     const [confirmOpen, setConfirmOpen] = useState(false);
-    // Which question that one dialog is asking (#862, "delete" added #590).
-    // The clipboard's discard confirm and the segment-delete confirm are the
-    // SAME dialog in the same overlay slot, so Back, `inert` and the focus
-    // restore all treat them exactly as they treat the erase confirm. Every
-    // door sets it as it opens the dialog, so a Back-dismissed discard or
-    // delete can never leave the next Erase asking the wrong question.
-    const [confirmFor, setConfirmFor] = useState<"erase" | "clip" | "delete">(
-      "erase"
-    );
+    // Which question that one dialog is asking (#862). The clipboard's
+    // discard confirm and the whole-take erase confirm are the SAME dialog in
+    // the same overlay slot, so Back, `inert` and the focus restore all treat
+    // them exactly alike. Every door sets it as it opens the dialog, so a
+    // Back-dismissed discard can never leave the next Erase asking the wrong
+    // question.
+    //
+    // A third value, `"delete"`, lived here from #590/#1080 until #1104 (the
+    // requirements owner's 2026-09-26 decision) pulled the whole-segment
+    // delete back out of this sheet's ≡ menu — it belongs to the chapter view
+    // now (`segment-row.tsx`, `segments-screen.tsx`), which owns its own
+    // confirm rather than sharing this one.
+    const [confirmFor, setConfirmFor] = useState<"erase" | "clip">("erase");
     // Which opener raised it: the bar's bin ("rerecord") or the ≡ Erase row
     // ("erase"). `onRerecord` sets the first and `openMenu` the second (the
     // menu is the only road to its Erase row), so it is never left over. Only
@@ -2024,62 +2026,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setPanState,
     ]);
 
-    // Delete segment (#590): the row itself, not only its audio — reverses G4
-    // for this one entry. Unlike `erase`, this hook is NOT shared via App:
-    // the recorder ≡ menu is the only entry point today (`#997`'s
-    // segment-row "Remove this segment" is a narrower, different action, on
-    // an empty segment only), so it is called directly here rather than
-    // lifted — see `use-delete-segment.ts`'s own docblock for the reasoning
-    // and for when to lift it.
-    const del = useDeleteSegment();
-    // Held locally, the same reason `eraseFailure` is: a shared error would
-    // paint the wrong screen's failure inside this sheet.
-    const [deleteFailure, setDeleteFailure] = useState<FailureKey | null>(null);
-    const isDeletingSegment = del.isDeleting;
-    const onConfirmDeleteSegment = useCallback(() => {
-      // Belt to `openMenu`'s suspenders, matching `onConfirmErase` above.
-      stopPlayback();
-      if (!isDeletingSegment()) setDeleteFailure(null);
-      void (async () => {
-        const result = await del.deleteSegment(segmentId);
-        if (result === "ok") {
-          // Unlike Erase (#592), there is no segment left to rebuild the
-          // sheet over — the row itself is gone. The only correct
-          // post-condition is leaving: `onExit(true)` is what closes the
-          // sheet (`App`'s `commitCloseRecorder` -> `recorderClosedState`)
-          // and reloads Segments, where the row is gone and the rest
-          // renumbered — already true in the store, `deleteSegment`'s own
-          // atomic renumber (#590). No second await follows the store call
-          // resolving, so — mirroring `onConfirmErase`'s own reasoning for
-          // its pre-latch window — no event can land between the delete
-          // landing and this exit.
-          dirty.current = true;
-          onExit(true);
-          return;
-        }
-        // A failed delete leaves the row on disk (the transaction never
-        // committed), so nothing is lost — mirrors `onConfirmErase`'s own
-        // failure arm exactly, including its `targetMissing: false`
-        // simplification (#378): the hook surfaces a result, not the cause.
-        setDeleteFailure(result.failed);
-        if (
-          failureExit("delete", {
-            databaseUnreachable,
-            targetMissing: false,
-          }) === "exit"
-        )
-          onExit(false);
-        else setConfirmOpen(false);
-      })();
-    }, [
-      del,
-      isDeletingSegment,
-      segmentId,
-      onExit,
-      stopPlayback,
-      databaseUnreachable,
-    ]);
-
     // The record bar's bin (#592): straight to the SAME confirm the ≡ row opens,
     // with no menu in between. Focus is captured here, in the gesture, for the
     // reason `openMenu` gives; the restore effect below lands it on Record once
@@ -2305,12 +2251,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // screen, the Back must dismiss IT and stay, never commit over an in-flight
       // erase (the R-B6 last-writer race) or a menu selection. Resolve false so
       // App keeps the sheet's protective history entry and the sheet itself.
-      // `erasing` folds in the delete's own in-flight guard too (#590): the
-      // shared confirm dialog can be committing either destructive op, and
-      // Back must not tear it down over either one — same reasoning, second
-      // guard, one boolean into the same (unrenamed) `overlayBlocksClose`/
-      // `overlayDismissal` parameter.
-      const erasing = isErasing() || isDeletingSegment();
+      const erasing = isErasing();
       if (overlayBlocksClose(menuOpen, confirmOpen, erasing)) {
         // Dismiss the overlay the Back landed on — but NOT the erase-confirm while
         // its delete is in flight (Frank R4-1): clearing `confirmOpen` mid-erase
@@ -2512,7 +2453,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       menuOpen,
       confirmOpen,
       isErasing,
-      isDeletingSegment,
       heldTake,
     ]);
 
@@ -2929,13 +2869,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       starting,
       hasClip: view?.hasClip ?? false,
     });
-    // #590: unlike `eraseReason`, does NOT require `hasClip` — deleting the
-    // row is exactly what an empty, accidentally added segment needs.
-    const deleteReason = deleteRowReason({
-      hasView: view !== null,
-      takeActive,
-      starting,
-    });
 
     // Why the edit toolbar's two history arrows are grey, derived from the same
     // predicates that grey them (#91, `edit-control-state.ts`) — the ≡ rows'
@@ -3020,11 +2953,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     }
 
     // Any overlay owns the screen: the ≡ menu, the erase confirm, or the erase
-    // (or, since #590, the delete) itself still committing after the confirm
-    // flag was cleared out from under it. One flag, because these chain
-    // within a single `inert` scope and both the inert gate below and the
-    // focus restore have to see the CHAIN, not the individual dialogs.
-    const overlayUp = menuShown || confirmOpen || erase.erasing || del.deleting;
+    // itself still committing after the confirm flag was cleared out from
+    // under it. One flag, because these chain within a single `inert` scope
+    // and both the inert gate below and the focus restore have to see the
+    // CHAIN, not the individual dialogs.
+    const overlayUp = menuShown || confirmOpen || erase.erasing;
 
     // The bottom-bar Edit control's own gate (#315 round 1, George P2-2) — the
     // toolbar-only surface-availability check the sheet `inert` exemption below
@@ -3077,12 +3010,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // native-disabled, no-reason gap and left the bin's as a named residual —
     // pre-existing, unrelated to #857's `hasTake` change, and nobody had
     // reviewed bar-appropriate erase copy yet. #878 closes it the same way
-    // Edit was closed: `strings.stopToErase` ("Stop recording to erase."),
+    // Edit was closed: `strings.stopToErase` ("Stop recording to clear."),
     // naming the bar's own Stop control, only while the take is LIVE
     // (`recording`) — the same split `editToolbarHint` above uses. The commit
     // window (`committing` half of `"uncommitted-take"`, Stop already
     // pressed) gets no label and stays natively `disabled` with no reason,
-    // same as Edit's commit-window half: "Stop recording to erase." would
+    // same as Edit's commit-window half: "Stop recording to clear." would
     // name a control that is now Record.
     const rerecordHint = barHint(
       eraseReason,
@@ -3603,12 +3536,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                   <Notice>{strings[eraseFailure]}</Notice>
                 </div>
               )}
-              {deleteFailure && (
-                <div className="px-[12px] pt-[8px]">
-                  {/* Same #172 mapping as `eraseFailure` above (#590). */}
-                  <Notice>{strings[deleteFailure]}</Notice>
-                </div>
-              )}
               <RecorderStatus state={state} isClosing={isClosing} />
               <div
                 className="recorder-stage flex-1"
@@ -4039,17 +3966,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           editReason={editReason}
           markReason={markReason}
           eraseReason={eraseReason}
-          deleteReason={deleteReason}
           onEnterEdit={onEnterEdit}
           onToggleFinished={onToggleFinished}
           onErase={() => {
             setMenuOpen(false);
             setConfirmFor("erase");
-            setConfirmOpen(true);
-          }}
-          onDeleteSegment={() => {
-            setMenuOpen(false);
-            setConfirmFor("delete");
             setConfirmOpen(true);
           }}
           onExitEdit={onExitEdit}
@@ -4063,43 +3984,32 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           title={
             confirmFor === "clip"
               ? strings.discardClipConfirmTitle
-              : confirmFor === "delete"
-                ? strings.deleteSegmentConfirmTitle(view?.ordinal ?? 0)
-                : strings.eraseConfirmTitle
+              : strings.eraseConfirmTitle
           }
-          // O4 G5 (#979): from the bar's bin, the workbench's record badge.
+          // Clear wears the eraser (#1119, DRI 2026-09-28); the clipboard's
+          // discard (#862) throws a cut away, so it keeps the bin.
+          glyph={confirmFor === "clip" ? "trash" : "eraser"}
+          // O4 G5 (#979): from the bar's Clear, the workbench's record badge.
           // The button, Keep and the title stay the 13 dialog's: the button
-          // erases and starts no take, so it keeps the bin and "Erase"
+          // clears and starts no take, so it keeps the eraser and "Clear"
           // (#1022). The workbench's "Record again" button records; here that
-          // would start the mic after the erase's awaits, outside the tap
+          // would start the mic after the clear's awaits, outside the tap
           // `use-audio-session.ts` startRecording needs. Switch off: one
-          // dialog, as before. The clipboard's discard (#862) and the
-          // segment delete (#590) are neither one the bar's bin, so both
-          // keep the trash badge — `g5` is also false for `"delete"`
-          // unconditionally, since `confirmFrom` never becomes `"rerecord"`
-          // through the delete door.
-          badge={g5 && confirmFor !== "clip" ? "record" : "trash"}
+          // dialog, as before, badged with `glyph`.
+          badge={g5 && confirmFor !== "clip" ? "record" : undefined}
           confirmLabel={
             confirmFor === "clip"
               ? strings.discardClipConfirm
-              : confirmFor === "delete"
-                ? strings.deleteSegmentConfirm
-                : strings.eraseConfirm
+              : strings.eraseConfirm
           }
           cancelLabel={strings.eraseCancel}
           // Busy through the post-erase re-read too (#592): `isClosing` is the
           // latch `onConfirmErase` holds across it, and a confirm is otherwise
           // only reachable at idle, where `isClosing` is false. The discard
-          // (#862) is synchronous and holds no latch of its own. The delete
-          // (#590) has no post-op re-read to latch across (`onConfirmDeleteSegment`'s
-          // own comment), so its own in-flight flag is enough.
-          busy={erase.erasing || isClosing || del.deleting}
+          // (#862) is synchronous and holds no latch of its own.
+          busy={erase.erasing || isClosing}
           onConfirm={
-            confirmFor === "clip"
-              ? onConfirmDiscardClip
-              : confirmFor === "delete"
-                ? onConfirmDeleteSegment
-                : onConfirmErase
+            confirmFor === "clip" ? onConfirmDiscardClip : onConfirmErase
           }
           onCancel={onCancelConfirm}
           preview={g5Preview}

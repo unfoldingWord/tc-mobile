@@ -34,6 +34,7 @@ import { useDesign } from "@/hooks/use-design";
 import type { FailureKey } from "@/hooks/save-failure";
 import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
+import { reportFailure } from "@/hooks/report-failure";
 import { useScreenLayers } from "@/hooks/use-screen-layers";
 import { useScrollToNew } from "@/hooks/use-scroll-to-new";
 import { useReorderGesture } from "@/hooks/use-reorder-gesture";
@@ -49,10 +50,17 @@ import type { ChapterId, SegmentId } from "@/types/domain";
  * total — a row added here with no behaviour, or a behaviour for an id that no
  * longer exists, is a `tsc` error rather than a Back that silently does nothing.
  *
- * Three, matching the design's "PR4 — Segments' overlays" (the chapter ⋮ menu
+ * Four, matching the design's "PR4 — Segments' overlays" (the chapter ⋮ menu
  * and its rename mode are ONE overlay: rename is a mode inside the same panel,
  * so it opens no second layer and Back from the rename field closes the menu,
- * just as the panel's own Close does).
+ * just as the panel's own Close does), plus `segments:delete-confirm` (#1104):
+ * Delete segment's own confirm, added when #1104 moved the whole-segment
+ * delete out of the recorder's ≡ menu and into this screen's row menu. Built
+ * as its own overlay/layer pair rather than folded into
+ * `segments:erase-confirm`, because the two share no in-flight guard — unlike
+ * `erase` (shared with the recorder via App, #160 L-12), the delete this
+ * screen calls (`useChapterSegments().deleteSegment`) has no other caller to
+ * share a guard with.
  *
  * `segments:row-menu` is the one whose state does not live here: it belongs to
  * the `SegmentRow` that opened it, which hands its own close up through
@@ -70,7 +78,10 @@ import type { ChapterId, SegmentId } from "@/types/domain";
  * a `dismiss()` that does nothing.
  */
 type SegmentsLayerId =
-  "segments:chapter-menu" | "segments:row-menu" | "segments:erase-confirm";
+  | "segments:chapter-menu"
+  | "segments:row-menu"
+  | "segments:erase-confirm"
+  | "segments:delete-confirm";
 
 /**
  * What App (slice 4) can drive from outside: a rebuild after a recorder commit,
@@ -152,6 +163,7 @@ export const SegmentsScreen = forwardRef<
     renameChapter,
     renameSegment,
     moveSegment,
+    deleteSegment,
   } = useChapterSegments(chapterId);
   // The passage heading the breadcrumb shows: the facilitator's label, else
   // "Chapter {number}" (#264).
@@ -166,6 +178,36 @@ export const SegmentsScreen = forwardRef<
   // `eraseRow` patches that one row to never-recorded in place (not reload());
   // on failure the reason surfaces in the screen's Notice.
   const [eraseTarget, setEraseTarget] = useState<SegmentId | null>(null);
+  // Delete segment (#590, moved to this screen by #1104): the row itself, not
+  // only its audio. One target, one confirm, one guard — all local to this
+  // screen, unlike `erase` above: `useChapterSegments().deleteSegment` (PR1,
+  // #1059) has no other caller to share an in-flight guard with, so this does
+  // not need App's cross-screen sharing shape. `deletingRef` is the
+  // synchronous half `Layer.busy()` reads (a `popstate` arrives with no
+  // render in between, the same reason `isErasing` above is a ref-backed
+  // callback rather than the state value); `deleting` is the render mirror
+  // `EraseConfirm`'s own `busy` prop paints from.
+  const [deleteTarget, setDeleteTarget] = useState<SegmentId | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const deletingRef = useRef(false);
+  // A landed delete that emptied the chapter hands focus to the invite.
+  const focusInviteRef = useRef(false);
+  // This screen's own record of "the delete I asked for failed" — mirrors
+  // `eraseFailure` below, and for the same reason: the hook itself already
+  // reports the cause to the funnel (`"segment-delete"`,
+  // `use-chapter-segments.ts`) and restores the row with its own `reload()`,
+  // so this is only what the screen shows, not a second copy of the cause.
+  const [deleteFailure, setDeleteFailure] = useState(false);
+  // The armed row's ordinal, snapshotted when the confirm opens. The title
+  // cannot read it from `rows`: `deleteSegment` patches the row out
+  // optimistically while `busy` still holds the dialog up, which read back
+  // as "Delete segment 0?" (Frank r2 F3 on #1119).
+  const [deleteOrdinal, setDeleteOrdinal] = useState(0);
+  // The row registry and the arm-then-reveal pair, shared with Books (#160
+  // L-15). Focus lands on the row's open/record control explicitly (not DOM
+  // order) — the right next move on a never-recorded row (George R3 P3).
+  // Declared up here because the delete confirm's close arms it.
+  const rowReveal = useScrollToNew<SegmentId>(".row-open");
   // A row's overflow menu is open. Lifted here so the list can go `inert` behind
   // it for AT/switch users (the menu itself is portalled out, so it stays live);
   // only one is ever open at a time — the open menu's scrim blocks reaching a
@@ -348,6 +390,23 @@ export const SegmentsScreen = forwardRef<
    */
   const closeEraseState = useCallback(() => setEraseTarget(null), []);
 
+  /**
+   * Cancel / Escape / scrim / a system Back take the delete confirm down. The
+   * row it was armed for is untouched — same "do not delete" answer as
+   * `closeEraseState` above.
+   *
+   * Focus goes back to that row once the list's `inert` lifts (Frank r2 F2
+   * on #1119: Escape left it on `<body>`, so the next Tab reached Back). The
+   * row menu that armed this is already gone, so the row itself is the
+   * landing, held by `rowReveal.reveal(listInert)` below until the commit
+   * that un-inerts the list. After a landed delete the row is gone, so
+   * `onConfirmDelete` replaces this arm with the row's neighbour.
+   */
+  const closeDeleteState = useCallback(() => {
+    if (deleteTarget !== null) rowReveal.armFocus(deleteTarget);
+    setDeleteTarget(null);
+  }, [deleteTarget, rowReveal]);
+
   const layers = useScreenLayers<SegmentsLayerId>(pushLayer, popLayer, {
     "segments:chapter-menu": {
       // Two writes live behind this panel: a rename in flight (#383/#384 —
@@ -393,6 +452,13 @@ export const SegmentsScreen = forwardRef<
       // (#452 PR5).
       busy: isErasing,
       dismiss: closeEraseState,
+    },
+    "segments:delete-confirm": {
+      // Same reasoning as the erase confirm just above, over `deletingRef`
+      // instead of a shared hook's own guard — this screen's delete has no
+      // second caller to synchronize with.
+      busy: () => deletingRef.current,
+      dismiss: closeDeleteState,
     },
   });
 
@@ -472,6 +538,23 @@ export const SegmentsScreen = forwardRef<
     layers.close("segments:erase-confirm");
   }, [closeEraseState, layers]);
 
+  // Arm the delete confirm for a row. Called from the row menu's Delete item
+  // BEFORE that menu closes itself, same 1 → 2 → 1 interleave `armErase` uses
+  // (`segment-row.tsx` has the ordering comment).
+  const armDelete = useCallback(
+    (segmentId: SegmentId, ordinal: number) => {
+      layers.open("segments:delete-confirm");
+      setDeleteOrdinal(ordinal);
+      setDeleteTarget(segmentId);
+    },
+    [layers]
+  );
+  // The confirm's own Cancel/Escape/scrim, plus the layer.
+  const closeDelete = useCallback(() => {
+    closeDeleteState();
+    layers.close("segments:delete-confirm");
+  }, [closeDeleteState, layers]);
+
   /**
    * Amendment C's other half — see `SegmentsScreenHandle.dismissOverlays`.
    *
@@ -529,7 +612,25 @@ export const SegmentsScreen = forwardRef<
     // unregisters it.
     rowMenuDismiss.current?.();
     if (closeConfirm) closeErase();
-  }, [chapterMenuOpen, closeErase, eraseTarget, isErasing, onCloseChapterMenu]);
+    // The delete confirm's own instance of the same call (#1104): not forced
+    // down while `deletingRef` is held, for the identical reason the erase
+    // confirm is not — see `onConfirmDelete`'s and `closeDeleteState`'s own
+    // comments.
+    const { closeConfirm: closeDeleteConfirm } = overlayDismissal(
+      false,
+      deleteTarget !== null,
+      deletingRef.current
+    );
+    if (closeDeleteConfirm) closeDelete();
+  }, [
+    chapterMenuOpen,
+    closeErase,
+    closeDelete,
+    deleteTarget,
+    eraseTarget,
+    isErasing,
+    onCloseChapterMenu,
+  ]);
 
   useImperativeHandle(ref, () => ({ reload, dismissOverlays }), [
     reload,
@@ -745,6 +846,78 @@ export const SegmentsScreen = forwardRef<
       else setConfirmMount((n) => n + 1);
     })();
   }, [audio, closeErase, erase, eraseTarget, eraseRow]);
+
+  /**
+   * Confirm Delete segment (#590, moved here by #1104). Unlike
+   * `onConfirmErase`, no shared hook holds the in-flight guard — this
+   * screen's own `deletingRef` is the only one, checked synchronously before
+   * any await (AGENTS.md: "a control goes busy before the first await in
+   * its handler, not after"), so a second Confirm tap in the same turn a
+   * first is still running is refused here rather than racing the store.
+   *
+   * `useChapterSegments().deleteSegment` (PR1, #1059) already does the list
+   * bookkeeping this needs: it patches the row out (and renumbers the rest)
+   * optimistically, reconciles against the store's own order on success, and
+   * on a real failure restores the row with its own `reload()` — so unlike
+   * `onConfirmErase`'s `eraseRow` patch, there is nothing left for this
+   * function to do to the list itself. It resolves `false` on a genuine
+   * failure and on a vanished chapter alike (the hook's own `staleTarget`
+   * path); either way this screen's own `deleteFailure` only means "my
+   * delete did not land", and the `staleTarget` Notice above it in the
+   * render order (below) already covers the other case (see `<Notice>`).
+   *
+   * The `await` is wrapped in `try`/`finally` (George Medium 2, #1119 round
+   * 5): `deleteSegment` catches its own store failure and always resolves,
+   * never rejects (its own docblock says so), so this is a backstop against a
+   * future change to that contract or an injected rejection in a test — not
+   * an observed path today. Without it, a reject would skip the two lines
+   * that clear `deletingRef`/`deleting`, and this dialog's own `busy()` layer
+   * gate reads `deletingRef.current`, so the confirm would stay open and
+   * uncloseable and Back would be trapped at this depth for the rest of the
+   * page's life. A rejection also goes to the same `"segment-delete"` funnel
+   * context the hook's own catch uses, and the row keeps `deleteFailure`'s
+   * Notice, same as any other failed delete.
+   */
+  const onConfirmDelete = useCallback(() => {
+    if (deleteTarget === null || deletingRef.current) return;
+    // The list order as it is now, while the row is still in it: the hook's
+    // optimistic patch removes the row during the await below, so the
+    // neighbour that takes its place has to be read before that.
+    const orderBefore = rows.map((r) => r.segmentId);
+    void (async () => {
+      // Stop playback first if THIS row is the one sounding — same reasoning
+      // as `onConfirmErase` above.
+      if (audio.playingId === deleteTarget) audio.leave();
+      else if (audio.playingBuffer) audio.stopBuffer();
+      setDeleteFailure(false);
+      deletingRef.current = true;
+      setDeleting(true);
+      let ok = false;
+      try {
+        ok = await deleteSegment(deleteTarget);
+      } catch (cause) {
+        reportFailure(cause, "segment-delete");
+        ok = false;
+      } finally {
+        deletingRef.current = false;
+        setDeleting(false);
+      }
+      if (!ok) setDeleteFailure(true);
+      // Arms the row itself — right after a failure, where the row survives.
+      closeDelete();
+      if (ok) {
+        // Frank r3 on #1119: the row is gone, so arming it hands focus to
+        // nothing and it falls to <body>. Books' rule (`delete-focus.ts`):
+        // the row below, else the row above, else the empty chapter's
+        // invite — the only control left. Overrides the arm above.
+        const at = orderBefore.indexOf(deleteTarget);
+        let next: SegmentId | null = null;
+        if (at >= 0) next = orderBefore[at + 1] ?? orderBefore[at - 1] ?? null;
+        rowReveal.armFocus(next);
+        focusInviteRef.current = next === null;
+      }
+    })();
+  }, [audio, closeDelete, deleteTarget, deleteSegment, rows, rowReveal]);
   // The list is hidden from AT while a dialog is up, mirroring the recorder
   // sheet (G8: aria-modal alone is not trusted to hide the background). The
   // share overlay joins the list (George r1 P2 #1/#2, #491): a screen
@@ -766,6 +939,7 @@ export const SegmentsScreen = forwardRef<
   // must read live.
   const listInert = segmentsListInert({
     eraseConfirmOpen: eraseTarget !== null,
+    deleteConfirmOpen: deleteTarget !== null,
     rowMenuOpen,
     chapterMenuOpen,
     shareOwnsScreen: shareOverlayOwnsScreen(share.progress),
@@ -789,6 +963,13 @@ export const SegmentsScreen = forwardRef<
   // once, so every render site below reads the mapped copy.
   const chapterErrorText = error ? strings[error] : null;
   const eraseErrorText = eraseFailure ? strings[eraseFailure] : null;
+  // Not a `strings`-mapped KEY (#172) the way the two above are:
+  // `useChapterSegments().deleteSegment` resolves a plain boolean, not a
+  // `FailureKey` (it reports the real cause to the funnel itself, under
+  // `"segment-delete"`) — so this reads the one fixed sentence #590 shipped
+  // for this outcome (`strings.deleteSegmentFailed`) rather than inventing a
+  // second mapping for a hook that gives this screen nothing to map.
+  const deleteErrorText = deleteFailure ? strings.deleteSegmentFailed : null;
   // See books-screen: hide the header create + while the invite's own primary
   // CTA is up, so there is one create action, announced once.
   const showEmpty = !staleTarget && loaded && rows.length === 0;
@@ -806,10 +987,6 @@ export const SegmentsScreen = forwardRef<
   // Books derived the identical three.
 
   const didInitialScroll = useRef(false);
-  // The row registry and the arm-then-reveal pair, shared with Books (#160
-  // L-15). Focus lands on the row's open/record control explicitly (not DOM
-  // order) — the right next move on a never-recorded row (George R3 P3).
-  const rowReveal = useScrollToNew<SegmentId>(".row-open");
 
   useEffect(() => {
     // Land on the first not-finished segment once the list is first loaded
@@ -820,14 +997,13 @@ export const SegmentsScreen = forwardRef<
     if (target) rowReveal.scrollTo(target.segmentId);
   }, [loading, rows, rowReveal]);
 
-  // Nothing on this screen holds the hand-off: focus is armed from one site
-  // only — the empty chapter's invite — and no overlay is up over it. Books
-  // passes a hold here, for a delete confirm that leaves the list `inert`.
-  // `false` is written out rather than defaulted, so a later overlay on this
-  // screen has to revisit this line to hold it.
+  // Held while the list is `inert`, the way Books holds for its own delete
+  // confirm: the delete confirm's close (`closeDeleteState`) arms its row in
+  // the same commit that lifts `inert`, so the hand-off must survive to that
+  // commit, and `listInert` is a dependency so the lift itself re-runs this.
   useEffect(() => {
-    rowReveal.reveal(false);
-  }, [rows, rowReveal]);
+    rowReveal.reveal(listInert);
+  }, [rows, listInert, rowReveal]);
 
   // ── Press-and-hold reorder (#953 PR2a, O4 only) ───────────────────────────
   //
@@ -895,6 +1071,15 @@ export const SegmentsScreen = forwardRef<
     },
   });
   const drag = o4 ? reorder.drag : null;
+
+  // The empty-chapter half of the delete hand-off (`onConfirmDelete`). The
+  // invite is not a row, so `rowReveal` cannot reach it. It is held the same
+  // way, until `inert` lifts.
+  useEffect(() => {
+    if (!focusInviteRef.current || listInert) return;
+    focusInviteRef.current = false;
+    if (showEmpty) scrollRef.current?.querySelector("button")?.focus();
+  }, [listInert, showEmpty]);
 
   const onAppend = useCallback(async () => {
     // Only the first append comes from the invite (the corner + is hidden while
@@ -1042,8 +1227,13 @@ export const SegmentsScreen = forwardRef<
           Share speaks in its own menu, not here. */}
       {staleTarget ? (
         <Notice>{strings.staleChapter}</Notice>
-      ) : (chapterErrorText ?? audio.error ?? eraseErrorText) ? (
-        <Notice>{chapterErrorText ?? audio.error ?? eraseErrorText}</Notice>
+      ) : (chapterErrorText ??
+        audio.error ??
+        eraseErrorText ??
+        deleteErrorText) ? (
+        <Notice>
+          {chapterErrorText ?? audio.error ?? eraseErrorText ?? deleteErrorText}
+        </Notice>
       ) : loading ? (
         // First mount: a slow chapter (sequential PCM walk) is otherwise a
         // header over a blank list with no reason given (G8).
@@ -1119,6 +1309,7 @@ export const SegmentsScreen = forwardRef<
                     guide.segmentId === row.segmentId
                   }
                   onErase={() => armErase(row.segmentId)}
+                  onDeleteSegment={() => armDelete(row.segmentId, row.ordinal)}
                   onRename={(label) => renameSegment(row.segmentId, label)}
                   onMenuOpen={onRowMenuOpen}
                   onMenuClose={onRowMenuClose}
@@ -1155,6 +1346,8 @@ export const SegmentsScreen = forwardRef<
         title={strings.eraseConfirmTitle}
         confirmLabel={strings.eraseConfirm}
         cancelLabel={strings.eraseCancel}
+        // Clear's eraser, not Delete's bin (#1119, DRI 2026-09-28).
+        glyph="eraser"
         // The RENDER mirror, deliberately: this paints the Confirm's busy state,
         // and a painted control may only ever show a committed value. The layer's
         // `busy()` reads the live ref instead (`isErasing`) — see the behaviour
@@ -1167,6 +1360,25 @@ export const SegmentsScreen = forwardRef<
         // memoized `layers`, so it still is one.
         onCancel={closeErase}
         preview={eraseRowPreview}
+      />
+
+      {/* Delete segment's own confirm (#590, moved here by #1104) — a
+          SEPARATE `EraseConfirm` mount from the one above, not a shared
+          `confirmFor` union the way `recorder.tsx` folds erase/clip-discard
+          into one dialog: the two overlays here have independent state
+          (`eraseTarget`/`deleteTarget`) and independent layers, since only
+          erase is shared cross-screen with the recorder (`erase`, held by
+          App) while delete is local to this screen alone. No `preview` —
+          same precedent `books-screen.tsx`'s own book-Delete confirm sets:
+          a whole-row delete, not a "what will be lost" scrub. */}
+      <EraseConfirm
+        open={deleteTarget !== null}
+        title={strings.deleteSegmentConfirmTitle(deleteOrdinal)}
+        confirmLabel={strings.deleteSegmentConfirm}
+        cancelLabel={strings.eraseCancel}
+        busy={deleting}
+        onConfirm={onConfirmDelete}
+        onCancel={closeDelete}
       />
 
       <Menu

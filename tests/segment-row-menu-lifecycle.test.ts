@@ -61,6 +61,7 @@ async function render(row: Row, close = onMenuClose) {
         onOpenRecorder: vi.fn(),
         onSetFinished: vi.fn(),
         onErase: vi.fn(),
+        onDeleteSegment: vi.fn(),
         onRename: vi.fn(),
         onMenuOpen,
         onMenuClose: close,

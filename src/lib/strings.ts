@@ -267,9 +267,13 @@ export const strings = {
   tileEdit: "Edit",
   tileFinished: "Done",
   tileRename: "Rename",
-  tileErase: "Erase",
+  // Clear removes a segment's audio and keeps the segment; Delete below
+  // removes the segment. Key names keep "erase" (the code's word for the
+  // operation); the visible word is "Clear" everywhere (the DRI's 2026-09-28
+  // pick on #1119: one word and one icon for one action).
+  tileErase: "Clear",
   // The book menu's Delete tile (04); its name is `deleteBook`. Shared with
-  // the recorder menu's Delete segment tile (#590) — its name is
+  // the chapter view's segment-menu Delete tile (#590/#1104) — its name is
   // `deleteSegment` — the same caption, on two different destructive tiles
   // in two different menus, rather than a second key holding the same word.
   tileDelete: "Delete",
@@ -363,10 +367,10 @@ export const strings = {
   // — most often a transient iOS "interrupted" AudioContext (#106), not a
   // corrupt clip. The sheet is a full panel, not a blank: the recording is
   // untouched, "Try again" resumes the context and re-decodes, and Back returns
-  // to the Segments list, where the row's Erase (which does not decode) works.
+  // to the Segments list, where the row's Clear (which does not decode) works.
   loadFailedTitle: "This recording could not be opened",
   loadFailedBody:
-    "Your recording is safe. Try again, or go back to erase it from the list.",
+    "Your recording is safe. Try again, or go back to clear it from the list.",
   loadRetry: "Try again",
   loadBack: "Go back",
   // Shown BENEATH the panel's two controls (both stay mounted) while a "Try
@@ -584,19 +588,20 @@ export const strings = {
   // not send anyone to a control that would abandon the in-flight start.
   micStarting: "The microphone is still starting.",
   nothingRecorded: "Nothing recorded yet.",
-  nothingStored: "Nothing saved to erase.",
+  nothingStored: "Nothing saved to clear.",
 
   // ── Live waveform (#120) ─────────────────────────────────────────────────
   liveWaveform: "Live recording waveform",
 
-  // ── VU meter + Erase Segment (B6) ────────────────────────────────────────
+  // ── VU meter + Clear (erase) Segment (B6) ────────────────────────────────
   vuMeterLabel: "Recording level",
   vuMeterUnavailable: "Level meter unavailable on this device",
-  eraseSegment: "Erase recording",
-  // The record bar's bin (#592): the same erase and the same confirm as the
+  // Clear: removes the recording, keeps the segment (#1119, DRI 2026-09-28).
+  eraseSegment: "Clear recording",
+  // The record bar's Clear (#592): the same clear and the same confirm as the
   // menu row above, named for what the translator is doing — starting the
   // segment over — because the sheet stays open, ready for the next take.
-  rerecord: "Erase and record again",
+  rerecord: "Clear and record again",
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
   // Press-and-hold reorder on the Segments list (#953, O4 only), spoken by
   // the list's live region: the row that was lifted, where it landed, or that
@@ -615,21 +620,21 @@ export const strings = {
     `${strings.chapterName(from)} is now chapter ${to}.`,
   chapterReorderStayed: (n: number): string =>
     `${strings.chapterName(n)} stayed where it was.`,
-  eraseConfirmTitle: "Erase this recording?",
-  eraseConfirm: "Erase",
-  // The safe action of the shared confirm dialog (`erase-confirm.tsx`). One
-  // string for every flow it now serves — segment Erase, book Delete and
-  // segment Delete (#590) — because it is the same control on the same
-  // surface saying the same word.
+  eraseConfirmTitle: "Clear this recording?",
+  eraseConfirm: "Clear",
+  // The safe action of the confirm dialog (`erase-confirm.tsx`). One string
+  // for every flow it now serves — segment Clear, book Delete and segment
+  // Delete (#590) — because it is the same control on the same surface
+  // saying the same word.
   eraseCancel: "Cancel",
-  eraseFailed: "Could not erase the recording. Try again.",
+  eraseFailed: "Could not clear the recording. Try again.",
   // The confirm's "Play what will be lost" row (#979 remainder, O4 "13"
   // only): the workbench's own copy, word for word, for the Play/Pause
   // transport beside the preview waveform.
   eraseConfirmPreviewPlay: "Play what will be lost",
   eraseConfirmPreviewPause: "Pause",
   // The clipboard's bin under the line (#862): throws away a cut that was
-  // never pasted, behind the same confirm as the whole-take erase. "Cut
+  // never pasted, behind the same confirm as the whole-take Clear. "Cut
   // audio", not "clipboard": the translator cut a piece of their recording,
   // and that piece is what is lost.
   discardClip: "Throw away the cut audio",
@@ -638,7 +643,7 @@ export const strings = {
 
   // ── Delete a book (#337) ─────────────────────────────────────────────────
   // The book ⋮-menu row, and the two-tap confirm behind it — the same dialog
-  // the segment Erase uses, not a second one.
+  // the segment Clear uses, not a second one.
   deleteBook: "Delete book",
   // Names the book, because this dialog's title is also its accessible name and
   // it is the only thing that says WHICH shelf row is about to go. "everything
@@ -659,23 +664,32 @@ export const strings = {
   deleteBookFailed: "Could not delete this book. Try again.",
 
   // ── Delete a segment (#590) ────────────────────────────────────────────────
-  // The recorder ≡-menu row/tile that deletes the segment itself, not only its
-  // audio (reverses G4, `docs/design/pivot-plan.md`'s Gate 1, for this one
-  // entry) — behind the same confirm dialog Erase and book Delete share, not a
-  // second one. No O4 workbench wording exists for THIS location: D20
-  // (`docs/design/o4-design-system.md`) draws "Remove this segment" for the
-  // SEGMENT-ROW menu (#997, a narrower, empty-only action deferred by the DRI
-  // past the training build), not the recorder. This reuses the erase/delete
-  // strings' own pattern instead — the exact wording is a residual for the DRI
-  // to confirm, not a workbench transcription.
+  // The chapter view's segment-row menu tile/row that deletes the segment
+  // itself, not only its audio (reverses G4, `docs/design/pivot-plan.md`'s
+  // Gate 1, for this one entry) — behind the same confirm component Clear and
+  // book Delete use, mounted a second time on the chapter view
+  // (`segments-screen.tsx` keeps a separate `EraseConfirm` for it).
+  //
+  // #590/#1080 first shipped this in the RECORDER's ≡ menu; #1104 (the
+  // requirements owner's 2026-09-26 decision) moved it here instead: "the
+  // menu inside the segment editor (recorder) shows Erase only. Delete
+  // (removing the whole segment) belongs to the chapter view." The strings
+  // below are unchanged by that move — only their call site is.
+  //
+  // No O4 workbench wording exists for this exact tile: D20
+  // (`docs/design/o4-design-system.md`) draws "Remove this segment" for
+  // #997's narrower, empty-only action (deferred by the DRI past the
+  // training build), not this one. This reuses the erase/delete strings'
+  // own pattern instead — the exact wording is a residual for the DRI to
+  // confirm, not a workbench transcription.
   deleteSegment: "Delete segment",
   // Caption is the shared `tileDelete` above, not a second key — same word,
   // same tone (destructive), just a different tile.
   deleteSegmentConfirmTitle: (ordinal: number): string =>
     `Delete segment ${ordinal}?`,
   deleteSegmentConfirm: "Delete",
-  // `eraseCancel`/`eraseFailed`'s own comments already say "erase" and "book
-  // Delete" share one dialog and one word; this is the third flow on both.
+  // `eraseCancel`'s own comment already says Clear and book Delete share one
+  // dialog and one word; this is the third flow on it.
   deleteSegmentFailed: "Could not delete this segment. Try again.",
 
   // ── Share (B7) ───────────────────────────────────────────────────────────
@@ -1140,7 +1154,7 @@ export const strings = {
   shareFailureLogRestart:
     "Cannot use this copy any more. Restart the app to use the new version.",
   clearFailureLog: "Clear problem report",
-  // Behind the bin: the same two-tap confirm the segment Erase and the book
+  // Behind the bin: the same two-tap confirm the segment Clear and the book
   // Delete use, not a second dialog (George R2 P3-3). Clearing is the one
   // irreversible write in this panel — the report is the only copy of what went
   // wrong that ever leaves the phone, and the bin sits directly under Share,
@@ -1182,7 +1196,7 @@ export const strings = {
   // (`strings.stop`, "Stop recording"), the same rule `stopToEdit` follows.
   // The wording itself is a coordinator assumption pending the requirements
   // owner's sign-off — see the #878 PR body.
-  stopToErase: "Stop recording to erase.",
+  stopToErase: "Stop recording to clear.",
 
   // ── Phone check (#1009) ──────────────────────────────────────────────────
   // A hidden tester screen, reached by five taps on the build stamp or by

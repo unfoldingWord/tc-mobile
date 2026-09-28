@@ -13,15 +13,15 @@ import type { SegmentId } from "@/types/domain";
 import { render } from "./render";
 
 /**
- * O4 G5, "Record again asks first" (#979): the record bar's bin opens the
+ * O4 G5, "Record again asks first" (#979): the record bar's Clear opens the
  * 13 confirm with the workbench's record badge. The confirm button keeps the
- * bin and "Erase", because that is all it does: it erases and leaves the
- * segment empty with Record ready, and it starts no take. The workbench's
- * "Record again" starts one; here that would call getUserMedia after the
- * erase's awaits, outside the tap, which `use-audio-session.ts`
- * (startRecording) says iOS treats as unprompted. The ≡ menu's Erase opens
- * the 13 dialog, bin and all, and with the switch off both openers show
- * today's dialog.
+ * eraser and "Clear" (#1119, DRI 2026-09-28), because that is all it does: it
+ * clears and leaves the segment empty with Record ready, and it starts no
+ * take. The workbench's "Record again" starts one; here that would call
+ * getUserMedia after the clear's awaits, outside the tap, which
+ * `use-audio-session.ts` (startRecording) says iOS treats as unprompted. The
+ * ≡ menu's Clear opens the 13 dialog, eraser and all, and with the switch off
+ * both openers show today's dialog.
  *
  * The harness is `tests/recorder-rerecord.test.ts`'s — the real `Recorder`,
  * the real erase hook and the real confirm, with the store and the segment
@@ -206,13 +206,13 @@ function dialog() {
 }
 
 describe("the record-again confirm with the switch on (G5, #979)", () => {
-  it("the bar's bin opens it with the record badge and the bin Erase button", async () => {
+  it("the bar's Clear opens it with the record badge and the eraser Clear button", async () => {
     await setup("o4");
     await act(async () => barRerecord().click());
     const d = dialog();
     expect(d.badge).toBe(iconInner("record"));
-    // The button names and draws what it does: it erases, it does not record.
-    expect(d.confirmIcon).toBe(iconInner("trash"));
+    // The button names and draws what it does: it clears, it does not record.
+    expect(d.confirmIcon).toBe(iconInner("eraser"));
     expect(d.confirm.getAttribute("aria-label")).toBe(strings.eraseConfirm);
     // Keep stays the 13 control, and focus still lands on it.
     expect(d.cancel.getAttribute("aria-label")).toBe(strings.eraseCancel);
@@ -220,49 +220,49 @@ describe("the record-again confirm with the switch on (G5, #979)", () => {
     expect(document.activeElement).toBe(d.cancel);
   });
 
-  it("its Erase erases through the shared hook and starts no take", async () => {
+  it("its Clear clears through the shared hook and starts no take", async () => {
     const audio = await setup("o4");
     boundary.reloads = [erased];
     await act(async () => barRerecord().click());
     await act(async () => dialog().confirm.click());
     expect(storage.clear).toHaveBeenCalledExactlyOnceWith("segment");
     expect(document.querySelector(".confirm-panel")).toBeNull();
-    // Why the button says Erase and not Record again: nothing records.
+    // Why the button says Clear and not Record again: nothing records.
     expect(audio.startRecording).not.toHaveBeenCalled();
   });
 
-  it("the ≡ menu's Erase still opens the 13 dialog: bin badge, Erase", async () => {
+  it("the ≡ menu's Clear still opens the 13 dialog: eraser badge, Clear", async () => {
     await setup("o4");
     await openFromMenu();
     const d = dialog();
-    expect(d.badge).toBe(iconInner("trash"));
-    expect(d.confirmIcon).toBe(iconInner("trash"));
+    expect(d.badge).toBe(iconInner("eraser"));
+    expect(d.confirmIcon).toBe(iconInner("eraser"));
     expect(d.confirm.getAttribute("aria-label")).toBe(strings.eraseConfirm);
   });
 
-  it("a cancelled record-again does not leak its look into a later ≡ Erase", async () => {
+  it("a cancelled record-again does not leak its look into a later ≡ Clear", async () => {
     await setup("o4");
     await act(async () => barRerecord().click());
     await act(async () => dialog().cancel.click());
     expect(document.querySelector(".confirm-panel")).toBeNull();
     await openFromMenu();
     const d = dialog();
-    expect(d.badge).toBe(iconInner("trash"));
+    expect(d.badge).toBe(iconInner("eraser"));
     expect(d.confirm.getAttribute("aria-label")).toBe(strings.eraseConfirm);
   });
 });
 
 describe("the record-again confirm with the switch off (unchanged)", () => {
-  it("the bar's bin opens today's dialog: bin badge, bin button, Erase", async () => {
+  it("the bar's Clear opens today's dialog: eraser badge, eraser button, Clear", async () => {
     await setup("current");
     await act(async () => barRerecord().click());
     const d = dialog();
-    expect(d.badge).toBe(iconInner("trash"));
-    expect(d.confirmIcon).toBe(iconInner("trash"));
+    expect(d.badge).toBe(iconInner("eraser"));
+    expect(d.confirmIcon).toBe(iconInner("eraser"));
     expect(d.confirm.getAttribute("aria-label")).toBe(strings.eraseConfirm);
   });
 
-  it("the bar's bin and the ≡ Erase open byte-identical dialogs", async () => {
+  it("the bar's Clear and the ≡ Clear open byte-identical dialogs", async () => {
     await setup("current");
     await act(async () => barRerecord().click());
     const fromBar = dialog().panel.outerHTML;

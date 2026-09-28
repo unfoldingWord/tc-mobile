@@ -59,7 +59,12 @@ const base = {
   onCancel: () => {},
 };
 
-async function mount(extra: { badge?: "trash" | "record" } = {}) {
+async function mount(
+  extra: {
+    badge?: "trash" | "eraser" | "record";
+    glyph?: "trash" | "eraser";
+  } = {}
+) {
   await act(async () => {
     root.render(createElement(EraseConfirm, { ...base, ...extra }));
   });
@@ -104,6 +109,22 @@ describe("EraseConfirm's badge (#979)", () => {
     expect(cancel!.querySelector("svg")!.innerHTML).toBe(iconInner("back"));
     expect(document.activeElement).toBe(cancel);
     expect(panel.querySelector("svg.confirm-glyph")).not.toBeNull();
+  });
+
+  // Clear (#1119, DRI 2026-09-28): the segment's Clear passes glyph="eraser",
+  // which the badge and the confirm button both draw; badge='record' still
+  // overrides only the badge.
+  it("draws the eraser in the badge and on the confirm for glyph='eraser'", async () => {
+    expect(iconInner("eraser")).not.toBe(iconInner("trash"));
+    const g = glyphs(await mount({ glyph: "eraser" }));
+    expect(g.badge).toBe(iconInner("eraser"));
+    expect(g.confirm).toBe(iconInner("eraser"));
+  });
+
+  it("keeps the eraser on the confirm when badge='record' overrides the badge", async () => {
+    const g = glyphs(await mount({ glyph: "eraser", badge: "record" }));
+    expect(g.badge).toBe(iconInner("record"));
+    expect(g.confirm).toBe(iconInner("eraser"));
   });
 
   it("renders byte-identical markup for badge='trash' and for no badge at all", async () => {

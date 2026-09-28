@@ -4,13 +4,15 @@
  * background, and every overlay on this screen is portalled out, so it stays
  * reachable while the content behind it does not).
  *
- * **Why this is a function and not four `||`s inline** (#452 PR4, Frank R1
+ * **Why this is a function and not `||`s inline** (#452 PR4, Frank R1
  * P2-1). This predicate is what the design's Amendment C decision (b) rests on:
  * the Record control that starts the Segments → Recorder transition sits inside
  * the subtree this inerts, which is why `dismissOverlays()` is allowed to leave
  * an in-flight erase confirm standing rather than tearing it down over a
  * committing `clearSegmentTake` (`segments-screen.tsx`). A term dropped from it
  * is not a rendering nit — it is that argument silently becoming false.
+ * `deleteConfirmOpen` (#1104) carries the identical argument for the delete
+ * confirm's own in-flight window.
  *
  * Inline in the JSX it had no Node-testable surface at all, and the only
  * automated evidence was one headless case that opens the chapter ⋮ menu — so
@@ -19,7 +21,7 @@
  *
  * **What the table below is worth, stated plainly:** the operator is a
  * disjunction and nobody needed a test for that. What it pins is the SET —
- * that these four conditions, and no fewer, cover the content. Drop a term and
+ * that these five conditions, and no fewer, cover the content. Drop a term and
  * its row dies.
  *
  * This predicate does not exercise the DOM wiring in `segments-screen.tsx`.
@@ -30,6 +32,16 @@
 export interface SegmentsOverlayState {
   /** The erase confirm is armed for a row — including while its erase runs. */
   readonly eraseConfirmOpen: boolean;
+  /**
+   * The delete confirm is armed for a row — including while its delete runs
+   * (#1104: Delete segment moved here from the recorder's ≡ menu). Its own
+   * term, not folded into `eraseConfirmOpen`: the two are separate overlays
+   * with separate state (`segments-screen.tsx`'s `deleteTarget`), and a row
+   * being deleted must inert the list the same way a row being erased does —
+   * Record on that same row must not be reachable while either destructive op
+   * is committing.
+   */
+  readonly deleteConfirmOpen: boolean;
   /** A row's overflow menu is open (only one ever is). */
   readonly rowMenuOpen: boolean;
   /** The chapter ⋮ menu is open, in either its action-list or rename mode. */
@@ -49,6 +61,7 @@ export interface SegmentsOverlayState {
 export function segmentsListInert(open: SegmentsOverlayState): boolean {
   return (
     open.eraseConfirmOpen ||
+    open.deleteConfirmOpen ||
     open.rowMenuOpen ||
     open.chapterMenuOpen ||
     open.shareOwnsScreen

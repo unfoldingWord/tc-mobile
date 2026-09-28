@@ -168,7 +168,7 @@ test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the 
   // satisfied during that window.
   //
   // So the commit is read off the two things only a LANDED take produces:
-  // `aria-busy` gone from the transport, and "Erase and record again"
+  // `aria-busy` gone from the transport, and "Clear and record again"
   // actionable. The bin is always drawn and is hinted-inert while there is
   // nothing to erase, so its hint clearing means `eraseRowReason` found a
   // stored clip in the RELOADED view — which is the persistence this case
@@ -181,7 +181,7 @@ test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the 
   // its accessible name — so the assertion below is about the inert state
   // itself and not about which wording the hint happens to carry.
   const rerecord = page.getByRole("button", {
-    name: /^Erase and record again/,
+    name: /^Clear and record again/,
   });
   await expect(rerecord).not.toHaveAttribute("aria-disabled", "true");
   // Still light after the commit — the theme outlived the take it spanned.
