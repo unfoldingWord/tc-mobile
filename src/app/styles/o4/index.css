@@ -43,12 +43,12 @@
  * itself.
  *
  * `tests/o4-cascade.test.ts` proves the position survives the production
- * build. It cannot prove that with a comment alone: a plain build was checked
- * against a comment-only version of this file (`npm run build`, then reading
- * `dist/assets/*.css`) and every comment here — including one prefixed
- * `/*!`, the marker some minifiers preserve for license banners, and which
- * Tailwind's own is — is stripped by this project's build. Only a real
- * declaration survives, which is why the one below exists. It is inert:
+ * build. It cannot prove that with a comment alone: this project's build
+ * strips CSS comments, including one prefixed `/*!` — the marker some
+ * minifiers preserve for license banners, and which Tailwind's own is — so an
+ * empty `@layer components {}` compiles away to zero bytes, indistinguishable
+ * from the file not existing. Only a real declaration survives, which is why
+ * the one below exists. It is inert:
  * nothing reads `--o4-scope` today, it paints nothing, and it exists under
  * the switch's own selector so it changes nothing about "byte-for-byte
  * unchanged with the switch off". Batch 1 lanes add real rules to their own
