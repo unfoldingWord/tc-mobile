@@ -52,11 +52,11 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    (download link)" and "iPhone or iPad (TestFlight)" sections;
    docs/native/README.md §5 step 4, §4 -->
 
-   **Updating an installed phone to a newer build works the same way —
-   install the new APK, or update through TestFlight, directly over the
-   version already there. Never uninstall to update: uninstalling wipes
-   the app's data, and every recording lives in that data, so uninstalling
-   deletes every recording on that phone.** <!-- source: gh issue #923,
+   **To update an installed phone to a newer build, do the same install
+   action — install the new APK, or update through TestFlight — directly
+   over the version already there. Never uninstall to update: uninstalling
+   wipes the app's data, and every recording lives in that data, so
+   uninstalling deletes every recording stored in the app.** <!-- source: gh issue #923,
    observed on Android 2026-09-25: "Uninstall v0.2.10, then install v0.2.12:
    the app shows 0.2.12, but all data from 0.2.10 is gone"; see also
    [the flip side of "nothing leaves the phone"](#the-flip-side-of-nothing-leaves-the-phone)
@@ -67,11 +67,13 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    relaunch twice, and confirm the footer reads 0.2.13 and every recording
    is still there. This issue closes once that's reported."); PR #934
    merged 2026-09-26 (merge e5218643), confirmed an ancestor of this branch
-   --> After installing over an old build, reopen the app and check the
-   build stamp — the small text at the bottom of every screen reading
-   something like `v0.2.1 · a1b2c3d` (more on it in
-   [section 5](#5-reporting-a-problem)) — to confirm it now shows the new
-   version before assuming the update took. <!-- source:
+   --> After installing over an old build, close and reopen the app twice,
+   then check the build stamp — the small text at the bottom of every
+   screen, a version and a short code in the shape `v0.2.1 · a1b2c3d` (the
+   numbers change with every build; more in
+   [section 5](#5-reporting-a-problem)). If it still shows the old version,
+   or recordings are missing, stop: do not uninstall — write down the stamp
+   and report it as in section 5. <!-- source:
    src/components/build-stamp.tsx; rendered on every screen via
    src/app/App.tsx -->
 
