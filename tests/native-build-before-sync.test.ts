@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { stripYamlComments } from "./support";
+
 /**
  * #923, round 2: `android-play.yml` still shipped every Google Play `.aab`
  * with the WEB build's Workbox precache worker — the exact defect round 1's
@@ -37,14 +39,16 @@ const CAP_SYNC = /\bnpx cap sync\b/;
 /**
  * Real (non-comment) command lines, in file order.
  *
- * "Non-comment" is a trimmed-line check, not a full shell/YAML parser: this
- * repo's convention is that an explanatory comment is always its own whole
- * line (`# …`), and every workflow line asserted against below follows that
- * convention — see the two probes in the synthetic test block for what this
- * does and does not catch.
+ * Read through the shared YAML comment strip (#822), so a TRAILING comment
+ * is dropped as well as a whole-line one: a full-line-only filter read
+ * `npm run build # npm run build:native` as a native build, because
+ * `BUILD_NATIVE` is tested first. Not a full shell/YAML parser — the strip is
+ * not quote-aware, so a ` #` inside a quoted string cuts the rest of that
+ * line; see the probes in the synthetic test block for what this does and
+ * does not catch.
  */
 function commandLines(text: string): string[] {
-  return text.split("\n").filter((line) => !line.trim().startsWith("#"));
+  return stripYamlComments(text).split("\n");
 }
 
 /**
@@ -115,6 +119,16 @@ describe("everySyncFollowsNativeBuild (synthetic fixtures)", () => {
       "      - run: npx cap sync android",
     ].join("\n");
     expect(everySyncFollowsNativeBuild(fixture).ok).toBe(true);
+  });
+
+  it("does not count a native build named only in a trailing comment (#822)", () => {
+    // The live command is a bare web build; the native one survives only as
+    // a comment after it. A full-line-only filter read this line as native.
+    const fixture = [
+      "      - run: npm run build # npm run build:native",
+      "      - run: npx cap sync android",
+    ].join("\n");
+    expect(everySyncFollowsNativeBuild(fixture).ok).toBe(false);
   });
 
   it("treats a later bare npm run build as re-poisoning a prior native build", () => {
