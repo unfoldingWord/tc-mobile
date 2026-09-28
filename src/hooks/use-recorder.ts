@@ -30,6 +30,7 @@ import {
   raceAudioResume,
   RESUME_TIMEOUT_MS,
   resumeAudioContext,
+  setRecordAudioSession,
   stopTracks,
 } from "./audio-io";
 import { reportFailure } from "./report-failure";
@@ -558,6 +559,15 @@ export function useRecorder(): UseRecorder {
     let stream: MediaStream | null = null;
 
     try {
+      // #1111: declare a record-capable audio session BEFORE the microphone
+      // opens. WebKit's `"playback"` type (`setPlaybackAudioSession`,
+      // `audio-io.ts`) — asserted on every Play so recordings stay audible
+      // through the iPhone silent switch — is documented for playback only;
+      // switching here, ahead of `getUserMedia`, is the "if needed" case
+      // #1111 asks this fix to cover so a session left on `"playback"` by an
+      // earlier Play cannot fight the mic. Feature-checked and a no-op on
+      // every non-WebKit engine.
+      setRecordAudioSession();
       stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           // Speech in a noisy room, recorded on a phone held in the hand.
