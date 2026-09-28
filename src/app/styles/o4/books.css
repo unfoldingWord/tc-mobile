@@ -81,6 +81,15 @@
     padding: 10px;
     background: var(--s-surface);
     border: 1px solid var(--s-card-edge);
+    /* Extends #559's opt-out to the Books rows (#563) — the book card and,
+       through inheritance, its chapter rows (.books-chapters is a child of
+       this card): control-only surfaces in the same sense the recorder
+       sheet is. No rename field lives inside a card or a chapter row (both
+       renames are Menu children, portalled elsewhere), so no opt-back-in is
+       needed here the way .name-input needed one inside .menu-panel. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   [data-design="o4"] .books-card-head {
     display: flex;
