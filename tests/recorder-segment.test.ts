@@ -22,9 +22,8 @@ import type { SegmentId } from "@/types/domain";
 /**
  * `loadRecorderSegmentView` is the React-free core of `useRecorderSegment` —
  * the segment → clip walk, the empty/PCM/MP3 branches, and the view it builds.
- * This repo has no jsdom or renderer (the same constraint
- * `tests/use-erase-segment.test.ts` and `tests/save-failure.test.ts` document),
- * so the hook's `error`/`retry`/`attempt` React state and its "resume the
+ * This suite does not mount the hook or render in jsdom, so the hook's
+ * `error`/`retry`/`attempt` React state and its "resume the
  * AudioContext on the retry gesture" wiring (#106/#137) are review + on-device
  * surface, not exercised here. What IS node-testable is the load itself: the
  * empty and PCM paths a translator hits every session, and the throw a missing
@@ -32,7 +31,7 @@ import type { SegmentId } from "@/types/domain";
  *
  * The MP3 decode branch runs the browser's `decodeAudioData`, so a SUCCESSFUL
  * decode can only be exercised on a device — like the rest of the audio
- * boundary, and not yet run on one at this head. What IS pinned here is the
+ * boundary. What IS pinned here is the
  * invariant that a finished MP3 segment REJECTS rather than opening as empty
  * (which would let the translator record over the clip): in Node the decode
  * throws, and the load must propagate that, not swallow it into `hasClip: false`.

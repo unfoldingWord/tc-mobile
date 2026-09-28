@@ -1028,8 +1028,8 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
         status = "reloadNeeded";
         seen.push(status);
       },
-      // What `use-database-status.ts` does, modelled here because this repo has
-      // no renderer to drive the hook itself.
+      // What `use-database-status.ts` does, modelled here because this
+      // suite has no renderer that runs the hook's effects.
       onBlocked: () => {
         status = status === "reloadNeeded" ? status : "blocked";
         seen.push(status);
