@@ -148,7 +148,7 @@ describe("exportLibraryZip", () => {
 
   it("leaves a book with no audio out, counts it missing, and still ships the books either side of it", async () => {
     // A strictly increasing clock pins shelf order (`listBooks` sorts by
-    // `updatedAt`, newest first): Later, Empty, Earlier. The empty book sits
+    // `createdAt`, newest first): Later, Empty, Earlier. The empty book sits
     // BETWEEN two full ones, so a loop that stops at it loses "Earlier".
     let t = 1_000_000;
     const clock = vi.spyOn(Date, "now").mockImplementation(() => (t += 10));

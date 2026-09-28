@@ -13,9 +13,9 @@ import { expect, test, type Page } from "@playwright/test";
  * ("button")?.focus()`, run once the Books delete confirm's `deleteTargetId`
  * goes back to `null`.
  *
- * `listBooks` sorts by `updatedAt` descending (`src/lib/storage/books.ts`),
- * so the most recently created (or renamed) book renders at the TOP of the
- * shelf, not the bottom — the helper below names the top row from the create
+ * `listBooks` sorts by `createdAt` descending (`src/lib/storage/books.ts`),
+ * so the most recently created book renders at the TOP of the shelf, not the
+ * bottom — the helper below names the top row from the create
  * count rather than assuming "Book 001" is first, which it is not once a
  * second book exists.
  *
