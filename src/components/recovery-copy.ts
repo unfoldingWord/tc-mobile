@@ -102,15 +102,17 @@ export function recoverySafetyLine(
   // past it — so "Don't close the app" forbids the only thing that can help,
   // while the title above asks for exactly that (George R2 P2-1).
   //
-  // What this line does NOT say is what becomes of the held recording across
-  // that restart. It is RAM-only and does not survive, and whether this screen
-  // should say so — and whether anything can be done to rescue it first — is a
-  // product question tracked on #441, not one to settle in a copy string.
+  // #441 (DRI pick, 2026-09-28: "Say plainly it can't be saved, offer Restart
+  // only") answered the product question this comment used to leave open: the
+  // line now says what becomes of the held recording across the restart, not
+  // only that this build cannot write it. It is RAM-only and does not survive
+  // a reload, and no rescue (e.g. sharing the raw take before restarting) was
+  // judged worth building for v1 — the honest line is the whole fix.
   switch (kind) {
     case "downgrade":
       return editOnly
-        ? "This copy of the app cannot save them. Restart to get the new version."
-        : "This copy of the app cannot save it. Restart to get the new version.";
+        ? "This copy of the app cannot save them. Restarting will lose them, but is the only way to get the new version."
+        : "This copy of the app cannot save it. Restarting will lose it, but is the only way to get the new version.";
     case "stale":
       return editOnly
         ? "This book was deleted in another copy of the app. Discard is the only exit."
@@ -155,9 +157,14 @@ function heldSafetyLine(editOnly: boolean): string {
  * The armed label names the loss rather than only the action. It is the last
  * thing the translator reads before the audio is gone, so it does not say
  * "restart" and leave them to work the rest out. What a screen should say about
- * that loss BEFORE the control is armed — and whether anything could rescue the
- * audio first — is the product question on #441; this is the minimum that keeps
- * the tap honest.
+ * that loss BEFORE the control is armed is settled for the downgrade
+ * save-failure screen by #441 (DRI pick, 2026-09-28): `recoverySafetyLine`'s
+ * `downgrade` case now says plainly that the held recording will not survive
+ * the restart, and no rescue (e.g. sharing the raw take first) was judged
+ * worth building for v1. `DatabasePanel`'s own restart (`reloadNeeded` /
+ * `blocked`) is a different condition — no failed save is held there — and
+ * #441 does not speak to it. This label is the minimum that keeps the armed
+ * tap itself honest either way.
  *
  * `alsoCutAudio` is the second thing one tap can destroy at once, and it is why
  * this is composed rather than enumerated (George R5 P2). `SaveFailed` outranks
