@@ -91,3 +91,14 @@ export interface SegmentRow {
 }
 
 export type SegmentRowState = "finished" | "recorded" | "empty";
+
+// ── Recorder (B5) ──────────────────────────────────────────────────────────
+
+/**
+ * Which mode the recorder sheet opens in. `"record"` is the row itself and
+ * its Record control. `"edit"` is the row menu's Edit, which promises the
+ * editor, so the sheet goes straight into edit mode once the stored take has
+ * loaded, instead of making the translator tap Edit a second time inside the
+ * sheet (#286 item 2).
+ */
+export type RecorderEntry = "record" | "edit";
