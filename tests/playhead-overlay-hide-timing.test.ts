@@ -9,15 +9,16 @@ import { PlayheadOverlay } from "@/components/playhead-overlay";
  * layout phase of that same commit — the phase `LiveScope` paints its canvas
  * in (`src/components/live-scope.tsx`, `useLayoutEffect`) — rather than in a
  * passive effect. React documents `useLayoutEffect` as firing before the
- * browser repaints (https://react.dev/reference/react/useLayoutEffect); it
- * makes no such promise for `useEffect`.
+ * browser repaints (https://react.dev/reference/react/useLayoutEffect), and
+ * `useEffect` as possibly running after the paint
+ * (https://react.dev/reference/react/useEffect).
  *
  * This is a defensive invariant for a reviewer-diagnosed paint-order seam
  * (Resume during an append's preview), not a reproduction of it: both the
- * `active` flip and the observation point are built inside this test. The
- * observation point is the harness parent's own `useLayoutEffect`, which runs
- * after its children's layout effects and before any passive effect of the
- * commit — so a hide still left in `useEffect` reads "1" there.
+ * `active` flip and the observation point are built inside this test, so it
+ * pins the component's contract and guards no caller. The observation point
+ * is the harness parent's own `useLayoutEffect` — a read taken in the layout
+ * phase of the commit that flips `active`.
  */
 
 let root: Root;
