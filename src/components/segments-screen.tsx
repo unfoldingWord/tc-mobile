@@ -190,8 +190,9 @@ export const SegmentsScreen = forwardRef<
   const [deleteTarget, setDeleteTarget] = useState<SegmentId | null>(null);
   const [deleting, setDeleting] = useState(false);
   const deletingRef = useRef(false);
-  // A landed delete that emptied the chapter hands focus to the invite.
-  const focusInviteRef = useRef(false);
+  // The chapter ⋮ opener: the focus hand-off's fallback when its row is gone
+  // (`focusFallback` below, #1124).
+  const chapterMenuOpenerRef = useRef<HTMLButtonElement | null>(null);
   // This screen's own record of "the delete I asked for failed" — mirrors
   // `eraseFailure` below, and for the same reason: the hook itself already
   // reports the cause to the funnel (`"segment-delete"`,
@@ -903,18 +904,21 @@ export const SegmentsScreen = forwardRef<
         setDeleting(false);
       }
       if (!ok) setDeleteFailure(true);
-      // Arms the row itself — right after a failure, where the row survives.
+      // Arms the row itself. After a failure the row is not on screen yet:
+      // the optimistic patch took it out and the hook's own `reload()` puts
+      // it back on a later commit. The reveal effect holds the request while
+      // that reload is `refreshing` and lands it once the row is back (#1124).
       closeDelete();
       if (ok) {
         // Frank r3 on #1119: the row is gone, so arming it hands focus to
         // nothing and it falls to <body>. Books' rule (`delete-focus.ts`):
-        // the row below, else the row above, else the empty chapter's
-        // invite — the only control left. Overrides the arm above.
+        // the row below, else the row above. With neither, the arm above
+        // stays on the deleted row, which cannot land, so the reveal's
+        // fallback takes it: the empty chapter's invite.
         const at = orderBefore.indexOf(deleteTarget);
-        let next: SegmentId | null = null;
-        if (at >= 0) next = orderBefore[at + 1] ?? orderBefore[at - 1] ?? null;
-        rowReveal.armFocus(next);
-        focusInviteRef.current = next === null;
+        const next =
+          at >= 0 ? (orderBefore[at + 1] ?? orderBefore[at - 1]) : undefined;
+        if (next !== undefined) rowReveal.armFocus(next);
       }
     })();
   }, [audio, closeDelete, deleteTarget, deleteSegment, rows, rowReveal]);
@@ -997,13 +1001,42 @@ export const SegmentsScreen = forwardRef<
     if (target) rowReveal.scrollTo(target.segmentId);
   }, [loading, rows, rowReveal]);
 
+  // The list's scroll box: the reorder gesture's viewport, and where the
+  // focus fallback below finds the empty chapter's invite.
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // One rule for every focus hand-off on this screen — Cancel, a landed
+  // delete, a failed delete, a drop, the first append (#1124): a request is
+  // kept until the row can take it, then lands on the row if it is there and
+  // on the fallback if it is not.
+  //
   // Held while the list is `inert`, the way Books holds for its own delete
   // confirm: the delete confirm's close (`closeDeleteState`) arms its row in
   // the same commit that lifts `inert`, so the hand-off must survive to that
   // commit, and `listInert` is a dependency so the lift itself re-runs this.
+  //
+  // Held while `refreshing`, too. Every row's `.row-open` is `disabled` then
+  // (`SegmentRow`'s `busy`), so a hand-off spent on that commit is a no-op
+  // that drops focus to <body>. And a failed delete's recovery IS a reload:
+  // `deleteSegment` resolves `false` with the row patched out and its own
+  // `reload()` in flight, so the row only exists again on the commit that
+  // clears `refreshing` (Frank r4 P3 on #1119, the third case after Cancel
+  // and a landed delete).
+  //
+  // The fallback, when the row is gone once the hold lifts: the empty
+  // chapter's invite if it is up, else the chapter ⋮ opener. Never the
+  // header `+` or Back: the activation that armed the hand-off can still be
+  // held down and key-repeat onto the landing, and those two write or leave.
+  const focusFallback = useCallback(
+    (): HTMLElement | null =>
+      (showEmpty
+        ? scrollRef.current?.querySelector<HTMLElement>("button")
+        : chapterMenuOpenerRef.current) ?? null,
+    [showEmpty]
+  );
   useEffect(() => {
-    rowReveal.reveal(listInert);
-  }, [rows, listInert, rowReveal]);
+    rowReveal.reveal(listInert || refreshing, focusFallback);
+  }, [rows, listInert, refreshing, rowReveal, focusFallback]);
 
   // ── Press-and-hold reorder (#953 PR2a, O4 only) ───────────────────────────
   //
@@ -1022,7 +1055,6 @@ export const SegmentsScreen = forwardRef<
   // an overlay has the list `inert`, a save is landing (`refreshing` disables
   // the rows' buttons), the first load has not finished, or the chapter is
   // gone.
-  const scrollRef = useRef<HTMLDivElement | null>(null);
   const [reorderStatus, setReorderStatus] = useState("");
   const reorder = useReorderGesture<SegmentId>({
     enabled: o4 && !listInert && !refreshing && !loading && !staleTarget,
@@ -1071,15 +1103,6 @@ export const SegmentsScreen = forwardRef<
     },
   });
   const drag = o4 ? reorder.drag : null;
-
-  // The empty-chapter half of the delete hand-off (`onConfirmDelete`). The
-  // invite is not a row, so `rowReveal` cannot reach it. It is held the same
-  // way, until `inert` lifts.
-  useEffect(() => {
-    if (!focusInviteRef.current || listInert) return;
-    focusInviteRef.current = false;
-    if (showEmpty) scrollRef.current?.querySelector("button")?.focus();
-  }, [listInert, showEmpty]);
 
   const onAppend = useCallback(async () => {
     // Only the first append comes from the invite (the corner + is hidden while
@@ -1210,6 +1233,7 @@ export const SegmentsScreen = forwardRef<
             setup step (#264). Share inside handles the no-audio case itself. */}
         <Control
           icon="more"
+          ref={chapterMenuOpenerRef}
           label={strings.chapterMenuOpen}
           variant="quiet"
           disabled={staleTarget || loading || refreshing || loadFailed}

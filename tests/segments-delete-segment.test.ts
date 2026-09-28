@@ -254,6 +254,85 @@ it("deleting the only segment hands focus to the empty chapter's invite (Frank r
   expect(document.activeElement).toBe(button(strings.addSegment));
 });
 
+/**
+ * A failed delete, the way `useChapterSegments().deleteSegment` actually
+ * fails: the optimistic patch has already taken the row out, the hook calls
+ * its own `reload()` (so `refreshing` is up and every row's `.row-open` is
+ * `disabled`), and it resolves `false` BEFORE that reload lands. The row comes
+ * back only on a later commit, when the reload's read installs it.
+ *
+ * `restored` is what that read returns. Both inputs are built here, so these
+ * cases pin the screen's contract for that sequence (#1124); the sequence
+ * itself is the hook's, per its own docblock.
+ */
+async function failDeleteThenRestore(
+  before: SegmentRow[],
+  patched: SegmentRow[],
+  restored: SegmentRow[]
+) {
+  mocks.chapter.mockReturnValue({ ...mocks.chapter(), rows: before });
+  mocks.deleteSegment.mockImplementationOnce(async () => {
+    mocks.chapter.mockReturnValue({
+      ...mocks.chapter(),
+      rows: patched,
+      refreshing: true,
+    });
+    return false;
+  });
+  await act(async () => root.render(createElement(Host)));
+  await openDeleteConfirm();
+  await act(async () => button(strings.deleteSegmentConfirm).click());
+  expect(dialogTitle()).toBeNull();
+  expect(failureNotice()).toBe(true);
+  // The reload lands on a later commit.
+  mocks.chapter.mockReturnValue({
+    ...mocks.chapter(),
+    rows: restored,
+    refreshing: false,
+  });
+  await act(async () => root.render(createElement(Host)));
+}
+
+it("a failed delete hands focus to the row once the reload restores it, not <body> (#1124)", async () => {
+  const second: SegmentRow = {
+    ...row,
+    segmentId: "second" as SegmentId,
+    ordinal: 2,
+  };
+  await failDeleteThenRestore(
+    [row, second],
+    [{ ...second, ordinal: 1 }],
+    [row, second]
+  );
+  const [restoredOpen] = document.querySelectorAll(".row-open");
+  expect(restoredOpen).toBeDefined();
+  expect(document.activeElement).toBe(restoredOpen);
+});
+
+it("a failed delete of the ONLY segment still hands focus to the restored row, not the interim invite (#1124)", async () => {
+  // The optimistic patch empties the chapter, so the invite is on screen for
+  // the length of the reload. Focus waits for the row, not for the invite.
+  await failDeleteThenRestore([row], [], [row]);
+  expect(document.activeElement).toBe(document.querySelector(".row-open"));
+});
+
+it("a failed delete whose row does not come back falls back to the chapter ⋮, not <body> (#1124)", async () => {
+  // The reload read the chapter without the row (another live copy deleted it
+  // meanwhile, say). The request survives to the settled commit and finds no
+  // target, so the explicit fallback takes it.
+  const second: SegmentRow = {
+    ...row,
+    segmentId: "second" as SegmentId,
+    ordinal: 2,
+  };
+  await failDeleteThenRestore(
+    [row, second],
+    [{ ...second, ordinal: 1 }],
+    [{ ...second, ordinal: 1 }]
+  );
+  expect(document.activeElement).toBe(button(strings.chapterMenuOpen));
+});
+
 it("the title keeps the armed ordinal while the optimistic patch has already removed the row (Frank r2 F3 on #1119)", async () => {
   let release!: (ok: boolean) => void;
   mocks.deleteSegment.mockImplementationOnce(
