@@ -448,6 +448,15 @@ it("the commit window after Stop does not tell the translator to stop (#857)", a
 
   await act(async () => settle());
   await s.render();
+
+  // #869 item 3 (George r5 L3): the commit window is not the whole story —
+  // once `commitTake`'s reload settles (`recorder.tsx`'s `setIsClosing(false)`
+  // in its success arm), Edit is usable again. `Control` (`control.tsx`) never
+  // renders `aria-busy` once `busy` is false, and with `editReason` back to
+  // `null` the toggle is neither natively `disabled` nor soft-`aria-disabled`.
+  expect(toggle!.getAttribute("aria-busy")).toBeNull();
+  expect(toggle!.disabled).toBe(false);
+  expect(toggle!.getAttribute("aria-disabled")).toBeNull();
 });
 
 it("a Back's recovery exits to Segments, unchanged", async () => {
