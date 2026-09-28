@@ -357,8 +357,7 @@ that session's next step was the first Android pass.
 
 **Idempotency is a property, not a policy.** Every write is safely re-runnable
 or documented as to why not. In practice that means: get-or-create in **one**
-transaction, never two; content-addressed clips so a repeated import dedupes
-instead of duplicating; append-only migrations. `ensureObsChapter` is the
+transaction, never two; append-only migrations. `ensureObsChapter` is the
 counter-example currently in the tree.
 
 **An async re-read never overwrites a known value with a stale or unknown
