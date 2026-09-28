@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 
 import { licenseTexts, thirdPartyLicenses } from "@/components/licenses";
 
+import { stripCodeComments } from "./strip-code-comments";
+
 /**
  * The LGPL and MIT/ISC obligations (#36) are met only if the disclosure is
  * *complete* and *accurate* and the licence text it points to actually ships.
@@ -298,16 +300,24 @@ describe("bundled licence texts", () => {
  * renderer — and assert the properties #36 exists to guarantee. The rendered
  * behaviour (focus, the failed-fetch Notice) still needs a browser and is not
  * claimed here.
+ *
+ * The files are read with their comments removed (#822). Every pin below is a
+ * positive match, so a commented-out copy of the good line could otherwise
+ * stand in for a broken live one, and a `// polyfill: false` comment could
+ * switch the Vite pin off. The parsing strip is needed here, not
+ * `stripComments`: `vite.config.ts`'s precache glob string holds a `/*`.
  */
 function readSource(rel: string): string {
-  return readFileSync(path.join(REPO_ROOT, rel), "utf8");
+  return stripCodeComments(
+    readFileSync(path.join(REPO_ROOT, rel), "utf8"),
+    rel
+  );
 }
 
 describe("reachability wiring (#36)", () => {
   it("precaches the licence texts and spares them from the SPA fallback", () => {
     const vite = readSource("vite.config.ts");
-    // The config line, not a comment that merely mentions the word — develop's
-    // versionJsonPlugin docblock says "globPatterns extensions" (no colon).
+    // The config line: `readSource` has already removed every comment.
     const globLine = vite.split("\n").find((l) => l.includes("globPatterns:"));
     expect(globLine, "no globPatterns in vite.config.ts").toBeDefined();
     // `txt` in the precache glob is what makes `public/licenses/*.txt` resolve
