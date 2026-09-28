@@ -76,14 +76,14 @@ function segment(id: string): Segment {
   };
 }
 
-function pcmClip(id: ClipId, samples: Int16Array): Clip {
+function pcmClip(id: ClipId, samples: Int16Array, durationMs = 1): Clip {
   return {
     encoding: "pcm",
     meta: {
       id,
       sampleRate: 22_050,
       frameCount: samples.length,
-      durationMs: 1,
+      durationMs,
       createdAt: 0,
       encoding: "pcm",
       generation: 0,
@@ -98,7 +98,8 @@ function pcmClip(id: ClipId, samples: Int16Array): Clip {
 function resolvedPcm(
   segmentId: string,
   clipId: ClipId,
-  samples: Int16Array
+  samples: Int16Array,
+  durationMs = 1
 ): SegmentAudio<Clip> {
   return {
     kind: "resolved",
@@ -108,9 +109,9 @@ function resolvedPcm(
       segmentId: sid(segmentId),
       clipId,
       createdAt: 0,
-      durationMs: 1,
+      durationMs,
     },
-    clip: pcmClip(clipId, samples),
+    clip: pcmClip(clipId, samples, durationMs),
   };
 }
 
@@ -731,5 +732,75 @@ describe("retryHeadroomMarginBytes (#1015)", () => {
   it("is the floor for a short clip whose expected size is under it", () => {
     // 1 ms, this file's fixture clip duration: expected size is a few bytes.
     expect(retryHeadroomMarginBytes(1)).toBe(RETRY_HEADROOM_FLOOR_BYTES);
+  });
+});
+
+describe("a failure before the load resolves keeps a known duration (#1167 P3)", () => {
+  /**
+   * #1012's warning — an async re-read must not overwrite a known value with
+   * a stale or unknown one — applies to `durationMs` too: a retry that fails
+   * out of room again before its OWN `loadSegmentClip` resolves must not
+   * erase the duration an earlier attempt already established for the same
+   * clip. Losing it silently drops the margin back to the floor, which is
+   * still safe (never "any rise"), but is a smaller, wrong margin for a clip
+   * whose own expected size is bigger — exactly the case this test forces by
+   * picking a duration whose margin is well above the floor.
+   */
+  it("does not drop the margin to the floor when a later failure never reaches the load", async () => {
+    owe("s1");
+    // 20 minutes: `expectedMp3ByteLength` gives 9,600,000 bytes, comfortably
+    // past `RETRY_HEADROOM_FLOOR_BYTES` (5,242,880) — the two code paths
+    // (duration known vs. lost to the floor) diverge only past that gap.
+    const longDurationMs = 20 * 60 * 1000;
+    const realMargin = retryHeadroomMarginBytes(longDurationMs);
+    expect(realMargin).toBeGreaterThan(RETRY_HEADROOM_FLOOR_BYTES);
+
+    vi.mocked(loadSegmentClip).mockImplementation(async (segmentId) =>
+      resolvedPcm(
+        segmentId,
+        clipOf.get(segmentId)!,
+        Int16Array.of(1),
+        longDurationMs
+      )
+    );
+    s1HitsQuota();
+    freeSpace(1_000_000);
+    await requestTranscodeSweep();
+    expect(encodeMp3).toHaveBeenCalledTimes(1);
+
+    // Retry: clears the REAL (duration-driven) margin, so it is attempted —
+    // but this time the LOAD itself fails with quota, before `clipDurationMs`
+    // is ever set.
+    freeSpace(1_000_000 + realMargin);
+    vi.mocked(loadSegmentClip).mockRejectedValue(
+      new DOMException("quota", "QuotaExceededError")
+    );
+    await requestTranscodeSweep();
+    expect(vi.mocked(loadSegmentClip)).toHaveBeenCalledTimes(2);
+    // No encode was reachable this turn — the load itself failed.
+    expect(encodeMp3).toHaveBeenCalledTimes(1);
+
+    // A rise that clears only the FLOOR over the latest failure reading —
+    // not the real, duration-driven margin — must still hold it, which is
+    // only true if the entry still remembers the 20-minute duration.
+    freeSpace(1_000_000 + realMargin + RETRY_HEADROOM_FLOOR_BYTES + 1);
+    vi.mocked(loadSegmentClip).mockImplementation(async (segmentId) =>
+      resolvedPcm(
+        segmentId,
+        clipOf.get(segmentId)!,
+        Int16Array.of(1),
+        longDurationMs
+      )
+    );
+    vi.mocked(commitTranscode).mockResolvedValue("committed");
+    await requestTranscodeSweep();
+    expect(vi.mocked(loadSegmentClip)).toHaveBeenCalledTimes(2);
+    expect(encodeMp3).toHaveBeenCalledTimes(1);
+
+    // A rise that clears the real margin from THAT reading does retry.
+    freeSpace(1_000_000 + realMargin + realMargin);
+    await requestTranscodeSweep();
+    expect(vi.mocked(loadSegmentClip)).toHaveBeenCalledTimes(3);
+    expect(encodeMp3).toHaveBeenCalledTimes(2);
   });
 });

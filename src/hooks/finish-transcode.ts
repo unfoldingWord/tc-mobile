@@ -53,7 +53,10 @@ import {
   subscribeToEncoderHealth,
   withEncoder,
 } from "./mp3-codec";
-import { DEFAULT_BITRATE_KBPS, expectedMp3ByteLength } from "@/lib/audio/mp3";
+import {
+  DEFAULT_BITRATE_KBPS,
+  expectedMp3ByteLength,
+} from "@/lib/audio/mp3-size";
 import { computePeaks } from "@/lib/audio/peaks";
 import { freeByteCount } from "@/lib/storage/pressure";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
@@ -595,10 +598,22 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
         // reading that let it retry, so an unknown re-read cannot erase a
         // usable baseline and pin the segment for the page (George R1).
         const freeAfter = await currentFreeBytes();
+        // A retry that fails again before its own load resolves must not
+        // overwrite a duration this same clip already had (#1012's warning
+        // against a re-read replacing a known value with an unknown one,
+        // caught on this PR by review): fall back to the prior entry's
+        // duration, but only when it is for the SAME clip — an entry from a
+        // clip this segment held before (already invalidated by the clip
+        // check above, so unreachable here) must never leak its duration
+        // onto a different one.
         failedSegments.set(segmentId, {
           clipId,
           freeAtFailure: freeAfter ?? freeBeforeRetry,
-          durationMs: clipDurationMs,
+          durationMs:
+            clipDurationMs ??
+            (failedBefore?.clipId === clipId
+              ? failedBefore.durationMs
+              : undefined),
         });
       } else {
         failedSegments.delete(segmentId);
