@@ -650,3 +650,81 @@ test.describe("selection handle focus ring at 0%/100% (#659)", () => {
     });
   }
 });
+
+// #361 row 5, the "stop-on-edit" half (#284): every edit action stops an
+// audition first, because a cut rematerialises `working` and a moved handle
+// changes the span the audition was OF. `recorder.tsx`'s `onSelectionChange`
+// and `onCut` each call `stopPlayback()` before they act, and nothing in the
+// Node suite reaches either handler. The span is widened first, so an
+// audition that was NOT stopped would still be sounding after each check's
+// timeout.
+test.describe("an edit stops the audition (#284, #361)", () => {
+  test("a handle nudge and a cut each silence a sounding selection", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 740 });
+    await page.goto("/");
+    await page.getByRole("button", { name: "New book" }).click();
+    await page.getByRole("button", { name: "Create book" }).click();
+    await page.getByRole("button", { name: /^Add chapter to/ }).click();
+    await page.getByRole("button", { name: "Create chapter" }).click();
+    await page.getByRole("button", { name: "Open Chapter 1" }).click();
+    await page.getByRole("button", { name: "Add segment" }).click();
+    await page.getByRole("button", { name: "Record segment 1" }).click();
+    await page.getByRole("button", { name: "Record", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: "Stop recording", exact: true })
+    ).toBeVisible();
+    await page.waitForTimeout(8000);
+    await page
+      .getByRole("button", { name: "Stop recording", exact: true })
+      .click();
+    await clickEditRecording(page);
+
+    const startHandle = page.getByLabel("Selection start", { exact: true });
+    const endHandle = page.getByLabel("Selection end", { exact: true });
+    await expect(startHandle).toBeVisible();
+    // Drag the start edge toward the canvas's left edge, so the span is
+    // longer than the seeded last quarter.
+    const stage = (await page.locator(".recorder-canvas").boundingBox())!;
+    const hb = (await startHandle.boundingBox())!;
+    const y = hb.y + hb.height / 2;
+    await page.mouse.move(hb.x + hb.width / 2, y);
+    await page.mouse.down();
+    await page.mouse.move(stage.x - 20, y, { steps: 8 });
+    await page.mouse.up();
+    const valueOf = async (h: Locator) =>
+      Number(await h.getAttribute("aria-valuenow"));
+    const max = Number(await endHandle.getAttribute("aria-valuemax"));
+    // Premise: the span is at least 40% of an 8 s take, over 3 s of audio,
+    // so an audition left running outlasts each 1.5 s check below.
+    expect((await valueOf(endHandle)) - (await valueOf(startHandle))).toBe(
+      max - (await valueOf(startHandle))
+    );
+    expect(max - (await valueOf(startHandle))).toBeGreaterThan(max * 0.4);
+
+    const play = page.getByRole("button", {
+      name: "Play the selection",
+      exact: true,
+    });
+    const stop = page.getByRole("button", {
+      name: "Stop playing",
+      exact: true,
+    });
+
+    // 1. A handle nudge (`onSelectionChange`) while the selection sounds.
+    await play.click();
+    await expect(stop).toBeVisible();
+    await endHandle.press("ArrowLeft");
+    await expect(stop).toHaveCount(0, { timeout: 1500 });
+    await expect(play).toBeVisible();
+
+    // 2. A cut (`onCut`) while the selection sounds.
+    await play.click();
+    await expect(stop).toBeVisible();
+    await page
+      .getByRole("button", { name: "Cut the selection", exact: true })
+      .click();
+    await expect(stop).toHaveCount(0, { timeout: 1500 });
+  });
+});
