@@ -207,8 +207,19 @@ test.describe("edit-toolbar history cue (#91)", () => {
         Math.abs(box.y - was.y),
         `control ${i} moved in y`
       ).toBeLessThanOrEqual(1);
-      expect(box.width, `control ${i} changed width`).toBe(was.width);
-      expect(box.height, `control ${i} changed height`).toBe(was.height);
+      // 0.5px tolerance, matching the wrapper-vs-button check just above:
+      // `getBoundingClientRect()` floats over the same box in the same
+      // column can differ by a sub-pixel rounding without a real reflow, and
+      // a strict `toBe` here was a flake surface the tolerated x/y checks
+      // right above it did not share (#719 item 2, raised in three rounds).
+      expect(
+        Math.abs(box.width - was.width),
+        `control ${i} changed width`
+      ).toBeLessThanOrEqual(0.5);
+      expect(
+        Math.abs(box.height - was.height),
+        `control ${i} changed height`
+      ).toBeLessThanOrEqual(0.5);
     }
 
     // ── Position 3: THE ROUND-1 DEFECT. Undo back to the bottom of a stack
