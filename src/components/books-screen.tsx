@@ -34,6 +34,7 @@ import { bookShareItems } from "./share-o4-view";
 import { ShareProgress } from "./share-progress";
 import { StoragePressureBanner } from "./storage-pressure-banner";
 import { storagePressureNotice } from "./storage-pressure-notice";
+import { shelfNoticeText } from "./shelf-notice-text";
 import { strings } from "@/lib/strings";
 import { ThemeControl } from "./theme-control";
 import { DesignControl } from "./design-control";
@@ -1655,12 +1656,9 @@ export function BooksScreen({
   // state there, so the label cannot outlive what it labels. A *reload* no
   // longer takes this line down (it would race the delete's own error off the
   // screen); what clears it is another delete, or any write that succeeds
-  // (George R4 P2-2 / Frank R4 P2).
-  const noticeText = deleteFailed
-    ? strings.deleteBookFailed
-    : error
-      ? strings[error]
-      : null;
+  // (George R4 P2-2 / Frank R4 P2). A delete that failed on a full disk
+  // speaks `noRoom`, as every other write does (#894).
+  const noticeText = shelfNoticeText(error, deleteFailed);
 
   // The guided chain's answer for this screen (#604): one accent on the next
   // required action, and nothing once the first book has been worked in. Read
