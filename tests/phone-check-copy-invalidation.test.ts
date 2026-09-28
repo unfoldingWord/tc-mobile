@@ -11,11 +11,12 @@ import { strings } from "@/lib/strings";
  * #1014 item 8: "Copied." must not survive a result landing after the copy.
  *
  * `tests/phone-check-entry.test.ts` covers `PhoneCheckView` with the static
- * render harness (`tests/render.ts`), which runs no effects — the invalidating
- * `useEffect` this file exercises cannot be reached from a single
- * `renderToStaticMarkup` pass, so this file mounts the real component with
- * `react-dom/client` and `act()`, the same step `docs`/AGENTS.md names for
- * "if an assertion genuinely needs effects."
+ * render harness (`tests/render.ts`), which renders once — a label that must
+ * change across a click, a clipboard write settling and a later re-render
+ * cannot be reached from a single `renderToStaticMarkup` pass, so this file
+ * mounts the real component with `react-dom/client` and `act()`. The label is
+ * keyed to the report text the copy actually wrote, so it shows only while
+ * that text is still the report on screen.
  *
  * jsdom has no Clipboard API, so `navigator.clipboard` is stubbed here with a
  * `writeText` that resolves — without it `copyText` falls back to `select()`
@@ -122,5 +123,41 @@ describe("PhoneCheckView clears a stale Copied when the report changes (#1014 it
     // no new result) must not clear a label that is still accurate.
     await act(async () => renderView({ ...IDLE, device: OK_DEVICE }));
     expect(copyStatusText()).toBe(strings.phoneCheckCopied);
+  });
+
+  it("ignores a copy that settles after the report has already changed", async () => {
+    let settle: () => void = () => {
+      throw new Error("writeText was never called");
+    };
+    const written: string[] = [];
+    writeText = (text) => {
+      written.push(text);
+      return new Promise<void>((resolve) => {
+        settle = resolve;
+      });
+    };
+
+    await act(async () => renderView({ ...IDLE, device: OK_DEVICE }));
+    const copyButton = container.querySelector<HTMLButtonElement>(
+      '[data-phone-check="copy"]'
+    );
+    if (copyButton === null) throw new Error("no copy button rendered");
+    await act(async () => copyButton.click());
+    expect(written).toHaveLength(1);
+    expect(copyStatusText()).toBe("");
+
+    // The encode step lands while the clipboard write is still pending.
+    await act(async () =>
+      renderView({ ...IDLE, device: OK_DEVICE, encode: OK_ENCODE })
+    );
+    const shown = container.querySelector<HTMLTextAreaElement>(
+      '[data-phone-check="report"]'
+    );
+    expect(shown?.value).not.toBe(written[0]);
+
+    // The old write now settles: it put the OLD report on the clipboard, so
+    // "Copied." would be a false claim about the report on screen.
+    await act(async () => settle());
+    expect(copyStatusText()).toBe("");
   });
 });
