@@ -53,6 +53,7 @@ import {
   subscribeToEncoderHealth,
   withEncoder,
 } from "./mp3-codec";
+import { DEFAULT_BITRATE_KBPS, expectedMp3ByteLength } from "@/lib/audio/mp3";
 import { computePeaks } from "@/lib/audio/peaks";
 import { freeByteCount } from "@/lib/storage/pressure";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
@@ -113,6 +114,14 @@ interface FailedTranscode {
   readonly clipId: OwedClipId;
   /** Free bytes read just after the failure; `undefined` when unknown. */
   readonly freeAtFailure: number | undefined;
+  /**
+   * The clip's PCM duration, read from the clip actually loaded for this
+   * attempt; `undefined` when the failure happened before a load resolved
+   * (so no duration was ever in hand — {@link retryHeadroomMarginBytes}
+   * falls back to the floor for it, the same as any other unknown reading in
+   * this module).
+   */
+  readonly durationMs: number | undefined;
 }
 
 /**
@@ -120,9 +129,11 @@ interface FailedTranscode {
  * quota error, as `isQuotaExceeded` reads one — in this page (#1010).
  *
  * Held out of later sweeps until:
- *  - a later storage estimate shows more free space than the one read at its
- *    failure — or, when that failure-time reading was itself unknown, any
- *    known later estimate, once ({@link shouldRetryAfterFailure});
+ *  - a later storage estimate shows AT LEAST a real headroom gain — the held
+ *    clip's own expected MP3 size or a fixed floor, whichever is larger
+ *    (#1015) — more free space than the one read at its failure; or, when
+ *    that failure-time reading was itself unknown, any known later estimate,
+ *    once, with no margin required ({@link shouldRetryAfterFailure});
  *  - the segment holds a different clip — re-recorded or edited, new audio;
  *  - the app restarts: this is module state, and a reload is a fresh module.
  *
@@ -145,17 +156,61 @@ interface FailedTranscode {
 const failedSegments = new Map<SegmentId, FailedTranscode>();
 
 /**
- * Whether storage has freed since a held-out segment failed.
+ * Fixed floor for {@link retryHeadroomMarginBytes}, so a very short segment's
+ * tiny expected MP3 size can never let a near-zero rise through (#1015 —
+ * `navigator.storage.estimate()` drifts on its own by browser rounding and by
+ * other origins, caches and the service worker, so ANY rise used to release a
+ * held-out segment, costing a decode and an encode on a slow phone for a retry
+ * that was never going to fit). 5 MB, the issue's own example — about ten
+ * minutes of audio at ADR 0009's 64 kbps, comfortably past estimate drift.
+ */
+export const RETRY_HEADROOM_FLOOR_BYTES = 5 * 1024 * 1024;
+
+/**
+ * How much free space must rise before a held-out segment (#1010) is worth
+ * retrying: the clip's own expected MP3 size at ADR 0009's bitrate
+ * ({@link expectedMp3ByteLength}), or {@link RETRY_HEADROOM_FLOOR_BYTES},
+ * whichever is larger (#1015) — the retry costs a decode and an encode, so it
+ * should not be spent on a rise too small to actually fit the clip.
  *
- * Ordinarily this is only true for a reading that shows MORE free bytes than
- * the failure-time reading. But when the failure-time reading was itself
- * unknown (no `estimate()`, a rejected call, a timed-out read), that reading
- * is no evidence AGAINST room either — so it does not hold the segment out
- * until a restart. It gets exactly one retry against any known reading now
- * (DRI ruling, 2026-09-26: "One retry on a real reading"). That retry's own
- * outcome sets a real `freeAtFailure` — the failure branch's re-read, or a
- * fallback to the reading that let the retry run — so a second failure is
- * held to the ordinary "strictly more free space" rule below, not another
+ * A missing, non-finite or non-positive duration falls back to the floor
+ * alone. That is the SAFE direction: the floor is a fixed, known-good number,
+ * so an unknown duration still demands a real, non-trivial rise rather than
+ * silently reopening the one-byte gap this function exists to close — the
+ * failure mode `shouldRetryAfterFailure` had before this change.
+ */
+export function retryHeadroomMarginBytes(
+  durationMs: number | undefined
+): number {
+  if (
+    durationMs === undefined ||
+    !Number.isFinite(durationMs) ||
+    durationMs <= 0
+  ) {
+    return RETRY_HEADROOM_FLOOR_BYTES;
+  }
+  return Math.max(
+    expectedMp3ByteLength(durationMs, DEFAULT_BITRATE_KBPS),
+    RETRY_HEADROOM_FLOOR_BYTES
+  );
+}
+
+/**
+ * Whether storage has freed ENOUGH since a held-out segment failed to be
+ * worth spending a retry on.
+ *
+ * Ordinarily this asks for a reading that shows at least
+ * {@link retryHeadroomMarginBytes} more free bytes than the failure-time
+ * reading — a REAL headroom gain (#1015), not the one-byte rise the estimate's
+ * own drift can produce on its own. But when the failure-time reading was
+ * itself unknown (no `estimate()`, a rejected call, a timed-out read), that
+ * reading is no evidence AGAINST room either — so it does not hold the segment
+ * out until a restart. It gets exactly one retry against any known reading now
+ * (DRI ruling, 2026-09-26: "One retry on a real reading"), still with no
+ * margin required, because there is no failure-time baseline to measure a
+ * margin from. That retry's own outcome sets a real `freeAtFailure` — the
+ * failure branch's re-read, or a fallback to the reading that let the retry
+ * run — so a second failure is held to the margin rule below, not another
  * free pass.
  *
  * A CURRENT reading that is unknown is never evidence of room, on either
@@ -165,11 +220,12 @@ const failedSegments = new Map<SegmentId, FailedTranscode>();
  */
 export function shouldRetryAfterFailure(
   freeNow: number | undefined,
-  freeAtFailure: number | undefined
+  freeAtFailure: number | undefined,
+  durationMs: number | undefined
 ): boolean {
   if (freeNow === undefined) return false;
   if (freeAtFailure === undefined) return true;
-  return freeNow > freeAtFailure;
+  return freeNow - freeAtFailure >= retryHeadroomMarginBytes(durationMs);
 }
 
 /**
@@ -466,12 +522,23 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
         if (paused()) requestedDuringPause = true;
         return null;
       }
-      if (!shouldRetryAfterFailure(freeNow, failedBefore.freeAtFailure)) {
+      if (
+        !shouldRetryAfterFailure(
+          freeNow,
+          failedBefore.freeAtFailure,
+          failedBefore.durationMs
+        )
+      ) {
         continue;
       }
       freeBeforeRetry = freeNow;
     }
     let startedHealthy = false;
+    // The clip's PCM duration, once the load resolves and matches — the
+    // margin's input if this turn goes on to fail out of room. Stays
+    // `undefined` when the failure happens before a load resolves, which
+    // {@link retryHeadroomMarginBytes} treats as "fall back to the floor".
+    let clipDurationMs: number | undefined;
     try {
       // Inside the encoder lane from the LOAD onward, not just the encode: the
       // PCM is read only once the lane is ours, so a share holding the lane
@@ -490,6 +557,7 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
           audio.clip.meta.id !== clipId
         )
           return;
+        clipDurationMs = audio.clip.meta.durationMs;
         const { samples } = audio.clip;
         // Before the encode: it transfers `samples` away.
         const peaks = computePeaks(samples, ROW_PEAK_BUCKETS);
@@ -530,6 +598,7 @@ async function sweepOnce(skip: SegmentId | null): Promise<SegmentId | null> {
         failedSegments.set(segmentId, {
           clipId,
           freeAtFailure: freeAfter ?? freeBeforeRetry,
+          durationMs: clipDurationMs,
         });
       } else {
         failedSegments.delete(segmentId);

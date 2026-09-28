@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { shouldRetryAfterFailure } from "@/hooks/finish-transcode";
+import {
+  RETRY_HEADROOM_FLOOR_BYTES,
+  retryHeadroomMarginBytes,
+  shouldRetryAfterFailure,
+} from "@/hooks/finish-transcode";
 import type { SegmentAudio } from "@/lib/storage/segment-audio";
 import type { AudioCodec, Clip } from "@/types/audio";
 import type {
@@ -18,7 +22,12 @@ import type {
  * re-encodes the failing segment and writes another failure-log row for it.
  *
  * A held-out segment is tried again when:
- *  - a later storage estimate shows more free space than at its failure;
+ *  - a later storage estimate shows a REAL headroom gain over its failure —
+ *    the clip's expected MP3 size or `RETRY_HEADROOM_FLOOR_BYTES`, whichever
+ *    is larger, not merely any rise (#1015 — the estimate drifts on its own,
+ *    and a fixture clip's `durationMs: 1` here always falls back to the
+ *    floor, so every "retries" case below rises by more than it to stay
+ *    meaningful);
  *  - its clip changes (re-recorded or edited: a new clip id);
  *  - the app restarts (a fresh module).
  *
@@ -148,10 +157,20 @@ function owe(...segmentIds: string[]): void {
   });
 }
 
+/**
+ * The quota `freeSpace` and the manual `readStorageEstimate` mocks below
+ * divide against — large enough that a #1015 margin-worth of headroom
+ * (`RETRY_HEADROOM_FLOOR_BYTES`, 5 MB) is a small fraction of it, the way a
+ * real device's quota is.
+ */
+const TEST_QUOTA_BYTES = 1_000_000_000;
+
 /** Free space the next estimate reports, or `null` for "could not ask". */
 function freeSpace(free: number | null): void {
   vi.mocked(readStorageEstimate).mockResolvedValue(
-    free === null ? null : { usage: 1_000_000 - free, quota: 1_000_000 }
+    free === null
+      ? null
+      : { usage: TEST_QUOTA_BYTES - free, quota: TEST_QUOTA_BYTES }
   );
 }
 
@@ -285,11 +304,11 @@ describe("a segment that failed is attempted once per session (#1010)", () => {
   it("returns a held-out segment to per-sweep retry once it fails another way", async () => {
     owe("s1");
     s1HitsQuota();
-    freeSpace(1_000);
+    freeSpace(1_000_000);
     await requestTranscodeSweep();
 
     // Storage frees; the retry now fails for a different reason.
-    freeSpace(50_000);
+    freeSpace(50_000_000);
     vi.mocked(commitTranscode).mockRejectedValue(new Error("not quota"));
     await requestTranscodeSweep();
     // A different reason is a new failure, and it gets its own row: the
@@ -297,7 +316,7 @@ describe("a segment that failed is attempted once per session (#1010)", () => {
     expect(segmentReports("s1")).toBe(2);
     // Less room than at the quota failure: only the entry being gone lets
     // this sweep retry it.
-    freeSpace(500);
+    freeSpace(500_000);
     await requestTranscodeSweep();
 
     expect(encodeMp3).toHaveBeenCalledTimes(3);
@@ -307,10 +326,10 @@ describe("a segment that failed is attempted once per session (#1010)", () => {
   it("logs a stall on a held-out segment's storage retry", async () => {
     owe("s1");
     s1HitsQuota();
-    freeSpace(1_000);
+    freeSpace(1_000_000);
     await requestTranscodeSweep();
 
-    freeSpace(50_000);
+    freeSpace(50_000_000);
     encodeMp3.mockRejectedValue(new StalledError(15_000));
     await requestTranscodeSweep();
 
@@ -333,10 +352,10 @@ describe("storage freeing up retries it", () => {
   it("retries once a later estimate shows more free space than at failure", async () => {
     owe("s1");
     s1HitsQuota();
-    freeSpace(1_000);
+    freeSpace(1_000_000);
     await requestTranscodeSweep();
 
-    freeSpace(50_000);
+    freeSpace(50_000_000);
     await requestTranscodeSweep();
 
     expect(encodeMp3).toHaveBeenCalledTimes(2);
@@ -345,7 +364,7 @@ describe("storage freeing up retries it", () => {
   it("does not retry on the same free space", async () => {
     owe("s1");
     s1HitsQuota();
-    freeSpace(1_000);
+    freeSpace(1_000_000);
     await requestTranscodeSweep();
 
     await requestTranscodeSweep();
@@ -356,13 +375,39 @@ describe("storage freeing up retries it", () => {
   it("does not retry on less free space", async () => {
     owe("s1");
     s1HitsQuota();
-    freeSpace(1_000);
+    freeSpace(1_000_000);
     await requestTranscodeSweep();
 
-    freeSpace(500);
+    freeSpace(500_000);
     await requestTranscodeSweep();
 
     expect(encodeMp3).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds a sub-margin rise (#1015): a real increase that is still under the margin", async () => {
+    owe("s1");
+    s1HitsQuota();
+    freeSpace(1_000_000);
+    await requestTranscodeSweep();
+
+    // A genuine rise (2 MB), but well under RETRY_HEADROOM_FLOOR_BYTES (5 MB)
+    // — the fixture clip's durationMs: 1 makes the floor the whole margin.
+    freeSpace(1_000_000 + 2 * 1024 * 1024);
+    await requestTranscodeSweep();
+
+    expect(encodeMp3).toHaveBeenCalledTimes(1);
+  });
+
+  it("releases at or above the margin (#1015)", async () => {
+    owe("s1");
+    s1HitsQuota();
+    freeSpace(1_000_000);
+    await requestTranscodeSweep();
+
+    freeSpace(1_000_000 + RETRY_HEADROOM_FLOOR_BYTES);
+    await requestTranscodeSweep();
+
+    expect(encodeMp3).toHaveBeenCalledTimes(2);
   });
 
   it("retries once on a later known reading when the failure-time reading was unknown", async () => {
@@ -377,7 +422,7 @@ describe("storage freeing up retries it", () => {
     freeSpace(null);
     await requestTranscodeSweep();
 
-    freeSpace(900_000);
+    freeSpace(900_000_000);
     await requestTranscodeSweep();
     expect(encodeMp3).toHaveBeenCalledTimes(2);
 
@@ -389,7 +434,7 @@ describe("storage freeing up retries it", () => {
   it("never retries on storage when the later reading is unknown", async () => {
     owe("s1");
     s1HitsQuota();
-    freeSpace(1_000);
+    freeSpace(1_000_000);
     await requestTranscodeSweep();
 
     freeSpace(null);
@@ -401,9 +446,9 @@ describe("storage freeing up retries it", () => {
   it("measures against the LATEST failure, so a retry that fails again needs more room again", async () => {
     owe("s1");
     s1HitsQuota();
-    freeSpace(1_000);
+    freeSpace(1_000_000);
     await requestTranscodeSweep();
-    freeSpace(50_000);
+    freeSpace(50_000_000);
     await requestTranscodeSweep(); // retried, fails at 50 000 free
     await requestTranscodeSweep(); // same 50 000: held out
 
@@ -413,14 +458,14 @@ describe("storage freeing up retries it", () => {
   it("keeps a usable baseline when a failed retry's re-read is unknown", async () => {
     owe("s1");
     s1HitsQuota();
-    freeSpace(1_000);
+    freeSpace(1_000_000);
     await requestTranscodeSweep();
 
     // The retry's pre-attempt read is 50 000 free; the quota catch's re-read
     // comes back unknown.
-    freeSpace(50_000);
+    freeSpace(50_000_000);
     vi.mocked(readStorageEstimate)
-      .mockResolvedValueOnce({ usage: 950_000, quota: 1_000_000 })
+      .mockResolvedValueOnce({ usage: 950_000_000, quota: 1_000_000_000 })
       .mockResolvedValueOnce(null);
     await requestTranscodeSweep();
     expect(encodeMp3).toHaveBeenCalledTimes(2);
@@ -429,7 +474,7 @@ describe("storage freeing up retries it", () => {
     await requestTranscodeSweep();
     expect(encodeMp3).toHaveBeenCalledTimes(2);
     // Not pinned for the page either: more room still buys a retry.
-    freeSpace(60_000);
+    freeSpace(60_000_000);
     await requestTranscodeSweep();
     expect(encodeMp3).toHaveBeenCalledTimes(3);
   });
@@ -437,9 +482,9 @@ describe("storage freeing up retries it", () => {
   it("does not log a second entry when the storage retry fails the same way", async () => {
     owe("s1");
     s1HitsQuota();
-    freeSpace(1_000);
+    freeSpace(1_000_000);
     await requestTranscodeSweep();
-    freeSpace(50_000);
+    freeSpace(50_000_000);
     await requestTranscodeSweep();
 
     expect(segmentReports("s1")).toBe(1);
@@ -448,11 +493,11 @@ describe("storage freeing up retries it", () => {
   it("lands the segment when the retry succeeds", async () => {
     owe("s1");
     s1HitsQuota();
-    freeSpace(1_000);
+    freeSpace(1_000_000);
     await requestTranscodeSweep();
 
     vi.mocked(commitTranscode).mockResolvedValue("committed");
-    freeSpace(50_000);
+    freeSpace(50_000_000);
     await requestTranscodeSweep();
 
     expect(
@@ -468,7 +513,7 @@ describe("the segment changing retries it", () => {
   it("retries on the very next sweep once the segment holds a new clip", async () => {
     owe("s1");
     s1HitsQuota();
-    freeSpace(1_000);
+    freeSpace(1_000_000);
     await requestTranscodeSweep();
 
     clipOf.set("s1", cid("c1-edited"));
@@ -541,19 +586,19 @@ describe("the storage read does not outlive a pause or hang the sweep", () => {
   it("does not start a held-out retry when the sweep is paused during the read", async () => {
     owe("s1");
     s1HitsQuota();
-    freeSpace(1_000);
+    freeSpace(1_000_000);
     await requestTranscodeSweep();
 
     vi.mocked(commitTranscode).mockResolvedValue("committed");
     vi.mocked(readStorageEstimate).mockImplementation(async () => {
       pauseTranscodeSweep("test");
-      return { usage: 950_000, quota: 1_000_000 };
+      return { usage: 950_000_000, quota: 1_000_000_000 };
     });
     await requestTranscodeSweep();
     expect(encodeMp3).toHaveBeenCalledTimes(1);
 
     // The request is handed to the resume, not lost.
-    freeSpace(50_000);
+    freeSpace(50_000_000);
     resumeTranscodeSweep("test");
     // Awaited by polling, not by joining with another request: a join would
     // itself ask for one more pass.
@@ -563,12 +608,12 @@ describe("the storage read does not outlive a pause or hang the sweep", () => {
   it("does not start a held-out retry when the sweep is quiesced during the read", async () => {
     owe("s1");
     s1HitsQuota();
-    freeSpace(1_000);
+    freeSpace(1_000_000);
     await requestTranscodeSweep();
 
     vi.mocked(readStorageEstimate).mockImplementation(async () => {
       quiesceTranscodeSweep();
-      return { usage: 950_000, quota: 1_000_000 };
+      return { usage: 950_000_000, quota: 1_000_000_000 };
     });
     await requestTranscodeSweep();
 
@@ -606,23 +651,85 @@ describe("the storage read does not outlive a pause or hang the sweep", () => {
   });
 });
 
-describe("shouldRetryAfterFailure", () => {
-  it("is true only for strictly more free space than at the failure", () => {
-    expect(shouldRetryAfterFailure(1_001, 1_000)).toBe(true);
-    expect(shouldRetryAfterFailure(1_000, 1_000)).toBe(false);
-    expect(shouldRetryAfterFailure(999, 1_000)).toBe(false);
+describe("shouldRetryAfterFailure (#1015 — a real headroom gain, not any rise)", () => {
+  it("holds a rise smaller than the margin", () => {
+    expect(
+      shouldRetryAfterFailure(
+        1_000 + RETRY_HEADROOM_FLOOR_BYTES - 1,
+        1_000,
+        undefined
+      )
+    ).toBe(false);
+  });
+
+  it("releases a rise at or above the margin", () => {
+    expect(
+      shouldRetryAfterFailure(
+        1_000 + RETRY_HEADROOM_FLOOR_BYTES,
+        1_000,
+        undefined
+      )
+    ).toBe(true);
+    expect(
+      shouldRetryAfterFailure(
+        1_000 + RETRY_HEADROOM_FLOOR_BYTES + 1,
+        1_000,
+        undefined
+      )
+    ).toBe(true);
+  });
+
+  it("is false for no rise or a fall, regardless of duration", () => {
+    expect(shouldRetryAfterFailure(1_000, 1_000, undefined)).toBe(false);
+    expect(shouldRetryAfterFailure(999, 1_000, undefined)).toBe(false);
   });
 
   it("is false when the current reading is unknown, known or not at the failure", () => {
-    expect(shouldRetryAfterFailure(undefined, 1_000)).toBe(false);
-    expect(shouldRetryAfterFailure(undefined, undefined)).toBe(false);
+    expect(shouldRetryAfterFailure(undefined, 1_000, undefined)).toBe(false);
+    expect(shouldRetryAfterFailure(undefined, undefined, undefined)).toBe(
+      false
+    );
   });
 
-  it("allows one retry on a known reading when the failure-time reading was unknown (DRI ruling, 2026-09-26)", () => {
-    expect(shouldRetryAfterFailure(1_000, undefined)).toBe(true);
+  it("allows one retry on a known reading when the failure-time reading was unknown (DRI ruling, 2026-09-26), with no margin required", () => {
+    expect(shouldRetryAfterFailure(1_000, undefined, undefined)).toBe(true);
   });
 
-  it("compares negative headroom the same way", () => {
-    expect(shouldRetryAfterFailure(-10, -20)).toBe(true);
+  it("compares negative headroom against the margin too, not against zero", () => {
+    expect(shouldRetryAfterFailure(-10, -20, undefined)).toBe(false);
+    expect(
+      shouldRetryAfterFailure(-20 + RETRY_HEADROOM_FLOOR_BYTES, -20, undefined)
+    ).toBe(true);
+  });
+
+  it("uses the clip's own expected MP3 size once it exceeds the floor", () => {
+    // 20 minutes at ADR 0009's 64 kbps: 20*60*1000 ms * 64 kbps / 8 =
+    // 9 600 000 bytes, comfortably past the 5 MB floor.
+    const durationMs = 20 * 60 * 1000;
+    const margin = retryHeadroomMarginBytes(durationMs);
+    expect(margin).toBeGreaterThan(RETRY_HEADROOM_FLOOR_BYTES);
+    expect(shouldRetryAfterFailure(1_000 + margin - 1, 1_000, durationMs)).toBe(
+      false
+    );
+    expect(shouldRetryAfterFailure(1_000 + margin, 1_000, durationMs)).toBe(
+      true
+    );
+  });
+});
+
+describe("retryHeadroomMarginBytes (#1015)", () => {
+  it("falls back to the floor for a missing, non-finite or non-positive duration", () => {
+    expect(retryHeadroomMarginBytes(undefined)).toBe(
+      RETRY_HEADROOM_FLOOR_BYTES
+    );
+    expect(retryHeadroomMarginBytes(0)).toBe(RETRY_HEADROOM_FLOOR_BYTES);
+    expect(retryHeadroomMarginBytes(-100)).toBe(RETRY_HEADROOM_FLOOR_BYTES);
+    expect(retryHeadroomMarginBytes(NaN)).toBe(RETRY_HEADROOM_FLOOR_BYTES);
+    expect(retryHeadroomMarginBytes(Infinity)).toBe(RETRY_HEADROOM_FLOOR_BYTES);
+  });
+
+  it("is the floor for a short clip whose expected size is under it", () => {
+    // 1 ms, this file's fixture clip duration: expected size is a few bytes.
+    expect(retryHeadroomMarginBytes(1)).toBe(RETRY_HEADROOM_FLOOR_BYTES);
   });
 });
