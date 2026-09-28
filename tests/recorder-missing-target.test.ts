@@ -12,6 +12,8 @@ import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import { setSegmentFinished } from "@/lib/storage/takes";
 import type { SegmentId } from "@/types/domain";
 
+import { restingErase } from "./support";
+
 /**
  * The recorder's two no-capture close tails on a segment another live copy
  * deleted (#607): a cut-to-empty close (`clear`) and a Finished change
@@ -154,13 +156,10 @@ async function setup(
    * this suite never erases — it drives the missing-target SAVE path — and a
    * stub answering "no erase in flight" is what the sheet's Back and confirm
    * gates read. A prop rather than a module mock, because the sheet takes it
-   * as one now and a module mock would intercept nothing.
+   * as one now and a module mock would intercept nothing. Shared fixture
+   * (#856 item 3, `tests/support.ts`).
    */
-  const erase = {
-    erase: vi.fn(async () => "ok" as const),
-    erasing: false,
-    isErasing: () => false,
-  };
+  const erase = restingErase();
   const clipboard = new Int16Array([7, 8, 9]);
   await act(async () =>
     root.render(

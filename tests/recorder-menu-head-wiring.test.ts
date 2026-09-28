@@ -9,6 +9,8 @@ import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
 
+import { restingErase } from "./support";
+
 /**
  * The recorder screen hands its view's book name and chapter number to the
  * ≡ menu's O4 sheet head (#949 G3). `tests/recorder-menu-head-o4.test.ts`
@@ -51,11 +53,8 @@ vi.mock("@/components/waveform", () => ({ Waveform: () => null }));
 vi.mock("@/components/live-scope", () => ({ LiveScope: () => null }));
 vi.mock("@/components/vu-meter", () => ({ VuMeter: () => null }));
 
-const erase = {
-  erase: vi.fn(async () => "ok" as const),
-  erasing: false,
-  isErasing: () => false,
-};
+// Resting erase (#856 item 3): shared fixture, `tests/support.ts`.
+const erase = restingErase();
 
 let root: Root;
 let container: HTMLDivElement;

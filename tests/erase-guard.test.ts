@@ -35,7 +35,17 @@ let host: HTMLDivElement;
 let api: UseEraseSegment;
 const seg = (n: number) => `segment-${n}` as SegmentId;
 
-function Harness({ onCommit }: { onCommit: (a: UseEraseSegment) => void }) {
+function Harness({
+  onCommit,
+  nonce,
+}: {
+  onCommit: (a: UseEraseSegment) => void;
+  // Unused in render; a changing value here forces React to re-render this
+  // plain function component (it is not `memo`-wrapped) without touching any
+  // state the hook itself owns — the re-render the identity test needs.
+  nonce?: number;
+}) {
+  void nonce; // read only to force the re-render; not itself asserted on
   const erase = useEraseSegment();
   useEffect(() => {
     onCommit(erase);
@@ -147,5 +157,28 @@ describe("useEraseSegment's in-flight guard", () => {
     // read it as a boolean and rendered a constant, while SHARING it would have
     // painted a list erase's failure inside the recorder sheet.
     expect(Object.keys(api).sort()).toEqual(["erase", "erasing", "isErasing"]);
+  });
+
+  it("keeps its returned object's identity across a re-render with unchanged state (#856 item 2)", () => {
+    // The hook now lives in `App`, beside the audio session, so it re-renders
+    // on every session-driven change, not just on erase — an unmemoised
+    // `{ erase, erasing, isErasing }` would churn on every one of those,
+    // even though nothing about erasing changed. `nonce` forces a genuine
+    // re-render of the SAME component instance (not a remount), with no
+    // erase ever started, so `erasing` never flips.
+    const seen: UseEraseSegment[] = [];
+    act(() => {
+      root.render(
+        createElement(Harness, { onCommit: (a) => seen.push(a), nonce: 1 })
+      );
+    });
+    act(() => {
+      root.render(
+        createElement(Harness, { onCommit: (a) => seen.push(a), nonce: 2 })
+      );
+    });
+
+    expect(seen).toHaveLength(2);
+    expect(seen[1]).toBe(seen[0]);
   });
 });

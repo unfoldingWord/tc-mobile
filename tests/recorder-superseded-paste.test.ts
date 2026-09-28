@@ -6,6 +6,7 @@ import { Recorder, type RecorderHandle } from "@/components/recorder";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
 import { strings } from "@/lib/strings";
+import { restingErase } from "./support";
 
 /**
  * A paste empties the clipboard (#489), so once it lands the phrase lives only
@@ -114,11 +115,8 @@ async function mountAfterPaste() {
       ref,
       segmentId: "segment" as SegmentId,
       audio,
-      erase: {
-        erase: vi.fn(async () => "ok" as const),
-        erasing: false,
-        isErasing: () => false,
-      },
+      // Resting erase (#856 item 3): shared fixture, `tests/support.ts`.
+      erase: restingErase(),
       saveRecording,
       saveEditedSegment,
       clipboard: clip,

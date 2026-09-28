@@ -9,11 +9,11 @@ import { Icon } from "@/components/icon";
 import { Recorder } from "@/components/recorder";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
-import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import type { SegmentId } from "@/types/domain";
 
 import { render } from "./render";
 import { mountInteractive, type InteractiveMount } from "./interactive-mount";
+import { restingErase } from "./support";
 
 // Hoisted mocks for the interactive header render below (`vi.mock` runs
 // before this module's own top-level code, so these must live here, not
@@ -256,12 +256,9 @@ describe("record mode's header opener stays ≡, and the Editing pill hides it i
       peekScope: () => null,
     } as unknown as UseAudioSession;
     // Resting erase: this suite never opens the confirm, but the sheet reads
-    // `erase.isErasing` during render, so the prop cannot be absent (#160 L-12).
-    const erase: UseEraseSegment = {
-      erase: vi.fn(async () => "ok" as const),
-      erasing: false,
-      isErasing: () => false,
-    };
+    // `erase.isErasing` during render, so the prop cannot be absent (#160
+    // L-12; shared fixture, #856 item 3, `tests/support.ts`).
+    const erase = restingErase();
     await act(async () => {
       root.render(
         createElement(Recorder, {
