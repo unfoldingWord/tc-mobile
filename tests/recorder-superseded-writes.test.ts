@@ -7,6 +7,7 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import type { SegmentId } from "@/types/domain";
 import { strings } from "@/lib/strings";
+import { restingErase } from "./support";
 
 const boundary = vi.hoisted(() => ({
   setFinished: vi.fn().mockResolvedValue(undefined),
@@ -72,6 +73,7 @@ beforeEach(() => {
     paste: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),
+    rollBackClipboard: vi.fn(),
   };
   container = document.createElement("div");
   document.body.append(container);
@@ -100,6 +102,7 @@ async function setup() {
       error: null,
       recorderError: null,
       meterFailed: false,
+      takeCap: { nearLimit: false, remainingMs: 20 * 60_000, reached: false },
       playTake: vi.fn(),
       playBuffer: vi.fn(),
       stopBuffer: vi.fn(),
@@ -126,12 +129,9 @@ async function setup() {
           audio,
           // A prop now (#160, L-12). This file never exercises erase, so a
           // resting stub is honest: a real hook here would only add a guard
-          // nothing in these cases touches.
-          erase: {
-            erase: vi.fn(async () => "ok" as const),
-            erasing: false,
-            isErasing: () => false,
-          },
+          // nothing in these cases touches. Shared fixture (#856 item 3,
+          // `tests/support.ts`).
+          erase: restingErase(),
           saveRecording,
           saveEditedSegment,
           clipboard: null,
@@ -165,12 +165,9 @@ async function setup() {
 }
 
 it.each(["edit", "clear", "finished"])(
-  // Driven through Stop (`commitTake("stay")`), not Edit-entry
-  // (`commitTake("edit")`): #857 disables the `[ ]`/"Edit recording" entry
-  // while a take is live, so it is no longer UI-reachable. The superseded
-  // verdict this pins runs unconditionally on `commitTake`'s `after` argument
-  // (`recorder.tsx`'s `verdict.kind === "superseded"` branch), so Stop
-  // exercises the identical shared code the Edit-triggered version did.
+  // Driven through Stop, the one UI route into `commitTake` since #857
+  // disabled the `[ ]`/"Edit recording" entry while a take is live (#871
+  // removed the commit-then-edit arm that entry used).
   "withholds pending %s after a superseded capture and idle Back follows",
   async (kind) => {
     const s = await setup();
@@ -215,7 +212,7 @@ it("still saves an ordinary idle edit", async () => {
   expect(s.saveEditedSegment).toHaveBeenCalledWith("segment", original, false);
 });
 
-// Both stops below are driven through Stop (`commitTake("stay")`), not
+// Both stops below are driven through Stop (`commitTake`), not
 // Edit-entry — #857 disables Edit-entry while a take is live, and neither
 // assertion here cares which mode the sheet lands in, only that a superseded
 // stop is followed by a real capture and idle writes still land afterward.

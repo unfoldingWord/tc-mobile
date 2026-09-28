@@ -37,18 +37,23 @@ describe("Tile (#941)", () => {
     expect(caption.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it.each(["edit", "name", "send", "erase", "plain"] as const)(
-    "tone %s lands as its own class",
-    (tone) => {
-      const el = one(
-        render(
-          createElement(Tile, { tone, icon: "edit", label: "x", caption: "x" })
-        ),
-        "button"
-      );
-      expect(el.classList.contains(`o4-tile--${tone}`)).toBe(true);
-    }
-  );
+  it.each([
+    "edit",
+    "name",
+    "send",
+    "erase",
+    "plain",
+    "done",
+    "doneoff",
+  ] as const)("tone %s lands as its own class", (tone) => {
+    const el = one(
+      render(
+        createElement(Tile, { tone, icon: "edit", label: "x", caption: "x" })
+      ),
+      "button"
+    );
+    expect(el.classList.contains(`o4-tile--${tone}`)).toBe(true);
+  });
 
   it("keeps Control's toggle and inert semantics", () => {
     const pressed = one(

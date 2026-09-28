@@ -47,11 +47,12 @@
  * for the share-scrim block: it slices that block and matches declaration
  * VALUES, which a comment cannot false-hit.
  *
- * That selector is written here WITHOUT its leading dot on purpose. The test
- * finds its block with a raw `indexOf` over this whole file, so a comment
- * containing the literal selector is found first and the slice becomes comment
- * text with no declarations in it. The declaration-count floor keeps an empty
- * block from passing the value assertions vacuously.
+ * That selector is written here WITHOUT its leading dot. share-progress now
+ * strips comments before it looks for the block (#533), so it no longer needs
+ * that; other suites still slice this file with a raw `indexOf`, where a
+ * comment holding the literal selector is found first and the slice becomes
+ * comment text with no declarations in it. Keep selectors in this header
+ * undotted.
  *
  * touch-policy reads this file whole and
  * regexes the raw string — and the paragraph above names the five colour
@@ -447,6 +448,13 @@
     text-align: left;
     cursor: pointer;
     border-radius: var(--c-breadcrumb-radius);
+    /* Extends #559's opt-out to the Segments header (#563): a control-only
+       surface in the same sense the recorder sheet, the menu drawer and the
+       erase confirm already are, and the exact long-pressable element the
+       reported screenshot selected text in. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   .breadcrumb > span {
     min-width: 0;
@@ -472,6 +480,16 @@
     padding: var(--p-space-3);
     border: 1px solid transparent;
     transition: background var(--p-dur-base) var(--p-ease);
+    /* Extends #559's opt-out to the Segments rows (#563), the control-only
+       surface #556 itself named as a reasonable second target. Shared by
+       both looks (segment-row.tsx always carries "row"), and inheritance
+       reaches the ordinal, the title and the scrub track the same way it
+       reaches the recorder sheet's chrome — no rename field or other text
+       input lives inside a row, so there is no opt-back-in to pair with
+       .name-input's. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
 
   /* --- type roles -------------------------------------------------------- */
@@ -612,7 +630,7 @@
   }
 
   /* --- inline name edit (#264) ------------------------------------------- */
-  /* The rename field + its commit control, shown inside a ≡ menu. The input
+  /* The rename field + its commit control, shown inside a ⋮ menu. The input
      sits on the raised surface with an edged outline so it reads as a fillable
      field against the menu panel, and gains the focus ring every control uses. */
   .name-edit {
@@ -713,6 +731,13 @@
     justify-content: center;
     padding: var(--p-space-5);
     z-index: 90;
+    /* Extends #559's opt-out to the ShareProgress portal (#563): it portals
+       to document.body the same way .menu-panel and .confirm-panel do, and
+       its content — a glyph and one line of outcome text — is presentational
+       only, with no control and no text input to opt back in. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   .share-progress {
     width: min(320px, 84vw);
@@ -1043,6 +1068,25 @@
     left: var(--p-space-3);
     color: var(--s-ink);
   }
+  /* #1005 ("Warn at 15, seal at 20"): from 15:00 of a live take, the whole
+     cluster (the rec dot, the elapsed readout, and the remaining-minutes word
+     below) tints to the warn role — the same colour `.notice[data-tone="info"]
+     .notice-glyph` and `.vu-meter__fill[data-zone="yellow"]` already use as
+     ink/fill directly on this app's surfaces, not a new pairing. Higher
+     specificity than the plain `.recorder-status` rule above (an attribute
+     selector added), so it wins in the same `@layer components` regardless of
+     source order. */
+  .recorder-status[data-near-limit="true"] {
+    color: var(--s-warn);
+  }
+  /* The remaining-minutes word `TakeCapMarker` renders (`take-cap-marker.tsx`).
+     No colour of its own — it inherits the warn tint from the container
+     above, the same way the rec dot and the timer do. */
+  .recorder-take-warn {
+    font-size: var(--p-text-xs);
+    font-weight: var(--p-weight-strong);
+    font-variant-numeric: tabular-nums;
+  }
   .recorder-toolbar {
     gap: var(--c-gap-items);
     padding-bottom: var(--p-space-3);
@@ -1323,5 +1367,38 @@
   .recorder-sheet--finished .recorder-toolbar.pair .control--play {
     background: var(--s-done);
     color: var(--s-done-ink);
+  }
+
+  /* --- cover-colour picker (#957) ----------------------------------------- */
+  /* `components/cover-picker.tsx` is exported only this lane (not mounted —
+     #943/#949 do that), so nothing below paints on any screen yet.
+
+     Structural sizing only, read directly per this file's own header rule.
+     The swatch FILL is deliberately not here: it is the book's chosen palette
+     hex, set inline per swatch by the component, because a palette entry is
+     an identity colour rather than a themed role — argued in full in
+     `lib/cover-colour.ts`'s docblock, not repeated here. The selected ring IS
+     a themed role (`--s-focus`, the same token `--c-focus-ring` above draws
+     its colour from), because unlike the fill it is a UI affordance that may
+     reasonably want different contrast per theme. */
+  .cover-swatch-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--p-space-3);
+  }
+
+  .cover-swatch {
+    width: var(--p-space-8);
+    height: var(--p-space-8);
+    border-radius: var(--p-radius-full);
+    border: 2px solid transparent;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .cover-swatch[aria-pressed="true"] {
+    border-color: var(--s-focus);
   }
 }

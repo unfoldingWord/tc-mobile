@@ -64,14 +64,48 @@ import { errorMessage } from "@/lib/failure-text";
 // is emitted and lamejs is not duplicated
 // (round-1 George G2).
 import encoderChunkUrl from "./mp3.worker.ts?worker&url";
-import type { AudioCodec } from "@/types/audio";
+import type { AudioCodec, Mp3Stream } from "@/types/audio";
 
-/** The one message the client posts: a view onto canonical PCM, transferred. */
-export interface EncodeRequest {
+/**
+ * What the client posts. The original request — a view onto canonical PCM,
+ * transferred, encoded whole — is unchanged and carries no version, so a
+ * Finished transcode and a short chapter speak exactly the protocol they
+ * always did. {@link StreamRequest} is the additive, versioned half (#1003
+ * part b).
+ */
+export type EncodeRequest = WholeEncodeRequest | StreamRequest;
+
+interface WholeEncodeRequest {
   readonly buffer: ArrayBuffer;
   readonly byteOffset: number;
   readonly length: number;
 }
+
+/**
+ * The stream protocol's version. A worker answers a stream request with any
+ * other `v` with an `error`, so a client and a worker chunk from different
+ * builds fail loudly instead of mis-reading each other.
+ */
+type StreamProtocolVersion = 1;
+
+/**
+ * One continuing encode, in pieces (#1003 part b): `stream-open`, then any
+ * number of `stream-chunk`s, then `stream-finish` — or `stream-cancel`. The
+ * worker answers `open` and each `chunk` with a `stream-ack` once it has
+ * encoded it, and `finish` with the usual `done`; the client awaits each
+ * answer before posting the next, so PCM never queues up in the worker and
+ * every step still runs under the silence deadline. `cancel` is not
+ * answered. The session lives in the worker between messages — the one piece
+ * of state it keeps — and an `open` replaces any session left behind.
+ */
+type StreamRequest =
+  | { readonly v: StreamProtocolVersion; readonly kind: "stream-open" }
+  | ({
+      readonly v: StreamProtocolVersion;
+      readonly kind: "stream-chunk";
+    } & WholeEncodeRequest)
+  | { readonly v: StreamProtocolVersion; readonly kind: "stream-finish" }
+  | { readonly v: StreamProtocolVersion; readonly kind: "stream-cancel" };
 
 /**
  * The messages the worker sends back.
@@ -82,12 +116,15 @@ export interface EncodeRequest {
  * `progress` is a liveness HEARTBEAT (#166), throttled by the worker
  * (`mp3.worker.ts`): it carries no result and the encode keeps waiting, but each
  * one tells the client the worker is still alive so a long encode is not judged
- * stalled. `done`/`error` settle the encode.
+ * stalled. Its `fraction` is also handed to the encode's `onProgress`, which is
+ * how Share Chapter's count moves through the encode (#996). `done`/`error`
+ * settle the encode.
  */
 export type EncodeResponse =
   | { readonly kind: "ready" }
   | { readonly kind: "progress"; readonly fraction: number }
   | { readonly kind: "done"; readonly mp3: ArrayBuffer }
+  | { readonly kind: "stream-ack" }
   | { readonly kind: "error"; readonly message: string };
 
 /**
@@ -333,8 +370,10 @@ export async function withEncoder<T>(
   try {
     await untilSettled(previous, signal);
     return await work({
-      encodeMp3: (samples) => encodeInWorker(samples, signal),
+      encodeMp3: (samples, onProgress) =>
+        encodeInWorker(samples, signal, onProgress),
       decodeMp3: decodeMp3ToCanonical,
+      openMp3Stream: () => openStreamInWorker(signal),
     });
   } finally {
     // Release only once the job ahead has finished too: an abort while still
@@ -374,10 +413,14 @@ function untilSettled(
  * `warmEncoder` constructs it at startup while the running build's precache still
  * holds the chunk, and every encode reuses it.
  *
- * Reuse is safe for exactly two reasons: the worker's message handler is
+ * Reuse is safe for exactly two reasons: a whole encode's message handling is
  * stateless (a fresh `encodeMp3` per message, `mp3.worker.ts`), and `withEncoder`
  * serialises every encode onto one lane — so the shared worker is never handling
- * two jobs, or carrying two `onmessage` handlers, at once.
+ * two jobs, or carrying two `onmessage` handlers, at once. The one state the
+ * worker keeps between messages is a streamed encode's session (#1003 part b),
+ * and that never outlives the lane turn that opened it: the stream is bound to
+ * this worker (`openStreamInWorker`), a later `open` replaces a session left
+ * behind, and every terminate takes it with the worker.
  *
  * A dead worker must never be left as a reusable handle. `new Worker` never
  * throws on a script-load failure — it reports it asynchronously as an `error`
@@ -769,8 +812,133 @@ export function warmEncoder(): void {
  */
 async function encodeInWorker(
   samples: Int16Array,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onProgress?: (fraction: number) => void
 ): Promise<Uint8Array<ArrayBuffer>> {
+  const { result } = await requestOnWorker(
+    pcmRequest(samples),
+    [samples.buffer as ArrayBuffer],
+    signal,
+    onProgress
+  );
+  return mp3From(result);
+}
+
+/** A view onto canonical PCM, as the worker is sent it (transferred). */
+function pcmRequest(samples: Int16Array): WholeEncodeRequest {
+  return {
+    buffer: samples.buffer as ArrayBuffer,
+    byteOffset: samples.byteOffset,
+    length: samples.length,
+  };
+}
+
+/** The MP3 a `done` carried; a request answered with an ack had none. */
+function mp3From(result: ArrayBuffer | null): Uint8Array<ArrayBuffer> {
+  if (result === null)
+    throw new EncoderFailedError(
+      "The MP3 encoder acknowledged a request that should have returned an MP3"
+    );
+  return new Uint8Array(result);
+}
+
+/**
+ * Open a streamed encode in the shared worker (#1003 part b).
+ *
+ * The `open` goes through everything a whole encode goes through — no
+ * `Worker`, construction, the #192 handshake — and the stream is then BOUND
+ * to the worker that answered it, because the session lives in that worker.
+ * Every later `write` and `finish` runs on that worker under the same silence
+ * deadline, abort and error handling a whole encode has
+ * (`runEncodeOnWorker`), one request in flight at a time. If the shared
+ * worker is no longer the bound one — it died between writes and was
+ * dropped, or was terminated and re-warmed — the session is gone with it, so
+ * the next `write` or `finish` rejects with an {@link EncoderFailedError}
+ * rather than post into a worker that never saw the `open`. That is not
+ * counted against the encoder's health again: the failure that dropped the
+ * worker already was.
+ *
+ * `write` CONSUMES its samples (transferred), as `encodeMp3` does. `cancel`
+ * posts a `stream-cancel` so the worker lets the session go; after a
+ * `finish` or another `cancel` it does nothing. A failed step still leaves it
+ * to post while `bound` is the shared worker, because a message that failed
+ * to post left that worker, and its session, alive.
+ */
+async function openStreamInWorker(signal?: AbortSignal): Promise<Mp3Stream> {
+  const { worker: bound } = await requestOnWorker(
+    { v: 1, kind: "stream-open" },
+    [],
+    signal
+  );
+  // Two different facts, kept apart (#1132 George R1 #1). `closed`: no more
+  // audio may be sent. `released`: the worker has been told, or never needs
+  // telling, that the session is over. A failed step sets only the first — a
+  // `postMessage` that throws fails the message, not the worker, which still
+  // holds the session — so `cancel` still posts while `bound` is current.
+  let closed = false;
+  let released = false;
+  const onBound = async (
+    request: StreamRequest,
+    transfer: Transferable[]
+  ): Promise<ArrayBuffer | null> => {
+    if (closed) throw new Error("This MP3 stream is already closed");
+    // An abort BETWEEN steps leaves the stream open, so the caller's `cancel`
+    // still tells the worker to let the session go. Nothing is in flight, so
+    // there is nothing to terminate.
+    if (signal?.aborted) throw abortReason(signal);
+    try {
+      if (sharedWorker !== bound)
+        throw new EncoderFailedError(
+          "The MP3 encoder restarted in the middle of a chapter"
+        );
+      return await runEncodeOnWorker(bound, request, transfer, signal);
+    } catch (cause) {
+      closed = true;
+      throw cause;
+    }
+  };
+  return {
+    write: async (samples) => {
+      await onBound({ v: 1, kind: "stream-chunk", ...pcmRequest(samples) }, [
+        samples.buffer as ArrayBuffer,
+      ]);
+    },
+    finish: async () => {
+      const result = await onBound({ v: 1, kind: "stream-finish" }, []);
+      closed = true;
+      released = true;
+      return mp3From(result);
+    },
+    cancel: () => {
+      if (released) return;
+      closed = true;
+      released = true;
+      if (sharedWorker !== bound) return;
+      const request: StreamRequest = { v: 1, kind: "stream-cancel" };
+      try {
+        bound.postMessage(request);
+      } catch (cause) {
+        // Not thrown: `cancel` runs on the way out of a failed or dismissed
+        // share, and must not replace that outcome. The session is at worst
+        // left until the next `open` replaces it.
+        reportFailure(cause, "encoder-recover");
+      }
+    },
+  };
+}
+
+/**
+ * Send one request to the shared worker — the preamble every encode and
+ * every stream `open` shares: no `Worker`, construction, the #192 handshake,
+ * then {@link runEncodeOnWorker}. Resolves with the worker that answered, and
+ * the `done`'s MP3 or `null` for a `stream-ack`.
+ */
+async function requestOnWorker(
+  request: EncodeRequest,
+  transfer: Transferable[],
+  signal?: AbortSignal,
+  onProgress?: (fraction: number) => void
+): Promise<{ worker: Worker; result: ArrayBuffer | null }> {
   if (signal?.aborted) throw abortReason(signal);
   if (typeof Worker === "undefined") {
     // A phone with no `Worker` cannot encode, ever. Counted like any other
@@ -850,7 +1018,16 @@ async function encodeInWorker(
   // shadowing the first and making neither one killable by mutation. It lives
   // next to the `postMessage` it protects, where it also covers the path that
   // never handshakes at all.
-  return runEncodeOnWorker(worker, samples, signal);
+  return {
+    worker,
+    result: await runEncodeOnWorker(
+      worker,
+      request,
+      transfer,
+      signal,
+      onProgress
+    ),
+  };
 }
 
 /**
@@ -1000,12 +1177,22 @@ function awaitWorkerReady(
   });
 }
 
-/** Run one encode on `worker`, with the silence deadline armed (#166). */
+/**
+ * Run one request on `worker`, with the silence deadline armed (#166): a
+ * whole encode, or one step of a stream (#1003 part b). Resolves with the
+ * `done`'s MP3, or `null` for a `stream-ack`.
+ *
+ * `onProgress` hears each heartbeat's fraction (#996) — only while this job is
+ * live, because every message handler below is a no-op once it has settled,
+ * so an abort, a stall or a result ends the reports with the job.
+ */
 function runEncodeOnWorker(
   worker: Worker,
-  samples: Int16Array,
-  signal?: AbortSignal
-): Promise<Uint8Array<ArrayBuffer>> {
+  request: EncodeRequest,
+  transfer: Transferable[],
+  signal?: AbortSignal,
+  onProgress?: (fraction: number) => void
+): Promise<ArrayBuffer | null> {
   return new Promise((resolve, reject) => {
     // An abort that ALREADY fired is not delivered again, and everything below
     // listens rather than asks (George R2 P3). This function is reached a
@@ -1194,12 +1381,19 @@ function runEncodeOnWorker(
         // racing `done` over and over. Re-arming means a progressing encode
         // never reaches `onStall`, so only the final window can race at all.
         armStall(ENCODER_SILENCE_TIMEOUT_MS);
+        // Last, after the deadline bookkeeping (#996): the caller's count is
+        // advisory, and the liveness accounting above must not depend on it.
+        onProgress?.(response.fraction);
         return;
       }
       release();
       if (response.kind === "done") {
         noteEncodeSucceeded();
-        resolve(new Uint8Array(response.mp3));
+        resolve(response.mp3);
+      } else if (response.kind === "stream-ack") {
+        // A stream step landed. Not a finished encode, so health is left to
+        // the `done` that ends the stream.
+        resolve(null);
       } else {
         noteEncodeFailed();
         reject(
@@ -1233,13 +1427,8 @@ function runEncodeOnWorker(
 
     armStall(ENCODER_SILENCE_TIMEOUT_MS);
 
-    const request: EncodeRequest = {
-      buffer: samples.buffer as ArrayBuffer,
-      byteOffset: samples.byteOffset,
-      length: samples.length,
-    };
     try {
-      worker.postMessage(request, [request.buffer]);
+      worker.postMessage(request, transfer);
     } catch (cause) {
       // A synchronous `postMessage` failure (a detached buffer, an
       // InvalidStateError) rejects this promise — but the executor throw would

@@ -87,6 +87,10 @@ export interface SegmentEditor {
   /** Step history forward one op. Returns the op that was (re-)applied, or
    *  null if there was nothing to redo or the rematerialise failed. */
   readonly redo: () => EditOp | null;
+  /** Put back the phrase the clipboard held when the editor last took its
+   *  base, for an exit that drops this session's edits unsaved. See the
+   *  docblock at its definition for what it restores and why. */
+  readonly rollBackClipboard: () => void;
 }
 
 /** The base buffer, the current edited buffer, and the history that maps between. */
@@ -136,6 +140,10 @@ export function useSegmentEditor(
     working: base,
     log: emptyLog(),
   }));
+  // The clipboard as it stood when this base was taken — what
+  // `rollBackClipboard` puts back. Taken in the same render-time reset as the
+  // history, so it moves exactly when the base does.
+  const [clipAtBase, setClipAtBase] = useState(() => clipboard.clip);
   const [selection, setSelectionState] = useState<SampleRange | null>(null);
   const [selectionActive, setSelectionActive] = useState(false);
   const [error, setError] = useState(false);
@@ -146,6 +154,7 @@ export function useSegmentEditor(
   // render, with no one-frame empty flash an effect would leave on open.
   if (hist.base !== base) {
     setHist({ base, working: base, log: emptyLog() });
+    setClipAtBase(clipboard.clip);
     setSelectionState(null);
     setSelectionActive(false);
     setError(false);
@@ -272,7 +281,9 @@ export function useSegmentEditor(
   // Nothing is lost by emptying it: the phrase is now in `working`, which
   // this sheet commits on close through the never-lose save path, and the
   // op keeps its own reference to the samples (`op.clip`), which is what
-  // `undo` below hands back to the clipboard if the paste is taken back.
+  // `undo` below hands back to the clipboard if the paste is taken back. The
+  // one exit that drops `working` unsaved, a superseded capture's, calls
+  // `rollBackClipboard` below to put the phrase back first.
   const paste = useCallback(
     (atSample: number): boolean => {
       const clip = clipboard.clip;
@@ -320,6 +331,14 @@ export function useSegmentEditor(
   // holds that paste's own samples — the same array, or the same samples a
   // cut's redo sliced back out — so a redo never discards a phrase it did
   // not put there.
+  //
+  // Undo of a paste and redo of a cut overwrite the slot without that check.
+  // That is safe because, while this sheet is open, nothing else puts a
+  // phrase on the clipboard: this hook is the only writer of a non-null clip.
+  // The other writers only empty it: the recorder's discard confirm (#862),
+  // a deliberate throw-away, and App's chapter change, which also unmounts
+  // the sheet. Overwriting an empty slot loses nothing. A new writer that can
+  // put a phrase there while the sheet is open would need a guard here.
   const undo = useCallback((): EditOp | null => {
     const undoneOp = opUndone(log);
     if (undoneOp === null) return null;
@@ -354,6 +373,26 @@ export function useSegmentEditor(
     return applied ? redoneOp : null;
   }, [log, base, working, runEdit, clearSelection, clipboard]);
 
+  // For an exit that leaves WITHOUT saving this session's edits — today the
+  // recorder's superseded-capture exit (#527), which withholds every pending
+  // write. A paste empties the clipboard (#489), so once one has landed the
+  // phrase lives only in `working`; dropping `working` unsaved would drop the
+  // phrase with it (Frank/George R3 on #965).
+  //
+  // So the clipboard rolls back with the edits: it gets back what it held when
+  // this base was taken. That is the one phrase this session can have removed
+  // from anywhere but its own buffer. Everything else the session put on the
+  // clipboard was cut from this segment, whose stored audio the unsaved exit
+  // leaves untouched, so replacing it loses nothing. A clipboard that was empty
+  // at the base is left as it is. The base moves on every successful save (the
+  // reset above), so a phrase already saved into this segment is never put
+  // back as a second copy.
+  const rollBackClipboard = useCallback(() => {
+    if (clipAtBase !== null && clipboard.clip !== clipAtBase) {
+      clipboard.set(clipAtBase);
+    }
+  }, [clipAtBase, clipboard]);
+
   const selectionSpan = selection
     ? clampRange(selection, working.length)
     : null;
@@ -383,5 +422,6 @@ export function useSegmentEditor(
     paste,
     undo,
     redo,
+    rollBackClipboard,
   };
 }

@@ -9,9 +9,11 @@
  * the whole reason the two coexist.
  */
 
-import { panAfterCut } from "@/lib/audio/viewport";
+import { panAfterCut, sampleToViewportX } from "@/lib/audio/viewport";
+import type { WaveformViewport } from "@/lib/audio/viewport";
 import { wholeSampleRange } from "@/lib/audio/edit";
 import type { EditOp } from "@/lib/audio/edit-log";
+import type { SampleRange } from "@/types/audio";
 
 /** The record-stage inputs this decision reads, all already-derived booleans. */
 export interface StageState {
@@ -79,13 +81,11 @@ export interface StageState {
  * for ("the same way it renders during the first take") and what avoids the
  * pause/close swap-and-flash that gating the frozen arm on `hasAudio` caused.
  *
- * Tradeoff: while an append is in flight this shows the head-growing (then
- * frozen) live scope in place of the existing clip; the clip returns as soon as
- * the take commits, which is now the same tap that ends it. For the default
- * end-append that reads naturally; for a mid-clip insert it shows the take
- * without the surrounding clip / insert position. Preserving the existing clip
- * *and* live growth together (a composed view) is a larger change tracked
- * separately if wanted.
+ * Swapping to the live scope no longer hides the existing clip (#640): the
+ * scope draws it too, before the insertion offset to the left of the new audio
+ * and after it from the head on (`LiveScope`'s `context`,
+ * `lib/audio/capture-context.ts`). That composition lives in the drawer, not
+ * here, so this rule stays the single mount decision it was.
  */
 export function liveScopeShown(s: StageState): boolean {
   if (s.meterFailed) return false;
@@ -1155,6 +1155,36 @@ export function selectionReseed(input: {
   }
   if (input.length <= 0 || input.collapsedByCut) return "clear";
   return "seed";
+}
+
+/**
+ * Where the Cut affordance (#1102) sits, as a percentage of the canvas
+ * viewport's width — the same coordinate space {@link SelectionOverlay} draws
+ * the band and handles in (`sampleToViewportX(sample, 100, win)`).
+ *
+ * `null` with no selection: `CutAnchor` reads that as "leave the child where
+ * it was" (the bin, #862, which never has a selection to center under).
+ *
+ * The midpoint can fall outside the visible window — a zoom-fitted selection
+ * wider than the viewport, or one panned partway off screen — so the raw
+ * percentage is clamped to `[0, 100]` here, the viewport's own edges. That is
+ * a COARSER clamp than the CSS `clamp()` in `o4/recorder.css`, which further
+ * narrows it to keep the button's own half-width on screen; the two compose
+ * rather than duplicate — this one is what a render test can assert without a
+ * browser's layout engine, that one is what a phone actually draws.
+ */
+export function cutAnchorPercent(
+  selection: SampleRange | null,
+  win: WaveformViewport
+): number | null {
+  if (!selection) return null;
+  // The midpoint of `[start, end]` and of `[end, start]` are the same
+  // number — `(a + b) / 2` needs no `min`/`max` ordering first, unlike
+  // `SelectionOverlay`'s `leftPct`/`widthPct`, which do (a width must be
+  // positive).
+  const mid = (selection.start + selection.end) / 2;
+  const raw = sampleToViewportX(mid, 100, win);
+  return Math.min(100, Math.max(0, raw));
 }
 
 export function stageView(input: StageInput): StageView {

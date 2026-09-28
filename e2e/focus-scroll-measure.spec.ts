@@ -59,6 +59,20 @@ async function createBooks(page: Page, count: number) {
   }
 }
 
+/**
+ * Pin the current look before the app boots (`lib/design.ts`'s key). #951
+ * flipped the default to o4, and this spec's delete-confirm cases assert the
+ * current look's `.confirm-panel` — O4 draws G6's Keep/Delete tiles inside
+ * the book sheet instead (#1030), so a case that needs the pre-O4 dialog has
+ * to opt out of the new default explicitly, the same way
+ * `recorder-menu-half-screen.spec.ts` opts INTO o4.
+ */
+async function pinCurrentLook(page: Page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("tc-mobile.design", "current");
+  });
+}
+
 /** Arms the Books delete confirm for `name`. */
 async function armDeleteFor(page: Page, name: string) {
   await page.getByRole("button", { name: `More actions for ${name}` }).click();
@@ -72,6 +86,7 @@ async function armDeleteFor(page: Page, name: string) {
 test("wheel over the shelf: closed confirm vs. open Books delete confirm", async ({
   page,
 }) => {
+  await pinCurrentLook(page);
   await page.goto("/");
   await createBooks(page, 25);
   const list = shelf(page);
@@ -114,6 +129,7 @@ test("wheel over the shelf: closed confirm vs. open Books delete confirm", async
 test("cancelling the Books delete confirm for a row away from the top: shelf scroll after the focus hand-off", async ({
   page,
 }) => {
+  await pinCurrentLook(page);
   await page.goto("/");
   await createBooks(page, 25);
   const list = shelf(page);

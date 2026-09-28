@@ -5,10 +5,46 @@ import { createPortal } from "react-dom";
 
 import { Control } from "./control";
 import { Icon } from "./icon";
+import { Waveform } from "./waveform";
+import type { Peaks } from "@/types/audio";
+
+/**
+ * The confirm's "Play what will be lost" row (#979, the O4 13/G5 remainder
+ * after #1022): the workbench's `vConfirm()` draws a `.prev` row between the
+ * title and the two buttons — a waveform and a Play/Pause transport for the
+ * take about to be erased. Optional, and rendered only when the caller passes
+ * it, so a caller that does not — the book Delete and the failure log's
+ * Clear — gets the same markup as before.
+ *
+ * Presentational, like every other prop here: the caller owns the actual
+ * playback (`SegmentsAudio.playTake`/`playingId` in `segments-screen.tsx`;
+ * `RecorderAudio.playBuffer`/`playingBuffer` in `recorder.tsx`'s own G5 call
+ * site), and hands this component only what to draw and one callback to
+ * toggle it. No audio API is touched from this file.
+ */
+export interface EraseConfirmPreview {
+  /** Peaks for the take about to be lost, or `null` for a never-recorded
+   *  segment — the confirm dialog is never opened for one, so this is
+   *  defensive, not a real path; the row disables Play rather than assume. */
+  peaks: Peaks | null;
+  /** This preview is the one currently sounding. */
+  playing: boolean;
+  /** Toggle playback of the previewed take from its start (offset 0) — this
+   *  row never scrubs, unlike the segment row it borrows `Waveform` from. */
+  onTogglePlay: () => void;
+  /** Accessible name while idle. Supplied by the integrator, like every other
+   *  label on this component (strings.ts's `eraseConfirmPreviewPlay`). */
+  playLabel: string;
+  /** Accessible name while sounding (strings.ts's `eraseConfirmPreviewPause`). */
+  pauseLabel: string;
+  /** Paints the finished (green) wash instead of the voice (amber) one,
+   *  mirroring `Waveform`'s own `finished` prop and `SegmentRow`'s row. */
+  finished?: boolean;
+}
 
 interface EraseConfirmProps {
   open: boolean;
-  /** The confirming line, e.g. "Erase this recording?". Copy is supplied by the
+  /** The confirming line, e.g. "Clear this recording?". Copy is supplied by the
    *  integrator (strings.ts), never read here — this surface is pure UI. */
   title: string;
   /** Accessible name of the destructive action. */
@@ -21,12 +57,34 @@ interface EraseConfirmProps {
   busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  /** The action's own glyph, drawn on the confirm BUTTON and, unless `badge`
+   *  says otherwise, in the badge. The bin by default: the book Delete (G6),
+   *  the segment Delete and the failure log's Clear pass nothing. "eraser" is
+   *  the segment's Clear, which removes only the audio (the DRI's 2026-09-28
+   *  pick on #1119: one word and one icon for one action). */
+  glyph?: "trash" | "eraser";
+  /** The icon in the badge, when it differs from `glyph`. "record" is O4 G5,
+   *  the record-again confirm (#979): the workbench's record badge. The
+   *  confirm button keeps `glyph` whatever this says, because it clears and
+   *  starts no take (#1022). The caller decides, so this surface stays free
+   *  of the design switch. */
+  badge?: "trash" | "eraser" | "record";
+  /**
+   * The "Play what will be lost" row (#979 remainder). Omitted entirely by
+   * default — the book Delete and the failure log's Clear render exactly as
+   * before. Wired from `segments-screen.tsx`'s own segment Erase (the O4 "13"
+   * dialog) and from `recorder.tsx`'s own G5 call site (the bar's bin, O4
+   * only — the ≡ menu's Erase and the clipboard's discard, which share this
+   * same dialog in that file, pass nothing).
+   */
+  preview?: EraseConfirmPreview;
 }
 
 /**
  * The erase confirmation (B6, D-CONFIRM).
  *
- * A minimal-text dialog: a trash glyph, one line, and two choices. Destructive,
+ * A minimal-text dialog: a badge (the action's glyph, or the record dot for
+ * O4 G5), one line, and two choices. Destructive,
  * so focus lands on Cancel — the safe action — not on Erase, and Escape or a
  * scrim tap resolves to Cancel too.
  *
@@ -43,6 +101,9 @@ export function EraseConfirm({
   busy = false,
   onConfirm,
   onCancel,
+  glyph = "trash",
+  badge = glyph,
+  preview,
 }: EraseConfirmProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   // Read from the keydown listener without re-subscribing it. The listener is
@@ -175,8 +236,33 @@ export function EraseConfirm({
         aria-label={title}
         className="confirm-panel"
       >
-        <Icon name="trash" size={32} className="confirm-glyph" />
+        <Icon name={badge} size={32} className="confirm-glyph" />
         <span className="t-title">{title}</span>
+        {preview && (
+          <div className="confirm-preview">
+            <Waveform
+              peaks={preview.peaks}
+              height={44}
+              recorded={preview.peaks !== null}
+              finished={preview.finished}
+              className="min-w-0 flex-1"
+            />
+            <Control
+              icon={preview.playing ? "pause" : "play"}
+              label={preview.playing ? preview.pauseLabel : preview.playLabel}
+              variant="play"
+              size={26}
+              // Not tied to `busy`: playback is non-destructive, and the
+              // caller already stops it before an erase commits
+              // (`audio.leave()` in `segments-screen.tsx`'s `onConfirmErase`)
+              // — this only guards the one case where there is nothing to
+              // play.
+              disabled={preview.peaks === null}
+              onClick={preview.onTogglePlay}
+              className="confirm-preview-play"
+            />
+          </div>
+        )}
         <div className="confirm-actions">
           <Control
             icon="back"
@@ -191,7 +277,7 @@ export function EraseConfirm({
             className="confirm-cancel"
           />
           <Control
-            icon="trash"
+            icon={glyph}
             label={confirmLabel}
             variant="record"
             disabled={busy}

@@ -12,10 +12,31 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { stripYamlComments } from "./support";
+
 const workflow = readFileSync(
   new URL("../.github/workflows/ios-testflight.yml", import.meta.url),
   "utf8"
 );
+// The same file without comments, for the assertions that read the YAML as
+// text, so a commented-out key or step cannot satisfy them (#822). `step()`
+// keeps reading `workflow` itself: it runs a step's script, and a `#` inside
+// that script is the script's business.
+const workflowCode = stripYamlComments(workflow);
+// ci.yml: only read for the "quality" job's ruby-visibility step (#958 item 3
+// below) — everything else in this file is about ios-testflight.yml.
+const ciWorkflow = readFileSync(
+  new URL("../.github/workflows/ci.yml", import.meta.url),
+  "utf8"
+);
+/** The `quality:` job's body, from its header to the next top-level job
+ *  (`build:`), stripped of comments — same extraction shape as
+ *  `ci-commit-messages-range.test.ts`'s `commitMessagesJob()`. */
+function qualityJobCode(): string {
+  const match = /\n {2}quality:\n([\s\S]*?)\n {2}build:/.exec(ciWorkflow);
+  if (!match?.[1]) throw new Error("quality job not found in ci.yml");
+  return stripYamlComments(match[1]);
+}
 const fixtures: string[] = [];
 
 function step(name: string): string {
@@ -39,11 +60,23 @@ function step(name: string): string {
   return script.join("\n");
 }
 
+// One environment policy for every subprocess this file spawns: always start
+// from the full parent environment and layer explicit overrides on top,
+// never swap PATH (or anything else) out wholesale. A version-manager shim
+// (asdf, rbenv) can depend on vars beyond PATH to resolve `ruby`, so reducing
+// a single call site here to `{ PATH }` alone would risk a false "ruby not
+// available" skip that silently drops the seven Xcode-selection cases below.
+// One named function, used everywhere a subprocess env is built, keeps that
+// choice a single edit instead of a per-call-site guess (#958 item 2).
+function subprocessEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  return { ...process.env, ...overrides };
+}
+
 function run(script: string, env: Record<string, string> = {}, cwd?: string) {
   return spawnSync("bash", ["-c", script], {
     encoding: "utf8",
     cwd,
-    env: { ...process.env, ...env },
+    env: subprocessEnv(env),
   });
 }
 
@@ -61,7 +94,10 @@ function rubyAvailable(env: NodeJS.ProcessEnv): boolean {
   return spawnSync("ruby", ["-v"], { env }).status === 0;
 }
 
-const hasRuby = rubyAvailable(process.env);
+// Routed through the same shared policy as every other subprocess call in
+// this file, rather than passing `process.env` straight through — see
+// `subprocessEnv` above.
+const hasRuby = rubyAvailable(subprocessEnv());
 
 describe("ruby availability detection", () => {
   it("is true when ruby resolves on PATH", () => {
@@ -77,6 +113,52 @@ describe("ruby availability detection", () => {
     const bin = mkdtempSync(path.join(tmpdir(), "ruby-absent-"));
     fixtures.push(bin);
     expect(rubyAvailable({ PATH: bin })).toBe(false);
+  });
+});
+
+describe("subprocess environment policy (#958 item 2)", () => {
+  it("subprocessEnv layers overrides onto the full parent environment rather than replacing it", () => {
+    const marker = "TC_MOBILE_TEST_958_MARKER";
+    const env = subprocessEnv({ [marker]: "present" });
+    for (const [key, value] of Object.entries(process.env)) {
+      if (key === marker) continue;
+      expect(env[key]).toBe(value);
+    }
+    expect(env[marker]).toBe("present");
+  });
+
+  it("run() carries a parent-only variable through to the child, not just PATH", () => {
+    process.env.TC_MOBILE_TEST_958_PARENT_VAR = "carried-through";
+    try {
+      const result = run('printf %s "$TC_MOBILE_TEST_958_PARENT_VAR"');
+      expect(result.stdout).toBe("carried-through");
+    } finally {
+      delete process.env.TC_MOBILE_TEST_958_PARENT_VAR;
+    }
+  });
+
+  it("resolves a ruby shim that needs a non-PATH state variable, unlike the PATH-only reduction the issue warns against", () => {
+    const bin = mkdtempSync(path.join(tmpdir(), "ruby-shim-958-"));
+    fixtures.push(bin);
+    // Simulates an asdf/rbenv-style shim: this stub only succeeds when its
+    // own version-manager state variable is present, the way a real shim's
+    // `ruby` wrapper consults its own environment before delegating.
+    writeFileSync(
+      path.join(bin, "ruby"),
+      '#!/bin/bash\n[ -n "$TC_MOBILE_TEST_958_SHIM_MARKER" ] && exit 0 || exit 1\n',
+      { mode: 0o755 }
+    );
+    process.env.TC_MOBILE_TEST_958_SHIM_MARKER = "1";
+    try {
+      // The point fix the issue warns against: restricting the check to
+      // PATH alone reports this shim as unavailable even though it works.
+      expect(rubyAvailable({ PATH: bin })).toBe(false);
+      // The shared policy layers PATH onto the full parent environment, so
+      // the shim's own state variable survives and the check is accurate.
+      expect(rubyAvailable(subprocessEnv({ PATH: bin }))).toBe(true);
+    } finally {
+      delete process.env.TC_MOBILE_TEST_958_SHIM_MARKER;
+    }
   });
 });
 
@@ -115,6 +197,7 @@ it("reproduces the reported failure: Select Xcode needs ruby on PATH", () => {
   // at /bin/bash only, and a dangling symlink makes the spawn ENOENT.
   const hostBash = spawnSync("bash", ["-c", "command -v bash"], {
     encoding: "utf8",
+    env: subprocessEnv(),
   }).stdout.trim();
   expect(path.isAbsolute(hostBash), hostBash).toBe(true);
   symlinkSync(hostBash, path.join(bashOnlyBin, "bash"));
@@ -133,7 +216,7 @@ it("reproduces the reported failure: Select Xcode needs ruby on PATH", () => {
 
 describe("iOS dispatch ref gate", () => {
   it("takes the branch/tag type from GitHub", () => {
-    expect(workflow).toContain("REF_TYPE: ${{ github.ref_type }}");
+    expect(workflowCode).toContain("REF_TYPE: ${{ github.ref_type }}");
   });
   it.each([
     ["staging", "branch", "false", 0],
@@ -216,15 +299,29 @@ describe.skipIf(!hasRuby)(
   }
 );
 
+describe("CI surfaces ruby availability before this suite runs (#958 item 3)", () => {
+  it("is still in ci.yml where this test reads it from", () => {
+    expect(() => qualityJobCode()).not.toThrow();
+    expect(qualityJobCode()).toContain("run: npm test");
+  });
+
+  it("runs `ruby -v` before the Test step, so a runner-image change that drops ruby is a visible log line rather than a silent skip of the seven Xcode-selection cases above", () => {
+    const job = qualityJobCode();
+    const rubyIndex = job.search(/run:\s*ruby -v/);
+    const testIndex = job.indexOf("run: npm test");
+    expect(rubyIndex).toBeGreaterThan(-1);
+    expect(testIndex).toBeGreaterThan(-1);
+    expect(rubyIndex).toBeLessThan(testIndex);
+  });
+});
+
 it("runs the canonical artifact checks after build and before sync", () => {
   const name = "Check the built artifacts";
   expect(step(name)).toBe("npm run test:dist");
-  expect(workflow.indexOf(`- name: ${name}`)).toBeGreaterThan(
-    workflow.indexOf("- name: Build the web bundle")
-  );
-  expect(workflow.indexOf(`- name: ${name}`)).toBeLessThan(
-    workflow.indexOf("- name: Sync dist/ into the iOS project")
-  );
+  const at = (step: string) => workflowCode.indexOf(`- name: ${step}`);
+  expect(at("Build the web bundle")).toBeGreaterThan(-1);
+  expect(at(name)).toBeGreaterThan(at("Build the web bundle"));
+  expect(at(name)).toBeLessThan(at("Sync dist/ into the iOS project"));
 });
 
 it.each([0, 23])("propagates the artifact suite exit status %i", (status) => {
@@ -243,7 +340,17 @@ it.each([0, 23])("propagates the artifact suite exit status %i", (status) => {
   ).toBe(status);
 });
 
-describe("the emitted iOS thumbnail precache", () => {
+// #923: this check moved out of "Guard the synced bundle" and into its own
+// step, "OBS thumbnail precache policy (web build; #177 / ADR 0006)", which
+// runs against the WEB build BEFORE "Rebuild dist/ for the native shell"
+// overwrites dist/sw.js with the native self-destroying worker — that worker
+// never precaches anything at all, so comparing IT against globPatterns would
+// either never agree once jpg is legitimately restored, or silently stop
+// meaning anything. Only the fixture files this step actually reads
+// (vite.config.ts, dist/sw.js) are written here; the step makes no claim
+// about ios/App/App/public or dist/manifest.webmanifest — those stay covered
+// by "Guard the synced bundle" itself, exercised generically below.
+describe("the OBS thumbnail precache policy (web build)", () => {
   const current = 'globPatterns: ["**/*.{js,css,html,svg,png,woff2}"]';
   const restored = 'globPatterns: ["**/*.{js,css,html,svg,png,jpg,woff2}"]';
   const disagreeAnnotation =
@@ -297,10 +404,9 @@ describe("the emitted iOS thumbnail precache", () => {
       annotation: noGlobPatternsAnnotation,
     },
   ])("$name", ({ config, thumbnails, status, annotation }) => {
-    const root = mkdtempSync(path.join(tmpdir(), "ios-bundle-gate-"));
+    const root = mkdtempSync(path.join(tmpdir(), "ios-thumbnail-gate-"));
     fixtures.push(root);
     mkdirSync(path.join(root, "dist"));
-    mkdirSync(path.join(root, "ios/App/App/public"), { recursive: true });
     writeFileSync(path.join(root, "vite.config.ts"), config);
     writeFileSync(
       path.join(root, "dist/sw.js"),
@@ -308,23 +414,102 @@ describe("the emitted iOS thumbnail precache", () => {
         (thumbnails ? ',{url:"obs/thumbs/01/01.jpg",revision:"b"}' : "") +
         "],{});"
     );
-    writeFileSync(path.join(root, "dist/manifest.webmanifest"), "{}");
-    writeFileSync(
-      path.join(root, "ios/App/App/public/index.html"),
-      "<!doctype html>"
+    const result = run(
+      step("OBS thumbnail precache policy (web build; #177 / ADR 0006)"),
+      {},
+      root
     );
-    const result = run(step("Guard the synced bundle"), {}, root);
     expect(result.status, result.stderr + result.stdout).toBe(status);
     if (status === 1) {
       expect(annotation).toEqual(expect.any(String));
       expect(annotation).not.toHaveLength(0);
       expect(result.stderr).toContain(`::error::${annotation}`);
       expect(result.stderr).not.toContain("at file:");
-      expect(result.stdout).not.toContain("Bundle built, clean, and synced");
     } else {
       expect(annotation).toBeNull();
       expect(result.stderr + result.stdout).not.toContain("::error::");
-      expect(result.stdout).toContain("Bundle built, clean, and synced");
     }
+  });
+});
+
+// The rest of "Guard the synced bundle" — existence checks and the e2e-leak
+// sweep — runs against whatever dist/ the native rebuild left behind and
+// whatever cap sync copied into ios/. Exercised generically (not per
+// OBS-thumbnail case, which no longer lives here — see the describe block
+// above) so a regression in the existence/leak checks themselves still has a
+// red state to go to.
+describe("Guard the synced bundle (existence + e2e-leak, native dist)", () => {
+  function bundleFixture({
+    swPresent = true,
+    manifestPresent = true,
+    e2eLeak = false,
+    syncedIndexPresent = true,
+  }: {
+    swPresent?: boolean;
+    manifestPresent?: boolean;
+    e2eLeak?: boolean;
+    syncedIndexPresent?: boolean;
+  } = {}) {
+    const root = mkdtempSync(path.join(tmpdir(), "ios-bundle-guard-"));
+    fixtures.push(root);
+    mkdirSync(path.join(root, "dist"));
+    mkdirSync(path.join(root, "ios/App/App/public"), { recursive: true });
+    if (swPresent) {
+      // The native build's own shape (#923) — no precache manifest.
+      writeFileSync(
+        path.join(root, "dist/sw.js"),
+        "self.addEventListener('activate', () => {});"
+      );
+    }
+    if (manifestPresent) {
+      writeFileSync(path.join(root, "dist/manifest.webmanifest"), "{}");
+    }
+    if (e2eLeak) {
+      writeFileSync(path.join(root, "dist/leak.js"), "window.__e2e = true;");
+    }
+    if (syncedIndexPresent) {
+      writeFileSync(
+        path.join(root, "ios/App/App/public/index.html"),
+        "<!doctype html>"
+      );
+    }
+    return root;
+  }
+
+  it("passes on a clean native-shaped bundle", () => {
+    const root = bundleFixture();
+    const result = run(step("Guard the synced bundle"), {}, root);
+    expect(result.status, result.stderr + result.stdout).toBe(0);
+    expect(result.stdout).toContain("Bundle built, clean, and synced");
+  });
+
+  it("fails closed when dist/sw.js is missing", () => {
+    const root = bundleFixture({ swPresent: false });
+    const result = run(step("Guard the synced bundle"), {}, root);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("::error::dist/sw.js missing");
+  });
+
+  it("fails closed when the manifest is missing", () => {
+    const root = bundleFixture({ manifestPresent: false });
+    const result = run(step("Guard the synced bundle"), {}, root);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("::error::manifest missing");
+  });
+
+  it("fails closed when the e2e harness leaked into dist/", () => {
+    const root = bundleFixture({ e2eLeak: true });
+    const result = run(step("Guard the synced bundle"), {}, root);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("e2e harness (__e2e) leaked");
+  });
+
+  it("fails closed when cap sync did not copy the bundle into ios/", () => {
+    const root = bundleFixture({ syncedIndexPresent: false });
+    const result = run(step("Guard the synced bundle"), {}, root);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      "cap sync did not copy the web bundle into ios/"
+    );
   });
 });

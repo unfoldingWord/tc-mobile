@@ -9,14 +9,24 @@ import {
 } from "@/hooks/report-failure";
 import { strings } from "@/lib/strings";
 
+// This file asserts the CURRENT look's markup (the 56px/30px glyph sizes,
+// `control--primary`/`control--quiet`), not O4's `o4-err-circle` (#948). #951
+// flipped the design default to o4, so pin the current look explicitly here
+// rather than rely on nothing-stored — the O4 shape of this same screen is
+// `tests/o4-errors.test.ts`'s.
+vi.mock("@/hooks/use-design", () => ({
+  useDesign: () => ({ design: "current" as const, toggle: () => {} }),
+}));
+
 /**
  * What this can and cannot prove.
  *
- * There is no renderer here — `vitest.config.ts` sets `environment: "node"`,
- * and this repo has no jsdom and no testing-library. So React's own catching is
+ * This suite does not mount in jsdom, so React's own catching is
  * NOT exercised below: `renderToStaticMarkup` rethrows a child's error rather
- * than routing it to the boundary (checked, at this commit), and nothing in
- * Node can mount a tree and break it. **That a render throw reaches this
+ * than routing it to the boundary. The render harness (#197, `tests/render.ts`)
+ * is the same static render, so it does not close that gap: catching a render
+ * throw takes a client mount (`tests/interactive-mount.ts`), and this suite
+ * does not do one. **That a render throw reaches this
  * boundary at all is verified in a browser, by hand, and is recorded on the
  * PR — not here.** The same goes for the focus move: `renderToStaticMarkup`
  * never attaches a ref, so `focusOnMount` is markup here and behaviour only in
@@ -26,7 +36,7 @@ import { strings } from "@/lib/strings";
  * React calls, invoked directly, and the markup the fallback produces. That
  * matters for one property in particular — the fallback must never put the
  * cause on screen. `react-dom/server` is a subpath of a dependency this project
- * already ships; no renderer is added for these cases.
+ * already ships; nothing beyond it is needed for these cases.
  */
 describe("ErrorBoundary", () => {
   let seen: FailureReport[];

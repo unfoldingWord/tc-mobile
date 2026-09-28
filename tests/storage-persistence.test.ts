@@ -26,10 +26,9 @@ import { storageMarker } from "@/lib/storage/persistence";
  * three-state `persisted` case. The P2-2 caching fix lives entirely in the
  * React effect, which this file still cannot reach — see the note below.
  *
- * What is NOT covered here: `useStoragePersistence` itself (this repo has no
- * jsdom or renderer — the same limitation `tests/use-erase-segment.test.ts`
- * documents) — so the module-scope `resolvedAnswer` cache that fixes P2-2 is
- * review/on-device surface, not pinned by a test — and the real
+ * What is NOT covered here: `useStoragePersistence` itself (this file does
+ * not mount the hook) — so the module-scope `resolvedAnswer` cache that fixes
+ * P2-2 is review/on-device surface, not pinned by a test — and the real
  * `navigator.storage` answer on a device. Whether an installed PWA on Android
  * is granted persistence is unknown and must be read off a device; nothing in
  * this repository can answer it. Whether `Capacitor.isNativePlatform()`

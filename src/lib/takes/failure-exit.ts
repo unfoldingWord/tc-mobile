@@ -18,7 +18,14 @@
  * Two rounds of review found that same shape at two different sites: the load
  * path (George R5 P3, #450) and the close tails plus erase (George R6 P2). Four
  * call sites, one cause — each site deciding for itself. So the decision is
- * taken away from the sites and made here, once.
+ * taken away from the sites and made here, once. A fifth site, the in-sheet
+ * segment delete (#590), was added later and followed the same rule rather
+ * than inventing its own — and was removed again when #1104 (the requirements
+ * owner's 2026-09-26 decision) pulled Delete back out of the recorder's ≡
+ * menu entirely, leaving the chapter view as the only door to it. That site
+ * carries no `failureExit` call at all: it is a list-screen Notice, not a
+ * whole-sheet exit decision, so it never belonged to this enumeration's
+ * problem in the first place.
  *
  * `RecorderFailureSite` is the enumeration of those four. It does not change the
  * answer today, and that uniformity is the point rather than an oversight: the

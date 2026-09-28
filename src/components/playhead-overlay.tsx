@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 import { playheadViewportX } from "@/lib/audio/viewport";
 import { cn } from "@/lib/utils";
@@ -88,7 +88,19 @@ export function PlayheadOverlay({
     readRef.current = readElapsedMs;
   }, [readElapsedMs]);
 
-  useEffect(() => {
+  // `useLayoutEffect`, not `useEffect` (#377): the hide on `active` going false,
+  // and the cleanup that cancels the running loop, belong to the same commit's
+  // layout phase — the phase `LiveScope` paints its freshly-mounted canvas in.
+  // React documents `useLayoutEffect` as firing before the browser repaints
+  // (react.dev/reference/react/useLayoutEffect), while `useEffect` may run
+  // after the paint (react.dev/reference/react/useEffect), so a hide left in
+  // `useEffect` could leave the previous preview's line over the new canvas for
+  // a frame. The same page says an effect caused by a click may run before the
+  // paint, so whether the Resume tap reaches that seam is not known; it is a
+  // reviewer's reading of the source, not an observed frame.
+  // `tests/playhead-overlay-hide-timing.test.ts` pins the layout-phase hide as
+  // a defensive invariant.
+  useLayoutEffect(() => {
     const line = lineRef.current;
     if (!line) return;
     // Idle / paused / empty: hide the line and run no loop.

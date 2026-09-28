@@ -11,6 +11,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { stripYamlComments } from "./support";
+
 /**
  * Pins the `commit-messages` job's range wiring in `ci.yml` (#865 follow-up).
  *
@@ -33,8 +35,9 @@ import { describe, expect, it } from "vitest";
  * out of `ci.yml` rather than re-typing the wiring, so a revert back to
  * `github.sha` (or a switch back to the raw `pull_request.base.sha`) fails
  * here even if nobody remembers why it mattered. Assertions read
- * `commitMessagesCode()`, which drops full-line YAML comments, so neither a
- * commented-out good range nor an inline `${{ }}` revert in `run:` passes.
+ * `commitMessagesCode()`, which drops YAML comments (full-line and trailing),
+ * so neither a commented-out good range nor an inline `${{ }}` revert in
+ * `run:` passes.
  */
 const ROOT = path.resolve(import.meta.dirname, "..");
 const workflow = readFileSync(
@@ -53,12 +56,11 @@ function commitMessagesJob(): string {
   return match[1];
 }
 
-/** The same job with full-line `#` comments removed: only live YAML. */
+/** The same job with its `#` comments removed, full-line and trailing alike
+ *  (the shared strip, #822): only live YAML. A full-line-only filter let
+ *  `live-line # good-line` satisfy a positive match on `good-line`. */
 function commitMessagesCode(): string {
-  return commitMessagesJob()
-    .split("\n")
-    .filter((line) => !/^\s*#/.test(line))
-    .join("\n");
+  return stripYamlComments(commitMessagesJob());
 }
 
 describe("commit-messages CI gate judges only the PR's own commits (#865 follow-up)", () => {

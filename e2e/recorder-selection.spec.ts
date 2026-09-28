@@ -1,8 +1,22 @@
 import { existsSync } from "node:fs";
 
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { clickEditRecording, editRecordingButton } from "./recorder-fixtures";
+
+/**
+ * Pin the current look before the app boots (`lib/design.ts`'s key). #951
+ * flipped the default to o4, and the cases below assert current-look
+ * structure — `.confirm-panel` (O4 draws G6's Keep/Delete tiles in the book
+ * sheet instead, #1030) and the edit toolbar's DOM order (O4's toolbar
+ * differs, #949) — so they opt out of the new default explicitly, the same
+ * way `recorder-menu-half-screen.spec.ts` opts INTO o4.
+ */
+async function pinCurrentLook(page: Page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("tc-mobile.design", "current");
+  });
+}
 
 // Shipped-build computed styles cover the real cascade, including Tailwind and
 // inline overrides. Chromium cannot verify the iOS callout; that is issue #564.
@@ -22,6 +36,7 @@ async function expectSelectionSuppressed(root: Locator) {
 test("selection stays scoped to recorder and panels, with editable names", async ({
   page,
 }) => {
+  await pinCurrentLook(page);
   await page.goto("/");
   await expect(page.locator("body")).not.toHaveCSS("user-select", "none");
   await expect(page.locator("#root")).not.toHaveCSS("user-select", "none");
@@ -189,8 +204,9 @@ test.describe("edit mode toggle", () => {
       // `recorder-fixtures.ts` and now matched by PREFIX rather than exact
       // name — see that file's docblock) is what actually waits out
       // `commitTake`'s own async tail. #857 removed the one-tap live-take
-      // entry #134 built — `commitTake("edit")` is no longer reachable from
-      // either toolbar control (`menu-row-state.ts`'s `editRowReason`) — so
+      // entry #134 built — neither toolbar control reaches Edit during a take
+      // (`menu-row-state.ts`'s `editRowReason`), and #871 removed the
+      // commit-then-edit arm itself — so
       // Stop-then-Edit is now the only path at EITHER width; the two widths
       // still differ on layout/breakpoint, which the frame-slot assertions
       // below are for.
@@ -415,22 +431,22 @@ test.describe("edit mode toggle", () => {
         }
         await expect(startHandle).toHaveAttribute("aria-valuenow", "0");
         // The buffer is whole again after the round trip above, so dragging
-        // the end handle to the canvas's right edge selects up to whatever
-        // that current total (`aria-valuemax`) is — read fresh rather than
-        // assumed, since #835 changed how this state was reached.
-        const reenterLength = Number(
-          await endHandle.getAttribute("aria-valuemax")
+        // the end handle to the canvas's right edge selects the whole
+        // segment: both the total (`aria-valuemax`) and the end handle's
+        // value must equal the segment's original length (#897). Asserted
+        // with `toHaveAttribute` so Playwright retries (#912) — a one-shot
+        // `getAttribute` read races the drag's commit, and `Number(null)` is
+        // 0, so a missing attribute would fail as "length 0" instead of as
+        // what it is. Comparing `aria-valuenow` against the known original,
+        // not against `aria-valuemax` read a line earlier, is what keeps
+        // this able to fail for a wrong length.
+        await expect(endHandle).toHaveAttribute(
+          "aria-valuemax",
+          String(originalLength)
         );
-        // #897: the buffer is whole again (comment above), so this read
-        // should equal the segment's original length. Without this, the
-        // handle assertion right below compares `aria-valuenow` to
-        // `reenterLength` — a value read from the SAME attribute pair one
-        // line earlier — so it would hold for any length the handle drag
-        // reached, including a wrong one, and never fail.
-        expect(reenterLength).toBe(originalLength);
         await expect(endHandle).toHaveAttribute(
           "aria-valuenow",
-          String(reenterLength)
+          String(originalLength)
         );
         await page
           .getByRole("button", { name: "Cut the selection", exact: true })
@@ -438,13 +454,13 @@ test.describe("edit mode toggle", () => {
         await expect(startHandle).toHaveCount(0);
         await expect(toggle).toHaveAttribute("aria-pressed", "true");
         await page.getByRole("button", { name: "Undo", exact: true }).click();
-        expect(await expectUsableFrame()).toBe(reenterLength);
+        expect(await expectUsableFrame()).toBe(originalLength);
         await page.getByRole("button", { name: "Redo", exact: true }).click();
         await expect(startHandle).toHaveCount(0);
         await page
           .getByRole("button", { name: "Paste at the line", exact: true })
           .click();
-        expect(await expectUsableFrame()).toBe(reenterLength);
+        expect(await expectUsableFrame()).toBe(originalLength);
       }
       await page
         .getByRole("button", { name: "Done editing", exact: true })
@@ -478,6 +494,7 @@ test.describe("edit toolbar keeps the ≡ off the leading edge (#370)", () => {
       page,
     }) => {
       await page.setViewportSize({ width, height: 740 });
+      await pinCurrentLook(page);
       await page.goto("/");
       await page.getByRole("button", { name: "New book" }).click();
       await page.getByRole("button", { name: "Create book" }).click();
@@ -648,4 +665,82 @@ test.describe("selection handle focus ring at 0%/100% (#659)", () => {
       }
     });
   }
+});
+
+// #361 row 5, the "stop-on-edit" half (#284): every edit action stops an
+// audition first, because a cut rematerialises `working` and a moved handle
+// changes the span the audition was OF. `recorder.tsx`'s `onSelectionChange`
+// and `onCut` each call `stopPlayback()` before they act, and nothing in the
+// Node suite reaches either handler. The span is widened first, so an
+// audition that was NOT stopped would still be sounding after each check's
+// timeout.
+test.describe("an edit stops the audition (#284, #361)", () => {
+  test("a handle nudge and a cut each silence a sounding selection", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 740 });
+    await page.goto("/");
+    await page.getByRole("button", { name: "New book" }).click();
+    await page.getByRole("button", { name: "Create book" }).click();
+    await page.getByRole("button", { name: /^Add chapter to/ }).click();
+    await page.getByRole("button", { name: "Create chapter" }).click();
+    await page.getByRole("button", { name: "Open Chapter 1" }).click();
+    await page.getByRole("button", { name: "Add segment" }).click();
+    await page.getByRole("button", { name: "Record segment 1" }).click();
+    await page.getByRole("button", { name: "Record", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: "Stop recording", exact: true })
+    ).toBeVisible();
+    await page.waitForTimeout(8000);
+    await page
+      .getByRole("button", { name: "Stop recording", exact: true })
+      .click();
+    await clickEditRecording(page);
+
+    const startHandle = page.getByLabel("Selection start", { exact: true });
+    const endHandle = page.getByLabel("Selection end", { exact: true });
+    await expect(startHandle).toBeVisible();
+    // Drag the start edge toward the canvas's left edge, so the span is
+    // longer than the seeded last quarter.
+    const stage = (await page.locator(".recorder-canvas").boundingBox())!;
+    const hb = (await startHandle.boundingBox())!;
+    const y = hb.y + hb.height / 2;
+    await page.mouse.move(hb.x + hb.width / 2, y);
+    await page.mouse.down();
+    await page.mouse.move(stage.x - 20, y, { steps: 8 });
+    await page.mouse.up();
+    const valueOf = async (h: Locator) =>
+      Number(await h.getAttribute("aria-valuenow"));
+    const max = Number(await endHandle.getAttribute("aria-valuemax"));
+    // Premise: the span is at least 40% of an 8 s take, over 3 s of audio,
+    // so an audition left running outlasts each 1.5 s check below.
+    expect((await valueOf(endHandle)) - (await valueOf(startHandle))).toBe(
+      max - (await valueOf(startHandle))
+    );
+    expect(max - (await valueOf(startHandle))).toBeGreaterThan(max * 0.4);
+
+    const play = page.getByRole("button", {
+      name: "Play the selection",
+      exact: true,
+    });
+    const stop = page.getByRole("button", {
+      name: "Stop playing",
+      exact: true,
+    });
+
+    // 1. A handle nudge (`onSelectionChange`) while the selection sounds.
+    await play.click();
+    await expect(stop).toBeVisible();
+    await endHandle.press("ArrowLeft");
+    await expect(stop).toHaveCount(0, { timeout: 1500 });
+    await expect(play).toBeVisible();
+
+    // 2. A cut (`onCut`) while the selection sounds.
+    await play.click();
+    await expect(stop).toBeVisible();
+    await page
+      .getByRole("button", { name: "Cut the selection", exact: true })
+      .click();
+    await expect(stop).toHaveCount(0, { timeout: 1500 });
+  });
 });

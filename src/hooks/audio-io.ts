@@ -39,6 +39,89 @@ const CANDIDATE_MIME_TYPES = [
   "audio/aac",
 ] as const;
 
+/**
+ * WebKit's Audio Session API type values a page can declare
+ * (https://developer.mozilla.org/en-US/docs/Web/API/AudioSession/type,
+ * https://github.com/w3c/audio-session/blob/main/explainer.md). Only the two
+ * this module uses are ever assigned; the rest of the union exists so an
+ * assignment elsewhere can't silently widen to a bare `string`.
+ */
+type AudioSessionType =
+  | "auto"
+  | "playback"
+  | "transient"
+  | "transient-solo"
+  | "ambient"
+  | "play-and-record";
+
+/** The shape of `navigator.audioSession` this module relies on. */
+interface WebKitAudioSession {
+  type: AudioSessionType;
+}
+
+/**
+ * `navigator.audioSession`, or `undefined` on every engine that does not
+ * implement it — Chrome, Firefox, and Android's WebView, plus Safari before
+ * 16.4. Not in any TS DOM lib as of this writing, hence the cast; reading it
+ * through one helper keeps that cast in one place.
+ */
+function getAudioSession(): WebKitAudioSession | undefined {
+  if (typeof navigator === "undefined") return undefined;
+  return (navigator as unknown as { audioSession?: WebKitAudioSession })
+    .audioSession;
+}
+
+/**
+ * Whether this engine exposes `navigator.audioSession` at all (#1111). Not
+ * used by the two setters below — they already feature-check themselves — but
+ * exported so a caller (or a test) can tell "nothing happened because this
+ * engine has no such API" apart from "the call silently did nothing else".
+ */
+export function hasAudioSessionApi(): boolean {
+  return getAudioSession() !== undefined;
+}
+
+/**
+ * Declare this page's audio as PLAYBACK (#1111): WebKit then routes it past
+ * the hardware silent/ring switch the way a music or podcast app is, rather
+ * than following the switch the way its own `"auto"`/`"ambient"` default
+ * does. The DRI's decision on #1111 accepts the paired trade-off documented
+ * for `"playback"` — it is exclusive, so it pauses another app's playback
+ * audio rather than mixing with it, the same as a music or podcast app.
+ *
+ * Called from `playSamples` below, on every Play — cheap and idempotent, so
+ * reasserting it costs nothing and repairs a session a previous recording
+ * left on `"play-and-record"` (see `setRecordAudioSession`) without this
+ * module needing its own "recording just ended" hook.
+ *
+ * Feature-checked and a no-op wherever `navigator.audioSession` does not
+ * exist: every engine besides Safari/WebKit 16.4+, and every already-shipped
+ * page load before this change. Never throws.
+ */
+export function setPlaybackAudioSession(): void {
+  const session = getAudioSession();
+  if (session) session.type = "playback";
+}
+
+/**
+ * Declare this page's audio as PLAY-AND-RECORD for the life of a take
+ * (#1111): the microphone is about to go live (`use-recorder.ts`'s
+ * `start()`, called just before `getUserMedia`), and WebKit's `"playback"`
+ * type above is documented for playback only — recording under it is the
+ * "if needed" case #1111 asks this module to research and cover. Not
+ * reverted explicitly on stop: the app's own audio session (`lib/audio/session.ts`)
+ * refuses a playback claim while the microphone holds the floor, so nothing
+ * can play while this type is live, and the next Play reasserts `"playback"`
+ * (`setPlaybackAudioSession` above) before it plays.
+ *
+ * Feature-checked and a no-op wherever `navigator.audioSession` does not
+ * exist. Never throws.
+ */
+export function setRecordAudioSession(): void {
+  const session = getAudioSession();
+  if (session) session.type = "play-and-record";
+}
+
 export function isRecordingSupported(): boolean {
   return (
     typeof window !== "undefined" &&
@@ -760,6 +843,13 @@ export async function playSamples(
   let hadRejection = false;
   let capturedCause: unknown;
   let unusableError: Error | undefined;
+
+  // #1111: declare this claim as playback BEFORE anything else, so a session
+  // a previous recording left on "play-and-record" is corrected the instant a
+  // Play is pressed, not only on the recorder's own stop path. Synchronous,
+  // feature-checked and a no-op on every non-WebKit engine — see the docblock
+  // on `setPlaybackAudioSession`.
+  setPlaybackAudioSession();
 
   const resumeTimedOut = await raceAudioResume("playback-resume", (cause) => {
     hadRejection = true;

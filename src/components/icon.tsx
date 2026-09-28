@@ -17,6 +17,7 @@ export type IconName =
   | "prev"
   | "next"
   | "trash"
+  | "eraser"
   | "alert"
   | "info"
   | "copies"
@@ -29,7 +30,6 @@ export type IconName =
   | "chevron-right"
   | "zoom-in"
   | "zoom-out"
-  | "selection"
   | "scissors"
   | "paste"
   | "undo"
@@ -125,6 +125,20 @@ const PATHS: Record<IconName, React.ReactNode> = {
         strokeLinejoin="round"
       />
     </>
+  ),
+  // Clear (#1119, the DRI's 2026-09-28 pick): an eraser block over the line
+  // it rubs out. Clear removes a segment's audio and keeps the segment, so it
+  // must not wear the bin — the bin is Delete's, which removes the segment
+  // itself. Same stroke and grid as the bin beside it.
+  eraser: (
+    <path
+      d="M7.2 17.8 4 14.6a1.5 1.5 0 0 1 0-2.1l8.1-8.1a1.5 1.5 0 0 1 2.1 0l4.1 4.1a1.5 1.5 0 0 1 0 2.1l-6.9 7.2M7.2 17.8H18M7.3 9.2l6.3 6.3"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
   ),
   alert: (
     <>
@@ -342,20 +356,9 @@ const PATHS: Record<IconName, React.ReactNode> = {
       />
     </>
   ),
-  // Selection-frame toggle: the two brackets that frame the picked span (mockup
-  // 4). Drawn as a facing pair so the button reads as "enclose a region".
-  selection: (
-    <path
-      d="M9 5.5H6v11h3M13 5.5h3v11h-3"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  ),
   // Cut: two finger loops and crossing blades. Appears below the waveform once a
-  // selection exists (mockup 4).
+  // selection exists (mockup 4), and is the recorder toolbar's edit-mode
+  // toggle (#955).
   scissors: (
     <>
       <circle

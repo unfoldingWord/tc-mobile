@@ -94,6 +94,10 @@ vi.mock("@/hooks/audio-io", () => ({
   raceAudioResume: vi.fn().mockResolvedValue(false),
   RESUME_TIMEOUT_MS: 1000,
   resumeAudioContext: vi.fn().mockResolvedValue(undefined),
+  // #1111: use-recorder.ts's start() calls this before getUserMedia. This
+  // suite is about ref-nulling on release, not the session-type call — see
+  // tests/use-recorder-audio-session.test.ts for that wiring.
+  setRecordAudioSession: vi.fn(),
   // A minimal stand-in for the real helper: stop every track on the stream
   // it is given. use-recorder.ts's own ref bookkeeping — not stopTracks's
   // per-track throw handling — is what these tests are about.

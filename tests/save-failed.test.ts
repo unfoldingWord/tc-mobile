@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+import { restartLabel } from "@/components/recovery-copy";
 import { SaveFailed } from "@/components/save-failed";
 import { strings } from "@/lib/strings";
 import { region } from "./support";
@@ -9,9 +10,9 @@ import { region } from "./support";
 /**
  * SaveFailed carries the same Send-log control the crash screen has (#456).
  *
- * Same constraint `tests/error-boundary.test.ts` documents: no jsdom, no
- * renderer (`vitest.config.ts` sets `environment: "node"`), so only the
- * markup a first render produces is checked here — the armed/preparing paint
+ * Same constraint `tests/error-boundary.test.ts` documents: this suite does
+ * not mount in jsdom (`vitest.config.ts` sets `environment: "node"`), so only
+ * the markup a first render produces is checked here — the armed/preparing paint
  * `SendLogControl`'s own hook (`useFailureLogShare`) reaches after a tap
  * needs a browser and is not exercised in this suite.
  *
@@ -44,7 +45,7 @@ describe("SaveFailed — the Send-log control (#456)", () => {
     // strictly follow Retry — a bare indexOf comparison would silently pass
     // if BOTH returned -1 (#533).
     region(html, {
-      from: html.indexOf('aria-label="Try saving again"'),
+      from: html.indexOf(`aria-label="${strings.saveFailedRetry}"`),
       to: html.indexOf(`aria-label="${strings.shareFailureLog}"`),
     });
   });
@@ -87,8 +88,11 @@ describe("SaveFailed — the Send-log control (#456)", () => {
     );
 
     expect(html).toContain("This book is gone");
-    expect(html).not.toContain('aria-label="Try saving again"');
-    expect(html).not.toContain("Restart the app");
+    // Both negatives read the words from where the screen reads them (#533):
+    // typed here as English literals, a copy edit to either label would leave
+    // these checking for text nothing renders any more, and pass on it.
+    expect(html).not.toContain(`aria-label="${strings.saveFailedRetry}"`);
+    expect(html).not.toContain(restartLabel("recording", false));
     expect(html).toContain(`aria-label="${strings.shareFailureLog}"`);
     expect(html).toContain("control--primary");
   });

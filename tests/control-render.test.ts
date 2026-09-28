@@ -86,7 +86,7 @@ describe("Control's inert cells", () => {
     // accessible name that carries the reason.
     const hint = barHint("uncommitted-take", strings.stopToEdit);
     const el = button({
-      icon: "selection",
+      icon: "scissors",
       label: strings.enterEdit,
       disabled: true,
       hint,

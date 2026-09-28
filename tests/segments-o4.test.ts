@@ -64,6 +64,7 @@ function rowProps(row: Row, extra: Record<string, unknown> = {}) {
     onOpenRecorder: () => {},
     onSetFinished: () => {},
     onErase: () => {},
+    onDeleteSegment: () => {},
     onRename: () => Promise.resolve(true),
     ...extra,
   };
@@ -321,8 +322,11 @@ describe("o4/segments.css (#944)", () => {
         "background: var(--s-well)",
       ])
     );
-    expect(block(`${O4} .row--finished .row-badge`)).toContain(
-      "background: var(--s-done)"
+    expect(block(`${O4} .row--finished .row-badge`)).toEqual(
+      expect.arrayContaining([
+        "background: var(--s-done-quiet)",
+        "color: var(--s-done-text)",
+      ])
     );
     expect(block(`${O4} .row .control--play`)).toEqual(
       expect.arrayContaining(["width: 72px", "height: 72px"])

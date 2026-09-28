@@ -77,7 +77,7 @@ export default defineConfig({
       // its own should fail to run visibly, not silently join whichever
       // project's baseURL happened to be the catch-all.
       name: "chromium-harness",
-      testMatch: /browser-boundary-smoke\.spec\.ts$/,
+      testMatch: /(browser-boundary-smoke|joined-mp3-decode)\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_E2E}` },
     },
     {
@@ -89,7 +89,7 @@ export default defineConfig({
       // by the production minifier or by Tailwind's layer ordering would pass
       // there (#171).
       testMatch:
-        /(service-worker-precache|theme-toggle|theme-mid-take|recorder-selection|segment-rename|object-menu-focus|edit-history-cue|focus-scroll-measure)\.spec\.ts$/,
+        /(service-worker-precache|theme-toggle|theme-mid-take|recorder-selection|name-sheet-confirm|recorder-discard-clip|recorder-menu-half-screen|recorder-zoom-insertion|recorder-audition-playhead|segment-rename|segment-menu-tile-fit|object-menu-focus|share-book-spool|edit-history-cue|focus-scroll-measure)\.spec\.ts$/,
       use: { ...chromium, baseURL: `http://127.0.0.1:${PORT_DIST}` },
     },
     {

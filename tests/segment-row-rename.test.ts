@@ -11,6 +11,15 @@ import { reportFailure } from "@/hooks/report-failure";
 // Read back, not run: the row hands a rejected rename's cause to the log.
 vi.mock("@/hooks/report-failure", () => ({ reportFailure: vi.fn() }));
 
+// This file asserts the CURRENT look's row heading ("3", then
+// "3 · verses 3–4"), not O4's markup. #951 flipped the design default to o4,
+// so pin the current look explicitly here rather than rely on
+// nothing-stored — the O4 row is covered elsewhere (`tests/segments-o4.test.ts`
+// and friends).
+vi.mock("@/hooks/use-design", () => ({
+  useDesign: () => ({ design: "current" as const, toggle: () => {} }),
+}));
+
 /**
  * Rename in the segment row's menu (#591): the label rides beside the ordinal,
  * and the menu reaches it on EVERY row — an empty one included, because the
@@ -76,6 +85,7 @@ async function render(
         onOpenRecorder: vi.fn(),
         onSetFinished: vi.fn(),
         onErase: vi.fn(),
+        onDeleteSegment: vi.fn(),
         onRename,
       })
     );

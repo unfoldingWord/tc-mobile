@@ -17,7 +17,7 @@ import {
 // the name and the version the app requests. Kept in sync by hand — there is
 // nothing else to key them off. (Mirrors tests/db-migration.test.ts.)
 const DB_NAME = "tc-mobile";
-const APP_VERSION = 8;
+const APP_VERSION = 9;
 
 /**
  * Delete the database outright so each case starts from a true fresh install,
@@ -1028,8 +1028,8 @@ describe("another copy of the app upgrades the database (versionchange)", () => 
         status = "reloadNeeded";
         seen.push(status);
       },
-      // What `use-database-status.ts` does, modelled here because this repo has
-      // no renderer to drive the hook itself.
+      // What `use-database-status.ts` does, modelled here because nothing
+      // in this suite mounts the hook to exercise its effects.
       onBlocked: () => {
         status = status === "reloadNeeded" ? status : "blocked";
         seen.push(status);

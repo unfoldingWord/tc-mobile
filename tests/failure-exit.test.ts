@@ -11,8 +11,16 @@ import {
  * The defect class this closes (George R5 P3 / #450, then George R6 P2) was four
  * failure sites each deciding for themselves whether a failure was worth
  * retrying, while the screen that could actually help was withheld behind them.
- * So the cases below are about the SET of sites as much as about either answer:
- * they must agree, and the list must be exhaustive.
+ * So the cases below are about the SET of sites as much as about either
+ * answer: they must agree, and the list must be exhaustive.
+ *
+ * A fifth site, the in-sheet segment delete (#590), lived here briefly —
+ * added by #1080, then removed again by this same PR when #1104 (the
+ * requirements owner's 2026-09-26 decision) pulled Delete back out of the
+ * recorder's ≡ menu entirely. The chapter view's own Delete (`segment-row.tsx`,
+ * `segments-screen.tsx`) is a list-screen Notice, never a whole-sheet exit
+ * decision, so it was never this function's problem to answer — the site list
+ * below is back to the original four.
  *
  * What this file does not cover: whether the call sites in `recorder.tsx`
  * consult this. `tests/recorder-missing-target.test.ts` mounts the sheet for
@@ -78,8 +86,8 @@ describe("failureExit", () => {
   });
 
   it("answers every site the same way — which is the whole fix", () => {
-    // The class was four sites deciding separately. If one of them ever needs a
-    // different answer, that divergence has to be written down here as a
+    // The class was four sites deciding separately. If one of them ever needs
+    // a different answer, that divergence has to be written down here as a
     // divergence, and this case is what forces the conversation.
     for (const databaseUnreachable of [false, true]) {
       for (const targetMissing of [false, true]) {
@@ -94,9 +102,9 @@ describe("failureExit", () => {
   });
 
   it("covers the four sites the class was found at, and no fewer", () => {
-    // A fifth failure path inside the sheet cannot be added without coming here
-    // and naming itself. `#450` was the load path; the close tails and the erase
-    // were George R6 P2.
+    // A fifth failure path inside the sheet cannot be added without coming
+    // here and naming itself. `#450` was the load path; the close tails and
+    // the erase were George R6 P2.
     expect(new Set(SITES).size).toBe(4);
     for (const site of ["clear", "mark", "erase", "load"] as const) {
       expect(SITES).toContain(site);

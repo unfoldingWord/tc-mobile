@@ -13,6 +13,11 @@ import {
 import type { CaptureFailure } from "@/lib/audio/capture-failure";
 import { decodeRetry } from "@/lib/audio/retry-decode";
 import { classifyEmptySeal, classifyStopDecode } from "@/lib/audio/stop-decode";
+import {
+  TAKE_CAP_MS,
+  takeCapStatus,
+  type TakeCapStatus,
+} from "@/lib/audio/take-cap";
 import { strings } from "@/lib/strings";
 
 import {
@@ -25,6 +30,7 @@ import {
   raceAudioResume,
   RESUME_TIMEOUT_MS,
   resumeAudioContext,
+  setRecordAudioSession,
   stopTracks,
 } from "./audio-io";
 import { reportFailure } from "./report-failure";
@@ -239,6 +245,20 @@ export interface UseRecorder {
   retryDecode: (blob: Blob) => Promise<RetryDecodeResult>;
   cancel: () => void;
   /**
+   * End an open take the way a #59 interruption does, for a `pagehide` (#807)
+   * or the page becoming hidden (#836): freeze at `"processing"` with the
+   * captured slices left where `stop()` will find them, so the sheet's
+   * interruption commit saves the partial take. Returns `true` when a take was
+   * open (the caller must then NOT `cancel()`), `false` when there is none.
+   * Idempotent: a second call before `stop()` takes the slices returns `true`
+   * and changes nothing.
+   *
+   * Synchronous and write-free: no `stop()`, no decode, no failure-log row.
+   * Everything that touches IndexedDB runs later, on the commit path, after
+   * `stop()`'s own awaits.
+   */
+  seal: () => boolean;
+  /**
    * The live capture level for the VU meter, in the raw amplitude domain (RMS of
    * the latest frame). A PULL read (D-LEVEL-PULL): the meter polls this on its
    * own animation clock so the recorder never re-renders per frame. Returns 0
@@ -275,6 +295,14 @@ export interface UseRecorder {
    * rather than a resting-empty strip. False while it is working or idle.
    */
   meterFailed: boolean;
+  /**
+   * The live take against the length cap (#1005, "Warn at 15, seal at 20"):
+   * `nearLimit` from 15:00 and the time left, for the recorder screen's
+   * state-in-place marker. Only a `"recording"` take is ever near the limit.
+   * At 20:00 the take is sealed like a `pagehide` seal (`seal()`), so the
+   * sheet commits and saves it, and one `"recorder-take-cap"` row is logged.
+   */
+  readonly takeCap: TakeCapStatus;
 }
 
 /**
@@ -324,6 +352,13 @@ export function useRecorder(): UseRecorder {
   const tickRef = useRef<number | null>(null);
   /** Bumped on cancel so a stop() already in flight resolves to nothing. */
   const generationRef = useRef(0);
+  /**
+   * A take whose slices no `stop()` has taken yet (#807). True from the moment
+   * `start()` has a recorder running until `stop()` snapshots the chunks or
+   * `cancel()` drops them. Covers `"recording"` and the #59 `"processing"`
+   * freeze before its commit starts, which is the window `seal()` must keep.
+   */
+  const takeOpenRef = useRef(false);
 
   const supported = isRecordingSupported();
 
@@ -333,14 +368,6 @@ export function useRecorder(): UseRecorder {
       tickRef.current = null;
     }
   }, []);
-
-  /** Run the elapsed timer for the current span, on top of the banked total. */
-  const startTick = useCallback(() => {
-    clearTick();
-    tickRef.current = window.setInterval(() => {
-      setElapsedMs(performance.now() - startedAtRef.current);
-    }, 100);
-  }, [clearTick]);
 
   /** Close the VU tap if one is open. Safe to call when there is none. */
   const closeTap = useCallback(() => {
@@ -456,6 +483,51 @@ export function useRecorder(): UseRecorder {
     if (streamRef.current === stream) streamRef.current = null;
   }, []);
 
+  const seal = useCallback((): boolean => {
+    if (!takeOpenRef.current) return false;
+    // Already frozen by a #59 interruption: its commit is on the way, and the
+    // only thing to do is not cancel it.
+    if (!recordingRef.current) return true;
+    // `onInterrupted`'s freeze, minus the parts that belong to a lost track:
+    // the recorder is still live here, so its tracks stay up until `stop()`
+    // has the final slice, and there is no failure row (#478's constraint).
+    clearTick();
+    tapRef.current?.disconnect();
+    recordingRef.current = false;
+    setState("processing");
+    return true;
+  }, [clearTick, setState]);
+
+  /**
+   * Run the elapsed timer for the current take, and seal the take when it
+   * reaches the length cap (#1005). The cap reuses `seal()`, so the sheet's
+   * interruption commit saves the take exactly as it does after a `pagehide`.
+   * Unlike a `pagehide`, the page is staying, so the one failure-log row that
+   * says the take was cut is written here. `seal()` clears this interval, so
+   * the row is written once per take.
+   *
+   * The check runs on this 100 ms tick, so a page whose timers the browser
+   * throttles (backgrounded) seals on the first tick it is given after 20:00,
+   * which can be later than 20:00.
+   */
+  const startTick = useCallback(() => {
+    clearTick();
+    tickRef.current = window.setInterval(() => {
+      const elapsed = performance.now() - startedAtRef.current;
+      setElapsedMs(elapsed);
+      // `true`: this tick only runs while recording. Every exit from
+      // "recording" (seal, interruption, stop, cancel) clears it first.
+      if (!takeCapStatus(elapsed, true).reached) return;
+      seal();
+      reportFailure(
+        new Error(
+          `The take reached the ${TAKE_CAP_MS / 60_000}-minute cap and was sealed and saved (#1005)`
+        ),
+        "recorder-take-cap"
+      );
+    }, 100);
+  }, [clearTick, seal]);
+
   const start = useCallback(async (): Promise<boolean> => {
     if (!supported) {
       setError(strings.recordingUnsupported);
@@ -487,6 +559,15 @@ export function useRecorder(): UseRecorder {
     let stream: MediaStream | null = null;
 
     try {
+      // #1111: declare a record-capable audio session BEFORE the microphone
+      // opens. WebKit's `"playback"` type (`setPlaybackAudioSession`,
+      // `audio-io.ts`) — asserted on every Play so recordings stay audible
+      // through the iPhone silent switch — is documented for playback only;
+      // switching here, ahead of `getUserMedia`, is the "if needed" case
+      // #1111 asks this fix to cover so a session left on `"playback"` by an
+      // earlier Play cannot fight the mic. Feature-checked and a no-op on
+      // every non-WebKit engine.
+      setRecordAudioSession();
       stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           // Speech in a noisy room, recorded on a phone held in the hand.
@@ -629,7 +710,7 @@ export function useRecorder(): UseRecorder {
           // for the same reason the original stop is: the chunks are final. NOT
           // on the error path (recorder still active), where clone-stop could
           // truncate the slice stop() will recover.
-          stream?.getTracks().forEach((track) => track.stop());
+          if (stream) stopTracks(stream, "recorder-release-track");
           closeTap();
         } else if (!interruptionReported) {
           interruptionReported = true;
@@ -675,6 +756,7 @@ export function useRecorder(): UseRecorder {
       setElapsedMs(0);
       // The ring may advance from the next rAF on — set before the state edge.
       recordingRef.current = true;
+      takeOpenRef.current = true;
       setState("recording");
 
       startTick();
@@ -733,6 +815,7 @@ export function useRecorder(): UseRecorder {
     // to the array rather than to the ref — see `start()`.
     const generation = generationRef.current;
     const chunks = chunksRef.current;
+    takeOpenRef.current = false;
     const stream = streamRef.current;
     // OWN the VU tap exactly as the stream is owned (below): steal it into a
     // local and null the ref. Two flush-window races this closes (Frank + George
@@ -1011,6 +1094,7 @@ export function useRecorder(): UseRecorder {
 
   const cancel = useCallback(() => {
     generationRef.current++;
+    takeOpenRef.current = false;
     clearTick();
     // Stop the live-scope push before the stream is torn down (releaseStream
     // nulls the tap too, but keep the flag consistent with the other exits).
@@ -1056,8 +1140,8 @@ export function useRecorder(): UseRecorder {
   // the way `resumeAudioContext` itself is — `tests/foreground-resume.test.ts`
   // mutates each guard to prove it. The effect is the one-line call plus the
   // `[state]` dependency: browser-boundary wiring whose guards are Node-tested,
-  // but the effect actually firing and iOS gesture-withholding are the on-device
-  // pass for #76 — NOT yet run on any device.
+  // but the effect actually firing and iOS gesture-withholding are on-device
+  // surface for #76, not exercised here.
   useEffect(() => armForegroundResume(state === "recording"), [state]);
 
   // Never leave the microphone hot if the screen unmounts mid-recording.
@@ -1073,10 +1157,12 @@ export function useRecorder(): UseRecorder {
     stop,
     retryDecode,
     cancel,
+    seal,
     readLevel,
     readMeterAvailable,
     readScope,
     peekScope,
     meterFailed,
+    takeCap: takeCapStatus(elapsedMs, state === "recording"),
   };
 }

@@ -1,14 +1,24 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 /**
- * Capacitor wraps the existing PWA in a native WebView so the same web build
- * (`npm run build` -> `dist/`) ships to TestFlight and as an Android APK for
- * the Nairobi training (#262). This is the shell only — no product changes.
+ * Capacitor wraps the existing PWA in a native WebView so the same app code
+ * ships to TestFlight and as an Android APK for the Nairobi training (#262).
+ * This is the shell only — no product changes.
  *
- * `webDir` is the Vite output directory (`dist`), the same bundle Cloudflare
- * Workers Builds serves for the PWA. Capacitor copies it into the native
- * projects at `cap sync`; it does not deploy anything, so it cannot collide
- * with the Cloudflare deploy. See docs/native/README.md.
+ * `webDir` is the Vite output directory (`dist`) — but the NATIVE build is
+ * `npm run build:native` (`vite build --mode native`), not the plain
+ * `npm run build` Cloudflare Workers Builds runs for the PWA (#923). Both
+ * emit the same application code into `dist/`; the native build additionally
+ * swaps `vite-plugin-pwa`'s output for a self-unregistering, cache-clearing
+ * `sw.js` and ships no service-worker registration script at all, because a
+ * Workbox offline precache adds nothing inside a WebView that already reads
+ * its bundle from local files, and a stale one is exactly what left an
+ * upgraded APK still running the old build. `cap sync` copies whichever
+ * `dist/` is on disk at the time it runs — always the native one for a real
+ * native build, per `docs/native/README.md`'s "core loop" — into the native
+ * projects; it does not deploy anything, so it cannot collide with the
+ * Cloudflare deploy. See `docs/native/README.md` and `vite.config.ts`'s
+ * native-mode comment.
  */
 const config: CapacitorConfig = {
   appId: "org.unfoldingword.tcmobile",

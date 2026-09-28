@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { resolveDistGate } from "./dist-gate";
+import { stripCssComments } from "./support";
 
 /**
  * The O4 stylesheet folder's position in the built cascade (#938, batch 0 of
@@ -27,17 +28,16 @@ import { resolveDistGate } from "./dist-gate";
  * see.
  *
  * WHY A REAL DECLARATION, NOT A COMMENT. `o4/index.css`'s own header records
- * this: a build was run against a comment-only version of that file (a plain
- * `/**` block, and separately one prefixed `/*!`, the marker some minifiers
- * preserve for license banners and which Tailwind's own banner in this same
- * built file survives as) and neither comment appeared anywhere in
- * `dist/assets/*.css` afterward — an empty `@layer components {}` compiles
- * away to zero bytes in this project's build, indistinguishable from the file
- * not existing. Only a real declaration survives, which is why
+ * this: this project's build strips CSS comments — a plain `/**` block, and
+ * separately one prefixed `/*!`, the marker some minifiers preserve for
+ * license banners and which Tailwind's own banner in this same built file
+ * survives as — so an empty `@layer components {}` compiles away to zero
+ * bytes, indistinguishable from the file not existing. Only a real
+ * declaration survives, which is why
  * `o4/index.css` carries the one inert `--o4-scope` custom property this test
  * locates. That is a narrower reading of this batch's "empty apart from a
- * header comment" done-when clause than the literal text — recorded as a
- * deliberate, evidence-based deviation, not an oversight, in this PR's body.
+ * header comment" done-when clause than the literal text — a deliberate,
+ * evidence-based deviation, not an oversight.
  *
  * WHAT THIS DOES NOT PROVE. It does not run a browser or compute an actual
  * cascade winner — like `tests/focus-offset-cascade.test.ts`, it reads
@@ -122,7 +122,12 @@ describe.skipIf(GATE === "skip")(
  * or by accident.
  */
 const O4_DIR = path.join(ROOT, "src", "app", "styles", "o4");
-const INDEX_SOURCE = readFileSync(path.join(O4_DIR, "index.css"), "utf8");
+// Read without its comments (#822): a commented-out `@import` still holds the
+// exact text the assertion below looks for, so a raw read passed with an area
+// file no longer wired in.
+const INDEX_SOURCE = stripCssComments(
+  readFileSync(path.join(O4_DIR, "index.css"), "utf8")
+);
 
 const AREA_FILES = [
   "books.css",

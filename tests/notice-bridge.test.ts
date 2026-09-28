@@ -1,10 +1,13 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
+import { Notice } from "@/components/notice";
 import { noticePresentation, type NoticeTone } from "@/components/notice-tone";
-import { cssRule } from "./support";
+import { one, render } from "./render";
+import { cssRule, declarationValue } from "./support";
 
 /**
  * `notice-tone.ts` is the SPECIFICATION; `.notice` in layer 3 is the
@@ -77,26 +80,26 @@ describe("the .notice rule honours the tone table (#164 L-14)", () => {
     // The box the component used to paint on itself.
     expect(base).toMatch(/background:\s*var\(--s-surface\)/);
     expect(base).toMatch(/border:\s*1px solid var\(--s-edge\)/);
-    expect(base).toMatch(/color:\s*var\(--s-ink\)/);
+    expect(declarationValue(base, "color")).toBe("var(--s-ink)");
   });
 
-  it("the component no longer paints itself, or layer 3 could not win", () => {
-    const notice = readFileSync(
-      path.resolve(
-        import.meta.dirname,
-        "..",
-        "src",
-        "components",
-        "notice.tsx"
-      ),
-      "utf8"
-    );
-    // The whole reason this lane exists. An inline `style` beats every layer,
-    // so one reintroduced here silently voids every assertion above.
-    expect(notice).not.toMatch(/style=\{\{/);
-    expect(notice).toMatch(/className="notice"/);
-    expect(notice).toMatch(/data-tone=\{tone\}/);
-  });
+  // Rendered, not read as text (#822): a comment in `notice.tsx` carrying
+  // `className="notice"` kept the old source pin green over a live element
+  // that no longer had the class. The markup cannot be satisfied by prose.
+  for (const tone of TONES) {
+    it(`${tone}: the component no longer paints itself, or layer 3 could not win`, () => {
+      const box = one(
+        render(createElement(Notice, { tone, children: "said once" })),
+        '[role="alert"], [role="status"]'
+      );
+      // The whole reason this lane exists. An inline `style` beats every
+      // layer, so one reintroduced here silently voids every assertion above.
+      expect(box.hasAttribute("style")).toBe(false);
+      expect(box.getAttribute("class")).toBe("notice");
+      // The attribute every tone override below is keyed on.
+      expect(box.getAttribute("data-tone")).toBe(tone);
+    });
+  }
 
   for (const tone of TONES) {
     const spec = noticePresentation(tone);
@@ -106,10 +109,11 @@ describe("the .notice rule honours the tone table (#164 L-14)", () => {
       // who cannot read, the colour is the second half of what tells the three
       // marks apart (George G3). That claim only means something if the
       // stylesheet actually paints it.
+      // The `color` declaration, exactly: the pattern this replaced was also
+      // satisfied by a `background-color`, or by the first of two `color`
+      // declarations when a later one overrides it (#533).
       const body = cssRule(CSS, `.notice[data-tone="${tone}"] .notice-glyph`);
-      expect(body).toMatch(
-        new RegExp(`color:\\s*${spec.glyph.replace(/[()]/g, "\\$&")}`)
-      );
+      expect(declarationValue(body, "color")).toBe(spec.glyph);
     });
 
     it(`${tone}: \`failure\` decides the live edge, and only for a failure`, () => {

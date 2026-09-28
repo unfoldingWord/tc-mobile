@@ -10,9 +10,11 @@ import {
   restartConsequence,
   restartLabel,
 } from "./recovery-copy";
+import { restartWideButtonClass } from "./save-failed-armed";
 import { SendLogControl } from "./send-log-control";
 import { strings } from "@/lib/strings";
 import { flushFailureLog } from "@/hooks/failure-log";
+import { useDesign } from "@/hooks/use-design";
 import {
   pauseTranscodeSweep,
   resumeTranscodeSweep,
@@ -97,6 +99,11 @@ export function SaveFailed({
   // quietly went un-busy while nothing had changed would be a dead button
   // wearing a spinner first, the same reasoning `RestartControl` documents.
   const [restarting, setRestarting] = useState(false);
+  // The O4 paint (#948): the failed state's mark sits in the error circle and
+  // Retry/Restart becomes the wide guide button. Presentation only — every
+  // control, name, focus claim, the Send-log control (#456) and the sweep
+  // pause (#514) below are the same in both looks.
+  const o4 = useDesign().design === "o4";
 
   useEffect(() => {
     pauseTranscodeSweep(SAVE_FAILED_SWEEP_PAUSE);
@@ -142,19 +149,31 @@ export function SaveFailed({
       role="alertdialog"
       aria-modal="true"
       aria-label={strings.saveFailedDialog(editOnly)}
-      className="flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
+      className={
+        o4
+          ? "o4-err flex w-full max-w-md flex-col items-center px-[22px] text-center"
+          : "flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
+      }
     >
-      <span className={saving ? "text-ink-muted" : "text-live"}>
-        <Icon name={saving ? "retry" : "alert"} size={56} />
-      </span>
+      {o4 && !saving ? (
+        <span className="o4-err-circle" aria-hidden="true">
+          <Icon name="alert" size={58} />
+        </span>
+      ) : (
+        <span className={saving ? "text-ink-muted" : "text-live"}>
+          <Icon name={saving ? "retry" : "alert"} size={56} />
+        </span>
+      )}
 
-      <p className="t-title text-ink">
+      <p className={o4 ? "o4-err-title text-ink" : "t-title text-ink"}>
         {saving
           ? strings.saveFailedSaving
           : recoveryTitle(kind ?? "unknown", editOnly)}
       </p>
 
-      <p className="text-ink-muted text-[13px]">{stillHere}</p>
+      <p className="text-ink-muted text-[length:var(--p-text-md)]">
+        {stillHere}
+      </p>
 
       {!saving && (
         <>
@@ -173,8 +192,8 @@ export function SaveFailed({
                   : strings.saveFailedRetry
               }
               variant="primary"
-              size={30}
-              className={terminal && restartArmed ? "text-live" : undefined}
+              size={o4 ? 34 : 30}
+              className={restartWideButtonClass(o4, terminal && restartArmed)}
               busy={terminal && restarting}
               autoFocus
               onClick={
@@ -198,7 +217,7 @@ export function SaveFailed({
           )}
 
           {terminal && restartArmed && !restarting && (
-            <p className="text-live text-[12px]">
+            <p className="text-live text-[length:var(--p-text-sm)]">
               {restartConsequence(
                 editOnly ? "changes" : "recording",
                 holdsCutAudio
@@ -231,11 +250,15 @@ export function SaveFailed({
           {!terminal && <SendLogControl />}
 
           {safetyLine && (
-            <p className="text-ink-muted text-[13px]">{safetyLine}</p>
+            <p className="text-ink-muted text-[length:var(--p-text-md)]">
+              {safetyLine}
+            </p>
           )}
 
           {attemptsLine && (
-            <p className="text-ink-faint text-[12px]">{attemptsLine}</p>
+            <p className="text-ink-faint text-[length:var(--p-text-sm)]">
+              {attemptsLine}
+            </p>
           )}
 
           <div className="mt-[10px] flex flex-col items-center gap-[8px]">
@@ -248,7 +271,7 @@ export function SaveFailed({
               onClick={() => (armed ? onDiscard() : setArmedAt(attempts))}
             />
             {armed && (
-              <p className="text-live text-[12px]">
+              <p className="text-live text-[length:var(--p-text-sm)]">
                 {strings.saveFailedDiscardHint(editOnly)}
               </p>
             )}

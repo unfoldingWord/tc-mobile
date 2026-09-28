@@ -3,10 +3,11 @@
  * alone, DOM-free, modelled directly on `lib/theme.ts`'s split of the same
  * shape (#171).
  *
- * The O4 look ships in the v1.0.0 training build behind this switch. With it
- * off, `data-design` is absent (or `"current"`) and every O4-scoped rule in
- * `app/styles/o4/` — each one written `[data-design="o4"] ...` — matches
- * nothing, so the current look renders exactly as it does today (epic #936,
+ * The O4 look ships in the v1.0.0 training build behind this switch, and #951
+ * turned it on by default. With `data-design="current"` — an explicit saved
+ * choice, never the default — every O4-scoped rule in `app/styles/o4/` —
+ * each one written `[data-design="o4"] ...` — matches nothing, so the
+ * current look renders exactly as it did before the flip (epic #936,
  * "Behind a switch"). The DOM half — the attribute, `localStorage`, the menu
  * control — is `hooks/use-design.ts`.
  *
@@ -29,19 +30,27 @@ export type Design = "current" | "o4";
  */
 export const DESIGN_STORAGE_KEY = "tc-mobile.design";
 
-/** The app ships the current look. O4 is opt-in until #951 turns it on by default. */
-const DEFAULT_DESIGN: Design = "current";
+/**
+ * The app ships O4 by default (#951). A user's saved choice still wins —
+ * `readStoredDesign` only reaches this for a stored value it does not
+ * recognise, chiefly "nothing has ever been written" (`raw === null`). An
+ * existing user with nothing stored is therefore switched to the new look
+ * the next time they launch; someone who already chose the old look
+ * explicitly (the exact `"current"` value `nextDesign`/the menu control
+ * writes) keeps it, because that string matches the first branch above and
+ * never falls through to this default.
+ */
+const DEFAULT_DESIGN: Design = "o4";
 
 /**
- * The design a stored value selects, defaulting to `"current"` on **anything**
- * this app did not write.
+ * The design a stored value selects, defaulting to {@link DEFAULT_DESIGN} —
+ * `"o4"` since #951 — on **anything** this app did not write.
  *
  * Not defensive for its own sake, the same reason `readStoredTheme` gives:
  * `data-design` is a plain attribute selector, and every O4 rule this repo
- * will ever add is scoped under `[data-design="o4"]` specifically — a stray
- * value would select neither block name, but only `"o4"` renders anything
- * different from today, so the safe fallback for anything unrecognised is the
- * look already shipping.
+ * will ever add is scoped under `[data-design="o4"]` specifically. An
+ * explicit, recognised `"current"` still wins over the default — that is
+ * the whole mechanism #951 relies on to honour a saved choice.
  */
 export function readStoredDesign(raw: string | null): Design {
   return raw === "current" || raw === "o4" ? raw : DEFAULT_DESIGN;

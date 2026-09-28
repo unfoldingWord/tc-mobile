@@ -7,10 +7,16 @@ import { describe, expect, it } from "vitest";
 import { Control } from "@/components/control";
 import { EmptyState } from "@/components/empty-state";
 import { NameEdit } from "@/components/name-edit";
+import {
+  RecorderToolbar,
+  type RecorderToolbarProps,
+} from "@/components/recorder-toolbars";
 import { SegmentRow } from "@/components/segment-row";
+import { strings } from "@/lib/strings";
 import type { SegmentRow as SegmentRowModel } from "@/types/view";
 
 import { one, render } from "./render";
+import { stripComments, stripCssComments } from "./support";
 
 /**
  * The guide's ONE visual, and the wiring that carries it (#604).
@@ -27,13 +33,19 @@ import { one, render } from "./render";
  * cascade or the real build — that is the Playwright suite's job
  * (`e2e/theme-toggle.spec.ts` is the precedent) — and nothing here claims the
  * ring has been SEEN.
+ *
+ * Every source read goes through the shared comment strip (#822): a positive
+ * pin over raw text is satisfied by a comment that quotes the code it looks
+ * for, so the live code could say something else and the test stay green.
  */
 const ROOT = path.resolve(import.meta.dirname, "..");
-const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8");
+const raw = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8");
+const read = (rel: string) => stripComments(raw(rel));
+const readCss = (rel: string) => stripCssComments(raw(rel));
 
-const semantic = read("src/app/styles/2-semantic.css");
-const components = read("src/app/styles/3-components.css");
-const globals = read("src/app/globals.css");
+const semantic = readCss("src/app/styles/2-semantic.css");
+const components = readCss("src/app/styles/3-components.css");
+const globals = readCss("src/app/globals.css");
 
 /** The declaration block that follows `selector`, by its first `{`…`}` pair. */
 function ruleBlock(css: string, selector: string): string {
@@ -46,6 +58,47 @@ function ruleBlock(css: string, selector: string): string {
   const close = css.indexOf("}", open);
   if (close === -1) throw new Error(`unterminated rule for ${selector}`);
   return css.slice(open + 1, close);
+}
+
+/** The record-mode bar with every gate open; only `guidedRecord` varies. */
+function recordBarProps(
+  over: Pick<RecorderToolbarProps, "guidedRecord">
+): RecorderToolbarProps {
+  const noop = () => {};
+  const ref = { current: null };
+  return {
+    mode: "record",
+    recording: false,
+    recordRef: ref,
+    rerecordRef: ref,
+    rerecordDisabled: false,
+    rerecordHint: null,
+    recordInert: false,
+    isClosing: false,
+    hasView: true,
+    playingBuffer: false,
+    dragging: false,
+    idleEditable: true,
+    playSource: null,
+    playDisabled: false,
+    editToolbarDisabled: false,
+    editToolbarHint: null,
+    undoBlocked: null,
+    redoBlocked: null,
+    zoom: 1,
+    windowControlsInert: false,
+    onRecordButton: noop,
+    onPlayButton: noop,
+    onEnterEdit: noop,
+    onAuditionButton: noop,
+    onToggleZoom: noop,
+    onUndo: noop,
+    onRedo: noop,
+    openMenu: noop,
+    onExitEdit: noop,
+    onRerecord: noop,
+    ...over,
+  };
 }
 
 describe("the guide accent is one colour, reached through layer 2 (#604)", () => {
@@ -108,16 +161,32 @@ describe("the guide accent is one colour, reached through layer 2 (#604)", () =>
     );
     // The answer and the mark that draws it live in two files since the bar's
     // JSX was lifted out of the sheet (#160, L-1): `recorder.tsx` derives
-    // `guidedRecord`, `recorder-toolbars.tsx` paints it. Both halves are still
-    // asserted — each against the file that now owns it.
-    const bar = read("src/components/recorder-toolbars.tsx");
-    expect(bar).toContain(
-      'className={cn("record-guide", guidedRecord && "is-guided")}'
-    );
-    expect(bar).not.toContain("guided={guidedRecord}");
+    // `guidedRecord`, `recorder-toolbars.tsx` paints it. The bar is
+    // presentational, so its half is rendered rather than read as text (#822);
+    // the sheet mounts the whole audio hook graph, so its half stays a pin.
     expect(read("src/components/recorder.tsx")).toContain(
       "isClosing: isClosing && !stoppingInPlace"
     );
+  });
+
+  it("draws the recorder guide on the wrapper around Record, and nowhere else", () => {
+    const bar = (guidedRecord: boolean) =>
+      render(createElement(RecorderToolbar, recordBarProps({ guidedRecord })));
+
+    const guided = bar(true);
+    const marked = guided.querySelectorAll(".is-guided");
+    // One mark, on the wrapper — a `guided` passed to the Control as well
+    // would paint an inset ring inside the disabled red button too.
+    expect(marked).toHaveLength(1);
+    const wrapper = marked[0]!;
+    expect(wrapper.classList.contains("record-guide")).toBe(true);
+    const record = wrapper.querySelector("button");
+    expect(record, "no button inside the record guide").not.toBeNull();
+    expect(record!.getAttribute("aria-label")).toBe(strings.record);
+
+    const idle = bar(false);
+    expect(idle.querySelector(".record-guide")).not.toBeNull();
+    expect(idle.querySelectorAll(".is-guided")).toHaveLength(0);
   });
 
   it("keeps the record ring OUTSIDE the red, and every other ring inside", () => {
@@ -146,7 +215,7 @@ describe("the guide accent is one colour, reached through layer 2 (#604)", () =>
     expect(block).toMatch(/outline-offset:\s*calc\(/);
     expect(block).toContain("--c-focus-offset");
     expect(block).toContain("--c-guide-ring");
-    expect(globals.replace(/\/\*[\s\S]*?\*\//g, "")).not.toMatch(/@layer\b/);
+    expect(globals).not.toMatch(/@layer\b/);
     expect(components).not.toContain(
       ".control--record.is-guided:focus-visible"
     );
@@ -283,6 +352,7 @@ describe("the mark reaches the control it is given to (#604)", () => {
           onOpenRecorder: () => {},
           onSetFinished: () => {},
           onErase: () => {},
+          onDeleteSegment: () => {},
           onRename: () => Promise.resolve(true),
           guided,
         })

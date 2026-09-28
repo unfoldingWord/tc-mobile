@@ -3,12 +3,23 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { stripYamlComments } from "./support";
+
 // The Play lane (docs/native/play-store.md) fires on push, so its preflight is
 // the only thing standing between a merge and a Play upload. Run the real
 // preflight script from the yml against each branch/variable combination.
-const workflow = readFileSync(
-  new URL("../.github/workflows/android-play.yml", import.meta.url),
-  "utf8"
+//
+// Read through the shared YAML comment strip (#822): the trigger, environment
+// and credential-path pins below are positive `toContain`s, and a `#` comment
+// holding the old line would satisfy them while the live line said otherwise.
+// The strip is not quote-aware; no live line in this workflow holds a ` #`
+// inside a string or a `run:` script, so it cuts only comments (and the
+// ` #923)` tail of two step names, which YAML itself reads as a comment).
+const workflow = stripYamlComments(
+  readFileSync(
+    new URL("../.github/workflows/android-play.yml", import.meta.url),
+    "utf8"
+  )
 );
 
 const fastfile = readFileSync(

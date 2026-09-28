@@ -17,7 +17,7 @@ import type { Layer } from "@/lib/nav/layer-stack";
  * `Layer.busy` and `Layer.dismiss` are captured when the overlay OPENS and
  * called much later, from the `popstate` handler. A `dismiss` captured inline
  * therefore freezes whatever its enclosing render closed over — and Books'
- * book-≡ close (`onCloseShareMenu`) closes over `useBookShare()`'s return
+ * book-⋮ close (`onCloseShareMenu`) closes over `useBookShare()`'s return
  * value, a fresh object literal every render whose `progress` field is the
  * screen's own share state. A Back a second later would have run that close
  * against a share timeline from the render in which the menu was opened: the

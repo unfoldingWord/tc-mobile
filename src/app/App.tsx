@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BooksScreen } from "@/components/books-screen";
 import { BuildStamp } from "@/components/build-stamp";
 import { DatabasePanel } from "@/components/database-panel";
+import { PhoneCheckScreen } from "@/components/phone-check-screen";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import { SaveFailed } from "@/components/save-failed";
 import {
@@ -14,7 +15,7 @@ import { warmEncoder } from "@/hooks/mp3-codec";
 import { useAudioSession } from "@/hooks/use-audio-session";
 import { useDatabaseStatus } from "@/hooks/use-database-status";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
-import { useNavStack } from "@/hooks/use-nav-stack";
+import { clearPhoneCheckQueryParam, useNavStack } from "@/hooks/use-nav-stack";
 import { useSaveTake } from "@/hooks/use-save-take";
 import {
   holdsUnsavedAudio,
@@ -80,6 +81,22 @@ export function App() {
   // samples until the chapter change that clears them — see
   // `holdsUnsavedAudio` for why nothing derived can be right here.
   const [clipboard, setClipboard] = useState<Int16Array | null>(null);
+  // The hidden tester screen (#1009). Opened at launch by `?check=phone` on the
+  // PWA, or by five taps on the build stamp — the only way in on an APK, where
+  // no URL can be typed. Read once, on the first render: the query is a way
+  // in, not a mode the app keeps watching.
+  const [phoneCheckOpen, setPhoneCheckOpen] = useState(
+    () => new URLSearchParams(window.location.search).get("check") === "phone"
+  );
+  // Close drops `?check=phone` from the URL too (#1014 item 4), or a later
+  // reload of this same tab would read it again and reopen the check. The
+  // `window.history` call itself lives in `use-nav-stack.ts`
+  // (`clearPhoneCheckQueryParam`), the one file invariant 1 permits one in
+  // (docs/design/back-navigation.md); this is only the state half.
+  const closePhoneCheck = useCallback(() => {
+    clearPhoneCheckQueryParam();
+    setPhoneCheckOpen(false);
+  }, []);
 
   const audio = useAudioSession();
   const { leave, primeAudioContext } = audio;
@@ -417,6 +434,22 @@ export function App() {
     );
   }
 
+  // Behind both screens above, never in front of them: a held take and an
+  // unreachable database each outrank a diagnostic. It replaces Books and
+  // nothing deeper — the stamp's way in is offered only on Books with no work
+  // in hand (`canRevealPhoneCheck` below), so no take, sheet or clipboard can
+  // be under it, and `?check=phone` opens it at launch, before any exists.
+  if (phoneCheckOpen) {
+    return (
+      <main className="app-shell mx-auto h-full max-w-md">
+        <PhoneCheckScreen onClose={closePhoneCheck} />
+      </main>
+    );
+  }
+
+  const canRevealPhoneCheck =
+    chapterId === null && recorder === null && !holdsUnsavedWork();
+
   return (
     <main className="app-shell mx-auto h-full max-w-md">
       {/* The recorder sheet is aria-modal, but the screen behind it stays
@@ -474,7 +507,16 @@ export function App() {
           onRequestBack={goBack}
         />
       )}
-      <BuildStamp />
+      <BuildStamp
+        onReveal={
+          canRevealPhoneCheck
+            ? () => {
+                leave();
+                setPhoneCheckOpen(true);
+              }
+            : undefined
+        }
+      />
     </main>
   );
 }

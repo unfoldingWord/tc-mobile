@@ -66,6 +66,7 @@ vi.mock("@/hooks/use-storage-persistence", () => ({
 vi.mock("@/hooks/failure-log", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/failure-log")>()),
   useFailureCount: () => 0,
+  useMarkedFailureCount: () => 0,
 }));
 vi.mock("@/hooks/use-chapter-segments", () => ({
   useChapterSegments: mocks.chapter,
@@ -224,6 +225,7 @@ describe("which glyph opens which menu (#589)", () => {
         onOpenRecorder: vi.fn(),
         onSetFinished: vi.fn(),
         onErase: vi.fn(),
+        onDeleteSegment: vi.fn(),
         onRename: vi.fn(),
         onMenuOpen: vi.fn(),
         onMenuClose: vi.fn(),

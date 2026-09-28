@@ -38,25 +38,46 @@ let root: Root;
 let host: HTMLDivElement;
 let api: RecorderViewport;
 
+interface HarnessProps {
+  mode: "record" | "edit";
+  selectionActive: boolean;
+  length: number;
+  initialZoom: number;
+}
+
+/**
+ * One component instance for the whole test, so a second `mount()` call
+ * RE-RENDERS it (new props, same fiber) rather than remounting — the shape a
+ * cut-driven reclamp needs: `panState` is internal hook state, and only a
+ * same-instance re-render carries it across a `length` change the way a live
+ * cut would. A fresh `Harness` reference per call would remount instead,
+ * discarding that state and testing nothing about reclamping.
+ */
+function Harness({ mode, selectionActive, length, initialZoom }: HarnessProps) {
+  const vp = useRecorderViewport(
+    mode,
+    selectionActive,
+    length,
+    CENTER,
+    initialZoom
+  );
+  useEffect(() => {
+    api = vp;
+  });
+  return null;
+}
+
 function mount(
   mode: "record" | "edit",
   selectionActive: boolean,
+  length = LENGTH,
   initialZoom = WHOLE
 ) {
-  function Harness() {
-    const vp = useRecorderViewport(
-      mode,
-      selectionActive,
-      LENGTH,
-      CENTER,
-      initialZoom
-    );
-    useEffect(() => {
-      api = vp;
-    });
-    return null;
-  }
-  act(() => root.render(createElement(Harness)));
+  act(() =>
+    root.render(
+      createElement(Harness, { mode, selectionActive, length, initialZoom })
+    )
+  );
 }
 
 beforeEach(() => {
@@ -143,12 +164,18 @@ describe("useRecorderViewport", () => {
   });
 
   it("clamps a pan past the end of a shortened buffer", () => {
-    // What a cut does: `working` gets shorter than an older `panState`. The
-    // clamp is upper-only, so the rest position follows the new end.
-    mount("record", false);
-    act(() => api.setPanState(LENGTH + 500));
-    expect(api.pan).toBe(LENGTH);
-    expect(api.insertionPan).toBe(LENGTH);
+    // What a cut does: `working` gets shorter than an older `panState` (the
+    // hook's `length` argument drops on the SAME instance, `panState` does
+    // not move on its own). The clamp is upper-only, so the rest position
+    // follows the new end.
+    mount("record", false, LENGTH);
+    act(() => api.setPanState(LENGTH - 100));
+    expect(api.pan).toBe(LENGTH - 100);
+    expect(api.insertionPan).toBe(LENGTH - 100);
+
+    mount("record", false, LENGTH - 200); // the cut: length shrinks under panState
+    expect(api.pan).toBe(LENGTH - 200);
+    expect(api.insertionPan).toBe(LENGTH - 200);
   });
 
   it("opens at the zoom its CALLER names, not a level of its own", () => {
@@ -158,7 +185,7 @@ describe("useRecorderViewport", () => {
     // control writes `ZOOM_WHOLE`, so if that constant moved, a fresh open and
     // every later zoom-to-whole would disagree, and neither would look wrong
     // on its own. This pins that the argument is what the hook opens at.
-    mount("record", false, 4);
+    mount("record", false, LENGTH, 4);
     expect(api.zoom).toBe(4);
     expect(api.win.visibleSamples).toBe(LENGTH / 4);
   });
@@ -171,6 +198,17 @@ describe("useRecorderViewport", () => {
     act(() => api.setZoom(4));
     expect(api.win.visibleSamples).toBe(LENGTH / 4);
     expect(api.win.centerlineSample).toBe(500);
+  });
+
+  it("keeps windowAt's identity across a render that doesn't change its inputs (#826 item 3)", () => {
+    // `windowAt` reads only `length`, `zoom` and `centerFraction` — a
+    // `panState` change alone must not hand back a new function. Nothing in
+    // this suite exercises an effect/callback keyed on `windowAt`, so this
+    // pins the referential contract directly rather than a caller of it.
+    mount("record", false);
+    const first = api.windowAt;
+    act(() => api.setPanState(400));
+    expect(api.windowAt).toBe(first);
   });
 
   it("answers for a pan it is not currently at, at the current zoom", () => {

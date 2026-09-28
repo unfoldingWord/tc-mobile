@@ -11,6 +11,329 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-27 (afternoon to midnight; Docker 0.2.14 lanes) — v0.2.13 tester bugs fixed, #1003 streaming landed, O4 safety sweep
+
+### Shipped (merged to develop)
+
+- **v0.2.13 tester fixes:**
+  - #1115: the new book, new chapter and rename dialogs no longer close with no change on iOS (#1099). Confirm now keeps focus in the form.
+  - #1116: playback plays through the iPhone silent switch (#1111). Native `.playAndRecord` at launch, and `navigator.audioSession` switches type for recording and playback.
+- **O4:**
+  - #1117: the trim knob moves to the bar's bottom and Cut is centred under the selection (#1102).
+  - #1122: the segments and recorder header breadcrumbs now match the menu chips (#1105).
+- **Recorder:** #1118 forwards takeCap and draws the 15:00 warning (#1005).
+- **Share (#1003):**
+  - #1120: Share Book's zip streams to an OPFS spool (part a).
+  - #1132: a long chapter's MP3 encode streams (part b). This follows the DRI pick "B: stream only long chapters". The 48 MiB PCM threshold is provisional, and the meter is coarse above it.
+- **Hygiene and tests:**
+  - #1127: fixed develop's typecheck; #1118 and #1122 had collided on `takeCap`.
+  - #1126: #575 slice.
+  - #1128: #856.
+  - #1129: #719 slice.
+  - #1130: #838 lint boundary.
+  - #1133: #866 item 2.
+  - #1134: #833 item 3.
+- **Contributor merges tonight:** #1101, #1106–#1110, #1112–#1114, #1121, #1123, #1135.
+
+### O4 safety sweep (at the DRI's request, develop `4fc35dab`)
+
+- No open PR and no merge tonight touches `src/lib/design.ts`.
+- No merge edited only old-look code for a behaviour O4 needs.
+- **Held:**
+  - #1119: its 64px compact tile departs from the pinned 76×76 token (`docs/design/o4-design-system.md:152`), the requirements owner hasn't confirmed where Delete sits, and D20 goes stale. There's a BLOCKED note on the PR.
+  - #684, #685 and #701: pre-O4 drafts where a rebase risks dropping O4 strings and branches.
+- **For the requirements owner:** #1118's 15:00 warning tint now shows in O4 without a design sign-off.
+- **Close or narrow candidates, as recommendations:** #859, #927, #997 (re-scope after #1119), #286 (item 2 only). The #248 runbook still calls the O4 sheet "the drawer".
+
+### Process notes
+
+- **The same fix line in two PRs duplicated on merge.** This is a second incident, after the #1118/#1122 collision above. #1116 carried its own copy of #1127's `takeCap` fixture fix, one row apart, and merging develop into #1116 produced TS1117. The bench caught it. #1116 took develop's copy of the file (`7b8a4dc8`), so the line on develop is #1127's alone. Rule: a develop fix lives in one PR only.
+- **Merges after 21:00 ET** had a pre-merge gate: both lenses clean at the current head, CI green, no bench hold, no design/styles/components files for the overnight allowlist, and a scratch merge into develop running tsc, eslint and vitest.
+
+### Not run
+
+- No phone has run #1115, #1116 or #1132.
+- #1003's low-end phone measurement is still open.
+
+### Next
+
+1. The DRI rules on #1119's three O4 points, then it's rebased.
+2. #1131 follows #1119.
+3. #974 phone pass: #1099, silent mode and #923.
+4. The requirements owner looks at #1118's warning state and the #866 item 3 ring question.
+5. #838's remaining residual, #869 item 3.
+6. Cut v0.2.14 from develop.
+
+---
+
+## 2026-09-27 (early; the 2026-09-26 day and evening Docker O4 session) — O4 flipped to default, #951 gate met, v0.2.13 on staging and published to testers
+
+### Shipped
+
+- **O4 is the default design** (#1085, merged 2026-09-26 23:27Z, `7224f625`). `DEFAULT_DESIGN` in `src/lib/design.ts` is `"o4"`. A saved choice still wins. Seven e2e call sites and five unit suites were pinned to the current look rather than loosened.
+- **#951 gate met.** #947, #948 and #950 were closed by DRI picks, with residuals in #1087, #1088 and #1089. #949 was closed by #1090 (the book cover square in the chapter, segment-row and recorder crumbs).
+- **Also merged today (O4 and recorder):**
+  - #1076 take cap: seal at 20:00, `nearLimit` from 15:00; the marker itself is not drawn yet.
+  - #1079: the take-cap row stays off the Books ≡ marker.
+  - #1080 Delete segment in the recorder menu (closes #590).
+  - #1071 visibilitychange seal (#836).
+  - #1070 chapter reorder (#953).
+  - #1074 record-again "Play what will be lost" (#979).
+  - #1019 LGPL notice and the About tile (#36).
+  - #1084 storage-banner pins and the armed Send remount (#1046).
+  - #1081 share hand-off test (#1031).
+  - #1068 joined-chapter step tests (#1004); read progress moved to #1078.
+  - #1072 zero-total guard.
+- **Tooling:** #1075 Node `^22.22.2 || ^24.15.0 || >=26.0.0`, then #990 jsdom 30. #1077 milestone renames in the docs.
+- Jesse's #1082, #1086, #1091 and #1094 merged.
+
+### v0.2.13 promotion (the run record)
+
+- Release #1095 was squash-merged as `3f7c6e81`, cut at develop `7224f625`. Promotion #1096 was merged into staging at 01:00Z, merge `7823830850c1f69f912004cdc51596c465fa5d34`. #1094 merged after the cut and waits for the next promotion.
+- 107 first-parent merges in `6094205a..7224f625`, one of them #918 itself.
+- **Schema: `DB_VERSION` 8 → 9** (#964, the `coverColourKey` backfill; tests in `tests/db-migration.test.ts`). This is the first cut since v8 that migrates field data. **It has not been run on a phone.**
+- `npm run check:deploy` at 01:03:19Z:
+  - `Deployed: version=0.2.13 sha=7823830 builtAt=2026-09-27T01:02:45.168Z`
+  - `PASS: https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build.`
+- Native builds, dispatched from staging by the DRI, with signing approved in `release-signing`:
+  - iOS TestFlight run 36284277947: success (upload only; Apple processing not tracked).
+  - Android APK run 36284279075: success.
+  - The Play lane ran on the staging push (success). Whether it uploaded was not checked.
+- `tester-build-v0.2.13` is published as a pre-release at `7823830`, with the asset `app-release.apk` (6,488,357 bytes). The signer SHA-256 `eed23e1b…baf2` was extracted from the APK and matches v0.2.12. The QR code decodes to `…/releases/download/tester-build-v0.2.13/app-release.apk`. The notes were corrected after publishing: no 15-minute warning is drawn yet.
+
+### DRI decisions (verbatim)
+
+- Milestones: "lets change 0.3.0 to training essentials and 1.0.0 to training stretch. and post training can be 1.1". Now #2 v0.3.0 — Training essentials, #4 v1.0.0 — Training stretch, #3 v1.1.0 — Post-training.
+- #1076, the cap row: "Log it, don't light ≡ (Recommended)". #1079, the panel copy: "Leave it (Recommended)".
+- #1068: "Retitle as tests, new issue (Recommended)"; the new issue is #1078.
+- #1080 copy: "Ship lane copy, Tim reviews (Recommended)". The copy review was requested on #590.
+- #1046 item 4: "Leave it: first wins (Recommended)".
+- #951 gate:
+  - #947: "Close; defer Armed (Recommended)"
+  - #948: "Close; residuals to v1.1.0 (Recommended)"
+  - #949: "Build it now (Recommended)"
+  - #950: "Close; defer the rest (Recommended)"
+- Standing: "lets grab o4 from anyone else that hasnt touched a PR or issue in 24 hours".
+- #1085: "Yes, after #1090 merges (Recommended)".
+- Build: "v0.2.13 now, v1.0.0 later (Recommended)" and "Cut without it (Recommended)" (#1094), then "no worries if it missed the release".
+
+### Filed
+
+#1078 (read-phase share progress), #1087 (the armed ring phase), #1088 (#948 residuals), #1089 (#950 motion residuals).
+
+### Open
+
+- Jesse's #965, #985 and #1097 are with the bench. #965 and #985 conflict with develop.
+- No O4 PRs are open.
+
+### Phone report after the cut (v0.2.13, iPhone 18 Pro Max, iOS 27.0, developer/DRI)
+
+- The O4 UI looks right in dark and light, and the theme choice persists after close.
+- **#1099:** the new book, new chapter and rename dialogs close with no change and no error.
+- **#1100:** no audio on playback, on existing or new recordings. Related to #555 and #269; an evidence comment is on #555.
+- Both are v1-required, in v0.3.0 — Training essentials. Pre-checks are listed in each issue: TestFlight or browser, the ≡ red mark and log, the old look, silent mode, capture vs playback.
+
+### Next
+
+1. **#1099 and #1100 first**, both training blockers. Run the pre-checks in each issue, then a fix lane. The v0.2.13 device-pass checklist issue is drafted and waits on the DRI.
+2. Tim's #951 staging review.
+3. The #974 phone pass, including the **v8 → v9 upgrade on a phone that holds v0.2.12 data**.
+4. Then v1.0.0 (#951 step 3). #1094 rides the next promotion. The 15-minute take marker is the #1076 residual.
+
+### Lessons
+
+- **Issue audit comments went stale within hours.** Two lanes, #949 D19 and #948 D15, found their "ready now" items merged earlier that day. Verify each item against develop before starting a lane.
+- **The bench merges develop into PR branches.** A pinned merge command goes stale when that happens, so re-read the head from gh before handing one over.
+- **Semantic merge conflict.** Suites that landed after #1079 branched mocked `@/hooks/failure-log` without its new export. The files merged cleanly, but the tests went red after the develop merge.
+- **A lane's hand-back gave a wrong full SHA** past the first eight characters. Read SHAs from gh.
+- **Unit pins don't cover e2e.** #1085's first CI run failed 12 smoke cases, so run the e2e suite against a fresh build for any default change.
+- **Check every tester-facing claim in release notes against merged code.** The first notes promised a 15-minute warning that isn't drawn.
+
+## 2026-09-26 (overnight) — Docker O4 session
+
+The Docker session ran O4 lanes overnight while the DRI slept, on the standing
+rules set at 05:35Z (no pickers, park at the cap, decision sheets over more
+rounds). The DRI woke twice to merge and rule on open calls; everything else
+went through the review VM (Frank = codex, George = grok).
+
+### Merged tonight
+
+| PR    | What                                                                           | Merge commit |
+| ----- | ------------------------------------------------------------------------------ | ------------ |
+| #964  | Books: store a chosen cover colour (#957)                                      | `9cace962`   |
+| #998  | Share: count the MP3 encode and skipped items in share progress (#996)         | `63ecb4ae`   |
+| #1022 | O4 Record-again confirm gets its record badge and button (G5, #979)            | `d1401f40`   |
+| #1013 | Diagnostics: a phone check screen for encode speed, storage, memory (#1009)    | `d238dca1`   |
+| #1029 | docs(tracker): EOD 2026-09-25 evening, Mac O4 session                          | `56d6d07e`   |
+| #1007 | O4 Books screen states 01/03, stored cover colour, fitted progress dots (#942) | `5537a43b`   |
+| #1024 | Editor: a bin under the line throws away a cut (#862)                          | `60ead394`   |
+| #1033 | O4 mic-denied title reads "Microphone is off" (D15)                            | `6aa05fc9`   |
+| #1034 | O4 recorder menu sheet head, and the #949 menus audit (G3)                     | `8a31cfe0`   |
+| #1036 | O4 done tiles and badge use D19's pale wash                                    | `4bf23eb7`   |
+
+**#1033, #1034 and #1036 were merged with George clean but before Frank had
+reviewed the head.** Any Frank findings that land on those heads after the
+fact go to follow-up issues, not a reopened PR.
+
+### Open and in review
+
+- **#1012** (transcode backoff, #1010): waiting on the bench to apply the
+  one-retry DRI ruling.
+- **#1019** (LGPL notice, vendored lamejs, #36): provenance check at
+  `f2e089b5`, waiting on reviewers.
+- **#1023** (O4 share progress ring and dots): Frank round 3 found an edge
+  case (positional carry can check an item the exporter never counted); bench
+  fix lane next.
+- **#1030 → #1037 → #1038**: the Books stack (in-sheet delete, storage
+  banner, book/app menu tiles on the tile grid). Merge in that order.
+
+### DRI decisions tonight (verbatim)
+
+- **One-retry** (#1012 call 2, 01:05Z): "One retry on a real reading
+  (Recommended)".
+- **Vendor lamejs** (#144 lane, 01:15Z): "Vendor into tc-mobile
+  (Recommended)".
+- **Provenance check** (#1019 cap, 03:05Z): "Build the provenance check
+  (Recommended)".
+- **Take-it-all / split / the Mac session stopped**: "Take it all
+  (Recommended)" for the O4 Books chain (03:05Z); at 04:00Z, "i will stop the
+  mac" — ownership split, with split notes posted on #1007 and #1023, and
+  Docker taking #1007, #1023, #980 and #983.
+- **Chips** (posted on #1026, 03:40Z): "Workbench chips (Recommended)".
+- **Erase-only** (posted on #1022, 03:40Z): "Erase only for now
+  (Recommended)"; the auto-start follow-up was filed as #1028.
+- **No ultracode, no self-review lanes** (04:30Z): "then lets build in
+  batches but not ulta becuase we burn a lot on the extra review cycles."
+  Batch 3 (#948 D15, #950 motion remainder, #949 menus audit) ran as plain
+  Agent lanes with the self-check stage dropped — uwreview already reviews
+  every PR, so the two-lens author self-check was pure duplication. The
+  night-notes.md append for this call was refused by the worktree guard and
+  never written; the quote is recorded in the coordinator's memory note
+  (`tc-mobile-no-self-review-lanes.md`) and in the handoff doc's restored
+  04:30Z entry.
+- **D15 always-title** (#1033, 05:00Z): "Always the title + sentence below
+  (Recommended)".
+- **The #1023 picks** (05:25Z, posted on the PR): "Bounded, scrolls
+  (Recommended)"; "No amber while skipping (Recommended)"; "Follow the
+  visible status (Recommended)".
+- **The night standing rules** (05:35Z, DRI asleep, send no pickers):
+  - Merges: "No, I'll merge in the morning (Recommended)".
+  - At the cap: "Park it, write the decision sheet (Recommended)".
+  - Design questions: "Workbench original; else park (Recommended)".
+  - Scope: "O4 only, stop new lanes by 11:00Z (Recommended)".
+- **The budget rule** (06:00Z, DRI going to bed): "89% left on our 7 day rate
+  limit, so maybe we try and stop before we get rate limited."
+
+### Morning merge list
+
+Checked against each PR's current head, by reading the latest `uw:review`
+markers for a matching sha. **None of the five open PRs are both-lenses-clean
+at their current head**, so there is no pinned merge command to hand off yet.
+
+- **#1012** — not yet: at head `6851381139f738f4fe3d7fed91039641812a1b75`,
+  Frank round 2 is clean but George round 2 is findings (the unknown-reading
+  predicate still doesn't match the DRI's one-retry ruling).
+- **#1019** — not yet: head is `f2e089b5d3cef719c5a33bf879316023ac4ef976`
+  (the provenance-check commit); no review has been posted at this head, only
+  at the prior sha `02c6cdb7a`.
+- **#1023** — not yet: at head `6783eadbb8e807512a9d41a2dcaffe4e5096521c`,
+  Frank round 3 has findings (positional carry / hollow-item edge case);
+  George has not reviewed this head.
+- **#1030** — not yet: at head `b59bfc70f6b6719ca2b67e2dab7bc4a3ea7b609d`,
+  George round 1 is clean; Frank has not reviewed this head.
+- **#1037** — not yet: at head `14321b060cf2b957b99adbfb9e39fef2cbe2d887`,
+  George round 1 has findings (the share-control focus/re-entrancy bug);
+  Frank has not reviewed this head.
+- **#1038** — not yet: head `a9425b484b4122bbe0594f57b4f16fbe31cd200a`
+  carries no review comments yet.
+
+### Follow-up issues filed
+
+#1014, #1015, #1017, #1028, #1031; plus comments on #823 (the Workbox
+Apache-vs-MIT question, and the org-transfer LGPL wording both reviewers
+flagged on #1019). The #974 tester row for the phone check is still owed with
+the next tester build.
+
+### Lessons
+
+- **The bench's conflict lane resolves DIRTY PRs on its own.** Don't race it
+  with a manual rebase.
+- **A stalled workflow stage can be skipped by marking the PR ready.** #1007's
+  Books-chain workflow had stalled inside #983's self-check; the fix was to
+  commit what was there and let the review VM take it from ready, not to debug
+  the stall.
+- **An author-side pre-PR self-check round duplicates the review VM.** It is
+  useful signal for the lane, but it never counts toward the two-lens bar —
+  only Frank and George at the current head do.
+
+---
+
+## 2026-09-25 (evening, Mac O4 session) — O4 batches 0–2 built and merged behind the switch; the DRI's workbench-original decisions recorded; O4 handed back to the Docker session
+
+The DRI ran the O4 epic (#936) from the Mac session, starting from the Docker session's handoff (`temp/tc-mobile/o4-handoff/README.md`). Lanes were agent workflows: implement, then an author-side pre-PR check, then fix, then PR. Every Frank and George review came from the uwreview VM. The pre-PR checks are author self-checks and never counted toward the two-lens bar.
+
+### Shipped (merged to `develop`)
+
+| Issue                                                     | PR                     | Notes                                                                                                                                                   |
+| --------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #938 switch, #940 icons                                   | #961, #960             | Plus #966, which corrected #961's test-coverage comments. The DRI accepted #961's ten empty area stylesheets as a named exception to the no-stubs rule. |
+| #939 primitives                                           | #967                   | The DRI accepted the D3 text inks the lane picked (`--s-live-text`, `--s-done-text`, gated at 4.5:1).                                                   |
+| #941 tile menu, #943 sheets, #944 Segments, #945 Recorder | #973, #971, #970, #972 |                                                                                                                                                         |
+| #946 dialogs (state 13)                                   | #982                   | G5 is #979, G6 is #980.                                                                                                                                 |
+| #948 errors (part)                                        | #978                   | The storage banner, state 17, is #983.                                                                                                                  |
+| #949 chapter, segment and recorder menus                  | #995, #994             | D17–D20 on #949. "Remove this segment" is deferred to T1 post-training #997.                                                                            |
+| #950 motion (part)                                        | #1011                  | Guide pulse, live edge and rec dot.                                                                                                                     |
+| #955 scissors toggle                                      | #1000                  | The icon-recognition row question is #999.                                                                                                              |
+| #957 cover colour                                         | #964                   | Merged by the DRI at `2467ee4`. The v8→v9 upgrade check is carried to #974.                                                                             |
+| #968 design reference                                     | #1006                  |                                                                                                                                                         |
+
+### Decisions recorded (DRI, verbatim where quoted)
+
+- **#947 (Share):** "i prefer the originals - even if we have to wait for the percent progress bar".
+  - D14: a plain check on hand-over.
+  - D15: the original busy look, with no interim version.
+  - D16: the six share outcomes the workbench never drew use option B, the O4 circle.
+  - D21: numbered chips, in order.
+  - D22: the core is a progress bar.
+  - A correction to D21/D22 is on #947: during packing, waiting chips are grey, and the progress bar stays at 100 on hand-over.
+- **#949 (menus):**
+  - D17: the caption is "Done".
+  - D18: no Edit tile in the recorder menu.
+  - D19: finished crumbs use the pale done wash.
+  - D20: the segment menu follows the workbench's state 07.
+- **Batch 2 ownership:** moved to the Mac session at 20:42Z, and handed back to the Docker session at this EOD.
+
+### Open at EOD
+
+- **#998** (share encode progress): both lenses clean at `36a0cdf`. Triaged, waiting on the DRI's merge.
+- **#1027** (removes the obsolete cover-blue tokens): George clean. Triaged, waiting on the DRI's merge.
+- **#1007** (#942 Books): reworked onto develop at `a2aeed0`. Needs both lenses.
+- **#1023** (#947 share ring): draft, stacked on #998. The Q1/Q3 correction is at `4e5fbad`, with CI green. Retarget it to develop and mark it ready once #998 merges.
+- **Possible flake:** one full-suite `npm run verify` run on the #1023 branch failed #998's `tests/use-chapter-share-steps.test.ts`. The test passed 5 of 5 times on its own and in the full rerun. Nobody has investigated it.
+- **#977** merged a teal busy glyph that D15 rules out. It gets replaced when #947 builds the share sheet.
+
+### Filed
+
+#958, #968, #983, #997, #999, #1018 (numeral systems research), #1020 (Settings menu, gear), #1021 (in-app Reduce motion, or rely on the OS setting).
+
+### Learnings
+
+- **Two sessions collided on #947.** A Mac lane started it minutes after the Docker session claimed it, and lost the push race. Lanes now read the issue's claim comments and `ls-remote` the branch before building.
+- **A stacked PR closes nothing until it targets the default branch.** GitHub only links "Closes #N" on a PR aimed at the default branch. It also doesn't retarget when the parent merges, unless the parent branch is deleted.
+- **A monitor that suppresses its first poll can hide events.** One watch script silently missed several merges. The fix was to diff each full status line against the previous poll.
+- **A decision's wording can drift from the source it names.** D21 said "go-out chips are teal", but the workbench draws waiting chips grey. When the DRI picks "the original", quote the source code, not a paraphrase.
+
+### Next
+
+- The Docker session resumes O4:
+  - #949's book slice: G1, the #980 delete swap and the cover tile.
+  - #983, the storage banner.
+  - #979, the record-again confirm (G5).
+  - #950's remaining slices: shake, mic pulse, armed and aud.
+  - #947's share sheet (D12).
+  - Then #951, the review, the flip to O4 by default, and the phone pass.
+- Build a tester APK with O4 and run #974, including the v8→v9 upgrade check.
+
 ## 2026-09-25 (afternoon, Docker merge-seat session) — #660, #782 and #959 merged at their approved heads; a worktree prune checked and nothing lost
 
 A separate session, run from `/workspace/approve`, merged approved PRs into `develop` by hand while the bench's automated merge lane (review-bot#1, D22) stays on hold.

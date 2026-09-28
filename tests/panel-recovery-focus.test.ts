@@ -7,6 +7,23 @@ import {
   panelRecoveryFocus,
   type PanelRecoveryAction,
 } from "@/lib/a11y/panel-recovery";
+import { region, stripComments, uniqueIndexOf } from "./support";
+
+/**
+ * `recorder.tsx` with its comments stripped, for the source-shape pins below.
+ * Every pin here is a positive match on live code, and this file's comments
+ * quote that code at length (the recovery effect's own comments name
+ * `menuLandmark` and `focusSheet()`), so an unstripped read lets a comment
+ * carrying the expected line satisfy a pin while the live code says otherwise
+ * (#822). `stripComments` is not string-aware; `recorder.tsx` holds no `//` or
+ * `/*` inside a string literal.
+ */
+const recorder = stripComments(
+  readFileSync(
+    path.resolve(import.meta.dirname, "..", "src/components/recorder.tsx"),
+    "utf8"
+  )
+);
 
 /**
  * The recovery-path focus decision (#199).
@@ -231,11 +248,6 @@ describe("panelRecoveryFocus holds through a close that may fail (#457 QA P2)", 
  * itself is not exercised (#549 candidate, #361).
  */
 describe("the recovery landing is the ≡ landmark, never the sheet's first button (#457 George R1 P2)", () => {
-  const recorder = readFileSync(
-    path.resolve(import.meta.dirname, "..", "src/components/recorder.tsx"),
-    "utf8"
-  );
-
   it("hands a `focus` action to the menu landmark", () => {
     // The landing is resolved into a local first, so the null case can bail
     // out before the history write (George R3 P2-2, pinned below).
@@ -249,11 +261,11 @@ describe("the recovery landing is the ≡ landmark, never the sheet's first butt
   });
 
   it("resolves that landmark by accessible name, not by position", () => {
-    const start = recorder.indexOf("const menuLandmark = useCallback(");
-    expect(start, "no menuLandmark callback in recorder.tsx").toBeGreaterThan(
-      -1
-    );
-    const body = recorder.slice(start, recorder.indexOf("}, []);", start));
+    const start = uniqueIndexOf(recorder, "const menuLandmark = useCallback(");
+    const body = region(recorder, {
+      from: start,
+      to: recorder.indexOf("}, []);", start),
+    });
     expect(body).toMatch(
       /overlayFallbackLabel\(labels, strings\.recorderMenuOpen\)/
     );
@@ -292,16 +304,13 @@ describe("the recovery landing is the ≡ landmark, never the sheet's first butt
  * the `.focus()` call itself is not exercised (#549 candidate, #361).
  */
 describe("the open-edge landing yields to a panel that owns the first commit (#457 George R3 P2-1)", () => {
-  const recorder = readFileSync(
-    path.resolve(import.meta.dirname, "..", "src/components/recorder.tsx"),
-    "utf8"
-  );
-  const end = recorder.indexOf("}, [focusSheet]);");
-  const start = recorder.lastIndexOf("useEffect(() => {", end);
-  const body = recorder.slice(start, end);
+  const end = uniqueIndexOf(recorder, "}, [focusSheet]);");
+  const body = region(recorder, {
+    from: recorder.lastIndexOf("useEffect(() => {", end),
+    to: end,
+  });
 
   it("is still mount-only: the deps are exactly [focusSheet], and only once", () => {
-    expect(end, "no mount effect keyed on [focusSheet]").toBeGreaterThan(-1);
     expect(recorder.match(/\}, \[focusSheet\]\);/g)?.length).toBe(1);
     expect(body, "panelOwnsFocus must not be a dependency").not.toMatch(
       /\[focusSheet, panelOwnsFocus\]|\[panelOwnsFocus/
@@ -351,29 +360,23 @@ describe("the open-edge landing yields to a panel that owns the first commit (#4
  * commit on which the ≡ has been enabled can still recover.
  */
 describe("menuLandmark yields null for a natively disabled ≡ (#457 George R3 P2-2)", () => {
-  const recorder = readFileSync(
-    path.resolve(import.meta.dirname, "..", "src/components/recorder.tsx"),
-    "utf8"
-  );
-
   it("returns null when the ≡ carries the native disabled attribute", () => {
-    const start = recorder.indexOf("const menuLandmark = useCallback(");
-    expect(start).toBeGreaterThan(-1);
-    const body = recorder.slice(start, recorder.indexOf("}, []);", start));
+    const start = uniqueIndexOf(recorder, "const menuLandmark = useCallback(");
+    const body = region(recorder, {
+      from: start,
+      to: recorder.indexOf("}, []);", start),
+    });
     expect(body).toMatch(/hasAttribute\("disabled"\)\) return null;/);
     // Native only — an `aria-disabled` control keeps its place (#135).
     expect(body).not.toMatch(/aria-disabled/);
   });
 
   it("a focus action with no landmark leaves the recovery history unwritten", () => {
-    const s = recorder.indexOf("const action = panelRecoveryFocus({");
-    const e = recorder.indexOf(
-      "}, [panelOwnsFocus, isClosing, menuLandmark]);",
-      s
-    );
-    expect(s).toBeGreaterThan(-1);
-    expect(e).toBeGreaterThan(s);
-    const effect = recorder.slice(s, e);
+    const s = uniqueIndexOf(recorder, "const action = panelRecoveryFocus({");
+    const effect = region(recorder, {
+      from: s,
+      to: recorder.indexOf("}, [panelOwnsFocus, isClosing, menuLandmark]);", s),
+    });
     const resolve = effect.indexOf("const landmark = menuLandmark();");
     const bail = effect.indexOf("if (landmark === null) return;");
     const land = effect.indexOf("landmark.focus();");

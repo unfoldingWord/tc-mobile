@@ -12,6 +12,16 @@ import {
 } from "@/components/recorder-menu";
 import { strings } from "@/lib/strings";
 
+import { stripComments } from "./support";
+
+// This file asserts the CURRENT look's menu rows (plain items, the `is-done`
+// class), not O4's tile grid (#949). #951 flipped the design default to o4,
+// so pin the current look explicitly here rather than rely on
+// nothing-stored — the O4 shape of this menu is `tests/recorder-menu-o4.test.ts`'s.
+vi.mock("@/hooks/use-design", () => ({
+  useDesign: () => ({ design: "current" as const, toggle: () => {} }),
+}));
+
 /**
  * The recorder's ≡ menu, now that it is its own component (#160, L-1).
  *
@@ -88,19 +98,57 @@ describe("RecorderMenu", () => {
     expect(named(strings.enterEdit)).toBeUndefined();
   });
 
-  it("flips the Mark row's LABEL and its green mark on the same value", () => {
-    // George R1: the paint and the label both key on `finishedState` — the
+  it("never offers Delete segment, in either mode (#1104 — Delete moved to the chapter view)", () => {
+    // #590/#1080 first shipped Delete segment as a row/tile in THIS menu; the
+    // requirements owner's 2026-09-26 decision on #1104 pulled it back out:
+    // "the menu inside the segment editor (recorder) shows Erase only.
+    // Delete (removing the whole segment) belongs to the chapter view." A red
+    // run of this exact case (against the pre-#1104 tree) failed on both
+    // modes, which is what proves this file is asserting the removal rather
+    // than an accident of never having built it.
+    show();
+    expect(named(strings.deleteSegment)).toBeUndefined();
+    show({ mode: "edit" });
+    expect(named(strings.deleteSegment)).toBeUndefined();
+  });
+
+  it("keeps the Mark row's label fixed and says its state with aria-pressed and the green mark (#351)", () => {
+    // George R1: the paint and the state both key on `finishedState` — the
     // state the store will actually write — never on the displayed intent,
     // which can still read "finished" for a segment that was emptied.
+    //
+    // #351: the label no longer flips to "not done". With `aria-pressed`
+    // beside it, a flipped label announces "Mark segment 3 not done, pressed",
+    // naming the opposite of the state; one fixed label is the pattern
+    // `DesignControl` already follows.
     show({ finishedState: "finished" });
-    const marked = named(strings.markUnfinished(3));
+    const marked = named(strings.markFinished(3));
     expect(marked).toBeDefined();
+    expect(marked?.getAttribute("aria-pressed")).toBe("true");
     expect(marked?.className).toContain("is-done");
+    expect(named("Mark segment 3 not done")).toBeUndefined();
 
     show({ finishedState: "empty" });
     const unmarked = named(strings.markFinished(3));
     expect(unmarked).toBeDefined();
+    // "false", not absent: an absent `aria-pressed` is a plain button, and
+    // this row is a toggle in both states.
+    expect(unmarked?.getAttribute("aria-pressed")).toBe("false");
     expect(unmarked?.className).not.toContain("is-done");
+  });
+
+  it("carries aria-pressed beside aria-disabled on a greyed, marked row (#351)", () => {
+    // The pair #351 asked to check: a marked row frozen while its take commits
+    // (`markRowReason`'s "uncommitted-take", which has a hint, #135)
+    // is `aria-disabled` AND still says it is pressed, and its name is the
+    // fixed label with the reason joined on.
+    show({ finishedState: "finished", markReason: "uncommitted-take" });
+    const row = startingWith(strings.markFinished(3));
+    expect(row?.getAttribute("aria-disabled")).toBe("true");
+    expect(row?.getAttribute("aria-pressed")).toBe("true");
+    expect(row?.getAttribute("aria-label")).toBe(
+      `${strings.markFinished(3)}. ${strings.blockedByTake}`
+    );
   });
 
   it("keeps the paint and the label agreeing when the ordinal is missing", () => {
@@ -122,7 +170,7 @@ describe("RecorderMenu", () => {
       "the unmarked label is what a null ordinal shows"
     ).toBeDefined();
     expect(row?.className).not.toContain("is-done");
-    expect(named(strings.markUnfinished(0))).toBeUndefined();
+    expect(named("Mark segment 0 not done")).toBeUndefined();
   });
 
   it("does NOT paint the green mark on a disabled-finished row", () => {
@@ -207,24 +255,74 @@ describe("RecorderMenu", () => {
     // `/*` inside the slice, so a slice-level strip cannot see it — `indexOf`
     // then finds the decoy and the live handler is never read. Same read-then-
     // strip-then-search order `tests/menu-hamburger-header.test.ts` uses.
-    const sheet = readFileSync(
-      path.resolve(import.meta.dirname, "..", "src/components/recorder.tsx"),
-      "utf8"
-    )
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^\s*\/\/.*$/gm, "");
+    // The shared strip, because a line-anchored one keeps a comment
+    // trailing a code line, and `indexOf` would find a whole arming
+    // `<RecorderMenu … />` written there ahead of the live one (#822).
+    const sheet = stripComments(
+      readFileSync(
+        path.resolve(import.meta.dirname, "..", "src/components/recorder.tsx"),
+        "utf8"
+      )
+    );
     const open = sheet.indexOf("<RecorderMenu");
     const end = sheet.indexOf("/>", open);
     expect(open, "no <RecorderMenu in the sheet").toBeGreaterThan(-1);
     expect(end, "unterminated <RecorderMenu").toBeGreaterThan(open);
     const tag = sheet.slice(open, end);
 
-    const lambda = /onErase=\{\(\)\s*=>\s*\{([^}]*)\}/.exec(tag)?.[1] ?? "";
-    expect(lambda, "no onErase lambda on <RecorderMenu>").not.toBe("");
-    expect(lambda).toContain("setConfirmOpen(true)");
-    expect(lambda).toContain("setMenuOpen(false)");
-    // The destructive call must not be reachable from here at all.
-    expect(lambda).not.toMatch(/erase|clearSegmentTake/i);
+    // An allow-list of ONE, not a denylist (#830). The earlier shape matched
+    // the body up to its first `}` and then checked it against two forbidden
+    // words, and it was fooled five ways: a trailing `//` on a code line
+    // survives the line-anchored strip above, a nested block hides whatever
+    // follows its `}`, and any destructive call not named `erase` or
+    // `clearSegmentTake` passed. Taking the WHOLE attribute to its matching
+    // brace and requiring it to equal the two arming statements exactly
+    // closes all of them: a comment, an extra statement or a renamed call
+    // each change the text. It fails closed on purpose — a harmless edit to
+    // this handler turns it red too, and on the control that erases a
+    // recording, making someone look is the point.
+    const attr = "onErase={";
+    const at = tag.indexOf(attr);
+    expect(at, "no onErase on <RecorderMenu>").toBeGreaterThan(-1);
+    expect(tag.indexOf(attr, at + 1), "a second onErase").toBe(-1);
+    let depth = 0;
+    let close = -1;
+    for (let i = at + attr.length - 1; i < tag.length; i++) {
+      if (tag[i] === "{") depth++;
+      else if (tag[i] === "}" && --depth === 0) {
+        close = i;
+        break;
+      }
+    }
+    expect(close, "unbalanced onErase braces").toBeGreaterThan(at);
+    // `setConfirmFor("erase")` (#862): the dialog also asks the clipboard's
+    // discard question, so this door names which one it opens — still only
+    // arming the confirm, never erasing.
+    expect(tag.slice(at, close + 1).replace(/\s+/g, "")).toBe(
+      'onErase={()=>{setMenuOpen(false);setConfirmFor("erase");setConfirmOpen(true);}}'
+    );
+  });
+
+  it("the sheet no longer wires an onDeleteSegment prop to <RecorderMenu> (#1104)", () => {
+    // The negative half of the removal: not only does the RENDERED menu omit
+    // Delete (the case above), the SHEET's own JSX no longer even offers a
+    // prop for it — so a future edit cannot silently wire a fresh delete
+    // handler back onto this menu without touching this test.
+    const sheet = stripComments(
+      readFileSync(
+        path.resolve(import.meta.dirname, "..", "src/components/recorder.tsx"),
+        "utf8"
+      )
+    );
+    const open = sheet.indexOf("<RecorderMenu");
+    const end = sheet.indexOf("/>", open);
+    expect(open, "no <RecorderMenu in the sheet").toBeGreaterThan(-1);
+    expect(end, "unterminated <RecorderMenu").toBeGreaterThan(open);
+    const tag = sheet.slice(open, end);
+    expect(tag.indexOf("onDeleteSegment"), "onDeleteSegment still wired").toBe(
+      -1
+    );
+    expect(tag.indexOf("deleteReason"), "deleteReason still wired").toBe(-1);
   });
 
   it("does not close itself when the finished mark is toggled", () => {

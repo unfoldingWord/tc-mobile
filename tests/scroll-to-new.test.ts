@@ -180,7 +180,7 @@ describe("arm, then reveal", () => {
   it("scrolls the armed row into view, nearest, and spends the arm", () => {
     act(() => {
       api().armScroll("b");
-      api().reveal();
+      api().reveal(false);
     });
 
     expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
@@ -188,12 +188,12 @@ describe("arm, then reveal", () => {
     expect(scrolled).toEqual(["b"]);
 
     // Spent: a second reveal with nothing newly armed does nothing.
-    act(() => api().reveal());
+    act(() => api().reveal(false));
     expect(scrolled).toEqual(["b"]);
   });
 
   it("does nothing when nothing is armed", () => {
-    act(() => api().reveal());
+    act(() => api().reveal(false));
     expect(scrollIntoView).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(document.body);
   });
@@ -213,13 +213,13 @@ describe("arm, then reveal", () => {
     // reasoning this lane applies to Segments' missing `inert` hold.
     act(() => {
       api().armScroll("never-added");
-      api().reveal();
+      api().reveal(false);
     });
     expect(scrollIntoView).not.toHaveBeenCalled();
 
     // The arm is gone, not waiting for the row to show up later.
     act(() => api().setNode("never-added", document.createElement("li")));
-    act(() => api().reveal());
+    act(() => api().reveal(false));
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
@@ -241,7 +241,7 @@ describe("arm, then reveal", () => {
 
     act(() => {
       api().armFocus("bare");
-      api().reveal();
+      api().reveal(false);
     });
     expect(document.activeElement).toBe(document.body);
 
@@ -249,14 +249,14 @@ describe("arm, then reveal", () => {
     const late = document.createElement("button");
     late.id = "bare-open";
     bare.appendChild(late);
-    act(() => api().reveal());
+    act(() => api().reveal(false));
     expect(document.activeElement).toBe(document.body);
   });
 
   it("hands focus to the armed row's control", () => {
     act(() => {
       api().armFocus("a");
-      api().reveal();
+      api().reveal(false);
     });
     expect(document.activeElement?.id).toBe("a-open");
   });
@@ -275,7 +275,7 @@ describe("arm, then reveal", () => {
     // whatever `nodes.get(null)` misses.
     act(() => {
       api().armFocus(null);
-      api().reveal();
+      api().reveal(false);
     });
     expect(document.activeElement).toBe(document.body);
   });
@@ -307,13 +307,80 @@ describe("arm, then reveal", () => {
     expect(document.activeElement).toBe(document.body);
   });
 
+  it("takes the FALLBACK when the armed row is missing and focus is lost (#1124)", () => {
+    // The row the hand-off was armed for is not on screen at the commit that
+    // lets it land. Without a fallback that is the SPENDS case above, and
+    // focus stays on <body>; with one, focus lands on the fallback instead.
+    const fallback = document.createElement("button");
+    fallback.id = "fallback";
+    host.appendChild(fallback);
+    act(() => {
+      api().armFocus("gone");
+      api().reveal(false, () => fallback);
+    });
+    expect(document.activeElement).toBe(fallback);
+    // Still spent: a later commit does not re-run the fallback.
+    act(() => (document.activeElement as HTMLElement).blur());
+    act(() => api().reveal(false, () => fallback));
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("takes the fallback when the armed control is there but refuses focus (#1124)", () => {
+    // A disabled control is present but `.focus()` on it is a no-op, which is
+    // the same lost focus as a missing row.
+    const fallback = document.createElement("button");
+    host.appendChild(fallback);
+    (document.getElementById("a-open") as HTMLButtonElement).disabled = true;
+    act(() => {
+      api().armFocus("a");
+      api().reveal(false, () => fallback);
+    });
+    expect(document.activeElement).toBe(fallback);
+  });
+
+  it("does not take the fallback when the armed row took focus", () => {
+    const fallback = vi.fn(() => null);
+    act(() => {
+      api().armFocus("a");
+      api().reveal(false, fallback);
+    });
+    expect(document.activeElement?.id).toBe("a-open");
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it("the fallback never moves focus that is somewhere, only focus that is lost", () => {
+    // It rescues a hand-off that fell to <body>; it is not a second landing
+    // that could pull focus off a control the translator is on.
+    const elsewhere = document.getElementById("b-open") as HTMLButtonElement;
+    act(() => elsewhere.focus());
+    const fallback = document.createElement("button");
+    host.appendChild(fallback);
+    act(() => {
+      api().armFocus("gone");
+      api().reveal(false, () => fallback);
+    });
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
+  it("a HELD hand-off does not take the fallback; it waits for the lift", () => {
+    const fallback = vi.fn(() => null);
+    act(() => {
+      api().armFocus("a");
+      api().reveal(true, fallback);
+    });
+    expect(fallback).not.toHaveBeenCalled();
+    act(() => api().reveal(false, fallback));
+    expect(document.activeElement?.id).toBe("a-open");
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
   it("scrollTo acts now and arms nothing", () => {
     // Segments' first load lands on the first not-finished row, a landing
     // decided from the list itself rather than from a create.
     act(() => api().scrollTo("a"));
     expect(scrolled).toEqual(["a"]);
 
-    act(() => api().reveal());
+    act(() => api().reveal(false));
     expect(scrolled).toEqual(["a"]);
   });
 });

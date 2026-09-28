@@ -379,9 +379,19 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
     // The AT consequence this PR asks a reviewer to ACCEPT, pinned rather than
     // left in prose. `Menu` lands open-edge focus on the first ACTIONABLE child,
     // skipping `aria-disabled` hinted rows (#135); on a segment with nothing
-    // recorded and an empty clipboard every pre-existing row is hinted, so the
-    // toggle is that child. Before this control existed, focus fell back to Edit
-    // and its reason.
+    // recorded and an empty clipboard every row is hinted (Edit: no audio and
+    // no clipboard to paste; Mark: no audio; Clear: no clip), making the
+    // toggle that child.
+    //
+    // #590/#1080 briefly changed this: "Delete segment" (once a row in this
+    // same menu) did not require stored audio, so on this exact empty segment
+    // it was actionable ahead of the toggle, and this assertion named IT as
+    // the open-edge target instead. #1104 (the requirements owner's
+    // 2026-09-26 decision) removed Delete from this menu entirely — it
+    // belongs to the chapter view's own segment-row menu now — so this is
+    // back to its original shape: no row ahead of the toggle is ever
+    // actionable on an empty segment, and open-edge focus lands directly on
+    // the toggle again.
     //
     // It is asserted BEFORE the click, because clicking moves focus itself and
     // would make this pass for the wrong reason.
@@ -390,11 +400,8 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
     // if a pre-existing row becomes actionable in this state, it takes the
     // first actionable position and this fails. It does NOT catch a reorder,
     // and an earlier version of this comment wrongly said it did (George).
-    // In this state every other row is hinted, so the toggle is the only
-    // actionable child WHEREVER it sits — which also means a reorder does not
-    // change what an AT user hears first here, so there is nothing for an
-    // order-sensitive assertion to protect. The mount ORDER is held by
-    // `tests/theme.test.ts` and by the comments in `recorder-menu.tsx`.
+    // The mount ORDER is held by `tests/theme.test.ts` and by the comments in
+    // `recorder-menu.tsx`.
     await expect(toLight).toBeFocused();
 
     await toLight.click();

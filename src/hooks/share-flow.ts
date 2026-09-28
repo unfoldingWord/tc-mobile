@@ -10,6 +10,8 @@ import { reportFailure } from "./report-failure";
 import { createShareHandoff } from "./share-handoff";
 import {
   HIDDEN,
+  carryFromPrepare,
+  type ShareCarry,
   type ShareGap,
   type ShareProgress,
   type ShareProgressEvent,
@@ -27,6 +29,7 @@ import {
   resolveProvesDelivery,
   selectShareRoute,
 } from "./share-target";
+import type { StepReporter } from "@/lib/export/chapter";
 
 /**
  * The two-gesture share flow, shared by Share Chapter and Share Book (B7, A4).
@@ -164,6 +167,16 @@ interface PreparedShare {
    * cannot recover it, so copy that names the chapter count needs it here.
    */
   readonly partialChapters?: number;
+  /**
+   * Drop whatever backs `file` (#1003: Share Book's and Share your work's
+   * archive spool, `archive-spool.ts`). Omitted when nothing does. From the
+   * moment the builder returns, the flow owns this and calls it exactly when
+   * the File is done with: once it is staged to the native cache, once the
+   * sheet call settles for good, or when the run is abandoned (a reset, an
+   * unmount, a cancel that lands after the build). A web `retry` keeps it,
+   * because the same File is armed again. Must never reject.
+   */
+  readonly release?: () => Promise<void>;
 }
 
 /**
@@ -176,11 +189,61 @@ interface PreparedShare {
  * `null` when the run was cancelled part-way (`isCurrent()` went false). An
  * abort may also surface as a rejection — the flow ignores it once the run is
  * stale.
+ *
+ * `onStep` (#986) is how a builder reports its truthful step count — call it
+ * with `(done, total)` each time one item has really finished (a segment
+ * gathered, a chapter archived; the export functions take it directly). It
+ * is optional to call: a builder that never does leaves the busy phase with
+ * no count, exactly as before. The count covers the build only: on the native
+ * route `prepare` stages the built file after the builder returns, so the
+ * count can read `N of N` while that write is still running. The busy phase
+ * stays up until it settles. That staging is left off the count (#996), and
+ * how much it costs is not measured for either share — it cannot run in
+ * Node. The chunk arithmetic is all there is: at the encoder's 64 kbps, one
+ * 384 KiB bridge write holds about 0.8 minutes of audio. For a chapter that
+ * is a handful of writes after a seconds-long encode. For a BOOK zip it is
+ * about 1.2 writes per minute of the whole book (an hour of audio is about 74
+ * writes), all after the last chapter's step has already read `N of N`, and
+ * after the zip is finished; whether that is long enough to see is exactly
+ * what is unknown. The phone check on #974 is what says whether staging needs
+ * its own steps.
+ *
+ * Share Chapter's count now includes the encode (#996, `withEncodeSteps`), and
+ * either share may pass `skipped` (how many of `done` finished with no audio)
+ * and `items` (how many of `total` are items, when not all are).
  */
 type BuildShareFile = (
   isCurrent: () => boolean,
-  signal: AbortSignal
+  signal: AbortSignal,
+  onStep: StepReporter
 ) => Promise<PreparedShare | "nothing" | null>;
+
+/**
+ * The `onStep` a prepare hands its builder (#986): each call becomes one
+ * `step` event on the progress machine, but only while this run still owns
+ * the flow. `isCurrent` is read at CALL time — a run superseded by a menu
+ * close, `reset` or unmount can still have a gather in flight for a moment,
+ * and its late count must not land on a newer run's modal. The machine itself
+ * rejects a count that is out of range or runs backward (`share-progress.ts`).
+ * A `skipped` count and an `items` count (#996), and the counted items'
+ * `keys` (#1044), ride the same event when the builder gives them.
+ */
+export function stepReporter(
+  isCurrent: () => boolean,
+  dispatch: (event: ShareProgressEvent) => void
+): StepReporter {
+  return (done, total, skipped, items, keys) => {
+    if (!isCurrent()) return;
+    dispatch({
+      type: "step",
+      done,
+      total,
+      ...(skipped === undefined ? {} : { skipped }),
+      ...(items === undefined ? {} : { items }),
+      ...(keys === undefined ? {} : { keys }),
+    });
+  };
+}
 
 /**
  * What tap 1 arms for tap 2: the File (plus its native staged copy, if any)
@@ -195,6 +258,8 @@ type BuildShareFile = (
 interface ArmedShare {
   readonly file: File;
   readonly staged: StagedShare | null;
+  /** {@link PreparedShare.release}, while the armed File still needs it. */
+  readonly release?: () => Promise<void>;
   readonly missing: number;
   readonly partial: number;
   readonly partialChapters: number;
@@ -382,7 +447,7 @@ export interface UseShareFlow {
    * also by `reset()` (menu close), alongside `error`/`missing`/`partial`.
    *
    * `reset()` clears it, not just `prepare()`, for a reason specific to
-   * Share Book: `useBookShare` is ONE hook instance shared by every row's ≡
+   * Share Book: `useBookShare` is ONE hook instance shared by every row's ⋮
    * menu (`shareMenuBookId` just tracks which book is open), so a flag that
    * survived `reset()` would leak an unconfirmed send from book A onto book
    * B's freshly opened, never-tried Share control the moment the shelf moves
@@ -471,7 +536,7 @@ export interface UseShareFlow {
  * The generic two-gesture share state machine. See the file header for why one
  * gesture cannot work. The encode runs in a Web Worker (B8, #34), so `preparing`
  * no longer janks the screen and a cancel (menu close, Back) actually stops it;
- * it is still a busy state rather than a meter — nothing reports progress yet.
+ * a prepare's busy phase also carries a step count (`progress.steps`, #986).
  */
 export function useShareFlow(): UseShareFlow {
   const [status, setStatus] = useState<ShareStatus>("idle");
@@ -508,6 +573,12 @@ export function useShareFlow(): UseShareFlow {
   // late result ignored; aborting is what stops the worker from finishing an
   // encode nobody will read. Both happen together in `reset` and on unmount.
   const abortRef = useRef<AbortController | null>(null);
+  // The armed prepare's per-item result (#1023): which items it finished with
+  // no audio, snapshotted from the modal just before the prepare settles to
+  // ready, and handed to the send's busy phase with a `carry` event right after
+  // its `begin`, so the hand-off does not check an item the prepare skipped.
+  // Cleared when a fresh prepare begins.
+  const carryRef = useRef<ShareCarry | undefined>(undefined);
   // The modal timeline (#491). The machine is `share-progress.ts`; the driver
   // below is its browser glue and nothing more, created once per hook
   // instance the way `handoffRef` is, so Books' flow and a Segments screen's
@@ -541,6 +612,8 @@ export function useShareFlow(): UseShareFlow {
       // reach into it.
       const armed = handoff.dropArmed();
       if (armed?.staged != null) void nativeShare.discard(armed.staged);
+      // Its spool, likewise (#1003). `release` never rejects.
+      void armed?.release?.();
     },
     [handoff, modal]
   );
@@ -578,9 +651,17 @@ export function useShareFlow(): UseShareFlow {
     // write, not an await, so the activation contract below still holds: the
     // sheet call is still the first await in this gesture.
     modal.dispatch({ type: "begin", work: "send", now: modal.now() });
+    // The prepare's per-item result rides into the send (#1023). Synchronous,
+    // like the `begin` above, so the sheet call is still the first await.
+    const carried = carryRef.current;
+    if (carried !== undefined) modal.dispatch({ type: "carry", carried });
     // Whether activation is live at the call decides how a NotAllowedError reads
     // (see classifyShareError). Read it immediately before `share`.
     const hadActivation = navigator.userActivation?.isActive ?? false;
+    // Whether the armed File is put back for another tap (a web `retry`). Every
+    // other way out of this send is the File's last use, so the `finally`
+    // below releases its spool (#1003).
+    let rearmed = false;
     // Which route this is was settled at prepare time and is carried by the
     // armed value, so the two gestures cannot disagree about it — and no
     // environment probe happens in the gesture. Either way exactly ONE call
@@ -681,6 +762,7 @@ export function useShareFlow(): UseShareFlow {
         // File is nobody's and is simply dropped.
         if (current()) {
           handoff.restore(armed);
+          rearmed = true;
           modal.dispatch({ type: "settle", settled: null, now: modal.now() });
           await modal.hidden();
         }
@@ -719,6 +801,10 @@ export function useShareFlow(): UseShareFlow {
       return outcome;
     } finally {
       handoff.finishSending();
+      // After the sheet call has settled, never during it: the File the sheet
+      // was reading is backed by the spool. Fire-and-forget, like `discard`;
+      // `release` never rejects.
+      if (!rearmed) void armed.release?.();
     }
   }, [handoff, modal]);
 
@@ -756,6 +842,7 @@ export function useShareFlow(): UseShareFlow {
       // A fresh attempt is itself the acknowledgment of any prior unconfirmed
       // one — see `UseShareFlow.sendUnconfirmed`'s own docblock.
       setSendUnconfirmed(false);
+      carryRef.current = undefined;
       setStatus("preparing");
       // The modal goes up with the busy status (#491). Not before the
       // unsupported gate above: a browser with no Web Share gets the error
@@ -764,12 +851,27 @@ export function useShareFlow(): UseShareFlow {
       // Yield once so `preparing` paints before the gather starts (its awaits
       // also yield, but a tiny share can return before the browser paints).
       await new Promise((resolve) => setTimeout(resolve, 0));
+      // The built File's `release` while nobody else owns it (#1003): set when
+      // the build returns, cleared the moment the handoff takes it or it is
+      // called. Whatever leaves this function with it still set — a cancel
+      // after the build, an unsupported File, a failed stage — releases it in
+      // the `finally` below.
+      let unowned: (() => Promise<void>) | undefined;
       try {
         // `build` threads `current` and the signal through to the export so a
         // cancel during the gather skips the encode and a cancel during the encode
         // stops the worker. It returns "nothing" for a genuinely empty share and
         // null when it was cancelled mid-build.
-        const prepared = await build(current, controller.signal);
+        // `stepReporter` carries the build's step count onto the modal (#986).
+        const prepared = await build(
+          current,
+          controller.signal,
+          stepReporter(current, modal.dispatch)
+        );
+        // Claimed BEFORE the stale-run bail below: a cancel that lands after
+        // the build finished still leaves a spool behind (#1003).
+        if (prepared !== null && prepared !== "nothing")
+          unowned = prepared.release;
         if (!current()) return null;
         // "nothing" (no audio) and null (cancelled, but not yet observed as such)
         // both settle back to idle; only "nothing" is a reason to surface. A null
@@ -815,6 +917,13 @@ export function useShareFlow(): UseShareFlow {
           route === "native"
             ? await nativeShare.stage(file, controller.signal)
             : null;
+        // Staged, the cache copy is what the chooser offers and nothing reads
+        // `file` again (a native send never re-arms it), so its spool goes now
+        // rather than after the chooser (#1003).
+        if (staged !== null && unowned !== undefined) {
+          void unowned();
+          unowned = undefined;
+        }
         if (!current()) {
           // Cancelled while staging, but the write finished first: the File is
           // nobody's now, so do not leave it in the cache. Fire-and-forget — the
@@ -822,17 +931,24 @@ export function useShareFlow(): UseShareFlow {
           if (staged !== null) void nativeShare.discard(staged);
           return null;
         }
+        // `unowned` is still the spool only on the web route; the send owns it
+        // from here.
         handoff.arm({
           file,
           staged,
           missing: prepared.missing,
           partial: prepared.partial ?? 0,
           partialChapters: prepared.partialChapters ?? 0,
+          ...(unowned === undefined ? {} : { release: unowned }),
         });
+        unowned = undefined;
         setMissing(prepared.missing);
         setPartial(prepared.partial ?? 0);
         setPartialChapters(prepared.partialChapters ?? 0);
         setStatus("ready");
+        // Snapshot the prepare's per-item result while its count is still on
+        // the modal (#1023); the settle below ends the busy phase that holds it.
+        carryRef.current = carryFromPrepare(modal.state());
         // Ready is not an outcome: the busy phase ends (after its minimum
         // hold) and the primary "Share now" control is what the person sees.
         modal.dispatch({ type: "settle", settled: null, now: modal.now() });
@@ -858,6 +974,7 @@ export function useShareFlow(): UseShareFlow {
         modal.dispatch({ type: "settle", settled, now: modal.now() });
         return null;
       } finally {
+        void unowned?.();
         // Only clear the guard for the run that still owns it. A stale run whose
         // token was bumped by `reset` must NOT release a newer run's guard, or a
         // further tap would start a third full encode over the same source.
@@ -901,6 +1018,8 @@ export function useShareFlow(): UseShareFlow {
     // owns it calls `finishSending()`.
     const armed = handoff.dropArmed();
     if (armed?.staged != null) void nativeShare.discard(armed.staged);
+    // The abandoned File's spool too (#1003); `release` never rejects.
+    void armed?.release?.();
     preparingRef.current = false;
     setStatus("idle");
     setError(null);

@@ -4,10 +4,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
-import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import type { SegmentId } from "@/types/domain";
 import { strings } from "@/lib/strings";
+
+import { restingErase } from "./support";
 
 /**
  * #586 item 2. #585 added a `supersededCapture` ref latch in
@@ -95,6 +96,7 @@ beforeEach(() => {
     paste: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),
+    rollBackClipboard: vi.fn(),
   };
   container = document.createElement("div");
   document.body.append(container);
@@ -123,6 +125,7 @@ async function setup() {
       error: null,
       recorderError: null,
       meterFailed: false,
+      takeCap: { nearLimit: false, remainingMs: 20 * 60_000, reached: false },
       playTake: vi.fn(),
       playBuffer: vi.fn(),
       stopBuffer: vi.fn(),
@@ -141,12 +144,9 @@ async function setup() {
       peekScope: () => null,
     };
   // Resting erase: this suite never opens the confirm, but the sheet reads
-  // `erase.isErasing` during render, so the prop cannot be absent (#160 L-12).
-  const erase: UseEraseSegment = {
-    erase: vi.fn(async () => "ok" as const),
-    erasing: false,
-    isErasing: () => false,
-  };
+  // `erase.isErasing` during render, so the prop cannot be absent (#160 L-12;
+  // shared fixture, #856 item 3, `tests/support.ts`).
+  const erase = restingErase();
   const render = async () =>
     act(async () =>
       root.render(
@@ -196,11 +196,9 @@ it("still saves and exits on a fresh close-path capture after an earlier superse
   // `supersededCapture.current = true`. That verdict does not exit or enter
   // edit mode, so the sheet stays mounted with the latch left true — the
   // same trigger `recorder-superseded-writes.test.ts` uses for its withhold
-  // cases. Driven through Stop (`commitTake("stay")`), not Edit-entry
-  // (`commitTake("edit")`, #134): #857 disables Edit-entry while a take is
-  // live, and the superseded verdict this sets up runs unconditionally on
-  // `commitTake`'s `after` argument, so Stop reaches the identical shared code
-  // the Edit-triggered version did.
+  // cases. Driven through Stop, the one UI route into `commitTake` since #857
+  // disabled Edit-entry during a take (#134's commit-then-edit arm went with
+  // #871).
   s.audio.recorderState = "recording";
   await s.render();
   await s.click(strings.stop);

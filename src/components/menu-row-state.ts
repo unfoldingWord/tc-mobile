@@ -85,7 +85,8 @@ interface EditRowInputs {
 
 /**
  * The record-menu "Edit recording" row, and (via `recorder.tsx`'s shared
- * `editReason`) the bottom-bar `[ ]` selection toggle. Null when enabled.
+ * `editReason`) the bottom-bar edit toggle (scissors since #955; `[ ]`
+ * before). Null when enabled.
  *
  * Enabled when there is something to edit — stored audio or a full clipboard —
  * and no take is in flight. Blocked by: the mic still starting, a live take
@@ -117,7 +118,7 @@ interface EraseRowInputs {
 }
 
 /**
- * The "Erase recording" row (both menus). Null when enabled. Reproduces
+ * The "Clear recording" row (both menus). Null when enabled. Reproduces
  * `!idleEditable || !view?.hasClip`. Erasing the stored take out from under a
  * live capture is nonsensical (George R-B6), so the take wins here too.
  */
@@ -125,6 +126,32 @@ export function eraseRowReason(i: EraseRowInputs): RowReason | null {
   if (i.starting) return "starting";
   if (i.takeActive) return "uncommitted-take";
   if (!i.hasView || !i.hasClip) return "no-clip";
+  return null;
+}
+
+interface DeleteRowInputs {
+  readonly hasView: boolean;
+  readonly takeActive: boolean;
+  /** The mic is being requested — see `EditRowInputs.starting`. */
+  readonly starting: boolean;
+}
+
+/**
+ * The "Delete segment" row/tile (#590, the recorder ≡ menu). Null when
+ * enabled.
+ *
+ * Deliberately narrower than `eraseRowReason`: it does NOT require a stored
+ * clip. Deleting the ROW is exactly what an accidentally added, never-recorded
+ * segment needs (the field-tester ask #590 records — "in case of accidentally
+ * adding segment or needing to restructure"), so an empty segment must stay
+ * deletable. What still blocks it is the same reason Erase refuses mid-capture
+ * (George R-B6): deleting the row out from under a live take is nonsensical,
+ * so a live or committing take still wins.
+ */
+export function deleteRowReason(i: DeleteRowInputs): RowReason | null {
+  if (i.starting) return "starting";
+  if (i.takeActive) return "uncommitted-take";
+  if (!i.hasView) return "no-segment";
   return null;
 }
 

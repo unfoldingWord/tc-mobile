@@ -1,5 +1,8 @@
 import { Control } from "./control";
 import { Menu } from "./menu";
+import { O4SheetHead } from "./o4-crumbs";
+import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
+import { useDesign } from "@/hooks/use-design";
 import { rowHint, type RowReason } from "./menu-row-state";
 import { strings } from "@/lib/strings";
 import { ThemeControl } from "./theme-control";
@@ -9,10 +12,18 @@ import { ThemeControl } from "./theme-control";
  *
  * A hundred lines of JSX lifted out of a 4000-line component, and the split is
  * where it is because every input is already a DERIVED value: the three row
- * reasons come from `menu-row-state.ts`, `finishedState` from the resolved
- * state the store will write, and the rest are handlers. Nothing here reads
- * the recorder's audio, editor or viewport state, which is what made this the
- * first of L-1's three JSX splits worth doing — the toolbars read far more.
+ * reasons (edit, mark, erase) come from `menu-row-state.ts`, `finishedState`
+ * from the resolved state the store will write, and the rest are handlers.
+ * Nothing here reads the recorder's audio, editor or viewport state, which is
+ * what made this the first of L-1's three JSX splits worth doing — the
+ * toolbars read far more.
+ *
+ * **Delete segment does NOT live here** (#1104, the requirements owner's
+ * 2026-09-26 decision, superseding #590's original placement): "the menu
+ * inside the segment editor (recorder) shows Erase only. Delete (removing the
+ * whole segment) belongs to the chapter view." #1080 (PR2 of #590) had put a
+ * Delete row/tile in both modes of both looks here; #1104 pulled it back out.
+ * The chapter view's own row menu (`segment-row.tsx`) carries Delete now.
  *
  * It renders one of two row sets, keyed on the sheet's mode. Every reason the
  * rows can be grey is passed in rather than re-derived, so the row and the
@@ -58,6 +69,20 @@ export interface RecorderMenuProps {
   /** Close the menu and arm the erase confirm. */
   onErase: () => void;
   onExitEdit: () => void;
+  /**
+   * The book's name, the O4 sheet head's first crumb (workbench G3). Read
+   * only in the O4 look; absent, that crumb is left out.
+   */
+  bookName?: string;
+  /**
+   * The book's resolved cover colour (#949, #957), already a hex string —
+   * see `O4SheetHead`'s own docblock for how it is resolved and why absent
+   * means "no square", not "no colour". `recorder.tsx` passes
+   * `view?.bookCoverHex ?? undefined`.
+   */
+  bookCoverHex?: string;
+  /** The chapter's number, the O4 sheet head's second crumb. */
+  chapterNumber?: number;
 }
 
 export function RecorderMenu({
@@ -73,6 +98,9 @@ export function RecorderMenu({
   onToggleFinished,
   onErase,
   onExitEdit,
+  bookName,
+  bookCoverHex,
+  chapterNumber,
 }: RecorderMenuProps) {
   // ONE answer for "this segment is marked", read by both the label and the
   // paint. They were two expressions that disagreed: the label also required a
@@ -82,6 +110,7 @@ export function RecorderMenu({
   // docblock — but a component should not depend on its caller being right to
   // stay self-consistent (George R1).
   const marked = ordinal !== null && finishedState === "finished";
+  const { design } = useDesign();
 
   return (
     <Menu
@@ -102,7 +131,52 @@ export function RecorderMenu({
       // keep the chevron; this drawer keeps ≡ no matter which opener it was.
       hamburger
     >
-      {mode === "record" ? (
+      {/* ONE <Menu> for both looks, so the surface — its title, the ≡
+          dismiss, focus trap and Escape — cannot differ between them; only
+          what sits inside it does. The O4 grid ends with the theme tile past
+          the spacer, last for the reason the current rows below give. */}
+      {design === "o4" && (
+        // Workbench G3's sheet head: the book, chapter and segment crumbs
+        // (§7), decoration only, as on the chapter and segment menus. The
+        // segment crumb is tinted by the state this menu already reads: the
+        // mark that will stick is "finished", audio that will exist on close
+        // is "recorded", anything else is "empty". The workbench's "hear
+        // this" speaker is not drawn (spoken titles, #952).
+        <O4SheetHead
+          book={bookName}
+          bookCoverHex={bookCoverHex}
+          chapter={chapterNumber}
+          segment={
+            ordinal === null
+              ? undefined
+              : {
+                  ordinal,
+                  state: marked
+                    ? "finished"
+                    : finishedState === "empty"
+                      ? "recorded"
+                      : "empty",
+                }
+          }
+        />
+      )}
+      {design === "o4" && (
+        <TileGrid>
+          <RecorderMenuTiles
+            mode={mode}
+            marked={marked}
+            ordinal={ordinal}
+            markReason={markReason}
+            eraseReason={eraseReason}
+            onToggleFinished={onToggleFinished}
+            onErase={onErase}
+            onExitEdit={onExitEdit}
+          />
+          <TileSpacer />
+          <ThemeControl tile />
+        </TileGrid>
+      )}
+      {design === "o4" ? null : mode === "record" ? (
         <>
           <Control
             icon="edit"
@@ -140,11 +214,13 @@ export function RecorderMenu({
             // keying the paint on it would show a green, "Unmark finished" row
             // that lies until close (George R1). `finishedState === "finished"`
             // is true only when the mark will stick.
-            label={
-              marked
-                ? strings.markUnfinished(ordinal)
-                : strings.markFinished(ordinal ?? 0)
-            }
+            //
+            // One fixed label, and `pressed` says the state (#351) — the
+            // `DesignControl` pattern. The label used to flip to "Mark segment
+            // N not done", and beside `aria-pressed` that flip would announce
+            // "not done, pressed", naming the opposite of the state.
+            label={strings.markFinished(ordinal ?? 0)}
+            pressed={marked}
             variant="quiet"
             // Same `onToggleFinished`/`finishedIntent` semantics the header
             // checkbox carried (D1) — only the trigger moved. It does NOT close
@@ -161,7 +237,7 @@ export function RecorderMenu({
             onClick={onToggleFinished}
           />
           <Control
-            icon="trash"
+            icon="eraser"
             label={strings.eraseSegment}
             variant="quiet"
             // Only when there is stored audio to erase (a first, uncommitted
@@ -213,7 +289,7 @@ export function RecorderMenu({
             onClick={onExitEdit}
           />
           <Control
-            icon="trash"
+            icon="eraser"
             label={strings.eraseSegment}
             variant="quiet"
             // Kept reachable from edit mode too — erasing is a segment-level op
@@ -228,5 +304,89 @@ export function RecorderMenu({
         </>
       )}
     </Menu>
+  );
+}
+
+/**
+ * The O4 look of this menu's action tiles (#949, workbench G3 and G8),
+ * mounted inside the same `<Menu>` as the current rows — focus trap, Escape,
+ * scrim, heading and ≡ dismiss unchanged — on the O4 grid, which
+ * `o4/menus.css` turns into a bottom sheet capped at half the screen, so the
+ * waveform above is meant to stay in view (#927).
+ *
+ * Each tile is the row it replaces with the same name, gate, hint and
+ * handler, read from the same props; the tone and the caption are all that
+ * is new. Two deliberate differences from the current look:
+ *
+ *   - Record mode has no Edit tile. G3 (workbench round 4) took it out
+ *     because the recorder screen carries its own edit control — the one
+ *     `recorder.tsx` gates on the same `editReason`.
+ *   - Mark's tile is #995's shared marking-done tone (G8): `doneoff` until
+ *     the mark will stick, then `done`, keyed on the same `marked` the
+ *     current row's paint reads. Its caption is the shared "Done" (D17).
+ *
+ * Every tile draws at the shared tile glyph size; `recorder-menu-tile` is
+ * only the hook for this sheet's half-screen cap in `o4/menus.css`.
+ */
+function RecorderMenuTiles({
+  mode,
+  marked,
+  ordinal,
+  markReason,
+  eraseReason,
+  onToggleFinished,
+  onErase,
+  onExitEdit,
+}: Pick<
+  RecorderMenuProps,
+  | "mode"
+  | "ordinal"
+  | "markReason"
+  | "eraseReason"
+  | "onToggleFinished"
+  | "onErase"
+  | "onExitEdit"
+> & { marked: boolean }) {
+  return (
+    <>
+      {mode === "record" ? (
+        <Tile
+          tone={marked ? "done" : "doneoff"}
+          icon="check"
+          // Fixed label, state on `pressed` — as the current look's row (#351).
+          // The tile's `is-on` ink loses to the tone's own ink: equal
+          // specificity, and `o4/` is imported after `3-components.css`.
+          label={strings.markFinished(ordinal ?? 0)}
+          pressed={marked}
+          caption={strings.tileFinished}
+          className="recorder-menu-tile"
+          disabled={markReason !== null}
+          hint={rowHint(markReason)}
+          onClick={onToggleFinished}
+        />
+      ) : (
+        <Tile
+          tone="plain"
+          icon="check"
+          label={strings.doneEditing}
+          caption={strings.tileDone}
+          className="recorder-menu-tile"
+          onClick={onExitEdit}
+        />
+      )}
+      {/* Clear (the DRI's 2026-09-28 pick on #1119): the eraser on the plain
+          well. Red is kept for Delete, which removes a whole segment and
+          lives only in the chapter view (#1104). */}
+      <Tile
+        tone="plain"
+        icon="eraser"
+        label={strings.eraseSegment}
+        caption={strings.tileErase}
+        className="recorder-menu-tile"
+        disabled={eraseReason !== null}
+        hint={rowHint(eraseReason)}
+        onClick={onErase}
+      />
+    </>
   );
 }

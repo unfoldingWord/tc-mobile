@@ -9,18 +9,16 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import type { SegmentId } from "@/types/domain";
 
+import { restingErase } from "./support";
+
 /**
  * The erase surface `App` now owns and passes down (#160, L-12). Resting: this
  * suite never erases, and a stub that answers "no erase in flight" is what the
  * screen's Back and confirm gates read. Written here rather than mocked at the
  * module, because the screen takes it as a PROP now — a module mock would
- * intercept nothing.
+ * intercept nothing. Shared fixture (#856 item 3, `tests/support.ts`).
  */
-const erase = {
-  erase: vi.fn(async () => "ok" as const),
-  erasing: false,
-  isErasing: () => false,
-};
+const erase = restingErase();
 
 /**
  * The tap that ends a recording commits it, in place (#614, Option A).
@@ -117,6 +115,7 @@ beforeEach(() => {
     paste: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),
+    rollBackClipboard: vi.fn(),
   };
   container = document.createElement("div");
   document.body.append(container);
@@ -148,6 +147,7 @@ async function setup() {
       error: null,
       recorderError: null,
       meterFailed: false,
+      takeCap: { nearLimit: false, remainingMs: 20 * 60_000, reached: false },
       playTake: vi.fn(),
       playBuffer: vi.fn(),
       stopBuffer: vi.fn(),
@@ -234,9 +234,10 @@ it("stays in the sheet, in record mode, on the committed audio", async () => {
   // to leave (or to enter edit), which is what made "scroll the take you just
   // recorded" impossible — the reported bug.
   expect(s.onExit).not.toHaveBeenCalled();
-  // NOT edit mode either: `commitTake("stay")` and `commitTake("edit")` share
-  // one path, and passing the wrong one here would open the edit toolbar on a
-  // plain Stop. The pill is the mode marker a sighted non-reader has (D2).
+  // NOT edit mode either: until #871, `commitTake` also served an Edit entry
+  // and took an argument saying which, and passing the wrong one here would
+  // have opened the edit toolbar on a plain Stop. The pill is the mode marker
+  // a sighted non-reader has (D2).
   expect(document.body.textContent).not.toContain(strings.modepillEditing);
   // Back at idle: the control is Record again, ready to append at the line.
   expect(s.button(strings.record)).toBeDefined();
@@ -378,23 +379,16 @@ it("a Stop whose decode failed stays in place when Try again succeeds", async ()
   expect(s.button(strings.record)).toBeDefined();
 });
 
-// `recoverDestination`'s third answer, `"edit"` — set only by
-// `onEnterEdit`'s `commitTake("edit")` — used to be reachable here: entering
-// Edit mid-take, decode failing, then a successful Try again landed in edit
-// mode rather than exiting (the "an Edit-entry recovery still reaches edit
-// mode" case this replaced pinned exactly that). #857 disables the `[ ]`
-// toggle and the ≡ menu's "Edit recording" row while a take is live
-// (`editRowReason`'s `hasTake` term, `menu-row-state.ts`), and
-// `commitTake("edit")` has no other caller — so `onEnterEdit`'s live-take
-// branch, and `recoverDestination`'s `"edit"` value, are unreachable from any
-// real UI surface as of this PR. That is a residual, not silently dropped:
-// left in place rather than removed (a `commitTake`/`recoverDestination`
-// refactor is out of scope for #857, and this is a HOT file with several
-// PRs in flight), and flagged in the #857 PR body for a follow-up cleanup
-// issue. What this case pins now, instead of the destination it used to
-// prove reachable, is that a live take keeps the toggle inert — the same
-// state the pure-function gate in `tests/menu-row-state.test.ts` covers,
-// exercised here through the real component.
+// `recoverDestination` once had a third answer, `"edit"`, set by
+// `onEnterEdit`'s commit-then-edit arm (#134): entering Edit mid-take,
+// decode failing, then a successful Try again landed in edit mode. #857
+// disabled the `[ ]` toggle and the menu's "Edit recording" row while a take
+// is live (`editRowReason`'s `hasTake` term, `menu-row-state.ts`), which left
+// that arm unreachable, and #871 removed it (the source-shape pins for the
+// removal are in `tests/recorder-edit-entry-no-commit.test.ts`). What this
+// case pins is that a live take keeps the toggle inert — the same state the
+// pure-function gate in `tests/menu-row-state.test.ts` covers, exercised here
+// through the real component.
 it("a live take keeps the Edit toggle disabled (#857)", async () => {
   const s = await setup();
   s.audio.recorderState = "recording";
@@ -454,6 +448,15 @@ it("the commit window after Stop does not tell the translator to stop (#857)", a
 
   await act(async () => settle());
   await s.render();
+
+  // #869 item 3 (George r5 L3): the commit window is not the whole story —
+  // once `commitTake`'s reload settles (`recorder.tsx`'s `setIsClosing(false)`
+  // in its success arm), Edit is usable again. `Control` (`control.tsx`) never
+  // renders `aria-busy` once `busy` is false, and with `editReason` back to
+  // `null` the toggle is neither natively `disabled` nor soft-`aria-disabled`.
+  expect(toggle!.getAttribute("aria-busy")).toBeNull();
+  expect(toggle!.disabled).toBe(false);
+  expect(toggle!.getAttribute("aria-disabled")).toBeNull();
 });
 
 it("a Back's recovery exits to Segments, unchanged", async () => {
