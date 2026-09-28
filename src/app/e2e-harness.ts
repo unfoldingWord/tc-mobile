@@ -794,6 +794,117 @@ async function buildAndDecodeJoinedChapter(
   };
 }
 
+// ── A long chapter streamed through the real worker (#1003 part b) ─────────
+//
+// `lib/export/chapter.ts` streams a chapter over its PCM threshold through
+// `codec.openMp3Stream` — a versioned open/chunk/finish sequence to the
+// worker, each chunk acked before the next is sent. Node covers both ends of
+// that wire against stand-ins; this runs the real worker thread, the real
+// transfer and the real lamejs chunk, and compares the streamed MP3 with the
+// whole-buffer encode of the SAME chapter byte for byte. The threshold is
+// passed as 0 (every chapter streams) and as Infinity (none does), so the
+// chapter can be a few seconds of audio.
+
+export interface StreamedChapterResult {
+  readonly segments: number;
+  readonly wholeBytes: number;
+  readonly streamedBytes: number;
+  /** The streamed MP3 equals the whole encode, byte for byte. */
+  readonly identical: boolean;
+  /** A streamed share aborted after its first segment rejected. */
+  readonly abortRejected: boolean;
+  /** Steps that share reported before the abort, and none after. */
+  readonly stepsBeforeAbort: readonly number[];
+  /** A streamed share right after that abort equals the whole encode too. */
+  readonly identicalAfterAbort: boolean;
+  /** `decodeAudioData`'s length for the streamed MP3. */
+  readonly decodedLength: number;
+  /** What a decoder that returns every granule gives for this chapter. */
+  readonly expectedTotal: number;
+}
+
+/**
+ * Build a PCM chapter of `segmentFrameCounts`, then export it whole and
+ * streamed on the real encoder lane, abort a streamed export mid-chapter, and
+ * stream it once more. See the section note above.
+ */
+async function streamChapterThroughWorker(
+  segmentFrameCounts: readonly number[]
+): Promise<StreamedChapterResult> {
+  const book = await createBook("");
+  const chapter = await addChapter(book.id);
+  for (const [n, frames] of segmentFrameCounts.entries()) {
+    const segment = await addSegment(chapter.id);
+    const samples = new Int16Array(frames);
+    for (let i = 0; i < frames; i++)
+      samples[i] = Math.round(5000 * Math.sin((i + n * 37) / (11 + n)));
+    await saveTake(segment.id, newClipId(), samples, CANONICAL_SAMPLE_RATE);
+  }
+  const build = (
+    threshold: number,
+    signal?: AbortSignal,
+    onStep?: (done: number) => void
+  ) =>
+    withEncoder(signal, (codec) =>
+      exportChapterMp3(chapter.id, codec, undefined, onStep, threshold)
+    );
+
+  const whole = await build(Number.POSITIVE_INFINITY);
+  const streamed = await build(0);
+  if (!whole || !streamed)
+    throw new Error("exportChapterMp3 returned null: nothing to share");
+  const same = (a: Uint8Array, b: Uint8Array) =>
+    a.length === b.length && a.every((x, i) => x === b[i]);
+
+  const controller = new AbortController();
+  const stepsBeforeAbort: number[] = [];
+  let abortRejected = false;
+  try {
+    await build(0, controller.signal, (done) => {
+      stepsBeforeAbort.push(done);
+      if (done === 1) controller.abort();
+    });
+  } catch {
+    // The abort is the expected outcome here, recorded below.
+    abortRejected = true;
+  }
+  const again = await build(0);
+
+  const Ctor = window.AudioContext;
+  let ctx: AudioContext;
+  try {
+    ctx = new Ctor({ sampleRate: CANONICAL_SAMPLE_RATE });
+  } catch {
+    // The rate was refused, not the context; see `audio-io.ts`'s own fallback.
+    ctx = new Ctor();
+  }
+  let decoded: AudioBuffer;
+  try {
+    decoded = await ctx.decodeAudioData(streamed.mp3.slice().buffer);
+  } finally {
+    await ctx.close();
+  }
+  const gapFrames = Math.round(SEGMENT_GAP_SECONDS * CANONICAL_SAMPLE_RATE);
+  const recorded = segmentFrameCounts.reduce((sum, n) => sum + n, 0);
+  return {
+    segments: streamed.segments,
+    wholeBytes: whole.mp3.length,
+    streamedBytes: streamed.mp3.length,
+    identical: same(whole.mp3, streamed.mp3),
+    abortRejected,
+    stepsBeforeAbort,
+    identicalAfterAbort: again !== null && same(whole.mp3, again.mp3),
+    decodedLength: decoded.length,
+    expectedTotal:
+      Math.ceil(
+        (MP3_TOTAL_DELAY +
+          recorded +
+          (segmentFrameCounts.length - 1) * gapFrames) /
+          MP3_GRANULE
+      ) * MP3_GRANULE,
+  };
+}
+
 /** Open the app's real IndexedDB connection through its real singleton. */
 async function openDb(): Promise<{ name: string; version: number }> {
   const db = await getDb();
@@ -821,6 +932,7 @@ declare global {
       measureWorkerReady: typeof measureWorkerReady;
       workerSnapshotReady: typeof workerSnapshotReady;
       buildAndDecodeJoinedChapter: typeof buildAndDecodeJoinedChapter;
+      streamChapterThroughWorker: typeof streamChapterThroughWorker;
       openDb: typeof openDb;
       watchVersionChange: typeof watchVersionChange;
       db?: IDBPDatabase<TcMobileDb>;
@@ -837,6 +949,7 @@ window.__e2e = {
   measureWorkerReady,
   workerSnapshotReady,
   buildAndDecodeJoinedChapter,
+  streamChapterThroughWorker,
   openDb,
   watchVersionChange,
 };

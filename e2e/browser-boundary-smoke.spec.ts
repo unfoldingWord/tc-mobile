@@ -121,6 +121,19 @@ declare global {
         gapRms: readonly number[];
         boundaryMaxAbsDelta: readonly number[];
       }>;
+      streamChapterThroughWorker: (
+        segmentFrameCounts: readonly number[]
+      ) => Promise<{
+        segments: number;
+        wholeBytes: number;
+        streamedBytes: number;
+        identical: boolean;
+        abortRejected: boolean;
+        stepsBeforeAbort: readonly number[];
+        identicalAfterAbort: boolean;
+        decodedLength: number;
+        expectedTotal: number;
+      }>;
       openDb: () => Promise<{ name: string; version: number }>;
       watchVersionChange: () => void;
       versionChangeFired?: boolean;
@@ -240,6 +253,40 @@ test.describe("the encoder heartbeat through a real busy worker (#166, #279 Geor
     // of it leaves room for a phone several times slower than this runner. If
     // this fails, the deadline design is wrong, not this bound.
     expect(r.maxGapMs).toBeLessThan(r.deadlineMs / 5);
+  });
+});
+
+test.describe("a long chapter streamed through the real worker (#1003 part b)", () => {
+  test("the streamed MP3 equals the whole-buffer encode byte for byte, an abort mid-chapter rejects, and the lane streams again after it", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await waitForHarness(page);
+    // Ragged lengths, so every seam falls off a frame boundary.
+    const frames = [52_919, 30_001, 1_153, 44_100];
+    const result = await page.evaluate(
+      (f) => window.__e2e!.streamChapterThroughWorker(f),
+      frames
+    );
+    console.log(
+      `[stream-chapter] segments=${result.segments} whole=${result.wholeBytes} ` +
+        `streamed=${result.streamedBytes} identical=${result.identical} ` +
+        `abortRejected=${result.abortRejected} steps=${JSON.stringify(result.stepsBeforeAbort)} ` +
+        `identicalAfterAbort=${result.identicalAfterAbort} ` +
+        `decoded=${result.decodedLength} expected=${result.expectedTotal}`
+    );
+    expect(result.segments).toBe(frames.length);
+    expect(result.streamedBytes).toBeGreaterThan(0);
+    expect(result.identical).toBe(true);
+    expect(result.abortRejected).toBe(true);
+    // The abort landed after segment 1's step; nothing was reported after it.
+    expect(result.stepsBeforeAbort).toEqual([0, 1]);
+    expect(result.identicalAfterAbort).toBe(true);
+    // Whole granules from a decoder that returns every one; one that trims
+    // its own delay still fits (the joined-chapter spec's tolerance).
+    expect(
+      Math.abs(result.decodedLength - result.expectedTotal)
+    ).toBeLessThanOrEqual(MP3_GRANULE / 2);
   });
 });
 

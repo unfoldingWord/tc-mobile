@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 
-import { encodeMp3 } from "@/lib/audio/mp3";
+import { createMp3StreamEncoder, encodeMp3 } from "@/lib/audio/mp3";
 import {
   MP3_GRANULE,
   MP3_TOTAL_DELAY,
@@ -8,7 +8,7 @@ import {
 } from "@/lib/audio/mp3-align";
 import { closeDb, getDb } from "@/lib/storage/db";
 import type { UseEraseSegment } from "@/hooks/use-erase-segment";
-import type { AudioCodec, Clip } from "@/types/audio";
+import type { AudioCodec, Clip, Mp3Stream } from "@/types/audio";
 
 /**
  * Shared test plumbing for the storage and export suites.
@@ -31,6 +31,15 @@ export function testCodec(
   return {
     encodeMp3: vi.fn(async (samples: Int16Array) => encodeMp3(samples)),
     decodeMp3: vi.fn(decodeMp3),
+    // The same synchronous encoder, fed in pieces (#1003 part b).
+    openMp3Stream: vi.fn(async (): Promise<Mp3Stream> => {
+      const stream = createMp3StreamEncoder();
+      return {
+        write: async (samples) => stream.write(samples),
+        finish: async () => stream.finish(),
+        cancel: () => {},
+      };
+    }),
   };
 }
 
