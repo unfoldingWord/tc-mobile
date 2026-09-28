@@ -160,6 +160,15 @@ jobs:
       - name: Unused files and dependencies
         run: npm run knip
 
+      # tests/ios-workflow-gates.test.ts's `describe.skipIf(!hasRuby)` block
+      # skips its seven Xcode-selection cases whenever `ruby -v` doesn't exit
+      # 0 on this runner, and the job stays green either way. Printing it
+      # here, right before the suite that depends on it, makes a runner-image
+      # change that silently drops ruby show up as a log line instead of a
+      # quiet drop in coverage (#958 item 3).
+      - name: Ruby availability (gates the iOS Xcode-selection tests)
+        run: ruby -v
+
       - name: Test
         run: npm test
 
