@@ -434,3 +434,50 @@ describe("the sheet-busy ground: edit mode is idle-only, and needs a view (#719)
     expect(call).toContain("starting,");
   });
 });
+
+/**
+ * #719 item 4 (George round 8 on #703, `e497cf2`) — the call site's live
+ * `dragging` flag is not pinned by anything.
+ *
+ * The two suites above already cover the pure function and the JSX, and
+ * neither reaches this gap: `tests/edit-control-state.test.ts`'s own loops
+ * (above) prove `undoReason`/`redoReason` reproduce `heldByDrag` over the
+ * whole input space, and `the toolbar reads one value for both halves`
+ * proves the JSX reads `undoBlocked`/`redoBlocked`. Both stay green if
+ * `recorder.tsx` changed to `undoReason({ dragging: false, idleEditable,
+ * canUndo: editor.canUndo })` — that call typechecks and silently drops the
+ * #317 drag lock from Undo and Redo, because `dragging` is a compile-time
+ * REQUIRED field (`HistoryControlInputs`), not a boolean that can be omitted;
+ * the only way to defeat the lock is to keep the key and change what feeds
+ * it, which is exactly the shape neither existing suite can see.
+ *
+ * So this reads the CALL LITERAL, scoped with `bodyAfter` the same way the
+ * `editRowReason` call site above is, and requires the `dragging` KEY to be
+ * shorthand — bound to the live identifier, not re-keyed to a literal or a
+ * different expression. A bare substring search for "dragging" would NOT
+ * catch the regression above: `{ dragging: false, ... }` still contains the
+ * word "dragging" as its own key. Scoping to the sliced literal (not the
+ * whole file, where "dragging" also names the drag-state variable used
+ * elsewhere in `recorder.tsx`) is the George round-8 note this issue already
+ * carries twice over — a whole-file grep passes on a call site that does not
+ * pass the flag.
+ */
+describe("recorder.tsx's history call sites pass the live drag flag (#719 item 4)", () => {
+  it("undoReason's and redoReason's call literals bind `dragging` as shorthand, not to a fixed value", () => {
+    const source = recorderCode();
+    for (const [marker, prop] of [
+      ["undoReason({", "undoBlocked"],
+      ["redoReason({", "redoBlocked"],
+    ] as const) {
+      const call = bodyAfter(source, marker);
+      // Shorthand `dragging,` (or `dragging}`) reads the live binding.
+      // `dragging: <anything>` re-keys it to a fixed or different value and
+      // must fail this — the negative lookahead is the whole point, not the
+      // bare `\bdragging\b` match a mutation of this test would weaken it to.
+      expect(
+        call,
+        `${prop}'s call literal did not bind \`dragging\` as shorthand: ${call}`
+      ).toMatch(/\bdragging\b(?!\s*:)/);
+    }
+  });
+});
