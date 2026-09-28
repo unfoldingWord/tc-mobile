@@ -54,6 +54,14 @@
     width: 12px;
     height: 12px;
   }
+  /* #1005's remaining-minutes word, sized down from the O4 32px timer next to
+     it — proposed here, not a workbench-signed state (docs/design/
+     o4-design-system.md's screen map names no near-limit variant for 09
+     Recording); see the PR body. */
+  [data-design="o4"] .recorder-status .recorder-take-warn {
+    font-size: 15px; /* #939 token */
+    font-weight: 500;
+  }
 
   /* --- timestamp (10 recorded, 11 playing) ------------------------------ */
   [data-design="o4"] .recorder-stamp {
@@ -85,21 +93,59 @@
 
   /* --- trim handles (12) ------------------------------------------------ */
   /* The hit box widens to the knob, and the clamp that keeps a zoom-fitted
-     edge inside the canvas (#707) reads this same property. */
+     edge inside the canvas (#707) reads this same property. Unchanged by
+     #1102: the 30px hit box and the #707 edge clamp both still read this. */
   [data-design="o4"] .selection-handle {
     --c-selection-hit: 30px;
   }
+  /* #1102 (requirements owner test session, v0.2.13): the knob sat at the
+     bar's vertical middle, over the waveform. Anchored to the bar's bottom
+     instead, so it reads as a grab target beside the audio rather than a
+     mark on top of it. The bar itself still spans the handle's full
+     `top: 0; bottom: 0` (3-components.css), so `bottom: 0` here sits at the
+     canvas's own bottom edge — fully inside it, nothing clipped by
+     `.recorder-canvas`'s `overflow: hidden`. */
   [data-design="o4"] .selection-handle::after {
     content: "";
     position: absolute;
-    top: 50%;
+    bottom: 0;
     left: 0;
     width: 30px;
     height: 56px;
-    margin-top: -28px;
     border-radius: 15px; /* #939 token */
     background: var(--s-voice);
     pointer-events: none;
+  }
+
+  /* --- cut anchor (12, #1102) --------------------------------------------- */
+  /* The Cut affordance (`recorder.tsx`'s `.recorder-cut`) used to sit at the
+     stage's own centre — `justify-content: center` over a row exactly as
+     wide as the button — so it drifted off-center under the selection as
+     the span moved or changed length. `CutAnchor` (`cut-anchor.tsx`) computes
+     the selection's midpoint as a percentage of the canvas viewport and
+     writes it inline as `--o4-cut-left`; this rule positions the wrapper there
+     instead. `width: 100%` gives the row the same coordinate space
+     `.recorder-canvas` has — both are siblings inside the same centered
+     `.recorder-stage` column (3-components.css) — so the percentage lines up
+     with the waveform under it. The clamp mirrors `.selection-handle`'s own
+     edge clamp above (#707): half the button's own box keeps it fully on
+     screen when the selection runs to an edge. `--c-control-sm` is what
+     `.control--quiet` (the scissors) is sized by, the same token
+     `.recorder-cut`'s reserved height reads (3-components.css). Colour is
+     unaffected — this row inks nothing itself, `.recorder-cut`'s existing
+     `color: var(--s-voice)` still carries down to the icon. */
+  [data-design="o4"] .recorder-cut {
+    position: relative;
+    width: 100%;
+  }
+  [data-design="o4"] .recorder-cut .cut-anchor {
+    position: absolute;
+    left: clamp(
+      calc(var(--c-control-sm) / 2),
+      var(--o4-cut-left, 50%),
+      calc(100% - var(--c-control-sm) / 2)
+    );
+    transform: translateX(-50%);
   }
 
   /* --- transport (08-11: the pair; 12: the edit bar) -------------------- */
