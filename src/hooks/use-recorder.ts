@@ -710,7 +710,7 @@ export function useRecorder(): UseRecorder {
           // for the same reason the original stop is: the chunks are final. NOT
           // on the error path (recorder still active), where clone-stop could
           // truncate the slice stop() will recover.
-          stream?.getTracks().forEach((track) => track.stop());
+          if (stream) stopTracks(stream, "recorder-release-track");
           closeTap();
         } else if (!interruptionReported) {
           interruptionReported = true;
