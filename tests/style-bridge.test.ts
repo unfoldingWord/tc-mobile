@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { stripCssComments } from "./support";
+
 /**
  * The one colour bridge, kept honest (#164 L-14).
  *
@@ -25,13 +27,16 @@ import { describe, expect, it } from "vitest";
  * These assertions read source text, not computed styles.
  */
 const ROOT = path.resolve(import.meta.dirname, "..");
-const globals = readFileSync(
-  path.join(ROOT, "src", "app", "globals.css"),
-  "utf8"
+// Both stylesheets are read with their comments stripped, so a commented-out
+// alias or role declaration cannot satisfy the checks below (#822).
+const globals = stripCssComments(
+  readFileSync(path.join(ROOT, "src", "app", "globals.css"), "utf8")
 );
-const semantic = readFileSync(
-  path.join(ROOT, "src", "app", "styles", "2-semantic.css"),
-  "utf8"
+const semantic = stripCssComments(
+  readFileSync(
+    path.join(ROOT, "src", "app", "styles", "2-semantic.css"),
+    "utf8"
+  )
 );
 const COMPONENTS = path.join(ROOT, "src", "components");
 
