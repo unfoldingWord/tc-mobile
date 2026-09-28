@@ -15,7 +15,7 @@ import { warmEncoder } from "@/hooks/mp3-codec";
 import { useAudioSession } from "@/hooks/use-audio-session";
 import { useDatabaseStatus } from "@/hooks/use-database-status";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
-import { useNavStack } from "@/hooks/use-nav-stack";
+import { clearPhoneCheckQueryParam, useNavStack } from "@/hooks/use-nav-stack";
 import { useSaveTake } from "@/hooks/use-save-take";
 import {
   holdsUnsavedAudio,
@@ -88,6 +88,15 @@ export function App() {
   const [phoneCheckOpen, setPhoneCheckOpen] = useState(
     () => new URLSearchParams(window.location.search).get("check") === "phone"
   );
+  // Close drops `?check=phone` from the URL too (#1014 item 4), or a later
+  // reload of this same tab would read it again and reopen the check. The
+  // `window.history` call itself lives in `use-nav-stack.ts`
+  // (`clearPhoneCheckQueryParam`), the one file invariant 1 permits one in
+  // (docs/design/back-navigation.md); this is only the state half.
+  const closePhoneCheck = useCallback(() => {
+    clearPhoneCheckQueryParam();
+    setPhoneCheckOpen(false);
+  }, []);
 
   const audio = useAudioSession();
   const { leave, primeAudioContext } = audio;
@@ -433,7 +442,7 @@ export function App() {
   if (phoneCheckOpen) {
     return (
       <main className="app-shell mx-auto h-full max-w-md">
-        <PhoneCheckScreen onClose={() => setPhoneCheckOpen(false)} />
+        <PhoneCheckScreen onClose={closePhoneCheck} />
       </main>
     );
   }

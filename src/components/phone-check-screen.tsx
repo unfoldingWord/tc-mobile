@@ -90,6 +90,25 @@ export function PhoneCheckView({
     allocation: state.allocation,
   });
   const status = activityLine(state.activity);
+  // "Done" means all three ordered steps landed, not merely that the first
+  // one did (#1014 item 7). A reload mid-run restores whichever of the three
+  // `readSavedChecks` found and nothing marks the rest `null` again, so
+  // checking `state.device` alone read a partial restore as complete.
+  const allStepsLanded = Boolean(state.device && state.encode && state.storage);
+
+  // The report changing under a "Copied." label is stale the moment it
+  // happens (#1014 item 8): a tester who copies mid-run, then watches a later
+  // step land, would otherwise paste a report the button never actually put
+  // on the clipboard. Adjusted during render — React's own recipe for
+  // "reset state when a prop/derived value changes" — rather than a
+  // `useEffect`, which would setState AFTER the stale paint had already
+  // committed and cost a second render to correct it; `lastReport` is the
+  // held value being compared against, not new copy state.
+  const [lastReport, setLastReport] = useState(report);
+  if (report !== lastReport) {
+    setLastReport(report);
+    setCopied(null);
+  }
 
   const onCopy = () => {
     // No `await` before `copyText` reaches `writeText`: the tap's activation
@@ -134,8 +153,12 @@ export function PhoneCheckView({
         {strings.phoneCheckStart}
       </button>
 
-      <p className="text-ink-muted text-[13px]" role="status">
-        {status ?? (state.device ? strings.phoneCheckDone : "")}
+      <p
+        className="text-ink-muted text-[13px]"
+        role="status"
+        data-phone-check="status"
+      >
+        {status ?? (allStepsLanded ? strings.phoneCheckDone : "")}
       </p>
 
       <div className="border-edge flex flex-col gap-2 rounded-2xl border p-3">
@@ -177,7 +200,11 @@ export function PhoneCheckView({
       >
         {strings.phoneCheckCopy}
       </button>
-      <p className="text-ink-muted text-[13px]" role="status">
+      <p
+        className="text-ink-muted text-[13px]"
+        role="status"
+        data-phone-check="copy-status"
+      >
         {copied === "copied"
           ? strings.phoneCheckCopied
           : copied === "selected"
