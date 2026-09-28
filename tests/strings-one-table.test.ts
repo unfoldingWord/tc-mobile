@@ -29,7 +29,9 @@ import { strings } from "@/lib/strings";
  * WHAT IT CHECKS, EXACTLY: no fixed sentence in the table appears as source text
  * anywhere in `app/`, `components/` or `hooks/` outside the table itself. It is
  * a source-text gate for the same reason `recorder-stop-release-guards.test.ts`
- * is one — there is no renderer here to ask a screen what it says.
+ * is one — the render harness (#197) mounts one component with one prop set per
+ * call, so it cannot sweep every literal across `app/`, `components/` and
+ * `hooks/` the way a source-text read can.
  *
  * WHAT IT DOES NOT CHECK, so nobody reads more into a green run:
  *

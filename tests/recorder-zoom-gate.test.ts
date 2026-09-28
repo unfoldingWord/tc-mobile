@@ -26,9 +26,10 @@ import { stripComments } from "./support";
  * which is strictly more than the one this was filed for.
  *
  * Source-shape, the reason `tests/recorder-cut-drag-gate.test.ts` documents:
- * `recorder.tsx` mounts the audio hook graph, there is no DOM runner for it,
- * and a `disabled` prop on one Control cannot be rendered and inspected —
- * only read as text. The assertion below names the kill condition (reverting
+ * `recorder.tsx` mounts the audio hook graph, so no test — including the
+ * render harness (#197) — mounts it, and a `disabled` prop on one Control
+ * cannot be rendered and inspected there — only read as text. The assertion
+ * below names the kill condition (reverting
  * the prop to `stage.windowControlsInert` alone fails it), which the
  * recorder's own commit-window e2e cannot reach today.
  */
