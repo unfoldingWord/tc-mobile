@@ -72,6 +72,10 @@ blind spots — is in [`AGENTS.md`](AGENTS.md).
   in a feature PR is a guaranteed conflict and records nothing.
 - Link the issue. Use `Closes #N` **only when the PR closes the whole issue**;
   otherwise reference it plainly (`part of #N`).
+- **Every PR carries its parent issue's milestone**, set before the PR is
+  marked ready — a hard stop, not a courtesy. Nine docs-sweep PRs against
+  #575 shipped with no milestone until a 2026-09-24 audit caught it after the
+  fact and set them retroactively (#839 §10, #840 R4).
 
 ## Lanes and ownership
 
