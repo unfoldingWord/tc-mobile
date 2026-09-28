@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import {
   effectivePan,
@@ -99,6 +99,15 @@ export function useRecorderViewport(
     length,
   });
 
+  // Stable across renders that don't change what it reads — length, zoom and
+  // centerFraction are its only inputs (#826 item 3). Latent today (no
+  // dependency array reads `windowAt`), but the next `useEffect`/`useCallback`
+  // consumer would otherwise re-arm on every render's fresh closure.
+  const windowAt = useCallback(
+    (at: number) => viewportWindow(length, at, zoom, centerFraction),
+    [length, zoom, centerFraction]
+  );
+
   return {
     setPanState,
     zoomPan,
@@ -108,6 +117,6 @@ export function useRecorderViewport(
     pan,
     win: viewportWindow(length, pan, zoom, centerFraction),
     insertionPan: Math.min(panState ?? length, length),
-    windowAt: (at) => viewportWindow(length, at, zoom, centerFraction),
+    windowAt,
   };
 }
