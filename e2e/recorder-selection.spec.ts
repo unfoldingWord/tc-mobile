@@ -301,12 +301,13 @@ test.describe("edit mode toggle", () => {
       // and paste do. Since #835, dragging the waveform does not reseed one
       // either while the clipboard still holds the cut: the requirements
       // owner's decision on #835 (2026-09-24) is that a new selection is
-      // available only once the clipboard is empty — today that means a
-      // paste (#489 makes it one-shot). An undone cut and a redone paste
-      // reopen the frame; an undone paste refills the clipboard and so
-      // collapses it again (#925), as a redone cut does (#722).
-      // Cutting twice in a row is therefore a paste in between, not a touch
-      // on the waveform.
+      // available only once the clipboard is empty — a paste (#489 makes it
+      // one-shot) or a discard (#862). A redone paste reopens the frame; an
+      // undone paste refills the clipboard and so collapses it again (#925),
+      // as a redone cut does (#722), and so does an undone cut while its
+      // phrase is still on the clipboard (#925, the DRI's decision of
+      // 2026-09-26). Cutting twice in a row is therefore a paste in between,
+      // not a touch on the waveform.
       const canvasBounds = async () =>
         (await page.locator(".recorder-canvas").boundingBox())!;
       const expectCollapsedOntoTheLine = async () => {
@@ -394,10 +395,13 @@ test.describe("edit mode toggle", () => {
       await expectCollapsedOntoTheLine();
       // Same #835 assertion after the second cut.
       await dragStaysCollapsed();
+      // #925: undoing the cut puts its audio back, but the phrase is still on
+      // the clipboard, so the stage stays on the line and the paste button
+      // (the DRI's decision of 2026-09-26). Before, this undo reopened a
+      // frame over a full clipboard.
       await page.getByRole("button", { name: "Undo", exact: true }).click();
-      expect(await expectUsableFrame()).toBe(originalLength);
-      // A redone cut collapses onto the line like the live one (#722); undo
-      // above still reopens the frame where the audio came back.
+      await expectCollapsedOntoTheLine();
+      // A redone cut collapses onto the line like the live one (#722).
       await page.getByRole("button", { name: "Redo", exact: true }).click();
       await expectCollapsedOntoTheLine();
       // #835: the redo-collapsed frame does not reopen on a drag either.
@@ -453,8 +457,10 @@ test.describe("edit mode toggle", () => {
           .click();
         await expect(startHandle).toHaveCount(0);
         await expect(toggle).toHaveAttribute("aria-pressed", "true");
+        // #925: the whole-buffer cut's undo stays on the line too, with the
+        // phrase still on the clipboard; the paste below is the round trip.
         await page.getByRole("button", { name: "Undo", exact: true }).click();
-        expect(await expectUsableFrame()).toBe(originalLength);
+        await expectCollapsedOntoTheLine();
         await page.getByRole("button", { name: "Redo", exact: true }).click();
         await expect(startHandle).toHaveCount(0);
         await page

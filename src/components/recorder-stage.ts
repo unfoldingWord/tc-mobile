@@ -943,21 +943,29 @@ export function redoCollapsesFrame(redoneOp: EditOp | null): boolean {
  * Whether an undo leaves the #613 collapse latched rather than reopening the
  * frame — the undo half of {@link redoCollapsesFrame}.
  *
- * An undone paste does (#925): undoing it puts the phrase back on the
- * clipboard (#489), and a new selection is available only once the clipboard
- * is empty — the rule the requirements owner set on #489 and #835. So the
- * stage shows the red line and the paste button, the state a cut leaves.
+ * The signal is the clipboard AFTER the undo, not the kind of op undone: a
+ * new selection is available only once the clipboard is empty — the rule the
+ * requirements owner set on #489 and #835, and held to for undo on #985 (the
+ * DRI's decision, 2026-09-26). So the stage shows the red line and the paste
+ * button, the state a cut leaves, whenever the undo leaves a phrase waiting.
  *
- * An undone cut does not. Its audio is back in the take, and the frame
- * reseeds where it came back, as it has since #613; the clipboard still
- * holds the phrase, so this is the one route that opens a frame over a full
- * clipboard, and it is named here rather than hidden. `null` answers false,
- * but `recorder.tsx`'s `onUndo` does not ask on `null`: an undo that failed
- * to apply leaves the latch as it was, so a failure cannot reopen a frame
- * over a full clipboard (Frank R1 on #985).
+ * An undone paste always does: undoing it puts the phrase back on the
+ * clipboard (#489). An undone cut leaves the clipboard as it was
+ * (`useSegmentEditor.undo` writes it only for a paste), so `clipboardFull` —
+ * `editor.canPaste` read BEFORE the undo, the same pre-op closure value
+ * `panAfterUndo` takes its length from — is the answer: the phrase is still
+ * waiting, unless a discard (#862) emptied the slot first, in which case the
+ * audio is back in the take and the frame reseeds where it came back (#613).
+ * `null` answers false, but `recorder.tsx`'s `onUndo` does not ask on
+ * `null`: an undo that failed to apply leaves the latch as it was, so a
+ * failure cannot reopen a frame over a full clipboard (Frank R1 on #985).
  */
-export function undoCollapsesFrame(undoneOp: EditOp | null): boolean {
-  return undoneOp?.kind === "paste";
+export function undoCollapsesFrame(
+  undoneOp: EditOp | null,
+  clipboardFull: boolean
+): boolean {
+  if (undoneOp === null) return false;
+  return undoneOp.kind === "paste" || clipboardFull;
 }
 
 /**
@@ -1118,11 +1126,12 @@ export function centerlineOverlayShown(input: {
  * three of the reported symptoms are this one reseed.
  *
  * So a cut suspends it — `collapsedByCut` — until something asks for a frame
- * again: a paste, an undone cut (an undone paste re-latches it, #925), a
- * redone paste (a redone cut re-latches it, #722), or the stage coming to
- * rest under a finger with the clipboard empty (#835). Leaving edit mode
- * sets the latch to whether the clipboard is full, and so does opening the
- * sheet (#925): edit mode opens on the red line while a paste is waiting.
+ * again: a paste, a discard (#862), an undo that leaves the clipboard empty
+ * (one that leaves a phrase on it re-latches it, #925), a redone paste (a
+ * redone cut re-latches it, #722), or the stage coming to rest under a
+ * finger with the clipboard empty (#835). Leaving edit mode sets the latch
+ * to whether the clipboard is full, and so does opening the sheet (#925):
+ * edit mode opens on the red line while a paste is waiting.
  *
  * Three answers rather than a boolean, because the reseed block does two
  * things and only one of them is suspended: `"seed"` opens a span AND drops

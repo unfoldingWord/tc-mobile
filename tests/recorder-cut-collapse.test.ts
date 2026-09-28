@@ -315,19 +315,24 @@ describe("recorder.tsx wires the collapse (#613)", () => {
       /if \(editor\.paste\(insertionPan\)\) reopenFrame\(\)/
     );
     expect(handlerBody("const onUndo = useCallback(")).toMatch(
-      /if \(undoneOp !== null\) setCutCollapsed\(undoCollapsesFrame\(undoneOp\)\)/
+      /if \(undoneOp !== null\) \{\s*setCutCollapsed\(undoCollapsesFrame\(undoneOp, editor\.canPaste\)\);\s*\}/
     );
     expect(handlerBody("const onRedo = useCallback(")).toMatch(
       /if \(redoneOp !== null\) setCutCollapsed\(redoCollapsesFrame\(redoneOp\)\)/
     );
   });
 
-  it("onUndo sets the latch from the undone op, not unconditionally open (#925)", () => {
+  it("onUndo sets the latch from the undone op and the clipboard, not unconditionally open (#925)", () => {
     // Source shape only: the rule itself is `undoCollapsesFrame`, pinned
     // below. Before #925 this called `reopenFrame()`, which opened a
-    // selection window after undoing a paste had just refilled the clipboard.
+    // selection window after undoing a paste had just refilled the clipboard,
+    // and after undoing a cut whose phrase was still on it. The second
+    // argument is the live clipboard, the pre-undo closure value the helper
+    // asks for — not a literal.
     const body = handlerBody("const onUndo = useCallback(");
-    expect(body).toMatch(/setCutCollapsed\(undoCollapsesFrame\(undoneOp\)\)/);
+    expect(body).toMatch(
+      /setCutCollapsed\(undoCollapsesFrame\(undoneOp, editor\.canPaste\)\)/
+    );
     expect(body).not.toMatch(/reopenFrame\(\)/);
   });
 
@@ -358,23 +363,44 @@ describe("recorder.tsx wires the collapse (#613)", () => {
   });
 });
 
-describe("undoCollapsesFrame — an undone paste re-latches the collapse (#925)", () => {
-  it("latches it for an undone paste: the phrase is back on the clipboard", () => {
-    const paste: EditOp = {
-      kind: "paste",
-      at: 2_000,
-      clip: new Int16Array(3_000),
-    };
-    expect(undoCollapsesFrame(paste)).toBe(true);
+/**
+ * #925: the latch after an undo follows the clipboard the undo leaves behind
+ * (the DRI's decision on #985, 2026-09-26), not the kind of op undone. The
+ * wiring is the `onUndo` source-shape case above; the undo-of-cut and
+ * undo-of-paste steps are in `e2e/recorder-selection.spec.ts`, and the
+ * discard-then-undo step in `e2e/recorder-discard-clip.spec.ts`.
+ */
+describe("undoCollapsesFrame — the latch follows the clipboard after the undo (#925)", () => {
+  const paste: EditOp = {
+    kind: "paste",
+    at: 2_000,
+    clip: new Int16Array(3_000),
+  };
+  const cut: EditOp = { kind: "cut", range: { start: 2_000, end: 5_000 } };
+
+  it("latches it for an undone paste, whatever the clipboard held before: the phrase is back on it", () => {
+    expect(undoCollapsesFrame(paste, false)).toBe(true);
+    expect(undoCollapsesFrame(paste, true)).toBe(true);
   });
 
-  it("does not latch it for an undone cut, or when nothing was undone", () => {
-    // An undone cut puts its audio back in the take, and the frame reseeds
-    // where it came back (#613); `e2e/recorder-selection.spec.ts` asserts a
-    // usable frame after exactly that undo.
-    const cut: EditOp = { kind: "cut", range: { start: 2_000, end: 5_000 } };
-    expect(undoCollapsesFrame(cut)).toBe(false);
-    expect(undoCollapsesFrame(null)).toBe(false);
+  it("latches it for an undone cut while the clipboard still holds a phrase", () => {
+    // Frank R2 on #985: the audio is back in the take, but the phrase is
+    // still on the clipboard, so a new selection is not yet available. Before
+    // this the answer was false for every cut, which opened a frame over a
+    // full clipboard by this one route.
+    expect(undoCollapsesFrame(cut, true)).toBe(true);
+  });
+
+  it("does not latch it for an undone cut once the clipboard is empty — a discard came first (#862)", () => {
+    // The clipboard is the signal, not the op kind: with nothing waiting, the
+    // frame reseeds where the audio came back (#613).
+    expect(undoCollapsesFrame(cut, false)).toBe(false);
+  });
+
+  it("answers false when nothing was undone, whatever the clipboard holds", () => {
+    // `onUndo` does not ask on `null`; this pins the helper's own contract.
+    expect(undoCollapsesFrame(null, false)).toBe(false);
+    expect(undoCollapsesFrame(null, true)).toBe(false);
   });
 });
 

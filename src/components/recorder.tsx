@@ -356,10 +356,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * Lift the #613 collapse: the next render may seed a frame again.
      *
      * Called from the routes that leave the translator wanting one — a paste
-     * that landed, and an undo unless it undid a paste
-     * (`undoCollapsesFrame`, #925). Leaving edit mode no longer calls it:
-     * since #925 it sets the latch to `editor.canPaste` instead, so the next
-     * entry opens on the red line while a paste is waiting. The
+     * that landed, and a discard (#862); an undo sets the latch from
+     * `undoCollapsesFrame` instead, which is the clipboard's state after it
+     * (#925). Leaving edit mode no longer calls it: since #925 it sets the
+     * latch to `editor.canPaste` instead, so the next entry opens on the red
+     * line while a paste is waiting. The
      * lift of a stage drag is the other route, but since #835 it is
      * conditional: `onPointerUp` only calls this when `liftOutcome` says
      * `reopenFrame`, which is false while the clipboard still holds a cut
@@ -1787,7 +1788,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // #925 this lifted the collapse unconditionally, which made `[ ]` off,
       // `[ ]` on a way to pick a second span with a paste still waiting; the
       // rule set on #489 and #835 replaces that route with emptying the
-      // clipboard first — a paste (#489), or a discard once #862 lands.
+      // clipboard first — a paste (#489) or a discard (#862).
       setCutCollapsed(editor.canPaste);
       setZoom(ZOOM_WHOLE);
       // The zoom's view pan is edit-only, exactly as the zoom itself is. The
@@ -1870,16 +1871,22 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       if (undoneOp !== null) {
         setPanState((p) => panAfterUndo(p, undoneOp, length));
       }
-      // Undoing the cut puts the audio back, so the collapse it latched is
-      // over (#613) — and so is the collapse a LATER undo steps past, since
-      // the frame it reseeds is measured against the buffer that comes back.
-      // An undone PASTE is the exception (#925): it puts the phrase back on
-      // the clipboard (#489), so the stage collapses to the line and the
-      // paste button, as after the cut. `undoCollapsesFrame` holds the rule.
-      // A FAILED undo (`null`) changes nothing, the latch included: reopening
-      // there would offer a new selection while a cut is still on the
-      // clipboard, and the next Cut would replace it (Frank R1 on #985).
-      if (undoneOp !== null) setCutCollapsed(undoCollapsesFrame(undoneOp));
+      // The latch follows the clipboard the undo leaves behind (#925, the
+      // DRI's decision of 2026-09-26): a new selection is available only once
+      // the clipboard is empty (#489/#835). An undone PASTE puts the phrase
+      // back on the clipboard (#489), so the stage collapses to the line and
+      // the paste button, as after the cut. An undone CUT puts its audio back
+      // but leaves the clipboard as it was, so the frame comes back only when
+      // that clipboard was already empty — a discard (#862) before the undo —
+      // and the collapse stays while the phrase is still waiting.
+      // `undoCollapsesFrame` holds the rule; `editor.canPaste` here is the
+      // pre-undo closure value, which is what it asks for. A FAILED undo
+      // (`null`) changes nothing, the latch included: reopening there would
+      // offer a new selection while a cut is still on the clipboard, and the
+      // next Cut would replace it (Frank R1 on #985).
+      if (undoneOp !== null) {
+        setCutCollapsed(undoCollapsesFrame(undoneOp, editor.canPaste));
+      }
     }, [editor, stopPlaybackDroppingPan, length, setPanState]);
 
     const onRedo = useCallback(() => {
