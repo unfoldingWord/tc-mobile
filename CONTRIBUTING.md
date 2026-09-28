@@ -172,12 +172,11 @@ The full version, with the incident behind each rule, is in
 Every issue carries a **milestone**, **labels** from the existing set, and an
 **assignee**. File into a milestone; do not leave one unset.
 
-| Milestone                        | Means                                                             |
-| -------------------------------- | ----------------------------------------------------------------- |
-| `v0.2.0 — Sept: production gate` | must be true before production. Due 2026-09-30                    |
-| `v0.3.0 — Training essentials`   | matters for the training, can land after the gate. Due 2026-10-09 |
-| `v1.0.0 — Training stretch`      | v0.3.0's scope plus the O4 UI; on phones by 2026-10-02            |
-| `v1.1.0 — Post-training`         | deliberately parked until after October. No due date              |
+| Milestone                        | Means                                                       |
+| -------------------------------- | ----------------------------------------------------------- |
+| `v0.2.0 — Sept: production gate` | must be true before production. Due 2026-09-30              |
+| `v1.0.0 — Training build`        | the training build, with the O4 UI; on phones by 2026-10-02 |
+| `v1.1.0 — Post-training`         | deliberately parked until after October. No due date        |
 
 Body shape — four headings, in this order:
 
