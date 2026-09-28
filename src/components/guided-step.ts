@@ -118,7 +118,8 @@ function booksStep(
     return view.naming ? { kind: "create-book" } : { kind: "new-book" };
   const book = books[0];
   if (!book) return null;
-  // `listBooks` sorts newest-first (`use-books.ts`), so `books[0]` is always
+  // `listBooks` sorts newest-created first (`lib/storage/books.ts`, #1185),
+  // and `use-books.ts` prepends a created book, so `books[0]` is always
   // the book that was just created. A book with no chapters yet gets the
   // Add-chapter ring whether or not other books already exist on the shelf —
   // #834, Tim's decision: "once a book is added, the blue ring goes around
