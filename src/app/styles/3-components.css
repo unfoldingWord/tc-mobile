@@ -1044,6 +1044,25 @@
     left: var(--p-space-3);
     color: var(--s-ink);
   }
+  /* #1005 ("Warn at 15, seal at 20"): from 15:00 of a live take, the whole
+     cluster (the rec dot, the elapsed readout, and the remaining-minutes word
+     below) tints to the warn role — the same colour `.notice[data-tone="info"]
+     .notice-glyph` and `.vu-meter__fill[data-zone="yellow"]` already use as
+     ink/fill directly on this app's surfaces, not a new pairing. Higher
+     specificity than the plain `.recorder-status` rule above (an attribute
+     selector added), so it wins in the same `@layer components` regardless of
+     source order. */
+  .recorder-status[data-near-limit="true"] {
+    color: var(--s-warn);
+  }
+  /* The remaining-minutes word `TakeCapMarker` renders (`take-cap-marker.tsx`).
+     No colour of its own — it inherits the warn tint from the container
+     above, the same way the rec dot and the timer do. */
+  .recorder-take-warn {
+    font-size: var(--p-text-xs);
+    font-weight: var(--p-weight-strong);
+    font-variant-numeric: tabular-nums;
+  }
   .recorder-toolbar {
     gap: var(--c-gap-items);
     padding-bottom: var(--p-space-3);

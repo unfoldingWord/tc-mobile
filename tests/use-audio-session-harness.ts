@@ -95,6 +95,10 @@ export interface RecorderMockShape {
   readScope: () => null;
   peekScope: () => null;
   meterFailed: boolean;
+  /** #1005's take-cap status, structural for the same reason as the rest of
+   * this shape — `{ nearLimit, remainingMs, reached }`, the real
+   * `TakeCapStatus`'s three fields, spelled out rather than imported. */
+  takeCap: { nearLimit: boolean; remainingMs: number; reached: boolean };
 }
 
 /**
@@ -124,6 +128,7 @@ export function makeRecorderMock(): RecorderMockShape {
     readScope: () => null,
     peekScope: () => null,
     meterFailed: false,
+    takeCap: { nearLimit: false, remainingMs: 20 * 60_000, reached: false },
   };
 }
 

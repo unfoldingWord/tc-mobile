@@ -14,7 +14,7 @@ import {
 } from "@/hooks/share-progress";
 import { encodeMp3 } from "@/lib/audio/mp3";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import { exportBookZip } from "@/lib/export/book";
+import { exportBookZip, memoryArchiveSink } from "@/lib/export/book";
 import {
   ENCODE_STEPS,
   type StepReporter,
@@ -402,7 +402,14 @@ describe("skipped — items that finished but contributed no audio (#996)", () =
       decodeMp3: () => Promise.reject(new Error("no MP3 clip expected")),
     };
     const { calls, onStep } = recorder();
-    await exportBookZip(bookId, nameChapter, codec, undefined, onStep);
+    await exportBookZip(
+      bookId,
+      nameChapter,
+      codec,
+      memoryArchiveSink(),
+      undefined,
+      onStep
+    );
     expect(calls).toEqual([
       [0, 3, 0],
       [1, 3, 0],
