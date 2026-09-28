@@ -11,6 +11,61 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-27 (afternoon to midnight; Docker 0.2.14 lanes) — v0.2.13 tester bugs fixed, #1003 streaming landed, O4 safety sweep
+
+### Shipped (merged to develop)
+
+- **v0.2.13 tester fixes:**
+  - #1115: the new book, new chapter and rename dialogs no longer close with no change on iOS (#1099). Confirm now keeps focus in the form.
+  - #1116: playback plays through the iPhone silent switch (#1111). Native `.playAndRecord` at launch, and `navigator.audioSession` switches type for recording and playback.
+- **O4:**
+  - #1117: the trim knob moves to the bar's bottom and Cut is centred under the selection (#1102).
+  - #1122: the segments and recorder header breadcrumbs now match the menu chips (#1105).
+- **Recorder:** #1118 forwards takeCap and draws the 15:00 warning (#1005).
+- **Share (#1003):**
+  - #1120: Share Book's zip streams to an OPFS spool (part a).
+  - #1132: a long chapter's MP3 encode streams (part b). This follows the DRI pick "B: stream only long chapters". The 48 MiB PCM threshold is provisional, and the meter is coarse above it.
+- **Hygiene and tests:**
+  - #1127: fixed develop's typecheck; #1118 and #1122 had collided on `takeCap`.
+  - #1126: #575 slice.
+  - #1128: #856.
+  - #1129: #719 slice.
+  - #1130: #838 lint boundary.
+  - #1133: #866 item 2.
+  - #1134: #833 item 3.
+- **Contributor merges tonight:** #1101, #1106–#1110, #1112–#1114, #1121, #1123, #1135.
+
+### O4 safety sweep (at the DRI's request, develop `4fc35dab`)
+
+- No open PR and no merge tonight touches `src/lib/design.ts`.
+- No merge edited only old-look code for a behaviour O4 needs.
+- **Held:**
+  - #1119: its 64px compact tile departs from the pinned 76×76 token (`docs/design/o4-design-system.md:152`), the requirements owner hasn't confirmed where Delete sits, and D20 goes stale. There's a BLOCKED note on the PR.
+  - #684, #685 and #701: pre-O4 drafts where a rebase risks dropping O4 strings and branches.
+- **For the requirements owner:** #1118's 15:00 warning tint now shows in O4 without a design sign-off.
+- **Close or narrow candidates, as recommendations:** #859, #927, #997 (re-scope after #1119), #286 (item 2 only). The #248 runbook still calls the O4 sheet "the drawer".
+
+### Process notes
+
+- **The same fix line in two PRs duplicated on merge.** #1116 and #1127 added one `takeCap` line one row apart, and the merge produced TS1117. The bench caught it. A develop fix now lives in one PR only.
+- **Merges after 21:00 ET** had a pre-merge gate: both lenses clean at the current head, CI green, no bench hold, no design/styles/components files for the overnight allowlist, and a scratch merge into develop running tsc, eslint and vitest.
+
+### Not run
+
+- No phone has run #1115, #1116 or #1132.
+- #1003's low-end phone measurement is still open.
+
+### Next
+
+1. The DRI rules on #1119's three O4 points, then it's rebased.
+2. #1131 follows #1119.
+3. #974 phone pass: #1099, silent mode and #923.
+4. The requirements owner looks at #1118's warning state and the #866 item 3 ring question.
+5. #838's remaining residual, #869 item 3.
+6. Cut v0.2.14 from develop.
+
+---
+
 ## 2026-09-27 (early; the 2026-09-26 day and evening Docker O4 session) — O4 flipped to default, #951 gate met, v0.2.13 on staging and published to testers
 
 ### Shipped
