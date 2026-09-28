@@ -61,9 +61,9 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    the app shows 0.2.12, but all data from 0.2.10 is gone"; see also
    [the flip side of "nothing leaves the phone"](#the-flip-side-of-nothing-leaves-the-phone)
    --> A fix that stopped an in-place Android update from silently
-   continuing to run the old build (#934) has merged but has not been
-   confirmed on a phone as of this writing — it has not been checked on
-   iOS at all. <!-- source: gh issue #923, comment 2026-09-27 ("the fix is
+   continuing to run the old build (#934) has merged, but it is not
+   confirmed on a phone as of this writing, nor checked on iOS at all. <!--
+   source: gh issue #923, comment 2026-09-27 ("the fix is
    in v0.2.13 ... Only the phone check is left: on an Android phone holding
    v0.2.12 recordings, install the v0.2.13 APK over it (don't uninstall),
    relaunch twice, and confirm the footer reads 0.2.13 and every recording
