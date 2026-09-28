@@ -39,16 +39,40 @@ export interface EncodeMp3Options {
   readonly onProgress?: (fraction: number) => void;
 }
 
-export function encodeMp3(
-  samples: Int16Array,
-  options: EncodeMp3Options = {}
-): Uint8Array<ArrayBuffer> {
+/**
+ * One continuing MP3 encode, fed PCM in pieces (#1003 part b).
+ *
+ * lamejs keeps its state across `encodeBuffer` calls and buffers a partial
+ * frame internally until the next call completes it, so how the PCM is cut
+ * into writes does not show in the output: the MP3 is byte-identical to one
+ * `encodeMp3(whole)` (`tests/mp3-stream.test.ts`, cuts on and off frame
+ * boundaries, empty and one-sample writes among them). Each write is still
+ * fed in 1152-sample slices, as `encodeMp3` always was, only so `onProgress`
+ * hears it as it goes — which is what keeps the worker's heartbeat alive
+ * through a long segment. What it holds between writes is lamejs's own
+ * state and the MP3 bytes produced so far.
+ */
+export interface Mp3StreamEncoder {
+  /**
+   * Encode `samples` after everything written before. `onProgress` hears how
+   * far through THIS write the encode has got, in (0, 1]. The samples are
+   * read during the call and not kept.
+   */
+  write(samples: Int16Array, onProgress?: (fraction: number) => void): void;
+  /** Flush and return the whole MP3. Once; nothing may be written after. */
+  finish(): Uint8Array<ArrayBuffer>;
+}
+
+export function createMp3StreamEncoder(
+  options: Omit<EncodeMp3Options, "onProgress"> = {}
+): Mp3StreamEncoder {
   const sampleRate = options.sampleRate ?? CANONICAL_SAMPLE_RATE;
   const bitrateKbps = options.bitrateKbps ?? DEFAULT_BITRATE_KBPS;
   const encoder = new Mp3Encoder(CANONICAL_CHANNELS, sampleRate, bitrateKbps);
 
   const chunks: Uint8Array[] = [];
   let total = 0;
+  let finished = false;
 
   const push = (buf: Uint8Array | Int8Array): void => {
     if (buf.length === 0) return;
@@ -59,19 +83,46 @@ export function encodeMp3(
     chunks.push(copy);
     total += copy.length;
   };
+  const refuseFinished = (): void => {
+    if (finished) throw new Error("This MP3 stream has already finished");
+  };
 
-  for (let i = 0; i < samples.length; i += SAMPLES_PER_FRAME) {
-    push(encoder.encodeBuffer(samples.subarray(i, i + SAMPLES_PER_FRAME)));
-    options.onProgress?.(Math.min(1, (i + SAMPLES_PER_FRAME) / samples.length));
-  }
-  push(encoder.flush());
+  return {
+    write(samples, onProgress) {
+      refuseFinished();
+      for (let i = 0; i < samples.length; i += SAMPLES_PER_FRAME) {
+        push(encoder.encodeBuffer(samples.subarray(i, i + SAMPLES_PER_FRAME)));
+        onProgress?.(Math.min(1, (i + SAMPLES_PER_FRAME) / samples.length));
+      }
+    },
+    finish() {
+      refuseFinished();
+      finished = true;
+      push(encoder.flush());
+      const out = new Uint8Array(total);
+      let offset = 0;
+      for (const c of chunks) {
+        out.set(c, offset);
+        offset += c.length;
+      }
+      chunks.length = 0;
+      return out;
+    },
+  };
+}
+
+/**
+ * Encode a whole buffer: one write and a finish on a fresh stream — the same
+ * lamejs calls this function has always made, so a whole encode's bytes are
+ * what they were before streaming existed.
+ */
+export function encodeMp3(
+  samples: Int16Array,
+  options: EncodeMp3Options = {}
+): Uint8Array<ArrayBuffer> {
+  const stream = createMp3StreamEncoder(options);
+  stream.write(samples, options.onProgress);
+  const out = stream.finish();
   options.onProgress?.(1);
-
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const c of chunks) {
-    out.set(c, offset);
-    offset += c.length;
-  }
   return out;
 }
