@@ -174,6 +174,7 @@ describe("the recorder header (#1105)", () => {
       playbackElapsedMs: 0,
       playbackRanOut: false,
       recorderState: "idle",
+      takeCap: { nearLimit: false, remainingMs: 20 * 60_000, reached: false },
       elapsedMs: 0,
       takeCap: { nearLimit: false, remainingMs: 20 * 60_000, reached: false },
       supported: true,
