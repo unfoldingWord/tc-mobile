@@ -7,57 +7,21 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 /**
  * The `react-hooks/refs` gate, asserted rather than described.
  *
- * #212: on `develop`, `src/hooks/use-save-take.ts` wrote
- * `onSavedRef.current = onSaved` during render — a real `react-hooks/refs`
- * violation — and `npm run lint` reported nothing. The rule was enabled the
- * whole time (`pluginReactHooks.configs.recommended.rules` in
- * `eslint.config.mjs`); it only started firing once PR #180 simplified the
- * `commit` callback. So the rule's own analysis was bailing out of that hook
- * body, silently, before #180 — and the bail-out is a property of the hook's
- * *shape*, not of whether the file happens to violate the rule.
+ * The blind spot tracked by #212 is a nested function inside `catch (cause)`
+ * that references the caught binding. The fixtures distinguish that shape
+ * from a plain render-time ref write and from a closure over a hoisted value.
+ * The minimal fixture does not require `useCallback`, `finally`, or `setState`.
  *
- * Bisecting the real file (delete/simplify, re-lint, repeat) found the
- * trigger: ANY nested function defined inside a `catch (cause) { ... }`
- * block that references the caught binding, anywhere in a hook's body,
- * silences `react-hooks/refs` for the WHOLE of that hook — including an
- * unrelated ref write earlier in the same body. `useCallback`, `finally`,
- * and `setState` specifically are all NOT required — confirmed by cutting
- * each away in turn and re-linting. A second hook in the same FILE is
- * unaffected, so the bail-out is scoped per hook function, not per file, and
- * a `catch` with no such closure does not bail on its own. That is narrower
- * and stranger than "try/catch/finally inside useCallback" (this issue's
- * working theory) — it is the closure-over-the-catch-binding specifically.
+ * These are synthetic probes under `.react-hooks-refs-probe/`, not a sweep of
+ * `src/`. They cannot prevent a live hook from combining a ref violation with
+ * the bail-out shape. Live occurrences require separate review.
  *
- * This test pins four probes. It does NOT, by itself, prevent a future hook
- * from combining a real render-time ref violation with the bail-out shape
- * below and shipping undetected — that would still slip past `react-hooks/refs`
- * exactly as #212 did, because the bail-out is a property of ESLint's own
- * analysis, not something a test on the side can intercept. What this file
- * pins is narrower and is what #212 actually asked for: (1) that the rule
- * still fires at all on an ordinary violation — so a future ESLint/plugin
- * upgrade, or a config accident, that disables `react-hooks/refs` outright is
- * caught here, in CI, rather than only in a reviewer's head — and (2) that
- * the specific bail-out shape is characterised, so a plugin fix that starts
- * reporting it again is noticed (the assertion flips) instead of the blind
- * spot silently narrowing further unremarked. Closing every LIVE instance of
- * the shape is explicitly out-of-band from what this file checks — it lints
- * only synthetic probes under `.react-hooks-refs-probe/`, never `src/` — so
- * that depends on review, not CI, and has needed it twice, not once: the
- * tree sweep in the third commit below found the shape in `use-save-take.ts`
- * (closed separately by #213); a fourth commit found the SAME shape still
- * live in a second hook, `useBooks`'s load effect (George round 3 on #433),
- * closed there by the same hoist. **Do not read a green run of this file as
- * `src/` having been swept clean — it has not been, and nothing here
- * re-sweeps it.** AGENTS.md and eslint.config.mjs both carry the same
- * trigger description beside the rule so a reviewer sees it without needing
- * to find this file.
+ * The silent cases characterize the plugin's blind spot, not desired behavior.
+ * If a plugin update reports those violations, the assertions and the matching
+ * notes in AGENTS.md and eslint.config.mjs need review.
  *
- *   - a plain render-time ref write, which MUST fire. This is the guarding
- *     assertion, proven non-vacuous by mutation (see the eslint.config.mjs
- *     edit below, done by hand and reverted) — it establishes that the check
- *     mechanism actually distinguishes a violation from silence, not that
- *     this specific probe reproduces #212's shape (it deliberately does not;
- *     the two probes below do).
+ *   - a plain render-time ref write, which MUST fire, guards against the rule
+ *     being disabled. It deliberately does not contain the bail-out shape.
  *   - the MINIMAL bisected trigger: the same render-time ref write, plus
  *     nothing but a `catch (cause)` whose body defines a closure referencing
  *     `cause`. No `useCallback`, no `finally`, no `setState` — so a later
@@ -179,11 +143,6 @@ describe("react-hooks/refs — what the gate actually catches", () => {
   // hits the same cost spawning tsc). 15s leaves headroom without hiding a
   // genuine hang.
   it("fires on a plain render-time ref write", () => {
-    // The guarding assertion. Proven by mutation, not just by running once:
-    // with `"react-hooks/refs": "off"` spliced into this probe's own ESLint
-    // invocation (done by hand — see the PR body for the exact diff and the
-    // failure it produced), this assertion fails, so the case is not
-    // vacuously true.
     const rules = lintProbe(
       "plain-write",
       `import { useRef } from "react";
@@ -199,14 +158,9 @@ export function usePlainRefsProbe(value: number) {
   }, 15000);
 
   it("stays silent on the MINIMAL bisected bail-out trigger (#212's blind spot)", () => {
-    // The reduction, not the realistic shape: a render-time ref write plus
-    // nothing else but a `catch (cause)` block whose body defines a closure
-    // that references `cause`. No `useCallback`, no `finally`, no
-    // `setState` — each was cut away in turn against the real file and the
-    // bail-out held every time. This is the fixture that must stay exactly
-    // this small: trimming the closure's reference to `cause`, or the catch
-    // block itself, makes the guarding case above start failing here
-    // instead — which is the point, not a bug in the test.
+    // A render-time ref write plus a catch-local closure over `cause`.
+    // Keep the fixture minimal so the caught binding is the distinguishing
+    // feature, without `useCallback`, `finally`, or `setState`.
     //
     // CHARACTERIZATION, not a requirement — records what
     // eslint-plugin-react-hooks 7.1.1 actually does with this shape. If a
@@ -319,10 +273,7 @@ export function useBailedRefsProbe(onSaved?: () => void) {
     // after the round-3 fix: a `useEffect` running an async IIFE, `catch
     // (cause)` hoisting `message` before a `setState` updater that
     // references `message`, not `cause` — plus a render-time ref write
-    // elsewhere in the hook, which MUST still fire. Proven by mutation: with
-    // the updater's `message` reverted to reference `cause` directly (the
-    // pre-hoist shape), this assertion fails — see the PR body / triage
-    // comment for the exact reversion and the failure it produced.
+    // elsewhere in the hook, which MUST still fire.
     const rules = lintProbe(
       "hoisted-cause-still-fires",
       `import { useEffect, useRef, useState } from "react";

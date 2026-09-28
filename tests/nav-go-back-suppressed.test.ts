@@ -2,46 +2,32 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { matchingBraceClose, stripComments } from "./support";
+
 /**
  * `goBack` refuses while a SUPPRESSED traversal is in flight (George r3 P2 on
  * PR 634, #374).
  *
  * The travel guard (`beginBack`) refuses a second `history.back()` only for
- * issuers it tracks. `commitCloseRecorder` and `trap-forward`'s cancel are
- * raw issuers outside it on purpose (`travel-guard.ts`, the third-issuer
- * paragraph): they set `suppressPop` and call `history.back()` themselves,
- * and their `popstate` lands a task later. The on-screen header Back is
+ * issuers it tracks. `trap-forward`'s cancel is a raw issuer outside it
+ * (`travel-guard.ts`; the programmatic recorder close was the other until
+ * #763 folded it in): it sets `suppressPop` and calls `history.back()`
+ * itself, and its `popstate` lands a task later. The on-screen header Back is
  * disabled for that window, so `goBack` could never run inside it — until the
  * hardware Back (#374) became a `goBack` issuer that nothing disables. Two
  * `history.back()` calls before the first lands is the coalescing hazard #493
  * closed for the tracked issuers; this is the same rule for the untracked one.
  *
- * Same shape as `nav-commit-close-rearm.test.ts`, for the same reason: the
- * Vitest suite has no renderer (AGENTS.md: no jsdom), so `useNavStack`'s
- * callbacks cannot be driven; the gate reads the hook's CODE, comments
- * stripped, and isolates `goBack`'s body so a match elsewhere in the file
+ * Like `nav-commit-close-rearm.test.ts`, this gate reads the hook's CODE
+ * rather than driving `useNavStack`'s callbacks. It strips comments and
+ * isolates `goBack`'s body so a match elsewhere in the file
  * cannot satisfy it. Mutation that must go red: delete the `suppressPop`
  * check, or move it after `beginBack`.
  */
 describe("goBack refuses while a suppressed traversal is outstanding (George r3 P2, PR 634)", () => {
   const sourceUrl = new URL("../src/hooks/use-nav-stack.ts", import.meta.url);
 
-  const stripComments = (text: string) =>
-    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
   const code = stripComments(readFileSync(sourceUrl, "utf8"));
-
-  const matchingBraceClose = (body: string, openIndex: number): number => {
-    let depth = 0;
-    for (let i = openIndex; i < body.length; i++) {
-      if (body[i] === "{") depth++;
-      else if (body[i] === "}") {
-        depth--;
-        if (depth === 0) return i;
-      }
-    }
-    return -1;
-  };
 
   const declStart = code.indexOf("const goBack = useCallback(");
   if (declStart === -1) {

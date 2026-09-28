@@ -9,13 +9,9 @@ import {
 /**
  * The failure sink, and only the sink.
  *
- * What is NOT covered here: the boundary that feeds it. `ErrorBoundary` renders
- * and `componentDidCatch` fires only in a browser, and this repo has no
- * renderer at all (`vitest.config.ts` sets `environment: "node"`, and there is
- * no jsdom or testing-library in `package.json`). Adding one for a single
- * component is a dependency this project has declined before, so the boundary's
- * render and the two `window` listeners in `src/app/main.tsx` are verified by
- * hand in a browser and recorded on the PR — not here, and not claimed here.
+ * This suite calls the sink directly. It does not exercise ErrorBoundary's
+ * `componentDidCatch` lifecycle or the browser's error/rejection listeners.
+ * The static render harness does not drive those client lifecycle events.
  *
  * The module holds process-wide state (the subscriber set, and the last cause
  * seen), so every case installs through the `subscribe` helper below — which

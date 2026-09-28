@@ -9,11 +9,12 @@ import {
 import { quiesceTranscodeSweep } from "@/hooks/finish-transcode";
 import { isTerminalOpenRefusal } from "@/lib/storage/db";
 import { reportFailure } from "@/hooks/report-failure";
+import { useDesign } from "@/hooks/use-design";
 import { Control } from "./control";
 import { Icon } from "./icon";
 import { Notice } from "./notice";
 import { SendLogControl } from "./send-log-control";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -75,9 +76,8 @@ const TEACH_ID = "app-failed-teach";
  * screen built for non-readers to suggest it. The row is already lost in that
  * state and no amount of holding retrieves it, so Restart reloads: that is the
  * pre-#440 behaviour, and reloading is also what picks up the newer build this
- * copy stepped aside for. **The three other surfaces that still offer a retry
- * after a yield — this screen's Send, and the panel's Send and Clear — are #455
- * and are deliberately not swept here.**
+ * copy stepped aside for. The Send and failure-log panel controls also surface
+ * terminal refusals as restart-only (#455).
  *
  * **There is still deliberately no timeout** (George R4 P2-3, decided by the DRI
  * on 2026-09-17: `busy` yes, timeout no, and unchanged by this round). The
@@ -135,19 +135,25 @@ async function reload(): Promise<boolean> {
  * quietly went un-busy while nothing had changed would be the dead button again,
  * wearing a spinner first.
  */
-function RestartControl() {
+function RestartControl({ className }: { className?: string }) {
   const [restarting, setRestarting] = useState(false);
   // The reload was declined because the crash row was refused by storage. The
   // screen stays, and it says why: a control that returns to idle having done
   // nothing is indistinguishable from a dead button.
   const [held, setHeld] = useState(false);
+  // O4 draws this wide button with the restart glyph, not retry's circular
+  // arrow (workbench state 18) — the same swap `PermissionPanel`'s O4 branch
+  // already makes for its own wide Restart. Presentation only: the current
+  // look keeps `retry`, unchanged.
+  const { design } = useDesign();
   return (
     <>
       <Control
-        icon="retry"
+        icon={design === "o4" ? "restart" : "retry"}
         label={restarting ? strings.appReloading : strings.appReload}
         variant="primary"
-        size={30}
+        size={className ? 34 : 30}
+        className={className}
         busy={restarting}
         onClick={() => {
           setHeld(false);
@@ -252,6 +258,24 @@ export class ErrorBoundary extends Component<
   override render(): ReactNode {
     if (!this.state.failed) return this.props.children;
 
+    return <CrashScreen />;
+  }
+}
+
+/**
+ * The fallback itself, split out of `ErrorBoundary.render` only so it can read
+ * `useDesign()` — a class cannot call a hook. The current look's markup below
+ * is unchanged by the split; the O4 branch is state 18 (#948).
+ */
+function CrashScreen() {
+  const { design } = useDesign();
+  if (design === "o4") {
+    // Same dialog, names, focus target, Restart and the SAME `SendLogControl`
+    // (#456) as the current look; only the paint differs. The workbench's
+    // "Recordings are safe" line is not here: a take held in RAM after a
+    // failed save is gone by the time this screen shows (see `ErrorBoundary`'s
+    // docblock), so the line would not always be true. Nor is its speaker
+    // button: there is no prompt-audio path to wire it to.
     return (
       <main className="app-shell grid h-full place-items-center">
         <div
@@ -259,31 +283,72 @@ export class ErrorBoundary extends Component<
           aria-modal="true"
           aria-labelledby={TITLE_ID}
           aria-describedby={TEACH_ID}
-          className="flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
+          className="o4-err flex w-full max-w-md flex-col items-center px-[22px] text-center"
         >
-          <span className="text-live">
-            <Icon name="alert" size={56} />
+          <span
+            className="o4-err-circle o4-err-circle--warn"
+            aria-hidden="true"
+          >
+            <Icon name="alert" size={72} />
           </span>
 
           <p
             id={TITLE_ID}
             ref={focusOnMount}
             tabIndex={-1}
-            className="t-title text-ink"
+            className="o4-err-title text-ink"
           >
             {strings.appFailed}
           </p>
 
-          <p id={TEACH_ID} className="text-ink-muted text-[13px]">
+          <p
+            id={TEACH_ID}
+            className="text-ink-muted text-[length:var(--p-text-md)]"
+          >
             {strings.appReloadTeach}
           </p>
 
-          <RestartControl />
+          <RestartControl className="o4-err-wide" />
 
-          {/* The log's only door once the tree is gone. */}
           <SendLogControl />
         </div>
       </main>
     );
   }
+  return (
+    <main className="app-shell grid h-full place-items-center">
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby={TITLE_ID}
+        aria-describedby={TEACH_ID}
+        className="flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
+      >
+        <span className="text-live">
+          <Icon name="alert" size={56} />
+        </span>
+
+        <p
+          id={TITLE_ID}
+          ref={focusOnMount}
+          tabIndex={-1}
+          className="t-title text-ink"
+        >
+          {strings.appFailed}
+        </p>
+
+        <p
+          id={TEACH_ID}
+          className="text-ink-muted text-[length:var(--p-text-md)]"
+        >
+          {strings.appReloadTeach}
+        </p>
+
+        <RestartControl />
+
+        {/* The log's only door once the tree is gone. */}
+        <SendLogControl />
+      </div>
+    </main>
+  );
 }

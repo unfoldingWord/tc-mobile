@@ -3,9 +3,20 @@ import { act, createElement, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
+
+import { restingErase } from "./support";
+
+/**
+ * The erase surface `App` now owns and passes down (#160, L-12). Resting: this
+ * suite never erases, and a stub that answers "no erase in flight" is what the
+ * screen's Back and confirm gates read. Written here rather than mocked at the
+ * module, because the screen takes it as a PROP now — a module mock would
+ * intercept nothing. Shared fixture (#856 item 3, `tests/support.ts`).
+ */
+const erase = restingErase();
 
 const view = {
   bookName: "Book",
@@ -13,8 +24,6 @@ const view = {
   ordinal: 1,
   finished: false,
   hasClip: false,
-  peaks: null,
-  lengthSamples: 0,
   samples: new Int16Array(),
 };
 vi.mock("@/hooks/use-recorder-segment", () => ({
@@ -69,17 +78,14 @@ async function setup(recorderState: UseAudioSession["recorderState"]) {
     error: null,
     recorderError: null,
     meterFailed: false,
+    takeCap: { nearLimit: false, remainingMs: 20 * 60_000, reached: false },
     playTake: vi.fn(),
     playBuffer: vi.fn(),
     stopBuffer: vi.fn(),
     readPlaybackPosition: () => null,
-    audioNeedsGesture: () => false,
     startRecording: vi.fn(),
-    pauseRecording: vi.fn(),
-    resumeRecording: vi.fn(),
     stopRecording: vi.fn(),
     retryDecode: vi.fn(),
-    previewCapture: vi.fn(),
     leave: vi.fn(),
     primeAudioContext: vi.fn(),
     readLevel: () => 0,
@@ -98,6 +104,7 @@ async function setup(recorderState: UseAudioSession["recorderState"]) {
         clipboard: null,
         onClipboardChange: vi.fn(),
         databaseUnreachable: false,
+        erase,
         onExit,
         onRequestBack: () => {
           void ref.current?.requestClose();

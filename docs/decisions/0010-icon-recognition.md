@@ -166,7 +166,7 @@ did not know_ counts, and the result column applies the rule above.
 | `play`                 | object     |               |               |        |
 | `trash`                | object     |               |               |        |
 | `zoom-in`              | object     |               |               |        |
-| `menu`                 | convention |               |               |        |
+| `more` (⋮)             | convention |               |               |        |
 | `check`                | convention |               |               |        |
 | `selection`            | convention |               |               |        |
 | `scissors`             | convention |               |               |        |
@@ -189,9 +189,16 @@ did not know_ counts, and the result column applies the rule above.
   something once an edit has been made, and the pencil sits in the same row menu as
   Finished and Erase, where it would be a third question on one menu. They
   stay in the claim's table; a later run can add them.
-- The pivot plan and #249 write the row menu as `⋮`; the tree draws it with the
+- The pivot plan and #249 write the row menu as `⋮`; the tree drew it with the
   `menu` glyph (three rules), the same glyph as the screen-level `≡`. The
   protocol tests the glyph as drawn.
+- 2026-09-23 (#589, #683; D1 decided by the DRI, @sethstoll, in
+  https://github.com/unfoldingWord/tc-mobile/pull/683#issuecomment-5787553352 —
+  "please use kebab on objects and hamburger menu for global"): an object's own menu (a book,
+  a chapter, a segment) opens from `⋮` (`more`); `≡` stays for the global Books
+  menu. Protocol row 3 (the Segments screen's top corner, the chapter menu) and
+  its sheet glyph now show `⋮`, the glyph as drawn. The recorder's `≡` is
+  unchanged and outside the ten.
 
 ## Consequences
 

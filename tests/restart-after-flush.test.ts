@@ -8,15 +8,9 @@ import { restartAfterFlush } from "@/lib/restart-after-flush";
  * document while a failure-log write is in flight — applied to the second
  * full-screen restart this app has.
  *
- * What this can and cannot prove, same limits as `tests/error-boundary.test.ts`:
- * there is no renderer here (`vitest.config.ts` sets `environment: "node"`, no
- * jsdom), so `SaveFailed`'s button click, its `busy` paint and the relabel to
- * `strings.appReloading` are NOT exercised below — only read and stated, not
- * tested. `window.location.reload()` itself has no seam in a Node suite either
- * way. `restartAfterFlush` takes the reload as a plain callback for exactly
- * this reason: the ordering (flush before reload) and the re-entrancy guard (a
- * second tap while one is already in flight) are real logic, independent of
- * the DOM, and are what this file covers.
+ * These cases call `restartAfterFlush` with plain callbacks. They cover flush
+ * ordering and the already-restarting guard, without rendering `SaveFailed`,
+ * clicking its button, checking its busy state or reloading a browser page.
  */
 describe("restartAfterFlush", () => {
   it("awaits the flush before reloading", async () => {

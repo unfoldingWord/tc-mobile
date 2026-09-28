@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  bumpStoragePressure,
   readStorageEstimate,
   storageEstimateSourceOf,
+  storagePressureGeneration,
   type StorageEstimateSource,
 } from "@/hooks/use-storage-pressure";
 import {
   CRITICAL_PRESSURE_FREE_BYTES,
   CRITICAL_PRESSURE_FREE_PERCENT,
+  freeByteCount,
   LOW_PRESSURE_FREE_BYTES,
   LOW_PRESSURE_FREE_PERCENT,
   MAX_SAFE_BYTE_COUNT,
@@ -27,12 +30,9 @@ import {
  * (`tests/storage-persistence.test.ts`). No jsdom, no real
  * `navigator.storage`.
  *
- * NOT covered here, and not claimed anywhere: `useStoragePressure` itself —
- * this repo has no renderer, the same limitation `useStoragePersistence`'s and
- * `useEraseSegment`'s docblocks name — and what a real Android device actually
- * reports for `usage`/`quota`. The thresholds below are pinned AS WRITTEN,
- * which is a claim about this module, not about any device: they are #247's
- * proposal and no field reading exists to tune them against.
+ * Not covered here: `useStoragePressure` effects or real device readings of
+ * `usage`/`quota`. The thresholds below are pinned as written; these tests
+ * do not establish that the thresholds are appropriate on a device.
  *
  * Every threshold is asserted on BOTH sides of its `<`, and every disjunct is
  * asserted with the other one deliberately not tripping, so a `<` -> `<=` or
@@ -236,6 +236,36 @@ describe("storagePressure", () => {
       // Negative headroom is worse than none, never an unknown and never ok.
       expect(storagePressure(1_200_000_000, 1_000_000_000)).toBe("critical");
     });
+  });
+});
+
+describe("freeByteCount (#1010)", () => {
+  // The free-space figure the transcode sweep compares across two readings to
+  // decide whether storage has freed since a segment failed. It must accept
+  // exactly the readings `storagePressure` accepts, or the two would disagree
+  // about what a usable estimate is.
+  it("is quota minus usage for a usable reading", () => {
+    expect(freeByteCount(80, 100)).toBe(20);
+  });
+
+  it("is negative, not unknown, when usage exceeds quota", () => {
+    expect(freeByteCount(120, 100)).toBe(-20);
+  });
+
+  it("is undefined when either figure is missing", () => {
+    expect(freeByteCount(undefined, 100)).toBeUndefined();
+    expect(freeByteCount(100, undefined)).toBeUndefined();
+  });
+
+  it("is undefined for a zero quota, the same trap storagePressure names", () => {
+    expect(freeByteCount(0, 0)).toBeUndefined();
+  });
+
+  it("is undefined for a figure storagePressure would not judge", () => {
+    expect(freeByteCount(-1, 100)).toBeUndefined();
+    expect(freeByteCount(Number.NaN, 100)).toBeUndefined();
+    expect(freeByteCount(0, MAX_SAFE_BYTE_COUNT + 1)).toBeUndefined();
+    expect(storagePressure(0, MAX_SAFE_BYTE_COUNT + 1)).toBe("unknown");
   });
 });
 
@@ -443,5 +473,53 @@ describe("storageEstimateSourceOf", () => {
       }
     );
     expect(storageEstimateSourceOf(scope)).toBeUndefined();
+  });
+});
+
+describe("bumpStoragePressure", () => {
+  /**
+   * #542 Part A (DRI decision, 2026-09-24): "build the module-scope
+   * estimate() invalidation now, bumped by book delete/create, without a
+   * device reading." `bumpStoragePressure` is that invalidation — a
+   * module-scope generation counter, in the same shape `mp3-codec.ts`'s
+   * encoder health and `failure-log.ts`'s log count already use — that
+   * `useStoragePressure` (untestable here without a DOM renderer, same
+   * limitation as every other effect in this module) takes as an effect
+   * dependency so a bump makes it re-read `estimate()` without a remount.
+   *
+   * This is the whole of what can be pinned in Node: the counter's own
+   * contract. `storagePressureGeneration()` exists only to make that
+   * possible — see its own docblock.
+   *
+   * Deltas, not absolute values, throughout: `generation` is module-scope
+   * state shared by every test in this file (and every other `it` in this
+   * `describe`), so an assertion on an absolute count would be order-
+   * dependent (#542).
+   */
+
+  it("advances the generation by exactly one per call", () => {
+    const before = storagePressureGeneration();
+    bumpStoragePressure();
+    expect(storagePressureGeneration()).toBe(before + 1);
+  });
+
+  it("is monotonic across repeated calls — never resets, never decreases", () => {
+    const before = storagePressureGeneration();
+    bumpStoragePressure();
+    bumpStoragePressure();
+    bumpStoragePressure();
+    expect(storagePressureGeneration()).toBe(before + 3);
+  });
+
+  it("tolerates being called more than once for one logical write, harmlessly", () => {
+    // The idempotency property this needs: a retried book create/delete that
+    // calls this twice must not corrupt anything or throw — it costs one
+    // extra `estimate()` read in whichever mount is live, nothing else.
+    const before = storagePressureGeneration();
+    expect(() => {
+      bumpStoragePressure();
+      bumpStoragePressure();
+    }).not.toThrow();
+    expect(storagePressureGeneration()).toBe(before + 2);
   });
 });

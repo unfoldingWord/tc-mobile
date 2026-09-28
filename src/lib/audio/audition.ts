@@ -82,9 +82,7 @@ export function auditionPlan(
   // Both bounds are `>` tests rather than a `Number.isFinite` special case: NaN
   // (which survives a clamp, so `viewportWindow`'s own clamping does not rule it
   // out) fails each of them and falls to the whole-buffer branch by the same
-  // rule a resting line does. That is the `!(x > 0)` shape `meter.ts` and
-  // `captureWindow` already use; an explicit finite guard beside it was dead
-  // code — the mutation run for this file could not kill it.
+  // rule a resting line does. No separate finite-value guard is needed.
   const from = Math.max(0, Math.min(centerlineSample, workingLength));
   return from > 0 && from < workingLength
     ? { range: { start: from, end: workingLength }, source: "line" }

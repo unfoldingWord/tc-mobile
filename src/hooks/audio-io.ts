@@ -12,10 +12,13 @@ import {
   CANONICAL_SAMPLE_RATE,
   canonicalFrameCount,
   floatToInt16,
+  INT16_MAX,
   int16ToFloatInto,
 } from "@/lib/audio/format";
+import { measureLevel } from "@/lib/audio/level";
 import { meterReadable, rmsLevel } from "@/lib/audio/meter";
 
+import { type ProbeSource, withAudioProbe } from "./audio-probe";
 import { reportFailure } from "./report-failure";
 
 /**
@@ -35,6 +38,89 @@ const CANDIDATE_MIME_TYPES = [
   "audio/mp4",
   "audio/aac",
 ] as const;
+
+/**
+ * WebKit's Audio Session API type values a page can declare
+ * (https://developer.mozilla.org/en-US/docs/Web/API/AudioSession/type,
+ * https://github.com/w3c/audio-session/blob/main/explainer.md). Only the two
+ * this module uses are ever assigned; the rest of the union exists so an
+ * assignment elsewhere can't silently widen to a bare `string`.
+ */
+type AudioSessionType =
+  | "auto"
+  | "playback"
+  | "transient"
+  | "transient-solo"
+  | "ambient"
+  | "play-and-record";
+
+/** The shape of `navigator.audioSession` this module relies on. */
+interface WebKitAudioSession {
+  type: AudioSessionType;
+}
+
+/**
+ * `navigator.audioSession`, or `undefined` on every engine that does not
+ * implement it — Chrome, Firefox, and Android's WebView, plus Safari before
+ * 16.4. Not in any TS DOM lib as of this writing, hence the cast; reading it
+ * through one helper keeps that cast in one place.
+ */
+function getAudioSession(): WebKitAudioSession | undefined {
+  if (typeof navigator === "undefined") return undefined;
+  return (navigator as unknown as { audioSession?: WebKitAudioSession })
+    .audioSession;
+}
+
+/**
+ * Whether this engine exposes `navigator.audioSession` at all (#1111). Not
+ * used by the two setters below — they already feature-check themselves — but
+ * exported so a caller (or a test) can tell "nothing happened because this
+ * engine has no such API" apart from "the call silently did nothing else".
+ */
+export function hasAudioSessionApi(): boolean {
+  return getAudioSession() !== undefined;
+}
+
+/**
+ * Declare this page's audio as PLAYBACK (#1111): WebKit then routes it past
+ * the hardware silent/ring switch the way a music or podcast app is, rather
+ * than following the switch the way its own `"auto"`/`"ambient"` default
+ * does. The DRI's decision on #1111 accepts the paired trade-off documented
+ * for `"playback"` — it is exclusive, so it pauses another app's playback
+ * audio rather than mixing with it, the same as a music or podcast app.
+ *
+ * Called from `playSamples` below, on every Play — cheap and idempotent, so
+ * reasserting it costs nothing and repairs a session a previous recording
+ * left on `"play-and-record"` (see `setRecordAudioSession`) without this
+ * module needing its own "recording just ended" hook.
+ *
+ * Feature-checked and a no-op wherever `navigator.audioSession` does not
+ * exist: every engine besides Safari/WebKit 16.4+, and every already-shipped
+ * page load before this change. Never throws.
+ */
+export function setPlaybackAudioSession(): void {
+  const session = getAudioSession();
+  if (session) session.type = "playback";
+}
+
+/**
+ * Declare this page's audio as PLAY-AND-RECORD for the life of a take
+ * (#1111): the microphone is about to go live (`use-recorder.ts`'s
+ * `start()`, called just before `getUserMedia`), and WebKit's `"playback"`
+ * type above is documented for playback only — recording under it is the
+ * "if needed" case #1111 asks this module to research and cover. Not
+ * reverted explicitly on stop: the app's own audio session (`lib/audio/session.ts`)
+ * refuses a playback claim while the microphone holds the floor, so nothing
+ * can play while this type is live, and the next Play reasserts `"playback"`
+ * (`setPlaybackAudioSession` above) before it plays.
+ *
+ * Feature-checked and a no-op wherever `navigator.audioSession` does not
+ * exist. Never throws.
+ */
+export function setRecordAudioSession(): void {
+  const session = getAudioSession();
+  if (session) session.type = "play-and-record";
+}
 
 export function isRecordingSupported(): boolean {
   return (
@@ -340,6 +426,30 @@ export interface LevelTap {
 }
 
 /**
+ * Stop every track on `stream`, even when one `stop()` throws (#479).
+ *
+ * A bare `getTracks().forEach((t) => t.stop())` ends at the first throw: the
+ * tracks after it stay live, and the throw escapes into a caller whose
+ * contract is a synchronous, total microphone release (`cancel()` and
+ * `leave()`). Each throw is reported through the funnel under `context` and
+ * the loop moves on; nothing is rethrown, so the caller's own cleanup after
+ * this call still runs.
+ *
+ * `MediaStreamTrack.stop()` is not specified to throw, and no engine has been
+ * seen to throw there. This is insurance for a native call on a dying audio
+ * stack, the same threat model as `cancel()`'s guarded `recorder.stop()`.
+ */
+export function stopTracks(stream: MediaStream, context: string): void {
+  for (const track of stream.getTracks()) {
+    try {
+      track.stop();
+    } catch (cause) {
+      reportFailure(cause, context);
+    }
+  }
+}
+
+/**
  * Open a read-only level tap on a live capture stream.
  *
  * The Web Audio graph stays inside this boundary; the meter math is imported
@@ -378,7 +488,7 @@ export function createLevelTap(stream: MediaStream): LevelTap {
     }
   };
   // Stop the cloned tracks; the recorder's own stream is left untouched.
-  const stopClone = () => tapStream.getTracks().forEach((t) => t.stop());
+  const stopClone = () => stopTracks(tapStream, "recorder-tap-clone-stop");
 
   let source: MediaStreamAudioSourceNode | undefined;
   let analyser: AnalyserNode | undefined;
@@ -469,10 +579,64 @@ export function createLevelTap(stream: MediaStream): LevelTap {
  * interchangeable — concatenating an iPhone's aac take with an Android's opus
  * take is a buffer join, not a codec problem.
  */
-export async function decodeToCanonical(blob: Blob): Promise<Int16Array> {
+export async function decodeToCanonical(
+  blob: Blob,
+  probeSource: ProbeSource = "capture"
+): Promise<Int16Array> {
   const arrayBuffer = await blob.arrayBuffer();
   const decoded = await getAudioContext().decodeAudioData(arrayBuffer);
+  probeDecode(decoded, probeSource);
   return toCanonical(decoded);
+}
+
+/**
+ * The capture track's settings fields that bear on level, for the opt-in probe
+ * (#555's `channelCount` question). Device and group ids are left out: they
+ * identify hardware and say nothing about level.
+ */
+const PROBED_TRACK_SETTINGS = [
+  "channelCount",
+  "sampleRate",
+  "sampleSize",
+  "autoGainControl",
+  "echoCancellation",
+  "noiseSuppression",
+  "latency",
+] as const;
+
+/** Record what the device granted for a capture stream, when the probe is on. */
+export function probeCaptureTrack(stream: MediaStream): void {
+  withAudioProbe(() => {
+    const tracks = stream.getAudioTracks();
+    const granted = tracks[0]?.getSettings() as
+      Record<string, unknown> | undefined;
+    const settings: Record<string, unknown> = { audioTracks: tracks.length };
+    for (const key of PROBED_TRACK_SETTINGS) settings[key] = granted?.[key];
+    return { stage: "capture-track", settings };
+  });
+}
+
+/**
+ * Every channel the decoder returned, measured separately and BEFORE the
+ * canonical downmix — the reading that shows a two-channel capture with a dead
+ * second channel, which the downmix would otherwise fold into a quiet mono
+ * take with no trace of why (#555).
+ */
+function probeDecode(decoded: AudioBuffer, source: ProbeSource): void {
+  withAudioProbe(() => {
+    const perChannel = [];
+    for (let c = 0; c < decoded.numberOfChannels; c++) {
+      perChannel.push(measureLevel(decoded.getChannelData(c), 1));
+    }
+    return {
+      stage: "decode",
+      source,
+      channels: decoded.numberOfChannels,
+      sampleRate: decoded.sampleRate,
+      frames: decoded.length,
+      perChannel,
+    };
+  });
 }
 
 /**
@@ -483,16 +647,20 @@ export async function decodeToCanonical(blob: Blob): Promise<Int16Array> {
  * injected function rather than doing it.
  *
  * NOT the clip as recorded: the decode carries the encoder's priming at its
- * head (1105 samples on a decoder that trims nothing — measured in Chromium)
- * and granule padding at its tail. EVERY consumer must pass the result through
- * `fitMp3Decode` (`lib/audio/mp3-align.ts`) with the clip's bytes and
- * `frameCount` — the chapter export, playback and the recorder's edit buffer
- * all do — or the recording plays late and, once saved, loses its last ~25 ms.
+ * head and granule padding at its tail (the exact sample counts are
+ * `lib/audio/mp3-align.ts`'s, pinned there). EVERY consumer must pass the
+ * result through `fitMp3Decode` (`lib/audio/mp3-align.ts`) with the clip's
+ * bytes and `frameCount` — the chapter export, playback and the recorder's
+ * edit buffer all do — or the recording plays late and, once saved, loses
+ * its last ~25 ms.
  */
 export async function decodeMp3ToCanonical(
   mp3: Uint8Array<ArrayBuffer>
 ): Promise<Int16Array> {
-  return decodeToCanonical(new Blob([mp3], { type: "audio/mpeg" }));
+  return decodeToCanonical(
+    new Blob([mp3], { type: "audio/mpeg" }),
+    "stored-mp3"
+  );
 }
 
 async function toCanonical(buffer: AudioBuffer): Promise<Int16Array> {
@@ -641,6 +809,11 @@ export async function playSamples(
      * in the shared sink (#104, George R1).
      */
     isStillCurrent: () => boolean;
+    /**
+     * Which path produced `samples`, for the opt-in level probe only
+     * (`hooks/audio-probe.ts`). Changes nothing about what is played.
+     */
+    source?: ProbeSource;
   }
 ): Promise<PlaybackHandle> {
   // SINGLE EXIT for the #469 resume-bound row (dev lead pick, option A on the
@@ -670,6 +843,13 @@ export async function playSamples(
   let hadRejection = false;
   let capturedCause: unknown;
   let unusableError: Error | undefined;
+
+  // #1111: declare this claim as playback BEFORE anything else, so a session
+  // a previous recording left on "play-and-record" is corrected the instant a
+  // Play is pressed, not only on the recorder's own stop path. Synchronous,
+  // feature-checked and a no-op on every non-WebKit engine — see the docblock
+  // on `setPlaybackAudioSession`.
+  setPlaybackAudioSession();
 
   const resumeTimedOut = await raceAudioResume("playback-resume", (cause) => {
     hadRejection = true;
@@ -749,6 +929,29 @@ export async function playSamples(
       0,
       Math.min(options.offsetSeconds ?? 0, buffer.duration)
     );
+    // Measured here, past both supersession bails and both fail-closed gates:
+    // a reading exists only for a buffer that is about to sound. `level`
+    // covers only what `source.start(0, offset)` sounds, from `startFrame`
+    // on, so a scrubbed play of a quiet tail reads quiet (Frank round 1 on
+    // #716). `withAudioProbe` drops any throw, so this cannot fail the play.
+    withAudioProbe(() => {
+      const startFrame = Math.min(
+        samples.length,
+        Math.floor(offset * buffer.sampleRate)
+      );
+      return {
+        stage: "play",
+        source: options.source ?? "unlabelled",
+        level: measureLevel(samples.subarray(startFrame), INT16_MAX),
+        viewOffset: samples.byteOffset / Int16Array.BYTES_PER_ELEMENT,
+        startFrame,
+        backingFrames: samples.buffer.byteLength / Int16Array.BYTES_PER_ELEMENT,
+        offsetSeconds: offset,
+        contextState: ctx.state,
+        contextRate: ctx.sampleRate,
+        destinationChannels: ctx.destination.channelCount,
+      };
+    });
     const startedAt = ctx.currentTime;
     let stopped = false;
 

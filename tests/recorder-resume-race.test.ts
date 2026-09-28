@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { stripComments } from "./support";
+
 /**
  * `raceAudioResume` bounds the one blocking `await resumeAudioContext()` in
  * `start()` (use-recorder.ts, between `getUserMedia` and `new MediaRecorder`,
@@ -50,7 +52,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * `tests/encoder-deadline.test.ts`'s `vi.useFakeTimers()` /
  * `vi.advanceTimersByTimeAsync` pattern is unchanged. Bare
  * `setTimeout`/`clearTimeout` (never `window.*`) is what makes this testable
- * at all in this Node-only suite (no jsdom).
+ * with this file's fake timers in Node.
  */
 
 const { reportFailure } = vi.hoisted(() => ({
@@ -310,31 +312,12 @@ describe("raceAudioResume (#108, moved to audio-io.ts for #469)", () => {
 });
 
 /**
- * The wiring, not just the helper (#108, Frank round 1b P2; relocated for
- * #469).
+ * The wiring, not just the helper (#108, #469).
  *
- * Every case above proves `raceAudioResume` behaves once it is CALLED — it
- * says nothing about whether `start()` still calls it, or how. This repo has
- * no renderer, so `start()` (a `useCallback` inside `useRecorder()`) cannot be
- * exercised directly (see `tests/foreground-resume.test.ts`'s own note on
- * why `armForegroundResume` had to be extracted as a plain function to be
- * testable at all). A revert of the one-line call-site change in `start()` —
- * back to a bare `await resumeAudioContext();` — would leave every case
- * above green (this file's own original mutation table, row 7). So the
- * wiring is asserted directly against the source text, the same way
- * `tests/failure-log.test.ts`'s "the wiring, not just the primitive" reads
- * `src/` with `readdirSync`/`readFileSync` rather than trying to render
- * anything.
- *
- * Honesty about what this proves: this is a TEXTUAL gate. It proves the
- * bounded call site is present in the source, not that `start()` behaves
- * correctly at runtime — the runtime behavior is what `raceAudioResume`'s
- * own tests above cover, and what a device pass still owes (see the PR
- * body).
- *
- * Two source files now, not one: `use-recorder.ts` for the call site,
- * `audio-io.ts` for `raceAudioResume`'s own body (moved there for #469 — see
- * the file-level docblock above).
+ * The helper cases exercise `raceAudioResume` with a fake AudioContext, not
+ * `useRecorder`'s `start()` callback. These source-text checks pin its bounded
+ * call site and the helper's wiring in `audio-io.ts`. They do not execute the
+ * hook, microphone capture or real browser resume behavior.
  */
 describe("the wiring, not just the helper (#108, #469)", () => {
   const recorderSourceUrl = new URL(
@@ -345,27 +328,10 @@ describe("the wiring, not just the helper (#108, #469)", () => {
   const recorderSource = () => readFileSync(recorderSourceUrl, "utf8");
   const audioIoSource = () => readFileSync(audioIoSourceUrl, "utf8");
 
-  /**
-   * This file's own doc comments legitimately quote the pre-#108 shape —
-   * e.g. "today's bare `await resumeAudioContext()`" — to explain what
-   * `raceAudioResume` replaced. A naive text match would treat that
-   * documentation as a regression. Comments are stripped before matching so
-   * the gate reads CODE, not prose about code. Safe here specifically:
-   * grepped for a `//` or `/*` inside any string literal in either file and
-   * found none, so a block/line comment strip cannot misfire on a literal.
-   */
-  const stripComments = (text: string) =>
-    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
   it("use-recorder.ts never awaits resumeAudioContext() directly — every use is bounded or fire-and-forget", () => {
-    // #108 IS this line: an unbounded `await resumeAudioContext()` between
-    // getUserMedia and `new MediaRecorder` is the exact defect. Every
-    // remaining call site in this file (armForegroundResume, resume(),
-    // retryDecode(), previewCapture()) is fire-and-forget
-    // (`void resumeAudioContext().catch(...)`); the one bounded call goes
-    // through `raceAudioResume`, imported from `audio-io.ts` and itself
-    // never awaited here. Reverting the start() call site back to a bare
-    // await must fail this.
+    // An unbounded resume await between getUserMedia and MediaRecorder
+    // construction can strand capture startup. Direct calls must remain
+    // fire-and-forget; the awaited startup path uses raceAudioResume.
     const code = stripComments(recorderSource());
     expect(code).not.toMatch(/await\s+resumeAudioContext\s*\(/);
   });

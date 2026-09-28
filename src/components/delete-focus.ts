@@ -14,9 +14,8 @@
  * `tests/delete-focus.test.ts` pins it in plain Node. The other half is "when" —
  * focus must move only once the shelf is no longer `inert`, because an element
  * in an inert subtree cannot take focus at all. That half is DOM ordering and
- * this repo cannot test it: `tests/` runs in Node with no jsdom and no
- * testing-library (#361). It is code-read only, and says so rather than
- * implying coverage it does not have.
+ * is outside the pure-function suite. The static markup harness in
+ * `tests/render.ts` does not run effects or focus transitions.
  */
 
 import type { BookId } from "@/types/domain";

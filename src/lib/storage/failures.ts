@@ -36,7 +36,17 @@
  */
 
 import { getDb } from "./db";
-import { FAILURE_LOG_LIMIT, type StoredFailure } from "@/types/failure";
+import { lightsFailureMarker } from "@/lib/failure-marker";
+import type { StoredFailure } from "@/types/failure";
+
+/**
+ * How many entries the durable log keeps. Oldest are dropped past this.
+ *
+ * Declared beside the prune that enforces it. It was in `types/failure.ts`,
+ * which made that layer non-erasable (L-17, #160) — and unlike the three items
+ * the audit enumerated, this one was found by the gate rather than by reading.
+ */
+export const FAILURE_LOG_LIMIT = 50;
 
 /**
  * Append one entry, then drop the oldest rows until the log is within its
@@ -129,6 +139,20 @@ export async function readFailures(): Promise<StoredFailure[]> {
 export async function countFailures(): Promise<number> {
   const db = await getDb();
   return db.count("failures");
+}
+
+/**
+ * How many entries light the Books ≡ marker: every row except the
+ * informational ones `lightsFailureMarker` names (#1005).
+ *
+ * Reads the rows rather than counting an index, because the store has no
+ * index on `context` and adding one would be a schema migration for a store
+ * of at most {@link FAILURE_LOG_LIMIT} short rows.
+ */
+export async function countMarkedFailures(): Promise<number> {
+  const db = await getDb();
+  const rows = await db.getAll("failures");
+  return rows.filter((row) => lightsFailureMarker(row.context)).length;
 }
 
 /**

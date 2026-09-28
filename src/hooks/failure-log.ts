@@ -1,14 +1,18 @@
 import { useEffect, useSyncExternalStore } from "react";
 
+import { lightsFailureMarker } from "@/lib/failure-marker";
 import { boundText, describeCause } from "@/lib/failure-text";
+import { isTerminalOpenRefusal } from "@/lib/storage/db";
 import {
   appendFailure,
   clearFailures,
   countFailures,
+  countMarkedFailures,
+  FAILURE_LOG_LIMIT,
   readFailures,
 } from "@/lib/storage/failures";
 import { reportFailure, subscribeToFailures } from "./report-failure";
-import { FAILURE_LOG_LIMIT, type StoredFailure } from "@/types/failure";
+import type { StoredFailure } from "@/types/failure";
 
 /**
  * The durable end of the failure funnel (#205), and the seam the UI reads it
@@ -122,6 +126,15 @@ function enqueue<T>(op: () => Promise<T>): Promise<T> {
  */
 let logCount = 0;
 let logGeneration = 0;
+/**
+ * How many of those rows light the Books ≡ marker (#1005): all of them except
+ * the informational contexts `lightsFailureMarker` names, today only
+ * `"recorder-take-cap"`. The DRI's decision on #1076, verbatim: "Log it, don't
+ * light ≡ (Recommended)". `logCount` still gates the menu's problem report, so
+ * a log holding only that row can still be sent. Kept beside `logCount` and
+ * moved at every one of its write sites, so the two cannot drift apart.
+ */
+let markedCount = 0;
 
 /**
  * Subscribers to the two numbers above, in the `useSyncExternalStore` shape.
@@ -148,6 +161,10 @@ function subscribeToLog(onChange: () => void): () => void {
  */
 function getFailureCount(): number {
   return logCount;
+}
+
+function getMarkedFailureCount(): number {
+  return markedCount;
 }
 
 /**
@@ -211,7 +228,7 @@ function notifyLog(): void {
  * doing that, not an equality guard here, and the difference matters: a guard
  * here would also have suppressed the generation the panel needs.
  */
-async function markLogWritten(): Promise<void> {
+async function markLogWritten(context: string): Promise<void> {
   try {
     logCount = await countFailures();
   } catch {
@@ -219,6 +236,15 @@ async function markLogWritten(): Promise<void> {
     // ring's limit, past which the same append also pruned. Not routed through
     // `refreshCount()`: that enqueues, and this already runs inside a lane op.
     logCount = Math.min(logCount + 1, FAILURE_LOG_LIMIT);
+  }
+  try {
+    markedCount = await countMarkedFailures();
+  } catch {
+    // The same floor for the marker, but only when the row that landed is one
+    // that lights it: an informational row must not mark ≡ by the back door.
+    if (lightsFailureMarker(context)) {
+      markedCount = Math.min(markedCount + 1, logCount);
+    }
   }
   logGeneration += 1;
   notifyLog();
@@ -232,6 +258,7 @@ async function markLogWritten(): Promise<void> {
  */
 function markLogCleared(): void {
   logCount = 0;
+  markedCount = 0;
   logGeneration += 1;
   notifyLog();
 }
@@ -245,8 +272,10 @@ function markLogCleared(): void {
  */
 async function readCountIntoStore(): Promise<void> {
   const next = await countFailures();
-  if (next === logCount) return;
+  const nextMarked = await countMarkedFailures();
+  if (next === logCount && nextMarked === markedCount) return;
   logCount = next;
+  markedCount = nextMarked;
   notifyLog();
 }
 
@@ -464,7 +493,7 @@ async function writeEntry(entry: StoredFailure): Promise<void> {
     // Awaited, so the store update stays inside the op that caused it — which
     // is also what makes `flushFailureLog` cover the count and the generation,
     // not just the row.
-    await markLogWritten();
+    await markLogWritten(entry.context);
   } catch (writeFailure) {
     // Recorded before the swallow, so the crash screen can tell a refused write
     // from a settled lane. The swallow itself stays: this function IS the
@@ -482,40 +511,30 @@ async function writeEntry(entry: StoredFailure): Promise<void> {
 }
 
 /**
- * Empty the log, ordered against the appends, then tell the watchers.
- *
- * On the shared lane (C1 above), so a clear cannot overtake an append that is
- * still in flight and leave the person with a row they thought they discarded.
- *
- * REJECTS to the caller, and reports on the way past. Both halves matter and
- * neither is redundant (Frank #2 ≡ George #4, round 1): the rejection is how the
- * panel knows not to report the log as discarded, and the report is the only
- * evidence a maintainer will ever get, since nothing below here — neither
- * `clearFailures` nor `getDb` — says anything of its own. Without it a clear
- * that failed produced no UI change AND no trace, which is the "errors have a
- * channel" bar failing in the one module that exists to satisfy it.
- *
- * **Through the funnel, not to the console** (Frank, takeover round 9). Round 1
- * settled for `console.error` here on the argument that a row about a failed
- * clear is noise in the log it failed to clear. That trade reads differently now
- * that the share path reports its own failures: the console is not a channel on
- * a phone in a village — AGENTS.md says so in as many words — and this was the
- * last path in the feature that had only one. The row is not noise, it is the
- * answer to "why is this log still here after I discarded it", and it goes out
- * with the next report.
- *
- * It cannot recurse. The append this queues is behind the failed clear on the
- * same lane, and if it fails too `writeEntry` swallows it: a failure of the log's
- * own write is the one place this module does not report. What would recurse is
- * reporting from inside `writeEntry`, which is exactly what that function's
- * docblock refuses to do.
+ * Clear the durable log on the same lane as appends. A failed clear rethrows
+ * so the caller can keep the log and show the appropriate recovery control.
+ * Retryable failures go through reportFailure, queued behind this attempt;
+ * writeEntry does not report its own append failures, so this cannot recurse.
+ * Terminal open refusals cannot persist another row: keep console evidence
+ * instead and let the caller offer restart rather than a futile retry.
  */
 export function clearFailureLog(): Promise<void> {
   return enqueue(async () => {
     try {
       await clearFailures();
     } catch (clearFailure) {
-      reportFailure(clearFailure, "failure-log-clear");
+      if (
+        !isTerminalOpenRefusal(
+          (clearFailure as { name?: string } | null)?.name ?? null
+        )
+      ) {
+        reportFailure(clearFailure, "failure-log-clear");
+      } else {
+        console.error(
+          "[failure-log-clear] Terminal database refusal",
+          clearFailure
+        );
+      }
       throw clearFailure;
     }
     markLogCleared();
@@ -692,4 +711,21 @@ export function useFailureCount(recoveryToken = 0): number {
   }, [recoveryToken]);
 
   return count;
+}
+
+/**
+ * How many rows light the Books ≡ marker, kept current as rows land (#1005).
+ *
+ * Read-only: it reads the same module store {@link useFailureCount} keeps, and
+ * it relies on that hook being mounted beside it to run the disk reads and
+ * their retry ladder. Books mounts both. The ≡ control's mark and accessible
+ * name key on this; the menu's problem report keys on `useFailureCount`, so a
+ * log holding only informational rows is still sendable.
+ */
+export function useMarkedFailureCount(): number {
+  return useSyncExternalStore(
+    subscribeToLog,
+    getMarkedFailureCount,
+    getMarkedFailureCount
+  );
 }

@@ -1,5 +1,10 @@
 import { useLayoutEffect, useRef } from "react";
 
+import {
+  CANVAS_FALLBACK_FAINT,
+  CANVAS_FALLBACK_VOICE,
+  withCanvasFallback,
+} from "./canvas-fallback-colors";
 import { useLiveTheme } from "@/hooks/use-theme";
 import { clampUnit, displayGain } from "@/lib/audio/display-gain";
 import { type WaveformWindow } from "@/lib/audio/viewport";
@@ -49,9 +54,10 @@ interface WaveformProps {
    */
   fitFrom?: Peaks | null;
   /**
-   * A finished row repaints in the green (`--s-done`) role. The stroke colour
-   * still comes from the inherited `--c-wave-stroke` (remapped by
-   * `.row--finished`); this flag exists only so the draw effect RE-RUNS when
+   * A finished row, or the recorder of a finished segment (#926), repaints in
+   * the green (`--s-done`) role. The stroke colour still comes from the
+   * inherited `--c-wave-stroke` (remapped by `.row--finished` and
+   * `.recorder-sheet--finished`); this flag exists only so the draw effect RE-RUNS when
    * finished toggles — a canvas painted once cannot observe a CSS-variable
    * change on its own (Frank/George R1 P2, the converged finding). A
    * `data-theme` switch is a CSS-variable change of the same class, which is
@@ -85,9 +91,10 @@ export function Waveform({
   // Read for its subscription only: a `data-theme` switch remaps every token
   // this draw reads (`--c-wave-stroke`, `--s-voice`, `--s-ink-faint`), and a
   // painted canvas cannot see that on its own — so the draw effect lists it.
-  // Today `useTheme` is Books-only and a toggle unmounts every canvas; the
-  // moment the toggle is reachable with a row mounted (#149) this is what keeps
-  // the bars from holding the previous theme's colours (George R2 P2 on #457).
+  // Written while the toggle was Books-only, where a toggle unmounted every
+  // canvas and this cost nothing yet; #149 put the toggle in the chapter and
+  // recorder menus, so this is now what keeps the bars from holding the
+  // previous theme's colours rather than what will (George R2 P2 on #457).
   const theme = useLiveTheme();
 
   // `useLayoutEffect`, not `useEffect`: the first paint below must land BEFORE
@@ -118,12 +125,20 @@ export function Waveform({
     const styles = getComputedStyle(canvas);
     // The bar colour is a component token so a finished row can remap it to green
     // (`.row--finished { --c-wave-stroke: var(--s-done) }`) without a prop. Falls
-    // back to the resolved voice value, then to amber, for a canvas outside a row.
-    const stroke =
-      styles.getPropertyValue("--c-wave-stroke").trim() ||
-      styles.getPropertyValue("--s-voice").trim() ||
-      "#e6a444";
-    const faint = styles.getPropertyValue("--s-ink-faint").trim() || "#5f6b7a";
+    // back to the resolved voice value, then, only if BOTH reads come back
+    // empty, to the unthemed dark-only fallback in `canvas-fallback-colors.ts`
+    // (#506 item 1) — a token failing to resolve, not the normal path.
+    const stroke = withCanvasFallback(
+      styles.getPropertyValue("--c-wave-stroke"),
+      withCanvasFallback(
+        styles.getPropertyValue("--s-voice"),
+        CANVAS_FALLBACK_VOICE
+      )
+    );
+    const faint = withCanvasFallback(
+      styles.getPropertyValue("--s-ink-faint"),
+      CANVAS_FALLBACK_FAINT
+    );
     const mid = h / 2;
 
     // The centerline is NOT painted here (#415). It used to be, unconditionally
@@ -215,8 +230,9 @@ export function Waveform({
       ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
     }
     // `finished` is in the deps for its side effect only: it changes with the
-    // `.row--finished` class, so listing it re-runs this draw (which re-reads
-    // the now-green `--c-wave-stroke`) on the toggle. Not referenced above.
+    // `.row--finished` / `.recorder-sheet--finished` class, so listing it
+    // re-runs this draw (which re-reads the now-green `--c-wave-stroke`) on the
+    // toggle. Not referenced above.
     // `theme` is the same shape for the same reason: a `data-theme` switch
     // remaps the tokens read above, and only a re-run re-reads them.
     // `firstTakeInFlight` IS referenced, in the gain above, and it toggles on

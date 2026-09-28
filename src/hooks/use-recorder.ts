@@ -10,10 +10,15 @@ import {
   type MicPermissionState,
   type MicRefusal,
 } from "@/lib/audio/mic-refusal";
+import type { CaptureFailure } from "@/lib/audio/capture-failure";
+import { decodeRetry } from "@/lib/audio/retry-decode";
+import { classifyEmptySeal, classifyStopDecode } from "@/lib/audio/stop-decode";
 import {
-  classifyStopDecode,
-  type StopDecodeError,
-} from "@/lib/audio/stop-decode";
+  TAKE_CAP_MS,
+  takeCapStatus,
+  type TakeCapStatus,
+} from "@/lib/audio/take-cap";
+import { strings } from "@/lib/strings";
 
 import {
   createLevelTap,
@@ -21,24 +26,14 @@ import {
   isRecordingSupported,
   type LevelTap,
   pickMimeType,
+  probeCaptureTrack,
   raceAudioResume,
   RESUME_TIMEOUT_MS,
   resumeAudioContext,
+  setRecordAudioSession,
+  stopTracks,
 } from "./audio-io";
 import { reportFailure } from "./report-failure";
-
-/** The translator-facing sentence for each `classifyStopDecode` error class. Kept
- *  here beside the recorder's other error copy; the classifier stays UI-free. */
-function stopDecodeMessage(error: StopDecodeError): string | null {
-  switch (error) {
-    case "silence":
-      return "No sound was recorded. Try again.";
-    case "undecodable":
-      return "Recording could not be decoded on this device.";
-    case null:
-      return null;
-  }
-}
 
 /**
  * The permission state for the microphone, or `"unknown"` where the platform
@@ -61,20 +56,20 @@ async function queryMicPermission(): Promise<MicPermissionState> {
   }
 }
 
-/** The honest sentence for each refusal (#203). Inline here, like the recorder's
- *  other error copy, because `hooks/` cannot reach the components' string table. */
+/** The honest sentence for each refusal (#203). The words live in the one string
+ *  table; this maps the pure classifier's verdict onto them. */
 function micRefusalMessage(refusal: MicRefusal): string {
   switch (refusal) {
     case "no-device":
-      return "No microphone was found on this device.";
+      return strings.micNoDevice;
     case "site-blocked":
-      return "Recording is blocked for this app. Allow the microphone in your browser's site settings, then try again.";
+      return strings.micSiteBlocked;
     case "os-blocked":
-      return "Your device is not letting the app use the microphone. Check microphone access in your device settings, then try again.";
+      return strings.micOsBlocked;
     case "prompt":
-      return "Microphone access is needed to record. Allow it when asked — or if you already allowed it, check your device settings.";
+      return strings.micPrompt;
     case "other":
-      return "Could not start recording.";
+      return strings.micStartFailed;
   }
 }
 
@@ -84,17 +79,17 @@ function micRefusalMessage(refusal: MicRefusal): string {
  *
  * Returning from an iOS backgrounding or an OS interruption can leave the shared
  * `AudioContext` `"suspended"`/`"interrupted"`, so the VU tap reads zeros even
- * though capture is fine. The `resume()` gesture already covers a manual
- * pause→resume; this covers a return that is NOT a resume tap — a background then
- * foreground with capture still live. Fire-and-forget: the resume must never gate
+ * though capture is fine. This covers a return to the foreground with capture
+ * still live — the one window left now that a take can no longer be suspended
+ * and resumed (#614). Fire-and-forget: the resume must never gate
  * anything, and best effort — iOS MAY withhold the un-suspend until the next real
  * user gesture, in which case the meter stays honestly hatched (`available()` ->
  * false) until a tap. That withholding is the open device question the iOS pass
  * settles.
  *
- * `recording` gates it: only a live take has a meter to rescue, and `resume()`
- * owns the paused edge, so idle/paused/requesting/processing arm nothing and hand
- * back a no-op cleanup. A module function, not an inline effect body, so the two
+ * `recording` gates it: only a live take has a meter to rescue, so idle,
+ * requesting and processing arm nothing and hand back a no-op cleanup. A module
+ * function, not an inline effect body, so the two
  * guards and the listener add/remove are exercisable without a React renderer
  * (this repo has none in Node) — see `tests/foreground-resume.test.ts`.
  */
@@ -118,8 +113,7 @@ export function armForegroundResume(recording: boolean): () => void {
  */
 const SCOPE_CAPACITY = 180;
 
-export type RecorderState =
-  "idle" | "requesting" | "recording" | "paused" | "processing";
+export type RecorderState = "idle" | "requesting" | "recording" | "processing";
 
 /**
  * The outcome of `stop()`.
@@ -135,21 +129,24 @@ export interface StopResult {
   /** Canonical PCM when the take produced usable audio, else null. */
   readonly samples: Int16Array | null;
   /**
-   * A translator-facing reason when `samples` is null and it is worth saying —
-   * an empty capture, an undecodable one, or a teardown that threw. A native
-   * `stop()` throwing inside the flush (#485) is NOT its own outcome: the
-   * slices MediaRecorder delivered before the throw are sealed from the local
-   * `chunks` exactly as on the flush timeout, reported under
+   * Why there are no usable samples, when it is worth saying — a {@link
+   * CaptureFailure} code, never a sentence. The words are chosen at the screen
+   * (`components/capture-failure-copy.ts`), so this hook has no copy to drift
+   * from the table (#169).
+   *
+   * A native `stop()` throwing inside the flush (#485) is NOT its own outcome:
+   * the slices MediaRecorder delivered before the throw are sealed from the
+   * local `chunks` exactly as on the flush timeout, reported under
    * `"recorder-stop-flush"`, and classified by the same tail — a decodable
    * seal is the take, an undecodable one is held in `blob`, and only an EMPTY
-   * seal yields `samples` and `blob` both null with `error` "Could not finish
-   * this recording." (the backstop's sentence, chosen over "No sound" because
-   * the engine failed). The recorder is back at `idle` either way, free to
+   * seal yields `samples` and `blob` both null with `"unfinished"` (the
+   * backstop's code, chosen over `"silence"` because the engine failed, not
+   * the translator). The recorder is back at `idle` either way, free to
    * `start()` again. Null when there is nothing to say: a superseded stop,
    * whose UI belongs to a newer recording — on every exit, the throw path
    * included.
    */
-  readonly error: string | null;
+  readonly error: CaptureFailure | null;
   /**
    * The captured container bytes, kept whenever a decode FAILED — on a current
    * stop AND on a superseded one (George R1 G2). A failed decode is the one case
@@ -170,7 +167,8 @@ export interface StopResult {
 /** The outcome of re-decoding a held take's container bytes (#165). */
 export interface RetryDecodeResult {
   readonly samples: Int16Array | null;
-  readonly error: string | null;
+  /** Why the re-decode produced nothing, as a code — see `StopResult.error`. */
+  readonly error: CaptureFailure | null;
 }
 
 /**
@@ -205,6 +203,7 @@ const STOP_FLUSH_TIMEOUT_MS = 5_000;
 
 export interface UseRecorder {
   readonly state: RecorderState;
+  readonly readState: () => RecorderState;
   readonly supported: boolean;
   readonly elapsedMs: number;
   readonly error: string | null;
@@ -222,13 +221,6 @@ export interface UseRecorder {
    */
   start: () => Promise<boolean>;
   /**
-   * Pause capture without ending the take. The same take resumes with
-   * `resume()`; the elapsed timer freezes. No-op unless currently recording.
-   */
-  pause: () => void;
-  /** Resume a paused take into the SAME recording. No-op unless paused. */
-  resume: () => void;
-  /**
    * Stop and return the captured audio as canonical mono 16-bit PCM, or the
    * reason it produced none — an empty capture, an undecodable one, or a
    * teardown that threw. The failure is in the result, not the `error` state
@@ -236,9 +228,8 @@ export interface UseRecorder {
    * path reports `"recorder-stop-flush"`, seals whatever slices are already in
    * hand and resolves through the same tail as a flush timeout — the take, a
    * held `blob`, or (only when the seal is empty) `{ samples: null, error:
-   * "Could not finish this recording.", blob: null }` — with state back at
-   * `idle` when current and the recorder ref dropped, so `start()` is free
-   * again (#485).
+   * "unfinished", blob: null }` — with state back at `idle` when current and
+   * the recorder ref dropped, so `start()` is free again (#485).
    */
   stop: () => Promise<StopResult>;
   /**
@@ -252,25 +243,21 @@ export interface UseRecorder {
    * caller's to keep or share out; this does not consume it.
    */
   retryDecode: (blob: Blob) => Promise<RetryDecodeResult>;
-  /**
-   * Decode the take captured SO FAR to canonical PCM for an in-sheet preview,
-   * WITHOUT ending the take (#101). Meant for a paused take — the caller enables
-   * Play while paused and previews what was recorded before committing on Back.
-   *
-   * Returns null, never throws, when there is nothing to preview or the take
-   * cannot be decoded mid-capture: `pause()` does not finalise the container, and
-   * iOS writes the moov atom only on `stop()`, so a paused fMP4 may not decode on
-   * that platform. The caller degrades to a disabled Play rather than claiming a
-   * preview it cannot produce — the flow is correct on every device, and whether
-   * a given device can decode a paused take is answered by the on-device pass.
-   *
-   * Resolves null if the take is no longer this paused recorder by the time the
-   * flush settles — a cancel/leave, a newer recording, a Resume, or a Back (whose
-   * `stop()` owns the chunks then). So it never previews post-resume audio as "the
-   * take so far", and never decodes in parallel with `stop()`'s own decode.
-   */
-  previewCapture: () => Promise<Int16Array | null>;
   cancel: () => void;
+  /**
+   * End an open take the way a #59 interruption does, for a `pagehide` (#807)
+   * or the page becoming hidden (#836): freeze at `"processing"` with the
+   * captured slices left where `stop()` will find them, so the sheet's
+   * interruption commit saves the partial take. Returns `true` when a take was
+   * open (the caller must then NOT `cancel()`), `false` when there is none.
+   * Idempotent: a second call before `stop()` takes the slices returns `true`
+   * and changes nothing.
+   *
+   * Synchronous and write-free: no `stop()`, no decode, no failure-log row.
+   * Everything that touches IndexedDB runs later, on the commit path, after
+   * `stop()`'s own awaits.
+   */
+  seal: () => boolean;
   /**
    * The live capture level for the VU meter, in the raw amplitude domain (RMS of
    * the latest frame). A PULL read (D-LEVEL-PULL): the meter polls this on its
@@ -308,6 +295,14 @@ export interface UseRecorder {
    * rather than a resting-empty strip. False while it is working or idle.
    */
   meterFailed: boolean;
+  /**
+   * The live take against the length cap (#1005, "Warn at 15, seal at 20"):
+   * `nearLimit` from 15:00 and the time left, for the recorder screen's
+   * state-in-place marker. Only a `"recording"` take is ever near the limit.
+   * At 20:00 the take is sealed like a `pagehide` seal (`seal()`), so the
+   * sheet commits and saves it, and one `"recorder-take-cap"` row is logged.
+   */
+  readonly takeCap: TakeCapStatus;
 }
 
 /**
@@ -318,7 +313,13 @@ export interface UseRecorder {
  * having to know what codec the device produced.
  */
 export function useRecorder(): UseRecorder {
-  const [state, setState] = useState<RecorderState>("idle");
+  const [state, setRenderedState] = useState<RecorderState>("idle");
+  const stateRef = useRef<RecorderState>("idle");
+  const setState = useCallback((next: RecorderState): void => {
+    stateRef.current = next;
+    setRenderedState(next);
+  }, []);
+  const readState = useCallback((): RecorderState => stateRef.current, []);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [error, setError] = useState<string | null>(null);
   // The VU tap could not be wired on this device (createLevelTap threw). The
@@ -348,19 +349,16 @@ export function useRecorder(): UseRecorder {
    */
   const tapRef = useRef<LevelTap | null>(null);
   const startedAtRef = useRef(0);
-  /**
-   * Elapsed time banked before the current running span.
-   *
-   * Pause/resume splits one take into several running spans. The timer cannot
-   * be `now - startedAt` any more — that would keep counting the paused gap.
-   * So each pause banks the span that just ended here, and the live timer adds
-   * only the current span on top. The take's length is the sum, never the wall
-   * clock since Record was first pressed.
-   */
-  const baseElapsedRef = useRef(0);
   const tickRef = useRef<number | null>(null);
   /** Bumped on cancel so a stop() already in flight resolves to nothing. */
   const generationRef = useRef(0);
+  /**
+   * A take whose slices no `stop()` has taken yet (#807). True from the moment
+   * `start()` has a recorder running until `stop()` snapshots the chunks or
+   * `cancel()` drops them. Covers `"recording"` and the #59 `"processing"`
+   * freeze before its commit starts, which is the window `seal()` must keep.
+   */
+  const takeOpenRef = useRef(false);
 
   const supported = isRecordingSupported();
 
@@ -370,16 +368,6 @@ export function useRecorder(): UseRecorder {
       tickRef.current = null;
     }
   }, []);
-
-  /** Run the elapsed timer for the current span, on top of the banked total. */
-  const startTick = useCallback(() => {
-    clearTick();
-    tickRef.current = window.setInterval(() => {
-      setElapsedMs(
-        baseElapsedRef.current + (performance.now() - startedAtRef.current)
-      );
-    }, 100);
-  }, [clearTick]);
 
   /** Close the VU tap if one is open. Safe to call when there is none. */
   const closeTap = useCallback(() => {
@@ -402,12 +390,13 @@ export function useRecorder(): UseRecorder {
   }
   // Whether a recorded frame is live, for `readScope` to gate the ring push
   // without sitting in a dependency array. Written SYNCHRONOUSLY at each
-  // transition (start/resume → true; pause/stop/cancel/interrupt → false), in
-  // the same turn as the tap/recorder change — the same way `tapRef` is cut at
-  // `stop()`. A `useEffect` mirror lags a commit, and `pause()` leaves the
-  // analyser live (R-B6), so a queued rAF `tick` between `pause()` and the
-  // effect would push a post-pause room-tone column into the frozen freeze
-  // (George R3). The effect is a backstop for any path the writes miss.
+  // transition (start → true; stop/cancel/interrupt → false), in the same turn
+  // as the tap/recorder change — the same way `tapRef` is cut at `stop()`. A
+  // `useEffect` mirror lags a commit, and an interruption leaves the analyser
+  // live until the recorder goes inactive (R-B6), so a queued rAF `tick`
+  // between the freeze and the effect would push a post-capture room-tone
+  // column into it (George R3). The effect is a backstop for any path the
+  // writes miss.
   const recordingRef = useRef(false);
   useEffect(() => {
     recordingRef.current = state === "recording";
@@ -435,7 +424,7 @@ export function useRecorder(): UseRecorder {
 
   /**
    * The live-waveform scope for the current take, or `null` when not recording
-   * (idle/paused/processing) or the tap could not be wired. A PULL like
+   * (idle/requesting/processing) or the tap could not be wired. A PULL like
    * `readLevel` (D-LEVEL-PULL): the scope drawer polls it on its own animation
    * clock, so the recorder never re-renders per frame. Each call while recording
    * folds the latest analyser frame in as one column and returns the ring.
@@ -447,11 +436,11 @@ export function useRecorder(): UseRecorder {
    * `readScope` is a pull that ADVANCES the ring ("one column per recorded
    * frame" is its enforced invariant), so it is wrong for any paint that is not
    * itself the animation tick. `LiveScope`'s activation paint called it on every
-   * `active` edge, which folded an extra column per pause→resume cycle and ran
-   * the waveform ahead of real time (George, #139 round 3).
+   * `active` edge, which folded an extra column per activation and ran the
+   * waveform ahead of real time (George, #139 round 3).
    *
-   * Deliberately NOT gated on `recordingRef`: a paused or remounted scope must
-   * be able to draw its frozen ring, which is the other half of that bug — when
+   * Deliberately NOT gated on `recordingRef`: a frozen or remounted scope must
+   * be able to draw its ring, which is the other half of that bug — when
    * `readFrame()` refuses (a suspended context) `readScope` returns null and the
    * freeze could not be painted at all.
    */
@@ -463,7 +452,7 @@ export function useRecorder(): UseRecorder {
   const readScope = useCallback((): CaptureScope | null => {
     // Advance the ring only while actually recording. The drawer already gates
     // its loop on `recording`; gating the PUSH here too makes "one column per
-    // recorded frame" an enforced invariant, not caller discipline, so a paused
+    // recorded frame" an enforced invariant, not caller discipline, so a frozen
     // take or a future second consumer cannot scroll or double-fold it (George
     // R2/R3).
     const ring = scopeRef.current;
@@ -476,7 +465,8 @@ export function useRecorder(): UseRecorder {
 
   const releaseStream = useCallback(() => {
     closeTap();
-    streamRef.current?.getTracks().forEach((t) => t.stop());
+    const stream = streamRef.current;
+    if (stream) stopTracks(stream, "recorder-release-track");
     streamRef.current = null;
     recorderRef.current = null;
   }, [closeTap]);
@@ -489,18 +479,63 @@ export function useRecorder(): UseRecorder {
    * opened.
    */
   const abandonStream = useCallback((stream: MediaStream) => {
-    stream.getTracks().forEach((t) => t.stop());
+    stopTracks(stream, "recorder-release-track");
     if (streamRef.current === stream) streamRef.current = null;
   }, []);
 
+  const seal = useCallback((): boolean => {
+    if (!takeOpenRef.current) return false;
+    // Already frozen by a #59 interruption: its commit is on the way, and the
+    // only thing to do is not cancel it.
+    if (!recordingRef.current) return true;
+    // `onInterrupted`'s freeze, minus the parts that belong to a lost track:
+    // the recorder is still live here, so its tracks stay up until `stop()`
+    // has the final slice, and there is no failure row (#478's constraint).
+    clearTick();
+    tapRef.current?.disconnect();
+    recordingRef.current = false;
+    setState("processing");
+    return true;
+  }, [clearTick, setState]);
+
+  /**
+   * Run the elapsed timer for the current take, and seal the take when it
+   * reaches the length cap (#1005). The cap reuses `seal()`, so the sheet's
+   * interruption commit saves the take exactly as it does after a `pagehide`.
+   * Unlike a `pagehide`, the page is staying, so the one failure-log row that
+   * says the take was cut is written here. `seal()` clears this interval, so
+   * the row is written once per take.
+   *
+   * The check runs on this 100 ms tick, so a page whose timers the browser
+   * throttles (backgrounded) seals on the first tick it is given after 20:00,
+   * which can be later than 20:00.
+   */
+  const startTick = useCallback(() => {
+    clearTick();
+    tickRef.current = window.setInterval(() => {
+      const elapsed = performance.now() - startedAtRef.current;
+      setElapsedMs(elapsed);
+      // `true`: this tick only runs while recording. Every exit from
+      // "recording" (seal, interruption, stop, cancel) clears it first.
+      if (!takeCapStatus(elapsed, true).reached) return;
+      seal();
+      reportFailure(
+        new Error(
+          `The take reached the ${TAKE_CAP_MS / 60_000}-minute cap and was sealed and saved (#1005)`
+        ),
+        "recorder-take-cap"
+      );
+    }, 100);
+  }, [clearTick, seal]);
+
   const start = useCallback(async (): Promise<boolean> => {
     if (!supported) {
-      setError("This device cannot record audio.");
+      setError(strings.recordingUnsupported);
       return false;
     }
     // Refuse to open a SECOND microphone while one is already live. Unreachable
-    // through the current UI — Record maps to pause/resume while non-idle and the
-    // permission panel only renders at idle — but a future caller invoking start()
+    // through the current UI — Record maps to the commit path while recording and
+    // the permission panel only renders at idle — but a future caller start()
     // mid-take would otherwise overwrite streamRef, stranding the old stream as a
     // hot mic while its recorder kept capturing into an orphaned array (#60). Leave
     // the running take's state and error untouched; just decline to open a new one.
@@ -524,6 +559,15 @@ export function useRecorder(): UseRecorder {
     let stream: MediaStream | null = null;
 
     try {
+      // #1111: declare a record-capable audio session BEFORE the microphone
+      // opens. WebKit's `"playback"` type (`setPlaybackAudioSession`,
+      // `audio-io.ts`) — asserted on every Play so recordings stay audible
+      // through the iPhone silent switch — is documented for playback only;
+      // switching here, ahead of `getUserMedia`, is the "if needed" case
+      // #1111 asks this fix to cover so a session left on `"playback"` by an
+      // earlier Play cannot fight the mic. Feature-checked and a no-op on
+      // every non-WebKit engine.
+      setRecordAudioSession();
       stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           // Speech in a noisy room, recorded on a phone held in the hand.
@@ -540,6 +584,7 @@ export function useRecorder(): UseRecorder {
       // Reachable by `cancel()` from here on, which is what matters across the
       // await below.
       streamRef.current = stream;
+      probeCaptureTrack(stream);
 
       // Unlock Web Audio while we still have the user gesture that started
       // this recording — iOS will not resume the context later without one.
@@ -613,11 +658,13 @@ export function useRecorder(): UseRecorder {
       // change, an OS audio interruption — which ends the capture track and
       // inactivates the recorder on its own. Without this the hook never learns:
       // state stays "recording", the timer keeps ticking, Record stays a live
-      // no-op Pause, and the chunks captured before the interruption are
-      // stranded (#59). Freeze the UI into `processing` so Record is dead and
-      // the timer stops, and leave the state where `close()` still runs the
-      // commit path — `stop()` then recovers those chunks instead of dropping
-      // the take. Guarded by generation so an interruption on a superseded
+      // no-op, and the chunks captured before the interruption are stranded
+      // (#59). Freeze the UI into `processing` so Record is dead and the timer
+      // stops, and leave the state where the sheet's own commit path can stop
+      // it — `stop()` then recovers those chunks instead of dropping the take.
+      // Since #614 the sheet does not wait for Back to do that: `processing`
+      // with no close in flight is an ended take, and the recorder commits it
+      // in place through the same path the Stop tap runs. Guarded by generation so an interruption on a superseded
       // recorder cannot repaint a newer one. `MediaStreamTrack.stop()` (our own
       // teardown) does NOT fire `ended`, so this only reacts to real losses.
       // The still-active arm (recorder not yet "inactive") is reported once
@@ -663,7 +710,7 @@ export function useRecorder(): UseRecorder {
           // for the same reason the original stop is: the chunks are final. NOT
           // on the error path (recorder still active), where clone-stop could
           // truncate the slice stop() will recover.
-          stream?.getTracks().forEach((track) => track.stop());
+          if (stream) stopTracks(stream, "recorder-release-track");
           closeTap();
         } else if (!interruptionReported) {
           interruptionReported = true;
@@ -706,10 +753,10 @@ export function useRecorder(): UseRecorder {
         setMeterFailed(true);
       }
       startedAtRef.current = performance.now();
-      baseElapsedRef.current = 0;
       setElapsedMs(0);
       // The ring may advance from the next rAF on — set before the state edge.
       recordingRef.current = true;
+      takeOpenRef.current = true;
       setState("recording");
 
       startTick();
@@ -741,49 +788,15 @@ export function useRecorder(): UseRecorder {
       }
       return false;
     }
-  }, [abandonStream, clearTick, closeTap, releaseStream, startTick, supported]);
-
-  /**
-   * Pause the take. `MediaRecorder.pause()` stops delivering `dataavailable`
-   * but keeps the recorder and stream alive, so `resume()` continues the same
-   * clip. The span that just ran is banked and the timer stopped, so the paused
-   * gap is not counted toward the take's length.
-   */
-  const pause = useCallback(() => {
-    const recorder = recorderRef.current;
-    if (!recorder || recorder.state !== "recording") return;
-    recorder.pause();
-    // Freeze the live scope the instant capture pauses: the analyser stays live
-    // (R-B6), so without this a queued rAF would fold a room-tone column into
-    // the freeze before the state effect catches up (George R3).
-    recordingRef.current = false;
-    baseElapsedRef.current += performance.now() - startedAtRef.current;
-    clearTick();
-    setElapsedMs(baseElapsedRef.current);
-    setState("paused");
-  }, [clearTick]);
-
-  /** Resume the paused take into the same recording. */
-  const resume = useCallback(() => {
-    const recorder = recorderRef.current;
-    if (!recorder || recorder.state !== "paused") return;
-    // Re-arm Web Audio in the resume gesture. A pause that spanned an iOS
-    // interruption or a backgrounding can leave the shared context suspended or
-    // interrupted; the VU tap then reads zeros — an empty strip a translator
-    // reads as a dead mic — even though capture is fine. This is the moment iOS
-    // allows the un-suspend (a user gesture), so fire it here. Fire-and-forget:
-    // the resume must not gate the recorder's own resume (#76).
-    void resumeAudioContext().catch((cause: unknown) => {
-      console.error("Could not resume the audio context", cause);
-    });
-    recorder.resume();
-    // Re-arm the live-scope push as capture resumes (the ring persists — the
-    // scope continues from where it froze, no `reset`).
-    recordingRef.current = true;
-    startedAtRef.current = performance.now();
-    setState("recording");
-    startTick();
-  }, [startTick]);
+  }, [
+    abandonStream,
+    clearTick,
+    closeTap,
+    releaseStream,
+    setState,
+    startTick,
+    supported,
+  ]);
 
   const stop = useCallback(async (): Promise<StopResult> => {
     const recorder = recorderRef.current;
@@ -802,6 +815,7 @@ export function useRecorder(): UseRecorder {
     // to the array rather than to the ref — see `start()`.
     const generation = generationRef.current;
     const chunks = chunksRef.current;
+    takeOpenRef.current = false;
     const stream = streamRef.current;
     // OWN the VU tap exactly as the stream is owned (below): steal it into a
     // local and null the ref. Two flush-window races this closes (Frank + George
@@ -923,9 +937,9 @@ export function useRecorder(): UseRecorder {
         // immediately; it yields the same one macrotask the inactive arm
         // above yields, THEN seals — the same seal the timeout arm's `finish`
         // builds. It then FALLS THROUGH to the ordinary tail below — an empty
-        // seal becomes the notice (with the "could not finish" sentence, via
-        // `flushThrew`), an undecodable one is held with its bytes for the
-        // recovery panel, a decodable one is the take — instead of returning
+        // seal becomes the notice (as `"unfinished"`, via `flushThrew`), an
+        // undecodable one is held with its bytes for the recovery panel, a
+        // decodable one is the take — instead of returning
         // `blob: null` and discarding minutes of audio that were in this
         // closure (panel r1 P2 on #500). The tail also owns
         // `setState("idle")`, gated on `current` exactly as at every other
@@ -962,8 +976,10 @@ export function useRecorder(): UseRecorder {
         // below (George r2 on #500, G-R2-P2-1; DRI decision 2026-09-19,
         // option A — this order, no new theory). `abandonStream` is safe to
         // call again from `finally`: `track.stop()` on an already-stopped
-        // track is a spec no-op, and the ref check is identity-gated, so the
-        // second call is inert.
+        // track is a spec no-op, and the ref check is identity-gated. A track
+        // whose `stop()` throws is the exception: `stopTracks` reports it on
+        // each call, so this path can write a second `"recorder-release-track"`
+        // row. That is a duplicate row, not a missed release.
         if (stream) abandonStream(stream);
         // One macrotask, same bound as the inactive arm and the timeout arm's
         // `finish`, so a slice already queued at the moment of the throw has
@@ -1019,13 +1035,8 @@ export function useRecorder(): UseRecorder {
       return {
         samples: null,
         // An empty seal after the flush arm threw is the engine's failure,
-        // not the translator's silence — the same sentence `stopRecording`'s
-        // backstop uses, and the one the facilitator runbook names.
-        error: current
-          ? flushThrew
-            ? "Could not finish this recording."
-            : "No sound was recorded. Try again."
-          : null,
+        // not the translator's silence — see `classifyEmptySeal` (#745).
+        error: classifyEmptySeal(flushThrew, current),
         blob: null, // nothing was captured — no bytes to keep
       };
     }
@@ -1046,7 +1057,7 @@ export function useRecorder(): UseRecorder {
       if (current2) setState("idle");
       return {
         samples: verdict.emitSamples ? samples : null,
-        error: stopDecodeMessage(verdict.error),
+        error: verdict.error,
         blob: verdict.keepBlob ? blob : null,
       };
     } catch {
@@ -1055,12 +1066,12 @@ export function useRecorder(): UseRecorder {
       if (current2) setState("idle");
       return {
         samples: null,
-        error: stopDecodeMessage(verdict.error),
+        error: verdict.error,
         // Kept even when superseded — see `classifyStopDecode` and #165.
         blob: verdict.keepBlob ? blob : null,
       };
     }
-  }, [abandonStream, clearTick]);
+  }, [abandonStream, clearTick, setState]);
 
   const retryDecode = useCallback(
     async (blob: Blob): Promise<RetryDecodeResult> => {
@@ -1073,103 +1084,17 @@ export function useRecorder(): UseRecorder {
       void resumeAudioContext().catch((cause: unknown) => {
         console.error("Could not resume the audio context", cause);
       });
-      try {
-        const samples = await decodeToCanonical(blob);
-        // A decode to zero samples yields no usable take. On the RETRY path this
-        // is NOT proven silence the way it is for `stop()`: the bytes are held
-        // only because the FIRST decode THREW, so a later zero-sample decode is
-        // ambiguous, and dropping the held take on it would lose the only copy
-        // (George R3 G-1). So this is just another retry failure — the caller
-        // keeps the bytes and surfaces the message; it never drops them.
-        if (samples.length === 0) {
-          return { samples: null, error: "No sound was recorded. Try again." };
-        }
-        return { samples, error: null };
-      } catch {
-        return {
-          samples: null,
-          error: "Recording could not be decoded on this device.",
-        };
-      }
+      // The empty-vs-throw choice, and why a zero-sample re-decode is not
+      // proven silence here the way it is on `stop()`, are `decodeRetry`'s
+      // (#745). The caller keeps the bytes on every failure.
+      return decodeRetry(() => decodeToCanonical(blob));
     },
     []
   );
 
-  const previewCapture = useCallback(async (): Promise<Int16Array | null> => {
-    const recorder = recorderRef.current;
-    if (!recorder || recorder.state === "inactive") return null;
-    // Unlock Web Audio in the SAME gesture turn as the Play tap that reaches this
-    // synchronously, BEFORE the awaits below: a pause that spanned an iOS
-    // interruption or backgrounding leaves the shared context suspended, and iOS
-    // will not un-suspend it once the activation is spent — so a preview decoded
-    // first, then played, would be silent. Fire-and-forget, like the record and
-    // playback paths (#101 / George R1 P3).
-    void resumeAudioContext().catch((cause: unknown) => {
-      console.error("Could not resume the audio context", cause);
-    });
-    // Snapshot before the awaits, exactly as `stop()` does: the audio belongs to
-    // this invocation, so a cancel()/leave() reassigning `chunksRef` mid-decode
-    // cannot divert it. A superseded generation returns null (silent), never a
-    // preview a newer recording would own.
-    const generation = generationRef.current;
-    const chunks = chunksRef.current;
-    // Flush any slice MediaRecorder is still buffering, so the preview includes
-    // the audio right up to the pause. `requestData` is valid while paused and
-    // fires `dataavailable` synchronously-ish; a macrotask lets it land. Some
-    // implementations reject it outside "recording" — then we preview the chunks
-    // already in hand, which is only the last sub-250 ms slice short.
-    try {
-      recorder.requestData();
-    } catch {
-      // requestData unsupported in this state — decode what already arrived.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    // Only decode a take that is STILL this recorder and STILL paused. A Back
-    // (which runs stop()) or a Resume during the flush wait means stop() or a new
-    // span owns the chunks now — decoding them here would run a second
-    // decodeToCanonical + PCM allocation in parallel with stop()'s, doubling the
-    // main-thread cost and memory on the low-end device the save path guards
-    // (George R3 #2). This closes the pre-decode window; a decode already in
-    // flight cannot be aborted (decodeAudioData has no cancel), but the caller's
-    // epoch drops its result.
-    if (
-      generation !== generationRef.current ||
-      recorderRef.current !== recorder ||
-      recorder.state !== "paused"
-    ) {
-      return null;
-    }
-    if (chunks.length === 0) return null;
-    const blob = new Blob(chunks, { type: recorder.mimeType });
-    if (blob.size === 0) return null;
-    try {
-      const samples = await decodeToCanonical(blob);
-      // Re-check ownership AND paused-state after the decode, not just generation:
-      // `resume()`/`stop()` do not bump `generationRef`, so a Resume or Back landing
-      // DURING the decode must still resolve null — the documented contract a future
-      // hook caller relies on, not only the component's epoch (Frank R8).
-      if (
-        generation !== generationRef.current ||
-        recorderRef.current !== recorder ||
-        recorder.state !== "paused"
-      ) {
-        return null;
-      }
-      // Zero samples is nothing to preview — same class as an undecodable blob.
-      return samples.length > 0 ? samples : null;
-    } catch (cause: unknown) {
-      // An undecodable partial container (device-dependent, chiefly iOS fMP4
-      // before its moov atom). Not this hook's error state: the caller degrades
-      // Play to disabled. Logged, not surfaced — console is the diagnostic here,
-      // and the `cause` is what tells "this device can't preview" from a real
-      // decoder bug in the field (#130).
-      console.error("Could not decode the take for preview", cause);
-      return null;
-    }
-  }, []);
-
   const cancel = useCallback(() => {
     generationRef.current++;
+    takeOpenRef.current = false;
     clearTick();
     // Stop the live-scope push before the stream is torn down (releaseStream
     // nulls the tap too, but keep the flag consistent with the other exits).
@@ -1207,7 +1132,7 @@ export function useRecorder(): UseRecorder {
     // failure must not follow the translator to the next screen and read as a
     // fresh one. Nothing else clears it that `start()` does not already clear.
     setError(null);
-  }, [clearTick, releaseStream]);
+  }, [clearTick, releaseStream, setState]);
 
   // Re-arm Web Audio when the app returns to the foreground mid-take (#76).
   // Extracted to `armForegroundResume` so its two guards (recording, visible) and
@@ -1215,8 +1140,8 @@ export function useRecorder(): UseRecorder {
   // the way `resumeAudioContext` itself is — `tests/foreground-resume.test.ts`
   // mutates each guard to prove it. The effect is the one-line call plus the
   // `[state]` dependency: browser-boundary wiring whose guards are Node-tested,
-  // but the effect actually firing and iOS gesture-withholding are the on-device
-  // pass for #76 — NOT yet run on any device.
+  // but the effect actually firing and iOS gesture-withholding are on-device
+  // surface for #76, not exercised here.
   useEffect(() => armForegroundResume(state === "recording"), [state]);
 
   // Never leave the microphone hot if the screen unmounts mid-recording.
@@ -1224,20 +1149,20 @@ export function useRecorder(): UseRecorder {
 
   return {
     state,
+    readState,
     supported,
     elapsedMs,
     error,
     start,
-    pause,
-    resume,
     stop,
     retryDecode,
-    previewCapture,
     cancel,
+    seal,
     readLevel,
     readMeterAvailable,
     readScope,
     peekScope,
     meterFailed,
+    takeCap: takeCapStatus(elapsedMs, state === "recording"),
   };
 }

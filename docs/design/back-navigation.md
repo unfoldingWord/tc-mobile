@@ -455,12 +455,15 @@ This is the exact regression test for R2-G-P2-1/R2-G-P2-2/R3-G-P2-1's
 class, and — since round 4 — also answers #493's cross-issuer coalescing
 question **for the two issuers this guard tracks** (`goBack` and the
 recorder's commit-close exit), at the source rather than disclosing it as an
-open risk. It does **not** close #493 for the adapter's own programmatic
-recorder close (`commitCloseRecorder`'s raw `window.history.back()`,
-`hooks/use-nav-stack.ts`): that is a THIRD raw issuer
-outside `TravelGuardState` entirely, suppressed rather than arbitrated, and
-the any-outstanding guard cannot see or refuse against it — already disclosed
-at `travel-guard.ts` (the THIRD raw issuer paragraph). `goBack` and the recorder's commit-close exit are
+open risk. At the time this note was written, it did **not** close #493 for
+the adapter's own programmatic recorder close (`commitCloseRecorder`'s raw
+`window.history.back()`, `hooks/use-nav-stack.ts`): that was a THIRD raw
+issuer outside `TravelGuardState` entirely, suppressed rather than
+arbitrated, invisible to the any-outstanding guard. #763 later found that
+issuer could race and folded it into the guard's `"commit-close"` slot
+through `history-latch.ts`'s `recorderExitTraversal` (see `travel-guard.ts`),
+so the programmatic recorder close is arbitrated now, not a third raw issuer
+the guard cannot see. `goBack` and the recorder's commit-close exit are
 rewritten to call `beginBack` (settling at the next landing with
 `settleOutstanding`) instead of touching **only** `backRequested` — **not**
 `suppressPop`, which stays fully load-bearing in the adapter at the

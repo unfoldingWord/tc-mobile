@@ -79,7 +79,7 @@ export interface NativeShareBridge {
   share(options: { files: string[] }): Promise<void>;
 }
 
-type ShareRoute = "native" | "web" | "unsupported";
+export type ShareRoute = "native" | "web" | "unsupported";
 
 /**
  * Which way this share goes. Called twice per share: once before the encode with
@@ -355,7 +355,8 @@ export function createNativeShareSession(
 }
 
 /**
- * 128 random bits as hex, for one staged share's directory.
+ * 128 random bits as hex, for one staged share's directory (and, in
+ * `archive-spool.ts`, one spool file's name, #1003).
  *
  * **`getRandomValues`, deliberately not `crypto.randomUUID`** (Frank R6 P2,
  * second pass). `randomUUID` needs Chromium 92 / WebKit 15.4; `getRandomValues`
@@ -364,7 +365,7 @@ export function createNativeShareSession(
  * the newer API here would put a `TypeError` in the one place the fix has to
  * work. It also means one path rather than a primary and an untested fallback.
  */
-function randomShareId(): string {
+export function randomShareId(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(

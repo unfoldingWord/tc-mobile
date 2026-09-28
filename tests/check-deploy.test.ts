@@ -33,6 +33,8 @@ import {
   SpaFallbackError,
 } from "../scripts/check-deploy.mjs";
 
+import { stripComments } from "./support";
+
 // An independent oracle for "this checkout's version", read the same way
 // `currentVersion()` reads it but without importing it — the fallback
 // assertions below must pin the *behaviour* (fall back to the working tree),
@@ -280,10 +282,8 @@ describe("CLI entry point against a real server serving a malformed version.json
   // event loop. `execFileSync` — used by the other CLI-subprocess describe
   // block above — blocks that event loop synchronously until the child
   // exits, which means the in-process `http.Server` below can never
-  // dequeue the child's incoming connection: every run hung until
-  // `execFileSync`'s own timeout SIGTERM'd it (observed directly: status
-  // `null`, signal `SIGTERM`, no stderr — reproduced live while writing
-  // this test, not theorized). `execFile` (async, promisified) yields
+  // dequeue the child's incoming connection, so the child would sit until
+  // its own timeout SIGTERM'd it. `execFile` (async, promisified) yields
   // control back to the event loop while the child runs, so the server can
   // actually answer it.
   const execFileAsync = promisify(execFile);
@@ -668,6 +668,109 @@ describe("isCanonicalOrigin", () => {
     expect(
       isCanonicalOrigin("https://some-user@github.com/sethstoll3/tc-mobile.git")
     ).toBe(false);
+  });
+
+  // Frank r2 P2 on #751: a suffix-style `~/.ssh/config` Host alias is
+  // rejected, because the URL text cannot show where it resolves. A benign
+  // `-uw` and a hostile `-evil` are the same string shape, so the gate
+  // treats them alike and fails closed on both.
+  it.each([
+    "git@github.com-uw:unfoldingWord/tc-mobile.git",
+    "git@github.com-uw:unfoldingWord/tc-mobile",
+    "git@github.com-evil:unfoldingWord/tc-mobile.git",
+    "git@ssh.github.com-uw:unfoldingWord/tc-mobile.git",
+    "git@github.com-uw:sethstoll3/tc-mobile.git",
+  ])("rejects a suffix-style Host alias: %s", (url) => {
+    expect(isCanonicalOrigin(url)).toBe(false);
+  });
+
+  it.each([
+    "git@gitlab.com:unfoldingWord/tc-mobile.git",
+    "git@evil.example:unfoldingWord/tc-mobile.git",
+    "git@github.com.evil.example:unfoldingWord/tc-mobile.git",
+    "git@localhost:unfoldingWord/tc-mobile",
+    "git@gh:unfoldingWord/tc-mobile.git",
+  ])("rejects a non-GitHub scp host with the canonical path: %s", (url) => {
+    expect(isCanonicalOrigin(url)).toBe(false);
+  });
+
+  it("accepts an explicit ssh:// URL via the ssh.github.com alias host", () => {
+    expect(
+      isCanonicalOrigin("ssh://git@ssh.github.com/unfoldingWord/tc-mobile.git")
+    ).toBe(true);
+  });
+
+  it("rejects a fork's URL via ssh://ssh.github.com", () => {
+    expect(
+      isCanonicalOrigin("ssh://git@ssh.github.com/sethstoll3/tc-mobile.git")
+    ).toBe(false);
+  });
+
+  it("accepts the canonical https URL with a trailing slash", () => {
+    expect(
+      isCanonicalOrigin("https://github.com/unfoldingWord/tc-mobile/")
+    ).toBe(true);
+  });
+
+  it("accepts the canonical https URL with a trailing .git and a trailing slash", () => {
+    expect(
+      isCanonicalOrigin("https://github.com/unfoldingWord/tc-mobile.git/")
+    ).toBe(true);
+  });
+
+  it("rejects a fork's URL with a trailing slash", () => {
+    expect(isCanonicalOrigin("https://github.com/sethstoll3/tc-mobile/")).toBe(
+      false
+    );
+  });
+
+  // #798 item 1: a separate `/.git` path segment (the shape of a bare or
+  // mirror clone's own directory name) was being stripped by the same
+  // pattern as a real `.git` SUFFIX, so it silently collapsed to the
+  // canonical URL and passed. These pin both directions: the canonical
+  // forms above still pass (with and without a real `.git` suffix, and
+  // both the https and scp-like shapes), and the malformed `/.git` segment
+  // is now refused rather than quietly accepted.
+  it("rejects a separate /.git path segment on the https form", () => {
+    expect(
+      isCanonicalOrigin("https://github.com/unfoldingWord/tc-mobile/.git")
+    ).toBe(false);
+  });
+
+  it("rejects a separate /.git path segment on the scp-like form", () => {
+    expect(
+      isCanonicalOrigin("git@github.com:unfoldingWord/tc-mobile/.git")
+    ).toBe(false);
+  });
+
+  it("rejects a separate /.git path segment on an explicit ssh:// URL", () => {
+    expect(
+      isCanonicalOrigin("ssh://git@github.com/unfoldingWord/tc-mobile/.git")
+    ).toBe(false);
+  });
+
+  it("still accepts the canonical https URL with no .git suffix (both states, #798)", () => {
+    expect(
+      isCanonicalOrigin("https://github.com/unfoldingWord/tc-mobile")
+    ).toBe(true);
+  });
+
+  it("still accepts the canonical https URL with a real .git suffix (both states, #798)", () => {
+    expect(
+      isCanonicalOrigin("https://github.com/unfoldingWord/tc-mobile.git")
+    ).toBe(true);
+  });
+
+  it("still accepts the canonical scp-like URL with no .git suffix (both states, #798)", () => {
+    expect(isCanonicalOrigin("git@github.com:unfoldingWord/tc-mobile")).toBe(
+      true
+    );
+  });
+
+  it("still accepts the canonical scp-like URL with a real .git suffix (both states, #798)", () => {
+    expect(
+      isCanonicalOrigin("git@github.com:unfoldingWord/tc-mobile.git")
+    ).toBe(true);
   });
 });
 
@@ -1247,9 +1350,13 @@ describe("vite.config.ts stays in sync with SHA_LENGTH", () => {
   // `vite.config.ts`'s source fresh and asserts it still pins the exact
   // same length as the exported `SHA_LENGTH`.
   it("vite.config.ts's buildSha pins the same --short=<N> as SHA_LENGTH", () => {
-    const viteConfigSource = readFileSync(
-      path.join(import.meta.dirname, "..", "vite.config.ts"),
-      "utf8"
+    // Comments stripped first (#822): the regex takes the FIRST match, so a
+    // comment quoting the call above the live one would otherwise answer.
+    const viteConfigSource = stripComments(
+      readFileSync(
+        path.join(import.meta.dirname, "..", "vite.config.ts"),
+        "utf8"
+      )
     );
     // Match the actual `execSync(...)` call, not a doc comment: the file's
     // own comment block above `buildSha` explains the `--short=7` choice in
@@ -1276,9 +1383,13 @@ describe("vite.config.ts stays in sync with SHA_LENGTH", () => {
   // here (e.g. bumping the primary call to `--short=8` without touching the
   // fallback slice) would go undetected.
   it("vite.config.ts's WORKERS_CI_COMMIT_SHA fallback slices to the same length as SHA_LENGTH", () => {
-    const viteConfigSource = readFileSync(
-      path.join(import.meta.dirname, "..", "vite.config.ts"),
-      "utf8"
+    // Comments stripped first (#822): the regex takes the FIRST match, so a
+    // comment quoting the call above the live one would otherwise answer.
+    const viteConfigSource = stripComments(
+      readFileSync(
+        path.join(import.meta.dirname, "..", "vite.config.ts"),
+        "utf8"
+      )
     );
     const match = /WORKERS_CI_COMMIT_SHA\?\.slice\(0,\s*(\d+)\)/.exec(
       viteConfigSource

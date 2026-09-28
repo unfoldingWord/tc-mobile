@@ -8,19 +8,25 @@ import {
   shareGapText,
   shareProgressText,
 } from "@/components/share-error-copy";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 import { EncoderFailedError, EncoderStalledError } from "@/hooks/mp3-codec";
 import { subscribeToFailures } from "@/hooks/report-failure";
 import {
   HIDDEN,
+  type ShareGap,
   type ShareProgress,
   type ShareSettled,
 } from "@/hooks/share-progress";
 import { classifyPrepareError, settlePrepareFailure } from "@/hooks/share-flow";
 
-/** Source-shape reads, because there is no renderer here (#197). */
+import { stripComments } from "./support";
+
+/** Source-shape reads. Comments stripped so a positive match reads code, not
+ *  a comment carrying the pinned text (#822). */
 const read = (rel: string) =>
-  readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
+  stripComments(
+    readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8")
+  );
 
 /**
  * A stalled or failing encoder during Share says so where the translator is
@@ -144,10 +150,7 @@ describe("shareProgressText", () => {
     since: 0,
     pending: null,
   });
-  const outcome = (
-    settled: ShareSettled,
-    gap?: { missing: number; partial: number }
-  ): ShareProgress => ({
+  const outcome = (settled: ShareSettled, gap?: ShareGap): ShareProgress => ({
     phase: "outcome",
     settled,
     since: 0,
@@ -212,13 +215,13 @@ describe("shareProgressText", () => {
   it("partial reuses the handed-over line, then names the gap — chapter scope (P1, this lane's own review round)", () => {
     expect(
       shareProgressText(
-        outcome("partial", { missing: 1, partial: 0 }),
+        outcome("partial", { missing: 1, partial: 0, partialChapters: 0 }),
         "chapter"
       )
     ).toBe(`${strings.shareSent} ${strings.shareMissing(1)}`);
     expect(
       shareProgressText(
-        outcome("partial", { missing: 3, partial: 0 }),
+        outcome("partial", { missing: 3, partial: 0, partialChapters: 0 }),
         "chapter"
       )
     ).toBe(`${strings.shareSent} ${strings.shareMissing(3)}`);
@@ -226,19 +229,49 @@ describe("shareProgressText", () => {
 
   it("partial names the gap in BOOK terms, combining both grains when both are non-zero", () => {
     expect(
-      shareProgressText(outcome("partial", { missing: 2, partial: 0 }), "book")
+      shareProgressText(
+        outcome("partial", { missing: 2, partial: 0, partialChapters: 0 }),
+        "book"
+      )
     ).toBe(`${strings.shareSent} ${strings.shareBookMissing(2)}`);
     expect(
-      shareProgressText(outcome("partial", { missing: 0, partial: 2 }), "book")
+      shareProgressText(
+        outcome("partial", { missing: 0, partial: 2, partialChapters: 1 }),
+        "book"
+      )
     ).toBe(`${strings.shareSent} ${strings.shareBookPartial(2)}`);
     expect(
-      shareProgressText(outcome("partial", { missing: 1, partial: 2 }), "book")
-    ).toBe(`${strings.shareSent} ${strings.shareBookMissingAndPartial(1, 2)}`);
+      shareProgressText(
+        outcome("partial", { missing: 1, partial: 2, partialChapters: 2 }),
+        "book"
+      )
+    ).toBe(
+      `${strings.shareSent} ${strings.shareBookMissingAndPartial(1, 2, 2)}`
+    );
+  });
+
+  it("partial passes the distinct-chapter count through, so one partial chapter and two read differently (#446)", () => {
+    expect(
+      shareProgressText(
+        outcome("partial", { missing: 1, partial: 2, partialChapters: 1 }),
+        "book"
+      )
+    ).toBe(
+      `${strings.shareSent} 1 chapter could not be included. 2 segments of an included chapter could not be included.`
+    );
+    expect(
+      shareProgressText(
+        outcome("partial", { missing: 1, partial: 2, partialChapters: 2 }),
+        "book"
+      )
+    ).toBe(
+      `${strings.shareSent} 1 chapter could not be included. 2 segments of 2 included chapters could not be included.`
+    );
   });
 
   it("partial is never the plain sent line — the whole point of the outcome", () => {
     const text = shareProgressText(
-      outcome("partial", { missing: 1, partial: 0 }),
+      outcome("partial", { missing: 1, partial: 0, partialChapters: 0 }),
       "chapter"
     );
     expect(text).not.toBe(strings.shareSent);
@@ -293,25 +326,52 @@ describe("shareProgressText", () => {
  */
 describe("shareGapText", () => {
   it("chapter scope always reads the plain missing count — the finer grain never applies", () => {
-    expect(shareGapText({ missing: 1, partial: 0 }, "chapter")).toBe(
-      strings.shareMissing(1)
-    );
+    expect(
+      shareGapText({ missing: 1, partial: 0, partialChapters: 0 }, "chapter")
+    ).toBe(strings.shareMissing(1));
     // Chapter share never sets `partial` (see `share-flow.ts`'s
     // `PreparedShare`), but the function still must not read it if it did.
-    expect(shareGapText({ missing: 1, partial: 5 }, "chapter")).toBe(
-      strings.shareMissing(1)
-    );
+    expect(
+      shareGapText({ missing: 1, partial: 5, partialChapters: 2 }, "chapter")
+    ).toBe(strings.shareMissing(1));
   });
 
   it("book scope combines both grains when both are non-zero", () => {
-    expect(shareGapText({ missing: 2, partial: 0 }, "book")).toBe(
-      strings.shareBookMissing(2)
+    expect(
+      shareGapText({ missing: 2, partial: 0, partialChapters: 0 }, "book")
+    ).toBe(strings.shareBookMissing(2));
+    expect(
+      shareGapText({ missing: 0, partial: 3, partialChapters: 2 }, "book")
+    ).toBe(strings.shareBookPartial(3));
+    expect(
+      shareGapText({ missing: 1, partial: 2, partialChapters: 1 }, "book")
+    ).toBe(strings.shareBookMissingAndPartial(1, 2, 1));
+    expect(
+      shareGapText({ missing: 1, partial: 2, partialChapters: 2 }, "book")
+    ).toBe(strings.shareBookMissingAndPartial(1, 2, 2));
+  });
+
+  it("the book Notice for each producer shape reads exactly (#446)", () => {
+    // The shapes `exportBookZip` can hand the book menu, as the exact words
+    // a facilitator reads.
+    const book = (missing: number, partial: number, partialChapters: number) =>
+      shareGapText({ missing, partial, partialChapters }, "book");
+    // Partial only, one chapter / several: no chapter was left out, so the
+    // segment count alone is unambiguous.
+    expect(book(0, 2, 1)).toBe("2 segments could not be included.");
+    expect(book(0, 3, 3)).toBe("3 segments could not be included.");
+    // Missing only.
+    expect(book(2, 0, 0)).toBe("2 chapters could not be included.");
+    // Missing AND partial: the second clause names the chapters that hold
+    // the gaps, from the producer's count, never from the segment sum.
+    expect(book(1, 1, 1)).toBe(
+      "1 chapter could not be included. 1 segment of an included chapter could not be included."
     );
-    expect(shareGapText({ missing: 0, partial: 3 }, "book")).toBe(
-      strings.shareBookPartial(3)
+    expect(book(1, 2, 1)).toBe(
+      "1 chapter could not be included. 2 segments of an included chapter could not be included."
     );
-    expect(shareGapText({ missing: 1, partial: 2 }, "book")).toBe(
-      strings.shareBookMissingAndPartial(1, 2)
+    expect(book(1, 2, 2)).toBe(
+      "1 chapter could not be included. 2 segments of 2 included chapters could not be included."
     );
   });
 
@@ -323,10 +383,10 @@ describe("shareGapText", () => {
     const segments = read("src/components/segments-screen.tsx");
     const books = read("src/components/books-screen.tsx");
     expect(segments).toMatch(
-      /shareGapText\(\s*\{ missing: share\.missing, partial: 0 \},\s*"chapter"\s*\)/
+      /shareGapText\(\s*\{ missing: share\.missing, partial: 0, partialChapters: 0 \},\s*"chapter"\s*\)/
     );
     expect(books).toMatch(
-      /shareGapText\(\s*\{ missing: bookShare\.missing, partial: bookShare\.partialSegments \},\s*"book"\s*\)/
+      /shareGapText\(\s*\{\s*missing: bookShare\.missing,\s*partial: bookShare\.partialSegments,\s*partialChapters: bookShare\.partialChapters,\s*\},\s*"book"\s*\)/
     );
   });
 });

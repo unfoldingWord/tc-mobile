@@ -15,12 +15,9 @@ import {
  * describe block below drives a scenario with fake `history.state`-shaped
  * inputs, composing `resumeNavIndex` with `navDirection`/`popAction` the way
  * the adapter (`hooks/use-nav-stack.ts`, wired in PR2) composes them — no
- * jsdom, no real `history`, and no exercise of the adapter's actual mount
- * effect. That composition proof is real and useful — it is the exact decision
- * table the adapter reproduces — but with no renderer it is not evidence the
- * live reload path is device-verified (Frank R4 P2, PR #492); that is a T2
- * on-device item, not claimed here. See the second describe block's own
- * docblock for the full scope statement.
+ * real `history`, and no exercise of the adapter's actual mount effect.
+ * These rows test pure composition, not the live reload path. See the second
+ * describe block's scope statement.
  */
 describe("resumeNavIndex", () => {
   it("resumes 0 for a fresh load with no state at all", () => {
@@ -82,15 +79,11 @@ describe("resumeNavIndex", () => {
  * `replaceState`-stamps index 0 when there is nothing app-shaped to adopt,
  * replacing `develop`'s old unconditional `replaceState`/reset.
  *
- * These remain PURE-function tests, though — there is no renderer here
- * (AGENTS.md), so nothing below exercises the adapter's real mount effect or a
+ * These pure-function tests do not exercise the adapter's mount effect or a
  * real `popstate`. They pin the decision table the adapter composes and the
- * BOTH-refs contract it must honour; the DOM reload path itself is not
- * observable from these Node rows (no renderer). It is exercised by
- * e2e/back-navigation.spec.ts case (c) in headless Chromium and remains an
- * on-device (T2) item, NOT claimed done here. The first test below
- * demonstrates the OLD un-adopted baseline (develop's bug); the two after it
- * demonstrate what the adopted composition the adapter now uses produces.
+ * both-refs contract it must honour. The first row models the un-adopted
+ * baseline; the following rows model the adopted composition. Browser reload
+ * behavior belongs to `e2e/back-navigation.spec.ts`, not these Node rows.
  */
 describe("resumeNavIndex + navDirection + popAction composition (the pure decision table the PR2 adapter composes)", () => {
   it("without adopting the resumed index (the OLD develop baseline, before PR2), a post-reload Back misfires as trap-forward", () => {
@@ -123,8 +116,8 @@ describe("resumeNavIndex + navDirection + popAction composition (the pure decisi
     // Frank R4 P2 (PR #492): this row models what the adapter's mount effect
     // reads BEFORE the first popstate — it calls
     // `resumeNavIndex(window.history.state)` as of PR2. This is the pure
-    // composition that effect performs; with no renderer here it is not
-    // evidence the live reload path is device-verified (T2, on-device).
+    // composition that effect performs; it does not execute that effect or
+    // establish the live reload behavior on a device.
     const currentEntryAtMount = { tc: true, index: 2 }; // top of stack, depth 2
     const adoptedNavIndex = resumeNavIndex(currentEntryAtMount);
     expect(adoptedNavIndex).toBe(2);

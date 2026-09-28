@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { stripComments } from "./support";
+
 /**
  * George R3 P2 (PR #499), Amendment B's load-bearing half: the mount effect
  * must adopt the resumed index into BOTH `navIndex.current` AND
@@ -13,9 +15,9 @@ import { describe, expect, it } from "vitest";
  * Back as "same"/"forward", and `popAction` swallows it — the translator is
  * stuck on Segments.
  *
- * WHY A TEXTUAL GATE AND NOT A BEHAVIOURAL TEST. This Node-only suite has no
- * renderer (AGENTS.md: no jsdom), so `useNavStack`'s mount effect cannot be
- * run and its refs cannot be read at runtime. `tests/nav-resume-index.test.ts`
+ * This source-shape gate does not execute the mount effect or inspect live
+ * refs. The static render harness does not run effects either.
+ * `tests/nav-resume-index.test.ts`
  * proves the pure COMPOSITION (that adopting both refs classifies the next
  * Back correctly) against a local `let nextIndex`, not against the adapter
  * source — deleting `nextIndex.current = resumed` from the real effect leaves
@@ -36,9 +38,6 @@ describe("Amendment B adopts the resumed index into BOTH refs (George R3 P2)", (
 
   // Strip comments so the gate reads CODE, not the docblock beside the effect
   // that (deliberately) names `navIndex`, `nextIndex` and "BOTH refs".
-  const stripComments = (text: string) =>
-    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
   const code = stripComments(readFileSync(sourceUrl, "utf8"));
 
   it("the adapter has exactly one resumeNavIndex(...) call (the mount effect)", () => {

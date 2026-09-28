@@ -3,6 +3,17 @@ import { Capacitor, type PluginListenerHandle } from "@capacitor/core";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 import {
+  deferWrite,
+  historyWriteDecision,
+  outstandingConsume,
+  recorderExitTraversal,
+  replayDecision,
+  replayQueue,
+  type DeferredWrite,
+  type HistoryWrite,
+  type HistoryWriteDecision,
+} from "@/lib/nav/history-latch";
+import {
   floorArmedOnResume,
   floorEntryForLayerChange,
   rearmAfterLayerBack,
@@ -37,12 +48,10 @@ import { reportFailure } from "./report-failure";
  * `settleOutstanding`, `routeBackToLayer` via `popAction`) all live, tested, in
  * `src/lib/nav`. Extracting App.tsx's inline refs/effects here is what lets the
  * onion keep the routing logic Node-testable while the browser wiring stays in
- * one reviewable place. The Vitest suite has no renderer (AGENTS.md: no jsdom),
- * so it covers only the pure decisions this composes; the DOM paths themselves
- * — `popstate` routing, the reload adopt, the sheet-close-and-land, and the
- * double-Back guard — are exercised in real Chromium by
- * `e2e/back-navigation.spec.ts` (Playwright, against the shipped `dist/`
- * build) and remain an on-device item for iOS Safari and Android WebView. Two
+ * one reviewable place. The static render harness does not drive this hook's
+ * effects or browser history. `e2e/back-navigation.spec.ts` targets the DOM
+ * paths against the shipped `dist/` build in Chromium; it does not establish
+ * behavior on iOS Safari or Android WebView. Two
  * things that spec does NOT reach, and which stay device items: the recorder's
  * commit path ITSELF (`requestClose` → re-arm push → `transitionInFlight` →
  * the consuming back()) is not observably distinct from a bare sheet-close in
@@ -52,7 +61,7 @@ import { reportFailure } from "./report-failure";
  * reachable from a headless spec at all — its exact end state stays a device
  * item (see the commit-close case below).
  *
- * What the adapter owns (six refs):
+ * What the adapter owns (its refs):
  *   - `navIndex` / `nextIndex` — the monotonic depth stamp (invariant 9). Both
  *     seed from `resumeNavIndex` on mount (Amendment B): a reload mid-stack
  *     ADOPTS the entry already there rather than rewriting it to 0.
@@ -81,9 +90,17 @@ import { reportFailure } from "./report-failure";
  *     `beginBack("commit-close")` is REFUSED because a `goBack` is still
  *     outstanding — there it absorbs that outstanding `goBack`'s own landing
  *     rather than issue a second traversal (see the popstate handler's
- *     commit-close case). `commitCloseRecorder`'s own raw `history.back()` is a
- *     THIRD raw issuer OUTSIDE `TravelGuardState`, suppressed rather than
- *     arbitrated; it is never fed to `beginBack`.
+ *     commit-close case). `commitCloseRecorder`'s programmatic close is
+ *     arbitrated too since #763: `recorderExitTraversal` decides whether it
+ *     issues its `history.back()` (through `beginBack("commit-close")`),
+ *     absorbs a Back already in flight, defers to one, or has nothing to
+ *     consume.
+ *   - `deferredWrites` — the history writes (`enterScreen`, the floor arm)
+ *     requested while one of the Backs above had not yet landed (#435), plus
+ *     the programmatic close's deferred consume (#763). No write is issued
+ *     under a pending traversal; `lib/nav/history-latch.ts` decides whether it
+ *     is written, deferred to the landing, or refused, and every landing
+ *     replays what was deferred.
  *
  * Amendment C is a centrally-owned cleanup effect (dep array `[screen,
  * recovering, databasePanel]`, primitives only — invariant 6) that clears the
@@ -130,6 +147,26 @@ export interface NativeBackRoute {
   /** The one in-app Back path (`goBack`). */
   goBack(): void;
 }
+
+/**
+ * The most recent `attachNativeBack` call's id, so attaches are ordered and a
+ * draining listener can tell a newer one from itself (#674). Module scope
+ * because the successor is a separate call — a remount — with nothing else
+ * shared between the two.
+ */
+let latestNativeBackAttach = 0;
+
+/**
+ * The newest attach whose own ENABLE has resolved while it was still live —
+ * the first point a successor can be shown to take a press. Beginning an
+ * attach proves nothing: `addListener`'s handle resolves once the call is
+ * posted, not once the plugin thread has registered it, and a successor whose
+ * `addListener` rejected, or that detached before its handle, never takes one.
+ * Its enable is posted after its `addListener`, so (inference, from the plugin
+ * thread running calls in order; not observed on a device) the enable
+ * resolving follows the registration.
+ */
+let operationalNativeBackAttach = 0;
 
 /**
  * Route a hardware Back inside the Capacitor shell (#374, design Amendment F).
@@ -181,43 +218,78 @@ export interface NativeBackRoute {
  * otherwise be an unhandled rejection with no context, so each is routed to
  * `reportFailure` under its own name. A rejected `remove()` is also the one
  * failure that leaves state behind — the callback stays registered — so the
- * listener checks `detached` itself and does nothing after the detach.
+ * listener checks its own phase and does nothing once the detach completes.
  *
  * Returns the detach. The plugin resolves its listener handle asynchronously,
  * so a detach that runs first marks the handle for removal the moment it lands.
+ *
+ * The disable is a bridge round trip (#674), and until it is applied the
+ * Android callback is still enabled, so a Back in that window still reaches
+ * this listener. Going inert there would swallow the press; routing it in-app
+ * would too, because the detach runs as the hook unmounts — the crash screen
+ * is the reachable case — and the `popstate` router goes with it. So the
+ * detach has two steps. While the disable is in flight the listener is
+ * DRAINING: a press gets what it would get a moment later from the activity
+ * default once the disable lands, which is leaving (`exitApp()`), whatever
+ * the WebView could pop. Only after the disable has settled — resolved or
+ * rejected, since a refused disable is reported and there is nothing further
+ * to wait for — does the listener go inert and the remove get posted. The
+ * remove therefore still follows the disable, as #634 round 3 relied on.
+ * Draining exists only where the window does: on Android, after the enable
+ * was posted (that is, once the handle resolved). Earlier, or off Android,
+ * the callback is not enabled and the detach is inert at once.
+ *
+ * A draining press leaves unless a newer attach is OPERATIONAL
+ * (`operationalNativeBackAttach`). `exitApp()` beside a successor that takes
+ * the same press would finish the activity under a running app — the variant
+ * #634 round 3 rejected — so then the draining listener is inert instead. A
+ * successor that has merely begun cannot take the press yet, so going inert
+ * beside it would swallow the press again (#674).
  */
 export function attachNativeBack(
   plugin: NativeBackPlugin,
   route: NativeBackRoute,
   toggleAndroidHandler = false
 ): () => void {
-  let detached = false;
+  const attach = ++latestNativeBackAttach;
+  let phase: "live" | "draining" | "detached" = "live";
   let handle: PluginListenerHandle | undefined;
-  const setHandler = (enabled: boolean): void => {
-    if (!toggleAndroidHandler) return;
-    plugin
+  const setHandler = (enabled: boolean): Promise<void> => {
+    if (!toggleAndroidHandler) return Promise.resolve();
+    return plugin
       .toggleBackButtonHandler({ enabled })
       .catch((cause: unknown) => reportFailure(cause, "native-back-handler"));
+  };
+  const exitApp = (): void => {
+    plugin
+      .exitApp()
+      .catch((cause: unknown) => reportFailure(cause, "native-back-exit"));
+  };
+  const release = (): void => {
+    phase = "detached";
+    handle
+      ?.remove()
+      .catch((cause: unknown) => reportFailure(cause, "native-back-remove"));
   };
   plugin
     .addListener("backButton", ({ canGoBack }) => {
       // Inert once detached, whatever the plugin did with `remove()`: a
       // removal that rejected leaves this callback registered, and the next
       // mount registers a second one — one press must not route twice.
-      if (detached) return;
+      if (phase === "detached") return;
+      if (phase === "draining") {
+        if (operationalNativeBackAttach <= attach) exitApp();
+        return;
+      }
       const action = route.decide();
       if (canGoBack) {
         route.goBack();
         return;
       }
-      if (action === "exit-app") {
-        plugin
-          .exitApp()
-          .catch((cause: unknown) => reportFailure(cause, "native-back-exit"));
-      }
+      if (action === "exit-app") exitApp();
     })
     .then((resolved) => {
-      if (detached) {
+      if (phase !== "live") {
         resolved
           .remove()
           .catch((cause: unknown) =>
@@ -226,16 +298,51 @@ export function attachNativeBack(
         return;
       }
       handle = resolved;
-      setHandler(true);
+      if (!toggleAndroidHandler) return;
+      plugin.toggleBackButtonHandler({ enabled: true }).then(
+        () => {
+          if (phase === "live" && attach > operationalNativeBackAttach) {
+            operationalNativeBackAttach = attach;
+          }
+        },
+        (cause: unknown) => reportFailure(cause, "native-back-handler")
+      );
     })
     .catch((cause: unknown) => reportFailure(cause, "native-back-listener"));
   return () => {
-    detached = true;
-    setHandler(false);
-    handle
-      ?.remove()
-      .catch((cause: unknown) => reportFailure(cause, "native-back-remove"));
+    const disabling = setHandler(false);
+    if (!toggleAndroidHandler || handle === undefined) {
+      release();
+      return;
+    }
+    phase = "draining";
+    // `finally`: release even if the report threw; the throw stays visible.
+    void disabling.finally(release);
   };
+}
+
+/**
+ * Drop `?check=phone` from the current history entry's URL (#1014 item 4), so
+ * a later reload of the same tab does not read it again and reopen the phone
+ * check. Not a screen transition and not an overlay dismiss — the check never
+ * pushes a nav layer of its own (`App` opens it by state alone, and this file
+ * never sees `phoneCheckOpen`) — so this is a `replaceState` on the entry
+ * already there, carrying `state` through unchanged rather than the `{ tc,
+ * index }` shape the rest of this file writes. It lives here regardless, next
+ * to `attachNativeBack`, rather than in `App.tsx`, because invariant 1 bans
+ * `window.history` anywhere else (the lint rule enforcing it does not
+ * distinguish a depth-changing call from a same-entry rewrite). A no-op when
+ * the param is already gone, so a second call after the first costs nothing.
+ */
+export function clearPhoneCheckQueryParam(): void {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("check")) return;
+  url.searchParams.delete("check");
+  window.history.replaceState(
+    window.history.state,
+    "",
+    `${url.pathname}${url.search}${url.hash}`
+  );
 }
 
 export interface UseNavStackParams {
@@ -304,6 +411,10 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   const transitionInFlight = useRef(false);
   // "This popstate is one WE caused — do not route it" (kept from develop).
   const suppressPop = useRef(false);
+  // History writes waiting for an outstanding Back to land (#435), in request
+  // order, once per screen entry (`deferWrite`). Replayed by the `popstate`
+  // handler at the end of every landing.
+  const deferredWrites = useRef<DeferredWrite[]>([]);
 
   // Latest-ref the state-half callbacks (menu.tsx onCloseRef pattern) so the
   // returned commands can be identity-stable — recorder.tsx:2213 rebuilds its
@@ -399,6 +510,151 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     navIndex.current = index;
   }, []);
 
+  /**
+   * Amendment G's arm, re-derived from the state at the moment it is written
+   * rather than at the moment it was asked for: a deferred arm (#435) replays
+   * after a landing that may already have dismissed the overlay it was for, or
+   * armed the entry itself.
+   */
+  const armFloor = useCallback(() => {
+    const action = floorEntryForLayerChange({
+      atFloor: atFloor.current,
+      armed: floorArmed.current,
+      open: layerStack.current.length,
+    });
+    if (action === "arm") {
+      floorArmed.current = true;
+      pushHistoryEntry();
+    }
+  }, [pushHistoryEntry]);
+
+  // The "consume outstanding" latch (#435, `lib/nav/history-latch.ts`). Every
+  // history write a UI command makes goes through here; the re-arms inside the
+  // `popstate` handler do not, because they run at a landing after the travel
+  // guard is settled and with `suppressPop` false (a suppressed landing returns
+  // before it routes), which is when nothing is outstanding.
+  const decideWrite = useCallback(
+    (write: HistoryWrite): HistoryWriteDecision =>
+      historyWriteDecision(
+        write,
+        outstandingConsume(suppressPop.current, travelGuard.current)
+      ),
+    []
+  );
+  const performWrite = useCallback(
+    (
+      write: Exclude<DeferredWrite, "consume-recorder">,
+      decision: HistoryWriteDecision
+    ) => {
+      if (decision === "defer") {
+        deferredWrites.current = deferWrite(deferredWrites.current, write);
+        return;
+      }
+      if (decision !== "write") return;
+      if (write === "arm-floor") armFloor();
+      else enterScreen();
+    },
+    [enterScreen, armFloor]
+  );
+  // The programmatic recorder close's history tail (#763). Its screen has
+  // already closed, so its entry must go — but never by a second
+  // `history.back()` while another is in flight. `recorderExitTraversal` has
+  // the four rows; this only performs the one it names. Replayed from the
+  // queue too, where it re-decides against the state at that landing.
+  const consumeRecorderEntry = useCallback(() => {
+    switch (
+      recorderExitTraversal(
+        suppressPop.current,
+        travelGuard.current,
+        deferredWrites.current
+      )
+    ) {
+      case "unqueue":
+        deferredWrites.current = deferredWrites.current.filter(
+          (write) => write !== "enter-recorder"
+        );
+        return;
+      case "absorb":
+        suppressPop.current = true;
+        return;
+      case "defer":
+        deferredWrites.current = deferWrite(
+          deferredWrites.current,
+          "consume-recorder"
+        );
+        return;
+      case "issue": {
+        // Both guard flags are clear on this row, so today `beginBack`
+        // always proceeds — but that is two independent checks of the same
+        // state agreeing, not a guarantee. Only write `.next`, set
+        // `suppressPop` and issue `history.back()` when `beginBack` actually
+        // says this issuer may proceed. A future refusal reason must not
+        // make this row stack a traversal the guard declined (#763's bug
+        // class, George r1 on #833 / #838 item 2).
+        //
+        // On refusal, set NOTHING — unlike the commit-close settle's refused
+        // arm (the `case "commit-close-recorder"` popstate arm below), which
+        // absorbs a `goBack` landing already in flight. This row is reached
+        // only with both guard flags already clear, so a refusal here has no
+        // landing to absorb; arming `suppressPop` anyway would make
+        // `goBack`'s own early return swallow the very next Back (Frank r1
+        // on #854, bench round 1).
+        const begun = beginBack(travelGuard.current, "commit-close");
+        if (begun.ok) {
+          travelGuard.current = begun.next;
+          suppressPop.current = true;
+          window.history.back();
+        }
+        return;
+      }
+    }
+  }, []);
+  // Called at the end of every landing. Each write is re-decided, never
+  // refused (`replayDecision`), so one whose landing issued another Back of
+  // its own waits for that one as well.
+  //
+  // `enterScreen`/`armFloor`'s `window.history` call is the only thing in this
+  // walk that can throw (#802). `replayQueue` is what stops that throw from
+  // costing the keys behind it: on a clean walk `outcome.ok` and there is
+  // nothing left to do; on a throw, the writes it had not yet attempted come
+  // back as `outcome.pending`, restored to the ref BEFORE the rethrow below —
+  // `deferredWrites.current` was already emptied above, and an exception
+  // unwinding out of this function is the only path back to the `popstate`
+  // listener that called it, so the restore has to happen first or it never
+  // happens at all.
+  //
+  // Rethrown, not reported through a new funnel key: no `window.history` call
+  // anywhere else in this file is caught locally either — every other one is
+  // bare, and a throw from any of them would already reach the same place
+  // this one now does, an uncaught exception out of a native `popstate`
+  // listener, which the global `error` handler
+  // (`app/install-failure-listeners.ts`) reports as `"uncaught-error"`. Adding
+  // a local catch-and-swallow here would make this one call the sole
+  // exception to a pattern the rest of the file does not have, for no gain the
+  // log can feel — the failure still reaches the same channel either way.
+  const replayDeferredWrites = useCallback(() => {
+    const queued = deferredWrites.current;
+    deferredWrites.current = [];
+    const outcome = replayQueue(queued, (write) => {
+      if (write === "consume-recorder") {
+        consumeRecorderEntry();
+        return;
+      }
+      performWrite(
+        write,
+        replayDecision(
+          outstandingConsume(suppressPop.current, travelGuard.current)
+        )
+      );
+    });
+    if (outcome.ok) return;
+    deferredWrites.current = outcome.pending.reduce(
+      deferWrite,
+      deferredWrites.current
+    );
+    throw outcome.cause;
+  }, [performWrite, consumeRecorderEntry]);
+
   // Amendment B (reload/bootstrap safety) — declared BEFORE the popstate effect
   // so it runs first on mount. Instead of `develop`'s unconditional
   // `replaceState({index:0})` + reset, ADOPT an app-shaped entry already on the
@@ -451,9 +707,10 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     // (a back() already outstanding) do NOTHING — no history.back(), no push.
     //
     // A SUPPRESSED traversal is outstanding too, and `beginBack` cannot see
-    // it: the raw issuers outside the guard (`commitCloseRecorder`,
-    // `trap-forward`'s cancel) set `suppressPop` and call `history.back()`
-    // themselves, and the header Back is disabled for exactly that window
+    // all of them: `trap-forward`'s cancel sets `suppressPop` and calls
+    // `history.back()` outside the guard (the programmatic recorder close
+    // also sets the guard since #763, so `beginBack` alone would refuse
+    // that one), and the header Back is disabled for exactly that window
     // (`recorder.tsx`) so it could never land here. The hardware Back (#374)
     // can — the plugin posts it from the Android UI thread, not behind the
     // pending `popstate` task — and a second `history.back()` before the
@@ -466,40 +723,46 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     window.history.back();
   }, []);
 
-  const commitCloseRecorder = useCallback((dirty: boolean) => {
-    // The recorder's own `onExit` — a PROGRAMMATIC close (erase), with no
-    // popstate involved. The state half runs, then the history tail: a
-    // popstate-driven close is `transitionInFlight` (the browser already popped
-    // and the handler re-armed, so leave history alone); a programmatic close
-    // still has its entry on the stack, so consume it, suppressing the popstate
-    // that back() fires. This raw back() is the THIRD issuer OUTSIDE the travel
-    // guard — suppressPop-guarded, never fed to beginBack (travel-guard.ts, the
-    // THIRD raw issuer paragraph).
-    onRecorderClosedRef.current(dirty);
-    if (!transitionInFlight.current) {
-      suppressPop.current = true;
-      window.history.back();
-    }
-  }, []);
+  const commitCloseRecorder = useCallback(
+    (dirty: boolean) => {
+      // The recorder's own `onExit`. The state half runs, then the history
+      // tail: a popstate-driven close is `transitionInFlight` (the browser
+      // already popped and the handler re-armed, and the commit-close settle
+      // consumes that entry), so leave history alone; a PROGRAMMATIC close (a
+      // failed save, erase's exits) still has its entry to account for, and
+      // `consumeRecorderEntry` does that through the latch and the travel
+      // guard (#763).
+      onRecorderClosedRef.current(dirty);
+      if (!transitionInFlight.current) consumeRecorderEntry();
+    },
+    [consumeRecorderEntry]
+  );
 
   const openChapter = useCallback(
     (id: ChapterId) => {
-      // State half then the protective push (Books → Segments). The push is a
-      // synchronous window.history call and the state half only enqueues React
-      // state, so their relative order is not observable — the entry is on the
-      // stack before this gesture returns either way.
+      // The latch is asked FIRST (#435): a refusal means a routed Back is
+      // outstanding and owns the next screen, so neither half runs. Otherwise
+      // the state half, then the protective push (Books → Segments) or its
+      // deferral. The push is a synchronous window.history call and the state
+      // half only enqueues React state, so their relative order is not
+      // observable — when nothing is outstanding, the entry is on the stack
+      // before this gesture returns either way.
+      const decision = decideWrite("enter-screen");
+      if (decision === "refuse") return;
       onOpenChapterRef.current(id);
-      enterScreen();
+      performWrite("enter-segments", decision);
     },
-    [enterScreen]
+    [decideWrite, performWrite]
   );
 
   const openRecorder = useCallback(
     (segmentId: SegmentId, ordinal: number) => {
+      const decision = decideWrite("enter-screen");
+      if (decision === "refuse") return;
       onOpenRecorderRef.current(segmentId, ordinal);
-      enterScreen();
+      performWrite("enter-recorder", decision);
     },
-    [enterScreen]
+    [decideWrite, performWrite]
   );
 
   const pushLayer = useCallback(
@@ -509,17 +772,20 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
       // here and never handed back by a traversal. `floorEntryForLayerChange`
       // has the whole argument for why there is no release — two review
       // findings in two places, both of them about one existing.
+      //
+      // The layer is registered whatever the latch says — the overlay opened
+      // in this same click handler — so only the arm can wait (#435). The
+      // latch never refuses `"arm-floor"`.
       const action = floorEntryForLayerChange({
         atFloor: atFloor.current,
         armed: floorArmed.current,
         open: layerStack.current.length,
       });
       if (action === "arm") {
-        floorArmed.current = true;
-        pushHistoryEntry();
+        performWrite("arm-floor", decideWrite("arm-floor"));
       }
     },
-    [pushHistoryEntry]
+    [decideWrite, performWrite]
   );
 
   const popLayer = useCallback((id: string) => {
@@ -580,7 +846,7 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // previous render's, closing over the previous render's trap flags. Every
   // value the handler reads is now a ref written in the layout effect above.
   useEffect(() => {
-    const onPopState = (event: PopStateEvent) => {
+    const land = (event: PopStateEvent) => {
       // Settle the guard at the top of EVERY landing, issuer-blind — the exact
       // spot develop clears `backRequested`, before the suppressPop early
       // return. `settleOutstanding`, NOT a per-issuer settle: always clearing
@@ -796,6 +1062,14 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
         }
       }
     };
+    // Every landing — suppressed or routed, whichever branch returned — ends
+    // by replaying the writes deferred behind it (#435). After the routing,
+    // not before: a routed landing may dismiss the overlay a deferred floor
+    // arm was for, and the replay re-derives the arm from what is left.
+    const onPopState = (event: PopStateEvent) => {
+      land(event);
+      replayDeferredWrites();
+    };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
     // `screen`, `recovering`, `databasePanel` and `onLeaveToBooks` are GONE
@@ -806,12 +1080,13 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     // landing between a trap's commit and this effect re-running was routed by
     // the previous render's listener, with `databasePanel` still `false`.
     //
-    // The two that remain are `useCallback([])` and so never change identity:
-    // this handler subscribes ONCE for the hook's life. That is the property
-    // to preserve — a new dependency here would silently reintroduce the
-    // re-subscribe window, so a new value belongs in the layout effect above,
-    // not in this array.
-  }, [pushHistoryEntry, popLayer]);
+    // The three that remain never change identity: `pushHistoryEntry` and
+    // `popLayer` are `useCallback([])`, and `replayDeferredWrites` is built
+    // only from callbacks that are (#435). This handler subscribes ONCE for
+    // the hook's life. That is the property to preserve — a dependency that
+    // can change identity would silently reintroduce the re-subscribe window,
+    // so a new value belongs in the layout effect above, not in this array.
+  }, [pushHistoryEntry, popLayer, replayDeferredWrites]);
 
   // The shell's leg of the same model (#374): a hardware Back arrives as the
   // App plugin's `backButton` event, not as a `popstate`. Registered only

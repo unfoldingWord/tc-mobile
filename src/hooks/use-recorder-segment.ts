@@ -2,33 +2,53 @@ import { useCallback, useEffect, useState } from "react";
 
 import { decodeMp3ToCanonical, resumeAudioContext } from "./audio-io";
 import { requestTranscodeSweep } from "./finish-transcode";
+import { reportFailure } from "./report-failure";
+import { failureKey, type FailureKey } from "./save-failure";
 import { fitMp3Decode } from "@/lib/audio/mp3-align";
-import { computePeaks } from "@/lib/audio/peaks";
-import {
-  getBook,
-  getChapter,
-  getSegment,
-  isFinished,
-  setSegmentFinished,
-} from "@/lib/storage/books";
+import { coverColourHex, resolveCoverKey } from "@/lib/cover-colour";
+import { getBook, getChapter, getSegment } from "@/lib/storage/books";
+import { isFinished, setSegmentFinished } from "@/lib/storage/takes";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
 import type { SegmentId } from "@/types/domain";
-import type { Peaks } from "@/types/audio";
-
-/** Peaks resolution for the recorder waveform — coarser than a row is wrong. */
-const PEAK_BUCKETS = 400;
 
 export interface RecorderSegmentView {
   readonly bookName: string;
+  /**
+   * The book's resolved cover colour (#949, #957), already a hex string —
+   * resolved the same way `books-screen.tsx`'s row and
+   * `use-chapter-segments.ts`'s `bookCoverHex` are, through
+   * {@link resolveCoverKey}, so a book with no chosen colour still resolves
+   * to its id-derived fallback rather than `null` here meaning "no
+   * colour" — `null` means only "this segment's book could not be read"
+   * (the same race `bookName`'s `?? ""` fallback covers).
+   *
+   * `recorder.tsx`'s own `<RecorderMenu>` call site reads this field
+   * (`bookCoverHex={view?.bookCoverHex ?? undefined}`).
+   */
+  readonly bookCoverHex: string | null;
   readonly chapterNumber: number;
+  /**
+   * The facilitator's passage label for this chapter (#264), or `null` when
+   * nobody has renamed it. Carried alongside the number rather than instead of
+   * it: the header resolves the two through `strings.chapterHeading`, which is
+   * the one place that decides what an unnamed chapter is called (#169).
+   */
+  readonly chapterName: string | null;
   readonly ordinal: number;
+  /** The facilitator's label, shown after the ordinal (#591); null ⇒ none. */
+  readonly segmentLabel: string | null;
+  /**
+   * The stored flag as loaded at open, and patched again by this hook's own
+   * `setFinished` once that write lands — NOT a snapshot. What it never sees
+   * is a write from anywhere else: it is one of the mirrors, and none of them
+   * observes the others (#160, L-10). How many there are, and what repairs
+   * each, is enumerated once — at `recorderClosedState` in `app/App.tsx`. Do
+   * not restate the count here. The sheet does not render this directly:
+   * `displayedFinished` puts the translator's un-committed intent over it.
+   */
   readonly finished: boolean;
   /** Playable audio is present (F3: resolved, not merely a take pointer). */
   readonly hasClip: boolean;
-  readonly peaks: Peaks | null;
-  /** Length of the existing clip in samples — the pan/zoom domain and the */
-  /** append offset. Zero on an empty segment. */
-  readonly lengthSamples: number;
   /**
    * The existing clip's samples, loaded here at mount, or null on an empty
    * segment. Held so the insert/append merge on close is synchronous: the save
@@ -41,8 +61,14 @@ export interface RecorderSegmentView {
 
 /**
  * Load one segment into a recorder view, or throw: its breadcrumb, its finished
- * flag, and — if it has playable audio — the peaks and sample length the
- * pan/zoom view is drawn over.
+ * flag, and — if it has playable audio — the samples the editing session is
+ * seeded from.
+ *
+ * It does NOT compute peaks. The sheet draws `editor.peaks`, which
+ * `useSegmentEditor` derives from the working buffer, and a working buffer
+ * diverges from this one the moment anything is recorded or cut — so peaks
+ * computed here could only ever be redrawn over, never read (L-9, #160). The
+ * pan/zoom domain is `editor.workingLength` for the same reason.
  *
  * The React-free core of {@link useRecorderSegment}, extracted so the walk, the
  * decode alignment and the empty/PCM branches are covered in Node against
@@ -89,12 +115,17 @@ export async function loadRecorderSegmentView(
           );
   return {
     bookName: book?.name ?? "",
+    bookCoverHex: book
+      ? coverColourHex(
+          resolveCoverKey({ id: book.id, coverColourKey: book.coverColourKey })
+        )
+      : null,
     chapterNumber: chapter?.number ?? 0,
+    chapterName: chapter?.name ?? null,
     ordinal: segment.index,
+    segmentLabel: segment.label,
     finished: isFinished(segment.status),
     hasClip: samples !== null,
-    peaks: samples ? computePeaks(samples, PEAK_BUCKETS) : null,
-    lengthSamples: samples?.length ?? 0,
     samples,
   };
 }
@@ -119,7 +150,7 @@ export async function loadRecorderSegmentView(
  */
 export function useRecorderSegment(segmentId: SegmentId) {
   const [view, setView] = useState<RecorderSegmentView | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FailureKey | null>(null);
   // Bumped by `retry`. The sheet is keyed on `segmentId` (App remounts it per
   // open), so a new segment resets this to 0 through the remount, not here.
   const [attempt, setAttempt] = useState(0);
@@ -145,12 +176,13 @@ export function useRecorderSegment(segmentId: SegmentId) {
         setError(null);
       } catch (cause) {
         if (cancelled) return;
-        // The message drives `error` (the panel branch); the cause itself
-        // reaches the log sink, since the panel shows translator copy, not a
-        // decoder string.
+        // The KEY (#172) drives `error` (the panel branch) — never the raw
+        // decoder/store message; the cause itself reaches the log sink via
+        // `reportFailure`, unchanged. `console.error` is kept beside it (#205).
         console.error("Could not open the segment for recording", cause);
+        reportFailure(cause, "recorder-segment-load");
         setView(null);
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(failureKey(cause, "loadFailed"));
       } finally {
         if (!cancelled) setRetrying(false);
       }
@@ -198,11 +230,13 @@ export function useRecorderSegment(segmentId: SegmentId) {
       setError(null);
       return next;
     } catch (cause) {
-      // Same failure channel as the load effect: the message drives the recovery
-      // panel, the cause reaches the log sink (not translator-facing).
+      // Same failure channel as the load effect: the KEY (#172) drives the
+      // recovery panel, the cause reaches the log sink via `reportFailure`
+      // under its own context (never the raw message, never translator-facing).
       console.error("Could not reload the segment after a commit", cause);
+      reportFailure(cause, "recorder-segment-reload");
       setView(null);
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(failureKey(cause, "loadFailed"));
       return null;
     }
   }, [segmentId]);

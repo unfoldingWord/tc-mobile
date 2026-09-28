@@ -3,18 +3,13 @@ import { describe, expect, it } from "vitest";
 import { createShareHandoff } from "@/hooks/share-handoff";
 
 /**
- * The staged-file ownership handoff (#365, raised independently by both
- * review lenses on #347 round 6 — Frank R6 P2 and George R6 P2, the highest-
- * confidence class this repo's review history has). `useShareFlow` itself
- * needs a renderer to test directly (no jsdom, no `@testing-library/react` —
- * see `tests/menu-row-state.test.ts` / `tests/use-erase-segment.test.ts`), so
- * this covers the one property pulled out into `share-handoff.ts`: what is
- * armed, and whether a send currently owns it.
+ * The staged-file ownership handoff (#365): what is armed, and whether a
+ * send currently owns it. These tests call the extracted handoff directly;
+ * they do not mount `useShareFlow` or exercise the native share sheet.
  *
- * The concrete regression both reviewers described: a later edit moves
- * `discard` back onto `reset()` without the handoff, the translator taps
- * Share now and then the scrim, and `FileProvider` is left serving a deleted
- * file. The two `dropArmed()` cases below are that story, end to end.
+ * A reset must not discard a file already owned by a send: tapping the scrim
+ * after Share now must not leave FileProvider serving a deleted file. The
+ * `dropArmed()` cases cover ownership before and after `take()`.
  */
 describe("createShareHandoff", () => {
   it("arms a value; take() returns it and clears armed", () => {

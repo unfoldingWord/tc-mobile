@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { matchingBraceClose, stripComments } from "./support";
+
 /**
  * George R1 P2-2 (PR #499): the `commit-close-recorder` popstate case must
  * RE-ARM the screen-depth entry the browser already popped even when the
@@ -15,16 +17,8 @@ import { describe, expect, it } from "vitest";
  * the moment a future caller can make `screenFor` return "recorder" with a null
  * recorder ref (a PR3 overlay conversion, an inner error boundary).
  *
- * WHY A TEXTUAL GATE AND NOT A BEHAVIOURAL TEST. This Node-only suite has no
- * renderer (AGENTS.md: no jsdom), so `useNavStack`'s popstate handler cannot be
- * mounted or a `popstate` dispatched at it — the null-handle branch cannot be
- * exercised at runtime here. Deleting the re-arm leaves every other test in the
- * repo green (the pure `src/lib/nav` tests never load the adapter, and the
- * Playwright spec's idle path always HAS a handle). That is the
- * mutation-survives case AGENTS.md says to close with a gate rather than leave
- * to a reviewer's memory; this mirrors
- * `tests/recorder-stop-release-guards.test.ts`'s comment-stripping,
- * brace-counting source-shape idiom.
+ * This source gate strips comments and isolates the null-handle branch; it
+ * does not mount `useNavStack` or dispatch a `popstate` event.
  *
  * WHAT IT PROVES, EXACTLY: that the source text's `commit-close-recorder` case
  * has a braced `if (!handle) { ... }` branch whose body calls
@@ -38,23 +32,7 @@ describe("commit-close-recorder re-arms on a null recorder handle (George R1 P2-
   // Comments are stripped so the gate reads CODE, not prose: the branch's own
   // comment discusses re-arming and `pushHistoryEntry`, and a naive match would
   // score documentation.
-  const stripComments = (text: string) =>
-    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-
   const code = stripComments(readFileSync(sourceUrl, "utf8"));
-
-  /** Brace-count from `openIndex` (an opening `{`) to its matching close. */
-  const matchingBraceClose = (body: string, openIndex: number): number => {
-    let depth = 0;
-    for (let i = openIndex; i < body.length; i++) {
-      if (body[i] === "{") depth++;
-      else if (body[i] === "}") {
-        depth--;
-        if (depth === 0) return i;
-      }
-    }
-    return -1;
-  };
 
   /**
    * Isolate the `case "commit-close-recorder":` block so the assertions check

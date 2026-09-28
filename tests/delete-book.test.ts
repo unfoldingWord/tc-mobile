@@ -9,16 +9,14 @@ import { computePeaks } from "@/lib/audio/peaks";
 import {
   addChapter,
   addSegment,
-  addTake,
   createBook,
   deleteBook,
   getBook,
   getChapter,
   getSegment,
   listBooks,
-  setSegmentFinished,
-  saveTake,
 } from "@/lib/storage/books";
+import { addTake, setSegmentFinished, saveTake } from "@/lib/storage/takes";
 import { getClip, getClipMeta, newClipId, putClip } from "@/lib/storage/clips";
 import { getDb } from "@/lib/storage/db";
 import { resolveSegmentAudio } from "@/lib/storage/segment-audio";
@@ -276,7 +274,7 @@ describe("deleteBook", () => {
     // ordinary. Deleting a book deletes MANY clips at once, so an unconditional
     // delete here would punch a whole book's worth of holes in another book's
     // audio. Reference-counting is the same guard `clearSegmentTake` already
-    // holds (books.ts) and that #68 tracks for `addTake`.
+    // holds (takes.ts) and that #68 tracks for `addTake`.
     const doomedBook = await createBook("Practice");
     const doomedChapter = await addChapter(doomedBook.id);
     const doomedSegment = await addSegment(doomedChapter.id);

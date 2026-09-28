@@ -1,59 +1,45 @@
 import { useCallback } from "react";
 
+import { spoolArchive } from "./archive-spool";
 import { withEncoder } from "./mp3-codec";
 import {
-  type ShareError,
   type ShareOutcome,
-  type ShareStatus,
+  type ShareSurface,
   useShareFlow,
 } from "./share-flow";
-import type { ShareProgress } from "./share-progress";
 import { exportBookZip } from "@/lib/export/book";
 import type { BookId } from "@/types/domain";
 
-export interface UseBookShare {
-  readonly status: ShareStatus;
-  readonly error: ShareError | null;
-  /** See {@link UseShareFlow.sendUnconfirmed}. */
-  readonly sendUnconfirmed: boolean;
-  /**
-   * Chapters with no resolvable audio, left out of the zip prepared by tap 1.
-   * Zero until a prepare succeeds. Surfaced so a book with empty chapters does
-   * not export "as if whole" without saying so.
-   */
-  readonly missing: number;
+export interface UseBookShare extends ShareSurface {
   /**
    * Segments missing INSIDE chapters that DID make it into the zip — the
    * roll-up of each included chapter's own gap (#116). Zero until a prepare
-   * succeeds. Distinct from `missing` above, which counts whole chapters left
-   * out entirely; a book can carry both at once.
+   * succeeds. Distinct from {@link ShareSurface.missing}, which here counts
+   * whole chapters left out entirely; a book can carry both at once, which is
+   * why this one is Share Book's alone and not on the shared surface.
    */
   readonly partialSegments: number;
+  /**
+   * How many distinct included chapters hold {@link partialSegments} (#446) —
+   * what lets the gap Notice name a chapter count the sum cannot. Zero until a
+   * prepare succeeds.
+   */
+  readonly partialChapters: number;
   /**
    * Tap 1: encode the book's chapters and archive them into one zip, stashing the
    * File for the send gesture. `zipFilename` names the archive; `nameChapter`
    * names each MP3 inside it (both are translator-facing copy from the screen).
    * Never rejects — a reason surfaces through `error`.
+   *
+   * See {@link UseShareFlow.prepare} (`share-flow.ts`, #860): on the native
+   * route this chains straight into `send()` and resolves to its outcome; on
+   * the web route it resolves `null` and leaves the flow at `ready`.
    */
   prepare: (
     bookId: BookId,
     zipFilename: string,
     nameChapter: (chapterNumber: number) => string
-  ) => Promise<void>;
-  /** Tap 2: hand the stashed File to the OS share sheet. See {@link useShareFlow}. */
-  send: () => Promise<ShareOutcome>;
-  /** Drop any prepared file and return to idle (menu close, unmount). */
-  reset: () => void;
-  /** The modal timeline over the flow (#491). See {@link UseShareFlow.progress}. */
-  readonly progress: ShareProgress;
-  /**
-   * The ref-backed read of {@link progress} a `Layer.busy()` must use (#452
-   * PR3). See {@link UseShareFlow.ownsScreen} for why the rendered `progress`
-   * above cannot serve that purpose.
-   */
-  readonly ownsScreen: () => boolean;
-  /** End an outcome flash early (a tap on it). */
-  dismissProgress: () => void;
+  ) => Promise<ShareOutcome | null>;
 }
 
 /**
@@ -73,6 +59,7 @@ export function useBookShare(): UseBookShare {
     sendUnconfirmed,
     missing,
     partial: partialSegments,
+    partialChapters,
     prepare: run,
     send,
     progress,
@@ -86,30 +73,39 @@ export function useBookShare(): UseBookShare {
       bookId: BookId,
       zipFilename: string,
       nameChapter: (chapterNumber: number) => string
-    ): Promise<void> =>
-      run((isCurrent, signal) =>
+    ): Promise<ShareOutcome | null> =>
+      run((isCurrent, signal, onStep) =>
         withEncoder(signal, async (codec) => {
-          const result = await exportBookZip(
-            bookId,
-            nameChapter,
-            codec,
-            isCurrent
+          // The zip streams into a spool as it is built (#1003): an OPFS file
+          // where the browser has one, memory where it does not
+          // (`archive-spool.ts`). `onStep`: chapters archived of the book's
+          // total (#986).
+          const spooled = await spoolArchive(
+            (sink) =>
+              exportBookZip(
+                bookId,
+                nameChapter,
+                codec,
+                sink,
+                isCurrent,
+                onStep
+              ),
+            zipFilename,
+            "application/zip"
           );
           // exportBookZip returns null for a book with no audio AND for a run
           // cancelled during the gather. `isCurrent` distinguishes them: still live
           // means genuinely nothing to share.
-          if (result === null) return isCurrent() ? "nothing" : null;
-          // The archive arrives as fflate's stream chunks and goes to `File` as
-          // parts — the browser assembles the Blob, so no archive-sized buffer is
-          // ever allocated here (B8; the ~2x peak George flagged on #114). The
-          // spread copies the list of references, not the bytes.
-          const file = new File([...result.chunks], zipFilename, {
-            type: "application/zip",
-          });
+          if (spooled === null) return isCurrent() ? "nothing" : null;
+          const { result, file, release } = spooled;
+          // `release` goes to the flow with the File: the flow drops the spool
+          // once the File is staged, shared, dismissed or abandoned.
           return {
             file,
+            release,
             missing: result.missing,
             partial: result.partialSegments,
+            partialChapters: result.partialChapters,
           };
         })
       ),
@@ -122,6 +118,7 @@ export function useBookShare(): UseBookShare {
     sendUnconfirmed,
     missing,
     partialSegments,
+    partialChapters,
     prepare,
     send,
     reset,

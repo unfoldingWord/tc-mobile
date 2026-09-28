@@ -37,6 +37,54 @@ export function boundText(text: string): string {
 }
 
 /**
+ * A thrown value as the bare message a caller can put on screen or on a report.
+ *
+ * The expression this replaces — `cause instanceof Error ? cause.message :
+ * String(cause)` — was written out inline across the hooks, and once more
+ * behind a private `messageOf` in `mp3-codec.ts` (#160, L-15). How many is
+ * deliberately not stated here: a census in prose cannot be re-checked and
+ * goes stale the first time someone adds a hook, and the number in this
+ * docblock's first draft was simply wrong (Frank on `25c336fd5`).
+ * `tests/failure-text.test.ts` pins it as an assertion instead — the
+ * expression survives in exactly one file, this one.
+ *
+ * Deliberately NOT {@link describeCause}, and the difference is the reason both
+ * exist. `describeCause` renders for the durable log: it prefixes the error's
+ * NAME ("TypeError: …"), walks the `cause` chain, and bounds the result, because
+ * a maintainer reading the log days later needs all three. This renders for a
+ * caller that is about to hold the string as state — `setError`, a report's
+ * `message` field — where the name is noise and the chain is not wanted.
+ *
+ * Also not `stale-target.ts`'s same-named local, which returns `string | null`
+ * on purpose: it feeds an equality test against a known message, so a non-Error
+ * must render as `null` rather than as its own text, or a THROWN STRING reading
+ * "No such chapter: …" would be mistaken for the store's own failure. Folding
+ * that one into this would be a behaviour change in a predicate, not a
+ * deduplication, so it stays where it is.
+ *
+ * Never throws (#721). Every caller here is a `catch` block, so if this
+ * conversion itself threw, a handled failure would become an unhandled one
+ * inside the code meant to report it. `instanceof` can throw on a revoked
+ * `Proxy`; `cause.message` can throw on a getter that does, even on a real
+ * `Error`; and `String(cause)` can throw on a hostile `toString`, a throwing
+ * `Symbol.toPrimitive`, or a null-prototype object with neither. `Symbol` and
+ * `BigInt` are NOT among these — `String()` does not throw on either, only
+ * implicit conversion does — so they still render their own text rather than
+ * the fallback. For an ordinary `Error` or a string, nothing here changes:
+ * the guarded expression is the same one as before, and only its unreachable
+ * failure path is new.
+ */
+export function errorMessage(cause: unknown): string {
+  try {
+    const text = cause instanceof Error ? cause.message : String(cause);
+    // A hostile `message` need not be a string; coerce it inside the guard.
+    return typeof text === "string" ? text : String(text);
+  } catch {
+    return `[unstringifiable ${typeof cause}]`;
+  }
+}
+
+/**
  * How many `cause` links are followed past the value that was thrown.
  *
  * Three, because the wrapping in this app is shallow by construction — a sweep

@@ -4,16 +4,21 @@ import { unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import { exportBookZip } from "@/lib/export/book";
+import { encodeMp3 } from "@/lib/audio/mp3";
+import { computePeaks } from "@/lib/audio/peaks";
+import { exportBookZip, memoryArchiveSink } from "@/lib/export/book";
 import * as chapterExport from "@/lib/export/chapter";
 import {
   addChapter,
   addSegment,
   createBook,
+  moveChapter,
   resolveBookChapters,
-  saveTake,
 } from "@/lib/storage/books";
-import { newClipId } from "@/lib/storage/clips";
+import { saveTake, setSegmentFinished } from "@/lib/storage/takes";
+import { getClip, newClipId } from "@/lib/storage/clips";
+import { resolveSegmentAudio } from "@/lib/storage/segment-audio";
+import { commitTranscode } from "@/lib/storage/transcode";
 import { getDb } from "@/lib/storage/db";
 import type { BookId } from "@/types/domain";
 import { clearAllStores, testCodec } from "./support";
@@ -105,13 +110,14 @@ describe("exportBookZip", () => {
       [{ n: CANONICAL_SAMPLE_RATE, v: -1000 }],
     ]);
     const codec = testCodec();
-    const result = await exportBookZip(bookId, nameChapter, codec);
+    const sink = memoryArchiveSink();
+    const result = await exportBookZip(bookId, nameChapter, codec, sink);
 
     expect(result).not.toBeNull();
     expect(result!.chapters).toBe(2);
     expect(result!.missing).toBe(0);
 
-    const entries = unzipSync(archive(result!.chunks));
+    const entries = unzipSync(archive(sink.chunks));
     // One entry per chapter, named by nameChapter(number), in chapter order.
     expect(Object.keys(entries)).toEqual(["Chapter 1.mp3", "Chapter 2.mp3"]);
 
@@ -130,10 +136,12 @@ describe("exportBookZip", () => {
     // archive would again hold every MP3 twice on a low-end phone.
     const bookId = await bookWith([[{ n: CANONICAL_SAMPLE_RATE, v: 1000 }]]);
     const codec = testCodec();
-    const result = await exportBookZip(bookId, nameChapter, codec);
+    const sink = memoryArchiveSink();
+    const result = await exportBookZip(bookId, nameChapter, codec, sink);
+    expect(result).not.toBeNull();
     const mp3 = await codec.encodeMp3.mock.results[0]!.value;
 
-    expect(result!.chunks.some((c) => c.buffer === mp3.buffer)).toBe(true);
+    expect(sink.chunks.some((c) => c.buffer === mp3.buffer)).toBe(true);
   });
 
   it("skips a chapter with no audio and counts it missing", async () => {
@@ -143,13 +151,14 @@ describe("exportBookZip", () => {
       [], // no segments at all
       [{ n: 100, v: 200 }],
     ]);
-    const result = await exportBookZip(bookId, nameChapter, testCodec());
+    const sink = memoryArchiveSink();
+    const result = await exportBookZip(bookId, nameChapter, testCodec(), sink);
 
     expect(result).not.toBeNull();
     expect(result!.chapters).toBe(2);
     expect(result!.missing).toBe(2);
     // Only the two recorded chapters are in the zip; the empty ones are absent.
-    expect(Object.keys(unzipSync(archive(result!.chunks)))).toEqual([
+    expect(Object.keys(unzipSync(archive(sink.chunks)))).toEqual([
       "Chapter 1.mp3",
       "Chapter 4.mp3",
     ]);
@@ -166,12 +175,13 @@ describe("exportBookZip", () => {
     const db = await getDb();
     await db.delete("chapters", mid!.id);
 
-    const result = await exportBookZip(bookId, nameChapter, testCodec());
+    const sink = memoryArchiveSink();
+    const result = await exportBookZip(bookId, nameChapter, testCodec(), sink);
 
     expect(result).not.toBeNull();
     expect(result!.chapters).toBe(2);
     expect(result!.missing).toBe(1); // the dangling chapter — silently 0 before the fix
-    expect(Object.keys(unzipSync(archive(result!.chunks)))).toEqual([
+    expect(Object.keys(unzipSync(archive(sink.chunks)))).toEqual([
       "Chapter 1.mp3",
       "Chapter 3.mp3",
     ]);
@@ -199,11 +209,12 @@ describe("exportBookZip", () => {
       CANONICAL_SAMPLE_RATE
     );
 
-    const result = await exportBookZip(book.id, nameChapter, testCodec());
+    const sink = memoryArchiveSink();
+    const result = await exportBookZip(book.id, nameChapter, testCodec(), sink);
 
     expect(result).not.toBeNull();
     expect(result!.chapters).toBe(2);
-    const entries = unzipSync(archive(result!.chunks));
+    const entries = unzipSync(archive(sink.chunks));
     // Two distinct entries — the collision was renamed, not overwritten.
     expect(Object.keys(entries)).toEqual([
       "Chapter 1.mp3",
@@ -227,12 +238,18 @@ describe("exportBookZip", () => {
       [{ n: 100, v: 150 }, null],
       [{ n: 100, v: 200 }, null],
     ]);
-    const result = await exportBookZip(bookId, nameChapter, testCodec());
+    const result = await exportBookZip(
+      bookId,
+      nameChapter,
+      testCodec(),
+      memoryArchiveSink()
+    );
 
     expect(result).not.toBeNull();
     expect(result!.chapters).toBe(3);
     expect(result!.missing).toBe(0); // no whole chapter was left out
     expect(result!.partialSegments).toBe(3); // one gap per chapter, summed
+    expect(result!.partialChapters).toBe(3); // three distinct chapters hold them
   });
 
   it("sums BOTH gaps from a single partial chapter, not one per chapter (#400)", async () => {
@@ -245,12 +262,18 @@ describe("exportBookZip", () => {
     const bookId = await bookWith([
       [{ n: 100, v: 100 }, null, null], // one chapter, TWO never-recorded segments
     ]);
-    const result = await exportBookZip(bookId, nameChapter, testCodec());
+    const result = await exportBookZip(
+      bookId,
+      nameChapter,
+      testCodec(),
+      memoryArchiveSink()
+    );
 
     expect(result).not.toBeNull();
     expect(result!.chapters).toBe(1); // the chapter ships — it has resolvable audio
     expect(result!.missing).toBe(0); // no whole chapter was left out
     expect(result!.partialSegments).toBe(2); // both gaps, from the ONE chapter
+    expect(result!.partialChapters).toBe(1); // ...which is one chapter, not two
   });
 
   it("counts a whole missing chapter toward `missing` and a partial one toward `partialSegments`, not both", async () => {
@@ -259,22 +282,95 @@ describe("exportBookZip", () => {
       [null], // no resolvable audio at all: a whole chapter left out
       [{ n: 100, v: 200 }], // included, fully present
     ]);
-    const result = await exportBookZip(bookId, nameChapter, testCodec());
+    const result = await exportBookZip(
+      bookId,
+      nameChapter,
+      testCodec(),
+      memoryArchiveSink()
+    );
 
     expect(result).not.toBeNull();
     expect(result!.chapters).toBe(2); // chapters 1 and 3 shipped
     expect(result!.missing).toBe(1); // chapter 2 had no audio at all
     expect(result!.partialSegments).toBe(1); // chapter 1's own gap only
+    expect(result!.partialChapters).toBe(1); // chapter 1 alone holds it
+  });
+
+  it("counts no partial chapters for a book whose included chapters are whole (#446)", async () => {
+    const bookId = await bookWith([
+      [{ n: 100, v: 100 }],
+      [null], // left out entirely: `missing`, never `partialChapters`
+      [
+        { n: 100, v: 200 },
+        { n: 100, v: 250 },
+      ],
+    ]);
+    const result = await exportBookZip(
+      bookId,
+      nameChapter,
+      testCodec(),
+      memoryArchiveSink()
+    );
+
+    expect(result).not.toBeNull();
+    expect(result!.missing).toBe(1);
+    expect(result!.partialSegments).toBe(0);
+    expect(result!.partialChapters).toBe(0);
+  });
+
+  /**
+   * #446: the pair `(missing, partialSegments)` cannot tell these two books
+   * apart — both read `(1, 2)` — yet one has its two gaps in ONE included
+   * chapter and the other in TWO. `partialChapters` is what the Notice reads
+   * to name the right chapter count, so the two must come out different.
+   */
+  it("tells one partial chapter from two when missing and partialSegments are identical (#446)", async () => {
+    const onePartial = await bookWith([
+      [{ n: 100, v: 100 }, null, null], // one chapter, two gaps
+      [null], // a chapter never recorded
+    ]);
+    const one = await exportBookZip(
+      onePartial,
+      nameChapter,
+      testCodec(),
+      memoryArchiveSink()
+    );
+    await clearAllStores();
+    const twoPartial = await bookWith([
+      [{ n: 100, v: 100 }, null], // one gap
+      [{ n: 100, v: 150 }, null], // one gap
+      [null], // a chapter never recorded
+    ]);
+    const two = await exportBookZip(
+      twoPartial,
+      nameChapter,
+      testCodec(),
+      memoryArchiveSink()
+    );
+
+    expect([one!.missing, one!.partialSegments]).toEqual([1, 2]);
+    expect([two!.missing, two!.partialSegments]).toEqual([1, 2]);
+    expect(one!.partialChapters).toBe(1);
+    expect(two!.partialChapters).toBe(2);
   });
 
   it("returns null when no chapter has any audio", async () => {
     const bookId = await bookWith([[null], []]);
-    expect(await exportBookZip(bookId, nameChapter, testCodec())).toBeNull();
+    expect(
+      await exportBookZip(bookId, nameChapter, testCodec(), memoryArchiveSink())
+    ).toBeNull();
   });
 
   it("returns null for a book with no chapters", async () => {
     const book = await createBook("empty");
-    expect(await exportBookZip(book.id, nameChapter, testCodec())).toBeNull();
+    expect(
+      await exportBookZip(
+        book.id,
+        nameChapter,
+        testCodec(),
+        memoryArchiveSink()
+      )
+    ).toBeNull();
   });
 
   it("stops before touching any chapter when cancelled up front", async () => {
@@ -287,7 +383,13 @@ describe("exportBookZip", () => {
     const chapterSpy = vi.spyOn(chapterExport, "exportChapterMp3");
     const codec = testCodec();
 
-    const result = await exportBookZip(bookId, nameChapter, codec, () => false);
+    const result = await exportBookZip(
+      bookId,
+      nameChapter,
+      codec,
+      memoryArchiveSink(),
+      () => false
+    );
 
     expect(result).toBeNull();
     expect(chapterSpy).not.toHaveBeenCalled();
@@ -319,6 +421,7 @@ describe("exportBookZip", () => {
       bookId,
       nameChapter,
       codec,
+      memoryArchiveSink(),
       shouldContinue
     );
 
@@ -326,5 +429,99 @@ describe("exportBookZip", () => {
     expect(chapterSpy).toHaveBeenCalledTimes(1); // chapter 2 never entered
     expect(codec.encodeMp3).toHaveBeenCalledTimes(1); // only chapter 1 encoded
     chapterSpy.mockRestore();
+  });
+});
+
+describe("exportBookZip — Finished chapters are joined, not re-encoded (#1004)", () => {
+  /** Mark every recorded segment of `bookId` Finished and land its transcode. */
+  async function finishAll(bookId: BookId): Promise<void> {
+    const { chapters } = await resolveBookChapters(bookId);
+    for (const chapter of chapters) {
+      for (const segmentId of chapter.segmentIds) {
+        const audio = await resolveSegmentAudio(segmentId);
+        if (audio.kind !== "resolved") continue;
+        const clip = await getClip(audio.clip.id);
+        if (clip?.encoding !== "pcm") throw new Error("expected a PCM clip");
+        await setSegmentFinished(segmentId, true);
+        expect(
+          await commitTranscode(
+            segmentId,
+            audio.clip.id,
+            encodeMp3(clip.samples),
+            computePeaks(clip.samples, 4)
+          )
+        ).toBe("committed");
+      }
+    }
+  }
+
+  it("archives each all-Finished chapter without calling the encoder", async () => {
+    const bookId = await bookWith([
+      [
+        { n: 20_000, v: 1000 },
+        { n: 9_000, v: 2000 },
+      ],
+      [{ n: 15_000, v: -1000 }],
+    ]);
+    await finishAll(bookId);
+    const codec = testCodec();
+
+    const sink = memoryArchiveSink();
+    const result = await exportBookZip(bookId, nameChapter, codec, sink);
+
+    expect(result).not.toBeNull();
+    expect(result!.chapters).toBe(2);
+    expect(codec.encodeMp3).not.toHaveBeenCalled();
+    expect(codec.decodeMp3).not.toHaveBeenCalled();
+    // Each entry is that chapter's joined MP3.
+    const entries = unzipSync(archive(sink.chunks));
+    const { chapters } = await resolveBookChapters(bookId);
+    for (const chapter of chapters) {
+      const solo = await chapterExport.exportChapterMp3(chapter.id, codec);
+      expect(entries[nameChapter(chapter.number)]).toEqual(solo!.mp3);
+    }
+    expect(codec.encodeMp3).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #953: a chapter move renumbers, and the zip follows both the new order and
+ * the new numbers — the entry name is `nameChapter(chapter.number)`, so the
+ * audio a facilitator already shared can come out under a different name
+ * after a move. That is the intended behaviour (scope §4, "File names").
+ */
+describe("exportBookZip after a chapter move (#953)", () => {
+  it("orders and names the entries by the moved order", async () => {
+    const bookId = await bookWith([
+      [{ n: 100, v: 100 }],
+      [{ n: 100, v: 150 }],
+      [{ n: 100, v: 200 }],
+    ]);
+    const before = (await resolveBookChapters(bookId)).chapters;
+    const codec = testCodec();
+    const solo = new Map<string, Uint8Array>();
+    for (const chapter of before) {
+      solo.set(
+        chapter.id,
+        (await chapterExport.exportChapterMp3(chapter.id, codec))!.mp3
+      );
+    }
+
+    // The third chapter moves to the top: it becomes Chapter 1.
+    await moveChapter(before[2]!.id, 0);
+
+    const sink = memoryArchiveSink();
+    const result = await exportBookZip(bookId, nameChapter, codec, sink);
+    expect(result).not.toBeNull();
+    const entries = unzipSync(archive(sink.chunks));
+    expect(Object.keys(entries)).toEqual([
+      "Chapter 1.mp3",
+      "Chapter 2.mp3",
+      "Chapter 3.mp3",
+    ]);
+    // Each name now holds the audio of the chapter that moved into that slot.
+    expect(entries["Chapter 1.mp3"]).toEqual(solo.get(before[2]!.id));
+    expect(entries["Chapter 2.mp3"]).toEqual(solo.get(before[0]!.id));
+    expect(entries["Chapter 3.mp3"]).toEqual(solo.get(before[1]!.id));
   });
 });

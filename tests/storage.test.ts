@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   deleteClip,
@@ -14,24 +14,29 @@ import { closeDb, getDb } from "@/lib/storage/db";
 import {
   addChapter,
   addSegment,
-  addTake,
   chapterProgress,
-  clearSegmentTake,
   createBook,
   getBook,
   getChapter,
   getSegment,
   getSegmentsOfChapter,
-  isFinished,
   isStaleBookFailure,
   listBooks,
   nextBookName,
+  nextChapterNumber,
   renameBook,
   renameChapter,
+  renameSegment,
   resolveChapterClipIds,
+  setBookCoverColour,
+} from "@/lib/storage/books";
+import {
+  addTake,
+  clearSegmentTake,
+  isFinished,
   saveTake,
   setSegmentFinished,
-} from "@/lib/storage/books";
+} from "@/lib/storage/takes";
 import {
   danglingReason,
   loadSegmentClip,
@@ -225,6 +230,9 @@ describe("book tree", () => {
       expect(s.status).toBe("not-started");
       expect(s.activeTakeId).toBeNull();
       expect(s.reference).toBeNull();
+      // Unlabelled by default: the row shows the ordinal alone (#591).
+      expect(s.label).toBeNull();
+      expect((await getSegment(s.id))?.label).toBeNull();
     }
   });
 
@@ -302,23 +310,34 @@ describe("book tree", () => {
     for (const status of notFinished) expect(isFinished(status)).toBe(false);
   });
 
-  it("rolls up finished/total for the chapter counter", async () => {
+  it("rolls up finished/total/recorded for the chapter counter and the storage-pressure gate", async () => {
     const book = await createBook("b");
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
-    await addSegment(chapter.id);
-    await addSegment(chapter.id);
+    const s2 = await addSegment(chapter.id);
+    await addSegment(chapter.id); // s3: never recorded
     await addTake(s1.id, await storedClip(), 100);
     await setSegmentFinished(s1.id, true);
+    // s2 is recorded but NOT finished ("draft") — the case `recorded` exists
+    // for (#542 Part B): it has reclaimable bytes behind it, but would not
+    // count as `finished`, and a mutation collapsing `recorded` back to
+    // `finished` must fail this exact assertion.
+    await addTake(s2.id, await storedClip(), 100);
 
     expect(await chapterProgress(chapter.id)).toEqual({
       finished: 1,
       total: 3,
+      recorded: 2,
     });
 
-    // An empty chapter is 0/0 — the UI hides the counter when total === 0.
+    // An empty chapter is 0/0/0 — the UI hides the counter when total === 0,
+    // and `hasReclaimableAudio` (`lib/view/book-rows.ts`) reads `recorded`.
     const empty = await addChapter(book.id);
-    expect(await chapterProgress(empty.id)).toEqual({ finished: 0, total: 0 });
+    expect(await chapterProgress(empty.id)).toEqual({
+      finished: 0,
+      total: 0,
+      recorded: 0,
+    });
   });
 
   it("replaces the take on re-record, deleting the superseded clip (1:1)", async () => {
@@ -402,7 +421,7 @@ describe("book tree", () => {
     // The pending-take retry path re-runs the save with the SAME clipId
     // (retrySave keeps it; putClip is an upsert). addTake then sees
     // prior.clipId === new clipId, and deleting "the superseded clip" would
-    // strand the take it just wrote — the guard at books.ts is the only thing
+    // strand the take it just wrote — the guard at takes.ts is the only thing
     // stopping that, and nothing else exercises it.
     const { segmentId } = await oneSegment();
     const clipId = await storedClip(1000);
@@ -659,6 +678,83 @@ describe("book auto-naming (#314, #360)", () => {
 });
 
 /**
+ * Naming a chapter at creation (#609) — the chapter parallel to #314.
+ *
+ * Add Chapter now prompts, pre-filled with "Chapter N" for the ordinal the new
+ * chapter is about to get, so a one-tap Confirm still adds a chapter and a
+ * facilitator who wants "Mark 6" types it once instead of hunting for Rename.
+ *
+ * The two halves this pins:
+ *
+ *   - `nextChapterNumber` is the ONE derivation of that ordinal, called both
+ *     inside `addChapter`'s write transaction and by the screen over the
+ *     chapters it has already loaded — the same "one pure function both go
+ *     through" shape `nextBookName` holds for books. Unlike `nextBookName` it
+ *     is `max + 1`, NOT the first unused: a chapter's `number` is its export
+ *     position, not a label, so filling a hole would reorder the concatenation
+ *     a Share Chapter/Book produces.
+ *   - `addChapter`'s `name` normalises exactly as `renameChapter` does: trimmed
+ *     when typed, `null` when blank. `null` is also what an untouched default
+ *     stores, because the screen sends "" rather than the "Chapter N" string it
+ *     rendered — so the row keeps displaying the ordinal the transaction
+ *     derived, and a one-tap create changes nothing on disk.
+ */
+describe("chapter naming at creation (#609)", () => {
+  it("numbers the first chapter 1 and counts up from the highest", () => {
+    expect(nextChapterNumber([])).toBe(1);
+    expect(nextChapterNumber([1, 2])).toBe(3);
+  });
+
+  it("extends past the highest rather than filling a hole (max + 1, not first unused)", () => {
+    // Deliberately NOT `nextBookName`'s rule. `number` is the export ordinal:
+    // a new chapter placed at 2 would land in the middle of the concatenation.
+    expect(nextChapterNumber([1, 3])).toBe(4);
+    expect(nextChapterNumber([5])).toBe(6);
+  });
+
+  it("seeds the field with the number the write transaction then derives", async () => {
+    // The screen pre-fills from the chapters it has loaded; `addChapter`
+    // derives the same ordinal inside its own transaction. Same function, same
+    // numbers, same answer — which is why a bare Confirm adds the chapter the
+    // field offered, whenever the loaded shelf still matches disk. When it does
+    // not, the write's number wins and the row shows it, because a one-tap
+    // create stores no label to contradict it.
+    const book = await createBook("b");
+    const first = await addChapter(book.id);
+    const second = await addChapter(book.id);
+    const displayed = nextChapterNumber([first.number, second.number]);
+    expect(displayed).toBe(3);
+    expect((await addChapter(book.id)).number).toBe(displayed);
+  });
+
+  it("stores a typed name, trimmed, like renameChapter does", async () => {
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id, undefined, "  Mark 6  ");
+    expect(chapter.name).toBe("Mark 6");
+    expect((await getChapter(chapter.id))?.name).toBe("Mark 6");
+  });
+
+  it("stores null for a blank, whitespace-only, or omitted name", async () => {
+    const book = await createBook("b");
+    // Blank is what an untouched "Chapter N" default confirms as, and what an
+    // emptied field sends: both keep the row on the ordinal display.
+    expect((await addChapter(book.id, undefined, "")).name).toBeNull();
+    expect((await addChapter(book.id, undefined, "  \t\n ")).name).toBeNull();
+    // The no-name call sites (every other suite, and the store's own default)
+    // are unchanged.
+    expect((await addChapter(book.id)).name).toBeNull();
+  });
+
+  it("does not let a name displace the ordinal", async () => {
+    // The name is a label OVER `number`, exactly as `renameChapter` leaves it.
+    const book = await createBook("b");
+    const first = await addChapter(book.id, undefined, "Mark 6");
+    const second = await addChapter(book.id, undefined, "Mark 7");
+    expect([first.number, second.number]).toEqual([1, 2]);
+  });
+});
+
+/**
  * Renaming a book and a chapter in place (#264, the Nairobi manual workflow).
  *
  * A facilitator names a book for the passage ("Mark") and a chapter for the
@@ -761,6 +857,150 @@ describe("rename book and chapter", () => {
   it("rejects renaming an unknown chapter", async () => {
     await expect(renameChapter("nope" as never, "Mark 6")).rejects.toThrow(
       /No such chapter/
+    );
+  });
+});
+
+describe("book cover colour (#957)", () => {
+  it("gives a fresh book a null colour (the derived fallback until chosen)", async () => {
+    const book = await createBook("Mark");
+    // Present and null, never absent — the same shape `Chapter.name` and
+    // `Segment.label` hold for a fresh row, so a reader never meets
+    // `undefined`. `lib/cover-colour.ts`'s `resolveCoverKey` is what turns
+    // this into a real colour.
+    expect(book.coverColourKey).toBeNull();
+    expect((await getBook(book.id))?.coverColourKey).toBeNull();
+  });
+
+  it("sets a book's cover colour in place", async () => {
+    const book = await createBook("Mark", null, 1000);
+    const updated = await setBookCoverColour(book.id, "forest", 5000);
+
+    expect(updated.coverColourKey).toBe("forest");
+    // Choosing a colour is activity, the same rule `renameBook` follows:
+    // updatedAt bumps so the book floats up the listBooks-sorted shelf.
+    expect(updated.updatedAt).toBe(5000);
+    expect((await getBook(book.id))?.coverColourKey).toBe("forest");
+  });
+
+  it("persists a chosen colour across a fresh database connection", async () => {
+    const book = await createBook("Mark");
+    await setBookCoverColour(book.id, "teal", 2000);
+
+    await closeDb();
+    const reopened = await getDb();
+    expect((await reopened.get("books", book.id))?.coverColourKey).toBe("teal");
+  });
+
+  it("clears a chosen colour back to null", async () => {
+    const book = await createBook("Mark");
+    await setBookCoverColour(book.id, "teal", 2000);
+    const cleared = await setBookCoverColour(book.id, null, 3000);
+
+    expect(cleared.coverColourKey).toBeNull();
+    expect((await getBook(book.id))?.coverColourKey).toBeNull();
+  });
+
+  it("setting the same colour again is an idempotent no-op (safe to re-run)", async () => {
+    const book = await createBook("Mark", null, 1000);
+    await setBookCoverColour(book.id, "forest", 5000);
+
+    const again = await setBookCoverColour(book.id, "forest", 9000);
+
+    // No write on the no-op: recency is unchanged, not bumped to 9000 — a
+    // re-run of the same write must not reshuffle the shelf.
+    expect(again.updatedAt).toBe(5000);
+    expect((await getBook(book.id))?.updatedAt).toBe(5000);
+  });
+
+  it("setting null when already null is an idempotent no-op", async () => {
+    const book = await createBook("Mark", null, 1000);
+    const again = await setBookCoverColour(book.id, null, 9000);
+    expect(again.updatedAt).toBe(1000);
+  });
+
+  it("re-running the exact same write repeatedly stays safe", async () => {
+    // The idempotency bar AGENTS.md asks for: calling it three times in a row
+    // with the same value leaves the store exactly where one call did.
+    const book = await createBook("Mark", null, 1000);
+    await setBookCoverColour(book.id, "brick", 2000);
+    await setBookCoverColour(book.id, "brick", 3000);
+    const third = await setBookCoverColour(book.id, "brick", 4000);
+
+    expect(third.coverColourKey).toBe("brick");
+    expect(third.updatedAt).toBe(2000);
+    expect((await getBook(book.id))?.coverColourKey).toBe("brick");
+  });
+
+  it("does not touch the book's name or language", async () => {
+    const book = await createBook("Mark", "en", 1000);
+    const updated = await setBookCoverColour(book.id, "plum", 2000);
+    expect(updated.name).toBe("Mark");
+    expect(updated.languageCode).toBe("en");
+  });
+
+  it("rejects setting a colour on an unknown book", async () => {
+    await expect(setBookCoverColour("nope" as never, "forest")).rejects.toThrow(
+      /No such book/
+    );
+  });
+});
+
+describe("rename segment (#591)", () => {
+  it("labels a segment in place, trimmed", async () => {
+    const { segmentId } = await oneSegment();
+    const renamed = await renameSegment(segmentId, "  verses 3–4  ");
+    expect(renamed.label).toBe("verses 3–4");
+    expect((await getSegment(segmentId))?.label).toBe("verses 3–4");
+  });
+
+  it("clears the label back to null on a blank rename, like a chapter", async () => {
+    const { segmentId } = await oneSegment();
+    await renameSegment(segmentId, "verses 3–4");
+    const cleared = await renameSegment(segmentId, "   ");
+    expect(cleared.label).toBeNull();
+    expect((await getSegment(segmentId))?.label).toBeNull();
+  });
+
+  it("changes the label and nothing else: ordinal, order, status and audio stay", async () => {
+    const book = await createBook("Mark");
+    const chapter = await addChapter(book.id);
+    await addSegment(chapter.id);
+    const second = await addSegment(chapter.id);
+    const clipId = await storedClip();
+    await addTake(second.id, clipId, 100);
+    await setSegmentFinished(second.id, true);
+    const before = await getSegment(second.id);
+    const chapterBefore = await getChapter(chapter.id);
+
+    await renameSegment(second.id, "verses 3–4");
+
+    expect(await getSegment(second.id)).toEqual({
+      ...before,
+      label: "verses 3–4",
+    });
+    expect(await getChapter(chapter.id)).toEqual(chapterBefore);
+    const audio = await loadSegmentClip(second.id);
+    expect(audio.kind).toBe("resolved");
+  });
+
+  it("renaming to the current label writes nothing", async () => {
+    const { segmentId } = await oneSegment();
+    await renameSegment(segmentId, "verses 3–4");
+    // Counted at the IndexedDB boundary: a re-put of the same row would leave
+    // the stored value unchanged, so only the call itself can show it happened.
+    const put = vi.spyOn(IDBObjectStore.prototype, "put");
+    try {
+      await renameSegment(segmentId, " verses 3–4 ");
+      expect(put).not.toHaveBeenCalled();
+    } finally {
+      put.mockRestore();
+    }
+  });
+
+  it("rejects renaming an unknown segment", async () => {
+    await expect(renameSegment("nope" as never, "verses 1")).rejects.toThrow(
+      /No such segment/
     );
   });
 });

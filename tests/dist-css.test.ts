@@ -59,8 +59,7 @@ describe.skipIf(GATE === "skip")(
     // unrelated `@supports` blocks earlier in this same file (feature
     // queries for other properties), so splitting on the bare string
     // "@supports" would cut the file off long before reaching
-    // `.recorder-stage` at all — confirmed by running this against the
-    // build while writing this test.
+    // `.recorder-stage` at all.
     const fromFirstRecorderStage = css.slice(css.indexOf(".recorder-stage{"));
     const baseRuleMatch = fromFirstRecorderStage.match(
       /^\.recorder-stage\{[^}]*\}/

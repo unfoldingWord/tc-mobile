@@ -3,11 +3,13 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SegmentsScreen } from "@/components/segments-screen";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { ChapterId, SegmentId } from "@/types/domain";
 import type { SegmentRow } from "@/types/view";
+
+import { restingErase } from "./support";
 
 const mocks = vi.hoisted(() => ({ chapter: vi.fn() }));
 vi.mock("@/hooks/use-chapter-segments", () => ({
@@ -22,13 +24,10 @@ vi.mock("@/hooks/use-chapter-share", () => ({
     reset: () => {},
   }),
 }));
-vi.mock("@/hooks/use-erase-segment", () => ({
-  useEraseSegment: () => ({
-    error: null,
-    erasing: false,
-    isErasing: () => false,
-  }),
-}));
+// A PROP now, not a module the screen reaches for (#160, L-12): App holds the
+// one instance. Mocking the module here would no longer intercept anything.
+// Shared fixture (#856 item 3, `tests/support.ts`).
+const erase = restingErase();
 
 let root: Root;
 let clipboard: string | null;
@@ -44,6 +43,7 @@ const addSegment = vi.fn();
 const row: SegmentRow = {
   segmentId: "segment" as SegmentId,
   ordinal: 1,
+  label: null,
   hasClip: false,
   finished: false,
   clipId: null,
@@ -92,6 +92,7 @@ async function render(staleTarget: boolean, rows: SegmentRow[] = []) {
       createElement(SegmentsScreen, {
         chapterId: "chapter" as ChapterId,
         audio,
+        erase,
         onBack,
         onOpenRecorder: vi.fn(),
         pushLayer,

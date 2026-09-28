@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyStopDecode } from "@/lib/audio/stop-decode";
+import { classifyEmptySeal, classifyStopDecode } from "@/lib/audio/stop-decode";
 
 /**
  * The #106/#165 data-loss contract, extracted from the browser-bound `stop()` so
- * it is pinned here rather than only in a hook no jsdom can reach (George R3 G-3).
+ * these tests can exercise the decision without mounting the recorder hook.
  *
  * The load-bearing row is the SUPERSEDED THROW: a decode that rejected keeps the
  * container bytes even when the stop was superseded, because a `leave()`/pagehide
@@ -53,5 +53,24 @@ describe("classifyStopDecode", () => {
     expect(
       classifyStopDecode({ decoded: true, sampleCount: 42 }, false)
     ).toEqual({ emitSamples: true, error: null, keepBlob: false });
+  });
+});
+
+describe("classifyEmptySeal", () => {
+  it('reports an empty seal after a flush throw as "unfinished", never "silence" (#485)', () => {
+    // The swap that must fail: "silence" tells a translator who spoke that
+    // nothing was heard, when the engine is what failed.
+    expect(classifyEmptySeal(true, true)).toBe("unfinished");
+  });
+
+  it('reports an empty seal with no throw as "silence"', () => {
+    expect(classifyEmptySeal(false, true)).toBe("silence");
+  });
+
+  it("says nothing on a superseded stop, whatever the flush did (#745)", () => {
+    // The branch the old source regex could not see: deleting the inline
+    // `: null` arm still matched it.
+    expect(classifyEmptySeal(true, false)).toBeNull();
+    expect(classifyEmptySeal(false, false)).toBeNull();
   });
 });

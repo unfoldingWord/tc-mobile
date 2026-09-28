@@ -1,0 +1,126 @@
+/* O4 — Bottom sheets and the name sheet (02, G4). Owner: #943. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file. */
+
+/* WHAT A "NAME SHEET" IS HERE. Every naming surface in the app (New book, Add
+   chapter, and the book, chapter and segment renames, #264/#314/#609) is the
+   shared Menu drawer holding the one NameEdit form. Their markup lives in the
+   screen files, which batch 1 gives to the screen lanes, so this file restyles
+   them from CSS alone: a menu panel that CONTAINS the name-edit form is a name
+   sheet. The :has() scope keeps every other menu (the app menu and the
+   book, chapter and segment action lists, #941/#949) out of these rules.
+
+   Selection and the iOS callout (#556/#564) are deliberately not set here: the
+   panel keeps 3-components.css's no-select/no-callout and the field keeps its
+   own selectable text. tests/o4-sheets.test.ts pins that. */
+@layer components {
+  /* The backdrop: O4's dim role, and the sheet docked to the bottom edge. */
+  [data-design="o4"] .menu-scrim:has(.name-edit) {
+    background: var(--s-dim);
+    align-items: flex-end;
+  }
+
+  /* The sheet shell: inset 8, radius 26, pad 12/16/20 (design reference §3).
+     The safe-area insets move from the drawer's padding into the margin, so
+     the sheet clears the home indicator and a landscape notch. */
+  [data-design="o4"] .menu-panel:has(.name-edit) {
+    flex: 1 1 auto;
+    width: auto;
+    height: auto;
+    max-height: calc(
+      100% - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+    );
+    margin: 8px calc(8px + env(safe-area-inset-right))
+      calc(8px + env(safe-area-inset-bottom))
+      calc(8px + env(safe-area-inset-left));
+    padding: 12px 16px 20px;
+    background: var(--s-surface);
+    border: 1px solid var(--s-card-edge);
+    border-radius: 26px; /* #939 token */
+    gap: 16px;
+  }
+
+  /* While focus is in the name form, the sheet docks at the TOP instead.
+     NameEdit autofocuses its field, and nothing in the tree lifts a
+     bottom-docked sheet above the soft keyboard (no keyboard plugin, no
+     visualViewport handling, no interactive-widget in the viewport meta), so
+     at the bottom the keyboard could cover the field and Confirm. Scoped to
+     the whole form rather than the field, so a tap on Confirm, which moves
+     focus from the field to the button, does not move the sheet out from
+     under the finger. The top margin takes the inset the bottom one gave up. */
+  [data-design="o4"] .menu-scrim:has(.name-edit:focus-within) {
+    align-items: flex-start;
+  }
+  [data-design="o4"] .menu-panel:has(.name-edit:focus-within) {
+    margin-top: calc(8px + env(safe-area-inset-top));
+  }
+
+  /* The handle, 56 × 5. Drawn, not a control: dismissal stays with Close, the
+     scrim, Escape and Back, exactly as before. */
+  [data-design="o4"] .menu-panel:has(.name-edit)::before {
+    content: "";
+    flex: none;
+    align-self: center;
+    width: 56px;
+    height: 5px;
+    border-radius: 3px; /* #939 token */
+    background: var(--s-edge);
+  }
+
+  /* The sheet title, 20/700. */
+  [data-design="o4"] .menu-panel:has(.name-edit) .t-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 20px; /* #939 token */
+    font-weight: 700; /* #939 token */
+    letter-spacing: normal;
+  }
+
+  /* The name row: field, then the commit control. */
+  [data-design="o4"] .name-edit {
+    gap: 12px;
+  }
+
+  /* The name input, 18/400, radius 12. 18px also stays above the 16px floor
+     that keeps iOS Safari from zooming a focused field (3-components.css,
+     .name-input). */
+  [data-design="o4"] .name-input {
+    min-height: 60px;
+    padding: 0 14px;
+    background: var(--s-floor);
+    border-radius: 12px; /* #939 token */
+    font-size: 18px; /* #939 token */
+    font-weight: 400;
+  }
+
+  /* The commit control as G4's green check, 80 × 80 on the done role. Busy
+     and guided marks come from 3-components.css unchanged. */
+  [data-design="o4"] .name-edit > .control {
+    flex: none;
+    width: 80px;
+    height: 80px;
+    background: var(--s-done);
+    color: var(--s-done-ink);
+  }
+
+  /* The guide ring (#604) cannot stay inset here: --s-guide on --s-done is
+     under the non-text floor in both themes (tests/contrast.test.ts), which
+     is the record button's reason for its outset ring too. So on this green
+     control the ring goes outside, onto the sheet's --s-surface, past a gap
+     band that clears the global focus outline (offset + its 2px width, from
+     globals.css) by 2px, so focus, gap and guide read as three separate
+     bands. The sheet's 16px side and 20px bottom padding hold the ring. */
+  [data-design="o4"] .name-edit > .control.is-guided {
+    box-shadow:
+      0 0 0 calc(var(--c-focus-offset) + 4px) var(--s-surface),
+      0 0 0 calc(var(--c-focus-offset) + 4px + var(--c-guide-ring))
+        var(--s-guide);
+  }
+
+  /* The rule above outranks 3-components.css's inert kill on specificity, so
+     a guided control nobody can tap keeps it off here too. */
+  [data-design="o4"] [inert] .name-edit > .control.is-guided,
+  [data-design="o4"] .name-edit > .control.is-guided[inert] {
+    box-shadow: none;
+  }
+}

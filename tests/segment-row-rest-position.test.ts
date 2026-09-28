@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { JSDOM } from "jsdom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SegmentRow } from "@/components/segment-row";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 import type { SegmentRow as Row } from "@/types/view";
 import type { SegmentId, ClipId } from "@/types/domain";
 
@@ -33,6 +33,7 @@ const onPlay = vi.fn();
 const row: Row = {
   segmentId: "segment" as SegmentId,
   ordinal: 1,
+  label: null,
   hasClip: true,
   finished: false,
   clipId: "clip" as ClipId,
@@ -78,6 +79,8 @@ async function show(
         onOpenRecorder: vi.fn(),
         onSetFinished: vi.fn(),
         onErase: vi.fn(),
+        onDeleteSegment: vi.fn(),
+        onRename: vi.fn(),
       })
     );
   });
@@ -121,4 +124,54 @@ it("leaves the dot where a hand stop reached, and plays on from there", async ()
   expect(dotPercent()).toBe(50);
   await tapPlay();
   expect(onPlay).toHaveBeenCalledWith(0.5);
+});
+
+/**
+ * #606 / #601: #618 rests the dot at the start after a run-out, but the dot
+ * can still reach the end by other paths, and a Play from there starts a
+ * source with no audio behind it: a silent Play, and the start #606's
+ * reporter tied a shriek to (not confirmed as its cause). So a Play with the
+ * dot at, or within a sliver of, the end sounds the take from the start.
+ */
+async function pressKey(key: string) {
+  const slider = document.querySelector('[role="slider"]');
+  expect(slider).not.toBeNull();
+  await act(async () => {
+    slider!.dispatchEvent(
+      new dom.window.KeyboardEvent("keydown", { key, bubbles: true })
+    );
+  });
+}
+
+it("plays from the start when the dot has been moved to the very end (#606)", async () => {
+  await show(false, 0);
+  for (let i = 0; i < 20; i++) await pressKey("ArrowRight");
+
+  expect(dotPercent()).toBe(100);
+  await tapPlay();
+  expect(onPlay).toHaveBeenCalledWith(0);
+});
+
+it("plays from the start when a hand stop left the dot within a sliver of the end (#606)", async () => {
+  await show(false, 0);
+  await show(true, 0);
+  // A Stop that lands on the last elapsed tick, before `onEnded` reports a
+  // run-out, is a hand stop: the dot rests where it reached.
+  await show(true, 970);
+  await show(false, 0);
+
+  expect(dotPercent()).toBe(97);
+  await tapPlay();
+  expect(onPlay).toHaveBeenCalledWith(0);
+});
+
+it("still plays on from a rest short of the tail window (#606)", async () => {
+  await show(false, 0);
+  await show(true, 0);
+  await show(true, 800);
+  await show(false, 0);
+
+  expect(dotPercent()).toBe(80);
+  await tapPlay();
+  expect(onPlay).toHaveBeenCalledWith(0.8);
 });

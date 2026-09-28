@@ -17,6 +17,7 @@ import {
   shareProgressWakeAt,
 } from "@/hooks/share-progress";
 import type { ShareOutcome } from "@/hooks/share-flow";
+import { region, stripCssComments, uniqueIndexOf } from "./support";
 
 /**
  * The share progress timeline (#491): a busy modal held for a MINIMUM time so
@@ -172,7 +173,7 @@ describe("the partial outcome carries its gap (P1, this lane's own review round)
   // not show the plain `sent` tick — see `share-progress.ts`'s header on
   // `ShareSettled` for why. This pins the gap surviving both the immediate
   // and the held-then-released paths, and that `sent` never carries one.
-  const gap: ShareGap = { missing: 2, partial: 0 };
+  const gap: ShareGap = { missing: 2, partial: 0, partialChapters: 0 };
 
   it("a settle after MIN_BUSY_MS shows partial AT ONCE, with its gap attached", () => {
     const at = T0 + MIN_BUSY_MS + 5_000;
@@ -254,13 +255,14 @@ describe("a send tap landing during prepare's own completed hold (P2, this lane'
     const held = settle(sendBusy, "sent", T0 + 20 + 5, {
       missing: 0,
       partial: 0,
+      partialChapters: 0,
     });
     expect(held).toMatchObject({ phase: "busy", pending: { settled: "sent" } });
     expect(tick(held, T0 + 20 + MIN_BUSY_MS)).toEqual({
       phase: "outcome",
       settled: "sent",
       since: T0 + 20 + MIN_BUSY_MS,
-      gap: { missing: 0, partial: 0 },
+      gap: { missing: 0, partial: 0, partialChapters: 0 },
     });
   });
 
@@ -394,7 +396,11 @@ describe("shareOverlayOwnsScreen (George r1 P2 #1/#2, #491)", () => {
   });
 });
 
-/** Source-shape reads, because there is no renderer here (#197). */
+/**
+ * Source-shape text matches, not checks of wiring: a `readFileSync` read and
+ * a string/pattern match confirm the expected text appears in source, not
+ * that it executes. These do not run hook effects or gestures.
+ */
 const read = (rel: string) =>
   readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
 
@@ -627,16 +633,16 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
       "share",
       "onPrepareShare",
       "onSendShare",
-      "onClick={onPrepareShare}",
-      "onClick={onSendShare}",
+      "onPrepare={onPrepareShare}",
+      "onSend={onSendShare}",
     ],
     [
       "src/components/books-screen.tsx",
       "bookShare",
       "onPrepareBookShare",
       "onSendBookShare",
-      "onClick={onPrepareBookShare}",
-      "onClick={onSendBookShare}",
+      "onPrepare={onPrepareBookShare}",
+      "onSend={onSendBookShare}",
     ],
   ] as const) {
     const name = screen.split("/").pop();
@@ -673,28 +679,111 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
   }
 
   /**
+   * The native one-tap chain (#860): on the native route `prepare()` now
+   * resolves to `send()`'s own outcome (`share-flow.ts`'s `chainsToSend`)
+   * instead of always leaving the flow at `ready`. So `onPrepareShare`/
+   * `onPrepareBookShare` must react to THAT return value the same way
+   * `onSendShare`/`onSendBookShare` already react to a manual tap 2 —
+   * closing the menu on `sent`/`dismissed`, and leaving it alone for every
+   * other outcome the `.then` does not name (`retry`, `failed`, `unproven`,
+   * `superseded`, and the `null` a non-chained web run, an empty share, a
+   * prepare error, or a superseded run resolves to).
+   */
+  for (const [screen, prepareFn, closeFn] of [
+    [
+      "src/components/segments-screen.tsx",
+      "onPrepareShare",
+      "onCloseChapterMenu",
+    ],
+    [
+      "src/components/books-screen.tsx",
+      "onPrepareBookShare",
+      "onCloseShareMenu",
+    ],
+  ] as const) {
+    const name = screen.split("/").pop();
+
+    it(`${name}: ${prepareFn} closes the menu on a chained sent/dismissed outcome — the same set ${closeFn}'s tap-2 sibling closes on`, () => {
+      const source = read(screen);
+      const prepareAt = source.indexOf(`const ${prepareFn} = useCallback`);
+      expect(prepareAt).toBeGreaterThan(-1);
+      const prepareBody = source.slice(
+        prepareAt,
+        source.indexOf("}, [", prepareAt)
+      );
+      expect(prepareBody).toMatch(
+        new RegExp(
+          `outcome === "sent" \\|\\| outcome === "dismissed"\\)\\s*${closeFn}\\(\\);`
+        )
+      );
+    });
+
+    it(`${name}: ${prepareFn} reads prepare()'s own resolved outcome via .then, not a bare fire-and-forget`, () => {
+      const source = read(screen);
+      const prepareAt = source.indexOf(`const ${prepareFn} = useCallback`);
+      const prepareBody = source.slice(
+        prepareAt,
+        source.indexOf("}, [", prepareAt)
+      );
+      expect(prepareBody).toMatch(
+        /\.prepare\([\s\S]*?\)\s*\.then\(\(outcome\) => \{/
+      );
+    });
+  }
+
+  /**
+   * The ternary's own half of the #96/#97 contract, asserted ONCE now that
+   * both menus render the same rows (#160, L-15).
+   *
+   * This got stronger in the move rather than weaker: it used to be the same
+   * property checked separately in two files that had to stay in step by
+   * hand. A `fallback` ref must be attached to EVERY branch, so it survives
+   * the ternary remounting the originally captured trigger out from under it
+   * — "Share chapter"/"Share book" swapping for "Share now" before the
+   * overlay has shown anything.
+   */
+  it("share-menu-section.tsx: the controlRef is attached to every branch of the Share/Send ternary", () => {
+    const source = read("src/components/share-menu-section.tsx");
+    const occurrences = source.split("ref={controlRef}").length - 1;
+    // Exactly two: the "ready" (Share now) branch and the "not ready"
+    // (Share chapter/book, including preparing) branch.
+    expect(occurrences).toBe(2);
+  });
+
+  /**
    * The two guards George r1 P2 #2 added (Rename's `onClick`, books'
-   * `onArmDelete`) are REMOVED in this round, not just left in place beside
+   * `onArmDelete`) were REMOVED in that round, not just left in place beside
    * `inert` — a per-handler check that can silently drift out of sync with
    * the primitive is worse than no check at all (it looks like coverage
    * without proving it). Both controls are inside the SAME `inert` subtree
-   * pinned above, so removing the guard does not reopen George r1 P2 #2.
+   * pinned above, so removing the guard did not reopen George r1 P2 #2.
+   *
+   * `onArmDelete`'s guard is BACK, though (#517 item 1, George r3 P3 on
+   * #508) — not because that reasoning was wrong, but as defense in depth
+   * for the specific case `inert` itself does not hold: unlike Rename
+   * (entering an in-menu edit mode), an unguarded `onArmDelete` still runs
+   * `setDeleteTargetId` even when the immediately-preceding
+   * `onCloseShareMenu()` call refuses to close, arming a destructive confirm
+   * that would paint under the share glyph at the same z-index. Rename's own
+   * guard stays removed — this is a scoped reversal of one case, not the
+   * whole round.
    */
   it("segments-screen.tsx: Rename's onClick carries no shareOverlayOwnsScreen guard of its own any more", () => {
     const source = read("src/components/segments-screen.tsx");
     expect(source).toMatch(/onClick=\{\(\) => setRenamingChapter\(true\)\}/);
   });
 
-  it("books-screen.tsx: Rename's onClick and onArmDelete carry no shareOverlayOwnsScreen guard of their own any more", () => {
+  it("books-screen.tsx: Rename's onClick carries no shareOverlayOwnsScreen guard of its own any more", () => {
     const source = read("src/components/books-screen.tsx");
     expect(source).toMatch(/onClick=\{\(\) => setRenamingBook\(true\)\}/);
+  });
+
+  it("books-screen.tsx: onArmDelete carries its own shareOverlayOwnsScreen guard again, as defense in depth (#517 item 1)", () => {
+    const source = read("src/components/books-screen.tsx");
     const armAt = source.indexOf("const onArmDelete = useCallback(() => {");
     expect(armAt).toBeGreaterThan(-1);
     const armBody = source.slice(armAt, source.indexOf("}, [", armAt));
-    // Checks for the GUARD CALL specifically, not a bare substring match —
-    // the surrounding comment names `shareOverlayOwnsScreen` on purpose, to
-    // say a guard call is no longer there.
-    expect(armBody).not.toMatch(
+    expect(armBody).toMatch(
       /if \(shareOverlayOwnsScreen\(bookShare\.progress\)\) return;/
     );
   });
@@ -753,13 +842,9 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
    * inside the `aria-modal` panel, and carry the busy-phase text
    * (`shareProgressText`'s `"busy"` case: `sharePreparing`/
    * `shareBookPreparing` for prepare-work, `shareHandingOver` for
-   * send-work) — not just the outcome text. Before the fix, `liveRegion`
-   * was gated on `phase === "outcome"` alone, so this assertion is false on
-   * that source (verified red: `git stash` of just the two screen files,
-   * this test run against the stashed-out fix, observed failing) and true
-   * once `shareOverlayOwnsScreen` (`phase !== "hidden"`) replaces it.
-   * Mutation: reverting the guard back to `phase === "outcome"` kills this
-   * test (verified).
+   * send-work) — not just the outcome text. `shareOverlayOwnsScreen`
+   * (`phase !== "hidden"`) must keep the live region present during both
+   * busy and outcome phases.
    */
   for (const [screen, hook, scope] of [
     ["src/components/segments-screen.tsx", "share", "chapter"],
@@ -817,7 +902,11 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
   it("share-progress.tsx no longer captures/restores the trigger itself — that moved to the screens (George r2 P2-1)", () => {
     const modal = read("src/components/share-progress.tsx");
     expect(modal).not.toMatch(/returnFocusRef/);
-    const at = modal.indexOf("useEffect(() => {\n    if (visible)");
+    // `useLayoutEffect`, not `useEffect`, as of #517 item 4 (George r3 P3 on
+    // #508) — see `tests/share-progress-overlay-layout-effects.test.ts` for
+    // why. This locator only needs the CURRENT hook spelling to find the
+    // effect; that file is what pins the spelling itself.
+    const at = modal.indexOf("useLayoutEffect(() => {\n    if (visible)");
     expect(at).toBeGreaterThan(-1);
     const effectEnd = modal.indexOf("}, [visible]);", at);
     const body = modal.slice(at, effectEnd);
@@ -895,10 +984,20 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
     it(`${name}: restores focus from a useLayoutEffect keyed on the overlay no longer owning the screen`, () => {
       const source = read(screen);
       expect(source).toMatch(/useLayoutEffect,/); // imported from "react"
-      const restoreAt = source.indexOf("useLayoutEffect(() => {");
-      expect(restoreAt).toBeGreaterThan(-1);
-      const effectEnd = source.indexOf("}, [", restoreAt);
-      const body = source.slice(restoreAt, effectEnd);
+      // Anchor on the effect's own dependency array, which names this
+      // screen's share hook and must occur once, then walk back to the
+      // effect's opening. The file's first `useLayoutEffect(() => {` is only
+      // this effect by position: both screens declare more than one, and a
+      // new one added above it sliced the wrong effect in PR #531 round 7
+      // (#533).
+      const effectEnd = uniqueIndexOf(
+        source,
+        `}, [${hook}.progress, focusRestore]);`
+      );
+      const body = region(source, {
+        from: source.lastIndexOf("useLayoutEffect(() => {", effectEnd),
+        to: effectEnd,
+      });
       expect(body).toMatch(
         new RegExp(
           `if \\(shareOverlayOwnsScreen\\(${hook}\\.progress\\)\\) return;`
@@ -911,16 +1010,17 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
       );
     });
 
-    it(`${name}: the ${controlRefName} is attached to every branch of the Share/Send ternary`, () => {
+    it(`${name}: declares the ${controlRefName} and hands it to the shared Share rows`, () => {
+      // The ternary itself moved into `ShareMenuSection` (#160, L-15), so this
+      // half is now "the screen owns the ref and passes it in" — the next case
+      // is "the section attaches it to BOTH branches", once, for both screens.
       const source = read(screen);
-      const refDeclAt = source.indexOf(
-        `const ${controlRefName} = useRef<HTMLButtonElement | null>(null);`
-      );
-      expect(refDeclAt).toBeGreaterThan(-1);
-      const occurrences = source.split(`ref={${controlRefName}}`).length - 1;
-      // Exactly two: the "ready" (Share now) branch and the "not ready"
-      // (Share chapter/book, including preparing) branch of the ternary.
-      expect(occurrences).toBe(2);
+      expect(
+        source.indexOf(
+          `const ${controlRefName} = useRef<HTMLButtonElement | null>(null);`
+        )
+      ).toBeGreaterThan(-1);
+      expect(source).toContain(`controlRef={${controlRefName}}`);
     });
   }
 
@@ -941,55 +1041,95 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
   });
 
   /**
-   * George r2 P2-2 (#491): the screens must actually READ `sendUnconfirmed`
-   * and feed it to `shareControlAffordance` and the idle label — the state
-   * this field exists to carry is invisible unless both wire it through.
+   * George r2 P2-2 (#491): `sendUnconfirmed` must actually be READ and fed to
+   * `shareControlAffordance` and the idle label — the state this field exists
+   * to carry is invisible unless both wire it through.
+   *
+   * Split in two since #160's L-15 moved the rows into `ShareMenuSection`: the
+   * screens hand the flag and their own copy in, and the section does the
+   * wiring. The section half is asserted ONCE for both menus, which is the
+   * improvement — it was the same property checked separately in two files.
    */
-  for (const [screen, hook, affordanceVar, unconfirmedString] of [
+  for (const [screen, hook, unconfirmedString, scopeValue, hasGapExpr] of [
     [
       "src/components/segments-screen.tsx",
       "share",
-      "shareAffordance",
       "shareChapterUnconfirmed",
+      "chapter",
+      "share.missing > 0",
     ],
     [
       "src/components/books-screen.tsx",
       "bookShare",
-      "bookShareAffordance",
       "shareBookUnconfirmed",
+      "book",
+      "bookShareHasGap",
     ],
   ] as const) {
     const name = screen.split("/").pop();
 
-    it(`${name}: passes ${hook}.sendUnconfirmed as shareControlAffordance's third argument`, () => {
+    it(`${name}: hands ${hook}.sendUnconfirmed and its own unconfirmed copy to the Share rows`, () => {
       const source = read(screen);
-      const at = source.indexOf(
-        `const ${affordanceVar} = shareControlAffordance(`
-      );
-      expect(at).toBeGreaterThan(-1);
-      const callEnd = source.indexOf(");", at);
-      const call = source.slice(at, callEnd);
-      expect(call).toMatch(new RegExp(`${hook}\\.sendUnconfirmed`));
-    });
-
-    it(`${name}: the idle Share control's label switches to the unconfirmed string when ${hook}.sendUnconfirmed is true, never disabling the control`, () => {
-      const source = read(screen);
-      const labelAt = source.indexOf(`strings.${unconfirmedString}`);
-      expect(labelAt).toBeGreaterThan(-1);
-      const ternaryStart = source.lastIndexOf("label={", labelAt);
-      const ternaryEnd = source.indexOf(
-        "}",
-        source.indexOf(unconfirmedString, labelAt) + 40
-      );
-      const ternary = source.slice(ternaryStart, ternaryEnd);
-      expect(ternary).toMatch(new RegExp(`${hook}\\.sendUnconfirmed`));
-      // Not disabled — a second Share must remain genuinely possible (the
-      // brief's own constraint), never gated behind `disabled`.
-      const controlStart = source.lastIndexOf("<Control", labelAt);
-      const controlEnd = source.indexOf("/>", labelAt);
-      expect(source.slice(controlStart, controlEnd)).not.toMatch(/disabled/);
+      // End-of-tag boundary (#720): a bare `indexOf("<ShareMenuSection")`
+      // also matches a hypothetical `<ShareMenuSectionXX`, the same prefix
+      // hole `share-outcome-glyph.test.ts` closed for its own copy of this
+      // tag search during #670 — this file was the second site of the same
+      // class, left behind when the first was fixed.
+      const at = source.search(/<ShareMenuSection[\s/>]/);
+      expect(at, "no <ShareMenuSection> in this screen").toBeGreaterThan(-1);
+      const tag = source.slice(at, source.indexOf("/>", at));
+      expect(tag).toContain(`sendUnconfirmed={${hook}.sendUnconfirmed}`);
+      expect(tag).toContain(`unconfirmedLabel={strings.${unconfirmedString}}`);
+      // The two props that actually differ between Books and Segments
+      // (#720 item 2): nothing pinned either before, so a call site could
+      // swap scope="book" for scope="chapter" — changing the share-error
+      // copy a translator reads — and every assertion above would stay
+      // green.
+      expect(tag).toContain(`scope="${scopeValue}"`);
+      expect(tag).toContain(`hasGap={${hasGapExpr}}`);
     });
   }
+
+  it("share-menu-section.tsx: feeds sendUnconfirmed to shareControlAffordance as its third argument", () => {
+    const source = read("src/components/share-menu-section.tsx");
+    const at = source.indexOf("shareControlAffordance(");
+    expect(at).toBeGreaterThan(-1);
+    const call = source.slice(at, source.indexOf(");", at));
+    expect(call).toMatch(/sendUnconfirmed/);
+  });
+
+  it("share-menu-section.tsx: the idle label switches on sendUnconfirmed, and that control is never disabled", () => {
+    const source = read("src/components/share-menu-section.tsx");
+    // Isolate the NOT-ready branch by its own handler, then walk back to its
+    // opening tag — `lastIndexOf` from the handler, so the ready branch's
+    // `<Control>` above it can never be the one measured. The window runs to
+    // the tag's own closing `/>` (#720), not just up to the handler: ending
+    // at `prepareAt` left anything placed AFTER `onClick={onPrepare}` — a
+    // `disabled`, or a dropped `busy` moved past it — outside the span this
+    // test claims to cover.
+    const prepareAt = source.indexOf("onClick={onPrepare}");
+    expect(prepareAt).toBeGreaterThan(-1);
+    const controlStart = source.lastIndexOf("<Control", prepareAt);
+    const controlEnd = source.indexOf("/>", prepareAt);
+    // region() throws if the lastIndexOf walk-back found no preceding
+    // <Control at all (#533's "unfloored lastIndexOf" finding), not just if
+    // the forward search for the closing /> came up empty.
+    const control = region(source, { from: controlStart, to: controlEnd });
+
+    // The label is a three-way: preparing, then unconfirmed, then idle.
+    expect(control).toMatch(/label=\{/);
+    expect(control).toMatch(/preparingLabel/);
+    expect(control).toMatch(/sendUnconfirmed/);
+    expect(control).toMatch(/unconfirmedLabel/);
+    expect(control).toMatch(/idleLabel/);
+
+    // Not disabled — a second Share must remain genuinely possible (the
+    // brief's own constraint), never gated behind `disabled`. `busy` is what
+    // paints and reads the wait instead (#354), and it also keeps the control
+    // inside Menu's FOCUSABLE set so the Tab trap holds (George R-B7).
+    expect(control).not.toMatch(/\bdisabled\b/);
+    expect(control).toMatch(/busy=\{affordance\.busy\}/);
+  });
 
   /**
    * Frank at `9832a8b` P2: the ref-sync effect that feeds the capture-phase
@@ -1006,7 +1146,11 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
    */
   it("share-progress.tsx syncs busyRef/onCancelRef/onDismissRef in a LAYOUT effect, not a passive one (Frank 9832a8b P2)", () => {
     const modal = read("src/components/share-progress.tsx");
-    expect(modal).toMatch(/import \{ useEffect, useLayoutEffect, useRef \}/);
+    // No bare `useEffect` any more, as of #517 item 4 (George r3 P3 on
+    // #508): the focus grab and the Escape/Tab capture listener, this
+    // component's other two effects, are also `useLayoutEffect` now — see
+    // `tests/share-progress-overlay-layout-effects.test.ts`.
+    expect(modal).toMatch(/import \{ useLayoutEffect, useRef \}/);
     const at = modal.indexOf("const busyRef = useRef(busy);");
     expect(at).toBeGreaterThan(-1);
     const effectAt = modal.indexOf("useLayoutEffect(() => {", at);
@@ -1023,7 +1167,11 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
   });
 
   it("the stylesheet inks busy and every settled outcome, with layer-2 roles only", () => {
-    const css = read("src/app/styles/3-components.css");
+    // Comments stripped first (#533): a header comment naming the selector
+    // used to be found by the block search below before the rule itself was
+    // (#529 round 3), which is why the stylesheet had to spell it without its
+    // leading dot. A comment can no longer be the match.
+    const css = stripCssComments(read("src/app/styles/3-components.css"));
     for (const key of ["busy", ...SHARE_SETTLED]) {
       const rule = new RegExp(
         `\\.share-scrim\\[data-outcome="${key}"\\][^{]*\\{[^}]*color:\\s*var\\(--s-`
@@ -1033,8 +1181,15 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
     // No colour primitive anywhere in the block: every ink, fill and edge is a
     // layer-2 role, or a theme cannot switch it. Spacing and radius primitives
     // are the same ones `.confirm-panel` uses and are not the leak this guards.
-    const start = css.indexOf(".share-scrim");
-    const block = css.slice(start, css.indexOf("@layer components", start));
+    // The block runs from the scrim's own base rule to the next layer block.
+    // `uniqueIndexOf` pins the base rule as the start, so a second
+    // `.share-scrim {` rule added elsewhere fails here rather than silently
+    // moving the window; `region` throws on a missing end or an empty slice.
+    const start = uniqueIndexOf(css, ".share-scrim {");
+    const block = region(css, {
+      from: start,
+      to: css.indexOf("@layer components", start),
+    });
     const declarations = [
       ...block.matchAll(/(color|background|border(?:-color)?):\s*([^;]+);/g),
     ];

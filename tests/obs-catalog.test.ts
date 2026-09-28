@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import catalog from "@/data/obs-catalog.json";
 import { obsFrameScope, OBS_BOOK_CODE, thumbUrl } from "@/lib/obs/catalog";
-import { isValidScope, parseScope } from "@/lib/scripture/scope";
+import { isValidScope, parseScope } from "./scope";
 import type { ObsCatalog } from "@/types/obs";
 
 const obs = catalog as unknown as ObsCatalog;

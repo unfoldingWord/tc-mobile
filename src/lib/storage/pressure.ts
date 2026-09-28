@@ -19,7 +19,9 @@
  * coarse reading can honestly support, and a band is also the only thing a
  * translator who may not read can act on. The hook that owns the browser call
  * (`hooks/use-storage-pressure.ts`) returns only this type for that reason:
- * the raw pair never leaves it.
+ * the raw pair never reaches a screen. The one other reader, the transcode
+ * sweep (#1010, through `freeByteCount`), compares free bytes across two
+ * readings to decide a retry and renders nothing.
  *
  * Pure arithmetic over two numbers — no DOM, no `navigator` — so it is pinned
  * in plain Node (`tests/storage-pressure.test.ts`) the way `storageMarker` is.
@@ -36,22 +38,23 @@
  * browser that answered `undefined` is worse than no marker, because a warning
  * with nothing behind it teaches a translator to ignore the one that is real.
  *
- * **Both `"low"` and `"critical"` are `info` tone, and neither is ever
- * `alert`.** An earlier draft of this docblock said `"critical"` maps to
- * `alert` "in the Books standing-condition slot `not-persisted` already uses",
- * and that was wrong twice over: the slot uses `info`
- * (`books-screen.tsx:1147-1148`), and `alert` is the FAILURE tone — it wears
- * the red mark and `role="alert"`. `encoder-notice.ts` records the invariant
- * this rests on: painting a standing condition red on the app's home screen
- * teaches people to ignore red, which is the cost `notice-tone.ts` exists to
- * avoid. Nothing has failed when this band trips; it is a heads-up that there
- * is still time to act on. A real out-of-space failure already has its own
- * full-screen recovery (`recovery-copy.ts`). For a translator who cannot read
- * the sentence and is reading the colour alone, red has to keep meaning
- * "something just failed" rather than "something might fail later". If
- * `"critical"` must eventually read as stronger than `"low"`, that is a new
- * standing tone to design, not `alert` borrowed. (George R4 G3; the product
- * half was decided by the DRI.)
+ * **Tone: `"low"` is `info`; `"critical"` is `alert` (DRI decision, Seth,
+ * 2026-09-24, reversing the call this paragraph used to make).** Through
+ * 2026-09-24 this docblock said BOTH bands were `info` and neither was ever
+ * `alert` — reasoned from `encoder-notice.ts`'s invariant that painting a
+ * standing condition red on the app's home screen teaches people to ignore
+ * red, which is the cost `notice-tone.ts` exists to avoid (George R4 G3; the
+ * product half was decided by the DRI at the time). The DRI has since judged
+ * that reasoning does not hold for `"critical"`: a critical condition
+ * rendered in the same tone as a low one does not read as more urgent, and
+ * the critical copy (`strings.storageCritical`) now states a concrete
+ * consequence — new recordings may not save — which is the shape `alert`
+ * exists for. `"low"` keeps `info`: nothing has failed at that band, and
+ * there is still time to act (mark segments Finished, or share and erase). A
+ * real out-of-space failure still has its own full-screen recovery
+ * (`recovery-copy.ts`), unrelated to either band here. This TYPE carries no
+ * tone of its own — the mapping lives in `components/
+ * storage-pressure-notice.ts`, pinned by `tests/storage-pressure-notice.test.ts`.
  */
 export type StoragePressure = "unknown" | "ok" | "low" | "critical";
 
@@ -120,6 +123,27 @@ export const MAX_SAFE_BYTE_COUNT = Math.floor(Number.MAX_SAFE_INTEGER / 100);
  */
 function isByteCount(value: number | undefined): value is number {
   return value !== undefined && value >= 0 && value <= MAX_SAFE_BYTE_COUNT;
+}
+
+/**
+ * Free bytes for one `usage`/`quota` pair, or `undefined` for a reading
+ * {@link storagePressure} would call `"unknown"`.
+ *
+ * For a caller that compares two readings rather than banding one: the
+ * transcode sweep (#1010) holds out a segment that failed until a later
+ * reading shows more room than the one taken at the failure. Same guard as
+ * `storagePressure`, so the two never disagree about what a usable reading is.
+ * Negative when `usage` exceeds `quota`, for the reason given there. Like the
+ * band, the figure is for a decision and never for the screen.
+ */
+export function freeByteCount(
+  usage: number | undefined,
+  quota: number | undefined
+): number | undefined {
+  if (!isByteCount(usage) || !isByteCount(quota) || quota === 0) {
+    return undefined;
+  }
+  return quota - usage;
 }
 
 /**

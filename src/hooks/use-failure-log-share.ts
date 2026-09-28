@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { formatFailureLog } from "@/lib/failure-text";
+import { isTerminalOpenRefusal } from "@/lib/storage/db";
 import {
   getLogGeneration,
   readFailureLog,
@@ -11,6 +12,7 @@ import {
   classifyShareError,
   resolveSendOutcome,
   type ShareError,
+  type ShareGestures,
   type ShareOutcome,
   type ShareStatus,
 } from "./share-flow";
@@ -66,10 +68,9 @@ export interface LogShareCapabilities {
  * `text/plain` File through Web Share, as plain text through Web Share, or not
  * at all.
  *
- * The whole point of extracting it: this is the decision both earlier review
- * rounds found a bug in, and the hook around it is React + browser glue this
- * repo has no renderer to exercise (the constraint `tests/share-flow.test.ts`
- * documents). Four rules, each paid for:
+ * Extracted so `tests/failure-log-share.test.ts` can exercise the capability
+ * decision directly. The static markup harness in `tests/render.ts` does not
+ * drive the surrounding hook's effects or share gestures. Four rules:
  *
  *  1. **Native wins first, and asks the WebView nothing** (Frank, this round).
  *     `share-target.ts` exists because the first external tester's Android APK
@@ -100,9 +101,20 @@ export function selectLogShareShape(
   return canShare.text() ? "text" : "unsupported";
 }
 
-export interface UseFailureLogShare {
-  readonly status: ShareStatus;
-  readonly error: ShareError | null;
+type FailureLogShareError = ShareError | "restart";
+
+export function classifyFailureLogOpenError(
+  cause: unknown
+): FailureLogShareError {
+  if (
+    isTerminalOpenRefusal((cause as { name?: string } | null)?.name ?? null)
+  ) {
+    return "restart";
+  }
+  return "failed";
+}
+
+export interface UseFailureLogShare extends ShareGestures<FailureLogShareError> {
   /**
    * See {@link UseShareFlow.sendUnconfirmed} — the identical field, on the
    * identical policy, for this hook's own `send()` (Frank at `238820a` P2,
@@ -114,6 +126,10 @@ export interface UseFailureLogShare {
    * nothing telling it apart from one that was never tried. Wired the same
    * way as chapter/book: true after an `unproven` settle, cleared at the
    * start of a fresh `prepare()` and by `reset()`.
+   *
+   * Re-declared from {@link ShareGestures} rather than inherited silently: the
+   * type is identical and adds nothing, but this history is about THIS hook's
+   * two callers and belongs where they will look for it.
    */
   readonly sendUnconfirmed: boolean;
   /**
@@ -121,13 +137,6 @@ export interface UseFailureLogShare {
    * a reason surfaces through `error`.
    */
   prepare: () => Promise<void>;
-  /** Tap 2: hand the armed payload to the OS share sheet. Must be called
-   * straight from a user gesture — the sheet call, `navigator.share` in a
-   * browser or the Share plugin inside the shell, runs with no await before it,
-   * so the activation the web platform requires is still live. */
-  send: () => Promise<ShareOutcome>;
-  /** Drop anything armed and return to idle (panel close, unmount). */
-  reset: () => void;
 }
 
 /**
@@ -179,7 +188,7 @@ export interface UseFailureLogShare {
  */
 export function useFailureLogShare(): UseFailureLogShare {
   const [status, setStatus] = useState<ShareStatus>("idle");
-  const [error, setError] = useState<ShareError | null>(null);
+  const [error, setError] = useState<FailureLogShareError | null>(null);
   // See UseFailureLogShare.sendUnconfirmed's own docblock.
   const [sendUnconfirmed, setSendUnconfirmed] = useState(false);
   /**
@@ -356,15 +365,25 @@ export function useFailureLogShare(): UseFailureLogShare {
       setStatus("ready");
     } catch (cause) {
       if (!current()) return;
+      const classified = classifyFailureLogOpenError(cause);
       // Through the funnel, not to the console (Frank, this round). Sharing the
       // log is an ordinary consumer of the log, not the log's own write: the
       // recursion that makes `writeEntry` swallow its failure — a row about the
       // failure to append a row — does not exist here. A facilitator whose
       // export failed gets a phone that has recorded WHY, and it goes out with
       // the next attempt. `reportFailure` terminates in `console.error` itself,
-      // so the maintainer's desk loses nothing.
-      reportFailure(cause, "failure-log-share-prepare");
-      setError("failed");
+      // so the maintainer's desk loses nothing. The terminal open refusal is the
+      // exception: this older page cannot write that row either, and retrying is
+      // not a real offer (#455).
+      if (classified !== "restart") {
+        reportFailure(cause, "failure-log-share-prepare");
+      } else {
+        console.error(
+          "[failure-log-share-prepare] Terminal database refusal",
+          cause
+        );
+      }
+      setError(classified);
       setStatus("idle");
     } finally {
       // Only the run that still owns the flow releases the guard. A stale run —
@@ -580,12 +599,8 @@ export function useFailureLogShare(): UseFailureLogShare {
   // **TWO TRIGGERS, ONE DROP** (Frank R8 P2). This effect was the only trigger,
   // and a passive effect is not a guard against a TAP: between React committing
   // the render that moved the generation and this effect running, the armed
-  // payload is still armed and `send` was still willing to hand it over. That is
-  // not reasoning — it was reproduced in headless Chromium against the shipped
-  // build, with the failure and the tap in one task, and the stale one-entry
-  // File went to `navigator.share` while this effect ran a beat later. The e2e
-  // case `a failure landing in the SAME TASK as tap 2 sends nothing` is that
-  // reproduction, kept.
+  // payload is still armed. The send path needs its own synchronous check
+  // so it cannot hand over a snapshot invalidated in that window.
   //
   // So `send` now asks the same question synchronously, from
   // `getLogGeneration()` rather than the `generation` captured below — the

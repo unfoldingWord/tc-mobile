@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { concat, silence } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { encodeMp3 } from "@/lib/audio/mp3";
-import { encodeWav } from "@/lib/audio/wav";
 
 /** A 440 Hz tone — real signal, so the encoder has something to compress. */
 const tone = (seconds: number): Int16Array => {
@@ -16,27 +15,6 @@ const tone = (seconds: number): Int16Array => {
   }
   return out;
 };
-
-describe("encodeWav", () => {
-  it("writes a valid RIFF/WAVE header", () => {
-    const samples = tone(0.1);
-    const wav = encodeWav(samples, CANONICAL_SAMPLE_RATE);
-    const ascii = (o: number, n: number) =>
-      String.fromCharCode(...wav.subarray(o, o + n));
-
-    expect(ascii(0, 4)).toBe("RIFF");
-    expect(ascii(8, 4)).toBe("WAVE");
-    expect(ascii(12, 4)).toBe("fmt ");
-    expect(ascii(36, 4)).toBe("data");
-    expect(wav.length).toBe(44 + samples.length * 2);
-
-    const view = new DataView(wav.buffer, wav.byteOffset, wav.byteLength);
-    expect(view.getUint32(4, true)).toBe(36 + samples.length * 2);
-    expect(view.getUint16(22, true)).toBe(1); // mono
-    expect(view.getUint32(24, true)).toBe(CANONICAL_SAMPLE_RATE);
-    expect(view.getUint16(34, true)).toBe(16); // bits per sample
-  });
-});
 
 describe("encodeMp3", () => {
   it("produces a stream that starts with an MPEG frame sync or ID3 tag", () => {
@@ -67,8 +45,8 @@ describe("encodeMp3", () => {
 
   it("encodes concatenated multi-section buffers", () => {
     // The shape an export would hand the encoder: sections joined with a gap.
-    // Not a product export path — there is none yet (#18); this covers the
-    // encoder primitive only.
+    // This covers the encoder primitive only; the product export path (Share
+    // Chapter, `lib/export/chapter.ts`) is tested in `chapter-export.test.ts`.
     const gap = silence(CANONICAL_SAMPLE_RATE * 0.25);
     const joined = concat([tone(0.3), gap, tone(0.3), gap, tone(0.3)]);
     const mp3 = encodeMp3(joined);

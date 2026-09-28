@@ -25,9 +25,9 @@
  * `popstate` is one WE caused to consume or cancel an entry; do not route it
  * through `popAction` at all" — and stays fully load-bearing in the adapter at
  * every programmatic `history.back()` site this guard does not model:
- *   - `commitCloseRecorder`'s programmatic close (e.g. the erase confirm's
- *     `onExit`, which calls `close()` directly with no `popstate` involved):
- *     `suppressPop.current = true; window.history.back();`
+ *   - `commitCloseRecorder`'s programmatic close (a failed save's or erase's
+ *     `onExit`, with no `popstate` involved), which suppresses the landing of
+ *     the traversal that consumes its entry, whichever issuer's that is.
  *   - `trap-forward`'s cancelling `back()`.
  *   - the commit-close settle — whether it issues its own consuming `back()`
  *     (guard clear) or, when refused because a `goBack` is still outstanding,
@@ -38,18 +38,16 @@
  * `popAction` for real — e.g. the programmatic close firing `to-books` and
  * clearing the clipboard on a plain, successful close.
  *
- * `commitCloseRecorder`'s own raw `window.history.back()` is therefore a THIRD
- * raw `window.history.back()` issuer this two-issuer guard does not cover at
- * all — not `goBack`, not the commit-close exit. It is suppressed rather than
- * arbitrated (its `popstate` never reaches `popAction`), so it does not need
- * a slot in `TravelGuardState` for THIS design to be correct. **#493 is
- * answered below for the two issuers this file tracks (2026-09-18, round 4:
- * see `beginBack`'s docblock)** — but the programmatic close's own raw
- * `history.back()` call is outside `TravelGuardState` entirely, so the
- * any-outstanding guard cannot see it or refuse against it. Whether a
- * programmatic close racing an outstanding `goBack`/`commit-close` call can
- * itself coalesce is not evaluated here; noted so it is not missed if this
- * third issuer is ever folded into the guard's accounting.
+ * `commitCloseRecorder`'s programmatic close used to be a THIRD raw
+ * `window.history.back()` issuer outside this guard. It could race: a close
+ * that runs while a `goBack`, or a suppressed cancel, has not landed yet
+ * issued a second traversal before the first one landed (#763). It is
+ * arbitrated now. It shares the `"commit-close"` slot, because it consumes
+ * the same recorder entry the settle does, and `history-latch.ts`'s
+ * `recorderExitTraversal` decides whether it issues through `beginBack`,
+ * absorbs the Back already in flight, or waits for it. `trap-forward`'s cancel
+ * is the one raw issuer still outside `TravelGuardState`. `goBack` refuses
+ * against it by `suppressPop`.
  *
  * Nothing here touches the DOM, `window`, or React; this file is the pure
  * decision table only.

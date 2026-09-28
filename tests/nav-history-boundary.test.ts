@@ -21,7 +21,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  * with `--no-ignore`. Being outside `src/`, a leftover probe cannot reach
  * knip's `src/**` project either.
  *
- * Both states are proven (AGENTS.md, "a gate is tested in both states"):
+ * The cases assert both states (AGENTS.md, "a gate is tested in both states"):
  *   - it FIRES on a real violation — `window.history.back()`, a bare
  *     `history.pushState()`, and `addEventListener("popstate", …)`;
  *   - it STAYS GREEN on a legitimate file — one that only mentions `popstate`
@@ -34,9 +34,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  *     `no-restricted-syntax` stays ENABLED there with its popstate selector
  *     narrowed out (George R3 P3-4) — so it reads `error` for both.
  *
- * The exemption's LOAD-BEARINGNESS (that removing the override flags the real
- * adapter) is proven by mutation in the PR body and by `npm run verify` staying
- * green WITH the override — it is not re-swept here.
+ * The config checks do not lint the real adapter or test removal of its
+ * exemption. The repository lint command checks the adapter itself.
  */
 
 const REPO = join(import.meta.dirname, "..");
@@ -200,10 +199,8 @@ export function useThing(): string | null {
     // the rule stays enabled with only the history popstate selector subtracted,
     // so a future non-history hooks selector still reaches this file.
     // `--print-config` reports only the level, not the selector set, so it reads
-    // `error` (2) here just as for any other hook; that the popstate selector
-    // ITSELF is exempted for the adapter is proven by the FIRES-popstate probe
-    // above (it fires in the hooks layer) together with `npm run verify` staying
-    // green on the adapter's own `addEventListener("popstate", …)`.
+    // `error` (2) here just as for any other hook. These level assertions
+    // do not check the adapter's selector set or lint its popstate listener.
     expect(ruleLevelFor(adapter, "no-restricted-syntax")).toBe(2);
     expect(ruleLevelFor(otherHook, "no-restricted-syntax")).toBe(2);
   }, 15000);

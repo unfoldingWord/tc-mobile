@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   type Clock,
+  chainsToSend,
   classifyShareError,
   createProgressDriver,
   resolveSendOutcome,
@@ -16,27 +17,29 @@ import {
   type ShareProgress,
 } from "@/hooks/share-progress";
 
-/** Source-shape reads, because there is no renderer here (#197). */
+import { stripComments, uniqueIndexOf } from "./support";
+
+/**
+ * Source-shape reads; these assertions do not mount the hook. Comments are
+ * stripped at read time, before anything is searched (#822): most cases here
+ * make a positive match against the file or a slice of it, and a comment
+ * carrying the expected line satisfies that match while the live code says
+ * something else. No anchor below may be a comment for the same reason.
+ */
 const read = (rel: string) =>
-  readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
+  stripComments(
+    readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8")
+  );
 
 /**
  * B7 Share (chapter + book) — the share-rejection classifier.
  *
- * The two-gesture flow lives in `useShareFlow` (wrapped by `useChapterShare` and
- * `useBookShare`), whose state machine and the `navigator.share` handoff are
- * React + browser glue this repo has no renderer to exercise (the constraint
- * `tests/use-erase-segment.test.ts` documents). What IS node-testable is the pure
- * decision the classifier makes about a rejection,
- * and it is the one with real product weight: it decides whether a translator
- * sees a failure, gets a silent retry, or the flow simply ends.
+ * These rows exercise the pure rejection classifier, not the hook's two-gesture
+ * flow or the browser's share handoff. The classifier decides whether a
+ * translator sees a failure, gets a retry, or the flow simply ends.
  *
- * The distinction that matters most is `NotAllowedError` → `retry`. That was the
- * P1 that sent this PR back: encoding spent the iOS activation window and the
- * share was refused. The rework prevents the refusal, but if one still arrives,
- * treating it as `failed` would throw away the already-encoded File and send the
- * translator back to re-encode — so it must classify as `retry`, keeping the
- * File armed for a fresh tap.
+ * A NotAllowedError without live activation keeps the encoded File armed for
+ * a fresh tap, avoiding another encode when the gesture window has expired.
  */
 describe("classifyShareError", () => {
   it("treats a dismissed sheet (AbortError) as dismissed, whatever the activation", () => {
@@ -75,6 +78,32 @@ describe("classifyShareError", () => {
 });
 
 /**
+ * `chainsToSend` (#860) — whether `prepare()` should chain straight into
+ * `send()` once armed, rather than leaving the flow at `ready` for a second
+ * tap. Testers on Android read the ready state's checkmark as "done" and
+ * never made that second tap; the fix is to skip it entirely on the route
+ * that does not need a live gesture to open the chooser.
+ *
+ * A pure, one-line decision — like `classifyShareError` and
+ * `resolveSendOutcome` above — so the branch it drives in `prepare()` is
+ * provable without mounting the hook: flip the comparison in
+ * `chainsToSend`'s own body to `route === "web"` and every row below dies.
+ */
+describe("chainsToSend", () => {
+  it("chains on the native route — the plugin needs no user activation", () => {
+    expect(chainsToSend("native")).toBe(true);
+  });
+
+  it("does NOT chain on the web route — navigator.share needs the tap's own activation, which a continuation after the encode does not carry", () => {
+    expect(chainsToSend("web")).toBe(false);
+  });
+
+  it("does NOT chain when the route is unsupported — prepare() never reaches this call on that route, but the function must not claim otherwise", () => {
+    expect(chainsToSend("unsupported")).toBe(false);
+  });
+});
+
+/**
  * `sentGap` (P1, this lane's own review round) — the pure decision that picks
  * `sent` vs `partial` at `send()`'s own settle, node-testable for the same
  * reason `classifyShareError` above is.
@@ -90,28 +119,44 @@ describe("classifyShareError", () => {
  */
 describe("sentGap", () => {
   it("no gap when both counts are zero", () => {
-    expect(sentGap({ missing: 0, partial: 0 })).toBeUndefined();
+    expect(
+      sentGap({ missing: 0, partial: 0, partialChapters: 0 })
+    ).toBeUndefined();
   });
 
   it("a gap from `missing` alone (a chapter's own left-out segments, or a book's whole missing chapters)", () => {
-    expect(sentGap({ missing: 1, partial: 0 })).toEqual({
+    expect(sentGap({ missing: 1, partial: 0, partialChapters: 0 })).toEqual({
       missing: 1,
       partial: 0,
+      partialChapters: 0,
     });
   });
 
   it("a gap from `partial` alone (segments missing inside a book chapter that DID ship)", () => {
-    expect(sentGap({ missing: 0, partial: 2 })).toEqual({
+    expect(sentGap({ missing: 0, partial: 2, partialChapters: 1 })).toEqual({
       missing: 0,
       partial: 2,
+      partialChapters: 1,
     });
   });
 
   it("a gap from both at once — a book can carry both", () => {
-    expect(sentGap({ missing: 1, partial: 2 })).toEqual({
+    expect(sentGap({ missing: 1, partial: 2, partialChapters: 2 })).toEqual({
       missing: 1,
       partial: 2,
+      partialChapters: 2,
     });
+  });
+
+  it("carries the distinct-chapter count through unchanged, so the outcome copy can name it (#446)", () => {
+    // Same `missing`/`partial` pair, different `partialChapters`: the gap the
+    // modal shows must keep them apart, or its copy falls back to guessing.
+    expect(
+      sentGap({ missing: 1, partial: 2, partialChapters: 1 })?.partialChapters
+    ).toBe(1);
+    expect(
+      sentGap({ missing: 1, partial: 2, partialChapters: 2 })?.partialChapters
+    ).toBe(2);
   });
 });
 
@@ -130,16 +175,16 @@ describe("resolveSendOutcome", () => {
   });
 
   it("a proven send with a gap settles partial", () => {
-    expect(resolveSendOutcome(true, { missing: 1, partial: 0 })).toBe(
-      "partial"
-    );
+    expect(
+      resolveSendOutcome(true, { missing: 1, partial: 0, partialChapters: 0 })
+    ).toBe("partial");
   });
 
   it("an UNPROVEN send settles unproven regardless of any gap — delivery itself is what's in question", () => {
     expect(resolveSendOutcome(false, undefined)).toBe("unproven");
-    expect(resolveSendOutcome(false, { missing: 2, partial: 1 })).toBe(
-      "unproven"
-    );
+    expect(
+      resolveSendOutcome(false, { missing: 2, partial: 1, partialChapters: 1 })
+    ).toBe("unproven");
   });
 });
 
@@ -154,11 +199,27 @@ describe("resolveSendOutcome", () => {
  * changed here.
  */
 describe("the wiring around sentGap and the reset guard (this lane's own review round)", () => {
+  it("an abort during stage arms nothing — the stale run discards and returns before handoff.arm (#365 residual)", () => {
+    const flow = read("src/hooks/share-flow.ts");
+    const stageAt = flow.indexOf(
+      'const staged =\n          route === "native"'
+    );
+    expect(stageAt).toBeGreaterThan(-1);
+    const staleAt = flow.indexOf("if (!current()) {", stageAt);
+    const armAt = flow.indexOf("handoff.arm({", stageAt);
+    expect(staleAt).toBeGreaterThan(stageAt);
+    expect(armAt).toBeGreaterThan(staleAt);
+    const staleBlock = flow.slice(stageAt, armAt);
+    expect(staleBlock).toMatch(
+      /if \(staged !== null\) void nativeShare\.discard\(staged\);\s*return null;/
+    );
+  });
+
   const flow = read("src/hooks/share-flow.ts");
 
   it("prepare() arms the gap counts alongside the File, not just in useState", () => {
     expect(flow).toMatch(
-      /handoff\.arm\(\{\s*file,\s*staged,\s*missing:\s*prepared\.missing,\s*partial:\s*prepared\.partial \?\? 0,?\s*\}\)/
+      /handoff\.arm\(\{\s*file,\s*staged,\s*missing:\s*prepared\.missing,\s*partial:\s*prepared\.partial \?\? 0,\s*partialChapters:\s*prepared\.partialChapters \?\? 0,\s*\.\.\.\(unowned === undefined \? \{\} : \{ release: unowned \}\),?\s*\}\)/
     );
   });
 
@@ -221,6 +282,72 @@ describe("the wiring around sentGap and the reset guard (this lane's own review 
 });
 
 /**
+ * The native one-tap chain (#860): `prepare()` calls `send()` itself once
+ * armed, on the native route only, rather than leaving the flow at `ready`
+ * for a second tap. These are source-shape pins on the exact call site —
+ * `chainsToSend`'s own describe block above pins the decision it reads; this
+ * pins that `prepare()` actually consults it, in the right spot (AFTER the
+ * ready transition, so the modal and `status` are already what every other
+ * `ready` settle leaves them, and the chain is additive rather than a
+ * parallel path) and returns what it resolves to, rather than firing it and
+ * discarding the result (which would leave a caller unable to close its menu
+ * on a chained `sent`/`dismissed` the way it already does for the web
+ * route's own second tap).
+ */
+describe("the native one-tap chain in prepare() (#860)", () => {
+  const flow = read("src/hooks/share-flow.ts");
+
+  it('prepare() checks chainsToSend(route) — not a hand-rolled route === "native" — right after the ready settle, and awaits send()', () => {
+    // Anchored on code, not on the comment above the settle: `read` strips
+    // comments. The settle dispatch occurs twice in the file, so the chain is
+    // the unique anchor and the settle is checked as what IMMEDIATELY
+    // precedes it — stricter than the "somewhere after" this used to be.
+    const chainAt = uniqueIndexOf(flow, "if (chainsToSend(route))");
+    expect(
+      flow
+        .slice(0, chainAt)
+        .trimEnd()
+        .endsWith(
+          'modal.dispatch({ type: "settle", settled: null, now: modal.now() });'
+        )
+    ).toBe(true);
+    expect(flow.slice(chainAt, chainAt + 80)).toMatch(
+      /if \(chainsToSend\(route\)\) return await send\(\);/
+    );
+  });
+
+  it("the non-chained fallback right after it is a plain `return null;` — never a bare `return;`, which would type as `undefined`", () => {
+    const chainAt = flow.indexOf(
+      "if (chainsToSend(route)) return await send();"
+    );
+    expect(chainAt).toBeGreaterThan(-1);
+    const after = flow.slice(chainAt, chainAt + 120);
+    expect(after).toMatch(/return null;/);
+  });
+
+  it("prepare()'s declared return type is ShareOutcome | null, not void — the chained outcome must reach the caller", () => {
+    expect(flow).toMatch(
+      /async \(build: BuildShareFile\): Promise<ShareOutcome \| null> => \{/
+    );
+  });
+
+  it("prepare()'s useCallback depends on send — the value it calls from inside the native branch", () => {
+    const prepareAt = flow.indexOf("const prepare = useCallback(");
+    expect(prepareAt).toBeGreaterThan(-1);
+    const depsAt = flow.indexOf("[handoff, modal, send]", prepareAt);
+    expect(depsAt).toBeGreaterThan(prepareAt);
+  });
+
+  it("every OTHER exit from prepare()'s try/catch also returns null, not a bare return — the function has exactly one non-null return, the chained one", () => {
+    const prepareAt = flow.indexOf("const prepare = useCallback(");
+    const prepareEnd = flow.indexOf("[handoff, modal, send]", prepareAt);
+    const body = flow.slice(prepareAt, prepareEnd);
+    // Every bare `return;` inside prepare() was replaced — none should remain.
+    expect(body).not.toMatch(/\breturn;/);
+  });
+});
+
+/**
  * `sendUnconfirmed` (George r2 P2-2, #491): before this, an `unproven` send's
  * success branch returned `status` to `idle` and cleared `missing`/`partial`
  * exactly like a confirmed one, and once the outcome glyph's own hold
@@ -229,12 +356,8 @@ describe("the wiring around sentGap and the reset guard (this lane's own review 
  * duplicate send if a translator, unable to tell the two states apart,
  * tapped Share again.
  *
- * Red-first: with `setSendUnconfirmed(true)` removed from the `unproven`
- * branch of `send()`'s success path, `sendUnconfirmed` never becomes true, so
- * the control-affordance/label wiring tests in `control-affordance.test.ts`
- * and the screens (`share-progress.test.ts`) would show a plain idle Share
- * control after an unconfirmed send — this block pins the wiring that feeds
- * them, at the source.
+ * These source assertions pin the flag's wiring, not the rendered control
+ * or the browser's handoff.
  */
 describe("sendUnconfirmed (George r2 P2-2, #491)", () => {
   const flow = read("src/hooks/share-flow.ts");
@@ -289,50 +412,13 @@ describe("sendUnconfirmed (George r2 P2-2, #491)", () => {
 });
 
 /**
- * `createProgressDriver` — the clock-monotonicity fix (Frank round 2, P2 at
- * `e915d05`: `share-flow.ts:704`).
+ * `createProgressDriver` must schedule another wake when a tick leaves a
+ * timed state unchanged. Otherwise a backward clock step can strand a busy
+ * or outcome modal after its timer fires before the state's deadline.
  *
- * The driver scheduled every busy/outcome wake off the wall clock and only
- * rescheduled `if (next !== state)` — the branch guarding the ENTIRE
- * reschedule. If the clock moved BACKWARD between a wake being scheduled and
- * its timer firing, `reduceShareProgress` correctly saw `now` short of the
- * deadline and left the SAME timed state in place, but nothing then replaced
- * the wake that had just fired and nulled itself — so a busy or outcome modal
- * could be stranded on screen forever. Fixed two ways: `createProgressDriver`
- * now takes an injectable `Clock` (production default `performance.now()`,
- * monotonic by spec, so `share-flow.ts`'s own callers can no longer FEED it a
- * backward step) — the reducer's own arithmetic is unchanged, it already took
- * `now` as relative data — and, as a belt for any clock source, a `tick` that
- * leaves the state unchanged now reschedules from the state's OWN wake time
- * (`shareProgressWakeAt`) instead of leaving `wake` at `null`.
- *
- * This block tests the belt directly, with an injected clock this suite steps
- * backward on purpose — the shape that struck the driver at `e915d05`,
- * reproduced here without depending on the real wall clock or on
- * `performance.now()`'s own monotonicity guarantee. Fake timers stand in for
- * the driver's `setTimeout`, and this suite drives both explicitly, one tick
- * at a time, rather than letting the fake clock free-run.
- *
- * Red-first: with the belt's `else if (event.type === "tick") scheduleWake
- * (state);` branch removed, `createProgressDriver` reschedules a wake ONLY
- * when a dispatch changes state — exactly `e915d05`'s own shape, the
- * clock-source difference aside. Run that way, both cases below failed:
- *
- *   - busy hold: `expect(last.phase).toBe("outcome")` — `AssertionError:
- *     expected 'busy' to be 'outcome'`. The driver never recovered: once the
- *     backward-stepped tick fired and found nothing to reschedule it, no
- *     further timer ever ran, and the busy modal stayed up regardless of how
- *     far the clock (or the fake timers) were then advanced.
- *   - outcome hold: `expect(last.phase).toBe("hidden")` — `AssertionError:
- *     expected 'outcome' to be 'hidden'`, and the `driver.hidden()` promise
- *     awaited at the end of that case never settled (the assertion that
- *     follows it never ran) — the exact shape of a `send()` caller left
- *     waiting on a flash that will never clear.
- *
- * Restoring the belt line made both pass. Mutation-confirmed the same way:
- * removing only that one line (leaving everything else in this PR's fix, the
- * injected `Clock`, `performance.now()` default, included) reproduces both
- * failures above; the line is what these tests are pinning.
+ * These rows inject a clock that steps backward and drive fake timers
+ * separately. They exercise the driver's rescheduling directly, without
+ * relying on the production clock's monotonicity or mounting the share hook.
  */
 describe("createProgressDriver — the clock-monotonicity fix (Frank e915d05 P2)", () => {
   beforeEach(() => {

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BooksScreen } from "@/components/books-screen";
 import { BuildStamp } from "@/components/build-stamp";
 import { DatabasePanel } from "@/components/database-panel";
+import { PhoneCheckScreen } from "@/components/phone-check-screen";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import { SaveFailed } from "@/components/save-failed";
 import {
@@ -13,10 +14,12 @@ import { requestTranscodeSweep } from "@/hooks/finish-transcode";
 import { warmEncoder } from "@/hooks/mp3-codec";
 import { useAudioSession } from "@/hooks/use-audio-session";
 import { useDatabaseStatus } from "@/hooks/use-database-status";
-import { useNavStack } from "@/hooks/use-nav-stack";
+import { useEraseSegment } from "@/hooks/use-erase-segment";
+import { clearPhoneCheckQueryParam, useNavStack } from "@/hooks/use-nav-stack";
 import { useSaveTake } from "@/hooks/use-save-take";
 import {
   holdsUnsavedAudio,
+  ordinalForTake,
   panelWouldLoseAudio,
 } from "@/lib/takes/pending-take";
 import type { ChapterId, SegmentId } from "@/types/domain";
@@ -40,10 +43,11 @@ import type { ChapterId, SegmentId } from "@/types/domain";
  */
 export function App() {
   const [chapterId, setChapterId] = useState<ChapterId | null>(null);
-  const [recorder, setRecorder] = useState<{
-    segmentId: SegmentId;
-    ordinal: number;
-  } | null>(null);
+  // WHICH segment the sheet is open on, and nothing else. It used to carry an
+  // `ordinal` alongside, written on every open and read by nobody (#160, L-11);
+  // the one ordinal is `recordingOrdinal` below. This slot is cleared the
+  // moment the sheet closes.
+  const [recorder, setRecorder] = useState<SegmentId | null>(null);
 
   const segmentsRef = useRef<SegmentsScreenHandle>(null);
   // System-Back handling (#168) lives in the `useNavStack` adapter below:
@@ -54,9 +58,16 @@ export function App() {
   // `pagehide` → `leave()` and dropped the in-progress take (#58). App keeps
   // only the recorder handle the adapter's commit-close path reaches.
   const recorderRef = useRef<RecorderHandle>(null);
-  // Which segment a held take belongs to, for the recovery screen — captured
-  // when the recorder opened, so it survives the sheet closing on a failed
-  // save. State, not a ref, because the recovery screen reads it during render.
+  // The display number of the segment the sheet was opened on, captured at
+  // open. The app's ONE ordinal (#160, L-11): the `recorder` slot above does
+  // not mirror it. Nothing clears it; the next open overwrites it.
+  //
+  // It is NOT what the recovery screen reads (#710). A take is stamped with
+  // this number when the sheet saves it (`saveRecordingOnSheet` below), and
+  // `SaveFailed` reads the number off the held take. Reading this slot there
+  // instead named the wrong segment: the first save attempt keeps the recovery
+  // screen down, so a second segment can be opened — overwriting this slot —
+  // before the first take's save fails.
   const [recordingOrdinal, setRecordingOrdinal] = useState<number | null>(null);
   // The cut/paste clipboard (B5), held here so it survives the recorder sheet
   // remounting per segment — G3: it reaches across a chapter and is lost on
@@ -70,9 +81,30 @@ export function App() {
   // samples until the chapter change that clears them — see
   // `holdsUnsavedAudio` for why nothing derived can be right here.
   const [clipboard, setClipboard] = useState<Int16Array | null>(null);
+  // The hidden tester screen (#1009). Opened at launch by `?check=phone` on the
+  // PWA, or by five taps on the build stamp — the only way in on an APK, where
+  // no URL can be typed. Read once, on the first render: the query is a way
+  // in, not a mode the app keeps watching.
+  const [phoneCheckOpen, setPhoneCheckOpen] = useState(
+    () => new URLSearchParams(window.location.search).get("check") === "phone"
+  );
+  // Close drops `?check=phone` from the URL too (#1014 item 4), or a later
+  // reload of this same tab would read it again and reopen the check. The
+  // `window.history` call itself lives in `use-nav-stack.ts`
+  // (`clearPhoneCheckQueryParam`), the one file invariant 1 permits one in
+  // (docs/design/back-navigation.md); this is only the state half.
+  const closePhoneCheck = useCallback(() => {
+    clearPhoneCheckQueryParam();
+    setPhoneCheckOpen(false);
+  }, []);
 
   const audio = useAudioSession();
   const { leave, primeAudioContext } = audio;
+  // ONE erase for both entry points — the recorder menu and the Segments-row
+  // overflow menu (#160, L-12). Held here rather than in each screen so a
+  // single in-flight guard covers both, instead of that resting on the sheet
+  // being modal. Each screen keeps its own record of whether ITS erase failed.
+  const erase = useEraseSegment();
 
   // Transcode on Finished (B8, D3) is a background sweep. Each Finished
   // transition asks for one; this catch-all at launch covers anything left over
@@ -110,8 +142,8 @@ export function App() {
   //
   // The rule itself lives in `lib/takes/pending-take.ts`, where it can be
   // tested: which of these arms count, and which kinds of unsaved work are
-  // deliberately excluded, is stated and unit-tested there rather than inline in
-  // a component this repo has no renderer to exercise. The CLIPBOARD arm is one
+  // deliberately excluded, is stated and unit-tested there rather than inline
+  // here. The CLIPBOARD arm is one
   // George found missing (R2 P2-2) — cut audio whose hole is already committed
   // is the only copy of that phrase.
   const holdsUnsavedWork = useCallback(
@@ -214,11 +246,112 @@ export function App() {
       // Priming it here spares the common transient case that failed open.
       primeAudioContext();
       setRecordingOrdinal(ordinal);
-      setRecorder({ segmentId, ordinal });
+      setRecorder(segmentId);
     },
     [leave, primeAudioContext]
   );
 
+  // What the sheet saves through: the hook's own two, with the take stamped
+  // with its segment's number in the same call that names its segment (#710).
+  // `ordinalForTake` gives that number only for the segment the sheet is open
+  // on, so a mismatch labels the take with no number rather than another's.
+  const saveRecordingOnSheet = useCallback(
+    (
+      segmentId: SegmentId,
+      existing: Int16Array,
+      recorded: Int16Array,
+      insertionOffset: number,
+      finished: boolean
+    ) =>
+      saveRecording(
+        segmentId,
+        ordinalForTake(
+          { segmentId: recorder, ordinal: recordingOrdinal },
+          segmentId
+        ),
+        existing,
+        recorded,
+        insertionOffset,
+        finished
+      ),
+    [saveRecording, recorder, recordingOrdinal]
+  );
+  const saveEditedSegmentOnSheet = useCallback(
+    (segmentId: SegmentId, buffer: Int16Array, finished: boolean) =>
+      saveEditedSegment(
+        segmentId,
+        ordinalForTake(
+          { segmentId: recorder, ordinal: recordingOrdinal },
+          segmentId
+        ),
+        buffer,
+        finished
+      ),
+    [saveEditedSegment, recorder, recordingOrdinal]
+  );
+
+  // ── The finished flag's LAST reconciliation point (#160, L-10) ───────────
+  //
+  // Recorded here because this `reload()` is the catch-all, and the next
+  // person to make the recorder non-modal has to find this first.
+  //
+  //   THREE writer paths, all landing in `lib/storage/takes.ts`:
+  //     - a take commit — `writeTakeInTx` stamps the status atomically with the
+  //       take, so `addTake`/`saveTake` set it on every recording;
+  //     - `clearSegmentTake`, which returns an erased segment to "not-started";
+  //     - `setSegmentFinished`, the explicit toggle.
+  //
+  //   TWO in-memory mirrors, neither of which observes the other or the store:
+  //     - `SegmentRow.finished`          (hooks/use-chapter-segments.ts)
+  //     - `RecorderSegmentView.finished` (hooks/use-recorder-segment.ts)
+  //
+  //   The sheet's `displayedFinished` is NOT a third mirror. It is
+  //   `finishedIntent` over `pendingDemote` over the view's flag
+  //   (components/recorder.tsx), recomputed every render — so it cannot go
+  //   stale against the mirror it is derived from, only against the store, and
+  //   only because that mirror has gone stale first.
+  //
+  // Nothing subscribes to the store, so each mirror is repaired by an explicit
+  // reload. THREE reconciliation ROUTES exist; this `reload()` is route 3, the
+  // last of them and not the only one. Routes, not call sites, and no grep
+  // lines up with them: route 2 calls `reloadView()`, a DIFFERENT function
+  // from routes 1 and 3's `reload()`, and more than one call site reaches the
+  // same route. The list below is the claim; a search for either name is not.
+  //     1. a landed save reloads the LIST at once — `useSaveTake`'s `onSaved`,
+  //        wired above, because the row reads as unrecorded until it does;
+  //     2. an in-sheet commit reloads the SHEET's own view (`reloadView()` in
+  //        components/recorder.tsx);
+  //     3. this `reload()`, when the sheet closes having changed something —
+  //        the only repair for what changes the segment without reaching
+  //        `onSaved`: a deferred Finished toggle, and the recorder MENU's
+  //        erase (`useEraseSegment`, which exits dirty). A cut to EMPTY runs
+  //        `performClearEditedSegment`, which fires `onSaved`
+  //        (hooks/use-save-take.ts) and then sets `dirty`, so routes 1 and 3
+  //        both run for it.
+  //
+  // Route 3 is not redundant, and that is the part worth keeping: the
+  // explicit toggle is DEFERRED to close (see `setFinished` in
+  // hooks/use-recorder-segment.ts), so a segment marked finished without a new
+  // take reaches the list through route 3 and no other.
+  //
+  // This inventory lives HERE and is not restated in the hooks. Both mirrors'
+  // docblocks used to carry their own partial copies and both had drifted: a
+  // second copy of a list is a second thing to keep in step. Link to it; do
+  // not re-enumerate it.
+  //
+  // Deferring the list's repair to close is correct today for one reason — the
+  // sheet is MODAL. While it is open the screens behind it are `inert` (the
+  // wrapper below), so the list's mirror cannot be focused or activated
+  // during the window in which it is stale --
+  // it is still PAINTED, which is why this is a modality argument and not a
+  // visibility one; and the
+  // list's own toggle patches its row in place only after a landed write, so it
+  // never diverges from the store on its own.
+  //
+  // The moment any of that stops holding — a non-modal sheet, a second surface
+  // showing the flag, a background write — a `reload()` on close is no longer
+  // enough and this wants a store-change subscription instead. That is the
+  // replacement L-10 names; it is not worth building while the premise holds.
   const recorderClosedState = useCallback(
     (dirty: boolean) => {
       // The recorder has already stopped and committed any take before this
@@ -275,7 +408,7 @@ export function App() {
           state={recovery.state}
           kind={recovery.kind}
           editOnly={recovery.editOnly}
-          ordinal={recordingOrdinal}
+          ordinal={recovery.ordinal}
           holdsCutAudio={holdsCutAudio}
           attempts={recovery.attempts}
           onRetry={retryPendingTake}
@@ -300,6 +433,22 @@ export function App() {
       </main>
     );
   }
+
+  // Behind both screens above, never in front of them: a held take and an
+  // unreachable database each outrank a diagnostic. It replaces Books and
+  // nothing deeper — the stamp's way in is offered only on Books with no work
+  // in hand (`canRevealPhoneCheck` below), so no take, sheet or clipboard can
+  // be under it, and `?check=phone` opens it at launch, before any exists.
+  if (phoneCheckOpen) {
+    return (
+      <main className="app-shell mx-auto h-full max-w-md">
+        <PhoneCheckScreen onClose={closePhoneCheck} />
+      </main>
+    );
+  }
+
+  const canRevealPhoneCheck =
+    chapterId === null && recorder === null && !holdsUnsavedWork();
 
   return (
     <main className="app-shell mx-auto h-full max-w-md">
@@ -328,6 +477,7 @@ export function App() {
             ref={segmentsRef}
             chapterId={chapterId}
             audio={audio}
+            erase={erase}
             onBack={goBack}
             onOpenRecorder={openRecorder}
             pushLayer={pushLayer}
@@ -336,19 +486,20 @@ export function App() {
         )}
       </div>
 
-      {recorder && (
+      {recorder !== null && (
         // Keyed on the segment: opening the sheet on a different segment (via a
         // list Record that was reachable before `inert`, or any future path)
         // must REMOUNT, not reuse the prior segment's loaded `view.samples` —
         // splicing those into the new segment's save would write one segment's
         // audio into another (G8).
         <Recorder
-          key={recorder.segmentId}
+          key={recorder}
           ref={recorderRef}
-          segmentId={recorder.segmentId}
+          segmentId={recorder}
           audio={audio}
-          saveRecording={saveRecording}
-          saveEditedSegment={saveEditedSegment}
+          erase={erase}
+          saveRecording={saveRecordingOnSheet}
+          saveEditedSegment={saveEditedSegmentOnSheet}
           clipboard={clipboard}
           onClipboardChange={setClipboard}
           databaseUnreachable={databaseUnreachable}
@@ -356,7 +507,16 @@ export function App() {
           onRequestBack={goBack}
         />
       )}
-      <BuildStamp />
+      <BuildStamp
+        onReveal={
+          canRevealPhoneCheck
+            ? () => {
+                leave();
+                setPhoneCheckOpen(true);
+              }
+            : undefined
+        }
+      />
     </main>
   );
 }

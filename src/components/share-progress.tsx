@@ -1,17 +1,22 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
-import { Icon } from "./icon";
 import { noticePresentation } from "./notice-tone";
-import { shareProgressText } from "./share-error-copy";
-import { shareSettledGlyph } from "./share-outcome-glyph";
+import {
+  libraryShareProgressText,
+  shareProgressText,
+} from "./share-error-copy";
+import { shareOverlayGlyph } from "./share-overlay-glyph";
+import { shareO4View, type ShareItem } from "./share-o4-view";
+import { ShareProgressPanel } from "./share-progress-panel";
 import type { ShareProgress as ShareProgressState } from "@/hooks/share-progress";
+import { useDesign } from "@/hooks/use-design";
+import type {
+  LibraryShareProgress,
+  UseLibraryShare,
+} from "@/hooks/use-library-share";
 
-interface ShareProgressProps {
-  /** The hook's timeline. Renders nothing while `hidden`. */
-  progress: ShareProgressState;
-  /** Picks the secondary text only — the glyphs are the same for both. */
-  scope: "chapter" | "book";
+interface ShareProgressCommonProps {
   /**
    * A scrim tap, or the Escape this component now captures, while BUSY.
    * Wired to `reset()` itself (George r1 P2 #1/#2), not the screen's full
@@ -28,6 +33,89 @@ interface ShareProgressProps {
   /** A tap anywhere, or the Escape this component now captures, while an
    *  OUTCOME is showing: end the flash early. */
   onDismiss: () => void;
+}
+
+/** Share Chapter and Share Book. */
+interface ItemShareProgressProps extends ShareProgressCommonProps {
+  /** The hook's timeline. Renders nothing while `hidden`. */
+  progress: ShareProgressState;
+  /** Picks the secondary text only — the glyphs are the same for both. */
+  scope: "chapter" | "book";
+  /**
+   * The items the share walks over, in order, from what the screen already
+   * holds: the chapter's segments, or the book's chapters. Only the O4 look
+   * reads them, for its numbered chips (#947 D21); the current look ignores
+   * them.
+   */
+  items?: readonly ShareItem[];
+}
+
+/**
+ * Share your work (#987, #1045): every book at once, from the O4 storage
+ * banner. Its timeline's `partial` gap is in books and chapters
+ * (`LibraryShareGap`), so it is a different type from the item scopes', and
+ * it has no items: the library export reports no step count to place chips
+ * by.
+ */
+interface LibraryShareProgressProps extends ShareProgressCommonProps {
+  /** `useLibraryShare().progress`. Renders nothing while `hidden`. */
+  progress: LibraryShareProgress;
+  scope: "library";
+  /**
+   * `useLibraryShare().error`, for the one refinement the timeline cannot
+   * carry: a `failed` settle that was a space refusal reads as `"storage"`,
+   * the same words the banner's Notice shows (`libraryShareProgressText`).
+   */
+  error: UseLibraryShare["error"];
+}
+
+type ShareProgressProps = ItemShareProgressProps | LibraryShareProgressProps;
+
+/**
+ * What the overlay draws from, whatever the scope: a timeline the glyph and
+ * O4 view can read, the secondary line, and the items. The library's
+ * timeline differs from the item scopes' only in its `partial` gap, which
+ * neither the glyph nor the O4 view reads, so it is handed on as the plain
+ * phases and the gap is spent here, on the line.
+ */
+function overlayInput(props: ShareProgressProps): {
+  progress: ShareProgressState;
+  text: string | null;
+  items: readonly ShareItem[] | undefined;
+} {
+  if (props.scope !== "library")
+    return {
+      progress: props.progress,
+      text: shareProgressText(props.progress, props.scope),
+      items: props.items,
+    };
+  return {
+    progress: withoutLibraryGap(props.progress),
+    text: libraryShareProgressText(props.progress, props.error),
+    items: undefined,
+  };
+}
+
+/** Every field kept but the library gap, which the glyph and O4 view never read. */
+function withoutLibraryGap(progress: LibraryShareProgress): ShareProgressState {
+  switch (progress.phase) {
+    case "hidden":
+      return progress;
+    case "busy":
+      return {
+        ...progress,
+        pending:
+          progress.pending === null
+            ? null
+            : { ...progress.pending, gap: undefined },
+      };
+    case "outcome":
+      return { ...progress, gap: undefined };
+    default: {
+      const unhandled: never = progress;
+      return unhandled;
+    }
+  }
 }
 
 /**
@@ -76,9 +164,9 @@ interface ShareProgressProps {
  * non-interactive node" shape `error-boundary.tsx`'s crash heading already
  * uses — this is the initial focus target inside the overlay). Handing focus
  * BACK on the visible→hidden edge (Frank round 2 P2) USED to also live here,
- * but moved to the calling screens (George r2 P2-1, #491) — see the
- * `useEffect` below for why a passive effect in THIS component can never
- * satisfy the #96/#97 contract once `inert` is involved. The menu very often
+ * but moved to the calling screens (George r2 P2-1, #491) — see the effect
+ * below for why a passive effect in THIS component can never satisfy the
+ * #96/#97 contract once `inert` is involved. The menu very often
  * outlives this overlay (a failed prepare, a "nothing" error, a native
  * `retry` that quietly re-arms `ready`), and the screens still restore focus
  * rather than merely dropping it, for the same reason this paragraph always
@@ -114,14 +202,15 @@ interface ShareProgressProps {
  * that keep THAT path from reaching the menu underneath. Both derive from
  * the one `shareOverlayOwnsScreen` predicate for that reason.
  */
-export function ShareProgress({
-  progress,
-  scope,
-  onCancel,
-  onDismiss,
-}: ShareProgressProps) {
+export function ShareProgress(props: ShareProgressProps) {
+  const { scope, onCancel, onDismiss } = props;
+  const { progress, text, items } = overlayInput(props);
   const visible = progress.phase !== "hidden";
   const busy = progress.phase === "busy";
+  // O4 (#947) swaps the glyph for the 140-in-176 circle, its filling ring and
+  // its numbered chips; the current look passes nothing and renders as it
+  // always has.
+  const { design } = useDesign();
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   // Read from the keydown listener without re-subscribing it — mirrors
@@ -177,13 +266,29 @@ export function ShareProgress({
   // also what can hand `restore()` a stable fallback landmark when the
   // status-driven ternary has remounted the originally-captured node out
   // from under it.
-  useEffect(() => {
+  //
+  // `useLayoutEffect`, not `useEffect` (#517 item 4, George r3 P3 on #508),
+  // matching `busyRef`'s own fix above: `inert` blurs whatever was focused in
+  // the menu's about-to-go-inert subtree to `document.body` during React's
+  // MUTATION phase, in the SAME commit this overlay becomes visible. React
+  // does not guarantee a passive effect runs before paint, so there can be a
+  // frame where focus sits on `body` — inert, with nothing else yet grabbed —
+  // before this effect runs. A layout effect closes that frame: it runs synchronously right
+  // after the same mutation `inert` applies in, before the browser paints.
+  useLayoutEffect(() => {
     if (visible) panelRef.current?.focus();
   }, [visible]);
 
   // The isolation fix itself (George r1 P2 #1/#2): see the docblock above for
   // why CAPTURE and `stopPropagation`, both, are required.
-  useEffect(() => {
+  //
+  // `useLayoutEffect`, not `useEffect` (#517 item 4, same reasoning as the
+  // focus grab immediately above): a passive binding leaves the same one-frame
+  // window unprotected from the OTHER side — a Tab or Escape arriving before
+  // this listener is bound at all, not merely before focus has moved. Binding
+  // in the same commit as the focus grab means the capture-phase listener is
+  // live before the browser can ever deliver a queued key event here.
+  useLayoutEffect(() => {
     if (!visible) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -206,11 +311,11 @@ export function ShareProgress({
   }, [visible]);
 
   if (progress.phase === "hidden") return null;
-  // The wait wears the same retry mark `Notice`'s `busy` tone does, spun by
-  // the stylesheet; an outcome wears the table's mark for it.
-  const glyph = busy
-    ? { icon: noticePresentation("busy").icon, tone: "busy" as const }
-    : shareSettledGlyph(progress.settled);
+  // Which mark and tone: `shareOverlayGlyph` (#850, `share-overlay-glyph
+  // .ts`) owns the busy-vs-settled choice as a plain function, so it is a
+  // behaviour a test can call directly rather than something only rendered
+  // JSX or source text could show.
+  const glyph = shareOverlayGlyph(progress);
   const { role } = noticePresentation(glyph.tone);
   // The stylesheet keys the glyph's ink on this, not on the tone: success is
   // `--s-done`, not the `info` tone's amber.
@@ -227,12 +332,13 @@ export function ShareProgress({
         } else onDismiss();
       }}
     >
-      <div ref={panelRef} tabIndex={-1} role={role} className="share-progress">
-        <Icon name={glyph.icon} size={48} className="share-progress-glyph" />
-        <span className="share-progress-text">
-          {shareProgressText(progress, scope)}
-        </span>
-      </div>
+      <ShareProgressPanel
+        ref={panelRef}
+        role={role}
+        icon={glyph.icon}
+        text={text}
+        o4={design === "o4" ? shareO4View(progress, scope, items) : undefined}
+      />
     </div>,
     document.body
   );

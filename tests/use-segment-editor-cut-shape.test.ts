@@ -2,26 +2,34 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { region, stripComments } from "./support";
+
 /**
- * `useSegmentEditor` is a hook — there is no DOM runner here (AGENTS.md), so
- * it cannot be rendered and its returned `cut` cannot be invoked directly.
- * This is a source-shape gate, the same comment-stripping-free,
- * indexOf-isolated idiom `tests/nav-commit-close-race-guards.test.ts` and
- * `tests/recorder-resume-race.test.ts`'s "the wiring, not just the helper"
- * section use for the same reason.
+ * `useSegmentEditor` is a hook this file exercises only as source text, not
+ * mounted: nothing here invokes its returned `cut` directly. It is a
+ * source-shape gate, indexOf-isolated like
+ * `tests/nav-commit-close-race-guards.test.ts`.
+ *
+ * The code pin reads the file with comments stripped BEFORE anything is
+ * searched (#822): unstripped, a comment carrying the expected
+ * `wholeSampleRange(...)` line inside `cut()` satisfies the positive match
+ * below while the live line reverts to the bare `clampRange(...)`. The
+ * docblock pin reads the raw file, because prose is what it checks.
  */
-const source = readFileSync(
+const raw = readFileSync(
   new URL("../src/hooks/use-segment-editor.ts", import.meta.url),
   "utf8"
 );
+const source = stripComments(raw);
 
 /**
  * #512 George R1 P3: `wholeSampleRange` (`lib/audio/edit.ts`) claims to be
  * "the ONE place" a fractional selection becomes the whole-sample bounds a
  * buffer edit acts on — but `cut()` stored and returned `clampRange`'s still
  * -fractional range on the `EditOp`, one caller reimplementing the
- * truncation question instead of sharing the answer. `panAfterCutRest`
- * happens to truncate again downstream, so nothing broke live, but the
+ * truncation question instead of sharing the answer. `onCut`'s pan writer
+ * (`panAfterCutRest` then, `panAfterCutCollapse` since #613) happens to
+ * truncate again downstream, so nothing broke live, but the
  * stored op itself was not actually whole-sample, and the interface's own
  * JSDoc ("the range removed (normalised)") did not say what "normalised"
  * left out.
@@ -46,28 +54,28 @@ describe("useSegmentEditor.cut stores and returns a whole-sample range (#512 Geo
     ).toBeGreaterThan(start);
   });
 
-  const body = source.slice(start, end);
+  const body = () => region(source, { from: start, to: end });
 
   it("routes the selection through wholeSampleRange before it is stored on the EditOp or returned", () => {
     // RED-FIRST kill: on PR #512's pre-fix head this line was
     // `const range = clampRange(selection, working.length);` — no
     // `wholeSampleRange` wrap — so this fails until the stored/returned
     // range is truncated the same way `sliceRange`/`cut` truncate it.
-    expect(body).toMatch(
+    expect(body()).toMatch(
       /const range = wholeSampleRange\(clampRange\(selection, working\.length\)\);/
     );
   });
 
   it("the interface docblock names the range as whole-sample, not merely 'normalised'", () => {
-    const docStart = source.indexOf(
+    const docStart = raw.indexOf(
       "Cut the selection to the clipboard, then drop the frame."
     );
     expect(
       docStart,
       "no cut() JSDoc found on the SegmentEditor interface"
     ).toBeGreaterThan(-1);
-    const docEnd = source.indexOf("*/", docStart);
-    const doc = source.slice(docStart, docEnd);
+    const docEnd = raw.indexOf("*/", docStart);
+    const doc = region(raw, { from: docStart, to: docEnd });
     expect(doc).toMatch(/whole-sample/);
   });
 });

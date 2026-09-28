@@ -36,8 +36,8 @@ describe("Corpus decision table — 'Resolving every surviving attack finding'",
   );
 
   it("F2 (P2): beginBack refuses a second request from EITHER issuer while one is outstanding, and settleOutstanding clears it (answers #493)", () => {
-    // The adapter composes these; these Node rows have no renderer (AGENTS.md)
-    // so they observe only the pure decision, not the adapter's DOM wiring
+    // The adapter composes these; these rows call pure functions
+    // and observe only the pure decision, not the adapter's DOM wiring
     // (the goBack refusal and guard-CLEAR settle are exercised in headless
     // Chromium by e2e/back-navigation.spec.ts case (d)): as of
     // PR2 use-nav-stack.ts's `goBack` calls `beginBack("go-back")` in place of
@@ -84,9 +84,8 @@ describe("Corpus decision table — 'Resolving every surviving attack finding'",
     // index (instead of forcing 0) makes the landing read as "back", not
     // "forward". The adapter's mount effect now reads window.history.state and
     // adopts this index into BOTH refs; the composition is proven here. The DOM
-    // reload path itself is not observable from this Node row (no renderer —
-    // AGENTS.md); it is exercised by e2e/back-navigation.spec.ts case (c) in
-    // headless Chromium and remains a device item, not a claim it ran on a
+    // reload path itself is not executed by this row; it is covered by
+    // e2e/back-navigation.spec.ts case (c) in headless Chromium and remains a device item, not a claim it ran on a
     // device.
     const adoptedAtMount = resumeNavIndex({ tc: true, index: 2 });
     const landingIndex = resumeNavIndex({ tc: true, index: 1 });

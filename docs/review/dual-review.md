@@ -55,6 +55,48 @@ and George _are_ the review. Once they are clean, merge is an admin merge.
 | Documentation and content                                                          | CI green, then admin merge                                                                                                                                            |
 | Process/meta artifacts — `ci.yml`, `AGENTS.md`, `scripts/review/**`, deploy config | Normally both reviewers, because these are _executed as instructions_. Exempting them is allowed but the **decision must be recorded on the PR**, never a silent skip |
 
+**A test-only PR takes the tier of the code it covers, not a tier of its
+own.** This rule is permanent, not freeze-specific. While the freeze-budget
+table below is in force, it governs _how many reviewers and rounds_ apply at
+that tier; after it expires, the mapping at the end of this rule does. Which
+tier a test-only PR lands on is decided here. Classify in this order, and
+stop at the first match:
+
+1. A **gate test** — one that enforces a repo-wide rule, such as the drift
+   guard, the dist gate, lint-boundary or the precache manifest — is Harness,
+   regardless of which files it happens to touch.
+2. Otherwise it takes the **strictest** tier (T1 over T2 over T3) of every
+   surface it covers, using the "Risk tiers" table in `AGENTS.md` as the set —
+   that table is total over `src/` (#864): every path resolves to a tier, by
+   an explicit row or one of that table's own defaults, so this step never
+   runs out of table to consult. The named globs are that table's own
+   strings. For example: `hooks/*` (the product hooks, not the git hooks of
+   the Harness row) or `lib/export/*` is T2; `lib/audio/*`, or
+   `lib/storage/*` including the schema in `lib/storage/db.ts`, is T1;
+   `components/*` or `app/*` is T3. An unlisted `lib/*` path — `lib/nav/*` and
+   `lib/view/*` are the ones #864 named — is T1 by that table's default, and
+   `src/types/*`, an ambient `*.d.ts` or `src/data/*` takes the strictest
+   tier of its non-test importers (T1 if that set can't be determined); any
+   other unlisted `src/**` path is T1. A test covering `hooks/*` and
+   `lib/storage/*` is T1.
+
+**The tier sets which reviewers run and how many rounds — not T2's on-device
+check.** `AGENTS.md`'s "Risk tiers" table gives T2 a bar of "tests where
+possible + on-device check on both Android and iOS"; that on-device check
+verifies a change to the hook _code_ running on a device, and does not apply
+to a PR that only adds or changes tests — there is no new code path for a
+device to exercise. A test-only PR classified T2 gets T2's reviewer bar, not
+the device check.
+
+**After the freeze, the tier maps onto the table above.** A Harness test
+takes the process/meta row, because the freeze table groups Harness with meta
+and a gate test is executed as an instruction. A T1, T2 or T3 test takes the
+application-code row.
+
+Added 2026-09-24 after the #839 audit found six test-only PRs (#797, #796,
+#792, #790, #786, #784) merged on George only; a retroactive Frank pass found
+real P2s on two of them (#845).
+
 **P1 and P2 block. P3 goes to an issue** unless the fix is trivial enough to
 just do.
 
@@ -64,7 +106,7 @@ explicitly accepted, recorded on the PR.
 
 ## Freeze budget — 2026-09-21 to 2026-10-04
 
-Decided by the DRI on 2026-09-21 for the run-up to the v0.3.0 handoff, and
+Decided by the DRI on 2026-09-21 for the run-up to the v1.0.0 handoff, and
 expiring with it. The reasoning: the harness's machine cost is small (about
 18 s for `npm run verify` locally, about 2 min in CI), and the cost that was
 eating the week was rounds — every documented five-round chain that week was
@@ -78,8 +120,47 @@ on the harness's own tests (#547, #572), not on the product.
 | Harness and meta (`scripts/**`, gate tests, `ci.yml`, hooks)   | Both reviewers, hard cap 2; residuals are accepted on the PR by the DRI, never carried into a round |
 | Any tier                                                       | A P3 never triggers a round: every P3 is batched into one follow-up issue at triage                 |
 
+How to tier a test-only PR — gate test first, then the strictest tier it
+covers, and what T2's on-device check does and does not require of one — is
+in "Merge policy" above, not repeated here: it is a standing rule, not a
+freeze-specific one.
+
 After 2026-10-04 this table is void and the merge policy above applies again
 unchanged.
+
+## Gate comment template
+
+Added 2026-09-28 after the #839 audit (#840 R2). Auditing 40 merged PRs found
+the freeze exemption recorded on some T3 gate comments (#803, #819) and
+missing on others (#769, #762, #759, #768, #785, #794, #787) — same bar,
+inconsistent record — and found gate comments citing `docs/review-policy.md`
+and "RULINGS D6–D16", neither of which exists anywhere in this repo.
+
+Every gate comment — the comment on a PR that records which tier and review
+bar it was assigned — states, in one place, on one comment:
+
+1. **The tier**: T1, T2, T3, or Harness/meta, per the "Risk tiers" table in
+   `AGENTS.md` and the classify order in "Merge policy" above.
+2. **The bar that applies**, naming the section of this file it comes from —
+   "Merge policy" or, while it is in force, "Freeze budget" — by heading, not
+   only by line number. A bare line number drifts: the exemption line quoted
+   in #839 cited `dual-review.md:77`, and at this file's current head that
+   line falls inside the "Merge policy" classify list, not the freeze table,
+   because the file has been edited since. Cite the heading first; a line
+   number may be added alongside it as a same-day convenience, never as the
+   only anchor.
+3. **Any exemption taken**, in the same comment, never a silent skip — for
+   example:
+
+   > Freeze exemption: T3, George only, one round, P1/P2 ("Freeze budget"
+   > table, `docs/review/dual-review.md`).
+
+A gate comment may cite only a document that is either committed in this repo
+(this file, `AGENTS.md`, `CONTRIBUTING.md`) or linked by URL. Naming a policy
+document or a ruling series that is not in the tree and not linked — a
+`review-policy.md`, a "RULINGS Dn" this repo has no record of — is itself a
+defect in the gate comment, on the same footing as a missing tier or a missing
+exemption line.
 
 ## Merging multiple lanes
 

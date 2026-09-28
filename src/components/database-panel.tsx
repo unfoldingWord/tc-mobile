@@ -4,7 +4,7 @@ import type { DatabaseStatus } from "@/hooks/use-database-status";
 import { Control } from "./control";
 import { Icon, type IconName } from "./icon";
 import { restartConsequence, restartLabel } from "./recovery-copy";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 
 /** The heading that names the alert, referenced by `aria-labelledby`. */
 const TITLE_ID = "db-panel-title";
@@ -92,7 +92,10 @@ export function DatabasePanel({ status, holdsCutAudio }: DatabasePanelProps) {
         {blocked ? strings.dbBlocked : strings.dbOutOfDate}
       </p>
 
-      <p id={TEACH_ID} className="text-ink-muted text-[13px]">
+      <p
+        id={TEACH_ID}
+        className="text-ink-muted text-[length:var(--p-text-md)]"
+      >
         {blocked ? strings.dbBlockedTeach : strings.dbOutOfDateTeach}
       </p>
 
@@ -114,7 +117,7 @@ export function DatabasePanel({ status, holdsCutAudio }: DatabasePanelProps) {
       />
 
       {restartArmed && (
-        <p className="text-live text-[12px]">
+        <p className="text-live text-[length:var(--p-text-sm)]">
           {restartConsequence("cutAudio")}
         </p>
       )}

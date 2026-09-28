@@ -17,9 +17,8 @@ import { playbackPosition } from "@/lib/audio/playback-position";
  * insertion offset. The default Play from the F7 rest became a punch-in at the
  * first sample.
  *
- * The hook cannot be unit-tested here (no renderer, no AudioContext in Node),
- * so the DECISION lives in `lib/` where it can be, and the hook is left with
- * two ref reads.
+ * These cases exercise the decision in `lib/` with plain values. They do not
+ * mount the hook or exercise an AudioContext, resume timing or playback.
  */
 describe("playbackPosition", () => {
   it("reports a real handle's position as measured", () => {

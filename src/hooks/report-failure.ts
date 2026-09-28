@@ -144,10 +144,9 @@ export function subscribeToFailures(listener: FailureListener): () => void {
  *
  * Logs once. Consecutive reports of the SAME object UNDER THE SAME CONTEXT are
  * collapsed, because there are two independent feeds — the boundary and the
- * `window` listeners — and one thrown object can reach both. That double arrival
- * was NOT observed in the dev-mode Chromium probe on the PR: a render throw
- * produced exactly one report there. The guard costs a reference comparison plus
- * a string compare and is what keeps the one log honest if a browser does raise
+ * `window` listeners — and one thrown object can reach both.
+ * The guard costs a reference comparison plus a string compare and is what
+ * keeps the one log honest if a browser does raise
  * it on both paths; it is not a claim that one does. Object identity is the only
  * test used for the cause, and only for objects — two separate rejections that
  * both carry the string `"failed"` are two failures and are logged twice.
@@ -160,9 +159,8 @@ export function subscribeToFailures(listener: FailureListener): () => void {
  * One consequence of collapsing by identity, stated rather than guarded: if the
  * same object ever did reach both feeds, the report kept is the FIRST to
  * arrive, so a `window` report that beat the boundary would keep the version
- * without a `componentStack`. Nothing observed does this — the boundary is what
- * React calls for a caught render throw — and a second flag to cover an
- * unobserved ordering is more machinery than the fact is worth today.
+ * without a `componentStack`. The deduplication guard does not enrich an
+ * earlier report with a later report's component stack.
  */
 export function reportFailure(
   cause: unknown,

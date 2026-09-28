@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { JSDOM } from "jsdom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SegmentRow } from "@/components/segment-row";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
 import type { SegmentRow as Row } from "@/types/view";
 import type { SegmentId, ClipId } from "@/types/domain";
 
@@ -13,6 +13,7 @@ let mounted: boolean;
 const recorded: Row = {
   segmentId: "segment" as SegmentId,
   ordinal: 1,
+  label: null,
   hasClip: true,
   finished: false,
   clipId: "clip" as ClipId,
@@ -60,6 +61,8 @@ async function render(row: Row, close = onMenuClose) {
         onOpenRecorder: vi.fn(),
         onSetFinished: vi.fn(),
         onErase: vi.fn(),
+        onDeleteSegment: vi.fn(),
+        onRename: vi.fn(),
         onMenuOpen,
         onMenuClose: close,
       })

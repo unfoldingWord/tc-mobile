@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Control } from "./control";
 import { Icon } from "./icon";
@@ -10,9 +10,15 @@ import {
   restartConsequence,
   restartLabel,
 } from "./recovery-copy";
+import { restartWideButtonClass } from "./save-failed-armed";
 import { SendLogControl } from "./send-log-control";
-import { strings } from "./strings";
+import { strings } from "@/lib/strings";
 import { flushFailureLog } from "@/hooks/failure-log";
+import { useDesign } from "@/hooks/use-design";
+import {
+  pauseTranscodeSweep,
+  resumeTranscodeSweep,
+} from "@/hooks/finish-transcode";
 import type { SaveFailureKind } from "@/hooks/save-failure";
 import { restartAfterFlush } from "@/lib/restart-after-flush";
 
@@ -24,6 +30,8 @@ import { restartAfterFlush } from "@/lib/restart-after-flush";
 function reload(): void {
   window.location.reload();
 }
+
+const SAVE_FAILED_SWEEP_PAUSE = "save-failed";
 
 interface SaveFailedProps {
   state: "saving" | "failed";
@@ -91,6 +99,17 @@ export function SaveFailed({
   // quietly went un-busy while nothing had changed would be a dead button
   // wearing a spinner first, the same reasoning `RestartControl` documents.
   const [restarting, setRestarting] = useState(false);
+  // The O4 paint (#948): the failed state's mark sits in the error circle and
+  // Retry/Restart becomes the wide guide button. Presentation only — every
+  // control, name, focus claim, the Send-log control (#456) and the sweep
+  // pause (#514) below are the same in both looks.
+  const o4 = useDesign().design === "o4";
+
+  useEffect(() => {
+    pauseTranscodeSweep(SAVE_FAILED_SWEEP_PAUSE);
+    return () => resumeTranscodeSweep(SAVE_FAILED_SWEEP_PAUSE);
+  }, []);
+
   const saving = state === "saving";
   const armed = armedAt === attempts && !saving;
   const restartArmed = restartArmedAt === attempts && !saving;
@@ -118,38 +137,43 @@ export function SaveFailed({
 
   // The held work: a fresh recording, or the edited buffer of one. Every visible
   // line names it correctly, because on the edit path the previously stored
-  // recording is untouched — discarding drops only the edit.
-  const subject = editOnly ? "edited recording" : "recording";
-  const stillHere =
-    ordinal === null
-      ? `Your ${subject} is still here.`
-      : `Your ${subject} of segment ${ordinal} is still here.`;
-  const discardLabel = armed
-    ? editOnly
-      ? "Tap again to discard these changes"
-      : "Tap again to delete this recording for good"
-    : editOnly
-      ? "Discard these changes"
-      : "Delete this recording";
+  // recording is untouched — discarding drops only the edit. That `editOnly`
+  // split is a parameter of the string table's entries rather than a ternary
+  // here, so the wording of both paths sits beside every other string in the
+  // app (#169).
+  const stillHere = strings.saveFailedHeld(editOnly, ordinal);
+  const discardLabel = strings.saveFailedDiscard(editOnly, armed);
 
   return (
     <div
       role="alertdialog"
       aria-modal="true"
-      aria-label={
-        editOnly ? "Your changes are not saved" : "This recording is not saved"
+      aria-label={strings.saveFailedDialog(editOnly)}
+      className={
+        o4
+          ? "o4-err flex w-full max-w-md flex-col items-center px-[22px] text-center"
+          : "flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
       }
-      className="flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
     >
-      <span className={saving ? "text-ink-muted" : "text-live"}>
-        <Icon name={saving ? "retry" : "alert"} size={56} />
-      </span>
+      {o4 && !saving ? (
+        <span className="o4-err-circle" aria-hidden="true">
+          <Icon name="alert" size={58} />
+        </span>
+      ) : (
+        <span className={saving ? "text-ink-muted" : "text-live"}>
+          <Icon name={saving ? "retry" : "alert"} size={56} />
+        </span>
+      )}
 
-      <p className="t-title text-ink">
-        {saving ? "Saving" : recoveryTitle(kind ?? "unknown", editOnly)}
+      <p className={o4 ? "o4-err-title text-ink" : "t-title text-ink"}>
+        {saving
+          ? strings.saveFailedSaving
+          : recoveryTitle(kind ?? "unknown", editOnly)}
       </p>
 
-      <p className="text-ink-muted text-[13px]">{stillHere}</p>
+      <p className="text-ink-muted text-[length:var(--p-text-md)]">
+        {stillHere}
+      </p>
 
       {!saving && (
         <>
@@ -165,11 +189,11 @@ export function SaveFailed({
                         restartArmed,
                         holdsCutAudio
                       )
-                  : "Try saving again"
+                  : strings.saveFailedRetry
               }
               variant="primary"
-              size={30}
-              className={terminal && restartArmed ? "text-live" : undefined}
+              size={o4 ? 34 : 30}
+              className={restartWideButtonClass(o4, terminal && restartArmed)}
               busy={terminal && restarting}
               autoFocus
               onClick={
@@ -193,7 +217,7 @@ export function SaveFailed({
           )}
 
           {terminal && restartArmed && !restarting && (
-            <p className="text-live text-[12px]">
+            <p className="text-live text-[length:var(--p-text-sm)]">
               {restartConsequence(
                 editOnly ? "changes" : "recording",
                 holdsCutAudio
@@ -217,26 +241,24 @@ export function SaveFailed({
               (George R1 P2-1). This is the same reason `DatabasePanel`
               carries no Send control.
 
-              KNOWN HOLE (George R1 P2-2, unfoldingWord/tc-mobile#514): unlike
-              `ErrorBoundary`, which calls `quiesceTranscodeSweep()` before
-              ever reaching its own `SendLogControl`, this screen does NOT
-              stop `App`'s module-scoped transcode sweep (`finish-transcode.ts`)
-              — `App` stays mounted underneath `SaveFailed`. A live failing
-              sweep can churn the armed share and prune the 50-row ring before
-              a tap here lands. Not fixed here: `ErrorBoundary`'s quiesce is
-              one-way, and its only exit is a reload, while this screen's
-              primary exit is Retry on the SAME page — a one-way quiesce would
-              silently skip the post-retry sweep a successful Finished retry
-              still owes (D3). Needs an explicit pause/resume, tracked in the
-              linked issue; documented, not silently reused. */}
+              `ErrorBoundary` can one-way quiesce the transcode sweep because
+              its only exit is a reload. This screen's primary exit is Retry on
+              the SAME page, so it pauses the module-scoped sweep while mounted
+              and resumes on unmount instead; otherwise a live failing sweep can
+              churn the armed share and prune the 50-row ring before a Send tap
+              lands (unfoldingWord/tc-mobile#514). */}
           {!terminal && <SendLogControl />}
 
           {safetyLine && (
-            <p className="text-ink-muted text-[13px]">{safetyLine}</p>
+            <p className="text-ink-muted text-[length:var(--p-text-md)]">
+              {safetyLine}
+            </p>
           )}
 
           {attemptsLine && (
-            <p className="text-ink-faint text-[12px]">{attemptsLine}</p>
+            <p className="text-ink-faint text-[length:var(--p-text-sm)]">
+              {attemptsLine}
+            </p>
           )}
 
           <div className="mt-[10px] flex flex-col items-center gap-[8px]">
@@ -249,10 +271,8 @@ export function SaveFailed({
               onClick={() => (armed ? onDiscard() : setArmedAt(attempts))}
             />
             {armed && (
-              <p className="text-live text-[12px]">
-                {editOnly
-                  ? "Tap again to discard them."
-                  : "Tap again to delete it."}
+              <p className="text-live text-[length:var(--p-text-sm)]">
+                {strings.saveFailedDiscardHint(editOnly)}
               </p>
             )}
           </div>

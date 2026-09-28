@@ -9,7 +9,7 @@ import {
   reportUnlessStale,
 } from "@/hooks/use-books";
 import type { Book, BookId, Chapter, ChapterId } from "@/types/domain";
-import type { BookCard } from "@/types/view";
+import type { BookCard, ChapterRow } from "@/types/view";
 
 /**
  * `reportUnlessStale` is the plain-async decision `renameBook`/`addChapter`'s
@@ -138,8 +138,8 @@ describe("dropBookCard", () => {
 });
 
 /**
- * `useBooks`'s Add-chapter and optimistic-patch paths, minus React (no
- * jsdom, no renderer — the same constraint `tests/use-erase-segment.test.ts`
+ * `useBooks`'s Add-chapter and optimistic-patch paths, minus React (this file
+ * does not mount the hook — the same scope `tests/use-erase-segment.test.ts`
  * documents). What is Node-testable here is three pure decisions the hook's
  * `addChapter`/`createBook`/load effect were missing:
  *
@@ -185,6 +185,7 @@ const book = (overrides: Partial<Book> = {}): Book => ({
   chapterIds: [],
   createdAt: 0,
   updatedAt: 0,
+  coverColourKey: null,
   ...overrides,
 });
 
@@ -203,6 +204,7 @@ describe("patchNewChapter", () => {
         name: null,
         finishedCount: 0,
         totalCount: 0,
+        recordedCount: 0,
       },
     ]);
     // The other book's card is untouched — same array reference, even.
@@ -210,13 +212,14 @@ describe("patchNewChapter", () => {
   });
 
   it("appends after any existing chapters, preserving chapter order", () => {
-    const existing = [
+    const existing: ChapterRow[] = [
       {
         chapterId: chapterId("ch-0"),
         number: 1,
         name: null,
         finishedCount: 2,
         totalCount: 2,
+        recordedCount: 2,
       },
     ];
     const books = [chapterCard(chapterBookId("b-1"), existing)];
@@ -265,6 +268,7 @@ describe("patchNewChapter", () => {
         name: null,
         finishedCount: 0,
         totalCount: 0,
+        recordedCount: 0,
       },
     ]);
     // The untouched book keeps its own identity, just shifted in position.

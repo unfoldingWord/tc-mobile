@@ -10,17 +10,12 @@ import {
  *
  * The rule this file exists to pin is the ORDERING one: a captured trigger that
  * is still inside an `inert` subtree is NOT a restore target, because
- * `.focus()` on it is a silent no-op. Every previous attempt in this repo
- * shipped a `.focus()` call that ran while the subtree was still inert and did
- * nothing at all — `docs/progress_tracker.md`: "a focus fix that ignores
- * `inert` is dead code", and #364 is that defect landing again on the Books
- * screen on 2026-09-15.
+ * `.focus()` on it is a silent no-op.
  *
- * The DOM half — reading `document.activeElement` in the tap handler, testing
- * `closest("[inert]")`, and calling `.focus()` from a layout effect — has no
- * automated coverage here and cannot have any: the suite is Node-only
- * (`vitest.config.ts` → `environment: "node"`). That gap is #361. What is
- * tested is the decision, and only the decision.
+ * These tests exercise only the pure decision. They do not read
+ * `document.activeElement`, inspect DOM ancestry with `closest("[inert]")`,
+ * or run the layout effect that calls `.focus()`. Browser focus behavior
+ * remains outside this suite's scope (#361).
  */
 
 /** The shape every case starts from: a healthy, restorable trigger. */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  failureKey,
   isDatabaseDowngrade,
   isQuotaExceeded,
   saveFailureKind,
@@ -18,6 +19,27 @@ import {
  * `tests/pending-take.test.ts`, and the storage writes by
  * `tests/storage.test.ts`.
  */
+/**
+ * Two shapes where reading `name`/`code` off the cause itself throws, rather
+ * than returning a value: a getter that throws (a hostile or malformed
+ * object arriving as a rejection reason) and a revoked Proxy (any property
+ * read throws a TypeError). Both are `typeof … === "object"` and non-null,
+ * so they pass every classifier's guard clause and reach the property read
+ * (Frank r2 P2 on #886, issuecomment-5822215744).
+ */
+function throwingGetterCause(): unknown {
+  return {
+    get name(): string {
+      throw new Error("hostile getter");
+    },
+  };
+}
+function revokedProxyCause(): unknown {
+  const { proxy, revoke } = Proxy.revocable<Record<string, unknown>>({}, {});
+  revoke();
+  return proxy;
+}
+
 describe("saveFailureKind", () => {
   it("recognises a quota failure by name", () => {
     expect(isQuotaExceeded({ name: "QuotaExceededError" })).toBe(true);
@@ -65,5 +87,70 @@ describe("saveFailureKind", () => {
     expect(saveFailureKind("no room")).toBe("unknown");
     expect(saveFailureKind(undefined)).toBe("unknown");
     expect(saveFailureKind(null)).toBe("unknown");
+  });
+
+  it("does not throw when the cause's own name/code cannot be read, and falls through to unknown", () => {
+    // Every classifier here is reached by saveFailureKind in sequence
+    // (isQuotaExceeded first, then isDatabaseDowngrade): both must survive a
+    // shape that throws on read, not just the first one checked.
+    expect(() => saveFailureKind(throwingGetterCause())).not.toThrow();
+    expect(saveFailureKind(throwingGetterCause())).toBe("unknown");
+    expect(() => saveFailureKind(revokedProxyCause())).not.toThrow();
+    expect(saveFailureKind(revokedProxyCause())).toBe("unknown");
+  });
+
+  it("keeps a readable name or code when only the other one throws (Frank r1 on #905)", () => {
+    const throws = (): never => {
+      throw new Error("hostile getter");
+    };
+    const nameWithThrowingCode = (name: string): unknown =>
+      Object.defineProperty({ name }, "code", { get: throws });
+    expect(isQuotaExceeded(nameWithThrowingCode("QuotaExceededError"))).toBe(
+      true
+    );
+    expect(
+      isDatabaseDowngrade(nameWithThrowingCode("DatabaseDowngradeError"))
+    ).toBe(true);
+    expect(
+      isQuotaExceeded(
+        Object.defineProperty({ code: 22 }, "name", { get: throws })
+      )
+    ).toBe(true);
+  });
+});
+
+/**
+ * `failureKey` (#172) — the general Books/Segments vocabulary, distinct from
+ * `saveFailureKind` above (that one is the take-save recovery screen's own
+ * four-way classification). Only quota is special-cased here: everything
+ * else is the call site's own fallback word, verbatim.
+ */
+describe("failureKey", () => {
+  it("returns the fallback for an ordinary (non-quota) failure", () => {
+    expect(failureKey(new Error("boom"), "loadFailed")).toBe("loadFailed");
+    expect(failureKey(new Error("No such segment: s1"), "saveFailed")).toBe(
+      "saveFailed"
+    );
+    expect(failureKey(undefined, "eraseFailed")).toBe("eraseFailed");
+  });
+
+  it('maps a quota-exceeded cause to "noRoom" regardless of the fallback', () => {
+    expect(failureKey({ name: "QuotaExceededError" }, "loadFailed")).toBe(
+      "noRoom"
+    );
+    expect(failureKey({ code: 22 }, "saveFailed")).toBe("noRoom");
+    expect(failureKey({ name: "QuotaExceededError" }, "eraseFailed")).toBe(
+      "noRoom"
+    );
+  });
+
+  it("returns the fallback, not a throw, when the cause's own shape cannot be read (Frank r2 P2, #886)", () => {
+    // A cause classified mid-`catch` is the one place a throw here is worst:
+    // the call site is already handling a failure, and a second, unrelated
+    // throw from the classifier itself would leave that failure neither
+    // mapped nor reported (see the `performErase` hook-level case in
+    // tests/use-erase-segment.test.ts).
+    expect(failureKey(throwingGetterCause(), "saveFailed")).toBe("saveFailed");
+    expect(failureKey(revokedProxyCause(), "loadFailed")).toBe("loadFailed");
   });
 });
