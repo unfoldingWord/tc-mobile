@@ -111,10 +111,10 @@ test("the bin under the line throws away a cut and brings the frame back (#862)"
   // The erase door still asks the erase question, not the discard one.
   await page.getByRole("button", { name: "More actions", exact: true }).click();
   await page
-    .getByRole("button", { name: "Erase recording", exact: true })
+    .getByRole("button", { name: "Clear recording", exact: true })
     .click();
   await expect(
-    page.getByRole("dialog", { name: "Erase this recording?" })
+    page.getByRole("dialog", { name: "Clear this recording?" })
   ).toBeVisible();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
 });

@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { Icon, type IconName } from "@/components/icon";
 import { SegmentsScreen } from "@/components/segments-screen";
 import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
@@ -12,6 +13,7 @@ import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow } from "@/types/view";
 
 import { areaRules, declsFor } from "./o4-area-css";
+import { render } from "./render";
 
 /**
  * #949's first slice: the chapter menu (G2), the segment menu (07) and
@@ -258,9 +260,8 @@ describe("the segment menu (07) on the tile grid", () => {
     async (_, row) => {
       await mount("current", row);
       await openRow();
-      // Delete (#590, moved here by #1104) is last, beside Erase — see this
-      // menu's own docblock for why the current look keeps that placement
-      // rather than the O4 tile grid's Done/Edit/Delete/Erase order (#1103).
+      // Delete (#590, moved here by #1104) is last, after Clear, as in the
+      // O4 tile grid (#1119); `eraseSegment` is Clear's name.
       expect(dialogNames()).toEqual([
         strings.menuClose,
         strings.editSegment(3, row.label),
@@ -296,35 +297,34 @@ describe("the segment menu (07) on the tile grid", () => {
     async (_, row) => {
       await mount("o4", row);
       await openRow();
-      // Tile order is Done, Edit, Delete, Erase (#1103, the requirements
-      // owner's 2026-09-27 pick) — NOT the Edit-then-Done order the workbench
-      // itself draws, and Delete (#590, moved here by #1104) is new since D20
-      // was drawn.
+      // Tile order is Done, Edit, Clear, Delete (the DRI's 2026-09-28 pick
+      // on #1119) — NOT the Edit-then-Done order the workbench itself draws,
+      // and Delete (#590, moved here by #1104) is new since D20 was drawn.
+      // `eraseSegment` is Clear's name ("Clear recording").
       expect(dialogNames()).toEqual([
         strings.menuClose,
         strings.renameSegment,
         strings.playSegment(3),
         strings.markFinished(3),
         strings.editSegment(3, row.label),
-        strings.deleteSegment,
         strings.eraseSegment,
+        strings.deleteSegment,
       ]);
       expect(focusedName()).toBe(strings.renameSegment);
     }
   );
 
-  it("draws Done, Edit, Delete and Erase with no gap, compact, with Rename as the head's pencil (#859, D20; order per #1103; compact per #1119 round 5)", async () => {
+  it("draws Done, Edit, Clear and Delete with no gap, compact, with Rename as the head's pencil (#859, D20; order and compact per #1119)", async () => {
     await mount("o4", recorded);
     await openRow();
     // Edit and Done carry a hint slot (#135), so each sits in its
     // `.control-hinted` wrapper; read the grid's buttons, not its children.
-    // Order is Done, Edit, Delete, Erase, contiguous — NO gap. Four real
+    // Order is Done, Edit, Clear, Delete, contiguous — NO gap. Four real
     // tiles (this `recorded` fixture's hasClip case) do not fit the pinned
-    // 76 x 76 token at 320-360px (#1119 round 5, George Medium 1: Frank
-    // measured Erase clipped past the panel edge), so this grid drops the
-    // spacer entirely and goes `o4-tiles--compact` (`o4/menus.css`) instead
-    // of pushing Delete/Erase to the far end — there is no room left to push
-    // into. The three-tile, no-clip case below (`never-recorded segment`)
+    // 76 x 76 token at 320-360px (#1119 round 5, George Medium 1), so this
+    // grid drops the spacer entirely and goes `o4-tiles--compact`
+    // (`o4/menus.css`) instead of pushing Clear/Delete to the far end —
+    // there is no room left to push into. The three-tile, no-clip case below (`never-recorded segment`)
     // still fits at full size and keeps its spacer.
     const grid = dialog().querySelector(".o4-tiles")!;
     expect(grid.classList.contains("o4-tiles--compact")).toBe(true);
@@ -337,12 +337,12 @@ describe("the segment menu (07) on the tile grid", () => {
     ).toEqual([
       strings.markFinished(3),
       strings.editSegment(3, null),
-      strings.deleteSegment,
       strings.eraseSegment,
+      strings.deleteSegment,
     ]);
     expect(tone(tile(strings.editSegment(3, null)))).toBe("edit");
+    expect(tone(tile(strings.eraseSegment))).toBe("plain");
     expect(tone(tile(strings.deleteSegment))).toBe("erase");
-    expect(tone(tile(strings.eraseSegment))).toBe("erase");
     const pen = button(strings.renameSegment);
     expect(pen.closest(".o4-sheet-bar"), "Rename sits in the head").not.toBe(
       null
@@ -357,6 +357,13 @@ describe("the segment menu (07) on the tile grid", () => {
   // alike. Clear wears the eraser on a neutral fill; only Delete keeps the
   // bin and the destructive (red) fill.
   describe("Clear and Delete look different (#1119, DRI 2026-09-28)", () => {
+    /** The markup the `Icon` component draws for `name`. */
+    function iconMarkup(name: IconName): string {
+      const svg = render(createElement(Icon, { name })).querySelector("svg");
+      expect(svg, name).not.toBeNull();
+      return svg!.innerHTML;
+    }
+
     /** The drawn glyph inside a control, as markup. */
     function glyphOf(el: Element): string {
       const svg = el.querySelector("svg");
@@ -369,9 +376,14 @@ describe("the segment menu (07) on the tile grid", () => {
       async (look) => {
         await mount(look, recorded);
         await openRow();
-        const clear = button(strings.eraseSegment);
-        const del = button(strings.deleteSegment);
-        expect(glyphOf(clear)).not.toBe(glyphOf(del));
+        // Exact glyphs, against the `Icon` component's own markup: Clear
+        // draws the eraser and Delete the bin, and the two references are
+        // themselves different drawings.
+        const eraser = iconMarkup("eraser");
+        const bin = iconMarkup("trash");
+        expect(eraser === bin).toBe(false);
+        expect(glyphOf(button(strings.eraseSegment))).toBe(eraser);
+        expect(glyphOf(button(strings.deleteSegment))).toBe(bin);
       }
     );
 
@@ -386,6 +398,30 @@ describe("the segment menu (07) on the tile grid", () => {
       ]);
       expect(tone(tile(strings.eraseSegment))).toBe("plain");
     });
+
+    it.each(LOOKS)(
+      "carries each glyph into its own confirm: eraser for Clear, bin for Delete (%s)",
+      async (look) => {
+        await mount(look, recorded);
+        const confirmGlyphs = () => {
+          const panel = document.querySelector(".confirm-panel");
+          expect(panel, "the confirm is up").not.toBeNull();
+          const badge = panel!.querySelector("svg.confirm-glyph");
+          const buttons = panel!.querySelectorAll(".confirm-actions > button");
+          expect(buttons).toHaveLength(2);
+          return [badge!.innerHTML, glyphOf(buttons[1]!)];
+        };
+        await openRow();
+        const clearGlyph = glyphOf(button(strings.eraseSegment));
+        const deleteGlyph = glyphOf(button(strings.deleteSegment));
+        await tap(strings.eraseSegment);
+        expect(confirmGlyphs()).toEqual([clearGlyph, clearGlyph]);
+        await tap(strings.eraseCancel);
+        await openRow();
+        await tap(strings.deleteSegment);
+        expect(confirmGlyphs()).toEqual([deleteGlyph, deleteGlyph]);
+      }
+    );
   });
 
   it("marks done grey until it is done, then the whole tile green (G8)", async () => {
@@ -435,7 +471,7 @@ describe("the segment menu (07) on the tile grid", () => {
     const done = `${strings.markFinished(3)}. ${why}`;
     // Done, Edit — greyed, hinted — then Delete, UNGREYED (#590's own
     // field-tester ask: an accidentally added, never-recorded segment is
-    // exactly what Delete exists to remove). No Erase: nothing to erase.
+    // exactly what Delete exists to remove). No Clear: nothing to clear.
     expect(dialogNames()).toEqual([
       strings.menuClose,
       strings.renameSegment,
@@ -453,11 +489,11 @@ describe("the segment menu (07) on the tile grid", () => {
     const del = tile(strings.deleteSegment);
     expect(del.getAttribute("aria-disabled")).toBeNull();
     expect(del.disabled).toBe(false);
-    // No Play or Erase on a segment with nothing to play or erase.
+    // No Play or Clear on a segment with nothing to play or clear.
     expect(dialogNames()).not.toContain(strings.playSegment(3));
     expect(dialogNames()).not.toContain(strings.eraseSegment);
     expect(focusedName()).toBe(strings.renameSegment);
-    // Three real tiles (no Erase) already fit the pinned 76 x 76 token
+    // Three real tiles (no Clear) already fit the pinned 76 x 76 token
     // (#1119 round 5's arithmetic): this row keeps its spacer and stays at
     // full size, unlike the four-tile `recorded` case above.
     const grid = dialog().querySelector(".o4-tiles")!;

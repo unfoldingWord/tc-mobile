@@ -141,15 +141,16 @@ export function RecorderToolbar({
       <Control
         ref={rerecordRef}
         // Wipe and record again (#592), on the bar so a translator who
-        // re-records whole passages sees it without opening a menu. The bin,
-        // because it is the one "throw away" glyph ADR 0010's check already
-        // puts in front of translators; the confirm it opens wears the same
-        // bin. Left end, away from the hero Record, so the destructive control
-        // is not the one under a thumb reaching to record; the confirm is the
-        // second tap either way. Always drawn, so the bar does not re-lay out
-        // when a first take lands: greyed, with its reason, where there is
-        // nothing to erase.
-        icon="trash"
+        // re-records whole passages sees it without opening a menu. The
+        // eraser, not the bin: this clears the audio and keeps the segment,
+        // and the bin is kept for Delete, which removes the segment (the
+        // DRI's 2026-09-28 pick on #1119: "Clear and record again" with the
+        // same icon as Clear everywhere else). Left end, away from the hero
+        // Record, so the destructive control is not the one under a thumb
+        // reaching to record; the confirm is the second tap either way.
+        // Always drawn, so the bar does not re-lay out when a first take
+        // lands: greyed, with its reason, where there is nothing to clear.
+        icon="eraser"
         label={strings.rerecord}
         variant="default"
         disabled={rerecordDisabled}

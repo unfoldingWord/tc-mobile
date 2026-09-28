@@ -1346,6 +1346,8 @@ export const SegmentsScreen = forwardRef<
         title={strings.eraseConfirmTitle}
         confirmLabel={strings.eraseConfirm}
         cancelLabel={strings.eraseCancel}
+        // Clear's eraser, not Delete's bin (#1119, DRI 2026-09-28).
+        glyph="eraser"
         // The RENDER mirror, deliberately: this paints the Confirm's busy state,
         // and a painted control may only ever show a committed value. The layer's
         // `busy()` reads the live ref instead (`isErasing`) — see the behaviour

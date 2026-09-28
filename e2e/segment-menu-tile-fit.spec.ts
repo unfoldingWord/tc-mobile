@@ -4,20 +4,15 @@ import { expect, test, type Page } from "@playwright/test";
 
 /**
  * The segment ≡ menu's O4 tile grid, at phone width, when it holds FOUR real
- * tiles (Done, Edit, Delete, Erase) — the row's `hasClip` state, against the
+ * tiles (Done, Edit, Clear, Delete) — the row's `hasClip` state, against the
  * shipped `dist/` build.
  *
- * #1119 round 5 (George Medium 1): Frank measured Erase, the row's last
- * tile, clipped past the panel edge — its centre landed at 331px in a
- * 320px-wide viewport. This spec pins that same measurement directly: run
- * against the pre-round-5 tree it fails at 320px for the identical reason
- * (confirmed by hand, red first, before the fix below existed).
- * `o4-tiles--compact` (`src/app/styles/o4/menus.css`, whose own docblock has
- * the sizing and says plainly what it does and does not claim about the
- * underlying flex mechanics) is the fix: it applies only to this four-tile
- * row (`segment-row.tsx`'s `hasClip` branch), not to every `TileGrid` — the
- * three-tile row (no stored clip, Erase absent) already fit and is
- * untouched.
+ * #1119 round 5 (George Medium 1): the row's last tile was clipped past the
+ * panel edge at 320px. This spec asserts that every tile's centre lands
+ * inside the viewport. `o4-tiles--compact` (`src/app/styles/o4/menus.css`)
+ * is the fix: it applies only to this four-tile row (`segment-row.tsx`'s
+ * `hasClip` branch), not to every `TileGrid` — the three-tile row (no stored
+ * clip, Clear absent) keeps the pinned size.
  *
  * This spec needs a REAL recorded take to reach the four-tile row, so it
  * uses synthetic Chromium media (`--use-fake-device-for-media-stream`), the
@@ -77,15 +72,16 @@ async function seedRecordedSegment(page: Page) {
 
 const WIDTHS = [320, 360];
 
-// The four tiles this row draws once it has a clip, left to right, exactly
-// as #1103 orders them — this spec does not re-check the order (the render
-// tests in `tests/o4-menus-chapter-segment.test.ts` already pin it), only
-// that each one's centre lands inside the viewport it was rendered at.
+// The four tiles this row draws once it has a clip, left to right, in the
+// DRI's 2026-09-28 order (Done, Edit, Clear, Delete) — this spec does not
+// re-check the order (the render tests in
+// `tests/o4-menus-chapter-segment.test.ts` pin it), only that each one's
+// centre lands inside the viewport it was rendered at.
 const TILE_LABELS = [
   "Mark segment 1 done",
   "Edit segment 1",
+  "Clear recording",
   "Delete segment",
-  "Erase recording",
 ];
 
 for (const width of WIDTHS) {

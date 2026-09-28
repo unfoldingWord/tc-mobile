@@ -133,10 +133,10 @@ describe("the record bar's re-record control", () => {
     // An action, not a toggle: an absent aria-pressed and a false one say
     // different things (`Control`'s `pressed` docblock).
     expect(control.hasAttribute("aria-pressed")).toBe(false);
-    // The bin — the one glyph ADR 0010's ten already test for "throw away",
-    // and the one the confirm it opens wears — drawn exactly as `Icon` draws it.
-    const bin = one(render(createElement(Icon, { name: "trash" })), "svg");
-    expect(one(control, "svg").outerHTML).toBe(bin.outerHTML);
+    // The eraser, Clear's glyph everywhere (#1119, DRI 2026-09-28), drawn
+    // exactly as `Icon` draws it. Not the bin: that is Delete's.
+    const eraser = one(render(createElement(Icon, { name: "eraser" })), "svg");
+    expect(one(control, "svg").outerHTML).toBe(eraser.outerHTML);
   });
 
   it("sits left of Record and leaves the edit toggle at the right-hand end", () => {

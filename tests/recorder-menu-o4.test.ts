@@ -207,12 +207,17 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
     }
   });
 
-  it("gives the tiles their tones: doneoff Mark, plain theme, the erase tone for Erase", () => {
+  it("gives the tiles their tones: doneoff Mark, plain theme, plain Clear (#1119)", () => {
     show();
     expect(named(strings.markFinished(3))?.classList).toContain(
       "o4-tile--doneoff"
     );
-    expect(named(strings.eraseSegment)?.classList).toContain("o4-tile--erase");
+    // Clear removes only the audio, so it takes the neutral well; the red
+    // erase tone is kept for Delete, which lives in the chapter view.
+    expect(named(strings.eraseSegment)?.classList).toContain("o4-tile--plain");
+    expect(named(strings.eraseSegment)?.classList).not.toContain(
+      "o4-tile--erase"
+    );
     expect(themeTile()?.classList).toContain("o4-tile--plain");
     show({ mode: "edit" });
     expect(named(strings.doneEditing)?.classList).toContain("o4-tile--plain");

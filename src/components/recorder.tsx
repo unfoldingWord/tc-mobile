@@ -3010,12 +3010,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // native-disabled, no-reason gap and left the bin's as a named residual —
     // pre-existing, unrelated to #857's `hasTake` change, and nobody had
     // reviewed bar-appropriate erase copy yet. #878 closes it the same way
-    // Edit was closed: `strings.stopToErase` ("Stop recording to erase."),
+    // Edit was closed: `strings.stopToErase` ("Stop recording to clear."),
     // naming the bar's own Stop control, only while the take is LIVE
     // (`recording`) — the same split `editToolbarHint` above uses. The commit
     // window (`committing` half of `"uncommitted-take"`, Stop already
     // pressed) gets no label and stays natively `disabled` with no reason,
-    // same as Edit's commit-window half: "Stop recording to erase." would
+    // same as Edit's commit-window half: "Stop recording to clear." would
     // name a control that is now Record.
     const rerecordHint = barHint(
       eraseReason,
@@ -3986,15 +3986,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               ? strings.discardClipConfirmTitle
               : strings.eraseConfirmTitle
           }
-          // O4 G5 (#979): from the bar's bin, the workbench's record badge.
+          // Clear wears the eraser (#1119, DRI 2026-09-28); the clipboard's
+          // discard (#862) throws a cut away, so it keeps the bin.
+          glyph={confirmFor === "clip" ? "trash" : "eraser"}
+          // O4 G5 (#979): from the bar's Clear, the workbench's record badge.
           // The button, Keep and the title stay the 13 dialog's: the button
-          // erases and starts no take, so it keeps the bin and "Erase"
+          // clears and starts no take, so it keeps the eraser and "Clear"
           // (#1022). The workbench's "Record again" button records; here that
-          // would start the mic after the erase's awaits, outside the tap
+          // would start the mic after the clear's awaits, outside the tap
           // `use-audio-session.ts` startRecording needs. Switch off: one
-          // dialog, as before. The clipboard's discard (#862) is not one the
-          // bar's bin, so it keeps the trash badge.
-          badge={g5 && confirmFor !== "clip" ? "record" : "trash"}
+          // dialog, as before, badged with `glyph`.
+          badge={g5 && confirmFor !== "clip" ? "record" : undefined}
           confirmLabel={
             confirmFor === "clip"
               ? strings.discardClipConfirm

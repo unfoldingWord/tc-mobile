@@ -380,7 +380,7 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
     // left in prose. `Menu` lands open-edge focus on the first ACTIONABLE child,
     // skipping `aria-disabled` hinted rows (#135); on a segment with nothing
     // recorded and an empty clipboard every row is hinted (Edit: no audio and
-    // no clipboard to paste; Mark: no audio; Erase: no clip), making the
+    // no clipboard to paste; Mark: no audio; Clear: no clip), making the
     // toggle that child.
     //
     // #590/#1080 briefly changed this: "Delete segment" (once a row in this

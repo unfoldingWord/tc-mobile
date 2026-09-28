@@ -178,8 +178,10 @@ function playOffsetSeconds(fraction: number, durationMs: number): number {
  * shipped it). Unlike Erase, Delete does NOT require a recorded row — an
  * accidentally added, never-recorded segment is exactly what it needs to
  * remove. In the O4 tile grid the tiles read left to right as Done, Edit,
- * Delete, Erase (#1103, the requirements owner's order); the current look
- * keeps Delete last, beside Erase.
+ * Clear, Delete (the DRI's 2026-09-28 pick on #1119); the current look also
+ * keeps Delete last, after Clear. "Clear" is the visible word for this file's
+ * erase (audio only; the segment stays), with the eraser glyph in both looks;
+ * the bin is Delete's alone.
  *
  * The ordinal always shows; a label, when set, follows it ("3 · verses 3–4").
  */
@@ -645,12 +647,14 @@ export function SegmentRow({
           // scissors, the pencil the name role, so the two are told apart
           // (#859). Done is grey until the segment is done, then the whole
           // tile green (G8). On a never-recorded segment Edit and Done stay,
-          // greyed with their reason (#135), and there is no Play or Erase —
+          // greyed with their reason (#135), and there is no Play or Clear —
           // Delete stays reachable there too (#590's own point: an empty,
           // accidentally added segment is exactly what it is for). Tile
-          // order is Done, Edit, Delete, Erase left to right (#1103, the
-          // requirements owner's 2026-09-27 pick), NOT the workbench's own
-          // D20 drawing, which this deliberately departs from (see below).
+          // order is Done, Edit, Clear, Delete left to right (the DRI's
+          // 2026-09-28 pick on #1119), NOT the workbench's own D20 drawing,
+          // which this deliberately departs from (see below). Clear removes
+          // only the audio and wears the eraser on the plain well; Delete
+          // removes the segment and alone keeps the bin and the red fill.
           //
           // The workbench's "Remove this segment" (D20, #997) is still not
           // drawn as such: THIS tile is #590/#1104's broader delete (any
@@ -712,15 +716,14 @@ export function SegmentRow({
               )}
             </div>
             {/* `hasClip` puts FOUR real tiles in this row (Done, Edit,
-                Delete, Erase) — the case that does not fit the pinned 76 ×
+                Clear, Delete) — the case that does not fit the pinned 76 ×
                 76 token at 320-360px (#1119 round 5, George Medium 1;
                 `o4-tiles--compact` in `o4/menus.css` has the arithmetic).
                 Compact there, and drop the spacer: with no room to push
-                Delete/Erase to the far end, the four tiles simply run
-                left-to-right in order, which is what #1103 asks for anyway
-                ("Done, Edit, Delete, Erase"). The three-tile case (no stored
-                clip) keeps the original spacer-pushed layout at full size —
-                it already fits. */}
+                Clear/Delete to the far end, the four tiles simply run
+                left-to-right in order. The three-tile case (no stored clip:
+                Done, Edit, then Delete past the spacer) keeps the
+                spacer-pushed layout at full size. */}
             <TileGrid className={hasClip ? "o4-tiles--compact" : undefined}>
               <Tile
                 tone={row.finished ? "done" : "doneoff"}
@@ -755,12 +758,29 @@ export function SegmentRow({
                 }}
               />
               {!hasClip && <TileSpacer />}
-              {/* Delete is unconditional — reachable on a never-recorded row,
-                  unlike Erase just after it (#590's own field-tester ask).
-                  On the 3-tile (no-clip) row the spacer above still pushes it
-                  to the far end (#1103: "Erase far right", Delete next to
-                  it); on the 4-tile (hasClip) row above there is no spacer,
-                  so it simply falls next in the compact, unpadded run. */}
+              {hasClip && (
+                // Clear removes only the audio; the segment stays
+                // (`performErase` -> `clearSegmentTake`). Eraser on the plain
+                // well, so red is left to Delete, which removes the segment
+                // (the DRI's 2026-09-28 pick on #1119).
+                <Tile
+                  tone="plain"
+                  icon="eraser"
+                  label={strings.eraseSegment}
+                  caption={strings.tileErase}
+                  onClick={() => {
+                    // Clear first, then close: the same 1 -> 2 -> 1 layer
+                    // interleave as Delete below (#452 PR3).
+                    onErase();
+                    closeMenu();
+                  }}
+                />
+              )}
+              {/* Delete is unconditional: reachable on a never-recorded row,
+                  unlike Clear just before it (#590's own field-tester ask).
+                  Last in both rows. On the 3-tile (no-clip) row the spacer
+                  above pushes it to the far end; on the 4-tile (hasClip) row
+                  there is no spacer and it follows Clear. */}
               <Tile
                 tone="erase"
                 icon="trash"
@@ -768,25 +788,11 @@ export function SegmentRow({
                 caption={strings.tileDelete}
                 onClick={() => {
                   // Delete first, then close: the same 1 -> 2 -> 1 layer
-                  // interleave Erase uses just below (#452 PR3).
+                  // interleave as Clear above (#452 PR3).
                   onDeleteSegment();
                   closeMenu();
                 }}
               />
-              {hasClip && (
-                <Tile
-                  tone="erase"
-                  icon="trash"
-                  label={strings.eraseSegment}
-                  caption={strings.tileErase}
-                  onClick={() => {
-                    // Erase first, then close: the same 1 -> 2 -> 1 layer
-                    // interleave as the row below (#452 PR3).
-                    onErase();
-                    closeMenu();
-                  }}
-                />
-              )}
             </TileGrid>
           </>
         ) : (
@@ -828,11 +834,11 @@ export function SegmentRow({
             />
             {hasClip && (
               <Control
-                icon="trash"
+                icon="eraser"
                 label={strings.eraseSegment}
                 variant="quiet"
                 onClick={() => {
-                  // Erase FIRST, then close this menu: the screen registers the
+                  // Clear FIRST, then close this menu: the screen registers the
                   // confirm's layer inside `onErase` and this close unregisters
                   // this menu's, so the stack goes 1 -> 2 -> 1 and never passes
                   // through empty. Same interleave, and the same reason, as
@@ -843,7 +849,7 @@ export function SegmentRow({
               />
             )}
             {/* Delete (#590, moved here by #1104), last and unconditional —
-                reachable on a never-recorded row, unlike Erase just above.
+                reachable on a never-recorded row, unlike Clear just above.
                 Same 1 -> 2 -> 1 interleave. */}
             <Control
               icon="trash"

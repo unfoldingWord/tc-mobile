@@ -237,7 +237,7 @@ export function RecorderMenu({
             onClick={onToggleFinished}
           />
           <Control
-            icon="trash"
+            icon="eraser"
             label={strings.eraseSegment}
             variant="quiet"
             // Only when there is stored audio to erase (a first, uncommitted
@@ -289,7 +289,7 @@ export function RecorderMenu({
             onClick={onExitEdit}
           />
           <Control
-            icon="trash"
+            icon="eraser"
             label={strings.eraseSegment}
             variant="quiet"
             // Kept reachable from edit mode too — erasing is a segment-level op
@@ -374,9 +374,12 @@ function RecorderMenuTiles({
           onClick={onExitEdit}
         />
       )}
+      {/* Clear (the DRI's 2026-09-28 pick on #1119): the eraser on the plain
+          well. Red is kept for Delete, which removes a whole segment and
+          lives only in the chapter view (#1104). */}
       <Tile
-        tone="erase"
-        icon="trash"
+        tone="plain"
+        icon="eraser"
         label={strings.eraseSegment}
         caption={strings.tileErase}
         className="recorder-menu-tile"
