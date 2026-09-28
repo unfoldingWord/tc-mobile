@@ -14,6 +14,7 @@ import { addChapter, addSegment, createBook } from "@/lib/storage/books";
 import { newClipId } from "@/lib/storage/clips";
 import { saveTake } from "@/lib/storage/takes";
 import type { AudioCodec } from "@/types/audio";
+import { fakeOpfs } from "./fake-opfs";
 import { clearAllStores, testCodec } from "./support";
 
 /**
@@ -333,4 +334,20 @@ it("settles 'nothing', not a silent idle, when the audio is gone by the time the
   expect(hook().error).toBe("nothing");
   expect(hook().status).toBe("idle");
   expect(reportFailure).not.toHaveBeenCalled();
+});
+
+it("streams the zip into an OPFS spool where there is one, and drops it when the menu closes (#1003)", async () => {
+  const opfs = fakeOpfs();
+  stubNavigator({ estimate, getDirectory: opfs.source });
+  await bookWith("Mark", [[CANONICAL_SAMPLE_RATE]]);
+
+  await prepare();
+
+  expect(hook().status).toBe("ready");
+  expect(opfs.files()).toHaveLength(1);
+  act(() => hook().reset());
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+  expect(opfs.files()).toEqual([]);
 });

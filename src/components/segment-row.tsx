@@ -699,11 +699,11 @@ export function SegmentRow({
               <Tile
                 tone={row.finished ? "done" : "doneoff"}
                 icon="check"
-                label={
-                  row.finished
-                    ? strings.markUnfinished(ordinal)
-                    : strings.markFinished(ordinal)
-                }
+                // One fixed label, and `pressed` says the state (#351), as
+                // the recorder menu's Done tile does: a label flipped to "not
+                // done" beside `aria-pressed` would announce the opposite.
+                label={strings.markFinished(ordinal)}
+                pressed={row.finished}
                 caption={strings.tileFinished}
                 disabled={!hasClip}
                 hint={rowHint(hasClip ? null : "no-audio")}
@@ -750,11 +750,9 @@ export function SegmentRow({
                 />
                 <Control
                   icon="check"
-                  label={
-                    row.finished
-                      ? strings.markUnfinished(ordinal)
-                      : strings.markFinished(ordinal)
-                  }
+                  // Fixed label, state on `pressed` (#351) — as the tile above.
+                  label={strings.markFinished(ordinal)}
+                  pressed={row.finished}
                   variant="quiet"
                   // Green while already finished. A standalone class, not
                   // inheritance — the menu is portalled to <body>, outside
