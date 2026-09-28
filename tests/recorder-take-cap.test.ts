@@ -19,6 +19,8 @@ import { useRecorder, type UseRecorder } from "@/hooks/use-recorder";
 import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import type { SegmentId } from "@/types/domain";
 
+import { restingErase } from "./support";
+
 /**
  * The take-length cap (#1005, DRI decision 2026-09-25: "Warn at 15, seal at
  * 20").
@@ -82,11 +84,8 @@ const MINUTE = 60_000;
 const original = new Int16Array([1, 2, 3, 4]);
 const captured = new Int16Array([7, 8, 9]);
 
-const erase = {
-  erase: vi.fn(async () => "ok" as const),
-  erasing: false,
-  isErasing: () => false,
-};
+// Resting erase (#856 item 3): shared fixture, `tests/support.ts`.
+const erase = restingErase();
 
 const boundary = vi.hoisted(() => ({
   editor: {} as SegmentEditor,

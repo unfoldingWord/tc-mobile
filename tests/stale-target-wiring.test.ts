@@ -9,6 +9,8 @@ import type { Layer } from "@/lib/nav/layer-stack";
 import type { ChapterId, SegmentId } from "@/types/domain";
 import type { SegmentRow } from "@/types/view";
 
+import { restingErase } from "./support";
+
 const mocks = vi.hoisted(() => ({ chapter: vi.fn() }));
 vi.mock("@/hooks/use-chapter-segments", () => ({
   useChapterSegments: mocks.chapter,
@@ -24,11 +26,8 @@ vi.mock("@/hooks/use-chapter-share", () => ({
 }));
 // A PROP now, not a module the screen reaches for (#160, L-12): App holds the
 // one instance. Mocking the module here would no longer intercept anything.
-const erase = {
-  erase: vi.fn(async () => "ok" as const),
-  erasing: false,
-  isErasing: () => false,
-};
+// Shared fixture (#856 item 3, `tests/support.ts`).
+const erase = restingErase();
 
 let root: Root;
 let clipboard: string | null;

@@ -14,6 +14,8 @@ import type { Layer } from "@/lib/nav/layer-stack";
 import type { BookId, ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { BookCard, ChapterRow, SegmentRow } from "@/types/view";
 
+import { restingErase } from "./support";
+
 /**
  * #1031 item 3: "the screens' `items` hand-off into ShareProgress isn't
  * covered by a test." `bookShareItems`/`chapterShareItems` themselves are
@@ -257,11 +259,8 @@ describe("Segments screen's Share Chapter items hand-off into ShareProgress (O4,
     playingBuffer: false,
     playbackElapsedMs: 0,
   } as UseAudioSession;
-  const erase = {
-    erase: vi.fn(async () => "ok" as const),
-    erasing: false,
-    isErasing: () => false,
-  };
+  // Resting erase (#856 item 3): shared fixture, `tests/support.ts`.
+  const erase = restingErase();
 
   let root: Root;
   const layers = new Map<string, Layer>();
