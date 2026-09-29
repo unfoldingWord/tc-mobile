@@ -44,7 +44,7 @@ export interface EraseConfirmPreview {
 
 interface EraseConfirmProps {
   open: boolean;
-  /** The confirming line, e.g. "Clear this recording?". Copy is supplied by the
+  /** The confirming line, e.g. "Reset segment and start over". Copy is supplied by the
    *  integrator (strings.ts), never read here — this surface is pure UI. */
   title: string;
   /** Accessible name of the destructive action. */

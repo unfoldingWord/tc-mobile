@@ -7,6 +7,7 @@ import {
   type PlaybackHandle,
 } from "./audio-io";
 import type { ProbeSource } from "./audio-probe";
+import { PlaybackResumeError } from "./playback-resume-error";
 import { reportFailure } from "./report-failure";
 import {
   useRecorder,
@@ -251,6 +252,22 @@ export type RecorderAudio = Pick<
 >;
 
 /**
+ * Send a failed Play to the failure log (#1213), unless `playSamples` has
+ * already written its row.
+ *
+ * A `PlaybackResumeError` is the #469 resume bound failing closed, and
+ * `playSamples` reports that itself under `"playback-resume-timeout"` or
+ * `"playback-resume-unusable"`. Every other cause, such as a failed load, a
+ * failed MP3 decode or a throw from the Web Audio graph, reached only
+ * `console.error` before #1213. Callers invoke this only for a claim that is
+ * still current, so a superseded Play writes nothing.
+ */
+function reportPlaybackFailure(cause: unknown, context: string): void {
+  if (cause instanceof PlaybackResumeError) return;
+  reportFailure(cause, context);
+}
+
+/**
  * Everything on screen that can make or capture sound, under one owner.
  *
  * The arbitration lives in `lib/audio/session.ts`, which is pure; this is only
@@ -451,6 +468,10 @@ export function useAudioSession(): UseAudioSession {
             const fault = danglingReason(audio);
             if (fault) {
               console.error("Nothing to play for this take:", fault);
+              reportFailure(
+                new Error(`Nothing to play for this take: ${fault}`),
+                "playback-dangling"
+              );
               setPlaybackError(strings.playbackFailed);
             }
             session.release(token);
@@ -483,6 +504,7 @@ export function useAudioSession(): UseAudioSession {
           // not this screen's news. Tapping play on B while A is still loading
           // supersedes A, and A's rejection must not paint an alert over B.
           if (session.isCurrent(token)) {
+            reportPlaybackFailure(cause, "playback-take");
             session.release(token);
             setPlaying(null);
             setPlaybackError(strings.playbackFailed);
@@ -562,6 +584,7 @@ export function useAudioSession(): UseAudioSession {
           // Inside the guard, exactly as in `playTake`: a failure that belongs
           // to a superseded claim is not this screen's news.
           if (session.isCurrent(token)) {
+            reportPlaybackFailure(cause, "playback-buffer");
             session.release(token);
             setPlayingBuffer(false);
             setPlaybackError(strings.playbackFailed);

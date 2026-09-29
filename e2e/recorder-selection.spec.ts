@@ -59,7 +59,9 @@ test("selection stays scoped to recorder and panels, with editable names", async
   await page.getByRole("button", { name: "Create chapter" }).click();
   await page.getByRole("button", { name: "Open Chapter 1" }).click();
   await page.getByRole("button", { name: "Add segment" }).click();
-  await page.getByRole("button", { name: "Record segment 1" }).click();
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
   await expectSelectionSuppressed(page.locator(".recorder-sheet"));
   await page.getByRole("button", { name: "More actions", exact: true }).click();
   await expectSelectionSuppressed(page.locator(".menu-panel"));
@@ -96,7 +98,9 @@ test.describe("handle targets after a zoom fit", () => {
       await page.getByRole("button", { name: "Create chapter" }).click();
       await page.getByRole("button", { name: "Open Chapter 1" }).click();
       await page.getByRole("button", { name: "Add segment" }).click();
-      await page.getByRole("button", { name: "Record segment 1" }).click();
+      await page
+        .getByRole("button", { name: "Open recorder for segment 1" })
+        .click();
       await page.getByRole("button", { name: "Record", exact: true }).click();
       await page.waitForTimeout(1200);
       await page
@@ -179,7 +183,9 @@ test.describe("edit mode toggle", () => {
       await page.getByRole("button", { name: "Create chapter" }).click();
       await page.getByRole("button", { name: "Open Chapter 1" }).click();
       await page.getByRole("button", { name: "Add segment" }).click();
-      await page.getByRole("button", { name: "Record segment 1" }).click();
+      await page
+        .getByRole("button", { name: "Open recorder for segment 1" })
+        .click();
       await page.getByRole("button", { name: "Record", exact: true }).click();
       await expect(
         page.getByRole("button", { name: "Stop recording", exact: true })
@@ -508,7 +514,9 @@ test.describe("edit toolbar keeps the ⋮ off the leading edge (#370)", () => {
       await page.getByRole("button", { name: "Create chapter" }).click();
       await page.getByRole("button", { name: "Open Chapter 1" }).click();
       await page.getByRole("button", { name: "Add segment" }).click();
-      await page.getByRole("button", { name: "Record segment 1" }).click();
+      await page
+        .getByRole("button", { name: "Open recorder for segment 1" })
+        .click();
       await page.getByRole("button", { name: "Record", exact: true }).click();
       await page.waitForTimeout(1200);
       await page
@@ -606,7 +614,9 @@ test.describe("selection handle focus ring at 0%/100% (#659)", () => {
       await page.getByRole("button", { name: "Create chapter" }).click();
       await page.getByRole("button", { name: "Open Chapter 1" }).click();
       await page.getByRole("button", { name: "Add segment" }).click();
-      await page.getByRole("button", { name: "Record segment 1" }).click();
+      await page
+        .getByRole("button", { name: "Open recorder for segment 1" })
+        .click();
       await page.getByRole("button", { name: "Record", exact: true }).click();
       await page.waitForTimeout(1200);
       await page
@@ -692,7 +702,9 @@ test.describe("an edit stops the audition (#284, #361)", () => {
     await page.getByRole("button", { name: "Create chapter" }).click();
     await page.getByRole("button", { name: "Open Chapter 1" }).click();
     await page.getByRole("button", { name: "Add segment" }).click();
-    await page.getByRole("button", { name: "Record segment 1" }).click();
+    await page
+      .getByRole("button", { name: "Open recorder for segment 1" })
+      .click();
     await page.getByRole("button", { name: "Record", exact: true }).click();
     await expect(
       page.getByRole("button", { name: "Stop recording", exact: true })

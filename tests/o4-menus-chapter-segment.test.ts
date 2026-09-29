@@ -297,7 +297,7 @@ describe("the segment menu (07) on the tile grid", () => {
       // Tile order is Done, Edit, Clear, Delete (the DRI's 2026-09-28 pick
       // on #1119) — NOT the Edit-then-Done order the workbench itself draws,
       // and Delete (#590, moved here by #1104) is new since D20 was drawn.
-      // `eraseSegment` is Clear's name ("Clear recording").
+      // `eraseSegment` is Clear's name ("Reset segment and start over").
       expect(dialogNames()).toEqual([
         strings.menuClose,
         strings.renameSegment,

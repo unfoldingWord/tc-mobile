@@ -28,7 +28,8 @@ export interface UseBookShare extends ShareSurface {
   /**
    * Tap 1: encode the book's chapters and archive them into one zip, stashing the
    * File for the send gesture. `zipFilename` names the archive; `nameChapter`
-   * names each MP3 inside it (both are translator-facing copy from the screen).
+   * names each MP3 inside it from the chapter's number and its own name, `null`
+   * when it has none (both are translator-facing copy from the screen).
    * Never rejects — a reason surfaces through `error`.
    *
    * See {@link UseShareFlow.prepare} (`share-flow.ts`, #860): on the native
@@ -38,7 +39,7 @@ export interface UseBookShare extends ShareSurface {
   prepare: (
     bookId: BookId,
     zipFilename: string,
-    nameChapter: (chapterNumber: number) => string
+    nameChapter: (chapterNumber: number, chapterName: string | null) => string
   ) => Promise<ShareOutcome | null>;
 }
 
@@ -72,7 +73,7 @@ export function useBookShare(): UseBookShare {
     (
       bookId: BookId,
       zipFilename: string,
-      nameChapter: (chapterNumber: number) => string
+      nameChapter: (chapterNumber: number, chapterName: string | null) => string
     ): Promise<ShareOutcome | null> =>
       run((isCurrent, signal, onStep) =>
         withEncoder(signal, async (codec) => {

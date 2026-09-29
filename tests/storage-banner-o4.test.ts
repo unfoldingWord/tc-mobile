@@ -46,7 +46,11 @@ const share = vi.hoisted(() => ({
     (
       zipFilename: string,
       nameBook: (bookName: string) => string,
-      nameChapter: (bookName: string, chapterNumber: number) => string
+      nameChapter: (
+        bookName: string,
+        chapterNumber: number,
+        chapterName: string | null
+      ) => string
     ) => Promise<null>
   >(() => Promise.resolve(null)),
   send: vi.fn(() => Promise.resolve("sent" as const)),
@@ -294,7 +298,9 @@ describe("the button runs the library share", () => {
     const [zip, nameBook, nameChapter] = share.prepare.mock.calls[0]!;
     expect(zip).toBe(strings.shareAllFilename);
     expect(nameBook("Mark/Luke")).toBe(strings.shareAllFolder("Mark/Luke"));
-    expect(nameChapter("Mark", 3)).toBe(strings.shareFilename("Mark", 3));
+    expect(nameChapter("Mark", 3, null)).toBe(strings.shareFilename("Mark", 3));
+    // The chapter's own name reaches the MP3, as in Share Book (#1218).
+    expect(nameChapter("Mark", 3, "The sower")).toBe("Mark - The sower.mp3");
     expect(share.send).not.toHaveBeenCalled();
   });
 

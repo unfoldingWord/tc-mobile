@@ -52,7 +52,9 @@ async function seedRecordedSegment(page: Page) {
     .click();
   await page.getByRole("button", { name: "Open Chapter 1" }).click();
   await page.getByRole("button", { name: "Add segment" }).click();
-  await page.getByRole("button", { name: "Record segment 1" }).click();
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
   await page.getByRole("button", { name: "Record", exact: true }).click();
   const stop = page.getByRole("button", {
     name: "Stop recording",
@@ -80,7 +82,7 @@ const WIDTHS = [320, 360];
 const TILE_LABELS = [
   "Mark segment 1 done",
   "Edit segment 1",
-  "Clear recording",
+  "Reset segment and start over",
   "Delete segment",
 ];
 

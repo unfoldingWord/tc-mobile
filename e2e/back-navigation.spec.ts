@@ -101,7 +101,7 @@ test("(b) Back from the recorder closes the sheet and lands on Segments (idle pa
     page.getByRole("button", { name: "Back to books" })
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Record segment 1" })
+    page.getByRole("button", { name: "Open recorder for segment 1" })
   ).toBeVisible();
 });
 
@@ -222,7 +222,7 @@ test("(d) a rapid double Back from the recorder issues exactly one history.back(
     page.getByRole("button", { name: "Back to books" })
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Record segment 1" })
+    page.getByRole("button", { name: "Open recorder for segment 1" })
   ).toBeVisible();
   await expect(newBookCta(page)).toHaveCount(0);
   // Landing check (see the note above — this is NOT the mutation-unique kill):
@@ -671,7 +671,7 @@ test("(m) the Record control is inside the list's `inert` subtree while the chap
   await seedToSegments(page);
   await page.getByRole("button", { name: "Add segment" }).click();
   await expect(
-    page.getByRole("button", { name: "Record segment 1" })
+    page.getByRole("button", { name: "Open recorder for segment 1" })
   ).toBeVisible();
 
   // `openRecorderState` is the ONE caller of `dismissOverlays()`, and PR4's
@@ -695,7 +695,9 @@ test("(m) the Record control is inside the list's `inert` subtree while the chap
   // a timeout instead would be slow and would not say which claim failed.
   const recordIsInert = () =>
     page.evaluate(() => {
-      const el = document.querySelector('[aria-label="Record segment 1"]');
+      const el = document.querySelector(
+        '[aria-label="Open recorder for segment 1"]'
+      );
       return el === null ? null : el.closest("[inert]") !== null;
     });
 
@@ -747,7 +749,7 @@ test("(n) a Record tap made before a pending Back to books lands issues no histo
   await seedToSegments(page);
   await page.getByRole("button", { name: "Add segment" }).click();
   await expect(
-    page.getByRole("button", { name: "Record segment 1" })
+    page.getByRole("button", { name: "Open recorder for segment 1" })
   ).toBeVisible();
 
   const calls = await page.evaluate(() => {
@@ -776,7 +778,7 @@ test("(n) a Record tap made before a pending Back to books lands issues no histo
     // Logged, so a control already gone after the Back click cannot pass as
     // the latch having refused the push (George round 1).
     const record = document.querySelector<HTMLButtonElement>(
-      '[aria-label="Record segment 1"]'
+      '[aria-label="Open recorder for segment 1"]'
     );
     log.push(record ? "tap" : "no-control");
     record?.click();
@@ -823,7 +825,7 @@ test("(o) a Record tap made before a Forward's cancel lands is deferred to that 
     page.getByRole("button", { name: "Close recorder" })
   ).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Record segment 1" })
+    page.getByRole("button", { name: "Open recorder for segment 1" })
   ).toBeVisible();
 
   await page.evaluate(() => {
@@ -855,7 +857,9 @@ test("(o) a Record tap made before a Forward's cancel lands is deferred to that 
       tapped = true;
       log.push("tap");
       document
-        .querySelector<HTMLButtonElement>('[aria-label="Record segment 1"]')
+        .querySelector<HTMLButtonElement>(
+          '[aria-label="Open recorder for segment 1"]'
+        )
         ?.click();
       log.push("tapped");
     });
@@ -896,7 +900,7 @@ test("(p) two Record taps made before a Forward's cancel lands write one entry f
   await seedToRecorder(page);
   await page.goBack();
   await expect(
-    page.getByRole("button", { name: "Record segment 1" })
+    page.getByRole("button", { name: "Open recorder for segment 1" })
   ).toBeVisible();
 
   await page.evaluate(() => {
@@ -919,7 +923,7 @@ test("(p) two Record taps made before a Forward's cancel lands write one entry f
       if (tapped) return;
       tapped = true;
       const record = document.querySelector<HTMLButtonElement>(
-        '[aria-label="Record segment 1"]'
+        '[aria-label="Open recorder for segment 1"]'
       );
       log.push(record ? "tap" : "no-control");
       record?.click();

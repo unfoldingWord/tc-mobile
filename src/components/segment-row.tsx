@@ -460,7 +460,7 @@ export function SegmentRow({
   // aria-label is now the ONLY place the finished state reaches AT on the row —
   // the checkbox's `aria-checked` is gone and the menu is closed — so it carries
   // "finished" explicitly. `openSegment` on an empty row stays distinct from the
-  // record button's "Record segment N" so the two do not collide.
+  // microphone control's "Open recorder for segment N" so the two do not collide.
   const openLabel =
     state === "finished"
       ? strings.editSegmentFinished(ordinal, row.label)
@@ -590,10 +590,13 @@ export function SegmentRow({
         />
       ) : (
         <Control
-          icon="record"
-          label={strings.recordSegment(ordinal)}
-          variant="record"
-          size={o4 ? 28 : 20}
+          // A microphone, not the recorder's red Record dot: this tap opens
+          // the recorder, and the Record there is a second, separate tap
+          // (#1217, #602).
+          icon="mic"
+          label={strings.openRecorderSegment(ordinal)}
+          variant="mic"
+          size={o4 ? 32 : 22}
           className="flex-none"
           disabled={busy}
           // Never on a control held inert by a landing save: the ring would
