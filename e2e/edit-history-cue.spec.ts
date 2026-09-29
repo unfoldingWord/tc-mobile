@@ -138,7 +138,7 @@ test.describe("edit-toolbar history cue (#91)", () => {
       );
     }
     // Nothing painted on either grey arrow (#924). Until #924 this asserted
-    // TWO badges here — the sighted half #135 round 2 added for the ≡ rows,
+    // TWO badges here — the sighted half #135 round 2 added for the ⋮ rows,
     // borrowed by #703 — and measured each one's overflow into the next
     // control. Both arrows are grey and both wrappers are present (asserted
     // below), so this is the cell where a badge would show if the hint grew

@@ -23,7 +23,7 @@ vi.mock("@/hooks/use-design", () => ({
 }));
 
 /**
- * The recorder's ≡ menu, now that it is its own component (#160, L-1).
+ * The recorder's ⋮ menu, now that it is its own component (#160, L-1).
  *
  * It had no test while it was a hundred lines inside a 4000-line component —
  * reaching it meant mounting the whole recorder with a mocked audio session.

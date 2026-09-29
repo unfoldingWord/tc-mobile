@@ -199,6 +199,14 @@ did not know_ counts, and the result column applies the rule above.
   menu. Protocol row 3 (the Segments screen's top corner, the chapter menu) and
   its sheet glyph now show `⋮`, the glyph as drawn. The recorder's `≡` is
   unchanged and outside the ten.
+- 2026-09-29 amendment (#1225; DRI pick on #1225, verbatim: "Switch to ⋮ in
+  rc.2 (Recommended)"): the 2026-09-23 line above no longer holds. The
+  recorder's menu acts on the segment being edited, so it is an object menu
+  under the same rule, and the record-mode header's opener and the drawer's
+  own close button now show `⋮` (`more`), matching the edit toolbar's opener
+  (#863). `≡` appears only on the Books screen, as the global menu. The
+  recorder is still outside the ten. The line above is left as written: it
+  was true on 2026-09-23.
 
 ## Consequences
 

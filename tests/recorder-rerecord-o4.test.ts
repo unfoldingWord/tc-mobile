@@ -20,7 +20,7 @@ import { render } from "./render";
  * take. The workbench's "Record again" starts one; here that would call
  * getUserMedia after the clear's awaits, outside the tap, which
  * `use-audio-session.ts` (startRecording) says iOS treats as unprompted. The
- * ≡ menu's Clear opens the 13 dialog, eraser and all, and with the switch off
+ * ⋮ menu's Clear opens the 13 dialog, eraser and all, and with the switch off
  * both openers show today's dialog.
  *
  * The harness is `tests/recorder-rerecord.test.ts`'s — the real `Recorder`,
@@ -231,7 +231,7 @@ describe("the record-again confirm with the switch on (G5, #979)", () => {
     expect(audio.startRecording).not.toHaveBeenCalled();
   });
 
-  it("the ≡ menu's Clear still opens the 13 dialog: eraser badge, Clear", async () => {
+  it("the ⋮ menu's Clear still opens the 13 dialog: eraser badge, Clear", async () => {
     await setup("o4");
     await openFromMenu();
     const d = dialog();
@@ -240,7 +240,7 @@ describe("the record-again confirm with the switch on (G5, #979)", () => {
     expect(d.confirm.getAttribute("aria-label")).toBe(strings.eraseConfirm);
   });
 
-  it("a cancelled record-again does not leak its look into a later ≡ Clear", async () => {
+  it("a cancelled record-again does not leak its look into a later ⋮ Clear", async () => {
     await setup("o4");
     await act(async () => barRerecord().click());
     await act(async () => dialog().cancel.click());
@@ -262,7 +262,7 @@ describe("the record-again confirm with the switch off (unchanged)", () => {
     expect(d.confirm.getAttribute("aria-label")).toBe(strings.eraseConfirm);
   });
 
-  it("the bar's Clear and the ≡ Clear open byte-identical dialogs", async () => {
+  it("the bar's Clear and the ⋮ Clear open byte-identical dialogs", async () => {
     await setup("current");
     await act(async () => barRerecord().click());
     const fromBar = dialog().panel.outerHTML;

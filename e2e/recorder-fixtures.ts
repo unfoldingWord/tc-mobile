@@ -2,7 +2,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 /**
  * The toolbar's "Edit recording" control (`.recorder-toolbar`, not the
- * ≡-menu's own "Edit recording" row), clicked safely.
+ * ⋮-menu's own "Edit recording" row), clicked safely.
  *
  * #846/#848/#825: every spec that records a take, taps Stop, and then taps
  * this control raced it — "Selection start" never mounted, on

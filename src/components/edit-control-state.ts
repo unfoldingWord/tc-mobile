@@ -1,6 +1,6 @@
 /**
  * Why a grey edit-toolbar history control is grey — derived, never
- * hand-maintained (#91, by #135's rule for the ≡-menu rows).
+ * hand-maintained (#91, by #135's rule for the ⋮-menu rows).
  *
  * #91 names select, cut, paste and zoom as the least self-evident affordances
  * in the app for a translator who may not read: abstract, icon-only, and used
@@ -12,7 +12,7 @@
  * start, and Redo at every tip of the stack. (That is the MOTIVATION for the cue;
  * it is not what the cue asserts — see {@link editControlHint}.) An icon-only
  * control that is grey for
- * a reason nobody states is the finding #135 already recorded once, in the ≡
+ * a reason nobody states is the finding #135 already recorded once, in the ⋮
  * menu: "a grey row with no reason read as a broken control to the
  * requirements owner" (2026-09-02, staging v0.1.10).
  *
@@ -111,7 +111,7 @@ export interface EditControlHint {
  * wearing `rowHint`'s `alert` mark, and the requirements owner, on v0.2.12,
  * read a ⚠ sitting on a greyed Redo — and moving to Undo once an undo emptied
  * the history — as an error. It is not one: a grey arrow at either end of the
- * stack is the ordinary idle state of an edit session, and the ≡ row that mark
+ * stack is the ordinary idle state of an edit session, and the ⋮ row that mark
  * was borrowed from is a different case, a control blocked by something ELSE
  * (an uncommitted take, a starting mic) that the translator can act on. #610
  * recorded the same reading for the toolbar Edit control and #624 answered it
@@ -120,7 +120,7 @@ export interface EditControlHint {
  * still reach the words, #135 round 2), and nothing is painted. `Control`
  * paints a badge only when a hint carries an `icon`, so a label-only hint is
  * exactly that. What the sighted non-reader loses is the mark #135 round 2
- * added for the ≡ rows; what they keep is the grey itself, which for these two
+ * added for the ⋮ rows; what they keep is the grey itself, which for these two
  * arrows is the whole message.
  *
  * **The words describe the CURRENT END OF THE STACK, never the session's

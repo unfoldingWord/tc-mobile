@@ -52,7 +52,7 @@ export interface RecorderToolbarProps {
   rerecordRef: RefObject<HTMLButtonElement | null>;
   /** The bin's gate — `eraseReason !== null`, answered by the sheet. */
   rerecordDisabled: boolean;
-  /** Its reason, in the shape the ≡ row's hint uses. */
+  /** Its reason, in the shape the ⋮ row's hint uses. */
   rerecordHint: RowHint | null;
   /** Record's own gate, answered by the sheet — see the module docblock. */
   recordInert: boolean;
@@ -69,9 +69,9 @@ export interface RecorderToolbarProps {
   /** What a Play tap will sound, or null when there is nothing to sound. */
   playSource: PlaySource;
   playDisabled: boolean;
-  /** The bottom-bar Edit gate, which ORs the open ≡ menu on top of the row's. */
+  /** The bottom-bar Edit gate, which ORs the open ⋮ menu on top of the row's. */
   editToolbarDisabled: boolean;
-  /** Its reason, which is NOT always the ≡ row's words (#315). */
+  /** Its reason, which is NOT always the ⋮ row's words (#315). */
   editToolbarHint: RowHint | null;
   /**
    * Why Undo is grey, or null when it is live (#91). The REASON rather than a
@@ -344,15 +344,12 @@ export function RecorderToolbar({
         onClick={onRedo}
       />
       <Control
-        // ⋮, not ≡ (#863, the requirements owner's rule on #608): ≡ is used
-        // only at the top right, and the top right in edit mode is the
-        // "Editing" pill, not this control. `openMenu` and the accessible
-        // name (`recorderMenuOpen`, "More actions") are unchanged — record
-        // mode's header opener still calls the same handler and answers to
-        // the same name, and still wears ≡ there (`recorder.tsx`'s header,
-        // untouched by this issue). Only the glyph in THIS toolbar moves,
-        // to the same kebab the book, chapter and segment rows have used
-        // since #589/#683.
+        // ⋮, not ≡ (#863, the requirements owner's rule on #608: ≡ is the
+        // global menu's alone, and this menu acts on the segment). `openMenu`
+        // and the accessible name (`recorderMenuOpen`, "More actions") are
+        // the same as record mode's header opener, which wears the same ⋮
+        // since #1225 (`recorder.tsx`'s header). The glyph is the kebab the
+        // book, chapter and segment rows have used since #589/#683.
         icon="more"
         label={strings.recorderMenuOpen}
         variant="quiet"

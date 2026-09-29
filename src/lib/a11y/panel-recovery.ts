@@ -18,7 +18,7 @@
  *
  * #199 offered accepting that as a residual (which is what `PermissionPanel`
  * already did) or landing focus deliberately. This is the second, for all
- * three panels rather than one. The landing is the ≡ ("More actions")
+ * three panels rather than one. The landing is the ⋮ ("More actions")
  * control, resolved by its accessible name (`recorder.tsx`, `menuLandmark`) —
  * deliberately NOT the header Back that a fresh open lands on. An earlier
  * draft shared the open call on the argument that a resolved panel leaves the

@@ -37,8 +37,9 @@ const erase = {
  * hand-copied path. The screens mount with their data hooks mocked out: only
  * the header and row controls are under test, not what fills them.
  *
- * Not covered here: the recorder's ≡ (`recorder.tsx`), which this change leaves
- * as it is.
+ * Not covered here: the recorder's openers and drawer dismiss, which wear ⋮ since
+ * #1225 and are pinned in `tests/recorder-header-opener-glyph.test.ts` and
+ * `tests/recorder-menu-header.test.ts`.
  */
 
 const mocks = vi.hoisted(() => ({ books: vi.fn(), chapter: vi.fn() }));

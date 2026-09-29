@@ -21,7 +21,7 @@ vi.mock("@/hooks/use-design", () => ({
 }));
 
 /**
- * Delete segment on the chapter view (#590, moved here from the recorder's ≡
+ * Delete segment on the chapter view (#590, moved here from the recorder's ⋮
  * menu by #1104 — the requirements owner's 2026-09-26 decision: "the menu
  * inside the segment editor (recorder) shows Erase only. Delete (removing the
  * whole segment) belongs to the chapter view.").

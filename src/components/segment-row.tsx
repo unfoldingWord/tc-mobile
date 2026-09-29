@@ -179,7 +179,7 @@ function playOffsetSeconds(fraction: number, durationMs: number): number {
  * from its record button, sized to match play (#82).
  *
  * **Delete segment lives here, not on Edit/Finished/Erase's terms** (#590,
- * moved to this menu by #1104 from the recorder's ≡ menu, where #1080 first
+ * moved to this menu by #1104 from the recorder's ⋮ menu, where #1080 first
  * shipped it). Unlike Erase, Delete does NOT require a recorded row — an
  * accidentally added, never-recorded segment is exactly what it needs to
  * remove. In the O4 tile grid the tiles read left to right as Done, Edit,

@@ -31,26 +31,32 @@ interface MenuProps {
    */
   focusKey?: string | number;
   /**
-   * The header's dismiss control wears the `menu` glyph (≡), in the top-right
+   * The header's dismiss control wears a single glyph in the top-right
    * corner, and the panel shows no visible title — one glyph, one place, and
-   * the glyph is the label. For the global menu (#608) that is also the glyph
-   * of the control that opened it — both are ≡, top-right, always. The
-   * recorder's overflow drawer opts in too (#621, the requirements owner's
-   * call on that panel): its "More" heading said nothing the ≡ did not, and a
-   * left-pointing chevron reads as "move left" on a drawer that docks on the
-   * RIGHT. Since #863 the recorder's two openers no longer match: record
-   * mode's header opener is ≡, but the edit toolbar's opener is ⋮ (the same
-   * kebab #589/#683 gave the object menus) — the drawer's OWN dismiss stays ≡
-   * regardless of which one opened it, because ≡ is used only at the top
-   * right (#608) and the drawer's header is the only top-right control
-   * showing while it is open. Off (the default) the header is a title beside
-   * a back chevron, which every other menu keeps — the book, chapter and
-   * segment menus (opened from a ⋮ since #589) and the New Book dialog. What
-   * a screen reader hears does not change either way: `title` still names the
-   * dialog and `closeLabel` still names the control ("Close menu" dismisses,
-   * as before), which is also what the e2e specs locate the menu by.
+   * the glyph is the label. Which glyph is `dismissIcon`'s call: `menu` (≡,
+   * the default) for the global menu (#608), where it is also the glyph of
+   * the control that opened it; `more` (⋮) for an object's menu that opts in.
+   * The recorder's overflow drawer opts in (#621, the requirements owner's
+   * call on that panel): its "More" heading said nothing the glyph did not,
+   * and a left-pointing chevron reads as "move left" on a drawer that docks
+   * on the RIGHT. Since #1225 that drawer acts on the segment being edited,
+   * so it is an object menu: both of its openers are ⋮ and its dismiss
+   * passes `dismissIcon="more"` to match, which leaves the Books screen's
+   * global menu as the only ≡. Off (the default) the header is a title
+   * beside a back chevron, which every other menu keeps — the book, chapter
+   * and segment menus (opened from a ⋮ since #589) and the New Book dialog.
+   * What a screen reader hears does not change either way: `title` still
+   * names the dialog and `closeLabel` still names the control ("Close menu"
+   * dismisses, as before), which is also what the e2e specs locate the menu
+   * by.
    */
   hamburger?: boolean;
+  /**
+   * The glyph `hamburger` paints on the dismiss control. Read only when
+   * `hamburger` is on; the back chevron of the default header is not
+   * configurable. Defaults to `menu` (≡), the global menu's glyph.
+   */
+  dismissIcon?: "menu" | "more";
   /**
    * When true, the header AND every child — Close included — go `inert`:
    * unfocusable, unclickable, and excluded from the accessibility tree as
@@ -122,6 +128,7 @@ export function Menu({
   closeLabel = strings.menuClose,
   focusKey,
   hamburger = false,
+  dismissIcon = "menu",
   inert,
   liveRegion,
   children,
@@ -252,7 +259,7 @@ export function Menu({
         <div className="contents" inert={inert || undefined}>
           {/* `justify-end` when the title is dropped keeps the one remaining
               child — the dismiss control — in the top-right corner, where the
-              ≡ that opened this panel was; `justify-between` alone would slide
+              opener of this panel was; `justify-between` alone would slide
               it to the left edge as the header's only flex item. */}
           <div
             ref={headerRef}
@@ -263,7 +270,7 @@ export function Menu({
           >
             {!hamburger && <span className="t-title">{title}</span>}
             <Control
-              icon={hamburger ? "menu" : "back"}
+              icon={hamburger ? dismissIcon : "back"}
               label={closeLabel}
               variant="quiet"
               onClick={onClose}

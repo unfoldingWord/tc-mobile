@@ -21,7 +21,7 @@
  * taken away from the sites and made here, once. A fifth site, the in-sheet
  * segment delete (#590), was added later and followed the same rule rather
  * than inventing its own — and was removed again when #1104 (the requirements
- * owner's 2026-09-26 decision) pulled Delete back out of the recorder's ≡
+ * owner's 2026-09-26 decision) pulled Delete back out of the recorder's ⋮
  * menu entirely, leaving the chapter view as the only door to it. That site
  * carries no `failureExit` call at all: it is a list-screen Notice, not a
  * whole-sheet exit decision, so it never belonged to this enumeration's
@@ -63,7 +63,7 @@ export type RecorderFailureSite =
   | "clear"
   /** A pending Finished toggle written on close (`setSegmentFinished`). */
   | "mark"
-  /** The in-sheet erase (`clearSegmentTake` again, from the ≡ menu). */
+  /** The in-sheet erase (`clearSegmentTake` again, from the ⋮ menu). */
   | "erase"
   /** The segment's own load, whose panel offers a re-read (#450). */
   | "load";

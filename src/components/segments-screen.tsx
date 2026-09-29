@@ -57,7 +57,7 @@ import type { RecorderEntry } from "@/types/view";
  * so it opens no second layer and Back from the rename field closes the menu,
  * just as the panel's own Close does), plus `segments:delete-confirm` (#1104):
  * Delete segment's own confirm, added when #1104 moved the whole-segment
- * delete out of the recorder's ≡ menu and into this screen's row menu. Built
+ * delete out of the recorder's ⋮ menu and into this screen's row menu. Built
  * as its own overlay/layer pair rather than folded into
  * `segments:erase-confirm`, because the two share no in-flight guard — unlike
  * `erase` (shared with the recorder via App, #160 L-12), the delete this
