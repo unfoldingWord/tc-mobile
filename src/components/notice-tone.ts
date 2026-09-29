@@ -72,7 +72,15 @@ export function noticePresentation(tone: NoticeTone): NoticePresentation {
 
 /**
  * The tone worn by every Notice whose answer to "is this genuinely a failure?"
- * is **no** — #147's open question, in one place instead of three.
+ * is **no** — #147's open question, in one place instead of at each call site.
+ *
+ * NO COUNT IN THIS LEDE ON PURPOSE. It said "instead of three" until George
+ * caught it reading three while the list below read two: the class lost a
+ * member mid-PR (see the third one, further down) and the lede did not move
+ * with it. Hover text shows the lede and not the list, so that is the sentence
+ * a reader trusts. `tests/notice-nothing-failed.test.ts` is where the
+ * membership is counted, which is the one place a count cannot go stale
+ * silently.
  *
  * The members of the class, as the audit found them:
  *

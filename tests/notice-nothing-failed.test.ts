@@ -206,6 +206,35 @@ describe("the not-a-failure Notices read one tone (#147)", () => {
     expect(actual).toEqual(expected);
   });
 
+  it("every member IMPORTS the constant, so the name cannot be a local", () => {
+    // George round 2, Low: `isConstantTone` matches an identifier by SPELLING,
+    // so a same-named local in one of these files would keep the assertions
+    // above green while wiring the Notice to something else entirely.
+    //
+    // Asserting the import closes that soundly rather than partly: a module
+    // cannot hold both an import binding and a local declaration of one name —
+    // that is a duplicate-identifier error, so `tsc` refuses the shadow the
+    // moment the import is present. Cheaper than standing up a `ts.Program`
+    // for a type checker, and it fails in the same cases.
+    for (const rel of [
+      "src/components/segments-screen.tsx",
+      "src/components/share-outcome-glyph.ts",
+    ]) {
+      const imported = parse(rel)
+        .statements.filter((s) => ts.isImportDeclaration(s))
+        .some((decl) => {
+          const bindings = decl.importClause?.namedBindings;
+          if (bindings === undefined || !ts.isNamedImports(bindings)) {
+            return false;
+          }
+          return bindings.elements.some(
+            (el) => el.name.text === "NOTHING_FAILED_TONE"
+          );
+        });
+      expect(imported, `${rel} does not import the constant`).toBe(true);
+    }
+  });
+
   it("the constant is the tone the share table actually hands the screen", () => {
     // Survives a re-tone: it says the two agree, not what they say. The literal
     // `alert` is pinned by `share-outcome-glyph.test.ts`, which is commented as
