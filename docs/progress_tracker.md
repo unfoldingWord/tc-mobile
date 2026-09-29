@@ -11,7 +11,7 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
-## 2026-09-29 (day) — v0.2.14 bugs triaged, #1189 fixed, 1.0.0-rc.1 red-teamed and published to all three channels, Play lane fixed, go-live epic, iPhone playback report
+## 2026-09-29 (day) — v0.2.14 bugs triaged, #1189 fixed, 1.0.0-rc.1 red-teamed and built on all three channels (Play as an internal-track draft), Play lane fixed, go-live epic, iPhone playback report
 
 ### v0.2.14 bug reports
 
@@ -20,7 +20,7 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
   - Both uwreview lenses were clean at `6f0e78fe`. The follow-ups are batched in #1201 (v1.1.0).
 - **#1188, chapter Play/Pause needs several presses (Moto G):**
   - The fix lane found no cause it could prove from the code, so it parked. Its findings are on the issue.
-  - The DRI picked "Ask Tim, ship rc.1 without it". Three observations were requested from the requirements owner on the issue.
+  - The DRI picked "[Ask the requirements owner], ship rc.1 without it". Three observations were requested from the requirements owner on the issue.
 - **Freeze:**
   - The DRI merged 11 PRs to develop at 11:30Z, then picked "Lifted until rc.1 is cut". Freeze-lifted notes went on the open contributor PRs.
   - #684, #1200 and #1203 merged during the lift.
@@ -47,7 +47,7 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
     - The embedded `version.json` reads `1.0.0-rc.1` / `68460117`.
     - The APK's SHA-256 is `50c2d3c1a5284c2a2a3f36abcffcc48525c55d62cf7113c42b581d17ab6da29f`, and the published download matches it.
   - **TestFlight:** run 36586498096, version `1.0`, build `1790694282`.
-  - **Published:** `tester-build-v1.0.0-rc.1`, a pre-release at `68460117`, at the DRI's instruction. The phone smoke result wasn't reported to the coordinator, and this record doesn't claim it passed. The publish record is #1206 comment 5893044684.
+  - **Published:** `tester-build-v1.0.0-rc.1`, a pre-release at `68460117`, at the DRI's instruction. The phone smoke result wasn't reported to the coordinator, and this record doesn't claim it passed. The red team's smoke-before-publish item is still open. The publish record is #1206 comment 5893044684.
 - **Store icons:**
   - **Play:** the listing icon is a manual 512×512 upload (#876), started by the DRI.
   - **App Store Connect:** the icon showed on every build row but not on the app header. It appeared once a build was attached to the 1.0 App Store version.
@@ -60,7 +60,6 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 - **#1210, go-live epic** (Play production and the App Store), with decisions first.
   - The iPad question is a one-way door: the project targets iPhone and iPad.
   - Checked against Google's help pages: Play's 12-tester closed-test rule covers only personal accounts, and this is an organization account. A first Play review can take up to 7 days.
-  - The code sends no data off the phone except through the share sheet.
 - **Tester feedback (iPhone, rc.1):**
   - **#1212** (post-v1): unclear menu options, and what the app adds over a voice recorder.
   - **#1213** (bug): after a drag, Play stays dead until lock/unlock or leaving the app.
