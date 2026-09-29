@@ -71,9 +71,10 @@ issue's priority in this checklist.
 
 ## 3. Promotion and origin verification
 
-1. Prepare the candidate through `develop`. Routine `develop → staging`
-   releases bump the patch; the `staging → main` milestone promotion owns
-   the `1.0.0` minor bump, per AGENTS.md. Keep `package.json` and its lockfile
+1. Prepare the candidate through `develop`. Outside the release-candidate
+   cycle, routine `develop → staging` releases bump the patch. During it,
+   each promotion bumps `1.0.0-rc.N` instead (§3a). The `staging → main`
+   milestone promotion owns the `1.0.0` bump, per AGENTS.md. Keep `package.json` and its lockfile
    consistent. List carried PRs and acceptance evidence in the promotion bodies.
 2. Promote `develop → staging` by PR. Complete the applicable checks and
    reviews, then confirm the deployed staging version and promoted SHA:
@@ -111,6 +112,84 @@ origins, and compares origin `version.json`. An explicit SHA/version pair
 bypasses that resolution; use the promoted branch's identity, not a local
 feature tip. Workers Builds owns PWA deployment. A green promotion merge is
 not evidence that the Worker deployed (#143).
+
+## 3a. Release candidates (`1.0.0-rc.N`)
+
+Before `1.0.0`, tester builds go out as release candidates. The
+`.claude/skills/tc-release` checklist walks these steps in order; this
+section is the reference it follows. Each step needs the DRI's pick where it
+says so, recorded verbatim on the PR it concerns.
+
+**Freeze.** From the moment an RC is promoted until `v1.0.0` is tagged,
+`develop` is frozen. The only merges are fixes for problems found in RC
+testing (including the #974 pass), and each one needs a DRI pick. Post the
+freeze note on every new PR to `develop`.
+
+1. **Scope.** The DRI picks which fixes go in. Each fix is its own PR with its
+   own issue, reviewed by both uwreview lenses and merged pinned to its
+   reviewed head (`--match-head-commit`).
+2. **Bump.** Open a `chore(release): v1.0.0-rc.N` PR on `develop` that changes
+   only `package.json` and `package-lock.json` (`npm version 1.0.0-rc.N
+--no-git-tag-version`). Its body lists every PR carried, what a tester will
+   see, and "not in this build". It states that nothing under
+   `src/lib/storage/` changed (`git diff <last RC bump> <tip> --
+src/lib/storage`), or names the migration if something did. Check that
+   `closingIssuesReferences` is `[]`. Merge by squash.
+3. **Pinned branch.** Create `release/v1.0.0-rc.N` at the `develop` commit
+   being promoted, so later `develop` merges stay out of the cut.
+4. **Promotion PR.** Open it from `release/v1.0.0-rc.N` to `staging`, with a
+   **hold** line at the top: no merge until the red team is posted and the
+   DRI gives a go/no-go. Check that `closingIssuesReferences` is `[]`.
+5. **Release red team.** The DRI requires this on every RC cut. Run
+   read-only passes before any merge or publish:
+   - a **risk register** over `git log --first-parent <staging>..<tip>`:
+     BLOCK / FIX-BEFORE-PUBLISH / NOTE, with file:line, each labelled observed
+     or inferred. It covers data safety across the upgrade, the PR-by-PR
+     risks, interactions between PRs merged in parallel, and anything the
+     bench deferred;
+   - an **announcement claim check** of the tester announcement and the bump
+     body: every factual sentence TRUE / FALSE / OVERSTATED / MISSING
+     CONTEXT, with evidence and corrected wording;
+   - a **delta pass** over anything merged after those passes started.
+
+   Fix every FALSE and OVERSTATED claim. Take each FIX-BEFORE-PUBLISH item to
+   the DRI (fix it in this RC, or accept it). File one batched follow-up
+   issue for the deferred review items. Post a summary on the promotion PR,
+   then ask the DRI for go/no-go.
+
+6. **Merge the promotion** with a merge commit, pinned to the branch head.
+   Run `npm run check:deploy` until it passes, and put the PASS line in
+   `docs/progress_tracker.md`. The staging push runs the Google Play lane,
+   which uploads a **draft** to the internal track. Record its release name.
+7. **Native builds from one commit.** Dispatch
+   [`android-apk.yml`](../../.github/workflows/android-apk.yml) and
+   [`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) from
+   `staging`, and confirm each run's head SHA is the promotion's merge commit.
+   Every channel (web, Play, APK and TestFlight) must come from that one
+   commit. If `staging` moves first, stop and re-promote rather than mix.
+8. **Check the APK before publishing.**
+   - The signer certificate SHA-256 equals the previous RC's; otherwise it
+     won't install over it.
+   - The embedded `assets/public/version.json` reads `1.0.0-rc.N` and the
+     merge commit.
+   - Record the APK's own SHA-256.
+9. **Publish** a GitHub pre-release tagged `tester-build-v1.0.0-rc.N` at the
+   merge commit (§5a of [the native runbook](../native/README.md)). The
+   red-teamed announcement is the notes. Attach `app-release.apk` and a QR
+   code image of its download URL, and embed the QR in the notes. Download
+   the published APK back and check its SHA-256 matches. Post a publish
+   record on the promotion PR.
+10. **TestFlight group.** Assign the processed build to the testers' group,
+    unless automatic distribution is on. A tester who isn't assigned stays on
+    the previous build, and their reports come from it. That happened on rc.1.
+    The announcement asks iPhone testers to confirm the build stamp before
+    they test.
+11. **Record.** Add a tracker entry, move the freeze note and the watch to
+    name the new RC, and route tester reports into issues (tagged by kind and
+    source, per AGENTS.md).
+
+rc.1 (#1205, #1206) and rc.2 (#1228, #1236) are worked examples. Their PR
+threads hold the red-team summaries and publish records.
 
 ## 4. Native candidate and durable delivery
 
@@ -180,8 +259,14 @@ installed APK or TestFlight bundle.
 - [ ] `staging → main` merged; `v1.0.0` points to that merge commit.
 - [ ] `check:deploy:prod` confirms the production version and promoted SHA;
       the PASS line is pasted into `docs/progress_tracker.md` (#840 R7).
+- [ ] Release red team run on the promotion range and announcement (§3a
+      step 5), with its findings and the DRI's go/no-go on the promotion PR.
 - [ ] Native run SHAs match the release tag; versions/build numbers recorded.
-- [ ] TestFlight build processed, assigned and installable by facilitators.
+- [ ] APK signer equals the last RC's certificate; embedded `version.json`
+      checked; APK SHA-256 recorded (§3a step 8).
+- [ ] TestFlight build processed, **assigned to the testers' group** and
+      installable by facilitators.
+- [ ] GitHub Release carries a QR code of the APK download URL.
 - [ ] GitHub Release on `v1.0.0` has the fresh signed APK attached and the
       TestFlight build number noted; downloaded bytes and installation checked;
       installation guide updated.

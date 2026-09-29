@@ -116,9 +116,15 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
   recording. A small panel asks once more (the eraser there confirms, the back
   arrow cancels). The recorder stays open with the segment empty, ready for
   Record. The eraser is greyed while recording and when the segment has
-  nothing saved yet. There is no undo for a clear. Clear keeps the segment;
-  **Delete** (the bin, in the segment's **⋮** on the chapter screen) removes
-  the whole segment. <!-- source: src/components/recorder-toolbars.tsx (rerecord icon="eraser"), src/components/recorder.tsx onRerecord / onConfirmErase (#592), src/components/erase-confirm.tsx (glyph), src/components/segment-row.tsx (Clear and Delete tiles, #1119); not device-verified -->
+  nothing saved yet. There is no undo for a clear. Clearing keeps the
+  segment, and so does **Reset** in the segment's **⋮** on the chapter screen
+  (its confirm box reads "Reset segment and start over"). **Delete** (the bin,
+  in the same **⋮**) removes the whole segment. <!-- source: src/components/recorder-toolbars.tsx (rerecord icon="eraser"), src/components/recorder.tsx onRerecord / onConfirmErase (#592), src/components/erase-confirm.tsx (glyph), src/components/segment-row.tsx (Reset and Delete tiles, #1119, #1220); not device-verified -->
+- **Recording a new segment.** On the chapter screen, a segment with no
+  recording shows a gray button with a red outline and a red microphone. It
+  does **not** start recording: it opens the recorder, and the translator
+  then presses the big red **Record** button there. Say this once, because a
+  participant may expect the first tap to record. <!-- source: src/components/segment-row.tsx (variant="mic", strings.openRecorderSegment, #1217); not device-verified -->
 - **Tapping the square ends and saves a recording in one step.** There is no
   in-between "paused" state anymore — the moment the square is tapped, that
   recording is saved into the segment and the waveform shifts to show it —
