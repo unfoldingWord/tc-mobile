@@ -384,8 +384,11 @@ export const strings = {
   // warn role, from 15:00 of a live take (`components/take-cap-marker.tsx`).
   // Parameterised, so it is outside `tests/strings-one-table.test.ts`'s
   // fixed-literal check the way `chapterName` and the other `(n) =>` entries
-  // above are.
-  takeCapWarning: (n: number): string => `${n} min left`,
+  // above are. The count goes through `plural` (#169) even though English
+  // needs only the one form: the abbreviation does not vary by count here,
+  // but the minute word does in other languages, and a table that can carry
+  // `one`/`few`/`many` is what lets a second locale be data.
+  takeCapWarning: (n: number): string => plural(n, { other: "{n} min left" }),
 
   // ── Recorder load failure (#137) ──────────────────────────────────────────
   // A finished segment's stored MP3 could not be decoded when the sheet opened
