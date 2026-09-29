@@ -69,3 +69,47 @@ export function noticePresentation(tone: NoticeTone): NoticePresentation {
       };
   }
 }
+
+/**
+ * The tone worn by every Notice whose answer to "is this genuinely a failure?"
+ * is **no** — #147's open question, in one place instead of at each call site.
+ *
+ * The members:
+ *
+ *   - `staleChapter` (`segments-screen.tsx`, twice) — another live copy deleted
+ *     this book or chapter under the screen (#378). `useChapterSegments`
+ *     classifies it that way itself: it sets `staleTarget` and clears `error`
+ *     in the same breath.
+ *   - `shareOutcomeGlyph("nothing")` — there is no audio yet to share. Nothing
+ *     failed to go; nothing was ever recorded.
+ *
+ * Both are "you cannot do this (or any more), and nothing is wrong and nothing
+ * is at risk" — a settled fact plus what to do next, which is the `info`
+ * contract as #147 states it.
+ *
+ * WHAT THEY SHARE IS THE TONE, NOT THE MARK. `alert` carries the failure
+ * colour and `role="alert"` for both, but only `staleChapter` also shows the
+ * failure triangle: it passes no `icon`, so it takes the tone's own glyph,
+ * while `shareOutcomeGlyph("nothing")` substitutes `share-empty` (#178). So the
+ * mis-signal that `info` was added to stop (#112, #140) reaches a translator who
+ * cannot read through the colour and the interrupting role, and through the
+ * glyph at one of the two sites.
+ *
+ * **This constant does not answer the question; it makes the answer one token.**
+ * Whether these should be `info` is Tim's call, not an engineering one, and it
+ * is unanswered: the value here is the `alert` both already wore, so this
+ * re-tones nothing. What it buys is that the members cannot drift apart while
+ * the question waits, which is what #147 asks for — "rather than fixing one and
+ * leaving the rest to drift".
+ *
+ * If the answer is `info`, it is this line. If it differs PER SITE, split this
+ * constant into the classes that were answered differently — never hardcode a
+ * tone back at one call site, which is exactly the drift it exists to prevent.
+ *
+ * `tests/notice-nothing-failed.test.ts` pins the membership from both
+ * directions, so the list above cannot silently gain or lose a site. The audit
+ * behind the class, and what became of the third member #147 was filed for, are
+ * on #147 and in PR #684 — deliberately not restated here, where they would go
+ * stale as the tree moves.
+ */
+export const NOTHING_FAILED_TONE: NoticeTone = "alert";

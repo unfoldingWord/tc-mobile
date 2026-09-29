@@ -17,6 +17,7 @@ import { NameEdit } from "./name-edit";
 import { O4Crumbs, O4SheetHead } from "./o4-crumbs";
 import { Tile, TileSpacer } from "./o4-tile-menu";
 import { Notice } from "./notice";
+import { NOTHING_FAILED_TONE } from "./notice-tone";
 import { SegmentRow } from "./segment-row";
 import { SegmentsHead } from "./segments-head";
 import { segmentsListInert } from "./segments-inert";
@@ -1256,7 +1257,7 @@ export const SegmentsScreen = forwardRef<
           console. `console.error is not a channel on a phone in a village.`
           Share speaks in its own menu, not here. */}
       {staleTarget ? (
-        <Notice>{strings.staleChapter}</Notice>
+        <Notice tone={NOTHING_FAILED_TONE}>{strings.staleChapter}</Notice>
       ) : (chapterErrorText ??
         audio.error ??
         eraseErrorText ??
@@ -1451,7 +1452,7 @@ export const SegmentsScreen = forwardRef<
         }
       >
         {staleTarget ? (
-          <Notice>{strings.staleChapter}</Notice>
+          <Notice tone={NOTHING_FAILED_TONE}>{strings.staleChapter}</Notice>
         ) : renamingChapter ? (
           <>
             {/* Rename the chapter in place (#264). Seeded with the current
