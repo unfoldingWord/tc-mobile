@@ -106,11 +106,11 @@ function isConstantTone(value: ts.JsxAttributeValue | undefined): boolean {
  * has children, so a self-closing one would be a different bug.
  */
 function noticesSaying(
-  path: string,
+  rel: string,
   stringKey: string
 ): { tone: "constant" | "other" }[] {
   const found: { tone: "constant" | "other" }[] = [];
-  walk(parse(path), (node) => {
+  walk(parse(rel), (node) => {
     if (!ts.isJsxElement(node)) return;
     const open = node.openingElement;
     if (!ts.isIdentifier(open.tagName) || open.tagName.text !== "Notice")

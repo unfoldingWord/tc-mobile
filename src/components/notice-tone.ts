@@ -74,53 +74,42 @@ export function noticePresentation(tone: NoticeTone): NoticePresentation {
  * The tone worn by every Notice whose answer to "is this genuinely a failure?"
  * is **no** — #147's open question, in one place instead of at each call site.
  *
- * NO COUNT IN THIS LEDE ON PURPOSE. It said "instead of three" until George
- * caught it reading three while the list below read two: the class lost a
- * member mid-PR (see the third one, further down) and the lede did not move
- * with it. Hover text shows the lede and not the list, so that is the sentence
- * a reader trusts. `tests/notice-nothing-failed.test.ts` is where the
- * membership is counted, which is the one place a count cannot go stale
- * silently.
- *
- * The members of the class, as the audit found them:
+ * The members:
  *
  *   - `staleChapter` (`segments-screen.tsx`, twice) — another live copy deleted
- *     this book or chapter under the screen (#378). `useChapterSegments` says so
- *     itself: it sets `staleTarget` and clears `error` in the same breath, so
- *     the hook already classifies this as not-a-failure while the screen paints
- *     it in the failure colour.
+ *     this book or chapter under the screen (#378). `useChapterSegments`
+ *     classifies it that way itself: it sets `staleTarget` and clears `error`
+ *     in the same breath.
  *   - `shareOutcomeGlyph("nothing")` — there is no audio yet to share. Nothing
  *     failed to go; nothing was ever recorded.
  *
  * Both are "you cannot do this (or any more), and nothing is wrong and nothing
  * is at risk" — a settled fact plus what to do next, which is the `info`
- * contract as #147 states it. Both are `alert` today, so a translator who
- * cannot read gets the red failure triangle for a state where nothing has gone
- * wrong. That is the mis-signal `info` was added to stop (#112, #140).
+ * contract as #147 states it.
  *
- * THE THIRD MEMBER IS GONE, and how it went is the most useful thing this
- * comment records. #147 was filed for `previewUnavailable` — the paused,
- * uncommitted take that would not decode for a preview (#101). #614 removed the
- * paused-preview state itself, so the take is committed in place and there is no
- * longer an undecodable paused take to describe; the string went with the state
- * (`tests/menu-row-state.test.ts` records the same deletion from the other
- * side). The issue's headline finding was answered by deleting the state, not
- * by re-toning it.
+ * WHAT THEY SHARE IS THE TONE, NOT THE MARK. `alert` carries the failure
+ * colour and `role="alert"` for both, but only `staleChapter` also shows the
+ * failure triangle: it passes no `icon`, so it takes the tone's own glyph,
+ * while `shareOutcomeGlyph("nothing")` substitutes `share-empty` (#178). So the
+ * mis-signal `info` was added to stop (#112, #140) reaches a translator who
+ * cannot read through the colour and the interrupting role, and through the
+ * glyph at one of the two sites.
  *
  * **This constant does not answer the question; it makes the answer one token.**
- * The counter-argument #147 records is real — from where the translator sits
- * they tapped Share and nothing was shared — and it is Tim's call, not an
- * engineering one. Two earlier passes (#457, and #147's own filing) declined to
- * decide it, and this one declines too: the value below is the `alert` both
- * already wore, so this change re-tones nothing.
+ * Whether these should be `info` is Tim's call, not an engineering one, and it
+ * is unanswered: the value here is the `alert` both already wore, so this
+ * re-tones nothing. What it buys is that the members cannot drift apart while
+ * the question waits, which is what #147 asks for — "rather than fixing one and
+ * leaving the rest to drift".
  *
- * What it buys is that the members cannot drift apart while the question waits,
- * which is what #147 asks for — "rather than fixing one and leaving the rest to
- * drift". If the answer is `info`, it is this line. If the answer differs PER
- * SITE (#147's comment thread notes the share case is the weaker `alert` of the
- * two, since it is only reached from a menu the translator opened themselves),
- * then the right move is to split this constant into the classes that were
- * answered differently — not to hardcode a tone back at one call site, which is
- * exactly the drift it exists to prevent.
+ * If the answer is `info`, it is this line. If it differs PER SITE, split this
+ * constant into the classes that were answered differently — never hardcode a
+ * tone back at one call site, which is exactly the drift it exists to prevent.
+ *
+ * `tests/notice-nothing-failed.test.ts` pins the membership from both
+ * directions, so the list above cannot silently gain or lose a site. The audit
+ * behind the class, and what became of the third member #147 was filed for, are
+ * on #147 and in PR #684 — deliberately not restated here, where they would go
+ * stale as the tree moves.
  */
 export const NOTHING_FAILED_TONE: NoticeTone = "alert";
