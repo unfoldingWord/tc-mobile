@@ -20,7 +20,10 @@ import { useDesign } from "@/hooks/use-design";
 import { Waveform } from "./waveform";
 import { cn } from "@/lib/utils";
 import { segmentRowState } from "@/lib/view/segment-rows";
-import type { SegmentRow as SegmentRowModel } from "@/types/view";
+import type {
+  RecorderEntry,
+  SegmentRow as SegmentRowModel,
+} from "@/types/view";
 
 interface SegmentRowProps {
   row: SegmentRowModel;
@@ -42,8 +45,10 @@ interface SegmentRowProps {
    */
   onPlay: (offsetSeconds: number) => void;
   /** Open the recorder sheet for this segment — to record an empty one, or to
-   * edit (insert/append/re-record) one that already has audio. */
-  onOpenRecorder: () => void;
+   * edit (insert/append/re-record) one that already has audio. The menu's Edit
+   * passes `"edit"` so the sheet opens in edit mode (#286 item 2); every other
+   * entry opens it in record mode. */
+  onOpenRecorder: (entry?: RecorderEntry) => void;
   onSetFinished: (finished: boolean) => void;
   /**
    * Ask to erase this segment's recording (B6, D-TWO-ENTRIES). Picked from the
@@ -529,7 +534,7 @@ export function SegmentRow({
     >
       <button
         type="button"
-        onClick={onOpenRecorder}
+        onClick={() => onOpenRecorder()}
         disabled={busy}
         aria-label={openLabel}
         className="row-open"
@@ -594,7 +599,7 @@ export function SegmentRow({
           // Never on a control held inert by a landing save: the ring would
           // be pointing at a tap the row is refusing.
           guided={guided && !busy}
-          onClick={onOpenRecorder}
+          onClick={() => onOpenRecorder()}
         />
       )}
 
@@ -754,7 +759,7 @@ export function SegmentRow({
                 hint={rowHint(hasClip ? null : "no-audio")}
                 onClick={() => {
                   closeMenu();
-                  onOpenRecorder();
+                  onOpenRecorder("edit");
                 }}
               />
               {!hasClip && <TileSpacer />}
@@ -805,7 +810,7 @@ export function SegmentRow({
                   variant="quiet"
                   onClick={() => {
                     closeMenu();
-                    onOpenRecorder();
+                    onOpenRecorder("edit");
                   }}
                 />
                 <Control

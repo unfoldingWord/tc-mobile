@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { FailureReport } from "@/hooks/report-failure";
 
+import { stripComments } from "./support";
+
 /**
  * A throwing `MediaStreamTrack.stop()` must not skip the tracks after it
  * (#479).
@@ -176,12 +178,12 @@ describe("use-recorder's stream-release helpers go through stopTracks (#479)", (
   // string literal in use-recorder.ts would remove real code with it.
   // `tests/recorder-resume-race.test.ts` documents the same limit, and nothing
   // asserts that the file is free of such strings.
-  const code = readFileSync(
-    new URL("../src/hooks/use-recorder.ts", import.meta.url),
-    "utf8"
-  )
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/.*$/gm, "");
+  const code = stripComments(
+    readFileSync(
+      new URL("../src/hooks/use-recorder.ts", import.meta.url),
+      "utf8"
+    )
+  );
 
   /** The body of `const <name> = useCallback(...)`, brace-counted. */
   const callbackBody = (name: string): string => {

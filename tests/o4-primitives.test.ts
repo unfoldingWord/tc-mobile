@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { stripCssComments } from "./support";
+
 /**
  * The structural primitives O4 adds to layer 1 (#939; decisions D4, D5 and D6
  * on #937): type sizes and weights, radii, and the ambient-motion group.
@@ -16,10 +18,12 @@ import { describe, expect, it } from "vitest";
  * header that names a token cannot satisfy or capture an assertion.
  */
 const ROOT = path.resolve(import.meta.dirname, "..");
-const source = readFileSync(
-  path.join(ROOT, "src", "app", "styles", "1-primitives.css"),
-  "utf8"
-).replace(/\/\*[\s\S]*?\*\//g, "");
+const source = stripCssComments(
+  readFileSync(
+    path.join(ROOT, "src", "app", "styles", "1-primitives.css"),
+    "utf8"
+  )
+);
 
 const REDUCE = "@media (prefers-reduced-motion: reduce)";
 

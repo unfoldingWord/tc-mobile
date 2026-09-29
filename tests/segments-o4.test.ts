@@ -14,6 +14,7 @@ import type { ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
 
 import { one, render } from "./render";
+import { stripCssComments } from "./support";
 
 /**
  * The O4 Segments screen (#944, epic #936): states 05 (empty chapter), 06
@@ -257,7 +258,7 @@ describe("o4/segments.css (#944)", () => {
   );
   // Comments stripped first: a header that names a selector or a primitive
   // must not satisfy, or trip, a check below (AGENTS.md, the share-scrim trap).
-  const code = source.replace(/\/\*[\s\S]*?\*\//g, "");
+  const code = stripCssComments(source);
   const layerOpen = code.indexOf("@layer components {");
   const body = code.slice(layerOpen + "@layer components {".length);
   const rules = [...body.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({
