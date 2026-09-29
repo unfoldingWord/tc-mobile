@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import { NOTHING_FAILED_TONE } from "@/components/notice-tone";
@@ -20,64 +21,125 @@ import { shareOutcomeGlyph } from "@/components/share-outcome-glyph";
  * preview state it described, so the assertion for it went with it rather than
  * being kept pointing at a string the tree no longer has.
  *
- * WHY THE SOURCE READS. `NOTHING_FAILED_TONE`'s value is `alert`, which is what
- * all three already wore, so no runtime assertion can tell a site that reads the
- * constant from one that hardcodes the same string — the drift this exists to
- * catch is invisible until the day the constant changes, which is exactly the
+ * WHY THIS READS SOURCE. `NOTHING_FAILED_TONE`'s value is `alert`, which is what
+ * both members already wore, so no runtime assertion can tell a site that reads
+ * the constant from one that hardcodes the same string — the drift this exists
+ * to catch is invisible until the day the constant changes, which is exactly the
  * day it is too late. The wiring is the property, so the wiring is what is read.
  *
- * COMMENTS ARE STRIPPED FIRST, and that is not incidental: this repo has already
- * had a stylesheet comment capture a test that searched the file whole
- * (`share-progress.test.ts`, #529 round 3), and `notice-tone.ts` and
- * `share-outcome-glyph.ts` both now NAME this constant in prose in order to
- * explain it. A reader that matched the bare identifier would pass on the
- * docblock alone. Each assertion below matches a code shape — the constant in
- * the position a tone is actually passed — not the name.
+ * WHY IT READS THE AST AND NOT THE TEXT. A first draft regexed the source with
+ * comments stripped, which closed the comment half of the trap
+ * (`share-progress.test.ts`, #529 round 3) but not the string half: a `const
+ * DECOY = "<Notice tone={NOTHING_FAILED_TONE}>{strings.staleChapter}</Notice>"`
+ * added beside ONE unwired call site made the count read 2 and the whole file
+ * pass. That is the `tc-prepush` guard case — the pattern inside a comment or a
+ * string must stay quiet — and it failed it. Matching parsed nodes closes both
+ * halves at once and costs nothing else: a comment is not a node, and a string
+ * literal is a `StringLiteral`, never the `Identifier` these assertions require.
  */
 
-/** Source with block comments and whole-line `//` comments removed. */
-function code(path: string): string {
-  const raw = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
-  const stripped = raw
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^[ \t]*\/\/.*$/gm, "");
-  // The floor #529 round 3 is the standing reason for: an assertion that loops
-  // over nothing, or matches against an empty string, reports success. A
-  // stripper that ate the file would otherwise fail every `not.toMatch` silently
-  // and pass every one of them.
-  expect(stripped.length, `${path} stripped to nothing`).toBeGreaterThan(1000);
-  return stripped;
+function parse(path: string): ts.SourceFile {
+  const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+  return ts.createSourceFile(
+    path,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    path.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  );
+}
+
+function walk(node: ts.Node, visit: (n: ts.Node) => void): void {
+  visit(node);
+  node.forEachChild((child) => walk(child, visit));
+}
+
+/** Is this JSX attribute value the bare identifier `NOTHING_FAILED_TONE`? */
+function isConstantTone(value: ts.JsxAttributeValue | undefined): boolean {
+  return (
+    value !== undefined &&
+    ts.isJsxExpression(value) &&
+    value.expression !== undefined &&
+    ts.isIdentifier(value.expression) &&
+    value.expression.text === "NOTHING_FAILED_TONE"
+  );
+}
+
+/**
+ * Every `<Notice>` in `path` whose body names `strings.<stringKey>`, as
+ * `{ tone: "constant" | "other" }`. An opening element only — a `Notice` always
+ * has children, so a self-closing one would be a different bug.
+ */
+function noticesSaying(
+  path: string,
+  stringKey: string
+): { tone: "constant" | "other" }[] {
+  const found: { tone: "constant" | "other" }[] = [];
+  walk(parse(path), (node) => {
+    if (!ts.isJsxElement(node)) return;
+    const open = node.openingElement;
+    if (!ts.isIdentifier(open.tagName) || open.tagName.text !== "Notice")
+      return;
+
+    // The body must REFERENCE the string, as a property access on `strings` —
+    // not merely contain the word, which a stray identifier or a string could.
+    let saysIt = false;
+    walk(node, (inner) => {
+      if (
+        ts.isPropertyAccessExpression(inner) &&
+        ts.isIdentifier(inner.expression) &&
+        inner.expression.text === "strings" &&
+        inner.name.text === stringKey
+      ) {
+        saysIt = true;
+      }
+    });
+    if (!saysIt) return;
+
+    const tone = open.attributes.properties.find(
+      (attr): attr is ts.JsxAttribute =>
+        ts.isJsxAttribute(attr) && attr.name.getText() === "tone"
+    );
+    found.push({
+      tone: isConstantTone(tone?.initializer) ? "constant" : "other",
+    });
+  });
+  return found;
 }
 
 describe("the not-a-failure Notices read one tone (#147)", () => {
+  it("BOTH stale-chapter Notices take their tone from the constant", () => {
+    // Two call sites, one screen: the list body and the chapter menu. The count
+    // is half the assertion — fixing one and leaving the other is the drift
+    // #147 names — and every one of them reading the constant is the other
+    // half, so neither a missing site nor a hardcoded tone can pass.
+    const notices = noticesSaying(
+      "src/components/segments-screen.tsx",
+      "staleChapter"
+    );
+    expect(notices).toHaveLength(2);
+    expect(notices.every((n) => n.tone === "constant")).toBe(true);
+  });
+
   it("the share outcome table's `nothing` takes its tone from the constant", () => {
     // `nothing` is "there is no audio yet", not "the share failed" — #178 gave
     // it its own mark for that reason and deliberately left the tone alone.
-    expect(code("src/components/share-outcome-glyph.ts")).toMatch(
-      /case "nothing":\s*return \{[^}]*tone: NOTHING_FAILED_TONE[^}]*\};/
-    );
-  });
-
-  it("BOTH stale-chapter Notices take their tone from the constant", () => {
-    // Two call sites, one screen: the list body and the chapter menu. The count
-    // is the assertion — fixing one and leaving the other is the drift #147
-    // names, and a bare `toMatch` would go green on either alone.
-    const hits =
-      code("src/components/segments-screen.tsx").match(
-        /<Notice tone=\{NOTHING_FAILED_TONE\}>\s*\{strings\.staleChapter\}\s*<\/Notice>/g
-      ) ?? [];
-    expect(hits).toHaveLength(2);
-  });
-
-  it("no member of the class hardcodes the tone it happens to share today", () => {
-    // The failure mode this whole file exists for: a later tidy-up writes
-    // `tone="alert"` back beside one member, every test stays green, and the
-    // day #147 is answered only the other one moves.
-    const path = "src/components/segments-screen.tsx";
-    expect(
-      /<Notice tone="alert">\s*\{strings\.staleChapter\}/.test(code(path)),
-      `${path} hardcodes a tone the constant owns`
-    ).toBe(false);
+    // Pinned at the `case "nothing"` clause, so wiring some OTHER outcome to
+    // the constant could never stand in for this one.
+    let toneInNothingCase: string | null = null;
+    walk(parse("src/components/share-outcome-glyph.ts"), (node) => {
+      if (!ts.isCaseClause(node)) return;
+      if (!ts.isStringLiteral(node.expression)) return;
+      if (node.expression.text !== "nothing") return;
+      walk(node, (inner) => {
+        if (!ts.isPropertyAssignment(inner)) return;
+        if (inner.name.getText() !== "tone") return;
+        toneInNothingCase = ts.isIdentifier(inner.initializer)
+          ? inner.initializer.text
+          : `<${ts.SyntaxKind[inner.initializer.kind]}>`;
+      });
+    });
+    expect(toneInNothingCase).toBe("NOTHING_FAILED_TONE");
   });
 
   it("the constant is the tone the share table actually hands the screen", () => {
