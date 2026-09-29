@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { stripCssComments } from "./support";
+
 /**
  * The O4 name sheet (#943, states 02 and G4 of `docs/design/o4-design-system.md`
  * §9) — the source half of `src/app/styles/o4/sheets.css`.
@@ -33,7 +35,7 @@ const SHEETS_CSS = readFileSync(
 );
 
 /** The stylesheet without its comments, so prose can never satisfy a match. */
-const CODE = SHEETS_CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+const CODE = stripCssComments(SHEETS_CSS);
 
 interface Rule {
   readonly selectors: readonly string[];

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { matchingBraceClose } from "./support";
+import { matchingBraceClose, stripComments } from "./support";
 
 /**
  * `Menu`'s `onCloseRef` sync runs in a LAYOUT effect, not a passive one
@@ -40,12 +40,9 @@ import { matchingBraceClose } from "./support";
  * effect.
  */
 describe("Menu's onCloseRef sync is a layout effect (#517 item 2)", () => {
-  const source = readFileSync(
-    new URL("../src/components/menu.tsx", import.meta.url),
-    "utf8"
-  )
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/.*$/gm, "");
+  const source = stripComments(
+    readFileSync(new URL("../src/components/menu.tsx", import.meta.url), "utf8")
+  );
 
   /** The effect's own body — unique in the file, and what identifies it. */
   const GUARD = "onCloseRef.current = onClose;";
