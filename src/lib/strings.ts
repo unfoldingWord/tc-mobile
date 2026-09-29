@@ -770,9 +770,19 @@ export const strings = {
     ),
   // The book name is free text since #264, so sanitise it into the filename —
   // a `/` in "Mark/Luke" would otherwise split a zip entry into a folder (G3).
-  // The chapter is an ordinal, always safe.
-  shareFilename: (book: string, chapter: number): string =>
-    `${filenameSafe(book)} - Chapter ${chapter}.mp3`,
+  // The chapter's own name (#264) is free text too and is sanitised the same
+  // way (#1218). No name, or one with nothing left once sanitised, falls back
+  // to the default through `chapterName`, the one place that spells it.
+  shareFilename: (
+    book: string,
+    chapter: number,
+    chapterName: string | null = null
+  ): string => {
+    const label = filenameSafe(chapterName ?? "");
+    return `${filenameSafe(book)} - ${
+      label === "" ? strings.chapterName(chapter) : label
+    }.mp3`;
+  },
 
   // Share Book — the book-level ⋮ menu and its zip-of-chapter-MP3s share. Names
   // each book so AT users can tell one shelf row's menu from the next.
