@@ -1598,7 +1598,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setStopError(null);
       insertionOffset.current = win.centerlineSample;
       setCaptureContext(
-        buildCaptureContext(editor.working, win.centerlineSample)
+        buildCaptureContext(editor.working, win.centerlineSample, editor.peaks)
       );
       audio.startRecording();
     }, [recording, view, audio, editor, win.centerlineSample, commitTake]);
@@ -1734,10 +1734,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setMenuOpen(false);
       // The offset stays the one the refused tap locked; the context follows it.
       setCaptureContext(
-        buildCaptureContext(editor.working, insertionOffset.current)
+        buildCaptureContext(
+          editor.working,
+          insertionOffset.current,
+          editor.peaks
+        )
       );
       audio.startRecording();
-    }, [audio, editor.working]);
+    }, [audio, editor.working, editor.peaks]);
 
     // Open the recorder menu — shared by both openers: record mode's header
     // ≡ and, since #863, the edit toolbar's ⋮. Stops buffer playback first:

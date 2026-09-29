@@ -22,14 +22,21 @@
  * held here at a fine, fixed bucket size and folded per paint to the measured
  * rate ({@link estimateColumnRate}), rather than precomputed at an assumed one.
  *
- * **Absolute level, like the ring.** No display fit (#358): the scope is drawn
- * absolute so a too-quiet mic looks too quiet (#359), and the clip beside it is
- * drawn on the same scale so the two halves are comparable. The stored clip's
- * fitted look returns when the take commits and `Waveform` takes the stage
- * back, the same scale change an append has always had at that edge.
+ * **The committed clip's scale, not absolute (#1189).** The context carries
+ * the display gain the idle `Waveform` drew the committed clip at
+ * ({@link CaptureContext.gain}), and the live scope draws BOTH the context and
+ * the new audio at it. Drawn absolute instead, every Record tap on a segment
+ * that already had audio collapsed that audio from its fitted height to its
+ * raw level — up to `MAX_DISPLAY_GAIN` smaller on a quiet phone, the Moto G of
+ * #358 — and the new take beside it grew at that raw level too. A first take
+ * has no context and stays absolute, so a too-quiet microphone still looks
+ * too quiet while there is nothing committed to compare it with (#359); the
+ * VU meter stays absolute throughout.
  */
 
+import { displayGain } from "./display-gain";
 import { CANONICAL_SAMPLE_RATE, INT16_MAX } from "./format";
+import type { Peaks } from "@/types/audio";
 
 /**
  * One side of the context: fine min/max buckets walking AWAY from the
@@ -52,6 +59,13 @@ export interface CaptureContext {
   readonly after: ContextSide;
   /** Samples per fine bucket — the unit {@link foldContextSide} folds from. */
   readonly samplesPerBucket: number;
+  /**
+   * The factor the scope multiplies every bar by while this take records: the
+   * committed clip's display gain (`displayGain`, the same rule and the same
+   * peaks the idle `Waveform` fits with), frozen at the Record tap like the
+   * rest of the context (#1189).
+   */
+  readonly gain: number;
 }
 
 /**
@@ -111,10 +125,16 @@ function side(
  * empty `after` — which is exactly the blank-left / blank-right the
  * requirements owner named as correct. `offset` is clamped into the buffer,
  * so a stale offset cannot index past it.
+ *
+ * `committedPeaks` is what the idle `Waveform` fits `working` from (the
+ * recorder's `editor.peaks`); the context's `gain` is fitted from it by the
+ * same `displayGain`, so the scale cannot change at the Record tap. Required
+ * rather than defaulted, so a new caller has to say which scale it draws at.
  */
 export function buildCaptureContext(
   working: Int16Array,
   offset: number,
+  committedPeaks: Peaks | null,
   bucketSamples: number = CONTEXT_BUCKET_SAMPLES,
   maxSamples: number = CONTEXT_MAX_SAMPLES
 ): CaptureContext | null {
@@ -127,6 +147,8 @@ export function buildCaptureContext(
     before: side(working, at, -1, size, maxSamples),
     after: side(working, at, 1, size, maxSamples),
     samplesPerBucket: size,
+    // Committed audio is never an in-flight first take, so the fit is on.
+    gain: displayGain(committedPeaks, false),
   };
 }
 
