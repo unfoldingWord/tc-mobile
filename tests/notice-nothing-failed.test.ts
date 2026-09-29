@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
@@ -38,15 +39,49 @@ import { shareOutcomeGlyph } from "@/components/share-outcome-glyph";
  * literal is a `StringLiteral`, never the `Identifier` these assertions require.
  */
 
-function parse(path: string): ts.SourceFile {
-  const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const REPO_ROOT = new URL("..", import.meta.url);
+
+function parse(rel: string): ts.SourceFile {
+  const source = readFileSync(new URL(rel, REPO_ROOT), "utf8");
   return ts.createSourceFile(
-    path,
+    rel,
     source,
     ts.ScriptTarget.Latest,
     true,
-    path.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+    rel.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
   );
+}
+
+/** Every `.ts`/`.tsx` file under `rel`, recursively. Repo-relative, POSIX. */
+function sourcesUnder(rel: string): string[] {
+  return readdirSync(new URL(rel, REPO_ROOT), { withFileTypes: true }).flatMap(
+    (entry) => {
+      const child = path.posix.join(rel, entry.name);
+      if (entry.isDirectory()) return sourcesUnder(`${child}/`);
+      return /\.tsx?$/.test(entry.name) ? [child] : [];
+    }
+  );
+}
+
+/**
+ * How many times `file` REFERENCES the constant as a value.
+ *
+ * The declaration's own name and an `import { NOTHING_FAILED_TONE }` specifier
+ * are not references — neither wires a Notice to anything, and counting them
+ * would make the expected numbers below depend on how a file happens to import.
+ */
+function constantReferences(rel: string): number {
+  let count = 0;
+  walk(parse(rel), (node) => {
+    if (!ts.isIdentifier(node)) return;
+    if (node.text !== "NOTHING_FAILED_TONE") return;
+    const parent = node.parent as ts.Node | undefined;
+    if (parent === undefined) return;
+    if (ts.isVariableDeclaration(parent) && parent.name === node) return;
+    if (ts.isImportSpecifier(parent)) return;
+    count += 1;
+  });
+  return count;
 }
 
 function walk(node: ts.Node, visit: (n: ts.Node) => void): void {
@@ -140,6 +175,35 @@ describe("the not-a-failure Notices read one tone (#147)", () => {
       });
     });
     expect(toneInNothingCase).toBe("NOTHING_FAILED_TONE");
+  });
+
+  it("NOTHING ELSE reads the constant — the inverse of the two above", () => {
+    // George round 1, Low: the assertions above pin "these sites read the
+    // constant" and say nothing about "nothing else does". A genuine FAILURE
+    // Notice that started passing `tone={NOTHING_FAILED_TONE}` would stay green
+    // today, because the value is still `alert` — and would be swept into
+    // `info` on the day the constant flips, which is the one day this file
+    // exists to make safe. So the membership is pinned from both directions.
+    //
+    // A new member is meant to be a deliberate act: adding a site means adding
+    // it here, which is where the "is this genuinely a failure?" question gets
+    // asked. The map is the class, and the audit table in the PR body is its
+    // reasoning.
+    const expected: Record<string, number> = {
+      "src/components/segments-screen.tsx": 2, // list body + chapter menu
+      "src/components/share-outcome-glyph.ts": 1, // case "nothing"
+    };
+    const actual: Record<string, number> = {};
+    for (const file of sourcesUnder("src/")) {
+      // The declaration's own module is where the constant lives, not a site
+      // that wears it; `constantReferences` already ignores the declaration,
+      // but the docblock there names it repeatedly in prose and a future
+      // `satisfies` or re-export would be a self-reference, not a call site.
+      if (file === "src/components/notice-tone.ts") continue;
+      const count = constantReferences(file);
+      if (count > 0) actual[file] = count;
+    }
+    expect(actual).toEqual(expected);
   });
 
   it("the constant is the tone the share table actually hands the screen", () => {
