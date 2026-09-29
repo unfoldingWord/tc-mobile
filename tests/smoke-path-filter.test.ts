@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { stripYamlComments } from "./support";
+
 /**
  * The browser-smoke path filter, gated in both states (QA review P2 on #457).
  *
@@ -28,9 +30,11 @@ import { describe, expect, it } from "vitest";
  * and defaults, not just its exported function".
  */
 const ROOT = path.resolve(import.meta.dirname, "..");
-const workflow = readFileSync(
-  path.join(ROOT, ".github", "workflows", "ci.yml"),
-  "utf8"
+// Comments stripped first (#822): `smokeFilter()` takes the FIRST match, so a
+// commented-out copy of the old pattern above a narrowed live step would
+// otherwise be the one this file tests.
+const workflow = stripYamlComments(
+  readFileSync(path.join(ROOT, ".github", "workflows", "ci.yml"), "utf8")
 );
 
 /** The pattern exactly as `ci.yml` spells it, single quotes stripped. */
