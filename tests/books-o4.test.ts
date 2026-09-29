@@ -682,7 +682,7 @@ describe("o4/books.css (#942)", () => {
       expect.arrayContaining(["width: 7px"])
     );
     expect(block(`${O4} .books-chapter`)).toEqual(
-      expect.arrayContaining(["height: 68px", "border-radius: 12px"])
+      expect.arrayContaining(["min-height: 68px", "border-radius: 12px"])
     );
     expect(block(`${O4} .books-chapter-num`)).toEqual(
       expect.arrayContaining([

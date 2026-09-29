@@ -2815,8 +2815,10 @@ const TITLED_DOT_ROOM = 19;
 
 /**
  * The size and gap of a chapter row's dots, in px: the largest step whose
- * wrapped rows fit in `height` ({@link TITLED_DOT_ROOM}). Past what the smallest step can hold, the smallest step is
- * returned anyway and the column's own overflow clips the rest. The
+ * wrapped rows fit in `height` ({@link TITLED_DOT_ROOM}). Past what the
+ * smallest step can hold, the smallest step is returned anyway and the dots
+ * wrap onto more rows: the row's height is a floor, not a cap
+ * (`o4/books.css`, #1229), so it grows rather than clipping a dot. The
  * workbench's steps, fitted against {@link DOT_COLUMN} rather than the
  * workbench's 206.
  */
