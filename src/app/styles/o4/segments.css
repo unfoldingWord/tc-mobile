@@ -134,7 +134,8 @@
   /* Play keeps `--s-voice` and record `--s-live` from layer 3; O4 only makes
      them 72 circles. */
   [data-design="o4"] .row .control--play,
-  [data-design="o4"] .row .control--record {
+  [data-design="o4"] .row .control--record,
+  [data-design="o4"] .row .control--mic {
     width: 72px;
     height: 72px;
   }

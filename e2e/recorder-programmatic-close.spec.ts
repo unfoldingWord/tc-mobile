@@ -149,7 +149,7 @@ async function seedToSegments(page: Page) {
   await page.getByRole("button", { name: "Open Chapter 1" }).click();
   await page.getByRole("button", { name: "Add segment" }).click();
   await expect(
-    page.getByRole("button", { name: "Record segment 1" })
+    page.getByRole("button", { name: "Open recorder for segment 1" })
   ).toBeVisible();
 }
 
@@ -180,7 +180,9 @@ test("(a) a failed-save exit while a goBack is in flight absorbs that Back's lan
 }) => {
   await injectWriteFailure(page);
   await seedToSegments(page);
-  await page.getByRole("button", { name: "Record segment 1" }).click();
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
   const atRecorder = await navIndex(page);
   expect(atRecorder).toBeGreaterThan(0);
   await startCapture(page);
@@ -206,7 +208,9 @@ test("(c) a failed-save exit from a recorder whose entry is still deferred behin
 }) => {
   await injectWriteFailure(page);
   await seedToSegments(page);
-  await page.getByRole("button", { name: "Record segment 1" }).click();
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
   await expect(
     page.getByRole("button", { name: "Close recorder" })
   ).toBeVisible();
@@ -227,7 +231,9 @@ test("(c) a failed-save exit from a recorder whose entry is still deferred behin
       if (tapped) return;
       tapped = true;
       document
-        .querySelector<HTMLButtonElement>('[aria-label="Record segment 1"]')
+        .querySelector<HTMLButtonElement>(
+          '[aria-label="Open recorder for segment 1"]'
+        )
         ?.click();
       (window as unknown as Probe).__log.push("tapped");
     });
@@ -254,7 +260,9 @@ test('a failed-save exit with nothing else in flight issues its own back() throu
 }) => {
   await injectWriteFailure(page);
   await seedToSegments(page);
-  await page.getByRole("button", { name: "Record segment 1" }).click();
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
   const atRecorder = await navIndex(page);
   expect(atRecorder).toBeGreaterThan(0);
   await startCapture(page);
@@ -276,7 +284,9 @@ test('a failed-save exit while an untracked suppressed Back (trap-forward\'s can
 }) => {
   await injectWriteFailure(page);
   await seedToSegments(page);
-  await page.getByRole("button", { name: "Record segment 1" }).click();
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
   const atRecorder = await navIndex(page);
   expect(atRecorder).toBeGreaterThan(0);
 
