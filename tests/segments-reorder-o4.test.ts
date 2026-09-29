@@ -15,7 +15,7 @@ import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
 
 import { render } from "./render";
-import { restingErase } from "./support";
+import { restingErase, stripCssComments } from "./support";
 
 /**
  * Press-and-hold reorder on the Segments list (#953 PR2a), wired: the real
@@ -533,10 +533,12 @@ describe("the switch-off look does not gain the gesture", () => {
 });
 
 describe("o4/segments.css: the lift (§3, §4)", () => {
-  const code = readFileSync(
-    path.resolve(import.meta.dirname, "../src/app/styles/o4/segments.css"),
-    "utf8"
-  ).replace(/\/\*[\s\S]*?\*\//g, "");
+  const code = stripCssComments(
+    readFileSync(
+      path.resolve(import.meta.dirname, "../src/app/styles/o4/segments.css"),
+      "utf8"
+    )
+  );
   const reduced = code.indexOf("@media (prefers-reduced-motion: reduce)");
   const main = code.slice(0, reduced === -1 ? code.length : reduced);
   const motion = reduced === -1 ? "" : code.slice(reduced);
