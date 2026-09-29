@@ -82,7 +82,7 @@ const WIDTHS = [320, 360];
 const TILE_LABELS = [
   "Mark segment 1 done",
   "Edit segment 1",
-  "Clear recording",
+  "Reset segment and start over",
   "Delete segment",
 ];
 
