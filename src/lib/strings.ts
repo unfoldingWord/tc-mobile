@@ -289,9 +289,11 @@ export const strings = {
   tileRename: "Rename",
   // Clear removes a segment's audio and keeps the segment; Delete below
   // removes the segment. Key names keep "erase" (the code's word for the
-  // operation); the visible word is "Clear" everywhere (the DRI's 2026-09-28
-  // pick on #1119: one word and one icon for one action).
-  tileErase: "Clear",
+  // operation). The tile's caption is "Reset", one word of `eraseSegment`
+  // ("Reset segment and start over", #1220), so the visible caption stays a
+  // word of the accessible name (WCAG 2.5.3, pinned by the label-in-name
+  // tests); one icon for one action stays as #1119 picked.
+  tileErase: "Reset",
   // The book menu's Delete tile (04); its name is `deleteBook`. Shared with
   // the chapter view's segment-menu Delete tile (#590/#1104) — its name is
   // `deleteSegment` — the same caption, on two different destructive tiles
@@ -617,7 +619,7 @@ export const strings = {
   vuMeterLabel: "Recording level",
   vuMeterUnavailable: "Level meter unavailable on this device",
   // Clear: removes the recording, keeps the segment (#1119, DRI 2026-09-28).
-  eraseSegment: "Clear recording",
+  eraseSegment: "Reset segment and start over",
   // The record bar's Clear (#592): the same clear and the same confirm as the
   // menu row above, named for what the translator is doing — starting the
   // segment over — because the sheet stays open, ready for the next take.
@@ -640,7 +642,7 @@ export const strings = {
     `${strings.chapterName(from)} is now chapter ${to}.`,
   chapterReorderStayed: (n: number): string =>
     `${strings.chapterName(n)} stayed where it was.`,
-  eraseConfirmTitle: "Clear this recording?",
+  eraseConfirmTitle: "Reset segment and start over",
   eraseConfirm: "Clear",
   // The safe action of the confirm dialog (`erase-confirm.tsx`). One string
   // for every flow it now serves — segment Clear, book Delete and segment

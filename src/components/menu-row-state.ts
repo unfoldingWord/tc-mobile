@@ -118,7 +118,7 @@ interface EraseRowInputs {
 }
 
 /**
- * The "Clear recording" row (both menus). Null when enabled. Reproduces
+ * The "Reset segment and start over" row (both menus). Null when enabled. Reproduces
  * `!idleEditable || !view?.hasClip`. Erasing the stored take out from under a
  * live capture is nonsensical (George R-B6), so the take wins here too.
  */

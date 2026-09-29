@@ -98,7 +98,7 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
      finished, and so on.
    - **≡** (three stacked lines) — only in the top corner of the Books screen
      (settings and the problem report) and inside the recorder (the drawer
-     with Edit, Mark finished, and Clear for the segment that is open).
+     with Edit, Mark finished, and "Reset segment and start over" for the segment that is open).
      Rename and delete stay on the item's **⋮**.
 
    Point this out once, early: a participant who has only ever seen one of
