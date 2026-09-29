@@ -44,7 +44,7 @@ vi.mock("@/components/vu-meter", () => ({ VuMeter: () => null }));
  * bottom bar in both modes and IS render-testable through `tests/render.ts` —
  * it is presentational, with no hooks of its own.
  *
- * The header that carries record mode's ≡ and the "Editing" pill lives inside
+ * The header that carries record mode's ⋮ and the "Editing" pill lives inside
  * `recorder.tsx`, which mounts the whole audio hook graph, so it cannot go
  * through `./render`'s STATIC harness (`renderToStaticMarkup` runs no effects
  * and dispatches no events, and the mode swap below is driven by a click, not
@@ -190,7 +190,7 @@ describe("the edit toolbar's menu opener wears ⋮, not ≡ (#863)", () => {
   });
 });
 
-describe("record mode's header opener stays ≡, and the Editing pill hides it in edit mode (#608, #863)", () => {
+describe("record mode's header opener wears ⋮, and the Editing pill hides it in edit mode (#608, #863, #1225)", () => {
   function segmentView() {
     const samples = new Int16Array(100).fill(3);
     return {
@@ -292,22 +292,23 @@ describe("record mode's header opener stays ≡, and the Editing pill hides it i
     ) as HTMLButtonElement | undefined;
   }
 
-  it("record mode's header carries a ≡ (menu) opener, not the toolbar's ⋮", async () => {
+  it("record mode's header carries a ⋮ (more) opener, not ≡ (#1225)", async () => {
     await mountRecorder();
     const opener = findButton(header(), strings.recorderMenuOpen);
-    expect(opener, "no ≡ opener in the header").toBeDefined();
+    expect(opener, "no ⋮ opener in the header").toBeDefined();
     const svg = opener!.querySelector("svg");
     // #907 item 1 (George r1 on #902): assert the <svg> exists, with a
     // message, before reading path/circle counts off it — a button rendered
     // with no <svg> must fail here with a named assertion, not a bare
     // TypeError off a non-null assertion on `null`.
-    expect(svg, "no <svg> in the ≡ opener").not.toBeNull();
-    // The exact shape, not just the name: the header's ≡ opener and the edit
-    // toolbar's ⋮ opener both carry `strings.recorderMenuOpen` as their
+    expect(svg, "no <svg> in the ⋮ opener").not.toBeNull();
+    // The exact shape, not just the name: the header's opener and the edit
+    // toolbar's opener both carry `strings.recorderMenuOpen` as their
     // accessible name (see `menuOpeners` above), so only the glyph — not the
-    // aria-label — can tell a wrongly-swapped icon from the real one.
-    expect(svg!.querySelectorAll("path").length).toBe(1);
-    expect(svg!.querySelectorAll("circle").length).toBe(0);
+    // aria-label — can tell a wrongly-swapped icon from the real one. Both
+    // wear the kebab since #1225.
+    expect(svg!.querySelectorAll("circle").length).toBe(3);
+    expect(svg!.querySelectorAll("path").length).toBe(0);
     expect(header().querySelector(".modepill")).toBeNull();
   });
 
@@ -319,7 +320,7 @@ describe("record mode's header opener stays ≡, and the Editing pill hides it i
     // and (b) the Editing pill itself renders no `<svg>` — the shape check
     // that rules out the pill being mistaken for a leftover opener glyph.
     // That is the right check for the #890 bug: a name-only check can't tell
-    // a real ≡ removal from a coincidental re-render, and a full-header scan
+    // a real opener removal from a coincidental re-render, and a full-header scan
     // (not sliced to the pill) is what #890 item 2 fixed.
     await mountRecorder();
     const enterEdit = findButton(container, strings.enterEdit);
@@ -334,7 +335,7 @@ describe("record mode's header opener stays ≡, and the Editing pill hides it i
     // first `</button>`, so nothing rendered after it in the same branch was
     // ever checked. A real render has no "after the slice" left to miss.
     const opener = findButton(header(), strings.recorderMenuOpen);
-    expect(opener, "≡ opener must not survive into edit mode").toBeUndefined();
+    expect(opener, "⋮ opener must not survive into edit mode").toBeUndefined();
 
     const pill = header().querySelector(".modepill");
     expect(pill, "no Editing pill in the header").not.toBeNull();

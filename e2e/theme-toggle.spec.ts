@@ -306,13 +306,13 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
    * Segments, open the hamburger, tap, and navigate back in — four screens,
    * in the one condition where the screen is hardest to read.
    *
-   * So these two cases assert the toggle is reachable from the chapter's `≡`
-   * and the recorder's `≡`, and that tapping it there actually repaints. They
+   * So these two cases assert the toggle is reachable from the chapter's `⋮`
+   * and the recorder's `⋮`, and that tapping it there actually repaints. They
    * fail on a Books-only toggle at the locator: the control is not in those
    * menus at all.
    *
    * WHY NOT A SECOND HAMBURGER on those screens. Both already carry their own
-   * `≡` (`strings.chapterMenuOpen`, `strings.recorderMenuOpen`), and a second
+   * `⋮` (`strings.chapterMenuOpen`, `strings.recorderMenuOpen`), and a second
    * opener beside them is the worse option on a 320px header that #370 already
    * reports wrapping — so the global entry joins the existing menu rather than
    * arriving with an opener of its own.
@@ -323,7 +323,7 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
    * store for every caller — proving them once is the point of that store.
    * What is new here is only REACHABILITY plus a real repaint at each site.
    */
-  test("the chapter ≡ carries the toggle, and it repaints from there", async ({
+  test("the chapter ⋮ carries the toggle, and it repaints from there", async ({
     page,
   }) => {
     await seedToSegments(page);
@@ -355,7 +355,7 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
     expect(await resolved(page, await floorOf(page))).toBe(DARK_FLOOR);
   });
 
-  test("the recorder ≡ carries the toggle, and it repaints from inside the sheet", async ({
+  test("the recorder ⋮ carries the toggle, and it repaints from inside the sheet", async ({
     page,
   }) => {
     // The case the reframing of #149 turns on: the sheet is where a translator
@@ -365,7 +365,7 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
     await seedToRecorder(page);
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 
-    // `exact`, because the Segments `≡` behind the sheet ("More actions for
+    // `exact`, because the Segments `⋮` behind the sheet ("More actions for
     // this chapter") is still in the DOM and a substring match would find two.
     await page
       .getByRole("button", { name: "More actions", exact: true })

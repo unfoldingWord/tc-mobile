@@ -34,7 +34,7 @@ export interface SegmentsOverlayState {
   readonly eraseConfirmOpen: boolean;
   /**
    * The delete confirm is armed for a row — including while its delete runs
-   * (#1104: Delete segment moved here from the recorder's ≡ menu). Its own
+   * (#1104: Delete segment moved here from the recorder's ⋮ menu). Its own
    * term, not folded into `eraseConfirmOpen`: the two are separate overlays
    * with separate state (`segments-screen.tsx`'s `deleteTarget`), and a row
    * being deleted must inert the list the same way a row being erased does —

@@ -88,7 +88,7 @@ describe("focusRestoreTarget", () => {
   });
 
   it("falls back when the trigger has gone natively disabled", () => {
-    // The recorder's ≡ opener is `disabled` while `denied`, while a take is
+    // The recorder's ⋮ opener is `disabled` while `denied`, while a take is
     // held, and through the close window. A natively disabled button can never
     // be `document.activeElement`.
     expect(focusRestoreTarget({ ...restorable, focusable: false })).toBe(
@@ -142,7 +142,7 @@ describe("overlayFallbackLabel — #368 George R5 P2", () => {
   });
 
   it("resolves to the menu opener when it is present, in edit mode's toolbar", () => {
-    // The edit-mode ≡ lives in the toolbar, not the header, and shares the
+    // The edit-mode ⋮ lives in the toolbar, not the header, and shares the
     // header opener's exact accessible name — the one label safe in both
     // modes.
     expect(

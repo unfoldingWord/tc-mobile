@@ -827,7 +827,7 @@
     gap: var(--c-gap-items);
     /* `.recorder-scrim` is `position: fixed; inset: 0`, so it covers the whole
        viewport and does not inherit the body's `env(safe-area-inset-*)` padding.
-       Without re-adding the top inset here the header (Back, ≡) lands under the
+       Without re-adding the top inset here the header (Back, ⋮) lands under the
        status-bar clock and cannot be tapped; the bottom inset clears the home
        indicator. */
     padding: calc(var(--p-space-4) + env(safe-area-inset-top)) var(--p-space-3)

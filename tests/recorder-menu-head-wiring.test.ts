@@ -13,7 +13,7 @@ import { restingErase } from "./support";
 
 /**
  * The recorder screen hands its view's book name and chapter number to the
- * ≡ menu's O4 sheet head (#949 G3). `tests/recorder-menu-head-o4.test.ts`
+ * ⋮ menu's O4 sheet head (#949 G3). `tests/recorder-menu-head-o4.test.ts`
  * covers the head given those props; this file covers the one link it cannot
  * see, the `recorder.tsx` call site, by opening the menu on the real sheet.
  *
@@ -130,14 +130,14 @@ async function openMenu(look: Design): Promise<Element> {
   const opener = [...document.querySelectorAll("button")].find(
     (b) => b.getAttribute("aria-label") === strings.recorderMenuOpen
   );
-  expect(opener, "the ≡ opener").toBeDefined();
+  expect(opener, "the ⋮ opener").toBeDefined();
   await act(async () => opener!.click());
   const panel = document.querySelector(".menu-panel");
-  expect(panel, "the ≡ drawer").not.toBeNull();
+  expect(panel, "the ⋮ drawer").not.toBeNull();
   return panel!;
 }
 
-describe("the recorder screen's ≡ menu head (G3)", () => {
+describe("the recorder screen's ⋮ menu head (G3)", () => {
   it("crumbs the view's book, chapter and segment, the segment tinted done (o4)", async () => {
     const panel = await openMenu("o4");
     expect(

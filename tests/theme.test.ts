@@ -236,7 +236,7 @@ describe("the light theme is reachable (#171)", () => {
 
   it("follows the translator into a chapter and into the recorder (#149)", () => {
     // WHAT THIS IS AND IS NOT. The behavioural claim — that the toggle is
-    // reachable from the chapter `≡` and the recorder `≡` and repaints the
+    // reachable from the chapter `⋮` and the recorder `⋮` and repaints the
     // shipped cascade from each — is `e2e/theme-toggle.spec.ts`, in real
     // Chromium against `dist/`. This is the cheap Node companion that fails
     // fast when a mount is DELETED, which is the way this regresses: both
@@ -253,11 +253,11 @@ describe("the light theme is reachable (#171)", () => {
     // comment-capture reason above.
     const mounts = (file: string) =>
       code(file).match(/<ThemeControl\s*\/>/g)?.length ?? 0;
-    // The chapter `≡`'s one action branch (the stale and rename branches are
+    // The chapter `⋮`'s one action branch (the stale and rename branches are
     // transient sub-states with no action list of their own).
     expect(mounts("src/components/segments-screen.tsx")).toBe(1);
     // Record mode and edit mode — in `recorder-menu.tsx` since #662 lifted the
-    // recorder's `≡` out of `recorder.tsx` into its own component. The count
+    // recorder's `⋮` out of `recorder.tsx` into its own component. The count
     // follows the menu rather than the screen, and `recorder.tsx` is asserted
     // to hold NONE, so a half-finished move that leaves one mount behind in
     // the screen fails here instead of silently double-mounting.

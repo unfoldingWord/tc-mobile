@@ -22,7 +22,7 @@ import {
  * term and the argument is silently false: a tap on Record would open the
  * recorder over a committing delete of the very row it opens.
  * `deleteConfirmOpen` (#1104, added when Delete segment moved to this screen
- * from the recorder's ≡ menu) carries the identical argument for the delete
+ * from the recorder's ⋮ menu) carries the identical argument for the delete
  * confirm's own in-flight window.
  *
  * Each row isolates one term of the predicate. These pure-function tests do

@@ -93,17 +93,19 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 5. **Show them the two menu buttons before they need them.** Everything in
    this app is opened by a picture, never a word, and there are exactly two
    pictures that open a menu:
-   - **⋮** (three dots in a column) — on a book, a chapter, or a segment. It
-     opens that one item's own actions: rename it, delete it, mark a segment
-     finished, and so on.
+   - **⋮** (three dots in a column) — on a book, a chapter, or a segment,
+     and in the top corner of the recorder. It opens that one item's own
+     actions: rename it, delete it, mark a segment finished, and so on. In
+     the recorder it opens the drawer with Edit, Mark finished, and Clear for
+     the segment that is open, and the drawer's own close button is a **⋮**
+     too.
    - **≡** (three stacked lines) — only in the top corner of the Books screen
-     (settings and the problem report) and inside the recorder (the drawer
-     with Edit, Mark finished, and Clear for the segment that is open).
-     Rename and delete stay on the item's **⋮**.
+     (settings and the problem report). Rename and delete stay on the item's
+     **⋮**.
 
    Point this out once, early: a participant who has only ever seen one of
    the two glyphs will otherwise tap the wrong one and conclude nothing is
-   there. <!-- source: src/components/menu.tsx (hamburger prop docblock); src/components/books-screen.tsx (bookMenuOpen icon="more"); src/components/segments-screen.tsx (chapterMenuOpen icon="more"); src/components/segment-row.tsx (segmentMenu icon="more"); gh PR #683 (Part of #589), decided by the dev lead 2026-09-23: "please use kebab on objects and hamburger menu for global" (https://github.com/unfoldingWord/tc-mobile/pull/683#issuecomment-5787553352) -->
+   there. <!-- source: src/components/menu.tsx (hamburger prop docblock); src/components/recorder.tsx (recorderMenuOpen icon="more", #1225); src/components/books-screen.tsx (bookMenuOpen icon="more"); src/components/segments-screen.tsx (chapterMenuOpen icon="more"); src/components/segment-row.tsx (segmentMenu icon="more"); gh PR #683 (Part of #589), decided by the dev lead 2026-09-23: "please use kebab on objects and hamburger menu for global" (https://github.com/unfoldingWord/tc-mobile/pull/683#issuecomment-5787553352) -->
 
 ## 3. During the training
 
@@ -134,7 +136,7 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 - **A new chapter asks for a name before it is created**, already filled in
   with "Chapter N" — accept that or type a real name (for example, a book
   and chapter reference), then confirm. <!-- source: src/components/books-screen.tsx (onNewChapter, NewBookDialog-style prompt, #609); gh PR #637 -->
-- **The recorder's own `≡` (its overflow drawer) opens and closes instantly** —
+- **The recorder's own `⋮` (its overflow drawer) opens and closes instantly** —
   it does not slide in or out, so do not expect an animation as a sign it
   worked; if the drawer's contents are on screen, it is open. <!-- source: src/components/menu.tsx (hamburger prop docblock, "opens and closes in place"); gh PR #656 (Fixes #621) -->
 - **Sharing a chapter** produces one MP3 file. **Sharing a book** produces a
