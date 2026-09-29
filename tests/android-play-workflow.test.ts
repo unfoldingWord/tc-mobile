@@ -294,3 +294,28 @@ describe("Play preflight branch → track mapping", () => {
     expect(r.stdout).toContain("enabled=false");
   });
 });
+
+// The ubuntu-24.04 runner's system Ruby is 3.2, and the locked fastlane gems
+// need 3.3 or newer (excon 1.7.1 declares `ruby >= 3.3.0`). With no Ruby of
+// its own, the lane's first real upload stopped at "Install fastlane" before
+// any build. The iOS lane runs on macOS, whose Ruby is already 3.3.
+describe("android-play.yml Ruby", () => {
+  it("pins setup-ruby by commit to a Ruby the locked gems accept", () => {
+    const step =
+      /- uses: ruby\/setup-ruby@([0-9a-f]{40})[ \t]*\n\s+with:\n\s+ruby-version: "(\d+)\.(\d+)"/.exec(
+        workflow
+      );
+    expect(step, "no SHA-pinned ruby/setup-ruby step").not.toBeNull();
+    const major = Number(step?.[2] ?? 0);
+    const minor = Number(step?.[3] ?? 0);
+    expect(major * 100 + minor).toBeGreaterThanOrEqual(303);
+  });
+
+  it("sets Ruby up before the first step that runs it", () => {
+    const setup = workflow.indexOf("- uses: ruby/setup-ruby@");
+    const firstUse = workflow.search(/command -v ruby|gem install|ruby -r/);
+    expect(setup).toBeGreaterThanOrEqual(0);
+    expect(firstUse).toBeGreaterThanOrEqual(0);
+    expect(setup).toBeLessThan(firstUse);
+  });
+});

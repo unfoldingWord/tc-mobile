@@ -173,6 +173,15 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      # The ubuntu-24.04 image's system Ruby is 3.2, and the locked fastlane
+      # gems need 3.3 or newer (excon 1.7.1 declares `ruby >= 3.3.0`). The
+      # iOS lane's macOS runner already ships 3.3. No `bundler-cache`: the
+      # "Install fastlane" step pins bundler and installs the frozen lock
+      # itself, after the checks below and before any secret reaches disk.
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+        with:
+          ruby-version: "3.3"
+
       - name: Assert the toolchain this project compiles against
         run: |
           set -euo pipefail
