@@ -137,9 +137,9 @@ test("the ring moves through the chain and marks exactly one control at a time",
   await expect.poll(() => guided(page)).toEqual(["Add segment"]);
 
   // The hop the issue's list skips: a segment exists with nothing recorded into
-  // it, and the row's own red Record is the only door to the recorder. Drawn
-  // OUTSIDE the red, which is the stylesheet's one exception — keyed on the
-  // variant, so it covers this control and the recorder's alike.
+  // it, and the row's microphone is the only door to the recorder (#1217). It
+  // is not solid red, so it takes the default ring INSIDE its box; the outset
+  // exception is keyed on `.control--record` and stays the recorder's alone.
   await page.getByRole("button", { name: "Add segment" }).click();
   await expect(
     page.getByRole("button", { name: "Open recorder for segment 1" })
@@ -148,7 +148,7 @@ test("the ring moves through the chain and marks exactly one control at a time",
     .poll(() => guided(page))
     .toEqual(["Open recorder for segment 1"]);
   expect(await ringOf(page)).toContain("rgb(46, 125, 246)");
-  expect(await ringOf(page)).not.toContain("inset");
+  expect(await ringOf(page)).toContain("inset");
 
   // Step 7 — the recorder over a segment with no audio: Record.
   await page
