@@ -459,7 +459,9 @@ resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
 unusable after the resume await — `"playback-resume-timeout"` when the
 1000 ms bound was what ended it, `"playback-resume-unusable"` when an
 earlier rejection did or a fresh interruption arrived during the post-fill
-yield, #469), the catch sites around it in `hooks/use-audio-session.ts`
+yield, #469; and, when such a Play drops the shared context so the next
+Play gets a fresh one, a failed `close()` of it, `"playback-context-close"`,
+#1213), the catch sites around it in `hooks/use-audio-session.ts`
 (`"playback-take"`, `"playback-buffer"`, and a segment whose audio is
 missing, `"playback-dangling"`, #1213; each skips the #469 error, whose row
 `playSamples` already wrote), the tester-only phone check (`hooks/phone-check-probes.ts`,

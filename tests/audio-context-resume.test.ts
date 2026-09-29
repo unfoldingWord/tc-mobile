@@ -70,6 +70,13 @@ class FakeAudioContext {
     this.resumeCalls++;
     this.state = "running";
   }
+  // Called when a fail-closed Play drops the shared context (#1213). Its own
+  // behaviour is pinned in tests/audio-context-recovery.test.ts.
+  closeCalls = 0;
+  async close(): Promise<void> {
+    this.closeCalls++;
+    this.state = "closed";
+  }
   createBuffer(_channels: number, length: number, sampleRate: number): unknown {
     return { duration: length / sampleRate, copyToChannel(): void {} };
   }
