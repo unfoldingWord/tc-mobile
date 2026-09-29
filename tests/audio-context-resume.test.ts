@@ -934,3 +934,84 @@ describe("playSamples — single-exit row accounting (dev lead pick, option A, 2
     });
   }
 });
+
+/**
+ * #1213: `use-audio-session.ts` reports every failed Play to the log EXCEPT
+ * the #469 resume bound's, whose row `playSamples` has already written. It
+ * tells the two apart by class, so both fail-closed throws must be a
+ * `PlaybackResumeError`. A plain `Error` here would put a second row in the
+ * log for one failed Play.
+ */
+describe("playSamples — the #469 fail-closed throw is a PlaybackResumeError (#1213)", () => {
+  const samples = new Int16Array([1, 2, 3, 4]);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    reportFailure.mockReset();
+  });
+
+  /** Loaded after `loadAudioIo`'s module reset, so it is the same class
+   * instance the freshly loaded `audio-io` throws. */
+  async function resumeErrorClass() {
+    return (await import("@/hooks/playback-resume-error")).PlaybackResumeError;
+  }
+
+  it("the timeout throw", async () => {
+    const ctx = new HangingAudioContext("interrupted");
+    const { playSamples, RESUME_TIMEOUT_MS } = await loadAudioIo(ctx);
+    const PlaybackResumeError = await resumeErrorClass();
+
+    const outcome = playSamples(samples, { isStillCurrent: () => true }).then(
+      () => undefined,
+      (cause: unknown) => cause
+    );
+    await vi.advanceTimersByTimeAsync(RESUME_TIMEOUT_MS);
+
+    expect(await outcome).toBeInstanceOf(PlaybackResumeError);
+  });
+
+  it("the unusable-gate throw after an early rejection", async () => {
+    const ctx = new HangingAudioContext("interrupted");
+    const { playSamples } = await loadAudioIo(ctx);
+    const PlaybackResumeError = await resumeErrorClass();
+
+    const outcome = playSamples(samples, { isStillCurrent: () => true }).then(
+      () => undefined,
+      (cause: unknown) => cause
+    );
+    ctx.settleResumeWithRejection(new Error("resume rejected early"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(await outcome).toBeInstanceOf(PlaybackResumeError);
+  });
+
+  it("the unusable-gate throw after the post-fill yield", async () => {
+    const ctx = new FakeAudioContext("suspended");
+    ctx.createBuffer = (
+      _channels: number,
+      length: number,
+      sampleRate: number
+    ) => ({
+      duration: length / sampleRate,
+      copyToChannel(): void {
+        setTimeout(() => {
+          ctx.state = "interrupted";
+        }, 0);
+      },
+    });
+    const { playSamples } = await loadAudioIo(ctx);
+    const PlaybackResumeError = await resumeErrorClass();
+
+    const outcome = playSamples(samples, { isStillCurrent: () => true }).then(
+      () => undefined,
+      (cause: unknown) => cause
+    );
+    await vi.runAllTimersAsync();
+
+    expect(await outcome).toBeInstanceOf(PlaybackResumeError);
+  });
+});

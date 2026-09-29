@@ -19,6 +19,7 @@ import { measureLevel } from "@/lib/audio/level";
 import { meterReadable, rmsLevel } from "@/lib/audio/meter";
 
 import { type ProbeSource, withAudioProbe } from "./audio-probe";
+import { PlaybackResumeError } from "./playback-resume-error";
 import { reportFailure } from "./report-failure";
 
 /**
@@ -883,7 +884,9 @@ export async function playSamples(
       // reaching `playTake`/`playBuffer`'s `catch`. Re-reading the live
       // state here (rather than trusting `resumeTimedOut`) closes that path
       // for BOTH causes — timeout and early rejection — with one check.
-      unusableError = new Error(buildResumeUnusableMessage(resumeTimedOut));
+      unusableError = new PlaybackResumeError(
+        buildResumeUnusableMessage(resumeTimedOut)
+      );
       throw unusableError;
     }
 
@@ -917,7 +920,9 @@ export async function playSamples(
       // here — a `true` would already have thrown above, before this line
       // could ever run — so this always builds the "-unusable" message, not
       // "-timeout".
-      unusableError = new Error(buildResumeUnusableMessage(false));
+      unusableError = new PlaybackResumeError(
+        buildResumeUnusableMessage(false)
+      );
       throw unusableError;
     }
 
