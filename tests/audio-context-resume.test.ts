@@ -532,7 +532,12 @@ describe("playSamples — resume bound (#469)", () => {
     expect(reportFailure).toHaveBeenCalledWith(cause, "playback-resume");
   });
 
-  it("a late REJECTION after the timeout still reaches reportFailure, under the caller's rejection key, and adds no second row", async () => {
+  it("a late REJECTION after the timeout, on the context that timeout dropped, adds no second row", async () => {
+    // Since #1213 the timed-out Play drops and closes this context, so a
+    // rejection arriving after it is on a closed context and is the drop's
+    // echo: the timeout row is that Play's one row (George round 1 #1 on
+    // #1214). A late rejection on a context that was NOT dropped still gets
+    // its "playback-resume" row — tests/audio-context-recovery.test.ts.
     const ctx = new HangingAudioContext("interrupted");
     const { playSamples } = await loadAudioIo(ctx);
 
@@ -554,8 +559,7 @@ describe("playSamples — resume bound (#469)", () => {
     // `Promise.resolve()` awaits do not reliably do.
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(reportFailure).toHaveBeenCalledTimes(1);
-    expect(reportFailure).toHaveBeenCalledWith(cause, "playback-resume");
+    expect(reportFailure).not.toHaveBeenCalled();
   });
 });
 

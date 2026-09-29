@@ -186,6 +186,46 @@ describe("playSamples — dropping the shared context after a failed resume (#12
     );
   });
 
+  it("a pending resume() that the drop's own close() rejects writes no second resume row", async () => {
+    // George round 1 #1 on #1214: the timeout row is the Play's one row. A
+    // late rejection caused by closing the context this module dropped is
+    // the drop's own echo, not a second failure.
+    const { playSamples, RESUME_TIMEOUT_MS } = await loadAudioIo();
+    const close = FakeContext.prototype.close;
+    const spy = vi
+      .spyOn(FakeContext.prototype, "close")
+      .mockImplementation(function (this: FakeContext) {
+        this.rejectPendingResume(new Error("closed while resuming"));
+        return close.call(this);
+      });
+
+    await timedOutPlay(playSamples, RESUME_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(FakeContext.made[0]!.closeCalls).toBe(1);
+    expect(reportFailure).toHaveBeenCalledTimes(1);
+    expect(reportFailure).toHaveBeenCalledWith(
+      expect.any(Error),
+      "playback-resume-timeout"
+    );
+    spy.mockRestore();
+  });
+
+  it("a late resume() rejection on a context that was NOT dropped is still reported", async () => {
+    // The suppression above is narrow: a Play superseded during the wait
+    // drops nothing, so its late rejection is a real one and keeps its row.
+    const { playSamples, RESUME_TIMEOUT_MS } = await loadAudioIo();
+    const outcome = playSamples(samples, { isStillCurrent: () => false });
+    await vi.advanceTimersByTimeAsync(RESUME_TIMEOUT_MS);
+    await outcome;
+    const late = new Error("late rejection");
+    FakeContext.made[0]!.rejectPendingResume(late);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(FakeContext.made[0]!.closeCalls).toBe(0);
+    expect(reportFailure).toHaveBeenCalledWith(late, "playback-resume");
+  });
+
   it("the unusable gate (an early rejection) also drops the context", async () => {
     const { playSamples } = await loadAudioIo();
     const outcome = playSamples(samples, { isStillCurrent: () => true }).then(

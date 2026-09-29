@@ -216,15 +216,22 @@ function createSharedContext(): AudioContext {
  */
 let sharedContextHolds = 0;
 
-/** Count one non-playback user of the shared context. Call the returned
- * release exactly once: the decode releases in a `finally`, and the level
- * tap from `disconnectGraph`, which is already idempotent. */
+/** Count one non-playback user of the shared context. The decode releases in
+ * a `finally`, and the level tap from `disconnectGraph`. The release is
+ * once-only, so a second call cannot drive the count below a live hold. */
 function holdSharedContext(): () => void {
   sharedContextHolds++;
+  let released = false;
   return () => {
+    if (released) return;
+    released = true;
     sharedContextHolds--;
   };
 }
+
+/** Contexts `discardSharedContext` closed. A `resume()` left pending on one
+ * rejects because of that close; `raceAudioResume` drops that late echo. */
+const droppedContexts = new WeakSet<AudioContext>();
 
 /**
  * SPECULATIVE (#1213). Drop the shared context after `playSamples`' #469
@@ -258,12 +265,15 @@ function holdSharedContext(): () => void {
  *     different operation from the resume the `"playback-resume*"` rows
  *     describe, and a row under it says the recovery itself failed.
  *   - A `resume()` still pending on the old context may reject once the
- *     context is closed. `raceAudioResume` reports such a late rejection as
- *     `"playback-resume"`, as it does for any late rejection.
+ *     context is closed. That late rejection is this drop's own echo, so
+ *     `raceAudioResume` writes no `"playback-resume"` row for it: the Play's
+ *     one row is the timeout or unusable row it already wrote. A late
+ *     rejection on a context that was not dropped is still reported.
  */
 function discardSharedContext(ctx: AudioContext): void {
   if (sharedContext !== ctx || sharedContextHolds > 0) return;
   sharedContext = null;
+  droppedContexts.add(ctx);
   try {
     ctx.close().catch((cause: unknown) => {
       reportFailure(cause, "playback-context-close");
@@ -402,6 +412,9 @@ export function raceAudioResume(
   onEarlyRejection?: (cause: unknown) => void
 ): Promise<boolean> {
   const resumePromise = resumeAudioContext();
+  // `resumeAudioContext()` read (or built) the shared context synchronously,
+  // so this is the context the resume was called on.
+  const resumedOn = sharedContext;
   return new Promise<boolean>((resolve) => {
     let settled = false;
     const timer = setTimeout(() => {
@@ -434,6 +447,14 @@ export function raceAudioResume(
         }
         if (decidesTheRace && onEarlyRejection) {
           onEarlyRejection(cause);
+        } else if (
+          !decidesTheRace &&
+          resumedOn !== null &&
+          droppedContexts.has(resumedOn)
+        ) {
+          // Late, and on a context `discardSharedContext` closed: the close
+          // caused it, and the Play already wrote its one row (#1213).
+          return;
         } else {
           reportFailure(cause, rejectionContextKey);
         }
