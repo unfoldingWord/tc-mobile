@@ -459,7 +459,12 @@ resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
 unusable after the resume await — `"playback-resume-timeout"` when the
 1000 ms bound was what ended it, `"playback-resume-unusable"` when an
 earlier rejection did or a fresh interruption arrived during the post-fill
-yield, #469), the tester-only phone check (`hooks/phone-check-probes.ts`,
+yield, #469; and, when such a Play drops the shared context so the next
+Play gets a fresh one, a failed `close()` of it, `"playback-context-close"`,
+#1213), the catch sites around it in `hooks/use-audio-session.ts`
+(`"playback-take"`, `"playback-buffer"`, and a segment whose audio is
+missing, `"playback-dangling"`, #1213; each skips the #469 error, whose row
+`playSamples` already wrote), the tester-only phone check (`hooks/phone-check-probes.ts`,
 `"phone-check"`, #1009: a probe that throws, and a `sessionStorage`
 breadcrumb or saved result that cannot be read or written — a failed memory-ceiling
 allocation is the measurement, not a failure, and is not reported), a
@@ -479,11 +484,9 @@ one-way because that screen exits through reload. An encoder turn already
 in flight can still finish and write one failure entry before the pause takes
 effect; pausing is not cancellation of that turn.
 What still ends at `console.error` and is therefore **never written down** is
-mic/record-start and the `use-audio-session.ts` catch sites that wrap
-`playSamples` (a failed decode, a dangling clip with nothing to play) — the
-resume bound's OWN failure is now on the funnel above, but the catch around
-it still only `console.error`s — the recorder's preview path, and share
-_send_ (`hooks/share-flow.ts`). Routing those is follow-up work — and it is
+mic/record-start, the in-tap `resumeAudioContext()` calls before Play and
+on sheet open (`use-audio-session.ts`), the recorder's preview path, and share _send_
+(`hooks/share-flow.ts`). Routing those is follow-up work — and it is
 not a one-line change, because `SaveFailed` replaces the tree the way the
 crash screen does, so that screen needs the Send control the boundary grew.
 Until it lands, do not describe the log as holding "anything that went wrong":

@@ -19,6 +19,7 @@ import { measureLevel } from "@/lib/audio/level";
 import { meterReadable, rmsLevel } from "@/lib/audio/meter";
 
 import { type ProbeSource, withAudioProbe } from "./audio-probe";
+import { PlaybackResumeError } from "./playback-resume-error";
 import { reportFailure } from "./report-failure";
 
 /**
@@ -180,6 +181,10 @@ let sharedContext: AudioContext | null = null;
  * `sampleRate` option, and a device may refuse the rate outright. Those fall
  * back to a default context, where `toCanonical`'s resample path — still there,
  * unchanged — does the conversion as before.
+ *
+ * One context for the life of the page, with one exception: a Play whose
+ * resume bound failed closed may drop it (`discardSharedContext`, #1213,
+ * speculative), and the next call here builds its replacement.
  */
 function getAudioContext(): AudioContext {
   sharedContext ??= createSharedContext();
@@ -194,6 +199,87 @@ function createSharedContext(): AudioContext {
     // The rate was refused, not the context. Swallowed deliberately: the
     // fallback is a fully working context whose decodes take the resample path.
     return new Ctor();
+  }
+}
+
+/**
+ * How many users other than playback have work on the shared context right
+ * now: a live level tap (`createLevelTap`, until its graph is disconnected)
+ * or a decode in flight (`decodeToCanonical`).
+ *
+ * The context is shared with capture. The recorder's VU tap and the live
+ * scope read an analyser built on it, and every captured take and stored MP3
+ * is decoded through it. `discardSharedContext` will not close it while any
+ * of these holds it, because closing it would silence the meter mid-take or
+ * reject a decode that a save, a preview or a share is waiting on. Playback
+ * holds no count of its own: a failed Play is the one asking for the drop.
+ */
+let sharedContextHolds = 0;
+
+/** Count one non-playback user of the shared context. The decode releases in
+ * a `finally`, and the level tap from `disconnectGraph`. The release is
+ * once-only, so a second call cannot drive the count below a live hold. */
+function holdSharedContext(): () => void {
+  sharedContextHolds++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    sharedContextHolds--;
+  };
+}
+
+/** Contexts `discardSharedContext` closed. A `resume()` left pending on one
+ * rejects because of that close; `raceAudioResume` drops that late echo. */
+const droppedContexts = new WeakSet<AudioContext>();
+
+/**
+ * SPECULATIVE (#1213). Drop the shared context after `playSamples`' #469
+ * resume bound has failed closed, and close it, so that the NEXT Play builds a
+ * fresh context inside the user's tap.
+ *
+ * The inferred cause: iOS leaves the shared context `"interrupted"` and its
+ * `resume()` never settles, and nothing in the app ever replaces that
+ * context, so every Play fails the same way until the OS ends the
+ * interruption (a lock and unlock, or leaving the app). This is an inference
+ * from reading the code and a stubbed WebKit run, not a device observation.
+ * Whether a fresh context escapes a WebKit interruption is not known.
+ *
+ * What it does and does not do:
+ *   - The press that failed still fails. It has already waited out the
+ *     1000 ms bound, and a context created now would be created outside a
+ *     user gesture. Only the next press gets the fresh context, created by
+ *     `resumeAudioContext()` in that press's own tap
+ *     (`use-audio-session.ts`), which also starts it.
+ *   - Nothing is dropped while `sharedContextHolds` is non-zero (a live level
+ *     tap or a decode in flight; see that counter). That Play fails as it
+ *     does today, and a later failure once the holds are gone drops it.
+ *   - Nothing is dropped if the shared context has already been replaced
+ *     since this Play started: that drop was someone else's to make.
+ *   - The old context is closed BEFORE anything can create its replacement,
+ *     because iOS caps how many contexts a page may create. `close()` is
+ *     called here, synchronously; the replacement is only built by a later
+ *     call to `getAudioContext()`.
+ *   - A `close()` that throws or rejects is reported as
+ *     `"playback-context-close"`. It is its own key because it is a
+ *     different operation from the resume the `"playback-resume*"` rows
+ *     describe, and a row under it says the recovery itself failed.
+ *   - A `resume()` still pending on the old context may reject once the
+ *     context is closed. That late rejection is this drop's own echo, so
+ *     `raceAudioResume` writes no `"playback-resume"` row for it: the Play's
+ *     one row is the timeout or unusable row it already wrote. A late
+ *     rejection on a context that was not dropped is still reported.
+ */
+function discardSharedContext(ctx: AudioContext): void {
+  if (sharedContext !== ctx || sharedContextHolds > 0) return;
+  sharedContext = null;
+  droppedContexts.add(ctx);
+  try {
+    ctx.close().catch((cause: unknown) => {
+      reportFailure(cause, "playback-context-close");
+    });
+  } catch (cause) {
+    reportFailure(cause, "playback-context-close");
   }
 }
 
@@ -326,6 +412,9 @@ export function raceAudioResume(
   onEarlyRejection?: (cause: unknown) => void
 ): Promise<boolean> {
   const resumePromise = resumeAudioContext();
+  // `resumeAudioContext()` read (or built) the shared context synchronously,
+  // so this is the context the resume was called on.
+  const resumedOn = sharedContext;
   return new Promise<boolean>((resolve) => {
     let settled = false;
     const timer = setTimeout(() => {
@@ -358,6 +447,14 @@ export function raceAudioResume(
         }
         if (decidesTheRace && onEarlyRejection) {
           onEarlyRejection(cause);
+        } else if (
+          !decidesTheRace &&
+          resumedOn !== null &&
+          droppedContexts.has(resumedOn)
+        ) {
+          // Late, and on a context `discardSharedContext` closed: the close
+          // caused it, and the Play already wrote its one row (#1213).
+          return;
         } else {
           reportFailure(cause, rejectionContextKey);
         }
@@ -528,6 +625,9 @@ export function createLevelTap(stream: MediaStream): LevelTap {
   const graph = analyser;
   const frame = new Float32Array(graph.fftSize);
   let disconnected = false;
+  // While this graph is connected, a failed Play must not close the context
+  // under it (#1213, `discardSharedContext`). Released with the graph.
+  const releaseHold = holdSharedContext();
 
   // Tear down only this tap's own nodes; the shared context stays open for
   // playback and the next recording. Idempotent.
@@ -537,6 +637,7 @@ export function createLevelTap(stream: MediaStream): LevelTap {
     disconnect(source);
     disconnect(analyser);
     disconnect(sink);
+    releaseHold();
   };
 
   return {
@@ -584,7 +685,15 @@ export async function decodeToCanonical(
   probeSource: ProbeSource = "capture"
 ): Promise<Int16Array> {
   const arrayBuffer = await blob.arrayBuffer();
-  const decoded = await getAudioContext().decodeAudioData(arrayBuffer);
+  // Held for the decode, so a failed Play cannot close the context out from
+  // under it (#1213, `discardSharedContext`).
+  const releaseHold = holdSharedContext();
+  let decoded: AudioBuffer;
+  try {
+    decoded = await getAudioContext().decodeAudioData(arrayBuffer);
+  } finally {
+    releaseHold();
+  }
   probeDecode(decoded, probeSource);
   return toCanonical(decoded);
 }
@@ -851,6 +960,10 @@ export async function playSamples(
   // on `setPlaybackAudioSession`.
   setPlaybackAudioSession();
 
+  // The context this claim resumes. If the bound fails closed, this is the
+  // one `discardSharedContext` may drop (#1213), and only if it is still the
+  // shared one by then.
+  const claimContext = getAudioContext();
   const resumeTimedOut = await raceAudioResume("playback-resume", (cause) => {
     hadRejection = true;
     capturedCause = cause;
@@ -883,7 +996,9 @@ export async function playSamples(
       // reaching `playTake`/`playBuffer`'s `catch`. Re-reading the live
       // state here (rather than trusting `resumeTimedOut`) closes that path
       // for BOTH causes — timeout and early rejection — with one check.
-      unusableError = new Error(buildResumeUnusableMessage(resumeTimedOut));
+      unusableError = new PlaybackResumeError(
+        buildResumeUnusableMessage(resumeTimedOut)
+      );
       throw unusableError;
     }
 
@@ -917,7 +1032,9 @@ export async function playSamples(
       // here — a `true` would already have thrown above, before this line
       // could ever run — so this always builds the "-unusable" message, not
       // "-timeout".
-      unusableError = new Error(buildResumeUnusableMessage(false));
+      unusableError = new PlaybackResumeError(
+        buildResumeUnusableMessage(false)
+      );
       throw unusableError;
     }
 
@@ -1022,5 +1139,11 @@ export async function playSamples(
         resumeTimedOut ? "playback-resume-timeout" : "playback-resume-unusable"
       );
     }
+    // SPECULATIVE (#1213): a claim that failed closed drops the shared
+    // context, so the next Play builds a fresh one inside its own tap. This
+    // press still fails. `unusableError` is set only at the two fail-closed
+    // throws, and only for a claim that is still current; see
+    // `discardSharedContext` for what it refuses to drop.
+    if (unusableError) discardSharedContext(claimContext);
   }
 }
