@@ -206,32 +206,55 @@ describe("the not-a-failure Notices read one tone (#147)", () => {
     expect(actual).toEqual(expected);
   });
 
-  it("every member IMPORTS the constant, so the name cannot be a local", () => {
-    // George round 2, Low: `isConstantTone` matches an identifier by SPELLING,
-    // so a same-named local in one of these files would keep the assertions
-    // above green while wiring the Notice to something else entirely.
+  it("every member imports the constant FROM `./notice-tone`, unrenamed", () => {
+    // George round 2: `isConstantTone` matches an identifier by SPELLING, so a
+    // same-named binding would keep the assertions above green while the Notice
+    // wore something else. This narrows that, and the comment states exactly how
+    // far — an earlier version of it claimed the gap was closed, which both
+    // lenses caught in round 4 and which measuring it here confirms.
     //
-    // Asserting the import closes that soundly rather than partly: a module
-    // cannot hold both an import binding and a local declaration of one name —
-    // that is a duplicate-identifier error, so `tsc` refuses the shadow the
-    // moment the import is present. Cheaper than standing up a `ts.Program`
-    // for a type checker, and it fails in the same cases.
+    // CLOSED by this assertion:
+    //   - a module-scope `const NOTHING_FAILED_TONE` instead of the import: a
+    //     second binding of one name in module scope is a duplicate-identifier
+    //     error, so requiring the import makes it uncompilable;
+    //   - `import { X as NOTHING_FAILED_TONE } from "./elsewhere"`: the module
+    //     specifier and the absence of a `propertyName` are both checked, so a
+    //     rename or a different module fails here.
+    //
+    // NOT CLOSED, and measured rather than assumed: a shadow in an INNER scope.
+    // `const NOTHING_FAILED_TONE = "info" as const` inside the component body is
+    // legal TypeScript, every `<Notice tone={NOTHING_FAILED_TONE}>` in that body
+    // silently rebinds to it, and this file stays green. `tsc` flagged only
+    // TS6133 (the import going unread) when EVERY use was inside the shadowed
+    // scope — with one use left outside, even that would not fire, and
+    // `eslint.config.mjs` has no `no-shadow`. Closing it needs a `ts.Program`
+    // and a real type checker to resolve each identifier to its declaration,
+    // which is more than this lane is buying. It takes a deliberate, odd edit,
+    // and it is written down here rather than left as a claim that the check is
+    // sound.
     for (const rel of [
       "src/components/segments-screen.tsx",
       "src/components/share-outcome-glyph.ts",
     ]) {
       const imported = parse(rel)
-        .statements.filter((s) => ts.isImportDeclaration(s))
+        .statements.filter((st) => ts.isImportDeclaration(st))
         .some((decl) => {
+          if (!ts.isStringLiteral(decl.moduleSpecifier)) return false;
+          if (decl.moduleSpecifier.text !== "./notice-tone") return false;
           const bindings = decl.importClause?.namedBindings;
           if (bindings === undefined || !ts.isNamedImports(bindings)) {
             return false;
           }
           return bindings.elements.some(
-            (el) => el.name.text === "NOTHING_FAILED_TONE"
+            (el) =>
+              el.name.text === "NOTHING_FAILED_TONE" &&
+              el.propertyName === undefined
           );
         });
-      expect(imported, `${rel} does not import the constant`).toBe(true);
+      expect(
+        imported,
+        `${rel} does not import the constant unrenamed from ./notice-tone`
+      ).toBe(true);
     }
   });
 
