@@ -7,11 +7,13 @@ import { captureFailureText } from "@/components/capture-failure-copy";
 import { strings } from "@/lib/strings";
 import type { CaptureFailure } from "@/lib/audio/capture-failure";
 
+import { stripComments } from "./support";
+
 const root = path.resolve(import.meta.dirname, "..");
 const read = (rel: string) => readFileSync(path.resolve(root, rel), "utf8");
 
 /**
- * Source text with its comments removed.
+ * Source text with its LINE-LEADING comments removed — the sweep's reader only.
  *
  * No comment in `src/hooks` or `src/lib` carries one of these sentences today
  * — both layers explain the move in paraphrase, not by quoting the copy — so
@@ -22,8 +24,14 @@ const read = (rel: string) => readFileSync(path.resolve(root, rel), "utf8");
  * repair for that false red is to weaken the pattern until it can no longer
  * catch a real leak in code. String literals are left alone — they are what
  * is hunted.
+ *
+ * Narrower than `stripComments` on purpose. The sweep's assertion is negated,
+ * so leaving a trailing `//` in place can only make it fail, never pass; and
+ * stripping one would cut a line at the `//` of any `"https://…"` literal,
+ * hiding a sentence written after it. The mapper's pin is positive, so it
+ * reads through the shared `stripComments` instead (#822).
  */
-function stripComments(source: string): string {
+function stripLeadingComments(source: string): string {
   return source
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^[ \t]*\/\/.*$/gm, "");
@@ -112,6 +120,14 @@ describe("captureFailureText", () => {
     // string, so `toBe(strings.captureSilence)` passes either way. Only the
     // source shape can, so that is what is read (the same move
     // `share-outcome-glyph.test.ts` makes for the same reason).
+    //
+    // Read through the shared `stripComments`, which also removes a `//` that
+    // trails live code (#822). The sweep's line-leading strip left one in
+    // place, so `return "No sound was recorded." + " Try again."; //
+    // strings.captureSilence` passed every case in this file: the key was in
+    // the comment, and the composed literal is not the sentence the
+    // `not.toContain` looks for. `capture-failure-copy.ts` holds no `//` or
+    // `/*` inside a string, which is what `stripComments` needs.
     const mapper = stripComments(
       read("src/components/capture-failure-copy.ts")
     );
@@ -165,7 +181,7 @@ describe("no layer below components mints this copy (#169)", () => {
 
   it.each(CODES)("no hook or lib file writes the %s sentence", (code) => {
     const leaked = files.filter((rel) =>
-      stripComments(read(rel)).includes(EXPECTED[code])
+      stripLeadingComments(read(rel)).includes(EXPECTED[code])
     );
     expect(leaked).toEqual([]);
   });
