@@ -11,6 +11,79 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-29 (day) — v0.2.14 bugs triaged, #1189 fixed, 1.0.0-rc.1 red-teamed and published to all three channels, Play lane fixed, go-live epic, iPhone playback report
+
+### v0.2.14 bug reports
+
+- **#1189, waveform shrinks on resume (Moto G):** fixed by #1199, merged `7e9cb99f`.
+  - Cause: the live scope drew the existing clip at raw level while the idle waveform drew it fitted.
+  - Both uwreview lenses were clean at `6f0e78fe`. The follow-ups are batched in #1201 (v1.1.0).
+- **#1188, chapter Play/Pause needs several presses (Moto G):**
+  - The fix lane found no cause it could prove from the code, so it parked. Its findings are on the issue.
+  - The DRI picked "Ask Tim, ship rc.1 without it". Three observations were requested from the requirements owner on the issue.
+- **Freeze:**
+  - The DRI merged 11 PRs to develop at 11:30Z, then picked "Lifted until rc.1 is cut". Freeze-lifted notes went on the open contributor PRs.
+  - #684, #1200 and #1203 merged during the lift.
+
+### 1.0.0-rc.1
+
+- **Bump:** #1205, squashed at `009e6b6c`. It is version-only, 0.2.14 → `1.0.0-rc.1`, in the DRI's `1.0.0-rc.N` form.
+  - Android `versionName` takes the string, and `versionCode` stays a timestamp.
+  - iOS `MARKETING_VERSION` stays `1.0` and never reads `package.json`.
+- **Release red team** (DRI: it is part of every RC cut): two read-only passes before the promotion merged.
+  - **Risk register:** 0 BLOCK. Three items to fix before publishing: a phone smoke, the APK checks, and the first automatic Play upload.
+  - **Announcement:** 1 FALSE claim ("Notices share one look": #684 changed no tone), 2 OVERSTATED, 5 MISSING CONTEXT. All were fixed in the notes, and the same overclaim was corrected in #1205's and #1206's bodies.
+  - Summary: #1206 comment 5892212691.
+- **Promotion #1206** merged at `5a767fde`. `check:deploy` PASS: `https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build.` (`1.0.0-rc.1` / `5a767fd`).
+- **The first automatic Play upload failed** (run 36581999554) at "Install fastlane".
+  - Cause: the `ubuntu-24.04` runner's Ruby is 3.2.3, and `excon 1.7.1` in the fastlane lock needs 3.3 or newer.
+  - #1207 added a pinned `ruby/setup-ruby` at 3.3: two red-first tests, and three mutations killed.
+  - The DRI asked that all three channels build from one commit, so #1208, a CI-only promotion, carried it to staging at `68460117`.
+  - `check:deploy` PASS: `1.0.0-rc.1` / `6846011`.
+- **Channels, all from `68460117`:**
+  - **Google Play:** run 36586138675, a **draft** on the internal track, `1.0.0-rc.1 (1790693736) staging@6846011`. `setup-ruby` and "Install fastlane" were green on a real runner (#1207 comment 5892811801).
+  - **Android APK:** run 36586494091.
+    - The signer SHA-256 is `eed23e1bccf9fbad8b69f2f9598fd8d97e094d23e544b71b9e91dd21c934baf2`, the same as v0.2.14.
+    - The embedded `version.json` reads `1.0.0-rc.1` / `68460117`.
+    - The APK's SHA-256 is `50c2d3c1a5284c2a2a3f36abcffcc48525c55d62cf7113c42b581d17ab6da29f`, and the published download matches it.
+  - **TestFlight:** run 36586498096, version `1.0`, build `1790694282`.
+  - **Published:** `tester-build-v1.0.0-rc.1`, a pre-release at `68460117`, at the DRI's instruction. The phone smoke result wasn't reported to the coordinator, and this record doesn't claim it passed. The publish record is #1206 comment 5893044684.
+- **Store icons:**
+  - **Play:** the listing icon is a manual 512×512 upload (#876), started by the DRI.
+  - **App Store Connect:** the icon showed on every build row but not on the app header. It appeared once a build was attached to the 1.0 App Store version.
+- **The freeze is back on** from the rc.1 cut until `v1.0.0` is tagged.
+  - #1207 was a DRI-approved CI exception.
+  - The freeze note (reworded for rc.1) went on the new contributor PRs #1204, #1209 and #1211.
+
+### Planning and feedback
+
+- **#1210, go-live epic** (Play production and the App Store), with decisions first.
+  - The iPad question is a one-way door: the project targets iPhone and iPad.
+  - Checked against Google's help pages: Play's 12-tester closed-test rule covers only personal accounts, and this is an organization account. A first Play review can take up to 7 days.
+  - The code sends no data off the phone except through the share sheet.
+- **Tester feedback (iPhone, rc.1):**
+  - **#1212** (post-v1): unclear menu options, and what the app adds over a voice recorder.
+  - **#1213** (bug): after a drag, Play stays dead until lock/unlock or leaving the app.
+    - Code trace: the seek path is correct.
+    - Inferred top cause: an `"interrupted"` AudioContext whose `resume()` never settles, which nothing in the app recreates.
+    - Relation to #1188: can't tell.
+    - The DRI picked "Diagnostic + speculative fix". **#1214** (Refs #1213) logs the three playback catch sites that only `console.error`, and drops and recreates the shared context after a fail-closed resume. CI is green and it's ready for uwreview. It hasn't run on an iPhone.
+
+### Not run
+
+- No phone ran #1199's fix, #1214, or any rc.1 change.
+- The rc.1 phone smoke result wasn't reported.
+- The Play App integrity signing-key check (#874) is still open.
+
+### Next
+
+- The uwreview verdict on #1214, then a DRI merge pick, then rc.2.
+- The requirements owner's answers on #1188, and the tester's answers on #1213.
+- The Android developer verification registration, due 2026-09-30 (`docs/native/play-store.md`).
+- The #1210 decisions D1–D7.
+
+---
+
 ## 2026-09-28 (day to late evening) — milestones merged, v0.2.14 cut and published, headless and phone smoke passed, books stay put (#1185), release freeze for 1.0.0
 
 ### Milestones and versions
