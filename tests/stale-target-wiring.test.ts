@@ -110,6 +110,18 @@ async function click(label: string) {
   expect(button(label)).toBeDefined();
   await act(async () => button(label)!.click());
 }
+/**
+ * The stale-chapter line is a heads-up, not a failure (#147, `info`): it is
+ * announced politely, and no `role="alert"` carries it.
+ */
+function expectStaleNotice() {
+  const said = (role: string) =>
+    [...document.querySelectorAll(`[role="${role}"]`)].some((el) =>
+      el.textContent?.includes(gone)
+    );
+  expect(said("status")).toBe(true);
+  expect(said("alert")).toBe(false);
+}
 
 it("keeps the rename menu layer until Close and leaves clipboard clearing to explicit Back", async () => {
   await render(false);
@@ -131,7 +143,7 @@ it("keeps the rename menu layer until Close and leaves clipboard clearing to exp
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(layers.size).toBe(0);
   expect(document.querySelector("header")?.hasAttribute("inert")).toBe(false);
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain(gone);
+  expectStaleNotice();
   expect(clipboard).toBe("copied audio");
   await click(strings.backToBooks);
   expect(onBack).toHaveBeenCalledTimes(1);
@@ -144,9 +156,7 @@ it.each([{ rows: [] }, { rows: [row] }])(
     await render(true, rows);
     expect(onBack).not.toHaveBeenCalled();
     expect(clipboard).toBe("copied audio");
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-      gone
-    );
+    expectStaleNotice();
     expect(document.querySelectorAll("li").length).toBe(0);
     expect(document.body.textContent).not.toContain(strings.segmentsEmptyTeach);
     expect(button(strings.addSegment)?.disabled).toBe(true);

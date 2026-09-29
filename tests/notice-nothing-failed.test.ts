@@ -12,21 +12,21 @@ import { shareOutcomeGlyph } from "@/components/share-outcome-glyph";
  *
  * #147 asks for an AUDIT of every default-tone `Notice` — "rather than fixing
  * one and leaving the rest to drift" — and the audit found the call sites whose
- * answer to "is this genuinely a failure?" is no, all riding the `alert` tone.
- * Whether they should be `info` is Tim's call and is still open. What this pins
- * is the weaker property that does not need his answer: they read ONE constant,
- * so the question can be answered in one place and cannot be half-answered.
+ * answer to "is this genuinely a failure?" is no. What this pins is that they
+ * read ONE constant, so the question is answered in one place and cannot be
+ * half-answered. It was answered `info` on #147 (DRI, 2026-09-28);
+ * `share-outcome-glyph.test.ts` and `stale-target-wiring.test.ts` pin that
+ * value at the table and the rendered role.
  *
  * The class was three when this file was written. #614 deleted the third —
  * `previewUnavailable`, the finding #147 was filed for — along with the paused-
  * preview state it described, so the assertion for it went with it rather than
  * being kept pointing at a string the tree no longer has.
  *
- * WHY THIS READS SOURCE. `NOTHING_FAILED_TONE`'s value is `alert`, which is what
- * both members already wore, so no runtime assertion can tell a site that reads
- * the constant from one that hardcodes the same string — the drift this exists
- * to catch is invisible until the day the constant changes, which is exactly the
- * day it is too late. The wiring is the property, so the wiring is what is read.
+ * WHY THIS READS SOURCE. No runtime assertion can tell a site that reads the
+ * constant from one that hardcodes the same string — that drift is invisible
+ * until the day the constant changes again, which is exactly the day it is too
+ * late. The wiring is the property, so the wiring is what is read.
  *
  * WHY IT READS THE AST AND NOT THE TEXT. A first draft regexed the source with
  * comments stripped, which closed the comment half of the trap
@@ -180,10 +180,10 @@ describe("the not-a-failure Notices read one tone (#147)", () => {
   it("NOTHING ELSE reads the constant — the inverse of the two above", () => {
     // George round 1, Low: the assertions above pin "these sites read the
     // constant" and say nothing about "nothing else does". A genuine FAILURE
-    // Notice that started passing `tone={NOTHING_FAILED_TONE}` would stay green
-    // today, because the value is still `alert` — and would be swept into
-    // `info` on the day the constant flips, which is the one day this file
-    // exists to make safe. So the membership is pinned from both directions.
+    // Notice that started passing `tone={NOTHING_FAILED_TONE}` would lose the
+    // failure colour and the interrupting role, and would move again with any
+    // later re-tone of the class. So the membership is pinned from both
+    // directions.
     //
     // A new member is meant to be a deliberate act: adding a site means adding
     // it here, which is where the "is this genuinely a failure?" question gets
@@ -259,9 +259,8 @@ describe("the not-a-failure Notices read one tone (#147)", () => {
   });
 
   it("the constant is the tone the share table actually hands the screen", () => {
-    // Survives a re-tone: it says the two agree, not what they say. The literal
-    // `alert` is pinned by `share-outcome-glyph.test.ts`, which is commented as
-    // the place to change when #147 is answered.
+    // Survives a re-tone: it says the two agree, not what they say. The
+    // literal is pinned by `share-outcome-glyph.test.ts`.
     expect(shareOutcomeGlyph("nothing").tone).toBe(NOTHING_FAILED_TONE);
   });
 });

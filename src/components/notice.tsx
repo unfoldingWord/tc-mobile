@@ -16,9 +16,9 @@ interface NoticeProps {
    * A MORE SPECIFIC mark within the tone (#178). The tone still decides the
    * colour and the ARIA role; this only substitutes the shape.
    *
-   * It exists because `nothing` and `failed` share the `alert` tone — that
-   * split is #147's open question, not this prop's to answer — so the mark is
-   * the only thing separating "record something first" from "try again" for a
+   * It exists because two share outcomes can wear one tone — `nothing` and
+   * `partial` are both `info` since #147 — so the mark is the only thing
+   * separating "record something first" from "it went out with a gap" for a
    * translator who cannot read. Callers do not pick a glyph freely: the share
    * screens read `shareOutcomeGlyph`, a table, for exactly the reason
    * `share-error-copy.ts` is a table.
