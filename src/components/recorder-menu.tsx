@@ -8,7 +8,7 @@ import { strings } from "@/lib/strings";
 import { ThemeControl } from "./theme-control";
 
 /**
- * The recorder sheet's ≡ menu (#160, L-1).
+ * The recorder sheet's ⋮ menu (#160, L-1).
  *
  * A hundred lines of JSX lifted out of a 4000-line component, and the split is
  * where it is because every input is already a DERIVED value: the three row
@@ -120,18 +120,19 @@ export function RecorderMenu({
       title={strings.recorderMenuTitle}
       // `hamburger` (#621, the requirements owner's call on this panel,
       // after #608 set the rule on the global menu): this drawer's own
-      // dismiss stays a ≡, top-right, and is what dismisses it — no "More"
-      // heading, and no chevron, because a chevron pointing LEFT reads as
-      // "move left" on a drawer that docks on the RIGHT. That holds
-      // regardless of which control opened it: record mode's header opener
-      // is ≡, but since #863 the edit toolbar's opener is ⋮ (≡ is used only
-      // at the top right, and the toolbar is not the top right) — the
-      // drawer's own top-right control is the only ≡ on screen either way.
-      // The book, chapter and segment menus open from a ⋮ since #589 and
-      // keep the chevron; this drawer keeps ≡ no matter which opener it was.
+      // dismiss is a single glyph, top-right, and is what dismisses it — no
+      // "More" heading, and no chevron, because a chevron pointing LEFT reads
+      // as "move left" on a drawer that docks on the RIGHT. Since #1225 that
+      // glyph is ⋮ (`dismissIcon="more"`), not ≡: this menu acts on the
+      // segment being edited, an object menu under the #608/#683 rule ("kebab
+      // on objects, hamburger for global"), and both of its openers — record
+      // mode's header and the edit toolbar — are ⋮ too, so the dismiss
+      // matches whichever one opened it. ≡ belongs to the Books screen's
+      // global menu alone.
       hamburger
+      dismissIcon="more"
     >
-      {/* ONE <Menu> for both looks, so the surface — its title, the ≡
+      {/* ONE <Menu> for both looks, so the surface — its title, the ⋮
           dismiss, focus trap and Escape — cannot differ between them; only
           what sits inside it does. The O4 grid ends with the theme tile past
           the spacer, last for the reason the current rows below give. */}
@@ -263,7 +264,7 @@ export function RecorderMenu({
               `aria-modal` over an `inert` Segments, so while it is up the Books
               hamburger is four screens away, and direct sun is exactly the
               condition that arrives while you are recording. The opener for this
-              menu — the header's `≡`, or the edit toolbar's `⋮` since #863 — is
+              menu — the header's `⋮` since #1225, or the edit toolbar's since #863 — is
               itself closed through the close window, while `denied`,
               and while a take is held — the panels those states raise own the
               body — so the toggle inherits those gates rather than adding its own.
@@ -310,7 +311,7 @@ export function RecorderMenu({
 /**
  * The O4 look of this menu's action tiles (#949, workbench G3 and G8),
  * mounted inside the same `<Menu>` as the current rows — focus trap, Escape,
- * scrim, heading and ≡ dismiss unchanged — on the O4 grid, which
+ * scrim, heading and ⋮ dismiss unchanged — on the O4 grid, which
  * `o4/menus.css` turns into a bottom sheet capped at half the screen, so the
  * waveform above is meant to stay in view (#927).
  *

@@ -136,7 +136,11 @@ export interface UseLibraryShare
   prepare: (
     zipFilename: string,
     nameBook: (bookName: string) => string,
-    nameChapter: (bookName: string, chapterNumber: number) => string
+    nameChapter: (
+      bookName: string,
+      chapterNumber: number,
+      chapterName: string | null
+    ) => string
   ) => Promise<ShareOutcome | null>;
 }
 
@@ -186,7 +190,11 @@ export function useLibraryShare(): UseLibraryShare {
     (
       zipFilename: string,
       nameBook: (bookName: string) => string,
-      nameChapter: (bookName: string, chapterNumber: number) => string
+      nameChapter: (
+        bookName: string,
+        chapterNumber: number,
+        chapterName: string | null
+      ) => string
     ): Promise<ShareOutcome | null> => {
       setStorageShort(false);
       return run(async (isCurrent, signal) => {

@@ -224,7 +224,10 @@ export const strings = {
     "A segment is one passage of the chapter — record it, play it back, record it again.",
   playSegment: (n: number): string => `Play segment ${n}`,
   pauseSegment: (n: number): string => `Pause segment ${n}`,
-  recordSegment: (n: number): string => `Record segment ${n}`,
+  // The unrecorded row's microphone (#1217). Its tap opens the recorder at
+  // rest; capture starts on the recorder's own Record (#602), so the name says
+  // what the tap does rather than promising a recording.
+  openRecorderSegment: (n: number): string => `Open recorder for segment ${n}`,
   // These three are the row's open control's accessible name, which REPLACES
   // its visible text, so they carry the same heading the row paints — label
   // included (#591, WCAG 2.5.3). Unlabelled, the heading is the bare ordinal.
@@ -289,9 +292,11 @@ export const strings = {
   tileRename: "Rename",
   // Clear removes a segment's audio and keeps the segment; Delete below
   // removes the segment. Key names keep "erase" (the code's word for the
-  // operation); the visible word is "Clear" everywhere (the DRI's 2026-09-28
-  // pick on #1119: one word and one icon for one action).
-  tileErase: "Clear",
+  // operation). The tile's caption is "Reset", one word of `eraseSegment`
+  // ("Reset segment and start over", #1220), so the visible caption stays a
+  // word of the accessible name (WCAG 2.5.3, pinned by the label-in-name
+  // tests); one icon for one action stays as #1119 picked.
+  tileErase: "Reset",
   // The book menu's Delete tile (04); its name is `deleteBook`. Shared with
   // the chapter view's segment-menu Delete tile (#590/#1104) — its name is
   // `deleteSegment` — the same caption, on two different destructive tiles
@@ -533,8 +538,8 @@ export const strings = {
   nothingToRedo: "Nothing to redo.",
   // The recorder drawer's dialog name for a screen reader — never painted
   // there (#621, the rule #608 set for `menuTitle`): the drawer's own
-  // dismiss stays a ≡ regardless of which control opened it (the record-mode
-  // header's ≡, or the edit toolbar's ⋮ since #863), so the glyph is its
+  // dismiss is a ⋮ (#1225), matching both controls that open it (the
+  // record-mode header's and the edit toolbar's), so the glyph is its
   // only visible label. This string is shared with the per-row segment menu (`segment-row.tsx`),
   // which does not pass `hamburger` and still paints it as that menu's
   // visible heading — #589 owns that menu's affordances and has not
@@ -573,7 +578,7 @@ export const strings = {
   // recorder open with this Notice in place, not a named remedy.
   captureUnfinished: "Could not finish this recording.",
   // ── Disabled-row reasons (#135) ──────────────────────────────────────────
-  // Appended to a disabled ≡-menu row's accessible name so the grey carries its
+  // Appended to a disabled ⋮-menu row's accessible name so the grey carries its
   // cause. Derived from the row's own gate in `menu-row-state.ts`, never set by
   // hand. Short and literal.
   // Names both steps in the order the overlay allows — while this menu is open
@@ -591,10 +596,11 @@ export const strings = {
   // (George, round 2). If `closeRecorder` is ever renamed, these move with it.
   // This one names the controls by name ONLY and does not describe their
   // glyphs the way the body notices do (#620): it is spoken
-  // inside the ≡ menu, where the recorder header — and so "Close recorder" —
+  // inside the ⋮ menu, where the recorder header — and so "Close recorder" —
   // is `inert` and the one live control on screen is the menu's own dismiss,
-  // which since #621 wears the ≡ glyph (this menu opts into `hamburger`,
-  // `recorder.tsx`), not a back chevron. Describing the save control by its
+  // which since #621 wears a single glyph, ⋮ since #1225 (this menu opts into
+  // `hamburger` with `dismissIcon="more"`, `recorder-menu.tsx`), not a back
+  // chevron. Describing the save control by its
   // looks here would still point at the dismiss, the exact collision the
   // round-1 `back` badge had (`menu-row-state.ts`, `rowHint`'s docblock);
   // #648 round 1 (George P2) caught the words repeating it.
@@ -603,7 +609,7 @@ export const strings = {
   // opts into `hamburger`.
   blockedByTake:
     'Use "Close menu", then "Close recorder", to save the recording.',
-  // The `requesting` race: Record tapped, ≡ opened before `getUserMedia`
+  // The `requesting` race: Record tapped, ⋮ opened before `getUserMedia`
   // resolves. No audio exists yet, so this must NOT promise a save — and must
   // not send anyone to a control that would abandon the in-flight start.
   micStarting: "The microphone is still starting.",
@@ -617,7 +623,7 @@ export const strings = {
   vuMeterLabel: "Recording level",
   vuMeterUnavailable: "Level meter unavailable on this device",
   // Clear: removes the recording, keeps the segment (#1119, DRI 2026-09-28).
-  eraseSegment: "Clear recording",
+  eraseSegment: "Reset segment and start over",
   // The record bar's Clear (#592): the same clear and the same confirm as the
   // menu row above, named for what the translator is doing — starting the
   // segment over — because the sheet stays open, ready for the next take.
@@ -640,7 +646,7 @@ export const strings = {
     `${strings.chapterName(from)} is now chapter ${to}.`,
   chapterReorderStayed: (n: number): string =>
     `${strings.chapterName(n)} stayed where it was.`,
-  eraseConfirmTitle: "Clear this recording?",
+  eraseConfirmTitle: "Reset segment and start over",
   eraseConfirm: "Clear",
   // The safe action of the confirm dialog (`erase-confirm.tsx`). One string
   // for every flow it now serves — segment Clear, book Delete and segment
@@ -690,7 +696,7 @@ export const strings = {
   // book Delete use, mounted a second time on the chapter view
   // (`segments-screen.tsx` keeps a separate `EraseConfirm` for it).
   //
-  // #590/#1080 first shipped this in the RECORDER's ≡ menu; #1104 (the
+  // #590/#1080 first shipped this in the RECORDER's ⋮ menu; #1104 (the
   // requirements owner's 2026-09-26 decision) moved it here instead: "the
   // menu inside the segment editor (recorder) shows Erase only. Delete
   // (removing the whole segment) belongs to the chapter view." The strings
@@ -767,9 +773,19 @@ export const strings = {
     ),
   // The book name is free text since #264, so sanitise it into the filename —
   // a `/` in "Mark/Luke" would otherwise split a zip entry into a folder (G3).
-  // The chapter is an ordinal, always safe.
-  shareFilename: (book: string, chapter: number): string =>
-    `${filenameSafe(book)} - Chapter ${chapter}.mp3`,
+  // The chapter's own name (#264) is free text too and is sanitised the same
+  // way (#1218). No name, or one with nothing left once sanitised, falls back
+  // to the default through `chapterName`, the one place that spells it.
+  shareFilename: (
+    book: string,
+    chapter: number,
+    chapterName: string | null = null
+  ): string => {
+    const label = filenameSafe(chapterName ?? "");
+    return `${filenameSafe(book)} - ${
+      label === "" ? strings.chapterName(chapter) : label
+    }.mp3`;
+  },
 
   // Share Book — the book-level ⋮ menu and its zip-of-chapter-MP3s share. Names
   // each book so AT users can tell one shelf row's menu from the next.

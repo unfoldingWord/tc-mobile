@@ -195,7 +195,7 @@ test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the 
   // rather than one reading against a clock that had not started.
   await expect.poll(() => elapsedSeconds(page)).toBeGreaterThan(0);
 
-  // The `≡` stays reachable mid-take on purpose, which is what makes the
+  // The `⋮` stays reachable mid-take on purpose, which is what makes the
   // toggle reachable here at all. The OPENER is gated on `!view`, the close
   // window, `denied` and a held take (`recorder.tsx`) — recording is not among
   // them — and the rows inside are gated one by one. So the menu being open

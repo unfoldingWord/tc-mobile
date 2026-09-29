@@ -1,5 +1,5 @@
 /**
- * Why a recorder ≡-menu row is disabled — derived, never hand-maintained (#135).
+ * Why a recorder ⋮-menu row is disabled — derived, never hand-maintained (#135).
  *
  * The Edit and Erase rows are gated on recorder state, and a grey row with no
  * reason read as a broken control to the requirements owner (2026-09-02,
@@ -118,7 +118,7 @@ interface EraseRowInputs {
 }
 
 /**
- * The "Clear recording" row (both menus). Null when enabled. Reproduces
+ * The "Reset segment and start over" row (both menus). Null when enabled. Reproduces
  * `!idleEditable || !view?.hasClip`. Erasing the stored take out from under a
  * live capture is nonsensical (George R-B6), so the take wins here too.
  */
@@ -137,7 +137,7 @@ interface DeleteRowInputs {
 }
 
 /**
- * The "Delete segment" row/tile (#590, the recorder ≡ menu). Null when
+ * The "Delete segment" row/tile (#590, the recorder ⋮ menu). Null when
  * enabled.
  *
  * Deliberately narrower than `eraseRowReason`: it does NOT require a stored
@@ -172,7 +172,7 @@ export interface RowHint {
  * **The glyph is `alert`, and the reason it is not a control glyph is the whole
  * history of this cue.** Round 1 badged the uncommitted-take row with `back`,
  * meaning the sheet's own commit control — which cannot be tapped, because at
- * the time the ≡ menu inerted the whole sheet while it was open, leaving the
+ * the time the ⋮ menu inerted the whole sheet while it was open, leaving the
  * menu's own Close as the one live back-chevron. The badge therefore marked the
  * DISMISS control as the way out. Round 2 then found that dropping the glyph
  * entirely left the cue in the accessible name only: invisible to the sighted
@@ -198,14 +198,14 @@ export interface RowHint {
  * "…to save the recording" would promise a save that cannot happen — and `close()`
  * does not treat `requesting` as an attempted capture, so a translator who
  * followed it would abandon the in-flight start (George, round 3). Reachable as a
- * short race: tap Record, then ≡ before the mic resolves.
+ * short race: tap Record, then ⋮ before the mic resolves.
  *
  * `denied` and `no-segment` carry no cue, on two DIFFERENT grounds — the earlier
  * "the opener is disabled, so no row is ever seen" covered both and was false for
  * `denied`, because a disabled opener only blocks OPENING and `denied` can turn on
  * while the menu is already up (George, round 4):
  *
- * - `denied` — the ≡ menu is now DISMISSED the moment `denied` turns on
+ * - `denied` — the ⋮ menu is now DISMISSED the moment `denied` turns on
  *   (`recorder.tsx`'s `menuShown`), so these rows genuinely cannot be seen under
  *   it. The permission panel is the reason, stated in full where the translator
  *   is looking; a badge on a hidden row would be a second, weaker copy of it.
@@ -235,7 +235,7 @@ export function rowHint(reason: RowReason | null): RowHint | null {
 }
 
 /**
- * The same reason, worn by a control on the record BAR rather than in the ≡
+ * The same reason, worn by a control on the record BAR rather than in the ⋮
  * menu — the toolbar Edit (#315) and the bin (#592).
  *
  * One difference from {@link rowHint}, because the bar is not the menu: no

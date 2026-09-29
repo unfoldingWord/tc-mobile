@@ -3,7 +3,8 @@ import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
 import { Icon, type IconName } from "./icon";
 
-type ControlVariant = "default" | "record" | "play" | "quiet" | "primary";
+type ControlVariant =
+  "default" | "record" | "mic" | "play" | "quiet" | "primary";
 
 interface ControlProps {
   icon: IconName;
@@ -102,6 +103,7 @@ interface ControlProps {
 const VARIANT_CLASS: Record<ControlVariant, string> = {
   default: "",
   record: "control--record",
+  mic: "control--mic",
   play: "control--play",
   quiet: "control--quiet",
   primary: "control--primary",
@@ -185,7 +187,7 @@ export const Control = forwardRef<HTMLButtonElement, ControlProps>(
     // root between <button> and <span> as a row gains a badge would remount the
     // button and DESTROY it while focused — and with the sheet and list both
     // `inert` and the menu's focus grab bound to `[open]`, focus would land
-    // nowhere behind the scrim. Reachable: ≡ open mid-take, a #59 interruption
+    // nowhere behind the scrim. Reachable: ⋮ open mid-take, a #59 interruption
     // flips `busy`, and the focused Mark row gains its badge (George, round 3).
     // With a stable root, gaining a badge adds an inner sibling and mutates
     // attributes on the same button.

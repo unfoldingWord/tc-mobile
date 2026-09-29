@@ -120,7 +120,7 @@ describe.each(["current", "o4"] as const)("%s look", (look) => {
 
   it("an empty row's Record opens it in record mode", async () => {
     await render(empty);
-    await click(button(strings.recordSegment(1)));
+    await click(button(strings.openRecorderSegment(1)));
     expect(onOpenRecorder).toHaveBeenCalledTimes(1);
     expect(onOpenRecorder.mock.calls[0]).toEqual([]);
   });

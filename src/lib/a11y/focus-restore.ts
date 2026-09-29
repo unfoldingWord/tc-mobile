@@ -57,7 +57,7 @@ interface FocusRestoreInput {
   readonly inert: boolean;
   /**
    * The captured element can still take focus at all — chiefly, it has not gone
-   * natively `disabled` since it was tapped (the recorder's ≡ opener does
+   * natively `disabled` since it was tapped (the recorder's ⋮ opener does
    * exactly that while `denied`). An `aria-disabled` control is deliberately
    * still focusable here, as it is everywhere else in this app (#135).
    */
@@ -87,7 +87,7 @@ export function focusRestoreTarget(input: FocusRestoreInput): FocusRestore {
  *
  * The recorder's own fallback query used to be "the last button in the
  * header." That is correct in record mode: the header's right-hand control is
- * the ≡ menu opener. It is wrong in edit mode: the header's right-hand control
+ * the ⋮ menu opener. It is wrong in edit mode: the header's right-hand control
  * there is the modepill ("Done editing"), and tapping it EXITS edit mode.
  * Landing overlay-close focus on it arms the very next Space / Enter /
  * switch-activate to leave edit mode — the #97 hazard (`use-focus-restore.ts`'s

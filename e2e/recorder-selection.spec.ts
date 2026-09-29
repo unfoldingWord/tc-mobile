@@ -59,7 +59,9 @@ test("selection stays scoped to recorder and panels, with editable names", async
   await page.getByRole("button", { name: "Create chapter" }).click();
   await page.getByRole("button", { name: "Open Chapter 1" }).click();
   await page.getByRole("button", { name: "Add segment" }).click();
-  await page.getByRole("button", { name: "Record segment 1" }).click();
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
   await expectSelectionSuppressed(page.locator(".recorder-sheet"));
   await page.getByRole("button", { name: "More actions", exact: true }).click();
   await expectSelectionSuppressed(page.locator(".menu-panel"));
@@ -96,7 +98,9 @@ test.describe("handle targets after a zoom fit", () => {
       await page.getByRole("button", { name: "Create chapter" }).click();
       await page.getByRole("button", { name: "Open Chapter 1" }).click();
       await page.getByRole("button", { name: "Add segment" }).click();
-      await page.getByRole("button", { name: "Record segment 1" }).click();
+      await page
+        .getByRole("button", { name: "Open recorder for segment 1" })
+        .click();
       await page.getByRole("button", { name: "Record", exact: true }).click();
       await page.waitForTimeout(1200);
       await page
@@ -179,7 +183,9 @@ test.describe("edit mode toggle", () => {
       await page.getByRole("button", { name: "Create chapter" }).click();
       await page.getByRole("button", { name: "Open Chapter 1" }).click();
       await page.getByRole("button", { name: "Add segment" }).click();
-      await page.getByRole("button", { name: "Record segment 1" }).click();
+      await page
+        .getByRole("button", { name: "Open recorder for segment 1" })
+        .click();
       await page.getByRole("button", { name: "Record", exact: true }).click();
       await expect(
         page.getByRole("button", { name: "Stop recording", exact: true })
@@ -482,8 +488,8 @@ test.describe("edit mode toggle", () => {
 // #370: at 320px with the frame open, `.recorder-toolbar.edit`'s old
 // `justify-content: space-between; flex-wrap: wrap` packed five 40px quiet
 // controls plus a 68px `primary`-variant Select onto one line and wrapped the
-// sixth (the ≡) alone onto a second line, where `space-between` on a
-// single-item line flushes it to main-start — landing the ≡ on the LEFT,
+// sixth (the ⋮) alone onto a second line, where `space-between` on a
+// single-item line flushes it to main-start — landing the ⋮ on the LEFT,
 // under Play, instead of the trailing edge it had been reached for.
 //
 // Premise check against `origin/develop` (2026-09-23): STALE. #579 (merged
@@ -494,9 +500,9 @@ test.describe("edit mode toggle", () => {
 // wrapping, and the toggle keeps its own fixed trailing track regardless of
 // viewport width. No CSS change was needed; this pins the now-correct layout
 // against a regression.
-test.describe("edit toolbar keeps the ≡ off the leading edge (#370)", () => {
+test.describe("edit toolbar keeps the ⋮ off the leading edge (#370)", () => {
   for (const width of [320, 360, 412]) {
-    test(`≡ stays on one row, right of the tools, with the frame open and closed (${width}px)`, async ({
+    test(`⋮ stays on one row, right of the tools, with the frame open and closed (${width}px)`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 740 });
@@ -508,7 +514,9 @@ test.describe("edit toolbar keeps the ≡ off the leading edge (#370)", () => {
       await page.getByRole("button", { name: "Create chapter" }).click();
       await page.getByRole("button", { name: "Open Chapter 1" }).click();
       await page.getByRole("button", { name: "Add segment" }).click();
-      await page.getByRole("button", { name: "Record segment 1" }).click();
+      await page
+        .getByRole("button", { name: "Open recorder for segment 1" })
+        .click();
       await page.getByRole("button", { name: "Record", exact: true }).click();
       await page.waitForTimeout(1200);
       await page
@@ -540,7 +548,7 @@ test.describe("edit toolbar keeps the ≡ off the leading edge (#370)", () => {
           boxes.push({ x: box!.x, y: box!.y, right: box!.x + box!.width });
         }
         // One row: nothing wrapped to a second line. This is the exact
-        // failure #370 named — the ≡ (index 4) landing on a line of its own.
+        // failure #370 named — the ⋮ (index 4) landing on a line of its own.
         // Tolerance is 3px, not 1: the trailing Select/Done slot (index 5) is
         // the 44px `--c-control-md` box against the other five 40px `quiet`
         // boxes, and `align-items: center` centres each within the shared
@@ -550,12 +558,12 @@ test.describe("edit toolbar keeps the ≡ off the leading edge (#370)", () => {
         for (const b of boxes) {
           expect(Math.abs(b.y - firstY)).toBeLessThanOrEqual(3);
         }
-        // Left-to-right in DOM order: the ≡ never jumps ahead of a tool that
+        // Left-to-right in DOM order: the ⋮ never jumps ahead of a tool that
         // comes after it in source order (the "lands on the left" failure).
         for (let i = 1; i < boxes.length; i++) {
           expect(boxes[i]!.x).toBeGreaterThan(boxes[i - 1]!.x);
         }
-        // The ≡ (index 4) sits to the right of every other tool and
+        // The ⋮ (index 4) sits to the right of every other tool and
         // immediately precedes the trailing Select/Done slot (index 5) — the
         // trailing-edge position the issue says is worth protecting.
         expect(boxes[4]!.x).toBeGreaterThan(boxes[3]!.x);
@@ -606,7 +614,9 @@ test.describe("selection handle focus ring at 0%/100% (#659)", () => {
       await page.getByRole("button", { name: "Create chapter" }).click();
       await page.getByRole("button", { name: "Open Chapter 1" }).click();
       await page.getByRole("button", { name: "Add segment" }).click();
-      await page.getByRole("button", { name: "Record segment 1" }).click();
+      await page
+        .getByRole("button", { name: "Open recorder for segment 1" })
+        .click();
       await page.getByRole("button", { name: "Record", exact: true }).click();
       await page.waitForTimeout(1200);
       await page
@@ -692,7 +702,9 @@ test.describe("an edit stops the audition (#284, #361)", () => {
     await page.getByRole("button", { name: "Create chapter" }).click();
     await page.getByRole("button", { name: "Open Chapter 1" }).click();
     await page.getByRole("button", { name: "Add segment" }).click();
-    await page.getByRole("button", { name: "Record segment 1" }).click();
+    await page
+      .getByRole("button", { name: "Open recorder for segment 1" })
+      .click();
     await page.getByRole("button", { name: "Record", exact: true }).click();
     await expect(
       page.getByRole("button", { name: "Stop recording", exact: true })

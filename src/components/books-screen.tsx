@@ -1321,7 +1321,7 @@ export function BooksScreen({
       .prepare(
         shareMenuBook.bookId,
         strings.shareBookFilename(shareMenuBook.name),
-        (n) => strings.shareFilename(shareMenuBook.name, n)
+        (n, name) => strings.shareFilename(shareMenuBook.name, n, name)
       )
       .then((outcome) => {
         if (outcome === "sent" || outcome === "dismissed") onCloseShareMenu();
@@ -2703,31 +2703,34 @@ function ChapterItem({
 }
 
 /**
- * The O4 chapter row's face (#942, state 03): the number in a 44 badge, an
- * optional title line, one progress dot per segment, and a chevron.
+ * The O4 chapter row's face (#942, state 03): the number in a 44 badge, the
+ * chapter's title line, one progress dot per segment, and a chevron.
  *
  * All of it is decoration — the row button's own name (`strings.openChapter`)
  * already carries the heading, typed title included — so each part is
  * `aria-hidden` and nothing here enters the reading order.
  *
- * A typed title (`Chapter.name`, #264) draws the title line and dims the
- * badge, as the design reference's §3 and §7 describe. A title that was only
- * spoken is tier 2 (after the training) and is not drawn here.
+ * The title line is the chapter's heading (`strings.chapterHeading`): the name
+ * the facilitator typed (`Chapter.name`, #264), or the default "Chapter N" the
+ * New Chapter prompt offered (#609) when it has none. A chapter always has a
+ * name to show (#1219), so the line is always drawn and the badge always steps
+ * back behind it, as the design reference's §3 and §7 describe for a titled
+ * row. The default is derived here at read time rather than stored, so a
+ * reorder (#953) renumbers it with the badge. A title that was only spoken is
+ * tier 2 (after the training) and is not drawn here.
  */
 function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
-  const titled = chapter.name !== null;
   const dots = dotStates(chapter);
-  const [size, gap] = dotFit(dots.length, titled ? 19 : 44);
+  const [size, gap] = dotFit(dots.length, TITLED_DOT_ROOM);
   return (
     <>
-      <span
-        className={cn("books-chapter-num", titled && "is-dim")}
-        aria-hidden="true"
-      >
+      <span className="books-chapter-num is-dim" aria-hidden="true">
         {chapter.number}
       </span>
       <span className="books-chapter-mid" aria-hidden="true">
-        {titled && <span className="books-chapter-title">{chapter.name}</span>}
+        <span className="books-chapter-title">
+          {strings.chapterHeading(chapter.name, chapter.number)}
+        </span>
         <span
           className="books-dots"
           style={
@@ -2804,10 +2807,18 @@ const DOT_STEPS: readonly (readonly [number, number])[] = [
 ];
 
 /**
+ * The dots' height under the title line, in px: the 44px middle column less
+ * the 20px title line and its 5px gap. Every row has the title line since
+ * #1219, so this is the only height the fit is asked for.
+ */
+const TITLED_DOT_ROOM = 19;
+
+/**
  * The size and gap of a chapter row's dots, in px: the largest step whose
- * wrapped rows fit in `height` (44px of middle column without a title, 19px
- * under one). Past what the smallest step can hold, the smallest step is
- * returned anyway and the column's own overflow clips the rest. The
+ * wrapped rows fit in `height` ({@link TITLED_DOT_ROOM}). Past what the
+ * smallest step can hold, the smallest step is returned anyway and the dots
+ * wrap onto more rows: the row's height is a floor, not a cap
+ * (`o4/books.css`, #1229), so it grows rather than clipping a dot. The
  * workbench's steps, fitted against {@link DOT_COLUMN} rather than the
  * workbench's 206.
  */

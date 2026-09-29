@@ -324,7 +324,7 @@ describe("O4 Books list, state 03 (#942)", () => {
     );
   });
 
-  it("gives a chapter row a 44 badge, a chevron, and a title line only when the chapter has a typed name", async () => {
+  it("gives a chapter row a 44 badge, a chevron, and a title line with its name, the default when it has none (#1219)", async () => {
     await mount("o4", [
       {
         bookId: bookId(1),
@@ -338,12 +338,16 @@ describe("O4 Books list, state 03 (#942)", () => {
     ]);
     await act(async () => button(strings.bookRow("Mark", 2, false)).click());
 
+    // A chapter nobody has named still shows a title: the default name the
+    // New Chapter prompt offered (#609), which is the name it goes by.
     const plain = button(strings.openChapter(strings.chapterName(1)));
     expect(only(".books-chapter-num", plain).textContent).toBe("1");
     expect(only(".books-chapter-num", plain).classList.contains("is-dim")).toBe(
-      false
+      true
     );
-    expect(plain.querySelector(".books-chapter-title")).toBeNull();
+    expect(only(".books-chapter-title", plain).textContent).toBe(
+      strings.chapterName(1)
+    );
 
     const titled = button(strings.openChapter("The sower"));
     expect(only(".books-chapter-num", titled).textContent).toBe("2");
@@ -386,7 +390,7 @@ describe("O4 Books list, state 03 (#942)", () => {
     expect(only(".books-dots", empty).children).toHaveLength(0);
   });
 
-  it("fits every chapter's dots in the narrowest supported column in a 26-chapter book, titled or not", async () => {
+  it("fits every chapter's dots in the narrowest supported column in a 26-chapter book, named or not", async () => {
     const chapters = Array.from({ length: 26 }, (_, i) =>
       chapter(1, i + 1, {
         // Every size the fit has to choose between, including 26 segments —
@@ -410,13 +414,14 @@ describe("O4 Books list, state 03 (#942)", () => {
     expect(column).toBe(154);
     const sizes = new Set<number>();
     for (const [i, row] of rows.entries()) {
-      const { totalCount, name } = chapters[i]!;
+      const { totalCount } = chapters[i]!;
       expect(only(".books-dots", row).children).toHaveLength(totalCount);
       const geometry = dotGeometry(row);
       sizes.add(geometry.size);
-      // 44px of middle column without a title, 19px under a 20px title line
-      // with its 5px gap (the design reference, §3).
-      const room = name === null ? 44 : 19;
+      // 19px under the 20px title line with its 5px gap (the design
+      // reference, §3). Every row carries the title line since #1219, so a
+      // chapter with no typed name gets no more room than a named one.
+      const room = 19;
       expect(
         packed(totalCount, geometry, column).height,
         `chapter ${i + 1}: ${totalCount} dots at ${geometry.size}/${geometry.gap}`
@@ -435,17 +440,21 @@ describe("O4 Books list, state 03 (#942)", () => {
         name: "Mark",
         coverColourKey: null,
         chapters: [
-          chapter(1, 1, { totalCount: 11 }),
-          chapter(1, 2, { totalCount: 26 }),
-          chapter(1, 3, { totalCount: 26, name: "Titled" }),
-          chapter(1, 4, { totalCount: 41, name: "Many" }),
+          chapter(1, 1, { totalCount: 8 }),
+          chapter(1, 2, { totalCount: 11 }),
+          chapter(1, 3, { totalCount: 26 }),
+          chapter(1, 4, { totalCount: 26, name: "Titled" }),
+          chapter(1, 5, { totalCount: 41, name: "Many" }),
         ],
       },
     ]);
-    await act(async () => button(strings.bookRow("Mark", 4, false)).click());
-    const [eleven, plain26, titled26, titled41] = all(".books-chapter");
-    expect(dotGeometry(eleven!)).toEqual({ size: 13, gap: 6 });
-    expect(dotGeometry(plain26!)).toEqual({ size: 11, gap: 5 });
+    await act(async () => button(strings.bookRow("Mark", 5, false)).click());
+    const [eight, eleven, plain26, titled26, titled41] = all(".books-chapter");
+    // Every row has the title line since #1219, so an unnamed chapter's dots
+    // fit the same 19px a named one's do.
+    expect(dotGeometry(eight!)).toEqual({ size: 13, gap: 6 });
+    expect(dotGeometry(eleven!)).toEqual({ size: 9, gap: 4 });
+    expect(dotGeometry(plain26!)).toEqual({ size: 7, gap: 3 });
     expect(dotGeometry(titled26!)).toEqual({ size: 7, gap: 3 });
     expect(dotGeometry(titled41!)).toEqual({ size: 5, gap: 2 });
   });
@@ -673,7 +682,7 @@ describe("o4/books.css (#942)", () => {
       expect.arrayContaining(["width: 7px"])
     );
     expect(block(`${O4} .books-chapter`)).toEqual(
-      expect.arrayContaining(["height: 68px", "border-radius: 12px"])
+      expect.arrayContaining(["min-height: 68px", "border-radius: 12px"])
     );
     expect(block(`${O4} .books-chapter-num`)).toEqual(
       expect.arrayContaining([

@@ -46,7 +46,9 @@ async function openEditMode(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Create chapter" }).click();
   await page.getByRole("button", { name: "Open Chapter 1" }).click();
   await page.getByRole("button", { name: "Add segment" }).click();
-  await page.getByRole("button", { name: "Record segment 1" }).click();
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
   await page.getByRole("button", { name: "Record", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Stop recording", exact: true })
@@ -136,7 +138,7 @@ test.describe("edit-toolbar history cue (#91)", () => {
       );
     }
     // Nothing painted on either grey arrow (#924). Until #924 this asserted
-    // TWO badges here — the sighted half #135 round 2 added for the ≡ rows,
+    // TWO badges here — the sighted half #135 round 2 added for the ⋮ rows,
     // borrowed by #703 — and measured each one's overflow into the next
     // control. Both arrows are grey and both wrappers are present (asserted
     // below), so this is the cell where a badge would show if the hint grew

@@ -137,19 +137,23 @@ test("the ring moves through the chain and marks exactly one control at a time",
   await expect.poll(() => guided(page)).toEqual(["Add segment"]);
 
   // The hop the issue's list skips: a segment exists with nothing recorded into
-  // it, and the row's own red Record is the only door to the recorder. Drawn
-  // OUTSIDE the red, which is the stylesheet's one exception — keyed on the
-  // variant, so it covers this control and the recorder's alike.
+  // it, and the row's microphone is the only door to the recorder. Drawn
+  // OUTSIDE the control, which is the stylesheet's one exception — keyed on
+  // the variant, so it covers this control and the recorder's alike.
   await page.getByRole("button", { name: "Add segment" }).click();
   await expect(
-    page.getByRole("button", { name: "Record segment 1" })
+    page.getByRole("button", { name: "Open recorder for segment 1" })
   ).toBeVisible();
-  await expect.poll(() => guided(page)).toEqual(["Record segment 1"]);
+  await expect
+    .poll(() => guided(page))
+    .toEqual(["Open recorder for segment 1"]);
   expect(await ringOf(page)).toContain("rgb(46, 125, 246)");
   expect(await ringOf(page)).not.toContain("inset");
 
   // Step 7 — the recorder over a segment with no audio: Record.
-  await page.getByRole("button", { name: "Record segment 1" }).click();
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
   await expect(
     page.getByRole("button", { name: "Close recorder" })
   ).toBeVisible();
@@ -177,12 +181,14 @@ test("the shelf stops once its book has been worked in, and the mark is on the r
   await page.getByRole("button", { name: "Open Chapter 1" }).click();
   await page.getByRole("button", { name: "Add segment" }).click();
   await expect(
-    page.getByRole("button", { name: "Record segment 1" })
+    page.getByRole("button", { name: "Open recorder for segment 1" })
   ).toBeVisible();
 
   // A chapter with a segment and no audio in it marks the row's Record, and
   // nothing else — one mark, not a list of them.
-  await expect.poll(() => guided(page)).toEqual(["Record segment 1"]);
+  await expect
+    .poll(() => guided(page))
+    .toEqual(["Open recorder for segment 1"]);
 
   // Back on the shelf, nothing is marked — including the row that was guided
   // one step ago. The shelf comes back collapsed (its expanded set is screen
@@ -324,7 +330,9 @@ test.describe("disabled recorder guide", () => {
         .click();
       await page.getByRole("button", { name: "Open Chapter 1" }).click();
       await page.getByRole("button", { name: "Add segment" }).click();
-      await page.getByRole("button", { name: "Record segment 1" }).click();
+      await page
+        .getByRole("button", { name: "Open recorder for segment 1" })
+        .click();
       const button = page.locator(".record-guide > button");
       const host = page.locator(".record-guide");
       await expect(button).toBeEnabled();

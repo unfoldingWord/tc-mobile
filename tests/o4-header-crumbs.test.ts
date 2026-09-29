@@ -243,7 +243,7 @@ describe("the recorder header (#1105)", () => {
     expect(() => button(header(), strings.closeRecorder)).not.toThrow();
   });
 
-  it("agrees with the ≡ menu's own crumbs, chip for chip", async () => {
+  it("agrees with the ⋮ menu's own crumbs, chip for chip", async () => {
     await mount("o4");
     const headerCrumbs = crumbs(header());
     await tap(document, strings.recorderMenuOpen);

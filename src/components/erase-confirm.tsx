@@ -44,7 +44,7 @@ export interface EraseConfirmPreview {
 
 interface EraseConfirmProps {
   open: boolean;
-  /** The confirming line, e.g. "Clear this recording?". Copy is supplied by the
+  /** The confirming line, e.g. "Reset segment and start over". Copy is supplied by the
    *  integrator (strings.ts), never read here — this surface is pure UI. */
   title: string;
   /** Accessible name of the destructive action. */
@@ -74,7 +74,7 @@ interface EraseConfirmProps {
    * default — the book Delete and the failure log's Clear render exactly as
    * before. Wired from `segments-screen.tsx`'s own segment Erase (the O4 "13"
    * dialog) and from `recorder.tsx`'s own G5 call site (the bar's bin, O4
-   * only — the ≡ menu's Erase and the clipboard's discard, which share this
+   * only — the ⋮ menu's Erase and the clipboard's discard, which share this
    * same dialog in that file, pass nothing).
    */
   preview?: EraseConfirmPreview;

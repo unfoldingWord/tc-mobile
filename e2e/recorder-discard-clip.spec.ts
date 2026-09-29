@@ -41,7 +41,9 @@ test("the bin under the line throws away a cut and brings the frame back (#862)"
   await page.getByRole("button", { name: "Create chapter" }).click();
   await page.getByRole("button", { name: "Open Chapter 1" }).click();
   await page.getByRole("button", { name: "Add segment" }).click();
-  await page.getByRole("button", { name: "Record segment 1" }).click();
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
   await page.getByRole("button", { name: "Record", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Stop recording", exact: true })
@@ -127,10 +129,10 @@ test("the bin under the line throws away a cut and brings the frame back (#862)"
   // The erase door still asks the erase question, not the discard one.
   await page.getByRole("button", { name: "More actions", exact: true }).click();
   await page
-    .getByRole("button", { name: "Clear recording", exact: true })
+    .getByRole("button", { name: "Reset segment and start over", exact: true })
     .click();
   await expect(
-    page.getByRole("dialog", { name: "Clear this recording?" })
+    page.getByRole("dialog", { name: "Reset segment and start over" })
   ).toBeVisible();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
 });
