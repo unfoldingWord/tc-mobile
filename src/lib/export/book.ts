@@ -152,12 +152,16 @@ function folderKey(name: string): string {
  * entries under one path is a corrupt-or-ambiguous archive (Frank R-B7-book P2).
  * Renaming keeps every chapter's audio; losing a recording is unrecoverable in
  * the field, a confusing filename is not.
+ *
+ * `taken` holds {@link folderKey} forms: a free-text chapter name can differ
+ * from a sibling's only in case ("Intro" / "intro"), and those two files
+ * overwrite each other once extracted, exactly as two such folders would.
  */
 function uniqueEntryName(taken: Set<string>, name: string): string {
   const dot = name.lastIndexOf(".");
   const stem = dot === -1 ? name : name.slice(0, dot);
   const ext = dot === -1 ? "" : name.slice(dot);
-  return uniqueName(taken, stem, ext);
+  return uniqueName(taken, stem, ext, folderKey);
 }
 
 /**
@@ -272,7 +276,7 @@ async function addChaptersToZip(
       taken,
       nameChapter(chapter.number, chapter.name)
     );
-    taken.add(name);
+    taken.add(folderKey(name));
     // Stored entry: fflate computes the CRC over the MP3 and emits the buffer
     // itself as the data chunk. `result.mp3` is dropped after this iteration;
     // the archive's reference to it is the one copy that remains.
@@ -313,8 +317,9 @@ async function finishZip(sink: ZipSink): Promise<void> {
  * (nothing to share) or when the run was cancelled part-way.
  *
  * `nameChapter` supplies each zip entry's filename from the chapter's number
- * and its own name (`null` when it has none, #1218): naming is translator-facing copy, so it is injected by the hook (from
- * `strings`) rather than baked in here, keeping this module free of UI text.
+ * and its own name (`null` when it has none, #1218): naming is
+ * translator-facing copy, so it is injected by the hook (from `strings`)
+ * rather than baked in here, keeping this module free of UI text.
  *
  * `shouldContinue` is the same cancellation seam `exportChapterMp3` takes,
  * checked before each chapter as well as threaded into it: a book is several
@@ -419,9 +424,10 @@ function folderStem(label: string, position: number): string {
  * part-way — a clean no-op for the caller, not an error.
  *
  * `nameBook` names each folder and `nameChapter` each MP3 inside it, both from
- * the book's display name (and, for an MP3, the chapter's number and name): copy is injected, as for `exportBookZip`. A folder
- * name is disambiguated against its siblings with ` (2)`, ` (3)`, … so two
- * books with one name keep both books' audio. Names that differ only in case
+ * the book's display name (and, for an MP3, the chapter's number and name):
+ * copy is injected, as for `exportBookZip`. A folder name is disambiguated
+ * against its siblings with ` (2)`, ` (3)`, … so two books with one name keep
+ * both books' audio. Names that differ only in case
  * count as one name here ({@link folderKey}), so they stay apart after the
  * zip is extracted on a case-insensitive filesystem too.
  *

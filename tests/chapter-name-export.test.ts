@@ -122,6 +122,30 @@ describe("the chapter name reaches the zip entry (#1218)", () => {
     ]);
   });
 
+  it("keeps both chapters' audio when two names differ only in case", async () => {
+    // Case-insensitive filesystems (iOS Files, Windows, macOS) would extract
+    // these onto one path, so the zip must already keep them apart.
+    const bookId = await bookNamed("Mark", [
+      "Intro",
+      "intro",
+      null,
+      "chapter 3",
+    ]);
+    const sink = memoryArchiveSink();
+    await exportBookZip(
+      bookId,
+      (n, name) => strings.shareFilename("Mark", n, name),
+      testCodec(),
+      sink
+    );
+    expect(Object.keys(unzipSync(archive(sink.chunks)))).toEqual([
+      "Mark - Intro.mp3",
+      "Mark - intro (2).mp3",
+      `Mark - ${strings.chapterName(3)}.mp3`,
+      "Mark - chapter 3 (2).mp3",
+    ]);
+  });
+
   it("Share your work names each book folder's MP3s the same way", async () => {
     await bookNamed("Mark", ["The sower", null]);
     const sink = memoryArchiveSink();
