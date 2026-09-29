@@ -896,10 +896,9 @@ export const strings = {
   // path the previously stored recording is untouched on disk and a line that
   // said "recording" would misname what a discard destroys.
   //
-  // The headline, the safety line and the attempt count are deliberately NOT
-  // here: they are `components/recovery-copy.ts`, a pure module with tests of
-  // its own, and folding a second, differently-shaped table into this one is
-  // not what #169 asks for.
+  // The headline, the safety line and the attempt count are here too (#169),
+  // below. `components/recovery-copy.ts` still decides WHICH of them a failure
+  // gets, and that choosing is what its tests are about; only the words moved.
   saveFailedDialog: (editOnly: boolean): string =>
     editOnly ? "Your changes are not saved" : "This recording is not saved",
   // In place of the headline while a retry is in flight.
@@ -936,6 +935,39 @@ export const strings = {
         : strings.takeRecoverDiscard,
   saveFailedDiscardHint: (editOnly: boolean): string =>
     editOnly ? "Tap again to discard them." : strings.takeRecoverDiscardHint,
+  // The headline for each failure kind but `quota`, which reads `noRoom`.
+  // `recoveryTitle` in `components/recovery-copy.ts` says why each is worded
+  // the way it is; a `downgrade` names what is needed, not what went wrong.
+  saveFailedNeedsUpdate: (editOnly: boolean): string =>
+    editOnly
+      ? "Your changes need the new version of the app."
+      : "This recording needs the new version of the app.",
+  saveFailedBookGone: (editOnly: boolean): string =>
+    editOnly
+      ? "This book is gone. Your changes cannot be saved."
+      : "This book is gone. This recording cannot be saved.",
+  saveFailedUnknown: (editOnly: boolean): string =>
+    editOnly
+      ? "Your changes could not be saved."
+      : "This recording could not be saved.",
+  // The safety line under Retry. `saveFailedOnlyCopy` is the one every failure
+  // gets unless staying in the app cannot help; `recoverySafetyLine` holds the
+  // two exceptions' reasons (#38, #441).
+  saveFailedUpdateLoses: (editOnly: boolean): string =>
+    editOnly
+      ? "This copy of the app cannot save them. Restarting will lose them, but is the only way to get the new version."
+      : "This copy of the app cannot save it. Restarting will lose it, but is the only way to get the new version.",
+  saveFailedBookDeleted: (editOnly: boolean): string =>
+    editOnly
+      ? "This book was deleted in another copy of the app. Discard is the only exit."
+      : "This book was deleted in another copy of the app. Delete this recording to leave.",
+  saveFailedOnlyCopy: (editOnly: boolean): string =>
+    editOnly
+      ? "This screen has the only copy of your changes. Don't close the app."
+      : "This screen has the only copy of your unsaved work. Don't close the app.",
+  // The faint count beside the safety line. `recoveryAttempts` decides when it
+  // shows.
+  saveFailedAttempts: (attempts: number): string => `Attempts: ${attempts}`,
 
   // ── Root error boundary (#167) ───────────────────────────────────────────
   // The whole text layer of the crash screen. Says that something failed and
