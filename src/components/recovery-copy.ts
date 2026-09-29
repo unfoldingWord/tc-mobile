@@ -1,5 +1,11 @@
 /**
- * The words the save-failure recovery screen shows, as pure functions.
+ * Which words the save-failure recovery screen shows, as pure functions.
+ *
+ * The fixed sentences are entries in `lib/strings.ts` (#169), under the
+ * save-failed block; this module picks one per failure kind. The restart
+ * label and its consequence line are still composed here from English
+ * fragments (`lossPhrase`), because a composed sentence has no single entry
+ * to hold — enumerating them is #169's "no glued fragments" work.
  *
  * Pulled out of `save-failed.tsx` for the reason this repo lifts copy and state
  * decisions into a tested, DOM-free module (see `lib/takes/pending-take.ts` and
@@ -14,7 +20,7 @@
  * in the slot just the same). Any line that sends the translator out of the app
  * to act (the old "Free some space on the phone, then try again") is therefore an
  * instruction to risk the OS discarding the PWA and taking the only copy with it.
- * The lines below never do that: they name the condition and that this screen
+ * The lines it picks never do that: they name the condition and that this screen
  * holds the only copy, and leave the acting to the Retry/Discard controls.
  */
 
@@ -46,15 +52,11 @@ export function recoveryTitle(
     // says what is needed rather than what went wrong, because that is the
     // only thing left that is true (George R1 P2-1).
     case "downgrade":
-      return editOnly
-        ? "Your changes need the new version of the app."
-        : "This recording needs the new version of the app.";
+      return strings.saveFailedNeedsUpdate(editOnly);
     case "stale":
-      return editOnly
-        ? "This book is gone. Your changes cannot be saved."
-        : "This book is gone. This recording cannot be saved.";
+      return strings.saveFailedBookGone(editOnly);
     case "unknown":
-      return unknownTitle(editOnly);
+      return strings.saveFailedUnknown(editOnly);
     default: {
       // A new `SaveFailureKind` fails to compile here until it is given its
       // own title (#777). At runtime it still gets the `unknown` line rather
@@ -62,15 +64,9 @@ export function recoveryTitle(
       // would cost the only copy of a recording.
       const unhandled: never = kind;
       void unhandled;
-      return unknownTitle(editOnly);
+      return strings.saveFailedUnknown(editOnly);
     }
   }
-}
-
-function unknownTitle(editOnly: boolean): string {
-  return editOnly
-    ? "Your changes could not be saved."
-    : "This recording could not be saved.";
 }
 
 /**
@@ -110,17 +106,13 @@ export function recoverySafetyLine(
   // judged worth building for v1 — the honest line is the whole fix.
   switch (kind) {
     case "downgrade":
-      return editOnly
-        ? "This copy of the app cannot save them. Restarting will lose them, but is the only way to get the new version."
-        : "This copy of the app cannot save it. Restarting will lose it, but is the only way to get the new version.";
+      return strings.saveFailedUpdateLoses(editOnly);
     case "stale":
-      return editOnly
-        ? "This book was deleted in another copy of the app. Discard is the only exit."
-        : "This book was deleted in another copy of the app. Delete this recording to leave.";
+      return strings.saveFailedBookDeleted(editOnly);
     case "quota":
     case "unknown":
     case null:
-      return heldSafetyLine(editOnly);
+      return strings.saveFailedOnlyCopy(editOnly);
     default: {
       // A new `SaveFailureKind` fails to compile here until someone decides
       // whether staying in the app still protects its work (#777). Until then
@@ -128,15 +120,9 @@ export function recoverySafetyLine(
       // keeps a RAM-only take alive.
       const unhandled: never = kind;
       void unhandled;
-      return heldSafetyLine(editOnly);
+      return strings.saveFailedOnlyCopy(editOnly);
     }
   }
-}
-
-function heldSafetyLine(editOnly: boolean): string {
-  return editOnly
-    ? "This screen has the only copy of your changes. Don't close the app."
-    : "This screen has the only copy of your unsaved work. Don't close the app.";
 }
 
 /**
@@ -269,5 +255,5 @@ export function recoveryAttempts(
 }
 
 function attemptCount(attempts: number): string | null {
-  return attempts > 1 ? `Attempts: ${attempts}` : null;
+  return attempts > 1 ? strings.saveFailedAttempts(attempts) : null;
 }
