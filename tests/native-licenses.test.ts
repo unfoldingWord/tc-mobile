@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 
 import { licenseTexts, licenseTextsFor } from "@/components/licenses";
 
+import { blankGradleSwiftComments } from "./support";
+
 /**
  * The native shells' attribution (#477). Each Capacitor build carries more
  * than the web bundle `tests/licenses.test.ts` covers: the Capacitor runtime
@@ -29,9 +31,12 @@ import { licenseTexts, licenseTextsFor } from "@/components/licenses";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8");
-/** Gradle or Swift source with its whole-line `//` comments removed, so a
- * commented-out declaration is not read as a live one. */
-const code = (rel: string) => read(rel).replace(/^\s*\/\/.*$/gm, "");
+/** Gradle or Swift source with every comment blanked (#822), so a
+ * commented-out declaration is not read as a live one. A whole-line `//` strip
+ * was not enough: a `/* *\/` block holding an old version, above a live `exact:`
+ * pin or below a live `ext` value, was the one these pins read, and the suite
+ * passed with the live declaration drifted from its notice section. */
+const code = (rel: string) => blankGradleSwiftComments(read(rel));
 const installedVersion = (pkg: string) =>
   (JSON.parse(read(`node_modules/${pkg}/package.json`)) as { version: string })
     .version;
@@ -305,4 +310,51 @@ describe("which licence texts the About screen lists", () => {
       );
     }
   );
+});
+
+/** Synthetic probes for the strip `code()` reads through (#822). */
+describe("blankGradleSwiftComments", () => {
+  it("blanks line, trailing and block comments, and keeps each offset", () => {
+    const src = [
+      "// header",
+      "a = '1' // a = '0'",
+      "/*",
+      "a = '0'",
+      "*/",
+      "b = '2'",
+    ].join("\n");
+    const out = blankGradleSwiftComments(src);
+    expect(out).toHaveLength(src.length);
+    expect(out.split("\n")).toHaveLength(6);
+    expect(
+      [...out.matchAll(/^\s*(\w+)\s*=\s*'([^']+)'/gm)].map((m) => m[0].trim())
+    ).toEqual(["a = '1'", "b = '2'"]);
+    expect(out).not.toMatch(/header|'0'/);
+  });
+
+  it("keeps a `//` or `/*` inside a string literal as code", () => {
+    const src = [
+      '.package(url: "https://example.org/a.git", exact: "1.0.0"), // x',
+      "url = 'https://plugins.gradle.org/m2/'",
+      'glob = "**/*.jar"',
+      "after = 1 /* gone */",
+    ].join("\n");
+    const out = blankGradleSwiftComments(src);
+    expect(out).toContain('"https://example.org/a.git", exact: "1.0.0"),');
+    expect(out).toContain("'https://plugins.gradle.org/m2/'");
+    expect(out).toContain('"**/*.jar"');
+    expect(out).toContain("after = 1");
+    expect(out).not.toMatch(/\/\/ x|gone/);
+  });
+
+  it.each([
+    ['a = """x"""', /triple-quoted/],
+    ['a = #"x"#', /raw literal/],
+    ['a = "x\nb"', /runs past its line/],
+    ["/* a /* b */", /nested block comment/],
+    ["/* a", /unterminated block comment/],
+    ['a = "x', /unterminated literal/],
+  ])("throws on a form it does not model: %j", (src, message) => {
+    expect(() => blankGradleSwiftComments(src)).toThrow(message);
+  });
 });

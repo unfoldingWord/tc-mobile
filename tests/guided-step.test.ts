@@ -165,8 +165,8 @@ describe("the Books screen's link in the chain (#604)", () => {
   it("#834: the newest book's Add chapter still guides even with other books on the shelf", () => {
     // Tim's decision (#834): "once a book is added, the blue ring goes around
     // that book's + for adding a chapter" — whether or not other books
-    // already exist. `listBooks` sorts newest-first (`use-books.ts`), so the
-    // just-created book is always `books[0]`.
+    // already exist. `listBooks` sorts newest-created first
+    // (`lib/storage/books.ts`), so the just-created book is always `books[0]`.
     expect(guidedStep(books({ books: [book(1), book(2)] }))).toEqual({
       kind: "add-chapter",
       bookId: bookId(1),

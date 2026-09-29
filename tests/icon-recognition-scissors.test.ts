@@ -3,7 +3,12 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { region, uniqueIndexOf } from "./support";
+import {
+  blankComments,
+  region,
+  stripHtmlComments,
+  uniqueIndexOf,
+} from "./support";
 
 /**
  * #999: after #955 replaced the recorder's edit-mode toggle with the app's
@@ -17,6 +22,13 @@ import { region, uniqueIndexOf } from "./support";
  * change) — it only compares source text, so it cannot catch a rendering
  * regression, only a drift between the two copies of the path data or a
  * leftover "bracket" reference.
+ *
+ * The positive matches read each file with its comments removed (#822): the
+ * sheet and the protocol through `stripHtmlComments`, `icon.tsx` through
+ * `blankComments` (it keeps offsets and indentation, which `iconBlock`'s
+ * two-space close anchor relies on). Otherwise a commented-out ring would still
+ * count as drawn, and two copies with the same ring commented out would match.
+ * The "bracket" check stays on the raw sheet: it is negated, so it fails safe.
  */
 
 const ICON_TSX = path.join(process.cwd(), "src/components/icon.tsx");
@@ -72,9 +84,10 @@ function sheetRow(html: string, n: number): string {
 }
 
 describe("icon-recognition sheet row 6 (#999)", () => {
-  const iconSource = readFileSync(ICON_TSX, "utf8");
-  const sheetHtml = readFileSync(SHEET_HTML, "utf8");
-  const protocolMd = readFileSync(PROTOCOL_MD, "utf8");
+  const iconSource = blankComments(readFileSync(ICON_TSX, "utf8"));
+  const rawSheetHtml = readFileSync(SHEET_HTML, "utf8");
+  const sheetHtml = stripHtmlComments(rawSheetHtml);
+  const protocolMd = stripHtmlComments(readFileSync(PROTOCOL_MD, "utf8"));
 
   it("draws row 6 with the app's own scissors path data, not a redrawn copy", () => {
     const appScissors = svgAttrs(iconBlock(iconSource, "scissors"));
@@ -107,7 +120,7 @@ describe("icon-recognition sheet row 6 (#999)", () => {
     // history, so "bracket" should not appear anywhere in it. The protocol
     // DOES narrate history (why row 6 changed, per #955/#999), so that check
     // is scoped to the live row 6 line only, in the next test.
-    expect(sheetHtml).not.toMatch(/bracket/i);
+    expect(rawSheetHtml).not.toMatch(/bracket/i);
   });
 
   it("the protocol's row 6 line asks about scissors, not brackets, and about opening editing, not picking a piece", () => {

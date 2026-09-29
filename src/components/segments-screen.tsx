@@ -17,6 +17,7 @@ import { NameEdit } from "./name-edit";
 import { O4Crumbs, O4SheetHead } from "./o4-crumbs";
 import { Tile, TileSpacer } from "./o4-tile-menu";
 import { Notice } from "./notice";
+import { NOTHING_FAILED_TONE } from "./notice-tone";
 import { SegmentRow } from "./segment-row";
 import { SegmentsHead } from "./segments-head";
 import { segmentsListInert } from "./segments-inert";
@@ -43,6 +44,7 @@ import type { Layer } from "@/lib/nav/layer-stack";
 import { overlayDismissal } from "@/lib/nav/navigation";
 import { firstNotFinished } from "@/lib/view/segment-rows";
 import type { ChapterId, SegmentId } from "@/types/domain";
+import type { RecorderEntry } from "@/types/view";
 
 /**
  * Every overlay this screen can put over the chapter, as a system-Back layer
@@ -124,7 +126,12 @@ interface SegmentsScreenProps {
    */
   erase: UseEraseSegment;
   onBack: () => void;
-  onOpenRecorder: (segmentId: SegmentId, ordinal: number) => void;
+  /** `entry` is the mode the sheet opens in; omitted, record (#286 item 2). */
+  onOpenRecorder: (
+    segmentId: SegmentId,
+    ordinal: number,
+    entry?: RecorderEntry
+  ) => void;
   /** Register an open overlay as a Back layer. `useNavStack`'s, through App. */
   pushLayer: (layer: Layer) => void;
   /** Unregister one by id. Idempotent. */
@@ -1250,7 +1257,7 @@ export const SegmentsScreen = forwardRef<
           console. `console.error is not a channel on a phone in a village.`
           Share speaks in its own menu, not here. */}
       {staleTarget ? (
-        <Notice>{strings.staleChapter}</Notice>
+        <Notice tone={NOTHING_FAILED_TONE}>{strings.staleChapter}</Notice>
       ) : (chapterErrorText ??
         audio.error ??
         eraseErrorText ??
@@ -1322,8 +1329,8 @@ export const SegmentsScreen = forwardRef<
                   ranOut={audio.playbackRanOut}
                   busy={refreshing}
                   onPlay={(offsetSeconds) => audio.playTake(row, offsetSeconds)}
-                  onOpenRecorder={() =>
-                    onOpenRecorder(row.segmentId, row.ordinal)
+                  onOpenRecorder={(entry) =>
+                    onOpenRecorder(row.segmentId, row.ordinal, entry)
                   }
                   onSetFinished={(finished) =>
                     onSetFinished(row.segmentId, finished)
@@ -1445,7 +1452,7 @@ export const SegmentsScreen = forwardRef<
         }
       >
         {staleTarget ? (
-          <Notice>{strings.staleChapter}</Notice>
+          <Notice tone={NOTHING_FAILED_TONE}>{strings.staleChapter}</Notice>
         ) : renamingChapter ? (
           <>
             {/* Rename the chapter in place (#264). Seeded with the current

@@ -118,28 +118,58 @@ the trap the paragraph below is about;
 `tests/dist-css.test.ts` reads the **built** `dist/assets/*.css`, not a source
 layer at all.
 
-So a CSS check is buildable today. **For the colour boundary, copy
-`tests/share-progress.test.ts`, not `tests/touch-policy.test.ts`** — share-progress
-already asserts this exact split for `.share-scrim`, by slicing the rule block
-and matching declaration _values_, which a comment cannot false-hit.
-touch-policy reads its file whole and regexes the raw string, so the obvious
-`not.toMatch(/--p-(amber|cool|green|red|warn)/)` copied from it fails on
-`3-components.css`'s own header, which names those five families in prose in
-order to ban them — and the natural repair is to weaken the pattern until it can
-no longer catch a real leak in a rule. A whole-file reader must ignore comments
-and match `var(…)` declarations rather than the bare identifier.
+So a CSS check is buildable today. **For a CSS rule, read it through `cssRule`
+and `declarationValue` in `tests/support.ts`** rather than a local regex:
+`cssRule` strips block comments and throws on a missing, ambiguous or empty
+rule, and `declarationValue` anchors a property on a declaration boundary, so
+the value can be asserted with `toBe` (`tests/take-cap-warn-style.test.ts` is a
+short worked example, colour boundary included). A whole-file reader must ignore
+comments and match `var(…)` declarations rather than the bare identifier:
+`3-components.css`'s own header names the five colour-primitive families in
+prose in order to ban them, so an unstripped
+`not.toMatch(/--p-(amber|cool|green|red|warn)/)` fails on the header — and the
+natural repair is to weaken the pattern until it can no longer catch a real
+leak in a rule.
 
-The same trap runs in the other direction, and it is observed, not theoretical:
-a **comment** that names something a test greps for can capture that test. Round
-3 of #529 wrote the share-scrim selector into `3-components.css`'s header, and
-`share-progress.test.ts` — which then located its block with a raw `indexOf`
-over the whole file — sliced the comment instead of the rule and went red. Its
-`expect(declarations.length).toBeGreaterThanOrEqual(8)` floor is the only reason
-that surfaced as a failure rather than as an assertion looping over nothing.
-That test now strips comments before it searches (#533); other suites still
-slice stylesheet source with a raw `indexOf`. When a stylesheet comment must
-name a selector a test searches for, write it without its leading dot, and keep
-a non-emptiness floor in any test that slices a block out of a file.
+**A comment can move a source-reading test in either direction, and both are
+observed, not theoretical.**
+
+- **Red — a comment captures the test.** Round 3 of #529 wrote the share-scrim
+  selector into `3-components.css`'s header, and `share-progress.test.ts` —
+  which then located its block with a raw `indexOf` over the whole file —
+  sliced the comment instead of the rule and went red. Its
+  `expect(declarations.length).toBeGreaterThanOrEqual(8)` floor is the only
+  reason that surfaced as a failure rather than as an assertion looping over
+  nothing. That test now strips comments before it searches (#533).
+- **Green — a comment satisfies the test.** This is the quiet one, because
+  nothing goes red and review reads the test as guarding the code. #822
+  records it by mutation: the recorder-menu erase pin stayed green with a
+  decoy comment carrying the arming statements ahead of a live handler that
+  erased with no confirmation, and the zoom-gate pin stayed green with
+  `windowControlsInert={false} // windowControlsInert={stage.windowControlsInert}`.
+  A negated assertion fails safe here; a positive `toContain` or `toMatch`
+  does not.
+
+What closes both, learned on that pin family one hole at a time:
+
+- **Strip before you search, with the shared helper for the file's language**,
+  never a local regex: `stripComments` / `blankComments` in
+  `tests/support.ts` for TS and JS (string-blind — the caller checks the file
+  holds no `//` or `/*` in a string), `stripCodeComments` in
+  `tests/strip-code-comments.ts` where the file does (it parses first),
+  `stripCssComments`, `stripYamlComments`, `stripHtmlComments` and
+  `blankGradleSwiftComments`. Bounding a slice fixes where the region ends,
+  not prose inside it; a strip anchored to line start misses a `//` that
+  trails live code. Each local repair on #822 closed only the form just used
+  against it.
+- **Where the code is a presentational component, render it instead.** A node
+  read through `tests/render.ts` cannot be satisfied by a comment at all —
+  `tests/notice-bridge.test.ts`'s `Notice` half and
+  `tests/guided-ring.test.ts`'s toolbar half are the examples. A strip is for
+  code that cannot be rendered.
+- **Keep a non-emptiness floor** on any sliced region — `region` and
+  `uniqueIndexOf` in `tests/support.ts` throw on a missing, duplicated or
+  empty anchor, which is what turned #529's capture into a visible failure.
 
 Blind spot #2 under "No sprawl" below still says nothing in this repo reads CSS
 at all; that sentence is stale and is tracked in #525, which is where it gets

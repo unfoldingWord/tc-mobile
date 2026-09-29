@@ -18,6 +18,8 @@ import type { Layer } from "@/lib/nav/layer-stack";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
+import { stripCssComments } from "./support";
+
 /**
  * The O4 Books screen (#942, epic #936): states 01 (empty shelf) and 03 (the
  * list), the book covers, the chapter rows and their progress dots.
@@ -176,7 +178,7 @@ function dotGeometry(row: HTMLElement): { size: number; gap: number } {
 const read = (file: string) =>
   readFileSync(path.resolve(import.meta.dirname, "..", file), "utf8");
 /** A stylesheet with its comments stripped (AGENTS.md, the share-scrim trap). */
-const cssCode = (file: string) => read(file).replace(/\/\*[\s\S]*?\*\//g, "");
+const cssCode = (file: string) => stripCssComments(read(file));
 
 /** Every `--p-*` primitive in layer 1, name → value. */
 const primitives = new Map(
@@ -582,7 +584,7 @@ describe("o4/books.css (#942)", () => {
   );
   // Comments stripped first, so a header naming a selector or a primitive can
   // neither satisfy nor trip a check below (AGENTS.md, the share-scrim trap).
-  const code = source.replace(/\/\*[\s\S]*?\*\//g, "");
+  const code = stripCssComments(source);
   const layerOpen = code.indexOf("@layer components {");
   const body = code.slice(layerOpen + "@layer components {".length);
   const rules = [...body.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({

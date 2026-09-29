@@ -46,7 +46,7 @@ const uuid = (): string => crypto.randomUUID();
 /**
  * Open the transaction a take write needs: the take row and segment pointer, the
  * clip both `saveTake` writes and a superseded take's clip is deleted from, and
- * the book/chapter parents floated to the top of the shelf. `addTake` and
+ * the book/chapter parents read to bump the book's `updatedAt`. `addTake` and
  * `saveTake` open the identical transaction — `saveTake` just also writes the
  * clip inside it — so the store list and the take logic are shared, not
  * duplicated. `clearSegmentTake` opens it too, so the clip reference check
@@ -119,7 +119,7 @@ export function isFinished(status: RecordingStatus): boolean {
  *
  * Shared by `addTake` (clip already on disk) and `saveTake` (clip written in the
  * same transaction), so the 1:1 replace, the finished-mark, the prior-clip
- * cleanup and the book float exist once. Does NOT open or close the transaction:
+ * cleanup and the book's `updatedAt` bump exist once. Does NOT open or close the transaction:
  * the caller owns its lifetime, which is what lets `saveTake` make the clip write
  * and this take write atomic together.
  */
@@ -165,9 +165,9 @@ async function writeTakeInTx(
     await deleteClipIfUnreferenced(tx, priorTake.clipId);
   }
 
-  // Recording is activity: float the book to the top of the shelf (listBooks
-  // sorts by updatedAt), in the SAME transaction so the take and the recency
-  // land together. A dangling chapter/book parent is skipped rather than
+  // Recording is activity: bump the book's `updatedAt`, in the SAME
+  // transaction so the take and the timestamp land together. The book keeps
+  // its place on the shelf (listBooks orders by createdAt, #1185). A dangling chapter/book parent is skipped rather than
   // failing a save that otherwise succeeded.
   const chapter = await tx.objectStore("chapters").get(segment.chapterId);
   const book = chapter
@@ -352,7 +352,7 @@ export async function clearSegmentTake(segmentId: SegmentId): Promise<void> {
     status: "not-started",
   });
 
-  // Editing is activity: float the book to the top of the shelf in the same
+  // Editing is activity: bump the book's `updatedAt` in the same
   // transaction, exactly as recording does.
   const chapter = await tx.objectStore("chapters").get(segment.chapterId);
   const book = chapter

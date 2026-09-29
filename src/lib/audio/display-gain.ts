@@ -23,9 +23,11 @@
  * records over it — see `firstTakeInFlight` below for why the distinction is
  * exactly there and not one step wider.
  *
- * Since #283, `LiveScope` (always absolute, not this module) is what draws a
- * punch-in's live recording in the happy path — the whole take-in-flight
- * window mounts it, first take or append. This module's own reasoning below
+ * Since #283, `LiveScope` is what draws a punch-in's live recording in the
+ * happy path — the whole take-in-flight window mounts it, first take or
+ * append. It draws a first take absolute and an append at the committed
+ * clip's `displayGain`, carried on its capture context (#1189,
+ * `capture-context.ts`), so the Record tap does not change the scale. This module's own reasoning below
  * about a punch-in's canvas staying fitted describes the paths that still
  * reach `Waveform` with committed audio present: idle, a failed mic tap
  * mid-take, and an append's own Pause+Play review (drawn fitted, deliberately,

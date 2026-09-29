@@ -13,6 +13,7 @@ import {
   newColumnRateClock,
   type CaptureContext,
 } from "@/lib/audio/capture-context";
+import { clampUnit } from "@/lib/audio/display-gain";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { captureWindow } from "@/lib/audio/viewport";
 import { cn } from "@/lib/utils";
@@ -50,7 +51,8 @@ interface LiveScopeProps {
    * (#640), or `null` for a first take. Drawn left of the new audio and right
    * of the head, at the scope's own measured column rate, so an append keeps
    * the take before it in view and a mid-clip insert keeps the clip on both
-   * sides. Read once per paint through a ref; it is fixed for the take.
+   * sides. Its `gain` scales every bar, the new audio's included (#1189).
+   * Read once per paint through a ref; it is fixed for the take.
    */
   context?: CaptureContext | null;
   height?: number;
@@ -87,34 +89,25 @@ interface LiveScopeProps {
  * no context, and a take at the very start has nothing before it — those are
  * the two cases the requirements owner named where a blank left is right.
  *
- * Drawn at ABSOLUTE level, deliberately — `Waveform` fits a stored take to the
- * lane (#358, `lib/audio/display-gain.ts`) and this does not. While capture is
- * live the scope is a level cue as much as a shape cue, and a scope that
- * auto-scaled would make a microphone capturing far too quietly look exactly
- * like a healthy one, which is the very problem #359 is about; the VU meter
- * beside it is absolute for the same reason.
+ * A FIRST take is drawn at absolute level, deliberately — `Waveform` fits a
+ * stored take to the lane (#358, `lib/audio/display-gain.ts`) and this does
+ * not while nothing is committed. While capture is live the scope is a level
+ * cue as much as a shape cue, and a scope that auto-scaled would make a
+ * microphone capturing far too quietly look exactly like a healthy one, which
+ * is the very problem #359 is about; the VU meter beside it is absolute for
+ * the same reason, for every take.
  *
- * `Waveform` holds the same line rather than contradicting it: it suppresses
- * the fit whenever `firstTakeInFlight` is set — capturing AND nothing
- * committed yet, not `capturing` alone, which a punch-in also sets over
- * already-committed audio it must keep fitted (George R2 P2) — so the
- * mid-take swaps between the two canvases for a FIRST take — this scope
- * unmounting for a paused decoded preview (`recorder.tsx`'s `previewShown`),
- * and remounting on Resume — do not change the scale under the translator
- * (George R1 P2, R3 P2). The re-fit lands once, when the take is committed and
- * capture is over.
+ * An APPEND or insert is drawn at the committed clip's display gain instead
+ * (#1189), carried on `context.gain` and applied to the context AND the new
+ * audio. Drawn absolute, a Record tap collapsed the audio already on the stage
+ * from the height the idle `Waveform` fitted it to down to its raw level —
+ * up to twenty times smaller on a quiet phone — and the new take grew beside
+ * it at that raw level too. At the committed clip's gain, the existing audio
+ * keeps the height it had a tap earlier and the new audio is on the same
+ * scale. The whole buffer is re-fitted by `Waveform` when the take commits.
  *
- * An APPEND's own Pause+Play preview is the one deliberate exception (since
- * #283, George R-resume round 2): this scope keeps drawing absolute through
- * the whole live recording, but its Pause+Play preview swaps to `Waveform`
- * FITTED to the committed clip's own gain — a real scale change, accepted as
- * the outcome of an explicit Play tap reviewing the take, not the involuntary
- * "did I lose it" class this module's absolute-level contract exists to
- * prevent. See `recorder-stage.ts` and the stage ternary in `recorder.tsx`.
- *
- * #358 also sketches a running-max scale during capture; that half is
- * deliberately NOT built here, pending the requirements owner's call and the
- * Moto G peak/RMS measurement that separates #358 from #359.
+ * #358 also sketches a running-max scale during capture; that is NOT built
+ * here — the gain is fixed for the take, never tracked while it records.
  */
 export function LiveScope({
   readScope,
@@ -228,18 +221,23 @@ export function LiveScope({
       // never zero (head > 0), so no divide-by-zero guard.
       const barW = Math.max(1, w / buckets / span - 1);
       ctx.fillStyle = stroke;
+      const around = contextRef.current;
+      // One factor for every bar this frame (#1189): the committed clip's
+      // display gain when there is one, absolute (1) for a first take.
+      // Clamped because the new take can be louder than the clip it was
+      // fitted to.
+      const gain = around ? around.gain : 1;
       const bar = (i: number, lo: number, hi: number) => {
         const x = ((i / buckets - win.startFraction) / span) * w;
-        const top = mid - hi * mid;
-        const bottom = mid - lo * mid;
+        const top = mid - clampUnit(hi * gain) * mid;
+        const bottom = mid - clampUnit(lo * gain) * mid;
         ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
       };
-      // The existing clip (#640), in the same colour and at the same absolute
-      // scale as the take: `before` fills the not-yet pad left of the new
-      // audio, walking outward from the oldest real column, and `after` runs
-      // from the head to the right edge. Folded to the MEASURED column rate so
-      // a second of stored audio is as wide as a second of the take beside it.
-      const around = contextRef.current;
+      // The existing clip (#640), in the same colour and at the same scale as
+      // the take: `before` fills the not-yet pad left of the new audio,
+      // walking outward from the oldest real column, and `after` runs from the
+      // head to the right edge. Folded to the MEASURED column rate so a second
+      // of stored audio is as wide as a second of the take beside it.
       if (around) {
         const bucketsPerColumn =
           CANONICAL_SAMPLE_RATE /
