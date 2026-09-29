@@ -2328,7 +2328,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // `claim("mic")` moves the floor, it does not touch the MediaRecorder, and
       // `stopRecording`'s `finally` stops the claim it SNAPSHOTTED before its
       // await, and only while that claim is still current (George G4). Equivalent
-      // here — `stopBuffer()` runs before `stopRecording()` takes its snapshot —
+      // here — `stopPlayback()` below calls `stopBuffer`, so it runs before
+      // `stopRecording()` takes its snapshot —
       // but "whichever claim is current", which this said until #147, describes a
       // guard that would release a NEWER recording's claim, which is the bug the
       // token exists to prevent (`use-audio-session.ts`, `stopRecording`).

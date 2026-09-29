@@ -27,14 +27,9 @@ import type { ShareSettled } from "@/hooks/share-progress";
  * it is owned. `tests/share-outcome-glyph.test.ts` pins that boundary so a
  * later tidy-up cannot cross it by accident.
  *
- * Which is why `nothing` now takes its tone from `NOTHING_FAILED_TONE` rather
- * than spelling `alert` out: #147's audit found this is not the only site
- * saying "nothing failed" on the failure tone, and the others are screens this
- * module never sees. The value is unchanged — the constant IS `alert` — so
- * nothing is settled here; what changes is that the day it is settled, they
- * move together instead of one of them being found later. The count itself is
- * deliberately not written down: it was three when the audit ran and is two
- * since #614, and `notice-tone.ts` is the one place that enumerates them.
+ * `nothing` takes its tone from `NOTHING_FAILED_TONE` rather than spelling
+ * `alert` out, so that this site and the others in that class move together
+ * when #147 is answered. `notice-tone.ts` holds the class and the reasoning.
  *
  * A table, not a ternary at the call site, for the reason `share-error-copy.ts`
  * gives in its own header: a nested ternary ending in `: null` means widening

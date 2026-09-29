@@ -91,7 +91,7 @@ export function noticePresentation(tone: NoticeTone): NoticePresentation {
  * colour and `role="alert"` for both, but only `staleChapter` also shows the
  * failure triangle: it passes no `icon`, so it takes the tone's own glyph,
  * while `shareOutcomeGlyph("nothing")` substitutes `share-empty` (#178). So the
- * mis-signal `info` was added to stop (#112, #140) reaches a translator who
+ * mis-signal that `info` was added to stop (#112, #140) reaches a translator who
  * cannot read through the colour and the interrupting role, and through the
  * glyph at one of the two sites.
  *
