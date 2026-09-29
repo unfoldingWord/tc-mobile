@@ -29,12 +29,17 @@ class FakeContext {
   static nextResume: ResumeMode = "prompt";
   static nextState = "suspended";
   static nextCloseRejects: unknown = undefined;
+  /** When true, the NEXT context built returns a `close()` promise that
+   * settles only when the test calls `settleClose` (#1232). */
+  static nextCloseHangs = false;
 
   readonly id: number;
   state: string;
   readonly resumeMode: ResumeMode;
   readonly closeRejects: unknown;
+  readonly closeHangs: boolean;
   closeCalls = 0;
+  private settlePendingClose: (() => void) | null = null;
   sourcesCreated = 0;
   private rejectResume: ((cause: unknown) => void) | null = null;
   decodeGate: {
@@ -48,6 +53,7 @@ class FakeContext {
     this.state = FakeContext.nextState;
     this.resumeMode = FakeContext.nextResume;
     this.closeRejects = FakeContext.nextCloseRejects;
+    this.closeHangs = FakeContext.nextCloseHangs;
     events.push(`create#${this.id}`);
   }
 
@@ -73,9 +79,18 @@ class FakeContext {
     this.closeCalls++;
     events.push(`close#${this.id}`);
     this.state = "closed";
+    if (this.closeHangs) {
+      return new Promise<void>((resolve) => {
+        this.settlePendingClose = resolve;
+      });
+    }
     return this.closeRejects === undefined
       ? Promise.resolve()
       : Promise.reject(this.closeRejects);
+  }
+  /** Resolve a `close()` that `closeHangs` left pending. */
+  settleClose(): void {
+    this.settlePendingClose?.();
   }
   createBuffer(_channels: number, length: number, sampleRate: number): unknown {
     return { duration: length / sampleRate, copyToChannel(): void {} };
@@ -152,6 +167,7 @@ beforeEach(() => {
   FakeContext.nextResume = "hang";
   FakeContext.nextState = "interrupted";
   FakeContext.nextCloseRejects = undefined;
+  FakeContext.nextCloseHangs = false;
   events.length = 0;
 });
 
@@ -365,5 +381,75 @@ describe("playSamples — dropping the shared context after a failed resume (#12
 
     expect(reportFailure).toHaveBeenCalledWith(cause, "playback-context-close");
     spy.mockRestore();
+  });
+
+  describe("bounding the drops while a close() is pending (#1232)", () => {
+    it("with close() never settling, six failed Plays in a row build at most two contexts", async () => {
+      FakeContext.nextCloseHangs = true;
+      const { playSamples, RESUME_TIMEOUT_MS } = await loadAudioIo();
+
+      for (let press = 0; press < 6; press++) {
+        await timedOutPlay(playSamples, RESUME_TIMEOUT_MS);
+      }
+
+      // Context 1 was dropped and its close() never settles. Every later
+      // failed Play reuses context 2 rather than dropping it again.
+      expect(FakeContext.made).toHaveLength(2);
+      expect(FakeContext.made[0]!.closeCalls).toBe(1);
+      expect(FakeContext.made[1]!.closeCalls).toBe(0);
+      expect(events).toEqual(["create#1", "close#1", "create#2"]);
+      // Still one resume row per Play, and no close row: nothing failed.
+      expect(reportFailure).toHaveBeenCalledTimes(6);
+      for (const [, key] of reportFailure.mock.calls) {
+        expect(key).toBe("playback-resume-timeout");
+      }
+    });
+
+    it("once the pending close() settles, the next failed Play drops again", async () => {
+      FakeContext.nextCloseHangs = true;
+      const { playSamples, RESUME_TIMEOUT_MS } = await loadAudioIo();
+
+      await timedOutPlay(playSamples, RESUME_TIMEOUT_MS);
+      await timedOutPlay(playSamples, RESUME_TIMEOUT_MS);
+      expect(FakeContext.made).toHaveLength(2);
+      expect(FakeContext.made[1]!.closeCalls).toBe(0);
+
+      FakeContext.made[0]!.settleClose();
+      await vi.advanceTimersByTimeAsync(0);
+
+      await timedOutPlay(playSamples, RESUME_TIMEOUT_MS);
+      expect(FakeContext.made[1]!.closeCalls).toBe(1);
+      await timedOutPlay(playSamples, RESUME_TIMEOUT_MS);
+      expect(FakeContext.made).toHaveLength(3);
+    });
+
+    it("a close() that rejects also ends the wait, so the next failed Play drops again", async () => {
+      FakeContext.nextCloseRejects = new Error("close rejected");
+      const { playSamples, RESUME_TIMEOUT_MS } = await loadAudioIo();
+
+      await timedOutPlay(playSamples, RESUME_TIMEOUT_MS);
+      await vi.advanceTimersByTimeAsync(0);
+      await timedOutPlay(playSamples, RESUME_TIMEOUT_MS);
+
+      expect(FakeContext.made).toHaveLength(2);
+      expect(FakeContext.made[1]!.closeCalls).toBe(1);
+    });
+
+    it("a close() that throws synchronously also ends the wait", async () => {
+      const { playSamples, RESUME_TIMEOUT_MS } = await loadAudioIo();
+      const spy = vi
+        .spyOn(FakeContext.prototype, "close")
+        .mockImplementationOnce(function (this: FakeContext) {
+          this.closeCalls++;
+          throw new Error("close threw");
+        });
+
+      await timedOutPlay(playSamples, RESUME_TIMEOUT_MS);
+      await timedOutPlay(playSamples, RESUME_TIMEOUT_MS);
+
+      expect(FakeContext.made).toHaveLength(2);
+      expect(FakeContext.made[1]!.closeCalls).toBe(1);
+      spy.mockRestore();
+    });
   });
 });
