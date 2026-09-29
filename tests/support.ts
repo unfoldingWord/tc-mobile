@@ -139,6 +139,62 @@ export function blankComments(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, blank).replace(/\/\/.*$/gm, blank);
 }
 
+/**
+ * `blankComments` for the Gradle (Groovy) and Swift files the native-licence
+ * pins read (#822): `//` and `/* *\/` comments are overwritten with spaces,
+ * their newlines kept, so a line-anchored pattern still sees every line start.
+ * Unlike `stripComments` and `blankComments`, it steps over `"…"` and `'…'`
+ * literals, so the `//` in a `"https://…"` URL stays code.
+ *
+ * It throws instead of guessing on the forms it does not model: a
+ * triple-quoted or `#"` raw literal, a literal that runs past its line, a
+ * block comment that opens another (Swift nests them, Groovy does not), and an
+ * unterminated block comment. A source that grows one fails its suite loudly.
+ */
+export function blankGradleSwiftComments(source: string): string {
+  const blank = (comment: string) => comment.replace(/[^\n]/g, " ");
+  let out = "";
+  let i = 0;
+  while (i < source.length) {
+    const c = source[i]!;
+    const next = source[i + 1];
+    if (c === '"' || c === "'") {
+      if (source.startsWith(c.repeat(3), i))
+        throw new Error(`triple-quoted literal at offset ${i}`);
+      let j = i + 1;
+      while (j < source.length && source[j] !== c) {
+        if (source[j] === "\n")
+          throw new Error(`literal at offset ${i} runs past its line`);
+        j += source[j] === "\\" ? 2 : 1;
+      }
+      if (j >= source.length)
+        throw new Error(`unterminated literal at offset ${i}`);
+      out += source.slice(i, j + 1);
+      i = j + 1;
+    } else if (c === "#" && next === '"') {
+      throw new Error(`raw literal at offset ${i}`);
+    } else if (c === "/" && next === "/") {
+      const newline = source.indexOf("\n", i);
+      const end = newline === -1 ? source.length : newline;
+      out += blank(source.slice(i, end));
+      i = end;
+    } else if (c === "/" && next === "*") {
+      const close = source.indexOf("*/", i + 2);
+      if (close === -1)
+        throw new Error(`unterminated block comment at offset ${i}`);
+      const comment = source.slice(i, close + 2);
+      if (comment.indexOf("/*", 2) !== -1)
+        throw new Error(`nested block comment at offset ${i}`);
+      out += blank(comment);
+      i = close + 2;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
+
 /** Strips YAML `#` comments: a `#` at the start of a line or after a space or
  *  tab, to the end of that line, as YAML itself reads one (#822). Not
  *  quote-aware, so a ` #` inside a quoted string or a `run:` script also cuts
