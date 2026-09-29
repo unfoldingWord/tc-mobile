@@ -146,8 +146,9 @@ function folderKey(name: string): string {
  * ` (2)`, ` (3)`, … suffix before the extension rather than letting the later
  * write clobber the earlier one.
  *
- * `nameChapter` derives the name from `chapter.number`, and `addChapter` permits
- * an explicit duplicate number, so two chapters CAN map to the same path. Two
+ * `nameChapter` derives the name from `chapter.number` and `chapter.name`;
+ * `addChapter` permits an explicit duplicate number and two chapters may carry
+ * the same name, so two chapters CAN map to the same path. Two
  * entries under one path is a corrupt-or-ambiguous archive (Frank R-B7-book P2).
  * Renaming keeps every chapter's audio; losing a recording is unrecoverable in
  * the field, a confusing filename is not.
@@ -214,7 +215,7 @@ interface ChaptersAdded {
 
 /**
  * Encode each of `chapters`, in order, and append it to `sink` as a stored
- * entry named `folder` + `nameChapter(number)`. The ONE chapter loop both
+ * entry named `folder` + `nameChapter(number, name)`. The ONE chapter loop both
  * Share Book and Share your work run (#987): the library export calls it once
  * per book with that book's folder, Share Book once with no folder — which is
  * what makes each library folder the same layout Share Book produces.
@@ -227,7 +228,7 @@ async function addChaptersToZip(
   sink: ZipSink,
   chapters: readonly Chapter[],
   folder: string,
-  nameChapter: (chapterNumber: number) => string,
+  nameChapter: (chapterNumber: number, chapterName: string | null) => string,
   codec: AudioCodec,
   shouldContinue?: () => boolean,
   onStep?: StepReporter
@@ -267,7 +268,10 @@ async function addChaptersToZip(
     // A cancel that landed during this chapter's encode must not report its
     // step (#986); the zip is dropped with the rest of the run.
     if (shouldContinue && !shouldContinue()) return null;
-    const name = uniqueEntryName(taken, nameChapter(chapter.number));
+    const name = uniqueEntryName(
+      taken,
+      nameChapter(chapter.number, chapter.name)
+    );
     taken.add(name);
     // Stored entry: fflate computes the CRC over the MP3 and emits the buffer
     // itself as the data chunk. `result.mp3` is dropped after this iteration;
@@ -308,8 +312,8 @@ async function finishZip(sink: ZipSink): Promise<void> {
  * archive them into one zip. Returns `null` when no chapter had resolvable audio
  * (nothing to share) or when the run was cancelled part-way.
  *
- * `nameChapter` supplies each zip entry's filename from the chapter's number:
- * naming is translator-facing copy, so it is injected by the hook (from
+ * `nameChapter` supplies each zip entry's filename from the chapter's number
+ * and its own name (`null` when it has none, #1218): naming is translator-facing copy, so it is injected by the hook (from
  * `strings`) rather than baked in here, keeping this module free of UI text.
  *
  * `shouldContinue` is the same cancellation seam `exportChapterMp3` takes,
@@ -347,7 +351,7 @@ async function finishZip(sink: ZipSink): Promise<void> {
  */
 export async function exportBookZip(
   bookId: BookId,
-  nameChapter: (chapterNumber: number) => string,
+  nameChapter: (chapterNumber: number, chapterName: string | null) => string,
   codec: AudioCodec,
   sink: ArchiveSink,
   shouldContinue?: () => boolean,
@@ -415,7 +419,7 @@ function folderStem(label: string, position: number): string {
  * part-way — a clean no-op for the caller, not an error.
  *
  * `nameBook` names each folder and `nameChapter` each MP3 inside it, both from
- * the book's display name: copy is injected, as for `exportBookZip`. A folder
+ * the book's display name (and, for an MP3, the chapter's number and name): copy is injected, as for `exportBookZip`. A folder
  * name is disambiguated against its siblings with ` (2)`, ` (3)`, … so two
  * books with one name keep both books' audio. Names that differ only in case
  * count as one name here ({@link folderKey}), so they stay apart after the
@@ -431,7 +435,11 @@ function folderStem(label: string, position: number): string {
  */
 export async function exportLibraryZip(
   nameBook: (bookName: string) => string,
-  nameChapter: (bookName: string, chapterNumber: number) => string,
+  nameChapter: (
+    bookName: string,
+    chapterNumber: number,
+    chapterName: string | null
+  ) => string,
   codec: AudioCodec,
   sink: ArchiveSink,
   shouldContinue?: () => boolean
@@ -458,7 +466,7 @@ export async function exportLibraryZip(
       zip,
       chapters,
       `${folder}/`,
-      (n) => nameChapter(book.name, n),
+      (n, name) => nameChapter(book.name, n, name),
       codec,
       shouldContinue
     );

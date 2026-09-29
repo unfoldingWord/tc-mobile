@@ -675,7 +675,10 @@ export const SegmentsScreen = forwardRef<
     // superseded run) this resolves `null`, and the guard below leaves the
     // menu exactly as every one of those already did.
     void share
-      .prepare(chapterId, strings.shareFilename(bookName, chapterNumber))
+      .prepare(
+        chapterId,
+        strings.shareFilename(bookName, chapterNumber, chapterName)
+      )
       .then((outcome) => {
         if (outcome === "sent" || outcome === "dismissed") onCloseChapterMenu();
       });
@@ -687,6 +690,7 @@ export const SegmentsScreen = forwardRef<
     chapterId,
     bookName,
     chapterNumber,
+    chapterName,
     onCloseChapterMenu,
   ]);
   // Tap 2 — hand the armed File to the OS share sheet. `send()` opens the sheet
@@ -783,7 +787,17 @@ export const SegmentsScreen = forwardRef<
       // makes the menu layer's `busy()` honest for a system Back landing in the
       // same task as this tap (invariant 4).
       setSavingName(true);
-      void renameChapter(name)
+      // The field opens on the default "Chapter N" when the chapter has no
+      // name (#1219). Confirming that default untouched sends "" so the store
+      // keeps no label and the default stays derived from the number, the
+      // mapping New Chapter's `onConfirmNewChapter` makes (#609). Compared
+      // TRIMMED, for the same stray-space reason given there.
+      const typed =
+        chapterName === null &&
+        name.trim() === strings.chapterName(chapterNumber)
+          ? ""
+          : name;
+      void renameChapter(typed)
         .then((ok) => {
           if (ok && chapterMenuSession.current === session)
             onCloseChapterMenu();
@@ -795,7 +809,13 @@ export const SegmentsScreen = forwardRef<
           if (chapterMenuSession.current === session) setSavingName(false);
         });
     },
-    [renameChapter, setSavingName, onCloseChapterMenu]
+    [
+      chapterName,
+      chapterNumber,
+      renameChapter,
+      setSavingName,
+      onCloseChapterMenu,
+    ]
   );
   // Abandon the rename (Cancel, Escape) and return to the action list. Bumps
   // the session and clears `savingChapterName` like every other exit from
@@ -1455,12 +1475,15 @@ export const SegmentsScreen = forwardRef<
           <Notice tone={NOTHING_FAILED_TONE}>{strings.staleChapter}</Notice>
         ) : renamingChapter ? (
           <>
-            {/* Rename the chapter in place (#264). Seeded with the current
-                custom label, or empty when it is still the default "Chapter N"
-                — so the facilitator types the passage rather than editing a
-                placeholder. */}
+            {/* Rename the chapter in place (#264). Seeded with the chapter's
+                current name (#1219): the typed label, or the default
+                "Chapter N" it goes by when it has none. The default arrives
+                selected, as New Chapter's does (#609), so typing a passage
+                replaces it in one go; a typed label arrives unselected, as a
+                book's does, so a small fix is an edit, not a retype. */}
             <NameEdit
-              initialValue={chapterName ?? ""}
+              initialValue={chapterHeading}
+              selectInitialValue={chapterName === null}
               fieldLabel={strings.chapterNameField}
               onSave={onSaveChapterName}
               onCancel={onCancelRenameChapter}

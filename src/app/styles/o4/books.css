@@ -180,9 +180,10 @@
     font-weight: var(--p-weight-heavy);
     font-variant-numeric: tabular-nums;
   }
-  /* A typed title takes the row's lead, so the number steps back: no fill,
-     faint ink, and the well's colour as a 2px inset ring. The ring is on the
-     badge, never on the row button that carries the guide ring. */
+  /* The title (typed, or the default "Chapter N", #1219) takes the row's
+     lead, so the number steps back: no fill, faint ink, and the well's colour
+     as a 2px inset ring. The ring is on the badge, never on the row button
+     that carries the guide ring. */
   [data-design="o4"] .books-chapter-num.is-dim {
     background: transparent;
     color: var(--s-ink-faint);
