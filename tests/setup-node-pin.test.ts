@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { stripYamlComments } from "./support";
+
 // #161 (Q-12): Node is pinned nowhere Cloudflare Workers Builds reads.
 // Workers Builds' build image detects a custom Node version from
 // `.nvmrc`/`.node-version` (or a `NODE_VERSION` build-environment variable);
@@ -23,7 +25,10 @@ const WORKFLOW_FILES = [
 const workflows = Object.fromEntries(
   WORKFLOW_FILES.map((file) => [
     file,
-    readFileSync(path.join(ROOT, file), "utf8"),
+    // Comments stripped first (#822): a commented-out
+    // `node-version-file: .node-version` would otherwise balance the count
+    // below for a step that no longer reads the file.
+    stripYamlComments(readFileSync(path.join(ROOT, file), "utf8")),
   ])
 ) as Record<(typeof WORKFLOW_FILES)[number], string>;
 
