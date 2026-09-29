@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { stripCodeComments } from "./strip-code-comments";
 import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
@@ -131,9 +132,7 @@ describe("the deleted bridge stays deleted (#164 L-14)", () => {
       // Strip comments first: several files legitimately NAME a token in prose
       // to explain which role a component token remaps (`waveform.tsx`), and
       // the record of what this lane changed is worth keeping.
-      const code = source
-        .replace(/\/\*[\s\S]*?\*\//g, "")
-        .replace(/^\s*\/\/.*$/gm, "");
+      const code = stripCodeComments(source, name);
       // The two spellings of the bridge that lost: an inline `style` carrying a
       // semantic role, and an arbitrary utility wrapping one. `left`/`transform`
       // computed from a module constant are data, not colour, and stay.

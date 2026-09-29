@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { stripCssComments } from "./support";
+
 /**
  * An inward focus offset is unlayered or it is dead (#448, #635).
  *
@@ -24,9 +26,8 @@ import { describe, expect, it } from "vitest";
  */
 const ROOT = path.resolve(import.meta.dirname, "..");
 const read = (...parts: string[]) =>
-  readFileSync(path.join(ROOT, "src", "app", ...parts), "utf8").replace(
-    /\/\*[\s\S]*?\*\//g,
-    ""
+  stripCssComments(
+    readFileSync(path.join(ROOT, "src", "app", ...parts), "utf8")
   );
 
 const globals = read("globals.css");

@@ -17,7 +17,13 @@ import {
   shareProgressWakeAt,
 } from "@/hooks/share-progress";
 import type { ShareOutcome } from "@/hooks/share-flow";
-import { region, stripCssComments, uniqueIndexOf } from "./support";
+import { stripCodeComments } from "./strip-code-comments";
+import {
+  blankComments,
+  region,
+  stripCssComments,
+  uniqueIndexOf,
+} from "./support";
 
 /**
  * The share progress timeline (#491): a busy modal held for a MINIMUM time so
@@ -400,9 +406,62 @@ describe("shareOverlayOwnsScreen (George r1 P2 #1/#2, #491)", () => {
  * Source-shape text matches, not checks of wiring: a `readFileSync` read and
  * a string/pattern match confirm the expected text appears in source, not
  * that it executes. These do not run hook effects or gestures.
+ *
+ * Every TS/TSX read comes back with its comments blanked (#822). Most pins
+ * below are POSITIVE, and a positive match over raw text is satisfied by a
+ * comment: with only `//` stripped, a `/* await nativeShare.send( *\/` beside
+ * an un-awaited live call kept the gesture pin green. `blankComments` keeps
+ * indexes and layout, so the slices below still line up; it is string-blind,
+ * so `SOURCES` is closed and the next `describe` checks each file against the
+ * parsing strip. A CSS file is returned raw — its reader strips it itself.
  */
-const read = (rel: string) =>
+const SOURCES = [
+  "src/components/books-screen.tsx",
+  "src/components/control-affordance.ts",
+  "src/components/control.tsx",
+  "src/components/failure-log-panel.tsx",
+  "src/components/menu.tsx",
+  "src/components/recorder.tsx",
+  "src/components/segments-screen.tsx",
+  "src/components/share-menu-section.tsx",
+  "src/components/share-progress.tsx",
+  "src/hooks/share-flow.ts",
+  "src/hooks/share-progress.ts",
+  "src/hooks/share-target.ts",
+];
+
+const readRaw = (rel: string) =>
   readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
+
+const read = (rel: string) => {
+  if (rel.endsWith(".css")) return readRaw(rel);
+  if (!SOURCES.includes(rel)) {
+    throw new Error(
+      `read: ${rel} is not in SOURCES, so nothing checks its strip`
+    );
+  }
+  return blankComments(readRaw(rel));
+};
+
+describe("the source reads see code, not comments (#822)", () => {
+  for (const rel of SOURCES) {
+    it(`${rel}: the string-blind blank removes comments and nothing else`, () => {
+      // Printed with comments removed, a correct blank and the parser agree.
+      // A `//` or `/*` inside a string, regex or JSX text would blank live
+      // text, and the two prints would differ.
+      const raw = readRaw(rel);
+      expect(stripCodeComments(blankComments(raw), rel)).toBe(
+        stripCodeComments(raw, rel)
+      );
+    });
+  }
+
+  it("a block comment cannot stand in for code", () => {
+    const decoy = `/* await nativeShare.send( */ void nativeShare.send(x);`;
+    expect(decoy).toMatch(/await nativeShare\.send\(/);
+    expect(blankComments(decoy)).not.toMatch(/await nativeShare\.send\(/);
+  });
+});
 
 describe("the hook drives the machine, and the screens render it (#491)", () => {
   // The knip blind spot AGENTS.md names first: a module imported only by a
@@ -418,12 +477,11 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
     const to = flow.indexOf("await navigator.share(");
     expect(from).toBeGreaterThan(-1);
     expect(to).toBeGreaterThan(from);
-    const gesture = flow.slice(from, to);
-    expect(gesture).toMatch(/type: "begin",\s*work: "send"/);
+    const code = flow.slice(from, to);
+    expect(code).toMatch(/type: "begin",\s*work: "send"/);
     // The only await in that window is the native route's own sheet call.
-    // Comments stripped first: the prose around this contract says "await"
-    // several times over, and a comment is not a suspension point.
-    const code = gesture.replace(/\/\/.*$/gm, "");
+    // `read` has blanked the comments: the prose around this contract says
+    // "await" several times over, and a comment is not a suspension point.
     const awaits = code.match(/\bawait\b/g) ?? [];
     expect(awaits).toHaveLength(1);
     expect(code).toMatch(/await nativeShare\.send\(/);
