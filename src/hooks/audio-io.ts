@@ -233,6 +233,10 @@ function holdSharedContext(): () => void {
  * rejects because of that close; `raceAudioResume` drops that late echo. */
 const droppedContexts = new WeakSet<AudioContext>();
 
+/** True from a drop's `close()` call until that close settles (#1232). While
+ * it is set, `discardSharedContext` drops nothing. */
+let dropClosePending = false;
+
 /**
  * SPECULATIVE (#1213). Drop the shared context after `playSamples`' #469
  * resume bound has failed closed, and close it, so that the NEXT Play builds a
@@ -260,6 +264,15 @@ const droppedContexts = new WeakSet<AudioContext>();
  *     because iOS caps how many contexts a page may create. `close()` is
  *     called here, synchronously; the replacement is only built by a later
  *     call to `getAudioContext()`.
+ *   - Nothing is dropped while an earlier drop's `close()` is still pending
+ *     (#1232). If WebKit never settles `close()` on an interrupted context,
+ *     that context's slot may never be freed, and dropping on every failed
+ *     Play would add one live context per press until the per-page cap made
+ *     `getAudioContext()` throw for capture decode too. So while a close is
+ *     pending the failed Play keeps the current context and the next Play
+ *     reuses it: at most one context is waiting on its close beside the
+ *     current one. Once that close resolves, rejects or throws, a later
+ *     failure may drop again.
  *   - A `close()` that throws or rejects is reported as
  *     `"playback-context-close"`. It is its own key because it is a
  *     different operation from the resume the `"playback-resume*"` rows
@@ -271,14 +284,23 @@ const droppedContexts = new WeakSet<AudioContext>();
  *     rejection on a context that was not dropped is still reported.
  */
 function discardSharedContext(ctx: AudioContext): void {
-  if (sharedContext !== ctx || sharedContextHolds > 0) return;
+  if (sharedContext !== ctx || sharedContextHolds > 0 || dropClosePending) {
+    return;
+  }
   sharedContext = null;
   droppedContexts.add(ctx);
+  dropClosePending = true;
   try {
-    ctx.close().catch((cause: unknown) => {
-      reportFailure(cause, "playback-context-close");
-    });
+    ctx
+      .close()
+      .catch((cause: unknown) => {
+        reportFailure(cause, "playback-context-close");
+      })
+      .finally(() => {
+        dropClosePending = false;
+      });
   } catch (cause) {
+    dropClosePending = false;
     reportFailure(cause, "playback-context-close");
   }
 }
