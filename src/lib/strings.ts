@@ -866,17 +866,23 @@ export const strings = {
   // translator knows how many chapters to go back to. "included" keeps the
   // locator George #423 round 3 required: the segments sit in chapters that
   // are in the zip, not in the one(s) the first sentence says were not.
+  //
+  // The chapter clause goes through `plural` like every other count here, not
+  // an English `> 1` ternary (#169). The count is floored at 1 because a
+  // segment gap sits in at least one included chapter: the caller passes
+  // `partialChapters ?? 0` from an optional field (`share-error-copy.ts`), and
+  // a missing count must still read "an included chapter", as the ternary
+  // did, rather than claim "0 included chapters" about a gap that exists.
   shareBookMissingAndPartial: (
     chapters: number,
     segments: number,
     partialChapters: number
   ): string =>
     `${strings.shareBookMissing(chapters)} ${couldNotBeIncluded(
-      `${plural(segments, { one: "{n} segment", other: "{n} segments" })} of ${
-        partialChapters > 1
-          ? `${partialChapters} included chapters`
-          : "an included chapter"
-      }`
+      `${plural(segments, { one: "{n} segment", other: "{n} segments" })} of ${plural(
+        Math.max(partialChapters, 1),
+        { one: "an included chapter", other: "{n} included chapters" }
+      )}`
     )}`,
   // The encoder went silent mid-share and was restarted (#166). Chapter and book
   // alike: the cause is the phone, not what was being shared. Try again is still
