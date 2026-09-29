@@ -5,6 +5,7 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import { resolveDistGate } from "./dist-gate";
+import { stripCodeComments } from "./strip-code-comments";
 
 // The Workbox precache manifest is generated at build time from the
 // `workbox.globPatterns` in vite.config.ts, so what it contains cannot be
@@ -40,8 +41,16 @@ const CATALOG = path.join(SRC, "lib", "obs", "catalog.ts");
 // `txt` is present for the offline licence texts under public/licenses/ (#36).
 const INTENDED = ["**/*.{js,css,html,svg,png,woff2,txt}"];
 
+// Both readers take the config with its comments removed (#822): each returns
+// the FIRST match, so a commented-out copy of the good entry above the live one
+// would otherwise be what they read. The parsing strip, because the glob string
+// itself holds a `/*` that `stripComments` would treat as a comment opening.
+function configSource(): string {
+  return stripCodeComments(readFileSync(CONFIG, "utf8"), "vite.config.ts");
+}
+
 function globPatterns(): string[] {
-  const source = readFileSync(CONFIG, "utf8");
+  const source = configSource();
   const match = source.match(/globPatterns:\s*\[([^\]]*)\]/);
   const body = match?.[1];
   if (body === undefined)
@@ -56,7 +65,7 @@ function globPatterns(): string[] {
 // licence texts, #36), so this grabs the FIRST entry (version.json), tolerating
 // a trailing `,` before the next entry rather than requiring the array to end.
 function navigateFallbackDenylist(): RegExp {
-  const source = readFileSync(CONFIG, "utf8");
+  const source = configSource();
   const match = source.match(
     /navigateFallbackDenylist:\s*\[\s*\/(.*?)\/[gimsuy]*\s*[,\]]/
   );
