@@ -140,6 +140,18 @@ describe("strings.shareBookMissingAndPartial", () => {
     );
   });
 
+  /**
+   * `share-error-copy.ts` passes `gap?.partialChapters ?? 0`, so a missing
+   * count arrives as 0 alongside segment gaps that do exist. The old `> 1`
+   * ternary read that as "an included chapter"; a bare `plural(0)` would pick
+   * English's `other` and claim "0 included chapters" (#169).
+   */
+  it("reads a missing chapter count as one included chapter, never as zero (#169)", () => {
+    expect(strings.shareBookMissingAndPartial(1, 2, 0)).toBe(
+      "1 chapter could not be included. 2 segments of an included chapter could not be included."
+    );
+  });
+
   it("counts chapters off partialChapters, never off the segment sum (regression guard, #400/#423)", () => {
     // The #400 bug pluralized "chapter" off `segments`. The second clause is
     // asserted directly: its chapter wording must follow `partialChapters`
