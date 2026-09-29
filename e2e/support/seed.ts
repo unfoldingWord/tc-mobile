@@ -63,10 +63,12 @@ export async function seedToRecorder(page: Page) {
   // Empty chapter: the only "Add segment" is the empty-state CTA.
   await page.getByRole("button", { name: "Add segment" }).click();
   await expect(
-    page.getByRole("button", { name: "Record segment 1" })
+    page.getByRole("button", { name: "Open recorder for segment 1" })
   ).toBeVisible();
   // Open the recorder sheet (Segments → Recorder) — a second protective push.
-  await page.getByRole("button", { name: "Record segment 1" }).click();
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
   await expect(
     page.getByRole("button", { name: "Close recorder" })
   ).toBeVisible();

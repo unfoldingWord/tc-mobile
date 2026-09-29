@@ -70,7 +70,9 @@ test("a segment's label shows after its ordinal on the row and in the recorder, 
     "Open segment 1 · verses 3–4"
   );
 
-  await page.getByRole("button", { name: "Record segment 1" }).click();
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
   const sheet = page.getByRole("dialog", { name: "Recorder" });
   await expect(sheet).toContainText("Book 001 > Chapter 1 > 1 · verses 3–4");
   await page.getByRole("button", { name: "Close recorder" }).click();

@@ -144,7 +144,7 @@ describe("O4 segment row (#944)", () => {
     const container = renderRow("o4", empty, { guided: true });
     const record = one(
       container,
-      `button[aria-label="${strings.recordSegment(3)}"]`
+      `button[aria-label="${strings.openRecorderSegment(3)}"]`
     );
     expect(record.classList.contains("is-guided")).toBe(true);
   });

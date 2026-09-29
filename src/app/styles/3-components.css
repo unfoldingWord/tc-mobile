@@ -223,9 +223,11 @@
      live recording moment, and nothing else" (1-primitives). Desaturate so it
      reads grey-inert instead. */
   .control--record:disabled,
+  .control--mic:disabled,
   .control--play:disabled,
   .control--primary:disabled,
   .control--record[aria-disabled="true"],
+  .control--mic[aria-disabled="true"],
   .control--play[aria-disabled="true"],
   .control--primary[aria-disabled="true"] {
     filter: saturate(0.12);
@@ -259,6 +261,16 @@
     color: var(--s-live-ink);
     width: var(--c-control-lg);
     height: var(--c-control-lg);
+  }
+  /* The unrecorded row's control (#1217): a gray disc, a red outline and a red
+     microphone, so it says "record here" without wearing the solid red of the
+     recorder's own Record button, which is the one thing that starts a take.
+     Colour comes through layer 2 only. */
+  .control--mic {
+    background: var(--s-well);
+    color: var(--s-live-text);
+    border: 2px solid var(--s-live);
+    box-sizing: border-box;
   }
   .control--play {
     background: var(--s-voice);
@@ -321,6 +333,7 @@
     border-radius: var(--p-radius-full);
   }
   .control--record.is-guided,
+  .control--mic.is-guided,
   .record-guide.is-guided {
     box-shadow: 0 0 0 var(--c-guide-ring) var(--s-guide);
   }
@@ -1287,7 +1300,8 @@
      the transport column reads uniform down the list. Scoped to `.row` on
      purpose — the recorder's own big red button and the erase-confirm button
      both keep `--c-control-lg`. */
-  .row .control--record {
+  .row .control--record,
+  .row .control--mic {
     width: var(--c-control-md);
     height: var(--c-control-md);
   }

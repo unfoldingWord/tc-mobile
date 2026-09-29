@@ -126,7 +126,11 @@ describe("every O4 loop is scoped under the switch (#950)", () => {
   it.each([
     [
       "guidePulse",
-      [`${O4} .control--record.is-guided`, `${O4} .record-guide.is-guided`],
+      [
+        `${O4} .control--record.is-guided`,
+        `${O4} .control--mic.is-guided`,
+        `${O4} .record-guide.is-guided`,
+      ],
       "guidePulse var(--p-ambient-guide-pulse, 1.8s) ease-in-out infinite",
     ],
     [
