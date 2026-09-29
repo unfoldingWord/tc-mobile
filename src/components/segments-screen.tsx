@@ -43,6 +43,7 @@ import type { Layer } from "@/lib/nav/layer-stack";
 import { overlayDismissal } from "@/lib/nav/navigation";
 import { firstNotFinished } from "@/lib/view/segment-rows";
 import type { ChapterId, SegmentId } from "@/types/domain";
+import type { RecorderEntry } from "@/types/view";
 
 /**
  * Every overlay this screen can put over the chapter, as a system-Back layer
@@ -124,7 +125,12 @@ interface SegmentsScreenProps {
    */
   erase: UseEraseSegment;
   onBack: () => void;
-  onOpenRecorder: (segmentId: SegmentId, ordinal: number) => void;
+  /** `entry` is the mode the sheet opens in; omitted, record (#286 item 2). */
+  onOpenRecorder: (
+    segmentId: SegmentId,
+    ordinal: number,
+    entry?: RecorderEntry
+  ) => void;
   /** Register an open overlay as a Back layer. `useNavStack`'s, through App. */
   pushLayer: (layer: Layer) => void;
   /** Unregister one by id. Idempotent. */
@@ -1322,8 +1328,8 @@ export const SegmentsScreen = forwardRef<
                   ranOut={audio.playbackRanOut}
                   busy={refreshing}
                   onPlay={(offsetSeconds) => audio.playTake(row, offsetSeconds)}
-                  onOpenRecorder={() =>
-                    onOpenRecorder(row.segmentId, row.ordinal)
+                  onOpenRecorder={(entry) =>
+                    onOpenRecorder(row.segmentId, row.ordinal, entry)
                   }
                   onSetFinished={(finished) =>
                     onSetFinished(row.segmentId, finished)

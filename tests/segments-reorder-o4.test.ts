@@ -251,7 +251,8 @@ describe("the O4 hold area (#953 PR2a, DRI pick: badge and title)", () => {
     await act(async () => vi.advanceTimersByTime(200));
     await act(async () => pointer(badge(1), "pointerup", 145));
     await act(async () => badge(1).click());
-    expect(onOpenRecorder).toHaveBeenCalledWith("s1", 2);
+    // No entry: a plain tap opens the sheet in record mode (#286 item 2).
+    expect(onOpenRecorder).toHaveBeenCalledWith("s1", 2, undefined);
     expect(moveSegment).not.toHaveBeenCalled();
   });
 });

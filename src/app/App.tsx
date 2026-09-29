@@ -23,6 +23,7 @@ import {
   panelWouldLoseAudio,
 } from "@/lib/takes/pending-take";
 import type { ChapterId, SegmentId } from "@/types/domain";
+import type { RecorderEntry } from "@/types/view";
 
 /**
  * The pivot app: Books → Segments → Recorder (a sheet over Segments).
@@ -48,6 +49,9 @@ export function App() {
   // the one ordinal is `recordingOrdinal` below. This slot is cleared the
   // moment the sheet closes.
   const [recorder, setRecorder] = useState<SegmentId | null>(null);
+  // The mode that sheet opens in (#286 item 2). Written on every open beside
+  // `recorder`; the sheet reads it once, when its take has loaded.
+  const [recorderEntry, setRecorderEntry] = useState<RecorderEntry>("record");
 
   const segmentsRef = useRef<SegmentsScreenHandle>(null);
   // System-Back handling (#168) lives in the `useNavStack` adapter below:
@@ -227,7 +231,7 @@ export function App() {
   }, [leave, setClipboard]);
 
   const openRecorderState = useCallback(
-    (segmentId: SegmentId, ordinal: number) => {
+    (segmentId: SegmentId, ordinal: number, entry?: RecorderEntry) => {
       // Amendment C's other half (#452 PR4, the decision recorded on #452 and
       // beside the cleanup effect in `use-nav-stack.ts`). The adapter clears
       // the WHOLE layer stack when `screen` changes, but this transition is not
@@ -245,6 +249,7 @@ export function App() {
       // un-resumed — the very trip the #155/#137 recovery panel exists to soften.
       // Priming it here spares the common transient case that failed open.
       primeAudioContext();
+      setRecorderEntry(entry ?? "record");
       setRecordingOrdinal(ordinal);
       setRecorder(segmentId);
     },
@@ -496,6 +501,7 @@ export function App() {
           key={recorder}
           ref={recorderRef}
           segmentId={recorder}
+          openInEdit={recorderEntry === "edit"}
           audio={audio}
           erase={erase}
           saveRecording={saveRecordingOnSheet}

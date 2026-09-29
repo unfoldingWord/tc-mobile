@@ -35,6 +35,7 @@ import {
   type TravelGuardState,
 } from "@/lib/nav/travel-guard";
 import type { ChapterId, SegmentId } from "@/types/domain";
+import type { RecorderEntry } from "@/types/view";
 
 import { reportFailure } from "./report-failure";
 
@@ -361,8 +362,13 @@ export interface UseNavStackParams {
   readonly getRecorderHandle: () => RecorderCloseHandle | null;
   /** Books → Segments state half (App's `openChapter` minus the history push). */
   readonly onOpenChapter: (id: ChapterId) => void;
-  /** Segments → Recorder state half (App's `openRecorder` minus the push). */
-  readonly onOpenRecorder: (segmentId: SegmentId, ordinal: number) => void;
+  /** Segments → Recorder state half (App's `openRecorder` minus the push).
+   *  `entry` is passed through as given: the mode the sheet opens in. */
+  readonly onOpenRecorder: (
+    segmentId: SegmentId,
+    ordinal: number,
+    entry?: RecorderEntry
+  ) => void;
   /** Segments → Books (App's `backToBooks`; no push — the browser already popped). */
   readonly onLeaveToBooks: () => void;
   /** Recorder close state half (App's `closeRecorder` minus the history tail). */
@@ -381,8 +387,13 @@ export interface UseNavStack {
   readonly popLayer: (id: string) => void;
   /** Books → Segments: the state half plus the protective push. */
   readonly openChapter: (id: ChapterId) => void;
-  /** Segments → Recorder: the state half plus the protective push. */
-  readonly openRecorder: (segmentId: SegmentId, ordinal: number) => void;
+  /** Segments → Recorder: the state half plus the protective push. `entry`
+   *  is the mode the sheet opens in; omitted, record (#286 item 2). */
+  readonly openRecorder: (
+    segmentId: SegmentId,
+    ordinal: number,
+    entry?: RecorderEntry
+  ) => void;
   /** One Back path (#168). `beginBack("go-back")`; on refusal, does nothing. */
   readonly goBack: () => void;
   /** The programmatic recorder close (erase's `onExit`); suppressPop-guarded. */
@@ -756,10 +767,10 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   );
 
   const openRecorder = useCallback(
-    (segmentId: SegmentId, ordinal: number) => {
+    (segmentId: SegmentId, ordinal: number, entry?: RecorderEntry) => {
       const decision = decideWrite("enter-screen");
       if (decision === "refuse") return;
-      onOpenRecorderRef.current(segmentId, ordinal);
+      onOpenRecorderRef.current(segmentId, ordinal, entry);
       performWrite("enter-recorder", decision);
     },
     [decideWrite, performWrite]

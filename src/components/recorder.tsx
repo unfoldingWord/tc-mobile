@@ -107,6 +107,12 @@ import type { SegmentId } from "@/types/domain";
 
 interface RecorderProps {
   segmentId: SegmentId;
+  /**
+   * Open in edit mode rather than record mode: the Segments row menu's Edit
+   * (#286 item 2), which promises the editor. Read once, when the segment
+   * first loads; see the entry effect beside `editReason`.
+   */
+  openInEdit?: boolean;
   /** The single audio owner, held by App so `leave()` fires on every nav. */
   audio: RecorderAudio;
   /**
@@ -244,6 +250,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
   function Recorder(
     {
       segmentId,
+      openInEdit = false,
       audio,
       erase,
       saveRecording,
@@ -2900,6 +2907,38 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       starting,
       hasClip: view?.hasClip ?? false,
     });
+
+    // Opened from the row menu's Edit (#286 item 2): enter edit mode once the
+    // segment has loaded, behind the same gate as the toolbar's Edit
+    // (`editReason`), so the translator does not tap Edit a second time.
+    // One decision, at the first load, then never again: if the sheet cannot
+    // edit at that moment (the mic is starting, it is refused, or there is no
+    // audio), it stays in record mode, as every entry did before. It must not
+    // fire later — after a take the translator recorded, say — because that
+    // would switch modes under a tap they did not make.
+    //
+    // Adjusted during render, the pattern `useSegmentEditor` uses for its own
+    // reset, so the loaded sheet is never painted in record mode first. It
+    // sets what `onEnterEdit` sets and nothing else: that handler's stop and
+    // menu close have nothing to act on here, since nothing in this sheet can
+    // sound or open before its segment has loaded.
+    //
+    // "Loaded" includes the editor: its reset runs in the same render pass as
+    // this one and still hands back the old, empty `working` until React
+    // re-renders, so deciding on the first pass that sees `view` would read
+    // no audio and give up. The reset installs `view.samples` itself as
+    // `working`, so identity says the editor has caught up.
+    const [editEntryPending, setEditEntryPending] = useState(openInEdit);
+    const editorLoaded =
+      view !== null &&
+      (view.samples === null || editor.working === view.samples);
+    if (editEntryPending && editorLoaded) {
+      setEditEntryPending(false);
+      if (editReason === null && hasAudio) {
+        setSelectionEntry({ samples: editor.working });
+        setMode("edit");
+      }
+    }
 
     // Why the edit toolbar's two history arrows are grey, derived from the same
     // predicates that grey them (#91, `edit-control-state.ts`) — the ≡ rows'
