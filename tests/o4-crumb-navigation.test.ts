@@ -84,9 +84,9 @@ describe("O4Crumbs with links (#1269)", () => {
     );
     const chips = [...root.querySelectorAll(".o4-crumb")];
     expect(chips.map((el) => el.tagName)).toEqual(["SPAN", "BUTTON", "SPAN"]);
-    expect(chips[1]!.getAttribute("aria-label")).toBe(
-      "Go to chapter Chapter 2"
-    );
+    // "Go to {heading}" (DRI pick on #1274): the chip's own heading, with
+    // no second "chapter" in front of a default "Chapter N".
+    expect(chips[1]!.getAttribute("aria-label")).toBe("Go to Chapter 2");
     expect(chips[2]!.getAttribute("aria-current")).toBe("page");
     expect(chips[2]!.getAttribute("data-state")).toBe("recorded");
   });

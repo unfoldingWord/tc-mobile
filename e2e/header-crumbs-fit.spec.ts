@@ -358,7 +358,7 @@ test("O4 headers at 360px: tapping a crumb above the current screen lands there 
   });
   await expect(recorderHead.locator('[aria-current="page"]')).toHaveText("1");
   const chapterCrumb = recorderHead.getByRole("button", {
-    name: `Go to chapter ${chapter}`,
+    name: `Go to ${chapter}`,
     exact: true,
   });
   // A control-sized target: 44px tall, though the chip is drawn 40px.

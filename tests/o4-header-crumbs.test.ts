@@ -247,14 +247,22 @@ describe("the recorder header (#1105)", () => {
     await mount("o4");
     const chips = [...header().querySelectorAll(".o4-crumb")];
     expect(chips.map((el) => el.tagName)).toEqual(["SPAN", "BUTTON", "SPAN"]);
-    expect(chips[1]!.getAttribute("aria-label")).toBe(
-      strings.goToChapter("2:1-4")
-    );
+    // "Go to {heading}" (DRI pick on #1274), spelled out, so a change to
+    // the entry cannot pass by agreeing with itself.
+    expect(chips[1]!.getAttribute("aria-label")).toBe("Go to 2:1-4");
     expect(chips[1]!.textContent).toBe("2:1-4");
     expect(chips[2]!.getAttribute("aria-current")).toBe("page");
     // The book crumb stays a plain chip here: Books is two Backs away and
     // the nav adapter has no call that chains them.
     expect(chips[0]!.getAttribute("aria-current")).toBeNull();
+  });
+
+  it("names an unnamed chapter's crumb by its default heading (#1269)", async () => {
+    recorderView.chapterName = null;
+    await mount("o4");
+    const crumb = header().querySelector("button.o4-crumb")!;
+    expect(crumb.getAttribute("aria-label")).toBe("Go to Chapter 1");
+    expect(crumb.textContent).toBe(strings.chapterName(1));
   });
 
   it("runs the header's own Back when the chapter crumb is tapped (#1269)", async () => {

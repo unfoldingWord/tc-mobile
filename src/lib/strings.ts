@@ -165,9 +165,15 @@ export const strings = {
    * the resolved heading (`chapterHeading`), the same text the chip shows.
    * The name is spoken, not drawn, so it carries no direction of its own; the
    * chip's text element carries `dir="auto"` (#1267).
+   *
+   * The chapter's is "Go to {heading}" (DRI pick on #1274), with no word
+   * of its own: the heading already says "Chapter N" when the chapter has no
+   * name, so "Go to chapter Chapter 1" said it twice. The book's keeps
+   * "book", because a book name is a bare label that says nothing about
+   * what it names.
    */
   goToBook: (book: string): string => `Go to book ${book}`,
-  goToChapter: (chapter: string): string => `Go to chapter ${chapter}`,
+  goToChapter: (heading: string): string => `Go to ${heading}`,
 
   // ── Naming (#264 rename, #314 New Book, #609 Add chapter) ────────────────
   // One naming field serves all three flows, so these strings are shared: the
