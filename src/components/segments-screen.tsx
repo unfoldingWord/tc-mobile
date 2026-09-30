@@ -1208,28 +1208,25 @@ export const SegmentsScreen = forwardRef<
             keeps its accessible name explicit (`aria-label`) rather than
             losing it when the chip text is hidden from the accessibility
             tree. The name is the `chapterBreadcrumb` trail built from the
-            SAME chapter NUMBER the visible chip shows, not `chapterHeading`:
-            a name fed the typed title would say one chapter while the chip
-            says another, and the visible text must sit inside the name
-            (WCAG 2.5.3, George round 2) — and deliberately NOT
+            SAME resolved chapter name the visible chip shows
+            (`chapterHeading`, #1230), so the spoken name names the chapter
+            and the visible text sits inside it (WCAG 2.5.3, George round 2
+            on #1105) — and deliberately NOT
             `strings.backToBooks`, the plain Back
             control's own name: giving the two the same name produced two
             controls named "Back to books" on the one screen, which broke
             every `getByRole("button", { name: "Back to books" })` lookup in
-            this repo's e2e suite (strict-mode: ambiguous) — caught by CI on
-            this PR's first push, not by a local run of any single spec.
-            Chapter is the plain NUMBER (`chapterNumber`) in the VISIBLE
-            chip, never `chapterHeading`'s resolved name: see
-            `o4-crumbs.tsx`'s `O4Crumbs` docblock for why that resolved name
-            is what made this header and the menu chip disagree (#1105). */}
+            this repo's e2e suite (strict-mode: ambiguous).
+            The visible chapter chip is `chapterHeading` too: the typed name,
+            else "Chapter N" (#1230, superseding #1105's number). The chapter
+            menu's sheet head still shows the number; `o4-crumbs.tsx`'s
+            `O4Crumbs` docblock says why. */}
         <button
           type="button"
           onClick={onBack}
           className="breadcrumb"
           aria-label={
-            o4
-              ? strings.chapterBreadcrumb(bookName, String(chapterNumber))
-              : undefined
+            o4 ? strings.chapterBreadcrumb(bookName, chapterHeading) : undefined
           }
         >
           {o4 ? (
@@ -1237,7 +1234,7 @@ export const SegmentsScreen = forwardRef<
               <O4Crumbs
                 className="min-w-0"
                 book={bookName}
-                chapter={chapterNumber}
+                chapter={chapterHeading}
               />
             </div>
           ) : (
