@@ -11,6 +11,70 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-30 (evening) — rc.2 tester reports fixed, 1.0.0-rc.3 red-teamed and published on all channels, #1251 recovery shipped
+
+### rc.2 reports and fixes
+
+- **Where the reports came from:** several testers and the requirements owner, on rc.2 (TestFlight and Android). The requirements owner decided #1243, #1252, #1268 and #1269 on their issues.
+- **#1251, the iPhone audio clock that stops:** on the DRI's own device, lock → unlock (and sometimes connecting headphones) left the shared audio context reporting "running" with a clock that doesn't move. Reopening the app cleared it; lock/unlock didn't, and desktop Safari didn't reproduce it. The cause is **inferred** from that and from the code: the playhead reads `ctx.currentTime`.
+- **Merged for rc.3:**
+
+  | PR    | What                                                                                                                                                                  | Issue         |
+  | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+  | #1261 | Stalled-clock detection and recovery: a failed Play drops the context, reset on hide/pagehide and `devicechange`, logged on return; iPhone app keeps its session type | part of #1251 |
+  | #1260 | Edit mode: scissors to enter, ✕ to leave, no edit-mode "Done"; ⋮ stays top right                                                                                      | #1243, #1252  |
+  | #1273 | New-look sheets close with ✕ and a drag down; the click that trails a drag is swallowed                                                                               | #1268         |
+  | #1274 | New-look header crumbs navigate (book → Books, chapter → chapter)                                                                                                     | #1269         |
+  | #1263 | Chapter names in the new-look headers and menus, cut off with "…"                                                                                                     | #1230         |
+  | #1270 | Right-to-left names set their own direction                                                                                                                           | #1267         |
+  | #1262 | New-look toolbar icons about 25% larger                                                                                                                               | #1259         |
+  | #1254 | The old-look switch removed from Books ≡                                                                                                                              | #1244         |
+  | #1240 | No ⚠ badge on greyed-out tiles                                                                                                                                        | #1239         |
+
+- **Docs:** the facilitator runbook (#1258, #1279), system requirements (#1257), the release procedure (#1238, #1256, #1266; #1266 adds `--admin` to the merge commands for ruleset 24043869), and the rc.2 entry (#1242).
+- **Filed for later:** #1264, #1265, #1271 and #1272 (the requirements owner decided "no change for the training"), #1275, #1278 (batched P3/Low items) and #1281 (starting the native lanes on promotion with branch-restricted signing, to start at go-live; its decisions are settled on the issue).
+
+### 1.0.0-rc.3
+
+- **Bump:** #1277 (`d3c6954e`). **Final `CUT_SHA`:** `b8fecd82`, the squash of #1279. The version was already rc.3, so a docs fix after the bump needed only a delta pass, not a second bump.
+- **Promotion:** #1280 from `release/v1.0.0-rc.3`, merged as `37906966`, with parents `be6da1e4` and `b8fecd82`. The DRI's go (verbatim): "Go: merge #1280 (Recommended)".
+- **Release red team:** results and the DRI's picks are on #1277 and #1280.
+  - **Risk register:** 0 BLOCK, 3 FIX-BEFORE-PUBLISH, 15 NOTE.
+  - **Claim check:** 0 FALSE; every overstated and missing-context item corrected.
+  - **Delta passes:** 0 BLOCK. The first delta's three runbook items were fixed by #1279, and the #1279 delta found nothing.
+  - **Picks:**
+    - F1, iPhone Play with the silent switch on, is unverified: "Accept, testers check".
+    - F2, no device pass: "Accept: phones test rc.3 (Recommended)".
+    - F3, stale runbook: "Fix before the cut", done in #1279.
+    - N11 (T2 PRs approved by George only) and N5 (a 6 px crumb overlap): "Accept both, note them (Recommended)".
+- **`check:deploy`:** PASS, `https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build.` (`1.0.0-rc.3` / `3790696`, built `2026-09-30T21:08:21.855Z`).
+- **Channels, all from `37906966`:**
+  - **Google Play:** run 36777349963, a draft on the internal track. The DRI said the rollout is done; it wasn't observed from here.
+  - **Android APK:** run 36777496390.
+    - The signer SHA-256 is `eed23e1bccf9fbad8b69f2f9598fd8d97e094d23e544b71b9e91dd21c934baf2`, the same as rc.2.
+    - The embedded `version.json` reads `1.0.0-rc.3` / `37906966b127…`.
+    - The APK's SHA-256 is `a4068d8896de961e1f3925182c62988745f7c7e6714951829fe73b804bff35e2`, and the published download matches it.
+  - **TestFlight:** run 36777585523, version `1.0`, build `1790803291`. The DRI said it's assigned to the testers' group; that wasn't observed from here.
+- **Published:** `tester-build-v1.0.0-rc.3`, a pre-release with the APK and a QR code, tagged at `37906966`. The QR decodes to the download URL. The publish record is on #1280.
+- **Announced:** in Zulip, 52 Innovation → tC Mobile, with the QR code inline.
+
+### After rc.3
+
+- **#1282 (part of #1276):** no text selection or iOS callout on the app shell and the build stamp, with text inputs switched back on. The report was the requirements owner's, on rc.2. The DRI picked "Lane now, ships in rc.4 or 1.0.0 (Recommended)". Merged as `2ef701ce` with George clean. **develop is now one commit past rc.3.**
+
+### Not run
+
+- Nothing in rc.3 has run on a phone, so #1261's recovery is unconfirmed on an iPhone, including with the silent switch on.
+- #1282 hasn't run on an iPhone.
+
+### Next
+
+- Collect the rc.3 tester reports, above all the #1251 lock/unlock and silent-switch runs (announcement test 1). Close the rc.3-fixed issues as testers confirm them.
+- Decide the next cut (rc.4 or 1.0.0). It carries #1282, needs a new bump and a red team, and uses the `tc-release` skill.
+- #1241 (which release steps are human-only) and #1264 (a parent check for the final `staging → main`) before the v1.0.0 tag.
+
+---
+
 ## 2026-09-30 (early; session began 2026-09-29 evening) — rc.1 tester reports fixed, 1.0.0-rc.2 red-teamed and published on all channels, RC procedure written down
 
 ### rc.1 reports and fixes
