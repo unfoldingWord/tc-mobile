@@ -213,6 +213,31 @@
     height: 64px;
   }
 
+  /* --- toolbar glyphs (#1259) -------------------------------------------- */
+  /* The requirements owner's O4 review: the glyphs in both bottom bars read
+     small, so each is drawn 25% larger while the circles above keep their
+     size and position. `Icon` writes width/height as SVG attributes (22 by
+     default, 24 for the edit bar's quiet controls, `size={24}` in
+     recorder-toolbars.tsx); a CSS width/height beats a presentation
+     attribute, so this applies to whatever glyph sits in a bar button,
+     the edit toggle's included, without a TSX change. The toggle keeps the
+     default-size base (22) it has today, so it stays a step smaller than the
+     five quiet glyphs beside it, as before. Fit: the smallest circle is the
+     44px touch floor (the edit bar at 320px), so the 30px glyph leaves 7px on
+     each side; the 64 and 80 circles leave more. Colour is untouched. */
+  [data-design="o4"] .recorder-toolbar {
+    --o4-toolbar-icon: calc(22px * 1.25); /* #939 token */
+    --o4-toolbar-icon-quiet: calc(24px * 1.25); /* #939 token */
+  }
+  [data-design="o4"] .recorder-toolbar .control svg {
+    width: var(--o4-toolbar-icon);
+    height: var(--o4-toolbar-icon);
+  }
+  [data-design="o4"] .recorder-toolbar.edit .control--quiet svg {
+    width: var(--o4-toolbar-icon-quiet);
+    height: var(--o4-toolbar-icon-quiet);
+  }
+
   /* --- the edit-mode pill (12) ------------------------------------------ */
   /* The workbench's edit badge: the voice wash with its darker ink, which
      #937 allows for text on the quiet washes. */
