@@ -59,10 +59,9 @@ export function readStoredDesign(raw: string | null): Design {
 /**
  * The other design.
  *
- * An involution, like `nextTheme`: the menu entry is one control carrying one
- * fixed label ("New look (O4)") and an `aria-pressed` state rather than two
- * different destinations to name, so a second tap is the only way back and
- * this is what makes that true.
+ * An involution, like `nextTheme`: `hooks/use-design.ts`'s `toggle` swaps the
+ * two looks, and a second toggle returns to the first. No menu entry calls
+ * it since #1244 removed the Books ≡ switch.
  */
 export function nextDesign(design: Design): Design {
   switch (design) {
