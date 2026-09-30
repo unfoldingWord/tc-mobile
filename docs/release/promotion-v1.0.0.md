@@ -94,8 +94,11 @@ issue's priority in this checklist.
    `--admin` is required because ruleset 24043869 ("Protected branches: merge
    by admins only") puts an `update` rule on `develop`, `staging` and `main`
    whose only bypass is the repository admin role; without it the merge fails
-   with "the base branch policy prohibits the merge". An agent never runs this
-   merge and never passes `--admin`. This is the production gate. Record any explicitly
+   with "the base branch policy prohibits the merge". `--admin` also skips
+   every other base-branch requirement (required checks, reviews), so the DRI
+   runs it only after every check and review this runbook requires is green.
+   `<HEAD_SHA>` is the production PR's reviewed head (`headRefOid`). An agent
+   hands this command over unchanged and never runs `gh pr merge`. This is the production gate. Record any explicitly
    accepted residuals before merging; an unresolved required issue is not
    waived merely by moving its milestone.
 4. Fetch `main` and tag the production merge commit `v1.0.0`; push that tag.
@@ -187,8 +190,10 @@ freeze note on every new PR to `develop`.
    `gh pr merge <N> --repo unfoldingWord/tc-mobile --merge --admin --match-head-commit <CUT_SHA>`.
    `--admin` is required by ruleset 24043869 (see step 3 of the final
    promotion above): its `update` rule on `develop`, `staging` and `main`
-   has only the repository admin role as bypass. An agent never runs this
-   merge and never passes `--admin`. The merge commit is
+   has only the repository admin role as bypass. `--admin` also skips every
+   other base-branch requirement, so run it only after the checks above pass.
+   An agent hands this command over unchanged and never runs `gh pr merge`.
+   The merge commit is
    `PROMO_SHA`; every channel below is built from it. Check that
    `git rev-parse <PROMO_SHA>^1 <PROMO_SHA>^2` prints `STAGING_SHA` then
    `CUT_SHA`. If not, stop. Re-resolve each of these SHAs with `git` or `gh`
