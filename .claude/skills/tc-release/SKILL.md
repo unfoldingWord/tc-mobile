@@ -29,11 +29,12 @@ done, stop and say which one and why.
   the head to pin, the exact command) and waits for the DRI to say it is done.
   Then it checks the result with a read-only command.
 - **Agent-allowed:** the agent may run it. It never touches a merge, a
-  workflow dispatch, a publish or a tag.
+  workflow dispatch or a tag. It publishes the tester pre-release only under
+  the conditions in step 7.
 
 Human-only across every release: merging any PR (the bump, the promotion,
 `staging → main`, the picked fixes), dispatching any workflow (via `!`), the
-go/no-go decision, publishing the GitHub pre-release or Release, pushing the
+go/no-go decision, publishing the `v1.0.0` GitHub Release, pushing the
 `v1.0.0` tag, releasing anything in the Play Console, and assigning the
 TestFlight build. An agent never passes `--admin`. Agent-allowed: preparing PR
 and release-note bodies, the red team, and read-only checks (`check:deploy`,
@@ -157,8 +158,12 @@ All agent-allowed and read-only.
 - [ ] Agent-allowed: make a QR PNG of
       `https://github.com/unfoldingWord/tc-mobile/releases/download/tester-build-v1.0.0-rc.N/app-release.apk`,
       and embed it in the notes.
-- [ ] Human-only: the DRI gives the publish go, then publishes. The agent
-      hands over the exact command and the files:
+- [ ] Agent-allowed, on two conditions: (a) every fail-closed check before
+      it has passed (the native runs' `headSha` equals `PROMO_SHA`, the APK
+      signer, the embedded `version.json`, the recorded APK hash), and (b) the
+      DRI has explicitly asked for the publish in this session. If either is
+      missing, do not run it: hand the DRI the exact command and the files to
+      run themselves. The command:
       `gh release create tester-build-v1.0.0-rc.N --target <PROMO_SHA> --prerelease --notes-file <announcement> app-release.apk <qr>.png`.
 - [ ] Agent-allowed: download the published APK back. Its SHA-256 equals the
       one recorded, and the tag target equals `PROMO_SHA`. If not, stop. Do not send the link. Tell the DRI to take the pre-release

@@ -189,9 +189,12 @@ freeze note on every new PR to `develop`.
      commit `PROMO_SHA`. If not, stop. Do not publish.
    - Record the APK's own SHA-256.
 9. **Publish** a GitHub pre-release tagged `tester-build-v1.0.0-rc.N` at the
-   `PROMO_SHA` (§5a of [the native runbook](../native/README.md)). The DRI
-   gives the publish go and runs `gh release create`; an agent prepares the
-   notes and the command and does not run it. The red-teamed announcement is
+   `PROMO_SHA` (§5a of [the native runbook](../native/README.md)). An agent
+   may run `gh release create`, but only after (a) every fail-closed check
+   before it has passed (the runs' `headSha`, the APK signer, the embedded
+   `version.json`, the recorded APK hash) and (b) the DRI has explicitly asked
+   for the publish in that session. Otherwise it hands the DRI the pinned
+   command to run. The red-teamed announcement is
    the notes. Attach `app-release.apk` and a QR code image of its download
    URL, and embed the QR in the notes. Download the published APK back. Its
    SHA-256 equals the one recorded, and the tag target equals `PROMO_SHA`. If
@@ -208,10 +211,11 @@ freeze note on every new PR to `develop`.
 
 **Who runs what.** Human-only (the DRI), from their own terminal or via `!`:
 every merge (picked fixes, the bump, the promotion, `staging → main`), every
-workflow dispatch, the go/no-go, the pre-release or Release publish, the
+workflow dispatch, the go/no-go, the `v1.0.0` Release publish, the
 `v1.0.0` tag, the Play Console release and the TestFlight assignment. An agent
 never passes `--admin`. Agent-allowed: preparing bodies and release notes, the
-red team, the release branch and promotion PR, read-only checks
+red team, the release branch and promotion PR, the tester pre-release publish
+(only under step 9's two conditions), read-only checks
 (`check:deploy`, the signer and hash checks, the download-back), and records.
 The `tc-release` skill tags each step the same way.
 
