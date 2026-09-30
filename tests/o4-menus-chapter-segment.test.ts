@@ -531,7 +531,11 @@ describe("the segment menu (07) on the tile grid", () => {
     expect(head).not.toBeNull();
     expect(head!.getAttribute("aria-hidden")).toBe("true");
     const crumbs = [...head!.querySelectorAll(".o4-crumb")];
-    expect(crumbs.map((c) => c.textContent)).toEqual(["Mark", "4", "3"]);
+    expect(crumbs.map((c) => c.textContent)).toEqual([
+      "Mark",
+      "Chapter 4",
+      "3",
+    ]);
     expect(crumbs[2]!.getAttribute("data-state")).toBe("finished");
   });
 
@@ -560,7 +564,7 @@ describe("the segment menu (07) on the tile grid", () => {
     // The crumbs themselves are unaffected — only the square is left out.
     expect(
       [...head!.querySelectorAll(".o4-crumb")].map((c) => c.textContent)
-    ).toEqual(["Mark", "4", "3"]);
+    ).toEqual(["Mark", "Chapter 4", "3"]);
   });
 
   it("moves the segment's name into the preview row, beside its badge and wave", async () => {
@@ -651,7 +655,7 @@ describe("the chapter menu (G2) on the tile grid", () => {
     expect(head?.getAttribute("aria-hidden")).toBe("true");
     expect(
       [...head!.querySelectorAll(".o4-crumb")].map((c) => c.textContent)
-    ).toEqual(["Mark", "4"]);
+    ).toEqual(["Mark", "Chapter 4"]);
   });
 
   it("draws the book's cover-colour square before the crumbs (#949, #957)", async () => {

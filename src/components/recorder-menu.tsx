@@ -83,6 +83,13 @@ export interface RecorderMenuProps {
   bookCoverHex?: string;
   /** The chapter's number, the O4 sheet head's second crumb. */
   chapterNumber?: number;
+  /**
+   * The chapter's resolved name (`strings.chapterHeading`), shown in place
+   * of `chapterNumber` when given, so the head matches the recorder header
+   * it was opened from (#1230). `recorder.tsx` always passes it once the
+   * view has loaded.
+   */
+  chapterHeading?: string;
 }
 
 export function RecorderMenu({
@@ -101,6 +108,7 @@ export function RecorderMenu({
   bookName,
   bookCoverHex,
   chapterNumber,
+  chapterHeading,
 }: RecorderMenuProps) {
   // ONE answer for "this segment is marked", read by both the label and the
   // paint. They were two expressions that disagreed: the label also required a
@@ -146,7 +154,7 @@ export function RecorderMenu({
         <O4SheetHead
           book={bookName}
           bookCoverHex={bookCoverHex}
-          chapter={chapterNumber}
+          chapter={chapterHeading ?? chapterNumber}
           segment={
             ordinal === null
               ? undefined
