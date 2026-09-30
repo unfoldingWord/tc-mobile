@@ -555,7 +555,11 @@ export function SegmentRow({
             <span className="row-status">
               {state === "finished" && <Icon name="check" size={16} />}
             </span>
-            <span className="t-ordinal row-heading">
+            <span
+              className="t-ordinal row-heading"
+              // "3 · label": only a label is user text (#1267).
+              dir={row.label ? "auto" : undefined}
+            >
               {strings.segmentHeading(ordinal, row.label)}
             </span>
           </>
@@ -566,7 +570,12 @@ export function SegmentRow({
         <div className="row-mid">
           {titled && (
             // Visual only: the open button's name already carries the label.
-            <span className="row-title" aria-hidden="true" {...holdArea}>
+            <span
+              className="row-title"
+              dir="auto"
+              aria-hidden="true"
+              {...holdArea}
+            >
               {row.label}
             </span>
           )}
@@ -699,7 +708,11 @@ export function SegmentRow({
                 {ordinal}
               </span>
               <span className="o4-menu-preview-mid" aria-hidden="true">
-                {titled && <span className="o4-menu-title">{row.label}</span>}
+                {titled && (
+                  <span className="o4-menu-title" dir="auto">
+                    {row.label}
+                  </span>
+                )}
                 <Waveform
                   peaks={hasClip ? row.peaks : null}
                   recorded={hasClip}

@@ -41,6 +41,14 @@ export interface O4CrumbsProps {
  * match. A crumb too long for its share of the row is elided with "…" by
  * `o4/menus.css`, which also sets how the crumbs share that row.
  *
+ * The book and chapter chips' text carries `dir="auto"` (#1267): both are
+ * names the facilitator typed, so each takes its direction from its own
+ * content, and the "…" elision and the alignment follow it (an RTL name is cut
+ * at its left end, the logical end). The chapter chip receives the resolved
+ * heading, so an unnamed chapter's default "Chapter N" also gets `auto`; that
+ * resolves the same way the app locale does, so nothing changes for it. The
+ * segment chip is a bare number and carries none.
+ *
  * Decoration only wherever it renders (no own `aria-hidden`, no own
  * `role`) — a caller in a menu wraps it in `O4SheetHead`'s `aria-hidden`
  * div; a caller in a screen header wraps it itself and supplies whatever
@@ -52,12 +60,12 @@ export function O4Crumbs({ book, chapter, segment, className }: O4CrumbsProps) {
     <div className={className ? `o4-crumbs ${className}` : "o4-crumbs"}>
       {book !== undefined && (
         <span className="o4-crumb">
-          <span>{book}</span>
+          <span dir="auto">{book}</span>
         </span>
       )}
       {chapter !== undefined && (
         <span className="o4-crumb">
-          <span>{chapter}</span>
+          <span dir="auto">{chapter}</span>
         </span>
       )}
       {segment && (
@@ -157,7 +165,11 @@ export function O4SheetHead({
         )}
         <O4Crumbs book={book} chapter={chapter} segment={segment} />
       </div>
-      {place !== null && <p className="o4-sheet-place sr-only">{place}</p>}
+      {place !== null && (
+        <p className="o4-sheet-place sr-only" dir="auto">
+          {place}
+        </p>
+      )}
     </>
   );
 }

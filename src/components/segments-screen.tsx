@@ -1238,7 +1238,9 @@ export const SegmentsScreen = forwardRef<
               />
             </div>
           ) : (
-            <span>{strings.chapterBreadcrumb(bookName, chapterHeading)}</span>
+            <span dir="auto">
+              {strings.chapterBreadcrumb(bookName, chapterHeading)}
+            </span>
           )}
         </button>
         {!showEmpty && (

@@ -291,6 +291,30 @@ describe("the recorder header (#1105)", () => {
     expect(header().querySelector(".o4-crumb")).toBeNull();
     expect(header().textContent).toContain("Book Mine > 2:1-4 > 1");
   });
+
+  it("sets a typed name's direction on the chips, the menu's head and its spoken place, not on the segment number (#1267)", async () => {
+    recorderView.chapterName = "שלום.";
+    await mount("o4");
+    const dirs = (scope: ParentNode) =>
+      [...scope.querySelectorAll(".o4-crumb > span")].map((el) =>
+        el.getAttribute("dir")
+      );
+    expect(dirs(header())).toEqual(["auto", "auto", null]);
+    await tap(document, strings.recorderMenuOpen);
+    const panel = document.querySelector(".menu-panel")!;
+    expect(dirs(panel)).toEqual(["auto", "auto", null]);
+    expect(panel.querySelector(".o4-sheet-place")?.getAttribute("dir")).toBe(
+      "auto"
+    );
+  });
+
+  it("current look: the trail's span sets its direction (#1267)", async () => {
+    await mount("current");
+    const trail = [...header().querySelectorAll("span")].find((el) =>
+      el.textContent?.includes("Book Mine > ")
+    );
+    expect(trail?.getAttribute("dir")).toBe("auto");
+  });
 });
 
 describe("the segments header (#1105)", () => {
@@ -449,6 +473,21 @@ describe("the segments header (#1105)", () => {
     expect(btn.getAttribute("aria-label")).toBeNull();
     expect(btn.textContent).toBe(
       strings.chapterBreadcrumb("Book Mine", "2:1-4")
+    );
+  });
+
+  it("sets the direction of the name chips, and of the current look's trail (#1267)", async () => {
+    await mount("o4");
+    expect(
+      [...header().querySelectorAll(".o4-crumb > span")].map((el) =>
+        el.getAttribute("dir")
+      )
+    ).toEqual(["auto", "auto"]);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await mount("current");
+    expect(breadcrumbButton().querySelector("span")?.getAttribute("dir")).toBe(
+      "auto"
     );
   });
 });

@@ -124,6 +124,10 @@ export function NameEdit({
       <input
         className="name-input"
         type="text"
+        // The field holds a name the facilitator types, so its direction comes
+        // from what is typed (#1267). The placeholder is the field's label, a
+        // UI string; it follows the same direction while the field is empty.
+        dir="auto"
         value={value}
         aria-label={fieldLabel}
         placeholder={fieldLabel}

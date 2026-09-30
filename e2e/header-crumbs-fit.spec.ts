@@ -50,6 +50,8 @@ interface Crumb {
   /** The text's full width, had it not been cut. */
   natural: number;
   elided: boolean;
+  /** The text's computed `direction`: from its content when it carries dir="auto". */
+  direction: string;
 }
 
 interface Measured {
@@ -84,6 +86,7 @@ async function measure(head: Locator): Promise<Measured> {
           room: text.getBoundingClientRect().width,
           natural: text.scrollWidth,
           elided: text.scrollWidth > text.clientWidth,
+          direction: getComputedStyle(text).direction,
         };
       }),
       crumbsRight: Math.max(
@@ -295,5 +298,38 @@ for (const width of [320, 360, 412]) {
       [LONG_CHAPTER, true],
       ["1", false],
     ]);
+  });
+}
+
+// Right-to-left names (#1267), each long enough to be cut at 320px and ending
+// in a period, as the tester's report did.
+const RTL_BOOK = "ספר בראשית וסיפורי האבות הקדושים.";
+const RTL_CHAPTER = "مثل الزارع والبذرة الطيبة في الحقل.";
+
+for (const width of [320, 360, 412]) {
+  test(`O4 headers at ${width}px: right-to-left names take their own direction, elide and still fit (#1267)`, async ({
+    page,
+  }) => {
+    const { segments, recorder } = await walk(
+      page,
+      width,
+      RTL_BOOK,
+      RTL_CHAPTER
+    );
+    for (const header of [segments, recorder]) {
+      expectFits(header);
+      // The two name chips read right-to-left from their own text, and are
+      // cut ("…") instead of overflowing; the segment number stays with the
+      // app's direction.
+      expect(header.crumbs.slice(0, 2).map((c) => c.direction)).toEqual([
+        "rtl",
+        "rtl",
+      ]);
+      expect(header.crumbs.slice(0, 2).map((c) => c.elided)).toEqual([
+        true,
+        true,
+      ]);
+    }
+    expect(recorder.crumbs[2]!.direction).toBe("ltr");
   });
 }
