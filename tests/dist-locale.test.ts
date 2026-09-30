@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { SHIPPED_LOCALE } from "@/lib/locale";
 import { resolveDistGate } from "./dist-gate";
+import { stripHtmlComments } from "./support";
 
 /**
  * The locale actually reaches the two artifacts a phone reads (#169).
@@ -26,10 +27,16 @@ import { resolveDistGate } from "./dist-gate";
  *
  * Runs under `npm run test:dist` after a build; skipped by a bare `npm test`.
  * See `tests/dist-gate.ts` for why presence of `dist/` decides nothing.
+ *
+ * The built document is read with its HTML comments stripped (#822). Vite
+ * does not minify HTML, so `index.html`'s comments reach `dist/` intact, and
+ * the `<html` regex below takes the first match: a commented-out
+ * `<html lang="en" dir="ltr">` ahead of the real tag would be the tag read.
  */
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const HTML = path.join(ROOT, "dist", "index.html");
+const readHtml = () => stripHtmlComments(readFileSync(HTML, "utf8"));
 const MANIFEST = path.join(ROOT, "dist", "manifest.webmanifest");
 
 const gate = resolveDistGate(
@@ -41,7 +48,7 @@ describe.skipIf(gate === "skip")(
   "the built app is labelled with its locale",
   () => {
     it("dist/index.html carries the locale's lang AND dir", () => {
-      const html = readFileSync(HTML, "utf8");
+      const html = readHtml();
       const tag = /<html\b([^>]*)>/i.exec(html)?.[1];
 
       expect(tag, "no <html> tag in the built document").toBeTruthy();
@@ -60,7 +67,7 @@ describe.skipIf(gate === "skip")(
     it("the document and the manifest agree", () => {
       // Two files, one fact. They were two independent literals before #169, and
       // this is the assertion that would have caught them drifting apart.
-      const html = readFileSync(HTML, "utf8");
+      const html = readHtml();
       const manifest = JSON.parse(readFileSync(MANIFEST, "utf8")) as {
         lang?: string;
         dir?: string;
