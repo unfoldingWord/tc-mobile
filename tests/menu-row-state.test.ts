@@ -257,11 +257,14 @@ describe("rowHint — which reasons carry a cue", () => {
         "utf8"
       )
     );
-    const dismiss =
-      /icon=\{hamburger \? dismissIcon : "([\w-]+)"\}\s*label=\{closeLabel\}/.exec(
-        menuSource
-      );
+    // The current look's arm of `dismissGlyph`; the O4 look draws ✕ over
+    // both arms (#1268), which names nothing this string could point at
+    // either.
+    const dismiss = /hamburger\s*\?\s*dismissIcon\s*:\s*"([\w-]+)"/.exec(
+      menuSource
+    );
     expect(dismiss?.[1]).toBe("back");
+    expect(menuSource).toMatch(/icon=\{dismissGlyph\}\s*label=\{closeLabel\}/);
 
     expect(strings.blockedByTake).not.toMatch(/back arrow/i);
     expect(strings.blockedByTake).toContain(`"${strings.menuClose}"`);

@@ -181,6 +181,12 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 - **The recorder's own `⋮` (its overflow drawer) opens and closes instantly** —
   it does not slide in or out, so do not expect an animation as a sign it
   worked; if the drawer's contents are on screen, it is open. <!-- source: src/components/menu.tsx (hamburger prop docblock, "opens and closes in place"); gh PR #656 (Fixes #621) -->
+- **Every menu that rises from the bottom closes with the ✕ at its top
+  right**, the same on the Books, book, chapter, segment and recorder menus
+  and the naming sheets. It can also be closed by dragging the bar at its top
+  (or the row with the ✕) down; a short drag lets it spring back open. The
+  `⋮` and `≡` only open menus now. About's licence text keeps a back arrow,
+  because there it goes back to the list rather than closing. <!-- source: src/components/menu.tsx (`back` prop docblock, drag down to close); src/components/sheet-drag.ts; #1268; not device-verified -->
 - **Sharing a chapter** produces one MP3 file. **Sharing a book** produces a
   zip file of all its chapters. Both go out through the phone's normal share
   sheet (the same menu you'd use to share a photo). <!-- source: AGENTS.md "Known open items" #5, and docs/decisions/0009-transcode-on-finished.md -->

@@ -39,6 +39,13 @@ import { stripComments } from "./support";
  * has the narrow-scan caveat noted at its `matchAll` call below.
  */
 
+// The glyphs pinned here are the CURRENT look's. The O4 look (the default)
+// draws ✕ on every one of these headers (#1268), pinned in
+// `sheet-close-o4.test.ts`; the title and names asserted here hold in both.
+vi.mock("@/hooks/use-design", () => ({
+  useDesign: () => ({ design: "current", toggle: () => {} }),
+}));
+
 let dom: JSDOM;
 let root: Root;
 const onClose = vi.fn();

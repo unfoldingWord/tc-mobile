@@ -155,9 +155,9 @@ describe("the book menu's rules", () => {
     expect(scrim).toHaveLength(1);
     expect(scrim[0]!.decls.get("align-items")).toBe("flex-end");
     const handle = menus.filter((r) =>
-      r.selectors.includes(`${O4}.menu-panel:has(.books-delete-ask)::before`)
+      r.selectors.includes(`${O4}.menu-panel:has(.books-delete-ask) .menu-grip`)
     );
     expect(handle).toHaveLength(1);
-    expect(handle[0]!.decls.get("width")).toBe("56px");
+    expect(handle[0]!.decls.get("display")).toBe("flex");
   });
 });
