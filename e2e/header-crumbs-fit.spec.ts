@@ -131,9 +131,62 @@ function expectFits(m: Measured) {
 const LONG_BOOK = "The Gospel According to Saint Matthew";
 const LONG_CHAPTER = "The parable of the sower and the seed";
 
+interface MenuHead {
+  crumbs: { text: string; elided: boolean }[];
+  /** The screen-reader-only line naming the place. */
+  place: string;
+  /** Every crumb ends inside the panel, and the page does not scroll sideways. */
+  fits: boolean;
+}
+
+/** Opens a menu by its opener's name, reads its sheet head, and closes it. */
+async function menuHead(page: Page, opener: string): Promise<MenuHead> {
+  await page.getByRole("button", { name: opener, exact: true }).click();
+  const panel = page.locator(".menu-panel");
+  await expect(panel.locator(".o4-sheet-head")).toBeVisible();
+  const head = await panel.evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    const chips = [...el.querySelectorAll(".o4-sheet-head .o4-crumb")];
+    return {
+      crumbs: chips.map((crumb) => {
+        const text = crumb.querySelector("span")!;
+        return {
+          text: text.textContent ?? "",
+          elided: text.scrollWidth > text.clientWidth,
+        };
+      }),
+      place: el.querySelector(".o4-sheet-place")?.textContent ?? "",
+      fits:
+        chips.every(
+          (c) => c.getBoundingClientRect().right <= box.right + 0.5
+        ) && document.documentElement.scrollWidth <= window.innerWidth,
+    };
+  });
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  return head;
+}
+
+/** A menu's head names the book and chapter exactly as its header does. */
+function expectMenuMatches(menu: MenuHead, header: Measured, place: string) {
+  expect(menu.fits).toBe(true);
+  expect(menu.crumbs.slice(0, 2).map((c) => c.text)).toEqual(
+    header.crumbs.slice(0, 2).map((c) => c.text)
+  );
+  expect(menu.place).toBe(place);
+  // A name longer than any phone's row elides here too, with the same "…".
+  for (const crumb of menu.crumbs) {
+    if (crumb.text === LONG_BOOK || crumb.text === LONG_CHAPTER) {
+      expect(crumb.elided).toBe(true);
+    }
+  }
+}
+
 /**
  * Books -> the named chapter (with one segment, so the header's + shows, the
- * common case) -> that segment's recorder; measures both headers.
+ * common case) -> that segment's recorder; measures both headers, and the
+ * sheet heads of the chapter menu, the segment's row menu and the recorder's
+ * ⋮ menu (the DRI's "Names in menus too" pick on #1263).
  */
 async function walk(page: Page, width: number, book: string, chapter: string) {
   await page.setViewportSize({ width, height: 800 });
@@ -154,6 +207,16 @@ async function walk(page: Page, width: number, book: string, chapter: string) {
     segmentsHead.getByRole("button", { name: `${book} > ${chapter}` })
   ).toBeVisible();
   const segments = await measure(segmentsHead);
+  expectMenuMatches(
+    await menuHead(page, "More actions for this chapter"),
+    segments,
+    `${book} > ${chapter}`
+  );
+  expectMenuMatches(
+    await menuHead(page, "More actions for segment 1"),
+    segments,
+    `${book} > ${chapter} > 1`
+  );
 
   await page
     .getByRole("button", { name: "Open recorder for segment 1" })
@@ -163,6 +226,11 @@ async function walk(page: Page, width: number, book: string, chapter: string) {
   });
   await expect(recorderHead).toBeVisible();
   const recorder = await measure(recorderHead);
+  expectMenuMatches(
+    await menuHead(page, "More actions"),
+    recorder,
+    `${book} > ${chapter} > 1`
+  );
   return { segments, recorder };
 }
 

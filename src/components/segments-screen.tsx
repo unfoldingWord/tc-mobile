@@ -1219,8 +1219,8 @@ export const SegmentsScreen = forwardRef<
             this repo's e2e suite (strict-mode: ambiguous).
             The visible chapter chip is `chapterHeading` too: the typed name,
             else "Chapter N" (#1230, superseding #1105's number). The chapter
-            menu's sheet head still shows the number; `o4-crumbs.tsx`'s
-            `O4Crumbs` docblock says why. */}
+            menu's and each row menu's sheet heads get the same text, so a
+            header and its menus always match. */}
         <button
           type="button"
           onClick={onBack}
@@ -1363,7 +1363,7 @@ export const SegmentsScreen = forwardRef<
                   onMenuClose={onRowMenuClose}
                   bookName={bookName}
                   bookCoverHex={bookCoverHex ?? undefined}
-                  chapterNumber={chapterNumber}
+                  chapterHeading={chapterHeading}
                   onHoldStart={o4 ? reorder.holdStart(index) : undefined}
                 />
               </li>
@@ -1523,7 +1523,7 @@ export const SegmentsScreen = forwardRef<
             <O4SheetHead
               book={bookName}
               bookCoverHex={bookCoverHex ?? undefined}
-              chapter={chapterNumber}
+              chapter={chapterHeading}
             />
             <ShareMenuSection
               status={share.status}

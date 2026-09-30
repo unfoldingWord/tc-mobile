@@ -4,7 +4,8 @@ import path from "node:path";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 
-import { O4Crumbs } from "@/components/o4-crumbs";
+import { O4Crumbs, O4SheetHead } from "@/components/o4-crumbs";
+import { strings } from "@/lib/strings";
 import { render } from "./render";
 import { cssRule, declarationValue } from "./support";
 
@@ -37,12 +38,59 @@ describe("O4Crumbs' chapter chip (#1230)", () => {
     expect(chips).toEqual(["Book Mine", "The sower and the seed"]);
   });
 
-  it("still renders a bare number, which the menus' sheet heads pass", () => {
+  it("still renders a bare number as the chip's text", () => {
     const root = render(createElement(O4Crumbs, { book: "B", chapter: 3 }));
     const chips = [...root.querySelectorAll(".o4-crumb > span")].map(
       (el) => el.textContent
     );
     expect(chips).toEqual(["B", "3"]);
+  });
+});
+
+describe("O4SheetHead's spoken place (#1230, the DRI's 'Names in menus too')", () => {
+  const places = (root: Element) =>
+    [...root.querySelectorAll(".o4-sheet-place")].map((el) => ({
+      text: el.textContent,
+      hidden: el.closest('[aria-hidden="true"]') !== null,
+      srOnly: el.classList.contains("sr-only"),
+    }));
+
+  it("names the book and the chapter's name for a chapter menu, outside the hidden chips", () => {
+    const root = render(
+      createElement(O4SheetHead, { book: "Ruth", chapter: "Naomi returns" })
+    );
+    expect(
+      root.querySelector(".o4-sheet-head")!.getAttribute("aria-hidden")
+    ).toBe("true");
+    expect(places(root)).toEqual([
+      {
+        text: strings.chapterBreadcrumb("Ruth", "Naomi returns"),
+        hidden: false,
+        srOnly: true,
+      },
+    ]);
+  });
+
+  it("adds the segment for a segment or recorder menu", () => {
+    const root = render(
+      createElement(O4SheetHead, {
+        book: "Ruth",
+        chapter: "Chapter 2",
+        segment: { ordinal: 3, state: "recorded" },
+      })
+    );
+    expect(places(root).map((p) => p.text)).toEqual([
+      strings.recorderBreadcrumb("Ruth", "Chapter 2", 3, null),
+    ]);
+  });
+
+  it("draws no place line when the book or the chapter is missing", () => {
+    expect(
+      places(render(createElement(O4SheetHead, { chapter: "Chapter 2" })))
+    ).toEqual([]);
+    expect(
+      places(render(createElement(O4SheetHead, { book: "Ruth" })))
+    ).toEqual([]);
   });
 });
 

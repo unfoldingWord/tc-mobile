@@ -123,7 +123,12 @@ interface SegmentRowProps {
    * `O4SheetHead`'s own docblock).
    */
   bookCoverHex?: string;
-  chapterNumber?: number;
+  /**
+   * The chapter's resolved name (`strings.chapterHeading`: the typed name,
+   * else "Chapter N"), the head's chapter crumb — the same text the
+   * chapter-screen header shows (#1230).
+   */
+  chapterHeading?: string;
   /**
    * Press-and-hold reorder (#953 PR2a): the screen's `onPointerDown` for this
    * row's hold area. Attached in the O4 look only, and only to the number
@@ -207,7 +212,7 @@ export function SegmentRow({
   guided = false,
   bookName,
   bookCoverHex,
-  chapterNumber,
+  chapterHeading,
   onHoldStart,
 }: SegmentRowProps) {
   const state = segmentRowState(row);
@@ -673,7 +678,7 @@ export function SegmentRow({
               <O4SheetHead
                 book={bookName}
                 bookCoverHex={bookCoverHex}
-                chapter={chapterNumber}
+                chapter={chapterHeading}
                 segment={{ ordinal, state }}
               />
               <Control

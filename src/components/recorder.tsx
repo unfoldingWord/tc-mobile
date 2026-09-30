@@ -3468,8 +3468,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               // is the chapter's NAME, resolved by `chapterHeading` the same
               // way the old-look trail below resolves it (#1230, superseding
               // #1105's number) — so it is also the name spoken here. The
-              // ⋮ menu's sheet head still shows the number; `o4-crumbs.tsx`
-              // says why. The segment state
+              // ⋮ menu's sheet head is handed the same text (`chapterHeading`
+              // on `RecorderMenu` below). The segment state
               // mirrors `RecorderMenu`'s own `marked`/`state` derivation
               // (recorder-menu.tsx) from the same `finishedState` this
               // component already computes — duplicated rather than shared
@@ -4061,6 +4061,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           bookName={view?.bookName}
           bookCoverHex={view?.bookCoverHex ?? undefined}
           chapterNumber={view?.chapterNumber}
+          // The header's own chapter chip text (#1230), so the ⋮ menu's
+          // sheet head always matches the header it was opened from.
+          chapterHeading={
+            view
+              ? strings.chapterHeading(view.chapterName, view.chapterNumber)
+              : undefined
+          }
         />
         <EraseConfirm
           key={confirmMount}
