@@ -16,7 +16,7 @@ export const SHEET_CLOSE_DISTANCE_PX = 96;
 /**
  * The share of the sheet's own height that also closes it, whichever of this
  * and {@link SHEET_CLOSE_DISTANCE_PX} is smaller — so a short sheet (a
- * one-row ask) does not need a drag longer than half of itself.
+ * one-row ask) closes at 40% of its own height.
  */
 const SHEET_CLOSE_FRACTION = 0.4;
 /** A downward flick at or above this speed closes, in px per ms. */

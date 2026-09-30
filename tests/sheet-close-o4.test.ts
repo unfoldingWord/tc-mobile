@@ -170,10 +170,16 @@ describe("one ✕ closes every sheet in O4 (#1268 item 2)", () => {
   });
 
   it("every <Menu> in src/ is a known caller, and only About asks for back", () => {
-    const dir = path.resolve(import.meta.dirname, "..", "src", "components");
+    // Every .tsx under src/, recursively, so a sheet added in a new folder
+    // trips this too.
+    const dir = path.resolve(import.meta.dirname, "..", "src");
     const calls: Record<string, number> = {};
     const backs: string[] = [];
-    for (const file of readdirSync(dir).filter((f) => f.endsWith(".tsx"))) {
+    const files = readdirSync(dir, { recursive: true, encoding: "utf8" })
+      .filter((f) => f.endsWith(".tsx"))
+      .map((f) => f.split(path.sep).join("/"));
+    expect(files.length, "no .tsx files found under src/").toBeGreaterThan(20);
+    for (const file of files) {
       const src = stripComments(readFileSync(path.join(dir, file), "utf8"));
       const tags = [...src.matchAll(/<Menu\b[\s\S]*?>/g)];
       if (tags.length === 0) continue;
@@ -181,13 +187,13 @@ describe("one ✕ closes every sheet in O4 (#1268 item 2)", () => {
       if (tags.some(([t]) => /\sback[\s=]/.test(t))) backs.push(file);
     }
     expect(calls).toEqual({
-      "about-panel.tsx": 1,
-      "books-screen.tsx": 4,
-      "recorder-menu.tsx": 1,
-      "segment-row.tsx": 1,
-      "segments-screen.tsx": 1,
+      "components/about-panel.tsx": 1,
+      "components/books-screen.tsx": 4,
+      "components/recorder-menu.tsx": 1,
+      "components/segment-row.tsx": 1,
+      "components/segments-screen.tsx": 1,
     });
-    expect(backs).toEqual(["about-panel.tsx"]);
+    expect(backs).toEqual(["components/about-panel.tsx"]);
   });
 });
 
@@ -298,14 +304,68 @@ describe("drag down to close (#1268 item 1)", () => {
     expect(p.getAttribute("data-sheet-drag")).toBe("settling");
   });
 
-  it("a press on the ✕ is a tap, never a drag", async () => {
+  // jsdom synthesises no click from pointer events, so the click that a real
+  // tap would produce is dispatched by hand after the pointer sequence.
+  it("a press that starts on the ✕ never starts a drag, and its click still closes once", async () => {
     const p = await mountMenu();
-    await drag(named(strings.menuClose), [
-      100,
-      100 + 2 * SHEET_CLOSE_DISTANCE_PX,
-    ]);
+    const close = named(strings.menuClose);
+    await drag(close, [100, 100 + 2 * SHEET_CLOSE_DISTANCE_PX]);
     expect(onClose).not.toHaveBeenCalled();
     expect(p.hasAttribute("data-sheet-drag")).toBe(false);
+    await act(async () => close.click());
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  describe("the trailing click after a drag closes the sheet (#1273, George round 1)", () => {
+    /** A button outside the sheet, standing in for what it covered. */
+    function underneath() {
+      const hit = vi.fn();
+      const button = document.createElement("button");
+      button.textContent = "under the sheet";
+      button.addEventListener("click", hit);
+      document.body.append(button);
+      return { button, hit };
+    }
+    const click = (el: Element) =>
+      el.dispatchEvent(
+        new m.dom.window.MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+
+    it("does not reach what was under the finger", async () => {
+      const { button, hit } = underneath();
+      const p = await mountMenu();
+      await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+      expect(onClose).toHaveBeenCalledTimes(1);
+      click(button);
+      expect(hit).not.toHaveBeenCalled();
+      // One click only: the next tap is a real one.
+      click(button);
+      expect(hit).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops waiting after the bound, so a later real tap is not eaten", async () => {
+      const { button, hit } = underneath();
+      const p = await mountMenu();
+      await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+      expect(onClose).toHaveBeenCalledTimes(1);
+      // No trailing click arrived (a pointer that never clicks); wait out
+      // the 400 ms bound.
+      await new Promise((resolve) => setTimeout(resolve, 450));
+      click(button);
+      expect(hit).toHaveBeenCalledTimes(1);
+    });
+
+    it("is not armed by a drag that springs back", async () => {
+      const { button, hit } = underneath();
+      const p = await mountMenu();
+      await drag(one(p, ".menu-grip"), [100, 120]);
+      expect(onClose).not.toHaveBeenCalled();
+      click(button);
+      expect(hit).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("the body does not start a drag, so it keeps its own scroll", async () => {

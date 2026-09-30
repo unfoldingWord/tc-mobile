@@ -33,6 +33,40 @@ function startsOnControl(target: EventTarget): boolean {
   );
 }
 
+/**
+ * How long after a drag closes a sheet its trailing click may still arrive.
+ * Past this, the swallow below is removed unused, so it can never eat the
+ * next real tap.
+ */
+const TRAILING_CLICK_MS = 400;
+
+/**
+ * A drag that closes a sheet ends in a `pointerup`, and the browser follows
+ * it with a compatibility `click`. The sheet is already gone by then, so
+ * that click would land on whatever it covered under the finger: a book on
+ * Books, a row or a record control on Segments (#1273, George round 1).
+ * This swallows that one click, in the capture phase on the document so no
+ * target sees it, and removes itself on the first click or after
+ * {@link TRAILING_CLICK_MS}, whichever comes first. Module scope, not the
+ * component's: the Menu has unmounted by the time the click arrives. The ✕'s
+ * own tap never arms it.
+ */
+function swallowTrailingClick(doc: Document): void {
+  const swallow = (ev: Event) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    disarm();
+  };
+  const timer = setTimeout(() => {
+    doc.removeEventListener("click", swallow, true);
+  }, TRAILING_CLICK_MS);
+  const disarm = () => {
+    clearTimeout(timer);
+    doc.removeEventListener("click", swallow, true);
+  };
+  doc.addEventListener("click", swallow, true);
+}
+
 /** A drag in progress, one pointer at a time. */
 interface SheetDrag {
   readonly pointerId: number;
@@ -318,7 +352,10 @@ export function Menu({
       sheetHeight: drag.sheetHeight,
     });
     settle();
-    if (outcome === "close") onClose();
+    if (outcome === "close") {
+      swallowTrailingClick(e.currentTarget.ownerDocument);
+      onClose();
+    }
   };
 
   const onDragCancel = (e: React.PointerEvent<HTMLElement>) => {
