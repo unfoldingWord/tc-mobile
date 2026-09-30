@@ -10,7 +10,12 @@ import {
   type Theme,
 } from "@/lib/theme";
 
-import { matchingBraceClose, stripComments } from "./support";
+import {
+  matchingBraceClose,
+  stripComments,
+  stripCssComments,
+  stripHtmlComments,
+} from "./support";
 
 /**
  * The theme decision (#171), as a table rather than a phone.
@@ -120,10 +125,11 @@ describe("the light theme is reachable (#171)", () => {
   /**
    * The same file with its comments removed - block and line - so an assertion
    * about the CODE cannot be satisfied by prose (George round 12, #623). Every
-   * positive match on a `.ts`/`.tsx` file below reads through this; `read` is
-   * kept for the CSS and HTML reads, for the raw half of the subscriber sweep,
-   * and for the one case that pins a comment on purpose (`data-theme` in the
-   * canvases' draw comment).
+   * positive match on a `.ts`/`.tsx` file below reads through this; the CSS
+   * and HTML reads go through `css` and `html` below. `read` is kept for the
+   * raw half of the subscriber sweep, for `vite.config.ts` (stripped per
+   * object in its own case), and for the one case that pins a comment on
+   * purpose (`data-theme` in the canvases' draw comment).
    *
    * AGENTS.md records the capture-by-comment trap in one direction: a comment
    * naming a string a test greps for can CAPTURE that test (#529 round 3).
@@ -146,6 +152,18 @@ describe("the light theme is reachable (#171)", () => {
    * by the raw half of the same sweep.
    */
   const code = (rel: string) => stripComments(read(rel));
+
+  /**
+   * A stylesheet with its block comments removed, and `index.html` with its
+   * HTML comments removed (#822). The pins over these are positive and take
+   * the first match, so a commented-out `:root[data-theme="light"] {`, a
+   * commented-out `--p-cool-950` value or a commented-out theme-color `<meta>`
+   * ahead of the live one satisfied them while the live rule or value said
+   * something else. CSS has no `//` comment, so the block strip is the whole
+   * strip; see `cssRule` in `./support` for why the line strip must not run.
+   */
+  const css = (rel: string) => stripCssComments(read(rel));
+  const html = (rel: string) => stripHtmlComments(read(rel));
 
   /** Every file under `dir`, recursively. Used by the subscriber sweep below. */
   const walk = (dir: string): string[] =>
@@ -178,10 +196,10 @@ describe("the light theme is reachable (#171)", () => {
   it("the stylesheet still has a block keyed on that attribute", () => {
     // If layer 2's light block is ever renamed or dropped, the hook above
     // starts setting an attribute nothing reads — reachable in name only.
-    expect(read("src/app/styles/2-semantic.css")).toMatch(
+    expect(css("src/app/styles/2-semantic.css")).toMatch(
       /:root\[data-theme="light"\]\s*\{/
     );
-    expect(read("src/app/styles/2-semantic.css")).toMatch(
+    expect(css("src/app/styles/2-semantic.css")).toMatch(
       /:root\[data-theme="dark"\]/
     );
   });
@@ -427,7 +445,7 @@ describe("the light theme is reachable (#171)", () => {
     // units off the floor the body paints. Pinned to the primitive rather than
     // to a literal, so the two cannot drift apart again.
     const floor = /--p-cool-950:\s*(#[0-9a-f]{6})/i.exec(
-      read("src/app/styles/1-primitives.css")
+      css("src/app/styles/1-primitives.css")
     );
     expect(floor?.[1], "no --p-cool-950 primitive found").toBeTruthy();
     // Only the manifest's own object, comments stripped. The whole file cannot
@@ -449,12 +467,11 @@ describe("the light theme is reachable (#171)", () => {
     // `#0b0f14` — a value no token has ever had, the drift this lane exists to
     // close (George R2 P3 on #457). Same pin as the manifest, same primitive.
     const floor = /--p-cool-950:\s*(#[0-9a-f]{6})/i.exec(
-      read("src/app/styles/1-primitives.css")
+      css("src/app/styles/1-primitives.css")
     );
     expect(floor?.[1], "no --p-cool-950 primitive found").toBeTruthy();
-    const html = read("index.html");
     const meta = /<meta\s+name="theme-color"\s+content="(#[0-9a-f]{6})"/i.exec(
-      html
+      html("index.html")
     );
     expect(meta?.[1], "no theme-color meta in index.html").toBeTruthy();
     expect((meta?.[1] ?? "").toLowerCase()).toBe(
