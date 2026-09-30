@@ -60,8 +60,12 @@ class FakeAudioContext {
   resumeCalls = 0;
   sourcesCreated: FakeBufferSource[] = [];
   constructor(public state: string) {}
+  // Advances on every read, so a Play sees a running clock and passes the
+  // #1251 stalled-clock check. A constant here is the stall itself.
+  private clock = 0;
   get currentTime(): number {
-    return 0;
+    this.clock += 0.01;
+    return this.clock;
   }
   get destination(): unknown {
     return {};
