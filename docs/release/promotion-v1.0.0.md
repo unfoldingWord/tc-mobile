@@ -89,7 +89,13 @@ issue's priority in this checklist.
    plan does not authorize direct commits to protected branches. Validate the
    final candidate and merge the production promotion with a merge commit
    to preserve the promotion history. The DRI runs this merge from their own
-   terminal, and an agent never passes `--admin`. This is the production gate. Record any explicitly
+   terminal with this pinned command:
+   `gh pr merge <N> --repo unfoldingWord/tc-mobile --merge --admin --match-head-commit <HEAD_SHA>`.
+   `--admin` is required because ruleset 24043869 ("Protected branches: merge
+   by admins only") puts an `update` rule on `develop`, `staging` and `main`
+   whose only bypass is the repository admin role; without it the merge fails
+   with "the base branch policy prohibits the merge". An agent never runs this
+   merge and never passes `--admin`. This is the production gate. Record any explicitly
    accepted residuals before merging; an unresolved required issue is not
    waived merely by moving its milestone.
 4. Fetch `main` and tag the production merge commit `v1.0.0`; push that tag.
@@ -178,8 +184,11 @@ freeze note on every new PR to `develop`.
    moved base means stop before the push, because the staging push starts the
    Play lane and this runbook does not recall it. After a recorded go, the DRI merges it from their
    own terminal with exactly this command:
-   `gh pr merge <N> --repo unfoldingWord/tc-mobile --merge --match-head-commit <CUT_SHA>`.
-   An agent never runs this merge or passes `--admin`. The merge commit is
+   `gh pr merge <N> --repo unfoldingWord/tc-mobile --merge --admin --match-head-commit <CUT_SHA>`.
+   `--admin` is required by ruleset 24043869 (see step 3 of the final
+   promotion above): its `update` rule on `develop`, `staging` and `main`
+   has only the repository admin role as bypass. An agent never runs this
+   merge and never passes `--admin`. The merge commit is
    `PROMO_SHA`; every channel below is built from it. Check that
    `git rev-parse <PROMO_SHA>^1 <PROMO_SHA>^2` prints `STAGING_SHA` then
    `CUT_SHA`. If not, stop. Re-resolve each of these SHAs with `git` or `gh`
