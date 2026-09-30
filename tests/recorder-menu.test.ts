@@ -120,7 +120,7 @@ describe("RecorderMenu", () => {
     // #351: the label no longer flips to "not done". With `aria-pressed`
     // beside it, a flipped label announces "Mark segment 3 not done, pressed",
     // naming the opposite of the state; one fixed label is the pattern
-    // `DesignControl` already follows.
+    // the zoom and level-meter toggles already follow.
     show({ finishedState: "finished" });
     const marked = named(strings.markFinished(3));
     expect(marked).toBeDefined();

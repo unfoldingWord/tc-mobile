@@ -37,7 +37,6 @@ import { storagePressureNotice } from "./storage-pressure-notice";
 import { shelfNoticeText } from "./shelf-notice-text";
 import { strings } from "@/lib/strings";
 import { ThemeControl } from "./theme-control";
-import { DesignControl } from "./design-control";
 import { useFailureCount, useMarkedFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import type { FailureKey } from "@/hooks/save-failure";
@@ -2039,9 +2038,10 @@ export function BooksScreen({
           the tap leaves this menu open. What stays Books-only is the panel
           above it, for the two reasons recorded there.
 
-          `DesignControl` (#938) is Books-only too, but for a different
-          reason: it is this batch's own files-owned scope, not a deliberate
-          split — see that component's docblock. */}
+          This menu used to end with the design switch (#938's pencil, "New
+          look (O4)"). #1244 removed it so the old look cannot be reached
+          from the app; a saved old-look choice still wins in
+          `readStoredDesign`, by the DRI's call on that issue. */}
       {/* `hamburger`: the ≡ in the header above stays a ≡ inside the open
           panel too — same glyph, same corner, and no visible "Menu" title
           (#608, the requirements owner's navigation rule). The recorder's
@@ -2061,8 +2061,7 @@ export function BooksScreen({
           // The workbench's G1, plus the DRI's About placement above: About
           // is a tile ahead of the spacer, the theme tile stays at the far
           // end, where every O4 menu draws it. The report panel above stays
-          // as it is (its Export tile's words are a DRI call), and so does
-          // the O4 switch below, which the workbench does not draw.
+          // as it is (its Export tile's words are a DRI call).
           <TileGrid>
             <Tile
               tone="plain"
@@ -2085,7 +2084,6 @@ export function BooksScreen({
             <ThemeControl />
           </>
         )}
-        <DesignControl />
       </Menu>
 
       <AboutPanel

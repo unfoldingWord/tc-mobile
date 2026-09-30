@@ -216,8 +216,8 @@ export function RecorderMenu({
             // that lies until close (George R1). `finishedState === "finished"`
             // is true only when the mark will stick.
             //
-            // One fixed label, and `pressed` says the state (#351) — the
-            // `DesignControl` pattern. The label used to flip to "Mark segment
+            // One fixed label, and `pressed` says the state (#351), the way
+            // the zoom and level-meter toggles do. The label used to flip to "Mark segment
             // N not done", and beside `aria-pressed` that flip would announce
             // "not done, pressed", naming the opposite of the state.
             label={strings.markFinished(ordinal ?? 0)}
