@@ -171,21 +171,20 @@ freeze note on every new PR to `develop`.
 7. **Native builds from one commit.** Dispatch
    [`android-apk.yml`](../../.github/workflows/android-apk.yml) and
    [`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) from
-   `staging`, and confirm each run's head SHA is `PROMO_SHA`.
-   Every channel (web, Play, APK and TestFlight) must come from that one
-   commit. If `staging` moves first, stop and re-promote rather than mix.
+   `staging`. Both runs' `headSha` equal `PROMO_SHA`, and so do the web and
+   Play builds: every channel must come from that one commit. If not, stop and re-promote. Do not mix refs.
 8. **Check the APK before publishing.**
-   - The signer certificate SHA-256 equals the previous RC's; otherwise it
-     won't install over it.
-   - The embedded `assets/public/version.json` reads `1.0.0-rc.N` and the
-     merge commit.
+   - The signer certificate SHA-256 equals the previous RC's. If not, stop and tell the DRI. Do not publish. Uninstall is not the remedy: uninstalling deletes recordings.
+   - The embedded `assets/public/version.json` shows version `1.0.0-rc.N` and
+     commit `PROMO_SHA`. If not, stop. Do not publish.
    - Record the APK's own SHA-256.
 9. **Publish** a GitHub pre-release tagged `tester-build-v1.0.0-rc.N` at the
-   merge commit (§5a of [the native runbook](../native/README.md)). The
+   `PROMO_SHA` (§5a of [the native runbook](../native/README.md)). The
    red-teamed announcement is the notes. Attach `app-release.apk` and a QR
    code image of its download URL, and embed the QR in the notes. Download
-   the published APK back and check its SHA-256 matches. Post a publish
-   record on the promotion PR.
+   the published APK back. Its SHA-256 equals the one recorded, and the tag
+   target equals `PROMO_SHA`. If not, stop. Do not send the link. Post a publish record on the
+   promotion PR.
 10. **TestFlight group.** Assign the processed build to the testers' group,
     unless automatic distribution is on. A tester who isn't assigned stays on
     the previous build, and their reports come from it. That happened on rc.1.

@@ -100,14 +100,14 @@ Run read-only agents and write their reports to the job tmp:
       `gh workflow run ios-testflight.yml --repo unfoldingWord/tc-mobile --ref staging`
       (each needs the `release-signing` approval).
 - [ ] Both runs' `headSha` equal `PROMO_SHA`, and so do the web and Play
-      builds. If not, stop.
+      builds. If not, stop and re-promote. Do not mix refs.
 
 ## 6. Check the APK
 
-- [ ] `gh run download <apk run>`; the signer certificate SHA-256 equals the
-      previous RC's (otherwise it won't install over it).
-- [ ] `unzip -p app-release.apk assets/public/version.json` reads the version
-      and `PROMO_SHA`.
+- [ ] `gh run download <apk run>`. The signer certificate SHA-256 equals the
+      previous RC's. If not, stop and tell the DRI. Do not publish. Uninstall is not the remedy: uninstalling deletes recordings.
+- [ ] `unzip -p app-release.apk assets/public/version.json` shows version
+      `1.0.0-rc.N` and commit `PROMO_SHA`. If not, stop. Do not publish.
 - [ ] Record the APK's SHA-256. Get the TestFlight build number from the iOS
       run.
 
@@ -120,8 +120,8 @@ Run read-only agents and write their reports to the job tmp:
       `https://github.com/unfoldingWord/tc-mobile/releases/download/tester-build-v1.0.0-rc.N/app-release.apk`,
       and embed it in the notes.
 - [ ] `gh release create tester-build-v1.0.0-rc.N --target <PROMO_SHA> --prerelease --notes-file <announcement> app-release.apk <qr>.png`.
-- [ ] Download the published APK back and check its SHA-256 matches. Check
-      the tag's target equals `PROMO_SHA`. Ask the DRI to scan the QR and to drag the image
+- [ ] Download the published APK back. Its SHA-256 equals the one recorded,
+      and the tag target equals `PROMO_SHA`. If not, stop. Do not send the link. Ask the DRI to scan the QR and to drag the image
       into the notes if it doesn't display.
 - [ ] Post a publish record on the promotion PR.
 
