@@ -70,8 +70,10 @@ async function measure(head: Locator): Promise<Measured> {
     const row = el.querySelector(".o4-crumbs")!;
     const rowBox = row.getBoundingClientRect();
     const chips = [...row.querySelectorAll(".o4-crumb")];
+    // The header's other controls: not the crumbs, which are buttons
+    // themselves where they navigate (#1269).
     const buttons = [...el.querySelectorAll("button")].filter(
-      (b) => !b.contains(row)
+      (b) => !b.contains(row) && !row.contains(b)
     );
     const after = buttons.filter(
       (b) => b.getBoundingClientRect().left >= rowBox.left
@@ -205,9 +207,9 @@ async function walk(page: Page, width: number, book: string, chapter: string) {
   const segmentsHead = page.locator("header").filter({
     has: page.getByRole("button", { name: "Back to books" }),
   });
-  // The breadcrumb's spoken name names the chapter.
+  // The book crumb is a button named for where it goes (#1269).
   await expect(
-    segmentsHead.getByRole("button", { name: `${book} > ${chapter}` })
+    segmentsHead.getByRole("button", { name: `Go to book ${book}` })
   ).toBeVisible();
   const segments = await measure(segmentsHead);
   expectMenuMatches(
@@ -333,3 +335,76 @@ for (const width of [320, 360, 412]) {
     expect(recorder.crumbs[2]!.direction).toBe("ltr");
   });
 }
+
+/**
+ * #1269, the requirements owner: "Yes, make the header crumbs tappable for
+ * navigation". Each crumb above the current screen lands where the header's
+ * Back lands: the recorder's chapter crumb on that chapter's segment list,
+ * the chapter screen's book crumb on the Books shelf. The layout tests above
+ * run with those crumbs as buttons, so they are the fit check at 320, 360
+ * and 412 px; this one taps them at 360 px.
+ */
+test("O4 headers at 360px: tapping a crumb above the current screen lands there (#1269)", async ({
+  page,
+}) => {
+  const book = "Ruth";
+  const chapter = "Naomi returns";
+  await walk(page, 360, book, chapter);
+
+  // The recorder is open on segment 1. Its segment crumb is the current
+  // place; its chapter crumb goes to the chapter.
+  const recorderHead = page.locator("header").filter({
+    has: page.getByRole("button", { name: "Close recorder" }),
+  });
+  await expect(recorderHead.locator('[aria-current="page"]')).toHaveText("1");
+  const chapterCrumb = recorderHead.getByRole("button", {
+    name: `Go to ${chapter}`,
+    exact: true,
+  });
+  // A control-sized target: 44px tall, though the chip is drawn 40px.
+  expect((await chapterCrumb.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  // The chip is drawn by the button's ::before, with the same height and
+  // fill as the plain book chip beside it; the button paints nothing.
+  const drawn = await recorderHead.evaluate((el) => {
+    const link = el.querySelector("button.o4-crumb")!;
+    const plain = el.querySelector("span.o4-crumb:not([data-state])")!;
+    const chip = getComputedStyle(link, "::before");
+    return {
+      height: chip.height,
+      fill: chip.backgroundColor,
+      plainHeight: getComputedStyle(plain).height,
+      plainFill: getComputedStyle(plain).backgroundColor,
+      buttonFill: getComputedStyle(link).backgroundColor,
+    };
+  });
+  expect(drawn.height).toBe(drawn.plainHeight);
+  expect(drawn.height).toBe("40px");
+  expect(drawn.fill).toBe(drawn.plainFill);
+  expect(drawn.buttonFill).toBe("rgba(0, 0, 0, 0)");
+  await chapterCrumb.click();
+  await expect(
+    page.getByRole("button", { name: "Close recorder" })
+  ).toHaveCount(0);
+  const segmentsHead = page.locator("header").filter({
+    has: page.getByRole("button", { name: "Back to books" }),
+  });
+  await expect(segmentsHead.locator('[aria-current="page"]')).toHaveText(
+    chapter
+  );
+  await expect(
+    page.getByRole("button", { name: "Open recorder for segment 1" })
+  ).toBeVisible();
+
+  // The chapter screen's book crumb goes to Books.
+  const bookCrumb = segmentsHead.getByRole("button", {
+    name: `Go to book ${book}`,
+    exact: true,
+  });
+  expect((await bookCrumb.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await bookCrumb.click();
+  await expect(page.getByRole("button", { name: "Back to books" })).toHaveCount(
+    0
+  );
+  await expect(page.getByRole("button", { name: "New book" })).toBeVisible();
+  await expect(page.getByText(book, { exact: true })).toBeVisible();
+});

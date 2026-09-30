@@ -1192,57 +1192,45 @@ export const SegmentsScreen = forwardRef<
           variant="quiet"
           onClick={onBack}
         />
-        {/* A control-sized hit area, not a ~20px text run (#164 R-10): its
-            action is Back, the same as the 44px control beside it, and two
-            adjacent ways to do one thing should not be two different sizes to
-            a thumb. Geometry lives in `.breadcrumb` (layer 3) rather than in
-            arbitrary utilities here, so the 44px floor reads the same
-            `--c-control-md` every other control does.
-
-            #1105: under O4 this stays the same interactive Back control (its
-            action, and its hit area, are unchanged) but its content becomes
-            the same chevron chips the chapter menu's `O4SheetHead` shows,
-            not the text trail. The chips carry `aria-hidden` — the same rule
-            `O4SheetHead` states in its own docblock, that a labelled control
-            does not need its decoration read a second time — so the button
-            keeps its accessible name explicit (`aria-label`) rather than
-            losing it when the chip text is hidden from the accessibility
-            tree. The name is the `chapterBreadcrumb` trail built from the
-            SAME resolved chapter name the visible chip shows
-            (`chapterHeading`, #1230), so the spoken name names the chapter
-            and the visible text sits inside it (WCAG 2.5.3, George round 2
-            on #1105) — and deliberately NOT
-            `strings.backToBooks`, the plain Back
-            control's own name: giving the two the same name produced two
-            controls named "Back to books" on the one screen, which broke
-            every `getByRole("button", { name: "Back to books" })` lookup in
-            this repo's e2e suite (strict-mode: ambiguous).
-            The visible chapter chip is `chapterHeading` too: the typed name,
-            else "Chapter N" (#1230, superseding #1105's number). The chapter
-            menu's and each row menu's sheet heads get the same text, so a
-            header and its menus always match. */}
-        <button
-          type="button"
-          onClick={onBack}
-          className="breadcrumb"
-          aria-label={
-            o4 ? strings.chapterBreadcrumb(bookName, chapterHeading) : undefined
-          }
-        >
-          {o4 ? (
-            <div aria-hidden="true" className="min-w-0">
-              <O4Crumbs
-                className="min-w-0"
-                book={bookName}
-                chapter={chapterHeading}
-              />
-            </div>
-          ) : (
+        {o4 ? (
+          /* #1269, the requirements owner: "Yes, make the header crumbs
+             tappable for navigation". In this look the crumbs are no longer
+             one Back button (#1105): the book crumb is its own button, named
+             for where it goes (`goToBook`), and runs `onBack`, the same
+             handler the Back control beside it runs, so it leaves by the
+             one Back path (`goBack`) with that path's guards, and is inert
+             with the rest of the header under an overlay. That lands on
+             the Books shelf, the screen Back lands on (App.tsx,
+             `backToBooks`). The chapter crumb is this screen, so it is not a
+             button: it carries `aria-current="page"`, and its text is
+             exposed, which is what now names the chapter to assistive tech
+             in place of the old button's `chapterBreadcrumb` label. The
+             chapter menu's and each row menu's sheet heads keep the same
+             chip text (#1230) and stay decoration. */
+          <div className="o4-crumbs-bar">
+            <O4Crumbs
+              className="min-w-0"
+              book={bookName}
+              chapter={chapterHeading}
+              links={{
+                book: { label: strings.goToBook(bookName), onClick: onBack },
+              }}
+              current="chapter"
+            />
+          </div>
+        ) : (
+          /* A control-sized hit area, not a ~20px text run (#164 R-10): its
+             action is Back, the same as the 44px control beside it, and two
+             adjacent ways to do one thing should not be two different sizes
+             to a thumb. Geometry lives in `.breadcrumb` (layer 3) rather
+             than in arbitrary utilities here, so the 44px floor reads the
+             same `--c-control-md` every other control does. */
+          <button type="button" onClick={onBack} className="breadcrumb">
             <span dir="auto">
               {strings.chapterBreadcrumb(bookName, chapterHeading)}
             </span>
-          )}
-        </button>
+          </button>
+        )}
         {!showEmpty && (
           <Control
             icon="plus"

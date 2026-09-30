@@ -157,6 +157,23 @@ export const strings = {
    */
   chapterBreadcrumb: (book: string, chapter: string): string =>
     trail(book, chapter),
+  /**
+   * The spoken names of the new look's header crumbs that navigate (#1269):
+   * the book crumb on the chapter screen, the chapter crumb on the recorder.
+   * Each names the destination, and each holds the text the chip shows, so
+   * the visible text sits inside the spoken name (WCAG 2.5.3). `chapter` is
+   * the resolved heading (`chapterHeading`), the same text the chip shows.
+   * The name is spoken, not drawn, so it carries no direction of its own; the
+   * chip's text element carries `dir="auto"` (#1267).
+   *
+   * The chapter's is "Go to {heading}" (DRI pick on #1274), with no word
+   * of its own: the heading already says "Chapter N" when the chapter has no
+   * name, so "Go to chapter Chapter 1" said it twice. The book's keeps
+   * "book", because a book name is a bare label that says nothing about
+   * what it names.
+   */
+  goToBook: (book: string): string => `Go to book ${book}`,
+  goToChapter: (heading: string): string => `Go to ${heading}`,
 
   // ── Naming (#264 rename, #314 New Book, #609 Add chapter) ────────────────
   // One naming field serves all three flows, so these strings are shared: the

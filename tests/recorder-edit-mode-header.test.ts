@@ -297,12 +297,17 @@ describe("the header ⋮ stays top right in both modes, and 'Editing' sits in th
     // The same DOM node: the opener did not move or remount across the flip.
     expect(after).toBe(before);
     // Nothing in the header exits edit mode any more (#863's pill is gone):
-    // its buttons are Back and the ⋮, nothing else.
+    // its buttons are Back, the chapter crumb (which runs that same Back,
+    // #1269) and the ⋮, nothing else.
     expect(
       [...header().querySelectorAll("button")].map((b) =>
         b.getAttribute("aria-label")
       )
-    ).toEqual([strings.closeRecorder, strings.recorderMenuOpen]);
+    ).toEqual([
+      strings.closeRecorder,
+      strings.goToChapter(strings.chapterName(1)),
+      strings.recorderMenuOpen,
+    ]);
     expect(header().textContent).not.toContain(strings.editingMarker);
   });
 

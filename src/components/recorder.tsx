@@ -612,6 +612,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // close (G10). A refused start returns to idle and lifts this.
     const takeActive = state !== "idle" || isClosing;
 
+    // The chapter's resolved name for the header's chapter crumb (#1230).
+    const chapterHeading = view
+      ? strings.chapterHeading(view.chapterName, view.chapterNumber)
+      : "";
+
     // `finishedIntent` is the translator's EXPLICIT choice, null until they tap
     // the checkbox — never written speculatively (an optimistic reset at Record
     // demoted an untouched approved segment when the mic was then denied, F9/G9).
@@ -3468,14 +3473,33 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               // (recorder-menu.tsx) from the same `finishedState` this
               // component already computes — duplicated rather than shared
               // because that file belongs to a parallel PR (#1104/#1103).
+              //
+              // #1269: the chapter crumb is a button to this chapter's
+              // segment list, named `goToChapter`. It runs `onRequestBack`,
+              // the handler the Close control above runs, and is disabled
+              // by the same expression (a held take, the close window;
+              // `tests/o4-header-crumbs.test.ts` pins the close window on
+              // both); it sits in the same
+              // header, so an overlay inerts both. So a crumb tap leaves
+              // exactly as Back does: `close()` stops Play, seals and saves
+              // an open take, commits pending edits, and refuses over a
+              // held take. The segment crumb is this screen:
+              // `aria-current`, not a button. The book crumb stays a plain
+              // chip: reaching Books from here takes two Backs, and the nav
+              // adapter has no call that chains them.
               <div className="min-w-0 flex-1">
                 <O4Crumbs
                   className="min-w-0"
                   book={view.bookName}
-                  chapter={strings.chapterHeading(
-                    view.chapterName,
-                    view.chapterNumber
-                  )}
+                  chapter={chapterHeading}
+                  links={{
+                    chapter: {
+                      label: strings.goToChapter(chapterHeading),
+                      onClick: onRequestBack,
+                    },
+                  }}
+                  disabled={heldTake !== null || isClosing}
+                  current="segment"
                   segment={{
                     ordinal: view.ordinal,
                     state:

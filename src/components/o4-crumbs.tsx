@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import { Icon } from "./icon";
 import { strings } from "@/lib/strings";
@@ -15,6 +15,19 @@ export interface O4CrumbsProps {
   chapter?: string | number;
   /** The segment crumb, on the segment menu and the recorder header only. */
   segment?: { ordinal: number; state: SegmentRowState };
+  /**
+   * The crumbs that navigate (#1269), each drawn as a button named for its
+   * destination. Only a screen header passes these; a menu's sheet head
+   * never does, so its crumbs stay decoration.
+   */
+  links?: { book?: O4CrumbLink; chapter?: O4CrumbLink };
+  /**
+   * Disables every linked crumb, for a header whose Back control is disabled
+   * in the same state (the recorder's held take and close window).
+   */
+  disabled?: boolean;
+  /** The crumb for the screen being shown, marked `aria-current="page"`. */
+  current?: "chapter" | "segment";
   /**
    * Extra classes for the row itself (`.o4-crumbs` is always applied) — a
    * header threads its own flex-shrink utilities (`min-w-0 flex-1`) here so
@@ -49,31 +62,92 @@ export interface O4CrumbsProps {
  * resolves the same way the app locale does, so nothing changes for it. The
  * segment chip is a bare number and carries none.
  *
- * Decoration only wherever it renders (no own `aria-hidden`, no own
- * `role`) — a caller in a menu wraps it in `O4SheetHead`'s `aria-hidden`
- * div; a caller in a screen header wraps it itself and supplies whatever
- * accessible name the surrounding control needs, because a plain header
- * (unlike a `<Menu>`) has no dialog title standing in for it.
+ * Without `links` it is decoration (no own `aria-hidden`, no own `role`) —
+ * a caller in a menu wraps it in `O4SheetHead`'s `aria-hidden` div, and
+ * `O4SheetHead` passes no links, so a menu's crumbs stay decoration.
+ *
+ * With `links` (#1269, the requirements owner: "Yes, make the header crumbs
+ * tappable for navigation"), a screen header turns each crumb that names a
+ * place above the current screen into a button named for its destination,
+ * and marks the current place's crumb `aria-current="page"`, which stays a
+ * plain span. The header hands each link its own Back handler, so a crumb
+ * never leaves by a path Back does not take. A linked crumb is a 44px
+ * target drawn as the same 40px chip (`o4/menus.css`, `button.o4-crumb`).
  */
-export function O4Crumbs({ book, chapter, segment, className }: O4CrumbsProps) {
+export function O4Crumbs({
+  book,
+  chapter,
+  segment,
+  links,
+  disabled,
+  current,
+  className,
+}: O4CrumbsProps) {
   return (
     <div className={className ? `o4-crumbs ${className}` : "o4-crumbs"}>
       {book !== undefined && (
-        <span className="o4-crumb">
+        <Crumb link={links?.book} disabled={disabled}>
           <span dir="auto">{book}</span>
-        </span>
+        </Crumb>
       )}
       {chapter !== undefined && (
-        <span className="o4-crumb">
+        <Crumb
+          link={links?.chapter}
+          disabled={disabled}
+          current={current === "chapter"}
+        >
           <span dir="auto">{chapter}</span>
-        </span>
+        </Crumb>
       )}
       {segment && (
-        <span className="o4-crumb" data-state={segment.state}>
+        <Crumb state={segment.state} current={current === "segment"}>
           <span>{segment.ordinal}</span>
-        </span>
+        </Crumb>
       )}
     </div>
+  );
+}
+
+/** A crumb that navigates: its spoken name, and the header's own handler. */
+interface O4CrumbLink {
+  label: string;
+  onClick: () => void;
+}
+
+function Crumb({
+  link,
+  disabled,
+  current,
+  state,
+  children,
+}: {
+  link?: O4CrumbLink;
+  disabled?: boolean;
+  current?: boolean;
+  state?: SegmentRowState;
+  children: ReactNode;
+}) {
+  if (link) {
+    return (
+      <button
+        type="button"
+        className="o4-crumb"
+        aria-label={link.label}
+        disabled={disabled}
+        onClick={link.onClick}
+      >
+        {children}
+      </button>
+    );
+  }
+  return (
+    <span
+      className="o4-crumb"
+      data-state={state}
+      aria-current={current ? "page" : undefined}
+    >
+      {children}
+    </span>
   );
 }
 

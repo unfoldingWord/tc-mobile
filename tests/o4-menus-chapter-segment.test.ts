@@ -747,7 +747,10 @@ describe("o4/menus.css, #949's chapter and segment menu section", () => {
     const crumb = declsFor(rules, `${O4} .o4-crumb`);
     expect(crumb.get("height")).toBe("40px");
     expect(crumb.get("background")).toBe("var(--s-well)");
-    expect(crumb.get("clip-path")).toMatch(/13px/);
+    // The chevron is one property (#1269), so a linked crumb's
+    // pseudo-element draws the same shape; the clip reads it.
+    expect(crumb.get("--o4-crumb-shape")).toMatch(/13px/);
+    expect(crumb.get("clip-path")).toBe("var(--o4-crumb-shape)");
     const finished = declsFor(rules, `${O4} .o4-crumb[data-state="finished"]`);
     expect(finished.get("background")).toBe("var(--s-done-quiet)");
     expect(finished.get("color")).toBe("var(--s-done-text)");
