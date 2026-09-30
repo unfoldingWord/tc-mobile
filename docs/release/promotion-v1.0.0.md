@@ -98,7 +98,8 @@ issue's priority in this checklist.
    every other base-branch requirement (required checks, reviews), so the DRI
    runs it only after every check and review this runbook requires is green.
    `<HEAD_SHA>` is the production PR's reviewed head (`headRefOid`). An agent
-   hands this command over unchanged and never runs `gh pr merge`. This is the production gate. Record any explicitly
+   hands this command over unchanged and never runs `gh pr merge`. This is the
+   production gate. Record any explicitly
    accepted residuals before merging; an unresolved required issue is not
    waived merely by moving its milestone.
 4. Fetch `main` and tag the production merge commit `v1.0.0`; push that tag.
