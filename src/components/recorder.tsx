@@ -3458,12 +3458,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               // other element here names the place — the Back control's
               // `closeRecorder` names the action — so the chip text is the one
               // place book, chapter and segment reach assistive tech, as the
-              // plain-text trail did before (George round 2). Chapter is the
-              // plain NUMBER, never
-              // `chapterHeading`'s resolved name — that mismatch (a renamed
-              // chapter reading one way in this header and another way on the
-              // menu chip) is what #1105 reported; `o4-crumbs.tsx` explains
-              // why the number is the one both paths keep. The segment state
+              // plain-text trail did before (George round 2). The chapter chip
+              // is the chapter's NAME, resolved by `chapterHeading` the same
+              // way the old-look trail below resolves it (#1230, superseding
+              // #1105's number) — so it is also the name spoken here. The
+              // ⋮ menu's sheet head is handed the same text (`chapterHeading`
+              // on `RecorderMenu` below). The segment state
               // mirrors `RecorderMenu`'s own `marked`/`state` derivation
               // (recorder-menu.tsx) from the same `finishedState` this
               // component already computes — duplicated rather than shared
@@ -3472,7 +3472,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 <O4Crumbs
                   className="min-w-0"
                   book={view.bookName}
-                  chapter={view.chapterNumber}
+                  chapter={strings.chapterHeading(
+                    view.chapterName,
+                    view.chapterNumber
+                  )}
                   segment={{
                     ordinal: view.ordinal,
                     state:
@@ -4048,6 +4051,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           bookName={view?.bookName}
           bookCoverHex={view?.bookCoverHex ?? undefined}
           chapterNumber={view?.chapterNumber}
+          // The header's own chapter chip text (#1230), so the ⋮ menu's
+          // sheet head always matches the header it was opened from.
+          chapterHeading={
+            view
+              ? strings.chapterHeading(view.chapterName, view.chapterNumber)
+              : undefined
+          }
         />
         <EraseConfirm
           key={confirmMount}

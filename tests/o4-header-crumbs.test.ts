@@ -14,31 +14,27 @@ import type { SegmentRow } from "@/types/view";
 
 /**
  * #1105: the top breadcrumb in the segments header and the recorder header
- * must render the same chevron-chip markup the O4 menus already show
- * (`o4-crumbs.tsx`'s `O4SheetHead`), and must agree with the menu on what
- * each crumb SAYS — not just how it looks.
+ * render the same chevron-chip markup the O4 menus already show
+ * (`o4-crumbs.tsx`'s `O4SheetHead`).
  *
- * The bug report's root cause (evidence: `strings.ts`, `o4-crumbs.tsx`,
- * `docs/design/o4-design-system.md` §6 "Menus"): the pre-fix header read
- * `strings.chapterHeading(view.chapterName, view.chapterNumber)`, which
- * prefers a chapter's TYPED name once one is set (#264/#169); the menu's
- * `O4SheetHead` has only ever taken `chapter?: number` — "the chapter's
- * number, the second crumb (the workbench's `crumbs()`)" is that prop's own
- * docblock, unchanged since #949. A chapter renamed to "2:1-4" therefore read
- * "2:1-4" in the header and "1" (its actual ordinal) in the menu — not a
- * wrong-chapter bug, a title-vs-number disagreement. This file pins the
- * number as the one both paths now show, and that the header and the menu
- * render byte-for-byte the same `.o4-crumb` chips for the same chapter.
+ * #1230: the header's CHAPTER chip shows the chapter's name — the typed one,
+ * or the default "Chapter N" — resolved through `strings.chapterHeading`. The
+ * requirements owner's decision on #1230 supersedes #1105's number-only
+ * choice for these two headers, and the DRI's pick on #1263 ("Names in menus
+ * too") extends it to the sheet heads of the menus opened from them: the
+ * chapter menu, a segment's menu and the recorder's ⋮ menu. So a header and
+ * its menu agree chip for chip. The spoken name follows the visible chip:
+ * the recorder's chips are exposed as they are, the segments breadcrumb's
+ * `aria-label` is built from the same resolved heading, and each menu's
+ * sheet head carries the same place as one screen-reader-only line.
  *
  * The current (non-O4) look is asserted UNCHANGED: it still resolves and
  * shows the chapter's typed name through `chapterHeading`, in a plain text
- * trail, with no `.o4-crumb` anywhere — #1105 is an O4-only fix.
+ * trail, with no `.o4-crumb` anywhere.
  *
- * What this does NOT cover: layout, the CSS cascade and truncation on a real
- * phone (jsdom has none of the three) — the claim it stands in for is that
- * the header renders the identical `.o4-crumb`/`.o4-crumbs` markup the menu
- * already ships under, so whatever the menu's own cascade does, the header's
- * now does too.
+ * What this does NOT cover: layout, the CSS cascade and truncation (jsdom
+ * has none of the three). `e2e/header-crumbs-fit.spec.ts` measures those in
+ * Chromium against the shipped build; a real phone is not covered by either.
  */
 
 const design = vi.hoisted(() => ({ current: "o4" as Design }));
@@ -52,7 +48,7 @@ const recorderView = vi.hoisted(() => ({
   // A chapter the facilitator renamed, reproducing Tim's report verbatim:
   // its NUMBER is 1, its typed name is "2:1-4".
   chapterNumber: 1,
-  chapterName: "2:1-4",
+  chapterName: "2:1-4" as string | null,
   ordinal: 1,
   segmentLabel: null as string | null,
   finished: false,
@@ -75,6 +71,7 @@ vi.mock("@/components/vu-meter", () => ({ VuMeter: () => null }));
 
 const segmentsMocks = vi.hoisted(() => ({
   rows: [] as SegmentRow[],
+  chapterName: "2:1-4" as string | null,
 }));
 vi.mock("@/hooks/use-chapter-segments", () => ({
   useChapterSegments: () => ({
@@ -82,7 +79,7 @@ vi.mock("@/hooks/use-chapter-segments", () => ({
     bookCoverHex: "#11796d",
     chapterNumber: 1,
     // Reproduces the same renamed chapter as the recorder case above.
-    chapterName: "2:1-4",
+    chapterName: segmentsMocks.chapterName,
     rows: segmentsMocks.rows,
     loading: false,
     loaded: true,
@@ -126,6 +123,8 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   design.current = "o4";
   segmentsMocks.rows = [];
+  segmentsMocks.chapterName = "2:1-4";
+  recorderView.chapterName = "2:1-4";
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -156,6 +155,19 @@ function crumbs(scope: ParentNode): { text: string; state: string | null }[] {
     text: el.textContent ?? "",
     state: el.getAttribute("data-state"),
   }));
+}
+
+/**
+ * What a screen reader gets for the place a menu acts on. The chips are
+ * `aria-hidden` inside a menu, so the sheet head carries the same place as
+ * one screen-reader-only line; this reads that line, and fails if there is
+ * not exactly one.
+ */
+function spokenPlace(panel: Element): string {
+  const lines = panel.querySelectorAll(".o4-sheet-place");
+  expect(lines, "one spoken place line in the menu").toHaveLength(1);
+  expect(lines[0]!.closest('[aria-hidden="true"]')).toBeNull();
+  return lines[0]!.textContent ?? "";
 }
 
 function header(): Element {
@@ -219,17 +231,25 @@ describe("the recorder header (#1105)", () => {
     );
   }
 
-  it("shows the chapter's NUMBER in a chip, never the renamed chapter's typed name", async () => {
+  it("shows a renamed chapter's typed name in the chapter chip (#1230)", async () => {
     await mount("o4");
     expect(crumbs(header())).toEqual([
       { text: "Book Mine", state: null },
-      { text: "1", state: null }, // the number, not "2:1-4"
+      { text: "2:1-4", state: null }, // the name, not the number 1
       // Recorded but not marked finished (`view.finished: false`, audio
       // present): the same "recorded" tint `RecorderMenu`'s own O4SheetHead
       // derives for this state (recorder-menu.tsx).
       { text: "1", state: "recorded" },
     ]);
-    expect(header().textContent).not.toContain("2:1-4");
+  });
+
+  it("shows the default name for a chapter with no stored name (#1230)", async () => {
+    recorderView.chapterName = null;
+    await mount("o4");
+    expect(crumbs(header())[1]).toEqual({
+      text: strings.chapterName(1),
+      state: null,
+    });
   });
 
   it("exposes the chips to assistive tech: the only thing in the header naming the place", async () => {
@@ -239,18 +259,32 @@ describe("the recorder header (#1105)", () => {
     // the chips would drop book/chapter/segment from the tree (George R2).
     expect(row.closest('[aria-hidden="true"]')).toBeNull();
     expect(header().querySelectorAll(".o4-crumbs")).toHaveLength(1);
+    // So the chapter's name is what is spoken, as it is what is shown.
+    expect(row.textContent).toContain("2:1-4");
     // The Back control is untouched by this fix: still there, still named.
     expect(() => button(header(), strings.closeRecorder)).not.toThrow();
   });
 
-  it("agrees with the ⋮ menu's own crumbs, chip for chip", async () => {
-    await mount("o4");
-    const headerCrumbs = crumbs(header());
-    await tap(document, strings.recorderMenuOpen);
-    const panel = document.querySelector(".menu-panel")!;
-    expect(panel).not.toBeNull();
-    expect(crumbs(panel)).toEqual(headerCrumbs);
-  });
+  it.each([["2:1-4"], [null]])(
+    "agrees with the ⋮ menu's own crumbs, chip for chip, and the menu speaks the chapter (name %s)",
+    async (name) => {
+      recorderView.chapterName = name;
+      await mount("o4");
+      const headerCrumbs = crumbs(header());
+      await tap(document, strings.recorderMenuOpen);
+      const panel = document.querySelector(".menu-panel")!;
+      expect(panel).not.toBeNull();
+      expect(crumbs(panel)).toEqual(headerCrumbs);
+      expect(spokenPlace(panel)).toBe(
+        strings.recorderBreadcrumb(
+          "Book Mine",
+          strings.chapterHeading(name, 1),
+          1,
+          null
+        )
+      );
+    }
+  );
 
   it("keeps the current look's plain-text trail, resolving the renamed chapter's name (unchanged)", async () => {
     await mount("current");
@@ -312,13 +346,24 @@ describe("the segments header (#1105)", () => {
     return found!;
   }
 
-  it("shows the chapter's NUMBER in a chip, never the renamed chapter's typed name", async () => {
+  it("shows a renamed chapter's typed name in the chapter chip (#1230)", async () => {
     await mount("o4");
     expect(crumbs(header())).toEqual([
       { text: "Book Mine", state: null },
-      { text: "1", state: null },
+      { text: "2:1-4", state: null },
     ]);
-    expect(header().textContent).not.toContain("2:1-4");
+  });
+
+  it("shows the default name for a chapter with no stored name, and names it (#1230)", async () => {
+    segmentsMocks.chapterName = null;
+    await mount("o4");
+    expect(crumbs(header())[1]).toEqual({
+      text: strings.chapterName(1),
+      state: null,
+    });
+    expect(breadcrumbButton().getAttribute("aria-label")).toBe(
+      strings.chapterBreadcrumb("Book Mine", strings.chapterName(1))
+    );
   });
 
   it("keeps the breadcrumb an interactive Back control, with its own accessible name once its text is hidden", async () => {
@@ -334,12 +379,12 @@ describe("the segments header (#1105)", () => {
     // "Back to books" })` lookup in the e2e suite with a strict-mode
     // ambiguity error — caught by CI, not by this file, until this guard
     // was added. The exact-name test below is the guard.
-    // Built from the chapter NUMBER the visible chip shows, never the typed
-    // name the chip does not show (WCAG 2.5.3 label-in-name, George R2).
+    // Built from the same resolved chapter name the visible chip shows, so
+    // the spoken name names the chapter and the visible text sits inside it
+    // (WCAG 2.5.3 label-in-name, George R2 on #1105; #1230).
     expect(btn.getAttribute("aria-label")).toBe(
-      strings.chapterBreadcrumb("Book Mine", "1")
+      strings.chapterBreadcrumb("Book Mine", "2:1-4")
     );
-    expect(btn.getAttribute("aria-label")).not.toContain("2:1-4");
 
     await act(async () => breadcrumbButton().click());
     expect(onBack).toHaveBeenCalledTimes(1);
@@ -359,14 +404,43 @@ describe("the segments header (#1105)", () => {
     );
   });
 
-  it("agrees with the chapter menu's own crumbs, chip for chip", async () => {
-    await mount("o4");
-    const headerCrumbs = crumbs(header());
-    await tap(document, strings.chapterMenuOpen);
-    const panel = document.querySelector(".menu-panel")!;
-    expect(panel).not.toBeNull();
-    expect(crumbs(panel)).toEqual(headerCrumbs);
-  });
+  it.each([["2:1-4"], [null]])(
+    "agrees with the chapter menu's own crumbs, chip for chip, and the menu speaks the chapter (name %s)",
+    async (name) => {
+      segmentsMocks.chapterName = name;
+      await mount("o4");
+      const headerCrumbs = crumbs(header());
+      await tap(document, strings.chapterMenuOpen);
+      const panel = document.querySelector(".menu-panel")!;
+      expect(panel).not.toBeNull();
+      expect(crumbs(panel)).toEqual(headerCrumbs);
+      expect(spokenPlace(panel)).toBe(
+        strings.chapterBreadcrumb("Book Mine", strings.chapterHeading(name, 1))
+      );
+    }
+  );
+
+  it.each([["2:1-4"], [null]])(
+    "names the chapter the same way in a segment's own menu (name %s)",
+    async (name) => {
+      segmentsMocks.chapterName = name;
+      await mount("o4");
+      const headerCrumbs = crumbs(header());
+      await tap(document, strings.segmentMenu(1));
+      const panel = document.querySelector(".menu-panel")!;
+      expect(panel).not.toBeNull();
+      // Book and chapter as the header shows them, then the segment.
+      expect(crumbs(panel).slice(0, 2)).toEqual(headerCrumbs);
+      expect(spokenPlace(panel)).toBe(
+        strings.recorderBreadcrumb(
+          "Book Mine",
+          strings.chapterHeading(name, 1),
+          1,
+          null
+        )
+      );
+    }
+  );
 
   it("keeps the current look's plain-text trail and implicit accessible name (unchanged)", async () => {
     await mount("current");

@@ -179,9 +179,21 @@
     align-items: center;
     min-width: 0;
   }
+  /* HOW THE CRUMBS SHARE THE ROW (#1230). The headers' chapter crumb is the
+     chapter's name, so two arbitrary-length names (book, chapter) now share
+     one row. Each crumb starts from its padding (basis 0) and takes an equal
+     share of the width left over; a crumb whose text fits in less than its
+     share stops at its own width (max-content) and hands the rest to the
+     others. So a short name ("Chapter 2") stays whole beside a long one, and
+     when both are long each gets half and each elides with "…" — rather
+     than the default shrink, which cuts both by the same fraction and so
+     cuts a short name as soon as the other is long. The segment crumb is a
+     short number carrying the state tint, so it never shrinks. */
   [data-design="o4"] .o4-crumb {
     display: flex;
     align-items: center;
+    flex: 1 1 0;
+    max-width: max-content;
     height: 40px;
     min-width: 0;
     margin-left: -6px;
@@ -215,6 +227,9 @@
   [data-design="o4"] .o4-crumb > span {
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  [data-design="o4"] .o4-crumb[data-state] {
+    flex: none;
   }
   [data-design="o4"] .o4-crumb[data-state="recorded"] {
     background: var(--s-voice-quiet);

@@ -82,6 +82,13 @@ export interface RecorderMenuProps {
   bookCoverHex?: string;
   /** The chapter's number, the O4 sheet head's second crumb. */
   chapterNumber?: number;
+  /**
+   * The chapter's resolved name (`strings.chapterHeading`), shown in place
+   * of `chapterNumber` when given, so the head matches the recorder header
+   * it was opened from (#1230). `recorder.tsx` always passes it once the
+   * view has loaded.
+   */
+  chapterHeading?: string;
 }
 
 export function RecorderMenu({
@@ -99,6 +106,7 @@ export function RecorderMenu({
   bookName,
   bookCoverHex,
   chapterNumber,
+  chapterHeading,
 }: RecorderMenuProps) {
   // ONE answer for "this segment is marked", read by both the label and the
   // paint. They were two expressions that disagreed: the label also required a
@@ -144,7 +152,7 @@ export function RecorderMenu({
         <O4SheetHead
           book={bookName}
           bookCoverHex={bookCoverHex}
-          chapter={chapterNumber}
+          chapter={chapterHeading ?? chapterNumber}
           segment={
             ordinal === null
               ? undefined
@@ -213,8 +221,8 @@ export function RecorderMenu({
             // that lies until close (George R1). `finishedState === "finished"`
             // is true only when the mark will stick.
             //
-            // One fixed label, and `pressed` says the state (#351) — the
-            // `DesignControl` pattern. The label used to flip to "Mark segment
+            // One fixed label, and `pressed` says the state (#351), the way
+            // the zoom and level-meter toggles do. The label used to flip to "Mark segment
             // N not done", and beside `aria-pressed` that flip would announce
             // "not done, pressed", naming the opposite of the state.
             label={strings.markFinished(ordinal ?? 0)}
