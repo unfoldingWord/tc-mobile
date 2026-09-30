@@ -27,11 +27,12 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 5. **Know which build you are on, and that it is a release candidate.** The
    training builds are called release candidates and carry a name like
    `1.0.0-rc.2`; the same name appears in the small build stamp at the bottom
-   of every screen (`v1.0.0-rc.2 · a1b2c3d`, the code after the dot changes
-   with every build). Check it on each phone before the session. <!-- source: package.json version "1.0.0-rc.2" at 8005751e; src/components/build-stamp.tsx (`v{__APP_VERSION__} · {__BUILD_SHA__}`); docs/native/README.md §5a ("Release candidates use `tester-build-v1.0.0-rc.N`") --> **From rc.3 onward
-   every phone shows the same new look**, so the screens you see match the
-   ones described here. A phone still on rc.2 or earlier may look different;
-   update it first (§2, step 1). <!-- source: gh issue #1244 (DRI decision 2026-09-30, freeze exception for rc.3); the change ships in PR #1254, not yet merged when this was written, so this describes rc.3 as intended, not as built; not device-verified -->
+   of every screen (`v1.0.0-rc.2 · a1b2c3d`; the short code after the `·`
+   changes with every build). Check it on each phone before the session. <!-- source: package.json version "1.0.0-rc.2" at 8005751e; src/components/build-stamp.tsx (`v{__APP_VERSION__} · {__BUILD_SHA__}`); docs/native/README.md §5a ("Release candidates use `tester-build-v1.0.0-rc.N`") --> **rc.3 is
+   meant to give every phone the same new look** that this runbook describes;
+   that change was not yet in a build when this was written, so check the
+   screens on one rc.3 phone before relying on it. A phone on rc.2 or earlier
+   may look different; update it first (§2, step 1). <!-- source: gh issue #1244 (DRI decision 2026-09-30, freeze exception for rc.3); the change ships in PR #1254, not yet merged when this was written, so this describes rc.3 as intended, not as built; not device-verified -->
 
 ## 2. Setting up a participant's phone
 
@@ -79,10 +80,12 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 
    **The same rules apply to testers and to participants.** On an iPhone,
    open TestFlight, choose the newest build of tC Mobile and tap **Update**
-   (or **Install**); do not delete the app first. On Android, open the newest
-   `app-release.apk` and install it over the old one. If Android refuses to
-   install over the old app, stop there: do not uninstall to get past it,
-   because that erases the recordings. Report it as in section 5. If a
+   (or **Install**). On Android, open the newest `app-release.apk` and
+   install it over the old one. On both, deleting the app erases every
+   recording on it. If Android refuses to install over the old app, or
+   TestFlight offers no newer build, stop there: do not uninstall to get
+   past it. The app's own record cannot hold this, so write down the message
+   and tell the maintainer (§5, "Write down what the app cannot know"). If a
    recording on that phone matters, share it first (§3), since Share is the
    only copy that leaves the phone. <!-- source: docs/native/README.md
    "Tester announcement template" ("If uninstalling is necessary, share any
@@ -95,8 +98,8 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 
    After installing over an old build, close and reopen the app twice,
    then check the build stamp — the small text at the bottom of every
-   screen, a version and a short code in the shape `v0.2.1 · a1b2c3d` (the
-   numbers change with every build; more in
+   screen, a version and a short code in the shape `v1.0.0-rc.2 · a1b2c3d`
+   (the short code changes with every build; more in
    [section 5](#5-reporting-a-problem)). If it still shows the old version,
    or recordings are missing, stop: do not uninstall — write down the stamp
    and report it as in section 5. <!-- source:
@@ -247,7 +250,9 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
   stop working.** After connecting Bluetooth headphones, and sometimes after
   coming back from the lock screen, the Play button can fail ("Could not play
   this recording.") or do nothing, and the moving line that shows the voice
-  while recording can stay flat. The recording itself is still saved.
+  while recording can stay flat. The recording should still be saved, but
+  after reopening, play it and confirm you hear the voice before anyone
+  records again; if you cannot, leave that phone alone and send the report.
   **Workaround: fully close the app** — swipe it away in the phone's app
   switcher — **and open it again.** A fix is in progress under #1251; it is
   not fixed yet, and the cause is not confirmed. If it happens, note the
@@ -346,8 +351,8 @@ work, not something this build does. <!-- source: src/hooks/report-failure.ts:41
    but does not put the mark there on its own, so open **≡** anyway if a
    translator tells you a long recording stopped by itself. <!-- source: src/components/books-screen.tsx (the mark keys on useMarkedFailureCount, the panel on useFailureCount); src/lib/failure-marker.ts (recorder-take-cap does not light it, #1005) -->
 2. Tap **≡**. The problem record appears at the top of this menu only when
-   something has been recorded — on a phone with nothing recorded there is
-   no send row, and that is normal. <!-- source: src/components/failure-log-panel.tsx docblock ("Only mounted while the log is non-empty"); src/components/books-screen.tsx (`failureCount > 0 && <FailureLogPanel>`) --> The menu says how many problems were recorded, and shows two
+   the app has logged a problem — on a phone with no problem logged there
+   is no share or bin icon, and that is normal. <!-- source: src/components/failure-log-panel.tsx docblock ("Only mounted while the log is non-empty"); src/components/books-screen.tsx (`failureCount > 0 && <FailureLogPanel>`) --> The menu says how many problems were recorded, and shows two
    buttons. Like everything else in this app they are **pictures, not words**:
    the **share** icon and the **bin** icon. <!-- source: src/components/failure-log-panel.tsx (icon-only Controls; the two Notices carry the only text) -->
 3. Tap the **share** icon once — it prepares the report — then tap it again
@@ -362,7 +367,7 @@ work, not something this build does. <!-- source: src/hooks/report-failure.ts:41
 4. Tap the **bin** icon afterwards if you want the mark to go quiet again. It
    asks once to confirm, then empties only this problem record — nothing
    anyone recorded is touched. Send first: the record is the only trace of
-   what went wrong, and there is no undo. <!-- source: src/lib/storage/failures.ts clearFailures (clears only the `failures` store) -->
+   what went wrong, and there is no undo. <!-- source: src/lib/storage/failures.ts clearFailures (clears only the `failures` store); src/components/failure-log-panel.tsx (the bin opens EraseConfirm; onClear runs only on onConfirm) -->
 
 If the app itself fails and shows the restart screen, that screen has its own
 smaller **share** icon underneath the big restart button — use it before
