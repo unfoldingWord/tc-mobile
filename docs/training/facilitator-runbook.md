@@ -32,7 +32,9 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    meant to give every phone the same new look** that this runbook describes;
    that change was not yet in a build when this was written, so check the
    screens on one rc.3 phone before relying on it. A phone on rc.2 or earlier
-   may look different; update it first (§2, step 1). <!-- source: gh issue #1244 (DRI decision 2026-09-30, freeze exception for rc.3); the change ships in PR #1254, not yet merged when this was written, so this describes rc.3 as intended, not as built; not device-verified -->
+   may look different. Once you have been told an rc.3 build is out for this
+   session, update those phones first (§2, step 1); until then an rc.2 phone
+   stays on rc.2. <!-- source: gh issue #1244 (DRI decision 2026-09-30, freeze exception for rc.3); the change ships in PR #1254, not yet merged when this was written, so this describes rc.3 as intended, not as built; not device-verified -->
 
 ## 2. Setting up a participant's phone
 
@@ -82,10 +84,13 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    open TestFlight, choose the newest build of tC Mobile and tap **Update**
    (or **Install**). On Android, open the newest `app-release.apk` and
    install it over the old one. On both, deleting the app erases every
-   recording on it. If Android refuses to install over the old app, or
-   TestFlight offers no newer build, stop there: do not uninstall to get
-   past it. The app's own record cannot hold this, so write down the message
-   and tell the maintainer (§5, "Write down what the app cannot know"). If a
+   recording on it. If Android refuses to install over the old app, stop
+   there: do not uninstall to get past it. The same goes for TestFlight
+   offering no newer build, but only once you have been told an rc.3 build is
+   out for this session; until then, a phone with no update offered simply
+   stays on rc.2, and that is not an install problem. The app's own record
+   cannot hold an install problem, so write down what you saw (the message,
+   if there is one) and tell the maintainer (§5, "Write down what the app cannot know"). If a
    recording on that phone matters, share it first (§3), since Share is the
    only copy that leaves the phone. <!-- source: docs/native/README.md
    "Tester announcement template" ("If uninstalling is necessary, share any
@@ -102,7 +107,8 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    (the short code changes with every build; more in
    [section 5](#5-reporting-a-problem)). If it still shows the old version,
    or recordings are missing, stop: do not uninstall — write down the stamp
-   and report it as in section 5. <!-- source:
+   and what you saw, as in section 5, "Write down what the app cannot know".
+   An empty problem record there does not mean nothing happened. <!-- source:
    src/components/build-stamp.tsx; rendered on every screen via
    src/app/App.tsx -->
 
@@ -250,15 +256,14 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
   stop working.** After connecting Bluetooth headphones, and sometimes after
   coming back from the lock screen, the Play button can fail ("Could not play
   this recording.") or do nothing, and the moving line that shows the voice
-  while recording can stay flat. The recording should still be saved, but
-  after reopening, play it and confirm you hear the voice before anyone
-  records again; if you cannot, leave that phone alone and send the report.
+  while recording can stay flat. The recording should still be saved.
   **Workaround: fully close the app** — swipe it away in the phone's app
-  switcher — **and open it again.** A fix is in progress under #1251; it is
+  switcher — **and open it again.** Then play the recording and confirm you
+  hear the voice before anyone records again. If it is still silent after
+  that restart, leave that phone alone and send the report (§5). A fix is in progress under #1251; it is
   not fixed yet, and the cause is not confirmed. If it happens, note the
-  iPhone model, whether headphones were connected, and send the problem
-  report (§5) before or after the restart; a failed Play may leave an entry
-  in it. <!-- source: gh issue #1251 (DRI comment 2026-09-30, and the read-only
+  iPhone model and whether headphones were connected; a failed Play may
+  leave an entry in the problem report. <!-- source: gh issue #1251 (DRI comment 2026-09-30, and the read-only
   trace at rc.2 be6da1e4: the live meter and Play both depend on one shared
   audio context, src/hooks/audio-io.ts; the trace's cause is marked
   "inferred", not observed running); recording itself does not use that
