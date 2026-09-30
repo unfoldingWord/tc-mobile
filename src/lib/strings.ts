@@ -922,13 +922,18 @@ export const strings = {
   // The one promise this screen makes, and the reason it can make it: the commit
   // is ONE transaction (#38), so a failed save left the take in the RAM slot
   // `useSaveTake` holds. Names the segment when the held take belongs to the
-  // chapter on screen, and says nothing about it when it does not.
-  saveFailedHeld: (editOnly: boolean, ordinal: number | null): string => {
-    const subject = editOnly ? "edited recording" : "recording";
-    return ordinal === null
-      ? `Your ${subject} is still here.`
-      : `Your ${subject} of segment ${ordinal} is still here.`;
-  },
+  // chapter on screen, and says nothing about it when it does not. Each arm is
+  // a whole sentence rather than a subject spliced into one frame (#169): a
+  // second locale may need the article, case or word order to change with
+  // what is held, and a shared frame would force English's on it.
+  saveFailedHeld: (editOnly: boolean, ordinal: number | null): string =>
+    editOnly
+      ? ordinal === null
+        ? "Your edited recording is still here."
+        : `Your edited recording of segment ${ordinal} is still here.`
+      : ordinal === null
+        ? "Your recording is still here."
+        : `Your recording of segment ${ordinal} is still here.`,
   // NOT `tryAgain` and NOT `loadRetry`: this retries a WRITE, and on an
   // icon-only `Control` the label is the whole thing a screen reader speaks.
   saveFailedRetry: "Try saving again",
