@@ -8,6 +8,7 @@ import { SegmentsScreen } from "@/components/segments-screen";
 import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
+import type { StopResult } from "@/hooks/use-recorder";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow } from "@/types/view";
@@ -177,15 +178,27 @@ function header(): Element {
 }
 
 describe("the recorder header (#1105)", () => {
-  async function mount(look: Design) {
+  async function mount(
+    look: Design,
+    options: {
+      recorderState?: UseAudioSession["recorderState"];
+      stopRecording?: UseAudioSession["stopRecording"];
+    } = {}
+  ) {
     design.current = look;
     const ref = createRef<RecorderHandle>();
+    const onExit = vi.fn();
+    // What App hands the recorder: the one Back path, which lands on the
+    // sheet's own close. A spy, so a test can count the header's Backs.
+    const onRequestBack = vi.fn(() => {
+      void ref.current?.requestClose();
+    });
     const audio: UseAudioSession = {
       playingId: null,
       playingBuffer: false,
       playbackElapsedMs: 0,
       playbackRanOut: false,
-      recorderState: "idle",
+      recorderState: options.recorderState ?? "idle",
       takeCap: { nearLimit: false, remainingMs: 20 * 60_000, reached: false },
       elapsedMs: 0,
       supported: true,
@@ -197,7 +210,7 @@ describe("the recorder header (#1105)", () => {
       stopBuffer: vi.fn(),
       readPlaybackPosition: () => null,
       startRecording: vi.fn(),
-      stopRecording: vi.fn(),
+      stopRecording: options.stopRecording ?? vi.fn(),
       retryDecode: vi.fn(),
       leave: vi.fn(),
       primeAudioContext: vi.fn(),
@@ -222,14 +235,68 @@ describe("the recorder header (#1105)", () => {
             erasing: false,
             isErasing: () => false,
           },
-          onExit: vi.fn(),
-          onRequestBack: () => {
-            void ref.current?.requestClose();
-          },
+          onExit,
+          onRequestBack,
         })
       )
     );
+    return { audio, onExit, onRequestBack };
   }
+
+  it("makes the chapter crumb a button to the chapter and the segment crumb the current place (#1269)", async () => {
+    await mount("o4");
+    const chips = [...header().querySelectorAll(".o4-crumb")];
+    expect(chips.map((el) => el.tagName)).toEqual(["SPAN", "BUTTON", "SPAN"]);
+    expect(chips[1]!.getAttribute("aria-label")).toBe(
+      strings.goToChapter("2:1-4")
+    );
+    expect(chips[1]!.textContent).toBe("2:1-4");
+    expect(chips[2]!.getAttribute("aria-current")).toBe("page");
+    // The book crumb stays a plain chip here: Books is two Backs away and
+    // the nav adapter has no call that chains them.
+    expect(chips[0]!.getAttribute("aria-current")).toBeNull();
+  });
+
+  it("runs the header's own Back when the chapter crumb is tapped (#1269)", async () => {
+    const { onRequestBack, onExit } = await mount("o4");
+    await tap(header(), strings.goToChapter("2:1-4"));
+    expect(onRequestBack).toHaveBeenCalledTimes(1);
+    // That Back is the recorder's own close, which exits the sheet.
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it("seals the take in progress, as Back does, and is disabled with Back while the close runs (#1269)", async () => {
+    // A take in progress: the crumb's Back must stop the capture first,
+    // exactly as the Close control's does. The stop is held open so the
+    // close window can be observed.
+    let release!: (value: StopResult) => void;
+    const stopRecording = vi.fn(
+      () =>
+        new Promise<StopResult>((resolve) => {
+          release = resolve;
+        })
+    );
+    const { onRequestBack, onExit } = await mount("o4", {
+      recorderState: "recording",
+      stopRecording,
+    });
+    await tap(header(), strings.goToChapter("2:1-4"));
+    expect(onRequestBack).toHaveBeenCalledTimes(1);
+    expect(stopRecording).toHaveBeenCalledTimes(1);
+    // The close is in flight: Back and the crumb are both disabled, so a
+    // second tap on either cannot start a second exit.
+    const crumb = button(header(), strings.goToChapter("2:1-4"));
+    const back = button(header(), strings.closeRecorder);
+    expect(back.disabled).toBe(true);
+    expect(crumb.disabled).toBe(true);
+    await act(async () => crumb.click());
+    expect(onRequestBack).toHaveBeenCalledTimes(1);
+    // A capture with audio, so the close saves it and exits.
+    await act(async () =>
+      release({ samples: new Int16Array([5, 6]), blob: null, error: null })
+    );
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
 
   it("shows a renamed chapter's typed name in the chapter chip (#1230)", async () => {
     await mount("o4");
@@ -378,40 +445,58 @@ describe("the segments header (#1105)", () => {
     ]);
   });
 
-  it("shows the default name for a chapter with no stored name, and names it (#1230)", async () => {
+  it("shows the default name for a chapter with no stored name (#1230)", async () => {
     segmentsMocks.chapterName = null;
     await mount("o4");
     expect(crumbs(header())[1]).toEqual({
       text: strings.chapterName(1),
       state: null,
     });
-    expect(breadcrumbButton().getAttribute("aria-label")).toBe(
-      strings.chapterBreadcrumb("Book Mine", strings.chapterName(1))
-    );
   });
 
-  it("keeps the breadcrumb an interactive Back control, with its own accessible name once its text is hidden", async () => {
-    const onBack = await mount("o4");
-    const btn = breadcrumbButton();
-    expect(
-      btn.querySelector(".o4-crumbs")?.closest('[aria-hidden="true"]')
-    ).not.toBeNull();
-    // The same `chapterBreadcrumb` trail shape — NOT `strings.backToBooks`. A first
-    // version of this fix reused that string and put two controls named
-    // "Back to books" on this one screen (the plain Control beside it, and
-    // this button), which broke every `getByRole(button, { name:
-    // "Back to books" })` lookup in the e2e suite with a strict-mode
-    // ambiguity error — caught by CI, not by this file, until this guard
-    // was added. The exact-name test below is the guard.
-    // Built from the same resolved chapter name the visible chip shows, so
-    // the spoken name names the chapter and the visible text sits inside it
-    // (WCAG 2.5.3 label-in-name, George R2 on #1105; #1230).
-    expect(btn.getAttribute("aria-label")).toBe(
-      strings.chapterBreadcrumb("Book Mine", "2:1-4")
+  it("makes the book crumb a button to Books and the chapter crumb the current place (#1269)", async () => {
+    await mount("o4");
+    const chips = [...header().querySelectorAll(".o4-crumb")];
+    expect(chips.map((el) => el.tagName)).toEqual(["BUTTON", "SPAN"]);
+    // Named for where it goes, and holding the text it shows (WCAG 2.5.3).
+    // Not `strings.backToBooks`: two controls with that name on one screen
+    // broke every `getByRole(button, { name: "Back to books" })` lookup in
+    // the e2e suite (#1105); the exact-name test below still guards it.
+    expect(chips[0]!.getAttribute("aria-label")).toBe(
+      strings.goToBook("Book Mine")
     );
+    expect(chips[1]!.getAttribute("aria-current")).toBe("page");
+    expect(chips[1]!.closest("button")).toBeNull();
+    // The chips are exposed now, since the chapter chip is what names this
+    // screen's chapter to assistive tech; the old look's Back button is gone.
+    expect(
+      header().querySelector('.o4-crumbs [aria-hidden="true"]')
+    ).toBeNull();
+    expect(
+      header().querySelector(".o4-crumbs")!.closest('[aria-hidden="true"]')
+    ).toBeNull();
+    expect(header().querySelector("button.breadcrumb")).toBeNull();
+  });
 
-    await act(async () => breadcrumbButton().click());
+  it("runs the header's own Back when the book crumb is tapped (#1269)", async () => {
+    const onBack = await mount("o4");
+    await tap(header(), strings.goToBook("Book Mine"));
     expect(onBack).toHaveBeenCalledTimes(1);
+    // The same handler the Back control runs, not a second exit.
+    await act(async () =>
+      header()
+        .querySelector<HTMLButtonElement>('button[title="Back to books"]')!
+        .click()
+    );
+    expect(onBack).toHaveBeenCalledTimes(2);
+  });
+
+  it("puts the book crumb out of reach with the rest of the header while an overlay is up (#1269)", async () => {
+    await mount("o4");
+    await tap(document, strings.chapterMenuOpen);
+    expect(document.querySelector(".menu-panel")).not.toBeNull();
+    const book = button(header(), strings.goToBook("Book Mine"));
+    expect(book.closest("[inert]")).toBe(header());
   });
 
   it("never shares an accessible name with the plain Back control beside it", async () => {

@@ -203,7 +203,9 @@
     font-size: 16px; /* #939 token */
     font-weight: 700; /* #939 token */
     white-space: nowrap;
-    clip-path: polygon(
+    /* The chevron, as a property so a linked crumb's pseudo-element (below,
+       #1269) draws the same shape its button would. */
+    --o4-crumb-shape: polygon(
       0 0,
       calc(100% - 13px) 0,
       100% 50%,
@@ -211,12 +213,13 @@
       0 100%,
       13px 50%
     );
+    clip-path: var(--o4-crumb-shape);
   }
   [data-design="o4"] .o4-crumb:first-child {
     margin-left: 0;
     padding-left: 12px;
     border-radius: 10px 0 0 10px; /* #939 token */
-    clip-path: polygon(
+    --o4-crumb-shape: polygon(
       0 0,
       calc(100% - 13px) 0,
       100% 50%,
@@ -230,6 +233,58 @@
   }
   [data-design="o4"] .o4-crumb[data-state] {
     flex: none;
+  }
+  /* A CRUMB THAT NAVIGATES (#1269). A header's crumb for a place above the
+     current screen is a button. The chip stays 40px tall, but the target is
+     `--c-control-md` (44px), the repo's control floor: the chip moves to a
+     pseudo-element inset 2px top and bottom, because a clip-path on the
+     button itself would clip its hit area to the chevron too. The button
+     paints nothing of its own. Long-press selection is off, as it was on
+     the `.breadcrumb` button this replaced on the chapter screen (#563). */
+  [data-design="o4"] button.o4-crumb {
+    position: relative;
+    isolation: isolate;
+    height: var(--c-control-md);
+    border: none;
+    background: transparent;
+    clip-path: none;
+    font-family: inherit;
+    text-align: start;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  [data-design="o4"] button.o4-crumb::before {
+    content: "";
+    position: absolute;
+    inset: 2px 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: var(--s-well);
+    clip-path: var(--o4-crumb-shape);
+  }
+  [data-design="o4"] button.o4-crumb:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: var(--c-focus-offset);
+  }
+  /* Disabled with the header's Back, and dimmed the way Back is. */
+  [data-design="o4"] button.o4-crumb:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+  /* The chapter screen's crumb row, in the place and at the size of the
+     `.breadcrumb` button it replaces in this look (#1269). */
+  [data-design="o4"] .o4-crumbs-bar {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    min-width: 0;
+    min-height: var(--c-control-md);
+    padding: 0 var(--c-breadcrumb-inset);
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   [data-design="o4"] .o4-crumb[data-state="recorded"] {
     background: var(--s-voice-quiet);
