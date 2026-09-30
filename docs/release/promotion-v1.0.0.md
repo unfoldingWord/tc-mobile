@@ -128,15 +128,19 @@ freeze note on every new PR to `develop`.
 1. **Scope.** The DRI picks which fixes go in. Each fix is its own PR with its
    own issue, reviewed by both uwreview lenses and merged pinned to its
    reviewed head (`--match-head-commit`).
-2. **Bump.** Open a `chore(release): v1.0.0-rc.N` PR on `develop` that changes
-   only `package.json` and `package-lock.json` (`npm version 1.0.0-rc.N
---no-git-tag-version`). Its body lists every PR carried, what a tester will
-   see, and "not in this build". It states that nothing under
-   `src/lib/storage/` changed (`git diff <last RC bump> <tip> --
-src/lib/storage`), or names the migration if something did. Check that
-   `closingIssuesReferences` is `[]`. Merge by squash.
-3. **Pinned branch.** Create `release/v1.0.0-rc.N` at the `develop` commit
-   being promoted, so later `develop` merges stay out of the cut.
+2. **Bump.** Merge every picked fix first. Then open a
+   `chore(release): v1.0.0-rc.N` PR on `develop` that changes only
+   `package.json` and `package-lock.json`, made with
+   `npm version 1.0.0-rc.N --no-git-tag-version`. Its body lists every PR
+   carried, what a tester will see, and "not in this build". It states that
+   nothing under `src/lib/storage/` changed since the last RC's cut commit,
+   or names the migration if something did. Check that
+   `closingIssuesReferences` is `[]`. The DRI merges it by squash. That squash
+   commit is the **cut commit** (`CUT_SHA`), the exact tree being promoted.
+   If anything merges to `develop` after it, cut a new bump.
+3. **Pinned branch.** Create `release/v1.0.0-rc.N` at `CUT_SHA`, so later
+   `develop` merges stay out of the cut. If that branch already exists, stop:
+   never move or reuse it.
 4. **Promotion PR.** Open it from `release/v1.0.0-rc.N` to `staging`, with a
    **hold** line at the top: no merge until the red team is posted and the
    DRI gives a go/no-go. Check that `closingIssuesReferences` is `[]`.
@@ -157,14 +161,17 @@ src/lib/storage`), or names the migration if something did. Check that
    issue for the deferred review items. Post a summary on the promotion PR,
    then ask the DRI for go/no-go.
 
-6. **Merge the promotion** with a merge commit, pinned to the branch head.
+6. **Merge the promotion.** After a recorded go, the DRI merges it with a
+   merge commit, pinned to `CUT_SHA`, from their own terminal. An agent
+   never runs this merge or passes `--admin`. The merge commit is
+   `PROMO_SHA`; every channel below is built from it.
    Run `npm run check:deploy` until it passes, and put the PASS line in
    `docs/progress_tracker.md`. The staging push runs the Google Play lane,
    which uploads a **draft** to the internal track. Record its release name.
 7. **Native builds from one commit.** Dispatch
    [`android-apk.yml`](../../.github/workflows/android-apk.yml) and
    [`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) from
-   `staging`, and confirm each run's head SHA is the promotion's merge commit.
+   `staging`, and confirm each run's head SHA is `PROMO_SHA`.
    Every channel (web, Play, APK and TestFlight) must come from that one
    commit. If `staging` moves first, stop and re-promote rather than mix.
 8. **Check the APK before publishing.**

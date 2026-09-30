@@ -22,22 +22,41 @@ done, stop and say which one and why.
       issue, clean from both uwreview lenses, merged with
       `--match-head-commit <reviewed sha>`.
 
+**Two commits name every step below.** Write both down when they exist and
+use no other:
+
+- **`CUT_SHA`**: the squash commit of the bump PR on `develop`. The bump
+  merges **last**, after every picked fix, so `CUT_SHA` is the exact tree
+  being promoted. If anything merges to `develop` after it, stop and cut a
+  new bump.
+- **`PROMO_SHA`**: the promotion PR's merge commit on `staging`. Every
+  channel (web, Play, APK, TestFlight) must be built from it.
+
+**Merges are the DRI's, run from their own terminal.** An agent following
+this checklist never merges the bump or the promotion, and never passes
+`--admin`. It asks in a picker and hands over the PR number and the head to
+pin, then waits.
+
 ## 1. Bump
 
-- [ ] Branch from `origin/develop` at the commit being promoted, then run
+- [ ] Every picked fix is merged. Branch from the `origin/develop` tip, then run
       `npm version 1.0.0-rc.N --no-git-tag-version` (or `1.0.0` for the final).
       Only `package.json` and `package-lock.json` change.
 - [ ] Body: every PR carried, what a tester will see, not in this build,
       not run, and the DRI's cut pick (verbatim).
-- [ ] Storage: `git diff <last bump> <tip> -- src/lib/storage` is empty, or
+- [ ] Storage: `git diff <last RC's CUT_SHA> HEAD -- src/lib/storage` is empty, or
       the migration is named. State `DB_VERSION`.
 - [ ] `closingIssuesReferences` is `[]` (and grep the title too).
-- [ ] Merge by squash, after review and the DRI's pick.
+- [ ] Human-only: the DRI merges it by squash after review. Its squash
+      commit is `CUT_SHA`. Check that `origin/develop` equals `CUT_SHA`.
 
 ## 2. Promotion
 
-- [ ] Create `release/v1.0.0-rc.N` at the `develop` commit being promoted:
-      `gh api repos/unfoldingWord/tc-mobile/git/refs -f ref=refs/heads/release/v1.0.0-rc.N -f sha=<sha>`.
+- [ ] If `release/v1.0.0-rc.N` already exists
+      (`gh api repos/unfoldingWord/tc-mobile/git/ref/heads/release/v1.0.0-rc.N`),
+      stop and ask. Never move or reuse it.
+- [ ] Create it at `CUT_SHA`:
+      `gh api repos/unfoldingWord/tc-mobile/git/refs -f ref=refs/heads/release/v1.0.0-rc.N -f sha=<CUT_SHA>`.
 - [ ] Open the PR `release/v1.0.0-rc.N → staging` with a **hold** line at the
       top ("release red team first"). `closingIssuesReferences` is `[]`.
 
@@ -45,14 +64,15 @@ done, stop and say which one and why.
 
 Run read-only agents and write their reports to the job tmp:
 
-- [ ] **Risk register** over `git log --first-parent <staging>..<tip>`:
+- [ ] **Risk register** over `git log --first-parent origin/staging..<CUT_SHA>`:
       BLOCK / FIX-BEFORE-PUBLISH / NOTE, with file:line, labelled observed or
       inferred. It covers data safety, each PR, interactions between PRs
       merged in parallel, bench deferrals and unanswered inline review
       comments (a P2 left unanswered is a finding).
 - [ ] **Announcement claim check** of the tester announcement and the bump
       body: TRUE / FALSE / OVERSTATED / MISSING CONTEXT, with corrections.
-- [ ] **Delta pass** if anything merged after those passes started.
+- [ ] **Delta pass** over anything the first two passes didn't cover up to
+      `CUT_SHA`.
 - [ ] Apply every FALSE and OVERSTATED correction.
 - [ ] Take each FIX-BEFORE-PUBLISH item to the DRI in a picker: fix it in
       this RC, or accept it. Record each pick verbatim on the relevant PR.
@@ -63,12 +83,14 @@ Run read-only agents and write their reports to the job tmp:
 
 ## 4. Merge and deploy
 
-- [ ] The DRI merges the promotion with a merge commit, pinned:
-      `gh pr merge <n> --repo unfoldingWord/tc-mobile --merge --admin --match-head-commit <sha>`.
-- [ ] Run `npm run check:deploy` until it passes (Workers Builds takes a few
-      minutes). Keep the PASS line for the tracker.
+- [ ] Human-only: after a recorded go, the DRI merges the promotion with a
+      merge commit, pinned to `CUT_SHA` (the PR head), from their own
+      terminal. Record its merge commit as `PROMO_SHA`, and check
+      `origin/staging` equals it.
+- [ ] Run `npm run check:deploy` until it passes for `PROMO_SHA` (Workers
+      Builds takes a few minutes). Keep the PASS line for the tracker.
 - [ ] Play lane (`android-play.yml`) run on the staging push: note its
-      release name (`<version> (<code>) staging@<sha>`) and status (a draft
+      release name (`<version> (<code>) staging@<PROMO_SHA short>`) and status (a draft
       on internal). The DRI releases the draft in the Play Console if wanted.
 
 ## 5. Native builds, one commit
@@ -77,15 +99,15 @@ Run read-only agents and write their reports to the job tmp:
       `gh workflow run android-apk.yml --repo unfoldingWord/tc-mobile --ref staging` and
       `gh workflow run ios-testflight.yml --repo unfoldingWord/tc-mobile --ref staging`
       (each needs the `release-signing` approval).
-- [ ] Both runs' `headSha` equal the promotion merge commit, and so do the
-      web and Play builds. If not, stop.
+- [ ] Both runs' `headSha` equal `PROMO_SHA`, and so do the web and Play
+      builds. If not, stop.
 
 ## 6. Check the APK
 
 - [ ] `gh run download <apk run>`; the signer certificate SHA-256 equals the
       previous RC's (otherwise it won't install over it).
 - [ ] `unzip -p app-release.apk assets/public/version.json` reads the version
-      and the merge commit.
+      and `PROMO_SHA`.
 - [ ] Record the APK's SHA-256. Get the TestFlight build number from the iOS
       run.
 
@@ -97,9 +119,9 @@ Run read-only agents and write their reports to the job tmp:
 - [ ] Make a QR PNG of
       `https://github.com/unfoldingWord/tc-mobile/releases/download/tester-build-v1.0.0-rc.N/app-release.apk`,
       and embed it in the notes.
-- [ ] `gh release create tester-build-v1.0.0-rc.N --target <merge sha> --prerelease --notes-file <announcement> app-release.apk <qr>.png`.
+- [ ] `gh release create tester-build-v1.0.0-rc.N --target <PROMO_SHA> --prerelease --notes-file <announcement> app-release.apk <qr>.png`.
 - [ ] Download the published APK back and check its SHA-256 matches. Check
-      the tag's target. Ask the DRI to scan the QR and to drag the image
+      the tag's target equals `PROMO_SHA`. Ask the DRI to scan the QR and to drag the image
       into the notes if it doesn't display.
 - [ ] Post a publish record on the promotion PR.
 
