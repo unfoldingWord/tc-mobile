@@ -177,19 +177,23 @@ describe("the ink and voice roles that paint small text meet AA (#164 R-9, #171)
       expect(over).toBeGreaterThanOrEqual(AA_SMALL_TEXT);
     });
 
-    // `.modepill` (3-components.css) is 12px `--p-weight-strong` text painted
-    // in the voice accent on a 15% voice wash. In the DARK theme the accent
-    // clears AA as text; on light it does not (~3.0:1), which is what
-    // `--s-voice-text` exists for — see the light block's own comment.
-    it(`${theme}: --s-voice-text on the .modepill voice wash — 12px`, () => {
+    // `--s-voice-text` is the voice accent as small INK. Its first reader was
+    // the "Editing" pill (12px on a 15% voice wash); #1243 made that marker
+    // plain text on the stage (`.recorder-editing`, 3-components.css), so it
+    // is checked on the bare surfaces as well as on the wash the role was
+    // tuned for. In the DARK theme the accent clears AA as text; on light the
+    // fill does not (~3.0:1), which is what the role exists for — see the
+    // light block's own comment.
+    it(`${theme}: --s-voice-text as small text, bare and on a 15% voice wash`, () => {
       const voiceText = resolve(theme, "--s-voice-text");
       for (const surface of ["--s-floor", "--s-surface", "--s-raised"]) {
-        const ratio = contrast(
-          voiceText,
-          wash(resolve(theme, "--s-voice"), resolve(theme, surface), 0.15)
-        );
+        const bg = resolve(theme, surface);
         expect(
-          ratio,
+          contrast(voiceText, bg),
+          `--s-voice-text on ${surface}`
+        ).toBeGreaterThanOrEqual(AA_SMALL_TEXT);
+        expect(
+          contrast(voiceText, wash(resolve(theme, "--s-voice"), bg, 0.15)),
           `--s-voice-text on a 15% voice wash over ${surface}`
         ).toBeGreaterThanOrEqual(AA_SMALL_TEXT);
       }

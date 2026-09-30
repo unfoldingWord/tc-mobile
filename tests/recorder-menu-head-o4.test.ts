@@ -53,7 +53,6 @@ const base: RecorderMenuProps = {
   onEnterEdit: () => {},
   onToggleFinished: () => {},
   onErase: () => {},
-  onExitEdit: () => {},
   bookName: "Ruth",
   bookCoverHex: "#7a3570",
   chapterNumber: 2,

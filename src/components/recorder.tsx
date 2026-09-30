@@ -232,12 +232,13 @@ export interface RecorderHandle {
  * (#592) and the menu opener in the header; the finished toggle lives in that
  * menu. EDIT mode — entered deliberately, from either the record menu's
  * "Edit recording" row or the toolbar Edit control (#315), both firing
- * `onEnterEdit` — has Play, Zoom, Undo, Redo and Menu beside the stable
- * pressed Edit toggle
+ * `onEnterEdit` — has Play, Zoom, Undo and Redo beside the stable
+ * edit toggle, which wears ✕ there (#1252), with the header's ⋮ unchanged (#1243),
  * with the selection frame over the canvas, the paste marker in its own
  * reserved row above the canvas (#414 — no longer an overlay drawn on top of
- * the waveform), and Cut in its own reserved row below, marked by a header
- * "Editing" pill that also exits. Both entry points are greyed while a take
+ * the waveform), and Cut in its own reserved row below, marked by plain
+ * "Editing" text in the waveform's top right (#1243; it does not exit — the
+ * ✕ does). Both entry points are greyed while a take
  * is live (#857: `editReason`'s `hasTake` term, `menu-row-state.ts`) — #614
  * gave the sheet a Stop that ends and commits a take on its own, so entering
  * Edit no longer has to. `onEnterEdit` refuses a live take outright rather
@@ -949,8 +950,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      *
      * It also DROPS any resume the #317 gesture still owes (George R2 P1). A
      * stop is the translator asking for silence, and every non-lift route out
-     * of the drag — Undo, Redo, Select, the menu opener (⋮ since #863), Edit,
-     * Done editing, Cut, Paste, Back — comes through here or through
+     * of the drag — Undo, Redo, Select, the menu opener (⋮), Edit,
+     * the edit toolbar's ✕, Cut, Paste, Back — comes through here or through
      * `stopPlaybackDroppingPan`, so clearing the flag in the TWO stop paths
      * covers all nine without nine assignments that a tenth handler could
      * later forget. The `"interrupt"` in `onPointerDown` sets the flag
@@ -1743,8 +1744,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       audio.startRecording();
     }, [audio, editor.working, editor.peaks]);
 
-    // Open the recorder menu — shared by both openers: record mode's header
-    // and, since #863, the edit toolbar's — both ⋮ since #1225. Stops buffer playback first:
+    // Open the recorder menu from the header's ⋮, its one opener in both
+    // modes (#1243; ⋮ since #1225). Stops buffer playback first:
     // the menu is the one gateway to every idle-time action reachable while a
     // buffer sounds (Edit, Finished, VU, Erase), and opening it inerts the
     // sheet AT IDLE — so Play, the only stop control, goes unreachable, and
@@ -1768,8 +1769,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setMenuOpen(true);
     }, [focusRestore, stopPlayback]);
 
-    // Exit edit mode — the header "Editing" pill and the edit-menu "Done editing"
-    // row share this. Close any open selection AND reset zoom to whole: record
+    // Exit edit mode — the toolbar toggle, wearing ✕ while editing (#1252),
+    // and the erase landing below call this. Close any open selection AND reset zoom to whole: record
     // mode has no zoom control, so a quarter-zoom carried out of edit would leave
     // the record view stuck zoomed with no way to widen it (George R1). It only
     // switches mode, it never closes the sheet (that is Back/`close`).
@@ -2800,15 +2801,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // The safe landmark for every mid-task hand-off: the "More actions"
     // control, resolved by its accessible NAME through `overlayFallbackLabel`
     // (`lib/a11y/focus-restore.ts`) and never by position — so it can only
-    // ever resolve to that control or to nothing, never to Back or the
-    // "Editing" pill. Resolving by name rather than glyph is what lets this
-    // stay one landmark after #863: record mode's opener and the edit
-    // toolbar's both wear ⋮ (#1225) and answer to the same accessible name, so
-    // `overlayFallbackLabel` cannot tell them apart and does not need to.
-    // Shared by the overlay restore and the panel recovery below, which are
+    // ever resolve to that control or to nothing, never to Back. Since #1243
+    // it is one control, the header's ⋮, in both modes. Shared by the overlay restore and the panel recovery below, which are
     // the two edges that hand focus back into a sheet the translator is
-    // still working in. `null` when neither opener is rendered, AND `null`
-    // when the one that is is natively `disabled` — an earlier draft
+    // still working in. `null` when the opener is not rendered, AND `null`
+    // when it is natively `disabled` — an earlier draft
     // promised the second half in this comment and returned the disabled
     // node anyway (George R3 P2-2 on #457): `.focus()` on a disabled button
     // is a silent no-op, and `use-focus-restore.ts`'s `hasFallback` checks
@@ -2819,8 +2816,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // `aria-disabled` control keeps its place in the Tab order (#135), and
     // this opener has no `hint`, so `Control` sets the native attribute for
     // it. Its `disabled` expression is `!view || isClosing || denied ||
-    // heldTake !== null` in record mode (`!hasView || isClosing` in edit
-    // mode, `recorder-toolbars.tsx`); a panel resolving clears `denied` /
+    // heldTake !== null` in both modes; a panel resolving clears `denied` /
     // `heldTake`, and the recovery effect below is what copes when the rest
     // has not cleared on the same commit.
     const menuLandmark = useCallback((): HTMLElement | null => {
@@ -3162,18 +3158,17 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // The overlay-close landmark is the "More actions" control itself —
         // deliberately NOT the sheet's first focusable, which is Back
         // (George R1 P1), and NOT "the header's last button" either (George R5
-        // P2): that was correct in record mode, where the header's right-hand
-        // control IS this opener, but wrong in edit mode, where that slot is
-        // the "Editing" pill — a control that EXITS edit mode. Landing
-        // overlay-close focus there would arm the very next Space/Enter/
-        // switch-activate to leave, the #97 hazard on the ordinary Edit row.
+        // P2): that happens to be this opener today in both modes (#1243),
+        // but it was the "Editing" pill — a control that EXITED edit mode —
+        // from #863 until #1243, and landing overlay-close focus there armed
+        // the very next Space/Enter/switch-activate to leave, the #97 hazard
+        // on the ordinary Edit row. A position rule breaks again the next
+        // time the header changes.
         //
         // This opener is safe in every mode: it reopens the very overlay that
-        // just closed, and this app renders it under the same accessible name
-        // in both places it lives (the header in record mode, the toolbar in
-        // edit mode). `menuLandmark` above resolves it by
+        // just closed. `menuLandmark` above resolves it by
         // name, never by position or glyph, so it can only ever resolve to
-        // this opener or to nothing — never to Back or the pill.
+        // this opener or to nothing — never to Back.
         fallback: menuLandmark(),
       });
       // …except when that landing is the bar's bin and the bin has just gone
@@ -3445,8 +3440,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               // discard are the only ways out until the take is recovered or rescued.
               // (The system Back is refused in `close()` for the same reason.)
               // Also frozen through the close window (`isClosing`), matching the
-              // record-mode menu opener (:disabled ... || isClosing) and the Editing
-              // pill: while `close()`'s stop -> decode -> save is in flight the sheet
+              // header's menu opener (:disabled ... || isClosing): while `close()`'s stop -> decode -> save is in flight the sheet
               // is still up, and a second Close tap here is the only issuer in the
               // HEADER of a `goBack` during `requestClose`; LoadErrorPanel's and
               // PermissionPanel's Back stay live through the close window and are
@@ -3514,44 +3508,28 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                   : ""}
               </span>
             )}
-            {mode === "record" ? (
-              // The menu opener lives in the header in record mode (the toolbar
-              // is the bin + Record + Play + Edit, #315/#592). Same gate the old
-              // toolbar opener used — reachable mid-take (Edit commits-then-edits
-              // a live take, #134), blocked only through the close window.
-              // ⋮, not ≡ (#1225): this menu acts on the segment being edited, so
-              // it is an object menu under #608's rule; ≡ is Books' alone.
-              <Control
-                icon="more"
-                label={strings.recorderMenuOpen}
-                variant="quiet"
-                // Also closed while `denied`: the permission panel owns the body
-                // and its Retry/Back, and opening the menu inerts the sheet — which
-                // would put the scrim over the panel's Retry with no way to reach it
-                // until the menu is dismissed (George R4).
-                // Also closed while a take is held (#165): the recovery panel owns
-                // the body, and opening the menu would inert the sheet over it.
-                disabled={!view || isClosing || denied || heldTake !== null}
-                onClick={openMenu}
-              />
-            ) : (
-              // The "Editing" pill (D2): the visible mode marker for a sighted
-              // non-reader AND the Done exit in one element — text says the mode,
-              // aria-label/title speak the action, tapping exits to record.
-              <button
-                type="button"
-                className="modepill"
-                aria-label={strings.doneEditing}
-                title={strings.doneEditing}
-                // Frozen through the close window, same gate as the record-mode
-                // menu opener: a mode flip mid-save would drop the translator into
-                // record mode over unsaved edits if that save then fails (George R2).
-                disabled={isClosing}
-                onClick={onExitEdit}
-              >
-                {strings.modepillEditing}
-              </button>
-            )}
+            {/* The menu opener stays in the header's top right in BOTH modes
+              (#1243, the requirements owner, reversing #863's edit-toolbar
+              ⋮): same glyph, same place, and the same `openMenu`, which opens
+              the edit-mode menu (Erase, theme; no Done tile, #1252) while editing.
+              Reachable mid-take (Edit commits-then-edits a live take, #134),
+              blocked only through the close window. ⋮, not ≡ (#1225): this
+              menu acts on the segment being edited, so it is an object menu
+              under #608's rule; ≡ is Books' alone. The edit-mode marker
+              ("Editing") is in the waveform's top right, not here. */}
+            <Control
+              icon="more"
+              label={strings.recorderMenuOpen}
+              variant="quiet"
+              // Also closed while `denied`: the permission panel owns the body
+              // and its Retry/Back, and opening the menu inerts the sheet — which
+              // would put the scrim over the panel's Retry with no way to reach it
+              // until the menu is dismissed (George R4).
+              // Also closed while a take is held (#165): the recovery panel owns
+              // the body, and opening the menu would inert the sheet over it.
+              disabled={!view || isClosing || denied || heldTake !== null}
+              onClick={openMenu}
+            />
           </header>
 
           {heldTake ? (
@@ -3964,13 +3942,28 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     <TakeCapMarker takeCap={audio.takeCap} />
                   </div>
                 )}
-                {/* O4 only (#945): renders nothing under the current look. */}
-                <RecorderStamp
-                  design={design}
-                  look={look}
-                  durationMs={drawnDurationMs}
-                  readElapsedMs={readSoundingElapsed}
-                />
+                {mode === "edit" ? (
+                  // The edit-mode marker (D2, #1243): plain text in the
+                  // waveform's top right, where O4's stamp sits otherwise.
+                  // Not a control — leaving edit mode is the toolbar's ✕
+                  // (#557, #1252) — so it carries no
+                  // role, name or tab stop, and a screen reader reads the word
+                  // it shows. `pointer-events: none` in the CSS keeps a touch
+                  // on it reaching the stage's pan.
+                  <span className="recorder-editing">
+                    {strings.editingMarker}
+                  </span>
+                ) : (
+                  // O4 only (#945): renders nothing under the current look.
+                  // Not in edit mode: the marker above takes its corner, so an
+                  // edit-mode audition does not draw the clock under it.
+                  <RecorderStamp
+                    design={design}
+                    look={look}
+                    durationMs={drawnDurationMs}
+                    readElapsedMs={readSoundingElapsed}
+                  />
+                )}
               </div>
 
               {mode === "record" && (
@@ -4016,7 +4009,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 recordInert={recordInert}
                 guidedRecord={guidedRecord}
                 isClosing={isClosing}
-                hasView={view !== null}
                 playingBuffer={audio.playingBuffer}
                 dragging={dragging}
                 idleEditable={idleEditable}
@@ -4035,7 +4027,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 onToggleZoom={onToggleZoom}
                 onUndo={onUndo}
                 onRedo={onRedo}
-                openMenu={openMenu}
                 onExitEdit={onExitEdit}
               />
             </>
@@ -4057,7 +4048,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             setConfirmFor("erase");
             setConfirmOpen(true);
           }}
-          onExitEdit={onExitEdit}
           bookName={view?.bookName}
           bookCoverHex={view?.bookCoverHex ?? undefined}
           chapterNumber={view?.chapterNumber}

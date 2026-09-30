@@ -1131,54 +1131,28 @@
     height: var(--c-control-lg);
   }
   .recorder-toolbar.edit {
-    grid-template-columns: repeat(5, minmax(0, 1fr)) var(--c-control-md);
+    grid-template-columns: repeat(4, minmax(0, 1fr)) var(--c-control-md);
     gap: var(--p-space-1);
     height: calc(var(--c-control-xl) + var(--p-space-3));
   }
 
-  /* The edit-mode marker + Done affordance (D2, #89), in the header-right slot.
-     `--s-voice` (amber) is the audio-edit accent the selection band and paste
-     marker already use, so the pill reads as "you are in the edit context". */
-  .modepill {
-    display: inline-flex;
-    align-items: center;
-    flex: none;
-    /* The 44px touch floor — this pill IS the Done control (D2), and the header
-       menu button it swaps with, plus the checkbox it replaced, both sat at
-       --c-control-md. A ~20px text pill next to a 44px Back that commits is too
-       easy to miss (George R3). */
-    min-height: var(--c-control-md);
-    padding: var(--p-space-1) var(--p-space-3);
-    border: none;
-    border-radius: var(--p-radius-full);
+  /* The edit-mode marker (D2, #89; moved here by #1243): plain "Editing" text
+     inside the stage's top right, mirroring `.recorder-status` in the top
+     left. Not a control — the toolbar's ✕ is the exit (#1252)
+     — so it has no touch box, and `pointer-events: none` lets a
+     touch on it reach the stage's pan. `--s-voice` (amber) is the audio-edit
+     accent the selection band and paste marker use; `--s-voice-text` is that
+     accent as INK for small text, the role #164 R-9 split off because the
+     light theme's fill value is too light to read as text. */
+  .recorder-editing {
+    position: absolute;
+    top: var(--p-space-3);
+    right: var(--p-space-3);
     font-size: var(--p-text-sm);
     font-weight: var(--p-weight-strong);
     letter-spacing: 0.01em;
-    cursor: pointer;
-    /* `--s-voice-text`, not `--s-voice`: this is 12px text on a wash of the
-       accent itself, and in the light theme the fill value is only 3.0:1
-       against that wash (#164 R-9). The BACKGROUND below stays `--s-voice`,
-       so the pill's colour identity is unchanged — only its ink darkens,
-       and only on light. */
     color: var(--s-voice-text);
-    background: color-mix(in srgb, var(--s-voice) 15%, transparent);
-    transition: filter var(--p-dur-base) var(--p-ease);
-  }
-  .modepill:hover {
-    filter: brightness(1.12);
-  }
-  .modepill:disabled {
-    cursor: default;
-    opacity: 0.4;
-  }
-  .modepill:focus-visible {
-    outline: var(--c-focus-ring);
-    outline-offset: var(--c-focus-offset);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .modepill {
-      transition: none;
-    }
+    pointer-events: none;
   }
 }
 

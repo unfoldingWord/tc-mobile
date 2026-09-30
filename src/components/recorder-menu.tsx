@@ -68,7 +68,6 @@ export interface RecorderMenuProps {
   onToggleFinished: () => void;
   /** Close the menu and arm the erase confirm. */
   onErase: () => void;
-  onExitEdit: () => void;
   /**
    * The book's name, the O4 sheet head's first crumb (workbench G3). Read
    * only in the O4 look; absent, that crumb is left out.
@@ -104,7 +103,6 @@ export function RecorderMenu({
   onEnterEdit,
   onToggleFinished,
   onErase,
-  onExitEdit,
   bookName,
   bookCoverHex,
   chapterNumber,
@@ -179,7 +177,6 @@ export function RecorderMenu({
             eraseReason={eraseReason}
             onToggleFinished={onToggleFinished}
             onErase={onErase}
-            onExitEdit={onExitEdit}
           />
           <TileSpacer />
           <ThemeControl tile />
@@ -261,7 +258,7 @@ export function RecorderMenu({
           />
           {/* The theme toggle (#149). LAST in both branches, so that WHEREVER A
               ROW ABOVE IS ACTIONABLE the open-edge focus still lands on it —
-              Edit / Done, what the translator opened this menu for — rather than
+              Edit / Erase, what the translator opened this menu for — rather than
               on a control that repaints the screen. Where none of them is, focus
               lands here, and that is the correct outcome rather than a regression
               to repair by reordering: see the consequence stated below, which is
@@ -272,7 +269,7 @@ export function RecorderMenu({
               `aria-modal` over an `inert` Segments, so while it is up the Books
               hamburger is four screens away, and direct sun is exactly the
               condition that arrives while you are recording. The opener for this
-              menu — the header's `⋮` since #1225, or the edit toolbar's since #863 — is
+              menu — the header's `⋮` (#1225), in both modes since #1243 — is
               itself closed through the close window, while `denied`,
               and while a take is held — the panels those states raise own the
               body — so the toggle inherits those gates rather than adding its own.
@@ -291,12 +288,9 @@ export function RecorderMenu({
         </>
       ) : (
         <>
-          <Control
-            icon="check"
-            label={strings.doneEditing}
-            variant="quiet"
-            onClick={onExitEdit}
-          />
+          {/* No "Done editing" row (#1252, the requirements owner): "Done"
+              keeps one meaning, mark finished, and the toolbar's ✕ leaves
+              edit mode. */}
           <Control
             icon="eraser"
             label={strings.eraseSegment}
@@ -345,7 +339,6 @@ function RecorderMenuTiles({
   eraseReason,
   onToggleFinished,
   onErase,
-  onExitEdit,
 }: Pick<
   RecorderMenuProps,
   | "mode"
@@ -354,11 +347,13 @@ function RecorderMenuTiles({
   | "eraseReason"
   | "onToggleFinished"
   | "onErase"
-  | "onExitEdit"
 > & { marked: boolean }) {
   return (
     <>
-      {mode === "record" ? (
+      {/* Edit mode has no Done tile (#1252, the requirements owner): "Done"
+          keeps one meaning, mark finished, and the toolbar's ✕ leaves edit
+          mode. */}
+      {mode === "record" && (
         <Tile
           tone={marked ? "done" : "doneoff"}
           icon="check"
@@ -372,15 +367,6 @@ function RecorderMenuTiles({
           disabled={markReason !== null}
           hint={rowHint(markReason)}
           onClick={onToggleFinished}
-        />
-      ) : (
-        <Tile
-          tone="plain"
-          icon="check"
-          label={strings.doneEditing}
-          caption={strings.tileDone}
-          className="recorder-menu-tile"
-          onClick={onExitEdit}
         />
       )}
       {/* Clear (the DRI's 2026-09-28 pick on #1119): the eraser on the plain

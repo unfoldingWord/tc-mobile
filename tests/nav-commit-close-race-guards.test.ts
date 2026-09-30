@@ -130,8 +130,8 @@ describe("commit-close-recorder re-arms transitionInFlight BEFORE requestClose (
 describe("recorder header Close is disabled through the close window (George R2 P2-1)", () => {
   /**
    * The on-screen belt to the absorb branch's suspenders: the header Close
-   * control must be `disabled` while `isClosing`, matching its record-mode menu
-   * and Editing-pill siblings, so it is not the issuer in the HEADER of a
+   * control must be `disabled` while `isClosing`, matching its menu-opener
+   * sibling, so it is not the issuer in the HEADER of a
    * `goBack` during `requestClose` (LoadErrorPanel's and PermissionPanel's Back
    * stay live through the close window and are covered by the absorb branch).
    * Isolate the Close control by its unique `label={strings.closeRecorder}` and

@@ -49,7 +49,6 @@ const base: RecorderMenuProps = {
   onEnterEdit: vi.fn(),
   onToggleFinished: vi.fn(),
   onErase: vi.fn(),
-  onExitEdit: vi.fn(),
 };
 
 function show(over: Partial<RecorderMenuProps> = {}) {
@@ -87,12 +86,17 @@ describe("RecorderMenu", () => {
     expect(named(strings.enterEdit)).toBeDefined();
     expect(named(strings.markFinished(3))).toBeDefined();
     expect(named(strings.eraseSegment)).toBeDefined();
-    expect(named(strings.doneEditing)).toBeUndefined();
   });
 
-  it("offers Done and Erase in edit mode, and no Mark", () => {
+  it("offers Erase in edit mode, and no Done or Mark (#1252)", () => {
     show({ mode: "edit" });
-    expect(named(strings.doneEditing)).toBeDefined();
+    // #1252 (the requirements owner): "Done" keeps one meaning, mark
+    // finished; the toolbar's ✕ leaves edit mode.
+    expect(
+      buttons()
+        .map((b) => b.getAttribute("aria-label") ?? "")
+        .filter((name) => /done/i.test(name))
+    ).toEqual([]);
     expect(named(strings.eraseSegment)).toBeDefined();
     expect(named(strings.markFinished(3))).toBeUndefined();
     expect(named(strings.enterEdit)).toBeUndefined();
