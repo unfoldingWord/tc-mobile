@@ -517,11 +517,26 @@ export async function resumeAudioContext(): Promise<void> {
   // through `claimSharedContext`: its release applies a waiting drop, and a
   // drop landing the moment an in-tap resume settles would close the context
   // the Play is about to use, outside that tap.
+  //
+  // Bounded by `RESUME_TIMEOUT_MS` (George r4 on #1261): WebKit's `resume()`
+  // from "interrupted" can hang (#108), and a claim that waited on it would
+  // hold `pendingClaims` up for the rest of the page, switching off the drop
+  // on hide and the return check. The release is once-only, so the timer and
+  // the settle cannot both count it down. No waiting drop is applied here
+  // either way; the next apply point lands it.
   pendingClaims++;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    pendingClaims--;
+  };
+  const timer = setTimeout(release, RESUME_TIMEOUT_MS);
   try {
     await ctx.resume();
   } finally {
-    pendingClaims--;
+    clearTimeout(timer);
+    release();
   }
 }
 

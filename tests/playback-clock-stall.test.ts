@@ -74,6 +74,7 @@ class FakeContext {
   resume(): Promise<void> {
     if (this.resumeHangs && this.state !== "running") {
       return new Promise<void>((resolve) => {
+        this.pendingResumes.push(resolve);
         this.settlePendingResume = () => {
           if (this.state !== "closed") this.state = "running";
           resolve();
@@ -86,6 +87,12 @@ class FakeContext {
   /** Settle a `resume()` that `nextResumeHangs` left pending. */
   settleResume(): void {
     this.settlePendingResume?.();
+  }
+  /** Every `resume()` that `nextResumeHangs` left pending, oldest first. */
+  private readonly pendingResumes: (() => void)[] = [];
+  /** Settle only the OLDEST pending `resume()`, leaving `state` alone. */
+  settleOldestResume(): void {
+    this.pendingResumes.shift()?.();
   }
   close(): Promise<void> {
     this.closeCalls++;
@@ -781,6 +788,53 @@ describe("an audio route change (devicechange, #1251)", () => {
     await check;
     expect(rowsFor("audio-clock-stalled-on-return")).toHaveLength(0);
     expect(ctx.closeCalls).toBe(0);
+  });
+
+  it("a resume() that never settles stops counting as a claim after RESUME_TIMEOUT_MS: the idle drop and the return check work again (George r4)", async () => {
+    FakeContext.nextResumeHangs = true;
+    const io = await loadAudioIo();
+    void io.resumeAudioContext();
+    const hung = FakeContext.made[0]!;
+
+    await vi.advanceTimersByTimeAsync(io.RESUME_TIMEOUT_MS);
+    io.dropSharedContextWhenIdle();
+    expect(hung.closeCalls).toBe(1);
+
+    // A later context that comes back "running" with its clock frozen.
+    FakeContext.nextResumeHangs = false;
+    FakeContext.nextClock = "frozen";
+    await io.resumeAudioContext();
+    const frozen = FakeContext.made[1]!;
+    expect(frozen.state).toBe("running");
+
+    const check = io.checkSharedClockOnReturn();
+    await vi.advanceTimersByTimeAsync(io.CLOCK_STALL_TIMEOUT_MS + 100);
+    await check;
+    expect(rowsFor("audio-clock-stalled-on-return")).toHaveLength(1);
+    expect(reportFailure).toHaveBeenCalledTimes(1);
+    expect(frozen.closeCalls).toBe(1);
+  });
+
+  it("a hung resume's claim is released once: its late settle does not also release a newer pending resume's claim", async () => {
+    FakeContext.nextResumeHangs = true;
+    const io = await loadAudioIo();
+    const first = io.resumeAudioContext();
+    const ctx = FakeContext.made[0]!;
+    await vi.advanceTimersByTimeAsync(io.RESUME_TIMEOUT_MS);
+
+    // A second tap's resume, still pending, on the same context.
+    void io.resumeAudioContext();
+    // The first resume settles late; its claim was already released.
+    ctx.settleOldestResume();
+    await first;
+
+    io.dropSharedContextWhenIdle();
+    expect(ctx.closeCalls).toBe(0);
+
+    // Once the second claim times out too, the waiting drop can land.
+    await vi.advanceTimersByTimeAsync(io.RESUME_TIMEOUT_MS);
+    io.dropSharedContextWhenIdle();
+    expect(ctx.closeCalls).toBe(1);
   });
 
   it("during a tap's own fire-and-forget resume (no race around it) does not close the context", async () => {
