@@ -196,7 +196,6 @@ describe("rowHint — which reasons carry a cue", () => {
 
   it("an uncommitted take speaks both steps, in the order the overlay allows", () => {
     expect(rowHint("uncommitted-take")).toEqual({
-      icon: "alert",
       label: spoken(strings.blockedByTake),
     });
     // While the ⋮ menu is open the sheet's control is behind the scrim, so the
@@ -339,21 +338,19 @@ describe("rowHint — which reasons carry a cue", () => {
 
   it("an empty segment speaks its reason", () => {
     expect(rowHint("no-audio")).toEqual({
-      icon: "alert",
       label: spoken(strings.nothingRecorded),
     });
     expect(rowHint("no-clip")).toEqual({
-      icon: "alert",
       label: spoken(strings.nothingStored),
     });
   });
 
-  // The glyph must be a STATE mark, never a control glyph. Round 1 shipped
-  // `back`, which named a control the overlay makes untappable and pointed at the
-  // menu's dismiss instead. `alert` says "blocked, look here" and names nothing.
-  it("every visible cue uses the alert state mark, never a control glyph", () => {
+  // #1239: the requirements owner's decision — no badge on a greyed menu tile
+  // or row, for any reason. The words are the whole cue.
+  it("no reason carries a glyph — the words are the whole cue (#1239)", () => {
     const reasons = [
       "uncommitted-take",
+      "starting",
       "denied",
       "no-segment",
       "no-audio",
@@ -362,7 +359,7 @@ describe("rowHint — which reasons carry a cue", () => {
     for (const r of reasons) {
       const hint = rowHint(r);
       if (hint === null) continue;
-      expect(hint.icon).toBe("alert");
+      expect(Object.keys(hint), r).toEqual(["label"]);
     }
   });
 
@@ -461,7 +458,7 @@ describe("the starting race — all four rows, distinct words", () => {
 
   it("says something other than the save-the-recording copy", () => {
     const starting = rowHint("starting");
-    expect(starting).toEqual({ icon: "alert", label: strings.micStarting });
+    expect(starting).toEqual({ label: strings.micStarting });
     expect(starting?.label).not.toBe(strings.blockedByTake);
     // The whole point: it must not send anyone to a control that would abandon
     // the in-flight start, so it names no control at all.
@@ -503,10 +500,9 @@ describe("heldTakeIsBusy", () => {
 });
 
 describe("barHint — the reason on a record-bar control (#315 Edit, #592 bin)", () => {
-  it("keeps the words and drops the badge for every reason that has words", () => {
+  it("gives the bar the menu's words for every reason that has words", () => {
     for (const reason of ["starting", "no-audio", "no-clip"] as const) {
       const row = rowHint(reason);
-      expect(row?.icon).toBe("alert");
       expect(barHint(reason)).toEqual({ label: row!.label });
     }
   });

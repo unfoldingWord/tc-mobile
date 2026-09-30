@@ -58,7 +58,7 @@ interface ControlProps {
    * control, used at eight unrelated call sites, and it should not depend on a
    * recorder-row type (George, round 2). `RowHint` is assignable to it.
    */
-  hint?: { readonly icon?: IconName; readonly label: string } | null;
+  hint?: { readonly label: string } | null;
   /**
    * This control is a two-state TOGGLE, and this is its state (#286, #91).
    *
@@ -83,7 +83,7 @@ interface ControlProps {
    * who may not read, and the accessible name already says what the control
    * does. Announcing a second "this is the next step" on every guided control
    * would put the guide in the way of an AT user who is navigating the screen
-   * their own way — the same reason the disabled-row badge is `aria-hidden`.
+   * their own way.
    *
    * Which control this is at any moment is `guided-step.ts`'s answer, never a
    * local condition: a call site that decides for itself is how two rings end
@@ -184,26 +184,13 @@ export const Control = forwardRef<HTMLButtonElement, ControlProps>(
     );
     // The wrapper is keyed on whether this control CAN carry a hint (the prop was
     // passed at all), never on whether it currently does. Switching the rendered
-    // root between <button> and <span> as a row gains a badge would remount the
+    // root between <button> and <span> as a row gains a hint would remount the
     // button and DESTROY it while focused — and with the sheet and list both
     // `inert` and the menu's focus grab bound to `[open]`, focus would land
     // nowhere behind the scrim. Reachable: ⋮ open mid-take, a #59 interruption
-    // flips `busy`, and the focused Mark row gains its badge (George, round 3).
-    // With a stable root, gaining a badge adds an inner sibling and mutates
-    // attributes on the same button.
+    // flips `busy`, and the focused Mark row gains its hint (George, round 3).
+    // With a stable root, gaining a hint mutates attributes on the same button.
     if (hint === undefined) return button;
-    return (
-      <span className="control-hinted">
-        {button}
-        {/* Decorative for AT — the reason is already in the accessible name — and
-          a SIBLING of the button, so the dimming that marks the control inert
-          does not also dim the mark explaining it. */}
-        {shownHint?.icon ? (
-          <span className="control-hint" aria-hidden="true">
-            <Icon name={shownHint.icon} size={12} />
-          </span>
-        ) : null}
-      </span>
-    );
+    return <span className="control-hinted">{button}</span>;
   }
 );

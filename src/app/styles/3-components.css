@@ -99,8 +99,8 @@
     --c-recorder-paste-row: calc(var(--c-control-md) + var(--p-space-2));
 
     --c-row-radius: var(--p-radius-lg);
-    /* The disabled-row hint badge (#135). The badge's geometry is named once,
-       here, so `.control-hint` below and anything that has to line up with it
+    /* The hint badge's geometry (#135; only the Books ≡ failure mark wears one
+       since #1239). It is named once, here, so `.control-hint` below and anything that has to line up with it
        read one source rather than repeating the numbers (Frank, round 1). */
     --c-hint-size: 18px;
     --c-hint-radius: var(--p-radius-full);
@@ -352,11 +352,11 @@
   .is-guided[inert] {
     box-shadow: none;
   }
-  /* The disabled-row reason badge (#135). The wrapper is a sibling shell around
-     the button so the badge escapes the inert control's opacity — the mark must
-     read at full ink while the control it explains is dimmed. `alert`, a state
-     mark: it says "blocked, look here" and names no control, which is all a glyph
-     can honestly do inside an overlay that inerts the sheet behind it. */
+  /* The hint wrapper. A `Control` given a `hint` prop sits in this shell so its
+     root never switches element as the hint comes and goes. `.control-hint` is a
+     sibling badge that escapes the inert control's opacity, so the mark reads at
+     full ink; since #1239 only the Books ≡ failure mark paints one — no menu tile
+     or row does. */
   .control-hinted {
     position: relative;
     display: inline-grid;
