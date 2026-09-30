@@ -26,15 +26,23 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 4. Charge every phone. Recording drains the battery faster than normal use.
 5. **Know which build you are on, and that it is a release candidate.** The
    training builds are called release candidates and carry a name like
-   `1.0.0-rc.2`; the same name appears in the small build stamp at the bottom
-   of every screen (`v1.0.0-rc.2 · a1b2c3d`; the short code after the `·`
-   changes with every build). Check it on each phone before the session. <!-- source: package.json version "1.0.0-rc.2" at 8005751e; src/components/build-stamp.tsx (`v{__APP_VERSION__} · {__BUILD_SHA__}`); docs/native/README.md §5a ("Release candidates use `tester-build-v1.0.0-rc.N`") --> **rc.3 is
-   meant to give every phone the same new look** that this runbook describes;
-   that change was not yet in a build when this was written, so check the
-   screens on one rc.3 phone before relying on it. A phone on rc.2 or earlier
-   may look different. Once you have been told an rc.3 build is out for this
-   session, update those phones first (§2, step 1); until then an rc.2 phone
-   stays on rc.2. <!-- source: gh issue #1244 (DRI decision 2026-09-30, freeze exception for rc.3); the change ships in PR #1254, not yet merged when this was written, so this describes rc.3 as intended, not as built; not device-verified -->
+   `1.0.0-rc.3`; the same name appears in the small build stamp at the bottom
+   of every screen (`v1.0.0-rc.3 · <short code>`; the short code after the `·`
+   changes with every build). Check it on each phone before the session. <!-- source: src/components/build-stamp.tsx (`v{__APP_VERSION__} · {__BUILD_SHA__}`); docs/native/README.md §5a ("Release candidates use `tester-build-v1.0.0-rc.N`") -->
+
+   **Not every phone has the new look.** A phone that saved the old look keeps
+   it after an update, and the app no longer has a switch to change it. A phone
+   that never saved a choice gets the new look. <!-- source: src/lib/design.ts readStoredDesign (a stored "current" wins; anything else, including nothing stored, reads as "o4"); nextDesign's docblock ("No menu entry calls it since #1244 removed the Books ≡ switch"); gh issue #1244 (DRI decision 2026-09-30); not device-verified -->
+   - **How to tell:** open any menu. In the new look its top corner shows a **✕**.
+     On an old-look phone that corner shows **‹**, **≡** or **⋮** instead. <!-- source: src/components/menu.tsx dismissGlyph (`o4` draws "close" unless `back`; otherwise `hamburger ? dismissIcon : "back"`) -->
+   - An old-look phone still records, plays and shares normally.
+   - These are **new look only**: the ✕ to close a menu, dragging a menu down to
+     close it, tappable crumbs (book and chapter names) in the screen headers,
+     chapter names in the headers, and the larger icons. Expect an old-look
+     phone not to have them. <!-- source: src/components/menu.tsx (drag to close is O4 only, #1268); src/components/o4-crumbs.tsx (links, #1269; chapter name, #1230); src/components/segments-screen.tsx (the O4 header); src/app/styles/o4/recorder.css (glyphs drawn larger); not device-verified -->
+   - **Do not uninstall or reinstall to change the look. That deletes every
+     recording on the phone.** Write down which phone it is and tell the
+     maintainer.
 
 ## 2. Setting up a participant's phone
 
@@ -86,9 +94,7 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    install it over the old one. On both, deleting the app erases every
    recording on it. If Android refuses to install over the old app, stop
    there: do not uninstall to get past it. The same goes for TestFlight
-   offering no newer build, but only once you have been told an rc.3 build is
-   out for this session; until then, a phone with no update offered simply
-   stays on rc.2, and that is not an install problem. The app's own record
+   offering no newer build, for a phone that should be on the newest build. The app's own record
    cannot hold an install problem, so write down what you saw (the message,
    if there is one) and tell the maintainer (§5, "Write down what the app cannot know"). If a
    recording on that phone matters, share it first (§3), since Share is the
@@ -103,7 +109,7 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 
    After installing over an old build, close and reopen the app twice,
    then check the build stamp — the small text at the bottom of every
-   screen, a version and a short code in the shape `v1.0.0-rc.2 · a1b2c3d`
+   screen, a version and a short code in the shape `v1.0.0-rc.3 · <short code>`
    (the short code changes with every build; more in
    [section 5](#5-reporting-a-problem)). If it still shows the old version,
    or recordings are missing, stop: do not uninstall — write down the stamp
@@ -181,12 +187,14 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 - **The recorder's own `⋮` (its overflow drawer) opens and closes instantly** —
   it does not slide in or out, so do not expect an animation as a sign it
   worked; if the drawer's contents are on screen, it is open. <!-- source: src/components/menu.tsx (hamburger prop docblock, "opens and closes in place"); gh PR #656 (Fixes #621) -->
-- **Every menu that rises from the bottom closes with the ✕ at its top
-  right**, the same on the Books, book, chapter, segment and recorder menus
-  and the naming sheets. It can also be closed by dragging the bar at its top
-  (or the row with the ✕) down; a short drag lets it spring back open. The
-  `⋮` and `≡` only open menus now. About's licence text keeps a back arrow,
-  because there it goes back to the list rather than closing. <!-- source: src/components/menu.tsx (`back` prop docblock, drag down to close); src/components/sheet-drag.ts; #1268; not device-verified -->
+- **In the new look, `⋮` and `≡` only open a menu, and the ✕ at the menu's top
+  right closes it** — the same on the Books, book, chapter, segment and
+  recorder menus and the naming sheets. It can also be closed by dragging the
+  bar at its top (or the row with the ✕) down; a short drag lets it spring
+  back open. About's licence text keeps a back arrow, because there it goes
+  back to the list rather than closing. **On an old-look phone (§1, step 5)
+  the menu's top corner shows ‹, ≡ or ⋮ instead of ✕, and that control
+  closes the menu.** <!-- source: src/components/menu.tsx (`back` prop docblock, dismissGlyph, drag down to close); src/components/recorder-menu.tsx (hamburger, dismissIcon="more"); src/components/sheet-drag.ts; #1268; not device-verified -->
 - **Sharing a chapter** produces one MP3 file. **Sharing a book** produces a
   zip file of all its chapters. Both go out through the phone's normal share
   sheet (the same menu you'd use to share a photo). <!-- source: AGENTS.md "Known open items" #5, and docs/decisions/0009-transcode-on-finished.md -->
@@ -261,24 +269,21 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
   the app open and resolve it before doing anything else. <!-- source: src/components/recorder.tsx close(); AGENTS.md Testing ("Second on-device run: 2026-08-25 ... incoming call mid-take ... saved the partial take" on iPhone Safari; "no Android pass has reached interruption or background capture (#245)"); https://github.com/unfoldingWord/tc-mobile/issues/58#issuecomment-5770432574 (accepted for training; #484 is the post-training device-evidence follow-up; #471, the earlier fix attempt, was closed 2026-09-24 as unrebaseable after #614 removed the recorder's paused state, and its replacement is #807, post-training) -->
 - **Known issue on iPhones (#1251, 2026-09-30): Play and the live waveform can
   stop working.** After connecting Bluetooth headphones, and sometimes after
-  coming back from the lock screen, the Play button can fail ("Could not play
-  this recording.") or do nothing, and the moving line that shows the voice
-  while recording can stay flat. The recording should still be saved.
+  coming back from the lock screen, the Play button can fail or do nothing,
+  and the moving line that shows the voice while recording can stay flat. The
+  recording should still be saved. **A fix is in rc.3, but it is not confirmed
+  on a phone.** What a person may see on rc.3:
+  - a Play that fails with "Could not play this recording."; the next Play
+    then starts fresh;
+  - a red mark on Books **≡** that can appear just from coming back to the
+    app (§5).
+
   **Workaround: fully close the app** — swipe it away in the phone's app
   switcher — **and open it again.** Then play the recording and confirm you
   hear the voice before anyone records again. If it is still silent after
-  that restart, leave that phone alone and send the report (§5). A fix is in progress under #1251; it is
-  not fixed yet, and the cause is not confirmed. If it happens, note the
-  iPhone model and whether headphones were connected; a failed Play may
-  leave an entry in the problem report. <!-- source: gh issue #1251 (DRI comment 2026-09-30, and the read-only
-  trace at rc.2 be6da1e4: the live meter and Play both depend on one shared
-  audio context, src/hooks/audio-io.ts; the trace's cause is marked
-  "inferred", not observed running); recording itself does not use that
-  context — the trace's "[observed]" reading of the code, and the "recording is
-  still saved" wording is the DRI's brief for this section; "Could not play
-  this recording." is src/lib/strings.ts playbackFailed; the swipe-away
-  workaround is from the tester's report in #1251 and has not been confirmed
-  by us on a device; not device-verified -->
+  that restart, leave that phone alone and send the report (§5). If it
+  happens, note the iPhone model and whether headphones were connected. <!-- source: gh issue #1251 (DRI comment 2026-09-30); src/hooks/audio-io.ts playSamples (clock check after source.start, "playback-clock-stalled", then discardSharedContext so the next Play builds a fresh context in its tap), checkSharedClockOnReturn (runs on the page becoming visible; writes "audio-clock-stalled-on-return"), src/hooks/use-audio-session.ts onVisibilityChange; src/lib/failure-marker.ts lightsFailureMarker (only "recorder-take-cap" is exempt, so every other row, these included, lights the ≡ mark); "Could not play this recording." is src/lib/strings.ts playbackFailed; the shared context is what decoding a captured take uses (src/hooks/audio-io.ts decodeAudioData via getAudioContext), and the live meter reads it too (createLevelTap), so a stalled clock can leave the waveform flat while the capture itself keeps working — that capture claim is inferred from the code, not observed; the swipe-away workaround is from the tester's report in #1251 and has not been confirmed by us on a device; not device-verified -->
+
 - **Use a practice book.** Create it with New book and give it a recognizable
   name. To remove it later, open that book's **⋮** menu, choose Delete, and
   confirm only after checking the book. Deleting a book removes its
@@ -350,7 +355,11 @@ Play failing for any other reason (a recording that could not be loaded or
 decoded, or nothing saved to play), and the app's sound engine looking
 switched on while its clock had stopped — found when Play started but no
 sound followed within a second, while the level meter was drawing during a
-recording, or when the app came back to the screen. <!-- source: src/app/install-failure-listeners.ts (uncaught-error, unhandled-rejection); src/components/error-boundary.tsx (render); src/hooks/mp3-codec.ts (encoder-health, encoder-recover); src/hooks/finish-transcode.ts (transcode-sweep, transcode-segment); src/hooks/share-flow.ts:101 (share-prepare); src/hooks/use-recorder.ts (recorder-interrupted-active #478 — onInterrupted's still-active arm; recorder-start-resume #470 — raceAudioResume's rejection branch; recorder-start-resume-timeout #475 — start()'s own report after the await, only once its generation check has passed (a cancelled or superseded start writes nothing) and only when raceAudioResume's 1000 ms timer won; recorder-cancel-stop #474 — cancel()'s native stop() guard; recorder-stop-flush #485 — stop()'s own catch on its bounded flush, which then seals the slices already delivered and carries them through the ordinary tail, so a Stop whose teardown threw is written down AND keeps whatever audio was in hand; recorder-release-track #479 — a track stop() that throws while the mic stream is released, reported per track so the other tracks are still stopped; recorder-take-cap #1005 — the elapsed tick sealing a take at the 20-minute cap, which the sheet then saves; not a failure, the one record that a take was cut); src/hooks/audio-io.ts (recorder-tap-clone-stop #479 — the level tap's cloned track throwing on its own stop()); src/hooks/use-audio-session.ts stopRecording's backstop catch (recorder-stop-backstop #480 — fires only when endRecording() REJECTS, which the flush catch above never does; a Stop whose failure rides the StopResult to the sheet's Notice does not reach it); src/hooks/use-save-take.ts:97 (save-take, #456); src/hooks/use-save-take.ts:202 (erase-segment, #456 — performClearEditedSegment's cut-to-empty close, not the segment-store erase below); src/hooks/use-books.ts:644 (book-delete, #456 — deleteBook's catch, structurally pinned in tests/use-books-delete-failure-gate.test.ts since this hook cannot be rendered in this Node-only suite); src/hooks/use-erase-segment.ts:44 (erase-segment, #456 — the store-failure catch only, not the separate post-erase-notification one); src/hooks/use-chapter-segments.ts renameSegment's catch and src/components/segment-row.tsx's rejection handler (segment-rename, #591 — not the vanished-segment case, which shows the stale-segment state instead); src/hooks/audio-io.ts's playSamples (a single try/finally is now the ONE report site for all three keys below — dev lead pick, option A, 2026-09-19 judgment sheet, closing the row-accounting class George round-2 P3 and Frank rounds 1 and 3 each found one more exit of: playback-resume #469 — raceAudioResume's own rejection report, or playSamples's single exit reporting a captured one; fires for a LATE rejection arriving after the 1000 ms bound already won the race, for an early rejection whose OWN resume() call failed but the shared context turned out usable anyway because a DIFFERENT, concurrent resumeAudioContext() call elsewhere (playTake/playBuffer's own fire-and-forget in-gesture unlock) won first (Frank round-1 P2), OR for an early rejection on a claim that was superseded (a Stop, a competing Play) before either fail-closed check below ever ran — previously dropped with no row at all (Frank round-3 P2 @ audio-io.ts:678), now still reported since the finally is reached from every exit, superseded or not; an early rejection that leaves the context still unusable is instead folded into playback-resume-unusable below, carrying the REAL captured cause rather than a synthetic stand-in (previously always synthetic even when a real cause existed — Frank round-3 P2 @ audio-io.ts:694), so one failed Play never writes more than one row (George round-2 P3); playback-resume-timeout #469 — the single exit's fail-closed report when the 1000 ms bound was what left the context still needing resume; playback-resume-unusable #469 — the same single exit when the context still needs resume without the bound firing: an early rejection, a resume() that resolved but left the context still needing resume, or a fresh interruption arriving during the buffer-fill/yield after resume had already succeeded (George round-2 P2)); src/hooks/use-audio-session.ts playTake's and playBuffer's catches and the dangling-clip branch (playback-take, playback-buffer, playback-dangling, #1213 — each skips the #469 error, whose row playSamples already wrote, and writes nothing for a superseded Play); src/hooks/audio-io.ts playSamples, createLevelTap and checkSharedClockOnReturn (playback-clock-stalled, recorder-tap-clock-stalled, audio-clock-stalled-on-return, #1251 — a shared context reporting running whose currentTime did not advance for 1000 ms: after a Play's source.start, across the level tap's frames during a take, or after the page became visible again; the Play one fails that Play, and playTake/playBuffer's catches skip its error the way they skip the #469 one); src/hooks/audio-io.ts discardSharedContext (playback-context-close, #1213 — a failed close() of the shared context a fail-closed Play dropped) --> What is **not** written
+recording, or when the app came back to the screen. In the exported file these three
+show as `playback-clock-stalled` (Play started but no sound followed),
+`recorder-tap-clock-stalled` (the level meter's clock stopped during a
+recording) and `audio-clock-stalled-on-return` (found when the app came back
+to the screen). Each one also puts the red mark on Books **≡**. <!-- source: src/app/install-failure-listeners.ts (uncaught-error, unhandled-rejection); src/components/error-boundary.tsx (render); src/hooks/mp3-codec.ts (encoder-health, encoder-recover); src/hooks/finish-transcode.ts (transcode-sweep, transcode-segment); src/hooks/share-flow.ts:101 (share-prepare); src/hooks/use-recorder.ts (recorder-interrupted-active #478 — onInterrupted's still-active arm; recorder-start-resume #470 — raceAudioResume's rejection branch; recorder-start-resume-timeout #475 — start()'s own report after the await, only once its generation check has passed (a cancelled or superseded start writes nothing) and only when raceAudioResume's 1000 ms timer won; recorder-cancel-stop #474 — cancel()'s native stop() guard; recorder-stop-flush #485 — stop()'s own catch on its bounded flush, which then seals the slices already delivered and carries them through the ordinary tail, so a Stop whose teardown threw is written down AND keeps whatever audio was in hand; recorder-release-track #479 — a track stop() that throws while the mic stream is released, reported per track so the other tracks are still stopped; recorder-take-cap #1005 — the elapsed tick sealing a take at the 20-minute cap, which the sheet then saves; not a failure, the one record that a take was cut); src/hooks/audio-io.ts (recorder-tap-clone-stop #479 — the level tap's cloned track throwing on its own stop()); src/hooks/use-audio-session.ts stopRecording's backstop catch (recorder-stop-backstop #480 — fires only when endRecording() REJECTS, which the flush catch above never does; a Stop whose failure rides the StopResult to the sheet's Notice does not reach it); src/hooks/use-save-take.ts:97 (save-take, #456); src/hooks/use-save-take.ts:202 (erase-segment, #456 — performClearEditedSegment's cut-to-empty close, not the segment-store erase below); src/hooks/use-books.ts:644 (book-delete, #456 — deleteBook's catch, structurally pinned in tests/use-books-delete-failure-gate.test.ts since this hook cannot be rendered in this Node-only suite); src/hooks/use-erase-segment.ts:44 (erase-segment, #456 — the store-failure catch only, not the separate post-erase-notification one); src/hooks/use-chapter-segments.ts renameSegment's catch and src/components/segment-row.tsx's rejection handler (segment-rename, #591 — not the vanished-segment case, which shows the stale-segment state instead); src/hooks/audio-io.ts's playSamples (a single try/finally is now the ONE report site for all three keys below — dev lead pick, option A, 2026-09-19 judgment sheet, closing the row-accounting class George round-2 P3 and Frank rounds 1 and 3 each found one more exit of: playback-resume #469 — raceAudioResume's own rejection report, or playSamples's single exit reporting a captured one; fires for a LATE rejection arriving after the 1000 ms bound already won the race, for an early rejection whose OWN resume() call failed but the shared context turned out usable anyway because a DIFFERENT, concurrent resumeAudioContext() call elsewhere (playTake/playBuffer's own fire-and-forget in-gesture unlock) won first (Frank round-1 P2), OR for an early rejection on a claim that was superseded (a Stop, a competing Play) before either fail-closed check below ever ran — previously dropped with no row at all (Frank round-3 P2 @ audio-io.ts:678), now still reported since the finally is reached from every exit, superseded or not; an early rejection that leaves the context still unusable is instead folded into playback-resume-unusable below, carrying the REAL captured cause rather than a synthetic stand-in (previously always synthetic even when a real cause existed — Frank round-3 P2 @ audio-io.ts:694), so one failed Play never writes more than one row (George round-2 P3); playback-resume-timeout #469 — the single exit's fail-closed report when the 1000 ms bound was what left the context still needing resume; playback-resume-unusable #469 — the same single exit when the context still needs resume without the bound firing: an early rejection, a resume() that resolved but left the context still needing resume, or a fresh interruption arriving during the buffer-fill/yield after resume had already succeeded (George round-2 P2)); src/hooks/use-audio-session.ts playTake's and playBuffer's catches and the dangling-clip branch (playback-take, playback-buffer, playback-dangling, #1213 — each skips the #469 error, whose row playSamples already wrote, and writes nothing for a superseded Play); src/hooks/audio-io.ts playSamples, createLevelTap and checkSharedClockOnReturn (playback-clock-stalled, recorder-tap-clock-stalled, audio-clock-stalled-on-return, #1251 — a shared context reporting running whose currentTime did not advance for 1000 ms: after a Play's source.start, across the level tap's frames during a take, or after the page became visible again; the Play one fails that Play, and playTake/playBuffer's catches skip its error the way they skip the #469 one); src/hooks/audio-io.ts discardSharedContext (playback-context-close, #1213 — a failed close() of the shared context a fail-closed Play dropped) --> What is **not** written
 down today is the microphone refusing to start, a Stop that fails the way you
 see it — the recorder's own notice that no sound was recorded or that the
 recording could not be decoded — and the share sheet failing
@@ -426,7 +435,7 @@ goes wrong, still write down:
 1. **Phone make and model** (for example, "Samsung Galaxy A17").
 2. **Android version**, if you can find it (Settings → About phone).
 3. **The build stamp** — a small line of text at the bottom of the app screen
-   reading something like `v0.2.1 · a1b2c3d`. This tells us exactly which
+   reading something like `v1.0.0-rc.3 · <short code>`. This tells us exactly which
    build was running. <!-- source: src/components/build-stamp.tsx; rendered at the bottom of every screen via src/app/App.tsx -->
 4. **What was tapped**, in order, right before the problem.
 5. **What happened** — the exact wording of any message on screen. A photo of
