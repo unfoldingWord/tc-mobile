@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-import { clickEditRecording } from "./recorder-fixtures";
+import { clickEditRecording, editRecordingButton } from "./recorder-fixtures";
 import { seedToRecorder } from "./support/seed";
 
 /**
@@ -116,9 +116,9 @@ for (const width of [320, 390]) {
 
     // Leave edit mode and come back. Leaving resets the zoom to whole and
     // drops the view pan, and the new seed is taken from the insertion line.
-    await page
-      .getByRole("button", { name: "Done editing", exact: true })
-      .click();
+    // The pressed scissors toggle is the exit (#1243 removed the header's
+    // "Editing" pill, which was the direct "Done editing" button).
+    await editRecordingButton(page).click();
     await expect(startHandle).toHaveCount(0);
     await clickEditRecording(page);
     await expect(startHandle).toBeVisible();

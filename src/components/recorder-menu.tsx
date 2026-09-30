@@ -264,7 +264,7 @@ export function RecorderMenu({
               `aria-modal` over an `inert` Segments, so while it is up the Books
               hamburger is four screens away, and direct sun is exactly the
               condition that arrives while you are recording. The opener for this
-              menu — the header's `⋮` since #1225, or the edit toolbar's since #863 — is
+              menu — the header's `⋮` (#1225), in both modes since #1243 — is
               itself closed through the close window, while `denied`,
               and while a take is held — the panels those states raise own the
               body — so the toggle inherits those gates rather than adding its own.

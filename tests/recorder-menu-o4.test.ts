@@ -14,8 +14,8 @@ import { areaRules, declsFor } from "./o4-area-css";
 
 /**
  * The recorder menu on the O4 tile grid (#949 G3, epic #936), including the
- * edit-mode menu the edit toolbar's ⋮ opens (#863) — both are this one
- * component.
+ * edit-mode menu the header's ⋮ opens while editing (#1243) — both are this
+ * one component.
  *
  * The switch is read through `useDesign()`, mocked so each case picks its
  * look (`tests/segments-o4.test.ts` is the pattern). The first case below is
@@ -129,7 +129,7 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
     expect(startingWith(strings.enterEdit)).toBeUndefined();
   });
 
-  it("lays edit mode (the ⋮ menu, #863) out as Done, Erase, then theme", () => {
+  it("lays edit mode (the ⋮ menu) out as Done, Erase, then theme", () => {
     show({ mode: "edit" });
     expect(labels().slice(0, 2)).toEqual([
       strings.doneEditing,

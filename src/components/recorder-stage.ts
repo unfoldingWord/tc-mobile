@@ -229,7 +229,7 @@ interface StageView {
    *   they are only ever drawn while a span is picked — the one case that keeps
    *   that window — so their mapping is always the one on screen. They stop the
    *   sound on the first move;
-   * - **Back, the ⋮ menu, the Editing pill**: they leave or suspend this state
+   * - **Back, the ⋮ menu, the edit toggle**: they leave or suspend this state
    *   rather than acting inside it, and each stops playback on the way.
    *
    * Mode-independent on purpose, as both of its owners are.

@@ -238,8 +238,8 @@ const PATHS: Record<IconName, React.ReactNode> = {
     />
   ),
   // Three dots, stacked — an object's own menu (a book, a chapter, a segment,
-  // since #589/#683) and the recorder's menu, whose two openers (the
-  // record-mode header's since #1225, the edit toolbar's since #863) and
+  // since #589/#683) and the recorder's menu, whose one opener (the
+  // header's, in both modes since #1243; ⋮ since #1225) and
   // whose drawer dismiss are all this glyph. Distinguishes these from the
   // global ≡ (#608), which appears only on the Books screen.
   more: (

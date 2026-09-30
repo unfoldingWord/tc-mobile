@@ -489,10 +489,11 @@ export const strings = {
   // The record-menu "Edit" row — distinct from `editSegment(n)`, the Segments
   // list's per-row label.
   enterEdit: "Edit recording",
-  // The edit-menu row and the "Editing" pill's spoken action.
+  // The edit-menu row's name (its tile caption is `tileDone`).
   doneEditing: "Done editing",
-  // The pill's visible text — the mode marker for a sighted non-reader (D2).
-  modepillEditing: "Editing",
+  // The edit-mode marker inside the waveform's top right (D2, #1243): plain
+  // text, not a control, so it is spoken as it reads.
+  editingMarker: "Editing",
 
   // ── Waveform editing (B5) ────────────────────────────────────────────────
   cut: "Cut the selection",

@@ -86,7 +86,7 @@ describe("every Tailwind colour alias maps to a live layer-2 role (#164 L-14)", 
   it("bridges --s-voice-text, the accent-as-INK role (#457 George R1 P3)", () => {
     // Layer 2 splits the accent as a FILL (`--s-voice`) from the accent as
     // 12px TEXT on a wash of itself (`--s-voice-text`), because on light the
-    // fill value is 3.0:1 there. `.modepill` reads the text role in layer 3;
+    // fill value is 3.0:1 there. `.recorder-editing` reads the text role in layer 3;
     // without an alias a JSX caller has only `text-voice`, which is the fill —
     // the sub-AA value the split exists to keep off small text.
     expect(aliases.map((a) => a.name)).toContain("voice-text");

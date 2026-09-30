@@ -59,8 +59,6 @@ export interface RecorderToolbarProps {
   /** Whether the #604 guide ring is drawn on Record right now. */
   guidedRecord: boolean;
   isClosing: boolean;
-  /** A segment is loaded. */
-  hasView: boolean;
   playingBuffer: boolean;
   /** A finger is mid-pan (#317) — the stage lock the history controls carry. */
   dragging: boolean;
@@ -94,7 +92,6 @@ export interface RecorderToolbarProps {
   onToggleZoom: () => void;
   onUndo: () => void;
   onRedo: () => void;
-  openMenu: () => void;
   onExitEdit: () => void;
   onRerecord: () => void;
 }
@@ -109,7 +106,6 @@ export function RecorderToolbar({
   recordInert,
   guidedRecord,
   isClosing,
-  hasView,
   playingBuffer,
   dragging,
   idleEditable,
@@ -129,7 +125,6 @@ export function RecorderToolbar({
   onToggleZoom,
   onUndo,
   onRedo,
-  openMenu,
   onExitEdit,
 }: RecorderToolbarProps) {
   // The ternary is HERE, in one element list, so the mode toggle's shared
@@ -242,8 +237,10 @@ export function RecorderToolbar({
       />
     </div>
   ) : (
-    // Edit mode: the spread editing toolbar. Redo is a visible button
-    // here (out of the menu); the menu opener lives at the end.
+    // Edit mode: the spread editing toolbar — Play, Zoom, Undo, Redo and the
+    // toggle. Redo is a visible button here (out of the menu). No menu
+    // opener: the ⋮ stays in the header's top right in both modes (#1243,
+    // reversing #863's toolbar ⋮).
     <div className="recorder-toolbar edit grid items-center px-[16px]">
       <Control
         // The audition (#284) — the SAME glyph pair the record bar
@@ -342,20 +339,6 @@ export function RecorderToolbar({
         disabled={redoBlocked !== null}
         hint={editControlHint(redoBlocked)}
         onClick={onRedo}
-      />
-      <Control
-        // ⋮, not ≡ (#863, the requirements owner's rule on #608: ≡ is the
-        // global menu's alone, and this menu acts on the segment). `openMenu`
-        // and the accessible name (`recorderMenuOpen`, "More actions") are
-        // the same as record mode's header opener, which wears the same ⋮
-        // since #1225 (`recorder.tsx`'s header). The glyph is the kebab the
-        // book, chapter and segment rows have used since #589/#683.
-        icon="more"
-        label={strings.recorderMenuOpen}
-        variant="quiet"
-        size={24}
-        disabled={!hasView || isClosing}
-        onClick={openMenu}
       />
       <Control
         key="edit-toggle"
