@@ -509,7 +509,20 @@ export async function resumeAudioContext(): Promise<void> {
   // tap, so the context built below is built in that tap (#1251).
   applyPendingIdleDrop();
   const ctx = getAudioContext();
-  if (contextNeedsResume(ctx.state)) await ctx.resume();
+  if (!contextNeedsResume(ctx.state)) return;
+  // A resume still pending counts as a claim (`pendingClaims`), so no idle
+  // drop or return check closes the context under it. That covers the
+  // fire-and-forget resumes in the Play taps and the sheet-open tap, which
+  // no `raceAudioResume` wraps (Frank r2 P2 on #1261). Counted directly, not
+  // through `claimSharedContext`: its release applies a waiting drop, and a
+  // drop landing the moment an in-tap resume settles would close the context
+  // the Play is about to use, outside that tap.
+  pendingClaims++;
+  try {
+    await ctx.resume();
+  } finally {
+    pendingClaims--;
+  }
 }
 
 /**

@@ -783,6 +783,77 @@ describe("an audio route change (devicechange, #1251)", () => {
     expect(ctx.closeCalls).toBe(0);
   });
 
+  it("during a tap's own fire-and-forget resume (no race around it) does not close the context", async () => {
+    // playTake/playBuffer and the sheet-open tap call resumeAudioContext()
+    // directly, then load the clip before playSamples runs.
+    FakeContext.nextResumeHangs = true;
+    const { io, deviceChange } = await loadAudioIoWithDevices();
+    const resuming = io.resumeAudioContext();
+    const ctx = FakeContext.made[0]!;
+
+    deviceChange();
+    expect(ctx.closeCalls).toBe(0);
+
+    ctx.settleResume();
+    await resuming;
+    // Settling the resume does not land the drop by itself either.
+    expect(ctx.closeCalls).toBe(0);
+  });
+
+  it("the return check stands aside while a tap's fire-and-forget resume is pending", async () => {
+    FakeContext.nextResumeHangs = true;
+    const io = await loadAudioIo();
+    void io.resumeAudioContext();
+    const ctx = FakeContext.made[0]!;
+    ctx.state = "running";
+
+    const check = io.checkSharedClockOnReturn();
+    await vi.advanceTimersByTimeAsync(io.CLOCK_STALL_TIMEOUT_MS + 100);
+    await check;
+    expect(rowsFor("audio-clock-stalled-on-return")).toHaveLength(0);
+    expect(ctx.closeCalls).toBe(0);
+  });
+
+  it("between a Play's resume and its source.start does not close the context", async () => {
+    // A running context: the race settles at once, then the Play yields one
+    // task before it builds its source.
+    FakeContext.nextClock = "advancing";
+    const { io, deviceChange } = await loadAudioIoWithDevices();
+    const play = io.playSamples(samples, { isStillCurrent: () => true });
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    const ctx = FakeContext.made[0]!;
+    expect(ctx.sources).toHaveLength(0);
+
+    deviceChange();
+    expect(ctx.closeCalls).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(100);
+    const handle = await play;
+    expect(FakeContext.made).toHaveLength(1);
+    expect(ctx.sources).toHaveLength(1);
+    expect(reportFailure).not.toHaveBeenCalled();
+    handle.stop();
+    expect(ctx.closeCalls).toBe(1);
+  });
+
+  it("a drop deferred by a Play that is then superseded lands when that Play returns", async () => {
+    FakeContext.nextResumeHangs = true;
+    const { io, deviceChange } = await loadAudioIoWithDevices();
+    let current = true;
+    const play = io.playSamples(samples, { isStillCurrent: () => current });
+    const ctx = FakeContext.made[0]!;
+
+    deviceChange();
+    expect(ctx.closeCalls).toBe(0);
+
+    current = false;
+    ctx.settleResume();
+    await vi.advanceTimersByTimeAsync(100);
+    await play;
+    expect(ctx.sources).toHaveLength(0);
+    expect(ctx.closeCalls).toBe(1);
+  });
+
   it("an engine with no mediaDevices still builds and uses the context", async () => {
     FakeContext.nextClock = "advancing";
     vi.stubGlobal("navigator", {});
