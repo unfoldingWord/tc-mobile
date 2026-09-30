@@ -22,7 +22,11 @@ interface SegmentsHeadProps {
 export function SegmentsHead({ chapterName, rows }: SegmentsHeadProps) {
   return (
     <div className="segments-head" aria-hidden="true">
-      {chapterName ? <p className="segments-title">{chapterName}</p> : null}
+      {chapterName ? (
+        <p className="segments-title" dir="auto">
+          {chapterName}
+        </p>
+      ) : null}
       <div className="segments-progress">
         {rows.length === 0 ? (
           <i className="segments-mark" data-state="empty" />

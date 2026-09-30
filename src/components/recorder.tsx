@@ -3488,7 +3488,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 />
               </div>
             ) : (
-              <span className="text-ink min-w-0 flex-1 truncate">
+              <span className="text-ink min-w-0 flex-1 truncate" dir="auto">
                 {view
                   ? strings.recorderBreadcrumb(
                       view.bookName,

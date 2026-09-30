@@ -593,6 +593,18 @@ describe("the segment menu (07) on the tile grid", () => {
     );
   });
 
+  it("sets the direction of the segment's typed name in the preview row (#1267)", async () => {
+    await mount("o4", titled);
+    await openRow();
+    expect(dialog().querySelector(".o4-menu-title")?.getAttribute("dir")).toBe(
+      "auto"
+    );
+    // The badge is a bare number: no direction of its own.
+    expect(dialog().querySelector(".o4-menu-badge")?.hasAttribute("dir")).toBe(
+      false
+    );
+  });
+
   it("adds none of it in the current look", async () => {
     await mount("current", titled);
     await openRow();

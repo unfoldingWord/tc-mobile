@@ -689,6 +689,16 @@
     border-color: var(--s-focus);
   }
 
+  /* User-typed text (#1267). An element showing a name the facilitator typed
+     carries dir="auto", so its direction follows the text and not the app
+     locale. Its alignment has to follow too: the row and header buttons that
+     hold these names say `text-align: left`, a physical value the name would
+     inherit, which left a right-to-left name flush left. `start` is the edge
+     the text's own direction begins at. */
+  [dir="auto"] {
+    text-align: start;
+  }
+
   /* --- the erase confirm dialog (B6) ------------------------------------- */
   /* A centred sheet, not the side drawer: it sits above the recorder sheet
      (z 60) and the menu (z 80) because it can be raised from either. */

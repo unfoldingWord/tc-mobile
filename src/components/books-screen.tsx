@@ -2540,7 +2540,9 @@ function BookItem({
                   size={expanded ? 36 : 34}
                 />
               </span>
-              <span className="books-name">{book.name}</span>
+              <span className="books-name" dir="auto">
+                {book.name}
+              </span>
             </>
           ) : (
             <>
@@ -2550,7 +2552,10 @@ function BookItem({
                   size={20}
                 />
               </span>
-              <span className="t-title text-ink min-w-0 truncate">
+              <span
+                className="t-title text-ink min-w-0 flex-1 truncate"
+                dir="auto"
+              >
                 {book.name}
               </span>
             </>
@@ -2682,7 +2687,12 @@ function ChapterItem({
           <O4ChapterFace chapter={chapter} />
         ) : (
           <>
-            <span className="text-ink min-w-0 truncate">{heading}</span>
+            <span
+              className="text-ink min-w-0 truncate"
+              dir={name === null ? undefined : "auto"}
+            >
+              {heading}
+            </span>
             {hasCounter && (
               <span
                 // All finished glows green (--s-done) — the wordless "chapter
@@ -2726,7 +2736,10 @@ function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
         {chapter.number}
       </span>
       <span className="books-chapter-mid" aria-hidden="true">
-        <span className="books-chapter-title">
+        <span
+          className="books-chapter-title"
+          dir={chapter.name === null ? undefined : "auto"}
+        >
           {strings.chapterHeading(chapter.name, chapter.number)}
         </span>
         <span
