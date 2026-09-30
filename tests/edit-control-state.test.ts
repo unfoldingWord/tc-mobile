@@ -202,7 +202,7 @@ describe("the cue (#91, #135, #924)", () => {
   });
 
   // No reason wears a glyph at all (#924). #703 shipped the two history cues
-  // with the `alert` state mark that `rowHint` puts on a ⋮-menu row, and the
+  // wearing a ⚠ state mark, and the
   // requirements owner read it on a grey arrow as an error — the same reading
   // #610 recorded for the toolbar Edit control, which #624 answered the same
   // way: words in the accessible name, nothing painted. A grey Undo or Redo is
