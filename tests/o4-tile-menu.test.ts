@@ -187,12 +187,13 @@ describe("o4/menus.css (#941)", () => {
       '[data-design="o4"] .menu-panel:has(.o4-tiles)'
     );
     expect(panel.get("border-radius")).toBe("26px");
+    // The handle is `menu.tsx`'s grip (#1268): drawn in o4/sheets.css,
+    // shown on a tile sheet here.
     const handle = declsFor(
       rules,
-      '[data-design="o4"] .menu-panel:has(.o4-tiles)::before'
+      '[data-design="o4"] .menu-panel:has(.o4-tiles) .menu-grip'
     );
-    expect(handle.get("width")).toBe("56px");
-    expect(handle.get("height")).toBe("5px");
+    expect(handle.get("display")).toBe("flex");
     const scrim = declsFor(
       rules,
       '[data-design="o4"] .menu-scrim:has(.o4-tiles)'

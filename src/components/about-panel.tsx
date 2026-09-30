@@ -89,6 +89,9 @@ export function AboutPanel({
       title={viewing ? viewing.label : strings.aboutTitle}
       focusKey={viewing?.href ?? "list"}
       closeLabel={viewing ? strings.aboutBack : undefined}
+      // In the licence view the header control goes back to the list, one
+      // level, so it keeps the chevron in O4 rather than the sheets' ✕ (#1268).
+      back={viewing !== null}
     >
       {viewing ? (
         <LicenseTextView text={viewing} />

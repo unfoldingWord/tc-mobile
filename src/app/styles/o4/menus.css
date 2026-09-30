@@ -123,15 +123,19 @@
     border: 1px solid var(--s-card-edge);
     border-radius: 26px; /* #939 token */
   }
-  [data-design="o4"] .menu-panel:has(.o4-tiles)::before {
-    content: "";
-    flex: none;
-    align-self: center;
-    width: 56px;
-    height: 5px;
-    margin-bottom: -2px;
-    border-radius: 3px;
-    background: var(--s-edge);
+  /* The grip (#1268): `menu.tsx`'s `.menu-grip`, drawn in o4/sheets.css and
+     shown here on a tile sheet and on the book delete ask below. These
+     sheets have an 18px gap where the name sheets have 16, so the grip gives
+     back 2px more below, as the handle they drew before did. The header row
+     is the other place a drag starts. */
+  [data-design="o4"] .menu-panel:has(.o4-tiles) .menu-grip,
+  [data-design="o4"] .menu-panel:has(.books-delete-ask) .menu-grip {
+    display: flex;
+    margin-bottom: -12px;
+  }
+  [data-design="o4"] .menu-panel:has(.o4-tiles) .menu-head,
+  [data-design="o4"] .menu-panel:has(.books-delete-ask) .menu-head {
+    touch-action: none;
   }
 
   /* === #949: the chapter menu (G2), the segment menu (07), marking done (G8)
@@ -360,15 +364,5 @@
     gap: 18px;
     border: 1px solid var(--s-card-edge);
     border-radius: 26px; /* #939 token */
-  }
-  [data-design="o4"] .menu-panel:has(.books-delete-ask)::before {
-    content: "";
-    flex: none;
-    align-self: center;
-    width: 56px;
-    height: 5px;
-    margin-bottom: -2px;
-    border-radius: 3px;
-    background: var(--s-edge);
   }
 }
