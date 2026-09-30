@@ -144,6 +144,20 @@
     flex-direction: column;
     gap: var(--c-gap-items);
     padding: var(--p-space-4) var(--p-space-3);
+    /* The whole shell is control chrome (#1276): a double-tap on a gap, an
+       empty row's neighbourhood or the stamp must not start the system text
+       selection, and the per-root opt-outs (#559, #563) left those gaps bare.
+       Real text inputs opt back in by the rule below. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* The opt-back-in for text the user genuinely edits or copies from. */
+  .app-shell :is(input, textarea, [contenteditable]) {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
   }
 
   /* Build identity, pinned to the bottom of the shell (flex `margin-top:auto`)
@@ -156,6 +170,11 @@
     color: var(--s-ink-faint);
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.02em;
+    /* Explicit, not only inherited from .app-shell (#1276): the stamp is the
+       line the selection handles ran down to. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
 
   /* --- controls --------------------------------------------------------- */
