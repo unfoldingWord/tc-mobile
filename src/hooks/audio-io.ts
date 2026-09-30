@@ -973,6 +973,12 @@ export function createLevelTap(stream: MediaStream): LevelTap {
       "recorder-tap-clock-stalled"
     );
   };
+  // A context out of "running" (an interruption, a suspend) holds its clock
+  // still by design, so that gap is not a stall: the next running sample
+  // starts a fresh window, the same rule `watchClock`'s "not-running" keeps.
+  const restartClockWindow = () => {
+    clockValue = Number.NaN;
+  };
 
   // Tear down only this tap's own nodes; the shared context stays open for
   // playback and the next recording — unless this tap saw its clock stopped
@@ -1002,8 +1008,12 @@ export function createLevelTap(stream: MediaStream): LevelTap {
       // shown speech off into a flat line a non-reader takes for a dead mic
       // (George R5). NOT an all-zero-frame check — that would freeze on real
       // silence too.
-      if (disconnected || contextNeedsResume(ctx.state)) return null;
+      if (disconnected || contextNeedsResume(ctx.state)) {
+        restartClockWindow();
+        return null;
+      }
       if (ctx.state === "running") noteClock();
+      else restartClockWindow();
       graph.getFloatTimeDomainData(frame);
       return frame;
     },

@@ -390,6 +390,53 @@ describe("createLevelTap — a running context whose clock never moves (#1251)",
     expect(reportFailure).not.toHaveBeenCalled();
     expect(FakeContext.made[0]!.closeCalls).toBe(0);
   });
+
+  it("a gap out of running (an interruption) restarts the window: the first running sample after it is not a stall", async () => {
+    const { createLevelTap, CLOCK_STALL_TIMEOUT_MS } = await loadAudioIo();
+    const tap = createLevelTap(fakeStream);
+    const ctx = FakeContext.made[0]!;
+
+    // One running sample, then the context leaves running for longer than
+    // the bound; the frozen clock during that gap is suspension, not a stall.
+    tap.readFrame();
+    ctx.state = "interrupted";
+    vi.setSystemTime(CLOCK_STALL_TIMEOUT_MS * 2);
+    tap.readFrame();
+    ctx.state = "suspended";
+    vi.setSystemTime(CLOCK_STALL_TIMEOUT_MS * 3);
+    tap.readFrame();
+    ctx.state = "running";
+    tap.readFrame();
+    expect(reportFailure).not.toHaveBeenCalled();
+
+    // Still running a full bound later on that same currentTime: a real stall.
+    vi.setSystemTime(CLOCK_STALL_TIMEOUT_MS * 4);
+    tap.readFrame();
+    expect(rowsFor("recorder-tap-clock-stalled")).toHaveLength(1);
+    expect(ctx.closeCalls).toBe(0);
+    tap.close();
+    expect(ctx.closeCalls).toBe(1);
+  });
+
+  it("an interruption shorter than a full running bound writes nothing and keeps the context", async () => {
+    const { createLevelTap, CLOCK_STALL_TIMEOUT_MS } = await loadAudioIo();
+    const tap = createLevelTap(fakeStream);
+    const ctx = FakeContext.made[0]!;
+
+    tap.readFrame();
+    ctx.state = "interrupted";
+    vi.setSystemTime(CLOCK_STALL_TIMEOUT_MS * 2);
+    tap.readFrame();
+    ctx.state = "running";
+    tap.readFrame();
+    ctx.clockMode = "advancing";
+    vi.setSystemTime(CLOCK_STALL_TIMEOUT_MS * 2 + 10);
+    tap.readFrame();
+    tap.close();
+
+    expect(reportFailure).not.toHaveBeenCalled();
+    expect(ctx.closeCalls).toBe(0);
+  });
 });
 
 /**
