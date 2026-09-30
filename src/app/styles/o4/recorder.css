@@ -173,7 +173,7 @@
     height: var(--o4-big);
   }
   /* Erase and the edit toggle: the 64 secondary circle on the well. No ink
-     here or on the edit bar: the pressed toggle's green ink (is-on) and the
+     here or on the edit bar: the zoom toggle's green ink (is-on) and the
      variants' own inks must keep winning. */
   [data-design="o4"]
     .recorder-toolbar.pair

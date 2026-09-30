@@ -43,6 +43,7 @@ export type IconName =
   | "share-closed"
   | "share-android"
   | "share-busy"
+  | "close"
   // The O4 batch (#940, part of #936): the 13 icons the O4 screens use,
   // redrawn from the 24-unit, stroke-2.2 reference sprite
   // (docs/design/o4/o4-icons.svg, landing with #935) onto this file's
@@ -358,8 +359,8 @@ const PATHS: Record<IconName, React.ReactNode> = {
     </>
   ),
   // Cut: two finger loops and crossing blades. Appears below the waveform once a
-  // selection exists (mockup 4), and is the recorder toolbar's edit-mode
-  // toggle (#955).
+  // selection exists (mockup 4), and is the recorder toolbar's toggle INTO
+  // edit mode (#955); while editing that toggle wears `close` (#1252).
   scissors: (
     <>
       <circle
@@ -386,6 +387,19 @@ const PATHS: Record<IconName, React.ReactNode> = {
         strokeLinecap="round"
       />
     </>
+  ),
+  // Leave edit mode (#1252, the requirements owner): the plain ✕ the edit
+  // toggle wears while editing, so the scissors on that screen mean only Cut.
+  // The same strokes as `share-closed` below, kept as its own name because
+  // that one is a share OUTCOME mark and this is a control.
+  close: (
+    <path
+      d="M7.2 7.2 L14.8 14.8 M14.8 7.2 L7.2 14.8"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+    />
   ),
   // Paste: audio dropping onto the centerline (mockup 5). A down arrow over the
   // line it inserts at.

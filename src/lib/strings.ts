@@ -308,10 +308,6 @@ export const strings = {
   tileAbout: "About",
   tileLight: "Light",
   tileDark: "Dark",
-  // The edit-mode recorder menu's exit tile (G3); its name is `doneEditing`.
-  // Its own key, not `tileFinished`: that one is marking done, this is leaving
-  // edit, and the two only happen to share a word in English.
-  tileDone: "Done",
   closeRecorder: "Close recorder",
   /**
    * The recorder sheet's header trail — the Segments one with the segment
@@ -486,11 +482,13 @@ export const strings = {
   // the action is stop (D4), so the label says "Stop playing".
   playRecording: "Play recording",
   stopPlayback: "Stop playing",
-  // The record-menu "Edit" row — distinct from `editSegment(n)`, the Segments
+  // The record-menu "Edit" row and the toolbar toggle in record mode (scissors)
+  // — distinct from `editSegment(n)`, the Segments
   // list's per-row label.
   enterEdit: "Edit recording",
-  // The edit-menu row's name (its tile caption is `tileDone`).
-  doneEditing: "Done editing",
+  // The edit toggle's name while editing, when it wears ✕ and a tap leaves
+  // (#1252). Not "Done": that word keeps one meaning, mark finished.
+  leaveEdit: "Stop editing",
   // The edit-mode marker inside the waveform's top right (D2, #1243): plain
   // text, not a control, so it is spoken as it reads.
   editingMarker: "Editing",

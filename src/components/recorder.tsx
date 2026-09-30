@@ -233,12 +233,12 @@ export interface RecorderHandle {
  * menu. EDIT mode — entered deliberately, from either the record menu's
  * "Edit recording" row or the toolbar Edit control (#315), both firing
  * `onEnterEdit` — has Play, Zoom, Undo and Redo beside the stable
- * pressed Edit toggle, with the header's ⋮ unchanged (#1243),
+ * edit toggle, which wears ✕ there (#1252), with the header's ⋮ unchanged (#1243),
  * with the selection frame over the canvas, the paste marker in its own
  * reserved row above the canvas (#414 — no longer an overlay drawn on top of
  * the waveform), and Cut in its own reserved row below, marked by plain
  * "Editing" text in the waveform's top right (#1243; it does not exit — the
- * toggle and the menu's Done editing do). Both entry points are greyed while a take
+ * ✕ does). Both entry points are greyed while a take
  * is live (#857: `editReason`'s `hasTake` term, `menu-row-state.ts`) — #614
  * gave the sheet a Stop that ends and commits a take on its own, so entering
  * Edit no longer has to. `onEnterEdit` refuses a live take outright rather
@@ -951,7 +951,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
      * It also DROPS any resume the #317 gesture still owes (George R2 P1). A
      * stop is the translator asking for silence, and every non-lift route out
      * of the drag — Undo, Redo, Select, the menu opener (⋮), Edit,
-     * Done editing, Cut, Paste, Back — comes through here or through
+     * the edit toolbar's ✕, Cut, Paste, Back — comes through here or through
      * `stopPlaybackDroppingPan`, so clearing the flag in the TWO stop paths
      * covers all nine without nine assignments that a tenth handler could
      * later forget. The `"interrupt"` in `onPointerDown` sets the flag
@@ -1769,8 +1769,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setMenuOpen(true);
     }, [focusRestore, stopPlayback]);
 
-    // Exit edit mode — the toolbar's pressed scissors toggle and the edit-menu
-    // "Done editing" row share this. Close any open selection AND reset zoom to whole: record
+    // Exit edit mode — the toolbar toggle, wearing ✕ while editing (#1252),
+    // and the erase landing below call this. Close any open selection AND reset zoom to whole: record
     // mode has no zoom control, so a quarter-zoom carried out of edit would leave
     // the record view stuck zoomed with no way to widen it (George R1). It only
     // switches mode, it never closes the sheet (that is Back/`close`).
@@ -3508,7 +3508,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             {/* The menu opener stays in the header's top right in BOTH modes
               (#1243, the requirements owner, reversing #863's edit-toolbar
               ⋮): same glyph, same place, and the same `openMenu`, which opens
-              the edit-mode menu (Done editing, Erase, theme) while editing.
+              the edit-mode menu (Erase, theme; no Done tile, #1252) while editing.
               Reachable mid-take (Edit commits-then-edits a live take, #134),
               blocked only through the close window. ⋮, not ≡ (#1225): this
               menu acts on the segment being edited, so it is an object menu
@@ -3942,8 +3942,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 {mode === "edit" ? (
                   // The edit-mode marker (D2, #1243): plain text in the
                   // waveform's top right, where O4's stamp sits otherwise.
-                  // Not a control — leaving edit mode is the scissors toggle
-                  // (#557, #955) or the menu's Done editing — so it carries no
+                  // Not a control — leaving edit mode is the toolbar's ✕
+                  // (#557, #1252) — so it carries no
                   // role, name or tab stop, and a screen reader reads the word
                   // it shows. `pointer-events: none` in the CSS keeps a touch
                   // on it reaching the stage's pan.
@@ -4045,7 +4045,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             setConfirmFor("erase");
             setConfirmOpen(true);
           }}
-          onExitEdit={onExitEdit}
           bookName={view?.bookName}
           bookCoverHex={view?.bookCoverHex ?? undefined}
           chapterNumber={view?.chapterNumber}

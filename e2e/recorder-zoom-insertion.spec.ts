@@ -116,7 +116,7 @@ for (const width of [320, 390]) {
 
     // Leave edit mode and come back. Leaving resets the zoom to whole and
     // drops the view pan, and the new seed is taken from the insertion line.
-    // The pressed scissors toggle is the exit (#1243 removed the header's
+    // The ✕ toggle is the exit (#1252; #1243 removed the header's
     // "Editing" pill, which was the direct "Done editing" button).
     await editRecordingButton(page).click();
     await expect(startHandle).toHaveCount(0);

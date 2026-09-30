@@ -232,7 +232,7 @@ test.describe("edit mode toggle", () => {
       await expect(
         page.getByLabel("Selection start", { exact: true })
       ).toBeVisible();
-      await expect(toggle).toHaveAttribute("aria-pressed", "true");
+      await expect(toggle).toHaveAccessibleName("Stop editing");
       const selectedStart = Number(
         await page
           .getByLabel("Selection start", { exact: true })
@@ -266,7 +266,7 @@ test.describe("edit mode toggle", () => {
       expect(after!.height).toBe(before!.height);
       await expect(toggle).toBeFocused();
       await toggle.press("Enter");
-      await expect(toggle).toHaveAttribute("aria-pressed", "false");
+      await expect(toggle).toHaveAccessibleName(/^Edit recording/);
       await expect(
         page.getByLabel("Selection start", { exact: true })
       ).toHaveCount(0);
@@ -296,7 +296,7 @@ test.describe("edit mode toggle", () => {
         const start = Number(await startHandle.getAttribute("aria-valuenow"));
         const end = Number(await endHandle.getAttribute("aria-valuenow"));
         expect(end).toBeGreaterThan(start);
-        await expect(toggle).toHaveAttribute("aria-pressed", "true");
+        await expect(toggle).toHaveAccessibleName("Stop editing");
         await expect(
           page.getByRole("button", { name: "Cut the selection", exact: true })
         ).toBeEnabled();
@@ -326,7 +326,7 @@ test.describe("edit mode toggle", () => {
         ).toHaveCount(0);
         await expect(page.getByTestId("centerline-overlay")).toHaveCount(1);
         // Still in edit mode: the collapse is a state inside it, not an exit.
-        await expect(toggle).toHaveAttribute("aria-pressed", "true");
+        await expect(toggle).toHaveAccessibleName("Stop editing");
         // ...and the line is offering the paste the issue says it marks.
         await expect(
           page.getByRole("button", { name: "Paste at the line", exact: true })
@@ -377,7 +377,7 @@ test.describe("edit mode toggle", () => {
       // and entering it again with the cut still on the clipboard must open
       // on the red line and the paste button, not on a selection window.
       await toggle.click();
-      await expect(toggle).toHaveAttribute("aria-pressed", "false");
+      await expect(toggle).toHaveAccessibleName(/^Edit recording/);
       await toggle.click();
       await expectCollapsedOntoTheLine();
       // A second cut is reachable by pasting first (Tim's decision on #835)
@@ -462,7 +462,7 @@ test.describe("edit mode toggle", () => {
           .getByRole("button", { name: "Cut the selection", exact: true })
           .click();
         await expect(startHandle).toHaveCount(0);
-        await expect(toggle).toHaveAttribute("aria-pressed", "true");
+        await expect(toggle).toHaveAccessibleName("Stop editing");
         // #925: the whole-buffer cut's undo stays on the line too, with the
         // phrase still on the clipboard; the paste below is the round trip.
         await page.getByRole("button", { name: "Undo", exact: true }).click();
@@ -474,10 +474,10 @@ test.describe("edit mode toggle", () => {
           .click();
         expect(await expectUsableFrame()).toBe(originalLength);
       }
-      // The pressed toggle is the exit (#1243 removed the header's "Editing"
+      // The ✕ toggle is the exit (#1252; #1243 removed the header's "Editing"
       // pill, which was the direct "Done editing" button).
       await toggle.click();
-      await expect(toggle).toHaveAttribute("aria-pressed", "false");
+      await expect(toggle).toHaveAccessibleName(/^Edit recording/);
       await expect(
         page.getByLabel("Selection start", { exact: true })
       ).toHaveCount(0);

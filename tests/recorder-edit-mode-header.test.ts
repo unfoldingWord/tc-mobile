@@ -43,8 +43,12 @@ vi.mock("@/components/vu-meter", () => ({ VuMeter: () => null }));
  * ⋮ menu opener stays in the header's top right in BOTH modes — same glyph,
  * same place, same menu — and the edit toolbar carries no ⋮ of its own. The
  * edit-mode marker moves inside the waveform window's top right as plain,
- * non-interactive text reading "Editing"; leaving edit mode stays on the
- * scissors toggle (#557, #955).
+ * non-interactive text reading "Editing".
+ *
+ * #1252 (the requirements owner, 2026-09-30): the edit-mode "Done" tile is
+ * removed from that menu, so "Done" keeps one meaning (mark finished), and
+ * the edit toggle (#557) shows scissors to enter and ✕ while editing; the ✕
+ * is the way out. The scissors in edit mode then mean only Cut.
  *
  * `RecorderToolbar` (`recorder-toolbars.tsx`) is presentational and goes
  * through `./render`'s static harness. The header and the stage live inside
@@ -107,7 +111,7 @@ function toolbarButtons(props: RecorderToolbarProps): HTMLButtonElement[] {
 }
 
 describe("the edit toolbar carries no ⋮ (#1243)", () => {
-  it("is Play, Zoom, Undo, Redo and the scissors toggle, in that order", () => {
+  it("is Play, Zoom, Undo, Redo and the ✕ exit, in that order", () => {
     const names = toolbarButtons(baseProps("edit")).map((b) =>
       b.getAttribute("aria-label")
     );
@@ -116,7 +120,7 @@ describe("the edit toolbar carries no ⋮ (#1243)", () => {
       strings.zoomAtWhole,
       strings.undo,
       strings.redo,
-      strings.enterEdit,
+      strings.leaveEdit,
     ]);
   });
 
@@ -271,12 +275,11 @@ describe("the header ⋮ stays top right in both modes, and 'Editing' sits in th
   async function enterEdit(): Promise<void> {
     const toggle = findButton(container, strings.enterEdit);
     expect(toggle, "no Edit toggle to drive the mode swap").toBeDefined();
-    expect(toggle!.getAttribute("aria-pressed")).toBe("false");
     await act(async () => toggle!.click());
     expect(
-      findButton(container, strings.enterEdit)?.getAttribute("aria-pressed"),
-      "the mode swap did not happen"
-    ).toBe("true");
+      findButton(container, strings.leaveEdit),
+      "the mode swap did not happen: no ✕ exit"
+    ).toBeDefined();
   }
 
   it("record mode: the header carries the ⋮ and the stage carries no Editing marker", async () => {
@@ -293,8 +296,13 @@ describe("the header ⋮ stays top right in both modes, and 'Editing' sits in th
     const after = expectHeaderKebab("edit");
     // The same DOM node: the opener did not move or remount across the flip.
     expect(after).toBe(before);
-    // Nothing in the header exits edit mode any more (#863's pill is gone).
-    expect(findButton(header(), strings.doneEditing)).toBeUndefined();
+    // Nothing in the header exits edit mode any more (#863's pill is gone):
+    // its buttons are Back and the ⋮, nothing else.
+    expect(
+      [...header().querySelectorAll("button")].map((b) =>
+        b.getAttribute("aria-label")
+      )
+    ).toEqual([strings.closeRecorder, strings.recorderMenuOpen]);
     expect(header().textContent).not.toContain(strings.editingMarker);
   });
 
@@ -316,26 +324,46 @@ describe("the header ⋮ stays top right in both modes, and 'Editing' sits in th
     expect(marker.getAttribute("aria-hidden")).toBeNull();
   });
 
-  it("edit mode: the header ⋮ opens the edit menu, with Done editing in it", async () => {
+  it("edit mode: the header ⋮ opens the edit menu, which has no Done tile (#1252)", async () => {
     await mountRecorder();
     await enterEdit();
     const opener = expectHeaderKebab("edit");
     await act(async () => opener.click());
-    const body = mount.dom.window.document.body;
-    expect(
-      findButton(body, strings.doneEditing),
-      "the edit menu's Done editing tile"
-    ).toBeDefined();
+    const menu = mount.dom.window.document.querySelector(".menu-panel");
+    expect(menu, "the edit menu did not open").not.toBeNull();
+    // Erase, then the theme control — nothing that leaves edit mode, and no
+    // "Done" that could be read as marking the segment finished.
+    const names = [...menu!.querySelectorAll("button")]
+      .map((b) => b.getAttribute("aria-label") ?? "")
+      .filter((name) => name !== strings.recorderMenuOpen);
+    expect(names).toContain(strings.eraseSegment);
+    expect(names.filter((name) => /done/i.test(name))).toEqual([]);
+    expect(menu!.textContent).not.toMatch(/\bDone\b/);
   });
 
-  it("the scissors toggle leaves edit mode, and the marker goes with it", async () => {
+  it("edit mode: the only scissors on screen is Cut (#1252)", async () => {
     await mountRecorder();
     await enterEdit();
-    const toggle = findButton(container, strings.enterEdit)!;
-    await act(async () => toggle.click());
-    expect(
-      findButton(container, strings.enterEdit)?.getAttribute("aria-pressed")
-    ).toBe("false");
+    const scissors = render(
+      createElement(Icon, { name: "scissors" })
+    ).querySelector("svg")!.innerHTML;
+    const worn = [...container.querySelectorAll("button")]
+      .filter((b) => b.querySelector("svg")?.innerHTML === scissors)
+      .map((b) => b.getAttribute("aria-label"));
+    expect(worn).toEqual([strings.cut]);
+  });
+
+  it("the ✕ leaves edit mode on the same node, and the marker goes with it", async () => {
+    await mountRecorder();
+    const before = findButton(container, strings.enterEdit)!;
+    await enterEdit();
+    const exit = findButton(container, strings.leaveEdit)!;
+    // One control across the flip (`key="edit-toggle"`), so focus stays put.
+    expect(exit).toBe(before);
+    expect(findButton(container, strings.enterEdit)).toBeUndefined();
+    await act(async () => exit.click());
+    expect(findButton(container, strings.enterEdit)).toBe(before);
+    expect(findButton(container, strings.leaveEdit)).toBeUndefined();
     expect(stage().querySelector(".recorder-editing")).toBeNull();
     expectHeaderKebab("record");
   });
@@ -372,41 +400,43 @@ describe("the Editing marker's corner (#1243)", () => {
   });
 });
 
-describe("the edit-mode toggle wears the scissors in both toolbars (#955)", () => {
-  // #955 (the requirements owner, 2026-09-25) overturns #594: the toggle that
-  // enters and leaves edit mode (`key="edit-toggle"`) shows the scissors, not
-  // the `[ ]` selection brackets. Compared against a rendered `<Icon
-  // name="scissors">` rather than a count of shapes, so ANY other glyph fails,
-  // not only the brackets.
+describe("the edit toggle: scissors to enter, ✕ to leave (#955, #1252)", () => {
+  // #955 (the requirements owner, 2026-09-25) put the scissors on the toggle
+  // that enters edit mode (`key="edit-toggle"`). #1252 (the requirements
+  // owner, 2026-09-30) keeps that for entering and shows ✕ while editing, so
+  // in edit mode the scissors mean only Cut (the bare quiet control under the
+  // selection, `recorder.tsx`). Each glyph is compared against a rendered
+  // `<Icon>`, so ANY other glyph fails, not only the one it replaced.
   //
-  // The selection's own Cut control (`recorder.tsx`, under the band) is also
-  // a scissors. The toolbar half of keeping the two apart is pinned here: the
-  // toggle keeps the default 22px glyph on the raised `default` tile in the
-  // bottom bar, where Cut is a bare `quiet` 26px glyph under the waveform.
-  const scissorsMarkup = render(
-    createElement(Icon, { name: "scissors" })
-  ).querySelector("svg")!.innerHTML;
+  // The name says what a tap does in each state ("Edit recording" / "Stop
+  // editing"), and there is no `aria-pressed`: a pressed toggle whose name
+  // also flips would announce "Stop editing, pressed" — the contradiction
+  // #351 took out of the Mark row.
+  const glyph = (name: "scissors" | "close") =>
+    render(createElement(Icon, { name })).querySelector("svg")!.innerHTML;
 
-  function editToggle(mode: "record" | "edit"): HTMLButtonElement {
-    const toggles = toolbarButtons(baseProps(mode)).filter(
-      (button) => button.getAttribute("aria-label") === strings.enterEdit
-    );
-    expect(toggles, `edit toggles in the ${mode} toolbar`).toHaveLength(1);
-    return toggles[0]!;
-  }
-
-  for (const [mode, pressed] of [
-    ["record", "false"],
-    ["edit", "true"],
+  for (const [mode, label, icon] of [
+    ["record", strings.enterEdit, "scissors"],
+    ["edit", strings.leaveEdit, "close"],
   ] as const) {
-    it(`${mode} toolbar: scissors glyph on the default tile at 22px, aria-pressed=${pressed}`, () => {
-      const toggle = editToggle(mode);
+    it(`${mode} toolbar: the last control is "${label}" wearing ${icon}, on the default tile at 22px`, () => {
+      const buttons = toolbarButtons(baseProps(mode));
+      const toggle = buttons.at(-1)!;
+      expect(toggle.getAttribute("aria-label")).toBe(label);
       const svg = toggle.querySelector("svg");
       expect(svg, `no <svg> in the ${mode} edit toggle`).not.toBeNull();
-      expect(svg!.innerHTML).toBe(scissorsMarkup);
+      expect(svg!.innerHTML).toBe(glyph(icon));
       expect(svg!.getAttribute("width")).toBe("22");
       expect(toggle.classList.contains("control--quiet")).toBe(false);
-      expect(toggle.getAttribute("aria-pressed")).toBe(pressed);
+      expect(toggle.hasAttribute("aria-pressed")).toBe(false);
     });
   }
+
+  it("the edit toolbar carries no scissors: in edit mode they mean only Cut", () => {
+    const scissors = glyph("scissors");
+    const worn = toolbarButtons(baseProps("edit")).filter(
+      (b) => b.querySelector("svg")?.innerHTML === scissors
+    );
+    expect(worn).toEqual([]);
+  });
 });

@@ -221,14 +221,15 @@ export function RecorderToolbar({
       />
       <Control
         key="edit-toggle"
-        // Scissors, not the `[ ]` brackets (#955 overturns #594), in both
-        // arms. The selection's Cut control under the band is a scissors
-        // too; the two stay apart by place and size: this one is the default
-        // 22px glyph on a raised tile in the bottom bar (pressed while
-        // editing), Cut is a bare quiet 26px glyph under the waveform.
+        // Scissors to ENTER edit mode (#955 overturns #594's `[ ]`); the edit
+        // arm below wears ✕ to leave (#1252, the requirements owner), so
+        // on the edit screen the scissors mean only Cut. No `pressed` in
+        // either arm: the name says what a tap does ("Edit recording" /
+        // "Stop editing"), and a pressed toggle whose name also flips would
+        // announce "Stop editing, pressed" — the contradiction #351 took out
+        // of the Mark row.
         icon="scissors"
         label={strings.enterEdit}
-        pressed={false}
         variant="default"
         busy={isClosing}
         disabled={editToolbarDisabled}
@@ -237,7 +238,7 @@ export function RecorderToolbar({
       />
     </div>
   ) : (
-    // Edit mode: the spread editing toolbar — Play, Zoom, Undo, Redo and the
+    // Edit mode: the spread editing toolbar — Play, Zoom, Undo, Redo and the ✕
     // toggle. Redo is a visible button here (out of the menu). No menu
     // opener: the ⋮ stays in the header's top right in both modes (#1243,
     // reversing #863's toolbar ⋮).
@@ -342,9 +343,9 @@ export function RecorderToolbar({
       />
       <Control
         key="edit-toggle"
-        icon="scissors"
-        label={strings.enterEdit}
-        pressed={true}
+        // ✕: the way out of edit mode (#1252). See the record arm.
+        icon="close"
+        label={strings.leaveEdit}
         // Not deletable, although it reads that way. Both arms pass `hint` so
         // the edit toggle keeps ONE prop shape across the mode flip — the
         // record arm passes `editToolbarHint`, which may itself be null. This
