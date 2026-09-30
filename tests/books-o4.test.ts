@@ -712,3 +712,40 @@ describe("o4/books.css (#942)", () => {
     );
   });
 });
+
+describe("right-to-left names on the shelf (#1267)", () => {
+  const HEBREW = "שלום.";
+  const ARABIC = "مرقس.";
+  const shelf = (): BookCard[] => [
+    {
+      bookId: bookId(1),
+      name: HEBREW,
+      coverColourKey: null,
+      chapters: [chapter(1, 1), chapter(1, 2, { name: ARABIC })],
+    },
+  ];
+
+  it("O4: the book's name and a typed chapter title carry dir=auto, the default chapter name does not", async () => {
+    await mount("o4", shelf());
+    await act(async () => button(strings.bookRow(HEBREW, 2, false)).click());
+    expect(only(".books-name").getAttribute("dir")).toBe("auto");
+    const typed = button(strings.openChapter(ARABIC));
+    expect(only(".books-chapter-title", typed).getAttribute("dir")).toBe(
+      "auto"
+    );
+    // "Chapter 1" is a UI string: it follows the app locale.
+    const plain = button(strings.openChapter(strings.chapterName(1)));
+    expect(only(".books-chapter-title", plain).hasAttribute("dir")).toBe(false);
+  });
+
+  it("current look: the same, on its own row markup", async () => {
+    await mount("current", shelf());
+    await act(async () => button(strings.bookRow(HEBREW, 2, false)).click());
+    const toggle = button(strings.bookRow(HEBREW, 2, true));
+    expect(only("span.t-title", toggle).getAttribute("dir")).toBe("auto");
+    const typed = button(strings.openChapter(ARABIC));
+    expect(only("span.truncate", typed).getAttribute("dir")).toBe("auto");
+    const plain = button(strings.openChapter(strings.chapterName(1)));
+    expect(only("span.truncate", plain).hasAttribute("dir")).toBe(false);
+  });
+});

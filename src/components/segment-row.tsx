@@ -123,7 +123,12 @@ interface SegmentRowProps {
    * `O4SheetHead`'s own docblock).
    */
   bookCoverHex?: string;
-  chapterNumber?: number;
+  /**
+   * The chapter's resolved name (`strings.chapterHeading`: the typed name,
+   * else "Chapter N"), the head's chapter crumb — the same text the
+   * chapter-screen header shows (#1230).
+   */
+  chapterHeading?: string;
   /**
    * Press-and-hold reorder (#953 PR2a): the screen's `onPointerDown` for this
    * row's hold area. Attached in the O4 look only, and only to the number
@@ -207,7 +212,7 @@ export function SegmentRow({
   guided = false,
   bookName,
   bookCoverHex,
-  chapterNumber,
+  chapterHeading,
   onHoldStart,
 }: SegmentRowProps) {
   const state = segmentRowState(row);
@@ -550,7 +555,11 @@ export function SegmentRow({
             <span className="row-status">
               {state === "finished" && <Icon name="check" size={16} />}
             </span>
-            <span className="t-ordinal row-heading">
+            <span
+              className="t-ordinal row-heading"
+              // "3 · label": only a label is user text (#1267).
+              dir={row.label ? "auto" : undefined}
+            >
               {strings.segmentHeading(ordinal, row.label)}
             </span>
           </>
@@ -561,7 +570,12 @@ export function SegmentRow({
         <div className="row-mid">
           {titled && (
             // Visual only: the open button's name already carries the label.
-            <span className="row-title" aria-hidden="true" {...holdArea}>
+            <span
+              className="row-title"
+              dir="auto"
+              aria-hidden="true"
+              {...holdArea}
+            >
               {row.label}
             </span>
           )}
@@ -673,7 +687,7 @@ export function SegmentRow({
               <O4SheetHead
                 book={bookName}
                 bookCoverHex={bookCoverHex}
-                chapter={chapterNumber}
+                chapter={chapterHeading}
                 segment={{ ordinal, state }}
               />
               <Control
@@ -694,7 +708,11 @@ export function SegmentRow({
                 {ordinal}
               </span>
               <span className="o4-menu-preview-mid" aria-hidden="true">
-                {titled && <span className="o4-menu-title">{row.label}</span>}
+                {titled && (
+                  <span className="o4-menu-title" dir="auto">
+                    {row.label}
+                  </span>
+                )}
                 <Waveform
                   peaks={hasClip ? row.peaks : null}
                   recorded={hasClip}

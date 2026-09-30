@@ -92,12 +92,10 @@ export function redoReason(
  * A disabled control's cue: the reason in words, and nothing painted.
  *
  * No `icon`, and that is the point rather than an omission (#924). This is
- * the same shape `menu-row-state.ts`'s `barHint` returns for the record bar's
- * Edit and bin, and for the same reason: a bar control sits in the
- * translator's hand all session, and a badge on one reads as something gone
- * wrong. `Control` paints a badge only when a hint carries an `icon`
- * (`control.tsx`), so a shape without the field cannot grow one back by
- * accident — the field would have to be re-added here first.
+ * the same shape `menu-row-state.ts`'s `rowHint` and `barHint` return, for the
+ * same reason: a badge on a greyed control reads as something gone wrong.
+ * `Control` paints nothing for a hint (#1239), so a shape without the field
+ * cannot grow a badge back by accident.
  */
 export interface EditControlHint {
   /** Appended to the control's accessible name while disabled. */
@@ -108,20 +106,16 @@ export interface EditControlHint {
  * Which reasons get a cue, and what it says.
  *
  * **The cue is words only — no badge (#924).** #703 shipped both history cues
- * wearing `rowHint`'s `alert` mark, and the requirements owner, on v0.2.12,
- * read a ⚠ sitting on a greyed Redo — and moving to Undo once an undo emptied
- * the history — as an error. It is not one: a grey arrow at either end of the
- * stack is the ordinary idle state of an edit session, and the ⋮ row that mark
- * was borrowed from is a different case, a control blocked by something ELSE
- * (an uncommitted take, a starting mic) that the translator can act on. #610
- * recorded the same reading for the toolbar Edit control and #624 answered it
- * the same way: the reason stays in the accessible name, the control stays
- * `aria-disabled` rather than natively disabled (so keyboard and switch users
- * still reach the words, #135 round 2), and nothing is painted. `Control`
- * paints a badge only when a hint carries an `icon`, so a label-only hint is
- * exactly that. What the sighted non-reader loses is the mark #135 round 2
- * added for the ⋮ rows; what they keep is the grey itself, which for these two
- * arrows is the whole message.
+ * wearing a ⚠ mark, and the requirements owner, on v0.2.12,
+ * read it on a greyed Redo — and moving to Undo once an undo emptied the
+ * history — as an error. It is not one: a grey arrow at either end of the
+ * stack is the ordinary idle state of an edit session. #610 recorded the same
+ * reading for the toolbar Edit control and #624 answered it the same way, and
+ * #1239 later extended the rule to the ⋮ menu rows: the reason stays in the
+ * accessible name, the control stays `aria-disabled` rather than natively
+ * disabled (so keyboard and switch users still reach the words, #135 round 2),
+ * and nothing is painted. What the sighted non-reader keeps is the grey
+ * itself, which for these two arrows is the whole message.
  *
  * **The words describe the CURRENT END OF THE STACK, never the session's
  * past**, because that is the only thing `canUndo`/`canRedo` know: they are

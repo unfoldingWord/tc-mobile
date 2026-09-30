@@ -14,8 +14,8 @@ import { areaRules, declsFor } from "./o4-area-css";
 
 /**
  * The recorder menu on the O4 tile grid (#949 G3, epic #936), including the
- * edit-mode menu the edit toolbar's ⋮ opens (#863) — both are this one
- * component.
+ * edit-mode menu the header's ⋮ opens while editing (#1243) — both are this
+ * one component.
  *
  * The switch is read through `useDesign()`, mocked so each case picks its
  * look (`tests/segments-o4.test.ts` is the pattern). The first case below is
@@ -66,18 +66,20 @@ const base: RecorderMenuProps = {
   onEnterEdit: vi.fn(),
   onToggleFinished: vi.fn(),
   onErase: vi.fn(),
-  onExitEdit: vi.fn(),
 };
 
 function show(over: Partial<RecorderMenuProps> = {}, look: Design = "o4") {
   design.current = look;
   act(() => root.render(createElement(RecorderMenu, { ...base, ...over })));
   // A floor for every O4 case: a case that loops over the tiles, or asks a
-  // row question, must be asking it of the tile grid and not of rows. Three:
-  // Mark, Erase, theme (#1104 removed the fourth, Delete — see the negative
-  // case near the end of this file).
+  // row question, must be asking it of the tile grid and not of rows. Three
+  // in record mode: Mark, Erase, theme (#1104 removed the fourth, Delete —
+  // see the negative case near the end of this file). Two in edit mode:
+  // Erase, theme (#1252 removed the Done tile).
   if (look === "o4" && (over.open ?? true))
-    expect(tiles().length, "no O4 tiles rendered").toBe(3);
+    expect(tiles().length, "no O4 tiles rendered").toBe(
+      over.mode === "edit" ? 2 : 3
+    );
 }
 const buttons = () => [...document.querySelectorAll("button")];
 const named = (label: string) =>
@@ -129,13 +131,16 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
     expect(startingWith(strings.enterEdit)).toBeUndefined();
   });
 
-  it("lays edit mode (the ⋮ menu, #863) out as Done, Erase, then theme", () => {
+  it("lays edit mode (the ⋮ menu) out as Erase, then theme — no Done tile (#1252)", () => {
     show({ mode: "edit" });
-    expect(labels().slice(0, 2)).toEqual([
-      strings.doneEditing,
+    expect(labels()).toEqual([
       strings.eraseSegment,
+      themeTile()?.getAttribute("aria-label"),
     ]);
-    expect(labels()[2]).toBe(themeTile()?.getAttribute("aria-label"));
+    // "Done" keeps one meaning, mark finished (the requirements owner).
+    expect(
+      tiles().filter((t) => t.textContent?.includes(strings.tileFinished))
+    ).toEqual([]);
     expect(named(strings.markFinished(3))).toBeUndefined();
   });
 
@@ -162,7 +167,7 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
         true
       );
       const actions = tiles().filter((t) => t !== themeTile());
-      expect(actions).toHaveLength(2);
+      expect(actions).toHaveLength(mode === "edit" ? 1 : 2);
       for (const t of actions)
         expect(
           t.classList.contains("recorder-menu-tile"),
@@ -219,8 +224,6 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
       "o4-tile--erase"
     );
     expect(themeTile()?.classList).toContain("o4-tile--plain");
-    show({ mode: "edit" });
-    expect(named(strings.doneEditing)?.classList).toContain("o4-tile--plain");
   });
 
   it("keeps the Mark tile's label fixed and flips its tone (done / doneoff) and aria-pressed on the same value (#351)", () => {
@@ -279,17 +282,14 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
   it("hands each tap to the same prop the current look does", () => {
     const onErase = vi.fn();
     const onToggleFinished = vi.fn();
-    const onExitEdit = vi.fn();
     const onClose = vi.fn();
     show({ onErase, onToggleFinished, onClose });
     act(() => named(strings.markFinished(3))?.click());
     act(() => named(strings.eraseSegment)?.click());
-    show({ mode: "edit", onErase, onExitEdit, onClose });
-    act(() => named(strings.doneEditing)?.click());
+    show({ mode: "edit", onErase, onClose });
     act(() => named(strings.eraseSegment)?.click());
     expect(onToggleFinished).toHaveBeenCalledTimes(1);
     expect(onErase).toHaveBeenCalledTimes(2);
-    expect(onExitEdit).toHaveBeenCalledTimes(1);
     // Marking does not close the sheet: the tile turns green under the thumb.
     expect(onClose).not.toHaveBeenCalled();
   });

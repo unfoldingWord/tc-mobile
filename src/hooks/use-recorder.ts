@@ -566,7 +566,8 @@ export function useRecorder(): UseRecorder {
       // switching here, ahead of `getUserMedia`, is the "if needed" case
       // #1111 asks this fix to cover so a session left on `"playback"` by an
       // earlier Play cannot fight the mic. Feature-checked and a no-op on
-      // every non-WebKit engine.
+      // every non-WebKit engine, and inside the native iOS shell (#1251),
+      // where the launch-time `.playAndRecord` category is not switched.
       setRecordAudioSession();
       stream = await navigator.mediaDevices.getUserMedia({
         audio: {

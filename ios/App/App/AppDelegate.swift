@@ -18,10 +18,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // (`use-recorder.ts`'s `start()`) is silently skipped on those
         // versions — leaving the native category at `.playback`, which is
         // documented for playback only, while the mic is live. A take could
-        // be captured silent under it. Setting `.playAndRecord` here, once,
-        // at launch, makes recording work on every iOS version this app
-        // supports, with no runtime category flip and no dependency on the
-        // WebKit version.
+        // be captured silent under it. `.playAndRecord` here, once, at
+        // launch, is meant to give the app a record-capable baseline on
+        // every iOS version it supports, whether or not that WebKit has
+        // `navigator.audioSession`.
         //
         // `.defaultToSpeaker` routes output to the speaker rather than the
         // much quieter earpiece receiver when no headset/Bluetooth device is
@@ -29,11 +29,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // hand, not to their ear. `.allowBluetooth` (classic/HFP) and
         // `.allowBluetoothA2DP` let a paired Bluetooth mic or headset
         // participate rather than being silently excluded by the category.
-        // This is now the app's one native session configuration;
-        // `navigator.audioSession` (`hooks/audio-io.ts`) still runs its own
-        // `"playback"`/`"play-and-record"` switch on top of it for Safari
-        // 16.4+ and WKWebView — see that file — but recording no longer
-        // depends on it.
+        // This is the app's one audio session configuration, and nothing
+        // switches it at run time: since #1251 the web code's
+        // `navigator.audioSession` switch (`"playback"` on each Play,
+        // `"play-and-record"` before each Record, `hooks/audio-io.ts`) does
+        // nothing inside this shell, and still runs in Safari and the
+        // installed PWA, where there is no AppDelegate. A `type` write on
+        // WebKit 16.4+ would replace this category, and the web API cannot
+        // restore `.defaultToSpeaker` or the Bluetooth options. Whether this
+        // category alone keeps Play audible with the silent switch on, inside
+        // WKWebView, has not been run on a device (#1251).
         //
         // Setting the category alone does NOT activate the audio session or
         // request microphone permission (Apple: `setCategory` configures the

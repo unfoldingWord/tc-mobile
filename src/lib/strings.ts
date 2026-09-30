@@ -157,6 +157,23 @@ export const strings = {
    */
   chapterBreadcrumb: (book: string, chapter: string): string =>
     trail(book, chapter),
+  /**
+   * The spoken names of the new look's header crumbs that navigate (#1269):
+   * the book crumb on the chapter screen, the chapter crumb on the recorder.
+   * Each names the destination, and each holds the text the chip shows, so
+   * the visible text sits inside the spoken name (WCAG 2.5.3). `chapter` is
+   * the resolved heading (`chapterHeading`), the same text the chip shows.
+   * The name is spoken, not drawn, so it carries no direction of its own; the
+   * chip's text element carries `dir="auto"` (#1267).
+   *
+   * The chapter's is "Go to {heading}" (DRI pick on #1274), with no word
+   * of its own: the heading already says "Chapter N" when the chapter has no
+   * name, so "Go to chapter Chapter 1" said it twice. The book's keeps
+   * "book", because a book name is a bare label that says nothing about
+   * what it names.
+   */
+  goToBook: (book: string): string => `Go to book ${book}`,
+  goToChapter: (heading: string): string => `Go to ${heading}`,
 
   // ── Naming (#264 rename, #314 New Book, #609 Add chapter) ────────────────
   // One naming field serves all three flows, so these strings are shared: the
@@ -276,12 +293,6 @@ export const strings = {
   // the training is where that glyph is tested rather than assumed.
   useLightTheme: "Switch to the light screen, for bright sunlight",
   useDarkTheme: "Switch to the dark screen, for low light",
-  // The O4 design switch (#938, epic #936). One control, `aria-pressed`
-  // carrying the on/off state (`Control`'s `pressed` prop, the same
-  // mechanism the zoom and level-meter toggles use) — so the label itself
-  // never has to change, unlike the theme toggle above, which names a
-  // destination because it has no `aria-pressed` state to carry that for it.
-  newLookO4: "New look (O4)",
   // The O4 menu tiles' visible captions (#949, `o4-tile-menu.tsx`). Shown,
   // never announced: each tile's name is the label its current-look row
   // already had, and every caption is a word that label holds (label-in-name,
@@ -308,10 +319,6 @@ export const strings = {
   tileAbout: "About",
   tileLight: "Light",
   tileDark: "Dark",
-  // The edit-mode recorder menu's exit tile (G3); its name is `doneEditing`.
-  // Its own key, not `tileFinished`: that one is marking done, this is leaving
-  // edit, and the two only happen to share a word in English.
-  tileDone: "Done",
   closeRecorder: "Close recorder",
   /**
    * The recorder sheet's header trail — the Segments one with the segment
@@ -486,13 +493,16 @@ export const strings = {
   // the action is stop (D4), so the label says "Stop playing".
   playRecording: "Play recording",
   stopPlayback: "Stop playing",
-  // The record-menu "Edit" row — distinct from `editSegment(n)`, the Segments
+  // The record-menu "Edit" row and the toolbar toggle in record mode (scissors)
+  // — distinct from `editSegment(n)`, the Segments
   // list's per-row label.
   enterEdit: "Edit recording",
-  // The edit-menu row and the "Editing" pill's spoken action.
-  doneEditing: "Done editing",
-  // The pill's visible text — the mode marker for a sighted non-reader (D2).
-  modepillEditing: "Editing",
+  // The edit toggle's name while editing, when it wears ✕ and a tap leaves
+  // (#1252). Not "Done": that word keeps one meaning, mark finished.
+  leaveEdit: "Stop editing",
+  // The edit-mode marker inside the waveform's top right (D2, #1243): plain
+  // text, not a control, so it is spoken as it reads.
+  editingMarker: "Editing",
 
   // ── Waveform editing (B5) ────────────────────────────────────────────────
   cut: "Cut the selection",

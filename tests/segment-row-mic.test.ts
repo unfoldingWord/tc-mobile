@@ -109,7 +109,6 @@ describe("the recorder's own Record button is unchanged (#1217)", () => {
       rerecordHint: null,
       recordInert: false,
       isClosing: false,
-      hasView: true,
       playingBuffer: false,
       dragging: false,
       idleEditable: true,
@@ -129,7 +128,6 @@ describe("the recorder's own Record button is unchanged (#1217)", () => {
       onToggleZoom: noop,
       onUndo: noop,
       onRedo: noop,
-      openMenu: noop,
       onExitEdit: noop,
       onRerecord: noop,
     };

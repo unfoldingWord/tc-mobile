@@ -154,7 +154,9 @@ async function mountAfterPaste() {
   await click(strings.paste);
   // The paste landed: the phrase is in the take and off the clipboard.
   expect(clipboard.current).toBeNull();
-  await click(strings.doneEditing);
+  // Leave edit mode on the toolbar's ✕ (#1252; the header's "Done editing"
+  // pill went with #1243).
+  await click(strings.leaveEdit);
   return {
     phrase,
     audio,

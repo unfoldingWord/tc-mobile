@@ -225,7 +225,7 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
     expect(toggle).toMatch(/height:\s*64px/);
   });
 
-  it("sets no ink on the transport, so the pressed toggle's is-on ink still wins", () => {
+  it("sets no ink on the transport, so the zoom toggle's is-on ink still wins", () => {
     for (const sel of [
       `${O4} .recorder-toolbar.pair .control:not(.control--record):not(.control--play)`,
       `${O4} .recorder-toolbar.edit .control`,

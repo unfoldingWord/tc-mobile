@@ -232,7 +232,7 @@ test.describe("edit mode toggle", () => {
       await expect(
         page.getByLabel("Selection start", { exact: true })
       ).toBeVisible();
-      await expect(toggle).toHaveAttribute("aria-pressed", "true");
+      await expect(toggle).toHaveAccessibleName("Stop editing");
       const selectedStart = Number(
         await page
           .getByLabel("Selection start", { exact: true })
@@ -266,7 +266,7 @@ test.describe("edit mode toggle", () => {
       expect(after!.height).toBe(before!.height);
       await expect(toggle).toBeFocused();
       await toggle.press("Enter");
-      await expect(toggle).toHaveAttribute("aria-pressed", "false");
+      await expect(toggle).toHaveAccessibleName(/^Edit recording/);
       await expect(
         page.getByLabel("Selection start", { exact: true })
       ).toHaveCount(0);
@@ -296,7 +296,7 @@ test.describe("edit mode toggle", () => {
         const start = Number(await startHandle.getAttribute("aria-valuenow"));
         const end = Number(await endHandle.getAttribute("aria-valuenow"));
         expect(end).toBeGreaterThan(start);
-        await expect(toggle).toHaveAttribute("aria-pressed", "true");
+        await expect(toggle).toHaveAccessibleName("Stop editing");
         await expect(
           page.getByRole("button", { name: "Cut the selection", exact: true })
         ).toBeEnabled();
@@ -326,7 +326,7 @@ test.describe("edit mode toggle", () => {
         ).toHaveCount(0);
         await expect(page.getByTestId("centerline-overlay")).toHaveCount(1);
         // Still in edit mode: the collapse is a state inside it, not an exit.
-        await expect(toggle).toHaveAttribute("aria-pressed", "true");
+        await expect(toggle).toHaveAccessibleName("Stop editing");
         // ...and the line is offering the paste the issue says it marks.
         await expect(
           page.getByRole("button", { name: "Paste at the line", exact: true })
@@ -377,7 +377,7 @@ test.describe("edit mode toggle", () => {
       // and entering it again with the cut still on the clipboard must open
       // on the red line and the paste button, not on a selection window.
       await toggle.click();
-      await expect(toggle).toHaveAttribute("aria-pressed", "false");
+      await expect(toggle).toHaveAccessibleName(/^Edit recording/);
       await toggle.click();
       await expectCollapsedOntoTheLine();
       // A second cut is reachable by pasting first (Tim's decision on #835)
@@ -462,7 +462,7 @@ test.describe("edit mode toggle", () => {
           .getByRole("button", { name: "Cut the selection", exact: true })
           .click();
         await expect(startHandle).toHaveCount(0);
-        await expect(toggle).toHaveAttribute("aria-pressed", "true");
+        await expect(toggle).toHaveAccessibleName("Stop editing");
         // #925: the whole-buffer cut's undo stays on the line too, with the
         // phrase still on the clipboard; the paste below is the round trip.
         await page.getByRole("button", { name: "Undo", exact: true }).click();
@@ -474,10 +474,10 @@ test.describe("edit mode toggle", () => {
           .click();
         expect(await expectUsableFrame()).toBe(originalLength);
       }
-      await page
-        .getByRole("button", { name: "Done editing", exact: true })
-        .click();
-      await expect(toggle).toHaveAttribute("aria-pressed", "false");
+      // The ✕ toggle is the exit (#1252; #1243 removed the header's "Editing"
+      // pill, which was the direct "Done editing" button).
+      await toggle.click();
+      await expect(toggle).toHaveAccessibleName(/^Edit recording/);
       await expect(
         page.getByLabel("Selection start", { exact: true })
       ).toHaveCount(0);
@@ -486,23 +486,20 @@ test.describe("edit mode toggle", () => {
 });
 
 // #370: at 320px with the frame open, `.recorder-toolbar.edit`'s old
-// `justify-content: space-between; flex-wrap: wrap` packed five 40px quiet
-// controls plus a 68px `primary`-variant Select onto one line and wrapped the
-// sixth (the ⋮) alone onto a second line, where `space-between` on a
-// single-item line flushes it to main-start — landing the ⋮ on the LEFT,
-// under Play, instead of the trailing edge it had been reached for.
+// `justify-content: space-between; flex-wrap: wrap` wrapped the trailing
+// control alone onto a second line. #579 rewrote the rule as a grid — `1fr`
+// tracks that shrink instead of wrapping, and a fixed trailing track for the
+// toggle.
 //
-// Premise check against `origin/develop` (2026-09-23): STALE. #579 (merged
-// 2026-09-21, "open selection with a stable edit toggle") rewrote this rule
-// to `grid-template-columns: repeat(5, minmax(0, 1fr)) var(--c-control-md)`
-// as a side effect of keeping the toggle in one stable slot — CSS Grid has
-// no wrap analogue to `flex-wrap`, so the five `1fr` tracks shrink instead of
-// wrapping, and the toggle keeps its own fixed trailing track regardless of
-// viewport width. No CSS change was needed; this pins the now-correct layout
-// against a regression.
-test.describe("edit toolbar keeps the ⋮ off the leading edge (#370)", () => {
+// #1243 (the requirements owner, reversing #863) took the ⋮ out of this bar:
+// it stays in the header's top right in both modes, and "Editing" is plain
+// text inside the waveform's top right. So the bar is five controls — Play,
+// Zoom, Undo, Redo and the toggle — and this pins, in a real layout, what the
+// unit suite cannot: one row, left to right, the toggle trailing, and the ⋮
+// and the marker in their top-right corners.
+test.describe("edit mode: one-row bar, ⋮ top right, Editing in the stage (#370, #1243)", () => {
   for (const width of [320, 360, 412]) {
-    test(`⋮ stays on one row, right of the tools, with the frame open and closed (${width}px)`, async ({
+    test(`five controls on one row and both corners held, frame open and closed (${width}px)`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 740 });
@@ -536,38 +533,60 @@ test.describe("edit toolbar keeps the ⋮ off the leading edge (#370)", () => {
       // `button.control` reaches the real button whether or not a control is
       // wrapped in `.control-hinted` (any control passed a `hint` prop, even
       // `null`, gets a wrapping span — `control.tsx`), so the count and order
-      // below are the six controls, not their wrappers.
+      // below are the five controls, not their wrappers.
       const controls = toolbar.locator("button.control");
+      const header = page.locator(".recorder-sheet header");
+      const opener = header.getByRole("button", {
+        name: "More actions",
+        exact: true,
+      });
+      const stage = page.locator(".recorder-stage");
+      const marker = stage.locator(".recorder-editing");
 
       const expectOneRowRightOfTheTools = async () => {
-        await expect(controls).toHaveCount(6);
+        await expect(controls).toHaveCount(5);
+        await expect(
+          toolbar.getByRole("button", { name: "More actions", exact: true })
+        ).toHaveCount(0);
         const boxes: { x: number; y: number; right: number }[] = [];
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < 5; i++) {
           const box = await controls.nth(i).boundingBox();
           expect(box).not.toBeNull();
           boxes.push({ x: box!.x, y: box!.y, right: box!.x + box!.width });
         }
-        // One row: nothing wrapped to a second line. This is the exact
-        // failure #370 named — the ⋮ (index 4) landing on a line of its own.
-        // Tolerance is 3px, not 1: the trailing Select/Done slot (index 5) is
-        // the 44px `--c-control-md` box against the other five 40px `quiet`
-        // boxes, and `align-items: center` centres each within the shared
-        // row height, so its top sits ~2px higher than theirs even on a
-        // single row.
+        // One row: nothing wrapped to a second line, the failure #370 named.
+        // Tolerance is 3px, not 1: the trailing toggle (index 4) is the 44px
+        // `--c-control-md` box against the other four 40px `quiet` boxes,
+        // and `align-items: center` centres each within the shared row
+        // height, so its top sits ~2px higher than theirs even on one row.
         const firstY = boxes[0]!.y;
         for (const b of boxes) {
           expect(Math.abs(b.y - firstY)).toBeLessThanOrEqual(3);
         }
-        // Left-to-right in DOM order: the ⋮ never jumps ahead of a tool that
-        // comes after it in source order (the "lands on the left" failure).
+        // Left-to-right in DOM order, the toggle last.
         for (let i = 1; i < boxes.length; i++) {
           expect(boxes[i]!.x).toBeGreaterThan(boxes[i - 1]!.x);
         }
-        // The ⋮ (index 4) sits to the right of every other tool and
-        // immediately precedes the trailing Select/Done slot (index 5) — the
-        // trailing-edge position the issue says is worth protecting.
-        expect(boxes[4]!.x).toBeGreaterThan(boxes[3]!.x);
-        expect(boxes[4]!.right).toBeLessThanOrEqual(boxes[5]!.x + 0.5);
+        // The ⋮ is in the header, in its right half, above the stage.
+        await expect(opener).toHaveCount(1);
+        const openerBox = await opener.boundingBox();
+        const stageBox = await stage.boundingBox();
+        expect(openerBox).not.toBeNull();
+        expect(stageBox).not.toBeNull();
+        expect(openerBox!.x).toBeGreaterThan(width / 2);
+        expect(openerBox!.y + openerBox!.height).toBeLessThanOrEqual(
+          stageBox!.y + 0.5
+        );
+        // "Editing" is inside the stage, in its top-right quarter.
+        await expect(marker).toHaveText("Editing");
+        const markerBox = await marker.boundingBox();
+        expect(markerBox).not.toBeNull();
+        expect(markerBox!.x).toBeGreaterThan(stageBox!.x + stageBox!.width / 2);
+        expect(markerBox!.x + markerBox!.width).toBeLessThanOrEqual(
+          stageBox!.x + stageBox!.width + 0.5
+        );
+        expect(markerBox!.y).toBeGreaterThanOrEqual(stageBox!.y - 0.5);
+        expect(markerBox!.y).toBeLessThan(stageBox!.y + stageBox!.height / 2);
         // No horizontal scroll at this width (AGENTS.md: no horizontal page
         // scroll at phone width).
         const scrollWidth = await page.evaluate(

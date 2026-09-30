@@ -397,6 +397,30 @@ describe("O4: the app ≡ menu on tiles (the workbench's G1)", () => {
   });
 });
 
+describe("the app ≡ menu holds no way back to the old look (#1244)", () => {
+  // #1244 removed the design switch (#938's pencil, "New look (O4)") from
+  // Books ≡, so the old look cannot be reached from the app. That switch was
+  // the only pressable control in this menu — the theme control names its
+  // destination instead of carrying `aria-pressed` — so a pressed state or a
+  // "new look" name anywhere in the menu is the switch coming back. Checked
+  // in both looks: a device that saved the old look before #1244 still
+  // renders it (the DRI kept `readStoredDesign` as it is), and must not find
+  // the switch there either.
+  for (const look of ["o4", "current"] as const) {
+    it(`draws no design switch in the ${look} look`, async () => {
+      await mount(look);
+      await openFrom(strings.menuOpen);
+      const menu = appMenu();
+      expect(menu).not.toBeNull();
+      const all = [...menu!.querySelectorAll<HTMLButtonElement>("button")];
+      expect(all.length).toBeGreaterThan(0);
+      expect(menu!.querySelectorAll("[aria-pressed]")).toHaveLength(0);
+      for (const b of all)
+        expect(b.getAttribute("aria-label") ?? "").not.toMatch(/new look/i);
+    });
+  }
+});
+
 describe("switch off: both menus are the current rows", () => {
   it("draws no tiles and no Cover colour control in the book menu", async () => {
     await mount("current");

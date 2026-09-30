@@ -137,6 +137,7 @@
     filter: brightness(0.84);
   }
   [data-design="o4"] .books-name {
+    flex: 1 1 auto; /* the whole row, so a right-to-left name sits at its end (#1267) */
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

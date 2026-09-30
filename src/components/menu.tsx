@@ -1,10 +1,80 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
+import { useDesign } from "@/hooks/use-design";
 import { cn } from "@/lib/utils";
 import { Control } from "./control";
 import { FOCUSABLE, wrapTab } from "./focus-trap";
+import type { IconName } from "./icon";
+import {
+  sheetDragOffset,
+  sheetDragRelease,
+  sheetDragVelocity,
+  type SheetDragSample,
+} from "./sheet-drag";
 import { strings } from "@/lib/strings";
+
+/**
+ * How long a released sheet takes to spring back, a little past the 160ms
+ * transition in `o4/sheets.css`, after which the drag's inline offset and
+ * state are removed. Under reduced motion there is no transition and the
+ * sheet is already home; the cleanup is the same.
+ */
+const SHEET_SETTLE_MS = 200;
+
+/**
+ * A press that lands on a control in the header (the ✕) stays a tap and
+ * never starts a drag.
+ */
+function startsOnControl(target: EventTarget): boolean {
+  return (
+    "closest" in target &&
+    (target as Element).closest("button, input, a") !== null
+  );
+}
+
+/**
+ * How long after a drag closes a sheet its trailing click may still arrive.
+ * Past this, the swallow below is removed unused, so it can never eat the
+ * next real tap.
+ */
+const TRAILING_CLICK_MS = 400;
+
+/**
+ * A drag that closes a sheet ends in a `pointerup`, and the browser follows
+ * it with a compatibility `click`. The sheet is already gone by then, so
+ * that click would land on whatever it covered under the finger: a book on
+ * Books, a row or a record control on Segments (#1273, George round 1).
+ * This swallows that one click, in the capture phase on the document so no
+ * target sees it, and removes itself on the first click or after
+ * {@link TRAILING_CLICK_MS}, whichever comes first. Module scope, not the
+ * component's: the Menu has unmounted by the time the click arrives. The ✕'s
+ * own tap never arms it.
+ */
+function swallowTrailingClick(doc: Document): void {
+  const swallow = (ev: Event) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    disarm();
+  };
+  const timer = setTimeout(() => {
+    doc.removeEventListener("click", swallow, true);
+  }, TRAILING_CLICK_MS);
+  const disarm = () => {
+    clearTimeout(timer);
+    doc.removeEventListener("click", swallow, true);
+  };
+  doc.addEventListener("click", swallow, true);
+}
+
+/** A drag in progress, one pointer at a time. */
+interface SheetDrag {
+  readonly pointerId: number;
+  readonly startY: number;
+  readonly sheetHeight: number;
+  last: SheetDragSample;
+  velocity: number;
+}
 
 interface MenuProps {
   open: boolean;
@@ -57,6 +127,19 @@ interface MenuProps {
    * configurable. Defaults to `menu` (≡), the global menu's glyph.
    */
   dismissIcon?: "menu" | "more";
+  /**
+   * The header control steps BACK one level inside this panel rather than
+   * closing it, so it keeps the back chevron in both looks. About's licence
+   * view is the one caller (#36): its control is "Back to the list".
+   *
+   * Everywhere else, the O4 look draws the header control as ✕ (#1268, the
+   * requirements owner: "Can we use a standard close button (some form of
+   * X)?"), whatever `hamburger` and `dismissIcon` say: one closer, in the
+   * same top-right place, on every sheet. Its name is still `closeLabel`
+   * ("Close menu" by default). The current look keeps the chevron, ≡ and ⋮
+   * described above.
+   */
+  back?: boolean;
   /**
    * When true, the header AND every child — Close included — go `inert`:
    * unfocusable, unclickable, and excluded from the accessibility tree as
@@ -129,6 +212,7 @@ export function Menu({
   focusKey,
   hamburger = false,
   dismissIcon = "menu",
+  back = false,
   inert,
   liveRegion,
   children,
@@ -167,6 +251,129 @@ export function Menu({
   useLayoutEffect(() => {
     onCloseRef.current = onClose;
   });
+
+  const { design } = useDesign();
+  const o4 = design === "o4";
+  const dismissGlyph: IconName = back
+    ? "back"
+    : o4
+      ? "close"
+      : hamburger
+        ? dismissIcon
+        : "back";
+
+  // DRAG DOWN TO CLOSE (#1268, the requirements owner: "it should work as
+  // drag down to close"). O4 only, and only where the grip is drawn: a
+  // bottom sheet, which `o4/sheets.css` keys on what the panel holds. The
+  // side drawer (About) draws none, so a press there never starts a drag.
+  //
+  // WHERE A DRAG STARTS: the grip and the header row, never the body. The
+  // body is where a sheet scrolls (the recorder sheet is capped at half the
+  // screen and scrolls past that) and where its tiles are, so a drag there
+  // would fight both. The header holds no scrolling content, and a press on
+  // a button in it (the ✕) stays a tap. Both carry `touch-action: none` in
+  // `o4/sheets.css`, so the browser does not claim the finger for a pan and
+  // cancel the drag.
+  //
+  // The sheet follows the finger through `--sheet-drag-y` on the panel, set
+  // here rather than through state so a move re-renders nothing. A release
+  // that closes calls `onClose`, the same function the ✕, Escape and the
+  // scrim call, so focus return and the caller's state reset are the
+  // caller's, unchanged. Every release springs the sheet back first, so a
+  // caller that refuses the close leaves the sheet where it was.
+  const gripRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<SheetDrag | null>(null);
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (settleTimer.current !== null) clearTimeout(settleTimer.current);
+    },
+    []
+  );
+
+  const settle = () => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    panel.setAttribute("data-sheet-drag", "settling");
+    panel.style.setProperty("--sheet-drag-y", "0px");
+    if (settleTimer.current !== null) clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => {
+      settleTimer.current = null;
+      panel.removeAttribute("data-sheet-drag");
+      panel.style.removeProperty("--sheet-drag-y");
+    }, SHEET_SETTLE_MS);
+  };
+
+  const onDragStart = (e: React.PointerEvent<HTMLElement>) => {
+    const panel = panelRef.current;
+    const grip = gripRef.current;
+    if (!panel || !grip || dragRef.current) return;
+    if (!e.isPrimary || e.button !== 0) return;
+    if (startsOnControl(e.target)) return;
+    if (window.getComputedStyle(grip).display === "none") return;
+    if (settleTimer.current !== null) {
+      clearTimeout(settleTimer.current);
+      settleTimer.current = null;
+    }
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startY: e.clientY,
+      sheetHeight: panel.getBoundingClientRect().height,
+      last: { y: e.clientY, t: e.timeStamp },
+      velocity: 0,
+    };
+    panel.setAttribute("data-sheet-drag", "dragging");
+    panel.style.setProperty("--sheet-drag-y", "0px");
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onDragMove = (e: React.PointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const sample = { y: e.clientY, t: e.timeStamp };
+    drag.velocity = sheetDragVelocity(drag.last, sample, drag.velocity);
+    drag.last = sample;
+    panelRef.current?.style.setProperty(
+      "--sheet-drag-y",
+      `${sheetDragOffset(drag.startY, e.clientY)}px`
+    );
+  };
+
+  const onDragEnd = (e: React.PointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+    const outcome = sheetDragRelease({
+      offset: sheetDragOffset(drag.startY, e.clientY),
+      velocity: drag.velocity,
+      lastMoveAt: drag.last.t,
+      releasedAt: e.timeStamp,
+      sheetHeight: drag.sheetHeight,
+    });
+    settle();
+    if (outcome === "close") {
+      swallowTrailingClick(e.currentTarget.ownerDocument);
+      onClose();
+    }
+  };
+
+  const onDragCancel = (e: React.PointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+    settle();
+  };
+
+  // Bound in both looks; the current look renders no grip, and a press
+  // without a grip on screen never starts a drag (`onDragStart`).
+  const dragHandlers = {
+    onPointerDown: onDragStart,
+    onPointerMove: onDragMove,
+    onPointerUp: onDragEnd,
+    onPointerCancel: onDragCancel,
+    onLostPointerCapture: onDragCancel,
+  };
 
   // Land focus inside the panel ONCE on the open edge — first ENABLED control,
   // never a disabled one (focusing it is a no-op that strands the user behind
@@ -257,6 +464,19 @@ export function Menu({
             `children` stay direct flex items of `.menu-panel` above —
             `inert` changes reachability, never layout. */}
         <div className="contents" inert={inert || undefined}>
+          {/* The O4 grip (#1268): drawn, and a place to start dragging the
+              sheet down, but not a control. It is `aria-hidden` and takes no
+              focus; the ✕ below is the accessible close. Inside the `inert`
+              subtree, so a sheet another overlay owns cannot be dragged
+              away either. */}
+          {o4 && (
+            <div
+              ref={gripRef}
+              className="menu-grip"
+              aria-hidden="true"
+              {...dragHandlers}
+            />
+          )}
           {/* `justify-end` when the title is dropped keeps the one remaining
               child — the dismiss control — in the top-right corner, where the
               opener of this panel was; `justify-between` alone would slide
@@ -264,13 +484,14 @@ export function Menu({
           <div
             ref={headerRef}
             className={cn(
-              "flex items-center",
+              "menu-head flex items-center",
               hamburger ? "justify-end" : "justify-between"
             )}
+            {...dragHandlers}
           >
             {!hamburger && <span className="t-title">{title}</span>}
             <Control
-              icon={hamburger ? dismissIcon : "back"}
+              icon={dismissGlyph}
               label={closeLabel}
               variant="quiet"
               onClick={onClose}

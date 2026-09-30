@@ -76,10 +76,8 @@ test("the row menu's Edit opens the recorder in edit mode (#286)", async ({
     page.getByRole("button", { name: "Close recorder" })
   ).toBeVisible();
   // No second Edit tap: the sheet is in edit mode with a frame seeded.
-  await expect(editRecordingButton(page)).toHaveAttribute(
-    "aria-pressed",
-    "true"
-  );
+  // The toggle is the ✕ exit while editing (#1252).
+  await expect(editRecordingButton(page)).toHaveAccessibleName("Stop editing");
   await expect(
     page.getByLabel("Selection start", { exact: true })
   ).toBeVisible();
@@ -98,9 +96,8 @@ test("the row itself still opens the recorder in record mode (#286)", async ({
   await expect(
     page.getByRole("button", { name: "Record", exact: true })
   ).toBeVisible();
-  await expect(editRecordingButton(page)).toHaveAttribute(
-    "aria-pressed",
-    "false"
+  await expect(editRecordingButton(page)).toHaveAccessibleName(
+    /^Edit recording/
   );
   await expect(page.getByLabel("Selection start", { exact: true })).toHaveCount(
     0

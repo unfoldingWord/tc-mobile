@@ -176,14 +176,22 @@ describe("the recorder's ⋮ drawer header (#621)", () => {
     expect(paintedText(panel)).not.toContain(strings.recorderMenuTitle);
   });
 
-  it("dismisses with the ⋮ glyph that opened it — not ≡, not a chevron — and a tap on it closes the drawer", async () => {
+  // The O4 look (the default) closes every sheet on ✕ (#1268, the
+  // requirements owner: "Can we use a standard close button (some form of
+  // X)?"), so the dismiss no longer repeats the ⋮ that opened it; the opener
+  // stays ⋮ (#1243). The current look's ⋮ dismiss is pinned on `Menu` in
+  // `menu-hamburger-header.test.ts`.
+  it("opens from ⋮ and dismisses with ✕ in O4 — not ≡, not a chevron — and a tap on it closes the drawer", async () => {
     const panel = await openMenu();
-    const opened = drawnGlyph(button(strings.recorderMenuOpen));
+    expect(drawnGlyph(button(strings.recorderMenuOpen))).toBe(
+      glyphMarkup("more")
+    );
 
     const dismiss = button(strings.menuClose);
     expect(panel.contains(dismiss)).toBe(true);
-    expect(drawnGlyph(dismiss)).toBe(glyphMarkup("more"));
-    expect(drawnGlyph(dismiss)).toBe(opened);
+    expect(drawnGlyph(dismiss)).toBe(glyphMarkup("close"));
+    for (const old of ["more", "menu", "back"] as const)
+      expect(drawnGlyph(dismiss)).not.toBe(glyphMarkup(old));
 
     await act(async () => dismiss.click());
     expect(drawer()).toBeNull();

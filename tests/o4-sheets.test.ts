@@ -148,12 +148,41 @@ describe("o4/sheets.css — the name sheet (02, G4)", () => {
     ).toBeGreaterThan(order(SHEET));
   });
 
-  it("draws a 56 × 5 handle above the header", () => {
-    const handle = rule(`${SHEET}::before`);
-    expect(handle.get("content")).toBe('""');
-    expect(handle.get("width")).toBe("56px");
-    expect(handle.get("height")).toBe("5px");
-    expect(handle.get("background")).toBe("var(--s-edge)");
+  it("draws a 56 × 5 handle above the header, on the grip (#1268)", () => {
+    const bar = rule(`${O4} .menu-grip::before`);
+    expect(bar.get("content")).toBe('""');
+    expect(bar.get("width")).toBe("56px");
+    expect(bar.get("height")).toBe("5px");
+    expect(bar.get("background")).toBe("var(--s-edge)");
+    // Hidden unless the panel is a sheet, and shown on the name sheet.
+    expect(rule(`${O4} .menu-grip`).get("display")).toBe("none");
+    expect(rule(`${SHEET} .menu-grip`).get("display")).toBe("flex");
+  });
+
+  it("starts a drag only on the grip and the header row, never the body (#1268)", () => {
+    expect(rule(`${O4} .menu-grip`).get("touch-action")).toBe("none");
+    expect(rule(`${SHEET} .menu-head`).get("touch-action")).toBe("none");
+    // No other rule here takes the pan from the sheet's body.
+    for (const { selectors, declarations } of RULES)
+      if (declarations.has("touch-action"))
+        for (const s of selectors) expect(s).toMatch(/\.menu-(grip|head)$/);
+  });
+
+  it("springs a released sheet back, with no motion under reduced motion (#1268)", () => {
+    expect(rule(`${O4} [data-sheet-drag]`).get("transform")).toBe(
+      "translateY(var(--sheet-drag-y, 0px))"
+    );
+    expect(rule(`${O4} [data-sheet-drag="settling"]`).get("transition")).toBe(
+      "transform 160ms ease"
+    );
+    const media =
+      /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([^{}]*\{[^{}]*\})\s*\}/.exec(
+        CODE
+      );
+    expect(media, "no reduced-motion block in o4/sheets.css").not.toBeNull();
+    expect(media![1]).toMatch(
+      /\[data-sheet-drag="settling"\]\s*\{\s*transition:\s*none;\s*\}/
+    );
   });
 
   it("sets the sheet title at 20/700", () => {

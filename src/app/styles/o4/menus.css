@@ -123,15 +123,19 @@
     border: 1px solid var(--s-card-edge);
     border-radius: 26px; /* #939 token */
   }
-  [data-design="o4"] .menu-panel:has(.o4-tiles)::before {
-    content: "";
-    flex: none;
-    align-self: center;
-    width: 56px;
-    height: 5px;
-    margin-bottom: -2px;
-    border-radius: 3px;
-    background: var(--s-edge);
+  /* The grip (#1268): `menu.tsx`'s `.menu-grip`, drawn in o4/sheets.css and
+     shown here on a tile sheet and on the book delete ask below. These
+     sheets have an 18px gap where the name sheets have 16, so the grip gives
+     back 2px more below, as the handle they drew before did. The header row
+     is the other place a drag starts. */
+  [data-design="o4"] .menu-panel:has(.o4-tiles) .menu-grip,
+  [data-design="o4"] .menu-panel:has(.books-delete-ask) .menu-grip {
+    display: flex;
+    margin-bottom: -12px;
+  }
+  [data-design="o4"] .menu-panel:has(.o4-tiles) .menu-head,
+  [data-design="o4"] .menu-panel:has(.books-delete-ask) .menu-head {
+    touch-action: none;
   }
 
   /* === #949: the chapter menu (G2), the segment menu (07), marking done (G8)
@@ -179,9 +183,21 @@
     align-items: center;
     min-width: 0;
   }
+  /* HOW THE CRUMBS SHARE THE ROW (#1230). The headers' chapter crumb is the
+     chapter's name, so two arbitrary-length names (book, chapter) now share
+     one row. Each crumb starts from its padding (basis 0) and takes an equal
+     share of the width left over; a crumb whose text fits in less than its
+     share stops at its own width (max-content) and hands the rest to the
+     others. So a short name ("Chapter 2") stays whole beside a long one, and
+     when both are long each gets half and each elides with "…" — rather
+     than the default shrink, which cuts both by the same fraction and so
+     cuts a short name as soon as the other is long. The segment crumb is a
+     short number carrying the state tint, so it never shrinks. */
   [data-design="o4"] .o4-crumb {
     display: flex;
     align-items: center;
+    flex: 1 1 0;
+    max-width: max-content;
     height: 40px;
     min-width: 0;
     margin-left: -6px;
@@ -191,7 +207,9 @@
     font-size: 16px; /* #939 token */
     font-weight: 700; /* #939 token */
     white-space: nowrap;
-    clip-path: polygon(
+    /* The chevron, as a property so a linked crumb's pseudo-element (below,
+       #1269) draws the same shape its button would. */
+    --o4-crumb-shape: polygon(
       0 0,
       calc(100% - 13px) 0,
       100% 50%,
@@ -199,12 +217,13 @@
       0 100%,
       13px 50%
     );
+    clip-path: var(--o4-crumb-shape);
   }
   [data-design="o4"] .o4-crumb:first-child {
     margin-left: 0;
     padding-left: 12px;
     border-radius: 10px 0 0 10px; /* #939 token */
-    clip-path: polygon(
+    --o4-crumb-shape: polygon(
       0 0,
       calc(100% - 13px) 0,
       100% 50%,
@@ -215,6 +234,61 @@
   [data-design="o4"] .o4-crumb > span {
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  [data-design="o4"] .o4-crumb[data-state] {
+    flex: none;
+  }
+  /* A CRUMB THAT NAVIGATES (#1269). A header's crumb for a place above the
+     current screen is a button. The chip stays 40px tall, but the target is
+     `--c-control-md` (44px), the repo's control floor: the chip moves to a
+     pseudo-element inset 2px top and bottom, because a clip-path on the
+     button itself would clip its hit area to the chevron too. The button
+     paints nothing of its own. Long-press selection is off, as it was on
+     the `.breadcrumb` button this replaced on the chapter screen (#563). */
+  [data-design="o4"] button.o4-crumb {
+    position: relative;
+    isolation: isolate;
+    height: var(--c-control-md);
+    border: none;
+    background: transparent;
+    clip-path: none;
+    font-family: inherit;
+    text-align: start;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  [data-design="o4"] button.o4-crumb::before {
+    content: "";
+    position: absolute;
+    inset: 2px 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: var(--s-well);
+    clip-path: var(--o4-crumb-shape);
+  }
+  [data-design="o4"] button.o4-crumb:focus-visible {
+    outline: var(--c-focus-ring);
+    outline-offset: var(--c-focus-offset);
+  }
+  /* Disabled with the header's Back, and dimmed the way Back is. */
+  [data-design="o4"] button.o4-crumb:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+  /* The chapter screen's crumb row, in the place and at the size of the
+     `.breadcrumb` button it replaces in this look (#1269). */
+  [data-design="o4"] .o4-crumbs-bar {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    min-width: 0;
+    min-height: var(--c-control-md);
+    padding: 0 var(--c-breadcrumb-inset);
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   [data-design="o4"] .o4-crumb[data-state="recorded"] {
     background: var(--s-voice-quiet);
@@ -345,15 +419,5 @@
     gap: 18px;
     border: 1px solid var(--s-card-edge);
     border-radius: 26px; /* #939 token */
-  }
-  [data-design="o4"] .menu-panel:has(.books-delete-ask)::before {
-    content: "";
-    flex: none;
-    align-self: center;
-    width: 56px;
-    height: 5px;
-    margin-bottom: -2px;
-    border-radius: 3px;
-    background: var(--s-edge);
   }
 }

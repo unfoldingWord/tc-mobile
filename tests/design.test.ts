@@ -13,7 +13,8 @@ import {
  *
  * The DOM half — the `data-design` attribute and `localStorage` — is
  * `hooks/use-design.ts`, covered by `tests/use-design.test.ts` (jsdom). The
- * menu entry, `components/design-control.tsx`, is rendered by no test. The
+ * Books ≡ menu entry that called it was removed by #1244; that it stays gone
+ * is `tests/books-menus-tiles-o4.test.ts`'s question. The
  * build-time cascade guarantee this switch exists to make
  * possible is `tests/o4-cascade.test.ts`'s question, not this file's.
  */
@@ -61,9 +62,9 @@ describe("readStoredDesign (#938)", () => {
 
 describe("nextDesign (#938)", () => {
   it("is an involution — two taps return you to where you were", () => {
-    // The menu entry is one fixed-label control ("New look (O4)") carrying
-    // its state via `aria-pressed`, not two different destination labels —
-    // see `design-control.tsx`. A third design id would need this revisited.
+    // The removed menu entry (#938, gone since #1244) was one fixed-label
+    // control carrying its state via `aria-pressed`, not two destination
+    // labels. A third design id would need this revisited.
     for (const d of ["current", "o4"] as const)
       expect(nextDesign(nextDesign(d))).toBe(d);
   });

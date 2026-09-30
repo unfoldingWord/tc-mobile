@@ -531,7 +531,11 @@ describe("the segment menu (07) on the tile grid", () => {
     expect(head).not.toBeNull();
     expect(head!.getAttribute("aria-hidden")).toBe("true");
     const crumbs = [...head!.querySelectorAll(".o4-crumb")];
-    expect(crumbs.map((c) => c.textContent)).toEqual(["Mark", "4", "3"]);
+    expect(crumbs.map((c) => c.textContent)).toEqual([
+      "Mark",
+      "Chapter 4",
+      "3",
+    ]);
     expect(crumbs[2]!.getAttribute("data-state")).toBe("finished");
   });
 
@@ -560,7 +564,7 @@ describe("the segment menu (07) on the tile grid", () => {
     // The crumbs themselves are unaffected — only the square is left out.
     expect(
       [...head!.querySelectorAll(".o4-crumb")].map((c) => c.textContent)
-    ).toEqual(["Mark", "4", "3"]);
+    ).toEqual(["Mark", "Chapter 4", "3"]);
   });
 
   it("moves the segment's name into the preview row, beside its badge and wave", async () => {
@@ -586,6 +590,18 @@ describe("the segment menu (07) on the tile grid", () => {
     // Not in the header any more.
     expect(dialog().querySelector(".o4-sheet-head")?.textContent).not.toMatch(
       /the sower/
+    );
+  });
+
+  it("sets the direction of the segment's typed name in the preview row (#1267)", async () => {
+    await mount("o4", titled);
+    await openRow();
+    expect(dialog().querySelector(".o4-menu-title")?.getAttribute("dir")).toBe(
+      "auto"
+    );
+    // The badge is a bare number: no direction of its own.
+    expect(dialog().querySelector(".o4-menu-badge")?.hasAttribute("dir")).toBe(
+      false
     );
   });
 
@@ -651,7 +667,7 @@ describe("the chapter menu (G2) on the tile grid", () => {
     expect(head?.getAttribute("aria-hidden")).toBe("true");
     expect(
       [...head!.querySelectorAll(".o4-crumb")].map((c) => c.textContent)
-    ).toEqual(["Mark", "4"]);
+    ).toEqual(["Mark", "Chapter 4"]);
   });
 
   it("draws the book's cover-colour square before the crumbs (#949, #957)", async () => {
@@ -731,7 +747,10 @@ describe("o4/menus.css, #949's chapter and segment menu section", () => {
     const crumb = declsFor(rules, `${O4} .o4-crumb`);
     expect(crumb.get("height")).toBe("40px");
     expect(crumb.get("background")).toBe("var(--s-well)");
-    expect(crumb.get("clip-path")).toMatch(/13px/);
+    // The chevron is one property (#1269), so a linked crumb's
+    // pseudo-element draws the same shape; the clip reads it.
+    expect(crumb.get("--o4-crumb-shape")).toMatch(/13px/);
+    expect(crumb.get("clip-path")).toBe("var(--o4-crumb-shape)");
     const finished = declsFor(rules, `${O4} .o4-crumb[data-state="finished"]`);
     expect(finished.get("background")).toBe("var(--s-done-quiet)");
     expect(finished.get("color")).toBe("var(--s-done-text)");

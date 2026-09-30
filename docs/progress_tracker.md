@@ -11,6 +11,69 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-09-30 (early; session began 2026-09-29 evening) — rc.1 tester reports fixed, 1.0.0-rc.2 red-teamed and published on all channels, RC procedure written down
+
+### rc.1 reports and fixes
+
+- **The requirements owner's Moto G session on rc.1:**
+  - the #974 upgrade row passed;
+  - #1188 no longer reproduced, closed as not reproducing (DRI: "Close as not reproducing (Recommended)");
+  - four new `v1-required` issues, all picked for rc.2 (DRI: "#1219 + #1218 chapter names, #1217 mic icon, #1220 eraser text").
+- **iPhone reports:** the tester's device was on an older TestFlight build, because the new build hadn't been assigned to the testers' group. The #1213 and #1212 reports are therefore not rc.1 evidence; the correction is on #1213.
+- **Merged for rc.2:**
+
+  | PR    | What                                                                                                          | Issue        |
+  | ----- | ------------------------------------------------------------------------------------------------------------- | ------------ |
+  | #1224 | Chapter names on Books, in the rename sheet and in export file names; default derived at read, no data change | #1218, #1219 |
+  | #1223 | Unrecorded segment control: a gray, red-outlined microphone                                                   | #1217        |
+  | #1222 | Eraser wording: "Reset segment and start over"                                                                | #1220        |
+  | #1227 | Recorder menu opener ⋮, so ≡ is on Books only; filed from a tester report                                     | #1225        |
+  | #1214 | Playback failure rows and a shared-context drop after a failed resume                                         | #1213        |
+  | #1234 | Books row title and dots no longer squashed or clipped on large chapters; red-team R7                         | #1229        |
+  | #1235 | Bound the context drops, with at most one close pending; an unanswered P2 on #1214                            | #1232        |
+
+- **Design question:** #1230, whether the new look's headers should show a chapter's name, is with the requirements owner.
+- **Follow-ups:** #1233 (v1.1.0) batches the deferred review items.
+
+### 1.0.0-rc.2
+
+- **Bump:** #1228 (`25c43332`). **Promotion:** #1236 from `release/v1.0.0-rc.2` at `3b625e02`, merged as `be6da1e4`. The DRI's go (verbatim): "Go: merge #1236 (Recommended)".
+- **Release red team:** three passes. Summary on #1236 (comment 5900978670).
+  - **Risk register:** 0 BLOCK, 5 FIX-BEFORE-PUBLISH, 9 NOTE.
+  - **Announcement:** 0 FALSE, 6 OVERSTATED, 9 MISSING CONTEXT, all corrected.
+  - **Delta:** 0 BLOCK, 6 NOTE, and one false claim in the promotion body, corrected.
+  - **Dispositions:** R3 was fixed by #1235 and R7 by #1234. R4 (Android, a slow first Play drops the context) was accepted (DRI: "Ship, and watch for it (Recommended)").
+- **`check:deploy`:** PASS, `https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build.` (`1.0.0-rc.2` / `be6da1e`).
+- **Channels, all from `be6da1e4`:**
+  - **Google Play:** run 36645388934, a draft on the internal track, `1.0.0-rc.2 (1790724591) staging@be6da1e`.
+  - **Android APK:** run 36645763556.
+    - The signer SHA-256 is `eed23e1bccf9fbad8b69f2f9598fd8d97e094d23e544b71b9e91dd21c934baf2`, the same as rc.1.
+    - The embedded `version.json` reads `1.0.0-rc.2` / `be6da1e4a911…`.
+    - The APK's SHA-256 is `4223acd2aa3a6881ebc66d6055cbe0a267765a07c6d975e1470df2e78b5592c6`, and the published download matches it.
+  - **TestFlight:** run 36645765916, version `1.0`, build `1790725433`.
+- **Published:** `tester-build-v1.0.0-rc.2`, a pre-release with the APK and a QR code of its download URL. The publish record is on #1236 (comment 5901231193). Whether the QR scans and displays inline wasn't checked here.
+
+### After rc.2
+
+- **#1240 (for #1239):** the ⚠ badge on greyed-out menu tiles is removed, at the requirements owner's ask (DRI: "Remove all badges, rc.3 (Recommended)"). Merged as `950e7394`. George was clean; the Frank seat hadn't posted when it merged.
+- **#1238:** the RC procedure is in `docs/release/promotion-v1.0.0.md` §3a/§6, plus a new `.claude/skills/tc-release` checklist, with fail-closed APK checks. Merged as `8005751e` at the meta-PR cap, under the DRI's stop rule. George's round-3 findings are on #1241, which needs a DRI decision on which release steps are human-only.
+
+### Not run
+
+- Nothing in rc.2 has run on a phone.
+- The #1213 premise is unconfirmed on rc.1 or rc.2.
+- R4 is watched only by the announcement's test 5.
+
+### Next
+
+- Collect the rc.2 tester reports, then cut rc.3 with `tc-release`. So far rc.3 carries #1240, plus #1238 (docs).
+- Get the #1213 retest on rc.2 from the iPhone tester (TestFlight build `1790725433`, assigned to the group).
+- The requirements owner's answers on #1230 and the #1233 product questions.
+- The DRI's decision on #1241.
+- The Android developer verification, due 2026-09-30.
+
+---
+
 ## 2026-09-29 (day) — v0.2.14 bugs triaged, #1189 fixed, 1.0.0-rc.1 red-teamed and built on all three channels (Play as an internal-track draft), Play lane fixed, go-live epic, iPhone playback report
 
 ### v0.2.14 bug reports

@@ -22,13 +22,11 @@ import { restingErase } from "./support";
  * opener, so no effect or event is needed to read it. The opener is found by
  * accessible name AND its drawn shapes are compared with what `Icon` itself
  * draws for each name, so a redraw of either icon cannot orphan a hand-copied
- * shape, and the edit toolbar's opener (same accessible name) cannot satisfy
- * the assertion in its place — this render is record mode, whose toolbar has
- * no opener, and the header is scanned on its own.
+ * shape, and the header is scanned on its own.
  *
  * What this cannot see: the drawer's own dismiss (a portal, opened by a
- * click) is pinned in `tests/recorder-menu-header.test.ts`, and the edit
- * toolbar's in `tests/recorder-edit-toolbar-glyph.test.ts`.
+ * click) is pinned in `tests/recorder-menu-header.test.ts`, and the same
+ * opener in edit mode (#1243) in `tests/recorder-edit-mode-header.test.ts`.
  */
 
 const design = vi.hoisted(() => ({ current: "current" as string }));

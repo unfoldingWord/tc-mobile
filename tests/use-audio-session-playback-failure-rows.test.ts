@@ -3,7 +3,10 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { PlaybackResumeError } from "@/hooks/playback-resume-error";
+import {
+  PlaybackClockStalledError,
+  PlaybackResumeError,
+} from "@/hooks/playback-resume-error";
 
 import {
   deferredHandle,
@@ -189,6 +192,43 @@ it("a playBuffer failure that IS the #469 resume bound writes no second row", as
   });
 
   expect(mocks.reportFailure).not.toHaveBeenCalled();
+});
+
+it("a playTake whose clock stalled (#1251) writes no second row, and ends the Play as failed", async () => {
+  mocks.loadSegmentClip.mockResolvedValueOnce(
+    resolvedClip(new Int16Array([1, 2]))
+  );
+  mocks.playSamples.mockRejectedValueOnce(
+    new PlaybackClockStalledError("currentTime did not advance")
+  );
+
+  const api = await renderHarness(root);
+  await act(async () => {
+    api().playTake(row("segment-a"));
+    await flush();
+  });
+
+  // playSamples wrote the "playback-clock-stalled" row itself.
+  expect(mocks.reportFailure).not.toHaveBeenCalled();
+  // The same end as any failed Play: the notice, and the button reset.
+  expect(api().error).not.toBeNull();
+  expect(api().playingId).toBeNull();
+});
+
+it("a playBuffer whose clock stalled (#1251) writes no second row, and ends the Play as failed", async () => {
+  mocks.playSamples.mockRejectedValueOnce(
+    new PlaybackClockStalledError("currentTime did not advance")
+  );
+
+  const api = await renderHarness(root);
+  await act(async () => {
+    api().playBuffer(new Int16Array([1, 2, 3]));
+    await flush();
+  });
+
+  expect(mocks.reportFailure).not.toHaveBeenCalled();
+  expect(api().error).not.toBeNull();
+  expect(api().playingBuffer).toBe(false);
 });
 
 it("a playBuffer failure that lands after the translator pressed Stop writes no row", async () => {

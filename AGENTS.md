@@ -464,7 +464,13 @@ Play gets a fresh one, a failed `close()` of it, `"playback-context-close"`,
 #1213), the catch sites around it in `hooks/use-audio-session.ts`
 (`"playback-take"`, `"playback-buffer"`, and a segment whose audio is
 missing, `"playback-dangling"`, #1213; each skips the #469 error, whose row
-`playSamples` already wrote), the tester-only phone check (`hooks/phone-check-probes.ts`,
+`playSamples` already wrote), a shared context that reports `"running"`
+while its clock stands still (#1251, `hooks/audio-io.ts`: a Play whose
+clock did not move within 1000 ms of starting, `"playback-clock-stalled"` —
+that Play fails and drops the context, and the catch sites above skip its
+error the same way; the level tap seeing it during a take,
+`"recorder-tap-clock-stalled"`; and the page becoming visible again with the
+clock still stopped, `"audio-clock-stalled-on-return"`), the tester-only phone check (`hooks/phone-check-probes.ts`,
 `"phone-check"`, #1009: a probe that throws, and a `sessionStorage`
 breadcrumb or saved result that cannot be read or written — a failed memory-ceiling
 allocation is the measurement, not a failure, and is not reported), a
