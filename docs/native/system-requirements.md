@@ -1,15 +1,14 @@
 # System requirements — status and evidence
 
-**Status: partial.** This is the single source of truth #1017 calls for, but
-it is not yet the finished requirements statement for the store listings and
-web page. Only #1017's open question 1 (below) is answered here, and a
-2026-09-28 note under "Open question 4" adds new evidence without closing it.
-The other open questions — the RAM floor, whether Android 7 is worth keeping,
-and the long-take listing wording — are **not** answered in this file yet:
-the RAM tiers in particular stay blocked on real phone reports landing on
-#974 (#1002 §6), and are deliberately not restated here until they are. Read
-#1017 and #1002 for the full picture; this file will grow into the final
-wording once every open question is closed.
+**Status: draft statement, RAM floor open.** This is the single source of
+truth #1017 calls for. The section "Requirements statement (draft for the
+listings)" below is the wording the Play listing, the App Store listing and the
+web page / facilitator runbook (#248) should reuse. Its platform floors are read
+from the build files, and its storage figures are derived by arithmetic shown
+there. **No phone has been measured, and nothing here claims a device test.**
+The RAM floor is deliberately **not** stated: it waits on real phone reports on
+#974 (#1002 §6), and #1017 says not to publish RAM figures before then. Read
+#1017 and #1002 for the full picture.
 
 **The iOS floor is 15.4, not 15.0 — raised 2026-09-26 (#1052).** The reason is
 below (open question 1's CSS section): the O4 CSS uses `:has()`, which needs
@@ -179,3 +178,116 @@ length. Whether the listing should still mention a 20-minute recording rhythm
 (as a UX expectation rather than a failure-avoidance warning) is a wording
 call this file does not make; it is left open for whoever finishes the "Done
 when" wording pass.
+
+## Requirements statement (draft for the listings)
+
+Every line cites the file it comes from. Where the tree cannot answer, the line
+says so. Nothing in this section was measured on a phone.
+
+### Platform floors (read from the tree)
+
+| Platform         | Floor                                          | Source                                                                                                                                                         |
+| ---------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Android          | Android 7.0 (API 24)                           | `android/variables.gradle` `minSdkVersion = 24`                                                                                                                |
+| Android target   | API 36 (`compileSdkVersion` is also 36)        | `android/variables.gradle` `targetSdkVersion = 36`                                                                                                             |
+| iPhone / iPad    | iOS 15.4                                       | `ios/App/App.xcodeproj/project.pbxproj` `IPHONEOS_DEPLOYMENT_TARGET = 15.4` (four occurrences); `ios/App/CapApp-SPM/Package.swift` `platforms: [.iOS("15.4")]` |
+| Native shell     | Capacitor 8.5.2                                | `package.json` (`@capacitor/core`, `@capacitor/android`, `@capacitor/ios`)                                                                                     |
+| Web build target | Chrome 111, Edge 111, Firefox 114, Safari 15.4 | `vite.config.ts` `build.target`                                                                                                                                |
+
+There is no `ios/App/Podfile` in the tree; the iOS project uses Swift Package
+Manager (`ios/App/CapApp-SPM/Package.swift`), so the Xcode setting and that file
+are the two iOS floors.
+
+The Android floor is the install floor. The app runs inside Android System
+WebView, so the standing wording is "kept up to date". The tree pins no minimum
+WebView version, and this file does not derive one. The DRI's decision on
+keeping API 24 (2026-09-28, quoted verbatim on #1017) was **"Keep Android 7
+(Recommended)"**, and the listing reads "Android 7 or later".
+
+### What the app needs from the device
+
+| Need                               | Where the tree uses it                                                                                                                                                                                                                              |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Microphone permission              | `android/app/src/main/AndroidManifest.xml` declares `RECORD_AUDIO` and `MODIFY_AUDIO_SETTINGS`; `ios/App/App/Info.plist` has `NSMicrophoneUsageDescription`                                                                                         |
+| `getUserMedia` and `MediaRecorder` | `src/hooks/audio-io.ts` checks `navigator.mediaDevices?.getUserMedia` and picks a type with `MediaRecorder.isTypeSupported` (mp4/aac on iOS, webm/opus elsewhere)                                                                                   |
+| IndexedDB                          | `src/lib/storage/db.ts`; every recording lives there                                                                                                                                                                                                |
+| Web Worker                         | `src/hooks/mp3-codec.ts` (`new Worker`), the MP3 encoder                                                                                                                                                                                            |
+| `navigator.storage`                | `estimate()` for the nearly-full marker (`src/lib/storage/pressure.ts`, `src/hooks/use-storage-pressure.ts`); `persist()` and `persisted()` for the not-persisted marker (`src/lib/storage/persistence.ts`, `src/hooks/use-storage-persistence.ts`) |
+| Secure context (HTTPS)             | Inference: `getUserMedia` requires one (AGENTS.md, "Device testing"). The native apps serve from local files inside the shell                                                                                                                       |
+
+The web page also needs a browser at or above the build target above. The
+iOS row in that target is the same 15.4 as the native floor. The build target
+is a build setting, not a test result. `MediaRecorder` needs Safari 14.1 and
+`:has()` needs Safari 15.4 (caniuse-lite `data/features/mediarecorder.js` and
+`css-has.js`, as cited under "Open question 1").
+
+### Storage: derived estimates
+
+Constants: `CANONICAL_SAMPLE_RATE = 44_100`, mono, 16-bit
+(`src/lib/audio/format.ts`), and 64 kbps MP3 once a segment is Finished
+(`src/types/audio.ts`, `src/hooks/share-flow.ts`).
+
+- Recording in progress (PCM): 44 100 samples/s x 2 bytes x 60 s = 5 292 000
+  bytes per minute, about **5.3 MB/min**. This agrees with AGENTS.md.
+- Finished (MP3): 64 000 bits/s / 8 x 60 s = 480 000 bytes per minute, about
+  **0.48 MB/min**.
+- One take at the cap: `TAKE_CAP_MS = 20 * 60_000` (`src/lib/audio/take-cap.ts`),
+  so 20 x 5.292 = about **106 MB** of PCM.
+- The draft's long-book example, 5 hours (300 min, the figure from #1002 §4,
+  not re-derived here): in progress 300 x 5.292 = about **1.6 GB**; Finished
+  300 x 0.48 = about **144 MB**.
+
+These are file-size arithmetic on the codec parameters. They ignore IndexedDB
+overhead, the app itself, the browser cache and the space the OS keeps free. The
+share step writes a file as well: Share Book builds a zip of chapter MP3s
+(AGENTS.md), so plan on roughly another Finished-size copy while sharing
+(inference; the temporary-file size is not measured).
+
+### Draft wording
+
+**Minimum** (records, edits and shares chapters)
+
+- Android 7.0 or later, with Android System WebView kept up to date, or an
+  iPhone with iOS 15.4 or later.
+- A working microphone, and permission to record audio.
+- Free storage: about 5 MB per minute while a segment is being worked on, and
+  about 0.5 MB per minute once it is marked Finished (arithmetic above).
+- RAM: **not stated.** See the open items.
+
+**Recommended** (a long book, shared in one sitting)
+
+- Free storage: at least twice the size of the finished book, plus room for the
+  segments still in progress. For example, a 5-hour book is about 144 MB
+  finished and up to about 1.6 GB while in progress. "Twice" is a derived
+  margin for the share copy above, not a measured figure.
+- Keep the app open while a book is being shared (this is guidance from #1017's
+  draft; the tree does not enforce it).
+- Recorded takes stop at 20 minutes and are saved (`take-cap.ts`, #1005), so a
+  translator does not need to plan around a warning. Whether the listing should
+  still suggest a recording rhythm is a wording call for the DRI.
+- RAM and processor class: **not stated.** See the open items.
+
+**Web (PWA)**
+
+- A current Chrome or Edge (111 or later), Firefox 114 or later, or Safari 15.4
+  or later on iPhone and iPad, opened over HTTPS. Installing it to the home
+  screen is recommended (#1017's draft). Samsung Internet is not in the build
+  target; a Chromium-version mapping for it is not derived here.
+
+### Still open
+
+1. **RAM floor and the recommended RAM and processor tier.** #1017's draft
+   figures (2 GB minimum, 4 GB recommended, a Unisoc T606 / Helio G85 class
+   phone) are inferences from desktop experiments and published benchmarks in
+   #1002. They wait on phone-check reports on #974 from at least one low-end
+   Android phone and one older iPhone. They are not restated here.
+2. **The slow-share line** ("close to an hour for Psalms on a very slow phone",
+   #1017) is an extrapolation from #1002 strand C. It is not reproduced here
+   until measured numbers exist.
+3. **Minimum Android System WebView version.** Not pinned in the tree.
+4. **Pasting the finished wording** into the Play listing, the App Store
+   listing and the web page / facilitator runbook (#248), each linking back to
+   this file. Not done in this change. The listings are outside the repository.
+5. **Existing docs that still state the floors**: `docs/tester-install.md:37`
+   and `docs/training/facilitator-runbook.md:18` say Android 7.0, which matches.
+   `docs/native/ios-credentials.md:440` says iOS 15.4, which matches.
