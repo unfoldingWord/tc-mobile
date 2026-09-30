@@ -150,3 +150,76 @@ test("an audition of a picked span draws its playhead inside the band (#361)", a
   const travelled = Math.max(...xs) - Math.min(...xs);
   expect(travelled).toBeGreaterThan(band!.width / 2);
 });
+
+// The same offset's other reader. `stopPlayback` adds `soundingOffsetRef` to
+// the boundary's position before `freezePlaybackPan` writes it into
+// `panState`, the record insertion offset. Dropping that term leaves the test
+// above green, because it only reads the overlay's own path. The line would
+// then land where playback had reached measured from the start of the TAKE:
+// a Stop after Play from a mid-take line would jump the line back, and the
+// next Record would splice there.
+//
+// A Play from the rest starts at sample 0, so its offset is 0 and cannot show
+// the leak. The first play therefore only moves the line into the take; the
+// second starts there, so its offset is non-zero. Each line position is read
+// as the next edit entry's seed: `seedSelection` starts the span at the line,
+// and both stops leave the line far enough from the end that the span need not
+// slide back.
+test("a Stop after Play from a mid-take line leaves the line past where it started (#361)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 740 });
+  await seedToRecorder(page);
+  await page.getByRole("button", { name: "Record", exact: true }).click();
+  const stopRecording = page.getByRole("button", {
+    name: "Stop recording",
+    exact: true,
+  });
+  await expect(stopRecording).toBeVisible();
+  await page.waitForTimeout(5000);
+  await stopRecording.click();
+
+  const toolbar = page.locator(".recorder-toolbar");
+  const play = toolbar.getByRole("button", {
+    name: /^Play (from the line|recording)$/,
+  });
+  const stopPlaying = toolbar.getByRole("button", {
+    name: "Stop playing",
+    exact: true,
+  });
+  const startHandle = page.getByLabel("Selection start", { exact: true });
+  const endHandle = page.getByLabel("Selection end", { exact: true });
+
+  /** Play for `ms`, then Stop, and read where the line came to rest. */
+  const playThenRead = async (ms: number) => {
+    await expect(
+      page.getByRole("button", { name: "Record", exact: true })
+    ).toBeVisible();
+    await play.click();
+    await expect(stopPlaying).toBeVisible();
+    await page.waitForTimeout(ms);
+    await stopPlaying.click();
+    await expect(play).toBeVisible();
+    await clickEditRecording(page);
+    await expect(startHandle).toBeVisible();
+    const line = await valueOf(startHandle);
+    const length = Number(await endHandle.getAttribute("aria-valuemax"));
+    await page
+      .getByRole("button", { name: "Done editing", exact: true })
+      .click();
+    await expect(startHandle).toHaveCount(0);
+    return { line, length };
+  };
+
+  const first = await playThenRead(2000);
+  expect(first.length).toBeGreaterThan(0);
+  // The premise: the first play moved the line off the start and left room
+  // before the end, so the second play starts mid-take.
+  expect(first.line).toBeGreaterThan(0.15 * first.length);
+  expect(first.line).toBeLessThan(0.6 * first.length);
+
+  const second = await playThenRead(800);
+  // With the offset, the line is past where the second play began. Without
+  // it, the line sits about 800 ms into the take, before that point.
+  expect(second.line).toBeGreaterThan(first.line);
+});
