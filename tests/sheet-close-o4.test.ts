@@ -169,11 +169,12 @@ describe("one ✕ closes every sheet in O4 (#1268 item 2)", () => {
     expect(glyphOf(named(strings.aboutBack))).toBe(glyphPath("back"));
   });
 
-  it("every <Menu> in src/ is a known caller, and only About asks for back", () => {
+  it("every <Menu> under src/components is a known caller, and only About asks for back", () => {
     const dir = path.resolve(import.meta.dirname, "..", "src", "components");
     const calls: Record<string, number> = {};
     const backs: string[] = [];
-    for (const file of readdirSync(dir).filter((f) => f.endsWith(".tsx"))) {
+    const files = readdirSync(dir, { recursive: true, encoding: "utf8" });
+    for (const file of files.filter((f) => f.endsWith(".tsx"))) {
       const src = stripComments(readFileSync(path.join(dir, file), "utf8"));
       const tags = [...src.matchAll(/<Menu\b[\s\S]*?>/g)];
       if (tags.length === 0) continue;
@@ -251,6 +252,33 @@ describe("drag down to close (#1268 item 1)", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("a drag-close swallows its release's click, once, so what the sheet covered is not tapped", async () => {
+    const p = await mountMenu();
+    const beneath = document.createElement("button");
+    const tapped = vi.fn();
+    beneath.addEventListener("click", tapped);
+    document.body.append(beneath);
+    await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    await act(async () => beneath.click());
+    expect(tapped).not.toHaveBeenCalled();
+    // One-shot: the next real tap goes through.
+    await act(async () => beneath.click());
+    expect(tapped).toHaveBeenCalledTimes(1);
+  });
+
+  it("a release that springs back swallows no click", async () => {
+    const p = await mountMenu();
+    const beneath = document.createElement("button");
+    const tapped = vi.fn();
+    beneath.addEventListener("click", tapped);
+    document.body.append(beneath);
+    await drag(one(p, ".menu-grip"), [100, 120]);
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => beneath.click());
+    expect(tapped).toHaveBeenCalledTimes(1);
+  });
+
   it("a drag on the sheet head (off the ✕) closes too", async () => {
     const p = await mountMenu();
     const head = one(p, ".menu-head");
@@ -298,7 +326,7 @@ describe("drag down to close (#1268 item 1)", () => {
     expect(p.getAttribute("data-sheet-drag")).toBe("settling");
   });
 
-  it("a press on the ✕ is a tap, never a drag", async () => {
+  it("a press dragged from the ✕ never starts a drag", async () => {
     const p = await mountMenu();
     await drag(named(strings.menuClose), [
       100,

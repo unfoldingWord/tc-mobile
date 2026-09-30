@@ -23,6 +23,33 @@ import { strings } from "@/lib/strings";
 const SHEET_SETTLE_MS = 200;
 
 /**
+ * How long a drag-close waits for its release's own `click` (#1268, George
+ * round 1). A release that closes unmounts the sheet, so that click must not
+ * land on whatever the sheet was covering. A touch drag usually sends none,
+ * so the swallow also ends on its own after this long rather than eating the
+ * next real tap.
+ */
+const SHEET_RELEASE_CLICK_MS = 400;
+
+/**
+ * Swallow the one `click` that follows a closing release, in the capture
+ * phase at the document, and then stop listening.
+ */
+function swallowReleaseClick(doc: Document): void {
+  const disarm = () => {
+    clearTimeout(timer);
+    doc.removeEventListener("click", swallow, true);
+  };
+  const swallow = (ev: Event) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    disarm();
+  };
+  const timer = setTimeout(disarm, SHEET_RELEASE_CLICK_MS);
+  doc.addEventListener("click", swallow, true);
+}
+
+/**
  * A press that lands on a control in the header (the ✕) stays a tap and
  * never starts a drag.
  */
@@ -318,7 +345,10 @@ export function Menu({
       sheetHeight: drag.sheetHeight,
     });
     settle();
-    if (outcome === "close") onClose();
+    if (outcome === "close") {
+      swallowReleaseClick(e.currentTarget.ownerDocument);
+      onClose();
+    }
   };
 
   const onDragCancel = (e: React.PointerEvent<HTMLElement>) => {
