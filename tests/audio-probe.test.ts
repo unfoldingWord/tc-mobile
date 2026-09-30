@@ -42,8 +42,12 @@ class FakeAudioContext {
   state = "running";
   readonly sampleRate = CANONICAL_SAMPLE_RATE;
   readonly destination = { channelCount: 2, maxChannelCount: 2 };
+  // Advances on every read, so a Play sees a running clock and passes the
+  // #1251 stalled-clock check. A constant here is the stall itself.
+  private clock = 0;
   get currentTime(): number {
-    return 0;
+    this.clock += 0.01;
+    return this.clock;
   }
   async resume(): Promise<void> {
     this.state = "running";

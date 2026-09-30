@@ -117,8 +117,12 @@ class FakeBufferSource {
 class FakeAudioContext {
   state = "running";
   constructor(private readonly onSourceStart: () => void) {}
+  // Advances on every read, so a Play sees a running clock and passes the
+  // #1251 stalled-clock check. A constant here is the stall itself.
+  private clock = 0;
   get currentTime(): number {
-    return 0;
+    this.clock += 0.01;
+    return this.clock;
   }
   get destination(): unknown {
     return {};
@@ -154,5 +158,79 @@ describe("playSamples — declares playback on every Play (#1111)", () => {
     });
 
     expect(typeAtSourceStart).toBe("playback");
+  });
+});
+
+/**
+ * #1251: inside the native iOS shell the launch-time `.playAndRecord`
+ * category (`ios/App/App/AppDelegate.swift`) is the whole configuration, so
+ * neither setter writes `navigator.audioSession.type` there. Safari and the
+ * PWA (`"web"`) keep the switching, which the cases above already pin.
+ *
+ * The build is faked where the app reads it: `Capacitor.getPlatform()`, the
+ * bridge `readSharePlatform()` (`hooks/share-target.ts`) narrows. So these
+ * cases also fail if `audio-io.ts` stops going through that one reader.
+ */
+async function loadAudioIoOn(platform: string, audioSession: { type: string }) {
+  const io = await loadAudioIo(audioSession);
+  const { Capacitor } = await import("@capacitor/core");
+  vi.spyOn(Capacitor, "getPlatform").mockReturnValue(platform);
+  return io;
+}
+
+describe("the native iOS shell leaves navigator.audioSession alone (#1251)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("setPlaybackAudioSession writes nothing on ios", async () => {
+    const audioSession = { type: "auto" };
+    const { setPlaybackAudioSession } = await loadAudioIoOn(
+      "ios",
+      audioSession
+    );
+    setPlaybackAudioSession();
+    expect(audioSession.type).toBe("auto");
+  });
+
+  it("setRecordAudioSession writes nothing on ios", async () => {
+    const audioSession = { type: "auto" };
+    const { setRecordAudioSession } = await loadAudioIoOn("ios", audioSession);
+    setRecordAudioSession();
+    expect(audioSession.type).toBe("auto");
+  });
+
+  it("both setters still write on web (Safari and the PWA)", async () => {
+    const audioSession = { type: "auto" };
+    const { setPlaybackAudioSession, setRecordAudioSession } =
+      await loadAudioIoOn("web", audioSession);
+    setRecordAudioSession();
+    expect(audioSession.type).toBe("play-and-record");
+    setPlaybackAudioSession();
+    expect(audioSession.type).toBe("playback");
+  });
+
+  it("a Play inside the ios shell leaves the session type as it was", async () => {
+    vi.resetModules();
+    const audioSession = { type: "auto" };
+    let typeAtSourceStart: string | undefined;
+    vi.stubGlobal("window", {
+      AudioContext: function () {
+        return new FakeAudioContext(() => {
+          typeAtSourceStart = audioSession.type;
+        });
+      },
+    });
+    vi.stubGlobal("navigator", { audioSession });
+    const { playSamples } = await import("@/hooks/audio-io");
+    const { Capacitor } = await import("@capacitor/core");
+    vi.spyOn(Capacitor, "getPlatform").mockReturnValue("ios");
+
+    await playSamples(new Int16Array([1, 2, 3, 4]), {
+      isStillCurrent: () => true,
+    });
+
+    expect(typeAtSourceStart).toBe("auto");
+    expect(audioSession.type).toBe("auto");
   });
 });
