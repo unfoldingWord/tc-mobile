@@ -135,9 +135,14 @@ from.
       push starts the Play lane and these docs do not recall it.
 - [ ] Human-only: after a recorded go, the DRI merges the promotion from their
       own terminal with this pinned command, and no other:
-      `gh pr merge <N> --repo unfoldingWord/tc-mobile --merge --match-head-commit <CUT_SHA>`.
-      The agent hands over the PR number and `CUT_SHA`, and never adds
-      `--admin`. Record the merge commit as `PROMO_SHA`, and check
+      `gh pr merge <N> --repo unfoldingWord/tc-mobile --merge --admin --match-head-commit <CUT_SHA>`.
+      `--admin` is required by ruleset 24043869 ("Protected branches: merge by
+      admins only"): its `update` rule on `develop`, `staging` and `main` has
+      only the repository admin role as bypass. `--admin` also skips every
+      other base-branch requirement (required checks and reviews), not only
+      that ruleset, so the DRI runs it only after every check and review above
+      is green. The agent hands this command over unchanged, with the PR number
+      and `CUT_SHA`, and never runs `gh pr merge`. Record the merge commit as `PROMO_SHA`, and check
       `origin/staging` equals it.
 - [ ] Agent-allowed: check that `git rev-parse <PROMO_SHA>^1 <PROMO_SHA>^2`
       prints `STAGING_SHA` then `CUT_SHA`. If not, stop.
@@ -215,7 +220,9 @@ All agent-allowed and read-only.
 ## Final v1.0.0 additionally
 
 Follow runbook §3 and §6. Human-only: the `staging → main` merge (a merge
-commit, from the DRI's terminal, never `--admin`), the tag `v1.0.0` on that
+commit, from the DRI's terminal; the only command is runbook §3 step 3's, with
+`--admin` and `--match-head-commit`, run only after that step's checks and
+reviews are green; an agent never runs it), the tag `v1.0.0` on that
 merge commit, the native dispatches from `main` at the tag, and publishing the
 GitHub Release on `v1.0.0` with the APK, QR and TestFlight build. Agent-allowed:
 `check:deploy:prod`, the APK checks, the download-back, the installation guide
