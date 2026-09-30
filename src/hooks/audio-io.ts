@@ -379,6 +379,31 @@ function discardSharedContext(ctx: AudioContext): boolean {
 let livePlaybacks = 0;
 
 /**
+ * Claims still on their way to using the shared context: a Record or a Play
+ * between the resume it started (`raceAudioResume`) and the level tap's hold
+ * or the source's `livePlaybacks` count that follows it. An idle drop waits
+ * while it is non-zero, and so does `checkSharedClockOnReturn`, because a
+ * drop there would close the context under that resume and leave the tap or
+ * the source to build a fresh one outside the user's gesture (Frank round 2
+ * on #1261). It does not gate `discardSharedContext` itself, so a Play's own
+ * #1213 and stalled-clock drops are unchanged.
+ */
+let pendingClaims = 0;
+
+/** Count one pending claim. The release is once-only, and applies a drop
+ * that waited for it. */
+function claimSharedContext(): () => void {
+  pendingClaims++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    pendingClaims--;
+    applyPendingIdleDrop();
+  };
+}
+
+/**
  * The shared context `dropSharedContextWhenIdle` asked to drop while it was
  * in use (#1251). `applyPendingIdleDrop` drops it once nothing uses it.
  */
@@ -401,7 +426,7 @@ function applyPendingIdleDrop(): void {
     idleDropPending = null;
     return;
   }
-  if (sharedContextHolds > 0 || livePlaybacks > 0) return;
+  if (sharedContextHolds > 0 || livePlaybacks > 0 || pendingClaims > 0) return;
   if (discardSharedContext(ctx)) idleDropPending = null;
 }
 
@@ -631,10 +656,12 @@ export async function checkSharedClockOnReturn(): Promise<void> {
   if (ctx === null) return;
   // A context replaced during the wait is refused by `discardSharedContext`
   // below (it is no longer the shared one), so it writes no row either.
+  // A claim still on its way to `source.start` or the tap's hold counts as
+  // use too (`pendingClaims`).
   const verdict = await watchClock(
     ctx,
     ctx.currentTime,
-    () => livePlaybacks > 0
+    () => livePlaybacks > 0 || pendingClaims > 0
   );
   if (verdict !== "stalled") return;
   if (!discardSharedContext(ctx)) return;
@@ -731,7 +758,16 @@ export function raceAudioResume(
   // `resumeAudioContext()` read (or built) the shared context synchronously,
   // so this is the context the resume was called on.
   const resumedOn = sharedContext;
-  return new Promise<boolean>((resolve) => {
+  // Taken after `resumeAudioContext()`'s own top-of-tap idle drop, so that
+  // drop still lands. Released one task after the race resolves: the
+  // caller's continuation runs first, and `start()` goes straight from it to
+  // `createLevelTap`, whose hold then keeps the context (`pendingClaims`).
+  const releaseClaim = claimSharedContext();
+  return new Promise<boolean>((rawResolve) => {
+    const resolve = (timedOut: boolean) => {
+      rawResolve(timedOut);
+      setTimeout(releaseClaim, 0);
+    };
     let settled = false;
     const timer = setTimeout(() => {
       settled = true;
@@ -1323,10 +1359,15 @@ export async function playSamples(
   // one `discardSharedContext` may drop (#1213), and only if it is still the
   // shared one by then.
   const claimContext = getAudioContext();
-  const resumeTimedOut = await raceAudioResume("playback-resume", (cause) => {
+  const racing = raceAudioResume("playback-resume", (cause) => {
     hadRejection = true;
     capturedCause = cause;
   });
+  // This Play's own claim, from its resume to `source.start` (where
+  // `livePlaybacks` takes over), across the `nextTask()` yield below, so an
+  // idle drop cannot close the context in between (`pendingClaims`).
+  const releaseClaim = claimSharedContext();
+  const resumeTimedOut = await racing;
 
   try {
     if (!options.isStillCurrent()) {
@@ -1435,6 +1476,7 @@ export async function playSamples(
     // idle drop waits for it (#1251, `livePlaybacks`). Once only.
     let live = true;
     livePlaybacks++;
+    releaseClaim();
     const endLive = () => {
       if (!live) return;
       live = false;
@@ -1561,5 +1603,7 @@ export async function playSamples(
     // throws, and only for a claim that is still current; see
     // `discardSharedContext` for what it refuses to drop.
     if (unusableError) discardSharedContext(claimContext);
+    // Every exit before `source.start` ends the claim here; once-only.
+    releaseClaim();
   }
 }

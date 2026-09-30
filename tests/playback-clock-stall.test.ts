@@ -38,6 +38,9 @@ class FakeContext {
   static nextEndsOnStart = false;
   /** When true, the NEXT context's `close()` settles only on `settleClose`. */
   static nextCloseHangs = false;
+  /** When true, the NEXT context starts suspended and its `resume()`
+   * settles only on `settleResume`. */
+  static nextResumeHangs = false;
 
   readonly id: number;
   state = "running";
@@ -48,6 +51,8 @@ class FakeContext {
   private readonly endsOnStart: boolean;
   private readonly closeHangs: boolean;
   private settlePendingClose: (() => void) | null = null;
+  private readonly resumeHangs: boolean;
+  private settlePendingResume: (() => void) | null = null;
 
   constructor() {
     FakeContext.made.push(this);
@@ -55,6 +60,8 @@ class FakeContext {
     this.clockMode = FakeContext.nextClock;
     this.endsOnStart = FakeContext.nextEndsOnStart;
     this.closeHangs = FakeContext.nextCloseHangs;
+    this.resumeHangs = FakeContext.nextResumeHangs;
+    if (this.resumeHangs) this.state = "suspended";
   }
 
   get currentTime(): number {
@@ -65,8 +72,20 @@ class FakeContext {
     return {};
   }
   resume(): Promise<void> {
+    if (this.resumeHangs && this.state !== "running") {
+      return new Promise<void>((resolve) => {
+        this.settlePendingResume = () => {
+          if (this.state !== "closed") this.state = "running";
+          resolve();
+        };
+      });
+    }
     this.state = "running";
     return Promise.resolve();
+  }
+  /** Settle a `resume()` that `nextResumeHangs` left pending. */
+  settleResume(): void {
+    this.settlePendingResume?.();
   }
   close(): Promise<void> {
     this.closeCalls++;
@@ -154,6 +173,7 @@ beforeEach(() => {
   FakeContext.nextClock = "frozen";
   FakeContext.nextEndsOnStart = false;
   FakeContext.nextCloseHangs = false;
+  FakeContext.nextResumeHangs = false;
 });
 
 afterEach(() => {
@@ -700,6 +720,67 @@ describe("an audio route change (devicechange, #1251)", () => {
     await io.resumeAudioContext();
     expect(second.closeCalls).toBe(1);
     expect(FakeContext.made).toHaveLength(3);
+  });
+
+  it("during a Play's pending resume does not close the context; the Play sounds on it and the drop lands when it stops", async () => {
+    FakeContext.nextClock = "advancing";
+    FakeContext.nextResumeHangs = true;
+    const { io, deviceChange } = await loadAudioIoWithDevices();
+    const play = io.playSamples(samples, { isStillCurrent: () => true });
+    const ctx = FakeContext.made[0]!;
+
+    deviceChange();
+    expect(ctx.closeCalls).toBe(0);
+
+    ctx.settleResume();
+    await vi.advanceTimersByTimeAsync(100);
+    const handle = await play;
+    expect(FakeContext.made).toHaveLength(1);
+    expect(ctx.sources).toHaveLength(1);
+    expect(ctx.closeCalls).toBe(0);
+    expect(reportFailure).not.toHaveBeenCalled();
+
+    handle.stop();
+    expect(ctx.closeCalls).toBe(1);
+  });
+
+  it("during a Record's pending resume does not close the context; the level tap opens on it and the drop waits for the tap", async () => {
+    FakeContext.nextClock = "advancing";
+    FakeContext.nextResumeHangs = true;
+    const { io, deviceChange } = await loadAudioIoWithDevices();
+    // `start()`'s shape: the race, then the tap in the same continuation.
+    const race = io.raceAudioResume("recorder-start-resume");
+    const ctx = FakeContext.made[0]!;
+
+    deviceChange();
+    expect(ctx.closeCalls).toBe(0);
+
+    ctx.settleResume();
+    expect(await race).toBe(false);
+    const tap = io.createLevelTap(fakeStream);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(FakeContext.made).toHaveLength(1);
+    expect(ctx.closeCalls).toBe(0);
+    expect(tap.readFrame()).not.toBeNull();
+
+    tap.disconnect();
+    expect(ctx.closeCalls).toBe(1);
+    expect(reportFailure).not.toHaveBeenCalled();
+  });
+
+  it("the return check stands aside while a resume is still pending", async () => {
+    FakeContext.nextResumeHangs = true;
+    const io = await loadAudioIo();
+    void io.raceAudioResume("recorder-start-resume");
+    const ctx = FakeContext.made[0]!;
+    // Reporting "running" before its clock has started, resume still pending.
+    ctx.state = "running";
+
+    const check = io.checkSharedClockOnReturn();
+    await vi.advanceTimersByTimeAsync(io.CLOCK_STALL_TIMEOUT_MS + 100);
+    await check;
+    expect(rowsFor("audio-clock-stalled-on-return")).toHaveLength(0);
+    expect(ctx.closeCalls).toBe(0);
   });
 
   it("an engine with no mediaDevices still builds and uses the context", async () => {
