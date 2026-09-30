@@ -306,7 +306,7 @@ describe("the header ⋮ stays top right in both modes, and 'Editing' sits in th
     const marker = markers[0]!;
     expect(marker.textContent).toBe(strings.editingMarker);
     // Not tappable, and not dressed up as one for a screen reader.
-    expect(marker.tagName).not.toBe("BUTTON");
+    expect(marker.tagName).toBe("SPAN");
     expect(marker.closest("button")).toBeNull();
     expect(marker.hasAttribute("role")).toBe(false);
     expect(marker.hasAttribute("tabindex")).toBe(false);
