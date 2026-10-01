@@ -1171,6 +1171,12 @@ export const strings = {
     "The source code for this app is public. This build's source:",
   // aria-label for the source link; the visible text is the repository path.
   aboutVisitAppSource: "Open this build's source on GitHub",
+  // The privacy policy, linked in the app as well as in the store listings
+  // (#1210; Apple guideline 5.1.1(i)). The visible text names the document;
+  // the aria-label says what the link does.
+  aboutPrivacy: "How this app handles your data:",
+  aboutPrivacyLink: "Privacy policy",
+  aboutVisitPrivacy: "Open the privacy policy",
   aboutThirdParty: "Open-source components",
   aboutTexts: "Licence texts",
   aboutContent: "Bundled content",
