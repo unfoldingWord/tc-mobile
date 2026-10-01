@@ -9,16 +9,21 @@ name: Android APK
 # builds whatever ref you pick there.
 #
 # One-time setup: create the release keystore (docs/native/README.md §5 step 1)
-# and set the four GitHub secrets below. The Android SDK (Platform 36,
+# and set the four secrets below in the `release-signing` environment
+# (required reviewers; #321). The Android SDK (Platform 36,
 # Build-tools 36.0.0, ANDROID_HOME) and Ruby are on the ubuntu-24.04 runner
 # image (verified against actions/runner-images, 2026-09-12). The JDK is NOT
 # left to the image: its default is Java 17, and Capacitor's generated
 # android/app/capacitor.build.gradle compiles at Java 21, so the lane pins
 # JDK 21 below — the same class of trap as the macos-15 default Xcode in the
-# iOS lane. No dispatch has run yet; the first one is the end-to-end check.
+# iOS lane.
 on:
   workflow_dispatch:
     inputs:
+      diagnostic:
+        description: "Enable USB WebView inspection in a clearly labelled diagnostic APK. Not a training build."
+        type: boolean
+        default: false
       allow_any_ref:
         description: "Build a ref other than staging/main (a feature-branch experiment). Tester builds should come from staging or main."
         type: boolean
@@ -32,27 +37,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # A cheap gate BEFORE any billable work. Refuse a non-staging/main ref
-  # (the dispatch picker defaults to develop) and a missing secret here — not
-  # partway through a Gradle build. An unset GitHub secret expands to "", so
-  # treat empty as missing. The build job `needs:` this, so a failure here
-  # never reaches the Gradle step.
+  # A cheap gate BEFORE the environment approval and any real work. Refuse a
+  # non-staging/main ref here (the dispatch picker defaults to develop). This
+  # job holds NO secrets and no environment on purpose: the signing secrets
+  # live in the `release-signing` environment (#321), which only the build job
+  # references, so a dispatch costs exactly one approval. The presence check
+  # moved there, as its first step.
   preflight:
-    name: Preflight (ref + secrets)
+    name: Preflight (ref)
     # Pinned to the image whose contents this lane was checked against (see the
     # header); `ubuntu-latest` retargets silently. Same reason the iOS lane pins
     # macos-15.
     runs-on: ubuntu-24.04
     permissions: {}
     env:
-      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
-      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       REF: ${{ github.ref_name }}
       # ref_name drops the branch-or-tag distinction: a TAG named `staging`
-      # would read as "staging". Require the ref to be a branch as well (#320
-      # tracks the same gap in the iOS lane).
+      # would read as "staging". Require the ref to be a branch as well,
+      # matching the iOS lane.
       REF_TYPE: ${{ github.ref_type }}
       ALLOW_ANY: ${{ inputs.allow_any_ref }}
     steps:
@@ -69,33 +71,50 @@ jobs:
             exit 1
           fi
 
+  build:
+    name: Build release APK
+    env:
+      TC_ANDROID_DIAGNOSTIC: ${{ inputs.diagnostic }}
+    needs: preflight
+    # The signing secrets are ENVIRONMENT secrets, not repository secrets, and
+    # the environment has required reviewers. A dispatch pauses here until an
+    # approver okays this run — the actor guard the in-yml ref check above
+    # cannot be (#321: any push-access branch can rewrite the yml and dispatch
+    # itself). The Android keystore is permanent app identity, so this gate is
+    # the only real control on it. The approval UI shows the ref being built.
+    environment: release-signing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      # First step, before checkout: an unset environment secret expands to "",
+      # so treat empty as missing and fail in seconds, not after npm ci and the
+      # web build. Step-scoped env so the keystore blob is not job-wide.
       - name: Require all four secrets
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           missing=0
           for name in ANDROID_KEYSTORE_BASE64 ANDROID_STORE_PASSWORD \
                       ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
             if [ -z "${!name:-}" ]; then
-              echo "::error::secret $name is unset or empty"
+              echo "::error::environment secret $name is unset or empty (environment: release-signing)"
               missing=1
             fi
           done
           [ "$missing" -eq 0 ] || exit 1
-          echo "Ref and all four secrets present."
+          echo "All four signing secrets present."
 
-  build:
-    name: Build release APK
-    needs: preflight
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22"
+          node-version-file: .node-version
           cache: "npm"
 
       # Pin the JDK BEFORE `cap sync` and Gradle. android/app/capacitor.build.gradle
@@ -133,8 +152,42 @@ jobs:
       - name: Build the web bundle
         run: npm run build
 
+      # ci.yml's fourth ship-blocker, checked against THIS (web) build, before
+      # the native rebuild two steps down replaces dist/sw.js with
+      # vite-plugin-pwa's self-destroying worker (#923): that worker never
+      # precaches anything at all, by design, so this grep would trivially
+      # "pass" against it forever regardless of vite.config.ts's globPatterns
+      # — silently stop being a real gate. The OBS thumbnails must not be in
+      # the service-worker precache (ADR 0006 / #177) — ~598 files stalling
+      # the first native launch. iOS checks emitted thumbnails against the
+      # reader-gated jpg policy; Android still rejects them unconditionally.
+      - name: OBS thumbnails stay out of the precache (web build; ADR 0006 / #177)
+        run: |
+          set -euo pipefail
+          if grep -q "obs/thumbs" dist/sw.js; then
+            echo "::error::dist/sw.js precaches obs/thumbs — vite.config.ts globPatterns regressed"
+            exit 1
+          fi
+
+      # #923: the web build above validates the PWA's own artifacts, but what
+      # actually ships inside the native shell must be the NATIVE-mode build —
+      # vite.config.ts's `--mode native` swaps `dist/sw.js` for
+      # vite-plugin-pwa's self-destroying worker and ships no auto-injected
+      # registration script, so the WebView never keeps an offline precache
+      # that can go stale across an in-place upgrade. This deliberately
+      # overwrites the dist/ the previous step just checked; `cap sync` below
+      # copies whatever dist/ holds at that point, which must be this one, not
+      # the web build's.
+      - name: Rebuild and check dist/ for the native shell (self-destroying service worker, #923)
+        run: npm run test:dist:native
+
       - name: Sync dist/ into the Android project
-        run: npx cap sync android
+        run: |
+          npx cap sync android
+          node scripts/check-android-diagnostic.mjs android/app/src/main/assets/capacitor.config.json
+
+      - name: Exercise the native diagnostic gate
+        run: node scripts/test-android-diagnostic.mjs
 
       # Mirrors the iOS lane's bundle guard. This is the first path that puts
       # dist/ on testers' devices, and workflow_dispatch can build a ref that
@@ -142,6 +195,8 @@ jobs:
       # a missing service worker or manifest, a leaked e2e harness — plus that
       # cap sync actually copied the bundle (android/app/src/main/assets/public
       # is gitignored; a sync that exits 0 without it would install a blank view).
+      # The OBS-thumbnail policy is checked against the WEB build above, not
+      # here — see that step's comment.
       - name: Guard the synced bundle
         run: |
           set -euo pipefail
@@ -153,13 +208,6 @@ jobs:
               exit 1
             fi
           done
-          # ci.yml's fourth ship-blocker: the OBS thumbnails must not be in the
-          # service-worker precache (ADR 0006 / #177) — ~598 files stalling the
-          # first native launch. The iOS guard omits this one; #320 carries it.
-          if grep -q "obs/thumbs" dist/sw.js; then
-            echo "::error::dist/sw.js precaches obs/thumbs — vite.config.ts globPatterns regressed"
-            exit 1
-          fi
           test -f android/app/src/main/assets/public/index.html \
             || { echo "::error::cap sync did not copy the web bundle into android/"; exit 1; }
           echo "Bundle built, clean, and synced into android/."
@@ -214,7 +262,7 @@ jobs:
       # layer; the test -f above is the first).
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: android-apk-${{ github.sha }}
+          name: android-apk-${{ inputs.diagnostic && 'diagnostic-' || '' }}${{ github.sha }}
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14

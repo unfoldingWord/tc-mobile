@@ -17,12 +17,10 @@ import { noTrimDecode, ramp } from "./support";
  * There is no MP3 decoder in Node, so the decoder is MODELLED: `noTrimDecode`
  * builds what a decoder that returns every granule hands back — 1105 samples
  * of priming, the recording, granule padding — with the granule count taken
- * from the real encode of the same audio. The model's two facts (head offset
- * 1105, length = granules × 1152) were measured in Chromium with impulses at
- * known positions for five input lengths; the PR body quotes the numbers.
+ * from the real encode of the same audio.
  *
  * Every fixture is a RAMP, never a constant: a fit that trimmed the wrong end
- * of a constant buffer would pass. That is exactly how round 1's fit passed.
+ * of a constant buffer would pass.
  */
 
 describe("mp3GranuleCount", () => {
@@ -36,9 +34,6 @@ describe("mp3GranuleCount", () => {
     [87_317, 77],
     [132_300, 116],
   ])("counts the frames lamejs emits for %i samples (%i)", (n, frames) => {
-    // The expected counts were read off the encoder's output by walking its
-    // headers in a separate probe, and match Chromium's decode lengths ÷ 1152
-    // (88,704 for 87,317; 133,632 for 132,300; 3,456 for 1,153 and 2,000).
     expect(mp3GranuleCount(encodeMp3(ramp(n)))).toBe(frames);
   });
 
@@ -70,7 +65,7 @@ describe("fitMp3Decode", () => {
   const emitted = mp3GranuleCount(mp3) * MP3_GRANULE;
 
   it("recovers the recording from a decoder that trims nothing", () => {
-    // The Chromium case: [1105 priming][recording][tail padding].
+    // No trimming: [1105 priming][recording][tail padding].
     const decoded = noTrimDecode(pcm, mp3);
     expect(decoded.length).toBe(emitted);
     const fitted = fitMp3Decode(decoded, mp3, N);

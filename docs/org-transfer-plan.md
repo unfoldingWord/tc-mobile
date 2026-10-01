@@ -1,6 +1,7 @@
 # Moving tC Mobile into the unfoldingWord org
 
-**Status:** plan, pending approval. Not yet executed.
+**Status:** executed — transferred 2026-09-02, public 2026-09-13. Kept as the
+record of the plan and its decisions.
 **Date:** 2026-08-27 · **DRI:** Seth Stoll · **Requirements:** the requirements owner
 
 ## Bottom line
@@ -45,10 +46,12 @@ named roster for that group yet, so honestly:
   (Seth) and a named **technical lead** (the EOS T2 merge-authority role — not
   currently named in `AGENTS.md`; the DRI section names builder/requirements/PM
   but no tech lead). Route via Birch (PM) / the uW eng leads.
-- **D2 — Public vs private.** uW default is **public**; tC Mobile is private and
-  `AGENTS.md` documents _why_ (it sidesteps the very approval gate this plan
-  closes). Once approved, the private reason expires — decide public, or
-  re-justify private and record it.
+- **D2 — Public vs private.** uW default is **public**; tC Mobile _was_ private
+  while `AGENTS.md` documented why (it sidestepped the very approval gate this
+  plan closed). **Decided: public, flipped 2026-09-13 (#250).** Keep it public:
+  a flip back would also disable the native lanes' signing gate and its
+  environment secrets (#321; `docs/native/README.md` §4a step 4) — not a free
+  change.
 
 ## What a GitHub _transfer_ carries — and what it doesn't
 
@@ -105,8 +108,14 @@ None of these block the move; siblings mostly lack them too.
 - **D5c — Name the technical lead** in `AGENTS.md` (feeds D1).
 - CODEOWNERS / PR / issue templates: **above** org norm (no sibling has them).
   Skip unless wanted.
-- **lamejs LGPL attribution (#36)** — the one open licensing item; unrelated to
-  the org move but should close before a public release.
+- **lamejs LGPL attribution (#36)** — the in-app notice and licence texts ship
+  (**Menu → About & licenses**, precached under `public/licenses/`). The DRI
+  selected this repository as the source offer under LGPL §4(d)(0); that is a
+  DRI-selected mechanism, not a legal determination that it satisfies §4(d)(0)
+  (ADR 0003 §4(d)). The repo went public **2026-09-13**, and the About screen
+  now links it for the exact build commit (#144), so this no longer ties to the
+  org move. The
+  native-shell (Capacitor) attribution is separate, #477.
 
 ## Already done (don't redo)
 

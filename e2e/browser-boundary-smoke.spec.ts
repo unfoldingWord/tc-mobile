@@ -25,16 +25,27 @@ import { expect, test } from "@playwright/test";
  * proven is the same code the screens run, without a fake microphone or a
  * simulated tap driving fragile UI timing.
  *
- * Scope cut, disclosed: the issue's fix-shape step 3 also asks for "at least
- * one `progress` message before `done`". On `develop` HEAD, `mp3.worker.ts`'s
- * protocol is one request → one `done`/`error` — no `progress` message exists
- * yet. That heartbeat is added by #207 (open, draft, unmerged as of this PR).
- * Asserting it here would either fabricate a pass against code that doesn't
- * emit it, or require implementing #207's deadline feature inside a smoke-test
- * PR — out of scope for #251. The round-trip itself (a real MP3 comes back
- * from the real worker) is asserted in full below; once #207 merges, extending
- * this spec to also assert the heartbeat is a small, separate follow-up.
+ * The heartbeat assertions require progress before completion and bound the
+ * gaps while encoding, so a busy worker must reach the main thread before the
+ * silence deadline (#166).
  */
+
+/**
+ * Ten minutes of canonical PCM gives the heartbeat test a long encode over
+ * which to sample progress gaps. The worker throttles progress to one message
+ * per 500 ms; a clip that finishes too quickly cannot exercise those gaps.
+ * Timings are logged to distinguish slow runners from missing heartbeats.
+ */
+const HEARTBEAT_CLIP_FRAMES = 44_100 * 600;
+
+/**
+ * One minute of canonical PCM for the #192 purge spec.
+ *
+ * The longer clip gives the abort a chance to interrupt an active encode.
+ * The harness waits for the PCM buffer to detach (the transfer) before
+ * aborting, rather than guessing when the worker has received it.
+ */
+const PURGE_CLIP_FRAMES = 44_100 * 60;
 
 /** Samples per MPEG-1 Layer III granule (`lib/audio/mp3-align.ts`). */
 const MP3_GRANULE = 1152;
@@ -44,6 +55,15 @@ const MP3_DECODER_DELAY = 529;
 declare global {
   interface Window {
     __e2e?: {
+      measureCanonicalise: (
+        right: "identical" | "decorrelated" | "silent"
+      ) => Promise<{
+        sourceRms: number;
+        outputRms: number;
+        deltaDb: number;
+        inputFrames: number;
+        outputFrames: number;
+      }>;
       encodeAndDecode: (frameCount: number) => Promise<{
         mp3Length: number;
         rawDecodedFrameCount: number;
@@ -54,6 +74,65 @@ declare global {
         fittedHeadRms: number;
         fittedTailRms: number;
         sourceRms: number;
+        alignmentLag: number;
+        alignmentCorrelation: number;
+      }>;
+      encodeWithHeartbeat: (frameCount: number) => Promise<{
+        frameCount: number;
+        codecMp3Length: number;
+        codecEncodeMs: number;
+        stalledName: string | null;
+        progressCount: number;
+        directEncodeMs: number;
+        maxGapMs: number;
+        deadlineMs: number;
+      }>;
+      encodeAfterAbortRebuild: (frameCount: number) => Promise<{
+        transferred: boolean;
+        aborted: boolean;
+        chunkRequestsBefore: number;
+        chunkRequestsAfter: number;
+        mp3Length: number;
+      }>;
+      measureWorkerReady: () => Promise<{
+        readyMs: number;
+        deadlineMs: number;
+      }>;
+      workerSnapshotReady: () => boolean;
+      // Declared here (not re-declared in joined-mp3-decode.spec.ts) because
+      // `tsconfig.e2e.json` compiles every file under `e2e/` as one program:
+      // a `declare global` is ambient over that whole program, and a second,
+      // differently-shaped `Window.__e2e` here would conflict with this one
+      // rather than merge with it. See that spec for what this is for (#1004
+      // residual 4).
+      buildAndDecodeJoinedChapter: (
+        segmentFrameCounts: readonly number[]
+      ) => Promise<{
+        segments: number;
+        missing: number;
+        joined: boolean;
+        mp3ByteLength: number;
+        sampleRate: number;
+        decodedLength: number;
+        expectedTotal: number;
+        toleranceFrames: number;
+        expectedGapCount: number;
+        gapCount: number;
+        gapRms: readonly number[];
+        boundaryMaxAbsDelta: readonly number[];
+      }>;
+      streamChapterThroughWorker: (
+        segmentFrameCounts: readonly number[]
+      ) => Promise<{
+        segments: number;
+        wholeBytes: number;
+        streamedBytes: number;
+        identical: boolean;
+        abortRejected: boolean;
+        stepsBeforeAbort: readonly number[];
+        identicalAfterAbort: boolean;
+        decodedLength: number;
+        expectedTotal: number;
       }>;
       openDb: () => Promise<{ name: string; version: number }>;
       watchVersionChange: () => void;
@@ -119,16 +198,14 @@ test.describe("worker MP3 encode round-trip + decodeAudioData (#251 assertions 2
     // The emitted length is whole granules of a real stream's frame headers.
     expect(result.emittedFrameCount % MP3_GRANULE).toBe(0);
 
-    // And the alignment must land on the RECORDING, not on the priming or the
-    // padding. The harness feeds a 440 Hz tone at amplitude 8000, so every
-    // window of the recording has an RMS near 8000/√2; the decoder's ~1105
-    // samples of priming, and the encoder's tail padding, are silence. A head
-    // skip that is too small leaves priming at the front, one that is too
-    // large runs off the end into padding — either way one of these two windows
-    // reads ~0 while a fitted-length check stays green. Bounds are loose (half
-    // to 1.5x the source's own RMS over the same window) because a 64 kbps
-    // lossy round-trip is not sample-exact; the failure being caught is
-    // silence, which is an order of magnitude away, not a few percent.
+    // The nonstationary chirp distinguishes an offset from a whole cycle.
+    // Correlation tolerates lossy gain changes; the lag bound permits only
+    // two samples of timing error, not the millisecond shifts RMS misses.
+    expect(result.alignmentCorrelation).toBeGreaterThan(0.95);
+    expect(Math.abs(result.alignmentLag)).toBeLessThanOrEqual(2);
+
+    // Retain the boundary-energy check for priming silence or tail padding.
+    // The chirp has constant amplitude, so both ends have comparable RMS.
     expect(result.sourceRms).toBeGreaterThan(1_000);
     expect(result.fittedHeadRms).toBeGreaterThan(result.sourceRms * 0.5);
     expect(result.fittedHeadRms).toBeLessThan(result.sourceRms * 1.5);
@@ -137,8 +214,84 @@ test.describe("worker MP3 encode round-trip + decodeAudioData (#251 assertions 2
   });
 });
 
+test.describe("the encoder heartbeat through a real busy worker (#166, #279 George R4 residual 1)", () => {
+  test("a multi-minute encode completes under the deadline, and its heartbeat gaps stay far inside it", async ({
+    page,
+  }) => {
+    // Two multi-minute encodes; generous, and logged below.
+    test.setTimeout(180_000);
+    await page.goto("/");
+    await waitForHarness(page);
+
+    const r = await page.evaluate(
+      (n) => window.__e2e!.encodeWithHeartbeat(n),
+      HEARTBEAT_CLIP_FRAMES
+    );
+    console.log(
+      `[heartbeat] ${r.frameCount / 44_100}s clip: codec encode ${Math.round(r.codecEncodeMs)} ms; ` +
+        `instrumented encode ${Math.round(r.directEncodeMs)} ms, ` +
+        `${r.progressCount} progress messages, max gap ${Math.round(r.maxGapMs)} ms ` +
+        `(deadline ${r.deadlineMs} ms)`
+    );
+
+    // (a) Through the app's real lane, deadline armed: no stall, real bytes.
+    expect(r.stalledName).toBeNull();
+    expect(r.codecMp3Length).toBeGreaterThan(100_000);
+
+    // The measurement only means something if the encode outlasted several
+    // heartbeat intervals. If a much faster machine ever finishes in under a
+    // second, this fails loudly and the clip length needs raising — rather than
+    // passing on a gap that was never given the chance to grow.
+    expect(r.directEncodeMs).toBeGreaterThan(2_000);
+
+    // (b) The busy worker's heartbeat reaches the main thread while it works —
+    // not one beat, but a steady stream across the encode.
+    expect(r.progressCount).toBeGreaterThanOrEqual(3);
+
+    // (c) The longest silence the main thread saw — request to first message,
+    // beat to beat, last beat to `done` — is far inside the deadline. A fifth
+    // of it leaves room for a phone several times slower than this runner. If
+    // this fails, the deadline design is wrong, not this bound.
+    expect(r.maxGapMs).toBeLessThan(r.deadlineMs / 5);
+  });
+});
+
+test.describe("a long chapter streamed through the real worker (#1003 part b)", () => {
+  test("the streamed MP3 equals the whole-buffer encode byte for byte, an abort mid-chapter rejects, and the lane streams again after it", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await waitForHarness(page);
+    // Ragged lengths, so every seam falls off a frame boundary.
+    const frames = [52_919, 30_001, 1_153, 44_100];
+    const result = await page.evaluate(
+      (f) => window.__e2e!.streamChapterThroughWorker(f),
+      frames
+    );
+    console.log(
+      `[stream-chapter] segments=${result.segments} whole=${result.wholeBytes} ` +
+        `streamed=${result.streamedBytes} identical=${result.identical} ` +
+        `abortRejected=${result.abortRejected} steps=${JSON.stringify(result.stepsBeforeAbort)} ` +
+        `identicalAfterAbort=${result.identicalAfterAbort} ` +
+        `decoded=${result.decodedLength} expected=${result.expectedTotal}`
+    );
+    expect(result.segments).toBe(frames.length);
+    expect(result.streamedBytes).toBeGreaterThan(0);
+    expect(result.identical).toBe(true);
+    expect(result.abortRejected).toBe(true);
+    // The abort landed after segment 1's step; nothing was reported after it.
+    expect(result.stepsBeforeAbort).toEqual([0, 1]);
+    expect(result.identicalAfterAbort).toBe(true);
+    // Whole granules from a decoder that returns every one; one that trims
+    // its own delay still fits (the joined-chapter spec's tolerance).
+    expect(
+      Math.abs(result.decodedLength - result.expectedTotal)
+    ).toBeLessThanOrEqual(MP3_GRANULE / 2);
+  });
+});
+
 test.describe("two-tab IndexedDB blocked/versionchange (#251 assertion 4)", () => {
-  test("the app's real connection sees a native versionchange; a concurrent delete stays blocked", async ({
+  test("the app's real connection sees a native versionchange and yields, so a concurrent delete proceeds", async ({
     browser,
   }) => {
     const context = await browser.newContext();
@@ -191,18 +344,27 @@ test.describe("two-tab IndexedDB blocked/versionchange (#251 assertion 4)", () =
           )
       );
 
-      // `src/lib/storage/db.ts` on `develop` HEAD attaches no `blocking()`
-      // handler (that lands in #236/#240, both open drafts, unmerged as of
-      // this PR) — so the app's own connection never closes itself on a
-      // native `versionchange`, and a concurrent delete from another tab
-      // stays genuinely `blocked` rather than proceeding. This is real
-      // Chromium IndexedDB behaviour through the app's real connection, not
-      // an inference from `fake-indexeddb`. Once #236/#240 land and `db.ts`
-      // closes on `versionchange`, this assertion is expected to flip to
-      // `"success"` — updating it then is that change's job, not a
-      // regression in this one. `.github/workflows/ci.yml`'s paths gate
-      // covers `src/lib/storage/` so that PR cannot land without running this.
-      expect(outcome).toBe("blocked");
+      // FLIPPED, deliberately, by the PR that superseded #236/#240 — which is
+      // the change this assertion was written to wait for, in as many words:
+      // "Once #236/#240 land and `db.ts` closes on `versionchange`, this
+      // assertion is expected to flip to `success` — updating it then is that
+      // change's job, not a regression in this one."
+      //
+      // `db.ts` now attaches `blocking()`. Both documents have the app mounted,
+      // so both have registered an upgrade coordinator, and with nothing held
+      // both answer "yield": each closes its own connection when the delete's
+      // native `versionchange` reaches it, and the delete proceeds instead of
+      // sitting on `onblocked`.
+      //
+      // This is the one piece of REAL-BROWSER evidence behind #221's P2. Node
+      // and `fake-indexeddb` can show that the close is reached synchronously
+      // inside the handler; only this can show that a real Chromium connection
+      // really lets go and that the operation waiting on it really proceeds.
+      // What it does NOT prove is the strict "before the handler returns"
+      // property — a close deferred by a microtask would very likely also
+      // satisfy a delete — and that half stays pinned by `tests/db-open.test.ts`,
+      // "gives up the connection inside the handler".
+      expect(outcome).toBe("success");
 
       const versionChangeFired = await pageA.evaluate(
         () => window.__e2e!.versionChangeFired
@@ -216,3 +378,117 @@ test.describe("two-tab IndexedDB blocked/versionchange (#251 assertion 4)", () =
     }
   });
 });
+
+test.describe("how long the worker takes to say ready (#192, George R2 P2)", () => {
+  test("a worker evaluates its whole chunk and answers far inside the handshake window", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await waitForHarness(page);
+
+    const result = await page.evaluate(
+      async () => await window.__e2e!.measureWorkerReady()
+    );
+    // Logged, not just asserted: the number is the point. `ENCODER_READY_TIMEOUT_MS`
+    // has to cover evaluation of the whole chunk — lamejs included, since `ready`
+    // is posted at the foot of the module — and until this ran, the constant rested
+    // on reasoning about that rather than on a measurement of it.
+    console.log(
+      `[ready] worker construction → ready: ${result.readyMs.toFixed(1)} ms ` +
+        `(window ${result.deadlineMs} ms)`
+    );
+
+    // It answered at all, which is the load-bearing half: a worker that never
+    // posts `ready` would hang this evaluate and fail the test.
+    expect(result.readyMs).toBeGreaterThan(0);
+    // And with room to spare. A tenth of the window is a deliberately loose
+    // bound — this is one engine on one machine, and a phone may be an order of
+    // magnitude slower, which is exactly why the window is freeze-aware and
+    // forgives one expiry rather than simply being long.
+    expect(result.readyMs).toBeLessThan(result.deadlineMs / 10);
+  });
+});
+
+test.describe("the worker chunk's blob snapshot survives a purge (#192)", () => {
+  test("an abort-driven rebuild still encodes after the chunk URL is unreachable", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await waitForHarness(page);
+
+    // Wait until the snapshot EXISTS. Purging before it does would leave nothing
+    // to rebuild from, and the assertion below would fail for a reason that has
+    // nothing to do with the fix. This asks the codec for `snapshotUrl` itself;
+    // it used to watch for the chunk's fetch in the resource timeline, which
+    // fires a `response.text()` and a `createObjectURL` too early and cannot see
+    // a non-ok response at all (George R1 P3-5).
+    //
+    // The `message` is not decoration. `captureWorkerSnapshot` is gated on
+    // `import.meta.env.PROD`, which Vite derives from NODE_ENV — so a shell that
+    // exports `NODE_ENV=development` (this dev container does) compiles the whole
+    // snapshot path out of the build and this poll times out on a bare "expected
+    // true, received false" that says nothing about why. CI sets no NODE_ENV, so
+    // it does not hit this; a laptop can.
+    await expect
+      .poll(() => page.evaluate(() => window.__e2e!.workerSnapshotReady()), {
+        timeout: 10_000,
+        message:
+          "captureWorkerSnapshot never produced a blob URL. It is gated on " +
+          "import.meta.env.PROD — if NODE_ENV is set to development in this " +
+          "shell, Vite builds with PROD=false and the snapshot path is compiled " +
+          "out. Re-run with NODE_ENV unset.",
+      })
+      .toBe(true);
+
+    // The purge. The harness build is served over HTTP with no service worker
+    // evicting anything, so it is simulated the only way a test can: every
+    // later request for the hashed chunk fails, exactly as a
+    // `cleanupOutdatedCaches` eviction leaves it for an offline page.
+    await page.route(/assets\/mp3\.worker-.*\.js$/, (route) => route.abort());
+
+    const result = await page.evaluate(
+      async (frames) => await window.__e2e!.encodeAfterAbortRebuild(frames),
+      PURGE_CLIP_FRAMES
+    );
+
+    // The abort really terminated an in-flight encode. Without this the warm
+    // worker was never dropped, no rebuild happened, and the MP3 below would be
+    // the ORIGINAL worker's — green for the wrong reason (#270: a gate has to be
+    // able to fail).
+    //
+    // Two claims, and each can fail on its own (Frank R3 P2). The PCM buffer
+    // was detached, so an encode was genuinely in flight when the abort landed:
+    // the harness waits for that with a deadline, and reports the deadline
+    // expiring rather than carrying on as if it had not.
+    expect(result.transferred).toBe(true);
+    // And the job rejected with THIS signal's reason — not with a worker error
+    // or a stall, which reject too and leave a different worker behind.
+    expect(result.aborted).toBe(true);
+    // The rebuild fetched nothing. A worker built from the chunk URL would have
+    // issued another request — and the route would have failed it.
+    expect(result.chunkRequestsAfter).toBe(result.chunkRequestsBefore);
+    // And a real MP3 came back, so the blob worker genuinely ran the encoder.
+    expect(result.mp3Length).toBeGreaterThan(0);
+  });
+});
+
+// #562: analytic stereo-to-mono expectations. This bounds a synthetic browser
+// path; it does not identify either phone's capture channels or audible route.
+for (const [right, expectedDb] of [
+  ["identical", 0],
+  ["decorrelated", 10 * Math.log10(0.5)],
+  ["silent", 20 * Math.log10(0.5)],
+] as const) {
+  test(`canonicalisation level: ${right} right channel`, async ({ page }) => {
+    await page.goto("/");
+    await page.waitForFunction(() => !!window.__e2e);
+    const result = await page.evaluate(
+      (mode) => window.__e2e!.measureCanonicalise(mode),
+      right
+    );
+    console.log(JSON.stringify({ right, expectedDb, ...result }));
+    expect
+      .soft(result.deltaDb, `${right} right-channel RMS delta`)
+      .toBeCloseTo(expectedDb, 1);
+  });
+}

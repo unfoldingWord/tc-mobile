@@ -58,6 +58,76 @@ jobs:
       - name: Scan full history
         run: ./gitleaks detect --source . --redact -v --exit-code 1
 
+  # #840 R3: a commit with a subject and no body has reached `develop` before
+  # (#776; the review bench's fix-lane commits on #792 `7a41ee29d` and #793
+  # `21108948e`), past AGENTS.md's "Conventions" rule (subject AND body,
+  # neither blank) and past `.husky/commit-msg`, which only guards a commit
+  # made in a checkout that ran `npm run prepare` — a PR opened from a
+  # checkout where hooks were bypassed or never installed reaches here
+  # ungated otherwise. `pull_request` only, per AGENTS.md's own rule for a
+  # check that reads `base..head`: the equivalent `push` event has no PR base
+  # to diff against, and a push to develop/staging/main is always a merge, not
+  # an individual commit this check would ever fail.
+  commit-messages:
+    name: Commit Messages
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Full history: `--range` below needs the merge base, which a shallow
+      # (default depth-1) checkout does not have. Same reasoning as
+      # browser-smoke's "Changed paths" step below.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+
+      # `github.sha` on a `pull_request` event is GitHub's synthetic merge
+      # ref (refs/pull/N/merge), which contains the base branch's CURRENT
+      # tip, not just this PR's commits — and `pull_request.base.sha` can be
+      # older than that tip by the time CI runs. Diffing `base.sha..github.sha`
+      # therefore sweeps in every commit already merged to the base branch
+      # since the PR's base snapshot was taken (#865 follow-up, observed on
+      # PR #869 run 36033907345: the gate failed on four bodyless commits
+      # already on `develop` — via #875, #870, #852 — that #869 never
+      # introduced). Fetching `origin/<base_ref>` live and diffing it against
+      # `pull_request.head.sha` (the PR branch's own tip, never the
+      # synthetic merge ref) judges only the PR's own commits, whether the
+      # PR was branched from an old `develop` or has since merged `develop`
+      # back in. See tests/ci-commit-messages-range.test.ts, which pins this
+      # exact wiring.
+      #
+      # For a PR whose base is `staging` or `main` (a promotion, or a
+      # hotfix), `origin/$BASE_REF..$HEAD_SHA` above is every commit since
+      # the LAST promotion — commits already judged by develop's own gate,
+      # or that predate this gate entirely (#891, #889: 20 such commits on
+      # the first `develop -> staging` promotion this gate ever saw). Giving
+      # them bodies would mean rewriting develop's history, which this repo
+      # does not do, so a promotion could never pass. Diffing against
+      # `origin/develop` instead correctly excludes all of that — every
+      # commit on develop has already been judged by develop's own gate, or
+      # predates it — while still catching a hotfix commit that is NOT on
+      # develop (branched off staging directly, or added after branching):
+      # that commit is not reachable from `origin/develop` either, so it
+      # still shows up in `origin/develop..$HEAD_SHA`. A PR into develop (or
+      # anything else) is unchanged.
+      - name: Check PR commits for a non-blank body
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$BASE_REF" = "staging" ] || [ "$BASE_REF" = "main" ]; then
+            git fetch origin develop
+            node scripts/check-commit-messages.mjs --range "origin/develop..$HEAD_SHA"
+          else
+            git fetch origin "$BASE_REF"
+            node scripts/check-commit-messages.mjs --range "origin/$BASE_REF..$HEAD_SHA"
+          fi
+
   quality:
     name: Code Quality
     runs-on: ubuntu-latest
@@ -68,7 +138,7 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22"
+          node-version-file: .node-version
           cache: "npm"
 
       - name: Install dependencies
@@ -90,6 +160,15 @@ jobs:
       - name: Unused files and dependencies
         run: npm run knip
 
+      # tests/ios-workflow-gates.test.ts's `describe.skipIf(!hasRuby)` block
+      # skips its seven Xcode-selection cases whenever `ruby -v` doesn't exit
+      # 0 on this runner, and the job stays green either way. Printing it
+      # here, right before the suite that depends on it, makes a runner-image
+      # change that silently drops ruby show up as a log line instead of a
+      # quiet drop in coverage (#958 item 3).
+      - name: Ruby availability (gates the iOS Xcode-selection tests)
+        run: ruby -v
+
       - name: Test
         run: npm test
 
@@ -107,7 +186,7 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22"
+          node-version-file: .node-version
           cache: "npm"
 
       - name: Install dependencies
@@ -119,11 +198,45 @@ jobs:
       - name: Confirm the PWA artefacts were emitted
         # A build that silently stops producing a service worker or manifest
         # would leave the app installable-looking but not actually offline —
-        # the one property this project cannot lose.
+        # the one property this project cannot lose. `version.json` is checked
+        # here too (round-1 George G1): `scripts/check-deploy.mjs` and the
+        # whole "Confirming a deploy" runbook (AGENTS.md) depend on every real
+        # build emitting it, and nothing else was asserting that.
         run: |
           test -f dist/sw.js || { echo "::error::dist/sw.js missing"; exit 1; }
           test -f dist/manifest.webmanifest || { echo "::error::manifest missing"; exit 1; }
+          test -f dist/version.json || { echo "::error::dist/version.json missing"; exit 1; }
+          node -e '
+            const fs = require("fs");
+            const v = JSON.parse(fs.readFileSync("dist/version.json", "utf8"));
+            if (typeof v.version !== "string" || typeof v.sha !== "string") {
+              console.error("::error::dist/version.json is missing a string version/sha field:", JSON.stringify(v));
+              process.exit(1);
+            }
+          '
           echo "PWA artefacts present."
+
+      - name: version.json stays out of the precache manifest
+        # tests/precache-manifest.test.ts's "never contains version.json"
+        # assertion reads dist/sw.js directly, and runs only under
+        # `npm run test:dist`, which guarantees a build first (#568); the
+        # Quality job's `npm test` skips it by design. This grep is a second,
+        # independent reader of the same build output, so the invariant does
+        # not rest on one mechanism: version.json must stay
+        # outside `workbox.globPatterns` (vite.config.ts) so `check:deploy`'s
+        # fetch (and a browser's) always reaches the origin, never a
+        # service-worker-cached copy (see "Confirming a deploy" in
+        # AGENTS.md). `-F` (fixed string) matters here: the emitted
+        # `navigateFallbackDenylist` regex source contains the *escaped*
+        # substring `version\.json` (backslash then dot), which a literal
+        # search for `version.json` does not match — only an actual
+        # `url:"version.json"` precache-manifest entry would.
+        run: |
+          if grep -qF "version.json" dist/sw.js; then
+            echo "::error::dist/sw.js's precache manifest contains version.json — it must stay outside workbox.globPatterns in vite.config.ts so a deploy check (and a browser) always fetches it from the origin, never a cached copy. See tests/precache-manifest.test.ts and AGENTS.md, 'Confirming a deploy and rolling one back'."
+            exit 1
+          fi
+          echo "version.json absent from dist/sw.js's precache manifest."
 
       - name: OBS thumbnails stay out of the precache manifest
         # tests/precache-manifest.test.ts pins `workbox.globPatterns` in
@@ -151,6 +264,27 @@ jobs:
             exit 1
           fi
           echo "obs/thumbs absent from dist/sw.js."
+
+      # tests/dist-css.test.ts and tests/precache-manifest.test.ts's
+      # `dist/sw.js`-reading block both read the actual build output, so they
+      # are meaningless anywhere a build has not just happened — the Quality
+      # job runs `npm test` before this job's `npm run build` exists, and
+      # they skip there by design. This step is the one place they run.
+      #
+      # `npm run test:dist` is that single sanctioned caller, shared with
+      # `npm run verify` and `.husky/pre-push` so there is one definition of
+      # "after a build" rather than three. It sets `REQUIRE_DIST_BUILD=1`,
+      # which turns each file's "fails, not skips, when required to find a
+      # build and does not" case from a no-op into a real assertion: point
+      # this same command at a tree with no `dist/` and it goes red, so a
+      # build step that silently stopped producing output is caught rather
+      # than skipped past.
+      #
+      # Nothing here gates on whether `dist/` merely happens to exist — that
+      # is what made the suite's tally depend on leftover state (#568). The
+      # variable decides, and only this script sets it.
+      - name: Build-artifact tests actually run here, not just skip
+        run: npm run test:dist
 
       # The e2e smoke harness (#251) must never reach a shipped build. What
       # keeps it out is `vite.config.ts`'s `build.rollupOptions.external`, not
@@ -216,10 +350,11 @@ jobs:
   # mp3.worker.ts round-trip, decodeAudioData of the worker's in-memory MP3
   # output (not the IndexedDB clipData round-trip, which the Node/fake-indexeddb
   # suite already covers), the service worker's atomic precache install, and a
-  # real two-tab IndexedDB blocked/versionchange — none of which the Node/vitest
-  # suite above can see by construction (lib/ is DOM-free on purpose). Gated to
-  # pull_request only, and only when the browser-boundary code it exercises
-  # actually changed, so a docs-only or components-only PR pays nothing for it.
+  # real two-tab IndexedDB blocked/versionchange — and, since #205, the durable
+  # failure log driven through the real UI of the shipped `dist/` build. None of
+  # which the Node/vitest suite above can see by construction (lib/ is DOM-free
+  # on purpose). Gated to pull_request only, and only when the code it exercises
+  # actually changed, so a docs-only PR pays nothing for it.
   browser-smoke:
     name: Headless-Chromium Smoke
     if: github.event_name == 'pull_request'
@@ -247,14 +382,56 @@ jobs:
       # and under the round-1 gate (`src/hooks/` or `vite.config.ts` only)
       # they would not have run it (round-1 Frank C2).
       #
-      # `src/app/main.tsx` is in the gate for the same reason and is easy to
+      # `src/app/main.tsx` was in the gate for the same reason and is easy to
       # miss: it is the ONLY production loader of the harness (the
       # `import.meta.env.MODE === "e2e"` dynamic `import()` at its foot). A PR
       # that deletes or breaks just that branch changes no other gated path, so
-      # without this entry the gate reads `smoke=false`, Playwright never runs,
+      # without that entry the gate reads `smoke=false`, Playwright never runs,
       # and CI goes green while `window.__e2e` has silently stopped loading —
       # every spec here would fail on the next PR that did trip the gate
       # (round-2 Frank F2 / George G-3).
+      #
+      # THE SOURCE HALF OF THIS FILTER IS A PLAIN `src/`, and two independent
+      # lanes arrived there within a day of each other — which is the strongest
+      # thing that can be said for it.
+      #
+      # #205's `e2e/failure-log.spec.ts` and #171's `e2e/theme-toggle.spec.ts`
+      # both load `/` from the shipped `dist/` build and assert the real UI, so
+      # neither has a dependency set smaller than the whole app graph reachable
+      # from `main.tsx`. The per-directory list was derivable only while every
+      # spec drove either the harness or the service worker.
+      #
+      # Each lane also has its own worked example of the list failing:
+      #
+      #   - #205: a components-only PR that removed the ≡ marker (or the
+      #     panel's mount, which is one `count > 0` away) would, under the old
+      #     list, have skipped all thirteen of its cases and merged green.
+      #   - #171: an enumerated list was tried and was wrong within one review
+      #     round. It named `src/lib/theme.ts`, `books-screen.tsx`,
+      #     `strings.ts`, `src/app/styles/` and `index.html` — each genuinely a
+      #     dependency — and still returned `smoke=false` for
+      #     `src/app/globals.css` (where the `@theme` colour bridge and the
+      #     `@import` of the whole style layer live), `src/app/App.tsx` (which
+      #     decides whether `BooksScreen` is mounted at all), `menu.tsx` (which
+      #     renders the toggle's children) and `control.tsx` (which IS the
+      #     toggle). That was the second such miss; round-1 Frank C2 was the
+      #     first.
+      #
+      # Both are the "a gate is tested in both states" failure AGENTS.md names,
+      # in the shape where the gate is simply never reached — and the failure
+      # mode is silent, because a skipped browser gate looks exactly like a
+      # passing one. Over-running this suite costs a few minutes; under-running
+      # it is the defect. `docs/**` and `*.md` still pay nothing.
+      #
+      # Still enumerated, because these are NOT under `src/` and each is a real
+      # dependency: `index.html` (the `meta[name="theme-color"]` the theme spec
+      # reads, and the viewport policy `tests/touch-policy.test.ts` gates),
+      # `e2e/` and `playwright.config.ts` (the suites and their projects),
+      # `vite.config.ts` (which decides what `dist/` and `dist-e2e/` contain at
+      # all) and the two lockfile/manifest paths.
+      #
+      # `tests/smoke-path-filter.test.ts` reads this exact regex out of this
+      # file and pins BOTH gate states.
       #
       # `git diff` failing — a missing base SHA on a shallow checkout, say —
       # must fail the STEP. Piped straight into `grep` inside an `if`, a broken
@@ -276,7 +453,7 @@ jobs:
           # then reads a here-string, not a pipe: no pipeline whose exit status
           # could be confused with the match result.
           changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
-          if grep -qE '^(src/hooks/|src/lib/audio/|src/lib/storage/|src/app/e2e-harness\.ts$|src/app/main\.tsx$|e2e/|playwright\.config\.ts$|vite\.config\.ts$|package\.json$|package-lock\.json$)' <<<"$changed"; then
+          if grep -qE '^(src/|index\.html$|e2e/|playwright\.config\.ts$|vite\.config\.ts$|package\.json$|package-lock\.json$)' <<<"$changed"; then
             echo "smoke=true" >> "$GITHUB_OUTPUT"
           else
             echo "smoke=false" >> "$GITHUB_OUTPUT"
@@ -285,7 +462,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         if: steps.changed.outputs.smoke == 'true'
         with:
-          node-version: "22"
+          node-version-file: .node-version
           cache: "npm"
 
       - name: Install dependencies

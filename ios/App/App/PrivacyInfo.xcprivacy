@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+      <!--
+        Required by @capacitor/filesystem (George R6 P2, #347). The plugin's
+        writeFile/appendFile/readdir calls resolve file timestamps and sizes
+        under the hood; Apple's required-reason API rule (in force since
+        2024-05-01) needs this declared or a TestFlight/App Store upload that
+        links CapacitorFilesystem is rejected. Reason C617.1 (display file
+        timestamps to the user) is the plugin README's stated reason:
+        node_modules/@capacitor/filesystem/README.md, "Apple Privacy Manifest
+        Requirements".
+      -->
+      <dict>
+        <key>NSPrivacyAccessedAPIType</key>
+        <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+        <key>NSPrivacyAccessedAPITypeReasons</key>
+        <array>
+          <string>C617.1</string>
+        </array>
+      </dict>
+    </array>
+  </dict>
+</plist>

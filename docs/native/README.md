@@ -5,10 +5,17 @@ installable iOS (TestFlight) + Android (APK) for the Nairobi training.
 **Decision basis:** `docs/research/native-packaging.md` (recommendation) and
 its counter-case (#86). **Status:** shell only, no product changes.
 
-Capacitor wraps the **existing PWA** in a native WebView. The same web build
-(`npm run build` → `dist/`) that Cloudflare serves is copied into a native iOS
-and Android project. There is no second codebase and no product change here —
-just the native shell and the pipeline to produce installable builds.
+Capacitor wraps the **existing PWA** in a native WebView. The same app code
+that Cloudflare serves is copied into a native iOS and Android project — but
+the native build is `npm run build:native` (`vite build --mode native`), not
+the plain `npm run build` Cloudflare Workers Builds runs for the PWA
+(#923). Both emit the same application code into `dist/`; the native build
+additionally ships a self-unregistering, cache-clearing service worker and no
+registration script at all, instead of the PWA's normal offline precache —
+see [§2](#2-the-core-loop)'s note below and `vite.config.ts`'s native-mode
+comment. There is no second codebase and no product change here — just the
+native shell, this one build-mode difference, and the pipeline to produce
+installable builds.
 
 > **What was NOT done in this repo, and why.** This integration was scaffolded
 > in a Linux CI container with **no Xcode and no Android Studio**. The native
@@ -19,8 +26,11 @@ just the native shell and the pipeline to produce installable builds.
 > with the native toolchains and are Seth's to run; the CI lanes in
 > [§4a](#4a-ios--testflight-via-ci-automated-no-mac-step) and
 > [§5a](#5a-android--apk-via-ci-automated-no-mac-step) run on GitHub-hosted
-> runners instead (the iOS lane is proven end to end, the Android lane has not
-> yet been dispatched). Nothing below has been verified on a device.
+> runners instead. A Capacitor debug APK was once refused the microphone by
+> the Android WebView, which is why §5's `MODIFY_AUDIO_SETTINGS` paragraph
+> exists — that is a reason the permission stays, not a coverage claim. For
+> what has and has not run on a device, read `docs/progress_tracker.md` and
+> #245; do not read it out of this banner. §8 still applies in full.
 
 ---
 
@@ -42,10 +52,14 @@ The two platforms have very different fastest routes:
   the toolchain generates for you, so there is nothing to set up first.
 
   ```bash
-  npm run build && npx cap sync android
+  npm run build:native && npx cap sync android
   cd android && ./gradlew assembleDebug
   # → android/app/build/outputs/apk/debug/app-debug.apk
   ```
+
+  To inspect this local debug build through `chrome://inspect`, set
+  `TC_ANDROID_DIAGNOSTIC=true` for both the sync and Gradle commands
+  ([diagnostic builds](#5a-android--apk-via-ci-automated-no-mac-step)).
 
   Install that APK **only on a developer's own device — one that will never
   receive a §5a release build** — and follow the sideload steps in
@@ -114,8 +128,10 @@ morning.
 | `@capacitor/{core,ios,android}` | runtime + platform deps (`dependencies`) | package.json    |
 | `@capacitor/cli`                | the `cap` CLI (`devDependencies`)        | package.json    |
 
-**Capacitor version:** 8.5.1 (pinned exact). **appId:** `org.unfoldingword.tcmobile`.
-**appName / home-screen label:** `tC Mobile` (matches the PWA `short_name`).
+**Capacitor version:** pinned exactly in `package.json`. **appId:** `org.unfoldingword.tcmobile`.
+**appName / ordinary home-screen label:** `tC Mobile` (matches the PWA `short_name`).
+Android [diagnostic builds](#5a-android--apk-via-ci-automated-no-mac-step)
+use the label `tC Mobile Diagnostic`.
 
 The native projects **are committed** — the mainstream Capacitor practice —
 so that signing config, `Info.plist`, entitlements, icons, and any native
@@ -131,8 +147,11 @@ the JS toolchain never formats or lints generated native files. **No root
 Generated project facts (evidence, from the scaffolded projects):
 
 - **Android:** `minSdk 24`, `compile/targetSdk 36`, Gradle `8.14.3`,
-  `applicationId org.unfoldingword.tcmobile`, `versionCode 1`, `versionName "1.0"`.
-- **iOS:** deployment target `15.0`, bundle id `org.unfoldingword.tcmobile`,
+  `applicationId org.unfoldingword.tcmobile`, `versionCode 1` (default; a
+  build passes `-PversionCode`), `versionName` read from `package.json`'s
+  `version` at build time (`0.2.3` as of this writing — was the Capacitor
+  template default `"1.0"` until #410).
+- **iOS:** deployment target `15.4`, bundle id `org.unfoldingword.tcmobile`,
   `MARKETING_VERSION 1.0`, `CURRENT_PROJECT_VERSION 1`, display name `tC Mobile`.
 
 ---
@@ -142,10 +161,24 @@ Generated project facts (evidence, from the scaffolded projects):
 Any time the web app changes, the native shell needs the new bundle:
 
 ```bash
-npm run build          # emit dist/
-npx cap sync           # copy dist/ into ios/ and android/, refresh native deps
+npm run build:native   # emit dist/ — the NATIVE build mode, not `npm run build`
+npx cap sync            # copy dist/ into ios/ and android/, refresh native deps
 # then open/build the native project (Mac only) — §4 / §5
 ```
+
+**Always `npm run build:native` here, never the plain `npm run build`
+(#923).** Both emit the same application code; `build:native`
+(`vite build --mode native`) additionally swaps the service worker
+`vite-plugin-pwa` emits for a self-unregistering, cache-clearing one and
+ships no registration script, because a Workbox offline precache adds
+nothing inside a WebView that already reads its bundle from local files —
+and a stale one is exactly what left an APK upgraded in place still running
+the old build. Syncing a plain `npm run build` into a native project
+re-introduces that bug. See `vite.config.ts`'s native-mode comment and
+`src/hooks/register-service-worker.ts` for the full reasoning, and
+[§7](#7-coexistence-with-the-cloudflare-pwa-deploy) for how this keeps the
+native shell from colliding with the Cloudflare PWA deploy, which still runs
+the plain `npm run build`.
 
 `cap sync` = `cap copy` (web assets + config) + `cap update` (native deps).
 Both `cap add` and `cap sync` run **without** Xcode/Android Studio (verified in
@@ -158,8 +191,9 @@ APK, which need no Mac at all.
 
 Convenience scripts are in `package.json` (added for the Monday prep, #262):
 
-- `npm run cap:sync` → `npm run build && npx cap sync` (rebuild the web bundle
-  and copy it into both native projects — the core loop above in one command).
+- `npm run cap:sync` → `npm run build:native && npx cap sync` (rebuild the
+  native bundle and copy it into both native projects — the core loop above
+  in one command).
 - `npm run cap:ios` → `npx cap open ios`.
 - `npm run cap:android` → `npx cap open android`.
 
@@ -181,11 +215,22 @@ Capacitor 8:
   compatible with Gradle 8.14.3 (**JDK 21** recommended).
 - `git clone` the repo, then `npm ci` at the repo root.
 
+**Local workflow tests:** `tests/ios-workflow-gates.test.ts` runs extracted Bash
+steps with real Node and Ruby executables. Ruby is not required to get a green
+`npm test` / `npm run verify` — without `ruby` (with RubyGems for
+`Gem::Version`) on `PATH`, the iOS Xcode-selection cases in that file are
+skipped, not failed (`describe.skipIf(!hasRuby)`,
+`tests/ios-workflow-gates.test.ts:167`), so a run on such a machine, including
+a devcontainer, has not exercised them — see
+[`../../CONTRIBUTING.md`](../../CONTRIBUTING.md#setup-and-commands). These
+tests do not require Xcode or signing credentials and do not dispatch a native
+build.
+
 ```bash
 git clone https://github.com/unfoldingWord/tc-mobile.git
 cd tc-mobile
 npm ci
-npm run build
+npm run build:native
 npx cap sync
 ```
 
@@ -236,15 +281,23 @@ iOS TestFlight → Run workflow**, choosing the branch to build. It never runs o
 push/PR, so it does not collide with the Cloudflare PWA deploy ([§7](#7-coexistence-with-the-cloudflare-pwa-deploy))
 and adds no required check to normal PRs.
 
-**What a run does:** `npm ci` → `npm run build` → `npx cap sync ios` → archive the
-`App` scheme (Release) → upload to TestFlight. **A green run means the binary
+**What a run does:** `npm ci` → `npm run build` → `npm run test:dist` (the web
+build and its own artifact checks, including the OBS thumbnail policy) →
+`npm run test:dist:native` (rebuilds `dist/` in native mode — the
+self-unregistering, cache-clearing service worker, #923 — and checks that
+output) → select Xcode 26 → `npx cap sync ios` → guard the synced bundle →
+archive the `App` scheme (Release) → upload to TestFlight. **A green run means
+the binary
 uploaded, not that a tester received it:** the lane sets
 `skip_waiting_for_build_processing` (it does not hold the billed runner open for
 Apple's processing) and assigns no tester group, so it cannot observe a later
 processing rejection either. Internal testers receive the build automatically once
 processing finishes **only if the internal tester group has _Automatically
 distribute new builds_ enabled** (§4a setup) — otherwise assign the processed build
-to the group by hand. **External** distribution needs a Beta App Review and is a
+to the group by hand. A tester whose group isn't assigned the new build stays on
+the previous one, and their reports then describe that older build (this
+happened on 1.0.0-rc.1). Check the assignment at every tester cut, and have
+iPhone testers confirm the build stamp before they report. **External** distribution needs a Beta App Review and is a
 separate step.
 
 The build number (`CFBundleVersion`) is the run's **unix timestamp** — unique and
@@ -286,7 +339,51 @@ change.
    Then create an **internal tester group** (TestFlight → Internal Testing) and
    enable **_Automatically distribute new builds_** on it, or an uploaded build
    reaches no one until it is assigned to a group by hand.
-4. **GitHub repository secrets** (_Settings → Secrets and variables → Actions_):
+4. **The `release-signing` environment** (_Settings → Environments → New_):
+   name it exactly `release-signing`, add **required reviewers** (the DRI at
+   minimum), and **untick _Allow administrators to bypass configured
+   protection rules_** — with it on (GitHub's default), any repository admin
+   can click _Start all waiting jobs_ and no reviewer is consulted, which is
+   the #321 hole under a different door. Leave _Prevent self-review_ off: the
+   DRI both dispatches and approves. Leave the deployment-branch rule at "all
+   branches" — the in-yml ref guard handles branches; the reviewer is the actor
+   guard (#321). A settings-side branch list would be the one ref guard a
+   rewritten yml cannot remove, but it would also block the `allow_any_ref`
+   proving dispatches from feature branches; recorded here so the trade-off is
+   not re-litigated.
+
+   **Plan trap.** On GitHub Free, Pro and Team, required reviewers exist
+   **only on public repositories**, and the unfoldingWord org is on Free. If
+   this repository is ever made private again, GitHub ignores the protection
+   rules **and the environment secrets**: the gate is silently gone, and both
+   lanes fail at the presence check naming a secret that is in fact set.
+   Nothing in a run explains why — this paragraph is the explanation.
+
+   Both native lanes' signing jobs declare `environment: release-signing`, so
+   every dispatch pauses for one approval before any secret is read.
+
+   **What the approval is.** GitHub runs the workflow file **on the dispatched
+   ref**, and any push-access branch can rewrite it while keeping
+   `environment: release-signing` on the job — so a branch can add a step that
+   reads the secrets, and the pause is the only thing between it and them.
+   Before _Approve and deploy_, open `.github/workflows/<lane>.yml` **on the
+   ref the run shows** and confirm it is the committed lane; reject anything
+   else. Approving without reading is the #321 hole with a rubber stamp on it.
+
+5. **Environment secrets** (_Settings → Environments → release-signing →
+   Environment secrets_), **not** repository secrets. When both exist, the
+   environment copy takes precedence for the gated job — but a repository
+   secret stays readable by **any** workflow in the repository, gated or not,
+   so a leftover repository copy is the bypass #321 closes. Migrating from
+   repository secrets, **in this order**: set and verify every environment
+   secret; promote the yml that carries `environment: release-signing` to
+   **every ref you still dispatch** (`staging`, and `main` once it has the
+   lane); only then delete the repository copies (all eleven signing names in
+   one loop — `ios-credentials.md` §8). Deleting earlier breaks the live
+   tester lane: the pre-#321 yml on `staging` has no environment, cannot see
+   environment secrets, and runs on the repository copies until the promotion
+   replaces it. Afterwards `gh secret list` at repository level should show
+   **no signing name** — `CLOUDFLARE_ACCOUNT_ID` is not one:
 
    | Secret                         | Value                                                                      |
    | ------------------------------ | -------------------------------------------------------------------------- |
@@ -325,16 +422,27 @@ is the repeatable path. **The first green CI run is the first real verification.
 
 ## 5. Android → APK sideload
 
-Sideload only; **Play Store submission is out of scope** (#262).
+Sideload only here. Google Play distribution is its own lane and runbook:
+[`play-store.md`](play-store.md).
 
-**Microphone permission:** the app records audio, so the manifest declares
-`RECORD_AUDIO`. This now **ships in the committed shell**
-(`android/app/src/main/AndroidManifest.xml`, alongside `INTERNET`) — the system
-WebView cannot grant `getUserMedia({audio:true})` a permission the manifest
-never declares. Android 6+ also shows a **runtime** prompt on first record;
-confirm the prompt appears and audio captures on-device (part of the
-audio-revalidation spike, §8). Do not remove the permission (#262 / #86 C1–C2,
-PR #265).
+**Microphone permission — two manifest lines, not one:** the manifest declares
+`RECORD_AUDIO` **and** `MODIFY_AUDIO_SETTINGS`
+(`android/app/src/main/AndroidManifest.xml`, alongside `INTERNET`). Both are
+required because of how Capacitor bridges the WebView to Android: when the page
+calls `getUserMedia({audio:true})`, the system WebView asks the host app for
+`AUDIO_CAPTURE`, and Capacitor's `BridgeWebChromeClient.onPermissionRequest`
+answers by requesting **both** `MODIFY_AUDIO_SETTINGS` and `RECORD_AUDIO` from
+Android and calls `request.deny()` unless every one is granted
+(`node_modules/@capacitor/android/.../BridgeWebChromeClient.java`, 8.5.1).
+Android refuses an undeclared permission silently, so with `RECORD_AUDIO` alone
+the OS prompt appears, the user allows it, Settings shows Microphone allowed —
+and the app still gets a `NotAllowedError` and shows the permission panel. That
+is exactly what the first Android device pass hit (Galaxy A17 5G, debug APK
+v0.1.15, 2026-09-14; #263 / #245). `MODIFY_AUDIO_SETTINGS` is normal-protection,
+granted at install with no prompt; `RECORD_AUDIO` still shows the **runtime**
+prompt on first record. Confirm the prompt appears and audio captures on-device
+(part of the audio-revalidation spike, §8). Do not remove either permission
+(#262 / #86 C1–C2, PR #265).
 
 **Backups are off:** the manifest sets `android:allowBackup="false"`
 (`AndroidManifest.xml`). Recordings and project metadata live in
@@ -364,6 +472,24 @@ for the audio store (PR #265).
    properties, not env vars, and the guard below would report all four as
    missing. The build fails loudly if any is unset, so it cannot silently
    produce an unsigned APK. **Never commit the keystore or passwords.**
+
+   The Mac's login shell is **zsh**, not bash — a bare `read -s VAR` (the bash
+   idiom) prints no prompt in zsh, so hitting Enter without noticing exports
+   an **empty** password and `assembleRelease` fails opaquely (hit for real,
+   2026-09-16, #411). Use zsh's `name?prompt` form, which shows a prompt while
+   still suppressing echo:
+
+   ```bash
+   export ANDROID_KEYSTORE_PATH="/absolute/path/to/tc-mobile-release.jks"
+   export ANDROID_KEY_ALIAS="tc-mobile"
+   read -s "ANDROID_STORE_PASSWORD?ANDROID_STORE_PASSWORD: "; export ANDROID_STORE_PASSWORD
+   read -s "ANDROID_KEY_PASSWORD?ANDROID_KEY_PASSWORD: "; export ANDROID_KEY_PASSWORD
+   ```
+
+   (bash's equivalent is `read -s -p "ANDROID_STORE_PASSWORD: " ANDROID_STORE_PASSWORD`
+   — the flag/prompt order is reversed between the two shells, which is the
+   trap.)
+
 3. Build a signed APK — **always with a `versionCode`**, the same unix
    timestamp the CI lane uses:
    ```bash
@@ -391,10 +517,111 @@ artifact. It is **manual-trigger only** (`workflow_dispatch`): run it from
 **Actions → Android APK → Run workflow**, choosing the branch to build. It
 never runs on push/PR.
 
-**What a run does:** `npm ci` → `npm run build` → `npx cap sync android` →
+**What a run does:** `npm ci` → `npm run build` (the OBS-thumbnail policy is
+checked against this web build) → `npm run test:dist:native` (rebuilds
+`dist/` in native mode — the self-unregistering, cache-clearing service
+worker, #923 — and checks that output) → `npx cap sync android` →
 `./gradlew assembleRelease -PversionCode=$(date +%s)` → upload
 `app-release.apk` as a workflow artifact (14-day retention). The APK is signed
 with the release keystore decoded from `ANDROID_KEYSTORE_BASE64`.
+
+**Diagnostic APKs (#593).** Leave the `diagnostic` dispatch input off for
+training builds. Turn it on only for a USB inspection session: it enables
+WebView inspection in `chrome://inspect`, appends `-diagnostic` to Android's
+version name, labels the launcher/activity **tC Mobile Diagnostic**, and names
+the artifact `android-apk-diagnostic-<sha>`. The web footer still shows the
+package version and build SHA. It remains an `assembleRelease` APK with the
+same application ID, release signer, signing approval and timestamp version
+code, so it can update the installed tester app without uninstalling. It is
+not a separate app and it uses the same recordings. Return to an ordinary
+build with a newer version code after the inspection; do not uninstall.
+
+For local builds, set `TC_ANDROID_DIAGNOSTIC=true` for both `npx cap sync
+android` and Gradle to request diagnostics. Unset it (or set `false`) for
+**both** commands to return to normal. Ordinary sync writes an explicit
+`webContentsDebuggingEnabled: false`, including on local debug builds.
+Gradle rejects assets synced with a different diagnostic mode. No
+`package.json` version edit or alternate signing key is needed.
+
+**Inspecting a diagnostic APK with `chrome://inspect`.** This is how
+`Share.share`'s settle is read on a tester's phone (#593, #336). You need a
+computer with desktop Chrome and a USB data cable. Install the diagnostic APK
+over the tester's existing app the §5 step 4 way. **Do not uninstall first.**
+
+1. **Turn on USB debugging on the phone.** Open Settings → About phone and tap
+   **Build number** seven times. On Samsung it is under About phone → Software
+   information. Then turn on Settings → Developer options → **USB debugging**.
+2. **Connect the phone by USB.** Accept the phone's _Allow USB debugging?_
+   prompt for this computer.
+3. **Attach.** On the computer, open `chrome://inspect#devices` in Chrome and
+   leave **Discover USB devices** ticked. Open **tC Mobile Diagnostic** on the
+   phone. Its WebView shows under the phone's name with the package
+   `org.unfoldingword.tcmobile`. Click **inspect**. If the phone appears
+   with no WebView under it, bring the app to the front first. If it still
+   does not appear, check that Settings → Apps shows a version ending in
+   `-diagnostic`. An ordinary APK cannot be inspected.
+4. **Record the environment.** Paste this in the DevTools Console and keep the
+   output (the user agent carries the WebView version #593 is missing):
+
+   ```js
+   ({
+     ua: navigator.userAgent,
+     share: typeof navigator.share,
+     canShare: typeof navigator.canShare,
+   });
+   ```
+
+5. **Wrap the bridge before tapping anything.** `@capacitor/core` looks up
+   `Capacitor.nativePromise` each time a plugin method is called, so wrapping
+   it in the Console catches the app's own `Share.share` call and its settle.
+   The wrapper logs the plugin and method names, the option keys, a file
+   count and the settle time. It never logs option values, settled values or
+   error bodies: Share's `files` URIs carry the device path and the chapter
+   file name, and `Filesystem.writeFile`/`appendFile` carry the audio as
+   base64.
+
+   ```js
+   const tcNative = Capacitor.nativePromise.bind(Capacitor);
+   Capacitor.nativePromise = (plugin, method, options) => {
+     const t0 = performance.now();
+     const call = tcNative(plugin, method, options);
+     if (plugin === "Share" || plugin === "Filesystem") {
+       const tag = `${plugin}.${method}`;
+       const ms = () => Math.round(performance.now() - t0);
+       console.log("[call]", tag, {
+         keys:
+           options && typeof options === "object" ? Object.keys(options) : [],
+         files: Array.isArray(options?.files) ? options.files.length : 0,
+       });
+       call.then(
+         () => console.log("[resolve]", tag, ms(), "ms"),
+         (error) => console.log("[reject]", tag, ms(), "ms", error?.name)
+       );
+     }
+     return call;
+   };
+   ```
+
+   Paste it once per page load. A reload or a relaunch removes it, and then
+   you paste it again.
+
+6. **Reproduce.** Tap Share Chapter (≡ on a chapter row → Share → Share now).
+   Then, separately, send the failure log from the Books ≡ control. Each time,
+   write down whether the Android chooser appeared, what you tapped, and
+   whether the phone left the app, even briefly (a notification, a call, the
+   Home button). Leaving the app matters because the Android Share plugin
+   resolves a cancelled chooser as a success once the activity has stopped
+   (`src/hooks/share-target.ts`, `resolveProvesDelivery`).
+7. **Report.** Paste the Console lines from `[call] Share.share` through its
+   `[resolve]` or `[reject]`, plus the step 4 object and your notes from step
+   6, as a comment on #593. #593 is public: paste only those redacted lines,
+   never an expanded object from elsewhere in the Console. Put the output in
+   the issue, not in a file in this repo. If Share is tapped and no `[call] Share.share` line appears,
+   the wrapper did not catch the call. Say that in the comment rather than
+   reading the silence as "Share was never called."
+
+When the session is over, turn off USB debugging. Then put the tester back on
+an ordinary build with a newer version code, as above.
 
 **`versionCode`** is the run's unix timestamp — unique and strictly increasing
 with no external round-trip. Android refuses a `versionCode` downgrade, so
@@ -408,20 +635,115 @@ forced uninstall wipes IndexedDB, i.e. every recording (§0). A debug-signed APK
 (§0's Monday route) is therefore a dead end for anyone who will later get a CI
 build: never hand one to a tester once the release keystore exists.
 
-**Tester distribution:** workflow artifacts require a GitHub login to download,
-and the lane attaches the APK **only** as a run artifact — nothing creates a
-GitHub release or pre-release today (the repo's first tag is the v0.2.0
-promotion). So the channel is: a person with repository access downloads the
-`android-apk-<commit sha>` artifact from the run, and shares the `.apk` through
-the team drive; §5
-step 4 covers installation on the phone. Attaching the APK to a release is a
-follow-up once a release step exists, not a documented path.
+`keytool` on Java 21 (§5 step 1) writes the keystore as **PKCS12**, which has a
+single password for both the store and every key inside it — so
+`ANDROID_STORE_PASSWORD` and `ANDROID_KEY_PASSWORD` are, in practice, **the
+same value** for a keystore generated this way. Confirm the two secrets match
+before assuming a typo when only one of them fails the presence check.
+
+**Tester distribution:** the lane itself attaches the APK **only** as a run
+artifact, and workflow artifacts require a GitHub login to download. The repo
+is public, so "a GitHub login" means **any** signed-in GitHub user can fetch
+the artifact for as long as it is retained; it is a convenience, not a private
+channel (the keystore is not in the APK — this is an access-boundary note, not
+a signing leak). **In practice the working channel is a manually published
+GitHub pre-release** with the run's `app-release.apk` attached as an asset —
+`android-release-v0.2.3` (published 2026-09-16, the first release-signed
+build) is the first instance — because USB did not enumerate the test device
+on the DRI's Mac, so a tester opens the release page directly in the phone's
+browser and downloads the `.apk` from there; §5 step 4 covers installation
+once it lands on the phone. Nothing in `android-apk.yml` creates the release
+automatically: a person downloads the run's `android-apk-<commit sha>`
+artifact and publishes it by hand as a pre-release with that file attached.
+Sharing the artifact through a team drive (the previously documented path)
+still works when USB or a browser download is not the constraint.
+
+### Tester announcement template
+
+Use this template for the manually published release body and its tester-chat
+copy. It covers all three channels even though the attached asset is an APK.
+Fill the placeholders from the actual distributed builds; mark a channel as
+pending if it is not yet available. A green upload job is not evidence of
+on-device acceptance. **Never attach a `-diagnostic` build.** The diagnostic
+APKs above are for a maintainer's own USB inspection session — same signer,
+different label — and are not tester builds (#709); confirm the asset is an
+ordinary `app-release.apk` before publishing.
+
+```markdown
+This is the shared tC Mobile v<VERSION> tester announcement for Android,
+iPhone and browser. Android's APK is attached here; iPhone testers use
+TestFlight; browser testers use the staging link below.
+
+Source: <commit and promotion>. Changes since <last version handed to testers>.
+
+**Android — install/update:** Download app-release.apk below, or scan the QR
+code (an attached image of the APK's download URL, embedded here). <Confirmed
+signing compatibility — the signer SHA-256 equals the previous build's — the
+APK's own SHA-256, and minimum Android version>. If uninstalling is
+necessary, share any recordings you need to keep first: uninstall deletes them.
+
+**iPhone — install/update:** Open TestFlight using your invitation and select
+<version/build>. <Availability or invitation instructions>. Check that the
+build stamp at the bottom of the Books screen reads <VERSION> before testing;
+if it doesn't, stop and tell us.
+
+**Browser — open:** <staging URL>. Check the app's displayed build before testing.
+
+**With every report:** Include the app build, steps, expected result and
+what happened. Android: phone model, Android version and Android System WebView
+version. iPhone: model and iOS version. Browser: device, OS, browser/version,
+and whether opened in a tab or installed to the home screen. We log every
+report by your role (tester, facilitator, developer), never by your name.
+
+**If something breaks:** On the Books screen, tap **≡** — a red mark means a
+problem was recorded. Tap it, then tap the share icon once to prepare the
+report and once more to send it: two taps, the same gesture as sharing a
+recording. It goes out as a small text file through your phone's own share
+sheet. If no share sheet opens, tell us that directly rather than retrying —
+that is itself a report, and may be the same failure already tracked in #593.
+
+**Changes:** <Symptom, affected platforms and evidence limits for each change>.
+
+**What to test:**
+
+- <Platforms> — <action>. Look for: <observable expected result>.
+
+**Known limits:** <Unverified behavior and checks still owed per platform>.
+```
+
+Name a symptom rather than a phone in change notes, and label every test with
+its platforms. For the #556 text-selection fix, say: "Long-press text-selection
+popup: suppression added; symptom seen on iPhone, Android not yet checked."
+Ask iPhone and Android testers to try it; do not turn that request into a claim
+that either platform passed. Android system Back, the app's Back control and a
+browser's Back are different actions; name the one a check requires.
+
+Keep existing `android-release-vX.Y.Z` tags and release URLs unchanged so
+shared links and QR codes continue to work. Use `tester-build-vX.Y.Z` for
+future all-platform tester announcements, starting with the next published
+build (DRI decision, #629). Release candidates use `tester-build-v1.0.0-rc.N`
+([promotion plan §3a](../release/promotion-v1.0.0.md)).
+
+Attach a QR code image of the APK's release download URL
+(`https://github.com/unfoldingWord/tc-mobile/releases/download/<tag>/app-release.apk`)
+to every tester pre-release and embed it in the notes. Scan it with a phone
+after publishing. GitHub serves an attached image as a download, so if it
+doesn't display inline, drag the image into the notes while editing the
+release.
 
 ### One-time setup
 
 1. **Create the release keystore** (§5 step 1) and store it in the team secret
    store.
-2. **Four GitHub repository secrets** (_Settings → Secrets and variables → Actions_):
+2. **Four environment secrets** in the `release-signing` environment (§4a
+   step 4 creates it; _Settings → Environments → release-signing →
+   Environment secrets_). Not repository secrets — the build job is
+   environment-scoped and pauses for a reviewer before reading them (#321). A
+   repository secret of the same name is still readable by an ungated
+   workflow, so if any of these four ever existed at repository level, delete
+   that copy — the eleven-name loop in `ios-credentials.md` §8 — once the
+   environment copy is verified **and** the gated yml is on every ref you
+   still dispatch (§4a step 5 has the order and the reason):
 
    | Secret                    | Value                                                                         |
    | ------------------------- | ----------------------------------------------------------------------------- |
@@ -433,9 +755,10 @@ follow-up once a release step exists, not a documented path.
    The keystore is decoded to `android/tc-mobile-release.jks` at build time
    (gitignored) and deleted after the APK is built. **Never commit it.**
 
-**First dispatch:** the preflight checks the ref and all four secrets before any
-Gradle work. The `build.gradle` signing config also fails loudly if the env vars
-are unset — two layers. What the runner provides was checked against the
+**First dispatch:** the preflight checks the ref; the build job then waits for
+the environment reviewer and, once approved, checks all four secrets as its
+first step, before checkout. The `build.gradle` signing config also fails
+loudly if the env vars are unset — three layers. What the runner provides was checked against the
 `ubuntu-24.04` image notes (actions/runner-images, 2026-09-12), not observed on
 a live run: Android SDK Platform 36 and Build-tools 36.0.0 under `ANDROID_HOME`,
 and Ruby for the keystore decode — so no `sdkmanager` step is needed. The JDK is
@@ -449,18 +772,39 @@ The lane has not been dispatched yet; the first run is the end-to-end proof.
 ## 6. Versioning
 
 `package.json` `version` is the **web/PWA** build number and moves only in the
-`chore(release)` promotion PR (AGENTS.md → _Versions and milestones_). The
-native builds carry their **own** version fields:
+`chore(release)` promotion PR (AGENTS.md → _Versions and milestones_). The two
+native platforms **diverge on whether their user-facing version field tracks
+it**: iOS's stays independent by design; Android's does not (#410). Each
+platform's separate build-number field (`versionCode` / `CURRENT_PROJECT_VERSION`)
+stays native/CI-owned either way — a unix timestamp stamped at build or upload
+time, never read from `package.json`.
 
-- **iOS:** `MARKETING_VERSION` (user-facing) + `CURRENT_PROJECT_VERSION`
+- **iOS:** `MARKETING_VERSION` (user-facing) is **independent** of
+  `package.json` by design — still `1.0` — + `CURRENT_PROJECT_VERSION`
   (build, must increase every upload — and the CI lane uploads unix-timestamp
   builds, so a later manual build must exceed the last `CFBundleVersion` on
   TestFlight, not the committed `1`; §4a).
-- **Android:** `versionName` (user-facing) + `versionCode` (integer, must
-  increase every install). The CI lane (§5a) stamps `versionCode` with a unix
-  timestamp via `-PversionCode=$(date +%s)`; a manual `assembleRelease` must
-  pass the same, because the committed default is `1`, and once any CI APK is
-  on a phone a `1` is a downgrade that Android refuses (§5 step 3).
+- **Android:** `versionName` (user-facing) is sourced from `package.json`'s
+  `version` at Gradle configuration time (#410) — **not** independent the way
+  iOS's `MARKETING_VERSION` is, so it moves with every PWA version bump, with
+  no separate `-PversionName` property to remember or pass in CI — +
+  `versionCode` (integer, must increase every install). The CI lane (§5a)
+  stamps `versionCode` with a unix timestamp via `-PversionCode=$(date +%s)`;
+  a manual `assembleRelease` must pass the same, because the committed
+  default is `1`, and once any CI APK is on a phone a `1` is a downgrade that
+  Android refuses (§5 step 3).
+
+  On ordinary builds, Settings → Apps shows the same version number as the `v…`
+  half of the in-app build stamp (`src/components/build-stamp.tsx`), instead
+  of a permanent `"1.0"`. That is **not** the same thing the facilitator
+  runbook asks testers to report: `docs/training/facilitator-runbook.md` §5
+  asks for the full build stamp — version **and** build SHA — because
+  Settings alone cannot distinguish two builds that share a `package.json`
+  version (for example, two CI dispatches of the same `staging` ref, or an
+  `allow_any_ref` build off `develop`). Point testers at the stamp; Settings
+  is a fallback only when the app will not open at all. Android
+  [diagnostic builds](#5a-android--apk-via-ci-automated-no-mac-step) append
+  `-diagnostic` to the Settings version; the web footer retains the package version.
 
 ---
 
@@ -478,11 +822,15 @@ workflow artifact, not a Cloudflare deploy.
 
 Two operational notes:
 
-- The native build consumes the **same** `dist/` the dispatched ref built, so a
-  tester's native app runs identical web code to the PWA **at that ref** — identical
-  to staging only when the workflow is dispatched from `staging`. The lane's ref
-  guard refuses anything but `staging`/`main` unless explicitly overridden, so build
-  tester IPAs and APKs from `staging` or `main`, not `develop`.
+- The native build runs the **same application code** as the PWA at the
+  dispatched ref — identical to staging only when the workflow is dispatched
+  from `staging` — but NOT the same `dist/`: the native lanes rebuild it in
+  native mode (`npm run build:native`, #923) after the ref's plain web build
+  has already been checked, so what actually ships inside the WebView carries
+  a different service worker (self-unregistering, no offline precache)
+  from what that same ref's PWA deploy serves. The lane's ref guard refuses
+  anything but `staging`/`main` unless explicitly overridden, so build tester
+  IPAs and APKs from `staging` or `main`, not `develop`.
 - Committing `android/`/`ios/` adds source under version control. To keep a
   native-only commit from burning a Cloudflare preview build, add `android/**`
   and `ios/**` to Cloudflare's **Exclude paths** on both Workers, alongside the
@@ -493,10 +841,43 @@ Two operational notes:
 ## 8. The one real risk (do not skip)
 
 The recommendation and counter-case (#86) agree the **audio boundary** is the
-decider: the app has only ever been validated in **iOS Safari**, and a
+decider: the background and interruption paths have only ever been validated
+in **iOS Safari**, and a
 Capacitor app runs in **WKWebView** (iOS) / the system WebView (Android), which
 differ in `getUserMedia`/MediaRecorder behavior, background capture, and storage
 eviction. **Record → background → interruption must be re-tested inside the
 Capacitor build on a real iPhone and a real Android device** before this is
 called shippable. That spike is tracked separately (see #262 → the
 audio-revalidation issue), not closed by this scaffold.
+
+---
+
+## 9. Native licence notices
+
+Each native build ships the web app's licence texts plus its own notice
+(#477): `public/licenses/ANDROID-NOTICES.txt` and
+`public/licenses/IOS-NOTICES.txt`. They cover what the shell adds — the
+Capacitor runtime and plugins' native code, and the Android (Gradle) or iOS
+(Swift Package Manager) libraries they are built with. **Menu → About &
+licenses** lists the matching one on that build only (`licenseTextsFor` in
+`src/components/licenses.ts`); the PWA lists neither.
+
+`tests/native-licenses.test.ts` reads the dependencies the native projects
+declare (`android/app/build.gradle`, `android/variables.gradle`, each
+Capacitor plugin's `build.gradle`, `ios/App/CapApp-SPM/Package.swift` and
+the plugin packages it points at) and fails when one has no section at its declared
+version. It cannot see the transitive Gradle graph, so when that test fails
+after a Capacitor, plugin or `variables.gradle` change, regenerate the Android
+list from a resolved graph:
+
+```bash
+npx cap sync android
+cd android && ./gradlew :app:dependencies --configuration releaseRuntimeClasspath
+```
+
+Every module in that output gets a section (`group:artifact version — SPDX`,
+the licence from the module's published POM), except a `-bom` platform, which
+ships no code. The iOS remote packages are the `.package(url:)` entries the
+test lists; `ion-ios-filesystem` is declared with a floor, not an exact
+version, and no `Package.resolved` is committed, so its section names the
+major (`1.x`) rather than a resolved release.

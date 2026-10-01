@@ -1,12 +1,19 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
+  barHint,
+  deleteRowReason,
   editRowReason,
   eraseRowReason,
+  heldTakeIsBusy,
   markRowReason,
   rowHint,
 } from "@/components/menu-row-state";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
+
+import { stripComments } from "./support";
 
 /**
  * #135 — a disabled recorder-menu row must carry its reason.
@@ -14,14 +21,15 @@ import { strings } from "@/components/strings";
  * The rows' `disabled` flags used to be inline boolean expressions in
  * `recorder.tsx`; the cue that explains a grey row has to be derived from the
  * SAME predicates, or the two drift and the row lies. These pin (1) the gate
- * each row carries — the Edit row's since #134 lets a live/paused take through
- * (commit-then-edit), so it no longer just reproduces the shipped idle-only
- * gate — (2) which reason wins when several hold, and (3) which reasons carry a
- * glyph cue.
+ * each row carries — the Edit row let a live take through once (#134,
+ * commit-then-edit); #857 blocks it again, folding `hasTake` into the same
+ * `"uncommitted-take"` reason `committing` already carried — (2) which reason
+ * wins when several hold, and (3) which reasons carry a glyph cue.
  *
- * No renderer here (this repo has no jsdom); `Control`'s badge markup and the
- * menu's reachability — and the commit-then-edit wiring itself — are review +
- * on-device surface.
+ * Nothing here renders: `Control`'s badge markup is pinned separately, by
+ * `tests/control-render.test.ts` through the #197 harness, and it consumes
+ * `rowHint` rather than restating it. The menu's reachability is still
+ * review + on-device surface.
  */
 
 const editOpen = {
@@ -34,7 +42,7 @@ const editOpen = {
   canPaste: false,
 };
 
-describe("editRowReason — the record-then-edit gate (#134)", () => {
+describe("editRowReason — blocked while a take is in flight (#857, #134)", () => {
   it("is enabled at idle with audio", () => {
     expect(editRowReason(editOpen)).toBeNull();
   });
@@ -51,18 +59,23 @@ describe("editRowReason — the record-then-edit gate (#134)", () => {
     ).toBe("no-audio");
   });
 
-  // The #134 fix, red-first: this asserted "uncommitted-take" (disabled) before
-  // the fix — the exact bug the requirements owner reported, Edit greyed after a
-  // take. A live or paused take now ENABLES Edit; `onEnterEdit` commits it, then
-  // edits. Reverting the `committing`/`hasTake` split (blocking on any non-idle
-  // state again) turns this red.
-  it("is ENABLED while a take is live or paused — entering Edit commits it, then edits (#134)", () => {
-    expect(editRowReason({ ...editOpen, hasTake: true })).toBeNull();
+  // #857, red-first: a tester found the `[ ]` toggle (and this row, which
+  // shares `editReason`) still openable mid-recording on a Moto G — #134 had
+  // let a live take (`hasTake`) straight through, on the theory that entering
+  // Edit would commit it first. #614 gave the sheet its own Stop since then,
+  // so #857 retires #134's one-tap "stop and edit": Stop, then Edit, is now
+  // the only way from a live take. This asserted `toBeNull()` before the fix.
+  it("is disabled while a take is LIVE — recording — same reason as committing (#857)", () => {
+    expect(editRowReason({ ...editOpen, hasTake: true })).toBe(
+      "uncommitted-take"
+    );
   });
 
-  // A FIRST take: nothing stored on disk, empty clipboard, but the paused take is
-  // the thing to edit — so `hasTake` alone must carry it past the no-audio gate.
-  it("is ENABLED on a first take with nothing stored yet (#134)", () => {
+  // A FIRST take: nothing stored on disk, empty clipboard, but a take is
+  // recording — `hasTake` alone must still block, the same as it does with
+  // stored audio above; a live take is a reason to block regardless of what
+  // is already on disk.
+  it("is disabled on a first take with nothing stored yet, while it is live (#857)", () => {
     expect(
       editRowReason({
         ...editOpen,
@@ -70,13 +83,11 @@ describe("editRowReason — the record-then-edit gate (#134)", () => {
         hasAudio: false,
         canPaste: false,
       })
-    ).toBeNull();
+    ).toBe("uncommitted-take");
   });
 
-  // The one window that still blocks Edit: the take is actually committing (the
-  // Back-tapped close, or a #59 interruption's `processing` freeze). Editing must
-  // wait for that to settle, so the row keeps its reason there.
-  it("is disabled ONLY while the take is committing — the close/processing window (#134)", () => {
+  // The close/processing window still blocks Edit, as it always has.
+  it("is disabled while the take is committing — the close/processing window", () => {
     expect(editRowReason({ ...editOpen, committing: true })).toBe(
       "uncommitted-take"
     );
@@ -138,6 +149,41 @@ describe("eraseRowReason — reproduces the shipped gate", () => {
   });
 });
 
+const deleteOpen = {
+  hasView: true,
+  takeActive: false,
+  starting: false,
+};
+
+describe("deleteRowReason — reaches an empty segment, unlike eraseRowReason (#590)", () => {
+  it("is enabled at idle, with or without stored audio", () => {
+    expect(deleteRowReason(deleteOpen)).toBeNull();
+  });
+
+  it("is disabled while a take is active — deleting the row out from under a live capture is nonsensical (George R-B6)", () => {
+    expect(deleteRowReason({ ...deleteOpen, takeActive: true })).toBe(
+      "uncommitted-take"
+    );
+  });
+
+  it("is disabled with no segment loaded", () => {
+    expect(deleteRowReason({ ...deleteOpen, hasView: false })).toBe(
+      "no-segment"
+    );
+  });
+});
+
+// The whole point of the narrower gate, pinned against `eraseRowReason`
+// directly: the identical inputs that grey Erase for a never-recorded
+// segment (`hasClip: false`) must NOT grey Delete (#590) — an accidentally
+// added, never-recorded segment is exactly what needs to stay deletable.
+describe("deleteRowReason vs eraseRowReason — the same segment, two different answers", () => {
+  it("Erase refuses a never-recorded segment; Delete does not", () => {
+    expect(eraseRowReason({ ...eraseOpen, hasClip: false })).toBe("no-clip");
+    expect(deleteRowReason(deleteOpen)).toBeNull();
+  });
+});
+
 describe("rowHint — which reasons carry a cue", () => {
   // `toEqual` on a strings-table entry passed once with the entry MISSING —
   // `undefined` equalled `undefined` — so every spoken label is also pinned as
@@ -150,13 +196,15 @@ describe("rowHint — which reasons carry a cue", () => {
 
   it("an uncommitted take speaks both steps, in the order the overlay allows", () => {
     expect(rowHint("uncommitted-take")).toEqual({
-      icon: "alert",
       label: spoken(strings.blockedByTake),
     });
-    // While the ≡ menu is open the sheet is inert, so the menu must be closed
-    // BEFORE the sheet's own control is reachable. Order is the whole content of
-    // this cue; a string naming them the other way round is wrong, not just
-    // clumsy (George, round 1).
+    // While the ⋮ menu is open the sheet's control is behind the scrim, so the
+    // menu must be closed BEFORE it is reachable. (The sheet is only `inert` at
+    // idle since #75, but the header — and so header Back — stays inert under
+    // any overlay regardless of `takeActive` (George R2 P2), so Back is not
+    // reachable to AT while this menu is up, mid-take or not.) Order is the
+    // whole content of this cue; a string naming them the other way round is
+    // wrong, not just clumsy (George, round 1).
     const said = strings.blockedByTake;
     expect(said.indexOf(strings.menuClose)).toBeGreaterThanOrEqual(0);
     expect(said.indexOf(strings.menuClose)).toBeLessThan(
@@ -167,13 +215,106 @@ describe("rowHint — which reasons carry a cue", () => {
   // Every control a hint tells the translator to use must EXIST under that name.
   // An earlier draft said "tap Back"; nothing in the product is named Back — the
   // two chevrons are "Close menu" and "Close recorder" — so a screen-reader user
-  // hunting for it found nothing (George, round 2). The two strings that must
-  // NAME the control are checked directly, so a rename of the control fails the
-  // suite instead of silently orphaning the words.
+  // hunting for it found nothing (George, round 2). Every string that NAMES the
+  // control is checked directly, so a rename of the control fails the suite
+  // instead of silently orphaning the words.
+  //
+  // The list was three. `previewUnavailable` and `recorderInterrupted` were the
+  // other two, and #614 deleted both with the states they described — an
+  // undecodable paused take, and a frozen take waiting to be saved by hand —
+  // taking the companion #620 test ("body notices describe the control the way
+  // a sighted user sees it") with them: it had exactly those two subjects and
+  // no third. `blockedByTake` is the one string left that names a control, and
+  // it names it BY NAME ONLY, for the reason the next test pins.
   it("hint copy names controls that actually exist", () => {
-    for (const copy of [strings.blockedByTake, strings.previewUnavailable]) {
-      expect(copy).toContain(strings.closeRecorder);
-    }
+    expect(strings.blockedByTake).toContain(`"${strings.closeRecorder}"`);
+  });
+
+  // The ⋮-menu hint must NOT describe the save control by its looks. It is only
+  // ever spoken inside the recorder's ⋮ menu, and while that menu is up the
+  // recorder header — the control it names — is `inert` (`recorder.tsx`'s
+  // `overlayUp` gate), so the one live control on screen is the menu's own
+  // dismiss, "Close menu". Since #621 that dismiss wears a single glyph (⋮ since #1225), not a
+  // back chevron — this is the recorder's OWN ⋮-menu, and it opts into
+  // `hamburger` (`recorder.tsx`); the "back chevron" this comment described
+  // before #621 is what the book/chapter/segment menus still wear, not this
+  // one. Whichever glyph it wears, "the arrow/chevron at the top" would still
+  // name the dismiss by its looks rather than by name, and a translator who
+  // tapped it would close the menu and save nothing — the same collision the
+  // round-1 `back` badge had (`rowHint`'s docblock); #648 round 1 (George P2)
+  // caught the words repeating it. The generic ternary is read from
+  // `menu.tsx` below, so the ban's premise is pinned rather than assumed: if
+  // either branch's glyph name changes, that assertion fails and the ban is
+  // re-decided instead of silently outliving its reason. A second assertion
+  // (#677) reads the recorder's OWN wiring, because the ternary alone cannot
+  // tell whether this specific menu still opts into the `hamburger` branch —
+  // dropping the prop at that call site would leave this menu on the "back"
+  // branch, silently contradicting the paragraph above.
+  it("the ⋮-menu hint names both controls by name only, never by glyph (#620, #648 R1)", () => {
+    const menuSource = stripComments(
+      readFileSync(
+        new URL("../src/components/menu.tsx", import.meta.url),
+        "utf8"
+      )
+    );
+    // The current look's arm of `dismissGlyph`; the O4 look draws ✕ over
+    // both arms (#1268), which names nothing this string could point at
+    // either.
+    const dismiss = /hamburger\s*\?\s*dismissIcon\s*:\s*"([\w-]+)"/.exec(
+      menuSource
+    );
+    expect(dismiss?.[1]).toBe("back");
+    expect(menuSource).toMatch(/icon=\{dismissGlyph\}\s*label=\{closeLabel\}/);
+
+    expect(strings.blockedByTake).not.toMatch(/back arrow/i);
+    expect(strings.blockedByTake).toContain(`"${strings.menuClose}"`);
+    expect(strings.blockedByTake).toContain(`"${strings.closeRecorder}"`);
+  });
+
+  // The assertion above pins the generic `hamburger ? dismissIcon : "back"`
+  // ternary in `menu.tsx`; it says nothing about which branch the RECORDER's
+  // own ⋮-menu (the one `blockedByTake` describes) actually takes. #621 wired
+  // that call site to `hamburger`, and #677 found nothing in this suite that
+  // would notice a regression at the call site — the generic ternary check
+  // above still passes even if the recorder stopped opting in, because it
+  // never reads `recorder.tsx`. Read the source directly instead, the same
+  // way `tests/menu-hamburger-header.test.ts` pins the Books global menu's
+  // wiring (#643).
+  it("the recorder's own ⋮-menu is the one that opts into `hamburger` (#621, #677)", () => {
+    // Since #160 L-1 this is a TWO-file chain: `recorder.tsx` opens
+    // `<RecorderMenu open={menuShown}>`, and `recorder-menu.tsx` is what
+    // renders the `<Menu>` that does or does not opt in. Both links are
+    // asserted — pinning only the second would let the sheet stop rendering
+    // the component at all with this still green, which is the #677 hole one
+    // file further along.
+    // The shared strip (#822): a line-anchored one keeps a trailing
+    // `onClose={onClose} // hamburger`, so the drawer could drop the prop
+    // and still match on the comment.
+    const read = (rel: string) =>
+      stripComments(
+        readFileSync(new URL(`../${rel}`, import.meta.url), "utf8")
+      );
+    // `(?:=>|[^>])*` in place of the plain `[^>]*` used elsewhere (e.g.
+    // `tests/menu-hamburger-header.test.ts`): these call sites' `onClose`
+    // props are inline arrow functions, `() => setMenuOpen(false)`, whose
+    // `=>` is itself a `>` — a bare `[^>]*` scan truncates there and never
+    // reaches the prop being checked. Preferring the two-char `=>`
+    // alternative first steps over it while still stopping at the tag's real
+    // closing `>`.
+    const openers = [
+      ...read("src/components/recorder.tsx").matchAll(
+        /<RecorderMenu\b(?:=>|[^>])*>/g
+      ),
+    ].filter(([tag]) => /\bopen\s*=\s*\{\s*menuShown\s*\}/.test(tag));
+    expect(openers, "the sheet no longer opens RecorderMenu").toHaveLength(1);
+
+    const recorderMenus = [
+      ...read("src/components/recorder-menu.tsx").matchAll(
+        /<Menu\b(?:=>|[^>])*>/g
+      ),
+    ];
+    expect(recorderMenus).toHaveLength(1);
+    expect(recorderMenus.at(0)?.[0]).toMatch(/\shamburger(?=\s|>)/);
   });
 
   // The "Back" ban is a PRODUCT-WIDE rule, so it is enforced over the whole
@@ -200,21 +341,19 @@ describe("rowHint — which reasons carry a cue", () => {
 
   it("an empty segment speaks its reason", () => {
     expect(rowHint("no-audio")).toEqual({
-      icon: "alert",
       label: spoken(strings.nothingRecorded),
     });
     expect(rowHint("no-clip")).toEqual({
-      icon: "alert",
       label: spoken(strings.nothingStored),
     });
   });
 
-  // The glyph must be a STATE mark, never a control glyph. Round 1 shipped
-  // `back`, which named a control the overlay makes untappable and pointed at the
-  // menu's dismiss instead. `alert` says "blocked, look here" and names nothing.
-  it("every visible cue uses the alert state mark, never a control glyph", () => {
+  // #1239: the requirements owner's decision — no badge on a greyed menu tile
+  // or row, for any reason. The words are the whole cue.
+  it("no reason carries a glyph — the words are the whole cue (#1239)", () => {
     const reasons = [
       "uncommitted-take",
+      "starting",
       "denied",
       "no-segment",
       "no-audio",
@@ -223,7 +362,7 @@ describe("rowHint — which reasons carry a cue", () => {
     for (const r of reasons) {
       const hint = rowHint(r);
       if (hint === null) continue;
-      expect(hint.icon).toBe("alert");
+      expect(Object.keys(hint), r).toEqual(["label"]);
     }
   });
 
@@ -287,14 +426,14 @@ describe("markRowReason — the third row in the same menu (round 3)", () => {
 });
 
 /**
- * The `requesting` race (round 3): Record tapped, ≡ opened before
+ * The `requesting` race (round 3): Record tapped, ⋮ opened before
  * `getUserMedia` resolves. No audio exists yet, so the uncommitted-take words
  * ("…to save the recording") would promise a save that cannot happen — and
  * `close()` does not treat `requesting` as an attempted capture, so following
  * them abandons the in-flight start. Every row that can be seen in that window
  * must say something else.
  */
-describe("the starting race — all three rows, distinct words", () => {
+describe("the starting race — all four rows, distinct words", () => {
   it("outranks the uncommitted-take reason on every row", () => {
     expect(
       editRowReason({
@@ -315,15 +454,70 @@ describe("the starting race — all three rows, distinct words", () => {
         canFinish: true,
       })
     ).toBe("starting");
+    expect(
+      deleteRowReason({ ...deleteOpen, takeActive: true, starting: true })
+    ).toBe("starting");
   });
 
   it("says something other than the save-the-recording copy", () => {
     const starting = rowHint("starting");
-    expect(starting).toEqual({ icon: "alert", label: strings.micStarting });
+    expect(starting).toEqual({ label: strings.micStarting });
     expect(starting?.label).not.toBe(strings.blockedByTake);
     // The whole point: it must not send anyone to a control that would abandon
     // the in-flight start, so it names no control at all.
     expect(starting?.label).not.toContain(strings.closeRecorder);
     expect(starting?.label).not.toContain(strings.menuClose);
+  });
+});
+
+/**
+ * #165 / #336 — the held-take panel's Discard destroys the ONLY copy of a take
+ * whose decode failed, so every operation holding that take has to block it.
+ * `sharing` joined `retrying` when the native share route landed: there the
+ * chooser does NOT open in the tap — the file is written to the app cache first,
+ * in 384 KiB chunks, each returning to the event loop with the panel mounted and
+ * clickable (George R5 P1).
+ *
+ * The predicate is shared by the control's `disabled`, by the armed-confirm
+ * display, and by `leaveHeldTake`'s guard, for the reason at the top of
+ * `menu-row-state.ts`: a second switch elsewhere is one that falls out of step.
+ */
+describe("heldTakeIsBusy", () => {
+  it("lets the take be dropped when nothing is holding it", () => {
+    expect(heldTakeIsBusy({ retrying: false, sharing: false })).toBe(false);
+  });
+
+  it("holds it during a re-decode", () => {
+    expect(heldTakeIsBusy({ retrying: true, sharing: false })).toBe(true);
+  });
+
+  it("holds it during a share — the native write runs before the chooser", () => {
+    // The regression this exists for: two taps during the cache write used to
+    // delete the recording out from under a share that had not reached the OS.
+    expect(heldTakeIsBusy({ retrying: false, sharing: true })).toBe(true);
+  });
+
+  it("holds it while both are somehow true", () => {
+    expect(heldTakeIsBusy({ retrying: true, sharing: true })).toBe(true);
+  });
+});
+
+describe("barHint — the reason on a record-bar control (#315 Edit, #592 bin)", () => {
+  it("gives the bar the menu's words for every reason that has words", () => {
+    for (const reason of ["starting", "no-audio", "no-clip"] as const) {
+      const row = rowHint(reason);
+      expect(barHint(reason)).toEqual({ label: row!.label });
+    }
+  });
+
+  it("says nothing for a live take — the menu's way out is not the bar's", () => {
+    expect(rowHint("uncommitted-take")?.label).toBe(strings.blockedByTake);
+    expect(barHint("uncommitted-take")).toBeNull();
+  });
+
+  it("says nothing where the menu says nothing", () => {
+    for (const reason of ["denied", "no-segment", null] as const) {
+      expect(barHint(reason)).toBeNull();
+    }
   });
 });

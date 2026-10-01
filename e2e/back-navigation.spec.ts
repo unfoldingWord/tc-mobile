@@ -1,0 +1,953 @@
+import { expect, test, type Page } from "@playwright/test";
+
+import { newBookCta, seedToRecorder, seedToSegments } from "./support/seed";
+
+/**
+ * The system-Back model's browser-only half (#452 PR2, `hooks/use-nav-stack.ts`),
+ * against the SHIPPED `dist/` build.
+ *
+ * The Node suite covers the pure decisions the adapter composes (`popAction`,
+ * `navDirection`, `screenFor`, `resumeNavIndex`, `beginBack` /
+ * `settleOutstanding`, `routeBackToLayer`) and the ESLint history boundary. What
+ * it structurally cannot cover — this repo runs Vitest in the Node environment
+ * with no jsdom/renderer (AGENTS.md) — is the adapter's DOM wiring itself: the
+ * single `popstate` listener, the mount-adopt effect (Amendment B), the
+ * protective `history.pushState`/`history.back()` on each transition, and the
+ * commit-close path. Those are what this spec drives, in real Chromium, by
+ * walking the real Books → Segments → Recorder tree and pressing the browser's
+ * own Back.
+ *
+ * What case (d) witnesses about the #168 double-Back guard is EXACTLY this: two
+ * rapid Close taps in one task issue exactly ONE `window.history.back()` (the
+ * second `goBack` is refused by the any-outstanding guard), asserted by wrapping
+ * and counting the calls — a deterministic, mutation-unique observable. The
+ * end-of-traversal index (rest at Segments depth 1) is a landing check, not that
+ * witness: dropping the guard only reddens the index when Chromium coalesces the
+ * two same-task traversals, whereas the call count reddens on every run (George
+ * R1 P2-1).
+ *
+ * NOT covered here, and not claimed:
+ *   - No device: iOS Safari and Android WebView produce their own `popstate`
+ *     timing and their own standalone-PWA "Back exits the app" semantics, which
+ *     a headless desktop Chromium tab does not have (a tab has nowhere to exit
+ *     TO — the first history entry is the floor). So "does not exit the app" is
+ *     asserted here as "stays on the expected in-app screen", the observable a
+ *     tab CAN show; the literal app-teardown a phone gesture triggers is a T2
+ *     device item.
+ *   - No microphone. The recorder sheet is opened and commit-closed with nothing
+ *     recorded (its idle-close path), which is all the Back routing needs; the
+ *     capture/save path is device work, like every other audio boundary here.
+ *   - The ms-window commit-close RACE (a `requestClose` resolving before an
+ *     outstanding go-back's `popstate` lands) is not reproducible from Playwright
+ *     — its exact end state stays a device item (see `use-nav-stack.ts`).
+ */
+
+/**
+ * The monotonic index the adapter stamps on the current history entry.
+ *
+ * MONOTONIC, not a depth: `pushHistoryEntry` stamps from `++nextIndex`, which
+ * is only ever reset by the mount adopt (invariant 9 / Amendment B). Every
+ * push in a page's life takes a number, including a floor entry armed for a
+ * Books overlay (Amendment G, #452 PR3) and then left standing after that
+ * overlay closed, so the value at a given screen depends on what the run did
+ * to get there. The cases below therefore compare it against what THIS run
+ * observed rather than against a literal — which is also what they always
+ * meant: `navDirection` reads these relatively, never absolutely.
+ */
+function navIndex(page: Page): Promise<number | undefined> {
+  return page.evaluate(
+    () => (window.history.state as { index?: number } | null)?.index
+  );
+}
+
+test("(a) Back from Segments returns to Books (stays on the app's own document — tab floor, see header)", async ({
+  page,
+}) => {
+  await seedToSegments(page);
+  // Opening the chapter pushed one entry; the browser Back consumes it and the
+  // adapter routes `to-books` rather than letting the tab walk out of the app.
+  await page.goBack();
+
+  // Books is showing again — its "New book" corner is only on the Books screen —
+  // and the chapter's Segments header is gone.
+  await expect(newBookCta(page)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back to books" })).toHaveCount(
+    0
+  );
+  // Still the app's own document. NB in a headless tab entry 0 is the floor
+  // (see header), so this URL half cannot fail whatever the adapter does — the
+  // Books-visible assertion above is the load-bearing one; the literal
+  // "does not exit the app" a phone gesture triggers is a device item.
+  await expect(page).toHaveURL(/\/$/);
+});
+
+test("(b) Back from the recorder closes the sheet and lands on Segments (idle path; whether close() ran is not observed — no microphone)", async ({
+  page,
+}) => {
+  await seedToRecorder(page);
+  await page.goBack();
+
+  // The sheet is gone and the Segments screen underneath it is back — NOT
+  // Books. What the spec observes is the sheet-close and the landing; it does
+  // NOT distinguish the commit path (requestClose → re-arm → transitionInFlight
+  // → the consuming back()) from a bare sheet-close — both end at index 1 with
+  // no available DOM/index observable between them (mutation: bypassing
+  // requestClose leaves this case green). That the commit path itself ran is a
+  // device item (see header).
+  await expect(
+    page.getByRole("button", { name: "Close recorder" })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Back to books" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Open recorder for segment 1" })
+  ).toBeVisible();
+});
+
+test("(c) after a reload at depth, the adapter adopts the resumed index into BOTH refs: the next push stamps resumed+1, Back returns to the resumed depth, and the shelf Back stays in the app (Amendment B, George R3 P2)", async ({
+  page,
+}) => {
+  await seedToSegments(page);
+  // At Segments the top history entry carries the index its own push stamped.
+  // Captured rather than written as a literal — see `navIndex`'s docblock: the
+  // seed opens the New Book dialog on the way, whose floor entry (Amendment G,
+  // #452 PR3) takes a number of its own before `enterScreen` re-stamps it for
+  // Segments (case (i)). What this case is about is the RELATIONS below, every
+  // one of which is preserved exactly.
+  const atSegments = await navIndex(page);
+  expect(atSegments).toBeGreaterThan(0);
+
+  await page.reload();
+
+  // Amendment B: the mount effect ADOPTS the entry already there into both refs
+  // instead of `replaceState`-ing it back to 0. Without the fix the mount would
+  // rewrite this entry's index to 0, so this value is the direct signal that the
+  // adopt happened.
+  expect(await navIndex(page)).toBe(atSegments);
+  // A reload always shows Books (no session restore of the open chapter — a
+  // disclosed, pre-existing simplification), so the shelf is what renders.
+  await expect(newBookCta(page)).toBeVisible();
+
+  // The LOAD-BEARING half of Amendment B (George R3 P2): the mount effect must
+  // adopt `resumed` into BOTH `navIndex` and `nextIndex`, because
+  // `pushHistoryEntry` stamps the next entry from `++nextIndex.current` ALONE.
+  // Open a chapter again — the first protective push AFTER the reload — and its
+  // entry must carry resumed + 1. With only `navIndex` adopted (the mis-wire
+  // this asserts against), `nextIndex` is still at its `useRef(0)` default, so
+  // `++nextIndex` stamps 1 here instead — F3 one push later, and this assertion
+  // goes red. A reload collapses the shelf's per-session expand state, so
+  // re-expand the book before its chapter is reachable.
+  await page
+    .getByRole("button", { name: "Book 001, 1 chapter, collapsed" })
+    .click();
+  await page.getByRole("button", { name: "Open Chapter 1" }).click();
+  await expect(
+    page.getByRole("button", { name: "Back to books" })
+  ).toBeVisible();
+  expect(await navIndex(page)).toBe((atSegments ?? 0) + 1);
+
+  // Back returns to the resumed depth: it lands on the adopted Segments-depth
+  // entry, which on this reloaded tree shows Books (React reset). Under the
+  // mis-wire the stamp above would have been lower than the adopted baseline,
+  // so this same Back would read as "same" and be swallowed — the translator
+  // stuck on Segments.
+  await page.goBack();
+  expect(await navIndex(page)).toBe(atSegments);
+  await expect(newBookCta(page)).toBeVisible();
+
+  // One more Back is absorbed at the Books root (`exit-app` is a no-op on the
+  // shelf, which pushed no entry) — the app stays put and shows Books; it does
+  // not misroute as a phantom Forward.
+  await page.goBack();
+  await expect(newBookCta(page)).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+});
+
+test("(d) a rapid double Back from the recorder issues exactly one history.back() — the second is refused (#168 guard) — and rests at Segments depth", async ({
+  page,
+}) => {
+  await seedToRecorder(page);
+  // The recorder's protective entry, one level above Segments'. Captured, not a
+  // literal — see `navIndex`'s docblock.
+  const atRecorder = await navIndex(page);
+  expect(atRecorder).toBeGreaterThan(0);
+
+  // Both taps of the recorder's own Back in ONE task, before any `popstate`
+  // lands — the double-tap the #168 any-outstanding guard exists for. The
+  // recorder's on-screen Back is one `goBack` (`onRequestBack`, the single Back
+  // path #168), which issues `window.history.back()` synchronously (or, when the
+  // guard refuses, nothing). So the first tap sets the guard and issues exactly
+  // one `history.back()`; the second is REFUSED — only ONE traversal is ever
+  // outstanding.
+  //
+  // The UNIQUE, MUTATION-DETERMINISTIC witness of that guard is the COUNT of
+  // `history.back()` calls the two taps issue, wrapped and captured here BEFORE
+  // any `popstate` lands and before the commit-close consume-back() fires — not
+  // the end index below. Delete `if (!begun.ok) return` in `use-nav-stack.ts`'s
+  // `goBack` and both taps issue `history.back()` in the same task, so this count
+  // is 2, on EVERY run, independent of whether Chromium coalesces the two
+  // traversals. (The end-index assertion further down is a landing check, not
+  // the mutation kill: its red state depends on the browser coalescing the two
+  // same-task traversals into one 2→0 jump, which reproduces on repeated runs
+  // rather than on every single one — George R1 P2-1. The count assertion
+  // removes that dependence.)
+  const backCalls = await page.evaluate(() => {
+    const original = window.history.back.bind(window.history);
+    let calls = 0;
+    // Transparent wrapper: it still performs the real traversal (so the
+    // sheet-close-and-land below is unaffected), it only tallies the calls.
+    window.history.back = () => {
+      calls += 1;
+      original();
+    };
+    const back = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Close recorder"]'
+    );
+    back?.click();
+    back?.click();
+    return calls;
+  });
+  // Two Close taps, exactly ONE traversal issued: the second `goBack` was
+  // refused by the any-outstanding guard (`beginBack`). This is the assertion
+  // that goes red — deterministically, every run — when the guard is dropped.
+  expect(backCalls).toBe(1);
+
+  // The sheet closed and the chapter's Segments screen is showing — NOT Books
+  // and not a torn-down app.
+  await expect(
+    page.getByRole("button", { name: "Close recorder" })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Back to books" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Open recorder for segment 1" })
+  ).toBeVisible();
+  await expect(newBookCta(page)).toHaveCount(0);
+  // Landing check (see the note above — this is NOT the mutation-unique kill):
+  // exactly one level was traversed, so the app rests at Segments depth with
+  // the shelf entry still below it — not walked to the root.
+  expect(await navIndex(page)).toBe((atRecorder ?? 0) - 1);
+});
+
+/**
+ * ── #452 PR3: Books' overlays are Back layers (#374) ──────────────────────
+ *
+ * Books is the app's FLOOR. With no protective entry, Back can navigate away
+ * from the document instead of producing an in-app popstate. Registering a
+ * layer alone cannot intercept that navigation: layer routing runs from the
+ * popstate handler.
+ *
+ * Hence the floor entry (Amendment G, `lib/nav/layer-stack.ts`'s
+ * `floorEntryForLayerChange`): once the FLOOR screen's layer stack goes
+ * non-empty the adapter holds exactly ONE protective entry, whatever number of
+ * overlays are stacked on it. Nothing hands that entry back — there is no
+ * release, and `floorEntryForLayerChange`'s docblock has the two review
+ * findings that is the answer to. It is CONSUMED instead, by whichever comes
+ * first: a Back that `rearmAfterLayerBack` declines to re-arm (case (e)), or a
+ * screen transition that re-stamps it (case (i)). Case (g) drives the third
+ * path, an overlay closed by its own control, and pins both halves of what
+ * that costs: the entry is bounded at one however often the overlay reopens,
+ * and the price is one silent Back.
+ *
+ * In a headless tab "the app is gone" is observable as the document leaving for
+ * `about:blank`, which is what cases (e) and (h) assert on the final Back. On a
+ * phone the same gesture backgrounds/closes the installed PWA — that half stays
+ * a T2 device item, exactly as this file's header already says for (a).
+ *
+ * NOT covered here, and not claimed: the `busy()` REFUSAL. Every Books
+ * `busy()` is a write-in-flight window (a create, a rename, a delete, an
+ * encode) with no deterministic way to hold it open from Playwright; driving
+ * it would need a fault-injection seam this build does not ship. Those rows
+ * are review + device only — see the PR body's "what is not covered".
+ */
+
+/** The Books global (hamburger) menu panel. */
+function globalMenu(page: Page) {
+  return page.getByRole("dialog", { name: "Menu" });
+}
+
+test("(e) with the Books hamburger menu open, Back dismisses the menu and stays on the shelf; that Back CONSUMED the floor entry and nothing re-arms it, so the NEXT Back leaves (#374)", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(newBookCta(page)).toBeVisible();
+  // The shelf holds no entry of its own: the floor.
+  expect(await navIndex(page)).toBe(0);
+
+  await page.getByRole("button", { name: "Open menu" }).click();
+  await expect(globalMenu(page)).toBeVisible();
+  // Opening the first layer on the floor armed ONE protective entry (Amendment
+  // G). Without it the Back below is a document navigation, not a `popstate`.
+  // "Above the floor" is the property — the stamp itself is monotonic, see
+  // `navIndex`.
+  expect(await navIndex(page)).toBeGreaterThan(0);
+
+  // Count the app's OWN history calls across the dismissal. Dismissing the
+  // shelf's last overlay must settle on the entry the `popstate` just landed
+  // on and touch nothing: no re-arm, and so no `history.back()` to undo one.
+  //
+  // A witness for `rearmAfterLayerBack`'s floor row (`lib/nav/layer-stack.ts`).
+  // It is NOT the only one any more: with the release gone `popLayer` no longer
+  // touches history at all, so forcing that row to `true` leaves a spurious entry
+  // standing and the index assertion at the end of this case reddens too. Both
+  // are kept because they say different things — the index says where the shelf
+  // ENDED, the counts say the adapter issued no history call of its own to get
+  // there. Same shape as case (d)'s call count, for the same reason.
+  await page.evaluate(() => {
+    const w = window as unknown as { __nav: { push: number; back: number } };
+    w.__nav = { push: 0, back: 0 };
+    const push = window.history.pushState.bind(window.history);
+    const back = window.history.back.bind(window.history);
+    // Transparent wrappers: they still perform the real operation, so the
+    // dismissal below behaves exactly as it does unwrapped.
+    window.history.pushState = (...args: Parameters<History["pushState"]>) => {
+      w.__nav.push += 1;
+      push(...args);
+    };
+    window.history.back = () => {
+      w.__nav.back += 1;
+      back();
+    };
+  });
+
+  await page.goBack();
+
+  // The menu is gone and the shelf is still here — the app did not leave.
+  await expect(globalMenu(page)).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __nav: { push: number; back: number } }).__nav
+    )
+  ).toEqual({ push: 0, back: 0 });
+  await expect(newBookCta(page)).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+  // The dismissal emptied the stack, so the entry the `popstate` consumed is
+  // NOT re-armed: the shelf is back at the floor. This is the assertion that
+  // guards #494 item 3's trap — a layer left registered (or an entry left
+  // armed) after its dismissal would hold Back at this depth forever.
+  expect(await navIndex(page)).toBe(0);
+
+  // And with nothing armed, Back at the shelf leaves the app exactly as it did
+  // before this PR — the floor entry did not buy the user an extra Back.
+  await page.goBack();
+  await expect(page).toHaveURL("about:blank");
+});
+
+test("(f) with the New Book dialog open, Back dismisses it and creates nothing", async ({
+  page,
+}) => {
+  await page.goto("/");
+  // Empty shelf: the only "New book" is the empty-state CTA.
+  await newBookCta(page).click();
+  await expect(
+    page.getByRole("dialog", { name: "Name your new book" })
+  ).toBeVisible();
+  expect(await navIndex(page)).toBeGreaterThan(0);
+
+  await page.goBack();
+
+  await expect(
+    page.getByRole("dialog", { name: "Name your new book" })
+  ).toHaveCount(0);
+  // Back mirrors Cancel: nothing was created, so the shelf is still empty and
+  // its invite is what comes back. (Whether Back should instead KEEP a
+  // typed-but-unsubmitted name is #452 open question 6, for the requirements
+  // owner — unchanged here.)
+  await expect(newBookCta(page)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /^More actions for/ })
+  ).toHaveCount(0);
+  expect(await navIndex(page)).toBe(0);
+});
+
+test("(g) an overlay closed by its OWN control leaves the floor entry standing — but never more than one, however many times it is reopened (Amendment G)", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(newBookCta(page)).toBeVisible();
+  expect(await navIndex(page)).toBe(0);
+
+  // Count the app's own history calls across the WHOLE loop below. There is no
+  // release in this design (Frank R1 P2 and R2 P1 were both about a release
+  // existing), so what has to be pinned is the bound: three opens, one entry.
+  await page.evaluate(() => {
+    const w = window as unknown as { __nav: { push: number; back: number } };
+    w.__nav = { push: 0, back: 0 };
+    const push = window.history.pushState.bind(window.history);
+    const back = window.history.back.bind(window.history);
+    window.history.pushState = (...args: Parameters<History["pushState"]>) => {
+      w.__nav.push += 1;
+      push(...args);
+    };
+    window.history.back = () => {
+      w.__nav.back += 1;
+      back();
+    };
+  });
+
+  // Open and close the menu three times through its own Close control.
+  let armed: number | undefined;
+  for (let i = 0; i < 3; i += 1) {
+    await page.getByRole("button", { name: "Open menu" }).click();
+    await expect(globalMenu(page)).toBeVisible();
+    if (i === 0) {
+      armed = await navIndex(page);
+      expect(armed).toBeGreaterThan(0);
+    } else {
+      // Re-opening arms NOTHING: `floorEntryForLayerChange`'s `!armed` guard.
+      // The stamp is the SAME entry, not a new one at a deeper level.
+      expect(await navIndex(page)).toBe(armed);
+    }
+    await page.getByRole("button", { name: "Close menu" }).click();
+    await expect(globalMenu(page)).toHaveCount(0);
+    // The entry SURVIVES its overlay's own Close — this is the design, not a
+    // leak. Nothing hands it back; it is consumed by whichever comes first, a
+    // Back (below) or a screen transition (`enterScreen` re-stamps it, case
+    // (i)).
+    expect(await navIndex(page)).toBe(armed);
+  }
+
+  // The bound, and the mutation-unique witness for the `!armed` guard: drop it
+  // and this reads 3.
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __nav: { push: number; back: number } }).__nav
+    )
+  ).toEqual({ push: 1, back: 0 });
+
+  // THE DISCLOSED COST. With no overlay open, this Back consumes the standing
+  // entry and routes "exit-app", which is a no-op at the app's own root — so
+  // the gesture does nothing the translator can see. It is one silent Back,
+  // bounded at one, and it cannot be forwarded away (a `history.back()` at the
+  // first entry is a spec no-op, so an installed PWA would not leave either).
+  // See `floorEntryForLayerChange`'s docblock and the PR body's residual.
+  await page.goBack();
+  await expect(newBookCta(page)).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+  expect(await navIndex(page)).toBe(0);
+
+  // And the second one leaves: the cost is exactly one Back, never a trap.
+  await page.goBack();
+  await expect(page).toHaveURL("about:blank");
+});
+
+test("(h) with a book's ≡ menu open, Back dismisses the menu and leaves the shelf and the book standing", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await newBookCta(page).click();
+  await page.getByRole("button", { name: "Create book" }).click();
+  await expect(
+    page.getByRole("button", { name: /^More actions for/ })
+  ).toBeVisible();
+  // The create closed its own dialog, which does NOT hand the floor entry back
+  // (case (g)) — so the shelf is still holding it here.
+  const armed = await navIndex(page);
+  expect(armed).toBeGreaterThan(0);
+
+  await page.getByRole("button", { name: /^More actions for/ }).click();
+  await expect(page.getByRole("dialog", { name: "Book" })).toBeVisible();
+  // A second overlay on the same shelf reuses that entry rather than stacking.
+  expect(await navIndex(page)).toBe(armed);
+
+  await page.goBack();
+
+  await expect(page.getByRole("dialog", { name: "Book" })).toHaveCount(0);
+  // The book is untouched — Back dismissed the menu, it did not delete, rename
+  // or leave.
+  await expect(
+    page.getByRole("button", { name: /^More actions for/ })
+  ).toBeVisible();
+  expect(await navIndex(page)).toBe(0);
+  await expect(page).toHaveURL(/\/$/);
+});
+
+test("(i) a screen transition RE-STAMPS a standing floor entry instead of stacking on it — Segments is still one Back from Books, and two from leaving", async ({
+  page,
+}) => {
+  // `seedToSegments` goes through the New Book dialog, so by the time it opens
+  // the chapter the shelf IS holding a standing floor entry (case (g)). That
+  // makes this the witness for `enterScreen`'s re-stamp branch: the entry
+  // already sits at exactly the depth the Segments entry wants, so it is
+  // replaced, not pushed past.
+  await seedToSegments(page);
+  const atSegments = await navIndex(page);
+  expect(atSegments).toBeGreaterThan(0);
+
+  // One Back to Books. (This much also passes if `enterScreen` pushed — the
+  // landing would route "to-books" off the stale floor entry and LOOK
+  // identical. The next assertion is the one that tells them apart.)
+  await page.goBack();
+  await expect(newBookCta(page)).toBeVisible();
+  expect(await navIndex(page)).toBe(0);
+
+  // The discriminator: from Books the very next Back leaves. Force
+  // `enterScreen` to always `pushState` and the stale floor entry survives
+  // underneath, so this Back is swallowed by it and the app needs a third —
+  // the extra dead level the re-stamp exists to prevent.
+  await page.goBack();
+  await expect(page).toHaveURL("about:blank");
+});
+
+test("(j) after the standing entry is consumed, the NEXT overlay arms a fresh one — the shelf does not go unprotected (the `exit-app` flag clear)", async ({
+  page,
+}) => {
+  // Reach the state case (g) ends in: the entry was armed by an overlay, left
+  // standing when that overlay closed itself, then consumed by a Back that did
+  // nothing visible.
+  await page.goto("/");
+  await expect(newBookCta(page)).toBeVisible();
+  await page.getByRole("button", { name: "Open menu" }).click();
+  await expect(globalMenu(page)).toBeVisible();
+  await page.getByRole("button", { name: "Close menu" }).click();
+  await expect(globalMenu(page)).toHaveCount(0);
+  await page.goBack();
+  await expect(newBookCta(page)).toBeVisible();
+  expect(await navIndex(page)).toBe(0);
+
+  // The entry is GONE, so `floorArmed` must have been cleared with it. This is
+  // the witness for that clear (`use-nav-stack.ts`'s `"exit-app"` case): leave
+  // the flag set and the open below arms nothing, because
+  // `floorEntryForLayerChange` believes an entry is already standing.
+  await page.getByRole("button", { name: "Open menu" }).click();
+  await expect(globalMenu(page)).toBeVisible();
+  expect(await navIndex(page)).toBeGreaterThan(0);
+
+  // And it is a real entry, not just a stamp: Back spends it on the menu
+  // instead of walking out of the app. Under the mutant this Back leaves.
+  await page.goBack();
+  await expect(globalMenu(page)).toHaveCount(0);
+  await expect(newBookCta(page)).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+  expect(await navIndex(page)).toBe(0);
+});
+
+test("(k) a RELOAD with an overlay open does not cost a level — the adapter adopts the entry it left behind instead of arming a second (Frank R3 P2)", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(newBookCta(page)).toBeVisible();
+  expect(await navIndex(page)).toBe(0);
+
+  await page.getByRole("button", { name: "Open menu" }).click();
+  await expect(globalMenu(page)).toBeVisible();
+  const armed = await navIndex(page);
+  expect(armed).toBeGreaterThan(0);
+
+  // Reload WITH the menu open. The entry survives; `floorArmed` is a ref and
+  // does not, so the bootstrap has to read the entry's kind back off
+  // `history.state` (`floorArmedOnResume`). React state resets, so the menu
+  // itself is gone.
+  await page.reload();
+  await expect(newBookCta(page)).toBeVisible();
+  await expect(globalMenu(page)).toHaveCount(0);
+  expect(await navIndex(page)).toBe(armed);
+
+  // The load-bearing assertion. Opening an overlay now must arm NOTHING,
+  // because the adopted entry already is the floor's. Drop the adopt and this
+  // pushes a second entry at a deeper index and reads `armed + 1`.
+  await page.getByRole("button", { name: "Open menu" }).click();
+  await expect(globalMenu(page)).toBeVisible();
+  expect(await navIndex(page)).toBe(armed);
+
+  // And the bound holds end to end: Back dismisses the menu and lands at the
+  // floor, then one more Back leaves. Without the adopt there is an extra dead
+  // level in between, so this second Back is silently swallowed and the app
+  // does not leave — which is what "unbounded across reload cycles" costs the
+  // translator, one Back per cycle.
+  await page.goBack();
+  await expect(globalMenu(page)).toHaveCount(0);
+  await expect(newBookCta(page)).toBeVisible();
+  expect(await navIndex(page)).toBe(0);
+
+  await page.goBack();
+  await expect(page).toHaveURL("about:blank");
+});
+
+/**
+ * ── #452 PR4: Segments' overlays are Back layers (#374) ───────────────────
+ *
+ * Segments is ABOVE the floor: `openChapter` already pushed its entry, so none
+ * of Amendment G applies here and nothing new is armed when an overlay opens.
+ * That is the first thing case (l) asserts, and it is the mutation-unique
+ * witness for `floorEntryForLayerChange`'s `atFloor` guard from this side —
+ * arming here would strand the app one level below the screen it is showing
+ * (invariant 2).
+ *
+ * **Only ONE of Segments' three overlays is reachable from this spec, and the
+ * reason is structural rather than an oversight.** A row's overflow menu
+ * renders only on a RECORDED row (`segment-row.tsx`'s `hasClip` gate), and the
+ * erase confirm is reachable only from that menu — so both need audio, and this
+ * spec has no microphone (see the file header). They are review plus device,
+ * exactly as PR3 said of Books' `busy()` refusals. What that leaves covered
+ * here is the chapter ≡ menu, which is also the one the Amendment C decision
+ * turns on.
+ *
+ * The `busy()` REFUSAL rows are covered by neither, on this screen as on Books:
+ * a rename write and a share encode are both in-flight windows with no
+ * deterministic way to hold one open from Playwright.
+ */
+
+/** The Segments chapter ≡ menu panel. */
+function chapterMenu(page: Page) {
+  return page.getByRole("dialog", { name: "Chapter" });
+}
+
+test("(l) with the chapter ≡ menu open, Back dismisses the menu and STAYS on Segments — the overlay armed no entry of its own, and the absorbed Back re-armed the screen's (#374)", async ({
+  page,
+}) => {
+  await seedToSegments(page);
+  const atSegments = await navIndex(page);
+  expect(atSegments).toBeGreaterThan(0);
+
+  // Count the app's own history calls across the OPEN. Invariant 1: an overlay
+  // never touches history. Above the floor there is not even an Amendment G
+  // arm to make — the screen's own entry is already there — so this window must
+  // be silent, and `navIndex` must not move.
+  await page.evaluate(() => {
+    const w = window as unknown as { __nav: { push: number; back: number } };
+    w.__nav = { push: 0, back: 0 };
+    const push = window.history.pushState.bind(window.history);
+    const back = window.history.back.bind(window.history);
+    // Transparent wrappers: they still perform the real operation.
+    window.history.pushState = (...args: Parameters<History["pushState"]>) => {
+      w.__nav.push += 1;
+      push(...args);
+    };
+    window.history.back = () => {
+      w.__nav.back += 1;
+      back();
+    };
+  });
+
+  await page
+    .getByRole("button", { name: "More actions for this chapter" })
+    .click();
+  await expect(chapterMenu(page)).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __nav: { push: number; back: number } }).__nav
+    )
+  ).toEqual({ push: 0, back: 0 });
+  expect(await navIndex(page)).toBe(atSegments);
+
+  await page.goBack();
+
+  // THE CASE. The menu is gone and Segments is still here — before PR4 this
+  // same Back fell through to `backEffectFor("segments")` and went to Books
+  // with the menu on it, which is #374. Drop `layers.open("segments:chapter-
+  // menu")` from `openChapterMenu` and this pair is what goes red.
+  await expect(chapterMenu(page)).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Back to books" })
+  ).toBeVisible();
+  await expect(newBookCta(page)).toHaveCount(0);
+  // The `popstate` had already popped the screen's entry before the layer got a
+  // say, so `"rearm-layer-dismiss"` pushed a fresh one — unconditionally, above
+  // the floor. The stamp is monotonic (see `navIndex`), so the witness is that
+  // it ADVANCED: force `rearmAfterLayerBack` to `false` here and the app rests
+  // at the shelf's depth while showing Segments, so this reads 0 and the next
+  // Back leaves the app instead of going to Books.
+  expect(await navIndex(page)).toBeGreaterThan(atSegments ?? 0);
+
+  // And the screen's Back still works normally afterwards: one to Books, one
+  // to leave. Nothing was spent, and nothing extra is owed.
+  await page.goBack();
+  await expect(newBookCta(page)).toBeVisible();
+  expect(await navIndex(page)).toBe(0);
+
+  await page.goBack();
+  await expect(page).toHaveURL("about:blank");
+});
+
+test("(m) the Record control is inside the list's `inert` subtree while the chapter ≡ menu is open, and outside it when nothing is — the unreachability Amendment C's decision (b) rests on (#452 PR4)", async ({
+  page,
+}) => {
+  await seedToSegments(page);
+  await page.getByRole("button", { name: "Add segment" }).click();
+  await expect(
+    page.getByRole("button", { name: "Open recorder for segment 1" })
+  ).toBeVisible();
+
+  // `openRecorderState` is the ONE caller of `dismissOverlays()`, and PR4's
+  // erase-in-flight decision leaves one window in which that dismissal cannot
+  // close the erase confirm. That window is harmless only because the control
+  // which STARTS the Segments → Recorder transition cannot be reached while any
+  // overlay is up. This asserts that rather than asserting the comment.
+  //
+  // HALF of it, and the half is the point (Frank R1 P2-1). What this case can
+  // reach is the CHAPTER MENU term: the erase confirm needs a RECORDED row and
+  // this spec has no microphone, so no headless case can open it. What this
+  // proves is that the `listInert` value reaches the DOM and takes the Record
+  // control out of reach; that the SET of terms feeding it still includes
+  // `eraseConfirmOpen` is `tests/segments-inert.test.ts`'s row, in Node. One
+  // value feeds both `inert` props, so the two compose — but the composition is
+  // the claim, not an observation of the erase branch in a browser.
+  //
+  // `closest("[inert]")`, not Playwright actionability: what `listInert` claims
+  // is that the control sits inside an inert SUBTREE. That the platform then
+  // refuses to activate it is the platform's job, not this app's, and asserting
+  // a timeout instead would be slow and would not say which claim failed.
+  const recordIsInert = () =>
+    page.evaluate(() => {
+      const el = document.querySelector(
+        '[aria-label="Open recorder for segment 1"]'
+      );
+      return el === null ? null : el.closest("[inert]") !== null;
+    });
+
+  // BOTH states (AGENTS.md: a gate is tested in both). Resting: reachable —
+  // this half is what fails if `listInert` is ever mutated to a constant
+  // `true`, which would otherwise make the assertion below pass vacuously.
+  expect(await recordIsInert()).toBe(false);
+
+  await page
+    .getByRole("button", { name: "More actions for this chapter" })
+    .click();
+  await expect(chapterMenu(page)).toBeVisible();
+  // The load-bearing half: drop `chapterMenuOpen` from `listInert` and this
+  // reads false.
+  expect(await recordIsInert()).toBe(true);
+
+  // And it comes back when the overlay does — through Back, which is PR4's own
+  // path, so the two claims are checked against each other rather than only
+  // against the resting state above.
+  await page.goBack();
+  await expect(chapterMenu(page)).toHaveCount(0);
+  expect(await recordIsInert()).toBe(false);
+});
+
+/**
+ * ── #435: no history write while a Back is still outstanding ─────────────
+ *
+ * `goBack` issues `history.back()` and returns; its `popstate` lands a task
+ * later. Until then the Segments screen is still showing and still live, so a
+ * Record tap in that window reaches `openRecorder`, which pushes the
+ * recorder's entry. `lib/nav/history-latch.ts` refuses that transition while
+ * the Back is outstanding, so no push is ever issued under a pending
+ * traversal; this case drives the rule through the real Segments controls.
+ *
+ * The test makes the overlap itself — both taps in one task — so it pins a
+ * defensive invariant. A real path reaches it only when a second tap beats a
+ * `popstate` (#435's inference: an automated double-tap or a slow WebView).
+ *
+ * The witness is the ORDERED LOG of history calls both taps issue in that
+ * task, before any `popstate` lands: exactly one `back()` and nothing after
+ * it. `openRecorder` without the latch pushes synchronously, so the log would
+ * carry a `"push"` after the `"back"`. The landing assertions after it are the
+ * user-visible half: the Back asked for first is the one that happens, and no
+ * recorder is left open.
+ */
+test("(n) a Record tap made before a pending Back to books lands issues no history write, and the Back lands on Books with no recorder open (#435)", async ({
+  page,
+}) => {
+  await seedToSegments(page);
+  await page.getByRole("button", { name: "Add segment" }).click();
+  await expect(
+    page.getByRole("button", { name: "Open recorder for segment 1" })
+  ).toBeVisible();
+
+  const calls = await page.evaluate(() => {
+    const log: string[] = [];
+    const history = window.history;
+    const back = history.back.bind(history);
+    const push = history.pushState.bind(history);
+    const replace = history.replaceState.bind(history);
+    // Transparent wrappers: each still performs the real call, so the landing
+    // below is the browser's own; they only record the order.
+    history.back = () => {
+      log.push("back");
+      back();
+    };
+    history.pushState = (...args: Parameters<History["pushState"]>) => {
+      log.push("push");
+      push(...args);
+    };
+    history.replaceState = (...args: Parameters<History["replaceState"]>) => {
+      log.push("replace");
+      replace(...args);
+    };
+    document
+      .querySelector<HTMLButtonElement>('[aria-label="Back to books"]')
+      ?.click();
+    // Logged, so a control already gone after the Back click cannot pass as
+    // the latch having refused the push (George round 1).
+    const record = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Open recorder for segment 1"]'
+    );
+    log.push(record ? "tap" : "no-control");
+    record?.click();
+    return log;
+  });
+  expect(calls).toEqual(["back", "tap"]);
+
+  await expect(newBookCta(page)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Close recorder" })
+  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Back to books" })).toHaveCount(
+    0
+  );
+});
+
+/**
+ * The other half of #435's latch: a Back whose landing is ABSORBED rather than
+ * routed. `trap-forward` cancels a Forward with a suppressed `history.back()`,
+ * and the screen does not change, so a Record tap before that cancel lands is
+ * still wanted afterwards — its state half runs at once and its push waits for
+ * the landing, then replays.
+ *
+ * The tap is made from a `popstate` listener added after the app's own, so it
+ * runs in the same dispatch, after the app has issued the cancel (DOM
+ * Standard: an event's listeners are invoked in the order they were added).
+ * Like (n), the test makes this overlap itself; it pins a defensive
+ * invariant, not a reproduced field failure.
+ *
+ * The ordered log is the witness: the recorder's push comes after the
+ * cancel's landing, not between the `"tap"` and `"tapped"` brackets, which is
+ * where a synchronous push from the tap itself would appear. The walk after
+ * it is the stack being whole: the recorder is one Back from Segments, and
+ * Segments one from Books.
+ */
+test("(o) a Record tap made before a Forward's cancel lands is deferred to that landing, not refused, and the recorder then sits one Back above Segments (#435)", async ({
+  page,
+}) => {
+  await seedToRecorder(page);
+  // Back from the recorder leaves its entry standing as a FORWARD entry — the
+  // commit-close re-arms above Segments and then consumes it.
+  await page.goBack();
+  await expect(
+    page.getByRole("button", { name: "Close recorder" })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Open recorder for segment 1" })
+  ).toBeVisible();
+
+  await page.evaluate(() => {
+    const log: string[] = [];
+    (window as unknown as { __log435: string[] }).__log435 = log;
+    const history = window.history;
+    const back = history.back.bind(history);
+    const push = history.pushState.bind(history);
+    const replace = history.replaceState.bind(history);
+    history.back = () => {
+      log.push("back");
+      back();
+    };
+    history.pushState = (...args: Parameters<History["pushState"]>) => {
+      log.push("push");
+      push(...args);
+    };
+    history.replaceState = (...args: Parameters<History["replaceState"]>) => {
+      log.push("replace");
+      replace(...args);
+    };
+    // Registered after the app's own listener, so each "pop" is logged after
+    // whatever the app did in response to that landing. The tap is bracketed,
+    // so a write the tap itself issues shows up between the two brackets.
+    let tapped = false;
+    window.addEventListener("popstate", () => {
+      log.push("pop");
+      if (tapped) return;
+      tapped = true;
+      log.push("tap");
+      document
+        .querySelector<HTMLButtonElement>(
+          '[aria-label="Open recorder for segment 1"]'
+        )
+        ?.click();
+      log.push("tapped");
+    });
+  });
+  await page.goForward();
+  await expect(
+    page.getByRole("button", { name: "Close recorder" })
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as unknown as { __log435: string[] }).__log435
+      )
+    )
+    .toEqual(["back", "pop", "tap", "tapped", "push", "pop"]);
+
+  await page.goBack();
+  await expect(
+    page.getByRole("button", { name: "Close recorder" })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Back to books" })
+  ).toBeVisible();
+  await page.goBack();
+  await expect(newBookCta(page)).toBeVisible();
+});
+
+/**
+ * (o) with TWO Record taps in the absorbed window (Frank round 1). Both defer
+ * the recorder's entry, and the recorder is one screen, so the replay writes
+ * one entry for it. The walk back is the witness a surplus entry cannot pass:
+ * Recorder, then Segments, then Books must end on the root entry. Like (o),
+ * the test makes this overlap itself.
+ */
+test("(p) two Record taps made before a Forward's cancel lands write one entry for the one recorder, and the walk back ends on the root entry (#435)", async ({
+  page,
+}) => {
+  await seedToRecorder(page);
+  await page.goBack();
+  await expect(
+    page.getByRole("button", { name: "Open recorder for segment 1" })
+  ).toBeVisible();
+
+  await page.evaluate(() => {
+    const log: string[] = [];
+    (window as unknown as { __log435: string[] }).__log435 = log;
+    const history = window.history;
+    const back = history.back.bind(history);
+    const push = history.pushState.bind(history);
+    history.back = () => {
+      log.push("back");
+      back();
+    };
+    history.pushState = (...args: Parameters<History["pushState"]>) => {
+      log.push("push");
+      push(...args);
+    };
+    let tapped = false;
+    window.addEventListener("popstate", () => {
+      log.push("pop");
+      if (tapped) return;
+      tapped = true;
+      const record = document.querySelector<HTMLButtonElement>(
+        '[aria-label="Open recorder for segment 1"]'
+      );
+      log.push(record ? "tap" : "no-control");
+      record?.click();
+      record?.click();
+      log.push("tapped");
+    });
+  });
+  await page.goForward();
+  await expect(
+    page.getByRole("button", { name: "Close recorder" })
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as unknown as { __log435: string[] }).__log435
+      )
+    )
+    .toEqual(["back", "pop", "tap", "tapped", "push", "pop"]);
+
+  await page.goBack();
+  await expect(
+    page.getByRole("button", { name: "Back to books" })
+  ).toBeVisible();
+  await page.goBack();
+  await expect(newBookCta(page)).toBeVisible();
+  expect(await navIndex(page)).toBe(0);
+});

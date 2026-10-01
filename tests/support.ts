@@ -1,13 +1,14 @@
 import { vi } from "vitest";
 
-import { encodeMp3 } from "@/lib/audio/mp3";
+import { createMp3StreamEncoder, encodeMp3 } from "@/lib/audio/mp3";
 import {
   MP3_GRANULE,
   MP3_TOTAL_DELAY,
   mp3GranuleCount,
 } from "@/lib/audio/mp3-align";
 import { closeDb, getDb } from "@/lib/storage/db";
-import type { AudioCodec, Clip } from "@/types/audio";
+import type { UseEraseSegment } from "@/hooks/use-erase-segment";
+import type { AudioCodec, Clip, Mp3Stream } from "@/types/audio";
 
 /**
  * Shared test plumbing for the storage and export suites.
@@ -30,6 +31,15 @@ export function testCodec(
   return {
     encodeMp3: vi.fn(async (samples: Int16Array) => encodeMp3(samples)),
     decodeMp3: vi.fn(decodeMp3),
+    // The same synchronous encoder, fed in pieces (#1003 part b).
+    openMp3Stream: vi.fn(async (): Promise<Mp3Stream> => {
+      const stream = createMp3StreamEncoder();
+      return {
+        write: async (samples) => stream.write(samples),
+        finish: async () => stream.finish(),
+        cancel: () => {},
+      };
+    }),
   };
 }
 
@@ -39,6 +49,28 @@ export function samplesOf(clip: Clip | undefined): Int16Array {
   if (clip.encoding !== "pcm")
     throw new Error(`expected a PCM clip, got ${clip.encoding}`);
   return clip.samples;
+}
+
+/**
+ * A resting `UseEraseSegment` — never erasing, for a suite that must mount a
+ * screen or menu taking `erase` as a prop but never exercises erase itself.
+ * Since #160 (L-12) lifted the one hook instance up to `App`, both entry
+ * points take `erase` as a real prop, not a module import — so a `vi.mock`
+ * of `@/hooks/use-erase-segment` intercepts nothing there and silently tests
+ * the wrong thing (the #631 hazard). This stays a real value a caller passes
+ * in, and is annotated `UseEraseSegment` so a shape change to the hook's
+ * return fails every call site at `tsc`, not silently (#856 item 3).
+ *
+ * A fresh object per call, not a shared singleton: each suite still gets its
+ * own `vi.fn()` identity, matching the one-per-module-scope shape these sites
+ * had before extraction, and no suite can observe another's mock calls.
+ */
+export function restingErase(): UseEraseSegment {
+  return {
+    erase: vi.fn(async () => "ok" as const),
+    erasing: false,
+    isErasing: () => false,
+  };
 }
 
 /**
@@ -71,12 +103,270 @@ export function ramp(n: number, base = 0): Int16Array {
 /**
  * What a decoder that returns every granule hands back for `mp3`, the encode
  * of `pcm`: 1105 samples of priming, the recording, then granule padding to the
- * stream's emitted length. The two facts this models — head offset and total
- * length — were measured in Chromium (`decodeAudioData`) for five input
- * lengths; this is that decoder, minus the codec noise.
+ * stream's emitted length. This is a synthetic layout, without codec noise.
  */
 export function noTrimDecode(pcm: Int16Array, mp3: Uint8Array): Int16Array {
   const out = new Int16Array(mp3GranuleCount(mp3) * MP3_GRANULE);
   out.set(pcm, MP3_TOTAL_DELAY);
   return out;
+}
+
+/**
+ * #533's extraction primitive family — the read-only source/text audits
+ * (`*.test.ts` source-pin suites, the CSS bridge tests) each re-declared
+ * `stripComments` (14 copies) and `matchingBraceClose` (10 copies), and four
+ * `indexOf`/`lastIndexOf`-then-slice call sites had no floor on the anchor at
+ * all: a missing or reordered anchor silently sliced an empty or wrong
+ * region, and the assertion after it — often a `not.toMatch`/`not.toContain`
+ * — passed trivially instead of catching anything (#533's audit, `b7004f8`).
+ * Nine-plus hand-copies of the same discipline is exactly how four call sites
+ * drifted without one; this file is the one place it is written down.
+ */
+
+/** Strips `/* ... *\/` and `// ...` comments. Not comment-in-string aware —
+ *  callers that rely on it (see each source-pin suite) have checked by hand
+ *  that the file they read holds no `//` or `/*` inside a string literal. */
+export function stripComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+}
+
+/** `stripComments`' two patterns, but each comment is overwritten with spaces
+ *  (its newlines kept) instead of removed, so every index and line number in
+ *  the result is the same as in `text`. For a sweep that reports `file:line`
+ *  from a match (#822). Same string-blindness as `stripComments`. */
+export function blankComments(text: string): string {
+  const blank = (comment: string) => comment.replace(/[^\n]/g, " ");
+  return text.replace(/\/\*[\s\S]*?\*\//g, blank).replace(/\/\/.*$/gm, blank);
+}
+
+/**
+ * `blankComments` for the Gradle (Groovy) and Swift files the native-licence
+ * pins read (#822): `//` and `/* *\/` comments are overwritten with spaces,
+ * their newlines kept, so a line-anchored pattern still sees every line start.
+ * Unlike `stripComments` and `blankComments`, it steps over `"…"` and `'…'`
+ * literals, so the `//` in a `"https://…"` URL stays code.
+ *
+ * It throws instead of guessing on the forms it does not model: a
+ * triple-quoted or `#"` raw literal, a literal that runs past its line, a
+ * block comment that opens another (Swift nests them, Groovy does not), and an
+ * unterminated block comment. A source that grows one fails its suite loudly.
+ */
+export function blankGradleSwiftComments(source: string): string {
+  const blank = (comment: string) => comment.replace(/[^\n]/g, " ");
+  let out = "";
+  let i = 0;
+  while (i < source.length) {
+    const c = source[i]!;
+    const next = source[i + 1];
+    if (c === '"' || c === "'") {
+      if (source.startsWith(c.repeat(3), i))
+        throw new Error(`triple-quoted literal at offset ${i}`);
+      let j = i + 1;
+      while (j < source.length && source[j] !== c) {
+        if (source[j] === "\n")
+          throw new Error(`literal at offset ${i} runs past its line`);
+        j += source[j] === "\\" ? 2 : 1;
+      }
+      if (j >= source.length)
+        throw new Error(`unterminated literal at offset ${i}`);
+      out += source.slice(i, j + 1);
+      i = j + 1;
+    } else if (c === "#" && next === '"') {
+      throw new Error(`raw literal at offset ${i}`);
+    } else if (c === "/" && next === "/") {
+      const newline = source.indexOf("\n", i);
+      const end = newline === -1 ? source.length : newline;
+      out += blank(source.slice(i, end));
+      i = end;
+    } else if (c === "/" && next === "*") {
+      const close = source.indexOf("*/", i + 2);
+      if (close === -1)
+        throw new Error(`unterminated block comment at offset ${i}`);
+      const comment = source.slice(i, close + 2);
+      if (comment.indexOf("/*", 2) !== -1)
+        throw new Error(`nested block comment at offset ${i}`);
+      out += blank(comment);
+      i = close + 2;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
+
+/** Strips YAML `#` comments: a `#` at the start of a line or after a space or
+ *  tab, to the end of that line, as YAML itself reads one (#822). Not
+ *  quote-aware, so a ` #` inside a quoted string or a `run:` script also cuts
+ *  the rest of that line. Callers check that no line they assert on holds one. */
+export function stripYamlComments(yaml: string): string {
+  return yaml.replace(/(^|[ \t])#.*$/gm, "$1");
+}
+
+/** Strips HTML `<!-- ... -->` comments, so a commented-out element cannot be
+ *  the first match a source pin reads from an `.html` file (#822). */
+export function stripHtmlComments(html: string): string {
+  return html.replace(/<!--[\s\S]*?-->/g, "");
+}
+
+/** Brace-counts from `openIndex` (the index of an opening `{`) to find its
+ *  matching close, or -1. */
+export function matchingBraceClose(text: string, openIndex: number): number {
+  let depth = 0;
+  for (let i = openIndex; i < text.length; i++) {
+    if (text[i] === "{") depth++;
+    else if (text[i] === "}") {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** Slice out the `{ ... }` body that follows the first occurrence of
+ *  `declaration` in `code`, throwing (not failing an assertion) when the
+ *  anchor is gone — a renamed callback is a harness defect, not a finding. */
+export function bodyAfter(code: string, declaration: string): string {
+  const declStart = code.indexOf(declaration);
+  if (declStart === -1) {
+    throw new Error(`${declaration} not found — has it been renamed or moved?`);
+  }
+  const open = code.indexOf("{", declStart);
+  if (open === -1) throw new Error(`${declaration}: opening brace not found`);
+  const close = matchingBraceClose(code, open);
+  if (close === -1 || close <= open) {
+    throw new Error(`${declaration}: closing brace not found`);
+  }
+  return code.slice(open, close + 1);
+}
+
+/**
+ * The index of `needle` in `text`, throwing when it is absent **or occurs more
+ * than once**. `region` catches an anchor that went missing; it cannot catch
+ * one that still matches, but matches the wrong occurrence — a second
+ * `useLayoutEffect(() => {` added above the one a test names (#533, PR #531
+ * round 7). A plain `indexOf` silently means "the first"; this makes the
+ * test's assumption that there is only one fail at the moment it stops being
+ * true, rather than when the extra occurrence happens to move to the front.
+ */
+export function uniqueIndexOf(text: string, needle: string): number {
+  const at = text.indexOf(needle);
+  if (at === -1) throw new Error(`uniqueIndexOf: not found: ${needle}`);
+  if (text.indexOf(needle, at + 1) !== -1) {
+    throw new Error(`uniqueIndexOf: occurs more than once: ${needle}`);
+  }
+  return at;
+}
+
+/**
+ * Slices `text.slice(from, to)`, and turns three silent-pass shapes into a
+ * throw instead of a trivially-satisfied assertion:
+ *
+ *   - a missing anchor — `from`/`to` still `-1` from whatever `indexOf` /
+ *     `lastIndexOf` / `search` produced it, so `slice(-1, n)` cannot quietly
+ *     become `""` and get regexed as if it were real content;
+ *   - a degenerate or reversed span (`to <= from`) — an end anchor that
+ *     resolved at or before the start, including the empty span `to === from`;
+ *   - a span that resolves to nothing but whitespace, which a bare
+ *     `expect(slice).not.toMatch(...)` cannot distinguish from real, checked
+ *     content.
+ *
+ * `from`/`to` are indices the caller already computed by whatever means fits
+ * the anchor (a forward `indexOf`, a `lastIndexOf` walking back from a later
+ * point, a brace count) — `region` does not itself search text; it is the one
+ * place the floor those searches all need gets checked, once.
+ */
+export function region(
+  text: string,
+  { from, to }: { from: number; to: number }
+): string {
+  if (from === -1) throw new Error("region: missing start anchor (-1)");
+  if (to === -1) throw new Error("region: missing end anchor (-1)");
+  if (to <= from) {
+    throw new Error(`region: end (${to}) is not after start (${from})`);
+  }
+  const slice = text.slice(from, to);
+  if (slice.trim() === "") {
+    throw new Error("region: matched a region with no content");
+  }
+  return slice;
+}
+
+/** Strips CSS block comments — and ONLY block comments. CSS has no `//`
+ *  comment, and `stripComments`' line strip would eat the rest of a line
+ *  holding a `url(https://…)`, closing brace included. */
+export function stripCssComments(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+/**
+ * Finds an exact, standalone CSS rule for `selector` and returns its
+ * declaration body, trimmed. Strips CSS block comments first, so a comment
+ * naming the selector in prose (#529's trap) can never be the match — block
+ * comments only: CSS has no `//` comment, and `stripComments`' line strip
+ * would eat the rest of a line holding a `url(https://…)`, closing brace
+ * included. Throws — rather than returning `""` or `null` — when the rule is
+ * absent, ambiguous or empty, so a caller cannot coerce a miss into an empty
+ * string and regex nothing (#533's `notice-bridge` finding). A caller that
+ * must assert a rule is deliberately ABSENT asserts the MISSING-rule throw
+ * specifically (`toThrow(\`cssRule: missing rule: ${selector}\`)`); a bare
+ * `toThrow()` would also accept an ambiguous or empty rule.
+ */
+export function cssRule(css: string, selector: string): string {
+  const stripped = stripCssComments(css);
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const rules = [
+    ...stripped.matchAll(new RegExp(`^\\s*${escaped}\\s*\\{([^{}]*)\\}`, "gm")),
+  ];
+  if (rules.length > 1) {
+    throw new Error(
+      `cssRule: ambiguous rule (${rules.length} matches): ${selector}`
+    );
+  }
+  const body = rules.at(0)?.[1];
+  if (body === undefined) throw new Error(`cssRule: missing rule: ${selector}`);
+  const trimmed = body.trim();
+  if (trimmed === "") throw new Error(`cssRule: empty rule: ${selector}`);
+  return trimmed;
+}
+
+/**
+ * The value of the ONE `property` declaration in a rule `body` (what `cssRule`
+ * returns), trimmed. A bare `/color:\s*X/` over a body is satisfied by
+ * `background-color: X` or `border-color: X`, and by the first of two
+ * declarations when a later one in the same rule overrides it (#533's
+ * 2026-09-22 notes, 1 and 4). This anchors the
+ * property on a declaration boundary, and throws when it is absent or declared
+ * more than once, so a caller can assert the value with `toBe` rather than a
+ * pattern. Quoted strings and `url(…)` are blanked to same-length filler
+ * before the scan, so a `;` or `color:` inside `content: "…"` or a data URI
+ * is not read as a declaration; the value is sliced from the unmasked text.
+ * Still a scanner, not a tokenizer: a comment splitting an identifier
+ * (`col/* *\/or`) is glued back together by the strip.
+ */
+export function declarationValue(body: string, property: string): string {
+  const escaped = property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const text = stripCssComments(body);
+  const masked = text.replace(
+    /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\burl\([^)]*\)/g,
+    (m) => m[0] + "_".repeat(m.length - 2) + m.at(-1)!
+  );
+  const values = [
+    ...masked.matchAll(
+      new RegExp(
+        `(?<=^|[;{])\\s*${escaped}\\s*:\\s*([^;{}]*?)\\s*(?=;|}|$)`,
+        "dg"
+      )
+    ),
+  ].map((m) => text.slice(...m.indices![1]!));
+  if (values.length > 1) {
+    throw new Error(
+      `declarationValue: ${property} declared ${values.length} times`
+    );
+  }
+  const value = values.at(0);
+  if (value === undefined || value === "") {
+    throw new Error(`declarationValue: no ${property} declaration`);
+  }
+  return value;
 }

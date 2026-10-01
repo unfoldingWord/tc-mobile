@@ -5,9 +5,13 @@ interface EmptyStateProps {
   /** A confident headline — a beginning, not an apology (ui-craft §21). */
   headline: string;
   /**
-   * One line that teaches the vocabulary and reassures on offline. On a screen
-   * built for people who may not read, this is spoken by a screen reader and is
-   * the attach point for a future spoken-prompt layer (see `strings.ts`).
+   * One line that teaches the vocabulary. On a screen built for people who
+   * may not read, this is spoken by a screen reader and is the attach point
+   * for a future spoken-prompt layer (see `strings.ts`). Neither caller's
+   * `teach` string makes an offline/durability claim: `booksEmptyTeach`
+   * dropped one it could not honour (`storageMarker`'s gates never fire while
+   * the shelf is empty — George #423 round 3 P3-3), and `segmentsEmptyTeach`
+   * never had one.
    */
   teach: string;
   /**
@@ -19,6 +23,14 @@ interface EmptyStateProps {
   ctaLabel: string;
   ctaIcon: IconName;
   onCta: () => void;
+  /**
+   * The CTA is the next required action in the guided chain (#604). Both
+   * callers are steps in it — the empty shelf's New book and the empty
+   * chapter's Add segment — and on both screens the header's create control is
+   * hidden while the invite is up, so there is no second control this could be
+   * confused with.
+   */
+  guided?: boolean;
 }
 
 /**
@@ -32,16 +44,12 @@ export function EmptyState({
   ctaLabel,
   ctaIcon,
   onCta,
+  guided,
 }: EmptyStateProps) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-[14px] px-[24px] text-center">
-      <p className="t-title" style={{ color: "var(--s-ink)" }}>
-        {headline}
-      </p>
-      <p
-        className="max-w-[28ch] text-[13px]"
-        style={{ color: "var(--s-ink-muted)" }}
-      >
+    <div className="flex h-full flex-col items-center justify-center gap-[var(--c-gap-items)] px-[24px] text-center">
+      <p className="t-title text-ink">{headline}</p>
+      <p className="text-ink-muted max-w-[28ch] text-[length:var(--p-text-md)]">
         {teach}
       </p>
       <Control
@@ -49,6 +57,7 @@ export function EmptyState({
         label={ctaLabel}
         variant="primary"
         size={28}
+        guided={guided}
         onClick={onCta}
       />
     </div>

@@ -7,11 +7,15 @@ import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import {
   addChapter,
   addSegment,
-  clearSegmentTake,
   createBook,
-  saveTake,
+  deleteBook,
 } from "@/lib/storage/books";
-import { newClipId } from "@/lib/storage/clips";
+import {
+  clearSegmentTake,
+  saveTake,
+  setSegmentFinished,
+} from "@/lib/storage/takes";
+import { deleteClip, newClipId, putClip } from "@/lib/storage/clips";
 import { getDb } from "@/lib/storage/db";
 import { clearAllStores } from "./support";
 
@@ -20,10 +24,12 @@ import { clearAllStores } from "./support";
  *
  * A transaction that returns success under the browser default (relaxed on
  * Chromium) may not have been flushed yet, so a crash or a power loss just
- * after a translator stops recording can take the recording with it. The two
+ * after a translator stops recording can take the recording with it. The
  * transactions here are the ones that create and remove the ONLY copy of a
  * take, which is why they are held to the same bar `commitTranscode` already
- * meets (ADR 0009).
+ * meets (ADR 0009). `putClip`/`deleteClip` (#163's durability addendum) write
+ * and delete clip bytes directly, the same asymmetry #179 closed for
+ * `saveTake`/`clearSegmentTake`.
  *
  * This is a CONTRACT test, and that limit is the point: fake-indexeddb accepts
  * the options bag and stores nothing to flush, so no test in this repo can
@@ -93,6 +99,69 @@ describe("take writes ask for strict durability", () => {
 
     const options = await transactionOptionsDuring(async () => {
       await clearSegmentTake(segmentId);
+    });
+
+    expect(options).toEqual([{ durability: "strict" }]);
+  });
+
+  it("deleteBook opens its transaction with durability: strict", async () => {
+    // Deleting a book removes the only copy of every take under it — a whole
+    // tree at once, not one segment — so it is held to the same bar as the two
+    // above (#337, #350). Without this case a refactor could drop the options
+    // bag and `tests/delete-book.test.ts` would stay green: it asserts what the
+    // rows look like afterwards, never how the transaction was opened.
+    const book = await createBook("b");
+    const chapter = await addChapter(book.id);
+    const segmentId = (await addSegment(chapter.id)).id;
+    await saveTake(
+      segmentId,
+      newClipId(),
+      samples(1000),
+      CANONICAL_SAMPLE_RATE
+    );
+
+    const options = await transactionOptionsDuring(async () => {
+      await deleteBook(book.id);
+    });
+
+    expect(options).toEqual([{ durability: "strict" }]);
+  });
+
+  it("setSegmentFinished opens its transaction with durability: strict", async () => {
+    // The finished mark is what an export trusts to decide what ships (#829).
+    const segmentId = await emptySegment();
+    await saveTake(
+      segmentId,
+      newClipId(),
+      samples(1000),
+      CANONICAL_SAMPLE_RATE
+    );
+
+    const options = await transactionOptionsDuring(async () => {
+      await setSegmentFinished(segmentId, true);
+    });
+
+    expect(options).toEqual([{ durability: "strict" }]);
+  });
+
+  it("putClip opens its transaction with durability: strict", async () => {
+    // #163's durability addendum to #179: putClip writes clip bytes and
+    // metadata directly (contrast saveTake, which writes them inside the
+    // take's own transaction, above) — it is its own top-level transaction
+    // and its own seam to observe.
+    const options = await transactionOptionsDuring(async () => {
+      await putClip(newClipId(), samples(1000), CANONICAL_SAMPLE_RATE);
+    });
+
+    expect(options).toEqual([{ durability: "strict" }]);
+  });
+
+  it("deleteClip opens its transaction with durability: strict", async () => {
+    const clipId = newClipId();
+    await putClip(clipId, samples(1000), CANONICAL_SAMPLE_RATE);
+
+    const options = await transactionOptionsDuring(async () => {
+      await deleteClip(clipId);
     });
 
     expect(options).toEqual([{ durability: "strict" }]);

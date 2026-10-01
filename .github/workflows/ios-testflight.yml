@@ -10,7 +10,8 @@ name: iOS TestFlight
 # macOS runners bill at a premium, so the trigger is deliberate and the lane
 # does not wait for Apple's server-side processing (see the Fastfile).
 #
-# One-time setup lives in docs/native/README.md §4a: the seven secrets below,
+# One-time setup lives in docs/native/README.md §4a: the seven secrets below
+# (in the `release-signing` environment, required reviewers — #321),
 # the App Store Connect app record, and the API key's role.
 on:
   workflow_dispatch:
@@ -28,54 +29,44 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # A cheap ubuntu gate BEFORE any billed macOS runner is acquired. Refuse a
-  # non-staging/main ref (the dispatch picker defaults to develop, and this is
-  # the first path that puts a build on a tester's phone) and a missing secret
-  # here — not ~10 minutes into the archive. An unset GitHub secret expands to
-  # "", which the Fastfile's `ENV.fetch` would NOT catch, so treat empty as
-  # missing. The macOS job `needs:` this, so a failure never reaches macos-14.
+  # A cheap ubuntu gate BEFORE the environment approval and the billed macOS
+  # runner. Refuse a non-staging/main ref here (the dispatch picker defaults
+  # to develop, and this is the first path that puts a build on a tester's
+  # phone). This job holds NO secrets and no environment on purpose: the
+  # signing secrets live in the `release-signing` environment (#321), which
+  # only the macOS job references, so a dispatch costs exactly one approval.
+  # The presence check moved there, as its first step.
   preflight:
-    name: Preflight (ref + secrets)
+    name: Preflight (ref)
     runs-on: ubuntu-latest
     permissions: {}
     env:
-      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
-      IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
-      IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
-      IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
       REF: ${{ github.ref_name }}
+      REF_TYPE: ${{ github.ref_type }}
       ALLOW_ANY: ${{ inputs.allow_any_ref }}
     steps:
       - name: Require staging/main (or an explicit override)
         run: |
           set -euo pipefail
           if [ "$ALLOW_ANY" = "true" ]; then
-            echo "allow_any_ref set — building '$REF'."
+            echo "allow_any_ref set — building '$REF' ($REF_TYPE)."
+          elif [ "$REF_TYPE" != "branch" ]; then
+            echo "::error::Refusing to build a tester IPA from $REF_TYPE '$REF'. Tester builds come from the staging or main BRANCH; set allow_any_ref for anything else."
+            exit 1
           elif [ "$REF" != "staging" ] && [ "$REF" != "main" ]; then
             echo "::error::Refusing to build a tester IPA from '$REF'. Dispatch from staging or main, or set allow_any_ref."
             exit 1
           fi
 
-      - name: Require all seven secrets
-        run: |
-          set -euo pipefail
-          missing=0
-          for name in ASC_KEY_ID ASC_ISSUER_ID APPLE_TEAM_ID ASC_KEY_P8_BASE64 \
-                      IOS_DIST_CERT_P12_BASE64 IOS_DIST_CERT_PASSWORD IOS_PROVISION_PROFILE_BASE64; do
-            if [ -z "${!name:-}" ]; then
-              echo "::error::secret $name is unset or empty"
-              missing=1
-            fi
-          done
-          [ "$missing" -eq 0 ] || exit 1
-          echo "Ref and all seven secrets present."
-
   testflight:
     name: Build and upload to TestFlight
     needs: preflight
+    # The signing secrets are ENVIRONMENT secrets, not repository secrets, and
+    # the environment has required reviewers. A dispatch pauses here until an
+    # approver okays this run — the actor guard the in-yml ref check above
+    # cannot be (#321: any push-access branch can rewrite the yml and dispatch
+    # itself). The approval UI shows the ref being built.
+    environment: release-signing
     runs-on: macos-15
     timeout-minutes: 45
     permissions:
@@ -89,11 +80,33 @@ jobs:
       # "Write signing credentials" step and not needed as env vars here.
       IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
     steps:
+      # First step, before checkout: an unset environment secret expands to "",
+      # which the Fastfile's `ENV.fetch` would NOT catch, so treat empty as
+      # missing and fail in seconds rather than ~10 minutes into the archive.
+      # Step-scoped env so the base64 blobs are not job-wide.
+      - name: Require all seven secrets
+        env:
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in ASC_KEY_ID ASC_ISSUER_ID APPLE_TEAM_ID ASC_KEY_P8_BASE64 \
+                      IOS_DIST_CERT_P12_BASE64 IOS_DIST_CERT_PASSWORD IOS_PROVISION_PROFILE_BASE64; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::environment secret $name is unset or empty (environment: release-signing)"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "All seven signing secrets present."
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22"
+          node-version-file: .node-version
           cache: "npm"
 
       - name: Install dependencies
@@ -102,26 +115,66 @@ jobs:
       - name: Build the web bundle
         run: npm run build
 
+      # These checks enforce the reader-gated OBS glob policy. The synced
+      # bundle guard below also checks what the build actually precaches.
+      - name: Check the built artifacts
+        run: npm run test:dist
+
+      # The OBS-thumbnail-vs-jpg-policy comparison below has to run against
+      # THIS (web) build, before the native rebuild two steps down replaces
+      # dist/sw.js with vite-plugin-pwa's self-destroying worker (#923) —
+      # that worker never precaches anything at all, by design, so comparing
+      # IT against globPatterns would either compare two things that can
+      # never agree once jpg is legitimately restored (Template Library,
+      # #33), or silently stop meaning anything. This is that same check,
+      # simply moved earlier; "Guard the synced bundle" below keeps the
+      # checks that are actually about what got synced into ios/.
+      - name: OBS thumbnail precache policy (web build; #177 / ADR 0006)
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const config = readFileSync('vite.config.ts', 'utf8');
+          const body = config.match(/globPatterns:\s*\[([^\]]*)\]/)?.[1];
+          const patterns = [...(body ?? '').matchAll(/"([^"]+)"/g)].map(m => m[1]);
+          if (patterns.length === 0) {
+            console.error('::error::No globPatterns found in vite.config.ts');
+            process.exit(1);
+          }
+          const jpgConfigured = patterns.some(p => /\bjpe?g\b/i.test(p));
+          const thumbnailsEmitted = readFileSync('dist/sw.js', 'utf8').includes('obs/thumbs');
+          if (thumbnailsEmitted !== jpgConfigured) {
+            console.error('::error::Emitted OBS thumbnails disagree with the reader-gated jpg policy');
+            process.exit(1);
+          }
+          NODE
+
+      # #923: the web build above (and its two checks) validate the PWA's own
+      # artifacts, but what actually ships inside the native shell must be the
+      # NATIVE-mode build — vite.config.ts's `--mode native` swaps `dist/sw.js`
+      # for vite-plugin-pwa's self-destroying worker and ships no
+      # auto-injected registration script, so the WebView never keeps an
+      # offline precache that can go stale across an in-place upgrade. This
+      # rebuild deliberately overwrites the dist/ the previous steps just
+      # validated; `cap sync` below copies whatever dist/ holds at that
+      # point, which must be this one, not the web build's.
+      - name: Rebuild and check dist/ for the native shell (self-destroying service worker, #923)
+        run: npm run test:dist:native
+
       # Select Xcode BEFORE `cap sync`: the iOS sync resolves the CapApp-SPM
       # Swift package through xcodebuild, so it must use the same toolchain gym
       # archives with, or SPM resolves against one Xcode and the archive runs on
-      # another. App Store Connect requires the iOS 26 SDK, so this pins Xcode 26
-      # explicitly rather than the image default: /Applications/Xcode.app is 16.x
-      # on macos-15 and Apple rejects its uploads. The step below globs the
-      # versioned Xcode_26*.app and fails closed if none is present (BSD `sort`
-      # has no `-V`, so it sorts lexicographically — fine within the 26.x range).
-      # No third-party action, keeping the "actions/* pinned by SHA only"
-      # property this repo's workflows hold (see ci.yml).
+      # another. Target the iOS 26 SDK for App Store Connect uploads, choosing
+      # the newest stable Xcode 26 by numeric version rather than relying on
+      # the runner image default. Fail closed if no matching application exists.
       - name: Select Xcode
         run: |
           set -euo pipefail
-          # App Store Connect requires the iOS 26 SDK (Xcode 26+). The image's
-          # default /Applications/Xcode.app symlink points to 16.x on macos-15,
-          # which Apple rejects at upload. Prefer any versioned Xcode_26*.app;
-          # BSD sort has no -V so sort lexicographically descending — fine for
-          # the 26.x range. If none is found, print what IS installed and exit
-          # so the error lands here rather than after ~10 min of billed archive.
-          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -r | head -1 || true)
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | ruby -e '
+            paths = STDIN.readlines.map(&:chomp)
+            candidates = paths.select { |p| p.match?(%r{/Xcode_26(?:\.\d+)*\.app\z}) }
+            puts candidates.max_by { |p| Gem::Version.new(p[/Xcode_([\d.]+)\.app\z/, 1]) }
+          ' || true)
           if [ -z "$XCODE" ]; then
             echo "::error::Xcode 26 not found on this runner. Available versions:"
             ls -d /Applications/Xcode*.app 2>/dev/null || echo "  (none)"
@@ -138,7 +191,8 @@ jobs:
       # Re-assert its cheap ship-blockers here — a missing service worker or
       # manifest, or a leaked e2e harness — plus that cap sync actually copied
       # the bundle (ios/App/App/public is gitignored; a sync that exits 0 without
-      # it would archive a blank WebView).
+      # it would archive a blank WebView). The OBS-thumbnail policy is checked
+      # against the WEB build above, not here — see that step's comment.
       - name: Guard the synced bundle
         run: |
           set -euo pipefail
@@ -163,7 +217,7 @@ jobs:
         # BSD `base64` this runner ships), and `Base64.decode64` also tolerates a
         # wrapped secret. Reading the secret from ENV keeps it out of the process
         # arguments and the shell history.
-        # The preflight job already failed the run if this secret is unset/empty.
+        # The first step of this job already failed the run if this secret is unset/empty.
         run: |
           set -euo pipefail
           ruby -rbase64 -e 'File.binwrite("fastlane/AuthKey.p8", Base64.decode64(ENV.fetch("ASC_KEY_P8_BASE64")))'

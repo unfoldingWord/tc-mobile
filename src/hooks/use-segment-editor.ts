@@ -1,20 +1,34 @@
 import { useCallback, useMemo, useState } from "react";
 
-import { clampRange, sliceRange } from "@/lib/audio/edit";
+import {
+  clampRange,
+  sliceRange,
+  spansWholeSample,
+  wholeSampleRange,
+} from "@/lib/audio/edit";
 import {
   canRedo as logCanRedo,
   canUndo as logCanUndo,
   emptyLog,
   materialize,
+  opRedone,
+  opUndone,
   pushOp,
   redo as logRedo,
   undo as logUndo,
   type EditLog,
+  type EditOp,
 } from "@/lib/audio/edit-log";
 import { computePeaks } from "@/lib/audio/peaks";
 import type { Peaks, SampleRange } from "@/types/audio";
 
-/** Waveform resolution, matched to `useRecorderSegment` so the redraw is stable. */
+/**
+ * Waveform resolution of the recorder stage — coarser than a row is wrong.
+ *
+ * The only declaration: `useRecorderSegment` used to carry a second copy for a
+ * peaks pass nothing drew, dropped with it (L-9, #160). A row's resolution is
+ * `ROW_PEAK_BUCKETS`, which is a different number for a different surface.
+ */
 const PEAK_BUCKETS = 400;
 
 const EMPTY = new Int16Array(0);
@@ -54,13 +68,29 @@ export interface SegmentEditor {
   readonly closeSelection: () => void;
   /** Update the picked span as a handle drags. Clamped to the buffer. */
   readonly setSelection: (range: SampleRange) => void;
-  /** Cut the selection to the clipboard, then drop the frame. Returns the range
-   *  removed (normalised) or null if nothing was cut. */
+  /** Cut the selection to the clipboard, then drop the frame. Returns the
+   *  whole-sample range removed — the same truncated bounds `cut`/
+   *  `sliceRange` (`lib/audio/edit.ts`) act on, via `wholeSampleRange`, not
+   *  the raw fractional selection — or null if nothing was cut. */
   readonly cut: () => SampleRange | null;
-  /** Paste the clipboard at a sample offset (the centerline). */
-  readonly paste: (atSample: number) => void;
-  readonly undo: () => void;
-  readonly redo: () => void;
+  /** Paste the clipboard at a sample offset (the centerline). One-shot
+   *  (#489): a paste that lands empties the clipboard; undoing it puts the
+   *  phrase back, and redoing it empties it again. Returns whether it
+   *  landed: false when there was nothing to paste or the allocation failed,
+   *  so the clipboard still holds the phrase and the recorder must not reopen
+   *  a frame over it (Frank R1 on #985). */
+  readonly paste: (atSample: number) => boolean;
+  /** Step history back one op. Returns the op that was undone (so the
+   *  recorder can map the centerline through its inverse, #449), or null if
+   *  there was nothing to undo or the rematerialise failed. */
+  readonly undo: () => EditOp | null;
+  /** Step history forward one op. Returns the op that was (re-)applied, or
+   *  null if there was nothing to redo or the rematerialise failed. */
+  readonly redo: () => EditOp | null;
+  /** Put back the phrase the clipboard held when the editor last took its
+   *  base, for an exit that drops this session's edits unsaved. See the
+   *  docblock at its definition for what it restores and why. */
+  readonly rollBackClipboard: () => void;
 }
 
 /** The base buffer, the current edited buffer, and the history that maps between. */
@@ -68,6 +98,13 @@ interface History {
   readonly base: Int16Array;
   readonly working: Int16Array;
   readonly log: EditLog;
+}
+
+/** The clipboard holds exactly these samples (same array, or equal content). */
+function sameSamples(held: Int16Array | null, clip: Int16Array): boolean {
+  if (held === clip) return true;
+  if (held === null || held.length !== clip.length) return false;
+  return held.every((v, i) => v === clip[i]);
 }
 
 /**
@@ -87,7 +124,8 @@ interface History {
  * save path made for the same OOM class.
  *
  * The clipboard is passed in rather than owned here: it must outlive the sheet
- * (G3), so it belongs to `App`. Cut writes it, paste reads it.
+ * (G3), so it belongs to `App`. Cut writes it; paste reads it and then
+ * empties it (#489), and undo/redo of a paste move it back and forth.
  *
  * `original` is the segment's loaded PCM (null until the async load resolves, or
  * on an empty segment); before it arrives the editor is an empty, no-op buffer.
@@ -102,6 +140,10 @@ export function useSegmentEditor(
     working: base,
     log: emptyLog(),
   }));
+  // The clipboard as it stood when this base was taken — what
+  // `rollBackClipboard` puts back. Taken in the same render-time reset as the
+  // history, so it moves exactly when the base does.
+  const [clipAtBase, setClipAtBase] = useState(() => clipboard.clip);
   const [selection, setSelectionState] = useState<SampleRange | null>(null);
   const [selectionActive, setSelectionActive] = useState(false);
   const [error, setError] = useState(false);
@@ -112,6 +154,7 @@ export function useSegmentEditor(
   // render, with no one-frame empty flash an effect would leave on open.
   if (hist.base !== base) {
     setHist({ base, working: base, log: emptyLog() });
+    setClipAtBase(clipboard.clip);
     setSelectionState(null);
     setSelectionActive(false);
     setError(false);
@@ -192,13 +235,28 @@ export function useSegmentEditor(
     [clampPoint]
   );
 
-  // Returns the range actually removed (normalised), or null if nothing was cut
-  // or the edit failed — so the recorder can shift the pan left by a cut that
-  // fell before the centerline.
+  // Returns the whole-sample range actually removed, or null if nothing was
+  // cut or the edit failed — so the recorder can shift the pan left by a cut
+  // that fell before the centerline. Normalised through `wholeSampleRange`
+  // (#512 George R1 P3), not just `clampRange`: the buffer edit below
+  // (`sliceRange`/`cut` in `lib/audio/edit.ts`) truncates fractional edges
+  // the way `Int16Array.slice` does, so the range stored on the `EditOp` —
+  // and handed back here — must already be truncated too, or a caller that
+  // does not re-truncate (the mappers in `recorder-stage.ts` do, today, but
+  // `wholeSampleRange`'s own docblock calls itself "the ONE place" this
+  // happens) reads a position `Math.round`ed instead of truncated.
   const cut = useCallback((): SampleRange | null => {
     if (!selection) return null;
-    const range = clampRange(selection, working.length);
-    if (range.start === range.end) return null; // nothing picked — not a no-op
+    const range = wholeSampleRange(clampRange(selection, working.length));
+    // Nothing picked — and "picked" is the one `spansWholeSample` question the
+    // audition asks, so what Play refuses to sound, Cut refuses to remove. The
+    // float compare this replaces called a span inside a single sample a real
+    // selection: `sliceRange` then took nothing, yet the op still went onto the
+    // undo log and `clipboard.set(removed)` below REPLACED the chapter-wide
+    // clipboard with an empty buffer — a tap that did nothing, and silently
+    // dropped audio the translator was about to paste somewhere else (Frank R3).
+    // Refusing here is not a no-op: it leaves the selection open to be resized.
+    if (!spansWholeSample(range)) return null;
     const applied = runEdit(() => {
       const removed = sliceRange(working, range);
       const nextLog = pushOp(log, { kind: "cut", range });
@@ -213,27 +271,127 @@ export function useSegmentEditor(
     return applied ? range : null;
   }, [selection, working, log, base, runEdit, clipboard, clearSelection]);
 
+  // One-shot (#489, the requirements owner's decision of 2026-09-24): a paste
+  // that lands empties the clipboard, so the next thing the translator can do
+  // is pick a new span rather than drop the same phrase again. Only a paste
+  // that LANDED empties it — `applyLog`'s `after` runs only once the new
+  // buffer has been allocated and committed, so a paste that fails in the
+  // allocation guard leaves the phrase on the clipboard to try again.
+  //
+  // Nothing is lost by emptying it: the phrase is now in `working`, which
+  // this sheet commits on close through the never-lose save path, and the
+  // op keeps its own reference to the samples (`op.clip`), which is what
+  // `undo` below hands back to the clipboard if the paste is taken back. The
+  // one exit that drops `working` unsaved, a superseded capture's, calls
+  // `rollBackClipboard` below to put the phrase back first.
   const paste = useCallback(
-    (atSample: number) => {
+    (atSample: number): boolean => {
       const clip = clipboard.clip;
-      if (!clip || clip.length === 0) return;
+      if (!clip || clip.length === 0) return false;
       const at = Math.max(0, Math.min(Math.round(atSample), working.length));
-      applyLog(pushOp(log, { kind: "paste", at, clip }));
+      return applyLog(pushOp(log, { kind: "paste", at, clip }), () =>
+        clipboard.set(null)
+      );
     },
-    [clipboard.clip, working.length, log, applyLog]
+    [clipboard, working.length, log, applyLog]
   );
 
   // Undo/redo re-materialise from base and clear any open selection, whose
   // sample range was measured against a buffer the history has just changed.
-  const undo = useCallback(
-    () => applyLog(logUndo(log), clearSelection),
-    [log, applyLog, clearSelection]
-  );
+  //
+  // Each returns the op it stepped over — the one being undone, or the one
+  // being (re-)applied — so the recorder can map the centerline through its
+  // inverse (#449) rather than dropping it unconditionally, through the
+  // shared `opUndone`/`opRedone` pair (`lib/audio/edit-log.ts`, #512 George
+  // R1 P2-2) rather than an inline index read, so the "which op did this
+  // step pass over" choice lives where a plain Node test reaches it. Read
+  // BEFORE `applyLog` runs (the cursor this closes over is the pre-step
+  // one); `null` when there was nothing to step to, or when `applyLog`'s
+  // guard reports the rematerialise failed, mirroring `cut()`'s own
+  // `applied ? range : null`.
+  //
+  // A paste is one-shot (#489), so stepping over one moves the clipboard with
+  // it. Undoing a paste takes the phrase back OUT of `working`; if it did not
+  // also go back on the clipboard, closing the sheet would drop the only copy
+  // left (the op's own reference dies with the session log). So the undone
+  // paste's samples go back on the clipboard. What that overwrites is, at
+  // that instant, also in `working`: only a LATER op in this session's log
+  // can have refilled it — a cut, whose undo (reachable before this one) put
+  // its audio back into `working`.
+  //
+  // That copy is only safe until the later cut is REDONE, which takes the
+  // audio back out of `working` (Frank/George R1: cut → paste → cut → undo ×2
+  // → redo ×2 left the second cut's phrase only in the redo tail). So a redo
+  // of a cut puts its samples on the clipboard, exactly as `cut()` did on the
+  // forward pass: the latest redone cut owns the slot. Refilling only an
+  // EMPTY slot was not enough — redoing two cuts in a row left the earlier
+  // one there and the later one nowhere (George R2).
+  //
+  // Redoing the paste empties it again, but only when the clipboard still
+  // holds that paste's own samples — the same array, or the same samples a
+  // cut's redo sliced back out — so a redo never discards a phrase it did
+  // not put there.
+  //
+  // Undo of a paste and redo of a cut overwrite the slot without that check.
+  // That is safe because, while this sheet is open, nothing else puts a
+  // phrase on the clipboard: this hook is the only writer of a non-null clip.
+  // The other writers only empty it: the recorder's discard confirm (#862),
+  // a deliberate throw-away, and App's chapter change, which also unmounts
+  // the sheet. Overwriting an empty slot loses nothing. A new writer that can
+  // put a phrase there while the sheet is open would need a guard here.
+  const undo = useCallback((): EditOp | null => {
+    const undoneOp = opUndone(log);
+    if (undoneOp === null) return null;
+    const applied = applyLog(logUndo(log), () => {
+      clearSelection();
+      if (undoneOp.kind === "paste") clipboard.set(undoneOp.clip);
+    });
+    return applied ? undoneOp : null;
+  }, [log, applyLog, clearSelection, clipboard]);
 
-  const redo = useCallback(
-    () => applyLog(logRedo(log), clearSelection),
-    [log, applyLog, clearSelection]
-  );
+  const redo = useCallback((): EditOp | null => {
+    const redoneOp = opRedone(log);
+    if (redoneOp === null) return null;
+    const held = clipboard.clip;
+    // Every allocation inside the guard, as in `cut()`: the refill slice is
+    // taken from the pre-redo buffer, the one the cut's range was measured on.
+    const applied = runEdit(() => {
+      const nextLog = logRedo(log);
+      const refill =
+        redoneOp.kind === "cut" ? sliceRange(working, redoneOp.range) : null;
+      return {
+        next: { base, working: materialize(base, nextLog), log: nextLog },
+        after: () => {
+          clearSelection();
+          if (refill) clipboard.set(refill);
+          if (redoneOp.kind === "paste" && sameSamples(held, redoneOp.clip)) {
+            clipboard.set(null);
+          }
+        },
+      };
+    });
+    return applied ? redoneOp : null;
+  }, [log, base, working, runEdit, clearSelection, clipboard]);
+
+  // For an exit that leaves WITHOUT saving this session's edits — today the
+  // recorder's superseded-capture exit (#527), which withholds every pending
+  // write. A paste empties the clipboard (#489), so once one has landed the
+  // phrase lives only in `working`; dropping `working` unsaved would drop the
+  // phrase with it (Frank/George R3 on #965).
+  //
+  // So the clipboard rolls back with the edits: it gets back what it held when
+  // this base was taken. That is the one phrase this session can have removed
+  // from anywhere but its own buffer. Everything else the session put on the
+  // clipboard was cut from this segment, whose stored audio the unsaved exit
+  // leaves untouched, so replacing it loses nothing. A clipboard that was empty
+  // at the base is left as it is. The base moves on every successful save (the
+  // reset above), so a phrase already saved into this segment is never put
+  // back as a second copy.
+  const rollBackClipboard = useCallback(() => {
+    if (clipAtBase !== null && clipboard.clip !== clipAtBase) {
+      clipboard.set(clipAtBase);
+    }
+  }, [clipAtBase, clipboard]);
 
   const selectionSpan = selection
     ? clampRange(selection, working.length)
@@ -246,10 +404,13 @@ export function useSegmentEditor(
     hasEdits: log.cursor > 0,
     selection,
     selectionActive,
+    // The scissors' enabled state asks the SAME question `cut` and the audition
+    // ask, so the control cannot be live for a span that would remove nothing
+    // (Frank R3).
     canCut:
       selectionActive &&
       selectionSpan !== null &&
-      selectionSpan.start !== selectionSpan.end,
+      spansWholeSample(selectionSpan),
     canPaste: clipboard.clip !== null && clipboard.clip.length > 0,
     canUndo: logCanUndo(log),
     canRedo: logCanRedo(log),
@@ -261,5 +422,6 @@ export function useSegmentEditor(
     paste,
     undo,
     redo,
+    rollBackClipboard,
   };
 }

@@ -10,6 +10,8 @@ import {
   replaceRange,
   silence,
   sliceRange,
+  spansWholeSample,
+  wholeSampleRange,
 } from "@/lib/audio/edit";
 
 const seq = (n: number, from = 0): Int16Array =>
@@ -28,6 +30,79 @@ describe("clampRange", () => {
   });
 });
 
+/**
+ * The one predicate behind "is anything actually selected?".
+ *
+ * Selection edges are floats — pointer geometry, and a keyboard nudge of
+ * `visibleSamples / 400` — while every consumer of a range TRUNCATES: `slice`
+ * for a cut, `subarray` for an audition. So "start !== end" is the wrong
+ * question, and asking it let two controls disagree with each other and with
+ * the audio: Play went inert on a sub-sample span while Cut stayed live and
+ * applied an empty cut, which advances the undo log and REPLACES the
+ * chapter-wide clipboard with an empty buffer (Frank R3). This is the question
+ * all of them ask now, so they cannot drift apart again.
+ *
+ * It takes an already-normalised range — every call site clamps with
+ * `clampRange` first, which is also what orders a reversed span.
+ */
+describe("spansWholeSample", () => {
+  it("is true for a span containing whole samples", () => {
+    expect(spansWholeSample({ start: 10, end: 11 })).toBe(true);
+    expect(spansWholeSample({ start: 0, end: 4410 })).toBe(true);
+  });
+
+  it("is true for a fractional span that straddles a sample boundary", () => {
+    // `slice(10.2, 11.1)` is `slice(10, 11)` — one sample is taken.
+    expect(spansWholeSample({ start: 10.2, end: 11.1 })).toBe(true);
+  });
+
+  it("is false for a span living inside one sample", () => {
+    // `slice(10.2, 10.9)` is `slice(10, 10)` — nothing is taken, so nothing
+    // may act as though something were.
+    expect(spansWholeSample({ start: 10.2, end: 10.9 })).toBe(false);
+  });
+
+  it("is false for a zero-length span", () => {
+    expect(spansWholeSample({ start: 250, end: 250 })).toBe(false);
+  });
+
+  it("is false for a non-finite edge", () => {
+    // `NaN === NaN` is false, so an equality test called this "selected".
+    expect(spansWholeSample({ start: Number.NaN, end: 400 })).toBe(false);
+    expect(spansWholeSample({ start: 100, end: Number.NaN })).toBe(false);
+  });
+});
+
+/**
+ * The ONE place an `EditOp` cut range (or any other fractional selection)
+ * becomes the whole-sample bounds a buffer edit actually acts on — folding
+ * round 2's `removedSampleCount` (a length) into a range, so `cut`/
+ * `sliceRange` and every position-reading caller (`recorder-stage.ts`'s pan
+ * arithmetic) share one normalisation instead of two (#473 round 3, Frank P2).
+ */
+describe("wholeSampleRange", () => {
+  it("truncates both edges toward zero, matching Int16Array.slice's own coercion", () => {
+    expect(wholeSampleRange({ start: 4_000.4, end: 8_000.7 })).toEqual({
+      start: 4_000,
+      end: 8_000,
+    });
+  });
+
+  it("normalises a reversed range", () => {
+    expect(wholeSampleRange({ start: 8_000.7, end: 4_000.4 })).toEqual({
+      start: 4_000,
+      end: 8_000,
+    });
+  });
+
+  it("is idempotent on an already-integer range", () => {
+    expect(wholeSampleRange({ start: 3, end: 9 })).toEqual({
+      start: 3,
+      end: 9,
+    });
+  });
+});
+
 describe("sliceRange", () => {
   it("copies the samples inside the range", () => {
     expect(Array.from(sliceRange(seq(10), { start: 2, end: 5 }))).toEqual([
@@ -40,6 +115,12 @@ describe("sliceRange", () => {
     const slice = sliceRange(source, { start: 0, end: 3 });
     slice[0] = 999;
     expect(source[0]).toBe(0);
+  });
+
+  it("truncates a fractional range exactly like its already-truncated equivalent — proving the wholeSampleRange refactor is a no-op (#473 round 3)", () => {
+    expect(Array.from(sliceRange(seq(10), { start: 2.9, end: 6.1 }))).toEqual(
+      Array.from(sliceRange(seq(10), { start: 2, end: 6 }))
+    );
   });
 });
 
@@ -59,6 +140,17 @@ describe("cut", () => {
   it("conserves total length", () => {
     const { remaining, removed } = cut(seq(100), { start: 10, end: 90 });
     expect(remaining.length + removed.length).toBe(100);
+  });
+
+  it("truncates a fractional range exactly like its already-truncated equivalent — proving the wholeSampleRange refactor is a no-op (#473 round 3)", () => {
+    const fractional = cut(seq(10), { start: 2.9, end: 6.1 });
+    const truncated = cut(seq(10), { start: 2, end: 6 });
+    expect(Array.from(fractional.remaining)).toEqual(
+      Array.from(truncated.remaining)
+    );
+    expect(Array.from(fractional.removed)).toEqual(
+      Array.from(truncated.removed)
+    );
   });
 });
 
@@ -147,6 +239,26 @@ describe("replaceRange", () => {
       Int16Array.from([9])
     );
     expect(Array.from(out)).toEqual([0, 9, 4, 5]);
+  });
+
+  /**
+   * #512 George R1 P3: `wholeSampleRange` was not actually "the ONE place" —
+   * `replaceRange` still inserted at `clampRange`'s rounded (not truncated)
+   * start after `cut()` had already truncated. `cut([2.6, 5))` removes
+   * indices [2, 5) (`Int16Array.slice` truncates), leaving the replacement's
+   * correct insertion point at 2 — but the pre-fix code inserted at
+   * `Math.round(2.6) = 3`, landing the replacement one sample late.
+   */
+  it("inserts at the cut's TRUNCATED start, not `Math.round` of the raw fractional one (#512 George R1 P3)", () => {
+    // seq(8) = [0,1,2,3,4,5,6,7]. cut([2.6,5)) truncates to [2,5), removing
+    // 2,3,4 and leaving [0,1,5,6,7]. The replacement must land at index 2 —
+    // right after 1, before the surviving 5 — not at index 3 (after 5).
+    const out = replaceRange(
+      seq(8),
+      { start: 2.6, end: 5 },
+      Int16Array.from([90])
+    );
+    expect(Array.from(out)).toEqual([0, 1, 90, 5, 6, 7]);
   });
 });
 

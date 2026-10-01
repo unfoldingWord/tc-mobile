@@ -1,10 +1,17 @@
 /**
- * The words the save-failure recovery screen shows, as pure functions.
+ * Which words the save-failure recovery screen shows, as pure functions.
+ *
+ * The fixed sentences are entries in `lib/strings.ts` (#169), under the
+ * save-failed block; this module picks one per failure kind. The restart
+ * label and its consequence line are still composed here from English
+ * fragments (`lossPhrase`), because a composed sentence has no single entry
+ * to hold — enumerating them is #169's "no glued fragments" work.
  *
  * Pulled out of `save-failed.tsx` for the reason this repo lifts copy and state
  * decisions into a tested, DOM-free module (see `lib/takes/pending-take.ts` and
  * `hooks/save-failure.ts`, lifted for exactly this): the wording here is
- * load-bearing, and this project has no renderer to test the component with.
+ * load-bearing, and testing it here means the assertions need not depend on
+ * rendering `save-failed.tsx` at all.
  *
  * Why it is load-bearing (#38): since the commit write became ONE transaction, a
  * FAILED save leaves nothing on disk — the recording is held only in the RAM slot
@@ -13,11 +20,12 @@
  * in the slot just the same). Any line that sends the translator out of the app
  * to act (the old "Free some space on the phone, then try again") is therefore an
  * instruction to risk the OS discarding the PWA and taking the only copy with it.
- * The lines below never do that: they name the condition and that this screen
+ * The lines it picks never do that: they name the condition and that this screen
  * holds the only copy, and leave the acting to the Retry/Discard controls.
  */
 
 import type { SaveFailureKind } from "@/hooks/save-failure";
+import { strings } from "@/lib/strings";
 
 /**
  * The headline. `quota` is the same either way — the phone is full whether the
@@ -28,10 +36,37 @@ export function recoveryTitle(
   kind: SaveFailureKind,
   editOnly: boolean
 ): string {
-  if (kind === "quota") return "No room left on this phone.";
-  return editOnly
-    ? "Your changes could not be saved."
-    : "This recording could not be saved.";
+  switch (kind) {
+    // `strings.noRoom` (#172), not a second literal of the same sentence: the
+    // no-room condition reads the same on this screen and on every other write
+    // that can hit it (Books, Segments) now that both exist. This was the
+    // ONE line `tests/strings-one-table.test.ts` (#678/#169) caught as a
+    // duplicate once #172 part 1 added the general vocabulary — the fix is to
+    // route through the shared word, not to weaken the gate or re-word either
+    // side into disagreement.
+    case "quota":
+      return strings.noRoom;
+    // Named as the condition it is, not as a failure that might go the other
+    // way next time: another copy of the app has moved the data past this
+    // build, so every further attempt from here fails the same way. The line
+    // says what is needed rather than what went wrong, because that is the
+    // only thing left that is true (George R1 P2-1).
+    case "downgrade":
+      return strings.saveFailedNeedsUpdate(editOnly);
+    case "stale":
+      return strings.saveFailedBookGone(editOnly);
+    case "unknown":
+      return strings.saveFailedUnknown(editOnly);
+    default: {
+      // A new `SaveFailureKind` fails to compile here until it is given its
+      // own title (#777). At runtime it still gets the `unknown` line rather
+      // than a throw: this is the recovery screen, the one place a crash
+      // would cost the only copy of a recording.
+      const unhandled: never = kind;
+      void unhandled;
+      return strings.saveFailedUnknown(editOnly);
+    }
+  }
 }
 
 /**
@@ -41,7 +76,9 @@ export function recoveryTitle(
  * NOT gated on `quota`: a failed save is RAM-only whatever the cause. A
  * `mergeTake` throw or an IndexedDB `AbortError` classifies as `unknown`, and
  * `failSave` keeps the samples in the slot exactly as a quota failure does, so
- * the don't-close warning applies to all of them — hence no `kind` parameter.
+ * the don't-close warning applies to all of them. `kind` was added only for the
+ * single case where staying in the app cannot help at all, and defaults to
+ * `null` so every other caller keeps the unconditional warning.
  *
  * Worded for what is actually RAM-only. On the record path `saveTake` rolls back
  * on failure, so the prior take (if any) survives on disk — but what does not is
@@ -51,10 +88,136 @@ export function recoveryTitle(
  * (George G5), where "what you just recorded" was silent about the cuts. The edit
  * path's subject is the edited buffer, whose prior stored take likewise survives.
  */
-export function recoverySafetyLine(editOnly: boolean): string {
-  return editOnly
-    ? "This screen has the only copy of your changes. Don't close the app."
-    : "This screen has the only copy of your unsaved work. Don't close the app.";
+export function recoverySafetyLine(
+  editOnly: boolean,
+  kind: SaveFailureKind | null = null
+): string {
+  // The ONE exception to "never send them out of the app", and it exists because
+  // the rule's premise fails here: staying is what keeps the work unsaveable.
+  // This build cannot open the store at all — a newer copy has moved the data
+  // past it — so "Don't close the app" forbids the only thing that can help,
+  // while the title above asks for exactly that (George R2 P2-1).
+  //
+  // #441 (DRI pick, 2026-09-28: "Say plainly it can't be saved, offer Restart
+  // only") answered the product question this comment used to leave open: the
+  // line now says what becomes of the held recording across the restart, not
+  // only that this build cannot write it. It is RAM-only and does not survive
+  // a reload, and no rescue (e.g. sharing the raw take before restarting) was
+  // judged worth building for v1 — the honest line is the whole fix.
+  switch (kind) {
+    case "downgrade":
+      return strings.saveFailedUpdateLoses(editOnly);
+    case "stale":
+      return strings.saveFailedBookDeleted(editOnly);
+    case "quota":
+    case "unknown":
+    case null:
+      return strings.saveFailedOnlyCopy(editOnly);
+    default: {
+      // A new `SaveFailureKind` fails to compile here until someone decides
+      // whether staying in the app still protects its work (#777). Until then
+      // it gets the don't-close line at runtime, which is the direction that
+      // keeps a RAM-only take alive.
+      const unhandled: never = kind;
+      void unhandled;
+      return strings.saveFailedOnlyCopy(editOnly);
+    }
+  }
+}
+
+/**
+ * The label on a restart control that would destroy audio held only in memory,
+ * in each of its two taps.
+ *
+ * Two taps, like the Discard beside it on this screen, because it is the same
+ * kind of action: the held audio is RAM-only, and reloading the document
+ * destroys it. A one-tap control that throws away the only copy of a recording
+ * is the exact loss these screens exist to prevent (Frank R4 P1).
+ *
+ * Shared with `DatabasePanel`, which grew the same two taps for the same reason
+ * (George R4 P1): once the panel is allowed to show over a full clipboard, its
+ * restart is the one control on screen and the cut phrase does not survive it.
+ * One function rather than two so the two surfaces cannot drift into saying
+ * different things about the same loss.
+ *
+ * The armed label names the loss rather than only the action. It is the last
+ * thing the translator reads before the audio is gone, so it does not say
+ * "restart" and leave them to work the rest out. What a screen should say about
+ * that loss BEFORE the control is armed is settled for the downgrade
+ * save-failure screen by #441 (DRI pick, 2026-09-28): `recoverySafetyLine`'s
+ * `downgrade` case now says plainly that the held recording will not survive
+ * the restart, and no rescue (e.g. sharing the raw take first) was judged
+ * worth building for v1. `DatabasePanel`'s own restart (`reloadNeeded` /
+ * `blocked`) is a different condition — no failed save is held there — and
+ * #441 does not speak to it. This label is the minimum that keeps the armed
+ * tap itself honest either way.
+ *
+ * `alsoCutAudio` is the second thing one tap can destroy at once, and it is why
+ * this is composed rather than enumerated (George R5 P2). `SaveFailed` outranks
+ * `DatabasePanel` while a take is held, so on the terminal `downgrade` screen the
+ * restart is reached with a cut phrase in the clipboard that the reload drops
+ * too — and the panel that would have named it cannot mount. Enumerating that
+ * would have taken a three-value `subject` to six cases and made the next axis
+ * twelve; the loss phrase is built instead, so a third thing to lose costs one
+ * clause rather than doubling the table. The full strings live in
+ * `tests/recovery-copy.test.ts`, which is where to grep for them.
+ */
+export function restartLabel(
+  subject: RestartSubject,
+  armed: boolean,
+  alsoCutAudio = false
+): string {
+  // `strings.appReload`, not a second literal of it (#805): the unarmed label
+  // names the same reload the crash screen's button does, and the label gate
+  // in `tests/strings-one-table.test.ts` reads every whole literal.
+  if (!armed) return strings.appReload;
+  return `Tap again to restart and lose ${lossPhrase(subject, alsoCutAudio)}`;
+}
+
+/**
+ * The line under an ARMED restart, saying what the next tap costs.
+ *
+ * Both surfaces had this inline and identical in shape; it is here for the same
+ * reason the label is — it makes the same claim, and the two must not drift.
+ * Shorter than the label on purpose: the label is the thing being tapped, this
+ * is the confirmation beside it.
+ */
+export function restartConsequence(
+  subject: RestartSubject,
+  alsoCutAudio = false
+): string {
+  const phrase = lossPhrase(subject, alsoCutAudio);
+  const plural =
+    subject === "changes" || carriesCutAudio(subject, alsoCutAudio);
+  return `Tap again and ${phrase} ${plural ? "are" : "is"} gone.`;
+}
+
+/** What the restart destroys, named. */
+type RestartSubject = "recording" | "changes" | "cutAudio";
+
+/**
+ * Whether the cut phrase has to be named ON TOP of the subject.
+ *
+ * `cutAudio` already IS the cut phrase — `DatabasePanel` passes it with nothing
+ * else in hand — so adding the clause there would say the same thing twice.
+ */
+function carriesCutAudio(
+  subject: RestartSubject,
+  alsoCutAudio: boolean
+): boolean {
+  return alsoCutAudio && subject !== "cutAudio";
+}
+
+function lossPhrase(subject: RestartSubject, alsoCutAudio: boolean): string {
+  const base =
+    subject === "changes"
+      ? "these changes"
+      : subject === "cutAudio"
+        ? "the audio you cut"
+        : "this recording";
+  return carriesCutAudio(subject, alsoCutAudio)
+    ? `${base} and the audio you cut`
+    : base;
 }
 
 /**
@@ -62,10 +225,35 @@ export function recoverySafetyLine(editOnly: boolean): string {
  * more than once: a quota failure's cause is already named by the title, and a
  * single blip needs no count. Never stands in for the safety line above — it is
  * an extra line beside it.
+ *
+ * Suppressed for `downgrade` and `stale` for a stronger reason than for
+ * `quota`. A count is a nudge to try once more, and here once more cannot work
+ * however many times it is tried — the title already says what is actually
+ * needed.
  */
 export function recoveryAttempts(
   kind: SaveFailureKind | null,
   attempts: number
 ): string | null {
-  return kind !== "quota" && attempts > 1 ? `Attempts: ${attempts}` : null;
+  switch (kind) {
+    case "quota":
+    case "downgrade":
+    case "stale":
+      return null;
+    case "unknown":
+    case null:
+      return attemptCount(attempts);
+    default: {
+      // A new `SaveFailureKind` fails to compile here until someone decides
+      // whether a retry can clear it (#777); at runtime it is counted, as
+      // every kind outside the three above always was.
+      const unhandled: never = kind;
+      void unhandled;
+      return attemptCount(attempts);
+    }
+  }
+}
+
+function attemptCount(attempts: number): string | null {
+  return attempts > 1 ? strings.saveFailedAttempts(attempts) : null;
 }

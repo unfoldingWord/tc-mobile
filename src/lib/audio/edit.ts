@@ -21,12 +21,59 @@ export function clampRange(range: SampleRange, length: number): SampleRange {
   };
 }
 
+/**
+ * Would this range actually take any audio? The one "is anything selected?"
+ * predicate, shared by everything that acts on a span.
+ *
+ * Selection edges are floats — pointer geometry, and a keyboard nudge of
+ * `visibleSamples / 400` — while every consumer TRUNCATES its indices: `slice`
+ * for a cut, `subarray` for an audition. So comparing the two floats asks the
+ * wrong question, and asking it let the controls disagree with each other and
+ * with the audio: on a span living inside one sample, Play went inert while Cut
+ * stayed live and applied an empty cut, which advances the undo log and
+ * REPLACES the chapter-wide clipboard with an empty buffer (Frank R3). `!(a > b)`
+ * rather than `<=` so a non-finite edge — which `start === end` let through,
+ * `NaN === NaN` being false — is rejected too.
+ *
+ * Takes an already-NORMALISED range: every call site clamps with `clampRange`
+ * first, which is also what orders a reversed span.
+ */
+export function spansWholeSample(range: SampleRange): boolean {
+  return Math.trunc(range.end) > Math.trunc(range.start);
+}
+
+/**
+ * The whole-sample range a cut/sliceRange actually acts on — the ONE place
+ * that turns an `EditOp` cut range (or any other fractional selection) into
+ * the truncated bounds the buffer edit uses, so every caller reasoning about
+ * a cut's effect shares a single rule instead of reimplementing it (#473
+ * round-3 Frank P2).
+ *
+ * Selection edges are floats (`spansWholeSample`'s docblock above), while
+ * `Int16Array.slice`/`subarray` TRUNCATE their arguments (`ToIntegerOrInfinity`,
+ * which truncates toward zero — identical to `Math.trunc` for the
+ * non-negative values every range here already is). Round 2 fixed only the
+ * removed LENGTH (`removedSampleCount`, folded into this); round 3's finding
+ * was that a caller predicting a cut's effect WITHOUT slicing —
+ * `recorder-stage.ts`'s pan arithmetic — must truncate every POSITION term
+ * the same way too, or its answer drifts from the buffer that actually
+ * sliced by up to one sample per boundary. `Math.min`/`Math.max` order the
+ * edges the way `clampRange` does, so this composes safely with `clampRange`
+ * in either order and is idempotent on a value already inside `[0, length]`.
+ */
+export function wholeSampleRange(range: SampleRange): SampleRange {
+  return {
+    start: Math.trunc(Math.min(range.start, range.end)),
+    end: Math.trunc(Math.max(range.start, range.end)),
+  };
+}
+
 /** Copy the samples inside `range`. Used for both copy and the cut clipboard. */
 export function sliceRange(
   samples: Int16Array,
   range: SampleRange
 ): Int16Array {
-  const { start, end } = clampRange(range, samples.length);
+  const { start, end } = wholeSampleRange(clampRange(range, samples.length));
   return samples.slice(start, end);
 }
 
@@ -35,12 +82,18 @@ export function sliceRange(
  *
  * Returns both the shortened buffer and the removed audio, so a cut can feed
  * the clipboard for a later paste without a second pass.
+ *
+ * Routed through {@link wholeSampleRange} rather than handing `clampRange`'s
+ * still-fractional bounds straight to `.slice`/`.subarray` — a no-op refactor
+ * (those two already truncate identically), proved equal to the pre-#473
+ * behaviour by `tests/audio-edit.test.ts`'s fractional-vs-truncated cases
+ * rather than merely asserted here.
  */
 export function cut(
   samples: Int16Array,
   range: SampleRange
 ): { readonly remaining: Int16Array; readonly removed: Int16Array } {
-  const { start, end } = clampRange(range, samples.length);
+  const { start, end } = wholeSampleRange(clampRange(range, samples.length));
   const removed = samples.slice(start, end);
   const remaining = new Int16Array(samples.length - removed.length);
   remaining.set(samples.subarray(0, start), 0);
@@ -65,14 +118,24 @@ export function insertAt(
   return out;
 }
 
-/** Replace `range` with `replacement` — the re-record-this-bit operation. */
+/**
+ * Replace `range` with `replacement` — the re-record-this-bit operation.
+ *
+ * The insertion point is {@link wholeSampleRange}'s truncated start, not
+ * `clampRange`'s still-fractional one (#512 George R1 P3): `cut` above
+ * already removed the truncated bounds (`Int16Array.slice` truncates), so
+ * inserting at the raw fractional start left `Math.round` to pick a
+ * different — and, at the exact `.5` boundary this cut/insert pair can
+ * produce, possibly one-sample-late — position than the one the buffer edit
+ * actually made room at.
+ */
 export function replaceRange(
   samples: Int16Array,
   range: SampleRange,
   replacement: Int16Array
 ): Int16Array {
   const { remaining } = cut(samples, range);
-  const { start } = clampRange(range, samples.length);
+  const { start } = wholeSampleRange(clampRange(range, samples.length));
   return insertAt(remaining, replacement, start);
 }
 
@@ -127,15 +190,8 @@ export function silence(frames: number): Int16Array {
  * `frames`, pad a shorter one with silence, return the same buffer when the
  * length already matches.
  *
- * Exists for MP3 decodes (B8). A decoded finished segment is not sample-exact —
- * LAME pads the head and tail of the stream (~1.1k samples), and whether the
- * decoder trims that back out depends on whether it honours the LAME info tag
- * (Chromium did not, in the B8 browser run: 133,632 frames back for 132,300).
- * The clip's `frameCount` is the length the translator recorded, and every
- * consumer of a decode — export, playback, the recorder's edit buffer — fits to
- * it here, so the phone's decoder cannot move a segment's duration, and an
- * edit → Finished → edit cycle cannot grow the audio by a padding each time
- * (round-1 Frank F1 / George G3).
+ * A decoded MP3 can contain encoder padding. After alignment, fitting to the
+ * stored frame count preserves the segment's duration across decode/edit cycles.
  */
 export function fitToFrames(samples: Int16Array, frames: number): Int16Array {
   if (!Number.isInteger(frames) || frames < 0) {

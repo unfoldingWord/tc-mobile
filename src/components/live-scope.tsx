@@ -1,5 +1,20 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 
+import {
+  CANVAS_FALLBACK_LIVE,
+  CANVAS_FALLBACK_VOICE,
+  withCanvasFallback,
+} from "./canvas-fallback-colors";
+import { useLiveTheme } from "@/hooks/use-theme";
+import {
+  advanceColumnRate,
+  columnsRightOfHead,
+  foldContextSide,
+  newColumnRateClock,
+  type CaptureContext,
+} from "@/lib/audio/capture-context";
+import { clampUnit } from "@/lib/audio/display-gain";
+import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { captureWindow } from "@/lib/audio/viewport";
 import { cn } from "@/lib/utils";
 import type { CaptureScope } from "@/lib/audio/capture-peaks";
@@ -31,6 +46,15 @@ interface LiveScopeProps {
    * Which one ships is a deferred UX call (the requirements owner, #120) — the geometry serves both.
    */
   headFraction?: number;
+  /**
+   * The segment's existing clip either side of the take's insertion offset
+   * (#640), or `null` for a first take. Drawn left of the new audio and right
+   * of the head, at the scope's own measured column rate, so an append keeps
+   * the take before it in view and a mid-clip insert keeps the clip on both
+   * sides. Its `gain` scales every bar, the new audio's included (#1189).
+   * Read once per paint through a ref; it is fixed for the take.
+   */
+  context?: CaptureContext | null;
   height?: number;
   /**
    * The whole accessible name. The scope is decorative status, so the canvas is
@@ -55,17 +79,56 @@ interface LiveScopeProps {
  * The zero-valued pad the ring emits before it fills is skipped via
  * `scope.count`: a `{0,0}` column is silence to a canvas, so painting it would
  * draw the unfilled head as amber "recorded silence".
+ *
+ * Where the segment already holds audio, that pad is not left blank (#640):
+ * the `context` prop carries the clip either side of the insertion offset,
+ * and the paint draws the audio before the offset in the pad, butted against
+ * the take's oldest column, and the audio after it from the head to the right
+ * edge. So an append keeps the take before it in view while the new one
+ * grows, and a mid-clip insert keeps the clip on both sides. A first take has
+ * no context, and a take at the very start has nothing before it — those are
+ * the two cases the requirements owner named where a blank left is right.
+ *
+ * A FIRST take is drawn at absolute level, deliberately — `Waveform` fits a
+ * stored take to the lane (#358, `lib/audio/display-gain.ts`) and this does
+ * not while nothing is committed. While capture is live the scope is a level
+ * cue as much as a shape cue, and a scope that auto-scaled would make a
+ * microphone capturing far too quietly look exactly like a healthy one, which
+ * is the very problem #359 is about; the VU meter beside it is absolute for
+ * the same reason, for every take.
+ *
+ * An APPEND or insert is drawn at the committed clip's display gain instead
+ * (#1189), carried on `context.gain` and applied to the context AND the new
+ * audio. Drawn absolute, a Record tap collapsed the audio already on the stage
+ * from the height the idle `Waveform` fitted it to down to its raw level —
+ * up to twenty times smaller on a quiet phone — and the new take grew beside
+ * it at that raw level too. At the committed clip's gain, the existing audio
+ * keeps the height it had a tap earlier and the new audio is on the same
+ * scale. The whole buffer is re-fitted by `Waveform` when the take commits.
+ *
+ * #358 also sketches a running-max scale during capture; that is NOT built
+ * here — the gain is fixed for the take, never tracked while it records.
  */
 export function LiveScope({
   readScope,
   peekScope,
   active,
   headFraction = 0.5,
+  context = null,
   height = 200,
   label,
   className,
 }: LiveScopeProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Read for its subscription only: a `data-theme` switch remaps `--s-voice`
+  // and `--s-live`, which the draw effect reads once per run, and a painted
+  // canvas cannot see that on its own — so the effect lists it. Today a toggle
+  // unmounts this canvas (the toggle is Books-only); once it is reachable from
+  // the recorder (#149) this is what keeps the scope from holding the previous
+  // theme's amber (George R2 P2 on #457) — while active through the loop's
+  // restart, and while FROZEN (paused / processing / close) through the
+  // explicit repaint after the observer bind below (George R4 P2-1).
+  const theme = useLiveTheme();
   // Hold the latest reader without retriggering the loop — the hook may hand a
   // fresh function identity each render, and restarting for that drops frames.
   const readScopeRef = useRef(readScope);
@@ -83,6 +146,22 @@ export function LiveScope({
   // safe to re-read only while no push is happening, which is exactly the
   // inactive window this ref is read in.
   const lastScopeRef = useRef<CaptureScope | null>(null);
+  // The existing clip beside the take (#640), latched like the readers above.
+  const contextRef = useRef(context);
+  useEffect(() => {
+    contextRef.current = context;
+  }, [context]);
+  // The column rate the ring actually advances at, measured from this mount's
+  // own ticks over a rolling window that a gap restarts (`advanceColumnRate`) —
+  // kept across effect re-runs so a frozen repaint draws the context at the
+  // scale the take was recorded at.
+  const rateRef = useRef(newColumnRateClock());
+  // Reused fold buffers for the context columns, grown on demand — never
+  // reallocated per frame (#102).
+  const foldRef = useRef({
+    min: new Float32Array(0),
+    max: new Float32Array(0),
+  });
 
   // `useLayoutEffect`, not `useEffect`: the first paint below must land BEFORE
   // the browser paints the freshly-mounted canvas. A remount happens on a
@@ -97,14 +176,25 @@ export function LiveScope({
     if (!ctx) return;
 
     // Geometry and colours are read once per effect, not per frame: the window
-    // is a pure function of headFraction, and the CSS tokens do not change mid
-    // take. `--s-voice` is the audio amber, `--s-live` the record-head red —
-    // the same roles `Waveform` uses.
+    // is a pure function of headFraction, and the CSS tokens change only on a
+    // `data-theme` switch — which `theme` in the deps below turns into a
+    // re-run, so this read stays per-effect rather than per-frame. `--s-voice`
+    // is the audio amber, `--s-live` the record-head red — the same roles
+    // `Waveform` uses.
     const win = captureWindow(headFraction);
     const span = win.endFraction - win.startFraction;
     const styles = getComputedStyle(canvas);
-    const stroke = styles.getPropertyValue("--s-voice").trim() || "#e6a444";
-    const live = styles.getPropertyValue("--s-live").trim() || "#d84a4a";
+    // Falls back to the unthemed dark-only hexes in `canvas-fallback-colors.ts`
+    // (#506 item 1) only if the token read comes back empty — a token failing
+    // to resolve, not the normal path.
+    const stroke = withCanvasFallback(
+      styles.getPropertyValue("--s-voice"),
+      CANVAS_FALLBACK_VOICE
+    );
+    const live = withCanvasFallback(
+      styles.getPropertyValue("--s-live"),
+      CANVAS_FALLBACK_LIVE
+    );
 
     // Paint one scope at the canvas's CURRENT css size. Sizing the backing store
     // only on an actual change is the #102 cost avoidance; doing it here (not
@@ -131,13 +221,63 @@ export function LiveScope({
       // never zero (head > 0), so no divide-by-zero guard.
       const barW = Math.max(1, w / buckets / span - 1);
       ctx.fillStyle = stroke;
+      const around = contextRef.current;
+      // One factor for every bar this frame (#1189): the committed clip's
+      // display gain when there is one, absolute (1) for a first take.
+      // Clamped because the new take can be louder than the clip it was
+      // fitted to.
+      const gain = around ? around.gain : 1;
+      const bar = (i: number, lo: number, hi: number) => {
+        const x = ((i / buckets - win.startFraction) / span) * w;
+        const top = mid - clampUnit(hi * gain) * mid;
+        const bottom = mid - clampUnit(lo * gain) * mid;
+        ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
+      };
+      // The existing clip (#640), in the same colour and at the same scale as
+      // the take: `before` fills the not-yet pad left of the new audio,
+      // walking outward from the oldest real column, and `after` runs from the
+      // head to the right edge. Folded to the MEASURED column rate so a second
+      // of stored audio is as wide as a second of the take beside it.
+      if (around) {
+        const bucketsPerColumn =
+          CANONICAL_SAMPLE_RATE /
+          rateRef.current.rate /
+          around.samplesPerBucket;
+        const right = columnsRightOfHead(buckets, span);
+        const need = Math.max(buckets, right);
+        if (foldRef.current.min.length < need) {
+          foldRef.current = {
+            min: new Float32Array(need),
+            max: new Float32Array(need),
+          };
+        }
+        const fold = foldRef.current;
+        const oldest = buckets - scope.count;
+        const left = foldContextSide(
+          around.before,
+          bucketsPerColumn,
+          oldest,
+          fold.min,
+          fold.max
+        );
+        for (let j = 0; j < left; j++) {
+          bar(oldest - 1 - j, fold.min[j]!, fold.max[j]!);
+        }
+        const ahead = foldContextSide(
+          around.after,
+          bucketsPerColumn,
+          right,
+          fold.min,
+          fold.max
+        );
+        for (let j = 0; j < ahead; j++) {
+          bar(buckets + j, fold.min[j]!, fold.max[j]!);
+        }
+      }
       // Paint only the real trailing columns; the leading `buckets - count` are
       // the not-yet pad (silence-valued, must not draw).
       for (let i = buckets - scope.count; i < buckets; i++) {
-        const x = ((i / buckets - win.startFraction) / span) * w;
-        const top = mid - (scope.max[i] ?? 0) * mid;
-        const bottom = mid - (scope.min[i] ?? 0) * mid;
-        ctx.fillRect(x, top, barW, Math.max(1.5, bottom - top));
+        bar(i, scope.min[i] ?? 0, scope.max[i] ?? 0);
       }
       // The record head, over the audio, in the record colour.
       ctx.fillStyle = live;
@@ -152,6 +292,18 @@ export function LiveScope({
       if (!active) paint(lastScopeRef.current);
     });
     observer.observe(canvas);
+    // A theme change while FROZEN takes the same path (George R4 P2-1): this
+    // effect re-runs on `theme`, and with `active` false nothing below would
+    // paint — the colours above were re-read into fresh closures and the stale
+    // frame stayed on the previous theme's amber until Resume or a resize. The
+    // ring is not advanced here (`lastScopeRef`, never `readScope` — see the
+    // peek note below), and a first mount while frozen has nothing to paint
+    // yet, which `paint` already treats as a no-op. Inference, not observed:
+    // ResizeObserver also delivers an initial notification on `observe()`
+    // per its spec, which would repaint through the callback above — but that
+    // is a spec detail of the engine, not this file's contract, so the repaint
+    // is stated here rather than relied on there.
+    if (!active) paint(lastScopeRef.current);
 
     let raf = 0;
     if (active) {
@@ -179,6 +331,9 @@ export function LiveScope({
         // painted frame rather than clearing to blank: a freeze, not a flash
         // (George R1). On a real scope, remember it for a later resize-repaint.
         if (scope) {
+          // One more column pushed: fold it into the rate before painting, so
+          // the context this frame draws is at the scale the ring runs at.
+          advanceColumnRate(rateRef.current, performance.now());
           lastScopeRef.current = scope;
           paint(scope);
         }
@@ -191,7 +346,11 @@ export function LiveScope({
       observer.disconnect();
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [active, headFraction, height]);
+    // `theme` is listed for its side effect only, like `Waveform`'s `finished`:
+    // a re-run re-reads the two colours above. While active that restarts the
+    // loop through the same peek-paint path an `active`/`height` edge already
+    // takes, so a mid-take toggle repaints in place rather than freezing.
+  }, [active, headFraction, height, theme]);
 
   return (
     <canvas

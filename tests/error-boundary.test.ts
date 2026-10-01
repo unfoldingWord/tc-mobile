@@ -7,16 +7,26 @@ import {
   subscribeToFailures,
   type FailureReport,
 } from "@/hooks/report-failure";
-import { strings } from "@/components/strings";
+import { strings } from "@/lib/strings";
+
+// This file asserts the CURRENT look's markup (the 56px/30px glyph sizes,
+// `control--primary`/`control--quiet`), not O4's `o4-err-circle` (#948). #951
+// flipped the design default to o4, so pin the current look explicitly here
+// rather than rely on nothing-stored — the O4 shape of this same screen is
+// `tests/o4-errors.test.ts`'s.
+vi.mock("@/hooks/use-design", () => ({
+  useDesign: () => ({ design: "current" as const, toggle: () => {} }),
+}));
 
 /**
  * What this can and cannot prove.
  *
- * There is no renderer here — `vitest.config.ts` sets `environment: "node"`,
- * and this repo has no jsdom and no testing-library. So React's own catching is
+ * This suite does not mount in jsdom, so React's own catching is
  * NOT exercised below: `renderToStaticMarkup` rethrows a child's error rather
- * than routing it to the boundary (checked, at this commit), and nothing in
- * Node can mount a tree and break it. **That a render throw reaches this
+ * than routing it to the boundary. The render harness (#197, `tests/render.ts`)
+ * is the same static render, so it does not close that gap: catching a render
+ * throw takes a client mount (`tests/interactive-mount.ts`), and this suite
+ * does not do one. **That a render throw reaches this
  * boundary at all is verified in a browser, by hand, and is recorded on the
  * PR — not here.** The same goes for the focus move: `renderToStaticMarkup`
  * never attaches a ref, so `focusOnMount` is markup here and behaviour only in
@@ -26,7 +36,7 @@ import { strings } from "@/components/strings";
  * React calls, invoked directly, and the markup the fallback produces. That
  * matters for one property in particular — the fallback must never put the
  * cause on screen. `react-dom/server` is a subpath of a dependency this project
- * already ships; no renderer is added for these cases.
+ * already ships; nothing beyond it is needed for these cases.
  */
 describe("ErrorBoundary", () => {
   let seen: FailureReport[];
@@ -73,7 +83,7 @@ describe("ErrorBoundary", () => {
     expect(seen[0]).not.toHaveProperty("componentStack");
   });
 
-  it("shows a glyph and one control, and never the cause", () => {
+  it("shows a glyph and two controls, and never the cause", () => {
     const boundary = new ErrorBoundary({ children: null });
     boundary.state = ErrorBoundary.getDerivedStateFromError();
 
@@ -97,18 +107,48 @@ describe("ErrorBoundary", () => {
     // The 56px alert mark — what a translator who does not read actually sees,
     // and the size the other recovery screen uses.
     expect(html).toContain('width="56"');
-    // One control, labelled for what it does — not the Books shelf's
-    // `tryAgain` — and large: `--primary` is 68px, over the 44px touch floor.
+    // Restart, labelled for what it does — not the Books shelf's `tryAgain` —
+    // and large: `--primary` is 68px, over the 44px touch floor.
     expect(html).toContain(`aria-label="${strings.appReload}"`);
     expect(html).toContain("control--primary");
     // `size={30}` — the same retry mark `SaveFailed` draws inside its 68px
     // button, not the 22px default.
     expect(html).toContain('width="30"');
     expect(html).not.toContain(`aria-label="${strings.tryAgain}"`);
+
+    // The log's second door (#205, George round 2). The boundary REPLACES the
+    // tree, so the ≡ marker and the menu that normally sends the log are
+    // unmounted with `BooksScreen` — and a deterministic home-path render throw
+    // returns here after every Restart. Without this control the one failure the
+    // durable log most exists to carry is the one that could never leave the
+    // phone, so its presence is asserted rather than left to a reading.
+    expect(html).toContain(`aria-label="${strings.shareFailureLog}"`);
+    // Restart FIRST. Order is the whole accommodation for a non-reader: the
+    // primary, recognisable action is under the thumb, and the facilitator's
+    // control is the one after it.
+    expect(html.indexOf(`aria-label="${strings.appReload}"`)).toBeLessThan(
+      html.indexOf(`aria-label="${strings.shareFailureLog}"`)
+    );
+    // And it is quiet in this state, so it cannot be mistaken for the action to
+    // take first. (Its ARMED paint — `default`, after tap 1 — needs a renderer
+    // this suite does not have: `renderToStaticMarkup` runs the hook once, in
+    // `idle`, and never runs the effect. That half is verified by reading, and
+    // said so rather than implied.)
+    expect(html).toContain("control--quiet");
     // Focus goes to the labelled heading, so the icon-only button carries no
     // autofocus of its own.
     expect(html).not.toContain("autofocus");
     expect(html).toContain('tabindex="-1"');
+    // Restart is NOT busy in this state, and carries its idle label. That is
+    // the legitimate-state half of the gate, and it fails if anyone wires
+    // `busy` on unconditionally. The BUSY half — the relabel, `aria-busy`, and
+    // the busy Notice under it (George R4 P2-3) — needs a click and a pending
+    // flush, which needs a renderer this suite does not have AND a render throw
+    // the e2e harness cannot produce without adding product surface to force
+    // one. Verified by reading, and said so rather than implied.
+    expect(html).not.toContain("aria-busy");
+    expect(html).not.toContain(strings.appReloading);
+
     // The property this screen exists to keep: no cause, ever.
     expect(html).not.toContain("Error");
     expect(html).not.toContain("stack");

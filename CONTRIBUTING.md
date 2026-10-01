@@ -26,7 +26,17 @@ the tree wins, and the disagreement is worth an issue.
 
 ## Setup and commands
 
-Node **22.12 or newer** (`engines` in `package.json`).
+Node **22.22.2+**, except the 23.x line, 24.0.0-24.14.x, and the 25.x line
+(`engines` in `package.json`: `^22.22.2 || ^24.15.0 || >=26.0.0`; a
+render-test dependency's own engine range excludes 23.x, #577; the floor
+itself was raised from 22.12.0 by lint-staged 17.5.1's own declared range,
+`>=22.22.1`; 24.0.0-24.14.x and 25.x were dropped to unblock jsdom 30 and its
+transitives, #990, DRI decision: "Drop 24.0–24.14 and 25 (Recommended)"). The iOS
+Xcode-selection cases in `tests/ios-workflow-gates.test.ts` exec `ruby` (with
+RubyGems for `Gem::Version`) on any platform, not only on the Mac setup in
+[`docs/native/README.md` §3](docs/native/README.md#3-one-time-mac-prerequisites).
+Without `ruby` on `PATH` those cases are skipped, not failed, so a green
+`npm test` / `npm run verify` on such a machine has not exercised them.
 
 ```bash
 npm ci
@@ -62,6 +72,10 @@ blind spots — is in [`AGENTS.md`](AGENTS.md).
   in a feature PR is a guaranteed conflict and records nothing.
 - Link the issue. Use `Closes #N` **only when the PR closes the whole issue**;
   otherwise reference it plainly (`part of #N`).
+- **Every PR carries its parent issue's milestone**, set before the PR is
+  marked ready — a hard stop, not a courtesy. Nine docs-sweep PRs against
+  #575 shipped with no milestone until a 2026-09-24 audit caught it after the
+  fact and set them retroactively (#839 §10, #840 R4).
 
 ## Lanes and ownership
 
@@ -77,7 +91,7 @@ the same file in the same week.
 Shared files, where collisions actually happen:
 
 - `src/components/recorder.tsx`
-- `src/components/strings.ts`
+- `src/lib/strings.ts`
 - `src/hooks/use-audio-session.ts`
 - `src/components/icon.tsx`
 - `AGENTS.md`
@@ -117,8 +131,11 @@ scripts/review/triage.sh <round> <pr>    # build the round's triage comment
   defect class: the fix approach is wrong) — and ask. Hitting the cap with
   findings open is an escalation, not an approval.
 - **A one-reviewer round is recorded as a deviation**, never as clean.
-- When both are clean, the reviewer posts a **GitHub approval**. The **author
-  merges** (squash) after that approval and green CI.
+- When both are clean, the reviewer posts a **GitHub approval**. The **DRI
+  admin-merges** after that approval and green CI, whoever wrote the PR,
+  pinned to the approved head SHA. An approval on an earlier head does not
+  count. Merges into `develop` normally use a **merge commit**; a release bump
+  must, so that its promotion carries the same bump commit (#918).
 - **Process artifacts** — `ci.yml`, `AGENTS.md`, `scripts/review/**`, deploy
   config — need both reviewers, because they are executed as instructions.
   Exempting them is allowed; the decision is recorded on the PR, never skipped
@@ -134,8 +151,11 @@ The full version, with the incident behind each rule, is in
 - **Mutation proves coverage on T1.** Break the guard, run the suite, confirm a
   test dies. Line coverage does not prove anything here.
 - **Never claim verification you did not perform.** No comment, docblock or PR
-  body says tested, verified or checked on-device unless it was. **Android and
-  iOS are separate claims** — name the platform, the OS version and the build.
+  body says tested, verified or checked on-device unless it was. A run's
+  OUTPUT goes in a PR comment or `docs/progress_tracker.md`, never in a
+  docblock, a CSS comment or a test name — a docblock may link that comment's
+  URL. On those allowed sites, **Android and iOS are separate claims** — name
+  the platform, the OS version and the build.
 - **Idempotent writes.** Get-or-create in one transaction, clips never deleted
   while another segment still references them, append-only migrations.
 - **Errors have a channel before they have copy.** An unhandled rejection
@@ -152,11 +172,11 @@ The full version, with the incident behind each rule, is in
 Every issue carries a **milestone**, **labels** from the existing set, and an
 **assignee**. File into a milestone; do not leave one unset.
 
-| Milestone                        | Means                                                             |
-| -------------------------------- | ----------------------------------------------------------------- |
-| `v0.2.0 — Sept: production gate` | must be true before production. Due 2026-09-30                    |
-| `v0.3.0 — Oct: training`         | matters for the training, can land after the gate. Due 2026-10-09 |
-| `v1.0.0 — Post-training`         | deliberately parked until after October. No due date              |
+| Milestone                        | Means                                                       |
+| -------------------------------- | ----------------------------------------------------------- |
+| `v0.2.0 — Sept: production gate` | must be true before production. Due 2026-09-30              |
+| `v1.0.0 — Training build`        | the training build, with the O4 UI; on phones by 2026-10-02 |
+| `v1.1.0 — Post-training`         | deliberately parked until after October. No due date        |
 
 Body shape — four headings, in this order:
 
@@ -204,6 +224,16 @@ PR is the production gate.
   **manual** native lanes (`ios-testflight.yml`, `android-apk.yml`), which are
   `workflow_dispatch`-only and never fire on push/PR.
 - **Confirm a deploy by the served bundle's version string, not by the merge.**
+  `npm run check:deploy` checks the `develop -> staging` promotion (staging is
+  the default origin); `npm run check:deploy:prod` checks `staging -> main`
+  and requires its production origin explicitly — the two are not
+  interchangeable. Both fetch `/version.json` from the deployed origin and,
+  for these two default origins, compare it against the **promoted branch's
+  remote-tracking ref** (`origin/staging` / `origin/main`), not local `HEAD`
+  — the check fetches that one branch itself first and fails closed if the
+  fetch fails, rather than trusting a promoter to have run `git fetch origin`
+  beforehand. See AGENTS.md, "Confirming a deploy and rolling one back", for
+  the full command forms, the production URL, and the rollback path.
 
 ## Working with an AI coding agent
 

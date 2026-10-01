@@ -2,7 +2,9 @@
  * LAYER 2 — SEMANTIC
  *
  * Roles, not values. This is the only layer that knows about themes, and the
- * only layer permitted to reference layer 1.
+ * only layer permitted to reference a layer-1 *colour* primitive — the
+ * structural primitives (spacing, radius, type, motion) are read directly by
+ * component and app-level rules too (#146).
  *
  * The app ships dark by default: it is used in low light, on battery, and a
  * theme switch is a decision nobody in a workshop should have to make. A light
@@ -25,15 +27,24 @@
     --s-overlay: var(--p-cool-700);
     --s-edge: #222c39;
 
-    /* Three ink roles. None is pure white. */
+    /* Three ink roles. None is pure white. Every one of them paints small
+       text somewhere, so all three clear AA against the surfaces they are
+       actually used on — gated, with the call sites named, in
+       `tests/contrast.test.ts` (#164 R-9). */
     --s-ink: #e7ecf3;
     --s-ink-muted: var(--p-cool-400);
-    --s-ink-faint: var(--p-cool-500);
+    --s-ink-faint: var(--p-cool-450);
 
     /* The single accent: audio that exists. */
     --s-voice: var(--p-amber-500);
     --s-voice-ink: #1a1206;
     --s-voice-quiet: var(--p-amber-950);
+    /* The accent AS INK on a surface, which is a different question from the
+       accent as a fill. Amber on a dark floor is 8.9:1, so here it is simply
+       the accent; the light theme is where the two must part company (see its
+       own block below). Split into a role rather than hard-coded at the one
+       call site so a third theme has one place to answer it. */
+    --s-voice-text: var(--s-voice);
 
     /* A finished segment. Mirrors the voice role: a fill, its ink, a quiet wash. */
     --s-done: var(--p-green-500);
@@ -45,8 +56,65 @@
     --s-live-ink: #ffffff;
     --s-warn: var(--p-warn-500);
 
+    /* The next required action (#604). One guidance colour for the whole
+       chain, and the same value in both themes: the accent is not saying
+       anything about the surface it sits on, it is saying "here next", and a
+       mark that changed colour with the theme would be a second thing to
+       learn. It clears the non-text floor on every surface it is drawn on in
+       both themes — `tests/contrast.test.ts` scores each one. */
+    --s-guide: var(--p-blue-500);
+
     --s-focus: var(--p-amber-500);
     --s-scrim: rgba(6, 9, 13, 0.92);
+
+    /* --- O4 roles (workbench round 4) -------------------------------------
+       Added for the O4 polish. Values are the ones the workbench's colour
+       table put up for approval; docs/design/o4-design-system.md carries
+       each role's use, its contrast, and the decisions still open. */
+
+    /* A recessed ground for chips, small round buttons and empty dots. Same
+       value as --s-raised here, but not on light, so it is its own role. */
+    --s-well: var(--p-cool-800);
+    /* Empty progress dots and bars. Decorative: 1.8:1, below the 3:1
+       non-text floor on purpose, because an empty mark must not read as a
+       control. */
+    --s-mark-empty: var(--p-cool-600);
+    /* Cards on dark separate by the surface ladder; on light they need a
+       hairline. */
+    --s-card-edge: transparent;
+    /* Behind a sheet or dialog. Lighter than --s-scrim, which stays for
+       the full-screen overlays that already use it. */
+    --s-dim: rgba(6, 9, 13, 0.72);
+    /* The waveform tail past the playhead. */
+    --s-voice-dim: rgba(230, 164, 68, 0.34);
+    --s-playhead: var(--p-cool-000);
+
+    --s-live-quiet: var(--p-red-950);
+    --s-warn-quiet: var(--p-warn-950);
+    --s-warn-text: var(--p-amber-400);
+    /* Words on the live and done washes (#937 D3), the way --s-warn-text is
+       the words on the warn wash. Not --s-live-ink / --s-done-ink, which are
+       the ink ON the solid fill. The live accent is just under AA on its own
+       dark wash, so it takes a lighter red; done is simply the accent here. */
+    --s-live-text: var(--p-red-400);
+    --s-done-text: var(--p-green-500);
+
+    /* Every "hear this" speaker icon. Blue beside the guide (#937 D1). */
+    --s-hear: var(--p-blue-400);
+
+    /* Menu tiles. Icons on them are --s-tile-ink. */
+    --s-tile-ink: var(--p-cool-000);
+    /* Slate in both themes, off blue (#937 D1b). */
+    --s-edit: var(--p-slate-600);
+    --s-name: var(--p-violet-600);
+    --s-send: var(--p-teal-700);
+    --s-send-ring: var(--p-teal-300);
+
+    /* Book covers: a user's pick, so identical in both themes. #937 D1 takes
+       covers off blue. */
+    --s-cover-amber: var(--p-amber-600);
+    --s-cover-teal: var(--p-teal-700);
+    --s-cover-plum: var(--p-plum-700);
   }
 
   :root[data-theme="light"] {
@@ -60,13 +128,23 @@
 
     --s-ink: #101821;
     --s-ink-muted: #4e5866;
-    --s-ink-faint: #7d8896;
+    /* Was #7d8896, which scored 3.4:1 on `--s-floor` — the same sub-AA gap
+       the dark theme had at 11-16px (#164 R-9). */
+    --s-ink-faint: #626d7b;
 
     /* Amber on white fails contrast as a text colour, so the light theme
        spends the accent as a darker fill and keeps the same role. */
     --s-voice: var(--p-amber-600);
     --s-voice-ink: #ffffff;
     --s-voice-quiet: var(--p-amber-100);
+    /* And this is where "fails contrast as a text colour" stops being only a
+       comment. The old "Editing" pill painted 12px text in the accent on a
+       15% accent wash: 5.4:1 dark, but 3.0:1 here, because a darker FILL on
+       white is still too light to be INK on a wash of itself. A darker amber
+       again, for the text case only — the fill above is unchanged. Its
+       readers now include the plain "Editing" marker (`.recorder-editing`,
+       #1243). */
+    --s-voice-text: #8a5a12;
 
     /* Darker green fill on white, same as voice does — keeps contrast on light. */
     --s-done: var(--p-green-600);
@@ -77,7 +155,39 @@
     --s-live-ink: #ffffff;
     --s-warn: #a35f14;
 
+    /* Unchanged from the dark theme — see its comment. */
+    --s-guide: var(--p-blue-500);
+
     --s-focus: var(--p-amber-600);
     --s-scrim: rgba(255, 255, 255, 0.94);
+
+    /* --- O4 roles (see the dark block) ---------------------------------- */
+    --s-well: var(--p-cool-100);
+    --s-mark-empty: var(--p-cool-300);
+    --s-card-edge: var(--p-cool-200);
+    --s-dim: rgba(16, 24, 33, 0.45);
+    --s-voice-dim: rgba(184, 124, 34, 0.32);
+    --s-playhead: var(--p-cool-900);
+
+    --s-live-quiet: var(--p-red-100);
+    --s-warn-quiet: var(--p-warn-100);
+    --s-warn-text: var(--p-warn-700);
+    /* The fill accents are too pale as words on their own light washes. */
+    --s-live-text: var(--p-red-700);
+    --s-done-text: var(--p-green-700);
+
+    --s-hear: var(--p-blue-600);
+
+    --s-tile-ink: var(--p-cool-000);
+    --s-edit: var(--p-slate-600);
+    --s-name: var(--p-violet-700);
+    --s-send: var(--p-teal-750);
+    /* The darker teal #937 D2 chose, so the ring clears the 3:1 non-text
+       floor on white; `tests/contrast.test.ts` gates it. */
+    --s-send-ring: var(--p-teal-600);
+
+    --s-cover-amber: var(--p-amber-600);
+    --s-cover-teal: var(--p-teal-700);
+    --s-cover-plum: var(--p-plum-700);
   }
 }

@@ -55,6 +55,16 @@ export interface ClipMeta {
   /** Bytes held in `clipData` — PCM frames × 2, or the MP3's length. */
   readonly byteLength: number;
   /**
+   * How many times a transcode of this clip ended in an encoder stall.
+   *
+   * Scheduling metadata, not a verdict on the audio: a stall is the WORKER
+   * going silent, and a clip that merely happened to be first when the worker
+   * died is counted the same as one that reliably wedges it. Never decays, so
+   * an unlucky clip stays behind the others — harmless, because the order only
+   * decides who is attempted first and every clip keeps its PCM either way.
+   */
+  readonly transcodeStallCount: number;
+  /**
    * Row-resolution waveform peaks, kept ONLY on an `mp3` clip: the Segments list
    * draws its bars from these so listing a chapter never has to decode audio.
    * `null` on PCM, where peaks are computed from the samples on load.
@@ -90,10 +100,57 @@ export type Clip =
  * — tests pass the synchronous encoder wrapped in a promise and a fake decoder.
  */
 export interface AudioCodec {
-  /** Canonical PCM → MP3 bytes. May reject with an `AbortError` when cancelled. */
-  readonly encodeMp3: (samples: Int16Array) => Promise<Uint8Array<ArrayBuffer>>;
+  /**
+   * Canonical PCM → MP3 bytes. May reject with an `AbortError` when cancelled,
+   * an `EncoderStalledError` when the worker goes silent past its deadline, or
+   * an `EncoderFailedError` when the encoder itself failed (#166) — the browser
+   * codec's typed signals, so a caller can tell an encoder failure from
+   * anything else that went wrong around it.
+   *
+   * `onProgress`, when given, hears how far the encode has got as a fraction
+   * in `[0, 1]` (#996). It is advisory and may be sparse — the browser codec
+   * forwards the worker's throttled heartbeat, so it is not called once per
+   * frame and need not be called with `1` at all. The MP3 exists only when
+   * the promise resolves, never because a fraction reached `1`. It is not
+   * called after the encode settles.
+   */
+  readonly encodeMp3: (
+    samples: Int16Array,
+    onProgress?: (fraction: number) => void
+  ) => Promise<Uint8Array<ArrayBuffer>>;
   /** MP3 bytes → canonical PCM. */
   readonly decodeMp3: (mp3: Uint8Array<ArrayBuffer>) => Promise<Int16Array>;
+  /**
+   * Open one continuing encode that takes its PCM in pieces (#1003 part b),
+   * so a long chapter never has to exist as one PCM buffer. Optional: a codec
+   * without it is only ever handed whole buffers through `encodeMp3`, and
+   * `lib/export/chapter.ts` takes its single-buffer path for it.
+   *
+   * Rejects the way `encodeMp3` does — an `AbortError`, an
+   * `EncoderStalledError`, an `EncoderFailedError` — and so do the stream's
+   * own `write` and `finish`.
+   */
+  readonly openMp3Stream?: () => Promise<Mp3Stream>;
+}
+
+/**
+ * An open encode from {@link AudioCodec.openMp3Stream}. One writer at a time:
+ * await each `write` before the next, then `finish` once — or `cancel`.
+ */
+export interface Mp3Stream {
+  /**
+   * Encode `samples` after everything written before, resolving once the
+   * encoder has taken them. CONSUMES `samples` in the browser codec: its
+   * buffer is transferred to the worker, as `encodeMp3`'s is.
+   */
+  readonly write: (samples: Int16Array) => Promise<void>;
+  /** The whole MP3, byte-identical to `encodeMp3` of every write joined. */
+  readonly finish: () => Promise<Uint8Array<ArrayBuffer>>;
+  /**
+   * Drop the encode without an MP3. Never throws and never rejects; safe to
+   * call after a failure, and a no-op after `finish`.
+   */
+  readonly cancel: () => void;
 }
 
 /**

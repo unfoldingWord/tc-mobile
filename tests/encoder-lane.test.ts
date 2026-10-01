@@ -8,7 +8,7 @@ import { withEncoder } from "@/hooks/mp3-codec";
  * `withEncoder` is browser glue around a Web Worker, but the property that
  * matters — no two encode-bearing jobs run at once, whatever aborts — is plain
  * promise sequencing and is testable here with work that never touches the
- * codec. The worker round-trip itself is verified in a browser, not here.
+ * codec. The worker round-trip itself is outside this suite.
  */
 
 /** A job that records when it runs and holds the lane until told to let go. */

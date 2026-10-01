@@ -5,7 +5,7 @@
 # Pods to install (docs/native/README.md §3).
 source "https://rubygems.org"
 
-gem "fastlane", "~> 2.226"
+gem "fastlane", "~> 2.240"
 
 # CFPropertyList 3.0.9 declares required_ruby_version < 3.2, which fails the
 # frozen install on the macos-14 runner (Ruby 3.3.12) — the first TestFlight

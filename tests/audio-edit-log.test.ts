@@ -5,6 +5,8 @@ import {
   canUndo,
   emptyLog,
   materialize,
+  opRedone,
+  opUndone,
   pushOp,
   redo,
   undo,
@@ -122,5 +124,83 @@ describe("edit-log", () => {
     expect(log.ops.length).toBe(0); // the empty log we started from is intact
     expect(log.cursor).toBe(0);
     expect(pushed).not.toBe(log);
+  });
+});
+
+/**
+ * #512 George R1 P2-2: `useSegmentEditor.undo`/`.redo` return the op they
+ * stepped over so `recorder.tsx` can map the centerline through it (#449),
+ * but that "which op did this step pass over" choice lived only inline in
+ * the hook, untested (`tests/audio-edit-log.test.ts` covered cursor motion,
+ * not this return; `tests/recorder-stage.test.ts` feeds hand-built `EditOp`s
+ * into the mappers directly). Pulled out to a pure function here, next to
+ * the log it reads, so the seam is testable without React.
+ */
+describe("opUndone / opRedone — the op a step is about to pass over (#512 George R1 P2-2)", () => {
+  it("cut [2,5) applied: opUndone returns that cut", () => {
+    const log = pushOp(emptyLog(), {
+      kind: "cut",
+      range: { start: 2, end: 5 },
+    });
+    const op = opUndone(log);
+    expect(op).toEqual({ kind: "cut", range: { start: 2, end: 5 } });
+  });
+
+  it("undo at the start of history returns null and does not map", () => {
+    expect(opUndone(emptyLog())).toBeNull();
+  });
+
+  it("redo at the end of history (nothing undone) returns null", () => {
+    const log = pushOp(emptyLog(), {
+      kind: "cut",
+      range: { start: 0, end: 3 },
+    });
+    expect(opRedone(log)).toBeNull();
+  });
+
+  it("after an undo, opRedone returns the SAME op opUndone just returned", () => {
+    // The redo tail's next op is the one undo just stepped over — the exact
+    // pairing `recorder.tsx`'s onUndo/onRedo lean on to map pan through the
+    // inverse then the forward effect of the same op.
+    const applied = pushOp(emptyLog(), {
+      kind: "cut",
+      range: { start: 2, end: 5 },
+    });
+    const undoneOp = opUndone(applied);
+    const back = undo(applied);
+    expect(opRedone(back)).toEqual(undoneOp);
+  });
+
+  it("a paste op round-trips through opUndone the same way", () => {
+    const clip = buf(90, 91);
+    const log = pushOp(emptyLog(), { kind: "paste", at: 3, clip });
+    expect(opUndone(log)).toEqual({ kind: "paste", at: 3, clip });
+  });
+
+  it("names the LAST applied op, not the next redo-tail one, when both exist", () => {
+    // Two ops applied (cursor 2): opUndone must name the SECOND (cursor - 1),
+    // not the first (cursor - 2) or the (nonexistent) third.
+    // RED-FIRST / mutation kill: swapping `log.cursor - 1` for `log.cursor`
+    // in `opUndone` would instead read the (out-of-bounds, undefined) op at
+    // the redo-tail position, failing this exact-equality check.
+    const first = pushOp(emptyLog(), {
+      kind: "cut",
+      range: { start: 0, end: 2 },
+    });
+    const second = pushOp(first, { kind: "paste", at: 0, clip: buf(9) });
+    expect(opUndone(second)).toEqual({ kind: "paste", at: 0, clip: buf(9) });
+  });
+
+  it("names the NEXT undone op, not the last applied one, when both exist", () => {
+    // Mirror of the case above for opRedone: after undoing back to cursor 1
+    // (one op applied, one on the redo tail), opRedone must read cursor
+    // (the redo tail's op), not cursor - 1 (the still-applied one).
+    const first = pushOp(emptyLog(), {
+      kind: "cut",
+      range: { start: 0, end: 2 },
+    });
+    const second = pushOp(first, { kind: "paste", at: 0, clip: buf(9) });
+    const back = undo(second);
+    expect(opRedone(back)).toEqual({ kind: "paste", at: 0, clip: buf(9) });
   });
 });

@@ -15,7 +15,7 @@ export function newClipId(): ClipId {
  * Build a PCM clip's metadata, rejecting a 0-frame clip.
  *
  * Pure and exported so the clip-write invariant lives in one place: `putClip`
- * writes clip+meta on its own, and `saveTake` (books.ts) writes them inside the
+ * writes clip+meta on its own, and `saveTake` (takes.ts) writes them inside the
  * take's transaction for atomicity (#38) — both must reject a 0-frame clip and
  * compute duration the same way. A 0-frame clip is not a recording: it resolves
  * as playable, silent audio and can be counted finished (the ghost take
@@ -50,6 +50,7 @@ export function buildClipMeta(
     encoding: "pcm",
     generation,
     byteLength: samples.length * 2,
+    transcodeStallCount: 0,
     peaks: null,
   };
 }
@@ -69,6 +70,9 @@ export function clipFromRecord(meta: ClipMeta, data: ArrayBuffer): Clip {
 /**
  * Persist samples and their metadata in a single transaction spanning both
  * stores, so a failure can never leave metadata pointing at absent audio.
+ * Strict durability: this can be the only copy of a take's audio on disk, the
+ * same bar every other write that removes or creates the only copy of a take
+ * already meets (#179, #163).
  */
 export async function putClip(
   id: ClipId,
@@ -79,7 +83,9 @@ export async function putClip(
   const meta = buildClipMeta(id, samples, sampleRate, createdAt);
 
   const db = await getDb();
-  const tx = db.transaction(["clipMeta", "clipData"], "readwrite");
+  const tx = db.transaction(["clipMeta", "clipData"], "readwrite", {
+    durability: "strict",
+  });
   // Copy through a fresh ArrayBuffer: a subarray view would serialise the
   // entire backing buffer, which for a trimmed clip can be far larger than
   // the audio it represents.
@@ -108,9 +114,16 @@ export async function getClip(id: ClipId): Promise<Clip | undefined> {
   return clipFromRecord(meta, data);
 }
 
+/**
+ * Strict durability: same bar as {@link putClip} (#179, #163) — the write and
+ * the delete of a take's only copy of its audio are held to the same
+ * guarantee.
+ */
 export async function deleteClip(id: ClipId): Promise<void> {
   const db = await getDb();
-  const tx = db.transaction(["clipMeta", "clipData"], "readwrite");
+  const tx = db.transaction(["clipMeta", "clipData"], "readwrite", {
+    durability: "strict",
+  });
   await Promise.all([
     tx.objectStore("clipMeta").delete(id),
     tx.objectStore("clipData").delete(id),
