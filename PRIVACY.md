@@ -9,11 +9,12 @@ Store and TestFlight), and in a web browser.
 
 ## In short
 
-- **Your recordings stay on your phone.** The app has no accounts and no server
+- **Your recordings stay on your device.** The app has no accounts and no server
   of its own.
-- **The app collects nothing.** It has no analytics, no advertising, no tracking
-  and no crash reporting to us or anyone else.
-- **Files leave your phone only when you share them,** using your phone's own
+- **The app collects nothing from you.** It has no analytics, no advertising, no
+  tracking and no crash-reporting software. The web version's host sees ordinary
+  connection details; see "What leaves your device".
+- **Files leave your device only when you share them,** using your phone's own
   share menu, to the app or person you choose.
 
 ## What the app stores, and where
@@ -56,8 +57,9 @@ internet connection.
 from a website hosted by Cloudflare. To deliver it, Cloudflare processes the
 standard information any website receives, such as your IP address and browser
 type, and may keep request logs for a limited time under its own policies.
-Once loaded, the web version works the same way as the phone apps, and your
-recordings stay in your browser's storage on your device.
+Loading or updating the web version contacts that host again. Otherwise it
+handles your recordings the same way as the phone apps: they stay in your
+browser's storage on your device.
 
 ## Deleting your data
 
@@ -68,13 +70,14 @@ recordings stay in your browser's storage on your device.
   data, as it does for other apps.
 - In the web version, clearing the website's data in your browser deletes it.
 
-Because we never receive your data, there is nothing for us to delete on our
-side.
+We never receive your recordings, the names you give them or the problem log,
+and there is no account to delete. Connection details the web host may log are
+described under "What leaves your device".
 
 ## Children
 
 The app is made for adult translation teams. It is not directed at children
-under 13, and it collects no information from anyone.
+under 13, and it does not ask anyone for personal information.
 
 ## Open source
 
