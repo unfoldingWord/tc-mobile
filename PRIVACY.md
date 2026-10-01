@@ -93,6 +93,7 @@ Changes are recorded in the repository's history.
 
 Questions about this policy, or a privacy concern:
 
+- Email: support@unfoldingword.org
 - GitHub: https://github.com/unfoldingWord/tc-mobile/issues
 - Mail: unfoldingWord, Attention: Privacy, 10524 Moss Park Road, Ste.
   204-402, Orlando, FL 32832-5898, USA
