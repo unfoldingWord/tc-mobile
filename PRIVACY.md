@@ -14,7 +14,7 @@ Store and TestFlight), and in a web browser.
 - **The app collects nothing from you.** It has no analytics, no advertising, no
   tracking and no crash-reporting software. The web version's host sees ordinary
   connection details; see "What leaves your device".
-- **Files leave your device only when you share them,** using your phone's own
+- **Files leave your device only when you share them,** using your device's own
   share menu, to the app or person you choose.
 
 ## What the app stores, and where
@@ -26,7 +26,7 @@ Everything the app keeps is stored in the app's own storage on your device:
 - **A small problem log.** If something goes wrong, the app writes technical
   details of the error, such as the error message and the part of the app
   where it happened. It does not contain your recordings. It stays on your
-  phone unless you choose to send it (see below).
+  device unless you choose to send it (see below).
 - **Your display settings,** such as light or dark.
 
 The app does not ask for or store your name, email address, phone number,
@@ -43,11 +43,11 @@ are saved on your device and are not sent anywhere by the app.
 Nothing leaves your device unless you send it:
 
 - **Sharing recordings.** When you tap Share, the app prepares an MP3 (one
-  chapter) or a zip of MP3s (a book) and hands it to your phone's share menu.
+  chapter) or a zip of MP3s (a book) and hands it to your device's share menu.
   You choose where it goes, for example a messaging app or email. From then on,
   that app's or person's own privacy practices apply.
 - **Sending the problem log.** When you choose to send it, it goes the same way,
-  through your phone's share menu, to the person or app you choose.
+  through your device's share menu, to the person or app you choose.
 
 The phone apps (Android and iPhone) run entirely from files installed with the
 app. They do not contact an unfoldingWord server, and they work without an
@@ -70,8 +70,10 @@ browser's storage on your device.
   data, as it does for other apps.
 - In the web version, clearing the website's data in your browser deletes it.
 
-We never receive your recordings, the names you give them or the problem log,
-and there is no account to delete. Connection details the web host may log are
+We never receive your recordings, the names you give them or the problem log
+unless you choose to send them to us, and there is no account to delete. If you
+do send us something, ask us at the email or mail address below to delete our
+copy. Connection details the web host may log are
 described under "What leaves your device".
 
 ## Children
@@ -94,7 +96,9 @@ Changes are recorded in the repository's history.
 Questions about this policy, or a privacy concern:
 
 - Email: support@unfoldingword.org
-- GitHub: https://github.com/unfoldingWord/tc-mobile/issues
+- GitHub (public): https://github.com/unfoldingWord/tc-mobile/issues. Anything
+  posted there is public. Do not include a recording, the problem log or other
+  personal information; use the email, mail or phone contact instead.
 - Mail: unfoldingWord, Attention: Privacy, 10524 Moss Park Road, Ste.
   204-402, Orlando, FL 32832-5898, USA
 - Phone: +1 (407) 900-3005
