@@ -210,7 +210,13 @@ freeze note on every new PR to `develop`.
    [`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) on its
    own (#1281): confirm that both runs started at `PROMO_SHA`
    (`gh run list --workflow <lane> --branch staging --json headSha,event,status`),
-   with `event` `push` and no dispatch. While `release-signing` still has a
+   with `event` `push` and no dispatch. A green run is not a build: a push
+   the preflight did not read as a promotion still makes a successful run,
+   with the signing job `skipped`. So read each run's signing job
+   (`Build release APK`, `Build and upload to TestFlight`) with
+   `gh run view <databaseId> --json jobs --jq '.jobs[] | select(.name=="<job>") | .conclusion'`:
+   `skipped` means the lane did not start, and only `success` is a build.
+   While `release-signing` still has a
    required reviewer (#1281's transition window), each signing job waits for
    the DRI's approval; once it is removed, no approval either. Both runs' `headSha`
    equal `PROMO_SHA`, and so do the web and Play builds: every channel must
@@ -275,7 +281,8 @@ The `staging → main` merge starts the
 [Android](../../.github/workflows/android-apk.yml) lanes on `main` on its own
 (#1281); the `release-signing` environment admits them because they run on
 `main`. Confirm both runs started at the production merge commit (the one
-`v1.0.0` tags) with `event` `push`. Record each run's resolved SHA and
+`v1.0.0` tags) with `event` `push`, and that each run's signing job
+concluded `success`, not `skipped` (the §3a step 7 check). Record each run's resolved SHA and
 require it to equal `v1.0.0` before accepting its artifact. If `main` moved,
 stop and select an explicitly approved ref strategy; do not label a different
 build as the tagged release. A manual rebuild, if one is ever needed, is the
