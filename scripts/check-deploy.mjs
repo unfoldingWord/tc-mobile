@@ -70,6 +70,17 @@ export const DEFAULT_ORIGIN =
   "https://tc-mobile-staging.unfoldingword.workers.dev";
 export const PROD_ORIGIN = "https://tc-mobile.unfoldingword.workers.dev";
 
+// The production Worker also serves on its custom domain (`wrangler.jsonc`
+// `routes`, #1295). It is the same Worker, so it is mapped to the same
+// promoted ref below — a promoter who checks it gets `origin/main`'s sha
+// and version, not the local-HEAD fallback this file reserves for an
+// origin with no promoted branch. `check:deploy:prod` checks both
+// production origins in turn: workers.dev proves the Worker deployed, the
+// custom domain proves the route in `wrangler.jsonc` still reaches it.
+// `tests/check-deploy.test.ts` pins the npm script to this exact value
+// too, for the same reason it pins `PROD_ORIGIN`.
+export const PROD_DOMAIN_ORIGIN = "https://tcmobile.app";
+
 // Round-2 George P2: `ensureRemoteRefFresh` fetches from the local `origin`
 // remote and treats `origin/staging`/`origin/main` as the promoted tip
 // Cloudflare deploys — true only when `origin` actually points at this repo.
@@ -127,7 +138,8 @@ function runGitSync(cmd) {
  * Maps a known default origin to the remote-tracking ref whose tip Cloudflare
  * Workers Builds actually deploys for that origin's promotion —
  * `origin/staging` for the staging default, `origin/main` for the production
- * Worker. For this repo's merge-PR promotion flow that tip is a merge
+ * Worker on either of its origins (`PROD_ORIGIN`, `PROD_DOMAIN_ORIGIN`).
+ * For this repo's merge-PR promotion flow that tip is a merge
  * commit, not a promoter's local branch tip: `docs/progress_tracker.md`'s
  * "2026-09-03 (evening) — v0.1.12 promoted and verified on staging; the
  * microphone report resolved outside the app" entry (cited by heading, not
@@ -141,7 +153,9 @@ function runGitSync(cmd) {
  */
 export function remoteRefForOrigin(origin) {
   if (origin === DEFAULT_ORIGIN) return "origin/staging";
-  if (origin === PROD_ORIGIN) return "origin/main";
+  if (origin === PROD_ORIGIN || origin === PROD_DOMAIN_ORIGIN) {
+    return "origin/main";
+  }
   return undefined;
 }
 

@@ -23,6 +23,7 @@ import {
   isJsonContentType,
   isMainEntry,
   parseArgs,
+  PROD_DOMAIN_ORIGIN,
   PROD_ORIGIN,
   remoteRefForOrigin,
   resolveExpected,
@@ -526,6 +527,14 @@ describe("remoteRefForOrigin", () => {
     expect(
       remoteRefForOrigin("https://tc-mobile.unfoldingword.workers.dev")
     ).toBe("origin/main");
+  });
+
+  // #1295: the production Worker also serves on its custom domain. Left
+  // unmapped, a promoter checking it would fall into the local-HEAD
+  // fallback reserved for a preview Worker — a production check compared
+  // against whatever commit the checkout sits on.
+  it("maps the production custom domain to origin/main", () => {
+    expect(remoteRefForOrigin("https://tcmobile.app")).toBe("origin/main");
   });
 
   it("returns undefined for an origin that isn't a known default (e.g. a per-PR preview Worker)", () => {
@@ -1330,13 +1339,24 @@ describe("package.json's check:deploy:prod stays in sync with PROD_ORIGIN", () =
     expect(pkg.scripts["check:deploy:prod"]).toContain(PROD_ORIGIN);
   });
 
+  // #1295: the same script checks the custom domain second, and the same
+  // drift applies — a hand-edited URL there would silently stop matching
+  // `remoteRefForOrigin`'s exact-match map.
+  it("check:deploy:prod's npm script contains the exact exported PROD_DOMAIN_ORIGIN", () => {
+    const pkg = JSON.parse(
+      readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")
+    ) as { scripts: Record<string, string> };
+    expect(pkg.scripts["check:deploy:prod"]).toContain(PROD_DOMAIN_ORIGIN);
+  });
+
   // Not asserted by the finding, but the same drift risk for the staging
   // default: `check:deploy` doesn't pass --origin at all (it relies on
   // parseArgs' DEFAULT_ORIGIN), so this instead pins DEFAULT_ORIGIN itself
   // against remoteRefForOrigin's map, closing the loop on both origins.
-  it("remoteRefForOrigin maps the exact exported DEFAULT_ORIGIN and PROD_ORIGIN", () => {
+  it("remoteRefForOrigin maps the exact exported DEFAULT_ORIGIN, PROD_ORIGIN and PROD_DOMAIN_ORIGIN", () => {
     expect(remoteRefForOrigin(DEFAULT_ORIGIN)).toBe("origin/staging");
     expect(remoteRefForOrigin(PROD_ORIGIN)).toBe("origin/main");
+    expect(remoteRefForOrigin(PROD_DOMAIN_ORIGIN)).toBe("origin/main");
   });
 });
 

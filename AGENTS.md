@@ -72,7 +72,7 @@ npm run verify         # everything above, in one command (test:dist last, after
 npm run deploy:staging # wrangler deploy --env staging
 npm run deploy         # wrangler deploy (production)
 npm run check:deploy      # confirm a develop -> staging deploy; see "Confirming a deploy" below
-npm run check:deploy:prod # confirm a staging -> main deploy; requires the production origin explicitly
+npm run check:deploy:prod # confirm a staging -> main deploy; checks both production origins, each named explicitly
 npm run check:prepush  # review-bench findings on this branch's commits and added lines; runs in pre-push. Checklist: .claude/skills/tc-prepush
 ```
 
@@ -660,6 +660,41 @@ connected twice:
 Non-production builds are enabled on **one** Worker only. With both on, every
 push to `develop` triggers two preview builds of the same commit.
 
+**Production serves on two origins, and both are deliberate** (#1295, decided
+2026-10-02): <https://tcmobile.app>, the custom domain — the address the store
+listings and new browser users get — and
+<https://tc-mobile.unfoldingword.workers.dev>, the `tc-mobile` Worker's own
+URL, which stays live with **no redirect**. The DRI first connected the
+domain through the Cloudflare dashboard; `wrangler.jsonc` now declares it
+too, as `routes: [{ pattern: "tcmobile.app", custom_domain: true }]` on the
+top-level (production) block, so a deploy from the file alone carries it. The
+route reaches production at the next `staging -> main` promotion, when
+Workers Builds deploys `main`; a PR deploys nothing. Three lines in that file
+are load-bearing, and each has a comment saying why:
+
+- `workers_dev: true` stays **explicit** on the production block. Wrangler's
+  default for it flips to `false` as soon as `routes` is non-empty, so
+  deleting the line would silently turn the workers.dev origin off.
+- `env.staging` sets `routes: []`. `routes` **is** inherited by named
+  environments (unlike `assets`), and wrangler's own config validation warns
+  that deploying an environment that inherits a custom domain "will reassign
+  these custom domains away from the top-level Worker" — a staging deploy
+  would steal tcmobile.app. The empty array is the override that warning
+  recommends.
+- Nothing redirects workers.dev to tcmobile.app, and nothing should. Browser
+  storage is per origin: recordings made at the workers.dev URL — in a tab or
+  an installed PWA — exist only in that origin's IndexedDB, tcmobile.app opens
+  empty, and the app has no import. A redirect would hide people's
+  recordings, not move them. The native apps bundle their assets and are
+  unaffected.
+
+`www.tcmobile.app` is **not** a route. A second custom domain would be a third
+storage origin with the same split, for no gain; Cloudflare's own custom-domain
+doc says a Worker on the apex "will not receive requests sent to
+`www.example.com`" and points at a redirect rule instead. So www is a
+dashboard redirect rule (www → apex, 301) that the DRI owns, like the DNS; it
+is not in this file.
+
 Add `docs/**` and `*.md` to Cloudflare's **Exclude paths** on both, or every
 documentation commit burns a build.
 
@@ -761,10 +796,14 @@ closed unless it resolves to `https://github.com/unfoldingWord/tc-mobile`
 (https or ssh, with or without `.git`). Repoint `origin` (see the transfer
 section) if this check fails on a clone that should be trusted.
 
-`check:deploy:prod` is
-`node scripts/check-deploy.mjs --require-origin --origin=https://tc-mobile.unfoldingword.workers.dev`
-(`package.json`) — the `tc-mobile` Worker's URL, written down here because
-nowhere else in the tree was. `check:deploy`'s (staging's) is
+`check:deploy:prod` is two runs of the script (`package.json`), one per
+production origin, each with `--require-origin`:
+`--origin=https://tc-mobile.unfoldingword.workers.dev` — the `tc-mobile`
+Worker's own URL — and then `--origin=https://tcmobile.app`, the custom
+domain (#1295). The first proves the Worker deployed; the second proves the
+route in `wrangler.jsonc` still reaches it. `remoteRefForOrigin` maps both
+to `origin/main` (`PROD_ORIGIN`, `PROD_DOMAIN_ORIGIN`), so neither falls into
+the local-`HEAD` fallback. `check:deploy`'s (staging's) is
 `https://tc-mobile-staging.unfoldingword.workers.dev`, also used in "Device
 testing" below.
 
