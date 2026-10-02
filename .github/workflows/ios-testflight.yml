@@ -10,10 +10,10 @@ name: iOS TestFlight
 # Triggers:
 #   push to `staging` or `main`  — builds only when the pushed tip is a
 #                                  promotion merge (`Merge pull request #N from
-#                                  unfoldingWord/release/*`, or `…/staging` for
-#                                  the production promotion); any other push
-#                                  to those branches ends at preflight with a
-#                                  notice and no build.
+#                                  unfoldingWord/release/*` or `…/develop` onto
+#                                  staging, `…/staging` for the production
+#                                  promotion); any other push to those branches
+#                                  ends at preflight with a notice and no build.
 #   workflow_dispatch            — a manual rebuild of `staging` or `main`.
 #                                  No other ref is accepted: the former
 #                                  `allow_any_ref` input is gone (#1281, DRI
@@ -33,11 +33,6 @@ on:
   workflow_dispatch:
 
 permissions: {}
-
-concurrency:
-  # One upload at a time; never cancel an in-flight archive/upload.
-  group: ios-testflight
-  cancel-in-progress: false
 
 jobs:
   # A cheap ubuntu gate BEFORE the environment and the billed macOS runner. It
@@ -84,14 +79,17 @@ jobs:
               echo "Manual rebuild of '$REF'."
               ;;
             push)
-              # The merge commit GitHub writes for a promotion PR. `release/*`
-              # is the pinned RC/release ref promoted to staging; `staging` is
-              # the production promotion to main. Only the subject line is read.
+              # The merge commit GitHub writes for a promotion PR (the repo's
+              # merge_commit_title is MERGE_MESSAGE, the classic subject).
+              # `release/*` is the pinned RC/release ref promoted to staging;
+              # `develop` is AGENTS.md's plain develop -> staging promotion (every
+              # one before #889 had that head); `staging` is the production
+              # promotion to main. Only the subject line is read.
               subject="${HEAD_MESSAGE%%$'\n'*}"
               # A carriage return would end the log line early; keep the echo
               # below one line that starts with its prefix.
               subject="${subject//$'\r'/}"
-              promotion='^Merge pull request [#][0-9]+ from unfoldingWord/(release/|staging$)'
+              promotion='^Merge pull request [#][0-9]+ from unfoldingWord/(release/|develop$|staging$)'
               echo "Subject: $subject"
               if [[ "$subject" =~ $promotion ]]; then
                 echo "build=true" >> "$GITHUB_OUTPUT"
@@ -121,6 +119,17 @@ jobs:
     # (ruleset 24043869), so only admin-merged code reaches the secrets
     # (#1281).
     environment: release-signing
+    # One upload per branch at a time; never cancel an in-flight
+    # archive/upload. The group is on THIS job, not the workflow, and keyed by
+    # ref: a run whose preflight decided not to build never enters it, so a
+    # docs push can no longer replace a pending promotion build (GitHub keeps
+    # one pending run per group and replaces it with a newer one). Two
+    # promotions to the same branch inside one build still queue, and the
+    # older pending one is replaced: the release checklist reads a
+    # `cancelled` run as "did not start".
+    concurrency:
+      group: ios-testflight-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: macos-15
     timeout-minutes: 45
     permissions:

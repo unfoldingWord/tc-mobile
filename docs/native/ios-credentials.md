@@ -407,11 +407,12 @@ Until then no secret has been read and no macOS minute billed — but the
 secret-presence check runs **after** approval, on the macOS runner, so check
 §8's `gh secret list --env release-signing` before approving rather than
 after. Once the reviewer is removed, the branch policy alone admits the job
-and it proceeds straight to that check. Do not re-dispatch a waiting run: the workflow's concurrency group has
-`cancel-in-progress: false`, so a second dispatch queues behind the first and a
-third replaces the second — reject the stale run instead. (Whether a waiting
-job counts as "in progress" for the concurrency group is not stated in GitHub's
-docs; treat it as if it does.)
+and it proceeds straight to that check. Do not re-dispatch a waiting run: the signing job's concurrency group
+(one per lane per branch, `cancel-in-progress: false`) means a second run of
+the same branch queues behind the first and a third replaces the second —
+reject the stale run instead. (Whether a waiting job counts as "in progress"
+for the concurrency group is not stated in GitHub's docs; treat it as if it
+does.)
 
 ---
 

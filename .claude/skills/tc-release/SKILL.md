@@ -167,6 +167,9 @@ from.
       `Build and upload to TestFlight`) with
       `gh run view <databaseId> --repo unfoldingWord/tc-mobile --json jobs --jq '.jobs[] | select(.name=="<job>") | .conclusion'`:
       `skipped` means the lane did not start, and only `success` is a build.
+      A run at `PROMO_SHA` that is `cancelled` (a later promotion to the
+      same branch replaced it while pending) did not start either, and
+      `staging` has then moved: stop, do not dispatch.
       An empty conclusion with the run still open means the job is waiting
       for the `release-signing` reviewer or running: it has started, so do
       not dispatch a second one.

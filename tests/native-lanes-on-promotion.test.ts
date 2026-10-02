@@ -95,6 +95,21 @@ describe.each(Object.keys(LANES) as Lane[])("%s triggers (#1281)", (lane) => {
     expect(text).not.toContain("ALLOW_ANY");
   });
 
+  it("serializes per ref on the signing job only, so a skipped run never enters the queue", () => {
+    // A workflow-level group is entered by every run, including one whose
+    // preflight decides not to build; GitHub keeps one pending run per group
+    // and replaces it with a newer one, so a docs push could cancel a
+    // pending promotion build (George, #1307 round 1). On the signing job
+    // the group is only ever entered by a run that builds.
+    expect(text).not.toMatch(/^concurrency:/m);
+    const job = LANES[lane];
+    const group = job === "build" ? "android-apk" : "ios-testflight";
+    const block = text.slice(text.indexOf(`  ${job}:\n`));
+    expect(block).toContain(
+      `    concurrency:\n      group: ${group}-\${{ github.ref }}\n      cancel-in-progress: false\n`
+    );
+  });
+
   it("runs the signing job only when preflight says so, in release-signing", () => {
     const job = LANES[lane];
     const block = text.slice(text.indexOf(`  ${job}:\n`));
@@ -124,6 +139,14 @@ describe.each(Object.keys(LANES) as Lane[])(
       // A release ref promoted straight to main is still an admin merge of a
       // pinned release ref; the gate accepts it on either branch.
       ["main", "Merge pull request #2000 from unfoldingWord/release/v1.0.2"],
+      // AGENTS.md's own promotion shape, `develop -> staging` by PR with
+      // `develop` as the head (every staging promotion before #889 was one),
+      // is a promotion too: the pinned `release/*` ref is the RC flow's
+      // refinement of it, not a replacement.
+      [
+        "staging",
+        "Merge pull request #775 from unfoldingWord/develop\n\nchore(release): v0.2.10",
+      ],
     ])("builds a promotion merge pushed to %s", (REF, HEAD_MESSAGE) => {
       const result = runGate(lane, { EVENT: "push", REF, HEAD_MESSAGE });
       expect(result.status, result.stderr + result.stdout).toBe(0);
@@ -140,6 +163,14 @@ describe.each(Object.keys(LANES) as Lane[])(
       [
         "a merge of a fork's release branch",
         "Merge pull request #8 from someone-else/release/v9",
+      ],
+      [
+        "a merge of a branch merely named like develop",
+        "Merge pull request #9 from unfoldingWord/develop-experiment",
+      ],
+      [
+        "a merge of a fork's develop",
+        "Merge pull request #10 from someone-else/develop",
       ],
       ["an empty message", ""],
       [
