@@ -88,23 +88,73 @@ issue's priority in this checklist.
    how the version change will return to `develop`/`staging` through PRs; this
    plan does not authorize direct commits to protected branches. Validate the
    final candidate and merge the production promotion with a merge commit
-   to preserve the promotion history. The DRI runs this merge from their own
-   terminal with this pinned command:
+   to preserve the promotion history. This is the production gate. Record any
+   explicitly accepted residuals before merging; an unresolved required issue
+   is not waived merely by moving its milestone.
+
+   Three commits name this step, under the same rule as §3a's `STAGING_SHA`,
+   `CUT_SHA` and `PROMO_SHA`: write each down when it exists, re-resolve it
+   with `git` or `gh` before a step uses it, and treat any PR text that quotes
+   it as a record, not the source.
+   - **`MAIN_SHA`**: the `origin/main` tip the production PR is reviewed
+     against, its `baseRefOid`. It is also the previous production build that
+     §5 records as the rollback target.
+   - **`HEAD_SHA`**: the production PR's reviewed head (`headRefOid`), the
+     `origin/staging` tip being promoted. It is the `PROMO_SHA` of the last
+     `develop → staging` promotion (§3a step 6); if the two differ, something
+     reached `staging` after that promotion, so stop.
+   - **`PROD_SHA`**: the merge commit the promotion puts on `main`. `v1.0.0`
+     goes on it and on nothing else.
+
+   **Before the merge** (agent-allowed, read-only):
+   `gh pr view <N> --repo unfoldingWord/tc-mobile --json baseRefOid,headRefOid`
+   must show `baseRefOid` equal to `MAIN_SHA` and `headRefOid` equal to
+   `HEAD_SHA`. If `main` has moved (a hotfix, another promotion), stop and
+   tell the DRI: the checks and reviews on this PR read a different base, and
+   `--match-head-commit` pins only the head, so this is the only guard on the
+   base. A moved base means stop before the push: the push to `main` deploys
+   production through Workers Builds and runs the Play lane, and this runbook
+   does not recall either.
+
+   **The merge** (human-only): the DRI runs it from their own terminal with
+   this pinned command:
    `gh pr merge <N> --repo unfoldingWord/tc-mobile --merge --admin --match-head-commit <HEAD_SHA>`.
    `--admin` is required because ruleset 24043869 ("Protected branches: merge
    by admins only") puts an `update` rule on `develop`, `staging` and `main`
    whose only bypass is the repository admin role; without it the merge fails
    with "the base branch policy prohibits the merge". `--admin` also skips
    every other base-branch requirement (required checks, reviews), so the DRI
-   runs it only after every check and review this runbook requires is green.
-   `<HEAD_SHA>` is the production PR's reviewed head (`headRefOid`). An agent
-   hands this command over unchanged and never runs `gh pr merge`. This is the
-   production gate. Record any explicitly
-   accepted residuals before merging; an unresolved required issue is not
-   waived merely by moving its milestone.
-4. Fetch `main` and tag the production merge commit `v1.0.0`; push that tag.
-   The DRI pushes the tag. If the tag already exists, inspect it and stop on a different target;
-   never overwrite a published release tag.
+   runs it only after every check and review this runbook requires is green
+   and after the `baseRefOid` check above. An agent hands this command over
+   unchanged and never runs `gh pr merge`.
+
+   **After the merge** (agent-allowed, read-only): fetch `main`, record the
+   merge commit as `PROD_SHA`, and check that `origin/main` equals it and
+   that `git rev-parse <PROD_SHA>^1 <PROD_SHA>^2` prints `MAIN_SHA` then
+   `HEAD_SHA` (`^1` is the base the PR merged into, `^2` the head it brought
+   in). If either line differs, stop: do not tag, do not dispatch the native
+   lanes, do not publish the Release. `main` then carries a merge nobody
+   reviewed, and what follows (a revert PR against `main` and a Worker
+   rollback, §5) is the DRI's pick, not the agent's.
+
+   Worked examples, read back from `main` with
+   `gh pr view <N> --json baseRefOid,headRefOid,mergeCommit` and
+   `git log -1 --format=%P <PROD_SHA>`:
+   - v1.0.0, #1287 (merged 2026-10-01): `MAIN_SHA` `7c560ce3`, `HEAD_SHA`
+     `8a1e4bb7` (#1286's `PROMO_SHA`), `PROD_SHA` `3e77b88d` with parents
+     `7c560ce3 8a1e4bb7`; `v1.0.0` points at `3e77b88d`.
+   - v1.0.1, #1292 (merged 2026-10-02): `MAIN_SHA` `3e77b88d` (the previous
+     `PROD_SHA`), `HEAD_SHA` `dd997ebf` (#1291's `PROMO_SHA`), `PROD_SHA`
+     `d0eb5456` with parents `3e77b88d dd997ebf`; `v1.0.1` points at
+     `d0eb5456`.
+
+   Both promotions were merged before this check existed (#1264). They show
+   the shape the check expects; neither is a run of it.
+
+4. Only after step 3's parent check printed `MAIN_SHA` then `HEAD_SHA`: fetch
+   `main` and tag `PROD_SHA` `v1.0.0`; push that tag. The DRI pushes the tag.
+   If the tag already exists, inspect it and stop on a different target; never
+   overwrite a published release tag.
 5. Confirm the production origin with the production-specific command:
 
    ```sh
@@ -253,7 +303,8 @@ workflow dispatch, the go/no-go, the `v1.0.0` Release publish, the
 never passes `--admin`. Agent-allowed: preparing bodies and release notes, the
 red team, the release branch and promotion PR, the tester pre-release publish
 (only under step 9's two conditions), read-only checks
-(`check:deploy`, the signer and hash checks, the download-back), and records.
+(`check:deploy`, the `baseRefOid` and merge-parent checks of step 6 and of
+§3 step 3, the signer and hash checks, the download-back), and records.
 The `tc-release` skill tags each step the same way.
 
 rc.1 (#1205, #1206) and rc.2 (#1228, #1236) are worked examples. Their PR
@@ -297,8 +348,9 @@ durable download link. An expiring Actions link alone does not satisfy handoff.
 ## 5. Rollback readiness
 
 Before promotion, record the previous production deployment/version and Git
-SHA, plus the available Cloudflare rollback target. Follow AGENTS.md's
-**Confirming a deploy and rolling one back** procedure: dashboard rollback or
+SHA (`MAIN_SHA`, §3 step 3), plus the available Cloudflare rollback target.
+Follow AGENTS.md's **Confirming a deploy and rolling one back** procedure:
+dashboard rollback or
 `npx wrangler rollback` targets production; `--env staging` targets staging.
 After rollback, verify the origin against the explicitly chosen rollback
 SHA/version using the deploy checker's explicit arguments. Its normal default
@@ -324,7 +376,9 @@ installed APK or TestFlight bundle.
       line is pasted into `docs/progress_tracker.md` (#840 R7 — v0.2.10's
       staging deploy went unconfirmed in the tracker until a later audit).
 - [ ] Production promotion reviewed and green; previous deployment recorded.
-- [ ] `staging → main` merged; `v1.0.0` points to that merge commit.
+- [ ] `staging → main` merged with `baseRefOid` still `MAIN_SHA`;
+      `git rev-parse <PROD_SHA>^1 <PROD_SHA>^2` printed `MAIN_SHA` then
+      `HEAD_SHA` (§3 step 3); `v1.0.0` points to `PROD_SHA`.
 - [ ] `check:deploy:prod` confirms the production version and promoted SHA;
       the PASS line is pasted into `docs/progress_tracker.md` (#840 R7).
 - [ ] Release red team run on the promotion range and announcement (§3a

@@ -41,13 +41,15 @@ go/no-go decision, publishing the `v1.0.0` GitHub Release, pushing the
 TestFlight build. An agent never passes `--admin`. Agent-allowed: preparing PR
 and release-note bodies, the red team, the release branch and promotion PR, the
 tester pre-release publish (only under step 7's two conditions), read-only
-checks (`check:deploy`, the signer and hash checks, the download-back), and
-records.
+checks (`check:deploy`, the `baseRefOid` and merge-parent checks, the signer
+and hash checks, the download-back), and records.
 
-**Three commits name every step below.** Write them down when they exist and
-use no other. Put each in the promotion PR's hold line as it is known, as a
-record. The hold line is not the source: re-resolve each one with `git` or
-`gh` before a step uses it, never from memory or from that text:
+**Three commits name every RC step below**, and the final promotion adds two
+more (`MAIN_SHA` and `PROD_SHA`, under "Final v1.0.0 additionally"). Write
+them down when they exist and use no other. Put each in the promotion PR's
+hold line as it is known, as a record. The hold line is not the source:
+re-resolve each one with `git` or `gh` before a step uses it, never from
+memory or from that text:
 
 - **`STAGING_SHA`**: the `origin/staging` tip the red team's range starts
   from. Staging is not frozen, so it can move.
@@ -219,12 +221,43 @@ All agent-allowed and read-only.
 
 ## Final v1.0.0 additionally
 
-Follow runbook §3 and §6. Human-only: the `staging → main` merge (a merge
-commit, from the DRI's terminal; the only command is runbook §3 step 3's, with
-`--admin` and `--match-head-commit`, run only after that step's checks and
-reviews are green; an agent never runs it), the tag `v1.0.0` on that
-merge commit, the native dispatches from `main` at the tag, and publishing the
-GitHub Release on `v1.0.0` with the APK, QR and TestFlight build. Agent-allowed:
-`check:deploy:prod`, the APK checks, the download-back, the installation guide
-update, closing the milestone and telling the PR authors the freeze is lifted
-(after the DRI lifts it).
+Follow runbook §3 and §6; §3 step 3 is the reference for this list. Two more
+commits name it, under the same rule as the three above (write them down when
+they exist, re-resolve each with `git` or `gh` before a step uses it, and
+treat PR text that quotes them as a record, not the source):
+
+- **`MAIN_SHA`**: the `origin/main` tip the production PR (`staging → main`)
+  is reviewed against, its `baseRefOid`.
+- **`PROD_SHA`**: the merge commit the promotion puts on `main`. `v1.0.0` goes
+  on it and on nothing else.
+
+The production PR's head is `HEAD_SHA`, its `headRefOid`: the `origin/staging`
+tip, which is the last `develop → staging` promotion's `PROMO_SHA`. If the two
+differ, something reached `staging` after that promotion, so stop.
+
+- [ ] Agent-allowed: just before the merge, check
+      `gh pr view <N> --repo unfoldingWord/tc-mobile --json baseRefOid,headRefOid`:
+      `baseRefOid` must still be `MAIN_SHA` and `headRefOid` must be
+      `HEAD_SHA`. If `main` has moved, stop and tell the DRI: the checks and
+      reviews read a different base, and `--match-head-commit` pins only the
+      head, so this is the only guard on the base. A moved base means stop
+      before the push, because the push to `main` deploys production and runs
+      the Play lane, and these docs do not recall either.
+- [ ] Human-only: the `staging → main` merge, a merge commit from the DRI's
+      terminal. The only command is runbook §3 step 3's, with `--admin` and
+      `--match-head-commit <HEAD_SHA>`, run only after that step's checks and
+      reviews are green and after the check above. An agent never runs it.
+      Record the merge commit as `PROD_SHA`; check `origin/main` equals it.
+- [ ] Agent-allowed: check that `git rev-parse <PROD_SHA>^1 <PROD_SHA>^2`
+      prints `MAIN_SHA` then `HEAD_SHA`. If not, stop: no tag, no dispatch,
+      no Release. Tell the DRI; the revert or rollback is the DRI's pick.
+- [ ] Human-only: the tag `v1.0.0` on `PROD_SHA`, only after the parent check
+      above passed; the native dispatches from `main` at the tag; publishing
+      the GitHub Release on `v1.0.0` with the APK, QR and TestFlight build.
+- [ ] Agent-allowed: `check:deploy:prod`, the APK checks, the download-back,
+      the installation guide update, closing the milestone and telling the PR
+      authors the freeze is lifted (after the DRI lifts it).
+
+The shape, from v1.0.0 (#1287): `PROD_SHA` `3e77b88d` has parents `7c560ce3`
+(`MAIN_SHA`) then `8a1e4bb7` (`HEAD_SHA`, #1286's `PROMO_SHA`). Runbook §3
+step 3 has that example and v1.0.1's (#1292) in full.
