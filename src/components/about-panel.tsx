@@ -13,6 +13,14 @@ import { reportFailure } from "@/hooks/report-failure";
 import { readSharePlatform } from "@/hooks/share-target";
 import { strings } from "@/lib/strings";
 
+/**
+ * The privacy policy's public address: `PRIVACY.md` on `main`, the URL both
+ * store listings give (#1210). It resolves once the promotion carrying
+ * `PRIVACY.md` reaches `main`.
+ */
+const PRIVACY_POLICY_URL =
+  "https://github.com/unfoldingWord/tc-mobile/blob/main/PRIVACY.md";
+
 interface AboutPanelProps {
   open: boolean;
   /** The licence text read in-drawer, or `null` for the list. Owned by the
@@ -138,6 +146,18 @@ export function AboutPanel({
           <div className="flex flex-col gap-[3px]">
             <span>{strings.aboutSourceOffer}</span>
             <SourceOfferLink />
+          </div>
+
+          {/* The privacy policy (#1210), after the licence-text buttons for
+              the same open-edge focus reason as the source offer. */}
+          <div className="flex flex-col gap-[3px]">
+            <span>{strings.aboutPrivacy}</span>
+            <ExternalLink
+              href={PRIVACY_POLICY_URL}
+              label={strings.aboutVisitPrivacy}
+            >
+              {strings.aboutPrivacyLink}
+            </ExternalLink>
           </div>
 
           <section className="flex flex-col gap-[10px]">

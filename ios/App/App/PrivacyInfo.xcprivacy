@@ -2,6 +2,17 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
   <dict>
+    <!--
+      Stated rather than implied (#1210 section 2): the app does no tracking,
+      contacts no tracking domain and collects no data. App Store Connect's
+      App Privacy answer is "Data Not Collected", and these keys agree with it.
+    -->
+    <key>NSPrivacyTracking</key>
+    <false/>
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
     <key>NSPrivacyAccessedAPITypes</key>
     <array>
       <!--
