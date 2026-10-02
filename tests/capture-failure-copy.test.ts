@@ -7,35 +7,11 @@ import { captureFailureText } from "@/components/capture-failure-copy";
 import { strings } from "@/lib/strings";
 import type { CaptureFailure } from "@/lib/audio/capture-failure";
 
+import { stripCodeComments } from "./strip-code-comments";
 import { stripComments } from "./support";
 
 const root = path.resolve(import.meta.dirname, "..");
 const read = (rel: string) => readFileSync(path.resolve(root, rel), "utf8");
-
-/**
- * Source text with its LINE-LEADING comments removed — the sweep's reader only.
- *
- * No comment in `src/hooks` or `src/lib` carries one of these sentences today
- * — both layers explain the move in paraphrase, not by quoting the copy — so
- * this strip changes no result as written. It is here against the #529 trap
- * AGENTS.md records, where a comment naming the thing a test greps for
- * captured the test: the sentences below are exactly what a future docblock
- * would reach for to explain why a hook no longer says them, and the natural
- * repair for that false red is to weaken the pattern until it can no longer
- * catch a real leak in code. String literals are left alone — they are what
- * is hunted.
- *
- * Narrower than `stripComments` on purpose. The sweep's assertion is negated,
- * so leaving a trailing `//` in place can only make it fail, never pass; and
- * stripping one would cut a line at the `//` of any `"https://…"` literal,
- * hiding a sentence written after it. The mapper's pin is positive, so it
- * reads through the shared `stripComments` instead (#822).
- */
-function stripLeadingComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^[ \t]*\/\/.*$/gm, "");
-}
 
 /** Every `.ts`/`.tsx` file under `rel`, recursively. */
 function sourcesUnder(rel: string): string[] {
@@ -122,8 +98,8 @@ describe("captureFailureText", () => {
     // `share-outcome-glyph.test.ts` makes for the same reason).
     //
     // Read through the shared `stripComments`, which also removes a `//` that
-    // trails live code (#822). The sweep's line-leading strip left one in
-    // place, so `return "No sound was recorded." + " Try again."; //
+    // trails live code (#822). A line-leading strip leaves one in place,
+    // so `return "No sound was recorded." + " Try again."; //
     // strings.captureSilence` passed every case in this file: the key was in
     // the comment, and the composed literal is not the sentence the
     // `not.toContain` looks for. `capture-failure-copy.ts` holds no `//` or
@@ -179,9 +155,36 @@ describe("no layer below components mints this copy (#169)", () => {
     expect(files.length).toBeGreaterThan(20);
   });
 
-  it.each(CODES)("no hook or lib file writes the %s sentence", (code) => {
+  // Each file is read through the parsing strip (#822), once. The local regex
+  // that stood here was string-blind, and for a NEGATED sweep that fails open:
+  // a `"/*"` literal let its block pattern eat live code up to the next `*/`,
+  // and its line-leading `//` pattern blanked a line inside a template
+  // literal, so a sentence in either place left every case green. The parser
+  // keeps string and template text as written, which is what is hunted, and
+  // also drops a `//` trailing live code, which is prose.
+  const code = new Map(
+    files.map((rel) => [rel, stripCodeComments(read(rel), rel)] as const)
+  );
+
+  it("reads string text as code and comments as prose", () => {
+    // The two shapes the regex strip lost, plus the comment it should drop.
+    const probe = [
+      'const glob = "/*";',
+      `const kept = "${EXPECTED.silence}"; // */`,
+      "const t = `",
+      `// ${EXPECTED.undecodable}`,
+      "`;",
+      `const x = 1; // ${EXPECTED.unfinished}`,
+    ].join("\n");
+    const stripped = stripCodeComments(probe, "probe.ts");
+    expect(stripped).toContain(EXPECTED.silence);
+    expect(stripped).toContain(EXPECTED.undecodable);
+    expect(stripped).not.toContain(EXPECTED.unfinished);
+  });
+
+  it.each(CODES)("no hook or lib file writes the %s sentence", (failure) => {
     const leaked = files.filter((rel) =>
-      stripLeadingComments(read(rel)).includes(EXPECTED[code])
+      code.get(rel)!.includes(EXPECTED[failure])
     );
     expect(leaked).toEqual([]);
   });
