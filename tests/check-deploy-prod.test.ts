@@ -152,6 +152,7 @@ describe("package.json's check:deploy:prod runs the wrapper, not a shell chain",
 // invisible. These read the config itself.
 describe("check-deploy-prod: the production origins match wrangler.jsonc (#1301)", () => {
   interface WranglerConfig {
+    name?: string;
     workers_dev?: boolean;
     routes?: { pattern: string; custom_domain?: boolean }[];
     env?: { staging?: { routes?: unknown[] } };
@@ -175,6 +176,15 @@ describe("check-deploy-prod: the production origins match wrangler.jsonc (#1301)
 
   it("checks two different origins, so collapsing the constants cannot pass", () => {
     expect(PROD_ORIGIN).not.toBe(PROD_DOMAIN_ORIGIN);
+  });
+
+  it("aims the workers.dev check at the Worker wrangler.jsonc names, on the unfoldingWord account", () => {
+    // AGENTS.md: the Cloudflare account is unfoldingWord. The account
+    // subdomain is not in the config, so it is the one literal here.
+    expect(config.name).toBe("tc-mobile");
+    expect(new URL(PROD_ORIGIN).hostname).toBe(
+      `${config.name}.unfoldingword.workers.dev`
+    );
   });
 
   it("keeps the workers.dev origin on explicitly, since `routes` flips wrangler's default off", () => {
