@@ -141,6 +141,7 @@ describe("table entries that reach outside their own arguments (#169)", () => {
         "strings.shareBookMissing",
       ],
       shareBookPartial: ["strings.shareMissing"],
+      shareFilename: ["strings.chapterName"],
       shareMissing: ["couldNotBeIncluded"],
     });
   });

@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-import { clickEditRecording } from "./recorder-fixtures";
+import { clickEditRecording, editRecordingButton } from "./recorder-fixtures";
 import { seedToRecorder } from "./support/seed";
 
 /**
@@ -204,9 +204,9 @@ test("a Stop after Play from a mid-take line leaves the line past where it start
     await expect(startHandle).toBeVisible();
     const line = await valueOf(startHandle);
     const length = Number(await endHandle.getAttribute("aria-valuemax"));
-    await page
-      .getByRole("button", { name: "Done editing", exact: true })
-      .click();
+    // The ✕ toggle is the exit (#1252; #1243 removed the header's "Editing"
+    // pill, which was the direct "Done editing" button).
+    await editRecordingButton(page).click();
     await expect(startHandle).toHaveCount(0);
     return { line, length };
   };
