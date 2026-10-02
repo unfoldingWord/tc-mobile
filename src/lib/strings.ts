@@ -50,6 +50,9 @@
 import { plural } from "@/lib/plural";
 import { filenameSafe } from "@/lib/utils";
 
+/** What an armed restart destroys, named: `restartArmed` and `restartGone`. */
+export type RestartSubject = "recording" | "changes" | "cutAudio";
+
 /**
  * The verb every "did not make it into what's being shared" sentence uses.
  * `shareMissing`, `shareBookMissing`, and `shareBookMissingAndPartial`'s own
@@ -1037,6 +1040,40 @@ export const strings = {
   // crash unmounts `App` and `leave()` abandons an uncommitted take, so a
   // "everything you saved is still here" line would over-promise (George, r2).
   appReloadTeach: "The app will start again.",
+  // A restart armed over audio only this screen holds: the label on the
+  // second tap, then the line beside it. One whole sentence per loss (#169),
+  // so a second locale translates each rather than a phrase glued into a
+  // frame. `components/recovery-copy.ts` says which screen passes which, and
+  // why the cut clause exists. `cutAudio` IS the cut phrase, so the flag adds
+  // nothing to it.
+  restartArmed: (subject: RestartSubject, alsoCutAudio: boolean): string => {
+    switch (subject) {
+      case "recording":
+        return alsoCutAudio
+          ? "Tap again to restart and lose this recording and the audio you cut"
+          : "Tap again to restart and lose this recording";
+      case "changes":
+        return alsoCutAudio
+          ? "Tap again to restart and lose these changes and the audio you cut"
+          : "Tap again to restart and lose these changes";
+      case "cutAudio":
+        return "Tap again to restart and lose the audio you cut";
+    }
+  },
+  restartGone: (subject: RestartSubject, alsoCutAudio: boolean): string => {
+    switch (subject) {
+      case "recording":
+        return alsoCutAudio
+          ? "Tap again and this recording and the audio you cut are gone."
+          : "Tap again and this recording is gone.";
+      case "changes":
+        return alsoCutAudio
+          ? "Tap again and these changes and the audio you cut are gone."
+          : "Tap again and these changes are gone.";
+      case "cutAudio":
+        return "Tap again and the audio you cut is gone.";
+    }
+  },
   // In place of `appReload` while Restart waits for the crash row to finish
   // being written, and as the busy Notice under it — the same in-place relabel
   // `loadRetrying` and `takeRecoverRetrying` use (#137 G2). The wait is real on
