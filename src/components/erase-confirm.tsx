@@ -44,7 +44,7 @@ export interface EraseConfirmPreview {
 
 interface EraseConfirmProps {
   open: boolean;
-  /** The confirming line, e.g. "Erase this recording?". Copy is supplied by the
+  /** The confirming line, e.g. "Reset segment and start over". Copy is supplied by the
    *  integrator (strings.ts), never read here — this surface is pure UI. */
   title: string;
   /** Accessible name of the destructive action. */
@@ -57,19 +57,24 @@ interface EraseConfirmProps {
   busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
-  /** The icon in the badge. The bin by default: the segment Erase (13), the
-   *  book Delete (G6) and the failure log's Clear pass nothing and render
-   *  exactly as before. "record" is O4 G5, the record-again confirm (#979):
-   *  the workbench's record badge. The confirm BUTTON keeps the bin whatever
-   *  this says, because it erases and starts no take (#1022). The caller
-   *  decides, so this surface stays free of the design switch. */
-  badge?: "trash" | "record";
+  /** The action's own glyph, drawn on the confirm BUTTON and, unless `badge`
+   *  says otherwise, in the badge. The bin by default: the book Delete (G6),
+   *  the segment Delete and the failure log's Clear pass nothing. "eraser" is
+   *  the segment's Clear, which removes only the audio (the DRI's 2026-09-28
+   *  pick on #1119: one word and one icon for one action). */
+  glyph?: "trash" | "eraser";
+  /** The icon in the badge, when it differs from `glyph`. "record" is O4 G5,
+   *  the record-again confirm (#979): the workbench's record badge. The
+   *  confirm button keeps `glyph` whatever this says, because it clears and
+   *  starts no take (#1022). The caller decides, so this surface stays free
+   *  of the design switch. */
+  badge?: "trash" | "eraser" | "record";
   /**
    * The "Play what will be lost" row (#979 remainder). Omitted entirely by
    * default — the book Delete and the failure log's Clear render exactly as
    * before. Wired from `segments-screen.tsx`'s own segment Erase (the O4 "13"
    * dialog) and from `recorder.tsx`'s own G5 call site (the bar's bin, O4
-   * only — the ≡ menu's Erase and the clipboard's discard, which share this
+   * only — the ⋮ menu's Erase and the clipboard's discard, which share this
    * same dialog in that file, pass nothing).
    */
   preview?: EraseConfirmPreview;
@@ -78,8 +83,8 @@ interface EraseConfirmProps {
 /**
  * The erase confirmation (B6, D-CONFIRM).
  *
- * A minimal-text dialog: a badge (the bin, or the record dot for O4 G5), one
- * line, and two choices. Destructive,
+ * A minimal-text dialog: a badge (the action's glyph, or the record dot for
+ * O4 G5), one line, and two choices. Destructive,
  * so focus lands on Cancel — the safe action — not on Erase, and Escape or a
  * scrim tap resolves to Cancel too.
  *
@@ -96,7 +101,8 @@ export function EraseConfirm({
   busy = false,
   onConfirm,
   onCancel,
-  badge = "trash",
+  glyph = "trash",
+  badge = glyph,
   preview,
 }: EraseConfirmProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -271,7 +277,7 @@ export function EraseConfirm({
             className="confirm-cancel"
           />
           <Control
-            icon="trash"
+            icon={glyph}
             label={confirmLabel}
             variant="record"
             disabled={busy}

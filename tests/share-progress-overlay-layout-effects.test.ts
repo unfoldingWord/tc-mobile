@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { matchingBraceClose } from "./support";
+import { matchingBraceClose, stripComments } from "./support";
 
 /**
  * `ShareProgress`'s focus grab and its Escape/Tab capture listener are LAYOUT
@@ -38,12 +38,12 @@ import { matchingBraceClose } from "./support";
  * effect.
  */
 describe("ShareProgress's overlay focus/keyboard effects are layout effects (#517 item 4)", () => {
-  const source = readFileSync(
-    new URL("../src/components/share-progress.tsx", import.meta.url),
-    "utf8"
-  )
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/.*$/gm, "");
+  const source = stripComments(
+    readFileSync(
+      new URL("../src/components/share-progress.tsx", import.meta.url),
+      "utf8"
+    )
+  );
 
   function locate(guard: string) {
     const guardIndex = source.indexOf(guard);

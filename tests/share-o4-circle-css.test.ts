@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 
 import { SHARE_SETTLED, type ShareSettled } from "@/hooks/share-progress";
 
+import { stripCssComments } from "./support";
+
 /**
  * The O4 share circle's colours and rings (#947, D14 to D16), read from the
  * SOURCE stylesheet as declaration values per selector, never as a bare
@@ -17,10 +19,9 @@ import { SHARE_SETTLED, type ShareSettled } from "@/hooks/share-progress";
  * built bundle; the device check is #974).
  */
 
-const CSS = readFileSync(
-  path.join(process.cwd(), "src/app/styles/o4/share.css"),
-  "utf8"
-).replace(/\/\*[\s\S]*?\*\//g, "");
+const CSS = stripCssComments(
+  readFileSync(path.join(process.cwd(), "src/app/styles/o4/share.css"), "utf8")
+);
 
 interface Rule {
   readonly selectors: readonly string[];

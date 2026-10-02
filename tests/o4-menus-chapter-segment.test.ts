@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { Icon, type IconName } from "@/components/icon";
 import { SegmentsScreen } from "@/components/segments-screen";
 import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
@@ -12,6 +13,8 @@ import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow } from "@/types/view";
 
 import { areaRules, declsFor } from "./o4-area-css";
+import { render } from "./render";
+import { restingErase } from "./support";
 
 /**
  * #949's first slice: the chapter menu (G2), the segment menu (07) and
@@ -100,11 +103,7 @@ const audio = {
   playingId: null,
   playbackElapsedMs: 0,
 } as UseAudioSession;
-const erase = {
-  erase: vi.fn(async () => "ok" as const),
-  erasing: false,
-  isErasing: () => false,
-};
+const erase = restingErase();
 
 beforeEach(() => {
   layers.clear();
@@ -258,21 +257,31 @@ describe("the segment menu (07) on the tile grid", () => {
     async (_, row) => {
       await mount("current", row);
       await openRow();
+      // Delete (#590, moved here by #1104) is last, after Clear, as in the
+      // O4 tile grid (#1119); `eraseSegment` is Clear's name.
       expect(dialogNames()).toEqual([
         strings.menuClose,
         strings.editSegment(3, row.label),
         strings.markFinished(3),
         strings.renameSegment,
         strings.eraseSegment,
+        strings.deleteSegment,
       ]);
       expect(focusedName()).toBe(strings.editSegment(3, row.label));
     }
   );
 
-  it("keeps the current look's never-recorded menu: Rename alone, focused", async () => {
+  it("keeps the current look's never-recorded menu: Rename then Delete, focused on Rename (#590/#1104)", async () => {
     await mount("current", empty);
     await openRow();
-    expect(dialogNames()).toEqual([strings.menuClose, strings.renameSegment]);
+    // Delete is reachable here too, unconditionally — the whole point of
+    // #590's narrower gate: an accidentally added, never-recorded segment is
+    // exactly what it exists to remove.
+    expect(dialogNames()).toEqual([
+      strings.menuClose,
+      strings.renameSegment,
+      strings.deleteSegment,
+    ]);
     expect(focusedName()).toBe(strings.renameSegment);
   });
 
@@ -285,24 +294,37 @@ describe("the segment menu (07) on the tile grid", () => {
     async (_, row) => {
       await mount("o4", row);
       await openRow();
+      // Tile order is Done, Edit, Clear, Delete (the DRI's 2026-09-28 pick
+      // on #1119) — NOT the Edit-then-Done order the workbench itself draws,
+      // and Delete (#590, moved here by #1104) is new since D20 was drawn.
+      // `eraseSegment` is Clear's name ("Reset segment and start over").
       expect(dialogNames()).toEqual([
         strings.menuClose,
         strings.renameSegment,
         strings.playSegment(3),
-        strings.editSegment(3, row.label),
         strings.markFinished(3),
+        strings.editSegment(3, row.label),
         strings.eraseSegment,
+        strings.deleteSegment,
       ]);
       expect(focusedName()).toBe(strings.renameSegment);
     }
   );
 
-  it("draws Edit and Done, then Erase past a gap, with Rename as the head's pencil (#859, D20)", async () => {
+  it("draws Done, Edit, Clear and Delete with no gap, compact, with Rename as the head's pencil (#859, D20; order and compact per #1119)", async () => {
     await mount("o4", recorded);
     await openRow();
     // Edit and Done carry a hint slot (#135), so each sits in its
     // `.control-hinted` wrapper; read the grid's buttons, not its children.
+    // Order is Done, Edit, Clear, Delete, contiguous — NO gap. Four real
+    // tiles (this `recorded` fixture's hasClip case) do not fit the pinned
+    // 76 x 76 token at 320-360px (#1119 round 5, George Medium 1), so this
+    // grid drops the spacer entirely and goes `o4-tiles--compact`
+    // (`o4/menus.css`) instead of pushing Clear/Delete to the far end —
+    // there is no room left to push into. The three-tile, no-clip case below (`never-recorded segment`)
+    // still fits at full size and keeps its spacer.
     const grid = dialog().querySelector(".o4-tiles")!;
+    expect(grid.classList.contains("o4-tiles--compact")).toBe(true);
     expect(
       [...grid.querySelectorAll("button, .o4-tiles-gap")].map((el) =>
         el.classList.contains("o4-tiles-gap")
@@ -310,13 +332,14 @@ describe("the segment menu (07) on the tile grid", () => {
           : el.getAttribute("aria-label")
       )
     ).toEqual([
-      strings.editSegment(3, null),
       strings.markFinished(3),
-      "|",
+      strings.editSegment(3, null),
       strings.eraseSegment,
+      strings.deleteSegment,
     ]);
     expect(tone(tile(strings.editSegment(3, null)))).toBe("edit");
-    expect(tone(tile(strings.eraseSegment))).toBe("erase");
+    expect(tone(tile(strings.eraseSegment))).toBe("plain");
+    expect(tone(tile(strings.deleteSegment))).toBe("erase");
     const pen = button(strings.renameSegment);
     expect(pen.closest(".o4-sheet-bar"), "Rename sits in the head").not.toBe(
       null
@@ -324,6 +347,78 @@ describe("the segment menu (07) on the tile grid", () => {
     expect(pen.closest(".o4-tiles"), "Rename is not a tile").toBeNull();
     expect(pen.classList.contains("o4-head-pen")).toBe(true);
     expectCaptionInName();
+  });
+
+  // The DRI's 2026-09-28 Clear/Delete ruling (#1119): Clear removes only the
+  // audio and Delete removes the whole segment, so the two must not look
+  // alike. Clear wears the eraser on a neutral fill; only Delete keeps the
+  // bin and the destructive (red) fill.
+  describe("Clear and Delete look different (#1119, DRI 2026-09-28)", () => {
+    /** The markup the `Icon` component draws for `name`. */
+    function iconMarkup(name: IconName): string {
+      const svg = render(createElement(Icon, { name })).querySelector("svg");
+      expect(svg, name).not.toBeNull();
+      return svg!.innerHTML;
+    }
+
+    /** The drawn glyph inside a control, as markup. */
+    function glyphOf(el: Element): string {
+      const svg = el.querySelector("svg");
+      expect(svg, "a glyph").not.toBeNull();
+      return svg!.innerHTML;
+    }
+
+    it.each(LOOKS)(
+      "never gives Clear and Delete the same glyph (%s)",
+      async (look) => {
+        await mount(look, recorded);
+        await openRow();
+        // Exact glyphs, against the `Icon` component's own markup: Clear
+        // draws the eraser and Delete the bin, and the two references are
+        // themselves different drawings.
+        const eraser = iconMarkup("eraser");
+        const bin = iconMarkup("trash");
+        expect(eraser === bin).toBe(false);
+        expect(glyphOf(button(strings.eraseSegment))).toBe(eraser);
+        expect(glyphOf(button(strings.deleteSegment))).toBe(bin);
+      }
+    );
+
+    it("gives the destructive fill to Delete alone in the O4 segment menu", async () => {
+      await mount("o4", recorded);
+      await openRow();
+      const tiles = [...dialog().querySelectorAll(".o4-tiles button.o4-tile")];
+      expect(tiles.length).toBe(4);
+      const red = tiles.filter((el) => tone(el) === "erase");
+      expect(red.map((el) => el.getAttribute("aria-label"))).toEqual([
+        strings.deleteSegment,
+      ]);
+      expect(tone(tile(strings.eraseSegment))).toBe("plain");
+    });
+
+    it.each(LOOKS)(
+      "carries each glyph into its own confirm: eraser for Clear, bin for Delete (%s)",
+      async (look) => {
+        await mount(look, recorded);
+        const confirmGlyphs = () => {
+          const panel = document.querySelector(".confirm-panel");
+          expect(panel, "the confirm is up").not.toBeNull();
+          const badge = panel!.querySelector("svg.confirm-glyph");
+          const buttons = panel!.querySelectorAll(".confirm-actions > button");
+          expect(buttons).toHaveLength(2);
+          return [badge!.innerHTML, glyphOf(buttons[1]!)];
+        };
+        await openRow();
+        const clearGlyph = glyphOf(button(strings.eraseSegment));
+        const deleteGlyph = glyphOf(button(strings.deleteSegment));
+        await tap(strings.eraseSegment);
+        expect(confirmGlyphs()).toEqual([clearGlyph, clearGlyph]);
+        await tap(strings.eraseCancel);
+        await openRow();
+        await tap(strings.deleteSegment);
+        expect(confirmGlyphs()).toEqual([deleteGlyph, deleteGlyph]);
+      }
+    );
   });
 
   it("marks done grey until it is done, then the whole tile green (G8)", async () => {
@@ -365,17 +460,21 @@ describe("the segment menu (07) on the tile grid", () => {
     }
   );
 
-  it("shows Edit and Done greyed on a never-recorded segment, each saying why (o4, D20)", async () => {
+  it("shows Edit and Done greyed on a never-recorded segment, each saying why, and keeps Delete reachable (o4, D20, #590/#1104)", async () => {
     await mount("o4", empty);
     await openRow();
     const why = strings.nothingRecorded;
     const edit = `${strings.editSegment(3, null)}. ${why}`;
     const done = `${strings.markFinished(3)}. ${why}`;
+    // Done, Edit — greyed, hinted — then Delete, UNGREYED (#590's own
+    // field-tester ask: an accidentally added, never-recorded segment is
+    // exactly what Delete exists to remove). No Clear: nothing to clear.
     expect(dialogNames()).toEqual([
       strings.menuClose,
       strings.renameSegment,
-      edit,
       done,
+      edit,
+      strings.deleteSegment,
     ]);
     for (const name of [edit, done]) {
       const el = tile(name);
@@ -384,9 +483,22 @@ describe("the segment menu (07) on the tile grid", () => {
       expect(el.getAttribute("aria-disabled"), name).toBe("true");
       expect(el.disabled, name).toBe(false);
     }
-    // No Play on a segment with nothing to play.
+    const del = tile(strings.deleteSegment);
+    expect(del.getAttribute("aria-disabled")).toBeNull();
+    expect(del.disabled).toBe(false);
+    // No Play or Clear on a segment with nothing to play or clear.
     expect(dialogNames()).not.toContain(strings.playSegment(3));
+    expect(dialogNames()).not.toContain(strings.eraseSegment);
     expect(focusedName()).toBe(strings.renameSegment);
+    // Three real tiles (no Clear) already fit the pinned 76 x 76 token
+    // (#1119 round 5's arithmetic): this row keeps its spacer and stays at
+    // full size, unlike the four-tile `recorded` case above.
+    const grid = dialog().querySelector(".o4-tiles")!;
+    expect(grid.classList.contains("o4-tiles--compact")).toBe(false);
+    expect(
+      grid.querySelector(".o4-tiles-gap"),
+      "the 3-tile row keeps its spacer"
+    ).not.toBeNull();
   });
 
   it("plays the segment from the preview row through the row's own play path, menu left open (o4, D20)", async () => {
@@ -419,7 +531,11 @@ describe("the segment menu (07) on the tile grid", () => {
     expect(head).not.toBeNull();
     expect(head!.getAttribute("aria-hidden")).toBe("true");
     const crumbs = [...head!.querySelectorAll(".o4-crumb")];
-    expect(crumbs.map((c) => c.textContent)).toEqual(["Mark", "4", "3"]);
+    expect(crumbs.map((c) => c.textContent)).toEqual([
+      "Mark",
+      "Chapter 4",
+      "3",
+    ]);
     expect(crumbs[2]!.getAttribute("data-state")).toBe("finished");
   });
 
@@ -448,7 +564,7 @@ describe("the segment menu (07) on the tile grid", () => {
     // The crumbs themselves are unaffected — only the square is left out.
     expect(
       [...head!.querySelectorAll(".o4-crumb")].map((c) => c.textContent)
-    ).toEqual(["Mark", "4", "3"]);
+    ).toEqual(["Mark", "Chapter 4", "3"]);
   });
 
   it("moves the segment's name into the preview row, beside its badge and wave", async () => {
@@ -474,6 +590,18 @@ describe("the segment menu (07) on the tile grid", () => {
     // Not in the header any more.
     expect(dialog().querySelector(".o4-sheet-head")?.textContent).not.toMatch(
       /the sower/
+    );
+  });
+
+  it("sets the direction of the segment's typed name in the preview row (#1267)", async () => {
+    await mount("o4", titled);
+    await openRow();
+    expect(dialog().querySelector(".o4-menu-title")?.getAttribute("dir")).toBe(
+      "auto"
+    );
+    // The badge is a bare number: no direction of its own.
+    expect(dialog().querySelector(".o4-menu-badge")?.hasAttribute("dir")).toBe(
+      false
     );
   });
 
@@ -539,7 +667,7 @@ describe("the chapter menu (G2) on the tile grid", () => {
     expect(head?.getAttribute("aria-hidden")).toBe("true");
     expect(
       [...head!.querySelectorAll(".o4-crumb")].map((c) => c.textContent)
-    ).toEqual(["Mark", "4"]);
+    ).toEqual(["Mark", "Chapter 4"]);
   });
 
   it("draws the book's cover-colour square before the crumbs (#949, #957)", async () => {
@@ -619,7 +747,10 @@ describe("o4/menus.css, #949's chapter and segment menu section", () => {
     const crumb = declsFor(rules, `${O4} .o4-crumb`);
     expect(crumb.get("height")).toBe("40px");
     expect(crumb.get("background")).toBe("var(--s-well)");
-    expect(crumb.get("clip-path")).toMatch(/13px/);
+    // The chevron is one property (#1269), so a linked crumb's
+    // pseudo-element draws the same shape; the clip reads it.
+    expect(crumb.get("--o4-crumb-shape")).toMatch(/13px/);
+    expect(crumb.get("clip-path")).toBe("var(--o4-crumb-shape)");
     const finished = declsFor(rules, `${O4} .o4-crumb[data-state="finished"]`);
     expect(finished.get("background")).toBe("var(--s-done-quiet)");
     expect(finished.get("color")).toBe("var(--s-done-text)");

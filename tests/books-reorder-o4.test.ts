@@ -12,6 +12,8 @@ import { strings } from "@/lib/strings";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
+import { stripCssComments } from "./support";
+
 /**
  * Press-and-hold reorder of CHAPTERS on the Books screen (#953 PR2b), wired:
  * the real `BooksScreen`, with `useBooks` and `useDesign` replaced at their
@@ -476,10 +478,12 @@ describe("the switch-off look does not gain the gesture", () => {
 });
 
 describe("o4/books.css: the lift (§3, §4)", () => {
-  const code = readFileSync(
-    path.resolve(import.meta.dirname, "../src/app/styles/o4/books.css"),
-    "utf8"
-  ).replace(/\/\*[\s\S]*?\*\//g, "");
+  const code = stripCssComments(
+    readFileSync(
+      path.resolve(import.meta.dirname, "../src/app/styles/o4/books.css"),
+      "utf8"
+    )
+  );
   const reduced = code.indexOf("@media (prefers-reduced-motion: reduce)");
   const main = code.slice(0, reduced === -1 ? code.length : reduced);
   const motion = reduced === -1 ? "" : code.slice(reduced);
@@ -523,10 +527,12 @@ describe("o4/books.css: the lift (§3, §4)", () => {
   });
 
   it("casts the lift shadow from o4/segments.css's one rule, on the item rather than the guided button", () => {
-    const segments = readFileSync(
-      path.resolve(import.meta.dirname, "../src/app/styles/o4/segments.css"),
-      "utf8"
-    ).replace(/\/\*[\s\S]*?\*\//g, "");
+    const segments = stripCssComments(
+      readFileSync(
+        path.resolve(import.meta.dirname, "../src/app/styles/o4/segments.css"),
+        "utf8"
+      )
+    );
     expect(decls(segments, `${O4} .books-lifted`)).toContain(
       "box-shadow: 0 14px 30px rgba(0, 0, 0, 0.38)"
     );

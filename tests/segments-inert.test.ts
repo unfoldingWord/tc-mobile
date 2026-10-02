@@ -10,7 +10,7 @@ import {
  *
  * **What this file is for, said before the rows so nobody mistakes it for
  * testing a disjunction.** The operator is `||` and nobody needed a test for
- * that. What these rows pin is the SET of terms — that these four conditions,
+ * that. What these rows pin is the SET of terms — that these five conditions,
  * and no fewer, take the header and list out of the focus and pointer tree.
  *
  * That set is load-bearing beyond accessibility. `dismissOverlays()`
@@ -21,6 +21,9 @@ import {
  * Record control unreachable for exactly as long as the erase runs. Delete that
  * term and the argument is silently false: a tap on Record would open the
  * recorder over a committing delete of the very row it opens.
+ * `deleteConfirmOpen` (#1104, added when Delete segment moved to this screen
+ * from the recorder's ⋮ menu) carries the identical argument for the delete
+ * confirm's own in-flight window.
  *
  * Each row isolates one term of the predicate. These pure-function tests do
  * not establish that the screen applies the result to the DOM or that the
@@ -29,6 +32,7 @@ import {
 
 const nothingOpen: SegmentsOverlayState = {
   eraseConfirmOpen: false,
+  deleteConfirmOpen: false,
   rowMenuOpen: false,
   chapterMenuOpen: false,
   shareOwnsScreen: false,
@@ -51,6 +55,10 @@ describe("segmentsListInert", () => {
     {
       term: "eraseConfirmOpen",
       why: "the term Amendment C's erase-in-flight decision rests on: it must hold for the whole of `clearSegmentTake`, not just while the dialog awaits a tap",
+    },
+    {
+      term: "deleteConfirmOpen",
+      why: "the delete confirm's own in-flight window (#1104) — Record must not be reachable over a segment's own row being deleted, the same argument `eraseConfirmOpen` makes for erase",
     },
     {
       term: "rowMenuOpen",
@@ -76,6 +84,7 @@ describe("segmentsListInert", () => {
     expect(
       segmentsListInert({
         eraseConfirmOpen: true,
+        deleteConfirmOpen: false,
         rowMenuOpen: true,
         chapterMenuOpen: false,
         shareOwnsScreen: false,
@@ -84,6 +93,7 @@ describe("segmentsListInert", () => {
     expect(
       segmentsListInert({
         eraseConfirmOpen: false,
+        deleteConfirmOpen: true,
         rowMenuOpen: false,
         chapterMenuOpen: true,
         shareOwnsScreen: true,

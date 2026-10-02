@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { stripCssComments } from "./support";
+
 /**
  * One O4 area stylesheet (`src/app/styles/o4/<area>.css`), read as rules
  * rather than as a raw string.
@@ -22,7 +24,7 @@ export interface CssRule {
 
 export function areaRules(area: string): CssRule[] {
   const file = path.join(process.cwd(), "src/app/styles/o4", `${area}.css`);
-  const text = readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const text = stripCssComments(readFileSync(file, "utf8"));
   const open = text.indexOf("@layer components");
   const body = text.slice(text.indexOf("{", open) + 1, text.lastIndexOf("}"));
   return [...body.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, sel, block]) => ({

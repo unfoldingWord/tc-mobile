@@ -861,7 +861,7 @@ test("clear empties the log, and it stays empty across a reload", async ({
   await page.getByRole("button", { name: "Clear problem report" }).click();
 
   // The bin arms a confirm rather than clearing (George R2 P3-3) — the same
-  // dialog the segment Erase and the book Delete use.
+  // dialog the segment Clear and the book Delete use.
   const confirm = page.getByRole("dialog", {
     name: "Clear the problem report?",
   });

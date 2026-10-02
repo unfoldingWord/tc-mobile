@@ -236,9 +236,9 @@ it("stays in the sheet, in record mode, on the committed audio", async () => {
   expect(s.onExit).not.toHaveBeenCalled();
   // NOT edit mode either: until #871, `commitTake` also served an Edit entry
   // and took an argument saying which, and passing the wrong one here would
-  // have opened the edit toolbar on a plain Stop. The pill is the mode marker
+  // have opened the edit toolbar on a plain Stop. "Editing" is the mode marker
   // a sighted non-reader has (D2).
-  expect(document.body.textContent).not.toContain(strings.modepillEditing);
+  expect(document.body.textContent).not.toContain(strings.editingMarker);
   // Back at idle: the control is Record again, ready to append at the line.
   expect(s.button(strings.record)).toBeDefined();
   expect(s.button(strings.stop)).toBeUndefined();
@@ -375,7 +375,7 @@ it("a Stop whose decode failed stays in place when Try again succeeds", async ()
   expect(s.saveRecording).toHaveBeenCalledOnce();
   // The whole point: still here, still in record mode, with the panel gone.
   expect(s.onExit).not.toHaveBeenCalled();
-  expect(document.body.textContent).not.toContain(strings.modepillEditing);
+  expect(document.body.textContent).not.toContain(strings.editingMarker);
   expect(s.button(strings.record)).toBeDefined();
 });
 
@@ -418,7 +418,7 @@ it("a live take keeps the Edit toggle disabled (#857)", async () => {
   // refuses one — this is the behavioural half `menu-row-state.test.ts`'s
   // pure-function assertion cannot reach: the tap never even started a stop.
   expect(s.audio.stopRecording).not.toHaveBeenCalled();
-  expect(document.body.textContent).not.toContain(strings.modepillEditing);
+  expect(document.body.textContent).not.toContain(strings.editingMarker);
 });
 
 // #869 round 3 (George Medium): `"uncommitted-take"` also covers the commit
@@ -448,6 +448,15 @@ it("the commit window after Stop does not tell the translator to stop (#857)", a
 
   await act(async () => settle());
   await s.render();
+
+  // #869 item 3 (George r5 L3): the commit window is not the whole story —
+  // once `commitTake`'s reload settles (`recorder.tsx`'s `setIsClosing(false)`
+  // in its success arm), Edit is usable again. `Control` (`control.tsx`) never
+  // renders `aria-busy` once `busy` is false, and with `editReason` back to
+  // `null` the toggle is neither natively `disabled` nor soft-`aria-disabled`.
+  expect(toggle!.getAttribute("aria-busy")).toBeNull();
+  expect(toggle!.disabled).toBe(false);
+  expect(toggle!.getAttribute("aria-disabled")).toBeNull();
 });
 
 it("a Back's recovery exits to Segments, unchanged", async () => {

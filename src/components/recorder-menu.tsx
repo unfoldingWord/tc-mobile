@@ -8,15 +8,22 @@ import { strings } from "@/lib/strings";
 import { ThemeControl } from "./theme-control";
 
 /**
- * The recorder sheet's ≡ menu (#160, L-1).
+ * The recorder sheet's ⋮ menu (#160, L-1).
  *
  * A hundred lines of JSX lifted out of a 4000-line component, and the split is
- * where it is because every input is already a DERIVED value: the four row
- * reasons (edit, mark, erase, delete — the last added by #590) come from
- * `menu-row-state.ts`, `finishedState` from the resolved state the store will
- * write, and the rest are handlers. Nothing here reads the recorder's audio,
- * editor or viewport state, which is what made this the first of L-1's three
- * JSX splits worth doing — the toolbars read far more.
+ * where it is because every input is already a DERIVED value: the three row
+ * reasons (edit, mark, erase) come from `menu-row-state.ts`, `finishedState`
+ * from the resolved state the store will write, and the rest are handlers.
+ * Nothing here reads the recorder's audio, editor or viewport state, which is
+ * what made this the first of L-1's three JSX splits worth doing — the
+ * toolbars read far more.
+ *
+ * **Delete segment does NOT live here** (#1104, the requirements owner's
+ * 2026-09-26 decision, superseding #590's original placement): "the menu
+ * inside the segment editor (recorder) shows Erase only. Delete (removing the
+ * whole segment) belongs to the chapter view." #1080 (PR2 of #590) had put a
+ * Delete row/tile in both modes of both looks here; #1104 pulled it back out.
+ * The chapter view's own row menu (`segment-row.tsx`) carries Delete now.
  *
  * It renders one of two row sets, keyed on the sheet's mode. Every reason the
  * rows can be grey is passed in rather than re-derived, so the row and the
@@ -57,19 +64,10 @@ export interface RecorderMenuProps {
   markReason: RowReason | null;
   /** Why Erase is unavailable, or null. Shared by both modes' rows. */
   eraseReason: RowReason | null;
-  /**
-   * Why Delete segment is unavailable, or null. Shared by both modes' rows
-   * (#590) — unlike `eraseReason`, this does NOT require stored audio; see
-   * `deleteRowReason` in `menu-row-state.ts`.
-   */
-  deleteReason: RowReason | null;
   onEnterEdit: () => void;
   onToggleFinished: () => void;
   /** Close the menu and arm the erase confirm. */
   onErase: () => void;
-  /** Close the menu and arm the delete-segment confirm (#590). */
-  onDeleteSegment: () => void;
-  onExitEdit: () => void;
   /**
    * The book's name, the O4 sheet head's first crumb (workbench G3). Read
    * only in the O4 look; absent, that crumb is left out.
@@ -84,6 +82,13 @@ export interface RecorderMenuProps {
   bookCoverHex?: string;
   /** The chapter's number, the O4 sheet head's second crumb. */
   chapterNumber?: number;
+  /**
+   * The chapter's resolved name (`strings.chapterHeading`), shown in place
+   * of `chapterNumber` when given, so the head matches the recorder header
+   * it was opened from (#1230). `recorder.tsx` always passes it once the
+   * view has loaded.
+   */
+  chapterHeading?: string;
 }
 
 export function RecorderMenu({
@@ -95,15 +100,13 @@ export function RecorderMenu({
   editReason,
   markReason,
   eraseReason,
-  deleteReason,
   onEnterEdit,
   onToggleFinished,
   onErase,
-  onDeleteSegment,
-  onExitEdit,
   bookName,
   bookCoverHex,
   chapterNumber,
+  chapterHeading,
 }: RecorderMenuProps) {
   // ONE answer for "this segment is marked", read by both the label and the
   // paint. They were two expressions that disagreed: the label also required a
@@ -123,18 +126,19 @@ export function RecorderMenu({
       title={strings.recorderMenuTitle}
       // `hamburger` (#621, the requirements owner's call on this panel,
       // after #608 set the rule on the global menu): this drawer's own
-      // dismiss stays a ≡, top-right, and is what dismisses it — no "More"
-      // heading, and no chevron, because a chevron pointing LEFT reads as
-      // "move left" on a drawer that docks on the RIGHT. That holds
-      // regardless of which control opened it: record mode's header opener
-      // is ≡, but since #863 the edit toolbar's opener is ⋮ (≡ is used only
-      // at the top right, and the toolbar is not the top right) — the
-      // drawer's own top-right control is the only ≡ on screen either way.
-      // The book, chapter and segment menus open from a ⋮ since #589 and
-      // keep the chevron; this drawer keeps ≡ no matter which opener it was.
+      // dismiss is a single glyph, top-right, and is what dismisses it — no
+      // "More" heading, and no chevron, because a chevron pointing LEFT reads
+      // as "move left" on a drawer that docks on the RIGHT. Since #1225 that
+      // glyph is ⋮ (`dismissIcon="more"`), not ≡: this menu acts on the
+      // segment being edited, an object menu under the #608/#683 rule ("kebab
+      // on objects, hamburger for global"), and both of its openers — record
+      // mode's header and the edit toolbar — are ⋮ too, so the dismiss
+      // matches whichever one opened it. ≡ belongs to the Books screen's
+      // global menu alone.
       hamburger
+      dismissIcon="more"
     >
-      {/* ONE <Menu> for both looks, so the surface — its title, the ≡
+      {/* ONE <Menu> for both looks, so the surface — its title, the ⋮
           dismiss, focus trap and Escape — cannot differ between them; only
           what sits inside it does. The O4 grid ends with the theme tile past
           the spacer, last for the reason the current rows below give. */}
@@ -148,7 +152,7 @@ export function RecorderMenu({
         <O4SheetHead
           book={bookName}
           bookCoverHex={bookCoverHex}
-          chapter={chapterNumber}
+          chapter={chapterHeading ?? chapterNumber}
           segment={
             ordinal === null
               ? undefined
@@ -171,11 +175,8 @@ export function RecorderMenu({
             ordinal={ordinal}
             markReason={markReason}
             eraseReason={eraseReason}
-            deleteReason={deleteReason}
             onToggleFinished={onToggleFinished}
             onErase={onErase}
-            onDeleteSegment={onDeleteSegment}
-            onExitEdit={onExitEdit}
           />
           <TileSpacer />
           <ThemeControl tile />
@@ -220,8 +221,8 @@ export function RecorderMenu({
             // that lies until close (George R1). `finishedState === "finished"`
             // is true only when the mark will stick.
             //
-            // One fixed label, and `pressed` says the state (#351) — the
-            // `DesignControl` pattern. The label used to flip to "Mark segment
+            // One fixed label, and `pressed` says the state (#351), the way
+            // the zoom and level-meter toggles do. The label used to flip to "Mark segment
             // N not done", and beside `aria-pressed` that flip would announce
             // "not done, pressed", naming the opposite of the state.
             label={strings.markFinished(ordinal ?? 0)}
@@ -242,7 +243,7 @@ export function RecorderMenu({
             onClick={onToggleFinished}
           />
           <Control
-            icon="trash"
+            icon="eraser"
             label={strings.eraseSegment}
             variant="quiet"
             // Only when there is stored audio to erase (a first, uncommitted
@@ -255,21 +256,9 @@ export function RecorderMenu({
             hint={rowHint(eraseReason)}
             onClick={onErase}
           />
-          <Control
-            icon="trash"
-            label={strings.deleteSegment}
-            variant="quiet"
-            // #590: deletes the ROW, not only its audio — unlike Erase above,
-            // reachable on a never-recorded segment (no `hasClip` gate). Still
-            // refused mid-capture, the same reason Erase is (George R-B6).
-            // Gate + reason from `deleteRowReason` (menu-row-state.ts).
-            disabled={deleteReason !== null}
-            hint={rowHint(deleteReason)}
-            onClick={onDeleteSegment}
-          />
           {/* The theme toggle (#149). LAST in both branches, so that WHEREVER A
               ROW ABOVE IS ACTIONABLE the open-edge focus still lands on it —
-              Edit / Done, what the translator opened this menu for — rather than
+              Edit / Erase, what the translator opened this menu for — rather than
               on a control that repaints the screen. Where none of them is, focus
               lands here, and that is the correct outcome rather than a regression
               to repair by reordering: see the consequence stated below, which is
@@ -280,7 +269,7 @@ export function RecorderMenu({
               `aria-modal` over an `inert` Segments, so while it is up the Books
               hamburger is four screens away, and direct sun is exactly the
               condition that arrives while you are recording. The opener for this
-              menu — the header's `≡`, or the edit toolbar's `⋮` since #863 — is
+              menu — the header's `⋮` (#1225), in both modes since #1243 — is
               itself closed through the close window, while `denied`,
               and while a take is held — the panels those states raise own the
               body — so the toggle inherits those gates rather than adding its own.
@@ -299,14 +288,11 @@ export function RecorderMenu({
         </>
       ) : (
         <>
+          {/* No "Done editing" row (#1252, the requirements owner): "Done"
+              keeps one meaning, mark finished, and the toolbar's ✕ leaves
+              edit mode. */}
           <Control
-            icon="check"
-            label={strings.doneEditing}
-            variant="quiet"
-            onClick={onExitEdit}
-          />
-          <Control
-            icon="trash"
+            icon="eraser"
             label={strings.eraseSegment}
             variant="quiet"
             // Kept reachable from edit mode too — erasing is a segment-level op
@@ -314,15 +300,6 @@ export function RecorderMenu({
             disabled={eraseReason !== null}
             hint={rowHint(eraseReason)}
             onClick={onErase}
-          />
-          <Control
-            icon="trash"
-            label={strings.deleteSegment}
-            variant="quiet"
-            // Kept reachable from edit mode too, same as Erase above (#590).
-            disabled={deleteReason !== null}
-            hint={rowHint(deleteReason)}
-            onClick={onDeleteSegment}
           />
           {/* Same entry, same last position, in edit mode too — see the
               record-mode branch above for why. */}
@@ -336,7 +313,7 @@ export function RecorderMenu({
 /**
  * The O4 look of this menu's action tiles (#949, workbench G3 and G8),
  * mounted inside the same `<Menu>` as the current rows — focus trap, Escape,
- * scrim, heading and ≡ dismiss unchanged — on the O4 grid, which
+ * scrim, heading and ⋮ dismiss unchanged — on the O4 grid, which
  * `o4/menus.css` turns into a bottom sheet capped at half the screen, so the
  * waveform above is meant to stay in view (#927).
  *
@@ -360,26 +337,23 @@ function RecorderMenuTiles({
   ordinal,
   markReason,
   eraseReason,
-  deleteReason,
   onToggleFinished,
   onErase,
-  onDeleteSegment,
-  onExitEdit,
 }: Pick<
   RecorderMenuProps,
   | "mode"
   | "ordinal"
   | "markReason"
   | "eraseReason"
-  | "deleteReason"
   | "onToggleFinished"
   | "onErase"
-  | "onDeleteSegment"
-  | "onExitEdit"
 > & { marked: boolean }) {
   return (
     <>
-      {mode === "record" ? (
+      {/* Edit mode has no Done tile (#1252, the requirements owner): "Done"
+          keeps one meaning, mark finished, and the toolbar's ✕ leaves edit
+          mode. */}
+      {mode === "record" && (
         <Tile
           tone={marked ? "done" : "doneoff"}
           icon="check"
@@ -394,37 +368,19 @@ function RecorderMenuTiles({
           hint={rowHint(markReason)}
           onClick={onToggleFinished}
         />
-      ) : (
-        <Tile
-          tone="plain"
-          icon="check"
-          label={strings.doneEditing}
-          caption={strings.tileDone}
-          className="recorder-menu-tile"
-          onClick={onExitEdit}
-        />
       )}
+      {/* Clear (the DRI's 2026-09-28 pick on #1119): the eraser on the plain
+          well. Red is kept for Delete, which removes a whole segment and
+          lives only in the chapter view (#1104). */}
       <Tile
-        tone="erase"
-        icon="trash"
+        tone="plain"
+        icon="eraser"
         label={strings.eraseSegment}
         caption={strings.tileErase}
         className="recorder-menu-tile"
         disabled={eraseReason !== null}
         hint={rowHint(eraseReason)}
         onClick={onErase}
-      />
-      <Tile
-        tone="erase"
-        icon="trash"
-        label={strings.deleteSegment}
-        caption={strings.tileDelete}
-        className="recorder-menu-tile"
-        // #590: same erase tone (both are destructive), gated by its own
-        // reason — enabled on a never-recorded segment, unlike Erase.
-        disabled={deleteReason !== null}
-        hint={rowHint(deleteReason)}
-        onClick={onDeleteSegment}
       />
     </>
   );

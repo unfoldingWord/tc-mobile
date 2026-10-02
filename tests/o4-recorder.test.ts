@@ -10,7 +10,13 @@ import { recorderLook, type RecorderLook } from "@/components/recorder-look";
 import { RecorderStamp } from "@/components/recorder-o4";
 import { PlayheadOverlay } from "@/components/playhead-overlay";
 import { render } from "./render";
-import { cssRule, region, stripComments, uniqueIndexOf } from "./support";
+import {
+  cssRule,
+  region,
+  stripComments,
+  stripCssComments,
+  uniqueIndexOf,
+} from "./support";
 
 /**
  * The O4 Recorder (#945, epic #936): states 08 idle, 09 recording, 10
@@ -38,20 +44,18 @@ const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8");
  * selector on the line that opens its block.
  */
 function flatten(css: string): string {
-  return css
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(
-      /([;{}])\s*([^;{}]+?)\s*\{/g,
-      (_, end: string, sel: string) =>
-        `${end}\n  ${sel.replace(/\s+/g, " ").trim()} {`
-    );
+  return stripCssComments(css).replace(
+    /([;{}])\s*([^;{}]+?)\s*\{/g,
+    (_, end: string, sel: string) =>
+      `${end}\n  ${sel.replace(/\s+/g, " ").trim()} {`
+  );
 }
 const CSS = flatten(read("src/app/styles/o4/recorder.css"));
 const O4 = '[data-design="o4"]';
 
 /** Every selector list that opens a style rule (not an at-rule). */
 function ruleSelectors(css: string): string[] {
-  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const stripped = stripCssComments(css);
   return [...stripped.matchAll(/([^{};]+)\{/g)]
     .map((m) => (m[1] ?? "").trim())
     .filter((s) => s !== "" && !s.startsWith("@"));
@@ -72,7 +76,7 @@ describe("o4/recorder.css is scoped and stays on the colour roles (#945)", () =>
   });
 
   it("reads colour only through layer-2 roles, never a primitive or a literal", () => {
-    const stripped = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+    const stripped = stripCssComments(CSS);
     const values = [...stripped.matchAll(/[\w-]+\s*:\s*([^;{}]+);/g)].map(
       (m) => m[1] ?? ""
     );
@@ -221,7 +225,7 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
     expect(toggle).toMatch(/height:\s*64px/);
   });
 
-  it("sets no ink on the transport, so the pressed toggle's is-on ink still wins", () => {
+  it("sets no ink on the transport, so the zoom toggle's is-on ink still wins", () => {
     for (const sel of [
       `${O4} .recorder-toolbar.pair .control:not(.control--record):not(.control--play)`,
       `${O4} .recorder-toolbar.edit .control`,
@@ -233,7 +237,7 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
     // The inert look is `3-components.css`'s `.control:disabled` /
     // `[aria-disabled]` dim and desaturate. Overriding opacity or filter in
     // O4 would un-grey a control the current look greys.
-    const stripped = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+    const stripped = stripCssComments(CSS);
     expect(stripped).not.toMatch(/(^|[\s;{])opacity\s*:/);
     expect(stripped).not.toMatch(/(^|[\s;{])filter\s*:/);
   });

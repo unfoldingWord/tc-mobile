@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EraseConfirm } from "@/components/erase-confirm";
 
+import { stripCssComments } from "./support";
+
 /**
  * The O4 confirm dialog (#946: states 13 Erase confirm, G5 Record again asks
  * first, G6 Delete book asks first).
@@ -34,10 +36,12 @@ import { EraseConfirm } from "@/components/erase-confirm";
  */
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const CSS = readFileSync(
-  path.join(ROOT, "src", "app", "styles", "o4", "dialogs.css"),
-  "utf8"
-).replace(/\/\*[\s\S]*?\*\//g, "");
+const CSS = stripCssComments(
+  readFileSync(
+    path.join(ROOT, "src", "app", "styles", "o4", "dialogs.css"),
+    "utf8"
+  )
+);
 
 const SCOPE = '[data-design="o4"]';
 

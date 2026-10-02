@@ -2,7 +2,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 /**
  * The toolbar's "Edit recording" control (`.recorder-toolbar`, not the
- * ≡-menu's own "Edit recording" row), clicked safely.
+ * ⋮-menu's own "Edit recording" row), clicked safely.
  *
  * #846/#848/#825: every spec that records a take, taps Stop, and then taps
  * this control raced it — "Selection start" never mounted, on
@@ -57,9 +57,12 @@ import { expect, type Locator, type Page } from "@playwright/test";
  * element is tracked through every name it wears.
  */
 export function editRecordingButton(page: Page): Locator {
+  // Either state of the one toggle (#1252): "Edit recording" (scissors) in
+  // record mode, "Stop editing" (✕) while editing — so a spec can hold one
+  // locator across the flip and tap it to leave.
   return page
     .locator(".recorder-toolbar")
-    .getByRole("button", { name: /^Edit recording/ });
+    .getByRole("button", { name: /^(Edit recording|Stop editing$)/ });
 }
 
 /** Click the toolbar's Edit control once the commit it may be racing has

@@ -37,11 +37,14 @@ import { LIGHT_FLOOR, floorOf, resolved } from "./support/theme";
  * same flags are scoped to this file (`test.use` at file scope below) —
  * there is no describe here, for the reason given above.
  *
- * WHAT IS ASSERTED. Four observables, and the wording stops where they do
+ * WHAT IS ASSERTED. Five observables, and the wording stops where they do
  * (Frank round 9, #623). After the toggle: the transport still offers Stop,
- * the elapsed readout has ADVANCED past a sample taken at the tap, the menu
- * still offers the way back, and the take lands — `aria-busy` clears and the
- * erase row becomes actionable, so the reloaded view found a clip.
+ * the elapsed readout has ADVANCED past a sample taken at the tap, the
+ * readout is the SAME TAKE's (#861: every value it took across the toggle,
+ * read off the DOM rather than sampled, never went down, and it is still the
+ * same element), the menu still offers the way back, and the take lands —
+ * `aria-busy` clears and the erase row becomes actionable, so the reloaded
+ * view found a clip.
  *
  * WHAT IS NOT ASSERTED, and why the obvious stronger sentence is absent.
  * This does NOT establish that audio capture continued after the toggle. The
@@ -72,7 +75,17 @@ test.use({
 });
 
 /**
- * The transport's elapsed readout, in seconds.
+ * The transport's elapsed readout, scoped to the recorder sheet (#861). A
+ * document-global `.t-timer` fails closed under strict mode if a second one
+ * appears, but the failure would then name the locator rather than the take.
+ */
+const timer = (page: Page) =>
+  page
+    .getByRole("dialog", { name: "Recorder", exact: true })
+    .locator(".t-timer");
+
+/**
+ * A readout string, in seconds.
  *
  * The shape is pinned and a miss THROWS rather than returning `NaN` (George
  * round 1, #623). `split(":")` + `Number` turns any unexpected string into
@@ -82,14 +95,87 @@ test.use({
  * pattern is `formatDuration`'s own output (`src/lib/utils.ts`): minutes
  * zero-padded to two but not capped there, seconds always exactly two.
  */
-const elapsedSeconds = async (page: Page) => {
-  const text = (await page.locator(".t-timer").innerText()).trim();
+const toSeconds = (raw: string) => {
+  const text = raw.trim();
   const match = /^(\d{2,}):(\d{2})$/.exec(text);
   if (!match) {
     throw new Error(`elapsed readout is not MM:SS: ${JSON.stringify(text)}`);
   }
   return Number(match[1]) * 60 + Number(match[2]);
 };
+
+const elapsedSeconds = async (page: Page) =>
+  toSeconds(await timer(page).innerText());
+
+/** What `watchTake` leaves on `window` for `readTakeWatch` to collect. */
+type TakeWatch = {
+  node: Element;
+  readings: string[];
+  observer: MutationObserver;
+  collect: (records: MutationRecord[]) => void;
+};
+
+/**
+ * Start recording EVERY value the readout takes, in the page (#861).
+ *
+ * The question is take identity: is the take after the toggle the same one
+ * that was running before it? A comparison against one sample cannot answer
+ * it — a take that restarted at `00:00` and climbed back past the sample
+ * satisfies "advanced" — and sampling from here on an interval can miss the
+ * dip between two samples. So this does not sample. A `MutationObserver` on
+ * the readout sees each change React writes to it, and `characterDataOldValue`
+ * (plus the text of any replaced text node) keeps the value each change
+ * overwrote, so a dip cannot hide inside one callback's batch of records.
+ *
+ * Two ways a restart can look, and each has its own witness in
+ * `readTakeWatch`: a clock reset in place shows as a DECREASE in this
+ * sequence, and a remounted readout leaves the node watched here detached, so
+ * the sheet's readout is no longer the same element.
+ */
+const watchTake = (page: Page) =>
+  timer(page).evaluate((node) => {
+    const readings = [node.textContent ?? ""];
+    const collect = (records: MutationRecord[]) => {
+      for (const record of records) {
+        if (record.type === "characterData" && record.oldValue !== null) {
+          readings.push(record.oldValue);
+        }
+        for (const removed of record.removedNodes) {
+          if (removed.nodeType === Node.TEXT_NODE) {
+            readings.push(removed.textContent ?? "");
+          }
+        }
+      }
+      readings.push(node.textContent ?? "");
+    };
+    const observer = new MutationObserver(collect);
+    observer.observe(node, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      characterDataOldValue: true,
+    });
+    const watch: TakeWatch = { node, readings, observer, collect };
+    (window as unknown as { __takeWatch: TakeWatch }).__takeWatch = watch;
+  });
+
+/**
+ * Stop the watch and return what it saw: every reading, in order, and whether
+ * the sheet's readout is still the element the watch started on.
+ */
+const readTakeWatch = (page: Page) =>
+  timer(page).evaluate((current) => {
+    const watch = (window as unknown as { __takeWatch: TakeWatch }).__takeWatch;
+    // The observer's callback may not have run for the last few changes yet;
+    // `takeRecords` hands those over, and `collect` ends the list with the
+    // current value.
+    watch.collect(watch.observer.takeRecords());
+    watch.observer.disconnect();
+    return {
+      readings: watch.readings,
+      sameReadout: watch.node === current && watch.node.isConnected,
+    };
+  });
 
 test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the take lands", async ({
   page,
@@ -109,7 +195,7 @@ test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the 
   // rather than one reading against a clock that had not started.
   await expect.poll(() => elapsedSeconds(page)).toBeGreaterThan(0);
 
-  // The `≡` stays reachable mid-take on purpose, which is what makes the
+  // The `⋮` stays reachable mid-take on purpose, which is what makes the
   // toggle reachable here at all. The OPENER is gated on `!view`, the close
   // window, `denied` and a held take (`recorder.tsx`) — recording is not among
   // them — and the rows inside are gated one by one. So the menu being open
@@ -134,6 +220,10 @@ test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the 
   // the time they take is time the clock is free to advance in. That is why
   // this proves the clock did not stall FROM the toggle onward, and not that
   // the toggle itself advanced it.
+  //
+  // The watch starts before that sample, so the sequence it records spans the
+  // sample, the tap and everything after it up to `readTakeWatch`.
+  await watchTake(page);
   const beforeToggle = await elapsedSeconds(page);
   await menu.getByRole("button", { name: /light screen/i }).click();
 
@@ -143,11 +233,32 @@ test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the 
 
   // The recorder is still in its recording state: the transport still offers
   // Stop, and the elapsed readout has moved past the reading taken at the tap.
-  // A toggle that CANCELLED the take fails one of these two. It does not
-  // follow that audio is still arriving — that readout is a wall clock, not a
-  // signal off the stream (see the docblock).
+  // A toggle that CANCELLED the take fails one of these two. A take that
+  // RESTARTED passes both, since it climbs back past the sample, so the
+  // checks after them are about identity (#861): the readout is still the
+  // element the watch started on, and across the whole watched window it
+  // never went down. It does not follow that audio is still arriving — that
+  // readout is a wall clock, not a signal off the stream (see the docblock).
   await expect(stop).toBeVisible();
   await expect.poll(() => elapsedSeconds(page)).toBeGreaterThan(beforeToggle);
+  const watched = await readTakeWatch(page);
+  // Identity of the element first: a replaced readout stops reporting to the
+  // watch, so every check after this one would be reading a dead node.
+  expect(watched.sameReadout, "the readout was remounted").toBe(true);
+  // The first and last readings are pushed whether or not the observer ever
+  // fired; a third one exists only if it saw a change. Without this floor, an
+  // observer that saw nothing would hand the order check below two readings
+  // and a restart between them would pass.
+  expect(watched.readings.length, "the watch saw no change").toBeGreaterThan(2);
+  const seconds = watched.readings.map(toSeconds);
+  // A restart can only show as a dip from a reading above `00:00`, so the
+  // watch must have started off it. The wait before the menu opened put the
+  // clock there; a clock back at `00:00` by the time the watch starts was
+  // itself reset.
+  expect(seconds[0], "the watch started at 00:00").toBeGreaterThan(0);
+  expect(seconds, "the readout went down: a restarted clock").toEqual(
+    [...seconds].sort((a, b) => a - b)
+  );
 
   // The menu is still up and still offers the way back, so a wrong guess
   // costs one tap in the same place — mid-take as anywhere else.
@@ -168,7 +279,7 @@ test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the 
   // satisfied during that window.
   //
   // So the commit is read off the two things only a LANDED take produces:
-  // `aria-busy` gone from the transport, and "Erase and record again"
+  // `aria-busy` gone from the transport, and "Clear and record again"
   // actionable. The bin is always drawn and is hinted-inert while there is
   // nothing to erase, so its hint clearing means `eraseRowReason` found a
   // stored clip in the RELOADED view — which is the persistence this case
@@ -181,7 +292,7 @@ test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the 
   // its accessible name — so the assertion below is about the inert state
   // itself and not about which wording the hint happens to carry.
   const rerecord = page.getByRole("button", {
-    name: /^Erase and record again/,
+    name: /^Clear and record again/,
   });
   await expect(rerecord).not.toHaveAttribute("aria-disabled", "true");
   // Still light after the commit — the theme outlived the take it spanned.

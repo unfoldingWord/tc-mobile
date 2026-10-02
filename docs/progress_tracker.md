@@ -11,6 +11,322 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-02 (session began 2026-10-01) — v1.0.0 and v1.0.1 shipped to production on all channels, store submissions started, tcmobile.app connected
+
+### v1.0.0
+
+- **The go:** the requirements owner, in chat: "Let's push it to 1.0 on the stores". No rc.3 fixes were picked. The DRI held all 17 open develop PRs until after the tag ("Nothing; merge after the tag (Recommended)").
+- **Cut and promotion:** bump #1285 (1.0.0-rc.3 → 1.0.0), develop → staging #1286, staging → main #1287. `PROD_SHA` `3e77b88d`, tagged `v1.0.0`. Rollback was accepted as forward-fix only ("Accept: forward fix only (Recommended)").
+- **Channels:**
+  - The APK was built by run 36925815658 from `main` `3e77b88`. Its signer SHA-256 `eed23e1bccf9fbad8b69f2f9598fd8d97e094d23e544b71b9e91dd21c934baf2` matches rc.3. The APK's SHA-256 is `c8131ad3359201493b598a61c6d3d58eab2a65f80178d687b8ce668eda7bc648`.
+  - TestFlight build 1790888768.
+  - GitHub Release v1.0.0, published 2026-10-01T22:19Z and downloaded back to check.
+
+### Go-live pack and v1.0.1, the store build
+
+- **Go-live brief** for the App Store and Google Play listings: https://claude.ai/artifact/2wHwek2EwpD7xXkG7U23Qk. It holds the copy with character counts, the screenshots, the console answers and the DRI's decisions:
+  - name "translationCore Mobile";
+  - iPhone only for now;
+  - privacy policy as `PRIVACY.md` in this repo;
+  - support: GitHub issues plus support@unfoldingword.org;
+  - all countries, declared trader;
+  - category Productivity;
+  - manual release after approval;
+  - keep the interim icon for 1.x.
+- **1.0.1 carries:**
+  - #1289: the privacy link in About, `TARGETED_DEVICE_FAMILY = 1`, and privacy-manifest keys for no tracking and no collected data;
+  - #1288: `PRIVACY.md`, merged at the bench cap on the DRI's pick;
+  - the bump, #1290.
+- **Promotion:** develop → staging #1291 (`PROMO_SHA` `dd997ebf`), staging → main #1292. `PROD_SHA` is `d0eb5456`, tagged `v1.0.1`.
+- **Red team** on `CUT_SHA` `8883b53b`: 0 BLOCK, 3 FIX-BEFORE-PUBLISH, 12 NOTE. The DRI dispositioned all three FIX items on #1290.
+- **Channels:**
+  - Production: `PASS: https://tc-mobile.unfoldingword.workers.dev is serving the expected build.` (1.0.1 / `d0eb545`; re-run at end of session).
+  - APK: run 36948776880, same signer as 1.0.0. Its embedded `version.json` reads 1.0.1 / `d0eb5456`. The APK's SHA-256 is `d98d3d5f4771038ff5293bdacfcf53951dd5d4154390b5a1b90a90adccf54648`.
+  - TestFlight: run 36948778987, build 1790903231 (iPhone-only).
+  - Play: run 36948498218, Closed testing `1.0.1 (1790902678) main@d0eb545`.
+  - GitHub Release: v1.0.1, published by the DRI and downloaded back to check. Its hash, tag target and QR code all match.
+- **Store submission:**
+  - App Store Connect first refused "Add for Review" for missing 13-inch iPad screenshots. The cause was the 1.0.0 build (iPhone and iPad) still being attached to version 1.0. It was swapped for 1790903231.
+  - App Store Connect also rejected the 1320×2868 screenshots, so they were re-rendered at 1284×2778 for the 6.5" slot.
+- **Announcement:** posted in the org-wide channel (Headlines): stores pending, beta by request, and the Android QR code.
+
+### Other
+
+- **#1293:** `PRIVACY.md`'s mailing address corrected to 13485 Veterans Way. It was stale, and the DRI confirmed the new address. It reaches the store URL only after a promotion to `main`.
+- **tcmobile.app:** connected by the DRI as a Custom Domain on the `tc-mobile` Worker. It is live over HTTPS and serves 1.0.1 / `d0eb545`. www has no DNS record yet, and the domain is set in the dashboard only, not in `wrangler.jsonc`. The rest is #1295, for the next release.
+- **#1294 filed:** a tester report from a developer on the team. After an alarm, the recorder's timer and flat waveform keep running, though the saved take ends at the alarm.
+
+### Not run
+
+Nothing in 1.0.0 or 1.0.1 has run on a phone beyond what the rc.3 entries record. The iPhone-only build has not been installed on a device.
+
+### Next
+
+1. Store review: the App Store submission is in. Google Play production, Android developer verification (overdue since 2026-09-30), the Play App integrity key check (#874), and the Apple EU trader declaration are still to do.
+2. Assign TestFlight build 1790903231 to the testers' group.
+3. Promote #1293 to `main`. Finish tcmobile.app in the next release (#1295): put it in `wrangler.jsonc`, set up www, keep workers.dev with no redirect (recordings are stored per address), and use it as the store marketing URL.
+4. Lift the freeze, close the v1.0.0 milestone, and let the 17 held develop PRs merge.
+5. Follow-ups: stale iPad mentions in `docs/native/system-requirements.md:193`, `docs/tester-install.md` and the facilitator runbook; the install guide's durable link; #1294.
+
+---
+
+## 2026-09-30 (evening) — rc.2 tester reports fixed, 1.0.0-rc.3 red-teamed and published on all channels, #1251 recovery shipped
+
+### rc.2 reports and fixes
+
+- **Where the reports came from:** several testers and the requirements owner, on rc.2 (TestFlight and Android). The requirements owner decided #1243, #1252, #1268 and #1269 on their issues.
+- **#1251, the iPhone audio clock that stops:** on the DRI's own device, lock → unlock (and sometimes connecting headphones) left the shared audio context reporting "running" with a clock that doesn't move. Reopening the app cleared it; lock/unlock didn't, and desktop Safari didn't reproduce it. The cause is **inferred** from that and from the code: the playhead reads `ctx.currentTime`.
+- **Merged for rc.3:**
+
+  | PR    | What                                                                                                                                                                  | Issue         |
+  | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+  | #1261 | Stalled-clock detection and recovery: a failed Play drops the context, reset on hide/pagehide and `devicechange`, logged on return; iPhone app keeps its session type | part of #1251 |
+  | #1260 | Edit mode: scissors to enter, ✕ to leave, no edit-mode "Done"; ⋮ stays top right                                                                                      | #1243, #1252  |
+  | #1273 | New-look sheets close with ✕ and a drag down; the click that trails a drag is swallowed                                                                               | #1268         |
+  | #1274 | New-look header crumbs navigate (book → Books, chapter → chapter)                                                                                                     | #1269         |
+  | #1263 | Chapter names in the new-look headers and menus, cut off with "…"                                                                                                     | #1230         |
+  | #1270 | Right-to-left names set their own direction                                                                                                                           | #1267         |
+  | #1262 | New-look toolbar icons about 25% larger                                                                                                                               | #1259         |
+  | #1254 | The old-look switch removed from Books ≡                                                                                                                              | #1244         |
+  | #1240 | No ⚠ badge on greyed-out tiles                                                                                                                                        | #1239         |
+
+- **Docs:** the facilitator runbook (#1258, #1279), system requirements (#1257), the release procedure (#1238, #1256, #1266; #1266 adds `--admin` to the merge commands for ruleset 24043869), and the rc.2 entry (#1242).
+- **Filed for later:** #1264, #1265, #1271 and #1272 (the requirements owner decided "no change for the training"), #1275, #1278 (batched P3/Low items) and #1281 (starting the native lanes on promotion with branch-restricted signing, to start at go-live; its decisions are settled on the issue).
+
+### 1.0.0-rc.3
+
+- **Bump:** #1277 (`d3c6954e`). **Final `CUT_SHA`:** `b8fecd82`, the squash of #1279. The version was already rc.3, so a docs fix after the bump needed only a delta pass, not a second bump.
+- **Promotion:** #1280 from `release/v1.0.0-rc.3`, merged as `37906966`, with parents `be6da1e4` and `b8fecd82`. The DRI's go (verbatim): "Go: merge #1280 (Recommended)".
+- **Release red team:** results and the DRI's picks are on #1277 and #1280.
+  - **Risk register:** 0 BLOCK, 3 FIX-BEFORE-PUBLISH, 15 NOTE.
+  - **Claim check:** 0 FALSE; every overstated and missing-context item corrected.
+  - **Delta passes:** 0 BLOCK. The first delta's three runbook items were fixed by #1279, and the #1279 delta found nothing.
+  - **Picks:**
+    - F1, iPhone Play with the silent switch on, is unverified: "Accept, testers check".
+    - F2, no device pass: "Accept: phones test rc.3 (Recommended)".
+    - F3, stale runbook: "Fix before the cut", done in #1279.
+    - N11 (T2 PRs approved by George only) and N5 (a 6 px crumb overlap): "Accept both, note them (Recommended)".
+- **`check:deploy`:** PASS, `https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build.` (`1.0.0-rc.3` / `3790696`, built `2026-09-30T21:08:21.855Z`).
+- **Channels, all from `37906966`:**
+  - **Google Play:** run 36777349963, a draft on the internal track. The DRI said the rollout is done; it wasn't observed from here.
+  - **Android APK:** run 36777496390.
+    - The signer SHA-256 is `eed23e1bccf9fbad8b69f2f9598fd8d97e094d23e544b71b9e91dd21c934baf2`, the same as rc.2.
+    - The embedded `version.json` reads `1.0.0-rc.3` / `37906966b127…`.
+    - The APK's SHA-256 is `a4068d8896de961e1f3925182c62988745f7c7e6714951829fe73b804bff35e2`, and the published download matches it.
+  - **TestFlight:** run 36777585523, version `1.0`, build `1790803291`. The DRI said it's assigned to the testers' group; that wasn't observed from here.
+- **Published:** `tester-build-v1.0.0-rc.3`, a pre-release with the APK and a QR code, tagged at `37906966`. The QR decodes to the download URL. The publish record is on #1280.
+- **Announced:** in Zulip, 52 Innovation → tC Mobile, with the QR code inline.
+
+### After rc.3
+
+- **#1282 (part of #1276):** no text selection or iOS callout on the app shell and the build stamp, with text inputs switched back on. The report was the requirements owner's, on rc.2. The DRI picked "Lane now, ships in rc.4 or 1.0.0 (Recommended)". Merged as `2ef701ce` with George clean. **develop is now one commit past rc.3.**
+
+### Not run
+
+- Nothing in rc.3 has run on a phone, so #1261's recovery is unconfirmed on an iPhone, including with the silent switch on.
+- #1282 hasn't run on an iPhone.
+
+### Next
+
+- Collect the rc.3 tester reports, above all the #1251 lock/unlock and silent-switch runs (announcement test 1). Close the rc.3-fixed issues as testers confirm them.
+- Decide the next cut (rc.4 or 1.0.0). It carries #1282, needs a new bump and a red team, and uses the `tc-release` skill.
+- #1241 (which release steps are human-only) and #1264 (a parent check for the final `staging → main`) before the v1.0.0 tag.
+
+---
+
+## 2026-09-30 (early; session began 2026-09-29 evening) — rc.1 tester reports fixed, 1.0.0-rc.2 red-teamed and published on all channels, RC procedure written down
+
+### rc.1 reports and fixes
+
+- **The requirements owner's Moto G session on rc.1:**
+  - the #974 upgrade row passed;
+  - #1188 no longer reproduced, closed as not reproducing (DRI: "Close as not reproducing (Recommended)");
+  - four new `v1-required` issues, all picked for rc.2 (DRI: "#1219 + #1218 chapter names, #1217 mic icon, #1220 eraser text").
+- **iPhone reports:** the tester's device was on an older TestFlight build, because the new build hadn't been assigned to the testers' group. The #1213 and #1212 reports are therefore not rc.1 evidence; the correction is on #1213.
+- **Merged for rc.2:**
+
+  | PR    | What                                                                                                          | Issue        |
+  | ----- | ------------------------------------------------------------------------------------------------------------- | ------------ |
+  | #1224 | Chapter names on Books, in the rename sheet and in export file names; default derived at read, no data change | #1218, #1219 |
+  | #1223 | Unrecorded segment control: a gray, red-outlined microphone                                                   | #1217        |
+  | #1222 | Eraser wording: "Reset segment and start over"                                                                | #1220        |
+  | #1227 | Recorder menu opener ⋮, so ≡ is on Books only; filed from a tester report                                     | #1225        |
+  | #1214 | Playback failure rows and a shared-context drop after a failed resume                                         | #1213        |
+  | #1234 | Books row title and dots no longer squashed or clipped on large chapters; red-team R7                         | #1229        |
+  | #1235 | Bound the context drops, with at most one close pending; an unanswered P2 on #1214                            | #1232        |
+
+- **Design question:** #1230, whether the new look's headers should show a chapter's name, is with the requirements owner.
+- **Follow-ups:** #1233 (v1.1.0) batches the deferred review items.
+
+### 1.0.0-rc.2
+
+- **Bump:** #1228 (`25c43332`). **Promotion:** #1236 from `release/v1.0.0-rc.2` at `3b625e02`, merged as `be6da1e4`. The DRI's go (verbatim): "Go: merge #1236 (Recommended)".
+- **Release red team:** three passes. Summary on #1236 (comment 5900978670).
+  - **Risk register:** 0 BLOCK, 5 FIX-BEFORE-PUBLISH, 9 NOTE.
+  - **Announcement:** 0 FALSE, 6 OVERSTATED, 9 MISSING CONTEXT, all corrected.
+  - **Delta:** 0 BLOCK, 6 NOTE, and one false claim in the promotion body, corrected.
+  - **Dispositions:** R3 was fixed by #1235 and R7 by #1234. R4 (Android, a slow first Play drops the context) was accepted (DRI: "Ship, and watch for it (Recommended)").
+- **`check:deploy`:** PASS, `https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build.` (`1.0.0-rc.2` / `be6da1e`).
+- **Channels, all from `be6da1e4`:**
+  - **Google Play:** run 36645388934, a draft on the internal track, `1.0.0-rc.2 (1790724591) staging@be6da1e`.
+  - **Android APK:** run 36645763556.
+    - The signer SHA-256 is `eed23e1bccf9fbad8b69f2f9598fd8d97e094d23e544b71b9e91dd21c934baf2`, the same as rc.1.
+    - The embedded `version.json` reads `1.0.0-rc.2` / `be6da1e4a911…`.
+    - The APK's SHA-256 is `4223acd2aa3a6881ebc66d6055cbe0a267765a07c6d975e1470df2e78b5592c6`, and the published download matches it.
+  - **TestFlight:** run 36645765916, version `1.0`, build `1790725433`.
+- **Published:** `tester-build-v1.0.0-rc.2`, a pre-release with the APK and a QR code of its download URL. The publish record is on #1236 (comment 5901231193). Whether the QR scans and displays inline wasn't checked here.
+
+### After rc.2
+
+- **#1240 (for #1239):** the ⚠ badge on greyed-out menu tiles is removed, at the requirements owner's ask (DRI: "Remove all badges, rc.3 (Recommended)"). Merged as `950e7394`. George was clean; the Frank seat hadn't posted when it merged.
+- **#1238:** the RC procedure is in `docs/release/promotion-v1.0.0.md` §3a/§6, plus a new `.claude/skills/tc-release` checklist, with fail-closed APK checks. Merged as `8005751e` at the meta-PR cap, under the DRI's stop rule. George's round-3 findings are on #1241, which needs a DRI decision on which release steps are human-only.
+
+### Not run
+
+- Nothing in rc.2 has run on a phone.
+- The #1213 premise is unconfirmed on rc.1 or rc.2.
+- R4 is watched only by the announcement's test 5.
+
+### Next
+
+- Collect the rc.2 tester reports, then cut rc.3 with `tc-release`. So far rc.3 carries #1240, plus #1238 (docs).
+- Get the #1213 retest on rc.2 from the iPhone tester (TestFlight build `1790725433`, assigned to the group).
+- The requirements owner's answers on #1230 and the #1233 product questions.
+- The DRI's decision on #1241.
+- The Android developer verification, due 2026-09-30.
+
+---
+
+## 2026-09-29 (day) — v0.2.14 bugs triaged, #1189 fixed, 1.0.0-rc.1 red-teamed and built on all three channels (Play as an internal-track draft), Play lane fixed, go-live epic, iPhone playback report
+
+### v0.2.14 bug reports
+
+- **#1189, waveform shrinks on resume (Moto G):** fixed by #1199, merged `7e9cb99f`.
+  - Cause: the live scope drew the existing clip at raw level while the idle waveform drew it fitted.
+  - Both uwreview lenses were clean at `6f0e78fe`. The follow-ups are batched in #1201 (v1.1.0).
+- **#1188, chapter Play/Pause needs several presses (Moto G):**
+  - The fix lane found no cause it could prove from the code, so it parked. Its findings are on the issue.
+  - The DRI picked "[Ask the requirements owner], ship rc.1 without it". Three observations were requested from the requirements owner on the issue.
+- **Freeze:**
+  - The DRI merged 11 PRs to develop at 11:30Z, then picked "Lifted until rc.1 is cut". Freeze-lifted notes went on the open contributor PRs.
+  - #684, #1200 and #1203 merged during the lift.
+
+### 1.0.0-rc.1
+
+- **Bump:** #1205, squashed at `009e6b6c`. It is version-only, 0.2.14 → `1.0.0-rc.1`, in the DRI's `1.0.0-rc.N` form.
+  - Android `versionName` takes the string, and `versionCode` stays a timestamp.
+  - iOS `MARKETING_VERSION` stays `1.0` and never reads `package.json`.
+- **Release red team** (DRI: it is part of every RC cut): two read-only passes before the promotion merged.
+  - **Risk register:** 0 BLOCK. Three items to fix before publishing: a phone smoke, the APK checks, and the first automatic Play upload.
+  - **Announcement:** 1 FALSE claim ("Notices share one look": #684 changed no tone), 2 OVERSTATED, 5 MISSING CONTEXT. All were fixed in the notes, and the same overclaim was corrected in #1205's and #1206's bodies.
+  - Summary: #1206 comment 5892212691.
+- **Promotion #1206** merged at `5a767fde`. `check:deploy` PASS: `https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build.` (`1.0.0-rc.1` / `5a767fd`).
+- **The first automatic Play upload failed** (run 36581999554) at "Install fastlane".
+  - Cause: the `ubuntu-24.04` runner's Ruby is 3.2.3, and `excon 1.7.1` in the fastlane lock needs 3.3 or newer.
+  - #1207 added a pinned `ruby/setup-ruby` at 3.3: two red-first tests, and three mutations killed.
+  - The DRI asked that all three channels build from one commit, so #1208, a CI-only promotion, carried it to staging at `68460117`.
+  - `check:deploy` PASS: `1.0.0-rc.1` / `6846011`.
+- **Channels, all from `68460117`:**
+  - **Google Play:** run 36586138675, a **draft** on the internal track, `1.0.0-rc.1 (1790693736) staging@6846011`. `setup-ruby` and "Install fastlane" were green on a real runner (#1207 comment 5892811801).
+  - **Android APK:** run 36586494091.
+    - The signer SHA-256 is `eed23e1bccf9fbad8b69f2f9598fd8d97e094d23e544b71b9e91dd21c934baf2`, the same as v0.2.14.
+    - The embedded `version.json` reads `1.0.0-rc.1` / `68460117`.
+    - The APK's SHA-256 is `50c2d3c1a5284c2a2a3f36abcffcc48525c55d62cf7113c42b581d17ab6da29f`, and the published download matches it.
+  - **TestFlight:** run 36586498096, version `1.0`, build `1790694282`.
+  - **Published:** `tester-build-v1.0.0-rc.1`, a pre-release at `68460117`, at the DRI's instruction. The phone smoke result wasn't reported to the coordinator, and this record doesn't claim it passed. The red team's smoke-before-publish item is still open. The publish record is #1206 comment 5893044684.
+- **Store icons:**
+  - **Play:** the listing icon is a manual 512×512 upload (#876), started by the DRI.
+  - **App Store Connect:** the icon showed on every build row but not on the app header. It appeared once a build was attached to the 1.0 App Store version.
+- **The freeze is back on** from the rc.1 cut until `v1.0.0` is tagged.
+  - #1207 was a DRI-approved CI exception.
+  - The freeze note (reworded for rc.1) went on the new contributor PRs #1204, #1209 and #1211.
+
+### Planning and feedback
+
+- **#1210, go-live epic** (Play production and the App Store), with decisions first.
+  - The iPad question is a one-way door: the project targets iPhone and iPad.
+  - Checked against Google's help pages: Play's 12-tester closed-test rule covers only personal accounts, and this is an organization account. A first Play review can take up to 7 days.
+- **Tester feedback (iPhone, rc.1):**
+  - **#1212** (post-v1): unclear menu options, and what the app adds over a voice recorder.
+  - **#1213** (bug): after a drag, Play stays dead until lock/unlock or leaving the app.
+    - Code trace: the seek path is correct.
+    - Inferred top cause: an `"interrupted"` AudioContext whose `resume()` never settles, which nothing in the app recreates.
+    - Relation to #1188: can't tell.
+    - The DRI picked "Diagnostic + speculative fix". **#1214** (Refs #1213) logs the three playback catch sites that only `console.error`, and drops and recreates the shared context after a fail-closed resume. CI is green and it's ready for uwreview. It hasn't run on an iPhone.
+
+### Not run
+
+- No phone ran #1199's fix, #1214, or any rc.1 change.
+- The rc.1 phone smoke result wasn't reported.
+- The Play App integrity signing-key check (#874) is still open.
+
+### Next
+
+- The uwreview verdict on #1214, then a DRI merge pick, then rc.2.
+- The requirements owner's answers on #1188, and the tester's answers on #1213.
+- The Android developer verification registration, due 2026-09-30 (`docs/native/play-store.md`).
+- The #1210 decisions D1–D7.
+
+---
+
+## 2026-09-28 (day to late evening) — milestones merged, v0.2.14 cut and published, headless and phone smoke passed, books stay put (#1185), release freeze for 1.0.0
+
+### Milestones and versions
+
+- The DRI retired 0.3.0. Open v0.3.0 items moved to **v1.0.0 — Training build**, due 2026-10-02. Its closed items moved to v0.2.0, and the v0.3.0 milestone was deleted. The version path is now 0.2.x → 1.0.0 (at staging → main) → 1.1.0. #1182 (closed #1181) removed 0.3.0 from the living instructions and renamed the runbook to `docs/release/promotion-v1.0.0.md`.
+- Release candidates are named **`1.0.0-rc.N`** in `package.json`, tagged `tester-build-v1.0.0-rc.N` (DRI). The first will be `1.0.0-rc.1`. The published v0.2.14 release was retitled so it no longer reads "RC1".
+
+### v0.2.14 cut and published
+
+- The bump (#1172) was squashed at `8435f3f5`. Promotion #1183 merged to staging at `2493ac1974da0bdb22ed1aff283449ee34b04396`.
+- `check:deploy`: **PASS**. Staging served `0.2.14` at `2493ac1`. The run used explicit `--sha`/`--version`, so it skipped the script's own fetch of the canonical origin.
+- A release red team checked the build and the announcement before publishing. It found no blocker. It found three false claims in the draft announcement, which were removed, and several omissions, which were added.
+- **Android APK** (run 36474205089):
+  - the only artifact is `app-release.apk`, with no diagnostic build;
+  - the v2 signing certificate SHA-256 is `eed23e1bccf9fbad8b69f2f9598fd8d97e094d23e544b71b9e91dd21c934baf2`, the same as v0.2.13;
+  - the embedded `version.json` reads 0.2.14 / `2493ac1`, and web debugging is off.
+- **TestFlight** run 36474207665 succeeded.
+- **Published:** `tester-build-v0.2.14`, a pre-release at `2493ac19` with the APK attached.
+- **Google Play:** the first build-only bundle was built by run 36476824983 (versionCode `1790626016`). Its signer is the upload key (`98:E7:…:32:53`) and its version is 0.2.14. The DRI set `PLAY_UPLOAD_ENABLED=true`. The first manual upload to Play Console is the DRI's step.
+
+### Smoke and runbook
+
+- **iPhone (TestFlight):** the DRI reported "looks good on iphone".
+- **Headless Chromium against staging** (a fake microphone and a stubbed `navigator.share`; not a device pass):
+  - record, play, Clear and record again, and play from the chapter screen;
+  - Share chapter (the MP3 decodes) and Share book (the zip passes its CRC check and its MP3 is identical);
+  - reopening in a new tab keeps every recording.
+  - The #974 browser-testable rows all passed: #1119, #1115, #925, #927, #452 via browser history, #1021, #1031 at 320×640, and #1118, including a real 20-minute take.
+  - Results: #974 comment 5878859695.
+- Cut, then undo, then paste inserts the phrase twice. The DRI left it as it is, because it is standard editor behaviour.
+- **Android APK, on a phone (DRI):** the core flows, book and chapter edits, lock-screen seal, Done, Share Book, Clear, Delete, the light theme and About all passed: "pretty solid release". Results: #974 comment 5879880308.
+
+### Shipped after the cut
+
+- **#1187 (closes #1185), books stay put.**
+  - `listBooks` sorts by `createdAt`. The Books-hook patches keep each card at its index.
+  - No storage format change: every book row is written by `createBook`, and the v3 recreate means no pre-pivot row became a book.
+  - Merged at `b889506c`. It is the one change approved during the freeze.
+  - On an existing install, the first launch reorders the shelf once, into creation order.
+- **#1186** was filed in v1.1.0: user-controlled book reordering.
+
+### Release freeze
+
+- The DRI froze develop until `v1.0.0` is tagged. The only merges allowed are fixes for smoke-test and #974 findings, each picked by the DRI. The open contributor PRs carry a freeze note.
+- 1.0.0 goes develop → staging → main with a version-only bump, then the `v1.0.0` tag.
+
+### Not run
+
+- The Android APK's native Back button, the iPhone edge swipe, #555 loudness and speaker, the #1015 full-phone retry and the #558 listening test. Tester-build users will cover these.
+
+### Next
+
+- The requirements owner's follow-up issues (the DRI will bring them tomorrow). Scope each one: rc.1 or v1.1.0.
+- Then cut `1.0.0-rc.1`: the bump PR, the promotion, `check:deploy`, native builds, a re-smoke that includes the books-stay-put check, and `tester-build-v1.0.0-rc.1`.
+- Tester invitations, then the thumbs-up, then the 1.0.0 promotion per `docs/release/promotion-v1.0.0.md`.
+
+---
+
 ## 2026-09-27 (afternoon to midnight; Docker 0.2.14 lanes) — v0.2.13 tester bugs fixed, #1003 streaming landed, O4 safety sweep
 
 ### Shipped (merged to develop)

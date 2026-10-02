@@ -14,7 +14,9 @@ import {
   NOMINAL_COLUMN_RATE,
   type ContextSide,
 } from "@/lib/audio/capture-context";
+import { displayGain } from "@/lib/audio/display-gain";
 import { CANONICAL_SAMPLE_RATE, INT16_MAX } from "@/lib/audio/format";
+import { computePeaks } from "@/lib/audio/peaks";
 
 import { stripComments } from "./support";
 
@@ -33,11 +35,11 @@ function pairs(s: ContextSide): [number, number][] {
 
 describe("buildCaptureContext (#640)", () => {
   it("has nothing to show for a first take", () => {
-    expect(buildCaptureContext(new Int16Array(0), 0)).toBeNull();
+    expect(buildCaptureContext(new Int16Array(0), 0, null)).toBeNull();
   });
 
   it("walks OUTWARD from the offset on both sides, nearest bucket first", () => {
-    const ctx = buildCaptureContext(ramp(10), 4, 2, 1_000)!;
+    const ctx = buildCaptureContext(ramp(10), 4, null, 2, 1_000)!;
     // Before: samples 3,2 then 1,0 — the bucket touching the offset is index 0.
     expect(pairs(ctx.before)).toEqual([
       [2000, 3000],
@@ -53,16 +55,16 @@ describe("buildCaptureContext (#640)", () => {
   });
 
   it("leaves the left blank at the very start and the right blank at the end", () => {
-    const atStart = buildCaptureContext(ramp(10), 0, 2, 1_000)!;
+    const atStart = buildCaptureContext(ramp(10), 0, null, 2, 1_000)!;
     expect(atStart.before.count).toBe(0);
     expect(atStart.after.count).toBe(5);
-    const atEnd = buildCaptureContext(ramp(10), 10, 2, 1_000)!;
+    const atEnd = buildCaptureContext(ramp(10), 10, null, 2, 1_000)!;
     expect(atEnd.before.count).toBe(5);
     expect(atEnd.after.count).toBe(0);
   });
 
   it("caps each side, with a short last bucket where the cap falls mid-bucket", () => {
-    const ctx = buildCaptureContext(ramp(10), 5, 2, 3)!;
+    const ctx = buildCaptureContext(ramp(10), 5, null, 2, 3)!;
     // 3 samples before: 4,3 then 2 alone.
     expect(pairs(ctx.before)).toEqual([
       [3000, 4000],
@@ -75,18 +77,51 @@ describe("buildCaptureContext (#640)", () => {
   });
 
   it("clamps an offset outside the buffer instead of indexing past it", () => {
-    expect(buildCaptureContext(ramp(10), -5, 2, 1_000)!.before.count).toBe(0);
-    expect(buildCaptureContext(ramp(10), 99, 2, 1_000)!.after.count).toBe(0);
-    expect(buildCaptureContext(ramp(10), NaN, 2, 1_000)!.before.count).toBe(0);
-    // Past the end reads as AT the end: the whole clip before it, real values.
-    expect(pairs(buildCaptureContext(ramp(10), 99, 2, 1_000)!.before)).toEqual(
-      pairs(buildCaptureContext(ramp(10), 10, 2, 1_000)!.before)
+    expect(
+      buildCaptureContext(ramp(10), -5, null, 2, 1_000)!.before.count
+    ).toBe(0);
+    expect(buildCaptureContext(ramp(10), 99, null, 2, 1_000)!.after.count).toBe(
+      0
     );
+    expect(
+      buildCaptureContext(ramp(10), NaN, null, 2, 1_000)!.before.count
+    ).toBe(0);
+    // Past the end reads as AT the end: the whole clip before it, real values.
+    expect(
+      pairs(buildCaptureContext(ramp(10), 99, null, 2, 1_000)!.before)
+    ).toEqual(pairs(buildCaptureContext(ramp(10), 10, null, 2, 1_000)!.before));
   });
 
   it("keeps Int16's asymmetric floor inside [-1, 1], as computePeaks does", () => {
-    const ctx = buildCaptureContext(Int16Array.of(-32768, 0), 1, 2, 1_000)!;
+    const ctx = buildCaptureContext(
+      Int16Array.of(-32768, 0),
+      1,
+      null,
+      2,
+      1_000
+    )!;
     expect(ctx.before.min[0]).toBe(-1);
+  });
+});
+
+describe("the context carries the committed clip's display gain (#1189)", () => {
+  // A quiet clip, the #358 Moto G shape: every sample at ±5% of full scale.
+  const quiet = Int16Array.from(
+    { length: 4_000 },
+    (_, i) => (i % 2 ? 1 : -1) * Math.round(0.05 * INT16_MAX)
+  );
+
+  it("is the gain the idle Waveform fits the same committed peaks to", () => {
+    const peaks = computePeaks(quiet, 400);
+    const ctx = buildCaptureContext(quiet, 2_000, peaks)!;
+    expect(ctx.gain).toBe(displayGain(peaks, false));
+    // Not trivially 1: the quiet clip is fitted up, which is what a Record
+    // tap used to throw away.
+    expect(ctx.gain).toBeGreaterThan(10);
+  });
+
+  it("is absolute (1) when there are no committed peaks to fit to", () => {
+    expect(buildCaptureContext(quiet, 2_000, null)!.gain).toBe(1);
   });
 });
 
@@ -150,7 +185,8 @@ describe("the context and the take share one time scale", () => {
     const seconds = 2;
     const ctx = buildCaptureContext(
       new Int16Array(seconds * CANONICAL_SAMPLE_RATE),
-      seconds * CANONICAL_SAMPLE_RATE
+      seconds * CANONICAL_SAMPLE_RATE,
+      null
     )!;
     expect(ctx.samplesPerBucket).toBe(CONTEXT_BUCKET_SAMPLES);
     const bucketsPerColumn =
@@ -285,13 +321,13 @@ describe("recorder wiring (#640)", () => {
 
   it("the Record tap builds the context at the offset it locks", () => {
     expect(src).toMatch(
-      /insertionOffset\.current = win\.centerlineSample;\s*setCaptureContext\(\s*buildCaptureContext\(editor\.working, win\.centerlineSample\)\s*\);\s*audio\.startRecording\(\);/
+      /insertionOffset\.current = win\.centerlineSample;\s*setCaptureContext\(\s*buildCaptureContext\(\s*editor\.working,\s*win\.centerlineSample,\s*editor\.peaks\s*\)\s*\);\s*audio\.startRecording\(\);/
     );
   });
 
   it("the permission Retry builds it from the offset already locked", () => {
     expect(src).toMatch(
-      /setCaptureContext\(\s*buildCaptureContext\(editor\.working, insertionOffset\.current\)\s*\);\s*audio\.startRecording\(\);/
+      /setCaptureContext\(\s*buildCaptureContext\(\s*editor\.working,\s*insertionOffset\.current,\s*editor\.peaks\s*\)\s*\);\s*audio\.startRecording\(\);/
     );
   });
 

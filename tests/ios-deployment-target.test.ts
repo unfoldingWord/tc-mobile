@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { blankGradleSwiftComments, stripHtmlComments } from "./support";
+
 /**
  * #1052/#1017: the DRI raised the iOS floor to 15.4 so a phone below that
  * version can no longer install a build whose O4 CSS relies on `:has()`
@@ -17,15 +19,28 @@ import { describe, expect, it } from "vitest";
  * site read `15.0`, and `Package.swift` read `.v15`); see the PR body's
  * mutation table for the reproduction, not this comment (AGENTS.md: a run's
  * output belongs in the PR, never a docblock).
+ *
+ * Every file is read with its comments removed (#822), because the pins below
+ * are positive matches and a comment could otherwise satisfy them: a
+ * `// platforms: [.iOS("15.4")]` above, or trailing, a live `.iOS("15.0")`;
+ * a commented-out `IPHONEOS_DEPLOYMENT_TARGET` standing in for a live one; an
+ * HTML comment in a doc carrying the sentence the live text dropped. The
+ * project and `Package.swift` go through the quote-aware Gradle/Swift strip,
+ * not `stripComments`: `Package.swift` holds a `"https://…"` URL, whose `//`
+ * `stripComments` would read as a comment. The `.pbxproj` is neither Gradle
+ * nor Swift, but it uses the same `//`, `/* *\/` and `"…"` forms, and the strip
+ * throws on any form it does not model rather than guessing.
  */
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const FLOOR = "15.4";
 
 describe("Xcode project deployment target", () => {
-  const pbxproj = readFileSync(
-    path.join(REPO_ROOT, "ios/App/App.xcodeproj/project.pbxproj"),
-    "utf8"
+  const pbxproj = blankGradleSwiftComments(
+    readFileSync(
+      path.join(REPO_ROOT, "ios/App/App.xcodeproj/project.pbxproj"),
+      "utf8"
+    )
   );
   const matches = [
     ...pbxproj.matchAll(/IPHONEOS_DEPLOYMENT_TARGET = ([\d.]+);/g),
@@ -45,9 +60,11 @@ describe("Xcode project deployment target", () => {
 });
 
 describe("SwiftPM package platform floor", () => {
-  const pkg = readFileSync(
-    path.join(REPO_ROOT, "ios/App/CapApp-SPM/Package.swift"),
-    "utf8"
+  const pkg = blankGradleSwiftComments(
+    readFileSync(
+      path.join(REPO_ROOT, "ios/App/CapApp-SPM/Package.swift"),
+      "utf8"
+    )
   );
 
   it("declares the raised iOS floor", () => {
@@ -64,13 +81,11 @@ describe("SwiftPM package platform floor", () => {
 });
 
 describe("native docs state the same floor", () => {
-  const readme = readFileSync(
-    path.join(REPO_ROOT, "docs/native/README.md"),
-    "utf8"
+  const readme = stripHtmlComments(
+    readFileSync(path.join(REPO_ROOT, "docs/native/README.md"), "utf8")
   );
-  const credentials = readFileSync(
-    path.join(REPO_ROOT, "docs/native/ios-credentials.md"),
-    "utf8"
+  const credentials = stripHtmlComments(
+    readFileSync(path.join(REPO_ROOT, "docs/native/ios-credentials.md"), "utf8")
   );
 
   it("README's platform table", () => {

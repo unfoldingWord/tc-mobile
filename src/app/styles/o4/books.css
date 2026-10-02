@@ -137,6 +137,7 @@
     filter: brightness(0.84);
   }
   [data-design="o4"] .books-name {
+    flex: 1 1 auto; /* the whole row, so a right-to-left name sits at its end (#1267) */
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -159,8 +160,11 @@
     align-items: center;
     gap: 14px;
     width: 100%;
-    height: 68px;
-    padding: 0 16px 0 12px;
+    /* A floor, not a fixed height (#1229): 12 + 44 + 12 is the design's 68,
+       and a chapter whose dots wrap past the room under the title grows the
+       row instead of clipping them. */
+    min-height: 68px;
+    padding: 12px 16px 12px 12px;
     border: 0;
     border-radius: var(--p-radius-12);
     background: var(--s-floor);
@@ -180,9 +184,10 @@
     font-weight: var(--p-weight-heavy);
     font-variant-numeric: tabular-nums;
   }
-  /* A typed title takes the row's lead, so the number steps back: no fill,
-     faint ink, and the well's colour as a 2px inset ring. The ring is on the
-     badge, never on the row button that carries the guide ring. */
+  /* The title (typed, or the default "Chapter N", #1219) takes the row's
+     lead, so the number steps back: no fill, faint ink, and the well's colour
+     as a 2px inset ring. The ring is on the badge, never on the row button
+     that carries the guide ring. */
   [data-design="o4"] .books-chapter-num.is-dim {
     background: transparent;
     color: var(--s-ink-faint);
@@ -195,10 +200,13 @@
     justify-content: center;
     gap: 5px;
     min-width: 0;
-    height: 44px;
+    min-height: 44px;
   }
+  /* flex: none so the dots can never shrink the title line below its 20px
+     (#1229): only the dots' block may take more height. */
   [data-design="o4"] .books-chapter-title {
     display: block;
+    flex: none;
     height: 20px;
     line-height: 20px;
     overflow: hidden;
@@ -256,8 +264,10 @@
   /* --- the progress dots (03) -------------------------------------------- */
   /* The size and gap come from the row (`dotFit` in books-screen.tsx), which
      picks the largest step whose wrapped rows fit this column's height at the
-     narrowest supported width (DOT_COLUMN there). The max-width is the
-     design reference's cap on a wide screen, not the width the fit assumes. */
+     narrowest supported width (DOT_COLUMN there). Past what the smallest
+     step holds, the dots keep wrapping and the row grows to hold them
+     (#1229). The max-width is the design reference's cap on a wide screen,
+     not the width the fit assumes. */
   [data-design="o4"] .books-dots {
     display: flex;
     flex-wrap: wrap;

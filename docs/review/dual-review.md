@@ -106,7 +106,7 @@ explicitly accepted, recorded on the PR.
 
 ## Freeze budget — 2026-09-21 to 2026-10-04
 
-Decided by the DRI on 2026-09-21 for the run-up to the v0.3.0 handoff, and
+Decided by the DRI on 2026-09-21 for the run-up to the v1.0.0 handoff, and
 expiring with it. The reasoning: the harness's machine cost is small (about
 18 s for `npm run verify` locally, about 2 min in CI), and the cost that was
 eating the week was rounds — every documented five-round chain that week was

@@ -51,7 +51,9 @@ export function O4BookHead({
         >
           <Icon name="book" size={24} />
         </span>
-        <span className="books-sheet-name">{name}</span>
+        <span className="books-sheet-name" dir="auto">
+          {name}
+        </span>
       </div>
       {children}
     </div>

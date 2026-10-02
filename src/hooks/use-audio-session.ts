@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  checkSharedClockOnReturn,
   decodeMp3ToCanonical,
+  dropSharedContextWhenIdle,
   playSamples,
   resumeAudioContext,
   type PlaybackHandle,
 } from "./audio-io";
 import type { ProbeSource } from "./audio-probe";
+import {
+  PlaybackClockStalledError,
+  PlaybackResumeError,
+} from "./playback-resume-error";
 import { reportFailure } from "./report-failure";
 import {
   useRecorder,
@@ -251,6 +257,29 @@ export type RecorderAudio = Pick<
 >;
 
 /**
+ * Send a failed Play to the failure log (#1213), unless `playSamples` has
+ * already written its row.
+ *
+ * A `PlaybackResumeError` is the #469 resume bound failing closed, and
+ * `playSamples` reports that itself under `"playback-resume-timeout"` or
+ * `"playback-resume-unusable"`. A `PlaybackClockStalledError` is a Play whose
+ * context clock never moved (#1251), which `playSamples` reports itself under
+ * `"playback-clock-stalled"`. Every other cause, such as a failed load, a
+ * failed MP3 decode or a throw from the Web Audio graph, reached only
+ * `console.error` before #1213. Callers invoke this only for a claim that is
+ * still current, so a superseded Play writes nothing.
+ */
+function reportPlaybackFailure(cause: unknown, context: string): void {
+  if (
+    cause instanceof PlaybackResumeError ||
+    cause instanceof PlaybackClockStalledError
+  ) {
+    return;
+  }
+  reportFailure(cause, context);
+}
+
+/**
  * Everything on screen that can make or capture sound, under one owner.
  *
  * The arbitration lives in `lib/audio/session.ts`, which is pure; this is only
@@ -451,6 +480,10 @@ export function useAudioSession(): UseAudioSession {
             const fault = danglingReason(audio);
             if (fault) {
               console.error("Nothing to play for this take:", fault);
+              reportFailure(
+                new Error(`Nothing to play for this take: ${fault}`),
+                "playback-dangling"
+              );
               setPlaybackError(strings.playbackFailed);
             }
             session.release(token);
@@ -483,6 +516,7 @@ export function useAudioSession(): UseAudioSession {
           // not this screen's news. Tapping play on B while A is still loading
           // supersedes A, and A's rejection must not paint an alert over B.
           if (session.isCurrent(token)) {
+            reportPlaybackFailure(cause, "playback-take");
             session.release(token);
             setPlaying(null);
             setPlaybackError(strings.playbackFailed);
@@ -562,6 +596,7 @@ export function useAudioSession(): UseAudioSession {
           // Inside the guard, exactly as in `playTake`: a failure that belongs
           // to a superseded claim is not this screen's news.
           if (session.isCurrent(token)) {
+            reportPlaybackFailure(cause, "playback-buffer");
             session.release(token);
             setPlayingBuffer(false);
             setPlaybackError(strings.playbackFailed);
@@ -739,12 +774,30 @@ export function useAudioSession(): UseAudioSession {
     // screen, and becoming visible again restarts nothing. `seal()` is
     // idempotent, so a `pagehide` after the hidden change finds the take
     // already sealed and returns `true` without cancelling it.
+    //
+    // #1251: the DRI reproduced a shared audio context stuck on "running"
+    // with its clock stopped by locking and unlocking the phone. So hiding
+    // also asks `dropSharedContextWhenIdle` to drop that context, AFTER the
+    // seal: it drops at once when nothing uses it, and otherwise waits for
+    // the sealed take's level tap, a decode or a sounding Play to let go. It
+    // stops nothing itself; a hidden page still keeps its playback. The first
+    // tap after the return then builds a fresh context inside its gesture.
+    // Becoming visible checks the clock of a context that is still there
+    // (`checkSharedClockOnReturn`, which drops it if the clock is stopped).
+    // Neither starts any sound or any recording.
     const onPageHide = () => {
-      if (sealRecording()) return;
-      leave();
+      if (!sealRecording()) leave();
+      dropSharedContextWhenIdle();
     };
     const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden") sealRecording();
+      if (document.visibilityState === "hidden") {
+        sealRecording();
+        dropSharedContextWhenIdle();
+        return;
+      }
+      if (document.visibilityState === "visible") {
+        void checkSharedClockOnReturn();
+      }
     };
     window.addEventListener("pagehide", onPageHide);
     document.addEventListener("visibilitychange", onVisibilityChange);

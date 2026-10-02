@@ -183,23 +183,38 @@ describe("Control's inert cells", () => {
   });
 });
 
-describe("Control's disabled-row badge", () => {
-  it("paints the ≡-row `alert` badge beside the button, not inside it", () => {
-    // The sighted half of the same cue (#135 round 2 found the words alone were
-    // invisible), and a SIBLING so the dimming that marks the row inert does
-    // not also dim the mark explaining it.
-    const container = render(
-      createElement(Control, {
-        icon: "trash",
-        label: "Erase recording",
-        disabled: true,
-        hint: rowHint("uncommitted-take"),
-      })
-    );
-    const badge = one(container, ".control-hint");
+describe("Control's disabled menu row (#1239)", () => {
+  it("paints no badge on a disabled, hinted menu tile, and keeps it aria-disabled and spoken", () => {
+    // The requirements owner's decision on #1239: no ⚠ on a greyed menu tile,
+    // for every reason. Both halves of what stays are asserted at the markup:
+    // the control is focusable and `aria-disabled` rather than natively
+    // disabled (#135 round 2), and its accessible name still carries the reason.
+    for (const reason of [
+      "uncommitted-take",
+      "starting",
+      "no-audio",
+      "no-clip",
+    ] as const) {
+      const hint = rowHint(reason);
+      const container = render(
+        createElement(Control, {
+          icon: "trash",
+          label: "Erase recording",
+          disabled: true,
+          hint,
+        })
+      );
+      const el = one(container, "button");
 
-    expect(badge.getAttribute("aria-hidden")).toBe("true");
-    expect(one(container, "button").contains(badge)).toBe(false);
+      expect(container.querySelector(".control-hint"), reason).toBeNull();
+      // The tile's own glyph is the only icon in the tree.
+      expect(container.querySelectorAll("svg").length, reason).toBe(1);
+      expect(el.hasAttribute("disabled"), reason).toBe(false);
+      expect(el.getAttribute("aria-disabled"), reason).toBe("true");
+      expect(el.getAttribute("aria-label"), reason).toBe(
+        `Erase recording. ${hint!.label}`
+      );
+    }
   });
 
   it("keeps the hinted root stable when the row is enabled, and shows no badge", () => {

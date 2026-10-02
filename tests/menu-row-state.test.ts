@@ -196,10 +196,9 @@ describe("rowHint — which reasons carry a cue", () => {
 
   it("an uncommitted take speaks both steps, in the order the overlay allows", () => {
     expect(rowHint("uncommitted-take")).toEqual({
-      icon: "alert",
       label: spoken(strings.blockedByTake),
     });
-    // While the ≡ menu is open the sheet's control is behind the scrim, so the
+    // While the ⋮ menu is open the sheet's control is behind the scrim, so the
     // menu must be closed BEFORE it is reachable. (The sheet is only `inert` at
     // idle since #75, but the header — and so header Back — stays inert under
     // any overlay regardless of `takeActive` (George R2 P2), so Back is not
@@ -231,12 +230,12 @@ describe("rowHint — which reasons carry a cue", () => {
     expect(strings.blockedByTake).toContain(`"${strings.closeRecorder}"`);
   });
 
-  // The ≡-menu hint must NOT describe the save control by its looks. It is only
-  // ever spoken inside the recorder's ≡ menu, and while that menu is up the
+  // The ⋮-menu hint must NOT describe the save control by its looks. It is only
+  // ever spoken inside the recorder's ⋮ menu, and while that menu is up the
   // recorder header — the control it names — is `inert` (`recorder.tsx`'s
   // `overlayUp` gate), so the one live control on screen is the menu's own
-  // dismiss, "Close menu". Since #621 that dismiss wears the ≡ glyph, not a
-  // back chevron — this is the recorder's OWN ≡-menu, and it opts into
+  // dismiss, "Close menu". Since #621 that dismiss wears a single glyph (⋮ since #1225), not a
+  // back chevron — this is the recorder's OWN ⋮-menu, and it opts into
   // `hamburger` (`recorder.tsx`); the "back chevron" this comment described
   // before #621 is what the book/chapter/segment menus still wear, not this
   // one. Whichever glyph it wears, "the arrow/chevron at the top" would still
@@ -251,34 +250,37 @@ describe("rowHint — which reasons carry a cue", () => {
   // tell whether this specific menu still opts into the `hamburger` branch —
   // dropping the prop at that call site would leave this menu on the "back"
   // branch, silently contradicting the paragraph above.
-  it("the ≡-menu hint names both controls by name only, never by glyph (#620, #648 R1)", () => {
+  it("the ⋮-menu hint names both controls by name only, never by glyph (#620, #648 R1)", () => {
     const menuSource = stripComments(
       readFileSync(
         new URL("../src/components/menu.tsx", import.meta.url),
         "utf8"
       )
     );
-    const dismiss =
-      /icon=\{hamburger \? "menu" : "([\w-]+)"\}\s*label=\{closeLabel\}/.exec(
-        menuSource
-      );
+    // The current look's arm of `dismissGlyph`; the O4 look draws ✕ over
+    // both arms (#1268), which names nothing this string could point at
+    // either.
+    const dismiss = /hamburger\s*\?\s*dismissIcon\s*:\s*"([\w-]+)"/.exec(
+      menuSource
+    );
     expect(dismiss?.[1]).toBe("back");
+    expect(menuSource).toMatch(/icon=\{dismissGlyph\}\s*label=\{closeLabel\}/);
 
     expect(strings.blockedByTake).not.toMatch(/back arrow/i);
     expect(strings.blockedByTake).toContain(`"${strings.menuClose}"`);
     expect(strings.blockedByTake).toContain(`"${strings.closeRecorder}"`);
   });
 
-  // The assertion above pins the generic `hamburger ? "menu" : "back"`
+  // The assertion above pins the generic `hamburger ? dismissIcon : "back"`
   // ternary in `menu.tsx`; it says nothing about which branch the RECORDER's
-  // own ≡-menu (the one `blockedByTake` describes) actually takes. #621 wired
+  // own ⋮-menu (the one `blockedByTake` describes) actually takes. #621 wired
   // that call site to `hamburger`, and #677 found nothing in this suite that
   // would notice a regression at the call site — the generic ternary check
   // above still passes even if the recorder stopped opting in, because it
   // never reads `recorder.tsx`. Read the source directly instead, the same
   // way `tests/menu-hamburger-header.test.ts` pins the Books global menu's
   // wiring (#643).
-  it("the recorder's own ≡-menu is the one that opts into `hamburger` (#621, #677)", () => {
+  it("the recorder's own ⋮-menu is the one that opts into `hamburger` (#621, #677)", () => {
     // Since #160 L-1 this is a TWO-file chain: `recorder.tsx` opens
     // `<RecorderMenu open={menuShown}>`, and `recorder-menu.tsx` is what
     // renders the `<Menu>` that does or does not opt in. Both links are
@@ -339,21 +341,19 @@ describe("rowHint — which reasons carry a cue", () => {
 
   it("an empty segment speaks its reason", () => {
     expect(rowHint("no-audio")).toEqual({
-      icon: "alert",
       label: spoken(strings.nothingRecorded),
     });
     expect(rowHint("no-clip")).toEqual({
-      icon: "alert",
       label: spoken(strings.nothingStored),
     });
   });
 
-  // The glyph must be a STATE mark, never a control glyph. Round 1 shipped
-  // `back`, which named a control the overlay makes untappable and pointed at the
-  // menu's dismiss instead. `alert` says "blocked, look here" and names nothing.
-  it("every visible cue uses the alert state mark, never a control glyph", () => {
+  // #1239: the requirements owner's decision — no badge on a greyed menu tile
+  // or row, for any reason. The words are the whole cue.
+  it("no reason carries a glyph — the words are the whole cue (#1239)", () => {
     const reasons = [
       "uncommitted-take",
+      "starting",
       "denied",
       "no-segment",
       "no-audio",
@@ -362,7 +362,7 @@ describe("rowHint — which reasons carry a cue", () => {
     for (const r of reasons) {
       const hint = rowHint(r);
       if (hint === null) continue;
-      expect(hint.icon).toBe("alert");
+      expect(Object.keys(hint), r).toEqual(["label"]);
     }
   });
 
@@ -426,7 +426,7 @@ describe("markRowReason — the third row in the same menu (round 3)", () => {
 });
 
 /**
- * The `requesting` race (round 3): Record tapped, ≡ opened before
+ * The `requesting` race (round 3): Record tapped, ⋮ opened before
  * `getUserMedia` resolves. No audio exists yet, so the uncommitted-take words
  * ("…to save the recording") would promise a save that cannot happen — and
  * `close()` does not treat `requesting` as an attempted capture, so following
@@ -461,7 +461,7 @@ describe("the starting race — all four rows, distinct words", () => {
 
   it("says something other than the save-the-recording copy", () => {
     const starting = rowHint("starting");
-    expect(starting).toEqual({ icon: "alert", label: strings.micStarting });
+    expect(starting).toEqual({ label: strings.micStarting });
     expect(starting?.label).not.toBe(strings.blockedByTake);
     // The whole point: it must not send anyone to a control that would abandon
     // the in-flight start, so it names no control at all.
@@ -503,10 +503,9 @@ describe("heldTakeIsBusy", () => {
 });
 
 describe("barHint — the reason on a record-bar control (#315 Edit, #592 bin)", () => {
-  it("keeps the words and drops the badge for every reason that has words", () => {
+  it("gives the bar the menu's words for every reason that has words", () => {
     for (const reason of ["starting", "no-audio", "no-clip"] as const) {
       const row = rowHint(reason);
-      expect(row?.icon).toBe("alert");
       expect(barHint(reason)).toEqual({ label: row!.label });
     }
   });

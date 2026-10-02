@@ -1,5 +1,5 @@
 /**
- * Why a recorder ≡-menu row is disabled — derived, never hand-maintained (#135).
+ * Why a recorder ⋮-menu row is disabled — derived, never hand-maintained (#135).
  *
  * The Edit and Erase rows are gated on recorder state, and a grey row with no
  * reason read as a broken control to the requirements owner (2026-09-02,
@@ -13,7 +13,6 @@
  * gates these reproduce, in plain Node.
  */
 
-import type { IconName } from "./icon";
 import { strings } from "@/lib/strings";
 
 /**
@@ -118,7 +117,7 @@ interface EraseRowInputs {
 }
 
 /**
- * The "Erase recording" row (both menus). Null when enabled. Reproduces
+ * The "Reset segment and start over" row (both menus). Null when enabled. Reproduces
  * `!idleEditable || !view?.hasClip`. Erasing the stored take out from under a
  * live capture is nonsensical (George R-B6), so the take wins here too.
  */
@@ -137,7 +136,7 @@ interface DeleteRowInputs {
 }
 
 /**
- * The "Delete segment" row/tile (#590, the recorder ≡ menu). Null when
+ * The "Delete segment" row/tile (#590, the recorder ⋮ menu). Null when
  * enabled.
  *
  * Deliberately narrower than `eraseRowReason`: it does NOT require a stored
@@ -155,60 +154,49 @@ export function deleteRowReason(i: DeleteRowInputs): RowReason | null {
   return null;
 }
 
-/** A disabled row's cue: a visible state mark, and the reason in words. */
+/** A disabled row's cue: the reason in words. Nothing is painted (#1239). */
 export interface RowHint {
-  /**
-   * A small badge on the row. `"alert"` — a STATE mark meaning "blocked, look
-   * here" — never a glyph that names a control (see {@link rowHint}).
-   */
-  readonly icon?: IconName;
   /** Appended to the row's accessible name while disabled. */
   readonly label: string;
 }
 
 /**
- * Which reasons get a cue, what it shows, and what it says.
+ * Which reasons get a cue, and what it says.
  *
- * **The glyph is `alert`, and the reason it is not a control glyph is the whole
- * history of this cue.** Round 1 badged the uncommitted-take row with `back`,
- * meaning the sheet's own commit control — which cannot be tapped, because at
- * the time the ≡ menu inerted the whole sheet while it was open, leaving the
- * menu's own Close as the one live back-chevron. The badge therefore marked the
- * DISMISS control as the way out. Round 2 then found that dropping the glyph
- * entirely left the cue in the accessible name only: invisible to the sighted
- * tester who reported #135, and skipped by Tab because the row was natively
- * `disabled`.
+ * **The cue is words only — no badge (#1239).** The requirements owner decided
+ * on #1239 that a greyed menu tile or row carries no warning mark, in either
+ * look and for every reason: it read as an error on a control that is merely
+ * waiting on something else, the same reason the bar's controls and the history
+ * arrows already go without (#610, #624, #924). The tile stays visibly dimmed,
+ * the reason stays in the accessible name, and `Control` makes a hinted row
+ * `aria-disabled` (focusable, announced, inert to activation) rather than
+ * natively disabled, so keyboard and switch users still reach the words (#135
+ * round 2). `Control` paints nothing for a hint, so a label-only shape cannot
+ * grow a badge back by accident.
  *
- * (#368 narrowed the inert scope so a live take's transport is reachable
- * mid-take, but the header — and so header Back — stays inert under any
- * overlay regardless of `takeActive` (George R2 P2). So the premise above still
- * holds in both states: header Back is never a reachable control while this row
- * is visible, only the menu's own Close is, and the badge names no control for
- * the same reason it always has.)
- *
- * So the badge is back, as a STATE mark rather than a direction: `alert` says
- * "blocked, look here" and names no control, which is the one thing a glyph in
- * this overlay can honestly do. The words carry the way out, using the controls'
- * real accessible names. `Control` renders the badge and makes hinted rows
- * `aria-disabled` (focusable, announced, inert to activation) rather than natively
- * disabled, which is what puts the reason in reach of keyboard and switch users.
+ * **The words never send anyone to a control the overlay makes untappable.** An
+ * earlier round pointed the uncommitted-take cue at the sheet's own commit
+ * control, which the ⋮ menu inerts while it is open (the header, so header Back,
+ * stays inert under any overlay regardless of `takeActive`, George R2 P2). Only
+ * the menu's own Close is reachable, so the words use the controls' real
+ * accessible names and go through it.
  *
  * `"starting"` is split from `"uncommitted-take"` because the words differ, not
  * the gate: while `getUserMedia` is still resolving there is no audio yet, so
  * "…to save the recording" would promise a save that cannot happen — and `close()`
  * does not treat `requesting` as an attempted capture, so a translator who
  * followed it would abandon the in-flight start (George, round 3). Reachable as a
- * short race: tap Record, then ≡ before the mic resolves.
+ * short race: tap Record, then ⋮ before the mic resolves.
  *
  * `denied` and `no-segment` carry no cue, on two DIFFERENT grounds — the earlier
  * "the opener is disabled, so no row is ever seen" covered both and was false for
  * `denied`, because a disabled opener only blocks OPENING and `denied` can turn on
  * while the menu is already up (George, round 4):
  *
- * - `denied` — the ≡ menu is now DISMISSED the moment `denied` turns on
+ * - `denied` — the ⋮ menu is now DISMISSED the moment `denied` turns on
  *   (`recorder.tsx`'s `menuShown`), so these rows genuinely cannot be seen under
  *   it. The permission panel is the reason, stated in full where the translator
- *   is looking; a badge on a hidden row would be a second, weaker copy of it.
+ *   is looking; a cue on a hidden row would be a second, weaker copy of it.
  * - `no-segment` — `view` starts set when the sheet mounts, and the one thing that
  *   returns it to null while open is a failed `reload()` (`use-recorder-segment`'s
  *   `setView(null)`, the commit-then-edit reload miss #134 added). In THAT state the
@@ -220,13 +208,13 @@ export interface RowHint {
 export function rowHint(reason: RowReason | null): RowHint | null {
   switch (reason) {
     case "uncommitted-take":
-      return { icon: "alert", label: strings.blockedByTake };
+      return { label: strings.blockedByTake };
     case "starting":
-      return { icon: "alert", label: strings.micStarting };
+      return { label: strings.micStarting };
     case "no-audio":
-      return { icon: "alert", label: strings.nothingRecorded };
+      return { label: strings.nothingRecorded };
     case "no-clip":
-      return { icon: "alert", label: strings.nothingStored };
+      return { label: strings.nothingStored };
     case "denied":
     case "no-segment":
     case null:
@@ -235,15 +223,15 @@ export function rowHint(reason: RowReason | null): RowHint | null {
 }
 
 /**
- * The same reason, worn by a control on the record BAR rather than in the ≡
+ * The same reason, worn by a control on the record BAR rather than in the ⋮
  * menu — the toolbar Edit (#315) and the bin (#592).
  *
- * One difference from {@link rowHint}, because the bar is not the menu: no
- * badge. The bar's controls sit in the translator's hand all session, and an
- * `alert` mark on an empty segment's Edit or bin would read as something gone
- * wrong on the first screen of every new segment. The reason stays in the
- * accessible name, and the control goes `aria-disabled`, so keyboard and
- * switch users still reach it.
+ * Like {@link rowHint} (#1239), it wears no badge: the bar's controls sit in
+ * the translator's hand all session, and a mark on an empty segment's Edit or
+ * bin would read as something gone wrong on the first screen of every new
+ * segment. The reason stays in the accessible name, and the control goes
+ * `aria-disabled`, so keyboard and switch users still reach it. The one
+ * difference from the menu is the words for `"uncommitted-take"`, below.
  *
  * `"uncommitted-take"` never gets `blockedByTake`'s words here: that sends
  * the translator to "Close menu", then "Close recorder" — a menu the bar is
@@ -279,8 +267,7 @@ export function barHint(
   if (reason === "uncommitted-take") {
     return uncommittedTakeLabel ? { label: uncommittedTakeLabel } : null;
   }
-  const hint = rowHint(reason);
-  return hint === null ? null : { label: hint.label };
+  return rowHint(reason);
 }
 
 /**

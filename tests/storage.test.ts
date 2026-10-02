@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   deleteClip,
@@ -16,6 +16,7 @@ import {
   addSegment,
   chapterProgress,
   createBook,
+  deleteSegment,
   getBook,
   getChapter,
   getSegment,
@@ -188,7 +189,7 @@ describe("book tree", () => {
     expect(third.name).toBe("Book 003");
   });
 
-  it("creates and lists books newest-updated first", async () => {
+  it("creates and lists books newest-created first", async () => {
     // Create in the OPPOSITE order to the expected sort, with explicit and
     // distinct timestamps, so an unsorted `getAll` (primary-key/uuid order)
     // fails deterministically rather than passing by luck.
@@ -407,9 +408,9 @@ describe("book tree", () => {
     expect((await db.get("segments", segmentId))?.status).toBe("draft");
   });
 
-  it("bumps the book's updatedAt when a segment is recorded (shelf recency)", async () => {
-    // listBooks sorts by updatedAt; recording is activity, so the book being
-    // worked in must float up, not sink under one that only got a new chapter.
+  it("bumps the book's updatedAt when a segment is recorded", async () => {
+    // Recording is activity on the book. The shelf order does not read it
+    // (#1185; the "books stay put" block below pins that).
     const book = await createBook("b", null, 1000);
     const chapter = await addChapter(book.id);
     const segment = await addSegment(chapter.id);
@@ -771,13 +772,13 @@ describe("rename book and chapter", () => {
     expect((await getChapter(chapter.id))?.name).toBeNull();
   });
 
-  it("renames a book in place and floats it up the shelf", async () => {
+  it("renames a book in place and bumps its updatedAt", async () => {
     const book = await createBook("Book 001", null, 1000);
     const renamed = await renameBook(book.id, "Mark", 5000);
 
     expect(renamed.name).toBe("Mark");
-    // Rename is activity: updatedAt bumps so the book the facilitator just
-    // labelled is where listBooks (sorted by updatedAt) puts it — the top.
+    // Rename is activity: updatedAt bumps. The book keeps its place on the
+    // shelf (#1185).
     expect(renamed.updatedAt).toBe(5000);
     expect((await getBook(book.id))?.name).toBe("Mark");
   });
@@ -796,7 +797,7 @@ describe("rename book and chapter", () => {
   it("renaming a book to its current name is an idempotent no-op", async () => {
     const book = await createBook("Mark", null, 1000);
     const again = await renameBook(book.id, "Mark", 9000);
-    // No write: updatedAt is not bumped, so a re-run does not reshuffle the shelf.
+    // No write: updatedAt is not bumped, so a re-run is a true no-op.
     expect(again.updatedAt).toBe(1000);
   });
 
@@ -817,10 +818,10 @@ describe("rename book and chapter", () => {
     expect(renamed.number).toBe(chapter.number);
   });
 
-  it("floats the parent book up the shelf when a chapter is renamed", async () => {
-    // G4: labelling a chapter is activity on its book. listBooks sorts by
-    // updatedAt, so a renamed chapter must float its book, consistent with
-    // addChapter/renameBook/recording — not leave it where it was.
+  it("bumps the parent book's updatedAt when a chapter is renamed", async () => {
+    // G4: labelling a chapter is activity on its book, consistent with
+    // addChapter/renameBook/recording. The book keeps its place on the shelf
+    // (#1185).
     const book = await createBook("Mark", null, 1000);
     const chapter = await addChapter(book.id);
     await renameChapter(chapter.id, "Mark 6", 5000);
@@ -830,7 +831,7 @@ describe("rename book and chapter", () => {
   it("renaming a chapter to its current name is an idempotent no-op (no book bump)", async () => {
     // The symmetric no-op the book path already covers (G-P3.4). Re-running a
     // rename with the same value writes nothing AND must not bump the parent
-    // book's recency — otherwise a re-run reshuffles the shelf.
+    // book's recency.
     const book = await createBook("Mark", null, 1000);
     const chapter = await addChapter(book.id);
     await renameChapter(chapter.id, "Mark 6", 2000);
@@ -878,7 +879,7 @@ describe("book cover colour (#957)", () => {
 
     expect(updated.coverColourKey).toBe("forest");
     // Choosing a colour is activity, the same rule `renameBook` follows:
-    // updatedAt bumps so the book floats up the listBooks-sorted shelf.
+    // updatedAt bumps. The book keeps its place on the shelf (#1185).
     expect(updated.updatedAt).toBe(5000);
     expect((await getBook(book.id))?.coverColourKey).toBe("forest");
   });
@@ -907,8 +908,7 @@ describe("book cover colour (#957)", () => {
 
     const again = await setBookCoverColour(book.id, "forest", 9000);
 
-    // No write on the no-op: recency is unchanged, not bumped to 9000 — a
-    // re-run of the same write must not reshuffle the shelf.
+    // No write on the no-op: recency is unchanged, not bumped to 9000.
     expect(again.updatedAt).toBe(5000);
     expect((await getBook(book.id))?.updatedAt).toBe(5000);
   });
@@ -1268,5 +1268,99 @@ describe("segment audio resolution", () => {
     // the audio under the id the take already names is enough.
     await putClip(clipId, samples(40), CANONICAL_SAMPLE_RATE);
     expect((await loadSegmentClip(segmentId)).kind).toBe("resolved");
+  });
+});
+
+describe("shelf order: books stay put (#1185)", () => {
+  // A strictly increasing clock, so every write gets its own timestamp and no
+  // order below is left to a tie.
+  let clock = 1_000;
+  beforeEach(() => {
+    clock = 1_000;
+    vi.spyOn(Date, "now").mockImplementation(() => (clock += 10));
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** One book with one chapter and one recorded segment, built in full
+   *  before the next book starts. */
+  const recordedBook = async (name: string) => {
+    const book = await createBook(name);
+    const chapter = await addChapter(book.id);
+    const segment = await addSegment(chapter.id);
+    await addTake(segment.id, await storedClip(), 100);
+    return { bookId: book.id, chapterId: chapter.id, segmentId: segment.id };
+  };
+
+  type Tree = Awaited<ReturnType<typeof recordedBook>>;
+
+  it.each<[string, (tree: Tree) => Promise<unknown>]>([
+    ["adding a chapter", (t) => addChapter(t.bookId)],
+    ["a real book rename", (t) => renameBook(t.bookId, "Renamed")],
+    ["a cover colour change", (t) => setBookCoverColour(t.bookId, "forest")],
+    ["a chapter rename", (t) => renameChapter(t.chapterId, "Mark 6")],
+    ["deleting a segment", (t) => deleteSegment(t.segmentId)],
+    [
+      "recording a take",
+      async (t) => addTake(t.segmentId, await storedClip(), 100),
+    ],
+    ["clearing a take", (t) => clearSegmentTake(t.segmentId)],
+  ])("%s leaves the listBooks order unchanged", async (_label, write) => {
+    const oldest = await recordedBook("oldest");
+    await recordedBook("middle");
+    await recordedBook("newest");
+    const before = (await listBooks()).map((b) => b.id);
+    // The book written to is the LAST one on the shelf, so any float moves it.
+    expect(before[2]).toBe(oldest.bookId);
+    const stamped = (await getBook(oldest.bookId))!.updatedAt;
+
+    await write(oldest);
+
+    // The write still bumps `updatedAt` — it is activity, it just does not
+    // order the shelf — so an unchanged order below is not a skipped write.
+    expect((await getBook(oldest.bookId))!.updatedAt).toBeGreaterThan(stamped);
+    expect((await listBooks()).map((b) => b.id)).toEqual(before);
+  });
+
+  it("puts a new book first, above a book written to after it was made", async () => {
+    const older = await recordedBook("older");
+    const fresh = await createBook("fresh");
+    // `older` is now the most recently written book on the shelf; `fresh`
+    // is still first because it was created last.
+    await addChapter(older.bookId);
+
+    expect((await listBooks()).map((b) => b.id)).toEqual([
+      fresh.id,
+      older.bookId,
+    ]);
+  });
+
+  it("keeps the order across a fresh database connection", async () => {
+    const oldest = await recordedBook("oldest");
+    const newest = await recordedBook("newest");
+    await addChapter(oldest.bookId);
+
+    await closeDb();
+    await getDb();
+
+    expect((await listBooks()).map((b) => b.id)).toEqual([
+      newest.bookId,
+      oldest.bookId,
+    ]);
+  });
+
+  it("orders books created in the same millisecond by id, ascending", async () => {
+    // Pins the tie rule; no line in `listBooks` implements it. `getAll`
+    // returns rows in primary-key order (IndexedDB 3.0, "retrieve multiple
+    // values from an object store") and `Array.prototype.sort` is stable
+    // (ECMA-262 since ES2019), so a `createdAt` tie keeps id order.
+    const a = await createBook("a", null, 5_000);
+    const b = await createBook("b", null, 5_000);
+    const c = await createBook("c", null, 5_000);
+
+    expect((await listBooks()).map((book) => book.id)).toEqual(
+      [a.id, b.id, c.id].sort()
+    );
   });
 });

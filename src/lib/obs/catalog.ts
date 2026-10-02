@@ -95,8 +95,9 @@ export function thumbUrl(story: number, frame: number): string {
 }
 
 /**
- * @pivotpending No caller yet. #253 pairs this with {@link obsFrameScope} to
- * address an OBS-derived `SegmentRef` ("OBS" the book, `obsFrameScope`'s
- * result the scope).
+ * @pivotpending No caller yet. Inferred companion to {@link obsFrameScope}
+ * for an OBS-derived `SegmentRef` ("OBS" the book, `obsFrameScope`'s result
+ * the scope) — #253's body names `obsFrameScope` but does not name this
+ * constant.
  */
 export const OBS_BOOK_CODE = "OBS";

@@ -20,7 +20,10 @@ import { useDesign } from "@/hooks/use-design";
 import { Waveform } from "./waveform";
 import { cn } from "@/lib/utils";
 import { segmentRowState } from "@/lib/view/segment-rows";
-import type { SegmentRow as SegmentRowModel } from "@/types/view";
+import type {
+  RecorderEntry,
+  SegmentRow as SegmentRowModel,
+} from "@/types/view";
 
 interface SegmentRowProps {
   row: SegmentRowModel;
@@ -42,8 +45,10 @@ interface SegmentRowProps {
    */
   onPlay: (offsetSeconds: number) => void;
   /** Open the recorder sheet for this segment — to record an empty one, or to
-   * edit (insert/append/re-record) one that already has audio. */
-  onOpenRecorder: () => void;
+   * edit (insert/append/re-record) one that already has audio. The menu's Edit
+   * passes `"edit"` so the sheet opens in edit mode (#286 item 2); every other
+   * entry opens it in record mode. */
+  onOpenRecorder: (entry?: RecorderEntry) => void;
   onSetFinished: (finished: boolean) => void;
   /**
    * Ask to erase this segment's recording (B6, D-TWO-ENTRIES). Picked from the
@@ -52,6 +57,17 @@ interface SegmentRowProps {
    * a recorded row — a never-recorded row has no audio to erase.
    */
   onErase: () => void;
+  /**
+   * Ask to delete this segment's ROW, not only its audio (#590, moved here
+   * by #1104 — the requirements owner's 2026-09-26 decision superseding
+   * #1080's recorder placement: "the menu inside the segment editor
+   * (recorder) shows Erase only. Delete (removing the whole segment) belongs
+   * to the chapter view."). Picked from the row's overflow menu; the screen
+   * owns the confirm and the store op. Unlike `onErase`, offered on EVERY
+   * row, recorded or not — deleting the row is exactly what an accidentally
+   * added, never-recorded segment needs (#590's own field-tester ask).
+   */
+  onDeleteSegment: () => void;
   /**
    * Commit a typed label (#591), resolving `true` once it has landed. The store
    * normalises it (trim, blank ⇒ `null`); the row only keeps its field up on
@@ -107,7 +123,12 @@ interface SegmentRowProps {
    * `O4SheetHead`'s own docblock).
    */
   bookCoverHex?: string;
-  chapterNumber?: number;
+  /**
+   * The chapter's resolved name (`strings.chapterHeading`: the typed name,
+   * else "Chapter N"), the head's chapter crumb — the same text the
+   * chapter-screen header shows (#1230).
+   */
+  chapterHeading?: string;
   /**
    * Press-and-hold reorder (#953 PR2a): the screen's `onPointerDown` for this
    * row's hold area. Attached in the O4 look only, and only to the number
@@ -162,6 +183,16 @@ function playOffsetSeconds(fraction: number, durationMs: number): number {
  * a never-recorded row too, but greyed with their reason and refusing the tap. A never-recorded row opens the recorder
  * from its record button, sized to match play (#82).
  *
+ * **Delete segment lives here, not on Edit/Finished/Erase's terms** (#590,
+ * moved to this menu by #1104 from the recorder's ⋮ menu, where #1080 first
+ * shipped it). Unlike Erase, Delete does NOT require a recorded row — an
+ * accidentally added, never-recorded segment is exactly what it needs to
+ * remove. In the O4 tile grid the tiles read left to right as Done, Edit,
+ * Clear, Delete (the DRI's 2026-09-28 pick on #1119); the current look also
+ * keeps Delete last, after Clear. "Clear" is the visible word for this file's
+ * erase (audio only; the segment stays), with the eraser glyph in both looks;
+ * the bin is Delete's alone.
+ *
  * The ordinal always shows; a label, when set, follows it ("3 · verses 3–4").
  */
 export function SegmentRow({
@@ -173,6 +204,7 @@ export function SegmentRow({
   onOpenRecorder,
   onSetFinished,
   onErase,
+  onDeleteSegment,
   onRename,
   onMenuOpen,
   onMenuClose,
@@ -180,7 +212,7 @@ export function SegmentRow({
   guided = false,
   bookName,
   bookCoverHex,
-  chapterNumber,
+  chapterHeading,
   onHoldStart,
 }: SegmentRowProps) {
   const state = segmentRowState(row);
@@ -433,7 +465,7 @@ export function SegmentRow({
   // aria-label is now the ONLY place the finished state reaches AT on the row —
   // the checkbox's `aria-checked` is gone and the menu is closed — so it carries
   // "finished" explicitly. `openSegment` on an empty row stays distinct from the
-  // record button's "Record segment N" so the two do not collide.
+  // microphone control's "Open recorder for segment N" so the two do not collide.
   const openLabel =
     state === "finished"
       ? strings.editSegmentFinished(ordinal, row.label)
@@ -507,7 +539,7 @@ export function SegmentRow({
     >
       <button
         type="button"
-        onClick={onOpenRecorder}
+        onClick={() => onOpenRecorder()}
         disabled={busy}
         aria-label={openLabel}
         className="row-open"
@@ -523,7 +555,11 @@ export function SegmentRow({
             <span className="row-status">
               {state === "finished" && <Icon name="check" size={16} />}
             </span>
-            <span className="t-ordinal row-heading">
+            <span
+              className="t-ordinal row-heading"
+              // "3 · label": only a label is user text (#1267).
+              dir={row.label ? "auto" : undefined}
+            >
               {strings.segmentHeading(ordinal, row.label)}
             </span>
           </>
@@ -534,7 +570,12 @@ export function SegmentRow({
         <div className="row-mid">
           {titled && (
             // Visual only: the open button's name already carries the label.
-            <span className="row-title" aria-hidden="true" {...holdArea}>
+            <span
+              className="row-title"
+              dir="auto"
+              aria-hidden="true"
+              {...holdArea}
+            >
               {row.label}
             </span>
           )}
@@ -563,16 +604,19 @@ export function SegmentRow({
         />
       ) : (
         <Control
-          icon="record"
-          label={strings.recordSegment(ordinal)}
-          variant="record"
-          size={o4 ? 28 : 20}
+          // A microphone, not the recorder's red Record dot: this tap opens
+          // the recorder, and the Record there is a second, separate tap
+          // (#1217, #602).
+          icon="mic"
+          label={strings.openRecorderSegment(ordinal)}
+          variant="mic"
+          size={o4 ? 32 : 22}
           className="flex-none"
           disabled={busy}
           // Never on a control held inert by a landing save: the ring would
           // be pointing at a tap the row is refusing.
           guided={guided && !busy}
-          onClick={onOpenRecorder}
+          onClick={() => onOpenRecorder()}
         />
       )}
 
@@ -625,15 +669,25 @@ export function SegmentRow({
           // scissors, the pencil the name role, so the two are told apart
           // (#859). Done is grey until the segment is done, then the whole
           // tile green (G8). On a never-recorded segment Edit and Done stay,
-          // greyed with their reason (#135), and there is no Play or Erase.
-          // The workbench's "Remove this segment" is not drawn: the app has
-          // no delete-segment action yet.
+          // greyed with their reason (#135), and there is no Play or Clear —
+          // Delete stays reachable there too (#590's own point: an empty,
+          // accidentally added segment is exactly what it is for). Tile
+          // order is Done, Edit, Clear, Delete left to right (the DRI's
+          // 2026-09-28 pick on #1119), NOT the workbench's own D20 drawing,
+          // which this deliberately departs from (see below). Clear removes
+          // only the audio and wears the eraser on the plain well; Delete
+          // removes the segment and alone keeps the bin and the red fill.
+          //
+          // The workbench's "Remove this segment" (D20, #997) is still not
+          // drawn as such: THIS tile is #590/#1104's broader delete (any
+          // segment, recorded or not), not #997's narrower empty-only one,
+          // which remains a separate, deferred, unbuilt action.
           <>
             <div className="o4-sheet-bar">
               <O4SheetHead
                 book={bookName}
                 bookCoverHex={bookCoverHex}
-                chapter={chapterNumber}
+                chapter={chapterHeading}
                 segment={{ ordinal, state }}
               />
               <Control
@@ -654,7 +708,11 @@ export function SegmentRow({
                 {ordinal}
               </span>
               <span className="o4-menu-preview-mid" aria-hidden="true">
-                {titled && <span className="o4-menu-title">{row.label}</span>}
+                {titled && (
+                  <span className="o4-menu-title" dir="auto">
+                    {row.label}
+                  </span>
+                )}
                 <Waveform
                   peaks={hasClip ? row.peaks : null}
                   recorded={hasClip}
@@ -683,19 +741,16 @@ export function SegmentRow({
                 />
               )}
             </div>
-            <TileGrid>
-              <Tile
-                tone="edit"
-                icon="scissors"
-                label={strings.editSegment(ordinal, row.label)}
-                caption={strings.tileEdit}
-                disabled={!hasClip}
-                hint={rowHint(hasClip ? null : "no-audio")}
-                onClick={() => {
-                  closeMenu();
-                  onOpenRecorder();
-                }}
-              />
+            {/* `hasClip` puts FOUR real tiles in this row (Done, Edit,
+                Clear, Delete) — the case that does not fit the pinned 76 ×
+                76 token at 320-360px (#1119 round 5, George Medium 1;
+                `o4-tiles--compact` in `o4/menus.css` has the arithmetic).
+                Compact there, and drop the spacer: with no room to push
+                Clear/Delete to the far end, the four tiles simply run
+                left-to-right in order. The three-tile case (no stored clip:
+                Done, Edit, then Delete past the spacer) keeps the
+                spacer-pushed layout at full size. */}
+            <TileGrid className={hasClip ? "o4-tiles--compact" : undefined}>
               <Tile
                 tone={row.finished ? "done" : "doneoff"}
                 icon="check"
@@ -716,23 +771,54 @@ export function SegmentRow({
                   onSetFinished(!row.finished);
                 }}
               />
+              <Tile
+                tone="edit"
+                icon="scissors"
+                label={strings.editSegment(ordinal, row.label)}
+                caption={strings.tileEdit}
+                disabled={!hasClip}
+                hint={rowHint(hasClip ? null : "no-audio")}
+                onClick={() => {
+                  closeMenu();
+                  onOpenRecorder("edit");
+                }}
+              />
+              {!hasClip && <TileSpacer />}
               {hasClip && (
-                <>
-                  <TileSpacer />
-                  <Tile
-                    tone="erase"
-                    icon="trash"
-                    label={strings.eraseSegment}
-                    caption={strings.tileErase}
-                    onClick={() => {
-                      // Erase first, then close: the same 1 -> 2 -> 1 layer
-                      // interleave as the row below (#452 PR3).
-                      onErase();
-                      closeMenu();
-                    }}
-                  />
-                </>
+                // Clear removes only the audio; the segment stays
+                // (`performErase` -> `clearSegmentTake`). Eraser on the plain
+                // well, so red is left to Delete, which removes the segment
+                // (the DRI's 2026-09-28 pick on #1119).
+                <Tile
+                  tone="plain"
+                  icon="eraser"
+                  label={strings.eraseSegment}
+                  caption={strings.tileErase}
+                  onClick={() => {
+                    // Clear first, then close: the same 1 -> 2 -> 1 layer
+                    // interleave as Delete below (#452 PR3).
+                    onErase();
+                    closeMenu();
+                  }}
+                />
               )}
+              {/* Delete is unconditional: reachable on a never-recorded row,
+                  unlike Clear just before it (#590's own field-tester ask).
+                  Last in both rows. On the 3-tile (no-clip) row the spacer
+                  above pushes it to the far end; on the 4-tile (hasClip) row
+                  there is no spacer and it follows Clear. */}
+              <Tile
+                tone="erase"
+                icon="trash"
+                label={strings.deleteSegment}
+                caption={strings.tileDelete}
+                onClick={() => {
+                  // Delete first, then close: the same 1 -> 2 -> 1 layer
+                  // interleave as Clear above (#452 PR3).
+                  onDeleteSegment();
+                  closeMenu();
+                }}
+              />
             </TileGrid>
           </>
         ) : (
@@ -745,7 +831,7 @@ export function SegmentRow({
                   variant="quiet"
                   onClick={() => {
                     closeMenu();
-                    onOpenRecorder();
+                    onOpenRecorder("edit");
                   }}
                 />
                 <Control
@@ -774,11 +860,11 @@ export function SegmentRow({
             />
             {hasClip && (
               <Control
-                icon="trash"
+                icon="eraser"
                 label={strings.eraseSegment}
                 variant="quiet"
                 onClick={() => {
-                  // Erase FIRST, then close this menu: the screen registers the
+                  // Clear FIRST, then close this menu: the screen registers the
                   // confirm's layer inside `onErase` and this close unregisters
                   // this menu's, so the stack goes 1 -> 2 -> 1 and never passes
                   // through empty. Same interleave, and the same reason, as
@@ -788,6 +874,18 @@ export function SegmentRow({
                 }}
               />
             )}
+            {/* Delete (#590, moved here by #1104), last and unconditional —
+                reachable on a never-recorded row, unlike Clear just above.
+                Same 1 -> 2 -> 1 interleave. */}
+            <Control
+              icon="trash"
+              label={strings.deleteSegment}
+              variant="quiet"
+              onClick={() => {
+                onDeleteSegment();
+                closeMenu();
+              }}
+            />
           </>
         )}
       </Menu>

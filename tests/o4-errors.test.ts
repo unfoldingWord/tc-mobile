@@ -11,6 +11,7 @@ import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 
 import { one, render } from "./render";
+import { stripCssComments } from "./support";
 
 /**
  * The O4 look of the three recovery surfaces (#948, epic #936): mic denied
@@ -188,10 +189,12 @@ describe("SaveFailed, O4", () => {
 });
 
 describe("o4/errors.css", () => {
-  const css = readFileSync(
-    path.resolve(import.meta.dirname, "..", "src/app/styles/o4/errors.css"),
-    "utf8"
-  ).replace(/\/\*[\s\S]*?\*\//g, "");
+  const css = stripCssComments(
+    readFileSync(
+      path.resolve(import.meta.dirname, "..", "src/app/styles/o4/errors.css"),
+      "utf8"
+    )
+  );
 
   // Every rule's selector list, comments stripped so prose cannot match.
   const rules = [...css.matchAll(/([^{}@]+)\{([^{}]*)\}/g)].map(

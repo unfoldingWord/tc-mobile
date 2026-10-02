@@ -15,10 +15,10 @@ export interface FocusRestore {
    *
    * Re-entrant by design: a second `capture()` while one is held keeps the
    * FIRST. Before the header went inert under any overlay regardless of
-   * `takeActive` (George R2 P2), the recorder's ≡ opener stayed reachable to AT
+   * `takeActive` (George R2 P2), the recorder's ⋮ opener stayed reachable to AT
    * while the menu was up over a live take (#75), and a second tap on it had to
    * not overwrite the real trigger with a row inside the panel. The header
-   * fix closes that specific path — the ≡ is now inert whenever an overlay is
+   * fix closes that specific path — the ⋮ is now inert whenever an overlay is
    * up, mode or `takeActive` regardless — but the guard is kept as the
    * defensive rule for any future caller that captures again before the
    * previous overlay's `inert` has committed.
@@ -65,15 +65,15 @@ export interface FocusRestore {
  * Modal focus-restore, done against this app's `inert` model (#97).
  *
  * One capture/restore pair per **inert scope** — not per dialog. The recorder's
- * ≡ menu and its erase confirm share one scope and chain within it (the Erase
+ * ⋮ menu and its erase confirm share one scope and chain within it (the Erase
  * row closes the menu and opens the confirm in the SAME commit), so a
  * per-dialog restore would fire into a subtree that is still inert and do
  * nothing. Keying on the composite is what makes the chain restore once, to the
- * ≡ that started it.
+ * ⋮ that started it.
  *
  * That also closes the sharp edge #97 names: after cancelling an erase, focus
  * used to sit on the document, so a switch user's next Tab landed on **Back** —
- * and Back is `close()`, which SAVES. Landing on the ≡ instead puts the next Tab
+ * and Back is `close()`, which SAVES. Landing on the ⋮ instead puts the next Tab
  * past Back and into the body.
  *
  * ## What is NOT verified

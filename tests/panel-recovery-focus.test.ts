@@ -238,7 +238,7 @@ describe("panelRecoveryFocus holds through a close that may fail (#457 QA P2)", 
  * armed to leave — the #97 hazard, on exactly the users #199 exists for.
  *
  * Open and recovery are different edges: open is not mid-task, recovery is.
- * So the recovery lands on the ≡, resolved by accessible name through
+ * So the recovery lands on the ⋮, resolved by accessible name through
  * `overlayFallbackLabel` — the same landmark the overlay restore in the same
  * file uses, for the same reason — and never by position.
  *
@@ -247,7 +247,7 @@ describe("panelRecoveryFocus holds through a close that may fail (#457 QA P2)", 
  * this landing behaviourally; no test here does yet, so the `.focus()` call
  * itself is not exercised (#549 candidate, #361).
  */
-describe("the recovery landing is the ≡ landmark, never the sheet's first button (#457 George R1 P2)", () => {
+describe("the recovery landing is the ⋮ landmark, never the sheet's first button (#457 George R1 P2)", () => {
   it("hands a `focus` action to the menu landmark", () => {
     // The landing is resolved into a local first, so the null case can bail
     // out before the history write (George R3 P2-2, pinned below).
@@ -341,14 +341,14 @@ describe("the open-edge landing yields to a panel that owns the first commit (#4
 });
 
 /**
- * A natively disabled ≡ is NOT a landmark (George R3 P2-2 on #457).
+ * A natively disabled ⋮ is NOT a landmark (George R3 P2-2 on #457).
  *
- * `menuLandmark`'s comment promised `null` when the ≡ is not rendered AND a
+ * `menuLandmark`'s comment promised `null` when the ⋮ is not rendered AND a
  * no-op when it is `disabled`; the callback returned the disabled node anyway,
  * and `use-focus-restore.ts`'s `hasFallback` checks connectivity, not
  * `disabled` (its `focusable` predicate is for the trigger alone). A disabled
  * button cannot take focus, so both callers "succeeded" with focus on <body>,
- * and the next Tab reached header Back. The ≡ is natively disabled (no `hint`,
+ * and the next Tab reached header Back. The ⋮ is natively disabled (no `hint`,
  * so `Control` sets the attribute) through `!view || isClosing || denied ||
  * heldTake !== null`.
  *
@@ -357,10 +357,10 @@ describe("the open-edge landing yields to a panel that owns the first commit (#4
  * trigger, so `aria-disabled` rows (#135) are untouched. And the recovery
  * effect, handed a `focus` action with no landmark to land on, leaves its
  * previous-commit history UNWRITTEN — the `hold` lesson again — so a later
- * commit on which the ≡ has been enabled can still recover.
+ * commit on which the ⋮ has been enabled can still recover.
  */
-describe("menuLandmark yields null for a natively disabled ≡ (#457 George R3 P2-2)", () => {
-  it("returns null when the ≡ carries the native disabled attribute", () => {
+describe("menuLandmark yields null for a natively disabled ⋮ (#457 George R3 P2-2)", () => {
+  it("returns null when the ⋮ carries the native disabled attribute", () => {
     const start = uniqueIndexOf(recorder, "const menuLandmark = useCallback(");
     const body = region(recorder, {
       from: start,
@@ -390,7 +390,7 @@ describe("menuLandmark yields null for a natively disabled ≡ (#457 George R3 P
     expect(write, "the history write must follow the bail-out").toBeGreaterThan(
       land
     );
-    // The optional-chain form silently spent the recovery on a disabled ≡.
+    // The optional-chain form silently spent the recovery on a disabled ⋮.
     expect(effect).not.toMatch(/menuLandmark\(\)\?\.focus\(\)/);
   });
 });

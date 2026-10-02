@@ -118,28 +118,58 @@ the trap the paragraph below is about;
 `tests/dist-css.test.ts` reads the **built** `dist/assets/*.css`, not a source
 layer at all.
 
-So a CSS check is buildable today. **For the colour boundary, copy
-`tests/share-progress.test.ts`, not `tests/touch-policy.test.ts`** — share-progress
-already asserts this exact split for `.share-scrim`, by slicing the rule block
-and matching declaration _values_, which a comment cannot false-hit.
-touch-policy reads its file whole and regexes the raw string, so the obvious
-`not.toMatch(/--p-(amber|cool|green|red|warn)/)` copied from it fails on
-`3-components.css`'s own header, which names those five families in prose in
-order to ban them — and the natural repair is to weaken the pattern until it can
-no longer catch a real leak in a rule. A whole-file reader must ignore comments
-and match `var(…)` declarations rather than the bare identifier.
+So a CSS check is buildable today. **For a CSS rule, read it through `cssRule`
+and `declarationValue` in `tests/support.ts`** rather than a local regex:
+`cssRule` strips block comments and throws on a missing, ambiguous or empty
+rule, and `declarationValue` anchors a property on a declaration boundary, so
+the value can be asserted with `toBe` (`tests/take-cap-warn-style.test.ts` is a
+short worked example, colour boundary included). A whole-file reader must ignore
+comments and match `var(…)` declarations rather than the bare identifier:
+`3-components.css`'s own header names the five colour-primitive families in
+prose in order to ban them, so an unstripped
+`not.toMatch(/--p-(amber|cool|green|red|warn)/)` fails on the header — and the
+natural repair is to weaken the pattern until it can no longer catch a real
+leak in a rule.
 
-The same trap runs in the other direction, and it is observed, not theoretical:
-a **comment** that names something a test greps for can capture that test. Round
-3 of #529 wrote the share-scrim selector into `3-components.css`'s header, and
-`share-progress.test.ts` — which then located its block with a raw `indexOf`
-over the whole file — sliced the comment instead of the rule and went red. Its
-`expect(declarations.length).toBeGreaterThanOrEqual(8)` floor is the only reason
-that surfaced as a failure rather than as an assertion looping over nothing.
-That test now strips comments before it searches (#533); other suites still
-slice stylesheet source with a raw `indexOf`. When a stylesheet comment must
-name a selector a test searches for, write it without its leading dot, and keep
-a non-emptiness floor in any test that slices a block out of a file.
+**A comment can move a source-reading test in either direction, and both are
+observed, not theoretical.**
+
+- **Red — a comment captures the test.** Round 3 of #529 wrote the share-scrim
+  selector into `3-components.css`'s header, and `share-progress.test.ts` —
+  which then located its block with a raw `indexOf` over the whole file —
+  sliced the comment instead of the rule and went red. Its
+  `expect(declarations.length).toBeGreaterThanOrEqual(8)` floor is the only
+  reason that surfaced as a failure rather than as an assertion looping over
+  nothing. That test now strips comments before it searches (#533).
+- **Green — a comment satisfies the test.** This is the quiet one, because
+  nothing goes red and review reads the test as guarding the code. #822
+  records it by mutation: the recorder-menu erase pin stayed green with a
+  decoy comment carrying the arming statements ahead of a live handler that
+  erased with no confirmation, and the zoom-gate pin stayed green with
+  `windowControlsInert={false} // windowControlsInert={stage.windowControlsInert}`.
+  A negated assertion fails safe here; a positive `toContain` or `toMatch`
+  does not.
+
+What closes both, learned on that pin family one hole at a time:
+
+- **Strip before you search, with the shared helper for the file's language**,
+  never a local regex: `stripComments` / `blankComments` in
+  `tests/support.ts` for TS and JS (string-blind — the caller checks the file
+  holds no `//` or `/*` in a string), `stripCodeComments` in
+  `tests/strip-code-comments.ts` where the file does (it parses first),
+  `stripCssComments`, `stripYamlComments`, `stripHtmlComments` and
+  `blankGradleSwiftComments`. Bounding a slice fixes where the region ends,
+  not prose inside it; a strip anchored to line start misses a `//` that
+  trails live code. Each local repair on #822 closed only the form just used
+  against it.
+- **Where the code is a presentational component, render it instead.** A node
+  read through `tests/render.ts` cannot be satisfied by a comment at all —
+  `tests/notice-bridge.test.ts`'s `Notice` half and
+  `tests/guided-ring.test.ts`'s toolbar half are the examples. A strip is for
+  code that cannot be rendered.
+- **Keep a non-emptiness floor** on any sliced region — `region` and
+  `uniqueIndexOf` in `tests/support.ts` throw on a missing, duplicated or
+  empty anchor, which is what turned #529's capture into a visible failure.
 
 Blind spot #2 under "No sprawl" below still says nothing in this repo reads CSS
 at all; that sentence is stale and is tracked in #525, which is where it gets
@@ -412,11 +442,15 @@ save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
 failed chapter reorder (`hooks/use-books.ts`, `"chapter-reorder"`, #953), a
 failed segment reorder (`hooks/use-chapter-segments.ts`, `"segment-reorder"`,
-#953), a failed segment delete — two call sites report under the same
-context, one op each reaches through the store's own `deleteSegment`
-(`hooks/use-chapter-segments.ts`'s optimistic list delete, PR1, and
-`hooks/use-delete-segment.ts`'s recorder-menu delete, PR2)
-(`"segment-delete"`, #590), a failed book
+#953), a failed segment delete, through the store's own `deleteSegment`
+(`hooks/use-chapter-segments.ts`'s optimistic list delete, called from
+`segments-screen.tsx`'s row menu — the chapter view, #1104's placement)
+(`"segment-delete"`, #590 — this briefly had a second call site,
+`hooks/use-delete-segment.ts`'s recorder-menu delete, PR2 of #590/#1080; #1104
+(the requirements owner's 2026-09-26 decision, "the menu inside the segment
+editor (recorder) shows Erase only") pulled Delete back out of the recorder's
+≡ menu entirely, so that hook and its call site are gone, and this context is
+back to one caller), a failed book
 cover-colour write
 (`hooks/use-book-cover-colour.ts`, `"book-cover-colour"`, #957),
 playback's own
@@ -425,7 +459,18 @@ resume bound in `playSamples` (`hooks/audio-io.ts`: a `resume()` rejection
 unusable after the resume await — `"playback-resume-timeout"` when the
 1000 ms bound was what ended it, `"playback-resume-unusable"` when an
 earlier rejection did or a fresh interruption arrived during the post-fill
-yield, #469), the tester-only phone check (`hooks/phone-check-probes.ts`,
+yield, #469; and, when such a Play drops the shared context so the next
+Play gets a fresh one, a failed `close()` of it, `"playback-context-close"`,
+#1213), the catch sites around it in `hooks/use-audio-session.ts`
+(`"playback-take"`, `"playback-buffer"`, and a segment whose audio is
+missing, `"playback-dangling"`, #1213; each skips the #469 error, whose row
+`playSamples` already wrote), a shared context that reports `"running"`
+while its clock stands still (#1251, `hooks/audio-io.ts`: a Play whose
+clock did not move within 1000 ms of starting, `"playback-clock-stalled"` —
+that Play fails and drops the context, and the catch sites above skip its
+error the same way; the level tap seeing it during a take,
+`"recorder-tap-clock-stalled"`; and the page becoming visible again with the
+clock still stopped, `"audio-clock-stalled-on-return"`), the tester-only phone check (`hooks/phone-check-probes.ts`,
 `"phone-check"`, #1009: a probe that throws, and a `sessionStorage`
 breadcrumb or saved result that cannot be read or written — a failed memory-ceiling
 allocation is the measurement, not a failure, and is not reported), a
@@ -445,11 +490,9 @@ one-way because that screen exits through reload. An encoder turn already
 in flight can still finish and write one failure entry before the pause takes
 effect; pausing is not cancellation of that turn.
 What still ends at `console.error` and is therefore **never written down** is
-mic/record-start and the `use-audio-session.ts` catch sites that wrap
-`playSamples` (a failed decode, a dangling clip with nothing to play) — the
-resume bound's OWN failure is now on the funnel above, but the catch around
-it still only `console.error`s — the recorder's preview path, and share
-_send_ (`hooks/share-flow.ts`). Routing those is follow-up work — and it is
+mic/record-start, the in-tap `resumeAudioContext()` calls before Play and
+on sheet open (`use-audio-session.ts`), the recorder's preview path, and share _send_
+(`hooks/share-flow.ts`). Routing those is follow-up work — and it is
 not a one-line change, because `SaveFailed` replaces the tree the way the
 crash screen does, so that screen needs the Send control the boundary grew.
 Until it lands, do not describe the log as holding "anything that went wrong":
@@ -583,8 +626,7 @@ place. Decided 2026-09-02, when the repo stopped being solo.
   | Milestone                        | Due        | Ships                                                  |
   | -------------------------------- | ---------- | ------------------------------------------------------ |
   | `v0.2.0 — Sept: production gate` | 2026-09-30 | the first `staging -> main` since the pivot            |
-  | `v0.3.0 — Training essentials`   | 2026-10-09 | training-essential scope, promoted to `main` as 0.3.0  |
-  | `v1.0.0 — Training stretch`      | 2026-10-02 | v0.3.0's scope plus the O4 UI; on phones by 2026-10-02 |
+  | `v1.0.0 — Training build`        | 2026-10-02 | the training build, at the `staging -> main` promotion |
   | `v1.1.0 — Post-training`         | —          | the first field-validated release                      |
 
 - **Every open issue carries a milestone.** File new issues into one. A
@@ -790,7 +832,7 @@ easy to regress.
   and the rationale in the body; they are not scheduled until they are
   reviewed against the plan after the training. Where a tester ask matches an
   issue already open, it lands as an evidence comment on that issue, not as a
-  new one. `v1-required` means V1 = the v0.3.0 training build.
+  new one. `v1-required` means V1 = the v1.0.0 training build.
 
 ## Review — every PR, both reviewers
 
@@ -819,7 +861,7 @@ again**. The cap prompts a decision; it is not a gate the loop closes on its
 own. Hitting it with findings open is an **escalation, not an approval**: name
 the residual findings on the PR and have them explicitly accepted.
 
-**Freeze budget (decided 2026-09-21, expires 2026-10-04).** Until the v0.3.0
+**Freeze budget (decided 2026-09-21, expires 2026-10-04).** Until the v1.0.0
 handoff, T3 and docs changes take one George round (P1/P2 only), harness and
 meta PRs cap at two rounds with residuals accepted on the PR, and a P3 never
 triggers a round on any tier — it is batched into one follow-up issue at

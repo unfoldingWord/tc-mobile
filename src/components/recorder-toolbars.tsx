@@ -52,15 +52,13 @@ export interface RecorderToolbarProps {
   rerecordRef: RefObject<HTMLButtonElement | null>;
   /** The bin's gate — `eraseReason !== null`, answered by the sheet. */
   rerecordDisabled: boolean;
-  /** Its reason, in the shape the ≡ row's hint uses. */
+  /** Its reason, in the shape the ⋮ row's hint uses. */
   rerecordHint: RowHint | null;
   /** Record's own gate, answered by the sheet — see the module docblock. */
   recordInert: boolean;
   /** Whether the #604 guide ring is drawn on Record right now. */
   guidedRecord: boolean;
   isClosing: boolean;
-  /** A segment is loaded. */
-  hasView: boolean;
   playingBuffer: boolean;
   /** A finger is mid-pan (#317) — the stage lock the history controls carry. */
   dragging: boolean;
@@ -69,9 +67,9 @@ export interface RecorderToolbarProps {
   /** What a Play tap will sound, or null when there is nothing to sound. */
   playSource: PlaySource;
   playDisabled: boolean;
-  /** The bottom-bar Edit gate, which ORs the open ≡ menu on top of the row's. */
+  /** The bottom-bar Edit gate, which ORs the open ⋮ menu on top of the row's. */
   editToolbarDisabled: boolean;
-  /** Its reason, which is NOT always the ≡ row's words (#315). */
+  /** Its reason, which is NOT always the ⋮ row's words (#315). */
   editToolbarHint: RowHint | null;
   /**
    * Why Undo is grey, or null when it is live (#91). The REASON rather than a
@@ -94,7 +92,6 @@ export interface RecorderToolbarProps {
   onToggleZoom: () => void;
   onUndo: () => void;
   onRedo: () => void;
-  openMenu: () => void;
   onExitEdit: () => void;
   onRerecord: () => void;
 }
@@ -109,7 +106,6 @@ export function RecorderToolbar({
   recordInert,
   guidedRecord,
   isClosing,
-  hasView,
   playingBuffer,
   dragging,
   idleEditable,
@@ -129,7 +125,6 @@ export function RecorderToolbar({
   onToggleZoom,
   onUndo,
   onRedo,
-  openMenu,
   onExitEdit,
 }: RecorderToolbarProps) {
   // The ternary is HERE, in one element list, so the mode toggle's shared
@@ -141,15 +136,16 @@ export function RecorderToolbar({
       <Control
         ref={rerecordRef}
         // Wipe and record again (#592), on the bar so a translator who
-        // re-records whole passages sees it without opening a menu. The bin,
-        // because it is the one "throw away" glyph ADR 0010's check already
-        // puts in front of translators; the confirm it opens wears the same
-        // bin. Left end, away from the hero Record, so the destructive control
-        // is not the one under a thumb reaching to record; the confirm is the
-        // second tap either way. Always drawn, so the bar does not re-lay out
-        // when a first take lands: greyed, with its reason, where there is
-        // nothing to erase.
-        icon="trash"
+        // re-records whole passages sees it without opening a menu. The
+        // eraser, not the bin: this clears the audio and keeps the segment,
+        // and the bin is kept for Delete, which removes the segment (the
+        // DRI's 2026-09-28 pick on #1119: "Clear and record again" with the
+        // same icon as Clear everywhere else). Left end, away from the hero
+        // Record, so the destructive control is not the one under a thumb
+        // reaching to record; the confirm is the second tap either way.
+        // Always drawn, so the bar does not re-lay out when a first take
+        // lands: greyed, with its reason, where there is nothing to clear.
+        icon="eraser"
         label={strings.rerecord}
         variant="default"
         disabled={rerecordDisabled}
@@ -225,14 +221,15 @@ export function RecorderToolbar({
       />
       <Control
         key="edit-toggle"
-        // Scissors, not the `[ ]` brackets (#955 overturns #594), in both
-        // arms. The selection's Cut control under the band is a scissors
-        // too; the two stay apart by place and size: this one is the default
-        // 22px glyph on a raised tile in the bottom bar (pressed while
-        // editing), Cut is a bare quiet 26px glyph under the waveform.
+        // Scissors to ENTER edit mode (#955 overturns #594's `[ ]`); the edit
+        // arm below wears ✕ to leave (#1252, the requirements owner), so
+        // on the edit screen the scissors mean only Cut. No `pressed` in
+        // either arm: the name says what a tap does ("Edit recording" /
+        // "Stop editing"), and a pressed toggle whose name also flips would
+        // announce "Stop editing, pressed" — the contradiction #351 took out
+        // of the Mark row.
         icon="scissors"
         label={strings.enterEdit}
-        pressed={false}
         variant="default"
         busy={isClosing}
         disabled={editToolbarDisabled}
@@ -241,8 +238,10 @@ export function RecorderToolbar({
       />
     </div>
   ) : (
-    // Edit mode: the spread editing toolbar. Redo is a visible button
-    // here (out of the menu); the menu opener lives at the end.
+    // Edit mode: the spread editing toolbar — Play, Zoom, Undo, Redo and the ✕
+    // toggle. Redo is a visible button here (out of the menu). No menu
+    // opener: the ⋮ stays in the header's top right in both modes (#1243,
+    // reversing #863's toolbar ⋮).
     <div className="recorder-toolbar edit grid items-center px-[16px]">
       <Control
         // The audition (#284) — the SAME glyph pair the record bar
@@ -343,27 +342,10 @@ export function RecorderToolbar({
         onClick={onRedo}
       />
       <Control
-        // ⋮, not ≡ (#863, the requirements owner's rule on #608): ≡ is used
-        // only at the top right, and the top right in edit mode is the
-        // "Editing" pill, not this control. `openMenu` and the accessible
-        // name (`recorderMenuOpen`, "More actions") are unchanged — record
-        // mode's header opener still calls the same handler and answers to
-        // the same name, and still wears ≡ there (`recorder.tsx`'s header,
-        // untouched by this issue). Only the glyph in THIS toolbar moves,
-        // to the same kebab the book, chapter and segment rows have used
-        // since #589/#683.
-        icon="more"
-        label={strings.recorderMenuOpen}
-        variant="quiet"
-        size={24}
-        disabled={!hasView || isClosing}
-        onClick={openMenu}
-      />
-      <Control
         key="edit-toggle"
-        icon="scissors"
-        label={strings.enterEdit}
-        pressed={true}
+        // ✕: the way out of edit mode (#1252). See the record arm.
+        icon="close"
+        label={strings.leaveEdit}
         // Not deletable, although it reads that way. Both arms pass `hint` so
         // the edit toggle keeps ONE prop shape across the mode flip — the
         // record arm passes `editToolbarHint`, which may itself be null. This

@@ -75,7 +75,6 @@ function recordBarProps(
     rerecordHint: null,
     recordInert: false,
     isClosing: false,
-    hasView: true,
     playingBuffer: false,
     dragging: false,
     idleEditable: true,
@@ -94,7 +93,6 @@ function recordBarProps(
     onToggleZoom: noop,
     onUndo: noop,
     onRedo: noop,
-    openMenu: noop,
     onExitEdit: noop,
     onRerecord: noop,
     ...over,
@@ -352,14 +350,17 @@ describe("the mark reaches the control it is given to (#604)", () => {
           onOpenRecorder: () => {},
           onSetFinished: () => {},
           onErase: () => {},
+          onDeleteSegment: () => {},
           onRename: () => Promise.resolve(true),
           guided,
         })
       );
 
     const marked = one(container(true), ".is-guided");
-    expect(marked.getAttribute("aria-label")).toBe("Record segment 1");
-    expect(marked.className).toContain("control--record");
+    expect(marked.getAttribute("aria-label")).toBe(
+      "Open recorder for segment 1"
+    );
+    expect(marked.className).toContain("control--mic");
     expect(container(false).querySelectorAll(".is-guided")).toHaveLength(0);
   });
 

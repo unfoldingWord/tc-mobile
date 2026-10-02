@@ -41,7 +41,9 @@ test("the bin under the line throws away a cut and brings the frame back (#862)"
   await page.getByRole("button", { name: "Create chapter" }).click();
   await page.getByRole("button", { name: "Open Chapter 1" }).click();
   await page.getByRole("button", { name: "Add segment" }).click();
-  await page.getByRole("button", { name: "Record segment 1" }).click();
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
   await page.getByRole("button", { name: "Record", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Stop recording", exact: true })
@@ -108,13 +110,29 @@ test("the bin under the line throws away a cut and brings the frame back (#862)"
   expect(afterLength).toBeGreaterThan(0);
   expect(afterLength).toBeLessThan(originalLength);
 
+  // #925: undoing the cut now puts its audio back with the clipboard EMPTY —
+  // the discard came first — so this is the one undo of a cut that opens a
+  // frame; with the phrase still waiting it stays on the line
+  // (`recorder-selection.spec.ts`). The clipboard stays empty through it: an
+  // undone cut does not refill the slot, so no paste button or bin comes
+  // back, and a Cut here would replace nothing.
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(startHandle).toBeVisible();
+  await expect(cut).toBeEnabled();
+  await expect(endHandle).toHaveAttribute(
+    "aria-valuemax",
+    String(originalLength)
+  );
+  await expect(paste).toHaveCount(0);
+  await expect(bin).toHaveCount(0);
+
   // The erase door still asks the erase question, not the discard one.
   await page.getByRole("button", { name: "More actions", exact: true }).click();
   await page
-    .getByRole("button", { name: "Erase recording", exact: true })
+    .getByRole("button", { name: "Reset segment and start over", exact: true })
     .click();
   await expect(
-    page.getByRole("dialog", { name: "Erase this recording?" })
+    page.getByRole("dialog", { name: "Reset segment and start over" })
   ).toBeVisible();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
 });

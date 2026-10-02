@@ -16,21 +16,23 @@
  * UI if called on the main thread. `onProgress` exists so a caller can drive
  * a progress indicator, but the intended home for this function is a Web
  * Worker. See docs/decisions/0003-mp3-encoder.md.
+ *
+ * NOTE ON THE MAIN BUNDLE: this module — and so `Mp3Encoder` — must stay
+ * reachable only from the worker (`hooks/mp3.worker.ts`), never from
+ * main-thread code (ADR 0009 §1). A caller that only needs to REASON about a
+ * clip's expected size, never to encode it, imports `./mp3-size` instead —
+ * that module holds no lamejs import at all, so it cannot reintroduce this by
+ * accident. `DEFAULT_BITRATE_KBPS` lives there; this module imports it rather
+ * than keeping a second copy.
  */
 
 import { Mp3Encoder } from "@breezystack/lamejs";
 
 import { CANONICAL_CHANNELS, CANONICAL_SAMPLE_RATE } from "./format";
+import { DEFAULT_BITRATE_KBPS } from "./mp3-size";
 
 /** MP3 encodes in granules of 1152 samples; feeding whole granules avoids padding. */
 const SAMPLES_PER_FRAME = 1152;
-
-/**
- * 64 kbps mono is transparent enough for speech and keeps an hour of audio
- * near 28 MB, which matters when the delivery mechanism may be a phone-to-
- * phone transfer rather than a network.
- */
-const DEFAULT_BITRATE_KBPS = 64;
 
 export interface EncodeMp3Options {
   readonly sampleRate?: number;

@@ -88,7 +88,7 @@ describe("focusRestoreTarget", () => {
   });
 
   it("falls back when the trigger has gone natively disabled", () => {
-    // The recorder's ≡ opener is `disabled` while `denied`, while a take is
+    // The recorder's ⋮ opener is `disabled` while `denied`, while a take is
     // held, and through the close window. A natively disabled button can never
     // be `document.activeElement`.
     expect(focusRestoreTarget({ ...restorable, focusable: false })).toBe(
@@ -123,13 +123,14 @@ describe("focusRestoreTarget", () => {
 describe("overlayFallbackLabel — #368 George R5 P2", () => {
   const menuOpenLabel = "More actions";
 
-  it("never resolves to the header's last button — the modepill, an exit control", () => {
-    // Edit mode's header is [Back, modepill]. The old fallback query picked
-    // "the last header button" positionally and landed on the modepill
-    // ("Done editing"), which EXITS edit mode — arming the very next
-    // Space/Enter/switch-activate to leave. This is the exact case George
-    // reported: no menu-opener present in this candidate list at all, so the
-    // only correct answer is `null`, never "Done editing".
+  it("never resolves to the header's last button when that is an exit control", () => {
+    // From #863 until #1243, edit mode's header was [Back, "Editing" pill].
+    // The old fallback query picked "the last header button" positionally and
+    // landed on the pill ("Done editing"), which EXITED edit mode — arming the
+    // very next Space/Enter/switch-activate to leave. This is the exact case
+    // George reported: no menu-opener present in this candidate list at all,
+    // so the only correct answer is `null`, never "Done editing". #1243 put
+    // the ⋮ back in that slot; the rule stays keyed on the name regardless.
     expect(
       overlayFallbackLabel(["Close recorder", "Done editing"], menuOpenLabel)
     ).toBeNull();
@@ -141,10 +142,10 @@ describe("overlayFallbackLabel — #368 George R5 P2", () => {
     ).toBe(menuOpenLabel);
   });
 
-  it("resolves to the menu opener when it is present, in edit mode's toolbar", () => {
-    // The edit-mode ≡ lives in the toolbar, not the header, and shares the
-    // header opener's exact accessible name — the one label safe in both
-    // modes.
+  it("resolves to the menu opener when it is present among toolbar controls", () => {
+    // Where the ⋮ sits (#863 put it in the edit toolbar, #1243 moved it back
+    // to the header) does not matter: the name is the one label safe in
+    // both modes.
     expect(
       overlayFallbackLabel(
         ["Zoom in", "Select", "Undo", "Redo", menuOpenLabel],

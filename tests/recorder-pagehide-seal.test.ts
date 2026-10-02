@@ -48,6 +48,8 @@ const mocks = vi.hoisted(() => ({
   reportFailure: vi.fn(),
   decodeToCanonical: vi.fn(),
   playSamples: vi.fn(),
+  checkSharedClockOnReturn: vi.fn().mockResolvedValue(undefined),
+  dropSharedContextWhenIdle: vi.fn(),
 }));
 
 vi.mock("@/hooks/report-failure", () => ({
@@ -55,6 +57,11 @@ vi.mock("@/hooks/report-failure", () => ({
 }));
 
 vi.mock("@/hooks/audio-io", () => ({
+  // #1251: the visible-again clock check and the drop on hide. Their own
+  // behaviour is in tests/playback-clock-stall.test.ts; here only the wiring
+  // is pinned.
+  checkSharedClockOnReturn: mocks.checkSharedClockOnReturn,
+  dropSharedContextWhenIdle: mocks.dropSharedContextWhenIdle,
   createLevelTap: () => ({
     read: () => 0,
     readFrame: () => null,
@@ -207,6 +214,8 @@ beforeEach(() => {
     blob.size > 0 ? captured : new Int16Array(0)
   );
   mocks.playSamples.mockReset();
+  mocks.checkSharedClockOnReturn.mockClear();
+  mocks.dropSharedContextWhenIdle.mockClear();
   saveRecording.mockReset();
   saveRecording.mockImplementation(async () => {
     if (insidePageHide) writesInsidePageHide.push("saveRecording");
@@ -619,6 +628,48 @@ describe("the page becoming hidden mid-take (#836)", () => {
 
     expect(ref.current?.audio.recorderState).toBe("recording");
     expect(recorder.stopCalls).toBe(0);
+  });
+
+  it("checks the shared context's clock when the page becomes visible, and not when it hides (#1251)", async () => {
+    await recordATake();
+
+    await act(async () => {
+      fireVisibility("hidden");
+    });
+    expect(mocks.checkSharedClockOnReturn).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireVisibility("visible");
+    });
+    expect(mocks.checkSharedClockOnReturn).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for the shared context to be dropped on hide, and not on becoming visible (#1251)", async () => {
+    // The take's own safety does not rest on call order: the level tap's hold
+    // defers the drop until the sealed take's flush disconnects it (see
+    // tests/playback-clock-stall.test.ts). Here only the wiring is pinned.
+    const { ref } = await recordATake();
+
+    await act(async () => {
+      fireVisibility("visible");
+    });
+    expect(mocks.dropSharedContextWhenIdle).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireVisibility("hidden");
+    });
+    expect(mocks.dropSharedContextWhenIdle).toHaveBeenCalledTimes(1);
+    // The seal still happened.
+    expect(ref.current?.audio.recorderState).not.toBe("recording");
+  });
+
+  it("asks for the shared context to be dropped on pagehide (#1251)", async () => {
+    await recordATake();
+
+    await act(async () => {
+      firePageHide(false);
+    });
+    expect(mocks.dropSharedContextWhenIdle).toHaveBeenCalledTimes(1);
   });
 
   it("starts nothing when the page becomes visible again after the seal", async () => {

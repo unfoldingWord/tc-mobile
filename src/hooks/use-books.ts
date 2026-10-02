@@ -189,17 +189,12 @@ interface Failure {
  * `reportUnlessStale` is built around; `isLoadCurrent` (below) is what stops
  * that reload's own read from landing on top of a newer patch.
  *
- * The patched card also moves to the FRONT of the shelf. `addChapterToBook`
- * bumps the book's `updatedAt` in the same write (`lib/storage/books.ts`,
- * the `chapters` object store put), and `listBooks` sorts newest-first — the
- * IMMEDIATE patch has to already reflect that, because the reload that
- * reconciles it is asynchronous: a chapter added to a book that is not
- * already first would otherwise flash out of order for the length of that
- * read (Frank R5 P2).
+ * The patched card keeps its index on the shelf (#1185): `listBooks` orders
+ * by `createdAt`, which adding a chapter does not change, so the reload that
+ * follows finds the card where the patch left it.
  *
  * Chapters themselves are appended, not prepended: `ChapterRow` order is the
- * book's chapter order — unlike `BookCard`'s `updatedAt` shelf sort — and a
- * new chapter is the next one, not the first.
+ * book's chapter order, and a new chapter is the next one, not the first.
  *
  * Pure so the fold itself, not just the ref that gates it, has a red-first
  * test (`tests/use-books.test.ts`).
@@ -228,15 +223,9 @@ export function patchNewChapter(
       },
     ],
   };
-  return moveToFront(books, index, patched);
-}
-
-/** Shared by every optimistic patch that also moves its card to the shelf's
- * front — see `patchNewChapter` and `patchRenamedBook`. Not exported: it is
- * an implementation detail of "where does the patched card land", not a
- * decision either caller needs to make independently. */
-function moveToFront<T>(items: readonly T[], index: number, patched: T): T[] {
-  return [patched, ...items.slice(0, index), ...items.slice(index + 1)];
+  const next = books.slice();
+  next[index] = patched;
+  return next;
 }
 
 /**
@@ -256,11 +245,9 @@ function moveToFront<T>(items: readonly T[], index: number, patched: T): T[] {
  * patch from a stale read the same way.
  *
  * Mirrors `renameBookInStore`'s own idempotency: a blank rename keeps the
- * current name and does not bump `updatedAt` or write at all, so a
- * name-unchanged result here does not reorder the shelf either — moving it
- * would show recency that never actually happened on disk. A genuine rename
- * moves the card to the front, matching the write's own bump, the same
- * reasoning `patchNewChapter` already follows for `addChapter`.
+ * current name and writes nothing, so a name-unchanged result returns `books`
+ * itself. A genuine rename replaces the card at its index (#1185): the order
+ * `listBooks` reads, `createdAt`, is not something a rename changes.
  */
 export function patchRenamedBook(
   books: readonly BookCard[],
@@ -270,7 +257,9 @@ export function patchRenamedBook(
   const original = books[index];
   if (index === -1 || !original) return books as BookCard[]; // stale card
   if (book.name === original.name) return books as BookCard[]; // no-op rename
-  return moveToFront(books, index, { ...original, name: book.name });
+  const next = books.slice();
+  next[index] = { ...original, name: book.name };
+  return next;
 }
 
 /**
@@ -287,10 +276,7 @@ export function patchRenamedBook(
  * Numbers are renumbered densely, as the store does (the DRI's "Renumber"
  * pick): the badge a row shows is its position + 1. Names are untouched.
  *
- * The card does NOT move to the front of the shelf, unlike
- * `patchNewChapter`/`patchRenamedBook`: the store leaves the book's
- * `updatedAt` alone on a reorder (#953 scope Q4), so `listBooks` keeps the
- * card where it is, and so does this.
+ * The card keeps its index on the shelf, as every patch here does (#1185).
  *
  * A move that changes nothing, or names a chapter no card holds, returns
  * `books` itself.
@@ -574,8 +560,8 @@ export function useBooks() {
         // only a manual delete (#337) recovers from; and the screen's
         // scroll/focus effect could not run at all, leaving focus on the
         // document (George R2 P2-1). Prepended because `listBooks` sorts by
-        // `updatedAt` and this is
-        // the newest, so the optimistic order is the order the reload confirms.
+        // `createdAt`, newest first, and this book is the newest, so the
+        // optimistic order is the order the reload confirms.
         //
         // `reload()` DOES follow this. An earlier round dropped it on the
         // theory that the new card is already fully correct so a reload could
