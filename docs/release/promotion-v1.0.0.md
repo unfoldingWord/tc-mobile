@@ -216,9 +216,12 @@ freeze note on every new PR to `develop`.
    (`Build release APK`, `Build and upload to TestFlight`) with
    `gh run view <databaseId> --json jobs --jq '.jobs[] | select(.name=="<job>") | .conclusion'`:
    `skipped` means the lane did not start, and only `success` is a build.
-   A run at `PROMO_SHA` that is `cancelled` (a later promotion to the same
-   branch replaced it while it was pending) did not start either; `staging`
-   has then moved, so stop rather than dispatch. While `release-signing` still has a
+   A run at `PROMO_SHA` that is `cancelled` was replaced while pending
+   (one signing job runs at a time across both branches; a later push or
+   dispatch took the single pending slot) and did not start. Read the tip
+   before deciding: if `origin/staging` is still `PROMO_SHA`, wait for the
+   run that took the slot and, once nothing for `PROMO_SHA` is queued or
+   running, the DRI dispatches it; if the tip has moved, stop. While `release-signing` still has a
    required reviewer (#1281's transition window), each signing job waits for
    the DRI's approval; once it is removed, no approval either. Both runs' `headSha`
    equal `PROMO_SHA`, and so do the web and Play builds: every channel must

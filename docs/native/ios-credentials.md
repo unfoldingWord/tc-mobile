@@ -309,7 +309,7 @@ cannot be added to an internal group — the mechanical reason Q3 matters.
 
 ## 8. Step G — set the seven secrets in the `release-signing` environment
 
-The environment must exist first, with required reviewers (README §4a step 4).
+The environment must exist first, restricted to the `staging` and `main` branches (README §4a step 4; the required reviewer of #321 stays until #1281's runbook removes it).
 Then _Settings → Environments → release-signing → Environment secrets_, or from
 a checkout — note `--env` on every line. When both exist, the environment copy
 takes precedence for the gated job, but a repository secret of the same name
@@ -408,9 +408,10 @@ secret-presence check runs **after** approval, on the macOS runner, so check
 §8's `gh secret list --env release-signing` before approving rather than
 after. Once the reviewer is removed, the branch policy alone admits the job
 and it proceeds straight to that check. Do not re-dispatch a waiting run: the signing job's concurrency group
-(one per lane per branch, `cancel-in-progress: false`) means a second run of
-the same branch queues behind the first and a third replaces the second —
-reject the stale run instead. (Whether a waiting job counts as "in progress"
+(one per lane, `cancel-in-progress: false`) means a second run queues
+behind the first and a third replaces the second —
+reject the stale run instead. The group is shared by `staging` and `main`,
+so a production build queues behind an RC build. (Whether a waiting job counts as "in progress"
 for the concurrency group is not stated in GitHub's docs; treat it as if it
 does.)
 

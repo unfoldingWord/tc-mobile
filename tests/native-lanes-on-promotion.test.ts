@@ -95,19 +95,25 @@ describe.each(Object.keys(LANES) as Lane[])("%s triggers (#1281)", (lane) => {
     expect(text).not.toContain("ALLOW_ANY");
   });
 
-  it("serializes per ref on the signing job only, so a skipped run never enters the queue", () => {
+  it("serializes the signing job in one group per lane across both branches, and only that job", () => {
     // A workflow-level group is entered by every run, including one whose
     // preflight decides not to build; GitHub keeps one pending run per group
     // and replaces it with a newer one, so a docs push could cancel a
     // pending promotion build (George, #1307 round 1). On the signing job
-    // the group is only ever entered by a run that builds.
+    // the group is only ever entered by a run that builds. The group carries
+    // no ref: staging and main stamp the same unix-timestamp build number
+    // (versionCode, CFBundleVersion) for one app, so two branches building
+    // at once could hand an RC a higher number than the production build
+    // behind it (George, #1307 round 2; android-play.yml keeps one group for
+    // the same reason).
     expect(text).not.toMatch(/^concurrency:/m);
     const job = LANES[lane];
     const group = job === "build" ? "android-apk" : "ios-testflight";
     const block = text.slice(text.indexOf(`  ${job}:\n`));
     expect(block).toContain(
-      `    concurrency:\n      group: ${group}-\${{ github.ref }}\n      cancel-in-progress: false\n`
+      `    concurrency:\n      group: ${group}\n      cancel-in-progress: false\n`
     );
+    expect(block).not.toContain("github.ref }}");
   });
 
   it("runs the signing job only when preflight says so, in release-signing", () => {
@@ -135,10 +141,11 @@ describe.each(Object.keys(LANES) as Lane[])(
   (lane) => {
     it.each([
       ["staging", PROMOTION_TO_STAGING],
-      ["main", PROMOTION_TO_MAIN],
       // A release ref promoted straight to main is still an admin merge of a
       // pinned release ref; the gate accepts it on either branch.
       ["main", "Merge pull request #2000 from unfoldingWord/release/v1.0.2"],
+      // The production promotion carries `staging` and lands on main only.
+      ["main", PROMOTION_TO_MAIN],
       // AGENTS.md's own promotion shape, `develop -> staging` by PR with
       // `develop` as the head (every staging promotion before #889 was one),
       // is a promotion too: the pinned `release/*` ref is the RC flow's
@@ -177,10 +184,23 @@ describe.each(Object.keys(LANES) as Lane[])(
         "a promotion phrase on the second line only",
         "chore: something\nMerge pull request #1 from unfoldingWord/release/v1",
       ],
-    ])("builds nothing on %s pushed to staging", (_name, HEAD_MESSAGE) => {
+      // The shapes are tied to the branch they land on: a develop tip
+      // reaching main around staging, or a staging subject on staging, is
+      // not a promotion of that branch.
+      [
+        "a develop-headed merge landing on main",
+        "Merge pull request #1300 from unfoldingWord/develop",
+        "main",
+      ],
+      [
+        "a staging-headed merge landing on staging",
+        PROMOTION_TO_MAIN,
+        "staging",
+      ],
+    ])("builds nothing on %s", (_name, HEAD_MESSAGE, REF = "staging") => {
       const result = runGate(lane, {
         EVENT: "push",
-        REF: "staging",
+        REF,
         HEAD_MESSAGE,
       });
       expect(result.status, result.stderr + result.stdout).toBe(0);
