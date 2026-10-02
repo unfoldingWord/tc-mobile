@@ -123,7 +123,7 @@ describe("useDesign / installStoredDesign (#938, default flipped #951)", () => {
   it("honours a saved old-look (current) choice over the new o4 default (#951)", async () => {
     // The user-visible change #951 makes: an existing user with NOTHING
     // stored now gets o4. Someone who already chose the old look explicitly
-    // — the exact value `nextDesign`/the menu control writes — keeps it.
+    // — the exact value the Books ≡ switch wrote before #1244 — keeps it.
     dom.window.localStorage.setItem(DESIGN_STORAGE_KEY, "current");
     await mountToggle();
     expect(
