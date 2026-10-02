@@ -1,28 +1,41 @@
 # Installing tC Mobile for testing
 
 Thank you for helping test tC Mobile. This guide walks you through installing
-the app on your phone or tablet. You do not need to be a developer — just
-follow the steps for the kind of device you have.
+the app on your phone. You do not need to be a developer — just follow the
+steps for the kind of phone you have. The current build is **1.0.1**; after
+installing, the small build stamp at the bottom of the app's first screen
+should start `v1.0.1 ·`. <!-- source: GitHub release v1.0.1 (tag v1.0.1, the newest full release, published 2026-10-02); docs/progress_tracker.md "2026-10-02 ... v1.0.0 and v1.0.1 shipped"; src/components/build-stamp.tsx -->
 
 If anything is unclear or does not work, that is useful to know. See
 [If something goes wrong](#if-something-goes-wrong) at the end.
 
 ---
 
-## iPhone or iPad (TestFlight)
+## iPhone (TestFlight)
 
 Apple asks testers to install through a free app called **TestFlight**. It is
 Apple's normal way to try an app before it is in the App Store.
+
+The app is built for **iPhone**, running **iOS 15.4 or later**. It is not
+offered for iPad: as of 1.0.1 the iOS app is iPhone-only, and it has not been
+tried on an iPad. <!-- source: ios/App/App.xcodeproj/project.pbxproj TARGETED_DEVICE_FAMILY = 1 (both app-target configurations, #1289, DRI pick 2026-10-01 "iPhone only for now") and IPHONEOS_DEPLOYMENT_TARGET = 15.4; docs/native/system-requirements.md "Platform floors"; PR #1289 "Not verified": iPad compatibility mode was not tried -->
 
 1. **Check your email** for an invitation to test tC Mobile. If you do not see
    it, check your spam folder, or let us know and we will re-send it.
 2. **Install TestFlight** (free) from the App Store if you do not already have
    it. Search for "TestFlight", made by Apple.
 3. **Open the invitation** from your email and tap **Accept**, then **Install**.
-   This installs tC Mobile onto your device.
+   This installs tC Mobile onto your iPhone. TestFlight shows the app's
+   version as `1.0` with a long build number; that is normal — the app's own
+   build stamp (below) is the thing to check. <!-- source: docs/native/README.md §4a (MARKETING_VERSION is 1.0, CFBundleVersion is the run's unix timestamp, independent of the web version) -->
 4. **Open tC Mobile from your home screen** — tap the tC Mobile icon, not the
    TestFlight app. TestFlight is only there to deliver the app; you use tC
    Mobile itself from the home screen like any other app.
+5. **Check the build stamp** at the bottom of the first screen. It should
+   start `v1.0.1 ·`. If it shows an older name (for example `v1.0.0-rc.3`),
+   open TestFlight and tap **Update** on tC Mobile; if TestFlight offers no
+   newer build, tell us rather than deleting the app — **deleting the app
+   deletes every recording on it.** <!-- source: docs/native/README.md §4a (a tester whose group is not assigned the new build stays on the old one; happened on 1.0.0-rc.1); docs/training/facilitator-runbook.md §2 (never uninstall to update) -->
 
 ---
 
@@ -34,13 +47,21 @@ normal. The steps below describe the usual path; button names and settings
 vary by phone and language. Where a word cannot be relied on, look for the
 shape, icon, or position described instead.
 
-The app needs **Android 7.0 (2016) or newer** — an older phone cannot install
-it. <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor) -->
+The app needs **Android 7.0 (2016) or newer**, with **Android System WebView
+kept up to date** (Play Store → Android System WebView → Update) — an older
+phone cannot install it. <!-- source: android/variables.gradle minSdkVersion = 24 (Capacitor 8 floor; DRI pick 2026-09-28 on #1017, "Keep Android 7 (Recommended)"); docs/native/system-requirements.md "Platform floors" (the "kept up to date" WebView wording is the standing product wording there; the tree pins no minimum WebView version) -->
 
 1. **Open the download link** we send you in your phone's web browser, or
-   scan the QR code we post with it. Every tester build is listed at
-   <https://github.com/unfoldingWord/tc-mobile/releases> — open the newest
-   one marked **Pre-release** and tap `app-release.apk`. <!-- source: each tester build is a pre-release with app-release.apk attached, tagged tester-build-vX.Y.Z from tester-build-v0.2.12 on (#629; docs/native/README.md "Keep existing"), and android-release-vX.Y.Z from android-release-v0.2.3 through android-release-v0.2.12, which stay up so shared links work; the repo is public so the asset link needs no login -->
+   scan the QR code we post with it. The durable address is
+   <https://github.com/unfoldingWord/tc-mobile/releases/latest> — GitHub
+   keeps it pointing at the newest full release — and every build is listed
+   at <https://github.com/unfoldingWord/tc-mobile/releases>. Open the newest
+   release (marked **Latest**; the earlier release candidates are the ones
+   marked **Pre-release**) and tap `app-release.apk`. <!-- source: GitHub release v1.0.1 is the newest full release ("Latest"), with app-release.apk and a QR image attached; the rc builds before it are pre-releases tagged tester-build-v1.0.0-rc.N (docs/native/README.md "Tester announcement template", docs/release/promotion-v1.0.0.md §3a); the older android-release-vX.Y.Z and tester-build-vX.Y.Z tags stay up so shared links work (#629); /releases/latest resolving to the newest non-pre-release is GitHub's behaviour, not this repo's; the repo is public so the asset link needs no login -->
+   **Stay with one install route.** If you installed tC Mobile from one of
+   these APKs, keep updating from them; do not switch to Google Play, or the
+   other way round, without asking us first — switching may need an
+   uninstall, and uninstalling deletes your recordings. <!-- source: GitHub release v1.0.1 body ("Stay with one install route"); docs/progress_tracker.md 2026-10-02 (Play Closed testing 1.0.1 exists alongside the APK) -->
 2. **Download the file.** It ends in `.apk` — that is the app. **Some
    browsers warn about it, or stop it, before it even finishes downloading** —
    an `.apk` is not a document or a picture, so the browser treats it with
@@ -96,6 +117,34 @@ language, and a photo or exact wording of the message — a photo carries across
 a language you cannot read. Some phones have extra steps that are not yet
 documented here; do not guess which settings to change.
 
+**Updating later:** install the newer `app-release.apk` over the app that is
+already there. **Never uninstall first** — uninstalling deletes every
+recording on the phone. After updating, close the app fully and open it again,
+and check that the build stamp at the bottom of the first screen has changed.
+<!-- source: GitHub release v1.0.1 body ("Do not uninstall to update"); gh issue #923 (observed on Android 2026-09-25: uninstall then install lost all data), closed 2026-09-28 with the in-place-update phone check moved to #974; docs/training/facilitator-runbook.md §2 -->
+
+---
+
+## Web browser (no install)
+
+The same app runs in a web browser at **<https://tcmobile.app>**. This is the
+route for a phone that cannot take either install above, or for trying the app
+on a computer; the phone apps above are the ones we hand out at a training.
+<!-- source: docs/progress_tracker.md 2026-10-02 ("tcmobile.app: connected by the DRI as a Custom Domain on the tc-mobile Worker ... serves 1.0.1"); gh issue #1295 -->
+
+- It needs a current browser: Chrome or Edge 111 or later, Firefox 114 or
+  later, or Safari 15.4 or later on an iPhone. Adding it to the home screen is
+  recommended. <!-- source: vite.config.ts build.target via docs/native/system-requirements.md "Platform floors" and "Web (PWA)"; README.md "Testing on a phone" (add to home screen) -->
+- **Recordings made in the browser are stored under the address you opened.**
+  If you have used the older address,
+  <https://tc-mobile.unfoldingword.workers.dev>, keep using it: it still works
+  and is not redirected, and your recordings are only there. Opening
+  <https://tcmobile.app> instead starts empty, and the app has no way to move
+  recordings between the two. Share anything you want to keep before
+  switching. <!-- source: gh issue #1295 ("Keep tc-mobile.unfoldingword.workers.dev serving, with no redirect ... Browser storage is per origin ... tcmobile.app opens empty, and the app has no import"); docs/progress_tracker.md 2026-10-02 "Next" item 3 -->
+- A browser can clear a website's stored data; if that happens, the
+  recordings are gone. There is no backup. <!-- source: PRIVACY.md "Deleting your data"; docs/decisions/0005-no-backend-in-phase-1.md -->
+
 ---
 
 ## What to expect
@@ -121,11 +170,23 @@ what to write down.)
 
 - **Which phone** you are using, and roughly which model (for example, "iPhone
   13" or "a Samsung Galaxy, a couple of years old").
+- **Which build** — the small build stamp at the bottom of the app's first
+  screen (for example `v1.0.1 · ` followed by a short code).
 - **What you were doing** when it happened (for example, "I tapped record for
   the first time").
 - **What you saw** — the exact message if there was one. A **photo** of the
   screen, or a **screen recording**, is enormously helpful.
 
-Send this to the maintainer (`<placeholder: support channel>`). Thank you —
-every report you send makes the app better for the translators who will use
-it.
+**Where to send it:** open a new issue on the project's public GitHub page,
+<https://github.com/unfoldingWord/tc-mobile/issues>. If you would rather not
+use GitHub, or do not have an account, give the notes to your facilitator or
+the person who sent you the app, and they will file it. <!-- source: gh issue #248, requirements owner (Tim) 2026-09-30: "point testers to the GitHub repository instead of an email address for reporting problems ... An email alias can replace it later"; this replaced the DRI's 2026-09-28 "Hold until we have an alias" on an email address -->
+
+**That page is public.** Do not post a recording, the app's problem-report
+file, your phone number or other personal details there — describe what
+happened in words and attach a photo of the screen if it shows no personal
+information. We record every report by role (tester, facilitator, developer),
+never by name. <!-- source: PRIVACY.md "Contact" ("Anything posted there is public. Do not include a recording, the problem log or other personal information"); AGENTS.md Conventions, "Tester feedback is tagged by kind and source" (role, never name) -->
+
+Thank you — every report you send makes the app better for the translators
+who will use it.
