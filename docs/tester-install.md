@@ -184,15 +184,17 @@ what to write down.)
 - **What you were doing** when it happened (for example, "I tapped record for
   the first time").
 - **What you saw** — the exact message if there was one. A **photo** of the
-  screen, or a **screen recording**, is enormously helpful.
+  screen is enormously helpful. If you made a **screen recording**, keep it
+  and show it to your facilitator in person; do not post it anywhere — it can
+  carry a translator's voice.
 
 **Where to send it:** open a new issue on the project's public GitHub page,
 <https://github.com/unfoldingWord/tc-mobile/issues>. If you would rather not
 use GitHub, or do not have an account, give the notes to your facilitator or
 the person who sent you the app, and they will file it. <!-- source: gh issue #248, requirements owner (Tim) 2026-09-30: "point testers to the GitHub repository instead of an email address for reporting problems ... An email alias can replace it later"; this replaced the DRI's 2026-09-28 "Hold until we have an alias" on an email address -->
 
-**That page is public.** Do not post a recording, the app's problem-report
-file, your phone number or other personal details there — describe what
+**That page is public.** Do not post a recording, a screen recording, the
+app's problem-report file, your phone number or other personal details there — describe what
 happened in words and attach a photo of the screen if it shows no personal
 information. We record every report by role (tester, facilitator, developer),
 never by name. <!-- source: PRIVACY.md "Contact" ("Anything posted there is public. Do not include a recording, the problem log or other personal information"); AGENTS.md Conventions, "Tester feedback is tagged by kind and source" (role, never name) -->

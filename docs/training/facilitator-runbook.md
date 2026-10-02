@@ -192,6 +192,10 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 
 ## 3. During the training
 
+The space figures and the warning behaviour described in this section come
+from the code and from desktop arithmetic, not from a phone: none of it has
+been measured on a device yet.
+
 - **Recording and editing work offline.** No signal is needed at any point.
 - **Mark segments Done as the translator finishes them.** A finished segment
   is compressed in the background and takes about a tenth of the space of one
@@ -231,7 +235,8 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
   — on the installed app as well as in the browser. If every segment is
   already finished, that line leaves nothing more to mark: **share one
   chapter at a time instead** (§3, "Sharing a chapter"), which does not take
-  this check, and remove shared chapters afterwards. In a browser on Android
+  this check. Remove nothing until that chapter's file has been opened and
+  checked at the agreed destination. In a browser on Android
   the button can also fail after building with "Could not share your work.
   Try again." (§4); again, share chapter by chapter. <!-- source: src/hooks/use-library-share.ts (roomForExport checked before the encode; InsufficientStorageError); src/lib/export/book.ts roomForExport and EXPORT_HEADROOM_FACTOR = 2 ("No device reading backs this figure"); src/lib/strings.ts shareAllStorage, shareAllFailed; Share Chapter and Share Book have no roomForExport caller (grep of src/); src/hooks/share-target.ts selectShareRoute ("unsupported" when canShare rejects the file; the native route never consults canShare); not device-verified; George round 1 P2-2 on PR #1297 -->
 
@@ -375,10 +380,11 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
   and a flat waveform may keep running after the alarm is dismissed, even
   though the saved recording ends where the alarm sounded — the screen says
   "recording" when nothing more is being captured. If an alarm rings, tap
-  the square, play the segment back to hear where it ends, then tap Record
-  again: it adds on from where the waveform sits and does not replace what
-  is already saved (§3, "Tapping the square"). One tester report,
-  2026-10-02, with the phone and build not given; not reproduced by us. <!-- source: gh issue #1294, open ("the recording actually ends when the timer went off ... a weird false graphic of time going up"; build, platform and OS version not given; cause inferred, not run); docs/progress_tracker.md 2026-10-02 "Other" -->
+  the square and play the segment back: trust what you hear, not the timer or
+  the waveform. Do not Reset. Whether tapping Record afterwards continues the
+  saved audio has not been confirmed, so keep the take as it is and report
+  the build stamp (§5). One tester report, 2026-10-02, with the phone and
+  build not given; not reproduced by us. <!-- source: gh issue #1294, open ("the recording actually ends when the timer went off ... a weird false graphic of time going up"; build, platform and OS version not given; cause inferred, not run); PR #1298 (fix lane, open: the hook never bound the track's mute event, so the on-screen position after an alarm is unreliable until that fix ships); docs/progress_tracker.md 2026-10-02 "Other"; bench George round 3 on PR #1297 -->
 
 - **Finish recording — tap the square — before switching apps or locking the
   phone.** Once it is tapped, the recording is already saved (§3), so this is
@@ -516,10 +522,10 @@ work, not something this build does. <!-- source: src/hooks/report-failure.ts:41
    small **text file**, through the phone's normal share sheet — **if it
    opens; see below for what to do on Android if it does not.** Which apps
    that sheet offers has not been checked on a real phone yet, so try
-   whatever is there — if it offers saving the file or attaching it to an
-   email, that is the preferred route when available. Send it the way "Where
-   reports go" (below) says — **not** by attaching it to a public GitHub
-   issue. Two taps is deliberate, and it is the same two taps as sharing a
+   whatever is there — if it offers saving the file, save it on the phone
+   and keep it there. Send it only the way "Where reports go" (below) says,
+   once a private address is confirmed — **not** by attaching it to a public
+   GitHub issue. Two taps is deliberate, and it is the same two taps as sharing a
    recording. <!-- source: src/hooks/use-failure-log-share.ts (two-gesture share); on the installed app the share goes through src/hooks/share-target.ts:338 `Share.share({ files })` — a file, never plain text; which apps the sheet then lists, and whether it offers save/email at all, is device behaviour and is not device-verified (gh PR #440, George round 6 P2-2; Frank round 10 P2-2) -->
 4. Tap the **bin** icon afterwards if you want the mark to go quiet again. It
    asks once to confirm, then empties only this problem record — nothing
