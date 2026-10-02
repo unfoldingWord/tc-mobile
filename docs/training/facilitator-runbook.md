@@ -375,9 +375,10 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
   and a flat waveform may keep running after the alarm is dismissed, even
   though the saved recording ends where the alarm sounded — the screen says
   "recording" when nothing more is being captured. If an alarm rings, tap
-  the square, play the segment back to hear where it ends, and record from
-  there. One tester report, 2026-10-02, with the phone and build not given;
-  not reproduced by us. <!-- source: gh issue #1294, open ("the recording actually ends when the timer went off ... a weird false graphic of time going up"; build, platform and OS version not given; cause inferred, not run); docs/progress_tracker.md 2026-10-02 "Other" -->
+  the square, play the segment back to hear where it ends, then tap Record
+  again: it adds on from where the waveform sits and does not replace what
+  is already saved (§3, "Tapping the square"). One tester report,
+  2026-10-02, with the phone and build not given; not reproduced by us. <!-- source: gh issue #1294, open ("the recording actually ends when the timer went off ... a weird false graphic of time going up"; build, platform and OS version not given; cause inferred, not run); docs/progress_tracker.md 2026-10-02 "Other" -->
 
 - **Finish recording — tap the square — before switching apps or locking the
   phone.** Once it is tapped, the recording is already saved (§3), so this is
