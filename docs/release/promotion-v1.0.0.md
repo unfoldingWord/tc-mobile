@@ -202,9 +202,14 @@ issue's priority in this checklist.
    `main`'s tip is by then:
 
    ```sh
-   npm run check:deploy:prod -- --sha=<PROD_SHA, first 7 characters> --version=1.0.0
+   npm run check:deploy:prod -- --sha=<PROD_SHA> --version=1.0.0
    ```
 
+   Pass the full 40-character `PROD_SHA`, never a 7-character slice: the
+   checker matches on a prefix of at least 7 characters (`shasMatch` in
+   `scripts/check-deploy.mjs`), so a slice would also match a later commit
+   whose disambiguated short sha shares those 7 characters, while the full
+   oid cannot be a prefix of a different commit's short sha.
    The bare command resolves its expected sha from `origin/main` after its
    own fetch (AGENTS.md, "Confirming a deploy and rolling one back"), so if
    a commit landed on `main` after the tag and Workers Builds deployed it,
@@ -308,10 +313,17 @@ freeze note on every new PR to `develop`.
    The merge commit is
    `PROMO_SHA`; every channel below is built from it. Check that
    `git rev-parse <PROMO_SHA>^1 <PROMO_SHA>^2` prints `STAGING_SHA` then
-   `CUT_SHA`. If not, stop. Re-resolve each of these SHAs with `git` or `gh`
-   before a step uses it. The hold line is a record, not the source.
-   Run `npm run check:deploy` until it passes, and put the PASS line in
-   `docs/progress_tracker.md`. The staging push runs the Google Play lane,
+   `CUT_SHA`. If not, stop. Re-resolve `CUT_SHA` and `PROMO_SHA` with `git`
+   or `gh` before a step uses them; `STAGING_SHA` stays the recorded oid
+   (step 3), confirmed with `git rev-parse <STAGING_SHA>^{commit}` and never
+   replaced by a fresh tip. The hold line is a record, not the source.
+   Run `npm run check:deploy -- --sha=<PROMO_SHA> --version=1.0.0-rc.N`
+   (the full oid and the rc version) until it passes, and put the PASS line
+   in `docs/progress_tracker.md`. The bare `check:deploy` compares the
+   served build with whatever `origin/staging`'s tip is after its own fetch,
+   so it PASSes on a commit that landed after `PROMO_SHA` with the same
+   version string; the explicit form is the one that confirms `PROMO_SHA`
+   (§3 step 5 says the same for production). The staging push runs the Google Play lane,
    which uploads a **draft** to the internal track. Record its release name.
    The DRI releases that draft in the Play Console if wanted.
 7. **Native builds from one commit.** The DRI dispatches
@@ -406,11 +418,20 @@ durable download link. An expiring Actions link alone does not satisfy handoff.
 
 ## 5. Rollback readiness
 
-Before promotion, record the build production is serving now, the `sha` and
-`version` in its `version.json` (`npm run check:deploy:prod` prints both),
-plus the available Cloudflare rollback target. That served build is the
-rollback target. It equals `MAIN_SHA` (§3 step 3) only when that read says
-so: a commit on `main` is not a deployed build (#143).
+Before promotion, record the build production is serving now: the `sha` and
+`version` in `version.json` on both production origins, read directly
+(`curl -s "https://tcmobile.app/version.json?t=$(date +%s)"` and the same on
+`https://tc-mobile.unfoldingword.workers.dev`), plus the available
+Cloudflare rollback target. Do not take it from the bare
+`npm run check:deploy:prod`: that command prints the `origin/main` tip first
+as its expectation, prints the served `Deployed:` line only after that, and
+on a non-canonical `origin` refuses before it fetches anything, so in the
+#143 shape (served build ≠ `main`'s tip) it is a FAIL whose first sha is the
+wrong one to record. If you do read it from the checker, record only the
+`Deployed:` line, and treat a canonical-origin FAIL as "repoint `origin` and
+run again". That served build is the rollback target. It equals `MAIN_SHA`
+(§3 step 3) only when that read says so: a commit on `main` is not a deployed
+build (#143).
 Follow AGENTS.md's **Confirming a deploy and rolling one back** procedure:
 dashboard rollback or
 `npx wrangler rollback` targets production; `--env staging` targets staging.
@@ -438,13 +459,16 @@ installed APK or TestFlight bundle.
       line is pasted into `docs/progress_tracker.md` (#840 R7 — v0.2.10's
       staging deploy went unconfirmed in the tracker until a later audit).
 - [ ] Production promotion reviewed and green; previous deployment recorded.
-- [ ] Before the `staging → main` merge: fetched `origin/main` and
+- [ ] Before the `staging → main` merge: the canonical `main` tip
+      (`gh api repos/unfoldingWord/tc-mobile/git/ref/heads/main`) and
       `baseRefOid` were the recorded `MAIN_SHA`, and `headRefOid` was the
-      recorded `HEAD_SHA` (§3 step 3).
-- [ ] After it: `PROD_SHA` is the PR's `mergeCommit.oid`, fetched
-      `origin/main` equals it, and `git rev-parse <PROD_SHA>^1 <PROD_SHA>^2`
-      printed the recorded `MAIN_SHA` then `HEAD_SHA`; `v1.0.0` points to
-      `PROD_SHA` (§3 steps 3 and 4).
+      recorded `HEAD_SHA` (§3 step 3). A local `origin/main` is not a
+      passing signal.
+- [ ] After it: `PROD_SHA` is the PR's `mergeCommit.oid`, the canonical
+      `main` tip equals it, and its parents
+      (`gh api repos/unfoldingWord/tc-mobile/commits/<PROD_SHA>`, or
+      `git rev-parse <PROD_SHA>^1 <PROD_SHA>^2`) are the recorded `MAIN_SHA`
+      then `HEAD_SHA`; `v1.0.0` points to `PROD_SHA` (§3 steps 3 and 4).
 - [ ] `check:deploy:prod -- --sha=<PROD_SHA> --version=…` confirms the
       production version and `PROD_SHA` itself, not a later `main` tip (§3
       step 5); the PASS line is pasted into `docs/progress_tracker.md`

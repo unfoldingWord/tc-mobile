@@ -7,9 +7,11 @@ description: Step-by-step checklist for cutting a tC Mobile tester release (a 1.
 
 This is a checklist, not authority. Every merge, publish and scope choice is
 the DRI's, asked in a picker and quoted verbatim on the PR it concerns. The
-reference is `docs/release/promotion-v1.0.0.md` §3a (release candidates) and
-§6 (the final promotion). Read them before starting. Where this skill and the
-runbook disagree, the runbook wins, and fix this file.
+reference is `docs/release/promotion-v1.0.0.md` §3a (release candidates) and,
+for the final promotion, §3 step 3 (the production gate and its checks), with
+§6 as the summary checklist. Read them before starting. Where this skill and
+the runbook disagree, the runbook wins, and fix this file; for the production
+gate the text that wins is §3 step 3, not a summary of it.
 
 Work through the list in order and don't skip a step. If a step can't be
 done, stop and say which one and why.
@@ -152,13 +154,17 @@ from.
       other base-branch requirement (required checks and reviews), not only
       that ruleset, so the DRI runs it only after every check and review above
       is green. The agent hands this command over unchanged, with the PR number
-      and `CUT_SHA`, and never runs `gh pr merge`. Record the merge commit as `PROMO_SHA`, and check
-      `origin/staging` equals it.
-- [ ] Agent-allowed: check that `git rev-parse <PROMO_SHA>^1 <PROMO_SHA>^2`
-      prints `STAGING_SHA` then `CUT_SHA`. If not, stop.
-- [ ] Agent-allowed: run `npm run check:deploy` until it passes for
-      `PROMO_SHA` (Workers Builds takes a few minutes). Keep the PASS line for
-      the tracker.
+      and `CUT_SHA`, and never runs `gh pr merge`. Record the PR's
+      `mergeCommit.oid` as `PROMO_SHA`.
+- [ ] Agent-allowed: the canonical `staging` tip (the same `gh api` read as
+      the check above, never a local `origin/staging`) equals `PROMO_SHA`,
+      and `git rev-parse <PROMO_SHA>^1 <PROMO_SHA>^2` prints the recorded
+      `STAGING_SHA` then `CUT_SHA`. If not, stop.
+- [ ] Agent-allowed: run
+      `npm run check:deploy -- --sha=<PROMO_SHA> --version=1.0.0-rc.N` (the
+      full oid; the bare form PASSes on whatever `origin/staging`'s tip is)
+      until it passes (Workers Builds takes a few minutes). Keep the PASS
+      line for the tracker.
 - [ ] Agent-allowed: Play lane (`android-play.yml`) runs on the staging push.
       Note its release name (`<version> (<code>) staging@<PROMO_SHA short>`) and
       status (a draft on internal). Human-only: the DRI releases the draft in
@@ -288,9 +294,10 @@ itself. `PROD_SHA` follows the normal rule.
 - [ ] Agent-allowed: both native runs' `headSha` equal `PROD_SHA` (they
       dispatch from `main`, so a moved `main` builds a commit that is not the
       tag; runbook §4 says stop and do not label it the release),
-      `npm run check:deploy:prod -- --sha=<PROD_SHA, 7 chars> --version=1.0.0`
-      (explicit, so a PASS means `PROD_SHA` and not a later `main` tip;
-      runbook §3 step 5), the APK checks, the download-back, the
+      `npm run check:deploy:prod -- --sha=<PROD_SHA> --version=1.0.0` (the
+      full oid, never a 7-character slice, which the checker's prefix match
+      would also accept for a colliding later commit; explicit, so a PASS
+      means `PROD_SHA` and not a later `main` tip; runbook §3 step 5), the APK checks, the download-back, the
       installation guide update, closing the milestone and telling the PR
       authors the freeze is lifted (after the DRI lifts it).
 
