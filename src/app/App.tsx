@@ -376,6 +376,7 @@ export function App() {
     openChapter,
     openRecorder,
     goBack,
+    goBackToBooks,
     commitCloseRecorder,
   } = useNavStack({
     hasChapter: chapterId !== null,
@@ -511,6 +512,9 @@ export function App() {
           databaseUnreachable={databaseUnreachable}
           onExit={commitCloseRecorder}
           onRequestBack={goBack}
+          // The book crumb's two-level Back (#1275) — the adapter's, not the
+          // state half `backToBooks` above, which runs only from a landing.
+          onRequestBackToBooks={goBackToBooks}
         />
       )}
       <BuildStamp

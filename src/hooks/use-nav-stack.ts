@@ -102,6 +102,13 @@ import { reportFailure } from "./report-failure";
  *     under a pending traversal; `lib/nav/history-latch.ts` decides whether it
  *     is written, deferred to the landing, or refused, and every landing
  *     replays what was deferred.
+ *   - `continueToBooks` — the one continuation a Back can carry (#1275, the
+ *     recorder's book crumb). `goBackToBooks` is `goBack` with this set: the
+ *     landing takes it off the ref, and only the `commit-close-recorder`
+ *     settle hands it on to its consuming landing, where — with Segments the
+ *     committed screen — the adapter issues the Segments Back itself. Every
+ *     other landing drops it, so a refused or declined first level ends
+ *     where a plain Back would.
  *
  * Amendment C is a centrally-owned cleanup effect (dep array `[screen,
  * recovering, databasePanel]`, primitives only — invariant 6) that clears the
@@ -396,6 +403,17 @@ export interface UseNavStack {
   ) => void;
   /** One Back path (#168). `beginBack("go-back")`; on refusal, does nothing. */
   readonly goBack: () => void;
+  /**
+   * Two levels in one gesture (#1275): the recorder's book crumb. The same
+   * Back as `goBack` — one `history.back()`, the same guard and refusals —
+   * carrying one continuation: once the recorder's commit-close has consumed
+   * its entry and Segments is the committed screen, the adapter issues the
+   * Segments Back itself, and that landing routes `"to-books"` like any
+   * other. A first level that is refused, or a close that declines (a held
+   * take, an overlay) or stays, drops the continuation. From Segments it is
+   * a plain Back.
+   */
+  readonly goBackToBooks: () => void;
   /** The programmatic recorder close (erase's `onExit`); suppressPop-guarded. */
   readonly commitCloseRecorder: (dirty: boolean) => void;
 }
@@ -426,6 +444,10 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // order, once per screen entry (`deferWrite`). Replayed by the `popstate`
   // handler at the end of every landing.
   const deferredWrites = useRef<DeferredWrite[]>([]);
+  // The continuation the outstanding Back carries (#1275): `goBackToBooks`
+  // sets it as it issues, the next landing takes it, and only the
+  // commit-close settle hands it on. Never read anywhere a landing is not.
+  const continueToBooks = useRef(false);
 
   // Latest-ref the state-half callbacks (menu.tsx onCloseRef pattern) so the
   // returned commands can be identity-stable — recorder.tsx:2213 rebuilds its
@@ -711,28 +733,35 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     });
   }, []);
 
-  const goBack = useCallback(() => {
-    // One Back path (#168): route through the browser so the on-screen Back gets
-    // the same commit-window protection as the system gesture. `beginBack` is
-    // the pure form of the old `backRequested` double-tap latch: on refusal
-    // (a back() already outstanding) do NOTHING — no history.back(), no push.
-    //
-    // A SUPPRESSED traversal is outstanding too, and `beginBack` cannot see
-    // all of them: `trap-forward`'s cancel sets `suppressPop` and calls
-    // `history.back()` outside the guard (the programmatic recorder close
-    // also sets the guard since #763, so `beginBack` alone would refuse
-    // that one), and the header Back is disabled for exactly that window
-    // (`recorder.tsx`) so it could never land here. The hardware Back (#374)
-    // can — the plugin posts it from the Android UI thread, not behind the
-    // pending `popstate` task — and a second `history.back()` before the
-    // first lands is the coalescing hazard `travel-guard.ts` exists to rule
-    // out (#493). That press is already the Back in flight; issue nothing.
+  // One Back path (#168): route through the browser so the on-screen Back gets
+  // the same commit-window protection as the system gesture. `beginBack` is
+  // the pure form of the old `backRequested` double-tap latch: on refusal
+  // (a back() already outstanding) do NOTHING — no history.back(), no push.
+  //
+  // A SUPPRESSED traversal is outstanding too, and `beginBack` cannot see
+  // all of them: `trap-forward`'s cancel sets `suppressPop` and calls
+  // `history.back()` outside the guard (the programmatic recorder close
+  // also sets the guard since #763, so `beginBack` alone would refuse
+  // that one), and the header Back is disabled for exactly that window
+  // (`recorder.tsx`) so it could never land here. The hardware Back (#374)
+  // can — the plugin posts it from the Android UI thread, not behind the
+  // pending `popstate` task — and a second `history.back()` before the
+  // first lands is the coalescing hazard `travel-guard.ts` exists to rule
+  // out (#493). That press is already the Back in flight; issue nothing.
+  //
+  // `toBooks` is the one continuation a Back can carry (#1275). It is
+  // written only on the path that issues, so a refused request can never
+  // leave it set for a Back it did not issue.
+  const issueBack = useCallback((toBooks: boolean) => {
     if (suppressPop.current) return;
     const begun = beginBack(travelGuard.current, "go-back");
     if (!begun.ok) return;
     travelGuard.current = begun.next;
+    continueToBooks.current = toBooks;
     window.history.back();
   }, []);
+  const goBack = useCallback(() => issueBack(false), [issueBack]);
+  const goBackToBooks = useCallback(() => issueBack(true), [issueBack]);
 
   const commitCloseRecorder = useCallback(
     (dirty: boolean) => {
@@ -865,6 +894,13 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
       // after a recorder Back and kill on-screen Back for the session
       // (#494 item 2).
       travelGuard.current = settleOutstanding(travelGuard.current);
+      // The continuation this landing may carry (#1275), taken off the ref
+      // here so it lives for exactly one landing: of the routes below only
+      // the commit-close settle hands it on, to its own consuming landing.
+      // A trap, a re-arm, a layer dismissal or a landing already at Books
+      // drops it — the gesture it continued was absorbed or has arrived.
+      const toBooks = continueToBooks.current;
+      continueToBooks.current = false;
       const state = event.state as { index?: number } | null;
       const toIndex = state?.index ?? 0;
       // Our own history.back() (programmatic close, trap-forward, or the
@@ -875,6 +911,30 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
       if (suppressPop.current) {
         suppressPop.current = false;
         navIndex.current = toIndex;
+        if (toBooks) {
+          // The recorder's entry is consumed and the guard is clear, so the
+          // second level is a plain Segments Back, issued here so that its
+          // landing is routed through `popAction` against the refs as they
+          // stand then — `"to-books"`, or a trap the close raised
+          // (`SaveFailed`), never a route this adapter decides for itself.
+          // Gated on the COMMITTED screen: `requestClose` resolved true
+          // after `onRecorderClosed` ran, and React's commit for that update
+          // is scheduled before the consuming `history.back()` is called
+          // (inference, from the scheduler posting its task ahead of the
+          // traversal's round trip; not observed on a device). If this
+          // landing nonetheless finds the recorder still the committed
+          // screen, a Back now would route it as a second commit-close and
+          // strand a re-arm entry (invariant 2), so the continuation is
+          // dropped — the tap ends at Segments, where a plain Back would —
+          // and the miss is surfaced, like the null-handle absorb below.
+          if (screenRef.current === "segments") {
+            goBack();
+          } else {
+            console.error(
+              "go-back-to-books: the recorder had not left the screen by its consuming landing; stopping at Segments"
+            );
+          }
+        }
         return;
       }
       const direction = navDirection(navIndex.current, toIndex);
@@ -1023,6 +1083,14 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
               // it. The `onRequestBack` issuers still live during close are
               // `LoadErrorPanel`'s and `PermissionPanel`'s
               // `onBack={onRequestBack}`.
+              //
+              // The continuation (#1275) rides the consuming landing in BOTH
+              // arms: whether this settle issues the consuming back() or
+              // absorbs the outstanding goBack's, that landing is the one
+              // at which the recorder's entry is gone, and it is the only
+              // landing that may issue the second level. Set before the
+              // arms so neither can forget it.
+              continueToBooks.current = toBooks;
               const begun = beginBack(travelGuard.current, "commit-close");
               if (begun.ok) {
                 travelGuard.current = begun.next;
@@ -1091,13 +1159,14 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     // landing between a trap's commit and this effect re-running was routed by
     // the previous render's listener, with `databasePanel` still `false`.
     //
-    // The three that remain never change identity: `pushHistoryEntry` and
-    // `popLayer` are `useCallback([])`, and `replayDeferredWrites` is built
+    // The four that remain never change identity: `pushHistoryEntry` and
+    // `popLayer` are `useCallback([])`, `goBack` is built only from
+    // `issueBack`, which is (#1275), and `replayDeferredWrites` is built
     // only from callbacks that are (#435). This handler subscribes ONCE for
     // the hook's life. That is the property to preserve — a dependency that
     // can change identity would silently reintroduce the re-subscribe window,
     // so a new value belongs in the layout effect above, not in this array.
-  }, [pushHistoryEntry, popLayer, replayDeferredWrites]);
+  }, [pushHistoryEntry, popLayer, replayDeferredWrites, goBack]);
 
   // The shell's leg of the same model (#374): a hardware Back arrives as the
   // App plugin's `backButton` event, not as a `popstate`. Registered only
@@ -1131,6 +1200,7 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     openChapter,
     openRecorder,
     goBack,
+    goBackToBooks,
     commitCloseRecorder,
   };
 }
