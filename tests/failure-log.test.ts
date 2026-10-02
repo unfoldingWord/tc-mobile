@@ -31,7 +31,8 @@ import {
   readFailures,
 } from "@/lib/storage/failures";
 import type { StoredFailure } from "@/types/failure";
-import { clearAllStores, stripComments } from "./support";
+import { stripCodeComments } from "./strip-code-comments";
+import { clearAllStores } from "./support";
 
 /**
  * The durable failure log (#205) — the store, and the sink that feeds it.
@@ -861,14 +862,15 @@ describe("every read of the log is on the write lane", () => {
       });
 
     // Comments stripped (#822): a comment naming either reader kept a file in
-    // the set after its live use was gone. The strip is string-blind (the
-    // class #789 names): a `//` or `/*` inside a string literal anywhere in
-    // `src/` would remove real code from what this sweep sees with it.
+    // the set after its live use was gone. Through the parsing strip, because
+    // this walk reads every file in `src/`: the string-blind `stripComments`
+    // cut each line at the `//` of a `"https://…"` literal, so a reader written
+    // after a URL on the same line was never seen.
     const consumers = walk(root)
       .filter((file) => file !== join(root, "hooks/failure-log.ts"))
       .filter((file) =>
         /\b(useLogGeneration|getLogGeneration)\b/.test(
-          stripComments(readFileSync(file, "utf8"))
+          stripCodeComments(readFileSync(file, "utf8"), file)
         )
       )
       .map((file) => file.slice(root.length))
@@ -886,11 +888,11 @@ describe("every read of the log is on the write lane", () => {
         return /\.tsx?$/.test(found.name) ? [full] : [];
       });
 
-    // Comments stripped, as above (#822).
+    // Comments stripped through the parsing strip, as above (#822).
     const importers = walk(root)
       .filter((file) =>
         /from "[^"]*storage\/failures"/.test(
-          stripComments(readFileSync(file, "utf8"))
+          stripCodeComments(readFileSync(file, "utf8"), file)
         )
       )
       .map((file) => file.slice(root.length))
