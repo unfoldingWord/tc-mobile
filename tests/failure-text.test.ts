@@ -10,6 +10,8 @@ import {
 } from "@/lib/failure-text";
 import type { StoredFailure } from "@/types/failure";
 
+import { stripCodeComments } from "./strip-code-comments";
+
 /**
  * The pure half of the durable failure log (#205).
  *
@@ -447,11 +449,11 @@ describe("formatFailureLog", () => {
 describe("errorMessage — the copies, counted by assertion", () => {
   const INLINE_COPY = /instanceof\s+Error\s*\?[^;]*?\.message\s*:\s*String\(/;
 
-  /** Block and line comments out, so prose about the pattern cannot match. */
-  function code(source: string): string {
-    return source
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+  /** Block and line comments out, so prose about the pattern cannot match.
+   *  Through the parsing strip (#822): a `//` inside a string stays code, and
+   *  a `//` after a `:` is still a comment. */
+  function code(source: string, fileName = "probe.ts"): string {
+    return stripCodeComments(source, fileName);
   }
 
   function walk(dir: string): string[] {
@@ -493,14 +495,17 @@ describe("errorMessage — the copies, counted by assertion", () => {
     // the implementation were deleted. Pinning the SET says both halves at
     // once — the canonical one is present, and it is the only one.
     const carriers = files.filter((f) =>
-      INLINE_COPY.test(code(readFileSync(f, "utf8")))
+      INLINE_COPY.test(code(readFileSync(f, "utf8"), f))
     );
     expect(carriers).toEqual([join("src", "lib", "failure-text.ts")]);
   });
 
   it("carries it exactly once even there", () => {
     // A second copy inside that same file would satisfy the set above.
-    const source = code(readFileSync("src/lib/failure-text.ts", "utf8"));
+    const source = code(
+      readFileSync("src/lib/failure-text.ts", "utf8"),
+      "failure-text.ts"
+    );
     expect(source.match(new RegExp(INLINE_COPY, "g")) ?? []).toHaveLength(1);
   });
 

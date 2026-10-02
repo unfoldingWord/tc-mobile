@@ -462,7 +462,7 @@ describe("an item the exporter omitted BEFORE its count (#1044)", () => {
     const send: Busy = { ...busy(undefined, "send"), carried };
     const view = shareO4View(send, "chapter", screen);
     expect(row(view.chips)).toBe("v--");
-    expect(goOutLabel(view)).toBe("1 of 3 go out");
+    expect(goOutLabel(view)).toBe("1 of 3 goes out");
     expect(
       row(
         shareO4View(

@@ -174,11 +174,9 @@ export function ShareMenuSection({
         </Notice>
       )}
       {errorText && (
-        // `nothing` and `failed` both wear the `alert` tone — that split is
-        // #147's open question — so the mark is the only thing separating
-        // "record a segment first" from "try again" (#178). The tone comes
-        // from the same table as the mark, so a #147 re-tone reaches this line
-        // without a second edit (George R3 P3).
+        // Tone and mark both come from the one table (#178, George R3 P3):
+        // `nothing` is the `info` heads-up since #147, `failed` the `alert`
+        // triangle, and neither is spelled out here.
         <Notice tone={errorMark?.tone} icon={errorMark?.icon}>
           {errorText}
         </Notice>

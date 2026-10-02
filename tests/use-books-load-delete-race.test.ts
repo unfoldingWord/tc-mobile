@@ -184,3 +184,37 @@ it("a delete failure survives the load it re-arms, and a later successful delete
   expect(hook().error).toBeNull();
   expect(shelfIds()).toEqual([luke]);
 });
+
+it("a retried delete takes the previous attempt's failure down when it starts, not when it settles (#361 row 2)", async () => {
+  const { mark, luke } = await mountTwoBooks();
+  vi.mocked(deleteBook).mockRejectedValueOnce(new Error("blocked"));
+  await act(async () => {
+    expect(await hook().deleteBook(mark)).toBe("failed");
+  });
+  expect(hook().deleteFailed).toBe(true);
+
+  // Hold the retry's store write open, so the attempt is running and has not
+  // reached a settle path. The success path clears the slot on its own, so a
+  // case that only checks after success cannot see the clear at the start.
+  let finish!: () => void;
+  vi.mocked(deleteBook).mockImplementationOnce(
+    () => new Promise<void>((r) => (finish = r))
+  );
+  neverListBooks();
+  let retry!: Promise<unknown>;
+  await act(async () => {
+    retry = hook().deleteBook(mark);
+    await settle();
+  });
+
+  expect(hook().deleting).toBe(true);
+  expect(hook().deleteFailed).toBe(false);
+  expect(hook().error).toBeNull();
+
+  await act(async () => {
+    finish();
+    expect(await retry).toBe("ok");
+  });
+  expect(hook().deleting).toBe(false);
+  expect(shelfIds()).toEqual([luke]);
+});

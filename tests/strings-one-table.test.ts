@@ -358,8 +358,8 @@ describe("no sentence is stranded outside the table (#169)", () => {
  * not nodes, so documentation cannot trip it.
  *
  * WHAT IT COVERS: every fixed table value with a space in it, plus every output
- * of the save-failed and take-recovery parameterised entries over their whole
- * domain, enumerated below. `saveFailedHeld` with an ordinal and
+ * of the save-failed, take-recovery and armed-restart parameterised entries
+ * over their whole domain, enumerated below. `saveFailedHeld` with an ordinal and
  * `saveFailedAttempts` are composed at run time, so their gate is the template
  * shape instead: a template whose fixed text around one `${…}` is the table's.
  *
@@ -384,11 +384,22 @@ const enumeratedOutputs: readonly string[] = [false, true].flatMap(
   ]
 );
 
+/** The armed restart's label and line, over subject and the cut flag (#169). */
+const restartOutputs: readonly string[] = (
+  ["recording", "changes", "cutAudio"] as const
+).flatMap((subject) =>
+  [false, true].flatMap((alsoCutAudio) => [
+    strings.restartArmed(subject, alsoCutAudio),
+    strings.restartGone(subject, alsoCutAudio),
+  ])
+);
+
 const labels = new Set<string>([
   ...tableValues
     .filter((value): value is string => typeof value === "string")
     .filter((value) => value.includes(" ")),
   ...enumeratedOutputs,
+  ...restartOutputs,
 ]);
 
 /**
@@ -442,6 +453,7 @@ describe("no label is written out again (#805 items 2 and 6)", () => {
     // written out by hand; the third proves the sentinel split found one hole.
     expect(labels.size).toBeGreaterThan(30);
     expect(enumeratedOutputs).toHaveLength(22);
+    expect(restartOutputs).toHaveLength(12);
     for (const parts of heldTemplates) expect(parts).toHaveLength(2);
   });
 

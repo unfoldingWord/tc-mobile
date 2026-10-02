@@ -195,6 +195,19 @@ describe("the numbered chips (D21)", () => {
     );
     expect(strings.shareItemsGoOut(3, 4)).toBe("3 of 4 go out");
   });
+
+  /**
+   * The verb agrees with how many go out, not with how many there are, and
+   * the choice is `plural`'s rather than a fixed English "go" (#169). A
+   * one-chapter book that goes out whole is "1 of 1", the commonest single
+   * case, and read "1 of 1 go out" while the label was one template.
+   */
+  it("agrees the verb with the count that goes out", () => {
+    expect(strings.shareItemsGoOut(1, 1)).toBe("1 of 1 goes out");
+    expect(strings.shareItemsGoOut(1, 4)).toBe("1 of 4 goes out");
+    expect(strings.shareItemsGoOut(0, 4)).toBe("0 of 4 go out");
+    expect(strings.shareItemsGoOut(2, 2)).toBe("2 of 2 go out");
+  });
 });
 
 describe("the progress bar's name at 100 follows the visible status (DRI pick (c))", () => {

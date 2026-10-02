@@ -133,7 +133,8 @@ export function stripComments(text: string): string {
 /** `stripComments`' two patterns, but each comment is overwritten with spaces
  *  (its newlines kept) instead of removed, so every index and line number in
  *  the result is the same as in `text`. For a sweep that reports `file:line`
- *  from a match (#822). Same string-blindness as `stripComments`. */
+ *  from a match (#822). Same string-blindness as `stripComments`; a sweep
+ *  whose file set is open-ended reads through `blankCodeComments` instead. */
 export function blankComments(text: string): string {
   const blank = (comment: string) => comment.replace(/[^\n]/g, " ");
   return text.replace(/\/\*[\s\S]*?\*\//g, blank).replace(/\/\/.*$/gm, blank);

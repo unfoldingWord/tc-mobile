@@ -3,9 +3,8 @@
  *
  * The fixed sentences are entries in `lib/strings.ts` (#169), under the
  * save-failed block; this module picks one per failure kind. The restart
- * label and its consequence line are still composed here from English
- * fragments (`lossPhrase`), because a composed sentence has no single entry
- * to hold — enumerating them is #169's "no glued fragments" work.
+ * label and its consequence line are entries too, one whole sentence per loss
+ * (#169), so nothing here composes words.
  *
  * Pulled out of `save-failed.tsx` for the reason this repo lifts copy and state
  * decisions into a tested, DOM-free module (see `lib/takes/pending-take.ts` and
@@ -25,7 +24,7 @@
  */
 
 import type { SaveFailureKind } from "@/hooks/save-failure";
-import { strings } from "@/lib/strings";
+import { strings, type RestartSubject } from "@/lib/strings";
 
 /**
  * The headline. `quota` is the same either way — the phone is full whether the
@@ -152,15 +151,17 @@ export function recoverySafetyLine(
  * #441 does not speak to it. This label is the minimum that keeps the armed
  * tap itself honest either way.
  *
- * `alsoCutAudio` is the second thing one tap can destroy at once, and it is why
- * this is composed rather than enumerated (George R5 P2). `SaveFailed` outranks
- * `DatabasePanel` while a take is held, so on the terminal `downgrade` screen the
- * restart is reached with a cut phrase in the clipboard that the reload drops
- * too — and the panel that would have named it cannot mount. Enumerating that
- * would have taken a three-value `subject` to six cases and made the next axis
- * twelve; the loss phrase is built instead, so a third thing to lose costs one
- * clause rather than doubling the table. The full strings live in
- * `tests/recovery-copy.test.ts`, which is where to grep for them.
+ * `alsoCutAudio` is the second thing one tap can destroy at once (George R5
+ * P2). `SaveFailed` outranks `DatabasePanel` while a take is held, so on the
+ * terminal `downgrade` screen the restart is reached with a cut phrase in the
+ * clipboard that the reload drops too — and the panel that would have named it
+ * cannot mount. It stays a flag beside `subject` rather than a fourth subject,
+ * so a caller says what it holds and not which sentence it wants. The words
+ * themselves are whole entries (`restartArmed`), one per combination (#169): a
+ * translated phrase glued into an English frame keeps English word order, and
+ * "is" or "are" has to agree with a count the frame cannot see. The cost is
+ * that a third thing to lose adds entries rather than one clause.
+ * `tests/recovery-copy.test.ts` pins each sentence in full.
  */
 export function restartLabel(
   subject: RestartSubject,
@@ -171,7 +172,7 @@ export function restartLabel(
   // names the same reload the crash screen's button does, and the label gate
   // in `tests/strings-one-table.test.ts` reads every whole literal.
   if (!armed) return strings.appReload;
-  return `Tap again to restart and lose ${lossPhrase(subject, alsoCutAudio)}`;
+  return strings.restartArmed(subject, alsoCutAudio);
 }
 
 /**
@@ -186,38 +187,7 @@ export function restartConsequence(
   subject: RestartSubject,
   alsoCutAudio = false
 ): string {
-  const phrase = lossPhrase(subject, alsoCutAudio);
-  const plural =
-    subject === "changes" || carriesCutAudio(subject, alsoCutAudio);
-  return `Tap again and ${phrase} ${plural ? "are" : "is"} gone.`;
-}
-
-/** What the restart destroys, named. */
-type RestartSubject = "recording" | "changes" | "cutAudio";
-
-/**
- * Whether the cut phrase has to be named ON TOP of the subject.
- *
- * `cutAudio` already IS the cut phrase — `DatabasePanel` passes it with nothing
- * else in hand — so adding the clause there would say the same thing twice.
- */
-function carriesCutAudio(
-  subject: RestartSubject,
-  alsoCutAudio: boolean
-): boolean {
-  return alsoCutAudio && subject !== "cutAudio";
-}
-
-function lossPhrase(subject: RestartSubject, alsoCutAudio: boolean): string {
-  const base =
-    subject === "changes"
-      ? "these changes"
-      : subject === "cutAudio"
-        ? "the audio you cut"
-        : "this recording";
-  return carriesCutAudio(subject, alsoCutAudio)
-    ? `${base} and the audio you cut`
-    : base;
+  return strings.restartGone(subject, alsoCutAudio);
 }
 
 /**

@@ -70,6 +70,12 @@ Each promotion is a PR. The `staging` -> `main` PR is the production gate.
 
 Live staging: <https://tc-mobile-staging.unfoldingword.workers.dev>
 
+Live production: <https://tcmobile.app>. The `tc-mobile` Worker's own URL,
+<https://tc-mobile.unfoldingword.workers.dev>, stays live too, with **no
+redirect**: browser storage is per origin, so recordings made there exist
+only there, and a redirect would hide them (#1295; the reasoning is in
+AGENTS.md → "Cloudflare Workers Builds owns deployment").
+
 **Cloudflare Workers Builds deploys** the PWA straight from the repo — no
 Actions workflow deploys the web app. (`.github/` holds three native lanes:
 `ios-testflight.yml` and `android-apk.yml` are manual-dispatch only;
