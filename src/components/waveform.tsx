@@ -23,34 +23,36 @@ interface WaveformProps {
    */
   view?: WaveformWindow | null;
   /**
-   * A take is being made on a segment with NO committed audio yet — the paused
-   * first take whose decoded preview this canvas draws while `LiveScope` is
-   * unmounted (#101). It suppresses the #358 display fit, so that preview reads
-   * at the same absolute level as the scope it replaced and Resume does not
-   * collapse it again (George R1 P2).
+   * A take is being made on a segment with NO committed audio yet. It
+   * suppresses the #358 display fit, so an uncommitted take reads at the same
+   * absolute level here as on the `LiveScope` this canvas replaces (George R1
+   * P2). The #101 paused-take preview that first needed it is gone (#614);
+   * `recorder.tsx`'s call site names the mid-take states that still reach
+   * this canvas, and `lib/audio/display-gain.ts` owns the rule.
    *
-   * Narrower than "recording or paused" on purpose (the `capturing` prop this
+   * Narrower than "a take is in flight" on purpose (the `capturing` prop this
    * used to be checked against was removed with #316, once the centerline
-   * stopped needing a capturing flag to stay visible — see `recorder.tsx`'s
-   * call site). A punch-in draws the segment's already committed audio while
-   * recording, and un-fitting THAT is the #358 complaint all over again at
-   * the moment the translator is aiming at the centreline (George R2 P2). A
-   * row never sets it; a stored take is always fitted.
+   * stopped needing a capturing flag to stay visible). A punch-in draws the
+   * segment's already committed audio while recording, and un-fitting THAT is
+   * the #358 complaint all over again at the moment the translator is aiming
+   * at the centreline (George R2 P2). A row never sets it; a stored take is
+   * always fitted.
    */
   firstTakeInFlight?: boolean;
   /**
-   * The peaks `displayGain` fits to, when they differ from `peaks` itself —
-   * the punch-in Pause+Play preview, which PAINTS the merged buffer (`#101`'s
-   * `previewShown.peaks`, insert included) but must FIT to the segment's
-   * already-committed clip, not the preview (George R3 P2). Undefined (not
-   * just omitted) falls back to `peaks`, which is every other call site: idle,
-   * a first take, and a row never pass this, so nothing changes for them.
+   * The peaks `displayGain` fits to, stated separately from the buffer this
+   * canvas paints. Undefined falls back to `peaks`, which is what a row and
+   * the erase confirm do. The recorder passes it explicitly — the gain source
+   * and the drawn peaks are two questions (George R3 P2) — and since #614 it
+   * passes the same array for both: the #101 Pause+Play preview, which painted
+   * a merged buffer while fitting to the committed clip, went with the paused
+   * take (`recorder.tsx`'s call site records the decision to keep the prop).
    *
-   * A frozen gain fitted to one buffer and applied to a louder one can push
-   * `value * gain` past the canvas edge — `displayGain`'s own [-1, 1]
+   * Nothing in this component's type makes `fitFrom` the same buffer as
+   * `peaks`, and a gain fitted to one buffer and applied to a louder one can
+   * push `value * gain` past the canvas edge — `displayGain`'s own [-1, 1]
    * guarantee only covers the buffer it was fitted to — so the draw loops
-   * below clamp with `clampUnit` rather than assuming the invariant still
-   * holds.
+   * below clamp with `clampUnit` rather than assuming the invariant holds.
    */
   fitFrom?: Peaks | null;
   /**
@@ -99,13 +101,12 @@ export function Waveform({
 
   // `useLayoutEffect`, not `useEffect`: the first paint below must land BEFORE
   // the browser paints a freshly-mounted canvas — the same reasoning
-  // `LiveScope` documents for its own mount effect. A first-take Pause+Play
-  // preview, and (since #283) an append's Pause+Play preview, both remount
-  // this component right where `LiveScope` unmounts; in `useEffect` the
-  // synchronous paint still runs after the browser had already shown one
-  // blank frame (George R-resume, rounds 1 and 2, both raised the class even
-  // though the fix each round landed on did not itself need it — closing it
-  // here rather than leaving it latent for the next remount path to hit).
+  // `LiveScope` documents for its own mount effect. This component mounts
+  // right where `LiveScope` unmounts — at the commit that ends a take (#614,
+  // `liveScopeShown`) — and in `useEffect` the synchronous paint would run
+  // after the browser had already shown one blank frame (George R-resume,
+  // rounds 1 and 2, raised the class on the Pause+Play preview remounts that
+  // #614 since retired; the commit remount is the same class).
   useLayoutEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
@@ -172,17 +173,15 @@ export function Waveform({
     // 400 buckets in the recorder, 120 in a row — one extra pass over what the
     // draw loop below already walks.
     //
-    // `firstTakeInFlight` — narrower than "recording or paused" — suppresses
+    // `firstTakeInFlight` — narrower than "a take is in flight" — suppresses
     // the fit, so an uncommitted take reads at the same absolute level as the
     // `LiveScope` this canvas replaces mid-take, while committed audio that a
     // punch-in is recording over stays fitted and aimable (George R1 P2, R2
     // P2; the prop's docblock carries both failures).
     //
-    // Fit from `fitFrom` when the caller supplied one — the punch-in Pause+Play
-    // preview paints the merged buffer but must fit to the committed clip, not
-    // the preview it is momentarily replacing (George R3 P2, `fitFrom`'s
-    // docblock). Every other call site leaves this undefined and fits the
-    // buffer it draws, same as before.
+    // Fit from `fitFrom` when the caller supplied one (George R3 P2, the
+    // prop's docblock); every other call site leaves it undefined and fits the
+    // buffer it draws.
     const gain = displayGain(fitFrom ?? peaks, firstTakeInFlight);
     if (view) {
       // The amplitude axis, faint, across the whole drawn width and UNDER the
@@ -240,9 +239,8 @@ export function Waveform({
     // the flag is that the same peaks draw at a different scale either side of
     // it, so a stale deps array would leave the canvas at the old scale until
     // something else happened to invalidate it. `fitFrom` is referenced there
-    // too: it can change (preview shown/cleared) while `peaks` also changes,
-    // and a stale value would fit the previous stage's committed clip to the
-    // current one's preview.
+    // too, and it is its own prop, so it is its own dep: a stale value would
+    // fit the current `peaks` to a previous render's buffer.
   }, [
     peaks,
     recorded,

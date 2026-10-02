@@ -325,9 +325,17 @@ describe("recorder wiring (#640)", () => {
     );
   });
 
-  it("the permission Retry builds it from the offset already locked", () => {
+  it("the permission Retry builds it from the offset already locked, and its deps carry editor.peaks (#1201)", () => {
+    // The pin runs THROUGH the `useCallback` dependency list, not just the
+    // call: with `editor.peaks` dropped from it, the Retry closure would
+    // still compile and still pass the argument match above, but hand
+    // `buildCaptureContext` the peaks of whatever render first created the
+    // callback — a stale fit for the context's `gain` (George R1 on #1199).
+    // `react-hooks/exhaustive-deps` also flags that drop today; this is the
+    // second gate, for the #212 bail-out shape that silences that rule for a
+    // whole hook body without failing lint.
     expect(src).toMatch(
-      /setCaptureContext\(\s*buildCaptureContext\(\s*editor\.working,\s*insertionOffset\.current,\s*editor\.peaks\s*\)\s*\);\s*audio\.startRecording\(\);/
+      /setCaptureContext\(\s*buildCaptureContext\(\s*editor\.working,\s*insertionOffset\.current,\s*editor\.peaks\s*\)\s*\);\s*audio\.startRecording\(\);\s*\},\s*\[audio,\s*editor\.working,\s*editor\.peaks\]\s*\);/
     );
   });
 
