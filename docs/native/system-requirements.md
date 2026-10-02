@@ -186,17 +186,26 @@ says so. Nothing in this section was measured on a phone.
 
 ### Platform floors (read from the tree)
 
-| Platform         | Floor                                          | Source                                                                                                                                                         |
-| ---------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Android          | Android 7.0 (API 24)                           | `android/variables.gradle` `minSdkVersion = 24`                                                                                                                |
-| Android target   | API 36 (`compileSdkVersion` is also 36)        | `android/variables.gradle` `targetSdkVersion = 36`                                                                                                             |
-| iPhone / iPad    | iOS 15.4                                       | `ios/App/App.xcodeproj/project.pbxproj` `IPHONEOS_DEPLOYMENT_TARGET = 15.4` (four occurrences); `ios/App/CapApp-SPM/Package.swift` `platforms: [.iOS("15.4")]` |
-| Native shell     | Capacitor 8.5.2                                | `package.json` (`@capacitor/core`, `@capacitor/android`, `@capacitor/ios`)                                                                                     |
-| Web build target | Chrome 111, Edge 111, Firefox 114, Safari 15.4 | `vite.config.ts` `build.target`                                                                                                                                |
+| Platform         | Floor                                          | Source                                                                                                                                                                                                                                  |
+| ---------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Android          | Android 7.0 (API 24)                           | `android/variables.gradle` `minSdkVersion = 24`                                                                                                                                                                                         |
+| Android target   | API 36 (`compileSdkVersion` is also 36)        | `android/variables.gradle` `targetSdkVersion = 36`                                                                                                                                                                                      |
+| iPhone           | iOS 15.4; iPhone only                          | `ios/App/App.xcodeproj/project.pbxproj` `IPHONEOS_DEPLOYMENT_TARGET = 15.4` (four occurrences) and `TARGETED_DEVICE_FAMILY = 1` (both app-target configurations, #1289); `ios/App/CapApp-SPM/Package.swift` `platforms: [.iOS("15.4")]` |
+| Native shell     | Capacitor 8.5.2                                | `package.json` (`@capacitor/core`, `@capacitor/android`, `@capacitor/ios`)                                                                                                                                                              |
+| Web build target | Chrome 111, Edge 111, Firefox 114, Safari 15.4 | `vite.config.ts` `build.target`                                                                                                                                                                                                         |
 
 There is no `ios/App/Podfile` in the tree; the iOS project uses Swift Package
 Manager (`ios/App/CapApp-SPM/Package.swift`), so the Xcode setting and that file
 are the two iOS floors.
+
+**The iOS app is iPhone-only as of 1.0.1** (#1289, DRI pick 2026-10-01,
+verbatim: "iPhone only for now (Recommended)"): `TARGETED_DEVICE_FAMILY = 1`
+in both app-target configurations, and the `~ipad` orientation set is gone
+from `ios/App/App/Info.plist`; `tests/ios-store-readiness.test.ts` pins both.
+Whether an iPad runs it in iPhone-compatibility mode is an inference in #1289
+and was not tried; no iPad has run any build of this app on record. The
+listings, this file and the runbook therefore say "iPhone", not "iPhone and
+iPad".
 
 The Android floor is the install floor. The app runs inside Android System
 WebView, so the standing wording is "kept up to date". The tree pins no minimum
@@ -270,9 +279,17 @@ share step writes a file as well: Share Book builds a zip of chapter MP3s
 **Web (PWA)**
 
 - A current Chrome or Edge (111 or later), Firefox 114 or later, or Safari 15.4
-  or later on iPhone and iPad, opened over HTTPS. Installing it to the home
-  screen is recommended (#1017's draft). Samsung Internet is not in the build
-  target; a Chromium-version mapping for it is not derived here.
+  or later on iPhone, opened over HTTPS. Installing it to the home screen is
+  recommended (#1017's draft). Samsung Internet is not in the build target; a
+  Chromium-version mapping for it is not derived here. Nothing in the build
+  target excludes Safari on an iPad, but no iPad run is on record, so this
+  file does not claim one.
+- The production address is <https://tcmobile.app>, connected 2026-10-02 as a
+  Custom Domain on the `tc-mobile` Worker and serving 1.0.1;
+  <https://tc-mobile.unfoldingword.workers.dev> keeps serving the same build
+  with no redirect, because browser storage is per origin and recordings made
+  at one address are not visible at the other (#1295, which also tracks
+  putting the domain into `wrangler.jsonc` and deciding `www`).
 
 ### Still open
 
@@ -285,9 +302,14 @@ share step writes a file as well: Share Book builds a zip of chapter MP3s
    #1017) is an extrapolation from #1002 strand C. It is not reproduced here
    until measured numbers exist.
 3. **Minimum Android System WebView version.** Not pinned in the tree.
-4. **Pasting the finished wording** into the Play listing, the App Store
-   listing and the web page / facilitator runbook (#248), each linking back to
-   this file. Not done in this change. The listings are outside the repository.
-5. **Existing docs that still state the floors**: `docs/tester-install.md:37`
-   and `docs/training/facilitator-runbook.md:18` say Android 7.0, which matches.
-   `docs/native/ios-credentials.md:440` says iOS 15.4, which matches.
+4. **Pasting the finished wording** into the Play listing and the App Store
+   listing, each linking back to this file. The listings are outside the
+   repository and are not checked from here. The two in-repo readers,
+   `docs/tester-install.md` (the "iPhone (TestFlight)", "Android" and "Web
+   browser" sections) and `docs/training/facilitator-runbook.md` (§1 step 2),
+   carry the platform floors from this file as of 2026-10-02 and link back
+   here; they repeat no RAM figure, per the top of this file.
+5. **Existing docs that state the floors**: `docs/tester-install.md` and
+   `docs/training/facilitator-runbook.md` say Android 7.0 with WebView kept up
+   to date, and iPhone with iOS 15.4, which matches the table above.
+   `docs/native/ios-credentials.md` says iOS 15.4, which matches.
