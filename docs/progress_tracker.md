@@ -11,6 +11,53 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-02 (day) — freeze lifted, the 17 held PRs merged, develop repaired, eight lane PRs through review
+
+### Freeze lift and the held PRs
+
+- **The lift:** the DRI's pick at start of day was "Lift now, merge them first". The freeze note was closed on #1210, the v1.0.0 milestone was closed, and its 26 open issues moved to v1.1.0 with a note on each.
+- **The merges:** the DRI merged the 17 held PRs (#1125, #1171, #1209, #1211, #1215, #1221, #1231, #1237, #1245, #1246, #1247, #1248, #1249, #1255, #1298, #1299, and #1297 later) on the checks they carried from 2026-09-29/30. #1125 and #1171 had their base merged in first (a `playwright` `testMatch` conflict).
+- **develop went red three ways** after the bulk merge, each a stale check against a base that had moved: a test probe passing `hasView` and `openMenu` to an edit bar that #1243 had removed (#1211), an e2e clicking a "Done editing" button that #1252/#1260 had removed (#1246), and a self-reference pin whose expected map lacked `shareFilename` from #1224 (#1221, predicted on the PR by its author with the one-line fix, which nobody applied). Fix PR #1302, merged at `f81066e8`; develop green from there and at the tip, `bcc6d64c`.
+- **The lesson, written down** (memory `feedback-stale-ci-is-not-preflight`): a "checks passed" badge is for the merge ref at the time of the run. Pre-flight for a held PR is a CI run newer than the current base tip, plus a read of the author's and bench's comments for a "when you rebase, do X" line.
+
+### Lane PRs, in merge order
+
+| PR    | Issue                 | Merged at              | What                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----- | --------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #1297 | #248, #1017           | `e87fd061`             | tester-install and facilitator runbook: iPhone-only build, alarm bullet, problem-report file kept on the phone, figures marked derived                                                                                                                                                                                                                                                                                                                          |
+| #1298 | #1294                 | `38c82e8d`             | seal the take when the capture track goes muted (not yet run on a phone)                                                                                                                                                                                                                                                                                                                                                                                        |
+| #1299 | #1295                 | `86fdd04a`             | `tcmobile.app` declared in `wrangler.jsonc`                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| #1300 | #1275 (closed)        | `e979fd4a`             | recorder book crumb is a two-level Back to Books                                                                                                                                                                                                                                                                                                                                                                                                                |
+| #1303 | #1131 (closed)        | `2fe58b75`             | last `restingErase()` swap, dead `vi.mock` removed                                                                                                                                                                                                                                                                                                                                                                                                              |
+| #1305 | #1201 items 1–2       | `5de36e9d`             | waveform docblocks retire the Pause+Play preview, Retry deps pinned                                                                                                                                                                                                                                                                                                                                                                                             |
+| #1306 | #1278, #1301 (closed) | `f283658f`             | batched rc.3 residuals; `check:deploy:prod` pins `PROD_DOMAIN_ORIGIN` to `wrangler.jsonc`; the bench's own fix commit `f283e5ed` gave the #1251 no-message Play cases an exit                                                                                                                                                                                                                                                                                   |
+| #1307 | #1281                 | `bcc6d64c`             | APK and TestFlight lanes start on a promotion merge to `staging`/`main`; `allow_any_ref` gone; concurrency on the signing job; runbook and skill read the signing job's conclusion                                                                                                                                                                                                                                                                              |
+| #1304 | #1264                 | **open at `3738ebee`** | production parent check: `MAIN_SHA`/`HEAD_SHA`/`PROD_SHA` frozen baseline, canonical `main` read before the merge, `PROD_SHA` from `mergeCommit.oid`. Develop merged in after #1307 (one conflict in the skill's "Final v1.0.0" list, resolved; three runbook sentences that still said the lanes are dispatched at the tag corrected). Bench George clean, CI green. The DRI reported the merge done; GitHub still showed it open when this entry was written. |
+
+- **Research only, by the DRI's pick:** #1284 (long names cut off) got a mechanism comparison for the requirements owner: full name in the existing ⋮ sheets recommended; tap-and-hold a poor primary path; Rename shows about sixteen letters. No UI until Tim picks.
+- **Filed:** #1308 (native-lane follow-ups from the #1307 reviews: AGENTS.md line on which merges get no build, the concurrency comment's claim, README §4a's list, the yml headers' transition wording, CONTRIBUTING's "ship" clause, a duplicate-build guard after a `cancelled` run). Two more Lows from #1304's bench round went to #1278 (`PROD_SHA` "follows the normal rule" cites a rule now split in three; §5's rollback `curl` lacks `-f`).
+- **Other repos, contributor hygiene only (the BT Servant lane is Ian's):** worker PR #443 (#422, welcome-message hardening) open, awaiting Ian's Codex pass; portal follow-ups #344 (#337: three ungated controls) and #345 (#336: share panel, blocked on worker #437) filed.
+
+### Review infrastructure
+
+- Codex (Frank) hit its usage limit for the whole day (resets 2026-10-03 17:13). The bench's Frank seat ran on the Claude engine under RULINGS D27 and is recorded as a stand-in, never as codex.
+- Local grok (George) stalled five times on #1307's head (`268–307` byte reports, defunct process), including a pass scoped to two workflow files. The bench's own George read the same head clean 26 minutes before the hold note that said nobody had; the note was corrected on the PR. Lesson: read the PR's bench markers before posting a verdict about what has or has not been reviewed.
+- Coordinator ran George past the harness/meta cap on #1304, #1306 and #1307 with the DRI's acceptance; #1304 and #1306 fixed their findings, #1307's last two rounds were fixed red-first and confirmed by the bench.
+
+### Not run
+
+Nothing merged today has run on a phone: #1298 (alarm during a take), #1300 (book crumb Back), #1305 (waveform docblocks only, no behaviour change claimed), and the #1251 runbook exits in #1306 are all unverified on a device.
+
+### Next
+
+1. #1304: confirm the merge on GitHub (`gh pr view 1304 --json state,mergeCommit`); if open, the pinned command is on the PR. #1264 closes with it.
+2. #1281 environment step, human-only: switch `release-signing` from the required reviewer to the deployment-branch policy; the first promotion after that is the evidence for the concurrency claim.
+3. Next develop → staging promotion (1.0.2) carrying today's merges; then the phone checks above and #1294's device check.
+4. #1295: www DNS, the no-redirect decision written down, the store marketing URL. #1284: Tim's pick. #1308 and #1278 residuals when the freeze budget expires (2026-10-04).
+5. Store review items from the previous entry are unchanged: App Store submission in, Google Play production, Android developer verification, the Play integrity key check (#874), the Apple EU trader declaration, TestFlight group assignment.
+
+---
+
 ## 2026-10-02 (session began 2026-10-01) — v1.0.0 and v1.0.1 shipped to production on all channels, store submissions started, tcmobile.app connected
 
 ### v1.0.0
