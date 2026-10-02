@@ -45,15 +45,18 @@ checks (`check:deploy`, the `baseRefOid` and merge-parent checks, the signer
 and hash checks, the download-back), and records.
 
 **Three commits name every RC step below**, and the final promotion adds
-`MAIN_SHA`, `HEAD_SHA` and `PROD_SHA` under "Final v1.0.0 additionally", where
-`MAIN_SHA` and `HEAD_SHA` are a frozen baseline and are not re-resolved. Write
-the three below down when they exist and use no other. Put each in the promotion PR's
-hold line as it is known, as a record. The hold line is not the source:
-re-resolve each one with `git` or `gh` before a step uses it, never from
-memory or from that text:
+`MAIN_SHA`, `HEAD_SHA` and `PROD_SHA` under "Final v1.0.0 additionally". Write
+the three below down when they exist and use no other. Put each in the
+promotion PR's hold line as it is known, as a record. The hold line is not
+the source: re-resolve `CUT_SHA` and `PROMO_SHA` with `git` or `gh` before a
+step uses it, never from memory or from that text. `STAGING_SHA` (like
+`MAIN_SHA` and `HEAD_SHA`) is a frozen baseline instead: re-resolving it means
+`git rev-parse <STAGING_SHA>^{commit}` to confirm the object, never a fresh
+tip, or the base check in step 4 compares a value with itself.
 
-- **`STAGING_SHA`**: the `origin/staging` tip the red team's range starts
-  from. Staging is not frozen, so it can move.
+- **`STAGING_SHA`**: the full oid of the `staging` tip the red team's range
+  starts from, the one its report names. Staging is not frozen, so the tip
+  can move; the record does not.
 
 - **`CUT_SHA`**: the squash commit of the bump PR on `develop`. The bump
   merges **last**, after every picked fix, so `CUT_SHA` is the exact tree
@@ -131,11 +134,12 @@ from.
 
 - [ ] Agent-allowed: just before the merge, check
       `gh pr view <N> --repo unfoldingWord/tc-mobile --json baseRefOid,headRefOid`:
-      `baseRefOid` must still be `STAGING_SHA` and `headRefOid` must be
-      `CUT_SHA`, and `git fetch origin +refs/heads/staging:refs/remotes/origin/staging`
-      then `git rev-parse origin/staging` must print `STAGING_SHA`
-      (`baseRefOid` on an open PR lags the base tip; the fetch is the live
-      read). If `staging` has moved, stop and tell the DRI, because the red
+      `baseRefOid` must still be the recorded `STAGING_SHA` and `headRefOid`
+      must be `CUT_SHA`, and the canonical `staging` tip,
+      `gh api repos/unfoldingWord/tc-mobile/git/ref/heads/staging --jq .object.sha`,
+      must print that same recorded `STAGING_SHA` (`baseRefOid` on an open PR
+      lags the base tip, and a local `origin/staging` can be stale; the
+      `gh api` read is the live one). If `staging` has moved, stop and tell the DRI, because the red
       team did not read that tree. Staging is not frozen, so this check is the
       only guard: a moved base means stop before the push, because the staging
       push starts the Play lane and these docs do not recall it.
@@ -228,12 +232,15 @@ All agent-allowed and read-only.
 Follow runbook §3 and §6; §3 step 3 is the reference for this list. Three
 more commits name it:
 
-- **`MAIN_SHA`**: the `origin/main` tip the production PR was reviewed
-  against, read when the record is made with
-  `git fetch origin +refs/heads/main:refs/remotes/origin/main` then
-  `git rev-parse origin/main`. The merge base only; the build production
-  serves is runbook §5's own read, and a commit on `main` is not a deployed
-  build (#143).
+- **`MAIN_SHA`**: the `main` tip the production PR's checks and reviews
+  went green against. Record it only when the canonical `main` tip,
+  `gh api repos/unfoldingWord/tc-mobile/git/ref/heads/main --jq .object.sha`,
+  and the PR's `baseRefOid` agree, and write that one oid down. If they
+  differ, stop and record neither; a later tip that differs is a stop, never
+  a new baseline. The merge base only; the build production serves is
+  runbook §5's own read, and a commit on `main` is not a deployed build
+  (#143). A local `origin/main` is never the tip: a fork or an unrepointed
+  clone carries a stale `main`.
 - **`HEAD_SHA`**: the production PR's reviewed head, its `headRefOid`. For a
   `staging → main` PR (the v1.0.0 and v1.0.1 shape, bump through `develop`)
   that is the `origin/staging` tip and the last `develop → staging`
@@ -245,17 +252,17 @@ more commits name it:
 
 **Exception to the re-resolve rule above:** `MAIN_SHA` and `HEAD_SHA` are the
 full 40-character oids written down when the production PR's checks and
-reviews went green. That record is the baseline. Re-read `origin/main`,
-`baseRefOid` and `headRefOid` fresh at each check below, and never rebuild the
-baseline from those reads, or each check compares a value with itself.
-`PROD_SHA` follows the normal rule.
+reviews went green. That record is the baseline. Re-read the canonical
+`main` tip, `baseRefOid` and `headRefOid` fresh at each check below, and never
+rebuild the baseline from those reads, or each check compares a value with
+itself. `PROD_SHA` follows the normal rule.
 
-- [ ] Agent-allowed, immediately before the merge:
-      `git fetch origin +refs/heads/main:refs/remotes/origin/main`, then
-      `git rev-parse origin/main` prints the recorded `MAIN_SHA`, and
+- [ ] Agent-allowed, immediately before the merge: the canonical `main` tip
+      (the `gh api` read above) prints the recorded `MAIN_SHA`, and
       `gh pr view <N> --repo unfoldingWord/tc-mobile --json baseRefOid,headRefOid`
-      shows that `MAIN_SHA` and the recorded `HEAD_SHA`. The fetch is the
-      live read: `baseRefOid` on an open PR lags the base tip. If `main` has
+      shows that `MAIN_SHA` and the recorded `HEAD_SHA`. The `gh api` read is
+      the live one: `baseRefOid` on an open PR lags the base tip, and a local
+      `origin/main` can be stale. If `main` has
       moved, stop and tell the DRI; the DRI does not run the merge.
       `--match-head-commit` pins only the head and `--admin` skips GitHub's
       up-to-date rule, so this is the only guard on the base, and it runs
@@ -267,20 +274,23 @@ baseline from those reads, or each check compares a value with itself.
       reviews are green and after the check above. An agent never runs it.
 - [ ] Agent-allowed: `PROD_SHA` is `mergeCommit.oid`
       (`gh pr view <N> --repo unfoldingWord/tc-mobile --json mergeCommit`).
-      Fetch `main` the same way; stop unless `git rev-parse origin/main`
-      prints `PROD_SHA` and `git rev-parse <PROD_SHA>^1 <PROD_SHA>^2` prints
-      the recorded `MAIN_SHA` then `HEAD_SHA`. On a stop: no tag, no
+      Stop unless the canonical `main` tip prints `PROD_SHA` and its parents
+      (`gh api repos/unfoldingWord/tc-mobile/commits/<PROD_SHA> --jq '[.parents[].sha] | join(" ")'`,
+      or `git rev-parse <PROD_SHA>^1 <PROD_SHA>^2` after `git fetch origin main`)
+      are the recorded `MAIN_SHA` then `HEAD_SHA`. On a stop: no tag, no
       dispatch, no Release. Tell the DRI; the revert or rollback is the DRI's
       pick.
 - [ ] Human-only: the tag `v1.0.0` on `PROD_SHA`, only after the check above
-      passed and a fresh fetch shows `origin/main` still at `PROD_SHA`
+      passed and a fresh canonical read shows `main` still at `PROD_SHA`
       (runbook §3 step 4); the native dispatches from `main` at the tag;
       publishing the GitHub Release on `v1.0.0` with the APK, QR and
       TestFlight build.
 - [ ] Agent-allowed: both native runs' `headSha` equal `PROD_SHA` (they
       dispatch from `main`, so a moved `main` builds a commit that is not the
       tag; runbook §4 says stop and do not label it the release),
-      `check:deploy:prod`, the APK checks, the download-back, the
+      `npm run check:deploy:prod -- --sha=<PROD_SHA, 7 chars> --version=1.0.0`
+      (explicit, so a PASS means `PROD_SHA` and not a later `main` tip;
+      runbook §3 step 5), the APK checks, the download-back, the
       installation guide update, closing the milestone and telling the PR
       authors the freeze is lifted (after the DRI lifts it).
 
