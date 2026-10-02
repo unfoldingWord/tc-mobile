@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { stripComments } from "./support";
+
 import {
   PROD_DOMAIN_ORIGIN,
   PROD_ORIGIN,
@@ -137,5 +139,59 @@ describe("package.json's check:deploy:prod runs the wrapper, not a shell chain",
     expect(pkg.scripts["check:deploy:prod"]).toBe(
       "node scripts/check-deploy-prod.mjs"
     );
+  });
+});
+
+// #1301 (from #1299 round-2 George P3): `PROD_DOMAIN_ORIGIN` and
+// `wrangler.jsonc`'s custom-domain route were two unshared strings, and the
+// suites above pin `PROD_ORIGINS` only against the exported constants, so
+// both sides could move together. Collapse `PROD_DOMAIN_ORIGIN` onto
+// `PROD_ORIGIN` and `check:deploy:prod` fetches workers.dev twice, exits 0,
+// and never requests tcmobile.app — a 301 from the custom domain, or a
+// staging deploy that dropped `routes: []` and took the domain, stay
+// invisible. These read the config itself.
+describe("check-deploy-prod: the production origins match wrangler.jsonc (#1301)", () => {
+  interface WranglerConfig {
+    name?: string;
+    workers_dev?: boolean;
+    routes?: { pattern: string; custom_domain?: boolean }[];
+    env?: { staging?: { routes?: unknown[] } };
+  }
+  // `stripComments` is not string-aware (tests/support.ts); checked by hand
+  // that no string in wrangler.jsonc holds `//` or `/*`. The trailing commas
+  // JSONC allows are removed before the parse.
+  const config = JSON.parse(
+    stripComments(
+      readFileSync(path.join(ROOT, "wrangler.jsonc"), "utf8")
+    ).replace(/,(\s*[}\]])/g, "$1")
+  ) as WranglerConfig;
+
+  it("declares exactly one custom-domain route, and the checker's constant is that domain", () => {
+    expect(config.routes).toHaveLength(1);
+    const [route] = config.routes!;
+    expect(route!.custom_domain).toBe(true);
+    expect(route!.pattern).toBe("tcmobile.app");
+    expect(`https://${route!.pattern}`).toBe(PROD_DOMAIN_ORIGIN);
+  });
+
+  it("checks two different origins, so collapsing the constants cannot pass", () => {
+    expect(PROD_ORIGIN).not.toBe(PROD_DOMAIN_ORIGIN);
+  });
+
+  it("aims the workers.dev check at the Worker wrangler.jsonc names, on the unfoldingWord account", () => {
+    // AGENTS.md: the Cloudflare account is unfoldingWord. The account
+    // subdomain is not in the config, so it is the one literal here.
+    expect(config.name).toBe("tc-mobile");
+    expect(new URL(PROD_ORIGIN).hostname).toBe(
+      `${config.name}.unfoldingword.workers.dev`
+    );
+  });
+
+  it("keeps the workers.dev origin on explicitly, since `routes` flips wrangler's default off", () => {
+    expect(config.workers_dev).toBe(true);
+  });
+
+  it("gives staging an empty `routes`, so a staging deploy cannot take the domain", () => {
+    expect(config.env?.staging?.routes).toEqual([]);
   });
 });

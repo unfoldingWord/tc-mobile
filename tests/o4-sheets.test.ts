@@ -185,6 +185,28 @@ describe("o4/sheets.css — the name sheet (02, G4)", () => {
     );
   });
 
+  it("removes the drag's inline offset only after the spring has finished (#1273)", () => {
+    // `menu.tsx`'s `SHEET_SETTLE_MS` was tied to this file's transition by a
+    // docblock alone (#1273 round 1, Frank). The declaration is read with a
+    // line-anchored match, which the docblock naming the number cannot
+    // satisfy, and compared with the duration this rule declares.
+    const menuSource = readFileSync(
+      path.resolve(import.meta.dirname, "..", "src/components/menu.tsx"),
+      "utf8"
+    );
+    const settle = /^const SHEET_SETTLE_MS = (\d+);$/m.exec(menuSource);
+    expect(settle, "no SHEET_SETTLE_MS declaration in menu.tsx").not.toBeNull();
+    const transition = rule(`${O4} [data-sheet-drag="settling"]`).get(
+      "transition"
+    );
+    const spring = /^transform (\d+)ms\b/.exec(transition ?? "");
+    expect(
+      spring,
+      `transition is not \`transform <n>ms …\`: ${transition}`
+    ).not.toBeNull();
+    expect(Number(settle![1])).toBeGreaterThan(Number(spring![1]));
+  });
+
   it("sets the sheet title at 20/700", () => {
     const title = rule(`${SHEET} .t-title`);
     expect(title.get("font-size")).toBe("20px");

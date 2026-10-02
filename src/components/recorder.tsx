@@ -185,6 +185,17 @@ interface RecorderProps {
    * since #592 only its failure arms, as a successful erase stays open.
    */
   onRequestBack: () => void;
+  /**
+   * The header's book crumb (#1275): a Back to Books, two levels up, through
+   * the nav adapter's `goBackToBooks` — the same `onRequestBack` path for the
+   * first level (so `close()` still stops Play, seals and saves the take,
+   * commits edits and refuses over a held take), then the Segments Back the
+   * adapter issues itself. Optional only so that a harness modelling no
+   * Books screen need not stub it: without it the book crumb is a plain
+   * chip. App always passes it (`tests/o4-header-crumbs.test.ts` pins both
+   * shapes).
+   */
+  onRequestBackToBooks?: () => void;
 }
 
 /**
@@ -261,6 +272,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       databaseUnreachable,
       onExit,
       onRequestBack,
+      onRequestBackToBooks,
     },
     ref
   ) {
@@ -3484,15 +3496,25 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               // exactly as Back does: `close()` stops Play, seals and saves
               // an open take, commits pending edits, and refuses over a
               // held take. The segment crumb is this screen:
-              // `aria-current`, not a button. The book crumb stays a plain
-              // chip: reaching Books from here takes two Backs, and the nav
-              // adapter has no call that chains them.
+              // `aria-current`, not a button.
+              //
+              // #1275: the book crumb is a button to Books, named `goToBook`,
+              // running `onRequestBackToBooks` — the adapter's two-level
+              // Back, whose first level IS the `onRequestBack` path above
+              // (the same `close()`, the same guards and refusals) and whose
+              // second is the Segments Back the adapter issues once the
+              // sheet has gone. Disabled by the same expression as the
+              // other two, and inert with them under an overlay.
               <div className="min-w-0 flex-1">
                 <O4Crumbs
                   className="min-w-0"
                   book={view.bookName}
                   chapter={chapterHeading}
                   links={{
+                    book: onRequestBackToBooks && {
+                      label: strings.goToBook(view.bookName),
+                      onClick: onRequestBackToBooks,
+                    },
                     chapter: {
                       label: strings.goToChapter(chapterHeading),
                       onClick: onRequestBack,

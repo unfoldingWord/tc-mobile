@@ -51,7 +51,7 @@ function expectOptOut(selector: string): void {
 const INPUT_SELECTOR = ".app-shell :is(input, textarea, [contenteditable])";
 
 describe("selection opt-out on the app shell and the build stamp (#1276)", () => {
-  it("opts the shell out, so the list and the gaps between rows are covered", () => {
+  it("puts the three opt-out declarations on the `.app-shell` rule", () => {
     expectOptOut(".app-shell");
   });
 

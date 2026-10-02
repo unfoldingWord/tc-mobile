@@ -37,7 +37,8 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    named `1.0.0-rc.1` to `1.0.0-rc.3`; a phone whose stamp still reads
    `v1.0.0-rc.…` is on an old build and should be updated the way §2 says —
    over the top, never by uninstalling. On an iPhone, TestFlight may not yet
-   offer the new build to every tester group; if it offers nothing newer,
+   offer the new build to every tester group; if it offers nothing newer and
+   the stamp is not the one named for the session (§2 says how to read it),
    note the phone and tell the maintainer rather than reinstalling. <!-- source: src/components/build-stamp.tsx (`v{__APP_VERSION__} · {__BUILD_SHA__}`); docs/progress_tracker.md "2026-10-02 ... v1.0.0 and v1.0.1 shipped" (1.0.1 is the store build; "Assign TestFlight build 1790903231 to the testers' group" is listed under Next, so assignment is not recorded as done); docs/native/README.md §4a (a tester whose group is not assigned the new build stays on the previous one; happened on 1.0.0-rc.1) and §5a ("Release candidates use `tester-build-v1.0.0-rc.N`") -->
 
    **Not every phone has the new look.** A phone that saved the old look keeps
@@ -126,7 +127,18 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    install it over the old one. On both, deleting the app erases every
    recording on it. If Android refuses to install over the old app, stop
    there: do not uninstall to get past it. The same goes for TestFlight
-   offering no newer build, for a phone that should be on the newest build. The app's own record
+   offering no newer build, for a phone that should be on the newest build —
+   but first read the whole stamp: a phone whose stamp already shows the
+   build named for the session — the version **and** the short code after
+   the `·` — is up to date, and TestFlight offering nothing newer there is
+   success, not an install problem. The version alone is not enough: it
+   stays the same across many builds. The short code changes when the app's
+   code changes, and no more often than that: two TestFlight uploads of the
+   same code show the same stamp, so when the maintainer says a NEW UPLOAD
+   of the same build is the one to be on, the stamp cannot tell the two
+   apart — ask the maintainer how to confirm it. If the version matches but
+   the short code differs, the phone is not up to date: note the phone and
+   tell the maintainer, as above. The app's own record
    cannot hold an install problem, so write down what you saw (the message,
    if there is one) and tell the maintainer (§5, "Write down what the app cannot know"). If a
    recording on that phone matters, share it first (§3), since Share is the
@@ -137,7 +149,15 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    uninstall first"); docs/native/README.md §4a (a tester whose TestFlight
    group is not assigned the new build stays on the old one — happened on
    1.0.0-rc.1); docs/tester-install.md "iPhone (TestFlight)"; the
-   TestFlight button labels are Apple's, not from this repo -->
+   TestFlight button labels are Apple's, not from this repo; the "already
+   newest is success" clause is George's Low on PR #1279, batched in gh
+   issue #1278, and it compares the WHOLE stamp because the version half
+   alone cannot tell two builds apart (docs/native/README.md, the build-stamp
+   paragraph under "Versions": two builds can share a package.json version;
+   George round 1 on PR #1306). The short code is `git rev-parse --short=7
+   HEAD` at build time (vite.config.ts, `buildSha`), not the iOS build
+   number, so two uploads of one commit carry one stamp (George round 2 on
+   PR #1306) -->
 
    After installing over an old build, close and reopen the app twice,
    then check the build stamp — the small text at the bottom of every
@@ -398,22 +418,56 @@ been measured on a device yet.
   expect to be there, and if a save or recovery screen appears instead, keep
   the app open and resolve it before doing anything else. <!-- source: src/components/recorder.tsx close(); AGENTS.md Testing ("Second on-device run: 2026-08-25 ... incoming call mid-take ... saved the partial take" on iPhone Safari; "no Android pass has reached interruption or background capture (#245)"); https://github.com/unfoldingWord/tc-mobile/issues/58#issuecomment-5770432574 (accepted for training; #484 is the post-training device-evidence follow-up; #471, the earlier fix attempt, was closed 2026-09-24 as unrebaseable after #614 removed the recorder's paused state, and its replacement is #807, post-training) -->
 - **Known issue on iPhones (#1251, 2026-09-30): Play and the live waveform can
-  stop working.** After connecting Bluetooth headphones, and sometimes after
-  coming back from the lock screen, the Play button can fail or do nothing,
-  and the moving line that shows the voice while recording can stay flat. The
-  recording should still be saved. **A fix shipped in rc.3 and is in 1.0.1,
-  but it is not confirmed on a phone, including with the silent switch on.**
-  What a person may see on rc.3 or 1.0.1: <!-- source: GitHub release v1.0.1 body, "Known limits in 1.0.1" ("Not yet confirmed on a phone: the rc.3 recovery of Play and the live waveform after locking an iPhone (#1251), including with the silent switch on") -->
+  stop working.** **If Play is silent or fails, do this, in this order:**
+  1. **Before touching anything, note what the screen shows** — whether it
+     says "Could not play this recording.", and whether the Play button is
+     showing as playing (a pause symbol) or not. Pressing again clears the
+     message.
+  2. **Leave the app open. Which screen you noted decides what the next
+     press does:**
+     - **The message is up and the button shows Play (not pause):** press
+       Play once. On rc.3 and 1.0.1 that press is the fresh start. Wait for
+       the voice.
+     - **The button shows pause and there is no message:** that Play is
+       still trying. Pressing now only stops it — it does not set up the
+       fresh start. Press Play again after that and wait: the press that
+       brings the message onto the screen is not the fresh start either.
+       Once the message is up, press Play once more and wait for the voice.
+       **If that press stays silent and the message never comes, go to
+       step 3 — do not keep waiting for it.**
+     - **The button shows Play and there is no message:** press Play once
+       and wait for the voice. If it stays silent, go to step 3.
+  3. **If the press that should have been the fresh start is still silent
+     or does nothing, or no press ever brings the message or the voice,
+     fully close the app** — swipe it away in the phone's
+     app switcher — **open it again, play the recording, and confirm you hear
+     the voice before anyone records again.** If it is still silent after
+     that restart, leave that phone alone.
+  4. **Send the report (§5) the first time this happens on a phone in a
+     session, even when a later press brought the voice back.** The rc.3 fix
+     has not been confirmed on a phone, so that report — with what you noted
+     in step 1 and which press or step brought the sound back — is the device
+     evidence #1251 is missing. Note the iPhone model and whether headphones
+     were connected.
+
+  **If the moving line goes flat while recording,** stop the take with the
+  square as usual, then **play that take and confirm you hear the voice
+  before anyone records again** on that phone. If you do not hear it, go
+  through the steps above. Send the report (§5) either way: the red mark on
+  Books **≡** is expected to light for this, and the "capture keeps working"
+  claim below is inferred from the code, not seen on a phone. <!-- source: gh issue #1251 (DRI comment 2026-09-30); src/hooks/audio-io.ts playSamples (clock check after source.start, "playback-clock-stalled", then discardSharedContext so the next Play builds a fresh context in its tap), checkSharedClockOnReturn (runs on the page becoming visible; writes "audio-clock-stalled-on-return"), src/hooks/use-audio-session.ts onVisibilityChange; src/lib/failure-marker.ts lightsFailureMarker (only "recorder-take-cap" is exempt, so every other row, these included, lights the ≡ mark); "Could not play this recording." is src/lib/strings.ts playbackFailed; the shared context is what decoding a captured take uses (src/hooks/audio-io.ts decodeAudioData via getAudioContext), and the live meter reads it too (createLevelTap), so a stalled clock can leave the waveform flat while the capture itself keeps working — that capture claim is inferred from the code, not observed; the swipe-away workaround is from the tester's report in #1251 and has not been confirmed by us on a device; not device-verified; the order — second Play before the restart — is George round 1 on PR #1306: the restart-first order made the "report the first recovered Play" ask below impossible to follow, because the second Play was never pressed; George round 2 on PR #1306 added step 1 (a second press clears the message: `claimFloor` sets `playbackError` to null, src/hooks/use-audio-session.ts), the stop-first rule (a press on a segment already marked playing is the toggle-off, src/hooks/use-audio-session.ts playTake/playBuffer, and does not build a new context), the "only after the message" limit (src/hooks/audio-io.ts playSamples discards the context and throws on two exits — the "stalled" clock verdict, and the resume fail-closed gate, whose `unusableError` makes the `finally` discard it — and the caller paints the same message for both; a silent "not-running" context returns a live handle and shows no message) and the step-2 split by screen is George round 3 on PR #1306: a Play that is still trying shows the pause glyph before any message (src/hooks/use-audio-session.ts playBuffer sets playingBuffer before its awaits), a press on it only stops (recorder.tsx's playingBuffer branch → stopAll, which bumps the session generation, src/lib/audio/session.ts, so watchClock resolves "skipped" and nothing is discarded, src/hooks/audio-io.ts), and the fresh context is built only by the press AFTER the message is painted; the two no-message exits to step 3 (a press that never paints the message, and the Play-glyph-with-no-message case) are bench George round 4 on PR #1306: a "not-running" clock verdict returns without throwing (src/hooks/audio-io.ts watchClock, and playSamples returns unless the verdict is "stalled"), so a silent press need not ever show the message; the flat-line paragraph (src/hooks/audio-io.ts createLevelTap writes "recorder-tap-clock-stalled" and keeps pushing frames, so the scope does not freeze and nothing in the Play steps would be triggered) --> <!-- source: gh issue #1251 is open and its fix is marked not device-verified in the comment above; the ask to report the first recovered Play is George's Low on PR #1279, batched in gh issue #1278 ("asking for it would give the device evidence #1251 still lacks") -->
+
+  What rc.2 phones saw: after connecting Bluetooth headphones, and sometimes
+  after coming back from the lock screen, the Play button failed or did
+  nothing, and the moving line that shows the voice while recording stayed
+  flat. The recording should still be saved. **A fix shipped in rc.3 and is
+  in 1.0.1, but it is not confirmed on a phone, including with the silent
+  switch on.** What a person may still see on rc.3 and 1.0.1 (the rc.3
+  residuals): <!-- source: GitHub release v1.0.1 body, "Known limits in 1.0.1" ("Not yet confirmed on a phone: the rc.3 recovery of Play and the live waveform after locking an iPhone (#1251), including with the silent switch on") -->
   - a Play that fails with "Could not play this recording."; the next Play
     then starts fresh;
   - a red mark on Books **≡** that can appear just from coming back to the
     app (§5).
-
-  **Workaround: fully close the app** — swipe it away in the phone's app
-  switcher — **and open it again.** Then play the recording and confirm you
-  hear the voice before anyone records again. If it is still silent after
-  that restart, leave that phone alone and send the report (§5). If it
-  happens, note the iPhone model and whether headphones were connected. <!-- source: gh issue #1251 (DRI comment 2026-09-30); src/hooks/audio-io.ts playSamples (clock check after source.start, "playback-clock-stalled", then discardSharedContext so the next Play builds a fresh context in its tap), checkSharedClockOnReturn (runs on the page becoming visible; writes "audio-clock-stalled-on-return"), src/hooks/use-audio-session.ts onVisibilityChange; src/lib/failure-marker.ts lightsFailureMarker (only "recorder-take-cap" is exempt, so every other row, these included, lights the ≡ mark); "Could not play this recording." is src/lib/strings.ts playbackFailed; the shared context is what decoding a captured take uses (src/hooks/audio-io.ts decodeAudioData via getAudioContext), and the live meter reads it too (createLevelTap), so a stalled clock can leave the waveform flat while the capture itself keeps working — that capture claim is inferred from the code, not observed; the swipe-away workaround is from the tester's report in #1251 and has not been confirmed by us on a device; not device-verified -->
 
 - **Use a practice book.** Create it with New book and give it a recognizable
   name. To remove it later, open that book's **⋮** menu, choose Delete, and

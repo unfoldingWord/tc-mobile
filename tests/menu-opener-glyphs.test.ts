@@ -13,18 +13,16 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { BookId, ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { BookCard, SegmentRow as Row } from "@/types/view";
 
+import { restingErase } from "./support";
+
 /**
  * The erase surface `App` now owns and passes down (#160, L-12). Resting: this
  * suite never erases, and a stub that answers "no erase in flight" is what the
  * screen's Back and confirm gates read. Written here rather than mocked at the
  * module, because the screen takes it as a PROP now — a module mock would
- * intercept nothing.
+ * intercept nothing. Shared fixture (#856 item 3, `tests/support.ts`).
  */
-const erase = {
-  erase: vi.fn(async () => "ok" as const),
-  erasing: false,
-  isErasing: () => false,
-};
+const erase = restingErase();
 
 /**
  * #589: one glyph, one meaning. ≡ opens the global menu and nothing else (#608
@@ -81,13 +79,13 @@ vi.mock("@/hooks/use-chapter-share", () => ({
     reset: () => {},
   }),
 }));
-vi.mock("@/hooks/use-erase-segment", () => ({
-  useEraseSegment: () => ({
-    error: null,
-    erasing: false,
-    isErasing: () => false,
-  }),
-}));
+// No `vi.mock` of `@/hooks/use-erase-segment` here: since #160 (L-12) lifted
+// the one hook instance up to `App`, `SegmentsScreen` takes `erase` as a real
+// prop (`restingErase()` above), so a module mock would intercept nothing —
+// the #631 hazard. #1131 named this factory as already dead (still naming the
+// `error` field the hook dropped), the same shape #1128 removed from
+// `tests/segments-rename-busy-notice.test.ts`; removed rather than kept as
+// inert weight.
 
 const book: BookCard = {
   bookId: "book" as BookId,

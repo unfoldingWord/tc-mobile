@@ -643,11 +643,13 @@ three **native** lanes — the iOS TestFlight lane (`ios-testflight.yml`, a
 native build to App Store Connect, `docs/native/README.md` §4a), the Android
 APK lane (`android-apk.yml`, a signed release APK attached as a run artifact,
 §5a), and the Google Play lane (`android-play.yml`, a signed .aab uploaded to
-a Play testing track, `docs/native/play-store.md`). The first two are
-`workflow_dispatch`-only (#262, #318). The Play lane is the one exception that
-fires on push, to `staging` and `main` only: it ships a native bundle to Google
-Play, never the PWA, and holds no Cloudflare credentials, so it cannot collide
-with Workers Builds. Do not add a push/PR job that deploys the **PWA**.
+a Play testing track, `docs/native/play-store.md`). All three fire on push,
+to `staging` and `main` only — the APK and TestFlight lanes build only when
+the pushed tip is a promotion merge, and keep `workflow_dispatch` for a manual
+rebuild from one of those two branches (#1281; they were
+`workflow_dispatch`-only under #262 and #318). Each ships a native bundle,
+never the PWA, and holds no Cloudflare credentials, so none can collide with
+Workers Builds. Do not add a push/PR job that deploys the **PWA**.
 
 Workers Builds is configured **per Worker**, so the same repository is
 connected twice:

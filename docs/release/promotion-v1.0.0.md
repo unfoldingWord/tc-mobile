@@ -142,7 +142,8 @@ issue's priority in this checklist.
    only guard on the base. Stop before the push: the push to `main` deploys
    production through Workers Builds and uploads a closed-testing bundle
    through the Play lane, and the parent check below runs after both have
-   started and stops only the tag, the native dispatch and the Release. Only
+   started and stops only the tag, the Release and accepting the native
+   builds (they start on the push too, §4). Only
    the DRI can move the Worker back (§5), and this runbook has no undo for
    the Play upload.
 
@@ -168,7 +169,8 @@ issue's priority in this checklist.
    has brought the object in (an oid names its content, so the parents of
    that object are the same from any remote). `^1` is the base the PR merged
    into, `^2` the head it brought in. If any of the three differs, stop: do
-   not tag, do not dispatch the native lanes, do not publish the Release.
+   not tag, do not accept or dispatch a native build, do not publish the
+   Release.
    `main` then carries a merge nobody reviewed, and what follows (a revert PR
    against `main` and a Worker rollback, §5) is the DRI's pick, not the
    agent's.
@@ -193,8 +195,8 @@ issue's priority in this checklist.
    `PROD_SHA` and its parents are the recorded `MAIN_SHA` then `HEAD_SHA`):
    read the canonical tip again and, if it is still `PROD_SHA`, tag
    `PROD_SHA` `v1.0.0`; push that tag. The DRI pushes the tag. If `main` has
-   moved past `PROD_SHA`, stop: the native lanes dispatch from `main` (§4), so
-   a moved `main` builds a commit that is not the tag. If the tag already
+   moved past `PROD_SHA`, stop: the native lanes build on `main` (§4), so a
+   moved `main` can build a commit that is not the tag. If the tag already
    exists, inspect it and stop on a different target; never overwrite a
    published release tag.
 5. Confirm the production origin with the production-specific command,
@@ -326,11 +328,30 @@ freeze note on every new PR to `develop`.
    (§3 step 5 says the same for production). The staging push runs the Google Play lane,
    which uploads a **draft** to the internal track. Record its release name.
    The DRI releases that draft in the Play Console if wanted.
-7. **Native builds from one commit.** The DRI dispatches
+7. **Native builds from one commit.** The staging push starts
    [`android-apk.yml`](../../.github/workflows/android-apk.yml) and
-   [`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) from
-   `staging`. Both runs' `headSha` equal `PROMO_SHA`, and so do the web and
-   Play builds: every channel must come from that one commit. If not, stop and re-promote. Do not mix refs.
+   [`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) on its
+   own (#1281): confirm that both runs started at `PROMO_SHA`
+   (`gh run list --workflow <lane> --branch staging --json databaseId,headSha,event,status`),
+   with `event` `push` and no dispatch. A green run is not a build: a push
+   the preflight did not read as a promotion still makes a successful run,
+   with the signing job `skipped`. So read each run's signing job
+   (`Build release APK`, `Build and upload to TestFlight`) with
+   `gh run view <databaseId> --json jobs --jq '.jobs[] | select(.name=="<job>") | .conclusion'`:
+   `skipped` means the lane did not start, and only `success` is a build.
+   A run at `PROMO_SHA` that is `cancelled` was replaced while pending
+   (one signing job runs at a time across both branches; a later push or
+   dispatch took the single pending slot) and did not start. Read the tip
+   before deciding: if `origin/staging` is still `PROMO_SHA`, wait for the
+   run that took the slot and, once nothing for `PROMO_SHA` is queued or
+   running, the DRI dispatches it; if the tip has moved, stop. While `release-signing` still has a
+   required reviewer (#1281's transition window), each signing job waits for
+   the DRI's approval; once it is removed, no approval either. Both runs' `headSha`
+   equal `PROMO_SHA`, and so do the web and Play builds: every channel must
+   come from that one commit. If not, stop and re-promote. Do not mix refs.
+   If a lane did not start, the DRI dispatches it from `staging` by hand
+   (`gh workflow run <lane> --repo unfoldingWord/tc-mobile --ref staging`) —
+   human-only — and the cause is a finding.
 8. **Check the APK before publishing.**
    - The signer certificate SHA-256 equals the previous RC's. If not, stop and tell the DRI. Do not publish. Uninstall is not the remedy: uninstalling deletes recordings.
    - The embedded `assets/public/version.json` shows version `1.0.0-rc.N` and
@@ -368,8 +389,9 @@ freeze note on every new PR to `develop`.
     source, per AGENTS.md).
 
 **Who runs what.** Human-only (the DRI), from their own terminal or via `!`:
-every merge (picked fixes, the bump, the promotion, `staging → main`), every
-workflow dispatch, the go/no-go, the `v1.0.0` Release publish, the
+every merge (picked fixes, the bump, the promotion, `staging → main`), any
+manual workflow dispatch (the lanes start on the promotion by themselves,
+#1281), the go/no-go, the `v1.0.0` Release publish, the
 `v1.0.0` tag, the Play Console release and the TestFlight assignment. An agent
 never passes `--admin`. Agent-allowed: preparing bodies and release notes, the
 red team, the release branch and promotion PR, the tester pre-release publish
@@ -383,19 +405,21 @@ threads hold the red-team summaries and publish records.
 
 ## 4. Native candidate and durable delivery
 
-Read the workflow files **on the dispatched ref** and follow their
-`release-signing` environment approval. The DRI dispatches the manual
+The `staging → main` merge starts the
 [iOS](../../.github/workflows/ios-testflight.yml) and
-[Android](../../.github/workflows/android-apk.yml) lanes from the `main` branch
-at the tagged release commit. Record each run's resolved SHA and require it
-to equal `v1.0.0` before accepting its artifact. If `main` moved, stop and
-select an explicitly approved ref strategy; do not label a different build
-as the tagged release.
+[Android](../../.github/workflows/android-apk.yml) lanes on `main` on its own
+(#1281); the `release-signing` environment admits them because they run on
+`main`. Confirm both runs started at the production merge commit (the one
+`v1.0.0` tags) with `event` `push`, and that each run's signing job
+concluded `success`, not `skipped` (the §3a step 7 check). Record each run's resolved SHA and
+require it to equal `v1.0.0` before accepting its artifact. If `main` moved,
+stop and select an explicitly approved ref strategy; do not label a different
+build as the tagged release. A manual rebuild, if one is ever needed, is the
+DRI's dispatch from the `main` branch.
 
-The normal tester path accepts `staging`/`main`, not an arbitrary tag. In
-particular, Android's guard requires a branch unless `allow_any_ref` is
-explicitly enabled. Do not dispatch a tag under the assumption it is accepted
-by the normal branch guard.
+The lanes build `staging` and `main` only, never an arbitrary tag: both
+preflights refuse a tag and any other branch, and the environment's branch
+policy refuses them again. Do not dispatch a tag.
 
 Android `versionName` comes from `package.json`; iOS `MARKETING_VERSION` is
 separate. Check both and their build numbers against the release's intended

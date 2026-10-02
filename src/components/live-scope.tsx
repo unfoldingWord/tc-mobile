@@ -35,9 +35,9 @@ interface LiveScopeProps {
   peekScope: () => CaptureScope | null;
   /**
    * Whether capture is live. While true the loop pulls and paints; while false
-   * the loop stops and the canvas is left FROZEN on its last frame — a paused
-   * take must not keep scrolling (a paused mic still emits frames, R-B6), and
-   * the translator should still see where they got to.
+   * the loop stops and the canvas is left FROZEN on its last frame — a take
+   * that has stopped capturing (processing, the commit) must not keep
+   * scrolling (R-B6), and the translator should still see where they got to.
    */
   active: boolean;
   /**
@@ -126,7 +126,7 @@ export function LiveScope({
   // unmounts this canvas (the toggle is Books-only); once it is reachable from
   // the recorder (#149) this is what keeps the scope from holding the previous
   // theme's amber (George R2 P2 on #457) — while active through the loop's
-  // restart, and while FROZEN (paused / processing / close) through the
+  // restart, and while FROZEN (processing / close) through the
   // explicit repaint after the observer bind below (George R4 P2-1).
   const theme = useLiveTheme();
   // Hold the latest reader without retriggering the loop — the hook may hand a
@@ -141,7 +141,7 @@ export function LiveScope({
   useEffect(() => {
     peekScopeRef.current = peekScope;
   }, [peekScope]);
-  // The last scope painted, so a resize while FROZEN (paused / processing /
+  // The last scope painted, so a resize while FROZEN (processing /
   // close) can repaint at the new size. Its arrays are the ring's reused pair —
   // safe to re-read only while no push is happening, which is exactly the
   // inactive window this ref is read in.
@@ -164,10 +164,10 @@ export function LiveScope({
   });
 
   // `useLayoutEffect`, not `useEffect`: the first paint below must land BEFORE
-  // the browser paints the freshly-mounted canvas. A remount happens on a
-  // first-take Resume after a preview, and in `useEffect` the synchronous paint
-  // still ran after the browser had already shown one blank frame — shorter than
-  // the rAF wait #130 filed, but the same class (George, round 2). The rAF loop
+  // the browser paints the freshly-mounted canvas. In `useEffect` the
+  // synchronous paint ran after the browser had already shown one blank frame
+  // — shorter than the rAF wait #130 filed, but the same class (George, round
+  // 2, on the first-take Resume remount that #614 since retired). The rAF loop
   // registered here is unaffected by the earlier timing; it is scheduled, not run.
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
@@ -308,17 +308,18 @@ export function LiveScope({
     let raf = 0;
     if (active) {
       // Paint the ring's current state NOW, before the browser paints and before
-      // the first rAF. A first-take Resume after a preview REMOUNTS this canvas
-      // (the preview unmounted it), and without this the stage showed a blank
-      // frame while the ring — which `resume()` does not reset — waited to be
-      // drawn (#130).
+      // the first rAF, so a mount or an effect re-run never shows a blank
+      // frame while the ring waits for its first tick (#130 — found on the
+      // first-take Resume remount that #614 since retired; a `theme` re-run
+      // mid-take takes the same path today).
       //
       // This MUST be the non-mutating peek. `readScope` advances the ring, and
-      // this effect re-runs on every `active` edge, so using it here folded an
-      // extra column into every pause→resume cycle — the waveform ran ahead of
-      // real time, ~5% of the window after ten cycles (George, round 3). The peek
-      // also draws when the tap is refusing frames, which is exactly the frozen
-      // ring this paint exists to show.
+      // this effect re-runs on every `active` edge and `theme` change, so using
+      // it here folded an extra column per re-run — the waveform ran ahead of
+      // real time, ~5% of the window after ten pause→resume cycles while those
+      // existed (George, round 3). The peek also draws when the tap is
+      // refusing frames, which is exactly the frozen ring this paint exists to
+      // show.
       const first = peekScopeRef.current();
       if (first) {
         lastScopeRef.current = first;

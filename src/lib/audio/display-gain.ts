@@ -27,12 +27,11 @@
  * happy path — the whole take-in-flight window mounts it, first take or
  * append. It draws a first take absolute and an append at the committed
  * clip's `displayGain`, carried on its capture context (#1189,
- * `capture-context.ts`), so the Record tap does not change the scale. This module's own reasoning below
- * about a punch-in's canvas staying fitted describes the paths that still
- * reach `Waveform` with committed audio present: idle, a failed mic tap
- * mid-take, and an append's own Pause+Play review (drawn fitted, deliberately,
- * per `recorder-stage.ts` and `recorder.tsx`'s stage ternary) — not the live
- * recording itself.
+ * `capture-context.ts`), so the Record tap does not change the scale. This
+ * module's own reasoning below about a punch-in's canvas staying fitted
+ * describes the paths that still reach `Waveform` with committed audio
+ * present: idle, and a failed mic tap mid-take (`liveScopeShown`,
+ * `recorder-stage.ts`) — not the live recording itself.
  */
 
 import type { Peaks } from "@/types/audio";
@@ -174,26 +173,23 @@ function loudestPeak(peaks: Peaks): number {
  * translator's finger.
  *
  * `firstTakeInFlight` is narrow on purpose: a take being made — the WHOLE
- * take-in-flight window (recording, paused, `processing`, the `isClosing`
- * close wait, not just `recording || paused`; George R3 #2) — on a segment
- * that has **no committed audio yet**. It forces 1, and it is not a nicety. A
- * paused first take whose Play decode has landed unmounts the live scope and
- * mounts this drawer on the decoded preview instead (`recorder.tsx`'s
- * `previewShown`), and Resume swaps it straight back. Without this the same
- * in-flight take would jump from a thin absolute line to a full-height fitted
- * one at Pause+Play and collapse again on Resume — the quiet-microphone-looks-
- * healthy failure this module is careful not to cause, arriving through the
- * one path that is not the live scope (George R1 P2). Narrowing the caller's
- * predicate to `recording || paused` reintroduces the same jump the moment
- * Back is tapped while that preview is still on stage (George R3 #2).
+ * take-in-flight window (recording, `processing`, the `isClosing` close wait;
+ * George R3 #2) — on a segment that has **no committed audio yet**. It forces
+ * 1, and it is not a nicety: an uncommitted take must read at the same
+ * absolute level on every canvas that shows it, or a quiet microphone looks
+ * healthy on one of them (George R1 P2). The path that earned it was the #101
+ * paused-take preview, which mounted this drawer mid-take on the decoded take
+ * and swapped back to the live scope on Resume; #614 retired the paused take,
+ * and `recorder.tsx`'s call site names the mid-take states that still reach
+ * this drawer with nothing committed.
  *
  * It is deliberately NOT "a take is in flight". A punch-in draws the segment's
  * ALREADY COMMITTED audio while capturing — `working` does not grow until the
- * new recording is spliced at close — so treating that canvas as in-flight
- * would collapse the stored speech to a tenth of the lane at the exact moment
- * the translator is aiming at the centreline with it, and pop it back at Back.
- * That is #358's own complaint, reintroduced on the insert path (George R2 P2).
- * Committed audio stays fitted through Record, Pause and Resume.
+ * new recording is spliced at the commit — so treating that canvas as
+ * in-flight would collapse the stored speech to a tenth of the lane at the
+ * exact moment the translator is aiming at the centreline with it. That is
+ * #358's own complaint, reintroduced on the insert path (George R2 P2).
+ * Committed audio stays fitted through the whole take.
  *
  * Four cases, in order:
  *
@@ -212,13 +208,13 @@ function loudestPeak(peaks: Peaks): number {
  * `peak * MAX_DISPLAY_GAIN` is smaller than the target still.
  *
  * That guarantee does NOT extend to a *different* buffer drawn at this gain.
- * A caller that fits from one array (`fitFrom`, `waveform.tsx`) but paints
- * another — the punch-in Pause+Play preview, whose merged peaks can be louder
- * than the committed clip the gain was frozen to (George R3 P2) — can produce
- * `value * gain` outside [-1, 1] at the drawn buckets, even though this
- * function's own contract holds for `peaks` alone. That caller clamps with
- * `clampUnit` below; this function does not, because it cannot see the second
- * buffer.
+ * A drawer that fits from one array but paints another — `LiveScope`, which
+ * paints a new take at the committed clip's gain (#1189), or `Waveform`'s
+ * `fitFrom` when a caller passes a buffer other than `peaks` (George R3 P2) —
+ * can produce `value * gain` outside [-1, 1] at the drawn buckets, even though
+ * this function's own contract holds for `peaks` alone. Those drawers clamp
+ * with `clampUnit` below; this function does not, because it cannot see the
+ * second buffer.
  */
 export function displayGain(
   peaks: Peaks | null,
@@ -241,9 +237,9 @@ export function displayGain(
  *
  * `displayGain`'s own invariant covers `value * gain` only when `value` comes
  * from the same peaks the gain was fitted to. A drawer that fits from one
- * buffer and paints another — `waveform.tsx`'s `fitFrom`, so a frozen gain
- * survives the punch-in preview swap without re-jumping the committed clip's
- * scale (George R3 P2) — can hand this a louder excursion than the fit
+ * buffer and paints another — `LiveScope` drawing a new take at the committed
+ * clip's gain (#1189), or `Waveform` drawing `peaks` at a gain fitted from
+ * `fitFrom` (George R3 P2) — can hand this a louder excursion than the fit
  * anticipated, and without a clamp that bar would run past the canvas edge
  * rather than merely look tall. Also rejects NaN (neither comparison is true,
  * so it falls through to the final branch) by returning it unchanged rather

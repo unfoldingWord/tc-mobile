@@ -68,6 +68,7 @@ function Owner({
     recorderOpen: true,
     recovering: false,
     databasePanel: false,
+    chapterClipboardHeld: false,
     getRecorderHandle: () => null,
     onOpenChapter: () => {},
     onOpenRecorder: () => {},

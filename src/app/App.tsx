@@ -376,12 +376,16 @@ export function App() {
     openChapter,
     openRecorder,
     goBack,
+    goBackToBooks,
     commitCloseRecorder,
   } = useNavStack({
     hasChapter: chapterId !== null,
     recorderOpen: recorder !== null,
     recovering,
     databasePanel: databasePanel !== null,
+    // `backToBooks` below clears this clipboard (G3), so the two-level Back
+    // (#1275) stops at Segments while it holds a phrase.
+    chapterClipboardHeld: clipboard !== null,
     getRecorderHandle: () => recorderRef.current,
     onOpenChapter: openChapterState,
     onOpenRecorder: openRecorderState,
@@ -511,6 +515,9 @@ export function App() {
           databaseUnreachable={databaseUnreachable}
           onExit={commitCloseRecorder}
           onRequestBack={goBack}
+          // The book crumb's two-level Back (#1275) — the adapter's, not the
+          // state half `backToBooks` above, which runs only from a landing.
+          onRequestBackToBooks={goBackToBooks}
         />
       )}
       <BuildStamp
