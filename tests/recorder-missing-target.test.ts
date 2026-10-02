@@ -11,6 +11,7 @@ import { performClearEditedSegment } from "@/hooks/use-save-take";
 import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import { setSegmentFinished } from "@/lib/storage/takes";
 import type { SegmentId } from "@/types/domain";
+import type { RecorderCloseResult } from "@/types/view";
 
 import { restingErase } from "./support";
 
@@ -190,7 +191,7 @@ async function setup(
       button!.click();
     });
   const close = async () => {
-    let exited: boolean | undefined;
+    let exited: RecorderCloseResult | undefined;
     await act(async () => {
       exited = await ref.current!.requestClose();
     });
@@ -217,7 +218,12 @@ describe("recorder close on a segment another copy deleted (#607)", () => {
         : Promise.resolve(true)
     );
 
-    expect(await s.close()).toBe(true);
+    // Exited — and the cut phrase on the chapter clipboard is now its only
+    // copy, since the segment it came from is gone. The result says so, so
+    // a two-level Back (`goBackToBooks`, #1275) stops at Segments instead of
+    // running `backToBooks`, which clears that clipboard (George round 1 on
+    // #1300).
+    expect(await s.close()).toBe("exited-stay-in-chapter");
 
     expect(s.onExit).toHaveBeenCalledExactlyOnceWith(true);
     expect(document.body.textContent).not.toContain(strings.clearFailed);

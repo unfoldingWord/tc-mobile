@@ -35,7 +35,7 @@ import {
   type TravelGuardState,
 } from "@/lib/nav/travel-guard";
 import type { ChapterId, SegmentId } from "@/types/domain";
-import type { RecorderEntry } from "@/types/view";
+import type { RecorderCloseResult, RecorderEntry } from "@/types/view";
 
 import { reportFailure } from "./report-failure";
 
@@ -130,7 +130,7 @@ import { reportFailure } from "./report-failure";
  * satisfies this getter.
  */
 interface RecorderCloseHandle {
-  requestClose: () => Promise<boolean>;
+  requestClose: () => Promise<RecorderCloseResult>;
 }
 
 /**
@@ -410,8 +410,10 @@ export interface UseNavStack {
    * its entry and Segments is the committed screen, the adapter issues the
    * Segments Back itself, and that landing routes `"to-books"` like any
    * other. A first level that is refused, or a close that declines (a held
-   * take, an overlay) or stays, drops the continuation. From Segments it is
-   * a plain Back.
+   * take, an overlay) or stays, drops the continuation; so does a close that
+   * exits holding a salvaged phrase on the chapter clipboard
+   * (`RecorderCloseResult`), which leaving the chapter would clear. From
+   * Segments it is a plain Back.
    */
   readonly goBackToBooks: () => void;
   /** The programmatic recorder close (erase's `onExit`); suppressPop-guarded. */
@@ -1090,7 +1092,15 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
               // at which the recorder's entry is gone, and it is the only
               // landing that may issue the second level. Set before the
               // arms so neither can forget it.
-              continueToBooks.current = toBooks;
+              //
+              // Only for a plain exit. `"exited-stay-in-chapter"` means the
+              // close salvaged a phrase onto the chapter clipboard — the
+              // only copy there is — and the second level's `to-books`
+              // landing runs `backToBooks`, which clears that clipboard
+              // (George round 1 on #1300). That exit still consumed its
+              // entry; it just ends at Segments, where the phrase can be
+              // pasted, as a plain Back would.
+              continueToBooks.current = toBooks && exited === true;
               const begun = beginBack(travelGuard.current, "commit-close");
               if (begun.ok) {
                 travelGuard.current = begun.next;

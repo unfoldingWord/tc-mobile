@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useNavStack, type UseNavStack } from "@/hooks/use-nav-stack";
+import type { RecorderCloseResult } from "@/types/view";
 
 /**
  * #1275: the recorder's book crumb goes to Books, two levels up, through
@@ -38,7 +39,7 @@ type Setters = {
 const fake = {
   nav: null as UseNavStack | null,
   set: null as Setters | null,
-  requestClose: async (): Promise<boolean> => true,
+  requestClose: async (): Promise<RecorderCloseResult> => true,
 };
 const onLeaveToBooks = vi.fn(() => fake.set?.setHasChapter(false));
 
@@ -208,6 +209,30 @@ describe("goBackToBooks from the recorder (#1275)", () => {
     expect(backSpy).toHaveBeenCalledTimes(2);
     expect(onLeaveToBooks).not.toHaveBeenCalled();
     expect(index()).toBe(1);
+  });
+
+  it("stops at Segments when the close exited holding a salvaged phrase on the chapter clipboard (George round 1 on #1300)", async () => {
+    // The recorder exits, but its close rolled a phrase back onto the
+    // chapter clipboard (a superseded stop after a landed paste) or left a
+    // cut-to-empty phrase there with its segment gone. Leaving the chapter
+    // runs `backToBooks`, which clears that clipboard, so the sheet reports
+    // the exit as one that must stay in the chapter and the continuation is
+    // dropped: the entry is still consumed, and the tap ends at Segments.
+    fake.requestClose = async () => {
+      fake.nav!.commitCloseRecorder(true);
+      return "exited-stay-in-chapter";
+    };
+    await act(async () => fake.nav!.goBackToBooks());
+    await settle();
+
+    expect(backSpy).toHaveBeenCalledTimes(2);
+    expect(landings).toEqual([1, 1]);
+    expect(onLeaveToBooks).not.toHaveBeenCalled();
+    expect(index()).toBe(1);
+    // Nothing is left armed: a later plain Back still issues.
+    backSpy.mockClear();
+    await act(async () => fake.nav!.goBack());
+    expect(backSpy).toHaveBeenCalledTimes(1);
   });
 
   it("the chained Back is routed like any other: a recovery modal raised by the close traps it instead of leaving", async () => {

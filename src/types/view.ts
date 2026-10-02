@@ -102,3 +102,16 @@ export type SegmentRowState = "finished" | "recorded" | "empty";
  * sheet (#286 item 2).
  */
 export type RecorderEntry = "record" | "edit";
+
+/**
+ * What the recorder's `requestClose()` resolves (#168, #1275). `false`: the
+ * sheet stayed — a held take, an overlay, a write that failed in place.
+ * `true`: it exited. `"exited-stay-in-chapter"`: it exited, but the chapter
+ * clipboard now holds the only copy of a phrase this exit salvaged — a
+ * superseded stop's rollback of a landed paste, or a cut-to-empty whose
+ * segment is gone — so a Back that would leave the chapter (the nav
+ * adapter's `goBackToBooks` second level, which clears that clipboard) must
+ * stop at Segments, where the phrase can still be pasted. Here rather than
+ * in the recorder because the adapter (`hooks/`) may not import a component.
+ */
+export type RecorderCloseResult = boolean | "exited-stay-in-chapter";
