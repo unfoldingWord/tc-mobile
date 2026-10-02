@@ -760,7 +760,8 @@ default origins, `resolveExpectedSha()`/`resolveExpectedVersion()`
 instead — `origin/staging` for `check:deploy`, `origin/main` for
 `check:deploy:prod`. Falling back to local `HEAD`/this checkout's
 `package.json` (and printing why) only ever happens for an origin that
-**isn't** one of these two known defaults (a hand-typed preview-Worker
+**isn't** one of the three known origins — staging, and production on
+either `workers.dev` or `tcmobile.app` — (a hand-typed preview-Worker
 URL) — there is no promoted branch to be stale there. For a known origin,
 see the fail-closed behavior below: nothing falls back.
 
@@ -796,14 +797,25 @@ closed unless it resolves to `https://github.com/unfoldingWord/tc-mobile`
 (https or ssh, with or without `.git`). Repoint `origin` (see the transfer
 section) if this check fails on a clone that should be trusted.
 
-`check:deploy:prod` is two runs of the script (`package.json`), one per
-production origin, each with `--require-origin`:
-`--origin=https://tc-mobile.unfoldingword.workers.dev` — the `tc-mobile`
-Worker's own URL — and then `--origin=https://tcmobile.app`, the custom
-domain (#1295). The first proves the Worker deployed; the second proves the
-route in `wrangler.jsonc` still reaches it. `remoteRefForOrigin` maps both
-to `origin/main` (`PROD_ORIGIN`, `PROD_DOMAIN_ORIGIN`), so neither falls into
-the local-`HEAD` fallback. `check:deploy`'s (staging's) is
+`check:deploy:prod` is `node scripts/check-deploy-prod.mjs` (`package.json`),
+a wrapper that runs the checker once per production origin, each with
+`--require-origin` and the origin fixed —
+`https://tc-mobile.unfoldingword.workers.dev`, the `tc-mobile` Worker's own
+URL, then `https://tcmobile.app`, the custom domain (#1295) — and **forwards
+the promoter's arguments to every run**. It is a script and not a shell
+`&&` chain because `npm run … -- <args>` appends `<args>` to the end of the
+script text, so in `a && b` only `b` sees them: `-- --sha=<previous>
+--version=<previous>`, the rollback-confirmation form, would have bound only
+to the custom-domain run while the workers.dev run compared against
+`origin/main` and PASSed on the build just rolled away from. The first run
+proves the Worker deployed; the second proves the route in `wrangler.jsonc`
+still reaches it. `remoteRefForOrigin` maps both origins to `origin/main`
+(`PROD_ORIGIN`, `PROD_DOMAIN_ORIGIN`), so neither falls into the local-`HEAD`
+fallback. The checker also **refuses a redirect to another origin**: a
+`version.json` that 301s from one production origin to the other fails even
+when the body it lands on is the expected build, because the run exists to
+prove that the origin asked about serves the Worker itself (a same-origin
+redirect still passes). `check:deploy`'s (staging's) origin is
 `https://tc-mobile-staging.unfoldingword.workers.dev`, also used in "Device
 testing" below.
 

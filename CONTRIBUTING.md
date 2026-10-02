@@ -226,10 +226,10 @@ PR is the production gate.
 - **Confirm a deploy by the served bundle's version string, not by the merge.**
   `npm run check:deploy` checks the `develop -> staging` promotion (staging is
   the default origin); `npm run check:deploy:prod` checks `staging -> main`
-  and requires its production origin explicitly — the two are not
-  interchangeable. Both fetch `/version.json` from the deployed origin and,
-  for these two default origins, compare it against the **promoted branch's
-  remote-tracking ref** (`origin/staging` / `origin/main`), not local `HEAD`
+  on both production origins, each named explicitly — the two commands are
+  not interchangeable. Both fetch `/version.json` from the deployed origin
+  and, for these three known origins, compare it against the **promoted
+  branch's remote-tracking ref** (`origin/staging` / `origin/main`), not local `HEAD`
   — the check fetches that one branch itself first and fails closed if the
   fetch fails, rather than trusting a promoter to have run `git fetch origin`
   beforehand. See AGENTS.md, "Confirming a deploy and rolling one back", for

@@ -113,10 +113,11 @@ issue's priority in this checklist.
 
 Production serves on two origins, <https://tcmobile.app> (the custom domain,
 #1295) and <https://tc-mobile.unfoldingword.workers.dev> (the Worker's own
-URL, kept with no redirect), and the production command checks both in turn;
-staging is <https://tc-mobile-staging.unfoldingword.workers.dev>. The commands
-are defined in [package.json](../../package.json). The production command
-explicitly supplies each origin so it cannot silently check staging.
+URL, kept with no redirect), and the production command checks both in turn,
+forwarding any `-- --sha=… --version=…` you pass to each; staging is
+<https://tc-mobile-staging.unfoldingword.workers.dev>. The commands are
+defined in [package.json](../../package.json). The production command
+supplies each origin itself so it cannot silently check staging.
 
 [The deploy checker](../../scripts/check-deploy.mjs) fetches the canonical
 remote branch before resolving the expected SHA/version for these known

@@ -382,6 +382,87 @@ describe("CLI entry point against a real server serving a malformed version.json
         expect(result.status).toBe(0);
       }
     ));
+
+  // #1299 round-1 George P2: `fetch` follows redirects by default, and the
+  // checker used to accept whatever body the final hop served while
+  // printing PASS for the origin that was ASKED. With two deliberate
+  // production origins (#1295) that is exactly backwards — a 301 from
+  // tcmobile.app to workers.dev would certify that the custom domain serves
+  // the Worker when it does not. Two servers, two ports, two origins.
+  async function withHandlerServer(
+    handler: (
+      req: { url?: string },
+      res: {
+        writeHead: (status: number, headers: Record<string, string>) => void;
+        end: (body?: string) => void;
+      }
+    ) => void,
+    fn: (origin: string) => Promise<void> | void
+  ): Promise<void> {
+    const server: Server = createServer(handler);
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve)
+    );
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        throw new Error("expected a bound TCP address");
+      }
+      await fn(`http://127.0.0.1:${address.port}`);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve()))
+      );
+    }
+  }
+
+  const GOOD = JSON.stringify({
+    version: "0.1.12",
+    sha: "abc1234",
+    builtAt: "now",
+  });
+
+  it("fails closed when version.json redirects to ANOTHER origin, even one serving the expected build", () =>
+    withServer(GOOD, (otherOrigin) =>
+      withHandlerServer(
+        (req, res) => {
+          res.writeHead(301, { location: `${otherOrigin}${req.url ?? ""}` });
+          res.end();
+        },
+        async (origin) => {
+          const result = await runCli([
+            `--origin=${origin}`,
+            "--version=0.1.12",
+            "--sha=abc1234",
+          ]);
+          expect(result.status).toBe(1);
+          expect(result.stderr).toContain("FAIL:");
+          expect(result.stderr).toContain("redirected off-origin");
+          expect(result.stderr).toContain(otherOrigin);
+        }
+      )
+    ));
+
+  it("still passes when version.json redirects WITHIN the same origin (both states)", () =>
+    withHandlerServer(
+      (req, res) => {
+        if ((req.url ?? "").startsWith("/version.json")) {
+          res.writeHead(302, { location: "/moved.json" });
+          res.end();
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(GOOD);
+      },
+      async (origin) => {
+        const result = await runCli([
+          `--origin=${origin}`,
+          "--version=0.1.12",
+          "--sha=abc1234",
+        ]);
+        expect(result.status).toBe(0);
+      }
+    ));
 });
 
 describe("CLI through an explicit symlink", () => {
@@ -515,8 +596,9 @@ describe("remoteRefForOrigin", () => {
   // round-3 George #1: Cloudflare Workers Builds deploys the promoted
   // branch's tip (usually a merge commit for this repo's PR-promotion
   // flow), not whatever commit a promoter's local checkout has HEAD on. For
-  // the two known default origins the expected sha must come from the
-  // corresponding remote-tracking ref instead.
+  // the three known origins (staging; production on workers.dev and on the
+  // custom domain) the expected sha must come from the corresponding
+  // remote-tracking ref instead.
   it("maps the staging default origin to origin/staging", () => {
     expect(
       remoteRefForOrigin("https://tc-mobile-staging.unfoldingword.workers.dev")
@@ -1320,39 +1402,18 @@ describe("parseArgs", () => {
   });
 });
 
-describe("package.json's check:deploy:prod stays in sync with PROD_ORIGIN", () => {
+describe("the production origins stay in sync with remoteRefForOrigin", () => {
   // Round-2 George P3-4: `check:deploy:prod`'s `--origin=` and
   // `remoteRefForOrigin`'s exact-match map were two unshared strings. A
-  // later edit to the npm script's URL (a custom domain, a typo) would
-  // silently drop `remoteRefForOrigin` back to `undefined` for that origin,
-  // which resolves expected sha/version from local HEAD/package.json
-  // instead of the promoted ref — a false FAIL (or a coincidental false
-  // PASS) on every real production promotion, discovered only by a
-  // promoter's confusion, not by this suite. Reading `package.json` fresh
-  // (not importing it, so this also catches a JSON-level edit at build
-  // time) and asserting the exported constant appears in the script text
-  // closes that gap mechanically.
-  it("check:deploy:prod's npm script contains the exact exported PROD_ORIGIN", () => {
-    const pkg = JSON.parse(
-      readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")
-    ) as { scripts: Record<string, string> };
-    expect(pkg.scripts["check:deploy:prod"]).toContain(PROD_ORIGIN);
-  });
-
-  // #1295: the same script checks the custom domain second, and the same
-  // drift applies — a hand-edited URL there would silently stop matching
-  // `remoteRefForOrigin`'s exact-match map.
-  it("check:deploy:prod's npm script contains the exact exported PROD_DOMAIN_ORIGIN", () => {
-    const pkg = JSON.parse(
-      readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")
-    ) as { scripts: Record<string, string> };
-    expect(pkg.scripts["check:deploy:prod"]).toContain(PROD_DOMAIN_ORIGIN);
-  });
-
-  // Not asserted by the finding, but the same drift risk for the staging
-  // default: `check:deploy` doesn't pass --origin at all (it relies on
-  // parseArgs' DEFAULT_ORIGIN), so this instead pins DEFAULT_ORIGIN itself
-  // against remoteRefForOrigin's map, closing the loop on both origins.
+  // later edit to the URL (a custom domain, a typo) would silently drop
+  // `remoteRefForOrigin` back to `undefined` for that origin, which
+  // resolves expected sha/version from local HEAD/package.json instead of
+  // the promoted ref — a false FAIL (or a coincidental false PASS) on every
+  // real production promotion, discovered only by a promoter's confusion,
+  // not by this suite. Since #1295 the npm script no longer names a URL —
+  // it runs `scripts/check-deploy-prod.mjs`, whose `PROD_ORIGINS` list is
+  // built from these exported constants and pinned in
+  // `tests/check-deploy-prod.test.ts` — so the map is pinned here directly.
   it("remoteRefForOrigin maps the exact exported DEFAULT_ORIGIN, PROD_ORIGIN and PROD_DOMAIN_ORIGIN", () => {
     expect(remoteRefForOrigin(DEFAULT_ORIGIN)).toBe("origin/staging");
     expect(remoteRefForOrigin(PROD_ORIGIN)).toBe("origin/main");
