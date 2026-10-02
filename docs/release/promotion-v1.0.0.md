@@ -95,7 +95,12 @@ issue's priority in this checklist.
    Three commits name this step, under the same rule as §3a's `STAGING_SHA`,
    `CUT_SHA` and `PROMO_SHA`: write each down when it exists, re-resolve it
    with `git` or `gh` before a step uses it, and treat any PR text that quotes
-   it as a record, not the source.
+   it as a record, not the source. **Exception:** `MAIN_SHA` and `HEAD_SHA`
+   are the full oids written down when the production PR's checks and reviews
+   went green. That record is the baseline the checks below compare against;
+   re-read `origin/main`, `baseRefOid` and `headRefOid` fresh, but never
+   re-derive the baseline from those reads, or each check compares a value
+   with itself.
    - **`MAIN_SHA`**: the `origin/main` tip the production PR is reviewed
      against, its `baseRefOid`. It is also the previous production build that
      §5 records as the rollback target.
@@ -106,7 +111,9 @@ issue's priority in this checklist.
    - **`PROD_SHA`**: the merge commit the promotion puts on `main`. `v1.0.0`
      goes on it and on nothing else.
 
-   **Before the merge** (agent-allowed, read-only):
+   **Before the merge** (agent-allowed, read-only), immediately before it:
+   `git fetch origin main` then `git rev-parse origin/main` must print
+   `MAIN_SHA`, and
    `gh pr view <N> --repo unfoldingWord/tc-mobile --json baseRefOid,headRefOid`
    must show `baseRefOid` equal to `MAIN_SHA` and `headRefOid` equal to
    `HEAD_SHA`. If `main` has moved (a hotfix, another promotion), stop and
@@ -129,10 +136,12 @@ issue's priority in this checklist.
    unchanged and never runs `gh pr merge`.
 
    **After the merge** (agent-allowed, read-only): fetch `main`, record the
-   merge commit as `PROD_SHA`, and check that `origin/main` equals it and
-   that `git rev-parse <PROD_SHA>^1 <PROD_SHA>^2` prints `MAIN_SHA` then
-   `HEAD_SHA` (`^1` is the base the PR merged into, `^2` the head it brought
-   in). If either line differs, stop: do not tag, do not dispatch the native
+   PR's `mergeCommit.oid` (`gh pr view <N> --json mergeCommit`) as
+   `PROD_SHA` (not `origin/main`, and not the parent lines), and check that
+   `origin/main` equals it and that
+   `git rev-parse <PROD_SHA>^1 <PROD_SHA>^2` prints the recorded `MAIN_SHA`
+   then `HEAD_SHA` (`^1` is the base the PR merged into, `^2` the head it
+   brought in). If any of the three differs, stop: do not tag, do not dispatch the native
    lanes, do not publish the Release. `main` then carries a merge nobody
    reviewed, and what follows (a revert PR against `main` and a Worker
    rollback, §5) is the DRI's pick, not the agent's.
@@ -376,9 +385,11 @@ installed APK or TestFlight bundle.
       line is pasted into `docs/progress_tracker.md` (#840 R7 — v0.2.10's
       staging deploy went unconfirmed in the tracker until a later audit).
 - [ ] Production promotion reviewed and green; previous deployment recorded.
-- [ ] `staging → main` merged with `baseRefOid` still `MAIN_SHA`;
-      `git rev-parse <PROD_SHA>^1 <PROD_SHA>^2` printed `MAIN_SHA` then
-      `HEAD_SHA` (§3 step 3); `v1.0.0` points to `PROD_SHA`.
+- [ ] `staging → main` merged with `origin/main` and `baseRefOid` still the
+      recorded `MAIN_SHA`; `PROD_SHA` is the PR's `mergeCommit.oid` and equals
+      `origin/main`; `git rev-parse <PROD_SHA>^1 <PROD_SHA>^2` printed the
+      recorded `MAIN_SHA` then `HEAD_SHA` (§3 step 3); `v1.0.0` points to
+      `PROD_SHA`.
 - [ ] `check:deploy:prod` confirms the production version and promoted SHA;
       the PASS line is pasted into `docs/progress_tracker.md` (#840 R7).
 - [ ] Release red team run on the promotion range and announcement (§3a
