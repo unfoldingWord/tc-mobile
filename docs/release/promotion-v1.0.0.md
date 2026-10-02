@@ -209,7 +209,7 @@ freeze note on every new PR to `develop`.
    [`android-apk.yml`](../../.github/workflows/android-apk.yml) and
    [`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) on its
    own (#1281): confirm that both runs started at `PROMO_SHA`
-   (`gh run list --workflow <lane> --branch staging --json headSha,event,status`),
+   (`gh run list --workflow <lane> --branch staging --json databaseId,headSha,event,status`),
    with `event` `push` and no dispatch. A green run is not a build: a push
    the preflight did not read as a promotion still makes a successful run,
    with the signing job `skipped`. So read each run's signing job
