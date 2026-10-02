@@ -423,29 +423,34 @@ been measured on a device yet.
      says "Could not play this recording.", and whether the Play button is
      showing as playing (a pause symbol) or not. Pressing again clears the
      message.
-  2. **Leave the app open and press Play once more.** If the button was
-     showing as playing, the first press only stops it: press Play again
-     after that, and wait until either the voice or the message is back. On
-     rc.3 and 1.0.1 the next Play is meant to start fresh after the message
-     has appeared; a Play that was silent with no message does not get a
-     fresh start this way.
-  3. **If that second Play is still silent or does nothing, fully close the
-     app** — swipe it away in the phone's app switcher — **open it again,
-     play the recording, and confirm you hear the voice before anyone records
-     again.** If it is still silent after that restart, leave that phone
-     alone.
+  2. **Leave the app open. Which screen you noted decides what the next
+     press does:**
+     - **The message is up and the button shows Play (not pause):** press
+       Play once. On rc.3 and 1.0.1 that press is the fresh start. Wait for
+       the voice.
+     - **The button shows pause and there is no message:** that Play is
+       still trying. Pressing now only stops it — it does not set up the
+       fresh start. Press Play again after that and wait: the press that
+       brings the message onto the screen is not the fresh start either.
+       Once the message is up, press Play once more and wait for the voice.
+  3. **If the press that should have been the fresh start is still silent
+     or does nothing, fully close the app** — swipe it away in the phone's
+     app switcher — **open it again, play the recording, and confirm you hear
+     the voice before anyone records again.** If it is still silent after
+     that restart, leave that phone alone.
   4. **Send the report (§5) the first time this happens on a phone in a
-     session, even when the second Play worked.** The rc.3 fix has not been
-     confirmed on a phone, so that report — with what you noted in step 1
-     and which step brought the sound back — is the device evidence #1251 is
-     missing. Note the iPhone model and whether headphones were connected.
+     session, even when a later press brought the voice back.** The rc.3 fix
+     has not been confirmed on a phone, so that report — with what you noted
+     in step 1 and which press or step brought the sound back — is the device
+     evidence #1251 is missing. Note the iPhone model and whether headphones
+     were connected.
 
   **If the moving line goes flat while recording,** stop the take with the
   square as usual, then **play that take and confirm you hear the voice
   before anyone records again** on that phone. If you do not hear it, go
   through the steps above. Send the report (§5) either way: the red mark on
   Books **≡** is expected to light for this, and the "capture keeps working"
-  claim below is inferred from the code, not seen on a phone. <!-- source: gh issue #1251 (DRI comment 2026-09-30); src/hooks/audio-io.ts playSamples (clock check after source.start, "playback-clock-stalled", then discardSharedContext so the next Play builds a fresh context in its tap), checkSharedClockOnReturn (runs on the page becoming visible; writes "audio-clock-stalled-on-return"), src/hooks/use-audio-session.ts onVisibilityChange; src/lib/failure-marker.ts lightsFailureMarker (only "recorder-take-cap" is exempt, so every other row, these included, lights the ≡ mark); "Could not play this recording." is src/lib/strings.ts playbackFailed; the shared context is what decoding a captured take uses (src/hooks/audio-io.ts decodeAudioData via getAudioContext), and the live meter reads it too (createLevelTap), so a stalled clock can leave the waveform flat while the capture itself keeps working — that capture claim is inferred from the code, not observed; the swipe-away workaround is from the tester's report in #1251 and has not been confirmed by us on a device; not device-verified; the order — second Play before the restart — is George round 1 on PR #1306: the restart-first order made the "report the first recovered Play" ask below impossible to follow, because the second Play was never pressed; George round 2 on PR #1306 added step 1 (a second press clears the message: `claimFloor` sets `playbackError` to null, src/hooks/use-audio-session.ts), the stop-first rule (a press on a segment already marked playing is the toggle-off, src/hooks/use-audio-session.ts playTake/playBuffer, and does not build a new context), the "only after the message" limit (src/hooks/audio-io.ts playSamples discards the context and throws only on the "stalled" clock verdict; a silent "not-running" context returns a live handle and shows no message) and the flat-line paragraph (src/hooks/audio-io.ts createLevelTap writes "recorder-tap-clock-stalled" and keeps pushing frames, so the scope does not freeze and nothing in the Play steps would be triggered) --> <!-- source: gh issue #1251 is open and its fix is marked not device-verified in the comment above; the ask to report the first recovered Play is George's Low on PR #1279, batched in gh issue #1278 ("asking for it would give the device evidence #1251 still lacks") -->
+  claim below is inferred from the code, not seen on a phone. <!-- source: gh issue #1251 (DRI comment 2026-09-30); src/hooks/audio-io.ts playSamples (clock check after source.start, "playback-clock-stalled", then discardSharedContext so the next Play builds a fresh context in its tap), checkSharedClockOnReturn (runs on the page becoming visible; writes "audio-clock-stalled-on-return"), src/hooks/use-audio-session.ts onVisibilityChange; src/lib/failure-marker.ts lightsFailureMarker (only "recorder-take-cap" is exempt, so every other row, these included, lights the ≡ mark); "Could not play this recording." is src/lib/strings.ts playbackFailed; the shared context is what decoding a captured take uses (src/hooks/audio-io.ts decodeAudioData via getAudioContext), and the live meter reads it too (createLevelTap), so a stalled clock can leave the waveform flat while the capture itself keeps working — that capture claim is inferred from the code, not observed; the swipe-away workaround is from the tester's report in #1251 and has not been confirmed by us on a device; not device-verified; the order — second Play before the restart — is George round 1 on PR #1306: the restart-first order made the "report the first recovered Play" ask below impossible to follow, because the second Play was never pressed; George round 2 on PR #1306 added step 1 (a second press clears the message: `claimFloor` sets `playbackError` to null, src/hooks/use-audio-session.ts), the stop-first rule (a press on a segment already marked playing is the toggle-off, src/hooks/use-audio-session.ts playTake/playBuffer, and does not build a new context), the "only after the message" limit (src/hooks/audio-io.ts playSamples discards the context and throws on two exits — the "stalled" clock verdict, and the resume fail-closed gate, whose `unusableError` makes the `finally` discard it — and the caller paints the same message for both; a silent "not-running" context returns a live handle and shows no message) and the step-2 split by screen is George round 3 on PR #1306: a Play that is still trying shows the pause glyph before any message (src/hooks/use-audio-session.ts playBuffer sets playingBuffer before its awaits), a press on it only stops (recorder.tsx's playingBuffer branch → stopAll, which bumps the session generation, src/lib/audio/session.ts, so watchClock resolves "skipped" and nothing is discarded, src/hooks/audio-io.ts), and the fresh context is built only by the press AFTER the message is painted; the flat-line paragraph (src/hooks/audio-io.ts createLevelTap writes "recorder-tap-clock-stalled" and keeps pushing frames, so the scope does not freeze and nothing in the Play steps would be triggered) --> <!-- source: gh issue #1251 is open and its fix is marked not device-verified in the comment above; the ask to report the first recovered Play is George's Low on PR #1279, batched in gh issue #1278 ("asking for it would give the device evidence #1251 still lacks") -->
 
   What rc.2 phones saw: after connecting Bluetooth headphones, and sometimes
   after coming back from the lock screen, the Play button failed or did
