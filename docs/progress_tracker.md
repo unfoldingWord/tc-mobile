@@ -11,6 +11,65 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-02 (session began 2026-10-01) — v1.0.0 and v1.0.1 shipped to production on all channels, store submissions started, tcmobile.app connected
+
+### v1.0.0
+
+- **The go:** the requirements owner, in chat: "Let's push it to 1.0 on the stores". No rc.3 fixes were picked. The DRI held all 17 open develop PRs until after the tag ("Nothing; merge after the tag (Recommended)").
+- **Cut and promotion:** bump #1285 (1.0.0-rc.3 → 1.0.0), develop → staging #1286, staging → main #1287. `PROD_SHA` `3e77b88d`, tagged `v1.0.0`. Rollback was accepted as forward-fix only ("Accept: forward fix only (Recommended)").
+- **Channels:**
+  - The APK was built by run 36925815658 from `main` `3e77b88`. Its signer SHA-256 `eed23e1bccf9fbad8b69f2f9598fd8d97e094d23e544b71b9e91dd21c934baf2` matches rc.3. The APK's SHA-256 is `c8131ad3359201493b598a61c6d3d58eab2a65f80178d687b8ce668eda7bc648`.
+  - TestFlight build 1790888768.
+  - GitHub Release v1.0.0, published 2026-10-01T22:19Z and downloaded back to check.
+
+### Go-live pack and v1.0.1, the store build
+
+- **Go-live brief** for the App Store and Google Play listings: https://claude.ai/artifact/2wHwek2EwpD7xXkG7U23Qk. It holds the copy with character counts, the screenshots, the console answers and the DRI's decisions:
+  - name "translationCore Mobile";
+  - iPhone only for now;
+  - privacy policy as `PRIVACY.md` in this repo;
+  - support: GitHub issues plus support@unfoldingword.org;
+  - all countries, declared trader;
+  - category Productivity;
+  - manual release after approval;
+  - keep the interim icon for 1.x.
+- **1.0.1 carries:**
+  - #1289: the privacy link in About, `TARGETED_DEVICE_FAMILY = 1`, and privacy-manifest keys for no tracking and no collected data;
+  - #1288: `PRIVACY.md`, merged at the bench cap on the DRI's pick;
+  - the bump, #1290.
+- **Promotion:** develop → staging #1291 (`PROMO_SHA` `dd997ebf`), staging → main #1292. `PROD_SHA` is `d0eb5456`, tagged `v1.0.1`.
+- **Red team** on `CUT_SHA` `8883b53b`: 0 BLOCK, 3 FIX-BEFORE-PUBLISH, 12 NOTE. The DRI dispositioned all three FIX items on #1290.
+- **Channels:**
+  - Production: `PASS: https://tc-mobile.unfoldingword.workers.dev is serving the expected build.` (1.0.1 / `d0eb545`; re-run at end of session).
+  - APK: run 36948776880, same signer as 1.0.0. Its embedded `version.json` reads 1.0.1 / `d0eb5456`. The APK's SHA-256 is `d98d3d5f4771038ff5293bdacfcf53951dd5d4154390b5a1b90a90adccf54648`.
+  - TestFlight: run 36948778987, build 1790903231 (iPhone-only).
+  - Play: run 36948498218, Closed testing `1.0.1 (1790902678) main@d0eb545`.
+  - GitHub Release: v1.0.1, published by the DRI and downloaded back to check. Its hash, tag target and QR code all match.
+- **Store submission:**
+  - App Store Connect first refused "Add for Review" for missing 13-inch iPad screenshots. The cause was the 1.0.0 build (iPhone and iPad) still being attached to version 1.0. It was swapped for 1790903231.
+  - App Store Connect also rejected the 1320×2868 screenshots, so they were re-rendered at 1284×2778 for the 6.5" slot.
+- **Announcement:** posted in the org-wide channel (Headlines): stores pending, beta by request, and the Android QR code.
+
+### Other
+
+- **#1293:** `PRIVACY.md`'s mailing address corrected to 13485 Veterans Way. It was stale, and the DRI confirmed the new address. It reaches the store URL only after a promotion to `main`.
+- **tcmobile.app:** connected by the DRI as a Custom Domain on the `tc-mobile` Worker. It is live over HTTPS and serves 1.0.1 / `d0eb545`. www has no DNS record yet, and the domain is set in the dashboard only, not in `wrangler.jsonc`. The rest is #1295, for the next release.
+- **#1294 filed:** a tester report from a developer on the team. After an alarm, the recorder's timer and flat waveform keep running, though the saved take ends at the alarm.
+
+### Not run
+
+Nothing in 1.0.0 or 1.0.1 has run on a phone beyond what the rc.3 entries record. The iPhone-only build has not been installed on a device.
+
+### Next
+
+1. Store review: the App Store submission is in. Google Play production, Android developer verification (overdue since 2026-09-30), the Play App integrity key check (#874), and the Apple EU trader declaration are still to do.
+2. Assign TestFlight build 1790903231 to the testers' group.
+3. Promote #1293 to `main`. Finish tcmobile.app in the next release (#1295): put it in `wrangler.jsonc`, set up www, keep workers.dev with no redirect (recordings are stored per address), and use it as the store marketing URL.
+4. Lift the freeze, close the v1.0.0 milestone, and let the 17 held develop PRs merge.
+5. Follow-ups: stale iPad mentions in `docs/native/system-requirements.md:193`, `docs/tester-install.md` and the facilitator runbook; the install guide's durable link; #1294.
+
+---
+
 ## 2026-09-30 (evening) — rc.2 tester reports fixed, 1.0.0-rc.3 red-teamed and published on all channels, #1251 recovery shipped
 
 ### rc.2 reports and fixes
