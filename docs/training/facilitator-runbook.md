@@ -212,11 +212,15 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
   zip; on an old-look phone they are a plain line of text. The words are: <!-- source: src/components/storage-pressure-banner.tsx (O4: state 17 banner, strings.storageShareSoon title, strings.shareAll button, #983/#987/#1045; current look: the #247 Notice); src/components/books-screen.tsx pressureLine -->
   - "This phone is running low on space. Mark segments finished to free up
     room, or share your work and then remove it." — a heads-up, with time to
-    act. Do what it says.
+    act. Mark segments finished first. **Remove nothing from the app until
+    the shared copy has been opened and checked at the agreed destination**
+    — a share that failed or was cut short is not a copy. For a long book,
+    the chapter-by-chapter note above applies to this share too.
   - "This phone is almost out of space, and new recordings may not save. Mark
     finished segments, or share your work and then remove it." — urgent: new
     recordings may fail to save. Stop recording on that phone until space is
-    freed, and share first if anything on it matters.
+    freed, and share first if anything on it matters. The same rule holds:
+    remove nothing until the shared copy has been checked.
   - "This phone may delete what you record here if space runs low. Share your
     work when you can." — **browser version only**; the installed app does not
     show it. It means the browser has not promised to keep the app's storage.

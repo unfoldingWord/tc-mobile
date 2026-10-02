@@ -119,8 +119,10 @@ documented here; do not guess which settings to change.
 
 **Updating later:** install the newer `app-release.apk` over the app that is
 already there. **Never uninstall first** — uninstalling deletes every
-recording on the phone. After updating, close the app fully and open it again,
-and check that the build stamp at the bottom of the first screen has changed.
+recording on the phone. After updating, close the app fully and open it again
+**twice**, then check that the build stamp at the bottom of the screen has
+changed. If it still shows the old version, or recordings are missing, stop —
+**do not uninstall** — and tell us the stamp and what you saw.
 <!-- source: GitHub release v1.0.1 body ("Do not uninstall to update"); gh issue #923 (observed on Android 2026-09-25: uninstall then install lost all data), closed 2026-09-28 with the in-place-update phone check moved to #974; docs/training/facilitator-runbook.md §2 -->
 
 ---
