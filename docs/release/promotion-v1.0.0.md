@@ -205,11 +205,19 @@ freeze note on every new PR to `develop`.
    `docs/progress_tracker.md`. The staging push runs the Google Play lane,
    which uploads a **draft** to the internal track. Record its release name.
    The DRI releases that draft in the Play Console if wanted.
-7. **Native builds from one commit.** The DRI dispatches
+7. **Native builds from one commit.** The staging push starts
    [`android-apk.yml`](../../.github/workflows/android-apk.yml) and
-   [`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) from
-   `staging`. Both runs' `headSha` equal `PROMO_SHA`, and so do the web and
-   Play builds: every channel must come from that one commit. If not, stop and re-promote. Do not mix refs.
+   [`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) on its
+   own (#1281): confirm that both runs started at `PROMO_SHA`
+   (`gh run list --workflow <lane> --branch staging --json headSha,event,status`),
+   with `event` `push` and no dispatch. While `release-signing` still has a
+   required reviewer (#1281's transition window), each signing job waits for
+   the DRI's approval; once it is removed, no approval either. Both runs' `headSha`
+   equal `PROMO_SHA`, and so do the web and Play builds: every channel must
+   come from that one commit. If not, stop and re-promote. Do not mix refs.
+   If a lane did not start, the DRI dispatches it from `staging` by hand
+   (`gh workflow run <lane> --repo unfoldingWord/tc-mobile --ref staging`) —
+   human-only — and the cause is a finding.
 8. **Check the APK before publishing.**
    - The signer certificate SHA-256 equals the previous RC's. If not, stop and tell the DRI. Do not publish. Uninstall is not the remedy: uninstalling deletes recordings.
    - The embedded `assets/public/version.json` shows version `1.0.0-rc.N` and
@@ -247,8 +255,9 @@ freeze note on every new PR to `develop`.
     source, per AGENTS.md).
 
 **Who runs what.** Human-only (the DRI), from their own terminal or via `!`:
-every merge (picked fixes, the bump, the promotion, `staging → main`), every
-workflow dispatch, the go/no-go, the `v1.0.0` Release publish, the
+every merge (picked fixes, the bump, the promotion, `staging → main`), any
+manual workflow dispatch (the lanes start on the promotion by themselves,
+#1281), the go/no-go, the `v1.0.0` Release publish, the
 `v1.0.0` tag, the Play Console release and the TestFlight assignment. An agent
 never passes `--admin`. Agent-allowed: preparing bodies and release notes, the
 red team, the release branch and promotion PR, the tester pre-release publish
@@ -261,19 +270,20 @@ threads hold the red-team summaries and publish records.
 
 ## 4. Native candidate and durable delivery
 
-Read the workflow files **on the dispatched ref** and follow their
-`release-signing` environment approval. The DRI dispatches the manual
+The `staging → main` merge starts the
 [iOS](../../.github/workflows/ios-testflight.yml) and
-[Android](../../.github/workflows/android-apk.yml) lanes from the `main` branch
-at the tagged release commit. Record each run's resolved SHA and require it
-to equal `v1.0.0` before accepting its artifact. If `main` moved, stop and
-select an explicitly approved ref strategy; do not label a different build
-as the tagged release.
+[Android](../../.github/workflows/android-apk.yml) lanes on `main` on its own
+(#1281); the `release-signing` environment admits them because they run on
+`main`. Confirm both runs started at the production merge commit (the one
+`v1.0.0` tags) with `event` `push`. Record each run's resolved SHA and
+require it to equal `v1.0.0` before accepting its artifact. If `main` moved,
+stop and select an explicitly approved ref strategy; do not label a different
+build as the tagged release. A manual rebuild, if one is ever needed, is the
+DRI's dispatch from the `main` branch.
 
-The normal tester path accepts `staging`/`main`, not an arbitrary tag. In
-particular, Android's guard requires a branch unless `allow_any_ref` is
-explicitly enabled. Do not dispatch a tag under the assumption it is accepted
-by the normal branch guard.
+The lanes build `staging` and `main` only, never an arbitrary tag: both
+preflights refuse a tag and any other branch, and the environment's branch
+policy refuses them again. Do not dispatch a tag.
 
 Android `versionName` comes from `package.json`; iOS `MARKETING_VERSION` is
 separate. Check both and their build numbers against the release's intended

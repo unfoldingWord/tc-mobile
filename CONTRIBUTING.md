@@ -220,9 +220,10 @@ PR is the production gate.
 - **The milestone's `staging` → `main` promotion bumps the minor and tags
   `main`.** The minor is the milestone.
 - **Cloudflare Workers Builds deploys the PWA on merge** — no Actions workflow
-  deploys it. `.github/` holds `ci.yml`, `dependabot.yml`, and the two
-  **manual** native lanes (`ios-testflight.yml`, `android-apk.yml`), which are
-  `workflow_dispatch`-only and never fire on push/PR.
+  deploys it. `.github/` holds `ci.yml`, `dependabot.yml`, and the three
+  native lanes (`ios-testflight.yml`, `android-apk.yml`, `android-play.yml`),
+  which fire on push to `staging`/`main` only and ship native bundles, never
+  the PWA (#1281).
 - **Confirm a deploy by the served bundle's version string, not by the merge.**
   `npm run check:deploy` checks the `develop -> staging` promotion (staging is
   the default origin); `npm run check:deploy:prod` checks `staging -> main`

@@ -1,31 +1,41 @@
 name: Android APK
 
-# Manual only. This is a NATIVE build (Capacitor → APK), not a web deploy:
-# it produces a signed release APK on an ubuntu runner and uploads it as a
-# workflow artifact. It never runs on push/PR, so it does not collide with
-# Cloudflare Workers Builds (which owns the PWA deploy — AGENTS.md).
+# AUTOMATIC on a promotion, manual otherwise (#1281). This is a NATIVE build
+# (Capacitor → APK), not a web deploy: it produces a signed release APK on an
+# ubuntu runner and uploads it as a workflow artifact. It holds no Cloudflare
+# credentials and deploys no PWA, so it does not collide with Cloudflare
+# Workers Builds (which owns the PWA deploy — AGENTS.md) even though both fire
+# on the same promotion merge.
 #
-# Run it from the Actions tab when a tester build is wanted; `workflow_dispatch`
-# builds whatever ref you pick there.
+# Triggers:
+#   push to `staging` or `main`  — builds only when the pushed tip is a
+#                                  promotion merge (`Merge pull request #N from
+#                                  unfoldingWord/release/*`, or `…/staging` for
+#                                  the production promotion); any other push
+#                                  to those branches ends at preflight with a
+#                                  notice and no build.
+#   workflow_dispatch            — a manual rebuild of `staging` or `main`.
+#                                  No other ref is accepted: the former
+#                                  `allow_any_ref` input is gone (#1281, DRI
+#                                  pick 2026-09-30).
 #
 # One-time setup: create the release keystore (docs/native/README.md §5 step 1)
-# and set the four secrets below in the `release-signing` environment
-# (required reviewers; #321). The Android SDK (Platform 36,
-# Build-tools 36.0.0, ANDROID_HOME) and Ruby are on the ubuntu-24.04 runner
-# image (verified against actions/runner-images, 2026-09-12). The JDK is NOT
-# left to the image: its default is Java 17, and Capacitor's generated
+# and set the four secrets below in the `release-signing` environment, whose
+# deployment-branch policy is the actor guard (#1281; it replaces the required
+# reviewer of #321). The Android SDK (Platform 36, Build-tools 36.0.0,
+# ANDROID_HOME) and Ruby are on the ubuntu-24.04 runner image (verified
+# against actions/runner-images, 2026-09-12). The JDK is NOT left to the
+# image: its default is Java 17, and Capacitor's generated
 # android/app/capacitor.build.gradle compiles at Java 21, so the lane pins
 # JDK 21 below — the same class of trap as the macos-15 default Xcode in the
 # iOS lane.
 on:
+  push:
+    branches: ["staging", "main"]
   workflow_dispatch:
     inputs:
       diagnostic:
         description: "Enable USB WebView inspection in a clearly labelled diagnostic APK. Not a training build."
-        type: boolean
-        default: false
-      allow_any_ref:
-        description: "Build a ref other than staging/main (a feature-branch experiment). Tester builds should come from staging or main."
         type: boolean
         default: false
 
@@ -37,51 +47,89 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # A cheap gate BEFORE the environment approval and any real work. Refuse a
-  # non-staging/main ref here (the dispatch picker defaults to develop). This
-  # job holds NO secrets and no environment on purpose: the signing secrets
-  # live in the `release-signing` environment (#321), which only the build job
-  # references, so a dispatch costs exactly one approval. The presence check
-  # moved there, as its first step.
+  # A cheap gate BEFORE the environment and any real work. It decides whether
+  # this event is one that builds: a promotion merge landing on staging/main,
+  # or a manual rebuild dispatched from one of those two branches. Anything
+  # else on a push ends here with a notice (no red X — the Play lane's
+  # "disabled" shape); a dispatch from any other ref is refused. This job
+  # holds NO secrets and no environment on purpose: the signing secrets live
+  # in the `release-signing` environment, which only the build job
+  # references. This check is the mistake guard; the environment's
+  # deployment-branch policy is the actor guard — a branch that rewrites
+  # this file cannot reach the secrets, whatever it writes here (#1281).
   preflight:
-    name: Preflight (ref)
+    name: Preflight (promotion or dispatch)
     # Pinned to the image whose contents this lane was checked against (see the
     # header); `ubuntu-latest` retargets silently. Same reason the iOS lane pins
     # macos-15.
     runs-on: ubuntu-24.04
     permissions: {}
+    outputs:
+      build: ${{ steps.gate.outputs.build }}
     env:
+      EVENT: ${{ github.event_name }}
       REF: ${{ github.ref_name }}
       # ref_name drops the branch-or-tag distinction: a TAG named `staging`
       # would read as "staging". Require the ref to be a branch as well,
       # matching the iOS lane.
       REF_TYPE: ${{ github.ref_type }}
-      ALLOW_ANY: ${{ inputs.allow_any_ref }}
+      # The pushed tip's full commit message; empty on a dispatch. Passed
+      # through env and never interpolated into the script: a commit message
+      # is free text.
+      HEAD_MESSAGE: ${{ github.event.head_commit.message }}
     steps:
-      - name: Require staging/main (or an explicit override)
+      - name: Build a promotion merge, or a dispatch from staging/main
+        id: gate
         run: |
           set -euo pipefail
-          if [ "$ALLOW_ANY" = "true" ]; then
-            echo "allow_any_ref set — building '$REF' ($REF_TYPE)."
-          elif [ "$REF_TYPE" != "branch" ]; then
-            echo "::error::Refusing to build a tester APK from $REF_TYPE '$REF'. Tester builds come from the staging or main BRANCH; set allow_any_ref for anything else."
-            exit 1
-          elif [ "$REF" != "staging" ] && [ "$REF" != "main" ]; then
-            echo "::error::Refusing to build a tester APK from '$REF'. Dispatch from staging or main, or set allow_any_ref."
+          if [ "$REF_TYPE" != "branch" ] || { [ "$REF" != "staging" ] && [ "$REF" != "main" ]; }; then
+            echo "::error::Refusing to build a tester APK from $REF_TYPE '$REF'. Tester builds come from the staging or main BRANCH; promote, or dispatch from one of those two."
             exit 1
           fi
+          case "$EVENT" in
+            workflow_dispatch)
+              echo "build=true" >> "$GITHUB_OUTPUT"
+              echo "Manual rebuild of '$REF'."
+              ;;
+            push)
+              # The merge commit GitHub writes for a promotion PR. `release/*`
+              # is the pinned RC/release ref promoted to staging; `staging` is
+              # the production promotion to main. Only the subject line is read.
+              subject="${HEAD_MESSAGE%%$'\n'*}"
+              promotion='^Merge pull request [#][0-9]+ from unfoldingWord/(release/|staging$)'
+              echo "Subject: $subject"
+              if [[ "$subject" =~ $promotion ]]; then
+                echo "build=true" >> "$GITHUB_OUTPUT"
+                echo "Promotion merge on '$REF': building."
+              else
+                echo "::notice::Not a promotion merge on '$REF'; no native build. Dispatch the lane for a manual rebuild."
+                echo "build=false" >> "$GITHUB_OUTPUT"
+              fi
+              ;;
+            *)
+              echo "::error::Unexpected event '$EVENT' for this lane."
+              exit 1
+              ;;
+          esac
 
+  # TC_ANDROID_DIAGNOSTIC is empty on a push (no `inputs` context there);
+  # android/app/build.gradle and scripts/check-android-diagnostic.mjs both read
+  # `== "true"`, so an empty value is an ordinary, non-diagnostic build.
   build:
     name: Build release APK
     env:
       TC_ANDROID_DIAGNOSTIC: ${{ inputs.diagnostic }}
     needs: preflight
+    if: needs.preflight.outputs.build == 'true'
     # The signing secrets are ENVIRONMENT secrets, not repository secrets, and
-    # the environment has required reviewers. A dispatch pauses here until an
-    # approver okays this run — the actor guard the in-yml ref check above
-    # cannot be (#321: any push-access branch can rewrite the yml and dispatch
-    # itself). The Android keystore is permanent app identity, so this gate is
-    # the only real control on it. The approval UI shows the ref being built.
+    # the environment's deployment-branch policy admits only `staging` and
+    # `main`. A job on any other ref is refused by GitHub before any step
+    # runs, however that ref's copy of this file was edited — the actor guard
+    # the in-yml check above cannot be (#321: any push-access branch can
+    # rewrite the yml). Code reaches staging/main only by admin merge
+    # (ruleset 24043869), so only admin-merged code reaches the secrets. The
+    # Android keystore is permanent app identity, so this policy is the only
+    # real control on it (#1281).
     environment: release-signing
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -190,13 +238,14 @@ jobs:
         run: node scripts/test-android-diagnostic.mjs
 
       # Mirrors the iOS lane's bundle guard. This is the first path that puts
-      # dist/ on testers' devices, and workflow_dispatch can build a ref that
-      # never passed ci.yml's build job. Re-assert the cheap ship-blockers here —
-      # a missing service worker or manifest, a leaked e2e harness — plus that
-      # cap sync actually copied the bundle (android/app/src/main/assets/public
-      # is gitignored; a sync that exits 0 without it would install a blank view).
-      # The OBS-thumbnail policy is checked against the WEB build above, not
-      # here — see that step's comment.
+      # dist/ on testers' devices, and a manual dispatch can rebuild a ref
+      # whose ci.yml run was not consulted. Re-assert the cheap ship-blockers
+      # here — a missing service worker or manifest, a leaked e2e harness —
+      # plus that cap sync actually copied the bundle
+      # (android/app/src/main/assets/public is gitignored; a sync that exits 0
+      # without it would install a blank view). The OBS-thumbnail policy is
+      # checked against the WEB build above, not here — see that step's
+      # comment.
       - name: Guard the synced bundle
         run: |
           set -euo pipefail

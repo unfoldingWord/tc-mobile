@@ -140,8 +140,9 @@ Variables), all optional except the first:
 | `PLAY_RELEASE_STATUS` | `draft`    | `draft` until the app is published once, then `completed` |
 
 The sideload APK lane (`android-apk.yml`) and its `release-signing`
-environment don't change. That environment still holds the app signing
-keystore and still needs a reviewer's approval.
+environment are separate. That environment holds the app signing keystore;
+since #1281 it uses the same `staging`/`main` branch restriction as
+`play-upload` in place of a reviewer's approval.
 
 ## 5. First bundle: upload it by hand
 

@@ -275,11 +275,17 @@ builds the iOS app on a macOS runner and uploads it to TestFlight with Fastlane
 **manual**: a Distribution certificate (`.p12`) and an App Store provisioning
 profile (`.mobileprovision`) are decoded from secrets into a temporary keychain;
 the App Store Connect **API key** authenticates the **upload only**, not signing.
-No `match`, no certs repo. It is **manual-trigger only** (`workflow_dispatch`):
-run it from **Actions →
-iOS TestFlight → Run workflow**, choosing the branch to build. It never runs on
-push/PR, so it does not collide with the Cloudflare PWA deploy ([§7](#7-coexistence-with-the-cloudflare-pwa-deploy))
-and adds no required check to normal PRs.
+No `match`, no certs repo. It **starts on a promotion** (#1281): a push to
+`staging` or `main` whose tip is a promotion merge (`Merge pull request #N
+from unfoldingWord/release/*`, or `…/staging` for the production promotion)
+builds and uploads with no dispatch and no approval; any other push to those
+two branches ends at the preflight job with a notice and no build. For a
+manual rebuild, run it from **Actions → iOS TestFlight → Run workflow** on
+`staging` or `main` — no other ref is accepted, and the former
+`allow_any_ref` override is gone (DRI pick, 2026-09-30). It never runs on a
+PR, so it does not collide with the Cloudflare PWA deploy
+([§7](#7-coexistence-with-the-cloudflare-pwa-deploy)) and adds no required
+check to normal PRs.
 
 **What a run does:** `npm ci` → `npm run build` → `npm run test:dist` (the web
 build and its own artifact checks, including the OBS thumbnail policy) →
@@ -340,35 +346,48 @@ change.
    enable **_Automatically distribute new builds_** on it, or an uploaded build
    reaches no one until it is assigned to a group by hand.
 4. **The `release-signing` environment** (_Settings → Environments → New_):
-   name it exactly `release-signing`, add **required reviewers** (the DRI at
-   minimum), and **untick _Allow administrators to bypass configured
-   protection rules_** — with it on (GitHub's default), any repository admin
-   can click _Start all waiting jobs_ and no reviewer is consulted, which is
-   the #321 hole under a different door. Leave _Prevent self-review_ off: the
-   DRI both dispatches and approves. Leave the deployment-branch rule at "all
-   branches" — the in-yml ref guard handles branches; the reviewer is the actor
-   guard (#321). A settings-side branch list would be the one ref guard a
-   rewritten yml cannot remove, but it would also block the `allow_any_ref`
-   proving dispatches from feature branches; recorded here so the trade-off is
-   not re-litigated.
+   name it exactly `release-signing` and set **Deployment branches and tags**
+   to _Selected branches and tags_ with exactly two rules, `staging` and
+   `main` — the same model as `play-upload`. That branch policy is the
+   **actor guard** on the signing secrets (#1281): a job that references the
+   environment from any other ref is refused by GitHub before any step runs,
+   whatever that ref's copy of the yml says, and code reaches `staging` or
+   `main` only by admin merge (ruleset 24043869, "Protected branches: merge
+   by admins only"). So the property #321 established — only admin-merged
+   code reaches these secrets — holds with no person in the loop. No required
+   reviewer: #321's reviewer was the actor guard until #1281 replaced it with
+   this policy, and the guard now rests on the ruleset and the admin set
+   staying intact (the risk #1281 states and asks the DRI to accept). Keep _Allow
+   administrators to bypass configured protection rules_ **unticked** as it
+   was under #321. The in-yml preflight is only the mistake guard (it refuses
+   a dispatch from any other ref and skips a non-promotion push).
 
-   **Plan trap.** On GitHub Free, Pro and Team, required reviewers exist
-   **only on public repositories**, and the unfoldingWord org is on Free. If
-   this repository is ever made private again, GitHub ignores the protection
-   rules **and the environment secrets**: the gate is silently gone, and both
-   lanes fail at the presence check naming a secret that is in fact set.
-   Nothing in a run explains why — this paragraph is the explanation.
+   A feature-branch experiment can therefore no longer reach the secrets at
+   all: the lanes are proven on promotion only. That was the DRI's pick
+   ("Drop it", 2026-09-30) over a second, reviewer-gated environment.
 
-   Both native lanes' signing jobs declare `environment: release-signing`, so
-   every dispatch pauses for one approval before any secret is read.
+   **Plan trap.** On GitHub Free, Pro and Team, environment protection rules
+   — the branch policy included — exist **only on public repositories**, and
+   the unfoldingWord org is on Free. If this repository is ever made private
+   again, GitHub ignores the protection rules **and the environment
+   secrets**: the gate is silently gone, and both lanes fail at the presence
+   check naming a secret that is in fact set. Nothing in a run explains why
+   — this paragraph is the explanation.
 
-   **What the approval is.** GitHub runs the workflow file **on the dispatched
-   ref**, and any push-access branch can rewrite it while keeping
-   `environment: release-signing` on the job — so a branch can add a step that
-   reads the secrets, and the pause is the only thing between it and them.
-   Before _Approve and deploy_, open `.github/workflows/<lane>.yml` **on the
-   ref the run shows** and confirm it is the committed lane; reject anything
-   else. Approving without reading is the #321 hole with a rubber stamp on it.
+   Both native lanes' signing jobs declare `environment: release-signing`,
+   and only those jobs do; the preflight job holds no secrets and no
+   environment.
+
+   **Why a branch policy and not the yml.** GitHub runs the workflow file
+   **on the triggering ref**, and any push-access branch can rewrite it while
+   keeping `environment: release-signing` on the job — so a branch can add a
+   step that reads the secrets, and nothing written inside the yml can stop
+   it. The deployment-branch policy is enforced by GitHub against the ref,
+   not by the yml, which is what makes it the guard. While a required
+   reviewer is still configured (the transition window in #1281), a run also
+   waits for approval; before _Approve and deploy_, open
+   `.github/workflows/<lane>.yml` **on the ref the run shows** and confirm it
+   is the committed lane.
 
 5. **Environment secrets** (_Settings → Environments → release-signing →
    Environment secrets_), **not** repository secrets. When both exist, the
@@ -377,7 +396,7 @@ change.
    so a leftover repository copy is the bypass #321 closes. Migrating from
    repository secrets, **in this order**: set and verify every environment
    secret; promote the yml that carries `environment: release-signing` to
-   **every ref you still dispatch** (`staging`, and `main` once it has the
+   **every ref that builds** (`staging`, and `main` once it has the
    lane); only then delete the repository copies (all eleven signing names in
    one loop — `ios-credentials.md` §8). Deleting earlier breaks the live
    tester lane: the pre-#321 yml on `staging` has no environment, cannot see
@@ -513,9 +532,12 @@ for the audio store (PR #265).
 
 [`.github/workflows/android-apk.yml`](../../.github/workflows/android-apk.yml)
 builds the Android app on an ubuntu runner and uploads the APK as a workflow
-artifact. It is **manual-trigger only** (`workflow_dispatch`): run it from
-**Actions → Android APK → Run workflow**, choosing the branch to build. It
-never runs on push/PR.
+artifact. It **starts on a promotion** (#1281), the same way as the iOS
+lane: a push to `staging` or `main` whose tip is a promotion merge builds and
+signs with no dispatch and no approval; any other push to those two branches
+ends at the preflight job with a notice and no build. For a manual rebuild,
+run it from **Actions → Android APK → Run workflow** on `staging` or `main`
+— no other ref is accepted. It never runs on a PR.
 
 **What a run does:** `npm ci` → `npm run build` (the OBS-thumbnail policy is
 checked against this web build) → `npm run test:dist:native` (rebuilds
@@ -525,8 +547,9 @@ worker, #923 — and checks that output) → `npx cap sync android` →
 `app-release.apk` as a workflow artifact (14-day retention). The APK is signed
 with the release keystore decoded from `ANDROID_KEYSTORE_BASE64`.
 
-**Diagnostic APKs (#593).** Leave the `diagnostic` dispatch input off for
-training builds. Turn it on only for a USB inspection session: it enables
+**Diagnostic APKs (#593).** A diagnostic APK is always a manual dispatch:
+the `diagnostic` input exists only there, and a promotion build is an ordinary
+build. Leave the input off for training builds. Turn it on only for a USB inspection session: it enables
 WebView inspection in `chrome://inspect`, appends `-diagnostic` to Android's
 version name, labels the launcher/activity **tC Mobile Diagnostic**, and names
 the artifact `android-apk-diagnostic-<sha>`. The web footer still shows the
@@ -738,12 +761,13 @@ release.
 2. **Four environment secrets** in the `release-signing` environment (§4a
    step 4 creates it; _Settings → Environments → release-signing →
    Environment secrets_). Not repository secrets — the build job is
-   environment-scoped and pauses for a reviewer before reading them (#321). A
-   repository secret of the same name is still readable by an ungated
-   workflow, so if any of these four ever existed at repository level, delete
-   that copy — the eleven-name loop in `ios-credentials.md` §8 — once the
-   environment copy is verified **and** the gated yml is on every ref you
-   still dispatch (§4a step 5 has the order and the reason):
+   environment-scoped, and the environment admits only `staging` and `main`
+   (#1281; §4a step 4). A repository secret of the same name is still
+   readable by an ungated workflow, so if any of these four ever existed at
+   repository level, delete that copy — the eleven-name loop in
+   `ios-credentials.md` §8 — once the environment copy is verified **and**
+   the gated yml is on every ref that builds (§4a step 5 has the order and
+   the reason):
 
    | Secret                    | Value                                                                         |
    | ------------------------- | ----------------------------------------------------------------------------- |
@@ -755,9 +779,10 @@ release.
    The keystore is decoded to `android/tc-mobile-release.jks` at build time
    (gitignored) and deleted after the APK is built. **Never commit it.**
 
-**First dispatch:** the preflight checks the ref; the build job then waits for
-the environment reviewer and, once approved, checks all four secrets as its
-first step, before checkout. The `build.gradle` signing config also fails
+**What a run checks first:** the preflight decides whether the event builds
+(a promotion merge, or a dispatch from `staging`/`main`); GitHub then admits
+the build job to `release-signing` only on those two branches; the job checks
+all four secrets as its first step, before checkout. The `build.gradle` signing config also fails
 loudly if the env vars are unset — three layers. What the runner provides was checked against the
 `ubuntu-24.04` image notes (actions/runner-images, 2026-09-12), not observed on
 a live run: Android SDK Platform 36 and Build-tools 36.0.0 under `ANDROID_HOME`,
@@ -765,7 +790,8 @@ and Ruby for the keystore decode — so no `sdkmanager` step is needed. The JDK 
 the one thing the image gets **wrong** for this project: its default is Java 17,
 while Capacitor's generated `android/app/capacitor.build.gradle` compiles at
 Java 21, so the lane pins JDK 21 with `actions/setup-java` before `cap sync`.
-The lane has not been dispatched yet; the first run is the end-to-end proof.
+The push trigger lands with #1281; the first promotion merge after it is the
+end-to-end proof that the lane starts on its own.
 
 ---
 
@@ -800,8 +826,8 @@ time, never read from `package.json`.
   runbook asks testers to report: `docs/training/facilitator-runbook.md` §5
   asks for the full build stamp — version **and** build SHA — because
   Settings alone cannot distinguish two builds that share a `package.json`
-  version (for example, two CI dispatches of the same `staging` ref, or an
-  `allow_any_ref` build off `develop`). Point testers at the stamp; Settings
+  version (for example, a promotion build and a later manual rebuild of the
+  same `staging` ref). Point testers at the stamp; Settings
   is a fallback only when the app will not open at all. Android
   [diagnostic builds](#5a-android--apk-via-ci-automated-no-mac-step) append
   `-diagnostic` to the Settings version; the web footer retains the package version.
@@ -814,23 +840,23 @@ time, never read from `package.json`.
 `wrangler deploy` (serving `./dist`) on pushes to `develop`/`staging`/`main`
 (AGENTS.md → _Cloudflare Workers Builds owns deployment_). Both native CI lanes
 ([§4a](#4a-ios--testflight-via-ci-automated-no-mac-step),
-[§5a](#5a-android--apk-via-ci-automated-no-mac-step)) are **manual-dispatch
-only** (`workflow_dispatch`) — never push/PR — so neither is a Workers Builds
-trigger and neither produces a web deploy. `cap sync` only copies `dist/` into
-the native projects; the IPA goes to App Store Connect and the APK becomes a
-workflow artifact, not a Cloudflare deploy.
+[§5a](#5a-android--apk-via-ci-automated-no-mac-step)) fire on the same
+promotion merge (#1281) but hold no Cloudflare credentials and run no
+`wrangler`, so neither is a Workers Builds trigger and neither produces a web
+deploy. `cap sync` only copies `dist/` into the native projects; the IPA goes
+to App Store Connect and the APK becomes a workflow artifact, not a Cloudflare
+deploy.
 
 Two operational notes:
 
 - The native build runs the **same application code** as the PWA at the
-  dispatched ref — identical to staging only when the workflow is dispatched
-  from `staging` — but NOT the same `dist/`: the native lanes rebuild it in
+  promoted commit (`PROMO_SHA`; the Play, APK and TestFlight builds all share
+  it) — but NOT the same `dist/`: the native lanes rebuild it in
   native mode (`npm run build:native`, #923) after the ref's plain web build
   has already been checked, so what actually ships inside the WebView carries
   a different service worker (self-unregistering, no offline precache)
-  from what that same ref's PWA deploy serves. The lane's ref guard refuses
-  anything but `staging`/`main` unless explicitly overridden, so build tester
-  IPAs and APKs from `staging` or `main`, not `develop`.
+  from what that same ref's PWA deploy serves. The lanes build only
+  `staging` and `main`, so a tester IPA or APK never comes from `develop`.
 - Committing `android/`/`ios/` adds source under version control. To keep a
   native-only commit from burning a Cloudflare preview build, add `android/**`
   and `ios/**` to Cloudflare's **Exclude paths** on both Workers, alongside the

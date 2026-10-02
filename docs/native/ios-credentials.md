@@ -376,9 +376,12 @@ only that something is set. The first dispatch is the first test of the values.
 
 ## 9. Step H — the first dispatch, and the ref trap
 
-**Read this before clicking Run workflow.** The lane's preflight refuses any ref
-except `staging` or `main` unless you tick **`allow_any_ref`**. Both native
-lanes (`ios-testflight.yml` and `android-apk.yml`) were **proven end to end
+**Read this before clicking Run workflow.** Since #1281 the lane starts on a
+promotion merge to `staging` or `main` by itself, and a manual dispatch is a
+rebuild of one of those two branches only: the preflight refuses any other
+ref, and the `release-signing` environment's branch policy refuses it again
+(the former `allow_any_ref` override is gone). Both native lanes
+(`ios-testflight.yml` and `android-apk.yml`) were **proven end to end
 dispatched from `staging`** on 2026-09-16, with the `release-signing`
 environment gate live (#262, #318, #321):
 
@@ -388,24 +391,23 @@ environment gate live (#262, #318, #321):
 | `staging` | ✅                   | ✅             | ✅                  | ✅                    |
 | `main`    | ✅                   | ✅             | ✅                  | ✅                    |
 
-**`staging` is the workable first dispatch** — no `allow_any_ref` override
-needed. `staging` was at v0.1.13 when this section was first written
-(2026-09-12); it carried v0.2.3 by the 2026-09-16 proving run, well past that
-snapshot. `develop` with `allow_any_ref` ticked remains available for a
-feature-branch experiment, but it is no longer the first choice now that the
-lane lives on `staging`.
+**`staging` is the workable first dispatch.** `staging` was at v0.1.13 when
+this section was first written (2026-09-12); it carried v0.2.3 by the
+2026-09-16 proving run, well past that snapshot. A feature-branch experiment
+cannot reach the signing job at all (#1281); prove a lane change by promoting
+it.
 
-**The run will stop and wait — that is the gate working.** After the preflight
-goes green, the _Build and upload to TestFlight_ job sits yellow in **Waiting**
-until a required reviewer acts: open the run, click **Review deployments**,
-tick `release-signing`, then **Approve and deploy** (or **Reject**, which fails
-the run). **Before approving, read the yml on the dispatched ref** — the run
-executes that copy, and a branch can keep `environment: release-signing` while
-adding a step that reads the secrets; approve only the committed lane. Until
-then no secret has been read and no macOS minute billed — but
-the secret-presence check now runs **after** approval, on the macOS runner, so
-check §8's `gh secret list --env release-signing` before approving rather than
-after. Do not re-dispatch a waiting run: the workflow's concurrency group has
+**While a required reviewer is still configured** (the #1281 transition
+window; the target state has none), the _Build and upload to TestFlight_ job
+sits yellow in **Waiting** after the preflight goes green until that reviewer
+acts: open the run, click **Review deployments**, tick `release-signing`, then
+**Approve and deploy** (or **Reject**, which fails the run). **Before
+approving, read the yml on the run's ref** — the run executes that copy.
+Until then no secret has been read and no macOS minute billed — but the
+secret-presence check runs **after** approval, on the macOS runner, so check
+§8's `gh secret list --env release-signing` before approving rather than
+after. Once the reviewer is removed, the branch policy alone admits the job
+and it proceeds straight to that check. Do not re-dispatch a waiting run: the workflow's concurrency group has
 `cancel-in-progress: false`, so a second dispatch queues behind the first and a
 third replaces the second — reject the stale run instead. (Whether a waiting
 job counts as "in progress" for the concurrency group is not stated in GitHub's
@@ -444,19 +446,20 @@ target).
 
 ## 11. When it fails — reading the error
 
-| Symptom                                                               | Almost certainly                                                                                                                                                                                                 |
-| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Run sits yellow in **Waiting** on the TestFlight job                  | Nobody has approved it — §9. A stale waiting run holds the lane; reject it rather than dispatching again                                                                                                         |
-| The TestFlight job's first step fails naming a secret, after approval | That **environment** secret is unset **or empty** — §8. Preflight no longer sees secrets, so this costs one approval and a macOS start; a repository-level copy does not count                                   |
-| Preflight refuses the ref                                             | §9 — dispatch `develop` with `allow_any_ref`, or promote first                                                                                                                                                   |
-| `org.unfoldingword.tcmobile` missing from the New App dropdown        | §4 was skipped — the identifier is not registered                                                                                                                                                                |
-| "The App Name you entered is already being used"                      | `translationCore Mobile` is Tim's call (§5) — escalate to him rather than improvising a name in the form                                                                                                         |
-| Upload rejected, "no app record" / "cannot find app"                  | §5 was skipped, or the bundle id does not match exactly                                                                                                                                                          |
-| Signing/provisioning failure in the **archive** or **export** phase   | A manual-signing credential is wrong (§5.5): a `.p12` exported without its private key, or a profile not bound to `org.unfoldingword.tcmobile` **and** that certificate. Not the API key — the key only uploads. |
-| Upload rejected for permissions after a clean archive                 | The API key's role is too low — §6 wants **App Manager**                                                                                                                                                         |
-| `errSecInternalComponent` after ~20 min                               | The keychain was not set up. `setup_ci` handles this when `CI=true`; a real failure mode running by hand                                                                                                         |
-| Green run, no tester ever receives it                                 | §7's _Automatically distribute new builds_ is off                                                                                                                                                                |
-| Build uploaded but never appears                                      | Processing rejection — check email; the lane cannot see this                                                                                                                                                     |
+| Symptom                                                             | Almost certainly                                                                                                                                                                                                 |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Run sits yellow in **Waiting** on the TestFlight job                | A required reviewer is still configured and nobody has approved it — §9. A stale waiting run holds the lane; reject it rather than dispatching again                                                             |
+| The TestFlight job fails before its first step, naming the branch   | The `release-signing` branch policy refused the ref — only `staging` and `main` build (#1281). Promote first                                                                                                     |
+| The TestFlight job's first step fails naming a secret               | That **environment** secret is unset **or empty** — §8. Preflight no longer sees secrets, so this costs a macOS start; a repository-level copy does not count                                                    |
+| Preflight refuses the ref                                           | §9 — only `staging` and `main` build; promote first                                                                                                                                                              |
+| `org.unfoldingword.tcmobile` missing from the New App dropdown      | §4 was skipped — the identifier is not registered                                                                                                                                                                |
+| "The App Name you entered is already being used"                    | `translationCore Mobile` is Tim's call (§5) — escalate to him rather than improvising a name in the form                                                                                                         |
+| Upload rejected, "no app record" / "cannot find app"                | §5 was skipped, or the bundle id does not match exactly                                                                                                                                                          |
+| Signing/provisioning failure in the **archive** or **export** phase | A manual-signing credential is wrong (§5.5): a `.p12` exported without its private key, or a profile not bound to `org.unfoldingword.tcmobile` **and** that certificate. Not the API key — the key only uploads. |
+| Upload rejected for permissions after a clean archive               | The API key's role is too low — §6 wants **App Manager**                                                                                                                                                         |
+| `errSecInternalComponent` after ~20 min                             | The keychain was not set up. `setup_ci` handles this when `CI=true`; a real failure mode running by hand                                                                                                         |
+| Green run, no tester ever receives it                               | §7's _Automatically distribute new builds_ is off                                                                                                                                                                |
+| Build uploaded but never appears                                    | Processing rejection — check email; the lane cannot see this                                                                                                                                                     |
 
 ---
 
@@ -479,7 +482,7 @@ API Issuer ID                        ________        -> ASC_ISSUER_ID
 .p8 filed in a password manager?     yes / no        -> ASC_KEY_P8_BASE64
 Internal group auto-distribute on?   yes / no        (§7 — the quiet failure)
 Seven secrets set?                   yes / no        (§8)
-First dispatch ref + allow_any_ref   ________        (§9)
+First dispatch ref (staging or main) ________        (§9)
 ```
 
 ---

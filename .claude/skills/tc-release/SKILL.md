@@ -156,10 +156,15 @@ from.
 
 ## 5. Native builds, one commit
 
-- [ ] Human-only: the DRI dispatches, from `staging`, via `!`:
-      `gh workflow run android-apk.yml --repo unfoldingWord/tc-mobile --ref staging` and
-      `gh workflow run ios-testflight.yml --repo unfoldingWord/tc-mobile --ref staging`
-      (each needs the `release-signing` approval).
+- [ ] Agent-allowed: the staging push starts `android-apk.yml` and
+      `ios-testflight.yml` by itself (#1281). Confirm both runs started at
+      `PROMO_SHA` with `event` `push` and no dispatch (and, once #1281 has
+      removed the required reviewer, no approval):
+      `gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --branch staging --limit 3 --json databaseId,headSha,event,status`.
+- [ ] Human-only, only if a lane did not start: the DRI dispatches it from
+      `staging` via `!`:
+      `gh workflow run <lane> --repo unfoldingWord/tc-mobile --ref staging`.
+      Record why it did not start on its own.
 - [ ] Agent-allowed: both runs' `headSha` equal `PROMO_SHA`, and so do the web
       and Play builds. If not, stop and re-promote. Do not mix refs.
 
@@ -223,8 +228,11 @@ Follow runbook §3 and §6. Human-only: the `staging → main` merge (a merge
 commit, from the DRI's terminal; the only command is runbook §3 step 3's, with
 `--admin` and `--match-head-commit`, run only after that step's checks and
 reviews are green; an agent never runs it), the tag `v1.0.0` on that
-merge commit, the native dispatches from `main` at the tag, and publishing the
-GitHub Release on `v1.0.0` with the APK, QR and TestFlight build. Agent-allowed:
+merge commit, and publishing the
+GitHub Release on `v1.0.0` with the APK, QR and TestFlight build. The native
+lanes start on the `main` merge by themselves (#1281); confirm both runs'
+`headSha` equal the tagged commit, and only a lane that did not start is a
+human-only dispatch from `main`. Agent-allowed:
 `check:deploy:prod`, the APK checks, the download-back, the installation guide
 update, closing the milestone and telling the PR authors the freeze is lifted
 (after the DRI lifts it).

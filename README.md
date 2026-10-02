@@ -77,12 +77,11 @@ only there, and a redirect would hide them (#1295; the reasoning is in
 AGENTS.md → "Cloudflare Workers Builds owns deployment").
 
 **Cloudflare Workers Builds deploys** the PWA straight from the repo — no
-Actions workflow deploys the web app. (`.github/` holds three native lanes:
-`ios-testflight.yml` and `android-apk.yml` are manual-dispatch only;
-`android-play.yml` triggers on push to `staging`/`main` and uploads a native
-bundle to Google Play only when `vars.PLAY_UPLOAD_ENABLED` is `true` —
-never Cloudflare — see AGENTS.md → "Cloudflare Workers Builds
-owns deployment".)
+Actions workflow deploys the web app. (`.github/` holds three native lanes, all
+on push to `staging`/`main` and none touching Cloudflare: `ios-testflight.yml`
+and `android-apk.yml` build on a promotion merge, `android-play.yml` uploads a
+native bundle to Google Play only when `vars.PLAY_UPLOAD_ENABLED` is `true` —
+see AGENTS.md → "Cloudflare Workers Builds owns deployment".)
 Workers Builds is configured per Worker, so the repo is connected twice:
 `tc-mobile` builds from `main`, `tc-mobile-staging` builds from `staging` with
 `--env staging`.
@@ -102,17 +101,18 @@ Chapter and Share Book hand an MP3 (or a zip of them) to the OS share sheet.
 `ci.yml`: full-history secret scan, format, lint, knip, typecheck, test, build,
 and a check that the PWA service worker, manifest, and `version.json` were
 emitted. It deploys nothing. (`.github/` also holds three native lanes, none
-of which touch Cloudflare: `ios-testflight.yml` and `android-apk.yml` are
-manual-dispatch only, each gated by a `release-signing` environment with
-required reviewers (#321); `android-play.yml` triggers on push to
-`staging`/`main` and uploads a signed .aab to Google Play only when
-`vars.PLAY_UPLOAD_ENABLED` is `true`, from a `play-upload` environment that
-has no required reviewers — branch-restricted instead, per the yml.)
+of which touch Cloudflare: `ios-testflight.yml` and `android-apk.yml` build
+on a promotion merge to `staging`/`main` (and on a manual dispatch from one of
+those two), signing in a `release-signing` environment that is restricted to
+those two branches (#1281, replacing #321's required reviewer);
+`android-play.yml` triggers on push to `staging`/`main` and uploads a signed
+.aab to Google Play only when `vars.PLAY_UPLOAD_ENABLED` is `true`, from a
+`play-upload` environment with the same branch restriction and no reviewers.)
 
 The repo is `unfoldingWord/tc-mobile`, in the unfoldingWord org, **public since
-2026-09-13**. Keep it public: `release-signing`'s required-reviewer gate
-exists only on public repositories for this org's plan —
-`docs/native/README.md` §4a step 4 has the detail.
+2026-09-13**. Keep it public: environments and their protection rules exist
+only on public repositories for this org's plan — `docs/native/README.md` §4a
+step 4 has the detail.
 
 ## Architecture
 
