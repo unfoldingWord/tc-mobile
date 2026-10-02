@@ -88,8 +88,14 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    the training route — the installed apps are — and recordings made in a
    browser are stored under the address that was opened, so a phone that
    used the older <https://tc-mobile.unfoldingword.workers.dev> address keeps
-   its recordings only there. Whether to offer the browser route at the
-   training at all is for the requirements owner to confirm. <!-- source:
+   its recordings only there. **The installed app is a third, separate store:**
+   recordings made in a browser do not appear in the TestFlight or APK app
+   on the same phone, and the other way round. A participant who tried the
+   app in a browser before the training must Share anything they want to
+   keep before switching to the installed app — the installed app opening
+   empty does not mean the browser recordings are gone, but nothing moves
+   them. Whether to offer the browser route at the training at all is for
+   the requirements owner to confirm. <!-- source: capacitor.config.ts (webDir "dist", no `server` block — the installed app loads its bundled files, not tcmobile.app); browser storage is per origin (gh issue #1295), so the WebView's own origin and the two HTTPS addresses are three stores — the exact WebView origin string is not in the committed config, and the "three stores" claim is an inference from per-origin storage plus the absence of any import path (src/lib/storage/persistence.ts docblock), confidence high; George round 1 P2-3 on PR #1297;
    docs/progress_tracker.md 2026-10-02 (tcmobile.app connected, serves
    1.0.1; "keep workers.dev with no redirect (recordings are stored per
    address)"); gh issue #1295; docs/tester-install.md "Web browser (no
@@ -162,12 +168,20 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    pictures that open a menu:
    - **⋮** (three dots in a column) — on a book, a chapter, or a segment,
      and in the top corner of the recorder. It opens that one item's own
-     actions: rename it, delete it, mark a segment done, and so on. In
-     the recorder it opens the drawer with Edit, the **Done** tile (marks the
-     segment finished), and "Reset segment and start over" for the segment
-     that is open, and the drawer's own close button is a **⋮** too. The tile
-     reads **Done**; the app's storage warnings and these notes say
-     "finished" for the same state. <!-- source: src/lib/strings.ts tileFinished ("Done", D17 #949), markFinished ("Mark segment N done"), storageLow ("Mark segments finished ..."); src/components/recorder-menu.tsx, src/components/segment-row.tsx -->
+     actions: rename it, delete it, mark a segment done, and so on. What the
+     recorder's own **⋮** drawer holds depends on the look (§1, step 5):
+     - **New look** (every freshly installed 1.0.1 phone): two tiles, **Done**
+       (marks the segment finished) and **Reset** (its confirm box reads
+       "Reset segment and start over"). There is **no Edit tile** here — Edit
+       is the scissors on the recorder's bottom bar (§3). The drawer closes
+       with the **✕** in its top corner, like every new-look menu.
+     - **Old look**: rows, not tiles — Edit, "Mark segment N done", and
+       "Reset segment and start over" — and the drawer's own close control is
+       a **⋮**.
+
+     The tile reads **Done**; the app's storage warnings and these notes say
+     "finished" for the same state. <!-- source: src/components/recorder-menu.tsx (o4 branch: RecorderMenuTiles renders the Done tile in record mode and the Reset tile; its docblock: "Record mode has no Edit tile ... because the recorder screen carries its own edit control"; the non-o4 branch renders the Edit, mark-done and erase rows; `hamburger` + `dismissIcon="more"`); src/components/menu.tsx dismissGlyph (o4 → "close", otherwise `hamburger ? dismissIcon : "back"`); src/lib/strings.ts tileFinished ("Done", D17 #949), markFinished ("Mark segment N done"), tileErase ("Reset", #1220), eraseSegment ("Reset segment and start over"), enterEdit ("Edit recording", the scissors), storageLow ("Mark segments finished ..."); src/lib/design.ts DEFAULT_DESIGN = "o4"; src/components/segment-row.tsx; not device-verified; George round 1 P2-1 on PR #1297 -->
+
    - **≡** (three stacked lines) — only in the top corner of the Books screen
      (settings and the problem report). Rename and delete stay on the item's
      **⋮**.
@@ -209,7 +223,19 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
   when there is something to act on. In the new look (§1, step 5) the first
   two come as a banner with a phone icon, the title "Share your work soon"
   and a **Share your work** button that shares every book on the phone as one
-  zip; on an old-look phone they are a plain line of text. The words are: <!-- source: src/components/storage-pressure-banner.tsx (O4: state 17 banner, strings.storageShareSoon title, strings.shareAll button, #983/#987/#1045; current look: the #247 Notice); src/components/books-screen.tsx pressureLine -->
+  zip; on an old-look phone they are a plain line of text. <!-- source: src/components/storage-pressure-banner.tsx (O4: state 17 banner, strings.storageShareSoon title, strings.shareAll button, #983/#987/#1045; current look: the #247 Notice); src/components/books-screen.tsx pressureLine -->
+
+  **Share your work can refuse.** Before it builds anything it checks that
+  the phone has room for the zip, and if not it says "This phone does not
+  have room to prepare your work. Mark finished segments, then try again."
+  — on the installed app as well as in the browser. If every segment is
+  already finished, that line leaves nothing more to mark: **share one
+  chapter at a time instead** (§3, "Sharing a chapter"), which does not take
+  this check, and remove shared chapters afterwards. In a browser on Android
+  the button can also fail after building with "Could not share your work.
+  Try again." (§4); again, share chapter by chapter. <!-- source: src/hooks/use-library-share.ts (roomForExport checked before the encode; InsufficientStorageError); src/lib/export/book.ts roomForExport and EXPORT_HEADROOM_FACTOR = 2 ("No device reading backs this figure"); src/lib/strings.ts shareAllStorage, shareAllFailed; Share Chapter and Share Book have no roomForExport caller (grep of src/); src/hooks/share-target.ts selectShareRoute ("unsupported" when canShare rejects the file; the native route never consults canShare); not device-verified; George round 1 P2-2 on PR #1297 -->
+
+  The words of the three warnings are:
   - "This phone is running low on space. Mark segments finished to free up
     room, or share your work and then remove it." — a heads-up, with time to
     act. Mark segments finished first. **Remove nothing from the app until
@@ -399,9 +425,13 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
   a JPEG twice does. This is expected, not a bug. <!-- source: docs/decisions/0009-transcode-on-finished.md, section 3 (generation count) -->
 - **English only.** The app's menus and messages are in English; there is no
   other language option yet. Names people type can be in any script. <!-- source: gh issue #169, open; PR #1270 (typed names set their own text direction, rc.3) is part of #1267, which stays open, so no further right-to-left claim is made here -->
-- **Share Book in the browser version on Android** can fail with "could not
-  share this book". The installed Android app sends a share by a different
-  route, and this failure has not been reported from it. <!-- source: gh issue #272, open (moved to v1.0.0 as the Chrome-on-Android PWA path; the APK routes shares through the Capacitor Share plugin and never reaches the Web Share gate, per the 2026-09-16 comment); GitHub release v1.0.1 body lists it among the known limits -->
+- **Share Book and Share your work in the browser version on Android** can
+  fail after the file is built: Share Book says "Could not share this book.
+  Try again." and the storage banner's Share your work says "Could not share
+  your work. Try again." Both hand over a zip, which Chrome on Android does
+  not accept for sharing; a chapter is a plain MP3 and is not affected, so
+  share chapter by chapter there. The installed Android app sends a share by
+  a different route, and this failure has not been reported from it. <!-- source: gh issue #272, open (moved to v1.0.0 as the Chrome-on-Android PWA path; the APK routes shares through the Capacitor Share plugin and never reaches the Web Share gate, per the 2026-09-16 comment); src/hooks/share-target.ts selectShareRoute docblock ("Android Chrome's Web Share allowlist rejects application/zip (#272)" — the project's claim, not re-run here); src/hooks/use-library-share.ts and src/hooks/use-book-share.ts (both "application/zip"); src/hooks/use-chapter-share.ts ("audio/mpeg"); src/lib/strings.ts shareBookFailed, shareAllFailed; GitHub release v1.0.1 body lists #272 among the known limits; George round 1 P2-2 on PR #1297 -->
 - **If playback is silent or too quiet, check the phone's media volume
   first.** If it persists, record the build, the screen used for playback,
   and whether it happened before or after marking the segment Finished.

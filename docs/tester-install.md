@@ -144,6 +144,13 @@ on a computer; the phone apps above are the ones we hand out at a training.
   <https://tcmobile.app> instead starts empty, and the app has no way to move
   recordings between the two. Share anything you want to keep before
   switching. <!-- source: gh issue #1295 ("Keep tc-mobile.unfoldingword.workers.dev serving, with no redirect ... Browser storage is per origin ... tcmobile.app opens empty, and the app has no import"); docs/progress_tracker.md 2026-10-02 "Next" item 3 -->
+- **The installed app is separate again.** Recordings you make in the browser
+  do not appear in the iPhone or Android app installed on the same phone, and
+  recordings made in the installed app do not appear in the browser. If you
+  try the app in a browser first and later install it, the installed app
+  starts empty — your browser recordings are still in the browser, and the
+  only way to carry one across is to Share it from the browser before you
+  switch. <!-- source: capacitor.config.ts (webDir "dist", no `server` block: the installed app loads bundled files, not tcmobile.app); per-origin browser storage (gh issue #1295) and no import path (src/lib/storage/persistence.ts); the separation is inferred from those, not observed on a phone; George round 1 P2-3 on PR #1297 -->
 - A browser can clear a website's stored data; if that happens, the
   recordings are gone. There is no backup. <!-- source: PRIVACY.md "Deleting your data"; docs/decisions/0005-no-backend-in-phase-1.md -->
 
