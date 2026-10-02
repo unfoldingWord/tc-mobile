@@ -6,7 +6,6 @@ import { Recorder, type RecorderHandle } from "@/components/recorder";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentEditor } from "@/hooks/use-segment-editor";
 import type { SegmentId } from "@/types/domain";
-import type { RecorderCloseResult } from "@/types/view";
 import { strings } from "@/lib/strings";
 
 import { restingErase } from "./support";
@@ -220,7 +219,7 @@ it("still saves and exits on a fresh close-path capture after an earlier superse
   s.audio.recorderState = "recording";
   await s.render();
 
-  let exited: RecorderCloseResult | undefined;
+  let exited: boolean | undefined;
   await act(async () => {
     exited = await s.ref.current!.requestClose();
   });

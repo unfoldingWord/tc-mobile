@@ -5,7 +5,6 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
-import type { RecorderCloseResult } from "@/types/view";
 import { strings } from "@/lib/strings";
 import { restingErase } from "./support";
 
@@ -140,13 +139,10 @@ async function mountAfterPaste() {
       button!.click();
     });
 
-  const back = async () => {
-    let exited: RecorderCloseResult | undefined;
-    await act(async () => {
-      exited = await ref.current!.requestClose();
+  const back = async () =>
+    act(async () => {
+      await ref.current!.requestClose();
     });
-    return exited;
-  };
   const record = async () => {
     await click(strings.record);
     audio.recorderState = "recording";
@@ -189,7 +185,7 @@ it.each<Drive>(["stop-then-back", "back-during-capture"])(
       await t.click(strings.stop);
       await t.render();
     }
-    const exited = await t.back();
+    await t.back();
     expect(t.audio.stopRecording).toHaveBeenCalledOnce();
 
     // The superseded exit still writes nothing (#527)...
@@ -198,11 +194,6 @@ it.each<Drive>(["stop-then-back", "back-during-capture"])(
     expect(t.saveEditedSegment).not.toHaveBeenCalled();
     // ...and the phrase it dropped from `working` is back where it came from.
     expect(t.clipboard.current).toBe(t.phrase);
-    // That clipboard is the phrase's only copy, so the exit says so: a Back
-    // that would leave the chapter (`goBackToBooks`, #1275) must stop at
-    // Segments rather than run `backToBooks` over it (George round 1 on
-    // #1300).
-    expect(exited).toBe("exited-stay-in-chapter");
   }
 );
 
@@ -218,12 +209,9 @@ it("a take saved by Back after a superseded Stop does not put the phrase back a 
     return { samples: new Int16Array([5, 5]), blob: null, error: null };
   });
   await t.record();
-  const exited = await t.back();
+  await t.back();
 
   expect(t.saveRecording).toHaveBeenCalledOnce();
   expect(t.onExit).toHaveBeenCalledOnce();
   expect(t.clipboard.current).toBeNull();
-  // A plain exit: the phrase was saved into the take, so leaving the
-  // chapter loses nothing and a two-level Back may go on to Books.
-  expect(exited).toBe(true);
 });

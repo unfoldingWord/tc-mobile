@@ -4,7 +4,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useNavStack, type UseNavStack } from "@/hooks/use-nav-stack";
-import type { RecorderCloseResult } from "@/types/view";
 
 /**
  * #1275: the recorder's book crumb goes to Books, two levels up, through
@@ -34,25 +33,29 @@ type Setters = {
   setRecorderOpen: (open: boolean) => void;
   setHasChapter: (has: boolean) => void;
   setRecovering: (on: boolean) => void;
+  setClipboardHeld: (held: boolean) => void;
 };
 
 const fake = {
   nav: null as UseNavStack | null,
   set: null as Setters | null,
-  requestClose: async (): Promise<RecorderCloseResult> => true,
+  requestClose: async (): Promise<boolean> => true,
 };
 const onLeaveToBooks = vi.fn(() => fake.set?.setHasChapter(false));
 
-/** App's shape: the three nav inputs are state, the state halves flip them. */
+/** App's shape: the nav inputs are state, the state halves flip them. */
 function Owner(): null {
   const [recorderOpen, setRecorderOpen] = useState(true);
   const [hasChapter, setHasChapter] = useState(true);
   const [recovering, setRecovering] = useState(false);
+  // App's `clipboard !== null`: a cut phrase the chapter holds.
+  const [clipboardHeld, setClipboardHeld] = useState(false);
   const nav = useNavStack({
     hasChapter,
     recorderOpen,
     recovering,
     databasePanel: false,
+    chapterClipboardHeld: clipboardHeld,
     getRecorderHandle: () =>
       recorderOpen ? { requestClose: () => fake.requestClose() } : null,
     onOpenChapter: () => {},
@@ -65,8 +68,13 @@ function Owner(): null {
   });
   // The setters are identity-stable, so this runs once.
   useLayoutEffect(() => {
-    fake.set = { setRecorderOpen, setHasChapter, setRecovering };
-  }, [setRecorderOpen, setHasChapter, setRecovering]);
+    fake.set = {
+      setRecorderOpen,
+      setHasChapter,
+      setRecovering,
+      setClipboardHeld,
+    };
+  }, [setRecorderOpen, setHasChapter, setRecovering, setClipboardHeld]);
   return null;
 }
 
@@ -211,28 +219,55 @@ describe("goBackToBooks from the recorder (#1275)", () => {
     expect(index()).toBe(1);
   });
 
-  it("stops at Segments when the close exited holding a salvaged phrase on the chapter clipboard (George round 1 on #1300)", async () => {
-    // The recorder exits, but its close rolled a phrase back onto the
-    // chapter clipboard (a superseded stop after a landed paste) or left a
-    // cut-to-empty phrase there with its segment gone. Leaving the chapter
-    // runs `backToBooks`, which clears that clipboard, so the sheet reports
-    // the exit as one that must stay in the chapter and the continuation is
-    // dropped: the entry is still consumed, and the tap ends at Segments.
+  it.each([
+    ["the close left a cut phrase on it (a saved cut, a cut-to-empty)", false],
+    ["the close put a phrase back on it (a superseded stop's rollback)", true],
+  ])(
+    "stops at Segments when the chapter clipboard holds a phrase once the sheet has gone — %s (George rounds 1 and 2 on #1300)",
+    async (_case, heldBefore) => {
+      // Leaving the chapter runs `onLeaveToBooks` (`backToBooks`), which
+      // clears the chapter clipboard. Once the sheet has gone, a phrase on it
+      // may exist nowhere else — a cut the close saved, a cut-to-empty whose
+      // segment is gone, a paste a superseded stop rolled back — so the
+      // continuation is dropped: the entry is still consumed, and the tap
+      // ends at Segments, where the phrase can still be pasted.
+      if (heldBefore) {
+        await act(async () => fake.set!.setClipboardHeld(true));
+      }
+      fake.requestClose = async () => {
+        if (!heldBefore) fake.set!.setClipboardHeld(true);
+        fake.nav!.commitCloseRecorder(true);
+        return true;
+      };
+      await act(async () => fake.nav!.goBackToBooks());
+      await settle();
+
+      expect(backSpy).toHaveBeenCalledTimes(2);
+      expect(landings).toEqual([1, 1]);
+      expect(onLeaveToBooks).not.toHaveBeenCalled();
+      expect(index()).toBe(1);
+      // Nothing is left armed: a later plain Back still issues.
+      backSpy.mockClear();
+      await act(async () => fake.nav!.goBack());
+      expect(backSpy).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it("goes on to Books when the close emptied the clipboard (a paste that landed and was saved)", async () => {
+    // The inverse: the chapter held a phrase while the sheet was up, the
+    // close pasted and saved it, so nothing is left to protect.
+    await act(async () => fake.set!.setClipboardHeld(true));
     fake.requestClose = async () => {
+      fake.set!.setClipboardHeld(false);
       fake.nav!.commitCloseRecorder(true);
-      return "exited-stay-in-chapter";
+      return true;
     };
     await act(async () => fake.nav!.goBackToBooks());
     await settle();
 
-    expect(backSpy).toHaveBeenCalledTimes(2);
-    expect(landings).toEqual([1, 1]);
-    expect(onLeaveToBooks).not.toHaveBeenCalled();
-    expect(index()).toBe(1);
-    // Nothing is left armed: a later plain Back still issues.
-    backSpy.mockClear();
-    await act(async () => fake.nav!.goBack());
-    expect(backSpy).toHaveBeenCalledTimes(1);
+    expect(backSpy).toHaveBeenCalledTimes(3);
+    expect(onLeaveToBooks).toHaveBeenCalledTimes(1);
+    expect(index()).toBe(0);
   });
 
   it("the chained Back is routed like any other: a recovery modal raised by the close traps it instead of leaving", async () => {
@@ -256,22 +291,79 @@ describe("goBackToBooks from the recorder (#1275)", () => {
     expect(pushSpy).toHaveBeenCalledTimes(2);
   });
 
-  it("fails safe to one level when the recorder has not left the screen by the consuming landing", async () => {
-    // The sheet reports it exited without the screen ever changing: the
-    // adapter's committed view still says "recorder" when the consuming
-    // back() lands. Issuing the chained Back there would route a stale
-    // screen, so the continuation is dropped and surfaced, and the tap ends
-    // where a plain Back would — at Segments.
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    fake.requestClose = async () => true;
-    await act(async () => fake.nav!.goBackToBooks());
-    await settle();
+  describe("a consuming landing that runs before React has committed the close (George round 2 on #1300)", () => {
+    // Observed in Chromium (the e2e "held cut" case): the consuming back()'s
+    // popstate ran ahead of the scheduler task that commits
+    // `onRecorderClosed`'s state, so at that landing the committed screen
+    // still read "recorder". The harness manufactures that state directly:
+    // the sheet resolves true without the screen changing, and the commit
+    // that closes it comes later.
+    it("waits for that commit, then issues the second level from it", async () => {
+      fake.requestClose = async () => true;
+      await act(async () => fake.nav!.goBackToBooks());
+      await settle();
+      // Two traversals so far, and no stale-screen Back was issued.
+      expect(backSpy).toHaveBeenCalledTimes(2);
+      expect(landings).toEqual([1, 1]);
+      expect(onLeaveToBooks).not.toHaveBeenCalled();
 
-    expect(backSpy).toHaveBeenCalledTimes(2);
-    expect(landings).toEqual([1, 1]);
-    expect(onLeaveToBooks).not.toHaveBeenCalled();
-    expect(index()).toBe(1);
-    expect(error).toHaveBeenCalledTimes(1);
-    error.mockRestore();
+      // The commit that closes the sheet: the layout effect finishes the
+      // continuation, and its landing routes `to-books`.
+      await act(async () => fake.set!.setRecorderOpen(false));
+      await settle();
+      expect(backSpy).toHaveBeenCalledTimes(3);
+      expect(landings).toEqual([1, 1, 0]);
+      expect(onLeaveToBooks).toHaveBeenCalledTimes(1);
+      expect(index()).toBe(0);
+    });
+
+    it("stops at Segments if that commit also shows the chapter clipboard holding a phrase", async () => {
+      fake.requestClose = async () => true;
+      await act(async () => fake.nav!.goBackToBooks());
+      await settle();
+      expect(backSpy).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        fake.set!.setClipboardHeld(true);
+        fake.set!.setRecorderOpen(false);
+      });
+      await settle();
+      expect(backSpy).toHaveBeenCalledTimes(2);
+      expect(onLeaveToBooks).not.toHaveBeenCalled();
+      expect(index()).toBe(1);
+    });
+
+    it("drops the deferred continuation when a Back of the translator's own lands first", async () => {
+      fake.requestClose = async () => true;
+      await act(async () => fake.nav!.goBackToBooks());
+      await settle();
+      expect(backSpy).toHaveBeenCalledTimes(2);
+
+      // A hardware Back before the commit: its landing owns the screen and
+      // clears the deferred continuation; the commit afterwards issues
+      // nothing more.
+      await act(async () => fake.nav!.goBack());
+      await settle();
+      const afterOwnBack = backSpy.mock.calls.length;
+      await act(async () => fake.set!.setRecorderOpen(false));
+      await settle();
+      expect(backSpy).toHaveBeenCalledTimes(afterOwnBack);
+    });
+
+    it("is a re-render, not a commit of the close, that leaves the flag alone", async () => {
+      fake.requestClose = async () => true;
+      await act(async () => fake.nav!.goBackToBooks());
+      await settle();
+      // A commit that still shows the recorder (another state flip) must not
+      // consume the flag or issue anything.
+      await act(async () => fake.set!.setRecovering(true));
+      await act(async () => fake.set!.setRecovering(false));
+      await settle();
+      expect(backSpy).toHaveBeenCalledTimes(2);
+      await act(async () => fake.set!.setRecorderOpen(false));
+      await settle();
+      expect(backSpy).toHaveBeenCalledTimes(3);
+      expect(onLeaveToBooks).toHaveBeenCalledTimes(1);
+    });
   });
 });

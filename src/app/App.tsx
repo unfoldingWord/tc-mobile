@@ -383,6 +383,9 @@ export function App() {
     recorderOpen: recorder !== null,
     recovering,
     databasePanel: databasePanel !== null,
+    // `backToBooks` below clears this clipboard (G3), so the two-level Back
+    // (#1275) stops at Segments while it holds a phrase.
+    chapterClipboardHeld: clipboard !== null,
     getRecorderHandle: () => recorderRef.current,
     onOpenChapter: openChapterState,
     onOpenRecorder: openRecorderState,

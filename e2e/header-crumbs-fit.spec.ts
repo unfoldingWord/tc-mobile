@@ -1,4 +1,30 @@
+import { existsSync } from "node:fs";
+
 import { expect, test, type Locator, type Page } from "@playwright/test";
+
+import { clickEditRecording } from "./recorder-fixtures";
+
+/**
+ * File-wide, because Playwright allows `launchOptions` only at the top level:
+ * the held-cut case at the foot of this file records through Chromium's fake
+ * microphone (the same flags `recorder-selection.spec.ts` uses). The layout
+ * cases above it neither record nor ask for the microphone, so the flags
+ * change nothing they measure.
+ */
+test.use({
+  permissions: ["microphone"],
+  launchOptions: {
+    executablePath:
+      process.env.PLAYWRIGHT_CHROMIUM_PATH ??
+      (existsSync("/opt/pw-browsers/chromium")
+        ? "/opt/pw-browsers/chromium"
+        : undefined),
+    args: [
+      "--use-fake-device-for-media-stream",
+      "--use-fake-ui-for-media-stream",
+    ],
+  },
+});
 
 /**
  * The new-look (O4) chapter-screen and recorder headers with the chapter's
@@ -475,4 +501,145 @@ test("O4 headers at 360px: tapping the recorder's book crumb lands on Books in o
     .toBe(0);
   expect(before.index).toBeGreaterThan(0);
   expect(await page.evaluate(() => window.history.length)).toBe(before.length);
+});
+
+/**
+ * #1275, George rounds 1 and 2 on #1300: the two-level Back stops at
+ * Segments while the chapter clipboard holds a phrase, because the second
+ * level's landing is `backToBooks`, which clears that clipboard (G3) — and
+ * after a cut the close has saved, the clipboard is the phrase's only copy.
+ * This records a real take through Chromium's fake microphone, cuts the
+ * whole span (so the close clears the segment and the phrase lives on the
+ * clipboard alone), taps the recorder's book crumb, and expects the chapter
+ * screen with its history entry — not Books. The chapter screen's own book
+ * crumb, a separate gesture on a screen where the paste was available, still
+ * leaves. The pure half (the adapter's gate) is `tests/nav-back-to-books.test.ts`;
+ * this is the real recorder, the real App clipboard and the real adapter
+ * together, against the shipped build.
+ */
+test.describe("the recorder's book crumb over a held cut (#1275)", () => {
+  test("stops at the chapter screen while the clipboard holds the cut, and the chapter screen's crumb still leaves", async ({
+    page,
+  }) => {
+    const book = "Ruth";
+    const chapter = "Naomi returns";
+    await walk(page, 360, book, chapter);
+
+    // A take, then a cut of its whole span: the clipboard holds the phrase
+    // and the buffer is empty, so the close will clear the segment.
+    await page.getByRole("button", { name: "Record", exact: true }).click();
+    await page.waitForTimeout(1200);
+    await page
+      .getByRole("button", { name: "Stop recording", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Record", exact: true })
+    ).toBeVisible();
+    await clickEditRecording(page);
+    const cut = page.getByRole("button", {
+      name: "Cut the selection",
+      exact: true,
+    });
+    await expect(cut).toBeEnabled();
+    await cut.click();
+    await expect(
+      page.getByRole("button", { name: "Paste at the line", exact: true })
+    ).toBeVisible();
+
+    const recorderHead = page.locator("header").filter({
+      has: page.getByRole("button", { name: "Close recorder" }),
+    });
+    const index = () =>
+      page.evaluate(
+        () => (window.history.state as { index?: number } | null)?.index
+      );
+    const atRecorder = (await index())!;
+    await recorderHead
+      .getByRole("button", { name: `Go to book ${book}`, exact: true })
+      .click();
+
+    // The sheet closed (the first level ran), and the gesture ended on the
+    // chapter screen: Books' controls are absent, the chapter's entry is the
+    // one the stack is on, and the phrase is still pasteable here.
+    await expect(
+      page.getByRole("button", { name: "Close recorder" })
+    ).toHaveCount(0);
+    const segmentsHead = page.locator("header").filter({
+      has: page.getByRole("button", { name: "Back to books" }),
+    });
+    await expect(segmentsHead).toBeVisible();
+    await expect(page.getByRole("button", { name: "New book" })).toHaveCount(0);
+    await expect.poll(index).toBe(atRecorder - 1);
+
+    // The chapter screen's book crumb is the translator's own gesture on the
+    // screen where the paste was offered; it leaves as #1269 made it.
+    await segmentsHead
+      .getByRole("button", { name: `Go to book ${book}`, exact: true })
+      .click();
+    await expect(page.getByRole("button", { name: "New book" })).toBeVisible();
+    await expect(page.getByText(book, { exact: true })).toBeVisible();
+  });
+});
+
+/**
+ * #1275, George round 2 on #1300: a close that awaits a write (`saveEditedSegment`
+ * in IndexedDB) resolves after that write, and in Chromium the consuming
+ * landing was observed to run BEFORE React had committed the close — the
+ * adapter's committed screen still read "recorder" there. The continuation
+ * now waits for that commit instead of being dropped, so the crumb still
+ * reaches Books. The edit here is a whole-span cut pasted straight back, so
+ * the close has an edit to save and the clipboard is empty: nothing holds
+ * the gesture at Segments, and only the deferred continuation can take it on.
+ */
+test("O4 headers at 360px: the recorder's book crumb reaches Books when the close has an edit to save (#1275)", async ({
+  page,
+}) => {
+  const book = "Ruth";
+  const chapter = "Naomi returns";
+  await walk(page, 360, book, chapter);
+
+  await page.getByRole("button", { name: "Record", exact: true }).click();
+  await page.waitForTimeout(1200);
+  await page
+    .getByRole("button", { name: "Stop recording", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Record", exact: true })
+  ).toBeVisible();
+  await clickEditRecording(page);
+  const cut = page.getByRole("button", {
+    name: "Cut the selection",
+    exact: true,
+  });
+  await expect(cut).toBeEnabled();
+  await cut.click();
+  const paste = page.getByRole("button", {
+    name: "Paste at the line",
+    exact: true,
+  });
+  await expect(paste).toBeVisible();
+  await paste.click();
+  await expect(paste).toHaveCount(0);
+
+  const recorderHead = page.locator("header").filter({
+    has: page.getByRole("button", { name: "Close recorder" }),
+  });
+  await recorderHead
+    .getByRole("button", { name: `Go to book ${book}`, exact: true })
+    .click();
+
+  await expect(
+    page.getByRole("button", { name: "Close recorder" })
+  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "New book" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back to books" })).toHaveCount(
+    0
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window.history.state as { index?: number } | null)?.index
+      )
+    )
+    .toBe(0);
 });

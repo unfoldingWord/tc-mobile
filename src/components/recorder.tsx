@@ -104,7 +104,6 @@ import { RecorderStamp } from "./recorder-o4";
 import { TakeCapMarker } from "./take-cap-marker";
 import type { SampleRange } from "@/types/audio";
 import type { SegmentId } from "@/types/domain";
-import type { RecorderCloseResult } from "@/types/view";
 
 interface RecorderProps {
   segmentId: SegmentId;
@@ -204,13 +203,10 @@ interface RecorderProps {
  * runs the SAME `close()` the on-screen Back does — stop, decode, save — and
  * resolves whether the sheet exited, so App can re-arm the history trap when a
  * failed commit keeps it open. This is the only way in: everything else the
- * recorder does stays inside it. The result is `RecorderCloseResult`
- * (`types/view.ts`): `false` stayed, `true` exited, and
- * `"exited-stay-in-chapter"` exited holding a salvaged phrase on the chapter
- * clipboard, which a two-level Back (#1275) must not leave the chapter over.
+ * recorder does stays inside it.
  */
 export interface RecorderHandle {
-  requestClose: () => Promise<RecorderCloseResult>;
+  requestClose: () => Promise<boolean>;
 }
 
 /**
@@ -2161,24 +2157,18 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // gates the callers used to thread in as `committed`/`attemptedCapture`
     // booleans are now expressed by which plan they hand over. Returns whether
     // it exited (false keeps the sheet open on a write failure, with the reason
-    // in place) — and, for an exit that leaves the chapter clipboard holding
-    // the only copy of a phrase, `"exited-stay-in-chapter"` rather than
-    // `true`, so the nav adapter's two-level Back (#1275) stops at Segments
-    // instead of running `backToBooks`, which clears that clipboard (George
-    // round 1 on #1300).
+    // in place).
     const executeTail = useCallback(
-      async (plan: TailPlan): Promise<RecorderCloseResult> => {
+      async (plan: TailPlan): Promise<boolean> => {
         // Shared by idle Back and held-take discard. Do not let either turn a
         // superseded Stop-commit into a delayed write against the old take.
         // Dropping the edits unsaved would drop a landed paste's phrase with
         // them, since a paste empties the clipboard (#489), so the clipboard
-        // rolls back with them first. That rolled-back phrase was cut from
-        // another segment and never saved into this one, so the clipboard is
-        // now its only copy: the exit must stay in the chapter.
+        // rolls back with them first.
         if (supersededCapture.current) {
           editor.rollBackClipboard();
           onExit(dirty.current);
-          return "exited-stay-in-chapter";
+          return true;
         }
         try {
           switch (plan.action) {
@@ -2204,19 +2194,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 // never committed, so the original take is still on disk.
                 // Terminal too when the segment is gone (#607): nothing is on
                 // disk to keep, and the cut phrase is App's clipboard, which
-                // leaving to Segments does not touch — leaving the chapter
-                // would, and the phrase has no other copy, so that exit
-                // stays in the chapter. The unreachable-database exit keeps
-                // `true`: the panel it raises traps any further Back.
+                // leaving does not touch.
                 const exit = failureExit("clear", {
                   databaseUnreachable,
                   targetMissing: cleared === "stale",
                 });
                 if (exit !== "stay") {
                   onExit(exit === "leave-stale" || dirty.current);
-                  return exit === "leave-stale"
-                    ? "exited-stay-in-chapter"
-                    : true;
+                  return true;
                 }
                 stayOpen(strings.clearFailed);
                 return false;
@@ -2306,16 +2291,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       [editor, finishedIntent, view]
     );
 
-    const close = useCallback((): Promise<RecorderCloseResult> => {
+    const close = useCallback((): Promise<boolean> => {
       // Resolves true when the sheet actually exits (`onExit` fired), false when a
       // commit failure keeps it open with an in-place error. App's history routing
       // (#168) reads that: a Back gesture that fails to save must NOT leave the
       // recorder's history entry consumed — it re-arms the trap so the next Back
-      // retries rather than escaping to Segments over an unsaved take. An exit
-      // that leaves a salvaged phrase as the chapter clipboard's only copy
-      // resolves `"exited-stay-in-chapter"` instead of `true` (`executeTail`),
-      // which the adapter's two-level Back (#1275) reads as "consumed, but go
-      // no further than Segments".
+      // retries rather than escaping to Segments over an unsaved take.
       if (closing.current) return Promise.resolve(false);
       // The decode-failed recovery panel owns the body (#165): its Try again /
       // Share / two-tap discard are the only exits, and the header Back is disabled
@@ -2503,7 +2484,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // no-capture tail (`leaveHeldTake` runs the SAME one, George R4-G1 root).
           // Spelled out rather than defaulted, so a new `ClosePlan` action cannot
           // reach the tail silently: it would have no case, and the switch would
-          // stop satisfying the `Promise<RecorderCloseResult>` return.
+          // stop satisfying the `Promise<boolean>` return.
           case "clear":
           case "save-edit":
           case "mark":
