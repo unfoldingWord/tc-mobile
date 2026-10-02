@@ -278,7 +278,8 @@ the App Store Connect **API key** authenticates the **upload only**, not signing
 No `match`, no certs repo. It **starts on a promotion** (#1281): a push to
 `staging` or `main` whose tip is a promotion merge (`Merge pull request #N
 from unfoldingWord/release/*`, or `…/staging` for the production promotion)
-builds and uploads with no dispatch and no approval; any other push to those
+builds and uploads with no dispatch (and no approval once #1281's runbook has
+removed the required reviewer; step 4 below); any other push to those
 two branches ends at the preflight job with a notice and no build. For a
 manual rebuild, run it from **Actions → iOS TestFlight → Run workflow** on
 `staging` or `main` — no other ref is accepted, and the former
@@ -534,7 +535,8 @@ for the audio store (PR #265).
 builds the Android app on an ubuntu runner and uploads the APK as a workflow
 artifact. It **starts on a promotion** (#1281), the same way as the iOS
 lane: a push to `staging` or `main` whose tip is a promotion merge builds and
-signs with no dispatch and no approval; any other push to those two branches
+signs with no dispatch (and no approval once #1281's runbook has removed the
+required reviewer); any other push to those two branches
 ends at the preflight job with a notice and no build. For a manual rebuild,
 run it from **Actions → Android APK → Run workflow** on `staging` or `main`
 — no other ref is accepted. It never runs on a PR.

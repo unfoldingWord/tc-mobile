@@ -207,5 +207,16 @@ describe.each(Object.keys(LANES) as Lane[])(
         }
       }
     });
+
+    it("strips a carriage return from the subject, so it cannot end the log line early", () => {
+      const result = runGate(lane, {
+        EVENT: "push",
+        REF: "staging",
+        HEAD_MESSAGE: "docs: typo\r::error::injected\nsecond line",
+      });
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain("\r");
+      expect(result.stdout).toContain("Subject: docs: typo::error::injected");
+    });
   }
 );

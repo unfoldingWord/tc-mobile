@@ -161,8 +161,17 @@ from.
       `PROMO_SHA` with `event` `push` and no dispatch (and, once #1281 has
       removed the required reviewer, no approval):
       `gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --branch staging --limit 3 --json databaseId,headSha,event,status`.
-- [ ] Human-only, only if a lane did not start: the DRI dispatches it from
-      `staging` via `!`:
+      A green run is not a build: a push the preflight did not read as a
+      promotion still makes a successful run, with the signing job
+      `skipped`. So read each run's signing job (`Build release APK`,
+      `Build and upload to TestFlight`) with
+      `gh run view <databaseId> --repo unfoldingWord/tc-mobile --json jobs --jq '.jobs[] | select(.name=="<job>") | .conclusion'`:
+      `skipped` means the lane did not start, and only `success` is a build.
+      An empty conclusion with the run still open means the job is waiting
+      for the `release-signing` reviewer or running: it has started, so do
+      not dispatch a second one.
+- [ ] Human-only, only if a lane did not start (its signing job `skipped`):
+      the DRI dispatches it from `staging` via `!`:
       `gh workflow run <lane> --repo unfoldingWord/tc-mobile --ref staging`.
       Record why it did not start on its own.
 - [ ] Agent-allowed: both runs' `headSha` equal `PROMO_SHA`, and so do the web
@@ -231,8 +240,10 @@ reviews are green; an agent never runs it), the tag `v1.0.0` on that
 merge commit, and publishing the
 GitHub Release on `v1.0.0` with the APK, QR and TestFlight build. The native
 lanes start on the `main` merge by themselves (#1281); confirm both runs'
-`headSha` equal the tagged commit, and only a lane that did not start is a
-human-only dispatch from `main`. Agent-allowed:
+`headSha` equal the tagged commit and that each run's signing job concluded
+`success`, not `skipped` (the step 5 check, on `--branch main`); only a lane
+whose signing job was `skipped` is a human-only dispatch from `main`.
+Agent-allowed:
 `check:deploy:prod`, the APK checks, the download-back, the installation guide
 update, closing the milestone and telling the PR authors the freeze is lifted
 (after the DRI lifts it).

@@ -96,6 +96,9 @@ jobs:
               # is the pinned RC/release ref promoted to staging; `staging` is
               # the production promotion to main. Only the subject line is read.
               subject="${HEAD_MESSAGE%%$'\n'*}"
+              # A carriage return would end the log line early; keep the echo
+              # below one line that starts with its prefix.
+              subject="${subject//$'\r'/}"
               promotion='^Merge pull request [#][0-9]+ from unfoldingWord/(release/|staging$)'
               echo "Subject: $subject"
               if [[ "$subject" =~ $promotion ]]; then
@@ -121,12 +124,13 @@ jobs:
       TC_ANDROID_DIAGNOSTIC: ${{ inputs.diagnostic }}
     needs: preflight
     if: needs.preflight.outputs.build == 'true'
-    # The signing secrets are ENVIRONMENT secrets, not repository secrets, and
-    # the environment's deployment-branch policy admits only `staging` and
-    # `main`. A job on any other ref is refused by GitHub before any step
-    # runs, however that ref's copy of this file was edited — the actor guard
-    # the in-yml check above cannot be (#321: any push-access branch can
-    # rewrite the yml). Code reaches staging/main only by admin merge
+    # The signing secrets are ENVIRONMENT secrets, not repository secrets. The
+    # environment's deployment-branch policy (#1281's target state; until the
+    # DRI has run its runbook, the #321 required reviewer still gates every
+    # run) admits only `staging` and `main`. A job on any other ref is
+    # refused by GitHub before any step runs, however that ref's copy of this
+    # file was edited — the actor guard the in-yml check above cannot be
+    # (#321: any push-access branch can rewrite the yml). Code reaches staging/main only by admin merge
     # (ruleset 24043869), so only admin-merged code reaches the secrets. The
     # Android keystore is permanent app identity, so this policy is the only
     # real control on it (#1281).

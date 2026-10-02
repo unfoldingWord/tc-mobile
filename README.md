@@ -103,8 +103,9 @@ and a check that the PWA service worker, manifest, and `version.json` were
 emitted. It deploys nothing. (`.github/` also holds three native lanes, none
 of which touch Cloudflare: `ios-testflight.yml` and `android-apk.yml` build
 on a promotion merge to `staging`/`main` (and on a manual dispatch from one of
-those two), signing in a `release-signing` environment that is restricted to
-those two branches (#1281, replacing #321's required reviewer);
+those two), signing in a `release-signing` environment restricted to those
+two branches once #1281's runbook has run (it replaces #321's required
+reviewer; until then the reviewer still gates every run);
 `android-play.yml` triggers on push to `staging`/`main` and uploads a signed
 .aab to Google Play only when `vars.PLAY_UPLOAD_ENABLED` is `true`, from a
 `play-upload` environment with the same branch restriction and no reviewers.)
