@@ -77,6 +77,26 @@ function trail(...parts: readonly string[]): string {
   return parts.join(" > ");
 }
 
+/**
+ * An entry that reuses another entry calls it through this binding:
+ * `chapterHeading` falls back to `strings.chapterName`, `shareBookPartial`
+ * returns `strings.shareMissing`, and the rest follow the same pattern
+ * (`grep -n "strings\." src/lib/strings.ts` finds them, along with comments
+ * that mention an entry). With one table, that is correct, and it is the
+ * reason the aliases exist. Byte-for-byte copies drifted, and an alias cannot.
+ *
+ * It is also what breaks when `strings[locale]` lands (#169). A second
+ * locale's entry that still calls through `strings` formats its embedded part
+ * from THIS table. The result is a heading that is half English.
+ *
+ * The existing tests cannot see that. `tests/breadcrumb.test.ts`'s
+ * `chapterHeading(null, n) === chapterName(n)` stays green while the bug is
+ * live, because both sides resolve through the same wrong table and agree.
+ * Whoever adds a second table needs each alias to resolve within its own table
+ * (through `this`, an explicit table parameter, or a factory that closes over
+ * the right one). They also need a test that a locale's entry never reaches the
+ * default table, which is a different assertion from the equality ones.
+ */
 export const strings = {
   // ── Books screen (B2) ────────────────────────────────────────────────────
   newBook: "New book",
@@ -137,6 +157,23 @@ export const strings = {
    */
   chapterBreadcrumb: (book: string, chapter: string): string =>
     trail(book, chapter),
+  /**
+   * The spoken names of the new look's header crumbs that navigate (#1269):
+   * the book crumb on the chapter screen, the chapter crumb on the recorder.
+   * Each names the destination, and each holds the text the chip shows, so
+   * the visible text sits inside the spoken name (WCAG 2.5.3). `chapter` is
+   * the resolved heading (`chapterHeading`), the same text the chip shows.
+   * The name is spoken, not drawn, so it carries no direction of its own; the
+   * chip's text element carries `dir="auto"` (#1267).
+   *
+   * The chapter's is "Go to {heading}" (DRI pick on #1274), with no word
+   * of its own: the heading already says "Chapter N" when the chapter has no
+   * name, so "Go to chapter Chapter 1" said it twice. The book's keeps
+   * "book", because a book name is a bare label that says nothing about
+   * what it names.
+   */
+  goToBook: (book: string): string => `Go to book ${book}`,
+  goToChapter: (heading: string): string => `Go to ${heading}`,
 
   // ── Naming (#264 rename, #314 New Book, #609 Add chapter) ────────────────
   // One naming field serves all three flows, so these strings are shared: the
@@ -204,7 +241,10 @@ export const strings = {
     "A segment is one passage of the chapter — record it, play it back, record it again.",
   playSegment: (n: number): string => `Play segment ${n}`,
   pauseSegment: (n: number): string => `Pause segment ${n}`,
-  recordSegment: (n: number): string => `Record segment ${n}`,
+  // The unrecorded row's microphone (#1217). Its tap opens the recorder at
+  // rest; capture starts on the recorder's own Record (#602), so the name says
+  // what the tap does rather than promising a recording.
+  openRecorderSegment: (n: number): string => `Open recorder for segment ${n}`,
   // These three are the row's open control's accessible name, which REPLACES
   // its visible text, so they carry the same heading the row paints — label
   // included (#591, WCAG 2.5.3). Unlabelled, the heading is the bare ordinal.
@@ -217,9 +257,9 @@ export const strings = {
   scrubSegment: (n: number): string => `Position in segment ${n}`,
   // "done", not "finished" (D17, #949): the O4 tile's caption is the
   // workbench's "Done", and the label must hold the caption (label-in-name).
-  // One string for both looks and both menus (segment row and recorder).
+  // One string for both looks and both menus (segment row and recorder). It
+  // does not flip to "not done": `aria-pressed` carries the state (#351).
   markFinished: (n: number): string => `Mark segment ${n} done`,
-  markUnfinished: (n: number): string => `Mark segment ${n} not done`,
   /**
    * The segment's display heading (#591): the ordinal, then the facilitator's
    * label when set — "3 · verses 3–4". The ordinal always stays, because it is
@@ -253,23 +293,23 @@ export const strings = {
   // the training is where that glyph is tested rather than assumed.
   useLightTheme: "Switch to the light screen, for bright sunlight",
   useDarkTheme: "Switch to the dark screen, for low light",
-  // The O4 design switch (#938, epic #936). One control, `aria-pressed`
-  // carrying the on/off state (`Control`'s `pressed` prop, the same
-  // mechanism the zoom and level-meter toggles use) — so the label itself
-  // never has to change, unlike the theme toggle above, which names a
-  // destination because it has no `aria-pressed` state to carry that for it.
-  newLookO4: "New look (O4)",
   // The O4 menu tiles' visible captions (#949, `o4-tile-menu.tsx`). Shown,
   // never announced: each tile's name is the label its current-look row
   // already had, and every caption is a word that label holds (label-in-name,
   // WCAG 2.5.3). Marking done says the workbench's "Done", and
-  // `markFinished`/`markUnfinished` say "done" to match (D17).
+  // `markFinished` says "done" to match (D17).
   tileEdit: "Edit",
   tileFinished: "Done",
   tileRename: "Rename",
-  tileErase: "Erase",
+  // Clear removes a segment's audio and keeps the segment; Delete below
+  // removes the segment. Key names keep "erase" (the code's word for the
+  // operation). The tile's caption is "Reset", one word of `eraseSegment`
+  // ("Reset segment and start over", #1220), so the visible caption stays a
+  // word of the accessible name (WCAG 2.5.3, pinned by the label-in-name
+  // tests); one icon for one action stays as #1119 picked.
+  tileErase: "Reset",
   // The book menu's Delete tile (04); its name is `deleteBook`. Shared with
-  // the recorder menu's Delete segment tile (#590) — its name is
+  // the chapter view's segment-menu Delete tile (#590/#1104) — its name is
   // `deleteSegment` — the same caption, on two different destructive tiles
   // in two different menus, rather than a second key holding the same word.
   tileDelete: "Delete",
@@ -279,10 +319,6 @@ export const strings = {
   tileAbout: "About",
   tileLight: "Light",
   tileDark: "Dark",
-  // The edit-mode recorder menu's exit tile (G3); its name is `doneEditing`.
-  // Its own key, not `tileFinished`: that one is marking done, this is leaving
-  // edit, and the two only happen to share a word in English.
-  tileDone: "Done",
   closeRecorder: "Close recorder",
   /**
    * The recorder sheet's header trail — the Segments one with the segment
@@ -350,15 +386,23 @@ export const strings = {
   // an icon-only `Control`'s accessible name is not a word anyone can see.
   recorderSaving: "Saving…",
 
+  // ── Take-length warning (#1005, "Warn at 15, seal at 20") ────────────────
+  // Rides inside the recorder's own elapsed-time readout once it tints to the
+  // warn role, from 15:00 of a live take (`components/take-cap-marker.tsx`).
+  // Parameterised, so it is outside `tests/strings-one-table.test.ts`'s
+  // fixed-literal check the way `chapterName` and the other `(n) =>` entries
+  // above are.
+  takeCapWarning: (n: number): string => `${n} min left`,
+
   // ── Recorder load failure (#137) ──────────────────────────────────────────
   // A finished segment's stored MP3 could not be decoded when the sheet opened
   // — most often a transient iOS "interrupted" AudioContext (#106), not a
   // corrupt clip. The sheet is a full panel, not a blank: the recording is
   // untouched, "Try again" resumes the context and re-decodes, and Back returns
-  // to the Segments list, where the row's Erase (which does not decode) works.
+  // to the Segments list, where the row's Clear (which does not decode) works.
   loadFailedTitle: "This recording could not be opened",
   loadFailedBody:
-    "Your recording is safe. Try again, or go back to erase it from the list.",
+    "Your recording is safe. Try again, or go back to clear it from the list.",
   loadRetry: "Try again",
   loadBack: "Go back",
   // Shown BENEATH the panel's two controls (both stay mounted) while a "Try
@@ -449,13 +493,16 @@ export const strings = {
   // the action is stop (D4), so the label says "Stop playing".
   playRecording: "Play recording",
   stopPlayback: "Stop playing",
-  // The record-menu "Edit" row — distinct from `editSegment(n)`, the Segments
+  // The record-menu "Edit" row and the toolbar toggle in record mode (scissors)
+  // — distinct from `editSegment(n)`, the Segments
   // list's per-row label.
   enterEdit: "Edit recording",
-  // The edit-menu row and the "Editing" pill's spoken action.
-  doneEditing: "Done editing",
-  // The pill's visible text — the mode marker for a sighted non-reader (D2).
-  modepillEditing: "Editing",
+  // The edit toggle's name while editing, when it wears ✕ and a tap leaves
+  // (#1252). Not "Done": that word keeps one meaning, mark finished.
+  leaveEdit: "Stop editing",
+  // The edit-mode marker inside the waveform's top right (D2, #1243): plain
+  // text, not a control, so it is spoken as it reads.
+  editingMarker: "Editing",
 
   // ── Waveform editing (B5) ────────────────────────────────────────────────
   cut: "Cut the selection",
@@ -501,8 +548,8 @@ export const strings = {
   nothingToRedo: "Nothing to redo.",
   // The recorder drawer's dialog name for a screen reader — never painted
   // there (#621, the rule #608 set for `menuTitle`): the drawer's own
-  // dismiss stays a ≡ regardless of which control opened it (the record-mode
-  // header's ≡, or the edit toolbar's ⋮ since #863), so the glyph is its
+  // dismiss is a ⋮ (#1225), matching both controls that open it (the
+  // record-mode header's and the edit toolbar's), so the glyph is its
   // only visible label. This string is shared with the per-row segment menu (`segment-row.tsx`),
   // which does not pass `hamburger` and still paints it as that menu's
   // visible heading — #589 owns that menu's affordances and has not
@@ -541,7 +588,7 @@ export const strings = {
   // recorder open with this Notice in place, not a named remedy.
   captureUnfinished: "Could not finish this recording.",
   // ── Disabled-row reasons (#135) ──────────────────────────────────────────
-  // Appended to a disabled ≡-menu row's accessible name so the grey carries its
+  // Appended to a disabled ⋮-menu row's accessible name so the grey carries its
   // cause. Derived from the row's own gate in `menu-row-state.ts`, never set by
   // hand. Short and literal.
   // Names both steps in the order the overlay allows — while this menu is open
@@ -559,10 +606,11 @@ export const strings = {
   // (George, round 2). If `closeRecorder` is ever renamed, these move with it.
   // This one names the controls by name ONLY and does not describe their
   // glyphs the way the body notices do (#620): it is spoken
-  // inside the ≡ menu, where the recorder header — and so "Close recorder" —
+  // inside the ⋮ menu, where the recorder header — and so "Close recorder" —
   // is `inert` and the one live control on screen is the menu's own dismiss,
-  // which since #621 wears the ≡ glyph (this menu opts into `hamburger`,
-  // `recorder.tsx`), not a back chevron. Describing the save control by its
+  // which since #621 wears a single glyph, ⋮ since #1225 (this menu opts into
+  // `hamburger` with `dismissIcon="more"`, `recorder-menu.tsx`), not a back
+  // chevron. Describing the save control by its
   // looks here would still point at the dismiss, the exact collision the
   // round-1 `back` badge had (`menu-row-state.ts`, `rowHint`'s docblock);
   // #648 round 1 (George P2) caught the words repeating it.
@@ -571,24 +619,25 @@ export const strings = {
   // opts into `hamburger`.
   blockedByTake:
     'Use "Close menu", then "Close recorder", to save the recording.',
-  // The `requesting` race: Record tapped, ≡ opened before `getUserMedia`
+  // The `requesting` race: Record tapped, ⋮ opened before `getUserMedia`
   // resolves. No audio exists yet, so this must NOT promise a save — and must
   // not send anyone to a control that would abandon the in-flight start.
   micStarting: "The microphone is still starting.",
   nothingRecorded: "Nothing recorded yet.",
-  nothingStored: "Nothing saved to erase.",
+  nothingStored: "Nothing saved to clear.",
 
   // ── Live waveform (#120) ─────────────────────────────────────────────────
   liveWaveform: "Live recording waveform",
 
-  // ── VU meter + Erase Segment (B6) ────────────────────────────────────────
+  // ── VU meter + Clear (erase) Segment (B6) ────────────────────────────────
   vuMeterLabel: "Recording level",
   vuMeterUnavailable: "Level meter unavailable on this device",
-  eraseSegment: "Erase recording",
-  // The record bar's bin (#592): the same erase and the same confirm as the
+  // Clear: removes the recording, keeps the segment (#1119, DRI 2026-09-28).
+  eraseSegment: "Reset segment and start over",
+  // The record bar's Clear (#592): the same clear and the same confirm as the
   // menu row above, named for what the translator is doing — starting the
   // segment over — because the sheet stays open, ready for the next take.
-  rerecord: "Erase and record again",
+  rerecord: "Clear and record again",
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
   // Press-and-hold reorder on the Segments list (#953, O4 only), spoken by
   // the list's live region: the row that was lifted, where it landed, or that
@@ -607,21 +656,21 @@ export const strings = {
     `${strings.chapterName(from)} is now chapter ${to}.`,
   chapterReorderStayed: (n: number): string =>
     `${strings.chapterName(n)} stayed where it was.`,
-  eraseConfirmTitle: "Erase this recording?",
-  eraseConfirm: "Erase",
-  // The safe action of the shared confirm dialog (`erase-confirm.tsx`). One
-  // string for every flow it now serves — segment Erase, book Delete and
-  // segment Delete (#590) — because it is the same control on the same
-  // surface saying the same word.
+  eraseConfirmTitle: "Reset segment and start over",
+  eraseConfirm: "Clear",
+  // The safe action of the confirm dialog (`erase-confirm.tsx`). One string
+  // for every flow it now serves — segment Clear, book Delete and segment
+  // Delete (#590) — because it is the same control on the same surface
+  // saying the same word.
   eraseCancel: "Cancel",
-  eraseFailed: "Could not erase the recording. Try again.",
+  eraseFailed: "Could not clear the recording. Try again.",
   // The confirm's "Play what will be lost" row (#979 remainder, O4 "13"
   // only): the workbench's own copy, word for word, for the Play/Pause
   // transport beside the preview waveform.
   eraseConfirmPreviewPlay: "Play what will be lost",
   eraseConfirmPreviewPause: "Pause",
   // The clipboard's bin under the line (#862): throws away a cut that was
-  // never pasted, behind the same confirm as the whole-take erase. "Cut
+  // never pasted, behind the same confirm as the whole-take Clear. "Cut
   // audio", not "clipboard": the translator cut a piece of their recording,
   // and that piece is what is lost.
   discardClip: "Throw away the cut audio",
@@ -630,7 +679,7 @@ export const strings = {
 
   // ── Delete a book (#337) ─────────────────────────────────────────────────
   // The book ⋮-menu row, and the two-tap confirm behind it — the same dialog
-  // the segment Erase uses, not a second one.
+  // the segment Clear uses, not a second one.
   deleteBook: "Delete book",
   // Names the book, because this dialog's title is also its accessible name and
   // it is the only thing that says WHICH shelf row is about to go. "everything
@@ -651,23 +700,32 @@ export const strings = {
   deleteBookFailed: "Could not delete this book. Try again.",
 
   // ── Delete a segment (#590) ────────────────────────────────────────────────
-  // The recorder ≡-menu row/tile that deletes the segment itself, not only its
-  // audio (reverses G4, `docs/design/pivot-plan.md`'s Gate 1, for this one
-  // entry) — behind the same confirm dialog Erase and book Delete share, not a
-  // second one. No O4 workbench wording exists for THIS location: D20
-  // (`docs/design/o4-design-system.md`) draws "Remove this segment" for the
-  // SEGMENT-ROW menu (#997, a narrower, empty-only action deferred by the DRI
-  // past the training build), not the recorder. This reuses the erase/delete
-  // strings' own pattern instead — the exact wording is a residual for the DRI
-  // to confirm, not a workbench transcription.
+  // The chapter view's segment-row menu tile/row that deletes the segment
+  // itself, not only its audio (reverses G4, `docs/design/pivot-plan.md`'s
+  // Gate 1, for this one entry) — behind the same confirm component Clear and
+  // book Delete use, mounted a second time on the chapter view
+  // (`segments-screen.tsx` keeps a separate `EraseConfirm` for it).
+  //
+  // #590/#1080 first shipped this in the RECORDER's ⋮ menu; #1104 (the
+  // requirements owner's 2026-09-26 decision) moved it here instead: "the
+  // menu inside the segment editor (recorder) shows Erase only. Delete
+  // (removing the whole segment) belongs to the chapter view." The strings
+  // below are unchanged by that move — only their call site is.
+  //
+  // No O4 workbench wording exists for this exact tile: D20
+  // (`docs/design/o4-design-system.md`) draws "Remove this segment" for
+  // #997's narrower, empty-only action (deferred by the DRI past the
+  // training build), not this one. This reuses the erase/delete strings'
+  // own pattern instead — the exact wording is a residual for the DRI to
+  // confirm, not a workbench transcription.
   deleteSegment: "Delete segment",
   // Caption is the shared `tileDelete` above, not a second key — same word,
   // same tone (destructive), just a different tile.
   deleteSegmentConfirmTitle: (ordinal: number): string =>
     `Delete segment ${ordinal}?`,
   deleteSegmentConfirm: "Delete",
-  // `eraseCancel`/`eraseFailed`'s own comments already say "erase" and "book
-  // Delete" share one dialog and one word; this is the third flow on both.
+  // `eraseCancel`'s own comment already says Clear and book Delete share one
+  // dialog and one word; this is the third flow on it.
   deleteSegmentFailed: "Could not delete this segment. Try again.",
 
   // ── Share (B7) ───────────────────────────────────────────────────────────
@@ -725,9 +783,19 @@ export const strings = {
     ),
   // The book name is free text since #264, so sanitise it into the filename —
   // a `/` in "Mark/Luke" would otherwise split a zip entry into a folder (G3).
-  // The chapter is an ordinal, always safe.
-  shareFilename: (book: string, chapter: number): string =>
-    `${filenameSafe(book)} - Chapter ${chapter}.mp3`,
+  // The chapter's own name (#264) is free text too and is sanitised the same
+  // way (#1218). No name, or one with nothing left once sanitised, falls back
+  // to the default through `chapterName`, the one place that spells it.
+  shareFilename: (
+    book: string,
+    chapter: number,
+    chapterName: string | null = null
+  ): string => {
+    const label = filenameSafe(chapterName ?? "");
+    return `${filenameSafe(book)} - ${
+      label === "" ? strings.chapterName(chapter) : label
+    }.mp3`;
+  },
 
   // Share Book — the book-level ⋮ menu and its zip-of-chapter-MP3s share. Names
   // each book so AT users can tell one shelf row's menu from the next.
@@ -854,10 +922,9 @@ export const strings = {
   // path the previously stored recording is untouched on disk and a line that
   // said "recording" would misname what a discard destroys.
   //
-  // The headline, the safety line and the attempt count are deliberately NOT
-  // here: they are `components/recovery-copy.ts`, a pure module with tests of
-  // its own, and folding a second, differently-shaped table into this one is
-  // not what #169 asks for.
+  // The headline, the safety line and the attempt count are here too (#169),
+  // below. `components/recovery-copy.ts` still decides WHICH of them a failure
+  // gets, and that choosing is what its tests are about; only the words moved.
   saveFailedDialog: (editOnly: boolean): string =>
     editOnly ? "Your changes are not saved" : "This recording is not saved",
   // In place of the headline while a retry is in flight.
@@ -894,6 +961,39 @@ export const strings = {
         : strings.takeRecoverDiscard,
   saveFailedDiscardHint: (editOnly: boolean): string =>
     editOnly ? "Tap again to discard them." : strings.takeRecoverDiscardHint,
+  // The headline for each failure kind but `quota`, which reads `noRoom`.
+  // `recoveryTitle` in `components/recovery-copy.ts` says why each is worded
+  // the way it is; a `downgrade` names what is needed, not what went wrong.
+  saveFailedNeedsUpdate: (editOnly: boolean): string =>
+    editOnly
+      ? "Your changes need the new version of the app."
+      : "This recording needs the new version of the app.",
+  saveFailedBookGone: (editOnly: boolean): string =>
+    editOnly
+      ? "This book is gone. Your changes cannot be saved."
+      : "This book is gone. This recording cannot be saved.",
+  saveFailedUnknown: (editOnly: boolean): string =>
+    editOnly
+      ? "Your changes could not be saved."
+      : "This recording could not be saved.",
+  // The safety line under Retry. `saveFailedOnlyCopy` is the one every failure
+  // gets unless staying in the app cannot help; `recoverySafetyLine` holds the
+  // two exceptions' reasons (#38, #441).
+  saveFailedUpdateLoses: (editOnly: boolean): string =>
+    editOnly
+      ? "This copy of the app cannot save them. Restarting will lose them, but is the only way to get the new version."
+      : "This copy of the app cannot save it. Restarting will lose it, but is the only way to get the new version.",
+  saveFailedBookDeleted: (editOnly: boolean): string =>
+    editOnly
+      ? "This book was deleted in another copy of the app. Discard is the only exit."
+      : "This book was deleted in another copy of the app. Delete this recording to leave.",
+  saveFailedOnlyCopy: (editOnly: boolean): string =>
+    editOnly
+      ? "This screen has the only copy of your changes. Don't close the app."
+      : "This screen has the only copy of your unsaved work. Don't close the app.",
+  // The faint count beside the safety line. `recoveryAttempts` decides when it
+  // shows.
+  saveFailedAttempts: (attempts: number): string => `Attempts: ${attempts}`,
 
   // ── Root error boundary (#167) ───────────────────────────────────────────
   // The whole text layer of the crash screen. Says that something failed and
@@ -1071,6 +1171,12 @@ export const strings = {
     "The source code for this app is public. This build's source:",
   // aria-label for the source link; the visible text is the repository path.
   aboutVisitAppSource: "Open this build's source on GitHub",
+  // The privacy policy, linked in the app as well as in the store listings
+  // (#1210; Apple guideline 5.1.1(i)). The visible text names the document;
+  // the aria-label says what the link does.
+  aboutPrivacy: "How this app handles your data:",
+  aboutPrivacyLink: "Privacy policy",
+  aboutVisitPrivacy: "Open the privacy policy",
   aboutThirdParty: "Open-source components",
   aboutTexts: "Licence texts",
   aboutContent: "Bundled content",
@@ -1132,7 +1238,7 @@ export const strings = {
   shareFailureLogRestart:
     "Cannot use this copy any more. Restart the app to use the new version.",
   clearFailureLog: "Clear problem report",
-  // Behind the bin: the same two-tap confirm the segment Erase and the book
+  // Behind the bin: the same two-tap confirm the segment Clear and the book
   // Delete use, not a second dialog (George R2 P3-3). Clearing is the one
   // irreversible write in this panel — the report is the only copy of what went
   // wrong that ever leaves the phone, and the bin sits directly under Share,
@@ -1174,7 +1280,7 @@ export const strings = {
   // (`strings.stop`, "Stop recording"), the same rule `stopToEdit` follows.
   // The wording itself is a coordinator assumption pending the requirements
   // owner's sign-off — see the #878 PR body.
-  stopToErase: "Stop recording to erase.",
+  stopToErase: "Stop recording to clear.",
 
   // ── Phone check (#1009) ──────────────────────────────────────────────────
   // A hidden tester screen, reached by five taps on the build stamp or by

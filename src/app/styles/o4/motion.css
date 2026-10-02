@@ -35,6 +35,7 @@
 @layer components {
   /* --- guidePulse: the guide ring on the next action -------------------- */
   [data-design="o4"] .control--record.is-guided,
+  [data-design="o4"] .control--mic.is-guided,
   [data-design="o4"] .record-guide.is-guided {
     animation: guidePulse var(--p-ambient-guide-pulse, 1.8s) ease-in-out
       infinite;
@@ -42,6 +43,7 @@
   [data-design="o4"] [inert] .is-guided,
   [data-design="o4"] .is-guided[inert],
   [data-design="o4"] .control--record.is-guided:focus-visible,
+  [data-design="o4"] .control--mic.is-guided:focus-visible,
   [data-design="o4"] .record-guide.is-guided:has(> .control:focus-visible) {
     animation: none;
   }
@@ -112,6 +114,7 @@
   /* --- the off switch --------------------------------------------------- */
   @media (prefers-reduced-motion: reduce) {
     [data-design="o4"] .control--record.is-guided,
+    [data-design="o4"] .control--mic.is-guided,
     [data-design="o4"] .record-guide.is-guided,
     [data-design="o4"] .recorder-stage[data-o4-look="recording"]::after,
     [data-design="o4"] .recorder-status .rec-dot,

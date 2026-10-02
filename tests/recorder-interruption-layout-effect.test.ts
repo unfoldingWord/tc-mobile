@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { matchingBraceClose } from "./support";
+import { matchingBraceClose, stripComments } from "./support";
 
 /**
  * The #59 interruption commit runs in a LAYOUT effect, not a passive one
@@ -47,12 +47,12 @@ import { matchingBraceClose } from "./support";
  * above, not re-typed.
  */
 describe("the #59 interruption commit is a layout effect (George r1 pass B P2)", () => {
-  const source = readFileSync(
-    new URL("../src/components/recorder.tsx", import.meta.url),
-    "utf8"
-  )
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/.*$/gm, "");
+  const source = stripComments(
+    readFileSync(
+      new URL("../src/components/recorder.tsx", import.meta.url),
+      "utf8"
+    )
+  );
 
   /** The effect's own guard — unique in the file, and what identifies it. */
   const GUARD = 'state !== "processing" || closing.current';

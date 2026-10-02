@@ -99,8 +99,8 @@
     --c-recorder-paste-row: calc(var(--c-control-md) + var(--p-space-2));
 
     --c-row-radius: var(--p-radius-lg);
-    /* The disabled-row hint badge (#135). The badge's geometry is named once,
-       here, so `.control-hint` below and anything that has to line up with it
+    /* The hint badge's geometry (#135; only the Books ≡ failure mark wears one
+       since #1239). It is named once, here, so `.control-hint` below and anything that has to line up with it
        read one source rather than repeating the numbers (Frank, round 1). */
     --c-hint-size: 18px;
     --c-hint-radius: var(--p-radius-full);
@@ -144,6 +144,20 @@
     flex-direction: column;
     gap: var(--c-gap-items);
     padding: var(--p-space-4) var(--p-space-3);
+    /* The whole shell is control chrome (#1276): a double-tap on a gap, an
+       empty row's neighbourhood or the stamp must not start the system text
+       selection, and the per-root opt-outs (#559, #563) left those gaps bare.
+       Real text inputs opt back in by the rule below. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* The opt-back-in for text the user genuinely edits or copies from. */
+  .app-shell :is(input, textarea, [contenteditable]) {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
   }
 
   /* Build identity, pinned to the bottom of the shell (flex `margin-top:auto`)
@@ -156,6 +170,11 @@
     color: var(--s-ink-faint);
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.02em;
+    /* Explicit, not only inherited from .app-shell (#1276): the stamp is the
+       line the selection handles ran down to. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
 
   /* --- controls --------------------------------------------------------- */
@@ -223,9 +242,11 @@
      live recording moment, and nothing else" (1-primitives). Desaturate so it
      reads grey-inert instead. */
   .control--record:disabled,
+  .control--mic:disabled,
   .control--play:disabled,
   .control--primary:disabled,
   .control--record[aria-disabled="true"],
+  .control--mic[aria-disabled="true"],
   .control--play[aria-disabled="true"],
   .control--primary[aria-disabled="true"] {
     filter: saturate(0.12);
@@ -259,6 +280,16 @@
     color: var(--s-live-ink);
     width: var(--c-control-lg);
     height: var(--c-control-lg);
+  }
+  /* The unrecorded row's control (#1217): a gray disc, a red outline and a red
+     microphone, so it says "record here" without wearing the solid red of the
+     recorder's own Record button, which is the one thing that starts a take.
+     Colour comes through layer 2 only. */
+  .control--mic {
+    background: var(--s-well);
+    color: var(--s-live-text);
+    border: 2px solid var(--s-live);
+    box-sizing: border-box;
   }
   .control--play {
     background: var(--s-voice);
@@ -321,6 +352,7 @@
     border-radius: var(--p-radius-full);
   }
   .control--record.is-guided,
+  .control--mic.is-guided,
   .record-guide.is-guided {
     box-shadow: 0 0 0 var(--c-guide-ring) var(--s-guide);
   }
@@ -339,11 +371,11 @@
   .is-guided[inert] {
     box-shadow: none;
   }
-  /* The disabled-row reason badge (#135). The wrapper is a sibling shell around
-     the button so the badge escapes the inert control's opacity — the mark must
-     read at full ink while the control it explains is dimmed. `alert`, a state
-     mark: it says "blocked, look here" and names no control, which is all a glyph
-     can honestly do inside an overlay that inerts the sheet behind it. */
+  /* The hint wrapper. A `Control` given a `hint` prop sits in this shell so its
+     root never switches element as the hint comes and goes. `.control-hint` is a
+     sibling badge that escapes the inert control's opacity, so the mark reads at
+     full ink; since #1239 only the Books ≡ failure mark paints one — no menu tile
+     or row does. */
   .control-hinted {
     position: relative;
     display: inline-grid;
@@ -448,6 +480,13 @@
     text-align: left;
     cursor: pointer;
     border-radius: var(--c-breadcrumb-radius);
+    /* Extends #559's opt-out to the Segments header (#563): a control-only
+       surface in the same sense the recorder sheet, the menu drawer and the
+       erase confirm already are, and the exact long-pressable element the
+       reported screenshot selected text in. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   .breadcrumb > span {
     min-width: 0;
@@ -473,6 +512,16 @@
     padding: var(--p-space-3);
     border: 1px solid transparent;
     transition: background var(--p-dur-base) var(--p-ease);
+    /* Extends #559's opt-out to the Segments rows (#563), the control-only
+       surface #556 itself named as a reasonable second target. Shared by
+       both looks (segment-row.tsx always carries "row"), and inheritance
+       reaches the ordinal, the title and the scrub track the same way it
+       reaches the recorder sheet's chrome — no rename field or other text
+       input lives inside a row, so there is no opt-back-in to pair with
+       .name-input's. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
 
   /* --- type roles -------------------------------------------------------- */
@@ -659,6 +708,16 @@
     border-color: var(--s-focus);
   }
 
+  /* User-typed text (#1267). An element showing a name the facilitator typed
+     carries dir="auto", so its direction follows the text and not the app
+     locale. Its alignment has to follow too: the row and header buttons that
+     hold these names say `text-align: left`, a physical value the name would
+     inherit, which left a right-to-left name flush left. `start` is the edge
+     the text's own direction begins at. */
+  [dir="auto"] {
+    text-align: start;
+  }
+
   /* --- the erase confirm dialog (B6) ------------------------------------- */
   /* A centred sheet, not the side drawer: it sits above the recorder sheet
      (z 60) and the menu (z 80) because it can be raised from either. */
@@ -714,6 +773,13 @@
     justify-content: center;
     padding: var(--p-space-5);
     z-index: 90;
+    /* Extends #559's opt-out to the ShareProgress portal (#563): it portals
+       to document.body the same way .menu-panel and .confirm-panel do, and
+       its content — a glyph and one line of outcome text — is presentational
+       only, with no control and no text input to opt back in. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   .share-progress {
     width: min(320px, 84vw);
@@ -803,7 +869,7 @@
     gap: var(--c-gap-items);
     /* `.recorder-scrim` is `position: fixed; inset: 0`, so it covers the whole
        viewport and does not inherit the body's `env(safe-area-inset-*)` padding.
-       Without re-adding the top inset here the header (Back, ≡) lands under the
+       Without re-adding the top inset here the header (Back, ⋮) lands under the
        status-bar clock and cannot be tapped; the bottom inset clears the home
        indicator. */
     padding: calc(var(--p-space-4) + env(safe-area-inset-top)) var(--p-space-3)
@@ -1044,6 +1110,25 @@
     left: var(--p-space-3);
     color: var(--s-ink);
   }
+  /* #1005 ("Warn at 15, seal at 20"): from 15:00 of a live take, the whole
+     cluster (the rec dot, the elapsed readout, and the remaining-minutes word
+     below) tints to the warn role — the same colour `.notice[data-tone="info"]
+     .notice-glyph` and `.vu-meter__fill[data-zone="yellow"]` already use as
+     ink/fill directly on this app's surfaces, not a new pairing. Higher
+     specificity than the plain `.recorder-status` rule above (an attribute
+     selector added), so it wins in the same `@layer components` regardless of
+     source order. */
+  .recorder-status[data-near-limit="true"] {
+    color: var(--s-warn);
+  }
+  /* The remaining-minutes word `TakeCapMarker` renders (`take-cap-marker.tsx`).
+     No colour of its own — it inherits the warn tint from the container
+     above, the same way the rec dot and the timer do. */
+  .recorder-take-warn {
+    font-size: var(--p-text-xs);
+    font-weight: var(--p-weight-strong);
+    font-variant-numeric: tabular-nums;
+  }
   .recorder-toolbar {
     gap: var(--c-gap-items);
     padding-bottom: var(--p-space-3);
@@ -1075,54 +1160,28 @@
     height: var(--c-control-lg);
   }
   .recorder-toolbar.edit {
-    grid-template-columns: repeat(5, minmax(0, 1fr)) var(--c-control-md);
+    grid-template-columns: repeat(4, minmax(0, 1fr)) var(--c-control-md);
     gap: var(--p-space-1);
     height: calc(var(--c-control-xl) + var(--p-space-3));
   }
 
-  /* The edit-mode marker + Done affordance (D2, #89), in the header-right slot.
-     `--s-voice` (amber) is the audio-edit accent the selection band and paste
-     marker already use, so the pill reads as "you are in the edit context". */
-  .modepill {
-    display: inline-flex;
-    align-items: center;
-    flex: none;
-    /* The 44px touch floor — this pill IS the Done control (D2), and the header
-       menu button it swaps with, plus the checkbox it replaced, both sat at
-       --c-control-md. A ~20px text pill next to a 44px Back that commits is too
-       easy to miss (George R3). */
-    min-height: var(--c-control-md);
-    padding: var(--p-space-1) var(--p-space-3);
-    border: none;
-    border-radius: var(--p-radius-full);
+  /* The edit-mode marker (D2, #89; moved here by #1243): plain "Editing" text
+     inside the stage's top right, mirroring `.recorder-status` in the top
+     left. Not a control — the toolbar's ✕ is the exit (#1252)
+     — so it has no touch box, and `pointer-events: none` lets a
+     touch on it reach the stage's pan. `--s-voice` (amber) is the audio-edit
+     accent the selection band and paste marker use; `--s-voice-text` is that
+     accent as INK for small text, the role #164 R-9 split off because the
+     light theme's fill value is too light to read as text. */
+  .recorder-editing {
+    position: absolute;
+    top: var(--p-space-3);
+    right: var(--p-space-3);
     font-size: var(--p-text-sm);
     font-weight: var(--p-weight-strong);
     letter-spacing: 0.01em;
-    cursor: pointer;
-    /* `--s-voice-text`, not `--s-voice`: this is 12px text on a wash of the
-       accent itself, and in the light theme the fill value is only 3.0:1
-       against that wash (#164 R-9). The BACKGROUND below stays `--s-voice`,
-       so the pill's colour identity is unchanged — only its ink darkens,
-       and only on light. */
     color: var(--s-voice-text);
-    background: color-mix(in srgb, var(--s-voice) 15%, transparent);
-    transition: filter var(--p-dur-base) var(--p-ease);
-  }
-  .modepill:hover {
-    filter: brightness(1.12);
-  }
-  .modepill:disabled {
-    cursor: default;
-    opacity: 0.4;
-  }
-  .modepill:focus-visible {
-    outline: var(--c-focus-ring);
-    outline-offset: var(--c-focus-offset);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .modepill {
-      transition: none;
-    }
+    pointer-events: none;
   }
 }
 
@@ -1244,7 +1303,8 @@
      the transport column reads uniform down the list. Scoped to `.row` on
      purpose — the recorder's own big red button and the erase-confirm button
      both keep `--c-control-lg`. */
-  .row .control--record {
+  .row .control--record,
+  .row .control--mic {
     width: var(--c-control-md);
     height: var(--c-control-md);
   }

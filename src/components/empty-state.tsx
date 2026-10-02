@@ -47,9 +47,11 @@ export function EmptyState({
   guided,
 }: EmptyStateProps) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-[14px] px-[24px] text-center">
+    <div className="flex h-full flex-col items-center justify-center gap-[var(--c-gap-items)] px-[24px] text-center">
       <p className="t-title text-ink">{headline}</p>
-      <p className="text-ink-muted max-w-[28ch] text-[13px]">{teach}</p>
+      <p className="text-ink-muted max-w-[28ch] text-[length:var(--p-text-md)]">
+        {teach}
+      </p>
       <Control
         icon={ctaIcon}
         label={ctaLabel}

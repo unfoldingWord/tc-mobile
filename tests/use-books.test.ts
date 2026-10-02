@@ -138,8 +138,8 @@ describe("dropBookCard", () => {
 });
 
 /**
- * `useBooks`'s Add-chapter and optimistic-patch paths, minus React (no
- * jsdom, no renderer — the same constraint `tests/use-erase-segment.test.ts`
+ * `useBooks`'s Add-chapter and optimistic-patch paths, minus React (this file
+ * does not mount the hook — the same scope `tests/use-erase-segment.test.ts`
  * documents). What is Node-testable here is three pure decisions the hook's
  * `addChapter`/`createBook`/load effect were missing:
  *
@@ -241,15 +241,13 @@ describe("patchNewChapter", () => {
     expect(next).toEqual(books);
   });
 
-  it("moves the patched book to the front of the shelf, matching the updatedAt bump the write already made (Frank R5 P2)", () => {
-    // `addChapterToBook` bumps the parent book's `updatedAt` in the same
-    // write, and `listBooks` sorts newest-first — `reload()` reconciles that
-    // order too, but only once its async read lands, so the patch itself
-    // still has to move the book immediately or the shelf flashes the wrong
-    // order for the length of that read (George R7 P3-3).
+  it("keeps the patched book at its index on the shelf (#1185)", () => {
+    // `listBooks` orders by `createdAt`, which adding a chapter does not
+    // change, so the patch must not move the card either.
     const books = [
       chapterCard(chapterBookId("b-1")),
       chapterCard(chapterBookId("b-2")),
+      chapterCard(chapterBookId("b-3")),
     ];
     const next = patchNewChapter(
       books,
@@ -258,10 +256,11 @@ describe("patchNewChapter", () => {
     );
 
     expect(next.map((c) => c.bookId)).toEqual([
-      chapterBookId("b-2"),
       chapterBookId("b-1"),
+      chapterBookId("b-2"),
+      chapterBookId("b-3"),
     ]);
-    expect(next[0]?.chapters).toEqual([
+    expect(next[1]?.chapters).toEqual([
       {
         chapterId: chapterId("ch-9"),
         number: 1,
@@ -271,16 +270,18 @@ describe("patchNewChapter", () => {
         recordedCount: 0,
       },
     ]);
-    // The untouched book keeps its own identity, just shifted in position.
-    expect(next[1]).toBe(books[0]);
+    // The untouched books keep their own identity and their slot.
+    expect(next[0]).toBe(books[0]);
+    expect(next[2]).toBe(books[2]);
   });
 });
 
 describe("patchRenamedBook", () => {
-  it("moves a genuinely renamed book to the front of the shelf", () => {
+  it("keeps a genuinely renamed book at its index on the shelf (#1185)", () => {
     const books = [
       chapterCard(chapterBookId("b-1")),
       chapterCard(chapterBookId("b-2")),
+      chapterCard(chapterBookId("b-3")),
     ];
     const next = patchRenamedBook(
       books,
@@ -288,18 +289,19 @@ describe("patchRenamedBook", () => {
     );
 
     expect(next.map((c) => c.bookId)).toEqual([
-      chapterBookId("b-2"),
       chapterBookId("b-1"),
+      chapterBookId("b-2"),
+      chapterBookId("b-3"),
     ]);
-    expect(next[0]?.name).toBe("Luke");
-    // The untouched book keeps its own identity, just shifted in position.
-    expect(next[1]).toBe(books[0]);
+    expect(next[1]?.name).toBe("Luke");
+    // The untouched books keep their own identity and their slot.
+    expect(next[0]).toBe(books[0]);
+    expect(next[2]).toBe(books[2]);
   });
 
-  it("does not reorder an idempotent rename (name unchanged, no write, no recency bump)", () => {
+  it("returns the shelf itself for an idempotent rename (name unchanged, no write)", () => {
     // Mirrors `renameBookInStore`'s own contract: a blank rename keeps the
-    // current name and does not bump `updatedAt` or write at all, so the
-    // shelf order must not move either — there is no recency to reflect.
+    // current name and writes nothing, so there is nothing to patch.
     const books = [
       chapterCard(chapterBookId("b-1")),
       chapterCard(chapterBookId("b-2")),

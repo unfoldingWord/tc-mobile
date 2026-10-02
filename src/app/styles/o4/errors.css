@@ -63,4 +63,16 @@
     background: var(--s-guide);
     color: var(--s-tile-ink);
   }
+  /* The terminal (downgrade) Restart, armed (#1088 S9). Was `--s-guide`'s
+     blue fill with a red TEXT utility layered on top — the retry glyph read
+     red on blue. Swaps the whole fill to the live role instead, the same
+     solid-red-circle pairing `.control--record` uses for "this is live"
+     (3-components.css): the glyph stays legible and the colour still says
+     "irreversible" the way every other armed control in this app does.
+     `save-failed-armed.ts` picks this class; the design record has no armed
+     variant for the wide guide button at all — see that file's own header. */
+  [data-design="o4"] .o4-err-wide--armed {
+    background: var(--s-live);
+    color: var(--s-live-ink);
+  }
 }

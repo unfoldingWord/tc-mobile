@@ -1,13 +1,14 @@
 import { vi } from "vitest";
 
-import { encodeMp3 } from "@/lib/audio/mp3";
+import { createMp3StreamEncoder, encodeMp3 } from "@/lib/audio/mp3";
 import {
   MP3_GRANULE,
   MP3_TOTAL_DELAY,
   mp3GranuleCount,
 } from "@/lib/audio/mp3-align";
 import { closeDb, getDb } from "@/lib/storage/db";
-import type { AudioCodec, Clip } from "@/types/audio";
+import type { UseEraseSegment } from "@/hooks/use-erase-segment";
+import type { AudioCodec, Clip, Mp3Stream } from "@/types/audio";
 
 /**
  * Shared test plumbing for the storage and export suites.
@@ -30,6 +31,15 @@ export function testCodec(
   return {
     encodeMp3: vi.fn(async (samples: Int16Array) => encodeMp3(samples)),
     decodeMp3: vi.fn(decodeMp3),
+    // The same synchronous encoder, fed in pieces (#1003 part b).
+    openMp3Stream: vi.fn(async (): Promise<Mp3Stream> => {
+      const stream = createMp3StreamEncoder();
+      return {
+        write: async (samples) => stream.write(samples),
+        finish: async () => stream.finish(),
+        cancel: () => {},
+      };
+    }),
   };
 }
 
@@ -39,6 +49,28 @@ export function samplesOf(clip: Clip | undefined): Int16Array {
   if (clip.encoding !== "pcm")
     throw new Error(`expected a PCM clip, got ${clip.encoding}`);
   return clip.samples;
+}
+
+/**
+ * A resting `UseEraseSegment` — never erasing, for a suite that must mount a
+ * screen or menu taking `erase` as a prop but never exercises erase itself.
+ * Since #160 (L-12) lifted the one hook instance up to `App`, both entry
+ * points take `erase` as a real prop, not a module import — so a `vi.mock`
+ * of `@/hooks/use-erase-segment` intercepts nothing there and silently tests
+ * the wrong thing (the #631 hazard). This stays a real value a caller passes
+ * in, and is annotated `UseEraseSegment` so a shape change to the hook's
+ * return fails every call site at `tsc`, not silently (#856 item 3).
+ *
+ * A fresh object per call, not a shared singleton: each suite still gets its
+ * own `vi.fn()` identity, matching the one-per-module-scope shape these sites
+ * had before extraction, and no suite can observe another's mock calls.
+ */
+export function restingErase(): UseEraseSegment {
+  return {
+    erase: vi.fn(async () => "ok" as const),
+    erasing: false,
+    isErasing: () => false,
+  };
 }
 
 /**
@@ -107,12 +139,74 @@ export function blankComments(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, blank).replace(/\/\/.*$/gm, blank);
 }
 
+/**
+ * `blankComments` for the Gradle (Groovy) and Swift files the native-licence
+ * pins read (#822): `//` and `/* *\/` comments are overwritten with spaces,
+ * their newlines kept, so a line-anchored pattern still sees every line start.
+ * Unlike `stripComments` and `blankComments`, it steps over `"…"` and `'…'`
+ * literals, so the `//` in a `"https://…"` URL stays code.
+ *
+ * It throws instead of guessing on the forms it does not model: a
+ * triple-quoted or `#"` raw literal, a literal that runs past its line, a
+ * block comment that opens another (Swift nests them, Groovy does not), and an
+ * unterminated block comment. A source that grows one fails its suite loudly.
+ */
+export function blankGradleSwiftComments(source: string): string {
+  const blank = (comment: string) => comment.replace(/[^\n]/g, " ");
+  let out = "";
+  let i = 0;
+  while (i < source.length) {
+    const c = source[i]!;
+    const next = source[i + 1];
+    if (c === '"' || c === "'") {
+      if (source.startsWith(c.repeat(3), i))
+        throw new Error(`triple-quoted literal at offset ${i}`);
+      let j = i + 1;
+      while (j < source.length && source[j] !== c) {
+        if (source[j] === "\n")
+          throw new Error(`literal at offset ${i} runs past its line`);
+        j += source[j] === "\\" ? 2 : 1;
+      }
+      if (j >= source.length)
+        throw new Error(`unterminated literal at offset ${i}`);
+      out += source.slice(i, j + 1);
+      i = j + 1;
+    } else if (c === "#" && next === '"') {
+      throw new Error(`raw literal at offset ${i}`);
+    } else if (c === "/" && next === "/") {
+      const newline = source.indexOf("\n", i);
+      const end = newline === -1 ? source.length : newline;
+      out += blank(source.slice(i, end));
+      i = end;
+    } else if (c === "/" && next === "*") {
+      const close = source.indexOf("*/", i + 2);
+      if (close === -1)
+        throw new Error(`unterminated block comment at offset ${i}`);
+      const comment = source.slice(i, close + 2);
+      if (comment.indexOf("/*", 2) !== -1)
+        throw new Error(`nested block comment at offset ${i}`);
+      out += blank(comment);
+      i = close + 2;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
+
 /** Strips YAML `#` comments: a `#` at the start of a line or after a space or
  *  tab, to the end of that line, as YAML itself reads one (#822). Not
  *  quote-aware, so a ` #` inside a quoted string or a `run:` script also cuts
  *  the rest of that line. Callers check that no line they assert on holds one. */
 export function stripYamlComments(yaml: string): string {
   return yaml.replace(/(^|[ \t])#.*$/gm, "$1");
+}
+
+/** Strips HTML `<!-- ... -->` comments, so a commented-out element cannot be
+ *  the first match a source pin reads from an `.html` file (#822). */
+export function stripHtmlComments(html: string): string {
+  return html.replace(/<!--[\s\S]*?-->/g, "");
 }
 
 /** Brace-counts from `openIndex` (the index of an opening `{`) to find its

@@ -53,16 +53,58 @@
     margin-top: calc(8px + env(safe-area-inset-top));
   }
 
-  /* The handle, 56 × 5. Drawn, not a control: dismissal stays with Close, the
-     scrim, Escape and Back, exactly as before. */
-  [data-design="o4"] .menu-panel:has(.name-edit)::before {
-    content: "";
+  /* THE GRIP, 56 × 5, and drag down to close (#1268, the requirements
+     owner: "it should work as drag down to close"). The grip is
+     `menu.tsx`'s `.menu-grip`, a real element so a finger can start a drag
+     on it. It is hidden by default and drawn on every bottom sheet: the name
+     sheets here, and the tile sheets and the book delete ask in
+     o4/menus.css. Anywhere else (the side drawer About uses) it stays
+     hidden, and `menu.tsx` starts no drag while it is. Not a control: it is
+     aria-hidden, and the ✕ in the header is the accessible close.
+
+     The element spans the sheet's width with 10px above and below the bar,
+     cancelled by the negative margin, so the target is 25px tall while the
+     layout keeps the bar's 5px. `touch-action: none` on it and on the header
+     row, where a drag also starts, stops the browser taking the finger for a
+     pan and cancelling the drag; the body, which scrolls, keeps its own. */
+  [data-design="o4"] .menu-grip {
+    display: none;
     flex: none;
-    align-self: center;
+    align-self: stretch;
+    justify-content: center;
+    padding: 10px 0;
+    margin: -10px 0;
+    touch-action: none;
+  }
+  [data-design="o4"] .menu-grip::before {
+    content: "";
     width: 56px;
     height: 5px;
     border-radius: 3px; /* #939 token */
     background: var(--s-edge);
+  }
+  [data-design="o4"] .menu-panel:has(.name-edit) .menu-grip {
+    display: flex;
+  }
+  [data-design="o4"] .menu-panel:has(.name-edit) .menu-head {
+    touch-action: none;
+  }
+
+  /* While dragged the sheet follows the finger (`--sheet-drag-y`, set by
+     `menu.tsx`, which is also the only writer of `data-sheet-drag`); a
+     release that does not close springs it back. The spring is the only
+     motion, and it is off under reduced motion: the sheet goes straight
+     home. */
+  [data-design="o4"] [data-sheet-drag] {
+    transform: translateY(var(--sheet-drag-y, 0px));
+  }
+  [data-design="o4"] [data-sheet-drag="settling"] {
+    transition: transform 160ms ease;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-design="o4"] [data-sheet-drag="settling"] {
+      transition: none;
+    }
   }
 
   /* The sheet title, 20/700. */

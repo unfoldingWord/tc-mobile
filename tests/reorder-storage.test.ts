@@ -156,16 +156,16 @@ describe("moveChapter (#953)", () => {
     expect(moved?.number).toBe(1);
   });
 
-  it("does not bump the book's updatedAt, so the shelf order holds", async () => {
-    // A strictly increasing clock, so every write that DOES bump gets a
-    // distinct `updatedAt` and the shelf order is not left to a tie.
+  it("does not bump the book's updatedAt, and the shelf order holds", async () => {
+    // A strictly increasing clock, so every write gets a distinct timestamp
+    // and the shelf order is not left to a tie.
     let clock = 1_000;
     vi.spyOn(Date, "now").mockImplementation(() => (clock += 10));
     const first = await bookOf(3, "first");
     const second = await bookOf(1, "second");
     const before = await getBook(first.bookId);
     const shelfBefore = (await listBooks()).map((b) => b.id);
-    // `second` is newest, so `first` is NOT at the front; a bump would move it.
+    // `second` is newest, so `first` is NOT at the front.
     expect(shelfBefore[0]).toBe(second.bookId);
 
     await moveChapter(first.chapterIds[2]!, 0);

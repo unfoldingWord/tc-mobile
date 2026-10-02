@@ -69,7 +69,9 @@ vi.mock("@/hooks/use-book-share", () => ({
   }),
 }));
 type CoverResult =
-  { ok: true; book: unknown } | "busy" | { failed: "saveFailed" | "noRoom" };
+  | { ok: true; book: unknown }
+  | "queued"
+  | { failed: "saveFailed" | "noRoom"; committed?: true };
 const cover = vi.hoisted(() => ({
   calls: [] as [BookId, CoverColourKey | null][],
   result: null as unknown as () => Promise<CoverResult>,
@@ -286,6 +288,19 @@ describe("O4: the Cover colour tile opens #964's picker (#937 D7)", () => {
     expect(document.activeElement).toBe(button(strings.coverColourLabel));
   });
 
+  // Frank round 2 P2: an earlier queued write committed before the last one
+  // failed, so the stored colour changed — the shelf must re-read it.
+  it("reloads the shelf on a failure that still committed an earlier write, and says so", async () => {
+    cover.result = () =>
+      Promise.resolve({ failed: "saveFailed", committed: true });
+    await mount();
+    await openFrom(strings.bookMenuOpen("Mark"));
+    await click(strings.coverColourLabel);
+    await act(async () => swatch(strings.coverColourForest).click());
+    expect(reloads).toBe(1);
+    expect(bookSheet()!.textContent).toContain(strings.saveFailed);
+  });
+
   it("stays on the picker and says so when the write fails", async () => {
     cover.result = () => Promise.resolve({ failed: "saveFailed" });
     await mount();
@@ -297,6 +312,27 @@ describe("O4: the Cover colour tile opens #964's picker (#937 D7)", () => {
     const sheet = bookSheet()!;
     expect(sheet.querySelector(".cover-swatch-row")).not.toBeNull();
     expect(sheet.textContent).toContain(strings.saveFailed);
+  });
+
+  // #1046 item 4 (George Low, #1038; DRI 2026-09-28: "Last tap wins"): a
+  // second swatch tapped while a write is already in flight is QUEUED, not
+  // refused — the hook coalesces it and resolves the outcome through the
+  // ORIGINAL caller's promise once the whole chain settles. This screen's
+  // reaction to a `"queued"` result (the mock stands in for that) — no
+  // reload, no error, stay on the picker — was previously unpinned by any
+  // test in this file; `tests/use-book-cover-colour-concurrency.test.ts`
+  // covers the hook's own queue, this covers the call site's reaction.
+  it("silently ignores a queued result: no reload, no error, stays on the picker", async () => {
+    cover.result = () => Promise.resolve("queued");
+    await mount();
+    await openFrom(strings.bookMenuOpen("Mark"));
+    await click(strings.coverColourLabel);
+    await act(async () => swatch(strings.coverColourForest).click());
+    expect(cover.calls).toEqual([[mark, "forest"]]);
+    expect(reloads).toBe(0);
+    const sheet = bookSheet()!;
+    expect(sheet.querySelector(".cover-swatch-row")).not.toBeNull();
+    expect(sheet.textContent).not.toContain(strings.saveFailed);
   });
 
   it("closing the sheet from the picker ends it: the next open shows the tiles", async () => {
@@ -359,6 +395,30 @@ describe("O4: the app ≡ menu on tiles (the workbench's G1)", () => {
     ).toBeTruthy();
     expect(document.activeElement).toBe(report);
   });
+});
+
+describe("the app ≡ menu holds no way back to the old look (#1244)", () => {
+  // #1244 removed the design switch (#938's pencil, "New look (O4)") from
+  // Books ≡, so the old look cannot be reached from the app. That switch was
+  // the only pressable control in this menu — the theme control names its
+  // destination instead of carrying `aria-pressed` — so a pressed state or a
+  // "new look" name anywhere in the menu is the switch coming back. Checked
+  // in both looks: a device that saved the old look before #1244 still
+  // renders it (the DRI kept `readStoredDesign` as it is), and must not find
+  // the switch there either.
+  for (const look of ["o4", "current"] as const) {
+    it(`draws no design switch in the ${look} look`, async () => {
+      await mount(look);
+      await openFrom(strings.menuOpen);
+      const menu = appMenu();
+      expect(menu).not.toBeNull();
+      const all = [...menu!.querySelectorAll<HTMLButtonElement>("button")];
+      expect(all.length).toBeGreaterThan(0);
+      expect(menu!.querySelectorAll("[aria-pressed]")).toHaveLength(0);
+      for (const b of all)
+        expect(b.getAttribute("aria-label") ?? "").not.toMatch(/new look/i);
+    });
+  }
 });
 
 describe("switch off: both menus are the current rows", () => {

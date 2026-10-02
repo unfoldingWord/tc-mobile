@@ -10,27 +10,25 @@ import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
 
 import { one, render as renderStatic } from "./render";
+import { restingErase } from "./support";
 
 /**
  * The erase surface `App` now owns and passes down (#160, L-12). Resting: this
  * suite never erases, and a stub that answers "no erase in flight" is what the
  * screen's Back and confirm gates read. Written here rather than mocked at the
  * module, because the screen takes it as a PROP now — a module mock would
- * intercept nothing.
+ * intercept nothing. Shared fixture (#856 item 3, `tests/support.ts`).
  */
-const erase = {
-  erase: vi.fn(async () => "ok" as const),
-  erasing: false,
-  isErasing: () => false,
-};
+const erase = restingErase();
 
 /**
  * #621: the recorder's overflow drawer (Edit / Mark finished / Erase) opens
- * from a ≡ and keeps it — no painted "More" heading, and the dismiss control
- * wears the same `menu` glyph the opener does, in the same top-right corner,
- * instead of a left-pointing chevron on a drawer that docks on the right.
- * The rule is #608's, and `Menu`'s `hamburger` prop is how a caller opts in;
- * what this file pins is that the RECORDER's call site passes it. The header
+ * from a ⋮ and keeps it — no painted "More" heading, and the dismiss control
+ * wears the same `more` glyph the opener does (#1225; it was ≡ before, when
+ * the opener was too), in the same top-right corner, instead of a
+ * left-pointing chevron on a drawer that docks on the right. The rule is
+ * #608's, and `Menu`'s `hamburger` prop is how a caller opts in; what this
+ * file pins is that the RECORDER's call site passes it, with the ⋮ glyph. The header
  * itself is proved in `menu-hamburger-header.test.ts`.
  *
  * Rendered through the real `Recorder`, not `Menu` alone, because a test on
@@ -92,11 +90,14 @@ function button(label: string): HTMLButtonElement {
   return found!;
 }
 
-/** The `d` of the one path an `Icon` of this name draws. */
-function glyphPath(name: IconName): string {
-  return one(renderStatic(createElement(Icon, { name })), "path").getAttribute(
-    "d"
-  )!;
+/** The drawn shapes of an `Icon` of this name, as markup. */
+function glyphMarkup(name: IconName): string {
+  return one(renderStatic(createElement(Icon, { name })), "svg").innerHTML;
+}
+
+/** The drawn shapes inside a control, as markup. */
+function drawnGlyph(control: Element): string {
+  return one(control, "svg").innerHTML;
 }
 
 /** Every non-empty text run a sighted user could read inside `el`. */
@@ -123,6 +124,7 @@ async function openMenu(): Promise<Element> {
     error: null,
     recorderError: null,
     meterFailed: false,
+    takeCap: { nearLimit: false, remainingMs: 20 * 60_000, reached: false },
     playTake: vi.fn(),
     playBuffer: vi.fn(),
     stopBuffer: vi.fn(),
@@ -165,7 +167,7 @@ async function openMenu(): Promise<Element> {
 /** The drawer's panel — NOT the first `role="dialog"`, which is the sheet. */
 const drawer = () => document.querySelector(".menu-panel");
 
-describe("the recorder's ≡ drawer header (#621)", () => {
+describe("the recorder's ⋮ drawer header (#621)", () => {
   it("paints no 'More' heading, while the dialog keeps that name for a screen reader", async () => {
     const panel = await openMenu();
 
@@ -174,13 +176,22 @@ describe("the recorder's ≡ drawer header (#621)", () => {
     expect(paintedText(panel)).not.toContain(strings.recorderMenuTitle);
   });
 
-  it("dismisses with the ≡ glyph that opened it — not a chevron — and a tap on it closes the drawer", async () => {
+  // The O4 look (the default) closes every sheet on ✕ (#1268, the
+  // requirements owner: "Can we use a standard close button (some form of
+  // X)?"), so the dismiss no longer repeats the ⋮ that opened it; the opener
+  // stays ⋮ (#1243). The current look's ⋮ dismiss is pinned on `Menu` in
+  // `menu-hamburger-header.test.ts`.
+  it("opens from ⋮ and dismisses with ✕ in O4 — not ≡, not a chevron — and a tap on it closes the drawer", async () => {
     const panel = await openMenu();
+    expect(drawnGlyph(button(strings.recorderMenuOpen))).toBe(
+      glyphMarkup("more")
+    );
 
     const dismiss = button(strings.menuClose);
     expect(panel.contains(dismiss)).toBe(true);
-    expect(one(dismiss, "path").getAttribute("d")).toBe(glyphPath("menu"));
-    expect(one(dismiss, "path").getAttribute("d")).not.toBe(glyphPath("back"));
+    expect(drawnGlyph(dismiss)).toBe(glyphMarkup("close"));
+    for (const old of ["more", "menu", "back"] as const)
+      expect(drawnGlyph(dismiss)).not.toBe(glyphMarkup(old));
 
     await act(async () => dismiss.click());
     expect(drawer()).toBeNull();

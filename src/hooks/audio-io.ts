@@ -19,7 +19,12 @@ import { measureLevel } from "@/lib/audio/level";
 import { meterReadable, rmsLevel } from "@/lib/audio/meter";
 
 import { type ProbeSource, withAudioProbe } from "./audio-probe";
+import {
+  PlaybackClockStalledError,
+  PlaybackResumeError,
+} from "./playback-resume-error";
 import { reportFailure } from "./report-failure";
+import { readSharePlatform } from "./share-target";
 
 /**
  * Candidate capture formats, best first.
@@ -38,6 +43,127 @@ const CANDIDATE_MIME_TYPES = [
   "audio/mp4",
   "audio/aac",
 ] as const;
+
+/**
+ * WebKit's Audio Session API type values a page can declare
+ * (https://developer.mozilla.org/en-US/docs/Web/API/AudioSession/type,
+ * https://github.com/w3c/audio-session/blob/main/explainer.md). Only the two
+ * this module uses are ever assigned; the rest of the union exists so an
+ * assignment elsewhere can't silently widen to a bare `string`.
+ */
+type AudioSessionType =
+  | "auto"
+  | "playback"
+  | "transient"
+  | "transient-solo"
+  | "ambient"
+  | "play-and-record";
+
+/** The shape of `navigator.audioSession` this module relies on. */
+interface WebKitAudioSession {
+  type: AudioSessionType;
+}
+
+/**
+ * `navigator.audioSession`, or `undefined` on every engine that does not
+ * implement it — Chrome, Firefox, and Android's WebView, plus Safari before
+ * 16.4. Not in any TS DOM lib as of this writing, hence the cast; reading it
+ * through one helper keeps that cast in one place.
+ */
+function getAudioSession(): WebKitAudioSession | undefined {
+  if (typeof navigator === "undefined") return undefined;
+  return (navigator as unknown as { audioSession?: WebKitAudioSession })
+    .audioSession;
+}
+
+/**
+ * Whether this engine exposes `navigator.audioSession` at all (#1111). Not
+ * used by the two setters below — they already feature-check themselves — but
+ * exported so a caller (or a test) can tell "nothing happened because this
+ * engine has no such API" apart from "the call silently did nothing else".
+ */
+export function hasAudioSessionApi(): boolean {
+  return getAudioSession() !== undefined;
+}
+
+/**
+ * Whether the native iOS shell owns this page's audio session (#1251), so
+ * the two setters below must leave `navigator.audioSession` alone.
+ *
+ * The Capacitor iOS app sets `AVAudioSession` to `.playAndRecord` with
+ * `.defaultToSpeaker` and the Bluetooth options once, at launch
+ * (`ios/App/App/AppDelegate.swift`). That one category is meant to cover
+ * recording, the silent switch and the speaker. On WebKit 16.4+ a
+ * `navigator.audioSession.type` write replaces that category, and the web
+ * API cannot put `.defaultToSpeaker` or the Bluetooth options back (#1116's
+ * review). The rc.2 stall (#1251: a context reading `"running"` with a
+ * stopped clock) reproduced in the TestFlight app and not in Safari on the
+ * same phone, so layering the per-press switch on top of the native
+ * category is one suspect. Whether it plays any part in the stall is not
+ * known; the reproduced trigger was locking and unlocking the phone, and
+ * the drop on hide and the stalled-clock checks are what answer that.
+ *
+ * Reads the build from `readSharePlatform()` (`share-target.ts`), the
+ * repo's one reading of `Capacitor.getPlatform()`. Safari, the installed
+ * PWA and the Android shell read `"web"` or `"android"` and keep the
+ * switching; Android's WebView has no `navigator.audioSession`, so there it
+ * was already a no-op.
+ */
+function nativeShellOwnsAudioSession(): boolean {
+  return readSharePlatform() === "ios";
+}
+
+/**
+ * Declare this page's audio as PLAYBACK (#1111): WebKit then routes it past
+ * the hardware silent/ring switch the way a music or podcast app is, rather
+ * than following the switch the way its own `"auto"`/`"ambient"` default
+ * does. The DRI's decision on #1111 accepts the paired trade-off documented
+ * for `"playback"` — it is exclusive, so it pauses another app's playback
+ * audio rather than mixing with it, the same as a music or podcast app.
+ *
+ * Called from `playSamples` below, on every Play — cheap and idempotent, so
+ * reasserting it costs nothing and repairs a session a previous recording
+ * left on `"play-and-record"` (see `setRecordAudioSession`) without this
+ * module needing its own "recording just ended" hook.
+ *
+ * Does nothing inside the native iOS shell (#1251,
+ * `nativeShellOwnsAudioSession`): there the launch-time `.playAndRecord`
+ * category is the whole configuration, and it is not switched per Play.
+ *
+ * Feature-checked and a no-op wherever `navigator.audioSession` does not
+ * exist: every engine besides Safari/WebKit 16.4+, and every already-shipped
+ * page load before this change. Never throws.
+ */
+export function setPlaybackAudioSession(): void {
+  if (nativeShellOwnsAudioSession()) return;
+  const session = getAudioSession();
+  if (session) session.type = "playback";
+}
+
+/**
+ * Declare this page's audio as PLAY-AND-RECORD for the life of a take
+ * (#1111): the microphone is about to go live (`use-recorder.ts`'s
+ * `start()`, called just before `getUserMedia`), and WebKit's `"playback"`
+ * type above is documented for playback only — recording under it is the
+ * "if needed" case #1111 asks this module to research and cover. Not
+ * reverted explicitly on stop: the app's own audio session (`lib/audio/session.ts`)
+ * refuses a playback claim while the microphone holds the floor, so nothing
+ * can play while this type is live, and the next Play reasserts `"playback"`
+ * (`setPlaybackAudioSession` above) before it plays.
+ *
+ * Does nothing inside the native iOS shell (#1251,
+ * `nativeShellOwnsAudioSession`): the launch-time `.playAndRecord` category
+ * is already record-capable, and since `setPlaybackAudioSession` no longer
+ * switches it away there, there is nothing to switch back.
+ *
+ * Feature-checked and a no-op wherever `navigator.audioSession` does not
+ * exist. Never throws.
+ */
+export function setRecordAudioSession(): void {
+  if (nativeShellOwnsAudioSession()) return;
+  const session = getAudioSession();
+  if (session) session.type = "play-and-record";
+}
 
 export function isRecordingSupported(): boolean {
   return (
@@ -97,9 +223,17 @@ let sharedContext: AudioContext | null = null;
  * `sampleRate` option, and a device may refuse the rate outright. Those fall
  * back to a default context, where `toCanonical`'s resample path — still there,
  * unchanged — does the conversion as before.
+ *
+ * One context for the life of the page, with one exception: a Play whose
+ * resume bound failed closed may drop it (`discardSharedContext`, #1213,
+ * speculative), and the next call here builds its replacement.
  */
 function getAudioContext(): AudioContext {
-  sharedContext ??= createSharedContext();
+  if (sharedContext === null) {
+    // #1251: from the first context on, a device change drops it.
+    ensureRouteWatch();
+    sharedContext = createSharedContext();
+  }
   return sharedContext;
 }
 
@@ -112,6 +246,242 @@ function createSharedContext(): AudioContext {
     // fallback is a fully working context whose decodes take the resample path.
     return new Ctor();
   }
+}
+
+/**
+ * How many users other than playback have work on the shared context right
+ * now: a live level tap (`createLevelTap`, until its graph is disconnected)
+ * or a decode in flight (`decodeToCanonical`).
+ *
+ * The context is shared with capture. The recorder's VU tap and the live
+ * scope read an analyser built on it, and every captured take and stored MP3
+ * is decoded through it. `discardSharedContext` will not close it while any
+ * of these holds it, because closing it would silence the meter mid-take or
+ * reject a decode that a save, a preview or a share is waiting on. Playback
+ * holds no count of its own: a failed Play is the one asking for the drop.
+ */
+let sharedContextHolds = 0;
+
+/** Count one non-playback user of the shared context. The decode releases in
+ * a `finally`, and the level tap from `disconnectGraph`. The release is
+ * once-only, so a second call cannot drive the count below a live hold. */
+function holdSharedContext(): () => void {
+  sharedContextHolds++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    sharedContextHolds--;
+    // An idle drop may have been asked for while this hold kept the context
+    // (#1251).
+    applyPendingIdleDrop();
+  };
+}
+
+/** Contexts `discardSharedContext` closed. A `resume()` left pending on one
+ * rejects because of that close; `raceAudioResume` drops that late echo. */
+const droppedContexts = new WeakSet<AudioContext>();
+
+/** True from a drop's `close()` call until that close settles (#1232). While
+ * it is set, `discardSharedContext` drops nothing. */
+let dropClosePending = false;
+
+/**
+ * SPECULATIVE (#1213). Drop the shared context after `playSamples`' #469
+ * resume bound has failed closed, and close it, so that the NEXT Play builds a
+ * fresh context inside the user's tap.
+ *
+ * More callers since #1251, for a context that reports `"running"` while
+ * its clock stands still: `playSamples` after its clock check
+ * (`watchClock`); a level tap that saw the same thing, once its graph is
+ * disconnected and its hold released; `checkSharedClockOnReturn` when the
+ * page is visible again; and `applyPendingIdleDrop`, for the drop asked for
+ * when the page hides or an audio device changes. Every refusal below
+ * applies to them unchanged. Whether a fresh context escapes that state
+ * inside the native shell is not known either.
+ *
+ * The inferred cause: iOS leaves the shared context `"interrupted"` and its
+ * `resume()` never settles, and nothing in the app ever replaces that
+ * context, so every Play fails the same way until the OS ends the
+ * interruption (a lock and unlock, or leaving the app). This is an inference
+ * from reading the code and a stubbed WebKit run, not a device observation.
+ * Whether a fresh context escapes a WebKit interruption is not known.
+ *
+ * What it does and does not do:
+ *   - The press that failed still fails. It has already waited out the
+ *     1000 ms bound, and a context created now would be created outside a
+ *     user gesture. Only the next press gets the fresh context, created by
+ *     `resumeAudioContext()` in that press's own tap
+ *     (`use-audio-session.ts`), which also starts it.
+ *   - Nothing is dropped while `sharedContextHolds` is non-zero (a live level
+ *     tap or a decode in flight; see that counter). That Play fails as it
+ *     does today, and a later failure once the holds are gone drops it.
+ *   - Nothing is dropped if the shared context has already been replaced
+ *     since this Play started: that drop was someone else's to make.
+ *   - The old context is closed BEFORE anything can create its replacement,
+ *     because iOS caps how many contexts a page may create. `close()` is
+ *     called here, synchronously; the replacement is only built by a later
+ *     call to `getAudioContext()`.
+ *   - Nothing is dropped while an earlier drop's `close()` is still pending
+ *     (#1232). If WebKit never settles `close()` on an interrupted context,
+ *     that context's slot may never be freed, and dropping on every failed
+ *     Play would add one live context per press until the per-page cap made
+ *     `getAudioContext()` throw for capture decode too. So while a close is
+ *     pending the failed Play keeps the current context and the next Play
+ *     reuses it: at most one context is waiting on its close beside the
+ *     current one. Once that close resolves, rejects or throws, a later
+ *     failure may drop again.
+ *   - A `close()` that throws or rejects is reported as
+ *     `"playback-context-close"`. It is its own key because it is a
+ *     different operation from the resume the `"playback-resume*"` rows
+ *     describe, and a row under it says the recovery itself failed.
+ *   - A `resume()` still pending on the old context may reject once the
+ *     context is closed. That late rejection is this drop's own echo, so
+ *     `raceAudioResume` writes no `"playback-resume"` row for it: the Play's
+ *     one row is the timeout or unusable row it already wrote. A late
+ *     rejection on a context that was not dropped is still reported.
+ *
+ * Returns whether it dropped the context. `checkSharedClockOnReturn` reads
+ * it to write its row only for a drop it made, and `applyPendingIdleDrop` to
+ * keep a mark it could not act on yet.
+ */
+function discardSharedContext(ctx: AudioContext): boolean {
+  if (sharedContext !== ctx || sharedContextHolds > 0 || dropClosePending) {
+    return false;
+  }
+  sharedContext = null;
+  droppedContexts.add(ctx);
+  dropClosePending = true;
+  try {
+    ctx
+      .close()
+      .catch((cause: unknown) => {
+        reportFailure(cause, "playback-context-close");
+      })
+      .finally(() => {
+        dropClosePending = false;
+      });
+  } catch (cause) {
+    dropClosePending = false;
+    reportFailure(cause, "playback-context-close");
+  }
+  return true;
+}
+
+/**
+ * Plays whose source has started and has not yet been stopped or ended.
+ * Counted from `source.start` in `playSamples` until the handle's `stop()`,
+ * the source's `onended`, or a stalled-clock failure. An idle drop (#1251,
+ * `dropSharedContextWhenIdle`) waits while it is non-zero, because closing
+ * the context under a sounding source would silence it with no end the UI
+ * could hear about.
+ */
+let livePlaybacks = 0;
+
+/**
+ * Claims still on their way to using the shared context: a Record or a Play
+ * between the resume it started (`raceAudioResume`) and the level tap's hold
+ * or the source's `livePlaybacks` count that follows it. An idle drop waits
+ * while it is non-zero, and so does `checkSharedClockOnReturn`, because a
+ * drop there would close the context under that resume and leave the tap or
+ * the source to build a fresh one outside the user's gesture (Frank round 2
+ * on #1261). It does not gate `discardSharedContext` itself, so a Play's own
+ * #1213 and stalled-clock drops are unchanged.
+ */
+let pendingClaims = 0;
+
+/** Count one pending claim. The release is once-only, and applies a drop
+ * that waited for it. */
+function claimSharedContext(): () => void {
+  pendingClaims++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    pendingClaims--;
+    applyPendingIdleDrop();
+  };
+}
+
+/**
+ * The shared context `dropSharedContextWhenIdle` asked to drop while it was
+ * in use (#1251). `applyPendingIdleDrop` drops it once nothing uses it.
+ */
+let idleDropPending: AudioContext | null = null;
+
+/**
+ * Drop the marked context, if nothing is using it now. Called from
+ * `dropSharedContextWhenIdle` itself, from every release of a hold or a live
+ * Play, and at the top of `resumeAudioContext()`, which every Play tap and
+ * the sheet-open tap call first — so a drop that had to wait lands at the
+ * latest inside the next tap, and the replacement is built there.
+ * `discardSharedContext`'s own refusals still apply (#1235's one pending
+ * close among them); a mark it refuses is kept while the marked context is
+ * still the shared one.
+ */
+function applyPendingIdleDrop(): void {
+  const ctx = idleDropPending;
+  if (ctx === null) return;
+  if (sharedContext !== ctx) {
+    idleDropPending = null;
+    return;
+  }
+  if (sharedContextHolds > 0 || livePlaybacks > 0 || pendingClaims > 0) return;
+  if (discardSharedContext(ctx)) idleDropPending = null;
+}
+
+/**
+ * Drop the shared context as soon as nothing uses it, so the next tap builds
+ * a fresh one inside its own gesture (#1251). Two callers:
+ *
+ *   - **The page becoming hidden** (`use-audio-session.ts`, on
+ *     `visibilitychange` to hidden and on `pagehide`). The DRI reproduced
+ *     #1251 twice in the TestFlight app by locking the phone and unlocking
+ *     it: afterwards the context reported `"running"` while Play and the
+ *     meter were dead. Dropping the context on the way out means the page
+ *     comes back with no context at all, and the first tap after the return
+ *     builds one. That this avoids the stuck state is an inference; it has
+ *     not been run on a device.
+ *   - **An audio device coming or going** (`devicechange`, see
+ *     `ensureRouteWatch`). The reporting tester saw it happen when headphones
+ *     connected; the DRI could not trigger it that way. Secondary.
+ *
+ * When nothing uses the context it is dropped at once. During a take (the
+ * level tap's hold), a decode, or a sounding Play it is only marked, and
+ * `applyPendingIdleDrop` drops it once those let go. A Play that is sounding
+ * when the page hides keeps playing: a hidden page keeps its playback (#836),
+ * so this waits for that Play to stop or end rather than stopping it. A take
+ * open at hide is sealed first by `use-audio-session.ts`; its level tap
+ * releases its hold as the seal's flush disconnects it, and the drop lands
+ * then. The stalled-clock checks stay the backstop. No row is written:
+ * hiding the page or connecting a headset is not a failure. A `close()` that
+ * fails still writes `"playback-context-close"`.
+ */
+export function dropSharedContextWhenIdle(): void {
+  if (sharedContext === null) return;
+  idleDropPending = sharedContext;
+  applyPendingIdleDrop();
+}
+
+let routeWatchInstalled = false;
+
+/**
+ * Listen for `navigator.mediaDevices`' `devicechange` once per page, from
+ * the first time the shared context is built (#1251). Installed here rather
+ * than in a hook's effect so every caller of the shared context is covered
+ * and no component has to remember it. Never removed: it lives as long as
+ * the page, like the shared context it looks after. Feature-checked: an
+ * engine with no `mediaDevices`, or none that dispatches events, gets no
+ * listener, and the stalled-clock checks are all it has. Whether WKWebView
+ * fires `devicechange` for a Bluetooth headset is not known.
+ */
+function ensureRouteWatch(): void {
+  if (routeWatchInstalled) return;
+  routeWatchInstalled = true;
+  if (typeof navigator === "undefined") return;
+  const devices = (navigator as { mediaDevices?: MediaDevices }).mediaDevices;
+  if (!devices || typeof devices.addEventListener !== "function") return;
+  devices.addEventListener("devicechange", dropSharedContextWhenIdle);
 }
 
 /**
@@ -135,8 +505,39 @@ export function contextNeedsResume(state: string): boolean {
 }
 
 export async function resumeAudioContext(): Promise<void> {
+  // An idle drop that had to wait lands here at the latest, inside the
+  // tap, so the context built below is built in that tap (#1251).
+  applyPendingIdleDrop();
   const ctx = getAudioContext();
-  if (contextNeedsResume(ctx.state)) await ctx.resume();
+  if (!contextNeedsResume(ctx.state)) return;
+  // A resume still pending counts as a claim (`pendingClaims`), so no idle
+  // drop or return check closes the context under it. That covers the
+  // fire-and-forget resumes in the Play taps and the sheet-open tap, which
+  // no `raceAudioResume` wraps (Frank r2 P2 on #1261). Counted directly, not
+  // through `claimSharedContext`: its release applies a waiting drop, and a
+  // drop landing the moment an in-tap resume settles would close the context
+  // the Play is about to use, outside that tap.
+  //
+  // Bounded by `RESUME_TIMEOUT_MS` (George r4 on #1261): WebKit's `resume()`
+  // from "interrupted" can hang (#108), and a claim that waited on it would
+  // hold `pendingClaims` up for the rest of the page, switching off the drop
+  // on hide and the return check. The release is once-only, so the timer and
+  // the settle cannot both count it down. No waiting drop is applied here
+  // either way; the next apply point lands it.
+  pendingClaims++;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    pendingClaims--;
+  };
+  const timer = setTimeout(release, RESUME_TIMEOUT_MS);
+  try {
+    await ctx.resume();
+  } finally {
+    clearTimeout(timer);
+    release();
+  }
 }
 
 /**
@@ -160,6 +561,145 @@ export async function resumeAudioContext(): Promise<void> {
  * (`use-recorder.ts`) importing back FROM a higher hook would be circular.
  */
 export const RESUME_TIMEOUT_MS = 1_000;
+
+/**
+ * How long a context that reports `"running"` may go without its
+ * `currentTime` moving before this module calls its clock stopped (#1251).
+ *
+ * On the DRI's iPhone at rc.2, inside the TestFlight app, a Play turned the
+ * button to Pause with a frozen playhead and no sound, and the live meter
+ * then drew nothing, with no failure row. The playhead is
+ * `offset + (ctx.currentTime - startedAt)`, so the inference is a context
+ * that reads `"running"` while its clock does not advance. No gate before
+ * this one looked at the clock.
+ *
+ * Why 1000 ms:
+ *   - A running context advances `currentTime` once per render quantum (128
+ *     frames, under 3 ms at 44.1 or 48 kHz). The main thread may see it move
+ *     in larger steps, one audio I/O buffer at a time; the size of that
+ *     buffer on an iPhone is not measured here. 1000 ms leaves a wide margin
+ *     over any buffer size in the tens of milliseconds, so a slow but working
+ *     device is not flagged.
+ *   - It matches `RESUME_TIMEOUT_MS`, the wait a translator already sees
+ *     before a failed Play says so, rather than adding a second scale.
+ *   - Like that bound, it is a PROVISIONAL ASSUMPTION, not a measured value,
+ *     and this is the one place to change it.
+ *
+ * The check polls every `CLOCK_POLL_MS` and returns as soon as the clock
+ * moves, so a healthy Play waits for one poll at most, not the full bound.
+ * It counts polls rather than reading a wall clock: a throttled timer only
+ * makes the real wait longer, never shorter.
+ */
+export const CLOCK_STALL_TIMEOUT_MS = 1_000;
+
+/** How often `watchClock` samples `currentTime` while it waits. */
+const CLOCK_POLL_MS = 25;
+
+/**
+ * What `watchClock` saw:
+ *   - `"advanced"`: `currentTime` moved past `startedAt`;
+ *   - `"skipped"`: the caller's `skip()` became true (the source ended, or
+ *     the claim was superseded) before the bound, so nothing is judged;
+ *   - `"stalled"`: the bound passed with the clock unmoved on a context that
+ *     still reports `"running"`;
+ *   - `"not-running"`: the bound passed with the clock unmoved, but the
+ *     context has left `"running"` (an interruption during the wait). A
+ *     stopped clock is expected there, and the existing interruption
+ *     handling owns it, so this is not a stall.
+ */
+type ClockVerdict = "advanced" | "skipped" | "stalled" | "not-running";
+
+/**
+ * Wait until `ctx.currentTime` moves past `startedAt`, or until
+ * `CLOCK_STALL_TIMEOUT_MS` passes (#1251). Checks once synchronously, then
+ * every `CLOCK_POLL_MS`. Never rejects. Uses the bare global `setTimeout`,
+ * so it runs under `vi.useFakeTimers()` in the Node suite.
+ */
+function watchClock(
+  ctx: AudioContext,
+  startedAt: number,
+  skip: () => boolean
+): Promise<ClockVerdict> {
+  const maxPolls = Math.ceil(CLOCK_STALL_TIMEOUT_MS / CLOCK_POLL_MS);
+  let polls = 0;
+  return new Promise<ClockVerdict>((resolve) => {
+    const check = () => {
+      if (skip()) {
+        resolve("skipped");
+        return;
+      }
+      if (ctx.currentTime > startedAt) {
+        resolve("advanced");
+        return;
+      }
+      if (polls >= maxPolls) {
+        resolve(ctx.state === "running" ? "stalled" : "not-running");
+        return;
+      }
+      polls++;
+      setTimeout(check, CLOCK_POLL_MS);
+    };
+    check();
+  });
+}
+
+/**
+ * Check the shared context's clock when the page becomes visible again
+ * (#1251), and drop the context if it is stopped, so the first Play after
+ * the return builds a fresh one inside its tap instead of failing.
+ *
+ * The DRI reproduced #1251 by resuming the TestFlight app from the lock
+ * screen: afterwards the context reported `"running"` and Play and the meter
+ * were dead. The drop on hide (`dropSharedContextWhenIdle`) normally leaves
+ * no context to check here; this covers a return where that drop had to
+ * wait, or was never asked for. Without it, the first Play after such a
+ * return is the one that finds out, waits out `CLOCK_STALL_TIMEOUT_MS` and
+ * fails; only the second press works. With it, a return that leaves the
+ * clock stopped is caught before anyone presses Play, as long as the check
+ * finishes first.
+ *
+ * Does nothing, and writes nothing, when:
+ *   - no shared context exists yet (the next caller builds a fresh one);
+ *   - the context is not `"running"` (the resume paths already handle a
+ *     suspended or interrupted context);
+ *   - a Play is live at any point in the wait (`livePlaybacks`, which
+ *     covers a Play inside its own clock check). That Play judges the clock
+ *     itself, and closing the context under its source would silence it
+ *     with no end the UI could hear about;
+ *   - the context was replaced during the wait;
+ *   - `discardSharedContext` refuses the drop (a level tap or a decode holds
+ *     the context, or an earlier close is pending). The Play or the tap then
+ *     finds the stall itself and writes its own row.
+ *
+ * A drop it makes writes one `"audio-clock-stalled-on-return"` row. Called
+ * from `use-audio-session.ts` on `visibilitychange` to visible. Never
+ * rejects. Whether a fresh context escapes this state inside the native
+ * shell has not been run on a device.
+ */
+export async function checkSharedClockOnReturn(): Promise<void> {
+  const ctx = sharedContext;
+  // A context that is not "running" ends as "not-running" below, and a live
+  // Play makes `skip()` true on the first check, so neither needs its own
+  // test here.
+  if (ctx === null) return;
+  // A context replaced during the wait is refused by `discardSharedContext`
+  // below (it is no longer the shared one), so it writes no row either.
+  // A claim still on its way to `source.start` or the tap's hold counts as
+  // use too (`pendingClaims`).
+  const verdict = await watchClock(
+    ctx,
+    ctx.currentTime,
+    () => livePlaybacks > 0 || pendingClaims > 0
+  );
+  if (verdict !== "stalled") return;
+  if (!discardSharedContext(ctx)) return;
+  reportFailure(
+    new Error(
+      `the shared context reported "running" but its currentTime did not advance within ${CLOCK_STALL_TIMEOUT_MS} ms of the page becoming visible; the context was dropped (#1251)`
+    ),
+    "audio-clock-stalled-on-return"
+  );
+}
 
 /**
  * Call `resumeAudioContext()` but never let it block the caller for longer
@@ -243,7 +783,19 @@ export function raceAudioResume(
   onEarlyRejection?: (cause: unknown) => void
 ): Promise<boolean> {
   const resumePromise = resumeAudioContext();
-  return new Promise<boolean>((resolve) => {
+  // `resumeAudioContext()` read (or built) the shared context synchronously,
+  // so this is the context the resume was called on.
+  const resumedOn = sharedContext;
+  // Taken after `resumeAudioContext()`'s own top-of-tap idle drop, so that
+  // drop still lands. Released one task after the race resolves: the
+  // caller's continuation runs first, and `start()` goes straight from it to
+  // `createLevelTap`, whose hold then keeps the context (`pendingClaims`).
+  const releaseClaim = claimSharedContext();
+  return new Promise<boolean>((rawResolve) => {
+    const resolve = (timedOut: boolean) => {
+      rawResolve(timedOut);
+      setTimeout(releaseClaim, 0);
+    };
     let settled = false;
     const timer = setTimeout(() => {
       settled = true;
@@ -275,6 +827,14 @@ export function raceAudioResume(
         }
         if (decidesTheRace && onEarlyRejection) {
           onEarlyRejection(cause);
+        } else if (
+          !decidesTheRace &&
+          resumedOn !== null &&
+          droppedContexts.has(resumedOn)
+        ) {
+          // Late, and on a context `discardSharedContext` closed: the close
+          // caused it, and the Play already wrote its one row (#1213).
+          return;
         } else {
           reportFailure(cause, rejectionContextKey);
         }
@@ -445,15 +1005,57 @@ export function createLevelTap(stream: MediaStream): LevelTap {
   const graph = analyser;
   const frame = new Float32Array(graph.fftSize);
   let disconnected = false;
+  // While this graph is connected, a failed Play must not close the context
+  // under it (#1213, `discardSharedContext`). Released with the graph.
+  const releaseHold = holdSharedContext();
+
+  // #1251: the same stopped clock `playSamples` checks for, seen from the
+  // meter's side. While the context reports "running", each `readFrame()`
+  // notes `currentTime`; if it has not moved for `CLOCK_STALL_TIMEOUT_MS` of
+  // wall time, one row is written. The context cannot be dropped then,
+  // because this tap holds it, so the drop waits for `disconnectGraph`.
+  // Wall time (`Date.now()`), not a frame count, because frames arrive at
+  // the display's rate and stop when the page is hidden.
+  let clockValue = Number.NaN;
+  let clockSinceMs = 0;
+  let clockStalled = false;
+  const noteClock = () => {
+    if (clockStalled) return;
+    const value = ctx.currentTime;
+    const nowMs = Date.now();
+    if (value !== clockValue) {
+      clockValue = value;
+      clockSinceMs = nowMs;
+      return;
+    }
+    if (nowMs - clockSinceMs < CLOCK_STALL_TIMEOUT_MS) return;
+    clockStalled = true;
+    reportFailure(
+      new Error(
+        `the shared context reported "running" but its currentTime did not advance for ${CLOCK_STALL_TIMEOUT_MS} ms while the level tap read it; the context is dropped once the tap disconnects (#1251)`
+      ),
+      "recorder-tap-clock-stalled"
+    );
+  };
+  // A context out of "running" (an interruption, a suspend) holds its clock
+  // still by design, so that gap is not a stall: the next running sample
+  // starts a fresh window, the same rule `watchClock`'s "not-running" keeps.
+  const restartClockWindow = () => {
+    clockValue = Number.NaN;
+  };
 
   // Tear down only this tap's own nodes; the shared context stays open for
-  // playback and the next recording. Idempotent.
+  // playback and the next recording — unless this tap saw its clock stopped
+  // (#1251), in which case the context is dropped once the hold is released,
+  // subject to every refusal in `discardSharedContext`. Idempotent.
   const disconnectGraph = () => {
     if (disconnected) return;
     disconnected = true;
     disconnect(source);
     disconnect(analyser);
     disconnect(sink);
+    releaseHold();
+    if (clockStalled) discardSharedContext(ctx);
   };
 
   return {
@@ -470,7 +1072,12 @@ export function createLevelTap(stream: MediaStream): LevelTap {
       // shown speech off into a flat line a non-reader takes for a dead mic
       // (George R5). NOT an all-zero-frame check — that would freeze on real
       // silence too.
-      if (disconnected || contextNeedsResume(ctx.state)) return null;
+      if (disconnected || contextNeedsResume(ctx.state)) {
+        restartClockWindow();
+        return null;
+      }
+      if (ctx.state === "running") noteClock();
+      else restartClockWindow();
       graph.getFloatTimeDomainData(frame);
       return frame;
     },
@@ -501,7 +1108,15 @@ export async function decodeToCanonical(
   probeSource: ProbeSource = "capture"
 ): Promise<Int16Array> {
   const arrayBuffer = await blob.arrayBuffer();
-  const decoded = await getAudioContext().decodeAudioData(arrayBuffer);
+  // Held for the decode, so a failed Play cannot close the context out from
+  // under it (#1213, `discardSharedContext`).
+  const releaseHold = holdSharedContext();
+  let decoded: AudioBuffer;
+  try {
+    decoded = await getAudioContext().decodeAudioData(arrayBuffer);
+  } finally {
+    releaseHold();
+  }
   probeDecode(decoded, probeSource);
   return toCanonical(decoded);
 }
@@ -761,10 +1376,26 @@ export async function playSamples(
   let capturedCause: unknown;
   let unusableError: Error | undefined;
 
-  const resumeTimedOut = await raceAudioResume("playback-resume", (cause) => {
+  // #1111: declare this claim as playback BEFORE anything else, so a session
+  // a previous recording left on "play-and-record" is corrected the instant a
+  // Play is pressed, not only on the recorder's own stop path. Synchronous,
+  // feature-checked and a no-op on every non-WebKit engine, and inside the
+  // native iOS shell (#1251) — see the docblock on `setPlaybackAudioSession`.
+  setPlaybackAudioSession();
+
+  // The context this claim resumes. If the bound fails closed, this is the
+  // one `discardSharedContext` may drop (#1213), and only if it is still the
+  // shared one by then.
+  const claimContext = getAudioContext();
+  const racing = raceAudioResume("playback-resume", (cause) => {
     hadRejection = true;
     capturedCause = cause;
   });
+  // This Play's own claim, from its resume to `source.start` (where
+  // `livePlaybacks` takes over), across the `nextTask()` yield below, so an
+  // idle drop cannot close the context in between (`pendingClaims`).
+  const releaseClaim = claimSharedContext();
+  const resumeTimedOut = await racing;
 
   try {
     if (!options.isStillCurrent()) {
@@ -793,7 +1424,9 @@ export async function playSamples(
       // reaching `playTake`/`playBuffer`'s `catch`. Re-reading the live
       // state here (rather than trusting `resumeTimedOut`) closes that path
       // for BOTH causes — timeout and early rejection — with one check.
-      unusableError = new Error(buildResumeUnusableMessage(resumeTimedOut));
+      unusableError = new PlaybackResumeError(
+        buildResumeUnusableMessage(resumeTimedOut)
+      );
       throw unusableError;
     }
 
@@ -827,7 +1460,9 @@ export async function playSamples(
       // here — a `true` would already have thrown above, before this line
       // could ever run — so this always builds the "-unusable" message, not
       // "-timeout".
-      unusableError = new Error(buildResumeUnusableMessage(false));
+      unusableError = new PlaybackResumeError(
+        buildResumeUnusableMessage(false)
+      );
       throw unusableError;
     }
 
@@ -864,11 +1499,68 @@ export async function playSamples(
     });
     const startedAt = ctx.currentTime;
     let stopped = false;
+    let ended = false;
+    // Counted as a live Play from here until it stops, ends or fails, so an
+    // idle drop waits for it (#1251, `livePlaybacks`). Once only.
+    let live = true;
+    livePlaybacks++;
+    releaseClaim();
+    const endLive = () => {
+      if (!live) return;
+      live = false;
+      livePlaybacks--;
+      applyPendingIdleDrop();
+    };
 
     source.onended = () => {
+      ended = true;
+      endLive();
       if (!stopped) options.onEnded?.();
     };
-    source.start(0, offset);
+    try {
+      source.start(0, offset);
+    } catch (cause) {
+      // Never started, so never live; do not leave the count raised.
+      endLive();
+      throw cause;
+    }
+
+    // #1251: a context can report "running" while its clock stands still.
+    // Every gate above reads only `state`, so such a Play would return a
+    // handle whose playhead never moves and whose audio never sounds, and no
+    // row would be written. Wait for the clock to move before handing the
+    // handle back. A source that has already ended is not judged: a short
+    // take can end before the first poll, and it only ends if the clock ran.
+    // A claim superseded during the wait is not judged either; the caller's
+    // `settle` stops its handle as it always has.
+    const clock = await watchClock(
+      ctx,
+      startedAt,
+      () => ended || !options.isStillCurrent()
+    );
+    if (clock === "stalled") {
+      stopped = true;
+      try {
+        source.stop();
+      } catch {
+        // Already stopped — Web Audio throws on a second stop() call and
+        // there is nothing meaningful to do about it.
+      }
+      const stall = new PlaybackClockStalledError(
+        `the shared context reported "running" but its currentTime did not advance within ${CLOCK_STALL_TIMEOUT_MS} ms of source.start(); playSamples ending the Play as failed (#1251)`
+      );
+      // One row, written here and nowhere else. The callers skip this class
+      // (`reportPlaybackFailure`, `use-audio-session.ts`), and the `finally`
+      // below writes #469 rows only, keyed on `hadRejection`/`unusableError`.
+      reportFailure(stall, "playback-clock-stalled");
+      // Drop the stuck context through the same path as #1213, with all its
+      // refusals (a hold, a pending close, an already-replaced context). The
+      // next Play's in-tap `resumeAudioContext()` builds the replacement
+      // inside that tap. This press is not retried: it is past its gesture.
+      discardSharedContext(ctx);
+      endLive();
+      throw stall;
+    }
 
     return {
       stop: () => {
@@ -879,6 +1571,7 @@ export async function playSamples(
           // Already stopped — Web Audio throws on a second stop() call and
           // there is nothing meaningful to do about it.
         }
+        endLive();
       },
       elapsed: () =>
         Math.min(buffer.duration, offset + (ctx.currentTime - startedAt)),
@@ -932,5 +1625,13 @@ export async function playSamples(
         resumeTimedOut ? "playback-resume-timeout" : "playback-resume-unusable"
       );
     }
+    // SPECULATIVE (#1213): a claim that failed closed drops the shared
+    // context, so the next Play builds a fresh one inside its own tap. This
+    // press still fails. `unusableError` is set only at the two fail-closed
+    // throws, and only for a claim that is still current; see
+    // `discardSharedContext` for what it refuses to drop.
+    if (unusableError) discardSharedContext(claimContext);
+    // Every exit before `source.start` ends the claim here; once-only.
+    releaseClaim();
   }
 }

@@ -35,6 +35,7 @@ import {
   type TravelGuardState,
 } from "@/lib/nav/travel-guard";
 import type { ChapterId, SegmentId } from "@/types/domain";
+import type { RecorderEntry } from "@/types/view";
 
 import { reportFailure } from "./report-failure";
 
@@ -321,6 +322,30 @@ export function attachNativeBack(
   };
 }
 
+/**
+ * Drop `?check=phone` from the current history entry's URL (#1014 item 4), so
+ * a later reload of the same tab does not read it again and reopen the phone
+ * check. Not a screen transition and not an overlay dismiss — the check never
+ * pushes a nav layer of its own (`App` opens it by state alone, and this file
+ * never sees `phoneCheckOpen`) — so this is a `replaceState` on the entry
+ * already there, carrying `state` through unchanged rather than the `{ tc,
+ * index }` shape the rest of this file writes. It lives here regardless, next
+ * to `attachNativeBack`, rather than in `App.tsx`, because invariant 1 bans
+ * `window.history` anywhere else (the lint rule enforcing it does not
+ * distinguish a depth-changing call from a same-entry rewrite). A no-op when
+ * the param is already gone, so a second call after the first costs nothing.
+ */
+export function clearPhoneCheckQueryParam(): void {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("check")) return;
+  url.searchParams.delete("check");
+  window.history.replaceState(
+    window.history.state,
+    "",
+    `${url.pathname}${url.search}${url.hash}`
+  );
+}
+
 export interface UseNavStackParams {
   /** `chapterId !== null` — the popstate handler and Amendment C read this. */
   readonly hasChapter: boolean;
@@ -337,8 +362,13 @@ export interface UseNavStackParams {
   readonly getRecorderHandle: () => RecorderCloseHandle | null;
   /** Books → Segments state half (App's `openChapter` minus the history push). */
   readonly onOpenChapter: (id: ChapterId) => void;
-  /** Segments → Recorder state half (App's `openRecorder` minus the push). */
-  readonly onOpenRecorder: (segmentId: SegmentId, ordinal: number) => void;
+  /** Segments → Recorder state half (App's `openRecorder` minus the push).
+   *  `entry` is passed through as given: the mode the sheet opens in. */
+  readonly onOpenRecorder: (
+    segmentId: SegmentId,
+    ordinal: number,
+    entry?: RecorderEntry
+  ) => void;
   /** Segments → Books (App's `backToBooks`; no push — the browser already popped). */
   readonly onLeaveToBooks: () => void;
   /** Recorder close state half (App's `closeRecorder` minus the history tail). */
@@ -357,8 +387,13 @@ export interface UseNavStack {
   readonly popLayer: (id: string) => void;
   /** Books → Segments: the state half plus the protective push. */
   readonly openChapter: (id: ChapterId) => void;
-  /** Segments → Recorder: the state half plus the protective push. */
-  readonly openRecorder: (segmentId: SegmentId, ordinal: number) => void;
+  /** Segments → Recorder: the state half plus the protective push. `entry`
+   *  is the mode the sheet opens in; omitted, record (#286 item 2). */
+  readonly openRecorder: (
+    segmentId: SegmentId,
+    ordinal: number,
+    entry?: RecorderEntry
+  ) => void;
   /** One Back path (#168). `beginBack("go-back")`; on refusal, does nothing. */
   readonly goBack: () => void;
   /** The programmatic recorder close (erase's `onExit`); suppressPop-guarded. */
@@ -732,10 +767,10 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   );
 
   const openRecorder = useCallback(
-    (segmentId: SegmentId, ordinal: number) => {
+    (segmentId: SegmentId, ordinal: number, entry?: RecorderEntry) => {
       const decision = decideWrite("enter-screen");
       if (decision === "refuse") return;
-      onOpenRecorderRef.current(segmentId, ordinal);
+      onOpenRecorderRef.current(segmentId, ordinal, entry);
       performWrite("enter-recorder", decision);
     },
     [decideWrite, performWrite]

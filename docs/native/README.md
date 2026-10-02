@@ -216,10 +216,15 @@ Capacitor 8:
 - `git clone` the repo, then `npm ci` at the repo root.
 
 **Local workflow tests:** `tests/ios-workflow-gates.test.ts` runs extracted Bash
-steps with real Node and Ruby executables. `ruby` (with RubyGems for
-`Gem::Version`) must be on `PATH` when running `npm test` or `npm run verify`,
-including in a devcontainer. These tests do not require Xcode or signing
-credentials and do not dispatch a native build.
+steps with real Node and Ruby executables. Ruby is not required to get a green
+`npm test` / `npm run verify` — without `ruby` (with RubyGems for
+`Gem::Version`) on `PATH`, the iOS Xcode-selection cases in that file are
+skipped, not failed (`describe.skipIf(!hasRuby)`,
+`tests/ios-workflow-gates.test.ts:167`), so a run on such a machine, including
+a devcontainer, has not exercised them — see
+[`../../CONTRIBUTING.md`](../../CONTRIBUTING.md#setup-and-commands). These
+tests do not require Xcode or signing credentials and do not dispatch a native
+build.
 
 ```bash
 git clone https://github.com/unfoldingWord/tc-mobile.git
@@ -289,7 +294,10 @@ Apple's processing) and assigns no tester group, so it cannot observe a later
 processing rejection either. Internal testers receive the build automatically once
 processing finishes **only if the internal tester group has _Automatically
 distribute new builds_ enabled** (§4a setup) — otherwise assign the processed build
-to the group by hand. **External** distribution needs a Beta App Review and is a
+to the group by hand. A tester whose group isn't assigned the new build stays on
+the previous one, and their reports then describe that older build (this
+happened on 1.0.0-rc.1). Check the assignment at every tester cut, and have
+iPhone testers confirm the build stamp before they report. **External** distribution needs a Beta App Review and is a
 separate step.
 
 The build number (`CFBundleVersion`) is the run's **unix timestamp** — unique and
@@ -668,17 +676,21 @@ TestFlight; browser testers use the staging link below.
 
 Source: <commit and promotion>. Changes since <last version handed to testers>.
 
-**Android — install/update:** Download app-release.apk below. <Confirmed
-signing compatibility and minimum Android version>. If uninstalling is
+**Android — install/update:** Download app-release.apk below, or scan the QR
+code (an attached image of the APK's download URL, embedded here). <Confirmed
+signing compatibility — the signer SHA-256 equals the previous build's — the
+APK's own SHA-256, and minimum Android version>. If uninstalling is
 necessary, share any recordings you need to keep first: uninstall deletes them.
 
 **iPhone — install/update:** Open TestFlight using your invitation and select
-<version/build>. <Availability or invitation instructions>.
+<version/build>. <Availability or invitation instructions>. Check that the
+build stamp at the bottom of the Books screen reads <VERSION> before testing;
+if it doesn't, stop and tell us.
 
 **Browser — open:** <staging URL>. Check the app's displayed build before testing.
 
-**With every report:** Include the app build, steps, expected result and what
-happened. Android: phone model, Android version and Android System WebView
+**With every report:** Include the app build, steps, expected result and
+what happened. Android: phone model, Android version and Android System WebView
 version. iPhone: model and iOS version. Browser: device, OS, browser/version,
 and whether opened in a tab or installed to the home screen. We log every
 report by your role (tester, facilitator, developer), never by your name.
@@ -709,7 +721,15 @@ browser's Back are different actions; name the one a check requires.
 Keep existing `android-release-vX.Y.Z` tags and release URLs unchanged so
 shared links and QR codes continue to work. Use `tester-build-vX.Y.Z` for
 future all-platform tester announcements, starting with the next published
-build (DRI decision, #629).
+build (DRI decision, #629). Release candidates use `tester-build-v1.0.0-rc.N`
+([promotion plan §3a](../release/promotion-v1.0.0.md)).
+
+Attach a QR code image of the APK's release download URL
+(`https://github.com/unfoldingWord/tc-mobile/releases/download/<tag>/app-release.apk`)
+to every tester pre-release and embed it in the notes. Scan it with a phone
+after publishing. GitHub serves an attached image as a download, so if it
+doesn't display inline, drag the image into the notes while editing the
+release.
 
 ### One-time setup
 
@@ -829,3 +849,35 @@ eviction. **Record → background → interruption must be re-tested inside the
 Capacitor build on a real iPhone and a real Android device** before this is
 called shippable. That spike is tracked separately (see #262 → the
 audio-revalidation issue), not closed by this scaffold.
+
+---
+
+## 9. Native licence notices
+
+Each native build ships the web app's licence texts plus its own notice
+(#477): `public/licenses/ANDROID-NOTICES.txt` and
+`public/licenses/IOS-NOTICES.txt`. They cover what the shell adds — the
+Capacitor runtime and plugins' native code, and the Android (Gradle) or iOS
+(Swift Package Manager) libraries they are built with. **Menu → About &
+licenses** lists the matching one on that build only (`licenseTextsFor` in
+`src/components/licenses.ts`); the PWA lists neither.
+
+`tests/native-licenses.test.ts` reads the dependencies the native projects
+declare (`android/app/build.gradle`, `android/variables.gradle`, each
+Capacitor plugin's `build.gradle`, `ios/App/CapApp-SPM/Package.swift` and
+the plugin packages it points at) and fails when one has no section at its declared
+version. It cannot see the transitive Gradle graph, so when that test fails
+after a Capacitor, plugin or `variables.gradle` change, regenerate the Android
+list from a resolved graph:
+
+```bash
+npx cap sync android
+cd android && ./gradlew :app:dependencies --configuration releaseRuntimeClasspath
+```
+
+Every module in that output gets a section (`group:artifact version — SPDX`,
+the licence from the module's published POM), except a `-bom` platform, which
+ships no code. The iOS remote packages are the `.package(url:)` entries the
+test lists; `ion-ios-filesystem` is declared with a floor, not an exact
+version, and no `Package.resolved` is committed, so its section names the
+major (`1.x`) rather than a resolved release.

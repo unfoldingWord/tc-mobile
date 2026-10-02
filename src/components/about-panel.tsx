@@ -3,14 +3,23 @@ import { useEffect, useRef, useState } from "react";
 import { BuildStamp } from "./build-stamp";
 import {
   contentAttribution,
-  licenseTexts,
+  licenseTextsFor,
   thirdPartyLicenses,
   type LicenseText,
 } from "./licenses";
 import { Menu } from "./menu";
 import { Notice } from "./notice";
 import { reportFailure } from "@/hooks/report-failure";
+import { readSharePlatform } from "@/hooks/share-target";
 import { strings } from "@/lib/strings";
+
+/**
+ * The privacy policy's public address: `PRIVACY.md` on `main`, the URL both
+ * store listings give (#1210). It resolves once the promotion carrying
+ * `PRIVACY.md` reaches `main`.
+ */
+const PRIVACY_POLICY_URL =
+  "https://github.com/unfoldingWord/tc-mobile/blob/main/PRIVACY.md";
 
 interface AboutPanelProps {
   open: boolean;
@@ -30,7 +39,10 @@ interface AboutPanelProps {
  * The app is MIT with one copyleft dependency, lamejs (LGPL-3.0, ADR 0003). The
  * LGPL and the MIT/ISC clauses of the other bundled dependencies all require
  * their licence text and copyright to travel with the app; this makes them
- * reachable by someone holding the phone, not just in `node_modules`.
+ * reachable by someone holding the phone, not just in `node_modules`. On a
+ * native build the list also names that shell's own notice (#477,
+ * `licenseTextsFor`), since the Capacitor runtime and the Android or iOS
+ * libraries it is built with ship in the app too.
  *
  * It owns its own `Menu` so the two-level view (the list, and a licence text
  * read in-drawer) composes with the modal contract: Close / Escape / a scrim
@@ -85,6 +97,9 @@ export function AboutPanel({
       title={viewing ? viewing.label : strings.aboutTitle}
       focusKey={viewing?.href ?? "list"}
       closeLabel={viewing ? strings.aboutBack : undefined}
+      // In the licence view the header control goes back to the list, one
+      // level, so it keeps the chevron in O4 rather than the sheets' ✕ (#1268).
+      back={viewing !== null}
     >
       {viewing ? (
         <LicenseTextView text={viewing} />
@@ -103,7 +118,7 @@ export function AboutPanel({
               never on an off-phone link (George G2). */}
           <section className="flex flex-col gap-[6px]">
             <h3 className="t-title">{strings.aboutTexts}</h3>
-            {licenseTexts.map((text) => (
+            {licenseTextsFor(readSharePlatform()).map((text) => (
               <button
                 key={text.href}
                 ref={(el) => {
@@ -131,6 +146,18 @@ export function AboutPanel({
           <div className="flex flex-col gap-[3px]">
             <span>{strings.aboutSourceOffer}</span>
             <SourceOfferLink />
+          </div>
+
+          {/* The privacy policy (#1210), after the licence-text buttons for
+              the same open-edge focus reason as the source offer. */}
+          <div className="flex flex-col gap-[3px]">
+            <span>{strings.aboutPrivacy}</span>
+            <ExternalLink
+              href={PRIVACY_POLICY_URL}
+              label={strings.aboutVisitPrivacy}
+            >
+              {strings.aboutPrivacyLink}
+            </ExternalLink>
           </div>
 
           <section className="flex flex-col gap-[10px]">

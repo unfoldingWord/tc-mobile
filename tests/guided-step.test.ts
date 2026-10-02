@@ -165,12 +165,42 @@ describe("the Books screen's link in the chain (#604)", () => {
   it("#834: the newest book's Add chapter still guides even with other books on the shelf", () => {
     // Tim's decision (#834): "once a book is added, the blue ring goes around
     // that book's + for adding a chapter" — whether or not other books
-    // already exist. `listBooks` sorts newest-first (`use-books.ts`), so the
-    // just-created book is always `books[0]`.
+    // already exist. `listBooks` sorts newest-created first
+    // (`lib/storage/books.ts`), so the just-created book is always `books[0]`.
     expect(guidedStep(books({ books: [book(1), book(2)] }))).toEqual({
       kind: "add-chapter",
       bookId: bookId(1),
     });
+  });
+
+  it("#866 item 2: a new empty book beside an older book that already has chapters still guides Add chapter", () => {
+    // The #834 fixture above (two empty books) is the easy shelf. The shape
+    // #834 actually reported is a shelf that already has a worked book: an
+    // older book with a chapter, and a brand-new empty one beside it.
+    // `books[0]` is still the newest book and still has no chapters, so it
+    // still gets the ring — the other book's chapters must not read as
+    // "this person has done this before" for the newest book's own step.
+    expect(
+      guidedStep(books({ books: [book(1), book(2, [chapter(1)])] }))
+    ).toEqual({
+      kind: "add-chapter",
+      bookId: bookId(1),
+    });
+  });
+
+  it("#866 item 2: the chapter-naming dialog still leads in for the newest book with more than one book on the shelf", () => {
+    // The `namingChapter` arm above (line ~102) was only ever exercised with a
+    // single book. This is the same arm with `books.length > 1` and an older
+    // book that already has a chapter — the dialog for the newest (empty)
+    // book's chapter still wins.
+    expect(
+      guidedStep(
+        books({
+          books: [book(1), book(2, [chapter(1)])],
+          namingChapter: true,
+        })
+      )
+    ).toEqual({ kind: "create-chapter" });
   });
 
   it("stops the terminal chain (not Add chapter) once there is more than one book", () => {

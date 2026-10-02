@@ -1,7 +1,155 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import { Icon } from "./icon";
+import { strings } from "@/lib/strings";
 import type { SegmentRowState } from "@/types/view";
+
+export interface O4CrumbsProps {
+  /** The book's name, the first crumb. */
+  book?: string;
+  /**
+   * The second crumb: the chapter's resolved name (`strings.chapterHeading`:
+   * the typed name, else "Chapter N", #1230), from every caller in `src/`.
+   * A number still renders, as a bare ordinal.
+   */
+  chapter?: string | number;
+  /** The segment crumb, on the segment menu and the recorder header only. */
+  segment?: { ordinal: number; state: SegmentRowState };
+  /**
+   * The crumbs that navigate (#1269), each drawn as a button named for its
+   * destination. Only a screen header passes these; a menu's sheet head
+   * never does, so its crumbs stay decoration.
+   */
+  links?: { book?: O4CrumbLink; chapter?: O4CrumbLink };
+  /**
+   * Disables every linked crumb, for a header whose Back control is disabled
+   * in the same state (the recorder's held take and close window).
+   */
+  disabled?: boolean;
+  /** The crumb for the screen being shown, marked `aria-current="page"`. */
+  current?: "chapter" | "segment";
+  /**
+   * Extra classes for the row itself (`.o4-crumbs` is always applied) — a
+   * header threads its own flex-shrink utilities (`min-w-0 flex-1`) here so
+   * the chips truncate the same way the menu's own row does, without this
+   * component needing to know it sits in a header rather than a sheet head.
+   */
+  className?: string;
+}
+
+/**
+ * The breadcrumb CHIPS on their own (#1105): chevron-clipped `.o4-crumb`
+ * spans, book then chapter then (if given) the segment, the segment's own
+ * crumb tinted by its state. Split out of `O4SheetHead` below so the
+ * segments and recorder headers (`segments-screen.tsx`, `recorder.tsx`) can
+ * render the exact same markup the O4 menus do, rather than a second
+ * hand-written reading of `.o4-crumb`'s chevron clip-path.
+ *
+ * The chapter crumb shows whatever the caller passes. #1105 made it the
+ * number everywhere; the requirements owner's decision on #1230 supersedes
+ * that, and every caller now passes the chapter's resolved name
+ * (`strings.chapterHeading`): the chapter-screen and recorder headers, and
+ * (the DRI's pick on #1263, "Names in menus too") the sheet heads of the
+ * chapter, segment and recorder menus, so a header and its menu always
+ * match. A crumb too long for its share of the row is elided with "…" by
+ * `o4/menus.css`, which also sets how the crumbs share that row.
+ *
+ * The book and chapter chips' text carries `dir="auto"` (#1267): both are
+ * names the facilitator typed, so each takes its direction from its own
+ * content, and the "…" elision and the alignment follow it (an RTL name is cut
+ * at its left end, the logical end). The chapter chip receives the resolved
+ * heading, so an unnamed chapter's default "Chapter N" also gets `auto`; that
+ * resolves the same way the app locale does, so nothing changes for it. The
+ * segment chip is a bare number and carries none.
+ *
+ * Without `links` it is decoration (no own `aria-hidden`, no own `role`) —
+ * a caller in a menu wraps it in `O4SheetHead`'s `aria-hidden` div, and
+ * `O4SheetHead` passes no links, so a menu's crumbs stay decoration.
+ *
+ * With `links` (#1269, the requirements owner: "Yes, make the header crumbs
+ * tappable for navigation"), a screen header turns each crumb that names a
+ * place above the current screen into a button named for its destination,
+ * and marks the current place's crumb `aria-current="page"`, which stays a
+ * plain span. The header hands each link its own Back handler, so a crumb
+ * never leaves by a path Back does not take. A linked crumb is a 44px
+ * target drawn as the same 40px chip (`o4/menus.css`, `button.o4-crumb`).
+ */
+export function O4Crumbs({
+  book,
+  chapter,
+  segment,
+  links,
+  disabled,
+  current,
+  className,
+}: O4CrumbsProps) {
+  return (
+    <div className={className ? `o4-crumbs ${className}` : "o4-crumbs"}>
+      {book !== undefined && (
+        <Crumb link={links?.book} disabled={disabled}>
+          <span dir="auto">{book}</span>
+        </Crumb>
+      )}
+      {chapter !== undefined && (
+        <Crumb
+          link={links?.chapter}
+          disabled={disabled}
+          current={current === "chapter"}
+        >
+          <span dir="auto">{chapter}</span>
+        </Crumb>
+      )}
+      {segment && (
+        <Crumb state={segment.state} current={current === "segment"}>
+          <span>{segment.ordinal}</span>
+        </Crumb>
+      )}
+    </div>
+  );
+}
+
+/** A crumb that navigates: its spoken name, and the header's own handler. */
+interface O4CrumbLink {
+  label: string;
+  onClick: () => void;
+}
+
+function Crumb({
+  link,
+  disabled,
+  current,
+  state,
+  children,
+}: {
+  link?: O4CrumbLink;
+  disabled?: boolean;
+  current?: boolean;
+  state?: SegmentRowState;
+  children: ReactNode;
+}) {
+  if (link) {
+    return (
+      <button
+        type="button"
+        className="o4-crumb"
+        aria-label={link.label}
+        disabled={disabled}
+        onClick={link.onClick}
+      >
+        {children}
+      </button>
+    );
+  }
+  return (
+    <span
+      className="o4-crumb"
+      data-state={state}
+      aria-current={current ? "page" : undefined}
+    >
+      {children}
+    </span>
+  );
+}
 
 interface O4SheetHeadProps {
   /** The book's name, the first crumb. */
@@ -17,8 +165,11 @@ interface O4SheetHeadProps {
    * as it did before this prop existed.
    */
   bookCoverHex?: string;
-  /** The chapter's number, the second crumb (the workbench's `crumbs()`). */
-  chapter?: number;
+  /**
+   * The second crumb: the chapter's resolved name (`strings.chapterHeading`,
+   * #1230), the same text the header the menu was opened from shows.
+   */
+  chapter?: string | number;
   /** The segment crumb, on the segment menu only: its ordinal and state. */
   segment?: { ordinal: number; state: SegmentRowState };
 }
@@ -30,10 +181,16 @@ interface O4SheetHeadProps {
  * crumbs on the well, the segment crumb tinted by its state. A crumb whose
  * value the caller does not have is left out.
  *
- * Decoration only, so the whole head is `aria-hidden`: the dialog is already
- * named by `<Menu>`'s title, and every action in it already names what it
- * does ("Edit segment 3", "Share chapter"). The screen reader hears the same
- * menu in both looks.
+ * The chips are decoration, so the head is `aria-hidden`: the dialog is
+ * named by `<Menu>`'s title, and every action in it names what it does
+ * ("Edit segment 3", "Share chapter"). Neither of those names the chapter,
+ * though, so beside the hidden head sits one screen-reader-only line
+ * (`.o4-sheet-place`) with the same place in words — the book, the chapter's
+ * name and the segment, the trail `strings.chapterBreadcrumb` /
+ * `strings.recorderBreadcrumb` spell (#1230). It is drawn only when both the
+ * book and the chapter are given, as every call site in `src/` gives them.
+ * The dialog's own name is left alone: the e2e suite and the current look
+ * find these menus by it.
  *
  * Used by the chapter, segment and recorder menus.
  *
@@ -58,33 +215,35 @@ export function O4SheetHead({
   chapter,
   segment,
 }: O4SheetHeadProps) {
+  const place =
+    book === undefined || chapter === undefined
+      ? null
+      : segment
+        ? strings.recorderBreadcrumb(
+            book,
+            String(chapter),
+            segment.ordinal,
+            null
+          )
+        : strings.chapterBreadcrumb(book, String(chapter));
   return (
-    <div className="o4-sheet-head" aria-hidden="true">
-      {book !== undefined && bookCoverHex !== undefined && (
-        <span
-          className="books-cover is-sm"
-          style={{ "--book-cover": bookCoverHex } as CSSProperties}
-        >
-          <Icon name="book" size={24} />
-        </span>
-      )}
-      <div className="o4-crumbs">
-        {book !== undefined && (
-          <span className="o4-crumb">
-            <span>{book}</span>
+    <>
+      <div className="o4-sheet-head" aria-hidden="true">
+        {book !== undefined && bookCoverHex !== undefined && (
+          <span
+            className="books-cover is-sm"
+            style={{ "--book-cover": bookCoverHex } as CSSProperties}
+          >
+            <Icon name="book" size={24} />
           </span>
         )}
-        {chapter !== undefined && (
-          <span className="o4-crumb">
-            <span>{chapter}</span>
-          </span>
-        )}
-        {segment && (
-          <span className="o4-crumb" data-state={segment.state}>
-            <span>{segment.ordinal}</span>
-          </span>
-        )}
+        <O4Crumbs book={book} chapter={chapter} segment={segment} />
       </div>
-    </div>
+      {place !== null && (
+        <p className="o4-sheet-place sr-only" dir="auto">
+          {place}
+        </p>
+      )}
+    </>
   );
 }

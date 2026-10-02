@@ -113,6 +113,7 @@ async function setup(look: Design, playingBuffer = false) {
     error: null,
     recorderError: null,
     meterFailed: false,
+    takeCap: { nearLimit: false, remainingMs: 20 * 60_000, reached: false },
     playTake: vi.fn(),
     playBuffer: vi.fn(),
     stopBuffer: vi.fn(),
@@ -174,7 +175,7 @@ async function openFromMenu() {
 const previewRow = () => document.querySelector(".confirm-preview");
 
 describe("the record-again confirm's 'Play what will be lost' row (#979 remainder), switch on", () => {
-  it("renders no row when opened via the ≡ menu's Erase (not the bin)", async () => {
+  it("renders no row when opened via the ⋮ menu's Erase (not the bin)", async () => {
     await setup("o4");
     await openFromMenu();
     expect(document.querySelector(".confirm-panel")).not.toBeNull();
@@ -223,7 +224,7 @@ describe("the row does not reach the switch-off dialog or the non-G5 dialogs", (
     expect(previewRow()).toBeNull();
   });
 
-  it("switch off: no row from the ≡ menu either", async () => {
+  it("switch off: no row from the ⋮ menu either", async () => {
     await setup("current");
     await openFromMenu();
     expect(previewRow()).toBeNull();

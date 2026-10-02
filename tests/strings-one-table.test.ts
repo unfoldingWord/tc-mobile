@@ -29,7 +29,9 @@ import { strings } from "@/lib/strings";
  * WHAT IT CHECKS, EXACTLY: no fixed sentence in the table appears as source text
  * anywhere in `app/`, `components/` or `hooks/` outside the table itself. It is
  * a source-text gate for the same reason `recorder-stop-release-guards.test.ts`
- * is one — there is no renderer here to ask a screen what it says.
+ * is one — the render harness (#197) mounts one component with one prop set per
+ * call, so it cannot sweep every literal across `app/`, `components/` and
+ * `hooks/` the way a source-text read can.
  *
  * WHAT IT DOES NOT CHECK, so nobody reads more into a green run:
  *
@@ -247,24 +249,32 @@ describe("the one string table (#169)", () => {
  * brought new files, and finding this class in them was a manual scan every
  * time. This is that scan.
  *
- * SCOPE IS `hooks/` AND `app/` ONLY, and that is a boundary rather than an
- * allowlist. In those two layers the table is the only legitimate source of a
- * translator-facing sentence. `components/` is not: `recovery-copy.ts` is a
- * second copy module on purpose — pure, tested, and deliberately left where it
- * is by this PR — so every one of its thirteen sentences would fail here, and
- * the repair would be a list of exceptions that a real leak could later hide
- * inside. A gate that needs an allowlist on day one is the "weaken the pattern
- * until it catches nothing" move AGENTS.md names; this one needs none.
+ * SCOPE IS `app/`, `hooks/` AND `components/`, less one file. It first ran
+ * over `app/` and `hooks/` alone, because `components/recovery-copy.ts` held
+ * its own sentences and every one of them would have failed here; the repair
+ * then would have been a list of exceptions that a real leak could later hide
+ * inside. Those sentences are table entries now (#169), so `components/` is in.
+ *
+ * The one file out is `components/licenses.ts`, and it is out as a second
+ * TABLE, not as an exception inside a layer: it is the licence disclosure
+ * record ADR 0003 and #36 describe, and `tests/licenses.test.ts` pins it
+ * against `package-lock.json`. Its copyright lines name their holders as each
+ * package ships them, which is not copy to translate. Whether its prose notes
+ * (`role`, `note`) should also come from the table is a separate call, left
+ * open on #169.
  *
  * WHAT IT CANNOT SEE: a sentence composed at the call site. A template literal
  * carrying `${...}` is skipped outright, because its text is not fixed and there
- * is nothing to compare. So this is a floor under the hooks layer, not a proof
- * that every word a hook can produce came from the table. The behavioural
+ * is nothing to compare. So this is a floor under these layers, not a proof
+ * that every word they can produce came from the table. The behavioural
  * version of that proof — rendering a screen and reading what it says — is a
  * different technique, and it belongs beside `recovery-copy.ts`'s own tests
  * rather than in a source-text gate.
  */
-const HOOK_LAYERS = ["app", "hooks"] as const;
+const HOOK_LAYERS = ["app", "hooks", "components"] as const;
+
+/** The licence disclosure record, a table of its own — see above. */
+const LICENCE_TABLE = path.join(ROOT, "src", "components", "licenses.ts");
 
 /**
  * Double-quoted, single-quoted, and interpolation-free template literals.
@@ -290,16 +300,22 @@ const tableSentences = new Set(
 
 const hookFiles = HOOK_LAYERS.flatMap((layer) =>
   sourceFiles(path.join(ROOT, "src", layer))
-);
+).filter((file) => file !== LICENCE_TABLE);
 
-describe("no sentence is stranded in a hook (#169)", () => {
+describe("no sentence is stranded outside the table (#169)", () => {
   it("has files to check", () => {
     // Same floor, same reason as above: a rename of `src/hooks` would otherwise
     // turn the loop below into an assertion over nothing.
     expect(hookFiles.length).toBeGreaterThan(10);
+    // And `components/` is really in it, not only named in the list: the module
+    // whose sentences kept it out is swept, and the licence record is not.
+    expect(hookFiles).toContain(
+      path.join(ROOT, "src", "components", "recovery-copy.ts")
+    );
+    expect(hookFiles).not.toContain(LICENCE_TABLE);
   });
 
-  it("every punctuated, non-composed literal in app/ and hooks/ is one the table holds", () => {
+  it("every punctuated, non-composed literal in app/, hooks/ and components/ is one the table holds", () => {
     const stranded: string[] = [];
     for (const file of hookFiles) {
       const code = stripComments(file);
@@ -330,8 +346,8 @@ describe("no sentence is stranded in a hook (#169)", () => {
  * Widening `isSentence` to take labels into the substring match above was
  * tried and rejected, not assumed: a label is short enough to occur inside a
  * longer sentence, so a substring match on labels fires on prose that merely
- * contains one (`"Delete this recording"` sits inside a `recovery-copy.ts`
- * sentence). The same trial found `restartLabel`'s `"Restart the app"`, a real
+ * contains one (`"Delete this recording"` sits inside
+ * `saveFailedBookDeleted`'s sentence). The same trial found `restartLabel`'s `"Restart the app"`, a real
  * second copy of `strings.appReload`, now routed through the table. That is
  * why this is a different technique rather than a wider pattern.
  *
@@ -343,12 +359,12 @@ describe("no sentence is stranded in a hook (#169)", () => {
  *
  * WHAT IT COVERS: every fixed table value with a space in it, plus every output
  * of the save-failed and take-recovery parameterised entries over their whole
- * domain, enumerated below. `saveFailedHeld` with an ordinal is composed at
- * run time, so its gate is the template shape instead: a template whose fixed
- * text around one `${…}` is the table's.
+ * domain, enumerated below. `saveFailedHeld` with an ordinal and
+ * `saveFailedAttempts` are composed at run time, so their gate is the template
+ * shape instead: a template whose fixed text around one `${…}` is the table's.
  *
  * WHAT IT DOES NOT: the other parameterised entries (counts, names, ordinals
- * outside `saveFailedHeld`) are not enumerated — their domains are not finite
+ * outside those two) are not enumerated — their domains are not finite
  * — and a label assembled from fragments at the call site is not a whole
  * literal. Single-word labels are out, for the reason `isSentence` gives.
  */
@@ -359,6 +375,12 @@ const enumeratedOutputs: readonly string[] = [false, true].flatMap(
     strings.saveFailedDiscard(editOnly, true),
     strings.saveFailedDiscardHint(editOnly),
     strings.saveFailedHeld(editOnly, null),
+    strings.saveFailedNeedsUpdate(editOnly),
+    strings.saveFailedBookGone(editOnly),
+    strings.saveFailedUnknown(editOnly),
+    strings.saveFailedUpdateLoses(editOnly),
+    strings.saveFailedBookDeleted(editOnly),
+    strings.saveFailedOnlyCopy(editOnly),
   ]
 );
 
@@ -370,14 +392,18 @@ const labels = new Set<string>([
 ]);
 
 /**
- * `saveFailedHeld(editOnly, n)` split around the ordinal, by asking the table
- * with a sentinel no real segment reaches. The sentinel must appear exactly
- * once, or the split is not describing one interpolation.
+ * `saveFailedHeld(editOnly, n)` split around the ordinal, and
+ * `saveFailedAttempts(n)` around the count, by asking the table with a
+ * sentinel no real segment or retry count reaches. The sentinel must appear
+ * exactly once, or the split is not describing one interpolation.
  */
 const SENTINEL = 987_654_321;
-const heldTemplates = [false, true].map((editOnly) =>
-  strings.saveFailedHeld(editOnly, SENTINEL).split(String(SENTINEL))
-);
+const heldTemplates = [
+  ...[false, true].map((editOnly) =>
+    strings.saveFailedHeld(editOnly, SENTINEL)
+  ),
+  strings.saveFailedAttempts(SENTINEL),
+].map((output) => output.split(String(SENTINEL)));
 
 /** Whole literal values in one file, keyed to where they sit. */
 function wholeLiterals(file: string): { value: string; line: number }[] {
@@ -415,7 +441,7 @@ describe("no label is written out again (#805 items 2 and 6)", () => {
     // the tree's count; the second is exact because the enumeration above is
     // written out by hand; the third proves the sentinel split found one hole.
     expect(labels.size).toBeGreaterThan(30);
-    expect(enumeratedOutputs).toHaveLength(10);
+    expect(enumeratedOutputs).toHaveLength(22);
     for (const parts of heldTemplates) expect(parts).toHaveLength(2);
   });
 

@@ -306,13 +306,13 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
    * Segments, open the hamburger, tap, and navigate back in — four screens,
    * in the one condition where the screen is hardest to read.
    *
-   * So these two cases assert the toggle is reachable from the chapter's `≡`
-   * and the recorder's `≡`, and that tapping it there actually repaints. They
+   * So these two cases assert the toggle is reachable from the chapter's `⋮`
+   * and the recorder's `⋮`, and that tapping it there actually repaints. They
    * fail on a Books-only toggle at the locator: the control is not in those
    * menus at all.
    *
    * WHY NOT A SECOND HAMBURGER on those screens. Both already carry their own
-   * `≡` (`strings.chapterMenuOpen`, `strings.recorderMenuOpen`), and a second
+   * `⋮` (`strings.chapterMenuOpen`, `strings.recorderMenuOpen`), and a second
    * opener beside them is the worse option on a 320px header that #370 already
    * reports wrapping — so the global entry joins the existing menu rather than
    * arriving with an opener of its own.
@@ -323,7 +323,7 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
    * store for every caller — proving them once is the point of that store.
    * What is new here is only REACHABILITY plus a real repaint at each site.
    */
-  test("the chapter ≡ carries the toggle, and it repaints from there", async ({
+  test("the chapter ⋮ carries the toggle, and it repaints from there", async ({
     page,
   }) => {
     await seedToSegments(page);
@@ -355,7 +355,7 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
     expect(await resolved(page, await floorOf(page))).toBe(DARK_FLOOR);
   });
 
-  test("the recorder ≡ carries the toggle, and it repaints from inside the sheet", async ({
+  test("the recorder ⋮ carries the toggle, and it repaints from inside the sheet", async ({
     page,
   }) => {
     // The case the reframing of #149 turns on: the sheet is where a translator
@@ -365,7 +365,7 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
     await seedToRecorder(page);
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 
-    // `exact`, because the Segments `≡` behind the sheet ("More actions for
+    // `exact`, because the Segments `⋮` behind the sheet ("More actions for
     // this chapter") is still in the DOM and a substring match would find two.
     await page
       .getByRole("button", { name: "More actions", exact: true })
@@ -379,16 +379,19 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
     // The AT consequence this PR asks a reviewer to ACCEPT, pinned rather than
     // left in prose. `Menu` lands open-edge focus on the first ACTIONABLE child,
     // skipping `aria-disabled` hinted rows (#135); on a segment with nothing
-    // recorded and an empty clipboard every pre-existing row USED TO be
-    // hinted, making the toggle that child. #590 changed that: "Delete
-    // segment" does not require stored audio (unlike Erase), so on this exact
-    // empty segment it is now actionable too — and it sits earlier in the DOM
-    // than the toggle, so IT is the first actionable child now, and the
-    // toggle is reached by Tab from there rather than by open-edge focus.
-    // This is exactly the "a pre-existing row becomes actionable" case the
-    // comment below already named as what would catch — Delete is a new row,
-    // not a pre-existing one, but the consequence for this assertion is the
-    // same: the first actionable child changed.
+    // recorded and an empty clipboard every row is hinted (Edit: no audio and
+    // no clipboard to paste; Mark: no audio; Clear: no clip), making the
+    // toggle that child.
+    //
+    // #590/#1080 briefly changed this: "Delete segment" (once a row in this
+    // same menu) did not require stored audio, so on this exact empty segment
+    // it was actionable ahead of the toggle, and this assertion named IT as
+    // the open-edge target instead. #1104 (the requirements owner's
+    // 2026-09-26 decision) removed Delete from this menu entirely — it
+    // belongs to the chapter view's own segment-row menu now — so this is
+    // back to its original shape: no row ahead of the toggle is ever
+    // actionable on an empty segment, and open-edge focus lands directly on
+    // the toggle again.
     //
     // It is asserted BEFORE the click, because clicking moves focus itself and
     // would make this pass for the wrong reason.
@@ -399,12 +402,6 @@ test.describe("the theme is reachable from the screens you work on (#149)", () =
     // and an earlier version of this comment wrongly said it did (George).
     // The mount ORDER is held by `tests/theme.test.ts` and by the comments in
     // `recorder-menu.tsx`.
-    const toDelete = menu.getByRole("button", { name: "Delete segment" });
-    await expect(toDelete).toBeFocused();
-
-    // The toggle is still reachable by keyboard from inside the sheet — the
-    // whole point of #149 — just not as the open-edge focus target anymore.
-    await page.keyboard.press("Tab");
     await expect(toLight).toBeFocused();
 
     await toLight.click();

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   MB,
+  UNITS_NOTE,
   formatMb,
   formatPhoneCheckReport,
   formatRate,
@@ -62,11 +63,31 @@ describe("phone check report arithmetic", () => {
   });
 });
 
+describe("formatPhoneCheckReport states the MB/MiB gap once (#1014 item 2)", () => {
+  it("carries the units note as the second line, ahead of every figure", () => {
+    const report = formatPhoneCheckReport({
+      version: "0.2.12",
+      sha: "abc1234",
+      device: null,
+      encode: null,
+      storage: null,
+      allocation: null,
+    });
+    const lines = report.split("\n");
+    expect(lines[1]).toBe(UNITS_NOTE);
+    expect(UNITS_NOTE).toContain("MiB");
+    expect(UNITS_NOTE).toContain("1024");
+    // The note's own claim: MB, the unit every section prints, IS 1024*1024.
+    expect(MB).toBe(1024 * 1024);
+  });
+});
+
 describe("formatPhoneCheckReport", () => {
   it("renders every probe's numbers when all ran", () => {
     expect(formatPhoneCheckReport(ALL_RUN)).toBe(
       [
         "**Phone check** (#1009) — build v0.2.12 · abc1234",
+        UNITS_NOTE,
         "Tester (role): ",
         "Device and OS version: ",
         "",

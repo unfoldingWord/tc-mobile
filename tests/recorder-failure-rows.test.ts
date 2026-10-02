@@ -75,7 +75,7 @@ describe("source pins (text shape only): onInterrupted's still-active arm report
    * Comment strip is safe for `src/hooks/use-recorder.ts`:
    * `tests/recorder-resume-race.test.ts` established it holds no `//` or
    * `/*` inside a string literal, and the #478 template literal added here
-   * contains neither (re-checked by grep for this PR).
+   * contains neither, so the strip cannot truncate it.
    */
   const sourceUrl = new URL("../src/hooks/use-recorder.ts", import.meta.url);
   const code = stripComments(readFileSync(sourceUrl, "utf8"));
@@ -286,10 +286,9 @@ describe("source pins (text shape only): stopRecording()'s backstop catch report
   /**
    * Comment strip safety for `src/hooks/use-audio-session.ts` had not been
    * established before this file (the two earlier gates checked only
-   * use-recorder.ts). Checked for this PR: a grep for `//` or `/*` inside a
-   * double-quoted, single-quoted or template literal in that file returned
-   * no match, so the strip cannot truncate a literal and mis-isolate
-   * `stopRecording`'s body.
+   * use-recorder.ts). A grep for `//` or `/*` inside a double-quoted,
+   * single-quoted or template literal in that file finds no match, so the
+   * strip cannot truncate a literal and mis-isolate `stopRecording`'s body.
    */
   const sourceUrl = new URL(
     "../src/hooks/use-audio-session.ts",

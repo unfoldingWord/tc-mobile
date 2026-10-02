@@ -7,18 +7,16 @@ import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
 
+import { restingErase } from "./support";
+
 /**
  * The erase surface `App` now owns and passes down (#160, L-12). Resting: this
  * suite never erases, and a stub that answers "no erase in flight" is what the
  * screen's Back and confirm gates read. Written here rather than mocked at the
  * module, because the screen takes it as a PROP now — a module mock would
- * intercept nothing.
+ * intercept nothing. Shared fixture (#856 item 3, `tests/support.ts`).
  */
-const erase = {
-  erase: vi.fn(async () => "ok" as const),
-  erasing: false,
-  isErasing: () => false,
-};
+const erase = restingErase();
 
 /**
  * The toolbar edit toggle (#557) and the span it opens (#554).
@@ -102,6 +100,7 @@ async function mount() {
     error: null,
     recorderError: null,
     meterFailed: false,
+    takeCap: { nearLimit: false, remainingMs: 20 * 60_000, reached: false },
     playTake: vi.fn(),
     playBuffer: vi.fn(),
     stopBuffer: vi.fn(),
@@ -143,9 +142,11 @@ function toolbar(): HTMLElement {
   expect(bars).toHaveLength(1);
   return bars[0]!;
 }
+/** The toggle in either state: "Edit recording" (scissors) in record mode,
+ * "Stop editing" (✕) in edit mode (#1252). */
 function toggle(): HTMLButtonElement {
   const found = toolbar().querySelectorAll<HTMLButtonElement>(
-    `button[aria-label="${strings.enterEdit}"]`
+    `button[aria-label="${strings.enterEdit}"], button[aria-label="${strings.leaveEdit}"]`
   );
   expect(found).toHaveLength(1);
   return found[0]!;
@@ -211,23 +212,28 @@ describe("the edit toggle (#557) opens the forward seed (#554)", () => {
     expect(handle(strings.selectionStartHandle)).toBe(563);
   });
 
-  it("is the same named control, last in both bars, and reads pressed only in edit mode", async () => {
+  it("is the same control, last in both bars, named for what a tap does (#1252)", async () => {
     await mount();
     const bar = toolbar();
+    const node = toggle();
     expect(bar.classList.contains("edit")).toBe(false);
-    expect(toggle().getAttribute("aria-pressed")).toBe("false");
-    expect(bar.lastElementChild?.contains(toggle())).toBe(true);
+    expect(node.getAttribute("aria-label")).toBe(strings.enterEdit);
+    expect(node.hasAttribute("aria-pressed")).toBe(false);
+    expect(bar.lastElementChild?.contains(node)).toBe(true);
 
     await act(async () => toggle().click());
     const editBar = toolbar();
     expect(editBar.classList.contains("edit")).toBe(true);
-    expect(toggle().getAttribute("aria-pressed")).toBe("true");
-    expect(editBar.lastElementChild?.contains(toggle())).toBe(true);
+    // The same DOM node (`key="edit-toggle"`), now the ✕ exit.
+    expect(toggle()).toBe(node);
+    expect(node.getAttribute("aria-label")).toBe(strings.leaveEdit);
+    expect(node.hasAttribute("aria-pressed")).toBe(false);
+    expect(editBar.lastElementChild?.contains(node)).toBe(true);
 
-    // The pressed toggle is the way back out, closing the frame on the way.
+    // The ✕ is the way back out, closing the frame on the way.
     await act(async () => toggle().click());
     expect(toolbar().classList.contains("edit")).toBe(false);
-    expect(toggle().getAttribute("aria-pressed")).toBe("false");
+    expect(toggle().getAttribute("aria-label")).toBe(strings.enterEdit);
     expect(handle(strings.selectionStartHandle)).toBeNull();
   });
 });

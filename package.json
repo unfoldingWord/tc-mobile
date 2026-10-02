@@ -1,10 +1,15 @@
 {
   "name": "tc-mobile",
-  "version": "0.2.13",
+  "version": "1.0.1",
   "private": true,
   "license": "MIT",
   "type": "module",
   "description": "translationCore Mobile — offline-first audio notebook/editor PWA for oral Bible translation",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/unfoldingWord/tc-mobile.git"
+  },
+  "homepage": "https://github.com/unfoldingWord/tc-mobile#readme",
   "scripts": {
     "dev": "vite dev",
     "dev:lan": "vite dev --host",

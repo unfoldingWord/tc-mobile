@@ -30,6 +30,7 @@ import {
   raceAudioResume,
   RESUME_TIMEOUT_MS,
   resumeAudioContext,
+  setRecordAudioSession,
   stopTracks,
 } from "./audio-io";
 import { reportFailure } from "./report-failure";
@@ -558,6 +559,16 @@ export function useRecorder(): UseRecorder {
     let stream: MediaStream | null = null;
 
     try {
+      // #1111: declare a record-capable audio session BEFORE the microphone
+      // opens. WebKit's `"playback"` type (`setPlaybackAudioSession`,
+      // `audio-io.ts`) — asserted on every Play so recordings stay audible
+      // through the iPhone silent switch — is documented for playback only;
+      // switching here, ahead of `getUserMedia`, is the "if needed" case
+      // #1111 asks this fix to cover so a session left on `"playback"` by an
+      // earlier Play cannot fight the mic. Feature-checked and a no-op on
+      // every non-WebKit engine, and inside the native iOS shell (#1251),
+      // where the launch-time `.playAndRecord` category is not switched.
+      setRecordAudioSession();
       stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           // Speech in a noisy room, recorded on a phone held in the hand.
@@ -700,7 +711,7 @@ export function useRecorder(): UseRecorder {
           // for the same reason the original stop is: the chunks are final. NOT
           // on the error path (recorder still active), where clone-stop could
           // truncate the slice stop() will recover.
-          stream?.getTracks().forEach((track) => track.stop());
+          if (stream) stopTracks(stream, "recorder-release-track");
           closeTap();
         } else if (!interruptionReported) {
           interruptionReported = true;
@@ -1130,8 +1141,8 @@ export function useRecorder(): UseRecorder {
   // the way `resumeAudioContext` itself is — `tests/foreground-resume.test.ts`
   // mutates each guard to prove it. The effect is the one-line call plus the
   // `[state]` dependency: browser-boundary wiring whose guards are Node-tested,
-  // but the effect actually firing and iOS gesture-withholding are the on-device
-  // pass for #76 — NOT yet run on any device.
+  // but the effect actually firing and iOS gesture-withholding are on-device
+  // surface for #76, not exercised here.
   useEffect(() => armForegroundResume(state === "recording"), [state]);
 
   // Never leave the microphone hot if the screen unmounts mid-recording.

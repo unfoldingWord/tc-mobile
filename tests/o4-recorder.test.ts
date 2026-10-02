@@ -10,7 +10,13 @@ import { recorderLook, type RecorderLook } from "@/components/recorder-look";
 import { RecorderStamp } from "@/components/recorder-o4";
 import { PlayheadOverlay } from "@/components/playhead-overlay";
 import { render } from "./render";
-import { cssRule, region, stripComments, uniqueIndexOf } from "./support";
+import {
+  cssRule,
+  region,
+  stripComments,
+  stripCssComments,
+  uniqueIndexOf,
+} from "./support";
 
 /**
  * The O4 Recorder (#945, epic #936): states 08 idle, 09 recording, 10
@@ -38,20 +44,18 @@ const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8");
  * selector on the line that opens its block.
  */
 function flatten(css: string): string {
-  return css
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(
-      /([;{}])\s*([^;{}]+?)\s*\{/g,
-      (_, end: string, sel: string) =>
-        `${end}\n  ${sel.replace(/\s+/g, " ").trim()} {`
-    );
+  return stripCssComments(css).replace(
+    /([;{}])\s*([^;{}]+?)\s*\{/g,
+    (_, end: string, sel: string) =>
+      `${end}\n  ${sel.replace(/\s+/g, " ").trim()} {`
+  );
 }
 const CSS = flatten(read("src/app/styles/o4/recorder.css"));
 const O4 = '[data-design="o4"]';
 
 /** Every selector list that opens a style rule (not an at-rule). */
 function ruleSelectors(css: string): string[] {
-  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const stripped = stripCssComments(css);
   return [...stripped.matchAll(/([^{};]+)\{/g)]
     .map((m) => (m[1] ?? "").trim())
     .filter((s) => s !== "" && !s.startsWith("@"));
@@ -72,7 +76,7 @@ describe("o4/recorder.css is scoped and stays on the colour roles (#945)", () =>
   });
 
   it("reads colour only through layer-2 roles, never a primitive or a literal", () => {
-    const stripped = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+    const stripped = stripCssComments(CSS);
     const values = [...stripped.matchAll(/[\w-]+\s*:\s*([^;{}]+);/g)].map(
       (m) => m[1] ?? ""
     );
@@ -142,6 +146,41 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
     expect(knob).toMatch(/background:\s*var\(--s-voice\)/);
   });
 
+  it("12 editing: the knob sits at the bar's bottom, not its vertical middle (#1102)", () => {
+    // The reported bug: `top: 50%; margin-top: -28px` centred the knob over
+    // the waveform. Anchored to `bottom: 0` instead — the bar itself still
+    // spans the handle's full `top: 0; bottom: 0` (3-components.css), so this
+    // sits at the canvas's own bottom edge.
+    const knob = cssRule(CSS, `${O4} .selection-handle::after`);
+    expect(knob).toMatch(/(?:^|;)\s*bottom:\s*0(?:px)?\s*;/);
+    // The vertical-middle rule this replaces, named so a partial revert (only
+    // one of the two declarations restored) still fails.
+    expect(knob).not.toMatch(/(?:^|;)\s*top:\s*50%/);
+    expect(knob).not.toMatch(/margin-top:\s*-28px/);
+  });
+
+  it("12 editing: the Cut row spans the canvas width, so its percentage lines up with the waveform (#1102)", () => {
+    const row = cssRule(CSS, `${O4} .recorder-cut`);
+    expect(row).toMatch(/(?:^|;)\s*width:\s*100%\s*;/);
+    expect(row).toMatch(/(?:^|;)\s*position:\s*relative\s*;/);
+  });
+
+  it("12 editing: the Cut wrapper centers on the selection's midpoint, clamped to stay on screen (#1102)", () => {
+    const anchor = cssRule(CSS, `${O4} .recorder-cut .cut-anchor`);
+    expect(anchor).toMatch(/(?:^|;)\s*position:\s*absolute\s*;/);
+    // The clamp mirrors `.selection-handle`'s own edge clamp: half the
+    // button's own box (`--c-control-sm`, what `.control--quiet` — the
+    // scissors — is sized by) on either side, so the button's whole 40px box
+    // stays inside the canvas even when the selection runs to an edge.
+    expect(anchor).toMatch(
+      /left:\s*clamp\(\s*calc\(var\(--c-control-sm\)\s*\/\s*2\),\s*var\(--o4-cut-left,\s*50%\),\s*calc\(100%\s*-\s*var\(--c-control-sm\)\s*\/\s*2\)\s*\)/
+    );
+    // Falls back to dead centre when nothing overrides it (the bin, #862,
+    // which never sets --o4-cut-left).
+    expect(anchor).toMatch(/var\(--o4-cut-left,\s*50%\)/);
+    expect(anchor).toMatch(/transform:\s*translateX\(-50%\)/);
+  });
+
   it("the big transport buttons are 80 × 80, shrinking no lower than the 44 floor", () => {
     const pair = cssRule(CSS, `${O4} .recorder-toolbar.pair`);
     expect(pair).toMatch(/container-type:\s*inline-size/);
@@ -186,7 +225,7 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
     expect(toggle).toMatch(/height:\s*64px/);
   });
 
-  it("sets no ink on the transport, so the pressed toggle's is-on ink still wins", () => {
+  it("sets no ink on the transport, so the zoom toggle's is-on ink still wins", () => {
     for (const sel of [
       `${O4} .recorder-toolbar.pair .control:not(.control--record):not(.control--play)`,
       `${O4} .recorder-toolbar.edit .control`,
@@ -198,7 +237,7 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
     // The inert look is `3-components.css`'s `.control:disabled` /
     // `[aria-disabled]` dim and desaturate. Overriding opacity or filter in
     // O4 would un-grey a control the current look greys.
-    const stripped = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+    const stripped = stripCssComments(CSS);
     expect(stripped).not.toMatch(/(^|[\s;{])opacity\s*:/);
     expect(stripped).not.toMatch(/(^|[\s;{])filter\s*:/);
   });

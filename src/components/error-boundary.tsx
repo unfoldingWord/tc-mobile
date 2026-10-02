@@ -301,7 +301,10 @@ function CrashScreen() {
             {strings.appFailed}
           </p>
 
-          <p id={TEACH_ID} className="text-ink-muted text-[13px]">
+          <p
+            id={TEACH_ID}
+            className="text-ink-muted text-[length:var(--p-text-md)]"
+          >
             {strings.appReloadTeach}
           </p>
 
@@ -334,7 +337,10 @@ function CrashScreen() {
           {strings.appFailed}
         </p>
 
-        <p id={TEACH_ID} className="text-ink-muted text-[13px]">
+        <p
+          id={TEACH_ID}
+          className="text-ink-muted text-[length:var(--p-text-md)]"
+        >
           {strings.appReloadTeach}
         </p>
 

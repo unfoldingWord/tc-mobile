@@ -85,6 +85,7 @@ async function render(
         onOpenRecorder: vi.fn(),
         onSetFinished: vi.fn(),
         onErase: vi.fn(),
+        onDeleteSegment: vi.fn(),
         onRename,
       })
     );

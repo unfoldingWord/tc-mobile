@@ -62,7 +62,9 @@ export function O4BookDeleteAsk({
         >
           <Icon name="book" size={24} />
         </span>
-        <span className="books-sheet-name">{name}</span>
+        <span className="books-sheet-name" dir="auto">
+          {name}
+        </span>
       </div>
       <div className="confirm-actions">
         <Control

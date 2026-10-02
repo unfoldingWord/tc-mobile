@@ -15,7 +15,7 @@ import { warmEncoder } from "@/hooks/mp3-codec";
 import { useAudioSession } from "@/hooks/use-audio-session";
 import { useDatabaseStatus } from "@/hooks/use-database-status";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
-import { useNavStack } from "@/hooks/use-nav-stack";
+import { clearPhoneCheckQueryParam, useNavStack } from "@/hooks/use-nav-stack";
 import { useSaveTake } from "@/hooks/use-save-take";
 import {
   holdsUnsavedAudio,
@@ -23,6 +23,7 @@ import {
   panelWouldLoseAudio,
 } from "@/lib/takes/pending-take";
 import type { ChapterId, SegmentId } from "@/types/domain";
+import type { RecorderEntry } from "@/types/view";
 
 /**
  * The pivot app: Books → Segments → Recorder (a sheet over Segments).
@@ -48,6 +49,9 @@ export function App() {
   // the one ordinal is `recordingOrdinal` below. This slot is cleared the
   // moment the sheet closes.
   const [recorder, setRecorder] = useState<SegmentId | null>(null);
+  // The mode that sheet opens in (#286 item 2). Written on every open beside
+  // `recorder`; the sheet reads it once, when its take has loaded.
+  const [recorderEntry, setRecorderEntry] = useState<RecorderEntry>("record");
 
   const segmentsRef = useRef<SegmentsScreenHandle>(null);
   // System-Back handling (#168) lives in the `useNavStack` adapter below:
@@ -88,6 +92,15 @@ export function App() {
   const [phoneCheckOpen, setPhoneCheckOpen] = useState(
     () => new URLSearchParams(window.location.search).get("check") === "phone"
   );
+  // Close drops `?check=phone` from the URL too (#1014 item 4), or a later
+  // reload of this same tab would read it again and reopen the check. The
+  // `window.history` call itself lives in `use-nav-stack.ts`
+  // (`clearPhoneCheckQueryParam`), the one file invariant 1 permits one in
+  // (docs/design/back-navigation.md); this is only the state half.
+  const closePhoneCheck = useCallback(() => {
+    clearPhoneCheckQueryParam();
+    setPhoneCheckOpen(false);
+  }, []);
 
   const audio = useAudioSession();
   const { leave, primeAudioContext } = audio;
@@ -218,7 +231,7 @@ export function App() {
   }, [leave, setClipboard]);
 
   const openRecorderState = useCallback(
-    (segmentId: SegmentId, ordinal: number) => {
+    (segmentId: SegmentId, ordinal: number, entry?: RecorderEntry) => {
       // Amendment C's other half (#452 PR4, the decision recorded on #452 and
       // beside the cleanup effect in `use-nav-stack.ts`). The adapter clears
       // the WHOLE layer stack when `screen` changes, but this transition is not
@@ -236,6 +249,7 @@ export function App() {
       // un-resumed — the very trip the #155/#137 recovery panel exists to soften.
       // Priming it here spares the common transient case that failed open.
       primeAudioContext();
+      setRecorderEntry(entry ?? "record");
       setRecordingOrdinal(ordinal);
       setRecorder(segmentId);
     },
@@ -433,7 +447,7 @@ export function App() {
   if (phoneCheckOpen) {
     return (
       <main className="app-shell mx-auto h-full max-w-md">
-        <PhoneCheckScreen onClose={() => setPhoneCheckOpen(false)} />
+        <PhoneCheckScreen onClose={closePhoneCheck} />
       </main>
     );
   }
@@ -487,6 +501,7 @@ export function App() {
           key={recorder}
           ref={recorderRef}
           segmentId={recorder}
+          openInEdit={recorderEntry === "edit"}
           audio={audio}
           erase={erase}
           saveRecording={saveRecordingOnSheet}

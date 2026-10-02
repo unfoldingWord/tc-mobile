@@ -11,11 +11,11 @@ import { SegmentsScreen } from "@/components/segments-screen";
 import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
-import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
 
 import { render } from "./render";
+import { restingErase, stripCssComments } from "./support";
 
 /**
  * Press-and-hold reorder on the Segments list (#953 PR2a), wired: the real
@@ -72,11 +72,7 @@ let onOpenRecorder: ReturnType<
   typeof vi.fn<(segmentId: SegmentId, ordinal: number) => void>
 >;
 
-const erase = {
-  erasing: false,
-  isErasing: () => false,
-  erase: vi.fn(),
-} as unknown as UseEraseSegment;
+const erase = restingErase();
 const audio = {
   error: null,
   playingId: null,
@@ -255,7 +251,8 @@ describe("the O4 hold area (#953 PR2a, DRI pick: badge and title)", () => {
     await act(async () => vi.advanceTimersByTime(200));
     await act(async () => pointer(badge(1), "pointerup", 145));
     await act(async () => badge(1).click());
-    expect(onOpenRecorder).toHaveBeenCalledWith("s1", 2);
+    // No entry: a plain tap opens the sheet in record mode (#286 item 2).
+    expect(onOpenRecorder).toHaveBeenCalledWith("s1", 2, undefined);
     expect(moveSegment).not.toHaveBeenCalled();
   });
 });
@@ -517,6 +514,7 @@ describe("the switch-off look does not gain the gesture", () => {
       onOpenRecorder: () => {},
       onSetFinished: () => {},
       onErase: () => {},
+      onDeleteSegment: () => {},
       onRename: () => Promise.resolve(true),
       onHoldStart: () => {},
     };
@@ -536,10 +534,12 @@ describe("the switch-off look does not gain the gesture", () => {
 });
 
 describe("o4/segments.css: the lift (§3, §4)", () => {
-  const code = readFileSync(
-    path.resolve(import.meta.dirname, "../src/app/styles/o4/segments.css"),
-    "utf8"
-  ).replace(/\/\*[\s\S]*?\*\//g, "");
+  const code = stripCssComments(
+    readFileSync(
+      path.resolve(import.meta.dirname, "../src/app/styles/o4/segments.css"),
+      "utf8"
+    )
+  );
   const reduced = code.indexOf("@media (prefers-reduced-motion: reduce)");
   const main = code.slice(0, reduced === -1 ? code.length : reduced);
   const motion = reduced === -1 ? "" : code.slice(reduced);

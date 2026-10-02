@@ -276,6 +276,38 @@ export const licenseTexts: readonly LicenseText[] = [
   { label: "GNU GPL v3 — lamejs", href: "/licenses/GNU-GPL-3.0.txt" },
 ];
 
+/**
+ * Each native shell's own notice (#477): what a Capacitor build carries beyond
+ * the web bundle — the Capacitor runtime and plugins' native code, and the
+ * Android (Gradle) or iOS (Swift Package Manager) libraries they are built
+ * with. The PWA carries none of it, so each is listed on its own build only.
+ * `tests/native-licenses.test.ts` reads the native projects' declared
+ * dependencies and requires a section for each in its platform's notice.
+ */
+const nativeLicenseTexts: Readonly<Record<"android" | "ios", LicenseText>> = {
+  android: {
+    label: "Android app — native components",
+    href: "/licenses/ANDROID-NOTICES.txt",
+  },
+  ios: {
+    label: "iPhone app — native components",
+    href: "/licenses/IOS-NOTICES.txt",
+  },
+};
+
+/**
+ * The licence texts for the build that is running: the web list everywhere,
+ * plus the native shell's notice on a native build. `platform` is the
+ * runtime's build id (`readSharePlatform()`), passed in so this stays data.
+ */
+export function licenseTextsFor(
+  platform: "android" | "ios" | "web"
+): readonly LicenseText[] {
+  return platform === "web"
+    ? licenseTexts
+    : [...licenseTexts, nativeLicenseTexts[platform]];
+}
+
 /** A piece of bundled content and the terms it is offered under. */
 interface ContentAttribution {
   readonly what: string;

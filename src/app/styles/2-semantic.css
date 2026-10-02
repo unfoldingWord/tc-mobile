@@ -138,11 +138,12 @@
     --s-voice-ink: #ffffff;
     --s-voice-quiet: var(--p-amber-100);
     /* And this is where "fails contrast as a text colour" stops being only a
-       comment. `.modepill` paints 12px text in the accent on a 15% accent
-       wash: 5.4:1 dark, but 3.0:1 here, because a darker FILL on white is
-       still too light to be INK on a wash of itself. A darker amber again,
-       for the text case only — the fill above is unchanged, so the pill still
-       reads as the edit context. */
+       comment. The old "Editing" pill painted 12px text in the accent on a
+       15% accent wash: 5.4:1 dark, but 3.0:1 here, because a darker FILL on
+       white is still too light to be INK on a wash of itself. A darker amber
+       again, for the text case only — the fill above is unchanged. Its
+       readers now include the plain "Editing" marker (`.recorder-editing`,
+       #1243). */
     --s-voice-text: #8a5a12;
 
     /* Darker green fill on white, same as voice does — keeps contrast on light. */

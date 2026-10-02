@@ -46,7 +46,9 @@ async function openEditMode(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Create chapter" }).click();
   await page.getByRole("button", { name: "Open Chapter 1" }).click();
   await page.getByRole("button", { name: "Add segment" }).click();
-  await page.getByRole("button", { name: "Record segment 1" }).click();
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
   await page.getByRole("button", { name: "Record", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Stop recording", exact: true })
@@ -136,7 +138,7 @@ test.describe("edit-toolbar history cue (#91)", () => {
       );
     }
     // Nothing painted on either grey arrow (#924). Until #924 this asserted
-    // TWO badges here — the sighted half #135 round 2 added for the ≡ rows,
+    // TWO badges here — the sighted half #135 round 2 added for the ⋮ rows,
     // borrowed by #703 — and measured each one's overflow into the next
     // control. Both arrows are grey and both wrappers are present (asserted
     // below), so this is the cell where a badge would show if the hint grew
@@ -207,8 +209,19 @@ test.describe("edit-toolbar history cue (#91)", () => {
         Math.abs(box.y - was.y),
         `control ${i} moved in y`
       ).toBeLessThanOrEqual(1);
-      expect(box.width, `control ${i} changed width`).toBe(was.width);
-      expect(box.height, `control ${i} changed height`).toBe(was.height);
+      // 0.5px tolerance, matching the wrapper-vs-button check just above:
+      // `getBoundingClientRect()` floats over the same box in the same
+      // column can differ by a sub-pixel rounding without a real reflow, and
+      // a strict `toBe` here was a flake surface the tolerated x/y checks
+      // right above it did not share (#719 item 2, raised in three rounds).
+      expect(
+        Math.abs(box.width - was.width),
+        `control ${i} changed width`
+      ).toBeLessThanOrEqual(0.5);
+      expect(
+        Math.abs(box.height - was.height),
+        `control ${i} changed height`
+      ).toBeLessThanOrEqual(0.5);
     }
 
     // ── Position 3: THE ROUND-1 DEFECT. Undo back to the bottom of a stack

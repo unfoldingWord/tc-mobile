@@ -34,9 +34,9 @@ import { bookShareItems } from "./share-o4-view";
 import { ShareProgress } from "./share-progress";
 import { StoragePressureBanner } from "./storage-pressure-banner";
 import { storagePressureNotice } from "./storage-pressure-notice";
+import { shelfNoticeText } from "./shelf-notice-text";
 import { strings } from "@/lib/strings";
 import { ThemeControl } from "./theme-control";
-import { DesignControl } from "./design-control";
 import { useFailureCount, useMarkedFailureCount } from "@/hooks/failure-log";
 import { encoderHealth, subscribeToEncoderHealth } from "@/hooks/mp3-codec";
 import type { FailureKey } from "@/hooks/save-failure";
@@ -1247,7 +1247,7 @@ export function BooksScreen({
   // ── O4: the Cover colour tile and #957's picker (#949, #937 D7) ─────────
   //
   // The write is #964's hook, which reports a failure to the funnel itself
-  // and refuses a second write while one is in flight. `reload()` after a
+  // and queues a second tap while one is in flight. `reload()` after a
   // success is what carries the stored key onto the shelf's card, and so to
   // the cover, the sheet head and the tile.
   const { setCoverColour } = useBookCoverColour();
@@ -1266,9 +1266,16 @@ export function BooksScreen({
       // The sheet session this choice belongs to: a close or a reopen while
       // the write settles must not flip the next session's picker.
       const session = bookMenuSession.current;
+      // "queued" (#1046 item 4, DRI: "Last tap wins"): this tap was coalesced
+      // into the in-flight chain and has no outcome of its own. The promise
+      // that STARTED the chain resolves later with the last write's
+      // { ok } / { failed } — that handler must still run the branches below.
       void setCoverColour(shareMenuBookId, key).then((result) => {
-        if (result === "busy") return;
+        if (result === "queued") return;
         if ("failed" in result) {
+          // An earlier write in the chain committed before the last one
+          // failed: the stored colour changed, so the shelf re-reads it.
+          if (result.committed) reload();
           if (bookMenuSession.current === session)
             setCoverFailed(result.failed);
           return;
@@ -1313,7 +1320,7 @@ export function BooksScreen({
       .prepare(
         shareMenuBook.bookId,
         strings.shareBookFilename(shareMenuBook.name),
-        (n) => strings.shareFilename(shareMenuBook.name, n)
+        (n, name) => strings.shareFilename(shareMenuBook.name, n, name)
       )
       .then((outcome) => {
         if (outcome === "sent" || outcome === "dismissed") onCloseShareMenu();
@@ -1655,12 +1662,9 @@ export function BooksScreen({
   // state there, so the label cannot outlive what it labels. A *reload* no
   // longer takes this line down (it would race the delete's own error off the
   // screen); what clears it is another delete, or any write that succeeds
-  // (George R4 P2-2 / Frank R4 P2).
-  const noticeText = deleteFailed
-    ? strings.deleteBookFailed
-    : error
-      ? strings[error]
-      : null;
+  // (George R4 P2-2 / Frank R4 P2). A delete that failed on a full disk
+  // speaks `noRoom`, as every other write does (#894).
+  const noticeText = shelfNoticeText(error, deleteFailed);
 
   // The guided chain's answer for this screen (#604): one accent on the next
   // required action, and nothing once the first book has been worked in. Read
@@ -2034,9 +2038,10 @@ export function BooksScreen({
           the tap leaves this menu open. What stays Books-only is the panel
           above it, for the two reasons recorded there.
 
-          `DesignControl` (#938) is Books-only too, but for a different
-          reason: it is this batch's own files-owned scope, not a deliberate
-          split — see that component's docblock. */}
+          This menu used to end with the design switch (#938's pencil, "New
+          look (O4)"). #1244 removed it so the old look cannot be reached
+          from the app; a saved old-look choice still wins in
+          `readStoredDesign`, by the DRI's call on that issue. */}
       {/* `hamburger`: the ≡ in the header above stays a ≡ inside the open
           panel too — same glyph, same corner, and no visible "Menu" title
           (#608, the requirements owner's navigation rule). The recorder's
@@ -2056,8 +2061,7 @@ export function BooksScreen({
           // The workbench's G1, plus the DRI's About placement above: About
           // is a tile ahead of the spacer, the theme tile stays at the far
           // end, where every O4 menu draws it. The report panel above stays
-          // as it is (its Export tile's words are a DRI call), and so does
-          // the O4 switch below, which the workbench does not draw.
+          // as it is (its Export tile's words are a DRI call).
           <TileGrid>
             <Tile
               tone="plain"
@@ -2080,7 +2084,6 @@ export function BooksScreen({
             <ThemeControl />
           </>
         )}
-        <DesignControl />
       </Menu>
 
       <AboutPanel
@@ -2537,7 +2540,9 @@ function BookItem({
                   size={expanded ? 36 : 34}
                 />
               </span>
-              <span className="books-name">{book.name}</span>
+              <span className="books-name" dir="auto">
+                {book.name}
+              </span>
             </>
           ) : (
             <>
@@ -2547,7 +2552,10 @@ function BookItem({
                   size={20}
                 />
               </span>
-              <span className="t-title text-ink min-w-0 truncate">
+              <span
+                className="t-title text-ink min-w-0 flex-1 truncate"
+                dir="auto"
+              >
                 {book.name}
               </span>
             </>
@@ -2679,7 +2687,12 @@ function ChapterItem({
           <O4ChapterFace chapter={chapter} />
         ) : (
           <>
-            <span className="text-ink min-w-0 truncate">{heading}</span>
+            <span
+              className="text-ink min-w-0 truncate"
+              dir={name === null ? undefined : "auto"}
+            >
+              {heading}
+            </span>
             {hasCounter && (
               <span
                 // All finished glows green (--s-done) — the wordless "chapter
@@ -2698,31 +2711,37 @@ function ChapterItem({
 }
 
 /**
- * The O4 chapter row's face (#942, state 03): the number in a 44 badge, an
- * optional title line, one progress dot per segment, and a chevron.
+ * The O4 chapter row's face (#942, state 03): the number in a 44 badge, the
+ * chapter's title line, one progress dot per segment, and a chevron.
  *
  * All of it is decoration — the row button's own name (`strings.openChapter`)
  * already carries the heading, typed title included — so each part is
  * `aria-hidden` and nothing here enters the reading order.
  *
- * A typed title (`Chapter.name`, #264) draws the title line and dims the
- * badge, as the design reference's §3 and §7 describe. A title that was only
- * spoken is tier 2 (after the training) and is not drawn here.
+ * The title line is the chapter's heading (`strings.chapterHeading`): the name
+ * the facilitator typed (`Chapter.name`, #264), or the default "Chapter N" the
+ * New Chapter prompt offered (#609) when it has none. A chapter always has a
+ * name to show (#1219), so the line is always drawn and the badge always steps
+ * back behind it, as the design reference's §3 and §7 describe for a titled
+ * row. The default is derived here at read time rather than stored, so a
+ * reorder (#953) renumbers it with the badge. A title that was only spoken is
+ * tier 2 (after the training) and is not drawn here.
  */
 function O4ChapterFace({ chapter }: { chapter: ChapterRow }) {
-  const titled = chapter.name !== null;
   const dots = dotStates(chapter);
-  const [size, gap] = dotFit(dots.length, titled ? 19 : 44);
+  const [size, gap] = dotFit(dots.length, TITLED_DOT_ROOM);
   return (
     <>
-      <span
-        className={cn("books-chapter-num", titled && "is-dim")}
-        aria-hidden="true"
-      >
+      <span className="books-chapter-num is-dim" aria-hidden="true">
         {chapter.number}
       </span>
       <span className="books-chapter-mid" aria-hidden="true">
-        {titled && <span className="books-chapter-title">{chapter.name}</span>}
+        <span
+          className="books-chapter-title"
+          dir={chapter.name === null ? undefined : "auto"}
+        >
+          {strings.chapterHeading(chapter.name, chapter.number)}
+        </span>
         <span
           className="books-dots"
           style={
@@ -2799,10 +2818,18 @@ const DOT_STEPS: readonly (readonly [number, number])[] = [
 ];
 
 /**
+ * The dots' height under the title line, in px: the 44px middle column less
+ * the 20px title line and its 5px gap. Every row has the title line since
+ * #1219, so this is the only height the fit is asked for.
+ */
+const TITLED_DOT_ROOM = 19;
+
+/**
  * The size and gap of a chapter row's dots, in px: the largest step whose
- * wrapped rows fit in `height` (44px of middle column without a title, 19px
- * under one). Past what the smallest step can hold, the smallest step is
- * returned anyway and the column's own overflow clips the rest. The
+ * wrapped rows fit in `height` ({@link TITLED_DOT_ROOM}). Past what the
+ * smallest step can hold, the smallest step is returned anyway and the dots
+ * wrap onto more rows: the row's height is a floor, not a cap
+ * (`o4/books.css`, #1229), so it grows rather than clipping a dot. The
  * workbench's steps, fitted against {@link DOT_COLUMN} rather than the
  * workbench's 206.
  */

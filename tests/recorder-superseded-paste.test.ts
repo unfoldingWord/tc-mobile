@@ -6,6 +6,7 @@ import { Recorder, type RecorderHandle } from "@/components/recorder";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
 import { strings } from "@/lib/strings";
+import { restingErase } from "./support";
 
 /**
  * A paste empties the clipboard (#489), so once it lands the phrase lives only
@@ -86,6 +87,7 @@ async function mountAfterPaste() {
       error: null,
       recorderError: null,
       meterFailed: false,
+      takeCap: { nearLimit: false, remainingMs: 20 * 60_000, reached: false },
       playTake: vi.fn(),
       playBuffer: vi.fn(),
       stopBuffer: vi.fn(),
@@ -114,11 +116,8 @@ async function mountAfterPaste() {
       ref,
       segmentId: "segment" as SegmentId,
       audio,
-      erase: {
-        erase: vi.fn(async () => "ok" as const),
-        erasing: false,
-        isErasing: () => false,
-      },
+      // Resting erase (#856 item 3): shared fixture, `tests/support.ts`.
+      erase: restingErase(),
       saveRecording,
       saveEditedSegment,
       clipboard: clip,
@@ -155,7 +154,9 @@ async function mountAfterPaste() {
   await click(strings.paste);
   // The paste landed: the phrase is in the take and off the clipboard.
   expect(clipboard.current).toBeNull();
-  await click(strings.doneEditing);
+  // Leave edit mode on the toolbar's ✕ (#1252; the header's "Done editing"
+  // pill went with #1243).
+  await click(strings.leaveEdit);
   return {
     phrase,
     audio,

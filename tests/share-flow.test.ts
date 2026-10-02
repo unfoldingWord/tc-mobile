@@ -219,7 +219,7 @@ describe("the wiring around sentGap and the reset guard (this lane's own review 
 
   it("prepare() arms the gap counts alongside the File, not just in useState", () => {
     expect(flow).toMatch(
-      /handoff\.arm\(\{\s*file,\s*staged,\s*missing:\s*prepared\.missing,\s*partial:\s*prepared\.partial \?\? 0,\s*partialChapters:\s*prepared\.partialChapters \?\? 0,?\s*\}\)/
+      /handoff\.arm\(\{\s*file,\s*staged,\s*missing:\s*prepared\.missing,\s*partial:\s*prepared\.partial \?\? 0,\s*partialChapters:\s*prepared\.partialChapters \?\? 0,\s*\.\.\.\(unowned === undefined \? \{\} : \{ release: unowned \}\),?\s*\}\)/
     );
   });
 

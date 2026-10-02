@@ -125,9 +125,18 @@ export async function createBook(
   return book;
 }
 
+/**
+ * Every book, newest-CREATED first (#1185, DRI 2026-09-28: "books stay put").
+ * A new book lands at the top; no later write moves a book, because nothing
+ * writes `createdAt` after `createBook`. `updatedAt` is still bumped by the
+ * writes that are activity on a book, but it does not order the shelf.
+ *
+ * Books with the same `createdAt` keep primary-key (id) order: `getAll`
+ * returns rows in key order, and `Array.prototype.sort` is stable.
+ */
 export async function listBooks(): Promise<Book[]> {
   const db = await getDb();
-  return (await db.getAll("books")).sort((a, b) => b.updatedAt - a.updatedAt);
+  return (await db.getAll("books")).sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export async function getBook(id: BookId): Promise<Book | undefined> {
@@ -142,9 +151,9 @@ export async function getBook(id: BookId): Promise<Book | undefined> {
  * read-tx-then-write-tx seam. The new name is trimmed; a blank/whitespace-only
  * rename is refused (a book must always have a non-empty name) and keeps the
  * current one. Renaming to the current name writes nothing and does NOT bump
- * `updatedAt`, so a re-run is a true no-op that never reshuffles the shelf.
- * Any real rename bumps `updatedAt` — labelling a book is activity, and
- * `listBooks` sorts by it, so the book just named floats to the top.
+ * `updatedAt`, so a re-run is a true no-op. Any real rename bumps `updatedAt`
+ * — labelling a book is activity — and the book keeps its place on the shelf
+ * ({@link listBooks} orders by `createdAt`).
  *
  * Concurrent renames deliberately use transaction-creation-order last-write-wins
  * (#394). The read and write stay in one readwrite transaction. The same-tab
@@ -201,9 +210,9 @@ export async function renameBook(
  * the first place.
  *
  * Setting a colour is activity, exactly like `renameBook`: a real change bumps
- * `updatedAt` so the book floats up the `listBooks`-sorted shelf, and setting
- * the SAME key again (including `null` to `null`) is an idempotent no-op —
- * no write, no recency bump, safe to re-run.
+ * `updatedAt` (the book keeps its place on the shelf), and setting the SAME
+ * key again (including `null` to `null`) is an idempotent no-op — no write,
+ * no recency bump, safe to re-run.
  */
 export async function setBookCoverColour(
   id: BookId,
@@ -615,10 +624,9 @@ export async function getChapter(id: ChapterId): Promise<Chapter | undefined> {
  * touched; the name is a label over it.
  *
  * A real rename also bumps the parent book's `updatedAt` in the SAME transaction
- * — labelling a chapter is activity on its book, and `listBooks` sorts by
- * `updatedAt`, so the book floats up the shelf exactly as `addChapter`,
- * `renameBook`, and recording do (G4). The no-op path skips the bump, so a
- * re-run never reshuffles the shelf.
+ * — labelling a chapter is activity on its book, exactly as `addChapter`,
+ * `renameBook` and recording are (G4). The book keeps its place on the shelf
+ * ({@link listBooks} orders by `createdAt`). The no-op path skips the bump.
  *
  * Concurrent renames use the same transaction-order last-write-wins policy as
  * {@link renameBook} (#394). The scope overlaps `renameBook` on `books`, so a
@@ -647,7 +655,7 @@ export async function renameChapter(
 
   const updated: Chapter = { ...chapter, name: nextName };
   await tx.objectStore("chapters").put(updated);
-  // Float the parent book up the shelf, in this same transaction. A dangling
+  // Bump the parent book's `updatedAt`, in this same transaction. A dangling
   // parent is skipped rather than failing a rename that otherwise succeeded.
   const book = await tx.objectStore("books").get(chapter.bookId);
   if (book) {
@@ -682,10 +690,10 @@ export async function renameChapter(
  *     no record — and export still counts it as missing.
  *   - **Names are not touched** (scope Q5): "Mark 6" stays "Mark 6"; only the
  *     number badge and the file name follow position.
- *   - **No shelf bump** (scope Q4): the book's `updatedAt` is left alone, so
- *     the card a translator is dragging inside does not jump to the top of the
- *     `listBooks`-sorted shelf. This is the one tree edit that differs from
- *     `renameChapter` here, on purpose.
+ *   - **No `updatedAt` bump** (scope Q4): a reorder is not recorded as
+ *     activity on the book. This is the one tree edit that differs from
+ *     `renameChapter` here, on purpose. (The shelf order does not depend on
+ *     it: {@link listBooks} orders by `createdAt`, #1185.)
  *   - **Idempotent.** The target is absolute, so a re-run lands in the same
  *     state; a move that leaves the order as it was writes nothing at all.
  *
@@ -718,7 +726,7 @@ export async function moveChapter(
       return plan.order;
     }
 
-    // No `updatedAt`: a reorder does not float the book up the shelf.
+    // No `updatedAt`: a reorder is not activity on the book (scope Q4).
     await books.put({ ...book, chapterIds: plan.ids });
     const renumbered: Chapter[] = [];
     for (const [position, row] of plan.order.entries()) {
@@ -806,7 +814,7 @@ export async function addSegment(chapterId: ChapterId): Promise<Segment> {
  *
  * Unlike a chapter rename it does not bump the book's `updatedAt`: the store is
  * `segments` alone, matching `addSegment` and `setSegmentFinished`, the other
- * segment edits that leave the shelf order where it was.
+ * segment edits that leave the book row unwritten.
  */
 export async function renameSegment(
   id: SegmentId,
@@ -842,8 +850,7 @@ export async function renameSegment(
  * scope Q1 — the renumber `Segment.index`'s own docblock has always said a
  * reorder owes), written only where it changes; a move that changes nothing
  * writes nothing. Label, take pointer and status are not touched, and nothing
- * above the chapter is — the book's shelf position stays where it was, as for
- * every other segment edit.
+ * above the chapter is — the book row is not written.
  *
  * Returns the chapter's resolvable segments in their new order, with the
  * indexes they now hold.
@@ -912,7 +919,7 @@ async function renumberSegments(
 /**
  * The stores a segment delete touches: the tree link (the chapter it hangs
  * off), the segment itself, its take, both halves of its clip, and the book
- * it floats (#590).
+ * whose `updatedAt` it bumps (#590).
  */
 const DELETE_SEGMENT_STORES = [
   "books",
@@ -948,9 +955,10 @@ const DELETE_SEGMENT_STORES = [
  *     already in `chapter.segmentIds` (unrelated to this delete) keeps its
  *     stored slot and is not renumbered, exactly as `moveSegment`'s
  *     `planReorder` leaves one.
- *   - **Editing is activity**: the book floats to the top of the
- *     `listBooks`-sorted shelf in the same transaction — the bump
- *     `clearSegmentTake`/`writeTakeInTx` make for exactly this reason.
+ *   - **Editing is activity**: the book's `updatedAt` is bumped in the same
+ *     transaction — the bump `clearSegmentTake`/`writeTakeInTx` make for
+ *     exactly this reason. The book keeps its place on the shelf
+ *     ({@link listBooks} orders by `createdAt`, #1185).
  *     **Inference, not a recorded decision**: `moveSegment`/`moveChapter`
  *     deliberately do NOT bump for a pure reorder (scope Q4), but a delete
  *     also discards a recording (or the last trace of an empty row), which is

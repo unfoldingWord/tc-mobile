@@ -23,7 +23,7 @@ vi.mock("@/hooks/use-design", () => ({
 }));
 
 /**
- * The recorder's ≡ menu, now that it is its own component (#160, L-1).
+ * The recorder's ⋮ menu, now that it is its own component (#160, L-1).
  *
  * It had no test while it was a hundred lines inside a 4000-line component —
  * reaching it meant mounting the whole recorder with a mocked audio session.
@@ -46,12 +46,9 @@ const base: RecorderMenuProps = {
   editReason: null,
   markReason: null,
   eraseReason: null,
-  deleteReason: null,
   onEnterEdit: vi.fn(),
   onToggleFinished: vi.fn(),
   onErase: vi.fn(),
-  onDeleteSegment: vi.fn(),
-  onExitEdit: vi.fn(),
 };
 
 function show(over: Partial<RecorderMenuProps> = {}) {
@@ -84,22 +81,39 @@ describe("RecorderMenu", () => {
     expect(buttons()).toHaveLength(0);
   });
 
-  it("offers Edit, Mark finished, Erase and Delete in record mode (#590)", () => {
+  it("offers Edit, Mark finished and Erase in record mode", () => {
     show();
     expect(named(strings.enterEdit)).toBeDefined();
     expect(named(strings.markFinished(3))).toBeDefined();
     expect(named(strings.eraseSegment)).toBeDefined();
-    expect(named(strings.deleteSegment)).toBeDefined();
-    expect(named(strings.doneEditing)).toBeUndefined();
   });
 
-  it("offers Done, Erase and Delete in edit mode, and no Mark (#590)", () => {
+  it("offers Erase in edit mode, and no Done or Mark (#1252)", () => {
     show({ mode: "edit" });
-    expect(named(strings.doneEditing)).toBeDefined();
+    // #1252 (the requirements owner): "Done" keeps one meaning, mark
+    // finished; the toolbar's ✕ leaves edit mode.
+    expect(
+      buttons()
+        .map((b) => b.getAttribute("aria-label") ?? "")
+        .filter((name) => /done/i.test(name))
+    ).toEqual([]);
     expect(named(strings.eraseSegment)).toBeDefined();
-    expect(named(strings.deleteSegment)).toBeDefined();
     expect(named(strings.markFinished(3))).toBeUndefined();
     expect(named(strings.enterEdit)).toBeUndefined();
+  });
+
+  it("never offers Delete segment, in either mode (#1104 — Delete moved to the chapter view)", () => {
+    // #590/#1080 first shipped Delete segment as a row/tile in THIS menu; the
+    // requirements owner's 2026-09-26 decision on #1104 pulled it back out:
+    // "the menu inside the segment editor (recorder) shows Erase only.
+    // Delete (removing the whole segment) belongs to the chapter view." A red
+    // run of this exact case (against the pre-#1104 tree) failed on both
+    // modes, which is what proves this file is asserting the removal rather
+    // than an accident of never having built it.
+    show();
+    expect(named(strings.deleteSegment)).toBeUndefined();
+    show({ mode: "edit" });
+    expect(named(strings.deleteSegment)).toBeUndefined();
   });
 
   it("keeps the Mark row's label fixed and says its state with aria-pressed and the green mark (#351)", () => {
@@ -110,13 +124,13 @@ describe("RecorderMenu", () => {
     // #351: the label no longer flips to "not done". With `aria-pressed`
     // beside it, a flipped label announces "Mark segment 3 not done, pressed",
     // naming the opposite of the state; one fixed label is the pattern
-    // `DesignControl` already follows.
+    // the zoom and level-meter toggles already follow.
     show({ finishedState: "finished" });
     const marked = named(strings.markFinished(3));
     expect(marked).toBeDefined();
     expect(marked?.getAttribute("aria-pressed")).toBe("true");
     expect(marked?.className).toContain("is-done");
-    expect(named(strings.markUnfinished(3))).toBeUndefined();
+    expect(named("Mark segment 3 not done")).toBeUndefined();
 
     show({ finishedState: "empty" });
     const unmarked = named(strings.markFinished(3));
@@ -160,7 +174,7 @@ describe("RecorderMenu", () => {
       "the unmarked label is what a null ordinal shows"
     ).toBeDefined();
     expect(row?.className).not.toContain("is-done");
-    expect(named(strings.markUnfinished(0))).toBeUndefined();
+    expect(named("Mark segment 0 not done")).toBeUndefined();
   });
 
   it("does NOT paint the green mark on a disabled-finished row", () => {
@@ -214,33 +228,6 @@ describe("RecorderMenu", () => {
     ).toBe("true");
   });
 
-  it("gates Delete in BOTH modes from its own reason (#590)", () => {
-    // Same shape as Erase's gate above, but its own `deleteReason` — the two
-    // rows must not share a gate (see the next case for why).
-    show({ deleteReason: "uncommitted-take" });
-    expect(
-      startingWith(strings.deleteSegment)?.getAttribute("aria-disabled")
-    ).toBe("true");
-    show({ mode: "edit", deleteReason: "uncommitted-take" });
-    expect(
-      startingWith(strings.deleteSegment)?.getAttribute("aria-disabled")
-    ).toBe("true");
-  });
-
-  it("Delete stays enabled on a never-recorded segment where Erase is greyed (#590)", () => {
-    // The whole reason `deleteRowReason` is a narrower gate than
-    // `eraseRowReason`: an accidentally added, empty segment is exactly what
-    // #590 asks to make deletable, while Erase (nothing to erase) stays
-    // refused.
-    show({ eraseReason: "no-clip" });
-    expect(
-      startingWith(strings.eraseSegment)?.getAttribute("aria-disabled")
-    ).toBe("true");
-    expect(named(strings.deleteSegment)?.getAttribute("aria-disabled")).toBe(
-      null
-    );
-  });
-
   it("hands the erase tap to its caller, from either mode", () => {
     // Named for what it pins. This component cannot see whether the tap arms a
     // confirm or erases outright — it only calls the prop, and a caller that
@@ -254,17 +241,6 @@ describe("RecorderMenu", () => {
     show({ mode: "edit", onErase });
     act(() => named(strings.eraseSegment)?.click());
     expect(onErase).toHaveBeenCalledTimes(2);
-  });
-
-  it("hands the delete tap to its caller, from either mode (#590)", () => {
-    const onDeleteSegment = vi.fn();
-    show({ onDeleteSegment });
-    act(() => named(strings.deleteSegment)?.click());
-    expect(onDeleteSegment).toHaveBeenCalledTimes(1);
-
-    show({ mode: "edit", onDeleteSegment });
-    act(() => named(strings.deleteSegment)?.click());
-    expect(onDeleteSegment).toHaveBeenCalledTimes(2);
   });
 
   it("the sheet's onErase ARMS the confirm — it does not erase", () => {
@@ -331,12 +307,11 @@ describe("RecorderMenu", () => {
     );
   });
 
-  it("the sheet's onDeleteSegment ARMS the confirm — it does not delete (#590)", () => {
-    // Same claim as the erase case above, for the second destructive row:
-    // deleting a segment's row is the one action in this menu that can lose a
-    // recording for good (Erase keeps the row; this does not), so the sheet
-    // must only arm the shared confirm, never call the delete itself. Same
-    // read-then-strip-then-search shape, same allow-list-of-one rigor.
+  it("the sheet no longer wires an onDeleteSegment prop to <RecorderMenu> (#1104)", () => {
+    // The negative half of the removal: not only does the RENDERED menu omit
+    // Delete (the case above), the SHEET's own JSX no longer even offers a
+    // prop for it — so a future edit cannot silently wire a fresh delete
+    // handler back onto this menu without touching this test.
     const sheet = stripComments(
       readFileSync(
         path.resolve(import.meta.dirname, "..", "src/components/recorder.tsx"),
@@ -348,26 +323,10 @@ describe("RecorderMenu", () => {
     expect(open, "no <RecorderMenu in the sheet").toBeGreaterThan(-1);
     expect(end, "unterminated <RecorderMenu").toBeGreaterThan(open);
     const tag = sheet.slice(open, end);
-
-    const attr = "onDeleteSegment={";
-    const at = tag.indexOf(attr);
-    expect(at, "no onDeleteSegment on <RecorderMenu>").toBeGreaterThan(-1);
-    expect(tag.indexOf(attr, at + 1), "a second onDeleteSegment").toBe(-1);
-    let depth = 0;
-    let close = -1;
-    for (let i = at + attr.length - 1; i < tag.length; i++) {
-      if (tag[i] === "{") depth++;
-      else if (tag[i] === "}" && --depth === 0) {
-        close = i;
-        break;
-      }
-    }
-    expect(close, "unbalanced onDeleteSegment braces").toBeGreaterThan(at);
-    // `setConfirmFor("delete")`: names which question the shared dialog is
-    // asking — still only arming the confirm, never deleting.
-    expect(tag.slice(at, close + 1).replace(/\s+/g, "")).toBe(
-      'onDeleteSegment={()=>{setMenuOpen(false);setConfirmFor("delete");setConfirmOpen(true);}}'
+    expect(tag.indexOf("onDeleteSegment"), "onDeleteSegment still wired").toBe(
+      -1
     );
+    expect(tag.indexOf("deleteReason"), "deleteReason still wired").toBe(-1);
   });
 
   it("does not close itself when the finished mark is toggled", () => {

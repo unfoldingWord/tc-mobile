@@ -28,9 +28,11 @@ import {
  * attribute toggle, persistence, bad-stored-value fallback and
  * `installStoredDesign` in `tests/use-design.test.ts`, mounted with
  * `createRoot` and `act` in a manual jsdom. NOT COVERED: `readDesign`'s catch
- * path (an accessor that throws on READ), the Books menu entry
- * (`components/design-control.tsx`), which no test renders, and anything on
- * a phone.
+ * path (an accessor that throws on READ), and anything on a phone.
+ *
+ * NO MENU ENTRY CALLS `toggle` ANY MORE (#1244): the Books ≡ switch was
+ * removed so the old look cannot be reached from the app. `toggle` stays for
+ * the tests above and for a later removal of the old look as a whole.
  */
 
 /**

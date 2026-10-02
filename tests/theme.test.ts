@@ -109,7 +109,8 @@ describe("THEME_STORAGE_KEY (#171)", () => {
  * So this asserts the chain end to end in source: the attribute is written,
  * the stylesheet has a block keyed on it, the toggle is mounted in the global
  * menu, and the theme is applied before React renders. Source-shape, not
- * behaviour — there is no DOM runner (#197) and none of this has been seen on
+ * behaviour — the render harness (#197) has no cascade, so it cannot say
+ * whether the CSS actually applies, and none of this has been seen on
  * a phone.
  */
 describe("the light theme is reachable (#171)", () => {
@@ -235,7 +236,7 @@ describe("the light theme is reachable (#171)", () => {
 
   it("follows the translator into a chapter and into the recorder (#149)", () => {
     // WHAT THIS IS AND IS NOT. The behavioural claim — that the toggle is
-    // reachable from the chapter `≡` and the recorder `≡` and repaints the
+    // reachable from the chapter `⋮` and the recorder `⋮` and repaints the
     // shipped cascade from each — is `e2e/theme-toggle.spec.ts`, in real
     // Chromium against `dist/`. This is the cheap Node companion that fails
     // fast when a mount is DELETED, which is the way this regresses: both
@@ -252,11 +253,11 @@ describe("the light theme is reachable (#171)", () => {
     // comment-capture reason above.
     const mounts = (file: string) =>
       code(file).match(/<ThemeControl\s*\/>/g)?.length ?? 0;
-    // The chapter `≡`'s one action branch (the stale and rename branches are
+    // The chapter `⋮`'s one action branch (the stale and rename branches are
     // transient sub-states with no action list of their own).
     expect(mounts("src/components/segments-screen.tsx")).toBe(1);
     // Record mode and edit mode — in `recorder-menu.tsx` since #662 lifted the
-    // recorder's `≡` out of `recorder.tsx` into its own component. The count
+    // recorder's `⋮` out of `recorder.tsx` into its own component. The count
     // follows the menu rather than the screen, and `recorder.tsx` is asserted
     // to hold NONE, so a half-finished move that leaves one mount behind in
     // the screen fails here instead of silently double-mounting.
@@ -471,10 +472,11 @@ describe("the light theme is reachable (#171)", () => {
     // must move together: `setLiveTheme` applies BEFORE it notifies, and the
     // effect is left as a mount-time reconcile only.
     //
-    // Source-shape, not behaviour: there is no DOM runner in the Node suite
-    // (#197) and no way to render the hook and observe the attribute between
-    // the store write and the subscriber's render. `e2e/theme-toggle.spec.ts`
-    // waits on the attribute, so it cannot see an intermediate frame either.
+    // Source-shape, not behaviour: the render harness (#197) renders once,
+    // after `setLiveTheme` returns, so it has no way to observe the attribute
+    // between the store write and the subscriber's render mid-call.
+    // `e2e/theme-toggle.spec.ts` waits on the attribute, so it cannot see an
+    // intermediate frame either.
     const hook = code("src/hooks/use-theme.ts");
     const setter = /function setLiveTheme\([^)]*\)[^{]*\{([\s\S]*?)\n\}/.exec(
       hook
@@ -563,9 +565,10 @@ describe("the light theme is reachable (#171)", () => {
     // `readScope`, which advances the ring (the extra-column defect George R3
     // found on the peek path).
     //
-    // Source-shape, not behaviour: no DOM runner in the Node suite (#197), and
-    // the scenario needs a theme control on a screen that keeps `LiveScope`
-    // mounted (#149), which does not exist yet.
+    // Source-shape, not behaviour: the render harness (#197) runs no effects,
+    // so the draw effect never fires there, and the scenario needs a theme
+    // control on a screen that keeps `LiveScope` mounted (#149), which does
+    // not exist yet.
     const source = code("src/components/live-scope.tsx");
     const draw =
       /useLayoutEffect\(\(\) => \{([\s\S]*?)\n    return \(\) => \{/.exec(

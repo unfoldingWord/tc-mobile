@@ -25,6 +25,14 @@ import { expect, test, type Page } from "@playwright/test";
  * The witness is the ordered log of history calls made before the held
  * traversal is released. It must hold ONE `back()`, never a second one issued
  * under the first. After release, the resting index shows the stack is whole.
+ *
+ * (a) and (c) are named for the races #763 itself asked about; (b), the third,
+ * is not driven here (see #833's own residual note). Two more cases below,
+ * left unlettered because they are not part of that a/b/c enumeration, drive
+ * the two rows of `recorderExitTraversal` neither (a) nor (c) reaches: a plain
+ * `"issue"` (nothing else in flight) and a `"defer"` (an untracked suppressed
+ * Back — `trap-forward`'s cancel — in flight over an entry already written
+ * for real, not deferred) (#833 item 3 / #838).
  */
 
 test.use({
@@ -141,7 +149,7 @@ async function seedToSegments(page: Page) {
   await page.getByRole("button", { name: "Open Chapter 1" }).click();
   await page.getByRole("button", { name: "Add segment" }).click();
   await expect(
-    page.getByRole("button", { name: "Record segment 1" })
+    page.getByRole("button", { name: "Open recorder for segment 1" })
   ).toBeVisible();
 }
 
@@ -172,7 +180,9 @@ test("(a) a failed-save exit while a goBack is in flight absorbs that Back's lan
 }) => {
   await injectWriteFailure(page);
   await seedToSegments(page);
-  await page.getByRole("button", { name: "Record segment 1" }).click();
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
   const atRecorder = await navIndex(page);
   expect(atRecorder).toBeGreaterThan(0);
   await startCapture(page);
@@ -198,7 +208,9 @@ test("(c) a failed-save exit from a recorder whose entry is still deferred behin
 }) => {
   await injectWriteFailure(page);
   await seedToSegments(page);
-  await page.getByRole("button", { name: "Record segment 1" }).click();
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
   await expect(
     page.getByRole("button", { name: "Close recorder" })
   ).toBeVisible();
@@ -219,7 +231,9 @@ test("(c) a failed-save exit from a recorder whose entry is still deferred behin
       if (tapped) return;
       tapped = true;
       document
-        .querySelector<HTMLButtonElement>('[aria-label="Record segment 1"]')
+        .querySelector<HTMLButtonElement>(
+          '[aria-label="Open recorder for segment 1"]'
+        )
         ?.click();
       (window as unknown as Probe).__log.push("tapped");
     });
@@ -239,4 +253,86 @@ test("(c) a failed-save exit from a recorder whose entry is still deferred behin
   // The cancel lands and replays nothing: no entry for the closed recorder.
   expect(await historyLog(page)).toEqual(["back", "pop", "tapped", "pop"]);
   expect(await navIndex(page)).toBe(atSegments);
+});
+
+test('a failed-save exit with nothing else in flight issues its own back() through beginBack("commit-close") — the plain "issue" row (#833 item 3)', async ({
+  page,
+}) => {
+  await injectWriteFailure(page);
+  await seedToSegments(page);
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
+  const atRecorder = await navIndex(page);
+  expect(atRecorder).toBeGreaterThan(0);
+  await startCapture(page);
+
+  await holdTraversals(page);
+  await stopWithFailedSave(page);
+  // Nothing was in flight: the exit consumes its own entry, issuing exactly
+  // one back() through beginBack("commit-close").
+  expect(await historyLog(page)).toEqual(["back"]);
+
+  await releaseAll(page);
+  expect(await historyLog(page)).toEqual(["back", "pop"]);
+  // One level, the recorder's, was consumed: the app rests at Segments depth.
+  expect(await navIndex(page)).toBe((atRecorder ?? 0) - 1);
+});
+
+test('a failed-save exit while an untracked suppressed Back (trap-forward\'s cancel) is in flight defers the consume to that landing, which then issues exactly one back() — the "defer" row (#833 item 3)', async ({
+  page,
+}) => {
+  await injectWriteFailure(page);
+  await seedToSegments(page);
+  await page
+    .getByRole("button", { name: "Open recorder for segment 1" })
+    .click();
+  const atRecorder = await navIndex(page);
+  expect(atRecorder).toBeGreaterThan(0);
+
+  // Manufacture a Forward entry above the recorder's own real entry, without
+  // going through the app: a direct pushState the adapter never observes,
+  // then a real Back that lands exactly on the entry `openRecorder` wrote.
+  // The recorder never pushes a second entry for its own overlays (menu,
+  // confirm, erase all use `overlayBlocksClose`, not history), so there is no
+  // UI path onto this state (#833's own residual note on the `"defer"` row) —
+  // this is the same "make the overlap itself" technique the cases above use
+  // for the other two rows, aimed one level higher on the stack so the
+  // recorder's own entry is left standing, real, un-deferred.
+  await page.evaluate(() => {
+    const cur = (window.history.state as { index?: number } | null)?.index ?? 0;
+    window.history.pushState({ tc: true, index: cur + 1 }, "");
+  });
+  await page.goBack();
+  await expect(
+    page.getByRole("button", { name: "Close recorder" })
+  ).toBeVisible();
+  await expect.poll(() => navIndex(page)).toBe(atRecorder);
+
+  await startCapture(page);
+
+  await holdTraversals(page);
+  // Forward walks onto the entry manufactured above. The recorder's own
+  // screen never changed underneath it, so `trap-forward` fires: its
+  // cancelling back() is logged and held.
+  await page.goForward();
+  await expect(
+    page.getByRole("button", { name: "Close recorder" })
+  ).toBeVisible();
+  await expect.poll(() => historyLog(page)).toEqual(["back", "pop"]);
+
+  await stopWithFailedSave(page);
+  // The recorder's entry was already written for real (not deferred), and no
+  // tracked Back owns it — but a suppressed one is still in flight, so the
+  // consume defers to that landing rather than issuing a second back() under
+  // it.
+  expect(await historyLog(page)).toEqual(["back", "pop"]);
+
+  await releaseAll(page);
+  // The cancel lands with nothing routed; its replay re-decides with nothing
+  // left in flight, and only THEN issues the one back() that actually
+  // consumes the recorder's entry.
+  expect(await historyLog(page)).toEqual(["back", "pop", "back", "pop", "pop"]);
+  // One level, the recorder's, was consumed: the app rests at Segments depth.
+  expect(await navIndex(page)).toBe((atRecorder ?? 0) - 1);
 });

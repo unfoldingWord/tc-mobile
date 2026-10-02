@@ -46,10 +46,11 @@ const uuid = (): string => crypto.randomUUID();
 /**
  * Open the transaction a take write needs: the take row and segment pointer, the
  * clip both `saveTake` writes and a superseded take's clip is deleted from, and
- * the book/chapter parents floated to the top of the shelf. `addTake` and
+ * the book/chapter parents read to bump the book's `updatedAt`. `addTake` and
  * `saveTake` open the identical transaction — `saveTake` just also writes the
  * clip inside it — so the store list and the take logic are shared, not
- * duplicated. `TakeTx` is derived from this call's return so the helper's
+ * duplicated. `clearSegmentTake` opens it too, so the clip reference check
+ * both share runs on one transaction type. `TakeTx` is derived from this call's return so the helper's
  * parameter type cannot drift from what actually opens.
  */
 function openTakeTx(db: IDBPDatabase<TcMobileDb>) {
@@ -104,9 +105,10 @@ export function isFinished(status: RecordingStatus): boolean {
  * this call, not of this helper alone — see the "Does NOT open or close the
  * transaction" note below.
  *
- * The prior clip is deleted only when it differs from the new one, so a retry
- * that reuses a clip id (the pending-take upsert path) never deletes the audio
- * it just committed.
+ * The prior clip is deleted only when no take still names it
+ * (`deleteClipIfUnreferenced`, the same check `clearSegmentTake` makes, #68).
+ * The new take row is written first, so a retry that reuses a clip id (the
+ * pending-take upsert path) finds its own clip still named and keeps it.
  *
  * `finished` sets the segment's final status in this same transaction. It
  * defaults to false — a new recording is draft, which is what demotes an
@@ -117,7 +119,7 @@ export function isFinished(status: RecordingStatus): boolean {
  *
  * Shared by `addTake` (clip already on disk) and `saveTake` (clip written in the
  * same transaction), so the 1:1 replace, the finished-mark, the prior-clip
- * cleanup and the book float exist once. Does NOT open or close the transaction:
+ * cleanup and the book's `updatedAt` bump exist once. Does NOT open or close the transaction:
  * the caller owns its lifetime, which is what lets `saveTake` make the clip write
  * and this take write atomic together.
  */
@@ -157,17 +159,15 @@ async function writeTakeInTx(
 
   if (priorTake && priorTake.id !== take.id) {
     await tx.objectStore("takes").delete(priorTake.id);
-    // Guard the clip delete against a reused id: retrying a save with the same
-    // clipId must not delete the audio the new take now points at.
-    if (priorTake.clipId !== clipId) {
-      await tx.objectStore("clipMeta").delete(priorTake.clipId);
-      await tx.objectStore("clipData").delete(priorTake.clipId);
-    }
+    // The new take row is already in the store, so a retry with the same
+    // clipId counts as a reference and keeps the audio it now points at; so
+    // does another segment's take that shares the clip.
+    await deleteClipIfUnreferenced(tx, priorTake.clipId);
   }
 
-  // Recording is activity: float the book to the top of the shelf (listBooks
-  // sorts by updatedAt), in the SAME transaction so the take and the recency
-  // land together. A dangling chapter/book parent is skipped rather than
+  // Recording is activity: bump the book's `updatedAt`, in the SAME
+  // transaction so the take and the timestamp land together. The book keeps
+  // its place on the shelf (listBooks orders by createdAt, #1185). A dangling chapter/book parent is skipped rather than
   // failing a save that otherwise succeeded.
   const chapter = await tx.objectStore("chapters").get(segment.chapterId);
   const book = chapter
@@ -176,6 +176,30 @@ async function writeTakeInTx(
   if (book) await tx.objectStore("books").put({ ...book, updatedAt: now });
 
   return take;
+}
+
+/**
+ * Delete a clip's metadata and bytes, unless some take still names it.
+ *
+ * Every take write and clear that lets go of a clip goes through here, so the
+ * reference check is written once. Call it on the caller's transaction AFTER
+ * the take row that let go of the clip is deleted, so `getAll` sees only the
+ * references that survive; the check and the delete then land in the same
+ * transaction as the take change.
+ *
+ * Nothing shares a clip today (every take mints a fresh `newClipId()`), but
+ * nothing in the schema forbids it either, and an unconditional delete would
+ * then punch a hole in another segment: unrecoverable audio loss. So this is a
+ * defensive invariant, not a fix for a path the app reaches (#68, Frank R4).
+ */
+async function deleteClipIfUnreferenced(
+  tx: TakeTx,
+  clipId: ClipId
+): Promise<void> {
+  const survivors = await tx.objectStore("takes").getAll();
+  if (survivors.some((t) => t.clipId === clipId)) return;
+  await tx.objectStore("clipMeta").delete(clipId);
+  await tx.objectStore("clipData").delete(clipId);
 }
 
 /**
@@ -308,12 +332,9 @@ export async function saveTake(
  */
 export async function clearSegmentTake(segmentId: SegmentId): Promise<void> {
   const db = await getDb();
-  const tx = db.transaction(
-    ["segments", "takes", "clipMeta", "clipData", "chapters", "books"],
-    "readwrite",
-    // Strict durability: this removes the only copy of a take. #179.
-    { durability: "strict" }
-  );
+  // The take write's transaction: the same stores, and strict durability
+  // because this removes the only copy of a take (#179).
+  const tx = openTakeTx(db);
   const segment = await tx.objectStore("segments").get(segmentId);
   if (!segment) throw new Error(`No such segment: ${segmentId}`);
 
@@ -321,23 +342,8 @@ export async function clearSegmentTake(segmentId: SegmentId): Promise<void> {
   if (priorTakeId !== null) {
     const priorTake = await tx.objectStore("takes").get(priorTakeId);
     await tx.objectStore("takes").delete(priorTakeId);
-    if (priorTake) {
-      // Delete the clip only when no OTHER take still points at it. Nothing
-      // shares a clip today (every take mints a fresh `newClipId()`), but a
-      // future content-addressed import could dedupe, and an unconditional
-      // delete would then punch a hole in another segment — unrecoverable audio
-      // loss (Frank R4). The take row is already gone, so `getAll` sees only the
-      // survivors. NOTE: `addTake`'s prior-clip delete has the same latent
-      // property and is tracked in #68.
-      const survivors = await tx.objectStore("takes").getAll();
-      const stillReferenced = survivors.some(
-        (t) => t.clipId === priorTake.clipId
-      );
-      if (!stillReferenced) {
-        await tx.objectStore("clipMeta").delete(priorTake.clipId);
-        await tx.objectStore("clipData").delete(priorTake.clipId);
-      }
-    }
+    // The take row is already gone, so only the survivors count.
+    if (priorTake) await deleteClipIfUnreferenced(tx, priorTake.clipId);
   }
 
   await tx.objectStore("segments").put({
@@ -346,7 +352,7 @@ export async function clearSegmentTake(segmentId: SegmentId): Promise<void> {
     status: "not-started",
   });
 
-  // Editing is activity: float the book to the top of the shelf in the same
+  // Editing is activity: bump the book's `updatedAt` in the same
   // transaction, exactly as recording does.
   const chapter = await tx.objectStore("chapters").get(segment.chapterId);
   const book = chapter

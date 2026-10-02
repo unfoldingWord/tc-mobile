@@ -40,7 +40,7 @@ interface WaveformScrollerProps {
    * it must not set state** — the recorder writes it to a ref, which is what
    * `freezePlaybackPan` reads when playback stops, from ANY route: the
    * Play/Pause tap, the end of the clip, a finger landing on the waveform
-   * (#317), the ≡ menu, Back. That ref is the whole of #416's fix: "the
+   * (#317), the ⋮ menu, Back. That ref is the whole of #416's fix: "the
    * waveform and the playhead stay exactly where playback had reached".
    */
   onPosition: (sample: number) => void;

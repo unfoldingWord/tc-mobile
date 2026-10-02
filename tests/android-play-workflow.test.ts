@@ -3,12 +3,23 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { stripYamlComments } from "./support";
+
 // The Play lane (docs/native/play-store.md) fires on push, so its preflight is
 // the only thing standing between a merge and a Play upload. Run the real
 // preflight script from the yml against each branch/variable combination.
-const workflow = readFileSync(
-  new URL("../.github/workflows/android-play.yml", import.meta.url),
-  "utf8"
+//
+// Read through the shared YAML comment strip (#822): the trigger, environment
+// and credential-path pins below are positive `toContain`s, and a `#` comment
+// holding the old line would satisfy them while the live line said otherwise.
+// The strip is not quote-aware; no live line in this workflow holds a ` #`
+// inside a string or a `run:` script, so it cuts only comments (and the
+// ` #923)` tail of two step names, which YAML itself reads as a comment).
+const workflow = stripYamlComments(
+  readFileSync(
+    new URL("../.github/workflows/android-play.yml", import.meta.url),
+    "utf8"
+  )
 );
 
 const fastfile = readFileSync(
@@ -281,5 +292,30 @@ describe("Play preflight branch → track mapping", () => {
     const r = runPreflight({ REF: "staging", ENABLED: "" });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("enabled=false");
+  });
+});
+
+// The ubuntu-24.04 runner's system Ruby is 3.2, and the locked fastlane gems
+// need 3.3 or newer (excon 1.7.1 declares `ruby >= 3.3.0`). With no Ruby of
+// its own, the lane's first real upload stopped at "Install fastlane" before
+// any build. The iOS lane runs on macOS, whose Ruby is already 3.3.
+describe("android-play.yml Ruby", () => {
+  it("pins setup-ruby by commit to a Ruby the locked gems accept", () => {
+    const step =
+      /- uses: ruby\/setup-ruby@([0-9a-f]{40})[ \t]*\n\s+with:\n\s+ruby-version: "(\d+)\.(\d+)"/.exec(
+        workflow
+      );
+    expect(step, "no SHA-pinned ruby/setup-ruby step").not.toBeNull();
+    const major = Number(step?.[2] ?? 0);
+    const minor = Number(step?.[3] ?? 0);
+    expect(major * 100 + minor).toBeGreaterThanOrEqual(303);
+  });
+
+  it("sets Ruby up before the first step that runs it", () => {
+    const setup = workflow.indexOf("- uses: ruby/setup-ruby@");
+    const firstUse = workflow.search(/command -v ruby|gem install|ruby -r/);
+    expect(setup).toBeGreaterThanOrEqual(0);
+    expect(firstUse).toBeGreaterThanOrEqual(0);
+    expect(setup).toBeLessThan(firstUse);
   });
 });

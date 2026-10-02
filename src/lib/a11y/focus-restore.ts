@@ -57,7 +57,7 @@ interface FocusRestoreInput {
   readonly inert: boolean;
   /**
    * The captured element can still take focus at all — chiefly, it has not gone
-   * natively `disabled` since it was tapped (the recorder's ≡ opener does
+   * natively `disabled` since it was tapped (the recorder's ⋮ opener does
    * exactly that while `denied`). An `aria-disabled` control is deliberately
    * still focusable here, as it is everywhere else in this app (#135).
    */
@@ -86,23 +86,23 @@ export function focusRestoreTarget(input: FocusRestoreInput): FocusRestore {
  * by ROLE, not position (#368 George R5 P2).
  *
  * The recorder's own fallback query used to be "the last button in the
- * header." That is correct in record mode: the header's right-hand control is
- * the ≡ menu opener. It is wrong in edit mode: the header's right-hand control
- * there is the modepill ("Done editing"), and tapping it EXITS edit mode.
- * Landing overlay-close focus on it arms the very next Space / Enter /
- * switch-activate to leave edit mode — the #97 hazard (`use-focus-restore.ts`'s
- * "a landmark that saves, deletes or leaves is then armed under the next
- * activation") on the ordinary Edit row, not an edge case.
+ * header." Until #1243 that was wrong in edit mode: the header's right-hand
+ * control there was the "Editing" pill ("Done editing"), and tapping it EXITED
+ * edit mode. Landing overlay-close focus on it armed the very next Space /
+ * Enter / switch-activate to leave edit mode — the #97 hazard
+ * (`use-focus-restore.ts`'s "a landmark that saves, deletes or leaves is then
+ * armed under the next activation") on the ordinary Edit row, not an edge
+ * case. Since #1243 the ⋮ is the header's right-hand control in both modes,
+ * but a positional rule is still one header change away from that hazard.
  *
  * The one landmark that is safe in EVERY mode is the "More actions" control
  * itself: it reopens the very overlay that just closed, never saves, deletes
- * or leaves, and this app renders it under the same accessible name in both
- * places it exists (the header in record mode, the toolbar in edit mode).
+ * or leaves.
  *
  * This function has exactly one branch that returns non-null, and it is keyed
  * on that label — not on "last," "first," or any other position. A future
  * header/toolbar control, however it is placed, cannot become the fallback by
- * accident the way the modepill did; only the control carrying
+ * accident the way the Editing pill did; only the control carrying
  * `menuOpenLabel` ever can. Structurally, it never returns an exiting
  * control, because it never returns anything but that one label or `null`.
  */

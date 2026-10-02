@@ -13,9 +13,15 @@
  * archive, ~240 MB on a long fully-recorded book, against the ~80 MB Share
  * Chapter was rewritten to stay under. fflate's streaming `Zip` emits the archive
  * as chunks while each chapter is appended, and a stored (level 0) entry's data
- * chunk IS the MP3 buffer, not a copy — so the chunks hold the archive once, and
- * the hook hands them to `File` as parts without ever concatenating them into a
- * second buffer. Peak is one chapter's PCM, its MP3, and the archive so far.
+ * chunk IS the MP3 buffer, not a copy.
+ *
+ * **Those chunks now leave as they are produced (#1003).** Every chunk goes to
+ * an injected {@link ArchiveSink}, and each chapter's writes are awaited before
+ * the next chapter is encoded, so what this module holds is one chapter's PCM,
+ * its MP3 and the zip's own stream state — not the archive so far. Where the
+ * bytes land is the hook's call: a file on disk (`hooks/archive-spool.ts`, OPFS)
+ * or, where there is none, {@link memoryArchiveSink}, which keeps every chunk
+ * the way this module did before and so holds the whole archive.
  *
  * **Share your work (#987)** sits here too, beside the book export rather than
  * in a file of its own: `exportLibraryZip` is the same per-book chapter loop,
@@ -40,13 +46,42 @@ import type { AudioCodec } from "@/types/audio";
 import type { BookId, Chapter } from "@/types/domain";
 import { Zip, ZipPassThrough } from "fflate";
 
-interface BookExport {
-  /**
-   * The zip archive as the ordered chunks fflate emitted it in. Concatenated they
-   * are the archive; the hook passes them straight to `new File(chunks, …)` so
-   * no single archive-sized buffer is ever allocated on this side (see header).
-   */
+/**
+ * Where a streaming archive's bytes go, in archive order, as fflate produces
+ * them (#1003). The export owns the order; the sink owns the storage.
+ *
+ * `write` may be called again before its last promise settles — fflate emits
+ * an entry's header, data and descriptor in one synchronous burst — so a sink
+ * MUST apply chunks in call order. The export awaits every write of an entry
+ * before it encodes the next chapter, which is what bounds the bytes in flight
+ * to about one chapter. A rejection fails the whole export. A sink must not
+ * mutate a chunk it was handed: a stored entry's data chunk is the chapter's
+ * MP3 buffer itself.
+ */
+export interface ArchiveSink {
+  write(chunk: Uint8Array<ArrayBuffer>): Promise<void>;
+}
+
+/**
+ * The sink that keeps every chunk in memory, in order — what this module did
+ * before #1003, and still the fallback where there is nowhere else to put the
+ * archive. Concatenated, `chunks` is the archive; hand them to `new File(chunks,
+ * …)` as parts rather than joining them into a second buffer.
+ */
+export function memoryArchiveSink(): ArchiveSink & {
   readonly chunks: ReadonlyArray<Uint8Array<ArrayBuffer>>;
+} {
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
+  return {
+    chunks,
+    write: (chunk) => {
+      chunks.push(chunk);
+      return Promise.resolve();
+    },
+  };
+}
+
+interface BookExport {
   /** Chapters that contributed an MP3 to the zip. */
   readonly chapters: number;
   /**
@@ -111,45 +146,67 @@ function folderKey(name: string): string {
  * ` (2)`, ` (3)`, … suffix before the extension rather than letting the later
  * write clobber the earlier one.
  *
- * `nameChapter` derives the name from `chapter.number`, and `addChapter` permits
- * an explicit duplicate number, so two chapters CAN map to the same path. Two
+ * `nameChapter` derives the name from `chapter.number` and `chapter.name`;
+ * `addChapter` permits an explicit duplicate number and two chapters may carry
+ * the same name, so two chapters CAN map to the same path. Two
  * entries under one path is a corrupt-or-ambiguous archive (Frank R-B7-book P2).
  * Renaming keeps every chapter's audio; losing a recording is unrecoverable in
  * the field, a confusing filename is not.
+ *
+ * `taken` holds {@link folderKey} forms: a free-text chapter name can differ
+ * from a sibling's only in case ("Intro" / "intro"), and those two files
+ * overwrite each other once extracted, exactly as two such folders would.
  */
 function uniqueEntryName(taken: Set<string>, name: string): string {
   const dot = name.lastIndexOf(".");
   const stem = dot === -1 ? name : name.slice(0, dot);
   const ext = dot === -1 ? "" : name.slice(dot);
-  return uniqueName(taken, stem, ext);
+  return uniqueName(taken, stem, ext, folderKey);
 }
 
 /**
- * One streaming archive and what it has emitted so far. `ondata` fires
+ * One streaming archive feeding one {@link ArchiveSink}. `ondata` fires
  * synchronously from `push`/`end` for a pass-through entry (nothing here is
- * deferred to a worker), so by the time `zip.end()` returns every chunk, the
- * central directory included, is in `chunks`. An error is surfaced as a
- * rejection of the whole export rather than a partial archive: a zip missing its
- * directory is not a share.
+ * deferred to a worker), so each chunk is handed to the sink in archive order
+ * the moment it exists, and its write is held in `pending` until {@link
+ * ZipSink.drain} awaits it. An error is surfaced as a rejection of the whole
+ * export rather than a partial archive: a zip missing its directory is not a
+ * share.
  */
 interface ZipSink {
   readonly zip: Zip;
-  readonly chunks: Uint8Array<ArrayBuffer>[];
   /** The first error fflate reported, if any. */
   error(): Error | null;
+  /**
+   * Await every write handed to the sink since the last drain. Called after
+   * each entry and after the central directory, so no write is left unawaited
+   * when the export returns or throws, and the next chapter's encode never
+   * starts while this one's bytes are still in flight.
+   */
+  drain(): Promise<void>;
 }
 
-function openZipSink(): ZipSink {
-  const chunks: Uint8Array<ArrayBuffer>[] = [];
+function openZipSink(sink: ArchiveSink): ZipSink {
+  let pending: Promise<void>[] = [];
   let zipError: Error | null = null;
   const zip = new Zip((err, chunk) => {
     if (err) {
       zipError ??= err;
       return;
     }
-    chunks.push(chunk);
+    // A sink that throws instead of rejecting throws out through fflate's
+    // `push`/`end` and so out of the export, which is the same failure.
+    pending.push(sink.write(chunk));
   });
-  return { zip, chunks, error: () => zipError };
+  return {
+    zip,
+    error: () => zipError,
+    drain: async () => {
+      const writes = pending;
+      pending = [];
+      await Promise.all(writes);
+    },
+  };
 }
 
 /** What one book's chapter loop added to the archive. */
@@ -162,7 +219,7 @@ interface ChaptersAdded {
 
 /**
  * Encode each of `chapters`, in order, and append it to `sink` as a stored
- * entry named `folder` + `nameChapter(number)`. The ONE chapter loop both
+ * entry named `folder` + `nameChapter(number, name)`. The ONE chapter loop both
  * Share Book and Share your work run (#987): the library export calls it once
  * per book with that book's folder, Share Book once with no folder — which is
  * what makes each library folder the same layout Share Book produces.
@@ -175,7 +232,7 @@ async function addChaptersToZip(
   sink: ZipSink,
   chapters: readonly Chapter[],
   folder: string,
-  nameChapter: (chapterNumber: number) => string,
+  nameChapter: (chapterNumber: number, chapterName: string | null) => string,
   codec: AudioCodec,
   shouldContinue?: () => boolean,
   onStep?: StepReporter
@@ -215,16 +272,26 @@ async function addChaptersToZip(
     // A cancel that landed during this chapter's encode must not report its
     // step (#986); the zip is dropped with the rest of the run.
     if (shouldContinue && !shouldContinue()) return null;
-    const name = uniqueEntryName(taken, nameChapter(chapter.number));
-    taken.add(name);
+    const name = uniqueEntryName(
+      taken,
+      nameChapter(chapter.number, chapter.name)
+    );
+    taken.add(folderKey(name));
     // Stored entry: fflate computes the CRC over the MP3 and emits the buffer
     // itself as the data chunk. `result.mp3` is dropped after this iteration;
     // the archive's reference to it is the one copy that remains.
     const entry = new ZipPassThrough(`${folder}${name}`);
     sink.zip.add(entry);
     entry.push(result.mp3, true);
+    // This chapter's bytes reach the sink before the next chapter is encoded
+    // (#1003): that is the whole bound on what the export holds.
+    await sink.drain();
     const zipError = sink.error();
     if (zipError) throw zipError;
+    // The drain is an await the old synchronous path did not have: a cancel
+    // that lands during it stops the run before this chapter's step, the same
+    // rule as a cancel during the encode (#986).
+    if (shouldContinue && !shouldContinue()) return null;
     partialSegments += result.missing;
     if (result.missing > 0) partialChapters++;
     written++;
@@ -233,9 +300,13 @@ async function addChaptersToZip(
   return { written, missing, partialSegments, partialChapters };
 }
 
-/** Close the archive, surfacing any error fflate reported while writing it. */
-function finishZip(sink: ZipSink): void {
+/**
+ * Close the archive, surfacing any error fflate reported while writing it, once
+ * the central directory has reached the sink.
+ */
+async function finishZip(sink: ZipSink): Promise<void> {
   sink.zip.end();
+  await sink.drain();
   const zipError = sink.error();
   if (zipError) throw zipError;
 }
@@ -245,9 +316,10 @@ function finishZip(sink: ZipSink): void {
  * archive them into one zip. Returns `null` when no chapter had resolvable audio
  * (nothing to share) or when the run was cancelled part-way.
  *
- * `nameChapter` supplies each zip entry's filename from the chapter's number:
- * naming is translator-facing copy, so it is injected by the hook (from
- * `strings`) rather than baked in here, keeping this module free of UI text.
+ * `nameChapter` supplies each zip entry's filename from the chapter's number
+ * and its own name (`null` when it has none, #1218): naming is
+ * translator-facing copy, so it is injected by the hook (from `strings`)
+ * rather than baked in here, keeping this module free of UI text.
  *
  * `shouldContinue` is the same cancellation seam `exportChapterMp3` takes,
  * checked before each chapter as well as threaded into it: a book is several
@@ -258,13 +330,19 @@ function finishZip(sink: ZipSink): void {
  * deflating it spends a second pass for ~no size gain — and storing is what
  * lets fflate pass each MP3 buffer through as-is (see header).
  *
+ * `sink` receives the archive's bytes in order as they are produced (#1003,
+ * {@link ArchiveSink}). On a `null` return or a throw it may already hold part
+ * of an archive, or nothing at all; either way that is not a share, and the
+ * caller discards whatever the sink holds.
+ *
  * `onStep` reports the book's truthful progress at the CHAPTER grain (#986):
  * `(0, total)` before the first chapter, `total` being the chapters the walk
  * found (a dangling id never enters it), then `(done, total)` after each
- * chapter is resolved — its MP3 in the archive, or skipped for having no
+ * chapter is resolved — its MP3 written to `sink`, or skipped for having no
  * audio and counted missing. `shouldContinue` is re-checked after each
- * chapter's export, before its step, so a cancel that lands while a chapter
- * is encoding returns `null` without reporting that chapter; a throw unwinds
+ * chapter's export and again after its bytes reach the sink, before its step,
+ * so a cancel that lands while a chapter is encoding or being written returns
+ * `null` without reporting that chapter; a throw (a failed write included) unwinds
  * before its step. Either way the count stops where it was. The native
  * staging a Share caller does after this returns adds no step. It is not
  * forwarded into `exportChapterMp3`: the book counts
@@ -278,8 +356,9 @@ function finishZip(sink: ZipSink): void {
  */
 export async function exportBookZip(
   bookId: BookId,
-  nameChapter: (chapterNumber: number) => string,
+  nameChapter: (chapterNumber: number, chapterName: string | null) => string,
   codec: AudioCodec,
+  sink: ArchiveSink,
   shouldContinue?: () => boolean,
   onStep?: StepReporter
 ): Promise<BookExport | null> {
@@ -288,9 +367,9 @@ export async function exportBookZip(
   // dangling chapter would export as if whole.
   const { chapters, missing: danglingChapters } =
     await resolveBookChapters(bookId);
-  const sink = openZipSink();
+  const zip = openZipSink(sink);
   const added = await addChaptersToZip(
-    sink,
+    zip,
     chapters,
     "",
     nameChapter,
@@ -300,9 +379,8 @@ export async function exportBookZip(
   );
   if (added === null || added.written === 0) return null;
 
-  finishZip(sink);
+  await finishZip(zip);
   return {
-    chunks: sink.chunks,
     chapters: added.written,
     missing: danglingChapters + added.missing,
     partialSegments: added.partialSegments,
@@ -311,8 +389,6 @@ export async function exportBookZip(
 }
 
 interface LibraryExport {
-  /** The archive as fflate's stream chunks — see {@link BookExport.chunks}. */
-  readonly chunks: ReadonlyArray<Uint8Array<ArrayBuffer>>;
   /** Books that contributed a folder to the zip. */
   readonly books: number;
   /** Books left out entirely: not one chapter had resolvable audio. */
@@ -348,26 +424,34 @@ function folderStem(label: string, position: number): string {
  * part-way — a clean no-op for the caller, not an error.
  *
  * `nameBook` names each folder and `nameChapter` each MP3 inside it, both from
- * the book's display name: copy is injected, as for `exportBookZip`. A folder
- * name is disambiguated against its siblings with ` (2)`, ` (3)`, … so two
- * books with one name keep both books' audio. Names that differ only in case
+ * the book's display name (and, for an MP3, the chapter's number and name):
+ * copy is injected, as for `exportBookZip`. A folder name is disambiguated
+ * against its siblings with ` (2)`, ` (3)`, … so two books with one name keep
+ * both books' audio. Names that differ only in case
  * count as one name here ({@link folderKey}), so they stay apart after the
  * zip is extracted on a case-insensitive filesystem too.
  *
- * One archive for the whole run, so the peak is still one chapter's PCM, its
- * MP3 and the archive so far. `shouldContinue` is checked before each book as
- * well as threaded into each book's chapter loop. An encode or archive error
- * anywhere rejects the whole call and the chunks gathered so far are dropped
- * with it: nothing partial comes back.
+ * One archive for the whole run, written to `sink` as it is produced, so what
+ * this holds is one chapter's PCM and its MP3 (#1003); the sink decides whether
+ * the archive so far sits on disk or in memory. `shouldContinue` is checked
+ * before each book as well as threaded into each book's chapter loop. An
+ * encode, archive or write error anywhere rejects the whole call, and whatever
+ * the sink already holds is the caller's to discard: nothing partial is a
+ * share.
  */
 export async function exportLibraryZip(
   nameBook: (bookName: string) => string,
-  nameChapter: (bookName: string, chapterNumber: number) => string,
+  nameChapter: (
+    bookName: string,
+    chapterNumber: number,
+    chapterName: string | null
+  ) => string,
   codec: AudioCodec,
+  sink: ArchiveSink,
   shouldContinue?: () => boolean
 ): Promise<LibraryExport | null> {
   const books = await listBooks();
-  const sink = openZipSink();
+  const zip = openZipSink(sink);
   const takenFolders = new Set<string>();
   let included = 0;
   let missing = 0;
@@ -385,10 +469,10 @@ export async function exportLibraryZip(
       folderKey
     );
     const added = await addChaptersToZip(
-      sink,
+      zip,
       chapters,
       `${folder}/`,
-      (n) => nameChapter(book.name, n),
+      (n, name) => nameChapter(book.name, n, name),
       codec,
       shouldContinue
     );
@@ -407,9 +491,8 @@ export async function exportLibraryZip(
   }
   if (included === 0) return null;
 
-  finishZip(sink);
+  await finishZip(zip);
   return {
-    chunks: sink.chunks,
     books: included,
     missing,
     incompleteChapters,
@@ -476,10 +559,10 @@ export async function estimateLibraryZipBytes(
 
 /**
  * How much free space a share must see before it starts, as a multiple of the
- * estimated archive. **An assumption, not a measurement:** the archive is held
- * as a Blob (which a browser may back with disk) and, on the native route, is
- * written again to the app cache before the sheet opens, so at worst it lands
- * twice. No device reading backs this figure (AGENTS.md: record what a real
+ * estimated archive. **An assumption, not a measurement:** the archive is
+ * spooled to disk where the browser allows it, or held as a Blob (which a
+ * browser may back with disk), and on the native route is written again to
+ * the app cache before the sheet opens, so at worst it lands twice. No device reading backs this figure (AGENTS.md: record what a real
  * phone reports before treating it as tuned).
  */
 const EXPORT_HEADROOM_FACTOR = 2;

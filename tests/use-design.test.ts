@@ -30,7 +30,7 @@ import { DESIGN_STORAGE_KEY } from "@/lib/design";
  * `installStoredDesign`'s pre-render application. NOT COVERED: `readDesign`'s
  * throw-on-READ catch (an accessor that throws on access, not merely absent —
  * jsdom's own `localStorage` does not reproduce that), and anything on a
- * phone — this switch has not been run on a device as of this PR.
+ * phone — that is on-device surface, not exercised here.
  */
 
 let dom: JSDOM;
