@@ -214,31 +214,8 @@ it("reproduces the reported failure: Select Xcode needs ruby on PATH", () => {
   expect(result.stderr).toContain("ruby: command not found");
 });
 
-describe("iOS dispatch ref gate", () => {
-  it("takes the branch/tag type from GitHub", () => {
-    expect(workflowCode).toContain("REF_TYPE: ${{ github.ref_type }}");
-  });
-  it.each([
-    ["staging", "branch", "false", 0],
-    ["main", "branch", "false", 0],
-    ["staging", "tag", "false", 1],
-    ["main", "tag", "false", 1],
-    ["develop", "branch", "false", 1],
-    ["feature/experiment", "branch", "false", 1],
-    ["staging", "tag", "true", 0],
-    ["main", "tag", "true", 0],
-    ["feature/experiment", "branch", "true", 0],
-    ["v0.3.0", "tag", "true", 0],
-  ])("%s (%s), override %s exits %i", (REF, REF_TYPE, ALLOW_ANY, status) => {
-    expect(
-      run(step("Require staging/main (or an explicit override)"), {
-        REF,
-        REF_TYPE,
-        ALLOW_ANY,
-      }).status
-    ).toBe(status);
-  });
-});
+// The preflight ref/promotion gate is covered for both native lanes in
+// tests/native-lanes-on-promotion.test.ts (#1281).
 
 describe.skipIf(!hasRuby)(
   "iOS Xcode selection (requires ruby on PATH; skipped without it — see the reproduction above)",
