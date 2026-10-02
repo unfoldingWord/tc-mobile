@@ -291,6 +291,41 @@ describe("goBackToBooks from the recorder (#1275)", () => {
     expect(pushSpy).toHaveBeenCalledTimes(2);
   });
 
+  it("hands the continuation on through the settle's absorb arm: a hardware Back admitted mid-close, with the close resolving before it lands (Frank round 2 on #1300)", async () => {
+    // The commit-close settle's REFUSED arm: a goBack is outstanding when
+    // `requestClose` resolves, so the settle issues nothing and absorbs that
+    // Back's landing instead. The crumb's continuation must ride that
+    // landing exactly as it rides the issued one.
+    let resolveClose: ((exited: boolean) => void) | null = null;
+    fake.requestClose = () =>
+      new Promise<boolean>((resolve) => {
+        resolveClose = resolve;
+      });
+    await act(async () => fake.nav!.goBackToBooks());
+    await settle();
+    // The first level landed and the close is pending.
+    expect(landings).toEqual([1]);
+    expect(resolveClose).not.toBeNull();
+
+    await act(async () => {
+      // A hardware Back, admitted: the landing settled the guard. Then the
+      // close exits and resolves before that Back's popstate lands (jsdom
+      // delivers it a task later; the promise continuation runs first).
+      fake.nav!.goBack();
+      fake.nav!.commitCloseRecorder(false);
+      resolveClose!(true);
+    });
+    await settle();
+
+    // Crumb's Back, the hardware Back, the chained Back — and no back() from
+    // the settle itself: it absorbed the hardware Back's landing.
+    expect(backSpy).toHaveBeenCalledTimes(3);
+    expect(landings).toEqual([1, 1, 0]);
+    expect(onLeaveToBooks).toHaveBeenCalledTimes(1);
+    expect(pushSpy).toHaveBeenCalledTimes(1);
+    expect(index()).toBe(0);
+  });
+
   describe("a consuming landing that runs before React has committed the close (George round 2 on #1300)", () => {
     // Observed in Chromium (the e2e "held cut" case): the consuming back()'s
     // popstate ran ahead of the scheduler task that commits
@@ -333,21 +368,55 @@ describe("goBackToBooks from the recorder (#1275)", () => {
       expect(index()).toBe(1);
     });
 
-    it("drops the deferred continuation when a Back of the translator's own lands first", async () => {
+    it.each([
+      { held: true, backs: 2, leaves: 0, index: 1 },
+      { held: false, backs: 3, leaves: 1, index: 0 },
+    ])(
+      "refuses a Back that enters the adapter in that window (clipboard held: $held), so the commit still decides (George round 3 on #1300)",
+      async ({ held, backs, leaves, index: finalIndex }) => {
+        fake.requestClose = async () => true;
+        await act(async () => fake.nav!.goBackToBooks());
+        await settle();
+        expect(backSpy).toHaveBeenCalledTimes(2);
+
+        // A hardware Back (or any issuer that goes through `goBack`) while
+        // the sheet is still the committed screen and the continuation is
+        // waiting on that commit. The guard is clear and `suppressPop` is
+        // down, so only the pending continuation can refuse it — and it
+        // must: issued, its landing would be routed after the commit as a
+        // plain Segments Back, `"to-books"`, past the clipboard gate.
+        await act(async () => fake.nav!.goBack());
+        await settle();
+        expect(backSpy).toHaveBeenCalledTimes(2);
+
+        await act(async () => {
+          fake.set!.setClipboardHeld(held);
+          fake.set!.setRecorderOpen(false);
+        });
+        await settle();
+        expect(backSpy).toHaveBeenCalledTimes(backs);
+        expect(onLeaveToBooks).toHaveBeenCalledTimes(leaves);
+        expect(index()).toBe(finalIndex);
+      }
+    );
+
+    it("drops the deferred continuation when a raw pop (a browser gesture) lands in that window", async () => {
       fake.requestClose = async () => true;
       await act(async () => fake.nav!.goBackToBooks());
       await settle();
       expect(backSpy).toHaveBeenCalledTimes(2);
 
-      // A hardware Back before the commit: its landing owns the screen and
-      // clears the deferred continuation; the commit afterwards issues
-      // nothing more.
-      await act(async () => fake.nav!.goBack());
+      // A browser Back never enters `issueBack`; the platform pops the entry
+      // itself. Its landing owns the screen and clears the deferred
+      // continuation (it is routed against a still-committed recorder, as a
+      // Back racing a close is on develop). The commit afterwards issues no
+      // second level of its own.
+      await act(async () => window.history.back());
       await settle();
-      const afterOwnBack = backSpy.mock.calls.length;
+      const afterRawPop = backSpy.mock.calls.length;
       await act(async () => fake.set!.setRecorderOpen(false));
       await settle();
-      expect(backSpy).toHaveBeenCalledTimes(afterOwnBack);
+      expect(backSpy).toHaveBeenCalledTimes(afterRawPop);
     });
 
     it("is a re-render, not a commit of the close, that leaves the flag alone", async () => {

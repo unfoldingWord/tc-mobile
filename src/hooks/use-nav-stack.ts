@@ -464,6 +464,11 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // sets it as it issues, the next landing takes it, and only the
   // commit-close settle hands it on. Never read anywhere a landing is not.
   const continueToBooks = useRef(false);
+  // The continuation a consuming landing could not issue because React had
+  // not yet committed the recorder's close; finished by the layout effect
+  // below `continueOnSegments`. While it is set, `issueBack` refuses: the
+  // pending continuation owns the next traversal (George round 3 on #1300).
+  const continueOnCommit = useRef(false);
 
   // Latest-ref the state-half callbacks (menu.tsx onCloseRef pattern) so the
   // returned commands can be identity-stable — recorder.tsx:2213 rebuilds its
@@ -770,8 +775,19 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // `toBooks` is the one continuation a Back can carry (#1275). It is
   // written only on the path that issues, so a refused request can never
   // leave it set for a Back it did not issue.
+  //
+  // `continueOnCommit` is the other window outside the guard (George round 3
+  // on #1300): the recorder's entry is consumed, the guard is clear and
+  // `suppressPop` is down, but the sheet is still the committed screen and
+  // the crumb's second level is waiting on the commit that closes it. A Back
+  // issued here would be routed after that commit as a plain Segments Back —
+  // `"to-books"`, past the clipboard gate `continueOnSegments` applies. The
+  // pending continuation owns that traversal; refuse this one. It is swallowed
+  // for one commit at most: the layout effect consumes the flag on the first
+  // commit that shows the sheet gone, and every landing clears it.
   const issueBack = useCallback((toBooks: boolean) => {
     if (suppressPop.current) return;
+    if (continueOnCommit.current) return;
     const begun = beginBack(travelGuard.current, "go-back");
     if (!begun.ok) return;
     travelGuard.current = begun.next;
@@ -803,7 +819,6 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // translator made in between owns the screen). Not the #430 shape: no
   // dependency array to go unstable, and nothing here fires on a re-render
   // while the flag is down.
-  const continueOnCommit = useRef(false);
   useLayoutEffect(() => {
     if (!continueOnCommit.current || screen === "recorder") return;
     continueOnCommit.current = false;
@@ -975,8 +990,9 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
           // `screenRef` still reading "recorder", route as a second
           // commit-close and strand a re-arm entry (invariant 2). So when
           // the recorder is still the committed screen, the second level is
-          // handed to `finishContinuation` below, which runs in the layout
-          // phase of the commit that closes it — the same phase that
+          // handed to `continueOnCommit`, consumed by the layout effect
+          // declared under `continueOnSegments`: it runs in the layout
+          // phase of the commit that closes the sheet — the same phase that
           // refreshes every ref this handler reads — and issues it there.
           // Either site makes the same decision; whichever observes the
           // committed close first fires, once.

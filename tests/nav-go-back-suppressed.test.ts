@@ -27,8 +27,10 @@ import { bodyAfter, stripComments } from "./support";
  * rather than driving `useNavStack`'s callbacks. It strips comments and
  * isolates each body so a match elsewhere in the file cannot satisfy it.
  * Mutation that must go red: delete the `suppressPop` check, or move it
- * after `beginBack`; give `goBack` or `goBackToBooks` a `history.back()` of
- * its own.
+ * after `beginBack`; delete the `continueOnCommit` check (the deferred
+ * continuation's window, George round 3 on #1300) or move it after
+ * `beginBack`; give `goBack` or `goBackToBooks` a `history.back()` of its
+ * own.
  */
 describe("goBack refuses while a suppressed traversal is outstanding (George r3 P2, PR 634)", () => {
   const sourceUrl = new URL("../src/hooks/use-nav-stack.ts", import.meta.url);
@@ -46,6 +48,18 @@ describe("goBack refuses while a suppressed traversal is outstanding (George r3 
     expect(
       guard,
       "no `if (suppressPop.current) return;` in issueBack"
+    ).not.toBeNull();
+    const beginIdx = body.search(/beginBack\s*\(/);
+    expect(guard!.index).toBeLessThan(beginIdx);
+  });
+
+  it("returns on continueOnCommit.current BEFORE consulting beginBack (George round 3 on #1300)", () => {
+    const guard = /if\s*\(\s*continueOnCommit\.current\s*\)\s*return\s*;/.exec(
+      body
+    );
+    expect(
+      guard,
+      "no `if (continueOnCommit.current) return;` in issueBack"
     ).not.toBeNull();
     const beginIdx = body.search(/beginBack\s*\(/);
     expect(guard!.index).toBeLessThan(beginIdx);
