@@ -690,8 +690,9 @@ if it doesn't, stop and tell us.
 **Browser — open:** <staging URL>. Check the app's displayed build before testing.
 
 **With every report:** Include the app build, whether the screen still shows
-the app's previous layout (phones that chose it earlier still do, and no
-setting shows it), steps, expected result and what happened. Android: phone
+the app's previous layout (phones that chose it earlier still do; the app
+has no setting that shows or switches it), steps, expected result and what
+happened. Android: phone
 model, Android version and Android System WebView
 version. iPhone: model and iOS version. Browser: device, OS, browser/version,
 and whether opened in a tab or installed to the home screen. We log every
