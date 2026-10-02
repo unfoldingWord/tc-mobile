@@ -9,7 +9,7 @@ import {
   type Locale,
 } from "@/lib/locale";
 
-import { bodyAfter, stripComments } from "./support";
+import { bodyAfter, stripComments, stripHtmlComments } from "./support";
 
 /**
  * #169's fourth fix item: `<html lang>`/`dir` and the manifest language come
@@ -25,7 +25,11 @@ import { bodyAfter, stripComments } from "./support";
  *
  * The build config is read with its comments stripped (#822): the manifest
  * block carries a comment right above `lang`, and a pin over raw text would
- * be satisfied by a comment that quoted the line it looks for.
+ * be satisfied by a comment that quoted the line it looks for. `index.html`
+ * is read through `stripHtmlComments` for the same reason: the transform
+ * labels the FIRST `<html` it finds, so a `<!-- <html lang="en" dir="ltr"> -->`
+ * ahead of the real tag made the idempotence check below pass on a document
+ * whose real tag said something else.
  */
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -150,7 +154,10 @@ describe("withLocaleAttributes", () => {
 
 describe("the shipped locale reaches the document and the manifest", () => {
   it("index.html's static tag is what the transform would produce", () => {
-    const html = read("index.html");
+    const html = stripHtmlComments(read("index.html"));
+    // Floor: an empty or tagless read would throw inside the transform, but
+    // say so here rather than through its message.
+    expect(html, "no <html> tag in index.html").toMatch(/<html\b/i);
     // Not "index.html contains lang=en": that passes while `dir` is absent,
     // which is the state this change exists to fix. Idempotence against the
     // transform is the whole claim — the file a human reads, and the file the

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 
+import { createElement, type RefObject } from "react";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -10,9 +11,14 @@ import {
 } from "@/components/edit-control-state";
 import { editRowReason } from "@/components/menu-row-state";
 import { heldByDrag } from "@/components/recorder-stage";
+import {
+  RecorderToolbar,
+  type RecorderToolbarProps,
+} from "@/components/recorder-toolbars";
 import { strings } from "@/lib/strings";
 
-import { bodyAfter, region, stripComments, uniqueIndexOf } from "./support";
+import { render } from "./render";
+import { bodyAfter, stripComments } from "./support";
 
 /**
  * #91 — a disabled edit-toolbar history control must carry its reason.
@@ -25,10 +31,10 @@ import { bodyAfter, region, stripComments, uniqueIndexOf } from "./support";
  * cell of the input space. A gate rewritten in one place and not the other
  * fails there, which a table of expected reasons would not catch.
  *
- * Nothing here renders. `Control`'s `aria-disabled` routing for a hint with
- * no glyph — the shape these two cues take since #924 — is pinned by
- * `tests/control-render.test.ts` through the #197 harness, and that file
- * consumes a hint rather than restating one. What a translator makes of a
+ * One group renders: the edit bar, to read which prop each history button's
+ * gate and name come from (#822). `Control`'s own `aria-disabled` routing for
+ * a hint with no glyph — the shape these two cues take since #924 — is pinned
+ * by `tests/control-render.test.ts` through the #197 harness. What a translator makes of a
  * grey arrow that says nothing visibly is still on-device surface, and #91 is
  * explicit that only real non-reader testing answers it.
  */
@@ -246,95 +252,158 @@ describe("the cue (#91, #135, #924)", () => {
 });
 
 /**
- * The wiring, read as source.
+ * The wiring, rendered (#822).
  *
  * The property this whole module exists for is that ONE value answers both
  * questions — whether the control is inert, and what it says about being inert.
- * Nothing at runtime can tell `disabled={undoBlocked !== null}` from an inline
- * `heldByDrag(...)` that happens to agree today, because agreeing today is
- * precisely what a drifting pair does. So the seam is read rather than
- * exercised, the way `tests/notice-nothing-failed.test.ts` reads its own.
+ * `RecorderToolbar` is presentational (`recorder-toolbars.tsx`'s docblock), so
+ * this renders the edit bar through `tests/render.ts` and reads the two history
+ * buttons it emits, rather than reading the JSX as text. A comment in the
+ * source cannot satisfy a rendered node, which is the hole #822 records in the
+ * text pins that stood here.
  *
- * COMMENTS ARE STRIPPED FIRST, and that is not incidental: the two control
- * sites now NAME `undoReason` and `heldByDrag` in prose in order to explain
- * why the gate is unchanged, so a reader matching the bare identifier would
- * pass on the comment alone. This repo has already had a stylesheet comment
- * capture a test that searched its file whole (`share-progress.test.ts`, #529
- * round 3), and it surfaced only because that test carried a floor — so this
- * one carries a floor too.
+ * The bar receives the reason and the raw gate terms (`dragging`,
+ * `idleEditable`) as separate props, so a render CAN tell
+ * `disabled={undoBlocked !== null}` from an inline `heldByDrag(...)` that
+ * agrees with it in the sheet: feed a null reason beside a live drag and a
+ * closing sheet, and only the derived gate leaves the arrow live. That input
+ * pair never reaches the bar from `recorder.tsx`; it is a probe, not a state.
  */
-/**
- * The bottom bars, which is where the history controls live since #160's L-1
- * split them out of the sheet. The two assertions below moved with the JSX —
- * pointing them at `recorder.tsx` would leave the positive one failing and,
- * worse, the NEGATIVE one passing over a file that no longer contains the
- * controls it is meant to be policing.
- */
-function toolbarsCode(): string {
-  const raw = readFileSync(
-    new URL("../src/components/recorder-toolbars.tsx", import.meta.url),
-    "utf8"
-  );
-  // The shared strip, which also removes a `//` trailing live code; the
-  // line-anchored copy that stood here kept one (#822).
-  const stripped = stripComments(raw);
-  expect(
-    stripped.length,
-    "recorder-toolbars.tsx stripped to nothing"
-  ).toBeGreaterThan(3000);
-  return stripped;
+const noop = () => {};
+const buttonRef = { current: null } as RefObject<HTMLButtonElement | null>;
+
+function editBarProps(
+  over: Partial<RecorderToolbarProps> = {}
+): RecorderToolbarProps {
+  return {
+    mode: "edit",
+    recording: false,
+    recordRef: buttonRef,
+    rerecordRef: buttonRef,
+    rerecordDisabled: false,
+    rerecordHint: null,
+    recordInert: false,
+    guidedRecord: false,
+    isClosing: false,
+    playingBuffer: false,
+    dragging: false,
+    idleEditable: true,
+    playSource: null,
+    playDisabled: false,
+    editToolbarDisabled: false,
+    editToolbarHint: null,
+    undoBlocked: null,
+    redoBlocked: null,
+    zoom: 1,
+    windowControlsInert: false,
+    onRecordButton: noop,
+    onPlayButton: noop,
+    onEnterEdit: noop,
+    onAuditionButton: noop,
+    onToggleZoom: noop,
+    onUndo: noop,
+    onRedo: noop,
+    onExitEdit: noop,
+    onRerecord: noop,
+    ...over,
+  };
 }
 
 /**
- * The single `<Control ... />` element carrying `iconMarker` (e.g.
- * `icon="undo"`), sliced out of `source` — comment-stripped already, by
- * `toolbarsCode()`. `uniqueIndexOf` fails loudly if the icon marker is not
- * exactly one occurrence (a second Undo/Redo control, or the marker renamed),
- * rather than silently anchoring on the wrong one.
- *
- * This is what closes #719 item 1: the wiring test below used to run two
- * INDEPENDENT `toContain` checks over the WHOLE file, one for `disabled={slot
- * !== null}` and one for `hint={editControlHint(slot)}` — so a source with
- * Undo's `disabled` paired to Redo's `hint` (or vice versa) satisfied both,
- * because both substrings existed *somewhere*. Scoping each pair's search to
- * the one control element it names closes that: a crossed pairing now has to
- * land its `disabled` and its `hint` on the SAME element to pass, which is
- * the actual property #91 depends on (see this file's top docblock).
+ * The one button whose accessible name is `label`, bare or carrying a hint
+ * (`Control` names a hinted one `${label}. ${hint}`). Throws on none or two,
+ * so a renamed or duplicated control fails by name rather than by a null read.
  */
-function controlBlock(source: string, iconMarker: string): string {
-  const markerAt = uniqueIndexOf(source, iconMarker);
-  const openAt = source.lastIndexOf("<Control", markerAt);
-  const closeAt = source.indexOf("/>", markerAt);
-  return region(source, { from: openAt, to: closeAt + "/>".length });
+function historyButton(props: RecorderToolbarProps, label: string): Element {
+  const container = render(createElement(RecorderToolbar, props));
+  const found = [...container.querySelectorAll("button")].filter((b) => {
+    const name = b.getAttribute("aria-label") ?? "";
+    return name === label || name.startsWith(`${label}. `);
+  });
+  if (found.length !== 1) {
+    throw new Error(
+      `${found.length} buttons named ${label} in the edit bar, expected exactly one`
+    );
+  }
+  return found[0]!;
 }
+
+/** Live: neither the native attribute nor the soft one. */
+function expectLive(button: Element, what: string): void {
+  expect(button.hasAttribute("disabled"), `${what}: native disabled`).toBe(
+    false
+  );
+  expect(button.hasAttribute("aria-disabled"), `${what}: aria-disabled`).toBe(
+    false
+  );
+}
+
+const HISTORY = [
+  {
+    slot: "undoBlocked",
+    label: strings.undo,
+    reason: "nothing-to-undo",
+    words: strings.nothingToUndo,
+    other: { slot: "redoBlocked", label: strings.redo },
+  },
+  {
+    slot: "redoBlocked",
+    label: strings.redo,
+    reason: "nothing-to-redo",
+    words: strings.nothingToRedo,
+    other: { slot: "undoBlocked", label: strings.undo },
+  },
+] as const;
 
 describe("the toolbar reads one value for both halves (#91)", () => {
-  it("each history control's `disabled` IS its own reason being non-null", () => {
-    const source = toolbarsCode();
-    for (const [icon, slot] of [
-      ['icon="undo"', "undoBlocked"],
-      ['icon="redo"', "redoBlocked"],
-    ] as const) {
-      const control = controlBlock(source, icon);
-      expect(control, `${slot} control (${icon})`).toContain(
-        `disabled={${slot} !== null}`
-      );
-      expect(control, `${slot} control (${icon})`).toContain(
-        `hint={editControlHint(${slot})}`
-      );
+  it("the fixture renders both history controls live", () => {
+    // The floor under every case below: with both reasons null, both arrows
+    // exist and are live, so a case that finds a control inert is reading the
+    // prop it set and not a fixture that greys everything.
+    for (const { label } of HISTORY) {
+      expectLive(historyButton(editBarProps(), label), label);
     }
   });
 
-  it("neither control re-derives the gate beside the cue", () => {
-    // The drift this file is named for: an inline `heldByDrag` restored at one
-    // of the two sites while its `hint` still reads the derivation, so the
-    // control goes grey for a reason the badge does not know about. `heldByDrag`
-    // legitimately survives at Play and `playDisabled`, so this is scoped to the
-    // history terms rather than banning the helper.
-    const source = toolbarsCode();
-    expect(source).not.toMatch(/heldByDrag\([^)]*canUndo/s);
-    expect(source).not.toMatch(/heldByDrag\([^)]*canRedo/s);
-  });
+  for (const { slot, label, reason, words, other } of HISTORY) {
+    it(`${label}: a history reason greys it softly and speaks through its own name`, () => {
+      const props = editBarProps({ [slot]: reason });
+      const button = historyButton(props, label);
+      // `disabled` and `hint` both read THIS slot: a hint read from the other
+      // slot would leave the name bare and the control natively disabled.
+      expect(button.getAttribute("aria-label")).toBe(`${label}. ${words}`);
+      expect(button.getAttribute("aria-disabled")).toBe("true");
+      expect(button.hasAttribute("disabled")).toBe(false);
+      // And the other control does not read this slot either.
+      expectLive(historyButton(props, other.label), `${other.label} beside it`);
+    });
+
+    it(`${label}: a reason with no cue greys it hard, with its bare name`, () => {
+      // `held-by-drag` has no words (`editControlHint`), so `Control` falls
+      // back to the native attribute — the #317 lock stays a hard disable.
+      const button = historyButton(
+        editBarProps({ [slot]: "held-by-drag" }),
+        label
+      );
+      expect(button.getAttribute("aria-label")).toBe(label);
+      expect(button.hasAttribute("disabled")).toBe(true);
+      expect(button.hasAttribute("aria-disabled")).toBe(false);
+    });
+
+    it(`${label}: the bar does not re-derive the gate beside the reason`, () => {
+      // The drift this file is named for: an inline `heldByDrag` restored at
+      // one of the two sites while its `hint` still reads the derivation, so
+      // the control goes grey for a reason the cue does not know about. A null
+      // reason beside a live drag and a busy sheet must leave the arrow live.
+      const props = editBarProps({
+        [slot]: null,
+        [other.slot]: null,
+        dragging: true,
+        idleEditable: false,
+      });
+      expectLive(historyButton(props, label), label);
+    });
+  }
 });
 
 /**

@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { blankComments } from "./support";
+import { blankCodeComments } from "./strip-code-comments";
 
 /**
  * Every dialog in the tree has an accessible name (#198, #164 R-19).
@@ -31,7 +31,10 @@ import { blankComments } from "./support";
  * Comments are blanked before the sweep (#822). JSX allows a comment between
  * attributes, so an `aria-label=` parked in one would otherwise name a dialog
  * that has no name. Blanked rather than removed, so the line numbers in the
- * case names still point at the file.
+ * case names still point at the file. Blanked by parsing, because the sweep
+ * reads every component: the string-blind `blankComments` blanked each line
+ * from the `//` of a `"https://…"` literal, so a `role="dialog"` after a URL
+ * on the same line dropped out of the sweep instead of failing it.
  */
 const COMPONENTS = path.resolve(import.meta.dirname, "..", "src", "components");
 
@@ -59,7 +62,10 @@ const files = readdirSync(COMPONENTS)
   .filter((name) => name.endsWith(".tsx"))
   .map((name) => ({
     name,
-    source: blankComments(readFileSync(path.join(COMPONENTS, name), "utf8")),
+    source: blankCodeComments(
+      readFileSync(path.join(COMPONENTS, name), "utf8"),
+      name
+    ),
   }));
 
 describe("every dialog carries an accessible name (#198, #164 R-19)", () => {

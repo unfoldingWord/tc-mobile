@@ -25,13 +25,17 @@ import { stripComments } from "./support";
  * POST-cut length — the exact clobber George R1 traced through
  * `recorder.tsx:1131-1136` and `1804-1806`.
  *
- * Source-shape, the same reason `tests/nav-commit-close-race-guards.test.ts`
- * and `tests/panel-recovery-focus.test.ts` are: there is no DOM runner here
- * (AGENTS.md), so the Cut control's `disabled` prop cannot be rendered and
- * inspected — only read as text.
+ * Source-shape, and only for Cut. Cut lives in `recorder.tsx`, not in the
+ * presentational bar, and rendering it means mounting the whole sheet with its
+ * hook boundary mocked (the `tests/interactive-mount.ts` shape
+ * `tests/recorder-edit-toolbar-glyph.test.ts` uses). This file does not do
+ * that, so it reads Cut's `disabled` prop as text. Undo lives
+ * in the presentational bar, so its half of the comparison is RENDERED in
+ * `tests/edit-control-state.test.ts` ("the toolbar reads one value for both
+ * halves") rather than read here (#822).
  */
 describe("Cut's disabled gate carries the #317 drag term, the way Undo/Redo do (#512 George R1 P2-1)", () => {
-  // Both reads are stripped before anything is searched (#822): unstripped,
+  // The read is stripped before anything is searched (#822): unstripped,
   // a comment carrying `label={strings.cut}` and the full gate ahead of the
   // live control is what `indexOf` finds, so the live Cut could lose its
   // drag term with every case here still green.
@@ -41,20 +45,6 @@ describe("Cut's disabled gate carries the #317 drag term, the way Undo/Redo do (
       "utf8"
     )
   );
-  // Two files, because the two controls this file talks about now live apart:
-  // Cut stayed in the sheet's edit body, and #160's L-1 split moved Undo into
-  // the bottom bars. #91 then changed what Undo is checked FOR — its gate is a
-  // derived `undoBlocked !== null` rather than an inline `heldByDrag(...)`, so
-  // the old "same call shape as Undo" comparison lost its subject and is gone.
-  // What is still asserted here is that Undo has not quietly gone back to an
-  // inline gate, which is what would leave Cut's reference dangling.
-  const toolbars = stripComments(
-    readFileSync(
-      new URL("../src/components/recorder-toolbars.tsx", import.meta.url),
-      "utf8"
-    )
-  );
-
   const cutDisabledExpr = (() => {
     // Isolate the Cut control by its unique `label={strings.cut}` and read
     // the `disabled={...}` expression that follows it — the same isolation
@@ -95,30 +85,5 @@ describe("Cut's disabled gate carries the #317 drag term, the way Undo/Redo do (
     expect(cutDisabledExpr.replace(/\s+/g, "")).toMatch(
       /^heldByDrag\(dragging,/
     );
-  });
-
-  it("Undo still carries the same drag term, through its own derivation (#91)", () => {
-    // This assertion used to read Undo's `disabled` expression and require the
-    // identical `heldByDrag(dragging,` text, using Undo as the live reference
-    // for the convention. #91 moved Undo and Redo off that literal: their gate
-    // is now `undoBlocked !== null`, from `edit-control-state.ts`, so that a
-    // disabled history control can also state WHY it is disabled — one value
-    // answering both questions is the whole point, and it cannot be an inline
-    // expression and still do that.
-    //
-    // The guarantee is unchanged, only relocated, so this checks the relocation
-    // is real rather than dropping the claim: `tests/edit-control-state.test.ts`
-    // asserts `undoReason(...) !== null` against `heldByDrag(dragging,
-    // !idleEditable || !canUndo)` over every cell of the input space, which is
-    // strictly stronger than the text match that stood here — it survives a
-    // reformat and fails on a term that is dropped rather than merely reworded.
-    // What this file keeps is that Undo has not quietly gone back to an inline
-    // gate with no drag term at all, which would leave Cut's reference dangling.
-    const undoLabelIdx = toolbars.indexOf("label={strings.undo}");
-    expect(undoLabelIdx).toBeGreaterThan(-1);
-    const undoMatch = /disabled=\{([^}]*)\}/.exec(toolbars.slice(undoLabelIdx));
-    expect(undoMatch).not.toBeNull();
-    const undoDisabledExpr = (undoMatch![1] ?? "").replace(/\s+/g, "");
-    expect(undoDisabledExpr).toBe("undoBlocked!==null");
   });
 });

@@ -39,12 +39,12 @@ const read = (rel: string) =>
  * `failed`: both were the red alert triangle, for "record something first" and
  * "try again".
  *
- * THIS FIXES THE GLYPH AND DELIBERATELY NOT THE TONE. #178's own fix shape says
+ * #178 fixed the GLYPH and deliberately not the tone: its own fix shape says
  * "reuse the `info`/`alert` tone split from #112 rather than adding a fourth
- * tone", and whether `nothing` is a failure at all is #147's question — which
- * is `needs-decision` and Tim's, and whose table currently reads the share
- * error as "genuinely a failure". Re-toning it here would decide that issue by
- * the back door. So: three marks, existing tones.
+ * tone", and whether `nothing` is a failure at all was #147's question. #147
+ * has since been answered — `info`, the DRI's pick on 2026-09-28 — and
+ * `nothing` reads that answer through `NOTHING_FAILED_TONE`, so the tone moved
+ * without this table spelling it.
  */
 describe("shareOutcomeGlyph (#178)", () => {
   it("gives every outcome a DIFFERENT mark", () => {
@@ -78,38 +78,41 @@ describe("shareOutcomeGlyph (#178)", () => {
     }
   });
 
-  it("keeps the tones exactly as they are — this lane changes marks, not tones", () => {
-    // Pins the #178/#147 boundary so a later "tidy-up" cannot quietly re-tone
-    // `nothing` and close Tim's open question by accident. `nothing` reads
-    // `NOTHING_FAILED_TONE` since #147's audit, so this is also the assertion
-    // that goes red when that constant is flipped — i.e. the line to change
-    // when #147 is answered, for every call site that reads it.
+  it("pins each outcome's tone — `nothing` is the heads-up #147 chose", () => {
+    // `partial` and `failed` are #178's and unchanged. `nothing` reads
+    // `NOTHING_FAILED_TONE`, which #147 answered `info` (DRI, 2026-09-28): no
+    // audio yet is not a failure, so it neither wears the failure colour nor
+    // interrupts. A later tidy-up that puts it back on `alert` fails here.
     expect(shareOutcomeGlyph("partial").tone).toBe("info");
-    expect(shareOutcomeGlyph("nothing").tone).toBe("alert");
+    expect(shareOutcomeGlyph("nothing").tone).toBe("info");
     expect(shareOutcomeGlyph("failed").tone).toBe("alert");
   });
 
-  it("nothing and failed share a tone, so ONLY the mark separates them", () => {
-    // The reason the distinct-icon assertion above is load-bearing rather than
-    // cosmetic: these two get the same colour and the same role, so if their
-    // icons ever converge a non-reader has no way to tell "record something
-    // first" from "try again".
+  it("nothing and partial share a tone, so ONLY the mark separates them", () => {
+    // With `nothing` on `info` (#147) it is `partial` it shares a colour and a
+    // role with, not `failed`. So the distinct-icon assertion above is still
+    // load-bearing, for a different pair: "record something first" and "it went
+    // out with a gap" must not converge on one shape.
     const nothing = shareOutcomeGlyph("nothing");
-    const failed = shareOutcomeGlyph("failed");
-    expect(nothing.tone).toBe(failed.tone);
+    const partial = shareOutcomeGlyph("partial");
+    expect(nothing.tone).toBe(partial.tone);
     expect(noticePresentation(nothing.tone).glyph).toBe(
-      noticePresentation(failed.tone).glyph
+      noticePresentation(partial.tone).glyph
     );
-    expect(nothing.icon).not.toBe(failed.icon);
+    expect(nothing.icon).not.toBe(partial.icon);
   });
 
-  it("does not reuse the tone's own default mark for either alert outcome", () => {
-    // `alert`'s default glyph is the failure triangle. If `nothing` fell back to
-    // it, this whole module would be a no-op that still passed the distinctness
-    // check against `partial`.
+  it("does not reuse a tone's own default mark for nothing or failed", () => {
+    // `alert`'s default glyph is the failure triangle, and `failed` keeps it.
+    // `nothing` must not fall back to its tone's default either — `info`'s
+    // ring-and-i, which also carries storage durability (#214/#406) — or it
+    // would share a shape with an unrelated standing condition.
     const alertDefault = noticePresentation("alert").icon;
-    expect(shareOutcomeGlyph("nothing").icon).not.toBe(alertDefault);
     expect(shareOutcomeGlyph("failed").icon).toBe(alertDefault);
+    expect(shareOutcomeGlyph("nothing").icon).not.toBe(alertDefault);
+    expect(shareOutcomeGlyph("nothing").icon).not.toBe(
+      noticePresentation("info").icon
+    );
   });
 
   it("gives `partial` its own mark, not the generic info glyph", () => {

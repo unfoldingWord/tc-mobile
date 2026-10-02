@@ -24,7 +24,8 @@
  * Neither half of the expectation defaults to the promoter's working tree.
  * `--sha` and `--version`, when not given explicitly, are resolved by
  * `resolveExpectedSha()` and `resolveExpectedVersion()` from the *same*
- * source: for the two known default origins (staging, production) that is the
+ * source: for the three known origins (staging, and production on either of
+ * its two origins) that is the
  * *promoted branch's remote-tracking ref* (`origin/staging` / `origin/main`),
  * not local `HEAD` — Cloudflare Workers Builds deploys that branch's tip,
  * which for this repo's merge-PR promotion flow is a merge commit, not
@@ -69,6 +70,18 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 export const DEFAULT_ORIGIN =
   "https://tc-mobile-staging.unfoldingword.workers.dev";
 export const PROD_ORIGIN = "https://tc-mobile.unfoldingword.workers.dev";
+
+// The production Worker also serves on its custom domain (`wrangler.jsonc`
+// `routes`, #1295). It is the same Worker, so it is mapped to the same
+// promoted ref below — a promoter who checks it gets `origin/main`'s sha
+// and version, not the local-HEAD fallback this file reserves for an
+// origin with no promoted branch. `check:deploy:prod`
+// (`scripts/check-deploy-prod.mjs`) runs this script once per production
+// origin, forwarding the promoter's arguments to each: workers.dev proves
+// the Worker deployed, the custom domain proves the route in
+// `wrangler.jsonc` still reaches it. `tests/check-deploy-prod.test.ts`
+// pins that list to these two constants.
+export const PROD_DOMAIN_ORIGIN = "https://tcmobile.app";
 
 // Round-2 George P2: `ensureRemoteRefFresh` fetches from the local `origin`
 // remote and treats `origin/staging`/`origin/main` as the promoted tip
@@ -127,7 +140,8 @@ function runGitSync(cmd) {
  * Maps a known default origin to the remote-tracking ref whose tip Cloudflare
  * Workers Builds actually deploys for that origin's promotion —
  * `origin/staging` for the staging default, `origin/main` for the production
- * Worker. For this repo's merge-PR promotion flow that tip is a merge
+ * Worker on either of its origins (`PROD_ORIGIN`, `PROD_DOMAIN_ORIGIN`).
+ * For this repo's merge-PR promotion flow that tip is a merge
  * commit, not a promoter's local branch tip: `docs/progress_tracker.md`'s
  * "2026-09-03 (evening) — v0.1.12 promoted and verified on staging; the
  * microphone report resolved outside the app" entry (cited by heading, not
@@ -141,7 +155,9 @@ function runGitSync(cmd) {
  */
 export function remoteRefForOrigin(origin) {
   if (origin === DEFAULT_ORIGIN) return "origin/staging";
-  if (origin === PROD_ORIGIN) return "origin/main";
+  if (origin === PROD_ORIGIN || origin === PROD_DOMAIN_ORIGIN) {
+    return "origin/main";
+  }
   return undefined;
 }
 
@@ -582,6 +598,20 @@ async function fetchVersionJson(
   }
   if (!res.ok) {
     throw new Error(`${res.status} ${res.statusText} for ${url}`);
+  }
+  // A redirect that lands on ANOTHER origin is a failure even when the body
+  // it lands on is the right build (#1299 round-1 George P2). The two
+  // production origins are deliberately separate — browser storage is per
+  // origin, so a redirect between them hides recordings (`wrangler.jsonc`,
+  // #1295) — and the custom-domain run exists to prove `tcmobile.app`
+  // itself serves the Worker. Following a 301 to workers.dev and PASSing
+  // on its body would certify the opposite. A same-origin redirect (a path
+  // rewrite) is still fine. `res.url` is the final URL after redirects.
+  if (res.redirected && new URL(res.url).origin !== new URL(origin).origin) {
+    throw new Error(
+      `${url} redirected off-origin to ${res.url} — refusing to accept another origin's build as this one's. ` +
+        "Production's two origins must each serve the Worker directly; a redirect between them hides per-origin recordings (#1295)."
+    );
   }
   const contentType = res.headers.get("content-type");
   if (!isJsonContentType(contentType)) {

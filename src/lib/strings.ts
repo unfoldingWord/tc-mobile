@@ -31,9 +31,27 @@
  * three — "typed out a second time further down the same file" — as the reason
  * this table moved; that was true before #700 and is not the case this move
  * rests on now.
+ *
+ * SOME ENTRIES CALL THE TABLE BY ITS MODULE NAME, and that is the trap for
+ * `strings[locale]`, the rest of #169 (George, #698). `chapterHeading` calls
+ * `strings.chapterName`, `shareBookPartial` calls `strings.shareMissing`, and
+ * a few more reach `couldNotBeIncluded` or `trail`, whose words are English.
+ * Every one is right while there is one table. Once there are several, an
+ * entry in a second locale's table that calls the module-level `strings`
+ * formats its embedded part from the default table, and the equality pins
+ * (`chapterHeading(null, n) === chapterName(n)`) STAY GREEN while it does,
+ * because both sides resolve through the same wrong table. The slice that
+ * adds a second table has to make each of these resolve within its own table
+ * (`this`, a table parameter, or a factory that closes over the right one),
+ * and needs a test that one locale's entry does not reach another's.
+ * `tests/strings-self-reference.test.ts` pins which entries these are, so a
+ * new one fails there and is sent back here.
  */
 import { plural } from "@/lib/plural";
 import { filenameSafe } from "@/lib/utils";
+
+/** What an armed restart destroys, named: `restartArmed` and `restartGone`. */
+export type RestartSubject = "recording" | "changes" | "cutAudio";
 
 /**
  * The verb every "did not make it into what's being shared" sentence uses.
@@ -146,7 +164,9 @@ export const strings = {
    * saying the old thing. No call of either can tell a copy from an alias —
    * they agree until the day they are meant to differ — so
    * `tests/breadcrumb.test.ts` counts the spellings in this file instead
-   * (#169).
+   * (#169). The alias is also the one that breaks under per-locale tables,
+   * and the pin that it equals `chapterName` does not see that break: see the
+   * paragraph on module-name calls at the top of this file.
    */
   chapterHeading: (name: string | null, n: number): string =>
     name ?? strings.chapterName(n),
@@ -391,8 +411,11 @@ export const strings = {
   // warn role, from 15:00 of a live take (`components/take-cap-marker.tsx`).
   // Parameterised, so it is outside `tests/strings-one-table.test.ts`'s
   // fixed-literal check the way `chapterName` and the other `(n) =>` entries
-  // above are.
-  takeCapWarning: (n: number): string => `${n} min left`,
+  // above are. The count goes through `plural` (#169) even though English
+  // needs only the one form: the abbreviation does not vary by count here,
+  // but the minute word does in other languages, and a table that can carry
+  // `one`/`few`/`many` is what lets a second locale be data.
+  takeCapWarning: (n: number): string => plural(n, { other: "{n} min left" }),
 
   // ── Recorder load failure (#137) ──────────────────────────────────────────
   // A finished segment's stored MP3 could not be decoded when the sheet opened
@@ -758,9 +781,14 @@ export const strings = {
   // The O4 share circle (#947). D22: the core is a progress bar with this
   // label, chapter and book alike. D21: the numbered chips above it are one
   // image with this label — how many of the items go out, of all of them.
+  // The verb agrees with `out`, so the choice goes through `plural` rather
+  // than a fixed "go" (#169).
   sharePreparingLabel: "Preparing to share",
   shareItemsGoOut: (out: number, all: number): string =>
-    `${out} of ${all} go out`,
+    plural(out, {
+      one: `{n} of ${all} goes out`,
+      other: `{n} of ${all} go out`,
+    }),
   shareSent: "Handed to the phone's share sheet.",
   shareDismissed: "The share sheet was closed before anything went out.",
   // The native Android plugin can resolve on a Back after the chooser's
@@ -932,13 +960,18 @@ export const strings = {
   // The one promise this screen makes, and the reason it can make it: the commit
   // is ONE transaction (#38), so a failed save left the take in the RAM slot
   // `useSaveTake` holds. Names the segment when the held take belongs to the
-  // chapter on screen, and says nothing about it when it does not.
-  saveFailedHeld: (editOnly: boolean, ordinal: number | null): string => {
-    const subject = editOnly ? "edited recording" : "recording";
-    return ordinal === null
-      ? `Your ${subject} is still here.`
-      : `Your ${subject} of segment ${ordinal} is still here.`;
-  },
+  // chapter on screen, and says nothing about it when it does not. Each arm is
+  // a whole sentence rather than a subject spliced into one frame (#169): a
+  // second locale may need the article, case or word order to change with
+  // what is held, and a shared frame would force English's on it.
+  saveFailedHeld: (editOnly: boolean, ordinal: number | null): string =>
+    editOnly
+      ? ordinal === null
+        ? "Your edited recording is still here."
+        : `Your edited recording of segment ${ordinal} is still here.`
+      : ordinal === null
+        ? "Your recording is still here."
+        : `Your recording of segment ${ordinal} is still here.`,
   // NOT `tryAgain` and NOT `loadRetry`: this retries a WRITE, and on an
   // icon-only `Control` the label is the whole thing a screen reader speaks.
   saveFailedRetry: "Try saving again",
@@ -1012,6 +1045,40 @@ export const strings = {
   // crash unmounts `App` and `leave()` abandons an uncommitted take, so a
   // "everything you saved is still here" line would over-promise (George, r2).
   appReloadTeach: "The app will start again.",
+  // A restart armed over audio only this screen holds: the label on the
+  // second tap, then the line beside it. One whole sentence per loss (#169),
+  // so a second locale translates each rather than a phrase glued into a
+  // frame. `components/recovery-copy.ts` says which screen passes which, and
+  // why the cut clause exists. `cutAudio` IS the cut phrase, so the flag adds
+  // nothing to it.
+  restartArmed: (subject: RestartSubject, alsoCutAudio: boolean): string => {
+    switch (subject) {
+      case "recording":
+        return alsoCutAudio
+          ? "Tap again to restart and lose this recording and the audio you cut"
+          : "Tap again to restart and lose this recording";
+      case "changes":
+        return alsoCutAudio
+          ? "Tap again to restart and lose these changes and the audio you cut"
+          : "Tap again to restart and lose these changes";
+      case "cutAudio":
+        return "Tap again to restart and lose the audio you cut";
+    }
+  },
+  restartGone: (subject: RestartSubject, alsoCutAudio: boolean): string => {
+    switch (subject) {
+      case "recording":
+        return alsoCutAudio
+          ? "Tap again and this recording and the audio you cut are gone."
+          : "Tap again and this recording is gone.";
+      case "changes":
+        return alsoCutAudio
+          ? "Tap again and these changes and the audio you cut are gone."
+          : "Tap again and these changes are gone.";
+      case "cutAudio":
+        return "Tap again and the audio you cut is gone.";
+    }
+  },
   // In place of `appReload` while Restart waits for the crash row to finish
   // being written, and as the busy Notice under it — the same in-place relabel
   // `loadRetrying` and `takeRecoverRetrying` use (#137 G2). The wait is real on

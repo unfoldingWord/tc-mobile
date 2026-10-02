@@ -18,18 +18,13 @@ import type { ShareSettled } from "@/hooks/share-progress";
  * `nothing` against `failed`: both the red alert triangle, for "record
  * something first" and "try again". This gives each outcome its own glyph.
  *
- * WHAT THIS DELIBERATELY DOES NOT DO: re-tone anything. #178's fix shape says
- * "reuse the `info`/`alert` tone split from #112 rather than adding a fourth
- * tone", and whether `nothing` is a failure at all is #147's question — which
- * carries `needs-decision`, is Tim's call, and whose table currently reads the
- * share error as genuinely a failure. Re-toning it here would settle that issue
- * by the back door. Three marks, existing tones; the tone question stays where
- * it is owned. `tests/share-outcome-glyph.test.ts` pins that boundary so a
- * later tidy-up cannot cross it by accident.
- *
- * `nothing` takes its tone from `NOTHING_FAILED_TONE` rather than spelling
- * `alert` out, so that this site and the others in that class move together
- * when #147 is answered. `notice-tone.ts` holds the class and the reasoning.
+ * #178 itself re-toned nothing. Its fix shape says "reuse the `info`/`alert`
+ * tone split from #112 rather than adding a fourth tone", and whether `nothing`
+ * is a failure at all was #147's question, owned elsewhere. #147 has since been
+ * answered `info` (DRI, 2026-09-28), and `nothing` takes that answer from
+ * `NOTHING_FAILED_TONE` rather than spelling a tone out, so this site and the
+ * others in that class move together. `notice-tone.ts` holds the class and the
+ * reasoning; `tests/share-outcome-glyph.test.ts` pins each outcome's tone.
  *
  * A table, not a ternary at the call site, for the reason `share-error-copy.ts`
  * gives in its own header: a nested ternary ending in `: null` means widening
@@ -177,11 +172,10 @@ export function shareSettledGlyph(settled: ShareSettled): ShareOutcomeGlyph {
  *
  * The whole table entry, not the icon alone (George R3 P3 on #457): the two
  * share-error Notices passed only the icon and leaned on `Notice`'s default
- * `alert` tone — right today, since `nothing` and `failed` are both `alert`,
- * but if #147 ever re-tones `nothing` in the table above, this module's own
- * tests would go green while the screens stayed `alert`. Handing the screens
- * `{ icon, tone }` keeps the tone where it is owned, as the `partial` path
- * already does.
+ * `alert` tone, so a re-tone of `nothing` in the table above — which #147 then
+ * made — would have left this module's own tests green while the screens
+ * stayed `alert`. Handing the screens `{ icon, tone }` keeps the tone where it
+ * is owned, as the `partial` path already does.
  *
  * `encoder` (#166) keeps the `alert` tone's own triangle and is NOT given a
  * glyph here. It is not one of #178's three outcomes, its copy already names a
