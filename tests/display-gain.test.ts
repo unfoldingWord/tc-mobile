@@ -141,10 +141,10 @@ describe("displayGain", () => {
   });
 
   it("does not fit an uncommitted take that is still in flight", () => {
-    // George R1 P2. A paused first take's decoded preview is drawn by the same
-    // canvas that replaced the live scope, so it stays at absolute level — the
-    // rule the scope and the VU meter follow — and Resume, which swaps the
-    // scope back, does not collapse a full-height waveform to a thin line.
+    // George R1 P2, on the #101 paused-take preview (retired by #614): an
+    // uncommitted take drawn by the `Waveform` canvas mid-take stays at
+    // absolute level — the rule the scope and the VU meter follow — so it
+    // never jumps against the live scope it replaces or hands back to.
     const peaks = peaksWithPeak(0.1);
     expect(displayGain(peaks, true)).toBe(1);
     // ...and the very same peaks ARE fitted once nothing is in flight. Both
@@ -218,25 +218,27 @@ describe("displayGain", () => {
     // ALREADY STORED clip — `working` does not grow until the new recording is
     // spliced at close — so un-fitting it would shrink the translator's only
     // view of what they are aiming at, at the moment they are aiming, and pop
-    // it back at Back. The same peaks are drawn at Record, at Pause, on Resume
-    // and at idle, and every one of them is the fitted gain.
+    // it back at the commit. The same peaks are drawn at Record, through
+    // processing and the close wait, and at idle, and every one of them is
+    // the fitted gain.
     const committed = peaksWithPeak(0.1);
     const fitted = displayGain(committed, false);
     expect(fitted).toBeCloseTo(9, 6);
     // Every stage of a punch-in draws committed audio: `firstTakeInFlight` is
     // false throughout, so there is one gain and no jump.
-    for (const stage of ["idle", "recording", "paused", "closing"]) {
+    for (const stage of ["idle", "recording", "processing", "closing"]) {
       expect([stage, displayGain(committed, false)]).toEqual([stage, fitted]);
     }
   });
 
-  it("keeps the committed gain, not the preview's, and clamps what it draws (George R3 P2)", () => {
-    // The punch-in Pause+Play preview PAINTS the merged buffer (`#101`) but
-    // must FIT to the committed clip alone — `waveform.tsx`'s `fitFrom`. A
-    // quiet committed take fitted to ~9x, with a louder insert spliced in for
-    // the preview: drawing the insert at the committed gain, unclamped, would
-    // run past the canvas edge, which is exactly what `clampUnit` exists to
-    // stop rather than merely look tall.
+  it("clamps a louder buffer drawn at a gain fitted to a quieter one (George R3 P2)", () => {
+    // The case that earned `clampUnit` was the #101 punch-in preview (retired
+    // by #614), which PAINTED a merged buffer while FITTING to the committed
+    // clip — `waveform.tsx`'s `fitFrom`. The live case today is `LiveScope`
+    // drawing a new take at the committed clip's gain (#1189). A quiet
+    // committed take fitted to ~9x, with a louder take drawn at that gain,
+    // unclamped, would run past the canvas edge, which is exactly what
+    // `clampUnit` exists to stop rather than merely look tall.
     const committed = peaksWithPeak(0.1);
     const committedGain = displayGain(committed, false);
     expect(committedGain).toBeCloseTo(9, 6);
