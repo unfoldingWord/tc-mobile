@@ -606,9 +606,9 @@ Merge a promotion PR with a merge commit and GitHub's subject left as is. The
 APK and TestFlight lanes build on push only when the tip is `Merge pull request
 #N from unfoldingWord/<head>`, with `develop` or `release/*` onto `staging`,
 `staging` or `release/*` onto `main`. A squash or rebase merge, an edited
-subject, or a hotfix branch merged straight to `main` gets a preflight notice
-and **no native build**; the DRI dispatches the lane by hand
-(`docs/native/README.md` §4a, §5a).
+subject, or a hotfix branch not named `release/*` merged straight to `main`
+gets a preflight notice and **no native build**; the DRI dispatches the lane by
+hand (`docs/native/README.md` §4a, §5a).
 
 ### Versions and milestones
 

@@ -186,30 +186,32 @@ from.
       A run at `PROMO_SHA` that is `cancelled` was replaced while pending
       (one signing job runs at a time across both branches; a later push or
       dispatch took the single pending slot) and did not start. Read the
-      tip before deciding: if `origin/staging` is still `PROMO_SHA`, wait
-      for the run that took the slot; if the tip has moved, stop. The
-      slot-holder can be a dispatch of `PROMO_SHA` itself, which the tip
-      read does not show, so before any dispatch list the lane's runs at
-      that commit
-      (`gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --commit <PROMO_SHA> --json databaseId,event,status,conclusion`)
-      and read each one's signing job as above (the run's `conclusion` is
-      not the signing job's: a run whose signing job was `skipped` still
-      concludes `success`). A `success` counts only if
-      it is an ordinary build: for the APK lane, the run's artifact must be
-      `android-apk-<PROMO_SHA>`, not `android-apk-diagnostic-<PROMO_SHA>`
+      tip before deciding: if `origin/staging` has moved past `PROMO_SHA`,
+      stop. **Before any dispatch of a lane** (a `cancelled` run, or a lane
+      that did not start), make both reads. (1) **Already built?**
+      `gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --commit <PROMO_SHA> --json databaseId,event,status,conclusion`
+      lists the lane's runs at that commit on any branch and from any event.
+      Read each one's signing job as above; the run's `conclusion` is not the
+      signing job's (a run whose signing job was `skipped` still concludes
+      `success`). A `success` counts only if it is an ordinary build: for the
+      APK lane, the run's artifact must be `android-apk-<PROMO_SHA>`, not
+      `android-apk-diagnostic-<PROMO_SHA>`
       (`gh api repos/unfoldingWord/tc-mobile/actions/runs/<databaseId>/artifacts --jq '.artifacts[].name'`);
       a diagnostic APK is not a training build. If an ordinary build
       concluded `success`, `PROMO_SHA` is already built: stop, and record
-      that run instead. A diagnostic-only success does not stop the
-      dispatch.
-      Otherwise, once nothing for `PROMO_SHA` is queued or running, the DRI
-      dispatches it (human-only).
+      that run instead. (2) **Lane free?** The group carries no branch, so
+      a `main` run, which the `--commit` read does not list, can hold the slot or replace a pending
+      dispatch. List the lane's recent runs on every branch
+      (`gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --limit 20 --json databaseId,headBranch,headSha,status`)
+      and wait until every one is `completed`. Then the DRI dispatches it
+      (human-only), and the agent re-reads the new run until its signing job has started. A dispatch `cancelled`
+      while pending goes back to the two reads.
       An empty conclusion with the run still open means the job is waiting
       for the `release-signing` reviewer or running: it has started, so do
       not dispatch a second one.
 - [ ] Human-only, only if a lane did not start (its signing job `skipped`)
-      and no run at `PROMO_SHA` has already built it (the `--commit` read
-      above): the DRI dispatches it from `staging` via `!`:
+      and the two reads above allow it: the DRI dispatches it from
+      `staging` via `!`:
       `gh workflow run <lane> --repo unfoldingWord/tc-mobile --ref staging`.
       Record why it did not start on its own.
 - [ ] Agent-allowed: both runs' `headSha` equal `PROMO_SHA`, and so do the web
@@ -297,7 +299,9 @@ full 40-character oids written down when the production PR's checks and
 reviews went green. That record is the baseline. Re-read the canonical
 `main` tip, `baseRefOid` and `headRefOid` fresh at each check below, and never
 rebuild the baseline from those reads, or each check compares a value with
-itself. `PROD_SHA` is re-resolved like `CUT_SHA` and `PROMO_SHA`.
+itself. `PROD_SHA` is re-resolved like `CUT_SHA` and `PROMO_SHA`, from the
+PR's `mergeCommit.oid` and never from the `main` tip, which the tag step
+compares with it.
 
 - [ ] Agent-allowed, immediately before the merge: the canonical `main` tip
       (the `gh api` read above) prints the recorded `MAIN_SHA`, and
@@ -330,9 +334,10 @@ itself. `PROD_SHA` is re-resolved like `CUT_SHA` and `PROMO_SHA`.
       themselves (#1281). Both runs' `headSha` equal `PROD_SHA` (a run that
       started on a moved `main` built a commit that is not the tag; runbook
       §4 says stop and do not label it the release), and each run's signing
-      job concluded `success`, not `skipped` (the step 5 check, on
-      `--branch main`); only a lane whose signing job was `skipped` is a
-      human-only dispatch from `main`.
+      job concluded `success`, not `skipped` (the step 5 check and its two
+      reads, with `--branch main` and `PROD_SHA` for `PROMO_SHA`; a success
+      at `PROMO_SHA` is the RC, not this build); only a lane whose signing
+      job was `skipped` is a human-only dispatch from `main`.
       `npm run check:deploy:prod -- --sha=<PROD_SHA> --version=1.0.0` (the
       full oid, never a 7-character slice, which the checker's prefix match
       would also accept for a colliding later commit; explicit, so a PASS

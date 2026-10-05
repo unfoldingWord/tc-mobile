@@ -94,9 +94,12 @@ issue's priority in this checklist.
 
    Three commits name this step. `PROD_SHA` is re-resolved like §3a's
    `CUT_SHA` and `PROMO_SHA` (not frozen like `STAGING_SHA`): write it down
-   when it exists, re-resolve it with `git` or `gh` before a step uses it,
-   and treat PR text that quotes it as a record, not the source. **`MAIN_SHA` and `HEAD_SHA`
-   are the exception.** They are the full 40-character oids written down when
+   when it exists, re-resolve it before a step uses it, and treat PR text
+   that quotes it as a record, not the source. Its source is the PR's
+   `mergeCommit.oid`
+   (`gh pr view <N> --repo unfoldingWord/tc-mobile --json mergeCommit`),
+   never the `main` tip: step 4 compares the tip with it. **`MAIN_SHA` and
+   `HEAD_SHA` are the exception.** They are the full 40-character oids written down when
    the production PR's checks and reviews went green, and that record is the
    baseline the checks below compare against. Re-read the canonical `main`
    tip, `baseRefOid` and `headRefOid` fresh at each check, and never
@@ -332,38 +335,43 @@ freeze note on every new PR to `develop`.
    [`android-apk.yml`](../../.github/workflows/android-apk.yml) and
    [`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) on its
    own (#1281): confirm that both runs started at `PROMO_SHA`
-   (`gh run list --workflow <lane> --branch staging --json databaseId,headSha,event,status`),
+   (`gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --branch staging --json databaseId,headSha,event,status`),
    with `event` `push` and no dispatch. A green run is not a build: a push
    the preflight did not read as a promotion still makes a successful run,
    with the signing job `skipped`. So read each run's signing job
    (`Build release APK`, `Build and upload to TestFlight`) with
-   `gh run view <databaseId> --json jobs --jq '.jobs[] | select(.name=="<job>") | .conclusion'`:
+   `gh run view <databaseId> --repo unfoldingWord/tc-mobile --json jobs --jq '.jobs[] | select(.name=="<job>") | .conclusion'`:
    `skipped` means the lane did not start, and only `success` is a build.
    A run at `PROMO_SHA` that is `cancelled` was replaced while pending
    (one signing job runs at a time across both branches; a later push or
    dispatch took the single pending slot) and did not start. Read the tip
-   before deciding: if `origin/staging` is still `PROMO_SHA`, wait for the
-   run that took the slot; if the tip has moved, stop. The slot-holder can
-   be a dispatch of `PROMO_SHA` itself, which the tip read does not show, so
-   before any dispatch list the lane's runs at that commit
-   (`gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --commit <PROMO_SHA> --json databaseId,event,status,conclusion`)
-   and read each one's signing job as above (the run's `conclusion` is
-   not the signing job's: a run whose signing job was `skipped` still
-   concludes `success`). A `success` counts only if it
-   is an ordinary build: for the APK lane, the run's artifact must be
-   `android-apk-<PROMO_SHA>`, not `android-apk-diagnostic-<PROMO_SHA>`
+   before deciding: if `origin/staging` has moved past `PROMO_SHA`, stop.
+   **Before any dispatch of a lane** (a `cancelled` run, or a lane that did
+   not start), make both reads. (1) **Already built?** List the lane's runs
+   at that commit, on any branch and from any event:
+   `gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --commit <PROMO_SHA> --json databaseId,event,status,conclusion`.
+   Read each one's signing job as above; the run's `conclusion` is not the
+   signing job's (a run whose signing job was `skipped` still concludes
+   `success`). A `success` counts only if it is an ordinary build: for the
+   APK lane, the run's artifact must be `android-apk-<PROMO_SHA>`, not
+   `android-apk-diagnostic-<PROMO_SHA>`
    (`gh api repos/unfoldingWord/tc-mobile/actions/runs/<databaseId>/artifacts --jq '.artifacts[].name'`);
-   a diagnostic APK is not a training build. If an ordinary build
-   concluded `success`, `PROMO_SHA` is already built: stop, and record
-   that run instead. A diagnostic-only success does not stop the dispatch.
-   Otherwise, once nothing for `PROMO_SHA` is queued or running, the DRI
-   dispatches it. While `release-signing` still has a
+   a diagnostic APK is not a training build. If an ordinary build concluded
+   `success`, `PROMO_SHA` is already built: stop, and record that run
+   instead. (2) **Lane free?** The group carries no branch, so a `main` run,
+   which the `--commit` read does not list, can hold the slot or replace a
+   pending dispatch. List the lane's recent runs on every branch
+   (`gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --limit 20 --json databaseId,headBranch,headSha,status`)
+   and wait until every one is `completed`. Then the DRI dispatches it, and
+   the agent re-reads the new run until its signing job has started (an
+   empty conclusion on an open run). A dispatch `cancelled` while pending
+   goes back to the two reads. While `release-signing` still has a
    required reviewer (#1281's transition window), each signing job waits for
    the DRI's approval; once it is removed, no approval either. Both runs' `headSha`
    equal `PROMO_SHA`, and so do the web and Play builds: every channel must
    come from that one commit. If not, stop and re-promote. Do not mix refs.
-   If a lane did not start and no run at `PROMO_SHA` has already built it
-   (the `--commit` read above), the DRI dispatches it from `staging` by hand
+   If a lane did not start, the DRI dispatches it from `staging` by hand
+   after the two reads above
    (`gh workflow run <lane> --repo unfoldingWord/tc-mobile --ref staging`) —
    human-only — and the cause is a finding.
 8. **Check the APK before publishing.**
@@ -425,7 +433,9 @@ The `staging → main` merge starts the
 (#1281); the `release-signing` environment admits them because they run on
 `main`. Confirm both runs started at the production merge commit (the one
 `v1.0.0` tags) with `event` `push`, and that each run's signing job
-concluded `success`, not `skipped` (the §3a step 7 check). Record each run's resolved SHA and
+concluded `success`, not `skipped` (the §3a step 7 check, with `PROD_SHA`
+for `PROMO_SHA` and `main` for `staging`; a success at `PROMO_SHA` is the
+RC, not this build). Record each run's resolved SHA and
 require it to equal `v1.0.0` before accepting its artifact. If `main` moved,
 stop and select an explicitly approved ref strategy; do not label a different
 build as the tagged release. A manual rebuild, if one is ever needed, is the
@@ -463,16 +473,20 @@ the same way on `https://tcmobile.app` and
 
 ```bash
 set -o pipefail
-curl -fsS "https://tcmobile.app/version.json?t=$(date +%s)" |
-  jq -e 'select((.sha|type=="string" and length>0) and (.version|type=="string" and length>0))'
+for origin in https://tcmobile.app https://tc-mobile.unfoldingword.workers.dev; do
+  curl -fsS "$origin/version.json?t=$(date +%s)" |
+    jq -en 'input | select((.sha|type=="string" and length>0) and (.version|type=="string" and length>0))' ||
+    echo "FAIL: $origin gave no deploy record"
+done
 ```
 
 plus the available Cloudflare rollback target. `-f` makes an HTTP error exit
-non-zero instead of printing an error page; `pipefail` keeps that exit,
-because `jq -e` on empty input exits 0; and the `jq -e` filter exits non-zero
-unless `sha` and `version` are both non-empty strings. A read that fails any
-of these is not a deploy record, so do not write it down as the rollback
-target. Do not take it from the bare
+non-zero instead of printing an error page, and `pipefail` keeps that exit.
+`jq -en 'input | …'` exits non-zero on an empty body (a redirect `curl`
+does not follow, or an empty 200), on a body that is not JSON, and unless
+`sha` and `version` are both non-empty strings; plain `jq -e` on an empty
+body exits 0. A read that fails any of these is not a deploy record, so do
+not write it down as the rollback target. Do not take it from the bare
 `npm run check:deploy:prod`: that command prints the `origin/main` tip first
 as its expectation, prints the served `Deployed:` line only after that, and
 on a non-canonical `origin` refuses before it fetches anything, so in the
