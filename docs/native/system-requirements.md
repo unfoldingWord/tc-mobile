@@ -4,12 +4,12 @@
 truth #1017 calls for. Three of #1017's four questions are decided; only the
 RAM floor is still open:
 
-| #1017 question                   | Status              | Decision and where it is recorded                                                                                                                                     |
-| -------------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Build target vs. device floor | Answered 2026-09-26 | iOS floor raised to 15.4 to match `:has()` (#1052, DRI: "Raise floor to 15.4 (Recommended)"); `build.target` pinned (#1051); Xcode project raised (#1055). See below. |
-| 2. RAM floor                     | **Open**            | Waits on phone-check reports on #974 from at least one low-end Android phone and one older iPhone. No RAM figure is stated anywhere in this file.                     |
-| 3. Keep Android 7?               | Answered 2026-09-28 | DRI pick on #1017 (verbatim): "Keep Android 7 (Recommended)". The floor stays API 24, Capacitor 8's own minimum; the listing reads "Android 7 or later".              |
-| 4. Long takes                    | Answered 2026-09-28 | Covered by the take cap (#1005), per the DRI's #1017 comment; the doc note landed in #1142. See "Open question 4" below.                                              |
+| #1017 question                   | Status              | Decision and where it is recorded                                                                                                                                                                                                        |
+| -------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Build target vs. device floor | Answered 2026-09-26 | iOS floor raised to 15.4 to match `:has()` (#1052, DRI: "Raise floor to 15.4 (Recommended)"); `build.target` pinned (#1051); Xcode project raised (#1055). See below.                                                                    |
+| 2. RAM floor                     | **Open**            | Waits on phone-check reports on #974 from at least one low-end Android phone and one older iPhone. No RAM floor is adopted. #1017's withheld draft figures are quoted only under "Still open" item 1, and they are not for the listings. |
+| 3. Keep Android 7?               | Answered 2026-09-28 | DRI pick on #1017 (verbatim): "Keep Android 7 (Recommended)". The floor stays API 24, Capacitor 8's own minimum; the listing reads "Android 7 or later".                                                                                 |
+| 4. Long takes                    | Answered 2026-09-28 | Covered by the take cap (#1005), per the DRI's #1017 comment; the doc note landed in #1142. See "Open question 4" below.                                                                                                                 |
 
 The section "Requirements statement (draft for the listings)" below is the
 wording the Play listing, the App Store listing and the web page / facilitator
@@ -184,16 +184,23 @@ holds:
   minutes) and `TAKE_WARN_MS = 15 * 60_000`, the DRI's 2026-09-25 decision on
   #1005, verbatim: "Warn at 15, seal at 20".
 - `src/hooks/use-recorder.ts` (`startTick`, the 100 ms tick that runs only
-  while recording) seals and saves the live take once
+  while recording) seals the live take once
   `takeCapStatus(elapsed, true).reached` is true, and logs one
-  `"recorder-take-cap"` failure-log row recording that the take was cut, not
-  lost.
+  `"recorder-take-cap"` failure-log row recording that the take was cut. The
+  seal itself writes nothing. The recorder sheet then commits the take through
+  the same path an interruption uses (the `seal()` comment in
+  `use-audio-session.ts`): `stop()`'s flush and whole-take decode, then the
+  save.
 - From 15 minutes, `src/components/take-cap-marker.tsx` shows a marker in the
   recorder (`takeCap.nearLimit`).
 
-None of this has been run on a phone. The 20-minute take on a low-end phone
-is a row on #974. The longer-term fix, decoding in rolling chunks so Stop never
-holds a whole take, is #1093.
+What the cap does **not** change: at 20 minutes the take goes through the
+ordinary Stop save, which still decodes the whole take in memory
+(`take-cap.ts`'s own docblock names that decode as the low-RAM risk). The cap
+bounds the take at about 106 MB of PCM (arithmetic below). It does not prove
+that a low-end phone can save that much. None of this has been run on a phone:
+the 20-minute take on a low-end phone is a row on #974. The longer-term fix,
+decoding in rolling chunks so Stop never holds a whole take, is #1093.
 
 ## Requirements statement (draft for the listings)
 
@@ -287,10 +294,12 @@ share step writes a file as well: Share Book builds a zip of chapter MP3s
   margin for the share copy above, not a measured figure.
 - Keep the app open while a book is being shared (this is guidance from #1017's
   draft; the tree does not enforce it).
-- Recorded takes stop at 20 minutes and are saved (`take-cap.ts`, #1005).
-  The listing adds no separate length warning (#1017 Q4, above). A passage
-  longer than 20 minutes needs more than one recording; splitting it into
-  segments is the normal way to work (facilitator runbook §3).
+- A take stops by itself at 20 minutes and then goes through the normal save
+  (`take-cap.ts`, #1005). That save is the full-take decode the RAM item below
+  still waits on, and no low-end phone has run it (#974). The listing adds no
+  separate length warning (#1017 Q4, above). A passage longer than 20 minutes
+  needs more than one recording; splitting it into segments is the normal way
+  to work (facilitator runbook §3).
 - RAM and processor class: **not stated.** See the open items.
 
 **Web (PWA)**

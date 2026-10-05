@@ -9,7 +9,8 @@ are stored only in the phone's own app storage and never travel anywhere
 unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-backend-in-phase-1.md; grep -rn "fetch(\|XMLHttpRequest\|WebSocket" src/ returned no matches, checked 2026-09-15 --> Tell every participant this up front — it was the very first question the first outside tester asked. <!-- source: gh issue #248, comment 2026-09-14 -->
 
 **Four points are awaiting Tim**, the requirements owner. Each is marked
-"Awaiting Tim" where it comes up; the text there says what to do meanwhile.
+"Awaiting Tim" where it comes up. Where the runbook already has a safe
+default, the text there says to keep using it.
 
 1. Whether to offer the browser version at the training (§2, step 1).
 2. Whether "share a very long book chapter by chapter" is a rule (§3).
@@ -400,23 +401,38 @@ role, never their name. Pass the notes along at the end of each day with
 your other notes (§5).
 
 1. **Fixing a mistake.** When a participant wanted to change something they
-   said, what did they do? Did they use the **scissors** to cut and paste
-   inside the recording, or the **eraser** ("Clear and record again") to say
-   the whole segment again? Did they find it alone, or did someone show them?
+   said, what did they do? Write which of these they used:
+   - **Edited the recording:** opened editing with the scissors in the
+     bottom bar, then cut a piece out (the scissors under the sound picture)
+     or put a cut piece back (paste, the arrow onto a line).
+   - **Said it all again:** the eraser in the recorder ("Clear and record
+     again"), or **Reset** in the segment's ⋮ menu.
+
+   Write whether they found it alone or someone showed them. Opening editing
+   and then leaving it without cutting counts as "looked at editing", not as
+   an edit.
+
 2. **The names they typed.** Copy down exactly what they typed for each
-   book, chapter and segment name. Note any name that was cut off with "…",
-   and whether that confused them. If they typed a number as a chapter name
-   (for example "22"), note what they expected the chapter's number to be.
+   book, chapter and segment name. If a name is a person's name or phone
+   number, write "a person's name" or "a phone number" instead. Note any
+   name that was cut off with "…", and whether that confused them. If they
+   typed a number as a chapter name (for example "22"), note what they
+   expected the chapter's number to be.
 3. **The icons.** If you are running the icon check, follow
    [`icon-recognition-protocol.md`](icon-recognition-protocol.md) and fill in
    its sheet. It takes about ten minutes per participant. Its results also
    decide whether the round buttons need to stand out more from the
-   background, so run it if you can.
+   background, so run it if you can. **The protocol was written for an
+   earlier build. Where it differs from the phone, go by the phone:** an
+   empty segment shows a **microphone**, which opens the recorder. The red
+   **Record** button there starts recording, and the **square** ends and
+   saves it (there is no pause). The menu tile the protocol calls "Clear" now
+   reads **Reset**.
 
 <!-- source and tracking, for maintainers:
-     item 1: gh issue #595 (DRI pick 2026-09-28, "After training observations (Recommended)": facilitators note who used cut/paste and who re-recorded; the editor-optional decision is made from those notes); strings.ts rerecord = "Clear and record again"; the scissors open editing (§3 above).
+     item 1: gh issue #595 (DRI pick 2026-09-28, "After training observations (Recommended)": facilitators note who used cut/paste and who re-recorded; the editor-optional decision is made from those notes); strings.ts rerecord = "Clear and record again" and tileErase = "Reset"; the bottom-bar scissors open editing, Cut is the scissors under the waveform, Paste is the arrow onto a line (§3 above; icon-recognition-protocol.md rows 6, 8, 9). Split per George round 1 P2-1 on PR #1314.
      item 2: gh issue #1284 (long names cut off with "…", no way to read them in full; known limit in §4) and gh issue #1272 (a typed chapter "number" becomes the chapter's name while the badge shows its position — the issue labels this inferred from the code).
-     item 3: gh issue #249 and ADR 0010 (docs/decisions/0010-icon-recognition.md); gh issue #461 waits on the #249 check (DRI pick 2026-09-28, "Decide after the #249 icon check (Recommended)": if people find controls by the glyph, the button-disc contrast is accepted; if not, a border or a lighter surface ladder is chosen).
+     item 3: the protocol's row 1 (red disc, Pause) and row 5 ("Clear") predate segment-row.tsx icon="mic" (#1217), recorder-toolbars.tsx stop/record (#614) and strings.ts tileErase "Reset"; fixing the protocol, sheet and ADR is gh issue #1315, and this interim note goes when it lands (George round 1 P2-2 on PR #1314). gh issue #249 and ADR 0010 (docs/decisions/0010-icon-recognition.md); gh issue #461 waits on the #249 check (DRI pick 2026-09-28, "Decide after the #249 icon check (Recommended)": if people find controls by the glyph, the button-disc contrast is accepted; if not, a border or a lighter surface ladder is chosen).
      Observation notes are per participant and by role, per AGENTS.md "Tester feedback is tagged by kind and source". -->
 
 ## 4. Known limits (as of 2026-10-02, build 1.0.1)
