@@ -358,6 +358,35 @@ describe("drag down to close (#1268 item 1)", () => {
       expect(hit).toHaveBeenCalledTimes(1);
     });
 
+    // #1278 (PR #1273 round 3, Frank P3): a touch drag that closes the sheet
+    // fires no click, so the swallow stays armed. A real tap inside the
+    // window starts with its own pointerdown, which no click from the
+    // drag can follow, so that tap's click must land.
+    it("lets a new tap's click through: its pointerdown ends the wait", async () => {
+      const { button, hit } = underneath();
+      const p = await mountMenu();
+      await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+      expect(onClose).toHaveBeenCalledTimes(1);
+      pointer(button, "pointerdown", 300);
+      pointer(button, "pointerup", 300);
+      click(button);
+      expect(hit).toHaveBeenCalledTimes(1);
+    });
+
+    it("lets a keyboard click through: a keydown ends the wait", async () => {
+      const { button, hit } = underneath();
+      const p = await mountMenu();
+      await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+      button.dispatchEvent(
+        new m.dom.window.KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+        })
+      );
+      click(button);
+      expect(hit).toHaveBeenCalledTimes(1);
+    });
+
     it("is not armed by a drag that springs back", async () => {
       const { button, hit } = underneath();
       const p = await mountMenu();

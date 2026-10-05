@@ -50,6 +50,12 @@ const TRAILING_CLICK_MS = 400;
  * {@link TRAILING_CLICK_MS}, whichever comes first. Module scope, not the
  * component's: the Menu has unmounted by the time the click arrives. The ✕'s
  * own tap never arms it.
+ *
+ * A touch drag usually fires no click at all, so the swallow would sit armed
+ * and eat a real tap made inside the window (#1278, PR #1273 round 3). The
+ * drag's own click follows its `pointerup` with no input between, so any new
+ * `pointerdown` or `keydown` means that click is not coming: either one
+ * removes the swallow before the new gesture's click is dispatched.
  */
 function swallowTrailingClick(doc: Document): void {
   const swallow = (ev: Event) => {
@@ -57,14 +63,16 @@ function swallowTrailingClick(doc: Document): void {
     ev.stopPropagation();
     disarm();
   };
-  const timer = setTimeout(() => {
-    doc.removeEventListener("click", swallow, true);
-  }, TRAILING_CLICK_MS);
   const disarm = () => {
     clearTimeout(timer);
     doc.removeEventListener("click", swallow, true);
+    doc.removeEventListener("pointerdown", disarm, true);
+    doc.removeEventListener("keydown", disarm, true);
   };
+  const timer = setTimeout(disarm, TRAILING_CLICK_MS);
   doc.addEventListener("click", swallow, true);
+  doc.addEventListener("pointerdown", disarm, true);
+  doc.addEventListener("keydown", disarm, true);
 }
 
 /** A drag in progress, one pointer at a time. */
