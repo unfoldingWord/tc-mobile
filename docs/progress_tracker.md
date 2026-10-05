@@ -11,6 +11,64 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-05 (day) — Sprint 1 opened, v1.0.2 cut and its promotion PR opened, two lane PRs merged, a GitHub Actions outage held the rest
+
+### Sprint cadence (DRI decision)
+
+- **Two-week sprints**, Monday 00:00 → Sunday 23:59. **Sprint 1 = 2026-10-05 → 2026-10-18.** The sprint-end `staging → main` promotion ships the minor (Sprint 1 → **v1.1.0**, due 10-18). The patch stays one `chore(release)` bump per `develop → staging` promotion. One milestone per sprint.
+- Milestone #3 is renamed **"v1.1.0 — Sprint 1 (10-05 → 10-18)"** (due 10-18). A new **Backlog** milestone (#5) took the 51 issues not pulled in, each with a note.
+- Sprint 1 holds 40 open issues: 33 picked, #1317, and 6 held for the DRI's call, which are v1-required or recent tester reports outside the list: #1243, #1244, #1259, #1212, #1252, #1271.
+- `AGENTS.md` "Versions and milestones" does not say any of this yet. That PR comes after #1313 merges, because both edit the same files.
+- **Review loops run on the uwreview VM bench** (DRI, 10-05): push, wait for the bench's Codex and Grok comments at the head, then post a triage. No local `scripts/review/*.sh` runs.
+
+### v1.0.2 → staging (the training stays on production 1.0.1, DRI pick)
+
+| Step                  | State                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bump #1311            | Merged `79e6037f` = **`CUT_SHA`**. Bench clean and APPROVED at `0c6fba5a`, PR CI 5/5. **Deviation, recorded on the PR:** merged by the coordinator agent with `--admin` on the DRI's picker instruction. tc-release step 1 marks that merge human-only.                                                                                                                                           |
+| Red team on `CUT_SHA` | Risk register: 0 BLOCK, 4 FIX-BEFORE-PUBLISH, 17 NOTE. Claim check: 29 TRUE, 0 FALSE, 1 OVERSTATED, 6 MISSING CONTEXT, all corrected in #1311's body. The DRI's picks are recorded verbatim in #1311's red-team comment. F1: testers are on Google Play and the DRI controls TestFlight group assignment. F2/F3: P2s accepted, fixed in #1319. F4: publish as `tester-build-v1.0.2`, pre-release. |
+| `release/v1.0.2`      | Created at `CUT_SHA` (agent-allowed).                                                                                                                                                                                                                                                                                                                                                             |
+| Promotion PR          | **#1322 open, on hold.** No merge until the DRI's go/no-go and green CI. It must merge with `--merge` and the subject unedited, or the native lanes build nothing.                                                                                                                                                                                                                                |
+| Push CI at `CUT_SHA`  | **Not green: never ran.** Run 37364748886: Secret Scan and Build cancelled twice, with no runner assigned. GitHub Actions was in an incident (degraded, then major outage). `CUT_SHA`'s tree is identical to `0c6fba5a`, whose PR CI passed 5/5.                                                                                                                                                  |
+| `check:deploy`        | Not run: nothing has been promoted yet.                                                                                                                                                                                                                                                                                                                                                           |
+
+### Merged to develop (after the release ref was cut)
+
+| PR    | Issue                                | Merged at  | What                                                                                                                                                                                                                                                                                              |
+| ----- | ------------------------------------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #1312 | #1201 (a)–(e), #1202 item 3          | `da9c91b3` | Waveform and recorder docblocks corrected. `src/` changes are comments only: all 621 production `dist/` files hash identically. Bench clean for 3 rounds.                                                                                                                                         |
+| #1319 | #1233 items 14–16, 18, 19; #1317 P2s | `a14b927d` | Pins for the row mic, `--s-live-text` contrast and the guided focus ring; the #1211 and #1221 surviving mutants are killed. Bench APPROVED at the head. PR CI was 5/5 against `79e6037f`. With Actions down, `npm run verify` was run on the actual merge result (exit 0) and recorded on the PR. |
+
+### Open, held by CI (the Actions outage)
+
+- **#1313** (#1308 items 2–7, #1278 Lows): bench clean at round 5. One Low was fixed in round 6 (`0be7a99d`). This was past the cap, and the findings were **siblings**, not a chain: five distinct holes in one redispatch guard. The DRI accepted the residuals ("Accept residuals, merge on green"), and **#1321** now owns the guard redesign.
+- **#1314** (#1017, #248 training docs and the watch list): Codex and Grok clean at `d5e11268`. The bench APPROVED review has not posted (inferred: it waits on CI). #1315 was filed: the icon protocol predates the current recorder.
+- **#1318** (#1278 code residuals: drag-close tap swallow, crumbs): clean at round 3. It changes behaviour, so it **merges after #1322** (DRI pick). It needs a device pass of drag-to-close followed by a quick tap.
+- **#1320** (#1202 items 1–2, #1092, #549): clean. It needs green CI.
+
+### Close-outs (each verified against develop before closing)
+
+Closed: #1241, #951, #936, #828, #1046, #801, #406, #506, #1088 (item 1 moved to #1089), and #245 (superseded by #974). Device-only leftovers moved to #974. #840 and #838 stay open, each with the one item still left. #1213 is marked a likely duplicate of #1251, pending an iPhone retest on 1.0.1. The stale `needs-decision` label is removed from #1251, #1268, #1269 and #1241.
+
+### Process lessons
+
+- **Messaging a running workflow lane forks a second live copy** in the same worktree. Both copies pushed to #1313, and one committed under the other on #1314. The whole workflow had to be stopped. Rule now: never message a running lane; stop and relaunch instead. A bug report went to Claude Code.
+- **Local commits carry the placeholder identity `Test <test@example.com>`.** That is this checkout's repo-level git config. Squash merges carry it as a `Co-authored-by` trailer. Needs the DRI's call on the right identity.
+
+### Not run
+
+Nothing today ran on a phone. CI did not complete at `CUT_SHA`, #1313, #1314, #1318 or #1320.
+
+### Next
+
+1. When Actions recovers: confirm CI at `CUT_SHA` and on #1322 is green. Then the **DRI's go/no-go** and `gh pr merge 1322 --merge --match-head-commit 79e6037f321f452170b20d6c04fc0e1ca0ece9e2`, followed by signing approvals, `check:deploy` (PASS line here), recording `PROMO_SHA`, and the `tester-build-v1.0.2` pre-release.
+2. Merge in order on clean and green, with a fresh pre-flight each: #1314, #1313, then the Sprint `AGENTS.md` PR, #1320, and #1318 after #1322.
+3. The DRI's calls: the 6 held Sprint 1 issues; the git identity; and #1088 item 1, #1092 items 2–3 (accept as fail-closed?).
+4. Training week: Tim's four #1297 runbook questions (#1314 marks them "awaiting Tim"); #249 icon check owner; #1284, #1272 and #272 picks.
+5. The #1281 environment step and the #1210 store items (Android developer verification is overdue) are unchanged.
+
+---
+
 ## 2026-10-02 (day) — freeze lifted, the 17 held PRs merged, develop repaired, eight lane PRs merged
 
 ### Freeze lift and the held PRs
