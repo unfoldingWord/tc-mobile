@@ -30,13 +30,21 @@ interface WaveformProps {
    * `recorder.tsx`'s call site names the mid-take states that still reach
    * this canvas, and `lib/audio/display-gain.ts` owns the rule.
    *
+   * It currently guards a path that draws no bars. With nothing committed the
+   * recorder passes `peaks` as `null` (`use-segment-editor.ts` computes no
+   * peaks for an empty buffer) and `recorded` as false, so the draw below
+   * takes the dotted never-recorded rule and never reaches the gain. Whether
+   * to remove the prop is the DRI's call (#1201).
+   *
    * Narrower than "a take is in flight" on purpose (the `capturing` prop this
    * used to be checked against was removed with #316, once the centerline
-   * stopped needing a capturing flag to stay visible). A punch-in draws the
-   * segment's already committed audio while recording, and un-fitting THAT is
-   * the #358 complaint all over again at the moment the translator is aiming
-   * at the centreline (George R2 P2). A row never sets it; a stored take is
-   * always fitted.
+   * stopped needing a capturing flag to stay visible). A punch-in's live
+   * recording is on `LiveScope` (#283), not this canvas; a punch-in reaches
+   * this canvas only at idle, in the `requesting` wait or through the
+   * tap-failed fallback, and there it draws the segment's committed clip.
+   * Un-fitting THAT is the #358 complaint all over again at the moment the
+   * translator is aiming at the centreline (George R2 P2). A row never sets
+   * it; a stored take is always fitted.
    */
   firstTakeInFlight?: boolean;
   /**
@@ -234,13 +242,13 @@ export function Waveform({
     // toggle. Not referenced above.
     // `theme` is the same shape for the same reason: a `data-theme` switch
     // remaps the tokens read above, and only a re-run re-reads them.
-    // `firstTakeInFlight` IS referenced, in the gain above, and it toggles on
-    // the Record and Back edges without `peaks` changing — the whole point of
-    // the flag is that the same peaks draw at a different scale either side of
-    // it, so a stale deps array would leave the canvas at the old scale until
-    // something else happened to invalidate it. `fitFrom` is referenced there
-    // too, and it is its own prop, so it is its own dep: a stale value would
-    // fit the current `peaks` to a previous render's buffer.
+    // `firstTakeInFlight` IS referenced, in the gain above, so it is its own
+    // dep: it can change without `peaks` changing, and a stale deps array
+    // would leave the canvas drawn for the old value. In the recorder today it
+    // is true only where the dotted-rule branch returns first (the prop's
+    // docblock), so that re-run repaints the same dots. `fitFrom` is
+    // referenced there too, and it is its own prop, so it is its own dep: a
+    // stale value would fit the current `peaks` to a previous render's buffer.
   }, [
     peaks,
     recorded,

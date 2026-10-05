@@ -2345,16 +2345,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // Silence buffer playback now, not at the eventual unmount `leave()`: the
       // async commit below can run a save while a long buffer keeps sounding, and
       // Play goes `disabled` on `isClosing` so nothing on screen can stop it
-      // (George R1). `stopBuffer` releases its own "take" floor — it never ENDS a
-      // capture, which is the property that makes it safe ahead of the path:
-      // `claim("mic")` moves the floor, it does not touch the MediaRecorder, and
-      // `stopRecording`'s `finally` stops the claim it SNAPSHOTTED before its
-      // await, and only while that claim is still current (George G4). Equivalent
-      // here — `stopPlayback()` below calls `stopBuffer`, so it runs before
-      // `stopRecording()` takes its snapshot —
-      // but "whichever claim is current", which this said until #147, describes a
-      // guard that would release a NEWER recording's claim, which is the bug the
-      // token exists to prevent (`use-audio-session.ts`, `stopRecording`).
+      // (George R1). `stopPlayback()` stops it through `stopBuffer`, which
+      // releases only its own "take" floor and never ENDS a capture — the
+      // property that makes it safe ahead of the commit: `claimFloor("mic")`
+      // moves the floor without touching the MediaRecorder, and
+      // `stopRecording`'s `finally` releases only the claim it SNAPSHOTTED
+      // before its await, and only while that claim is still current (George
+      // G4; `use-audio-session.ts`, `stopRecording`).
       stopPlayback();
       return (async () => {
         // Commit on close (F8): if the mic is live, stop it, then splice what
@@ -3794,10 +3791,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                         recorded={hasAudio}
                         // The #358 display fit is suppressed only for a take with
                         // nothing committed behind it. A punch-in (`hasAudio`)
-                        // reaches THIS branch only via the tap-failed fallback or
-                        // an idle view — its live recording is on `LiveScope`
-                        // (#283) — and in both it draws the STORED clip fitted,
-                        // since `working` does not grow until the take commits
+                        // reaches THIS branch only via the tap-failed fallback,
+                        // the `requesting` wait or an idle view — its live
+                        // recording is on `LiveScope` (#283) — and in each it
+                        // draws the STORED clip fitted, since `working` does not
+                        // grow until the take commits
                         // (George R2 P2). The rule itself is pure and table-tested
                         // in `lib/audio/display-gain.ts`, not spelled out here.
                         //
@@ -3808,13 +3806,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                         // the `isClosing` stop→decode→save wait, during which
                         // `stop()` has already flipped `state` to idle. Gating this
                         // flag on `recording` alone would let it go false while
-                        // the same stage content was still up, jumping it from thin
-                        // to full height under the Saving notice — the exact
-                        // quiet-mic-looks-healthy failure this flag exists to
-                        // prevent. `hasAudio` still gates the punch-in case
-                        // unchanged: once there is committed audio,
-                        // `isFirstTakeInFlight` is false regardless of
-                        // `state`/`isClosing`, so George R2 P2 stands.
+                        // the same take was still in flight. Today that changes
+                        // no pixels: with nothing committed this canvas draws
+                        // the dotted rule and never reaches the gain (the prop's
+                        // docblock in `waveform.tsx`, #1201). `hasAudio` still
+                        // gates the punch-in case unchanged: once there is
+                        // committed audio, `isFirstTakeInFlight` is false
+                        // regardless of `state`/`isClosing`, so George R2 P2
+                        // stands.
                         //
                         // `isFirstTakeInFlight` takes `state` and `isClosing`
                         // separately and computes `takeActive` itself (#757) — a
