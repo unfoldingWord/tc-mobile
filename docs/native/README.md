@@ -278,8 +278,8 @@ the App Store Connect **API key** authenticates the **upload only**, not signing
 No `match`, no certs repo. It **starts on a promotion** (#1281): a push to
 `staging` or `main` whose tip is a promotion merge (`Merge pull request #N
 from unfoldingWord/release/*` or `…/develop` onto staging, `…/staging` or
-`…/release/*` onto main; a squash, a hotfix branch or an edited subject is
-not one)
+`…/release/*` onto main; a squash, an edited subject, or a hotfix branch not
+named `release/*` is not one)
 builds and uploads with no dispatch (and no approval once #1281's runbook has
 removed the required reviewer; step 4 below); any other push to those
 two branches ends at the preflight job with a notice and no build. For a
