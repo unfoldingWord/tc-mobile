@@ -244,11 +244,22 @@
      pseudo-element inset 2px top and bottom, because a clip-path on the
      button itself would clip its hit area to the chevron too. The button
      paints nothing of its own. Long-press selection is off, as it was on
-     the `.breadcrumb` button this replaced on the chapter screen (#563). */
+     the `.breadcrumb` button this replaced on the chapter screen (#563).
+     `appearance: none` drops WebKit's native button look, which the
+     preflight's `appearance: button` keeps (#1278).
+     KNOWN OVERLAP, ACCEPTED (rc.3 red team N5; DRI: "Accept both, note
+     them"): each crumb after the first is pulled 6px left by the base
+     rule's negative margin so the chevrons nest. Where the later crumb is
+     also a button (the recorder header's book then chapter), its box is an
+     unclipped rectangle over the last 6px of the one before it, so by that
+     geometry (not measured on a phone) a tap on the book crumb's chevron
+     tip runs the chapter crumb's one-level Back instead. */
   [data-design="o4"] button.o4-crumb {
     position: relative;
     isolation: isolate;
     height: var(--c-control-md);
+    -webkit-appearance: none;
+    appearance: none;
     border: none;
     background: transparent;
     clip-path: none;

@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { act, createElement, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { O4Crumbs } from "@/components/o4-crumbs";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import { SegmentsScreen } from "@/components/segments-screen";
 import type { Design } from "@/lib/design";
@@ -12,6 +16,8 @@ import type { StopResult } from "@/hooks/use-recorder";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow } from "@/types/view";
+
+import { cssRule, declarationValue, restingErase } from "./support";
 
 /**
  * #1105: the top breadcrumb in the segments header and the recorder header
@@ -237,11 +243,7 @@ describe("the recorder header (#1105)", () => {
           clipboard: null,
           onClipboardChange: vi.fn(),
           databaseUnreachable: false,
-          erase: {
-            erase: vi.fn(async () => "ok" as const),
-            erasing: false,
-            isErasing: () => false,
-          },
+          erase: restingErase(),
           onExit,
           onRequestBack,
           ...(options.withBooks === false ? {} : { onRequestBackToBooks }),
@@ -336,6 +338,36 @@ describe("the recorder header (#1105)", () => {
       release({ samples: new Int16Array([5, 6]), blob: null, error: null })
     );
     expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  // #1278 (#1274 Low): the crumbs' `disabled` is `heldTake !== null ||
+  // isClosing`. The close-window test above holds `isClosing`; this one
+  // holds only the take. A decode that failed with its bytes kept is held
+  // on the recovery panel, the close window has ended, and the take exists
+  // nowhere else, so a crumb must not leave.
+  it("stays disabled with Back while a take is held for recovery, after the close window ends (#1274)", async () => {
+    const stopRecording = vi.fn(async (): Promise<StopResult> => ({
+      samples: null,
+      blob: new Blob(["kept"]),
+      error: "undecodable",
+    }));
+    const { onRequestBack, onRequestBackToBooks, onExit } = await mount("o4", {
+      recorderState: "recording",
+      stopRecording,
+    });
+    await tap(header(), strings.goToChapter("2:1-4"));
+    expect(stopRecording).toHaveBeenCalledTimes(1);
+    expect(onExit).not.toHaveBeenCalled();
+    const crumb = button(header(), strings.goToChapter("2:1-4"));
+    const bookCrumb = button(header(), strings.goToBook("Book Mine"));
+    expect(button(header(), strings.closeRecorder).disabled).toBe(true);
+    expect(crumb.disabled).toBe(true);
+    expect(bookCrumb.disabled).toBe(true);
+    await act(async () => crumb.click());
+    await act(async () => bookCrumb.click());
+    expect(onRequestBack).toHaveBeenCalledTimes(1);
+    expect(onRequestBackToBooks).not.toHaveBeenCalled();
+    expect(onExit).not.toHaveBeenCalled();
   });
 
   it("shows a renamed chapter's typed name in the chapter chip (#1230)", async () => {
@@ -442,11 +474,7 @@ describe("the segments header (#1105)", () => {
     playingId: null,
     playbackElapsedMs: 0,
   } as UseAudioSession;
-  const erase = {
-    erase: vi.fn(async () => "ok" as const),
-    erasing: false,
-    isErasing: () => false,
-  };
+  const erase = restingErase();
 
   async function mount(look: Design, onBack = vi.fn()) {
     design.current = look;
@@ -614,5 +642,38 @@ describe("the segments header (#1105)", () => {
     expect(breadcrumbButton().querySelector("span")?.getAttribute("dir")).toBe(
       "auto"
     );
+  });
+});
+
+describe("a linked crumb, the #1274 Lows (#1278)", () => {
+  // No caller passes both today; the next one that does must not ship a
+  // control that looks current and navigates with the marker gone.
+  it("keeps aria-current on a crumb that is both current and linked", async () => {
+    await act(async () =>
+      root.render(
+        createElement(O4Crumbs, {
+          book: "Book Mine",
+          chapter: "2:1-4",
+          links: { chapter: { label: "Go to 2:1-4", onClick: vi.fn() } },
+          current: "chapter",
+        })
+      )
+    );
+    const chip = button(container, "Go to 2:1-4");
+    expect(chip.getAttribute("aria-current")).toBe("page");
+    expect(container.querySelectorAll("[aria-current]")).toHaveLength(1);
+  });
+
+  // A WebKit button keeps its native look unless the author turns it off;
+  // the transparent background and no border do not reset `appearance`.
+  // This reads the rule; a WKWebView on a phone is what would show it.
+  it("drops the native button look on a linked crumb, WebKit prefix included", () => {
+    const css = readFileSync(
+      path.resolve(import.meta.dirname, "..", "src/app/styles/o4/menus.css"),
+      "utf8"
+    );
+    const rule = cssRule(css, '[data-design="o4"] button.o4-crumb');
+    expect(declarationValue(rule, "appearance")).toBe("none");
+    expect(declarationValue(rule, "-webkit-appearance")).toBe("none");
   });
 });

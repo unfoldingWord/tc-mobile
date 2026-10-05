@@ -69,9 +69,10 @@ export interface O4CrumbsProps {
  * With `links` (#1269, the requirements owner: "Yes, make the header crumbs
  * tappable for navigation"), a screen header turns each crumb that names a
  * place above the current screen into a button named for its destination,
- * and marks the current place's crumb `aria-current="page"`, which stays a
- * plain span. The header hands each link its own Back handler, so a crumb
- * never leaves by a path Back does not take. A linked crumb is a 44px
+ * and marks the current place's crumb `aria-current="page"`. That crumb is
+ * a plain span unless a caller also links it; then its button carries the
+ * marker (#1278). The header hands each link its own Back handler, so a
+ * crumb never leaves by a path Back does not take. A linked crumb is a 44px
  * target drawn as the same 40px chip (`o4/menus.css`, `button.o4-crumb`).
  */
 export function O4Crumbs({
@@ -133,6 +134,7 @@ function Crumb({
         type="button"
         className="o4-crumb"
         aria-label={link.label}
+        aria-current={current ? "page" : undefined}
         disabled={disabled}
         onClick={link.onClick}
       >

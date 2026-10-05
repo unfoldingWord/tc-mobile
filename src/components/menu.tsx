@@ -35,36 +35,81 @@ function startsOnControl(target: EventTarget): boolean {
 
 /**
  * How long after a drag closes a sheet its trailing click may still arrive.
- * Past this, the swallow below is removed unused, so it can never eat the
- * next real tap.
+ * Past this, the swallow below is removed, so it can never eat a later
+ * real tap.
  */
 const TRAILING_CLICK_MS = 400;
+
+/**
+ * The control an event target belongs to: its nearest button, link or
+ * `role="button"`, else the target itself, else null. Duck-typed like
+ * {@link startsOnControl}, not `instanceof`, which is false for a node from
+ * another realm (an iframe's document, or a test's own DOM).
+ */
+function controlOf(target: EventTarget | null): EventTarget | null {
+  if (target === null) return null;
+  if (!("closest" in target)) return target;
+  return (target as Element).closest('button, a, [role="button"]') ?? target;
+}
+
+/** The keys whose `keydown` a button answers with a click. */
+const ACTIVATION_KEYS = new Set(["Enter", " "]);
 
 /**
  * A drag that closes a sheet ends in a `pointerup`, and the browser follows
  * it with a compatibility `click`. The sheet is already gone by then, so
  * that click would land on whatever it covered under the finger: a book on
  * Books, a row or a record control on Segments (#1273, George round 1).
- * This swallows that one click, in the capture phase on the document so no
- * target sees it, and removes itself on the first click or after
- * {@link TRAILING_CLICK_MS}, whichever comes first. Module scope, not the
- * component's: the Menu has unmounted by the time the click arrives. The ✕'s
- * own tap never arms it.
+ * This swallows clicks, in the capture phase on the document so no target
+ * sees them, until {@link TRAILING_CLICK_MS} has passed. Module scope, not
+ * the component's: the Menu has unmounted by the time the click arrives.
+ * The ✕'s own tap never arms it.
+ *
+ * A touch drag usually fires no click at all, so the window must not eat a
+ * real tap made inside it (#1278, PR #1273 round 3). So a click is let
+ * through when it is a NEW gesture's own: a `pointerdown` names that
+ * gesture's control and makes it ready at its `pointerup` on the same
+ * control; an Enter or Space `keydown` (whose click has no `pointerup`)
+ * makes its control ready at once. A ready gesture's click on that control
+ * is delivered, and the gesture is then spent. Every other click in the
+ * window is swallowed, a click on an ancestor included, and nothing but the
+ * bound takes the swallow down (PR #1318 rounds 1 and 2, George).
  */
 function swallowTrailingClick(doc: Document): void {
+  let gesture: EventTarget | null = null;
+  let ready = false;
   const swallow = (ev: Event) => {
+    if (ready && gesture !== null && controlOf(ev.target) === gesture) {
+      ready = false;
+      gesture = null;
+      return;
+    }
     ev.preventDefault();
     ev.stopPropagation();
-    disarm();
   };
-  const timer = setTimeout(() => {
-    doc.removeEventListener("click", swallow, true);
-  }, TRAILING_CLICK_MS);
+  const onPointerDown = (ev: Event) => {
+    gesture = controlOf(ev.target);
+    ready = false;
+  };
+  const onPointerUp = (ev: Event) => {
+    ready = gesture !== null && controlOf(ev.target) === gesture;
+  };
+  const onKeyDown = (ev: Event) => {
+    if (!ACTIVATION_KEYS.has((ev as KeyboardEvent).key)) return;
+    gesture = controlOf(ev.target);
+    ready = gesture !== null;
+  };
   const disarm = () => {
-    clearTimeout(timer);
     doc.removeEventListener("click", swallow, true);
+    doc.removeEventListener("pointerdown", onPointerDown, true);
+    doc.removeEventListener("pointerup", onPointerUp, true);
+    doc.removeEventListener("keydown", onKeyDown, true);
   };
+  setTimeout(disarm, TRAILING_CLICK_MS);
   doc.addEventListener("click", swallow, true);
+  doc.addEventListener("pointerdown", onPointerDown, true);
+  doc.addEventListener("pointerup", onPointerUp, true);
+  doc.addEventListener("keydown", onKeyDown, true);
 }
 
 /** A drag in progress, one pointer at a time. */
