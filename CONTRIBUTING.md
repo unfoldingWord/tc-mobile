@@ -222,8 +222,10 @@ PR is the production gate.
 - **Cloudflare Workers Builds deploys the PWA on merge** — no Actions workflow
   deploys it. `.github/` holds `ci.yml`, `dependabot.yml`, and the three
   native lanes (`ios-testflight.yml`, `android-apk.yml`, `android-play.yml`),
-  which fire on push to `staging`/`main` only and ship native bundles, never
-  the PWA (#1281).
+  which fire on push to `staging`/`main` only and never ship the PWA (#1281).
+  A push ships a native bundle only when the lane's preflight lets it: a
+  promotion merge for the APK and TestFlight lanes, Play upload enabled for
+  the Play lane (which also skips a docs-only push).
 - **Confirm a deploy by the served bundle's version string, not by the merge.**
   `npm run check:deploy` checks the `develop -> staging` promotion (staging is
   the default origin); `npm run check:deploy:prod` checks `staging -> main`

@@ -45,7 +45,10 @@ concurrency:
   # One run for this Play app at a time, across BOTH branches: staging and main
   # share one package and one service account, a second Play edit invalidates
   # the first, and versionCode (date +%s) must increase per app, not per track.
-  # Never cancel an in-flight upload; queued runs each get their own build.
+  # Never cancel an in-flight upload. This group is on the whole run, so
+  # GitHub keeps one pending run and replaces it with a newer one: a push or
+  # dispatch queued behind an in-flight upload can be replaced by a later one
+  # and never build. Read a `cancelled` run against the branch tip (#1308).
   group: android-play
   cancel-in-progress: false
 

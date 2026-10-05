@@ -92,10 +92,10 @@ issue's priority in this checklist.
    explicitly accepted residuals before merging; an unresolved required issue
    is not waived merely by moving its milestone.
 
-   Three commits name this step. `PROD_SHA` follows §3a's rule for
-   `STAGING_SHA`, `CUT_SHA` and `PROMO_SHA`: write it down when it exists,
-   re-resolve it with `git` or `gh` before a step uses it, and treat PR text
-   that quotes it as a record, not the source. **`MAIN_SHA` and `HEAD_SHA`
+   Three commits name this step. `PROD_SHA` is re-resolved like §3a's
+   `CUT_SHA` and `PROMO_SHA` (not frozen like `STAGING_SHA`): write it down
+   when it exists, re-resolve it with `git` or `gh` before a step uses it,
+   and treat PR text that quotes it as a record, not the source. **`MAIN_SHA` and `HEAD_SHA`
    are the exception.** They are the full 40-character oids written down when
    the production PR's checks and reviews went green, and that record is the
    baseline the checks below compare against. Re-read the canonical `main`
@@ -343,13 +343,20 @@ freeze note on every new PR to `develop`.
    (one signing job runs at a time across both branches; a later push or
    dispatch took the single pending slot) and did not start. Read the tip
    before deciding: if `origin/staging` is still `PROMO_SHA`, wait for the
-   run that took the slot and, once nothing for `PROMO_SHA` is queued or
-   running, the DRI dispatches it; if the tip has moved, stop. While `release-signing` still has a
+   run that took the slot; if the tip has moved, stop. The slot-holder can
+   be a dispatch of `PROMO_SHA` itself, which the tip read does not show, so
+   before any dispatch list the lane's runs at that commit
+   (`gh run list --workflow <lane> --commit <PROMO_SHA> --json databaseId,event,status`)
+   and read each one's signing job as above. If any concluded `success`,
+   `PROMO_SHA` is already built: stop, and record that run instead.
+   Otherwise, once nothing for `PROMO_SHA` is queued or running, the DRI
+   dispatches it. While `release-signing` still has a
    required reviewer (#1281's transition window), each signing job waits for
    the DRI's approval; once it is removed, no approval either. Both runs' `headSha`
    equal `PROMO_SHA`, and so do the web and Play builds: every channel must
    come from that one commit. If not, stop and re-promote. Do not mix refs.
-   If a lane did not start, the DRI dispatches it from `staging` by hand
+   If a lane did not start and no run at `PROMO_SHA` has already built it
+   (the `--commit` read above), the DRI dispatches it from `staging` by hand
    (`gh workflow run <lane> --repo unfoldingWord/tc-mobile --ref staging`) —
    human-only — and the cause is a finding.
 8. **Check the APK before publishing.**
@@ -444,9 +451,12 @@ durable download link. An expiring Actions link alone does not satisfy handoff.
 
 Before promotion, record the build production is serving now: the `sha` and
 `version` in `version.json` on both production origins, read directly
-(`curl -s "https://tcmobile.app/version.json?t=$(date +%s)"` and the same on
-`https://tc-mobile.unfoldingword.workers.dev`), plus the available
-Cloudflare rollback target. Do not take it from the bare
+(`curl -fsS "https://tcmobile.app/version.json?t=$(date +%s)" | jq -e 'select(.sha and .version)'`
+and the same on `https://tc-mobile.unfoldingword.workers.dev`), plus the
+available Cloudflare rollback target. `-f` makes an HTTP error exit non-zero
+instead of printing an error page, and `jq -e` exits non-zero unless the body
+carries both `sha` and `version`; a read that fails either is not a deploy
+record, so do not write it down as the rollback target. Do not take it from the bare
 `npm run check:deploy:prod`: that command prints the `origin/main` tip first
 as its expectation, prints the served `Deployed:` line only after that, and
 on a non-canonical `origin` refuses before it fetches anything, so in the

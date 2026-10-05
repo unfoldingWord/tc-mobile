@@ -187,14 +187,21 @@ from.
       (one signing job runs at a time across both branches; a later push or
       dispatch took the single pending slot) and did not start. Read the
       tip before deciding: if `origin/staging` is still `PROMO_SHA`, wait
-      for the run that took the slot and, once nothing for `PROMO_SHA` is
-      queued or running, the DRI dispatches it (human-only); if the tip has
-      moved, stop.
+      for the run that took the slot; if the tip has moved, stop. The
+      slot-holder can be a dispatch of `PROMO_SHA` itself, which the tip
+      read does not show, so before any dispatch list the lane's runs at
+      that commit
+      (`gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --commit <PROMO_SHA> --json databaseId,event,status`)
+      and read each one's signing job as above. If any concluded `success`,
+      `PROMO_SHA` is already built: stop, and record that run instead.
+      Otherwise, once nothing for `PROMO_SHA` is queued or running, the DRI
+      dispatches it (human-only).
       An empty conclusion with the run still open means the job is waiting
       for the `release-signing` reviewer or running: it has started, so do
       not dispatch a second one.
-- [ ] Human-only, only if a lane did not start (its signing job `skipped`):
-      the DRI dispatches it from `staging` via `!`:
+- [ ] Human-only, only if a lane did not start (its signing job `skipped`)
+      and no run at `PROMO_SHA` has already built it (the `--commit` read
+      above): the DRI dispatches it from `staging` via `!`:
       `gh workflow run <lane> --repo unfoldingWord/tc-mobile --ref staging`.
       Record why it did not start on its own.
 - [ ] Agent-allowed: both runs' `headSha` equal `PROMO_SHA`, and so do the web
@@ -282,7 +289,7 @@ full 40-character oids written down when the production PR's checks and
 reviews went green. That record is the baseline. Re-read the canonical
 `main` tip, `baseRefOid` and `headRefOid` fresh at each check below, and never
 rebuild the baseline from those reads, or each check compares a value with
-itself. `PROD_SHA` follows the normal rule.
+itself. `PROD_SHA` is re-resolved like `CUT_SHA` and `PROMO_SHA`.
 
 - [ ] Agent-allowed, immediately before the merge: the canonical `main` tip
       (the `gh api` read above) prints the recorded `MAIN_SHA`, and
