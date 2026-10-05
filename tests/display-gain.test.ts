@@ -214,20 +214,35 @@ describe("displayGain", () => {
 
   it("keeps committed audio fitted while a punch-in records over it", () => {
     // George R2 P2, and the reason the flag is `firstTakeInFlight` rather than
-    // "a take is in flight". During a punch-in the canvas shows the segment's
-    // ALREADY STORED clip — `working` does not grow until the new recording is
-    // spliced at close — so un-fitting it would shrink the translator's only
-    // view of what they are aiming at, at the moment they are aiming, and pop
-    // it back at the commit. The same peaks are drawn at Record, through
-    // processing and the close wait, and at idle, and every one of them is
-    // the fitted gain.
+    // "a take is in flight". With committed audio on the segment, whatever
+    // `Waveform` shows is the segment's ALREADY STORED clip — `working` does
+    // not grow until the new recording is spliced at the commit — so
+    // un-fitting it would shrink the translator's only view of what they are
+    // aiming at, at the moment they are aiming, and pop it back at the commit.
     const committed = peaksWithPeak(0.1);
     const fitted = displayGain(committed, false);
     expect(fitted).toBeCloseTo(9, 6);
-    // Every stage of a punch-in draws committed audio: `firstTakeInFlight` is
-    // false throughout, so there is one gain and no jump.
-    for (const stage of ["idle", "recording", "processing", "closing"]) {
-      expect([stage, displayGain(committed, false)]).toEqual([stage, fitted]);
+    // Every stage of a punch-in, through the same two calls `Waveform` and
+    // `recorder.tsx` make: one gain and no jump.
+    type State = "idle" | "requesting" | "recording" | "processing";
+    const stages: ReadonlyArray<[State, boolean]> = [
+      ["idle", false],
+      ["requesting", false],
+      ["recording", false],
+      ["processing", false],
+      ["idle", true], // the close wait
+    ];
+    for (const [state, isClosing] of stages) {
+      const firstTakeInFlight = isFirstTakeInFlight({
+        state,
+        isClosing,
+        hasCommittedAudio: true,
+      });
+      expect([
+        state,
+        isClosing,
+        displayGain(committed, firstTakeInFlight),
+      ]).toEqual([state, isClosing, fitted]);
     }
   });
 

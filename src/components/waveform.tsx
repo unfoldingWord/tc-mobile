@@ -30,13 +30,21 @@ interface WaveformProps {
    * `recorder.tsx`'s call site names the mid-take states that still reach
    * this canvas, and `lib/audio/display-gain.ts` owns the rule.
    *
+   * It currently guards a path that draws no bars. With nothing committed the
+   * recorder passes `peaks` as `null` (`use-segment-editor.ts` computes no
+   * peaks for an empty buffer) and `recorded` as false, so the draw below
+   * takes the dotted never-recorded rule and never reaches the gain. Whether
+   * to remove the prop is the DRI's call (#1201).
+   *
    * Narrower than "a take is in flight" on purpose (the `capturing` prop this
    * used to be checked against was removed with #316, once the centerline
-   * stopped needing a capturing flag to stay visible). A punch-in draws the
-   * segment's already committed audio while recording, and un-fitting THAT is
-   * the #358 complaint all over again at the moment the translator is aiming
-   * at the centreline (George R2 P2). A row never sets it; a stored take is
-   * always fitted.
+   * stopped needing a capturing flag to stay visible). A punch-in's live
+   * recording is on `LiveScope` (#283), not this canvas; a punch-in reaches
+   * this canvas only at idle, in the `requesting` wait or through the
+   * tap-failed fallback, and there it draws the segment's committed clip.
+   * Un-fitting THAT is the #358 complaint all over again at the moment the
+   * translator is aiming at the centreline (George R2 P2). A row never sets
+   * it; a stored take is always fitted.
    */
   firstTakeInFlight?: boolean;
   /**
