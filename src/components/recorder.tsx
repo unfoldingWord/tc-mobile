@@ -3806,13 +3806,14 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                         // the `isClosing` stop→decode→save wait, during which
                         // `stop()` has already flipped `state` to idle. Gating this
                         // flag on `recording` alone would let it go false while
-                        // the same stage content was still up, jumping it from thin
-                        // to full height under the Saving notice — the exact
-                        // quiet-mic-looks-healthy failure this flag exists to
-                        // prevent. `hasAudio` still gates the punch-in case
-                        // unchanged: once there is committed audio,
-                        // `isFirstTakeInFlight` is false regardless of
-                        // `state`/`isClosing`, so George R2 P2 stands.
+                        // the same take was still in flight. Today that changes
+                        // no pixels: with nothing committed this canvas draws
+                        // the dotted rule and never reaches the gain (the prop's
+                        // docblock in `waveform.tsx`, #1201). `hasAudio` still
+                        // gates the punch-in case unchanged: once there is
+                        // committed audio, `isFirstTakeInFlight` is false
+                        // regardless of `state`/`isClosing`, so George R2 P2
+                        // stands.
                         //
                         // `isFirstTakeInFlight` takes `state` and `isClosing`
                         // separately and computes `takeActive` itself (#757) — a

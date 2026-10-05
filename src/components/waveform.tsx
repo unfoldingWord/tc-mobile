@@ -242,13 +242,13 @@ export function Waveform({
     // toggle. Not referenced above.
     // `theme` is the same shape for the same reason: a `data-theme` switch
     // remaps the tokens read above, and only a re-run re-reads them.
-    // `firstTakeInFlight` IS referenced, in the gain above, and it toggles on
-    // the Record and Back edges without `peaks` changing — the whole point of
-    // the flag is that the same peaks draw at a different scale either side of
-    // it, so a stale deps array would leave the canvas at the old scale until
-    // something else happened to invalidate it. `fitFrom` is referenced there
-    // too, and it is its own prop, so it is its own dep: a stale value would
-    // fit the current `peaks` to a previous render's buffer.
+    // `firstTakeInFlight` IS referenced, in the gain above, so it is its own
+    // dep: it can change without `peaks` changing, and a stale deps array
+    // would leave the canvas drawn for the old value. In the recorder today it
+    // is true only where the dotted-rule branch returns first (the prop's
+    // docblock), so that re-run repaints the same dots. `fitFrom` is
+    // referenced there too, and it is its own prop, so it is its own dep: a
+    // stale value would fit the current `peaks` to a previous render's buffer.
   }, [
     peaks,
     recorded,

@@ -190,13 +190,17 @@ function loudestPeak(peaks: Peaks): number {
  * `Waveform`'s prop currently guards a path that draws no bars. Whether to
  * remove that prop is the DRI's call (#1201).
  *
- * It is deliberately NOT "a take is in flight". A punch-in draws the segment's
- * ALREADY COMMITTED audio while capturing — `working` does not grow until the
- * new recording is spliced at the commit — so treating that canvas as
+ * It is deliberately NOT "a take is in flight". Where `Waveform` shows a
+ * punch-in — idle, `requesting`, or a failed mic tap for the whole take — it
+ * draws the segment's ALREADY COMMITTED audio, since `working` does not grow
+ * until the new recording is spliced at the commit. Treating that canvas as
  * in-flight would collapse the stored speech to a tenth of the lane at the
  * exact moment the translator is aiming at the centreline with it. That is
  * #358's own complaint, reintroduced on the insert path (George R2 P2).
- * Committed audio stays fitted through the whole take.
+ * Committed audio stays fitted through the whole take. A punch-in with a
+ * working tap is drawn by `LiveScope` instead, at its capture context's gain,
+ * which `capture-context.ts` fits with this function and a literal `false`;
+ * this flag does not reach that canvas.
  *
  * Four cases, in order:
  *

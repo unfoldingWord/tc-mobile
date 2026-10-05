@@ -224,9 +224,10 @@ describe("displayGain", () => {
     expect(fitted).toBeCloseTo(9, 6);
     // Every stage of a punch-in, as a predicate table: `recorder.tsx` derives
     // the flag with `isFirstTakeInFlight` and `Waveform` passes it to
-    // `displayGain`. Only idle, `requesting` and the tap-failed fallback put
-    // `Waveform` on stage with committed audio; the other rows are on
-    // `LiveScope`, and pin the predicate rather than a drawn canvas.
+    // `displayGain`. With a working mic tap, only idle and `requesting` put
+    // `Waveform` on stage with committed audio, and the other rows are on
+    // `LiveScope`; after a failed tap (`meterFailed`), `Waveform` stays up for
+    // every row. Either way the rows pin the predicate the canvas is given.
     type State = "idle" | "requesting" | "recording" | "processing";
     const stages: ReadonlyArray<[State, boolean]> = [
       ["idle", false],
