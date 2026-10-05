@@ -206,7 +206,12 @@ from.
       and wait until every one is `completed`. A run still open at the
       first read may have built `PROMO_SHA` while you waited, so repeat read
       (1); if an ordinary build has since concluded `success`, stop and
-      record that run. Only if (1) still finds none does the DRI dispatch it
+      record that run. The wait can move the tip, and `--ref staging`
+      builds the tip at dispatch, so immediately before dispatching re-read
+      the canonical tip
+      (`gh api repos/unfoldingWord/tc-mobile/git/ref/heads/staging --jq .object.sha`);
+      if it is not exactly `PROMO_SHA`, stop. Only if (1) still finds none
+      and the tip is still `PROMO_SHA` does the DRI dispatch it
       (human-only), and the agent re-reads the new run until its signing job has started. A dispatch `cancelled`
       while pending goes back to the two reads.
       An empty conclusion with the run still open means the job is waiting
