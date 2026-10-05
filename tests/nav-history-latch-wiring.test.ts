@@ -9,11 +9,16 @@ import { bodyAfter, matchingBraceClose, stripComments } from "./support";
  * makes, and replays what it deferred at every landing.
  *
  * Like `nav-go-back-suppressed.test.ts`, this reads the hook's CODE rather
- * than driving `useNavStack`: the Node suite has no renderer that runs a
- * hook's effects. It strips comments and isolates each command's own body, so
- * a match elsewhere in the file cannot satisfy it. What it cannot see is the
- * order a browser delivers the calls in; `e2e/back-navigation.spec.ts` cases
- * (n) and (o) drive that.
+ * than driving `useNavStack`. That is a choice, not a missing harness: the
+ * hook CAN be mounted with its effects running under jsdom
+ * (`nav-consume-recorder-refusal.test.ts` drives it that way). What this file
+ * pins is the ORDER inside every command's body — decide, return on refusal,
+ * state half, write — which a source read checks directly in each command,
+ * and a mount sees only through a scenario built to expose each ordering. It
+ * strips comments and isolates each command's own body, so a match elsewhere
+ * in the file cannot satisfy it. What it cannot see is the order a browser
+ * delivers the calls in; `e2e/back-navigation.spec.ts` cases (n) and (o)
+ * drive that.
  *
  * Mutations that must go red here: call `enterScreen()` straight from
  * `openChapter` or `openRecorder`; run a command's state half before its
