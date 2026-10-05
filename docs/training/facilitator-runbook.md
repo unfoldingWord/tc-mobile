@@ -8,6 +8,17 @@ not a developer guide. Plain language, short steps.
 are stored only in the phone's own app storage and never travel anywhere
 unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-backend-in-phase-1.md; grep -rn "fetch(\|XMLHttpRequest\|WebSocket" src/ returned no matches, checked 2026-09-15 --> Tell every participant this up front — it was the very first question the first outside tester asked. <!-- source: gh issue #248, comment 2026-09-14 -->
 
+**Four points are awaiting Tim**, the requirements owner. Each is marked
+"Awaiting Tim" where it comes up. Where the runbook already has a safe
+default, the text there says to keep using it.
+
+1. Whether to offer the browser version at the training (§2, step 1).
+2. Whether "share a very long book chapter by chapter" is a rule (§3).
+3. Whether participants file their own problem reports (§5, "Where reports go").
+4. Which private address the problem-report file goes to (§5, "Where reports go").
+
+<!-- source: PR #1297 body, "For the requirements owner to confirm" items 1-4; no answer to any of them is on gh issue #248 as of 2026-10-05 -->
+
 ## 1. Before the training
 
 1. Make sure you have the install link or invitation ready for every phone you
@@ -95,8 +106,8 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    app in a browser before the training must Share anything they want to
    keep before switching to the installed app — the installed app opening
    empty does not mean the browser recordings are gone, but nothing moves
-   them. Whether to offer the browser route at the training at all is for
-   the requirements owner to confirm. <!-- source: capacitor.config.ts (webDir "dist", no `server` block — the installed app loads its bundled files, not tcmobile.app); browser storage is per origin (gh issue #1295), so the WebView's own origin and the two HTTPS addresses are three stores — the exact WebView origin string is not in the committed config, and the "three stores" claim is an inference from per-origin storage plus the absence of any import path (src/lib/storage/persistence.ts docblock), confidence high; George round 1 P2-3 on PR #1297;
+   them. **Awaiting Tim (requirements owner): whether to offer the browser
+   route at the training at all.** Until he decides, use the installed apps. <!-- source: capacitor.config.ts (webDir "dist", no `server` block — the installed app loads its bundled files, not tcmobile.app); browser storage is per origin (gh issue #1295), so the WebView's own origin and the two HTTPS addresses are three stores — the exact WebView origin string is not in the committed config, and the "three stores" claim is an inference from per-origin storage plus the absence of any import path (src/lib/storage/persistence.ts docblock), confidence high; George round 1 P2-3 on PR #1297;
    docs/progress_tracker.md 2026-10-02 (tcmobile.app connected, serves
    1.0.1; "keep workers.dev with no redirect (recordings are stored per
    address)"); gh issue #1295; docs/tester-install.md "Web browser (no
@@ -234,8 +245,8 @@ been measured on a device yet.
   book (Psalms-sized) now streams to a temporary file instead of holding the
   whole book in memory, but no phone has run that path. Until one has,
   sharing chapter by chapter is the safer route for a long book at the
-  training. **Whether to tell facilitators this as a rule is for the
-  requirements owner to confirm.** <!-- source: gh issue #1003, closed 2026-09-28 ("Not verified: no phone has run either path yet, and the low-end phone measurement hasn't been done"); gh issue #248 comment on #1002's known limits -->
+  training. **Awaiting Tim (requirements owner): whether this is a rule for
+  every facilitator.** Until he decides, treat it as the safer default. <!-- source: gh issue #1003, closed 2026-09-28 ("Not verified: no phone has run either path yet, and the low-end phone measurement hasn't been done"); gh issue #248 comment on #1002's known limits -->
 - **Keep the phone awake and the app open while a book is being shared.** A
   large book can take many minutes on a slow phone. If the app is closed
   partway, a temporary file may be left on the phone, taking up space. <!-- source: GitHub release v1.0.1 body, "Known limits in 1.0.1" (Share Book); gh issue #1004 (closed 2026-09-26); gh issue #248 comment on #1002's known limits -->
@@ -381,6 +392,48 @@ been measured on a device yet.
   3. Check that the saved recording still plays. A failed share does not ask
      the app to erase it; sharing can be tried again. Native share changes
      still need acceptance on the training phones. <!-- source: src/hooks/share-flow.ts; issues #336 and #245 -->
+
+### What to watch for at the training
+
+Some changes to the app will be decided from what you see at the training. For
+each participant, write down the three things below. Write the person's
+role, never their name. Pass the notes along at the end of each day with
+your other notes (§5).
+
+1. **Fixing a mistake.** When a participant wanted to change something they
+   said, what did they do? Write which of these they used:
+   - **Edited the recording:** opened editing with the scissors in the
+     bottom bar, then cut a piece out (the scissors under the sound picture)
+     or put a cut piece back (paste, the arrow onto a line).
+   - **Said it all again:** the eraser in the recorder ("Clear and record
+     again"), or **Reset** in the segment's ⋮ menu.
+
+   Write whether they found it alone or someone showed them. Opening editing
+   and then leaving it without cutting counts as "looked at editing", not as
+   an edit.
+
+2. **The names they typed.** Copy down exactly what they typed for each
+   book, chapter and segment name. If a name is a person's name or phone
+   number, write "a person's name" or "a phone number" instead. Note any
+   name that was cut off with "…", and whether that confused them. If they
+   typed a number as a chapter name (for example "22"), note what they
+   expected the chapter's number to be.
+3. **The icons.** If you are running the icon check, follow
+   [`icon-recognition-protocol.md`](icon-recognition-protocol.md) and fill in
+   its sheet. It takes about ten minutes per participant. Its results also
+   decide whether the round buttons need to stand out more from the
+   background, so run it if you can. **The protocol was written for an
+   earlier build. Where it differs from the phone, go by the phone:** an
+   empty segment shows a **microphone**, which opens the recorder. The red
+   **Record** button there starts recording, and the **square** ends and
+   saves it (there is no pause). The menu tile the protocol calls "Clear" now
+   reads **Reset**.
+
+<!-- source and tracking, for maintainers:
+     item 1: gh issue #595 (DRI pick 2026-09-28, "After training observations (Recommended)": facilitators note who used cut/paste and who re-recorded; the editor-optional decision is made from those notes); strings.ts rerecord = "Clear and record again" and tileErase = "Reset"; the bottom-bar scissors open editing, Cut is the scissors under the waveform, Paste is the arrow onto a line (§3 above; icon-recognition-protocol.md rows 6, 8, 9). Split per George round 1 P2-1 on PR #1314.
+     item 2: gh issue #1284 (long names cut off with "…", no way to read them in full; known limit in §4) and gh issue #1272 (a typed chapter "number" becomes the chapter's name while the badge shows its position — the issue labels this inferred from the code).
+     item 3: the protocol's row 1 (red disc, Pause) and row 5 ("Clear") predate segment-row.tsx icon="mic" (#1217), recorder-toolbars.tsx stop/record (#614) and strings.ts tileErase "Reset"; fixing the protocol, sheet and ADR is gh issue #1315, and this interim note goes when it lands (George round 1 P2-2 on PR #1314). gh issue #249 and ADR 0010 (docs/decisions/0010-icon-recognition.md); gh issue #461 waits on the #249 check (DRI pick 2026-09-28, "Decide after the #249 icon check (Recommended)": if people find controls by the glyph, the button-disc contrast is accepted; if not, a border or a lighter surface ladder is chosen).
+     Observation notes are per participant and by role, per AGENTS.md "Tester feedback is tagged by kind and source". -->
 
 ## 4. Known limits (as of 2026-10-02, build 1.0.1)
 
@@ -649,9 +702,9 @@ problem, with the notes above. This is the requirements owner's decision of
 2026-09-30; an email address may replace it later. <!-- source: gh issue #248, requirements owner (Tim) 2026-09-30: "point testers to the GitHub repository instead of an email address for reporting problems: https://github.com/unfoldingWord/tc-mobile/issues (the repo is public). An email alias can replace it later." This superseded the DRI's 2026-09-28 "Hold until we have an alias" on an email address. -->
 
 - **Filing needs a GitHub account.** A participant without one gives the notes
-  to you, and you file them. Whether participants are expected to file their
-  own reports, or everything goes through the facilitator, is for the
-  requirements owner to confirm. <!-- inference about GitHub, not repo evidence: creating an issue requires being signed in; confidence high -->
+  to you, and you file them. **Awaiting Tim (requirements owner): whether
+  participants file their own reports, or everything goes through the
+  facilitator.** <!-- inference about GitHub, not repo evidence: creating an issue requires being signed in; confidence high -->
 - **The page is public.** Write what happened and which build; attach a photo
   of the screen only if it shows no personal information. Do **not** attach a
   recording, the app's problem-report file, or anyone's name or phone number.
@@ -661,6 +714,6 @@ problem, with the notes above. This is the requirements owner's decision of
   repository names no tester channel for it: the privacy policy and the store
   listings give `support@unfoldingword.org` as the public support contact,
   and the DRI's 2026-09-28 note held a tester email alias until one exists.
-  **Which address the problem-report file should be sent to is for the
-  requirements owner to confirm.** Until then, keep the file on the phone (do
+  **Awaiting Tim (requirements owner): which private address the
+  problem-report file goes to.** Until he decides, keep the file on the phone (do
   not tap the bin) and say in the GitHub issue that a report file exists. <!-- source: PRIVACY.md "Contact" (support@unfoldingword.org, listed as the privacy contact); docs/progress_tracker.md 2026-10-02 ("support: GitHub issues plus support@unfoldingword.org" for the store listings); gh issue #248, DRI 2026-09-28 ("Hold until we have an alias") and Tim 2026-09-30 (GitHub for now); src/components/failure-log-panel.tsx (the bin clears the record; there is no undo) -->
