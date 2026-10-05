@@ -103,10 +103,10 @@ interface SegmentRowProps {
    */
   busy?: boolean;
   /**
-   * This row's Record is the next required action in the guided chain (#604) —
+   * This row's mic is the next required action in the guided chain (#604) —
    * the hop between "Add segment" and the recorder, which is the only door to
    * it. Only ever true on a row with no audio, which is the only state that
-   * renders a Record at all; `guided-step.ts` owns that rule.
+   * renders the mic at all; `guided-step.ts` owns that rule.
    */
   guided?: boolean;
   /**

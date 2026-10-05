@@ -140,7 +140,7 @@ describe("O4 segment row (#944)", () => {
     }
   });
 
-  it("keeps the guided ring on the empty row's Record in O4 (#604)", () => {
+  it("keeps the guided ring on the empty row's mic in O4 (#604)", () => {
     const container = renderRow("o4", empty, { guided: true });
     const record = one(
       container,
@@ -333,6 +333,11 @@ describe("o4/segments.css (#944)", () => {
       expect.arrayContaining(["width: 72px", "height: 72px"])
     );
     expect(block(`${O4} .row .control--record`)).toEqual(
+      expect.arrayContaining(["width: 72px", "height: 72px"])
+    );
+    // An unrecorded row's mic (#1217) takes the same 72px circle as Play
+    // (#1233 item 19).
+    expect(block(`${O4} .row .control--mic`)).toEqual(
       expect.arrayContaining(["width: 72px", "height: 72px"])
     );
     expect(block(`${O4} .row-title`)).toEqual(

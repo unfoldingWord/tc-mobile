@@ -100,8 +100,8 @@ function segmentsStep(
   // at a finished-looking segment or skip a broken one.
   if (segments.some((segment) => segment.hasClip)) return null;
   // The hop between "Add segment" and the recorder. A segment with no audio is
-  // not the end of the chain — the row's red Record is the only door to the
-  // recorder, and a first-time user has never seen it.
+  // not the end of the chain — the row's mic (Open recorder) is the only door
+  // to the recorder, and a first-time user has never seen it.
   const first = segments.find((segment) => !segment.hasClip);
   return first ? { kind: "open-segment", segmentId: first.segmentId } : null;
 }

@@ -87,7 +87,10 @@ describe("the unrecorded row's control (#1217)", () => {
     expect(label).not.toMatch(/^record\b/i);
   });
 
-  it("still opens the recorder in one tap-target, and a recorded row keeps Play", () => {
+  it("an empty row carries exactly one mic, and a recorded row carries Play and no mic", () => {
+    // Counts controls only. That a click on the mic opens the recorder is
+    // `segment-row-edit-entry.test.ts`'s "an empty row's mic opens it in
+    // record mode" (#1233 item 16).
     const container = renderRow("current", empty);
     expect(container.querySelectorAll(".control--mic")).toHaveLength(1);
     const recorded = renderRow("current", base);
