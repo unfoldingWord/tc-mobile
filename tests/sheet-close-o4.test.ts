@@ -360,9 +360,8 @@ describe("drag down to close (#1268 item 1)", () => {
 
     // #1278 (PR #1273 round 3, Frank P3): a touch drag that closes the sheet
     // fires no click, so the swallow stays armed. A real tap inside the
-    // window starts with its own pointerdown, which no click from the
-    // drag can follow, so that tap's click must land.
-    it("lets a new tap's click through: its pointerdown ends the wait", async () => {
+    // window is a whole new gesture on its own target, so its click must land.
+    it("lets a new tap's click through inside the window", async () => {
       const { button, hit } = underneath();
       const p = await mountMenu();
       await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
@@ -373,7 +372,7 @@ describe("drag down to close (#1268 item 1)", () => {
       expect(hit).toHaveBeenCalledTimes(1);
     });
 
-    it("lets a keyboard click through: a keydown ends the wait", async () => {
+    it("lets a keyboard click through inside the window", async () => {
       const { button, hit } = underneath();
       const p = await mountMenu();
       await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
@@ -385,6 +384,48 @@ describe("drag down to close (#1268 item 1)", () => {
       );
       click(button);
       expect(hit).toHaveBeenCalledTimes(1);
+    });
+
+    // PR #1318 round 1 (George): a new gesture must not uninstall the
+    // swallow. A click that is not that gesture's own (here, on what the
+    // sheet covered) is still eaten inside the window.
+    it("still eats a click elsewhere after a new pointerdown, then lets that tap's click through", async () => {
+      const covered = underneath();
+      const next = underneath();
+      const p = await mountMenu();
+      await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+      pointer(next.button, "pointerdown", 300);
+      click(covered.button);
+      expect(covered.hit).not.toHaveBeenCalled();
+      pointer(next.button, "pointerup", 300);
+      click(next.button);
+      expect(next.hit).toHaveBeenCalledTimes(1);
+    });
+
+    it("still eats a click elsewhere after a keydown, then lets the key's click through", async () => {
+      const covered = underneath();
+      const next = underneath();
+      const p = await mountMenu();
+      await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+      next.button.dispatchEvent(
+        new m.dom.window.KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+        })
+      );
+      click(covered.button);
+      expect(covered.hit).not.toHaveBeenCalled();
+      click(next.button);
+      expect(next.hit).toHaveBeenCalledTimes(1);
+    });
+
+    it("eats a click on the new tap's target that arrives before its pointerup", async () => {
+      const { button, hit } = underneath();
+      const p = await mountMenu();
+      await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+      pointer(button, "pointerdown", 300);
+      click(button);
+      expect(hit).not.toHaveBeenCalled();
     });
 
     it("is not armed by a drag that springs back", async () => {

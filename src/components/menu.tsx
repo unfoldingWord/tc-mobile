@@ -41,6 +41,15 @@ function startsOnControl(target: EventTarget): boolean {
 const TRAILING_CLICK_MS = 400;
 
 /**
+ * An event target as a DOM node, else null. Duck-typed like
+ * {@link startsOnControl}, not `instanceof Node`, which is false for a node
+ * from another realm (an iframe's document, or a test's own DOM).
+ */
+function asNode(target: EventTarget | null): Node | null {
+  return target !== null && "contains" in target ? (target as Node) : null;
+}
+
+/**
  * A drag that closes a sheet ends in a `pointerup`, and the browser follows
  * it with a compatibility `click`. The sheet is already gone by then, so
  * that click would land on whatever it covered under the finger: a book on
@@ -52,27 +61,58 @@ const TRAILING_CLICK_MS = 400;
  * own tap never arms it.
  *
  * A touch drag usually fires no click at all, so the swallow would sit armed
- * and eat a real tap made inside the window (#1278, PR #1273 round 3). The
- * drag's own click follows its `pointerup` with no input between, so any new
- * `pointerdown` or `keydown` means that click is not coming: either one
- * removes the swallow before the new gesture's click is dispatched.
+ * and eat a real tap made inside the window (#1278, PR #1273 round 3). So it
+ * lets one click through: the click of a NEW gesture, made inside the
+ * window. A `pointerdown` names that gesture's target and it is ready at its
+ * `pointerup` on the same target; a `keydown` (Enter or Space, whose click
+ * has no `pointerup`) is ready at once. A click on that target while ready
+ * is delivered and ends the wait. Any other click is still swallowed, so a
+ * late trailing click cannot slip through behind a new touch (PR #1318
+ * round 1, George). Only the bound or one handled click removes it.
  */
 function swallowTrailingClick(doc: Document): void {
+  let nextTarget: Node | null = null;
+  let ready = false;
+  const sameTarget = (t: EventTarget | null) => {
+    const node = asNode(t);
+    return (
+      nextTarget !== null &&
+      node !== null &&
+      (node === nextTarget ||
+        nextTarget.contains(node) ||
+        node.contains(nextTarget))
+    );
+  };
   const swallow = (ev: Event) => {
-    ev.preventDefault();
-    ev.stopPropagation();
+    if (!(ready && sameTarget(ev.target))) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
     disarm();
+  };
+  const onPointerDown = (ev: Event) => {
+    nextTarget = asNode(ev.target);
+    ready = false;
+  };
+  const onPointerUp = (ev: Event) => {
+    ready = sameTarget(ev.target);
+  };
+  const onKeyDown = (ev: Event) => {
+    nextTarget = asNode(ev.target);
+    ready = true;
   };
   const disarm = () => {
     clearTimeout(timer);
     doc.removeEventListener("click", swallow, true);
-    doc.removeEventListener("pointerdown", disarm, true);
-    doc.removeEventListener("keydown", disarm, true);
+    doc.removeEventListener("pointerdown", onPointerDown, true);
+    doc.removeEventListener("pointerup", onPointerUp, true);
+    doc.removeEventListener("keydown", onKeyDown, true);
   };
   const timer = setTimeout(disarm, TRAILING_CLICK_MS);
   doc.addEventListener("click", swallow, true);
-  doc.addEventListener("pointerdown", disarm, true);
-  doc.addEventListener("keydown", disarm, true);
+  doc.addEventListener("pointerdown", onPointerDown, true);
+  doc.addEventListener("pointerup", onPointerUp, true);
+  doc.addEventListener("keydown", onKeyDown, true);
 }
 
 /** A drag in progress, one pointer at a time. */
