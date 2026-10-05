@@ -222,8 +222,11 @@ describe("displayGain", () => {
     const committed = peaksWithPeak(0.1);
     const fitted = displayGain(committed, false);
     expect(fitted).toBeCloseTo(9, 6);
-    // Every stage of a punch-in, through the same two calls `Waveform` and
-    // `recorder.tsx` make: one gain and no jump.
+    // Every stage of a punch-in, as a predicate table: `recorder.tsx` derives
+    // the flag with `isFirstTakeInFlight` and `Waveform` passes it to
+    // `displayGain`. Only idle, `requesting` and the tap-failed fallback put
+    // `Waveform` on stage with committed audio; the other rows are on
+    // `LiveScope`, and pin the predicate rather than a drawn canvas.
     type State = "idle" | "requesting" | "recording" | "processing";
     const stages: ReadonlyArray<[State, boolean]> = [
       ["idle", false],
@@ -238,11 +241,12 @@ describe("displayGain", () => {
         isClosing,
         hasCommittedAudio: true,
       });
-      expect([
+      expect([state, isClosing, firstTakeInFlight]).toEqual([
         state,
         isClosing,
-        displayGain(committed, firstTakeInFlight),
-      ]).toEqual([state, isClosing, fitted]);
+        false,
+      ]);
+      expect(displayGain(committed, firstTakeInFlight)).toBe(fitted);
     }
   });
 
