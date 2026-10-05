@@ -184,7 +184,7 @@ test("the shelf stops once its book has been worked in, and the mark is on the r
     page.getByRole("button", { name: "Open recorder for segment 1" })
   ).toBeVisible();
 
-  // A chapter with a segment and no audio in it marks the row's Record, and
+  // A chapter with a segment and no audio in it marks the row's mic, and
   // nothing else — one mark, not a list of them.
   await expect
     .poll(() => guided(page))

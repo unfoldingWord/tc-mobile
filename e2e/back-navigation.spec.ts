@@ -665,7 +665,7 @@ test("(l) with the chapter ≡ menu open, Back dismisses the menu and STAYS on S
   await expect(page).toHaveURL("about:blank");
 });
 
-test("(m) the Record control is inside the list's `inert` subtree while the chapter ≡ menu is open, and outside it when nothing is — the unreachability Amendment C's decision (b) rests on (#452 PR4)", async ({
+test("(m) the row's mic (Open recorder) control is inside the list's `inert` subtree while the chapter ≡ menu is open, and outside it when nothing is — the unreachability Amendment C's decision (b) rests on (#452 PR4)", async ({
   page,
 }) => {
   await seedToSegments(page);
@@ -683,8 +683,8 @@ test("(m) the Record control is inside the list's `inert` subtree while the chap
   // HALF of it, and the half is the point (Frank R1 P2-1). What this case can
   // reach is the CHAPTER MENU term: the erase confirm needs a RECORDED row and
   // this spec has no microphone, so no headless case can open it. What this
-  // proves is that the `listInert` value reaches the DOM and takes the Record
-  // control out of reach; that the SET of terms feeding it still includes
+  // proves is that the `listInert` value reaches the DOM and takes the row's
+  // mic control out of reach; that the SET of terms feeding it still includes
   // `eraseConfirmOpen` is `tests/segments-inert.test.ts`'s row, in Node. One
   // value feeds both `inert` props, so the two compose — but the composition is
   // the claim, not an observation of the erase branch in a browser.
@@ -727,7 +727,7 @@ test("(m) the Record control is inside the list's `inert` subtree while the chap
  *
  * `goBack` issues `history.back()` and returns; its `popstate` lands a task
  * later. Until then the Segments screen is still showing and still live, so a
- * Record tap in that window reaches `openRecorder`, which pushes the
+ * tap on the row's mic in that window reaches `openRecorder`, which pushes the
  * recorder's entry. `lib/nav/history-latch.ts` refuses that transition while
  * the Back is outstanding, so no push is ever issued under a pending
  * traversal; this case drives the rule through the real Segments controls.
@@ -743,7 +743,7 @@ test("(m) the Record control is inside the list's `inert` subtree while the chap
  * user-visible half: the Back asked for first is the one that happens, and no
  * recorder is left open.
  */
-test("(n) a Record tap made before a pending Back to books lands issues no history write, and the Back lands on Books with no recorder open (#435)", async ({
+test("(n) a tap on the row's mic made before a pending Back to books lands issues no history write, and the Back lands on Books with no recorder open (#435)", async ({
   page,
 }) => {
   await seedToSegments(page);
@@ -798,9 +798,9 @@ test("(n) a Record tap made before a pending Back to books lands issues no histo
 /**
  * The other half of #435's latch: a Back whose landing is ABSORBED rather than
  * routed. `trap-forward` cancels a Forward with a suppressed `history.back()`,
- * and the screen does not change, so a Record tap before that cancel lands is
- * still wanted afterwards — its state half runs at once and its push waits for
- * the landing, then replays.
+ * and the screen does not change, so a tap on the row's mic before that cancel
+ * lands is still wanted afterwards — its state half runs at once and its push
+ * waits for the landing, then replays.
  *
  * The tap is made from a `popstate` listener added after the app's own, so it
  * runs in the same dispatch, after the app has issued the cancel (DOM
@@ -814,7 +814,7 @@ test("(n) a Record tap made before a pending Back to books lands issues no histo
  * it is the stack being whole: the recorder is one Back from Segments, and
  * Segments one from Books.
  */
-test("(o) a Record tap made before a Forward's cancel lands is deferred to that landing, not refused, and the recorder then sits one Back above Segments (#435)", async ({
+test("(o) a tap on the row's mic made before a Forward's cancel lands is deferred to that landing, not refused, and the recorder then sits one Back above Segments (#435)", async ({
   page,
 }) => {
   await seedToRecorder(page);
@@ -888,13 +888,13 @@ test("(o) a Record tap made before a Forward's cancel lands is deferred to that 
 });
 
 /**
- * (o) with TWO Record taps in the absorbed window (Frank round 1). Both defer
- * the recorder's entry, and the recorder is one screen, so the replay writes
- * one entry for it. The walk back is the witness a surplus entry cannot pass:
+ * (o) with TWO taps on the row's mic in the absorbed window (Frank round 1).
+ * Both defer the recorder's entry, and the recorder is one screen, so the
+ * replay writes one entry for it. The walk back is the witness a surplus entry cannot pass:
  * Recorder, then Segments, then Books must end on the root entry. Like (o),
  * the test makes this overlap itself.
  */
-test("(p) two Record taps made before a Forward's cancel lands write one entry for the one recorder, and the walk back ends on the root entry (#435)", async ({
+test("(p) two taps on the row's mic made before a Forward's cancel lands write one entry for the one recorder, and the walk back ends on the root entry (#435)", async ({
   page,
 }) => {
   await seedToRecorder(page);

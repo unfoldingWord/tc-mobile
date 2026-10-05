@@ -118,7 +118,7 @@ describe.each(["current", "o4"] as const)("%s look", (look) => {
     expect(onOpenRecorder.mock.calls[0]).toEqual([]);
   });
 
-  it("an empty row's Record opens it in record mode", async () => {
+  it("an empty row's mic opens it in record mode", async () => {
     await render(empty);
     await click(button(strings.openRecorderSegment(1)));
     expect(onOpenRecorder).toHaveBeenCalledTimes(1);

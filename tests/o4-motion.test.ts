@@ -219,4 +219,20 @@ describe("the guide pulse keeps the base ring's own exceptions (#950)", () => {
     );
     expect(stop!.at).toBeGreaterThan(pulse.at);
   });
+
+  // An unrecorded row's mic (#1217) pulses too, and its focus outline is
+  // pushed out the same way, so the same stop has to cover it (#1233 item 19).
+  it("stops the pulse while the guided row mic has keyboard focus", () => {
+    const pulse = animated.find(
+      (b) => animationName(b.decls.get("animation")!) === "guidePulse"
+    )!;
+    expect(selectorsOf(pulse)).toContain(`${O4} .control--mic.is-guided`);
+    const stop = styleRules.find(
+      (b) =>
+        b.decls.get("animation") === "none" &&
+        selectorsOf(b).includes(`${O4} .control--mic.is-guided:focus-visible`)
+    );
+    expect(stop).toBeDefined();
+    expect(stop!.at).toBeGreaterThan(pulse.at);
+  });
 });

@@ -263,11 +263,15 @@ describe("the cue (#91, #135, #924)", () => {
  * text pins that stood here.
  *
  * The bar receives the reason and the raw gate terms (`dragging`,
- * `idleEditable`) as separate props, so a render CAN tell
- * `disabled={undoBlocked !== null}` from an inline `heldByDrag(...)` that
- * agrees with it in the sheet: feed a null reason beside a live drag and a
- * closing sheet, and only the derived gate leaves the arrow live. That input
- * pair never reaches the bar from `recorder.tsx`; it is a probe, not a state.
+ * `idleEditable`, and every other flag that greys a sibling control) as
+ * separate props, so a render CAN tell `disabled={undoBlocked !== null}` from
+ * an inline `heldByDrag(...)`, or from any other prop OR'd in beside the
+ * reason: feed a null reason beside EVERY gate input at its busy value
+ * (`BUSY` below), and only the derived gate leaves the arrow live. That input
+ * set never reaches the bar from `recorder.tsx`; it is a probe, not a state.
+ * Setting only `dragging` and `idleEditable` let `|| isClosing`,
+ * `|| editToolbarDisabled` and `|| windowControlsInert` re-derive the gate
+ * green (PR #1211 review, 2026-10-02).
  */
 const noop = () => {};
 const buttonRef = { current: null } as RefObject<HTMLButtonElement | null>;
@@ -338,6 +342,26 @@ function expectLive(button: Element, what: string): void {
   );
 }
 
+/**
+ * Every non-reason prop the edit bar gates a control on, each at the value
+ * that greys whatever reads it. A prop added to `RecorderToolbarProps` that
+ * gates something belongs here too; the re-derive case below proves none
+ * of these greys an arrow whose reason is null.
+ */
+const BUSY = {
+  recording: true,
+  recordInert: true,
+  rerecordDisabled: true,
+  isClosing: true,
+  playingBuffer: true,
+  dragging: true,
+  idleEditable: false,
+  playSource: null,
+  playDisabled: true,
+  editToolbarDisabled: true,
+  windowControlsInert: true,
+} as const satisfies Partial<RecorderToolbarProps>;
+
 const HISTORY = [
   {
     slot: "undoBlocked",
@@ -391,19 +415,33 @@ describe("the toolbar reads one value for both halves (#91)", () => {
     });
 
     it(`${label}: the bar does not re-derive the gate beside the reason`, () => {
-      // The drift this file is named for: an inline `heldByDrag` restored at
-      // one of the two sites while its `hint` still reads the derivation, so
-      // the control goes grey for a reason the cue does not know about. A null
-      // reason beside a live drag and a busy sheet must leave the arrow live.
+      // The drift this file is named for: an inline `heldByDrag` — or any
+      // other prop — OR'd in at one of the two sites while its `hint` still
+      // reads the derivation, so the control goes grey for a reason the cue
+      // does not know about. A null reason beside every gate input at its
+      // busy value must leave the arrow live.
       const props = editBarProps({
+        ...BUSY,
         [slot]: null,
         [other.slot]: null,
-        dragging: true,
-        idleEditable: false,
       });
       expectLive(historyButton(props, label), label);
     });
   }
+
+  it("with both reasons set, each arm speaks its own", () => {
+    const props = editBarProps({
+      ...BUSY,
+      undoBlocked: "nothing-to-undo",
+      redoBlocked: "nothing-to-redo",
+    });
+    for (const { label, words } of HISTORY) {
+      const button = historyButton(props, label);
+      expect(button.getAttribute("aria-label")).toBe(`${label}. ${words}`);
+      expect(button.getAttribute("aria-disabled")).toBe("true");
+      expect(button.hasAttribute("disabled")).toBe(false);
+    }
+  });
 });
 
 /**

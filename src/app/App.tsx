@@ -464,7 +464,7 @@ export function App() {
       {/* The recorder sheet is aria-modal, but the screen behind it stays
           mounted so close can reload() it. `inert` takes that whole background
           out of the focus and pointer tree while the sheet is open, so an
-          AT/keyboard/switch user cannot reach the list's Back or a row's Record
+          AT/keyboard/switch user cannot reach the list's Back or a row's mic
           — both call leave() → cancel(), which silently drops the in-progress
           take with no recovery screen (G8). `display: contents` (the `contents`
           utility) keeps this wrapper layout-transparent; inertness still

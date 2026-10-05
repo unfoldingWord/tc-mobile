@@ -270,8 +270,8 @@ describe("the Segments screen's link in the chain (#604)", () => {
 
   it("hands the chain on to the row that opens the recorder", () => {
     // The hop the issue's own list skips: a segment exists, nothing has been
-    // recorded into it, and the next required action is the row's red Record —
-    // the only door to the recorder. Without this the guide goes dark exactly
+    // recorded into it, and the next required action is the row's mic (Open
+    // recorder) — the only door to the recorder. Without this the guide goes dark exactly
     // where a first-time user has never been.
     expect(guidedStep(segments(true, [segment(1)]))).toEqual({
       kind: "open-segment",

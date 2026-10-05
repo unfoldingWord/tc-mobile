@@ -334,9 +334,16 @@
      live red is well under the non-text floor in both themes, which
      `tests/contrast.test.ts` asserts, so a ring drawn inside the record button
      is a ring a low-vision user simply does not get; on the sheet's floor
-     around it, the same accent clears that floor. The record button is also
-     the one guided control with room outside it. If the accent ever changes,
+     around it, the same accent clears that floor. If the accent ever changes,
      that assertion is where this exception is re-argued.
+
+     An unrecorded row's mic (#1217) takes the same exception for a related
+     reason, not the same one: its fill is the grey well, not red, but its 2px
+     `--s-live` outline is the box's border, and an inset shadow is painted
+     directly inside the border — so the ring would sit against that red, the
+     same guide-on-live pair. Outside the disc it sits on the row's `--s-surface`,
+     which the same test file scores. The reason is inferred from the markup;
+     #1223 itself states none.
 
      The rule above says inset and outset read as concentric rings with the
      focus outline. Here the ring is on the same side as focus, so that
