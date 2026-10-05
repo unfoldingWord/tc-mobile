@@ -99,8 +99,8 @@ Questions about this policy, or a privacy concern:
 - GitHub (public): https://github.com/unfoldingWord/tc-mobile/issues. Anything
   posted there is public. Do not include a recording, the problem log or other
   personal information; use the email, mail or phone contact instead.
-- Mail: unfoldingWord, Attention: Privacy, 10524 Moss Park Road, Ste.
-  204-402, Orlando, FL 32832-5898, USA
+- Mail: unfoldingWord, Attention: Privacy, 13485 Veterans Way, Ste 460,
+  Orlando, FL 32827-7978, USA
 - Phone: +1 (407) 900-3005
 
 This policy is governed by the laws of the State of Florida, USA.

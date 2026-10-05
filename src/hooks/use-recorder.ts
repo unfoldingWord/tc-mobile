@@ -668,19 +668,34 @@ export function useRecorder(): UseRecorder {
       // in place through the same path the Stop tap runs. Guarded by generation so an interruption on a superseded
       // recorder cannot repaint a newer one. `MediaStreamTrack.stop()` (our own
       // teardown) does NOT fire `ended`, so this only reacts to real losses.
+      //
+      // A track the platform MUTES instead of ending is the same loss to the
+      // translator (#1294): the spec's "temporarily unable to provide data",
+      // which an OS audio interruption such as an alarm can produce, fires
+      // `mute` and neither `ended` nor `error`. Left unbound, the state stayed
+      // "recording" over a take the engine had stopped filling — the timer
+      // kept counting and the live scope scrolled the analyser's zeros as a
+      // flat line until Stop. So `mute` is bound to this same handler. The
+      // recorder is still active then, so the still-active arm leaves its
+      // tracks up for `stop()`'s flush; the sheet's commit runs that `stop()`
+      // in the same commit as the freeze. Sealing on a mute is a product
+      // reading, not only an engineering one: an interruption ends the take
+      // (#836), and the translator appends to it afterwards if they wish. An
+      // `unmute` is never waited for.
+      //
       // The still-active arm (recorder not yet "inactive") is reported once
       // per take so tester phones show whether it is ever reached (#478).
       // The row carries only what this frame can observe — `recorder.state`
       // and `event.type`, i.e. which feed fired (`error` from the recorder,
-      // `ended` from a track). Whether the mic is still hot is NOT observable
-      // here: on `ended` the track is already dead, and an `error` at
-      // "recording" may be followed by an `ended` that reaches the inactive
+      // `ended` or `mute` from a track). Whether the mic is still hot is NOT
+      // observable here: on `ended` the track is already dead, and an `error`
+      // at "recording" may be followed by an `ended` that reaches the inactive
       // arm and releases everything — so the row must not assert it.
       //
       // Per take, not per call: a fresh binding per start() closure, like
       // `chunks` above. `onInterrupted` is bound to `onerror` AND every
-      // track's `onended`, so one interruption can invoke it more than once,
-      // in different tasks — and the funnel's own dedup collapses only the
+      // track's `onended` and `onmute`, so one interruption can invoke it more
+      // than once, in different tasks — and the funnel's own dedup collapses only the
       // same Error identity within one microtask, which a synthesized Error
       // per call is not. Never reset: a take that hits the still-active arm
       // is frozen at "processing" and cannot resume, so per-take and
@@ -736,6 +751,7 @@ export function useRecorder(): UseRecorder {
       recorder.onerror = onInterrupted;
       stream.getTracks().forEach((track) => {
         track.onended = onInterrupted;
+        track.onmute = onInterrupted;
       });
 
       recorder.start(250);
@@ -832,10 +848,13 @@ export function useRecorder(): UseRecorder {
     tapRef.current = null;
     tap?.disconnect();
     // This invocation owns teardown now: detach the interruption handlers so a
-    // late `error`/`ended` event, delivered after our final `setState`, cannot
-    // repaint a stopped recorder back to "processing".
+    // late `error`/`ended`/`mute` event, delivered after our final `setState`,
+    // cannot repaint a stopped recorder back to "processing".
     recorder.onerror = null;
-    stream?.getTracks().forEach((track) => (track.onended = null));
+    stream?.getTracks().forEach((track) => {
+      track.onended = null;
+      track.onmute = null;
+    });
     // Take the stream OUT of the shared ref before the flush await. A cancel()
     // (pagehide, navigation, unmount) landing during the wait calls
     // releaseStream(), which stops whatever streamRef holds — and stopping THIS

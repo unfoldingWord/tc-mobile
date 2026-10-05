@@ -1,6 +1,10 @@
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
-import { stripCodeComments } from "./strip-code-comments";
+import { blankCodeComments, stripCodeComments } from "./strip-code-comments";
 
 /** Synthetic probes only: the three comment forms #822 found used against a
  *  source pin, and the string case that rules out `stripComments` for
@@ -48,3 +52,73 @@ describe("stripCodeComments (#822)", () => {
     expect(out).not.toContain("later block comment");
   });
 });
+
+/** The index-preserving half. Probes for each comment form and each look-alike
+ *  that is not one, then the whole of `src/` against the printer. */
+describe("blankCodeComments (#822)", () => {
+  it("blanks each comment form in place and keeps every index", () => {
+    const source = [
+      "// polyfill: false",
+      "/* globPatterns: [] */ const a = 1; // closeGlobalMenu();",
+      "/** JSDoc, {@link a} // see */ const b = 2;",
+      'const x = <g aria-x={/* aria-label="decoy" */ 1}>{/* hidden */}</g>;',
+    ].join("\n");
+    const out = blankCodeComments(source, "probe.tsx");
+    expect(out).toHaveLength(source.length);
+    expect(out.split("\n").length).toBe(source.split("\n").length);
+    expect(out).toContain("const a = 1;");
+    expect(out).toContain("const b = 2;");
+    expect(out).toContain("<g aria-x={");
+    expect(out).not.toMatch(
+      /polyfill|globPatterns|closeGlobalMenu|JSDoc|decoy|hidden/
+    );
+  });
+
+  it("keeps a `//` or `/*` inside a string, a template, a regex or JSX text", () => {
+    const source = [
+      'const url = "https://example.org"; const kept = 1;',
+      "const glob = `**/*.{js}`; const alsoKept = 2;",
+      "const re = /\\/\\//; const regexKept = 3;",
+      "const t = <p>// shown on screen</p>;",
+    ].join("\n");
+    // The string-blind blank loses all four lines' tails; this one keeps them.
+    expect(blankCodeComments(source, "probe.tsx")).toBe(source);
+  });
+
+  it("agrees with the printer on every file in src/", () => {
+    // Printed WITH comments, the blanked text must equal the original printed
+    // WITHOUT them: nothing but comments was blanked, and no comment is left.
+    const root = path.resolve(import.meta.dirname, "..", "src");
+    const files = sourcesUnder(root);
+    expect(files.length).toBeGreaterThan(100);
+    const print = (text: string, name: string, removeComments: boolean) =>
+      ts
+        .createPrinter({ removeComments })
+        .printFile(
+          ts.createSourceFile(
+            name,
+            text,
+            ts.ScriptTarget.Latest,
+            true,
+            name.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+          )
+        );
+    const disagree = files.filter((file) => {
+      const text = readFileSync(file, "utf8");
+      const blanked = blankCodeComments(text, file);
+      return (
+        blanked.length !== text.length ||
+        print(blanked, file, false) !== print(text, file, true)
+      );
+    });
+    expect(disagree).toEqual([]);
+  });
+});
+
+function sourcesUnder(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) return sourcesUnder(full);
+    return /\.tsx?$/.test(entry.name) ? [full] : [];
+  });
+}

@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -309,5 +313,57 @@ describe("a kind outside SaveFailureKind (#777)", () => {
   it("is counted, as every kind outside quota/downgrade/stale always was", () => {
     expect(recoveryAttempts(future, 1)).toBeNull();
     expect(recoveryAttempts(future, 3)).toBe("Attempts: 3");
+  });
+});
+
+/**
+ * #169's "no glued fragments": the restart label and its consequence line are
+ * whole table entries, one per combination, so a second locale translates each
+ * as a sentence rather than inheriting English word order from a template.
+ *
+ * Read from the parse tree, so a comment cannot satisfy or trip it: every
+ * string literal in `recovery-copy.ts` that carries a space, and every
+ * template with an interpolation in it, is copy composed outside the table.
+ * The switch labels and type members this module does hold are single words.
+ */
+describe("recovery-copy composes no words of its own (#169)", () => {
+  const file = path.resolve(
+    import.meta.dirname,
+    "..",
+    "src",
+    "components",
+    "recovery-copy.ts"
+  );
+  const source = ts.createSourceFile(
+    file,
+    readFileSync(file, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS
+  );
+  const literals: string[] = [];
+  const composed: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+      literals.push(node.text);
+    } else if (ts.isTemplateExpression(node)) {
+      composed.push(node.getText(source));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+
+  it("reads a module that holds literals at all", () => {
+    // The floor under the two below: the switch labels are literals, so an
+    // empty list means the walk read nothing, not that nothing is composed.
+    expect(literals.length).toBeGreaterThan(5);
+  });
+
+  it("holds no multi-word literal", () => {
+    expect(literals.filter((text) => text.includes(" "))).toEqual([]);
+  });
+
+  it("builds no template around a value", () => {
+    expect(composed).toEqual([]);
   });
 });

@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 
 import { plural } from "@/lib/plural";
 
+import { stripCodeComments } from "./strip-code-comments";
+
 /**
  * #169 — the six count-varying labels in `lib/strings.ts` branched on
  * `n === 1` inline. These cases exist to hold `plural` to being a *rule* rather
@@ -118,9 +120,7 @@ describe("plural's default locale", () => {
     path.resolve(import.meta.dirname, "../src/lib/plural.ts"),
     "utf8"
   );
-  const code = source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const code = stripCodeComments(source, "plural.ts");
 
   it("reads the shipped locale instead of naming a language itself", () => {
     expect(code).toMatch(/SHIPPED_LOCALE\.tag/);

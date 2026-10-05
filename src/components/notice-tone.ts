@@ -16,11 +16,12 @@ import type { IconName } from "./icon";
  * `busy` is work in progress the translator has to wait for: muted, the retry
  * glyph, announced politely.
  * `info` is a heads-up that is not a failure and not a wait: full ink, its own
- * glyph, announced politely. Covers both a completeness caveat about
- * something already done (a share gap, an interruption) and a standing
- * condition worth naming on its own — e.g. storage durability (#12) — where
- * nothing has failed yet but the risk is ongoing rather than a one-time
- * event. Not red (nothing failed) and not muted (it is news, not a wait).
+ * glyph, announced politely. Covers a completeness caveat about something
+ * already done (a share gap, an interruption), a standing condition worth
+ * naming on its own — e.g. storage durability (#12) — where nothing has failed
+ * yet but the risk is ongoing rather than a one-time event, and the
+ * `NOTHING_FAILED_TONE` class below (#147). Not red (nothing failed) and not
+ * muted (it is news, not a wait).
  */
 export type NoticeTone = "alert" | "busy" | "info";
 
@@ -72,7 +73,8 @@ export function noticePresentation(tone: NoticeTone): NoticePresentation {
 
 /**
  * The tone worn by every Notice whose answer to "is this genuinely a failure?"
- * is **no** — #147's open question, in one place instead of at each call site.
+ * is **no** — #147's question, answered in one place instead of at each call
+ * site.
  *
  * The members:
  *
@@ -87,24 +89,15 @@ export function noticePresentation(tone: NoticeTone): NoticePresentation {
  * is at risk" — a settled fact plus what to do next, which is the `info`
  * contract as #147 states it.
  *
- * WHAT THEY SHARE IS THE TONE, NOT THE MARK. `alert` carries the failure
- * colour and `role="alert"` for both, but only `staleChapter` also shows the
- * failure triangle: it passes no `icon`, so it takes the tone's own glyph,
- * while `shareOutcomeGlyph("nothing")` substitutes `share-empty` (#178). So the
- * mis-signal that `info` was added to stop (#112, #140) reaches a translator who
- * cannot read through the colour and the interrupting role, and through the
- * glyph at one of the two sites.
+ * **`info`, by the DRI's pick on #147** (2026-09-28, "Amber 'info'
+ * (Recommended)"). So neither member wears the failure colour or interrupts
+ * with `role="alert"` any more. The marks still differ: `staleChapter` passes
+ * no `icon`, so it takes this tone's own ring-and-i, while
+ * `shareOutcomeGlyph("nothing")` keeps `share-empty` (#178).
  *
- * **This constant does not answer the question; it makes the answer one token.**
- * Whether these should be `info` is Tim's call, not an engineering one, and it
- * is unanswered: the value here is the `alert` both already wore, so this
- * re-tones nothing. What it buys is that the members cannot drift apart while
- * the question waits, which is what #147 asks for — "rather than fixing one and
- * leaving the rest to drift".
- *
- * If the answer is `info`, it is this line. If it differs PER SITE, split this
- * constant into the classes that were answered differently — never hardcode a
- * tone back at one call site, which is exactly the drift it exists to prevent.
+ * If the answer ever differs PER SITE, split this constant into the classes
+ * that were answered differently — never hardcode a tone back at one call
+ * site, which is exactly the drift it exists to prevent.
  *
  * `tests/notice-nothing-failed.test.ts` pins the membership from both
  * directions, so the list above cannot silently gain or lose a site. The audit
@@ -112,4 +105,4 @@ export function noticePresentation(tone: NoticeTone): NoticePresentation {
  * on #147 and in PR #684 — deliberately not restated here, where they would go
  * stale as the tree moves.
  */
-export const NOTHING_FAILED_TONE: NoticeTone = "alert";
+export const NOTHING_FAILED_TONE: NoticeTone = "info";

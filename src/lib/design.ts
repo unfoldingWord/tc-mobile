@@ -8,13 +8,12 @@
  * choice, never the default — every O4-scoped rule in `app/styles/o4/` —
  * each one written `[data-design="o4"] ...` — matches nothing, so the
  * current look renders exactly as it did before the flip (epic #936,
- * "Behind a switch"). The DOM half — the attribute, `localStorage`, the menu
- * control — is `hooks/use-design.ts`.
+ * "Behind a switch"). The DOM half — the attribute and `localStorage` — is
+ * `hooks/use-design.ts`.
  *
  * WHY A SEPARATE MECHANISM FROM `data-theme` AND NOT A THIRD THEME VALUE. The
- * two are independent axes: a tester compares the current look against O4 in
- * either theme, and `2-semantic.css`'s theme roles apply under both looks
- * unchanged. Folding "which look" into "which theme" would mean four values
+ * two are independent axes: `2-semantic.css`'s theme roles apply under both
+ * looks unchanged. Folding "which look" into "which theme" would mean four values
  * standing in for two orthogonal choices, and would make the O4 stylesheets'
  * own scoping selector (`[data-design="o4"]`) depend on a value that also
  * carries the theme.
@@ -36,9 +35,9 @@ export const DESIGN_STORAGE_KEY = "tc-mobile.design";
  * recognise, chiefly "nothing has ever been written" (`raw === null`). An
  * existing user with nothing stored is therefore switched to the new look
  * the next time they launch; someone who already chose the old look
- * explicitly (the exact `"current"` value `nextDesign`/the menu control
- * writes) keeps it, because that string matches the first branch above and
- * never falls through to this default.
+ * explicitly (the exact `"current"` value the Books ≡ switch wrote before
+ * #1244 removed it) keeps it, because that string matches the first branch
+ * above and never falls through to this default.
  */
 const DEFAULT_DESIGN: Design = "o4";
 
@@ -61,7 +60,8 @@ export function readStoredDesign(raw: string | null): Design {
  *
  * An involution, like `nextTheme`: `hooks/use-design.ts`'s `toggle` swaps the
  * two looks, and a second toggle returns to the first. No menu entry calls
- * it since #1244 removed the Books ≡ switch.
+ * it since #1244 removed the Books ≡ switch; deleting the old look as a
+ * whole, and this with it, is #954.
  */
 export function nextDesign(design: Design): Design {
   switch (design) {

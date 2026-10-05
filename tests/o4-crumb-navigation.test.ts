@@ -91,6 +91,34 @@ describe("O4Crumbs with links (#1269)", () => {
     expect(chips[2]!.getAttribute("data-state")).toBe("recorded");
   });
 
+  it("links both the book and the chapter crumb and keeps aria-current on the segment alone, as the recorder does (#1275)", () => {
+    const root = render(
+      createElement(O4Crumbs, {
+        book: "Ruth",
+        chapter: "Chapter 2",
+        segment: { ordinal: 3, state: "recorded" },
+        links: {
+          book: { label: strings.goToBook("Ruth"), onClick: noop },
+          chapter: { label: strings.goToChapter("Chapter 2"), onClick: noop },
+        },
+        current: "segment",
+      })
+    );
+    const chips = [...root.querySelectorAll(".o4-crumb")];
+    expect(chips.map((el) => el.tagName)).toEqual(["BUTTON", "BUTTON", "SPAN"]);
+    expect(chips[0]!.getAttribute("aria-label")).toBe("Go to book Ruth");
+    expect(chips[1]!.getAttribute("aria-label")).toBe("Go to Chapter 2");
+    // #1278's note on #1274: a crumb that gets a link must not be the one
+    // that was current. Here neither linked crumb is, and the current
+    // marker stays on the one plain chip.
+    expect(root.querySelectorAll("[aria-current]")).toHaveLength(1);
+    expect(chips[2]!.getAttribute("aria-current")).toBe("page");
+    for (const b of chips.slice(0, 2)) {
+      expect(b.hasAttribute("aria-current")).toBe(false);
+      expect(b.hasAttribute("disabled")).toBe(false);
+    }
+  });
+
   it("disables every linked crumb when the header's Back is disabled", () => {
     const root = render(
       createElement(O4Crumbs, {

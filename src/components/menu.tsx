@@ -101,9 +101,11 @@ interface MenuProps {
    */
   focusKey?: string | number;
   /**
-   * The header's dismiss control wears a single glyph in the top-right
-   * corner, and the panel shows no visible title — one glyph, one place, and
-   * the glyph is the label. Which glyph is `dismissIcon`'s call: `menu` (≡,
+   * The panel shows no visible title, and the dismiss control sits alone in
+   * the top-right corner. In the current look that control wears the glyph
+   * `dismissIcon` names — one glyph, one place, and the glyph is the label;
+   * under O4 it is the ✕ every sheet closes with (#1268, the `back` docblock
+   * below), whatever `dismissIcon` says. Which glyph is `dismissIcon`'s call: `menu` (≡,
    * the default) for the global menu (#608), where it is also the glyph of
    * the control that opened it; `more` (⋮) for an object's menu that opts in.
    * The recorder's overflow drawer opts in (#621, the requirements owner's
@@ -113,8 +115,9 @@ interface MenuProps {
    * so it is an object menu: both of its openers are ⋮ and its dismiss
    * passes `dismissIcon="more"` to match, which leaves the Books screen's
    * global menu as the only ≡. Off (the default) the header is a title
-   * beside a back chevron, which every other menu keeps — the book, chapter
-   * and segment menus (opened from a ⋮ since #589) and the New Book dialog.
+   * beside the dismiss control — a back chevron in the current look, the ✕
+   * under O4 — which every other menu keeps: the book, chapter and segment
+   * menus (opened from a ⋮ since #589) and the New Book dialog.
    * What a screen reader hears does not change either way: `title` still
    * names the dialog and `closeLabel` still names the control ("Close menu"
    * dismisses, as before), which is also what the e2e specs locate the menu
@@ -174,11 +177,11 @@ interface MenuProps {
    * The menu's contents.
    *
    * Never empty on the global menu any more: Books always mounts the About &
-   * licenses entry (#36), the theme toggle (#171) and the design control
-   * (#938), and ahead of them `FailureLogPanel` while the failure log has
-   * rows (#205) — that panel is deliberately absent on a phone that has never
-   * failed, so a quiet phone's menu holds About, the toggle and the design
-   * control. The empty case still exists for
+   * licenses entry (#36) and the theme toggle (#171), and ahead of them
+   * `FailureLogPanel` while the failure log has rows (#205) — that panel is
+   * deliberately absent on a phone that has never failed, so a quiet phone's
+   * menu holds About and the toggle (the design control #938 once mounted
+   * here went with #1244). The empty case still exists for
    * callers that pass nothing, but it is no longer the global menu's normal
    * state. Template Library (B7, #33) is the other consumer still to come.
    */

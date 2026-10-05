@@ -2,7 +2,26 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "tc-mobile",
   "compatibility_date": "2026-08-01",
+
+  // Production serves on two origins, and both are deliberate (#1295):
+  //
+  //   https://tcmobile.app                           the custom domain
+  //   https://tc-mobile.unfoldingword.workers.dev    the workers.dev URL
+  //
+  // `workers_dev` MUST stay an explicit `true` here. Wrangler's default for
+  // it flips to `false` as soon as `routes` is non-empty (the config
+  // reference: "Defaults to `true` when the configuration has no `route` or
+  // `routes`, and `false` otherwise"), so dropping this line once the custom
+  // domain is below would silently turn the workers.dev origin off.
+  //
+  // The workers.dev origin is kept WITHOUT a redirect to tcmobile.app, and
+  // nothing in this Worker should add one: browser storage is per origin, so
+  // recordings made at the workers.dev URL — in a tab or an installed PWA —
+  // live only in that origin's IndexedDB. tcmobile.app opens empty, and the
+  // app has no import. A redirect would hide people's recordings, not move
+  // them. The native apps bundle their own assets and are unaffected.
   "workers_dev": true,
+  "routes": [{ "pattern": "tcmobile.app", "custom_domain": true }],
   "observability": { "enabled": true },
 
   // Phase 1 is entirely offline and client-side: there is no Worker script and
@@ -22,6 +41,13 @@
     "staging": {
       "name": "tc-mobile-staging",
       "workers_dev": true,
+      // `routes` IS inherited by named environments, unlike `assets`. Left
+      // unset here, staging would inherit the production custom domain
+      // above, and wrangler itself warns that deploying the environment
+      // "will reassign these custom domains away from the top-level
+      // Worker" — i.e. a staging deploy would steal tcmobile.app. The empty
+      // array is the override wrangler's own warning text recommends.
+      "routes": [],
       "observability": { "enabled": true },
       "assets": {
         "directory": "./dist",

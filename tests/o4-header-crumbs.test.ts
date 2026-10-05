@@ -183,6 +183,8 @@ describe("the recorder header (#1105)", () => {
     options: {
       recorderState?: UseAudioSession["recorderState"];
       stopRecording?: UseAudioSession["stopRecording"];
+      /** Hand the sheet the two-level Back (#1275), as App does. */
+      withBooks?: boolean;
     } = {}
   ) {
     design.current = look;
@@ -193,6 +195,11 @@ describe("the recorder header (#1105)", () => {
     const onRequestBack = vi.fn(() => {
       void ref.current?.requestClose();
     });
+    // The adapter's two-level Back (#1275). In App its first level is this
+    // same close, then the Segments Back; here it is a spy, so a test can
+    // tell which handler the book crumb ran. The chain itself is
+    // `tests/nav-back-to-books.test.ts`.
+    const onRequestBackToBooks = vi.fn();
     const audio: UseAudioSession = {
       playingId: null,
       playingBuffer: false,
@@ -237,30 +244,50 @@ describe("the recorder header (#1105)", () => {
           },
           onExit,
           onRequestBack,
+          ...(options.withBooks === false ? {} : { onRequestBackToBooks }),
         })
       )
     );
-    return { audio, onExit, onRequestBack };
+    return { audio, onExit, onRequestBack, onRequestBackToBooks };
   }
 
-  it("makes the chapter crumb a button to the chapter and the segment crumb the current place (#1269)", async () => {
+  it("makes the book and chapter crumbs buttons to their places and the segment crumb the current place (#1269, #1275)", async () => {
     await mount("o4");
     const chips = [...header().querySelectorAll(".o4-crumb")];
-    expect(chips.map((el) => el.tagName)).toEqual(["SPAN", "BUTTON", "SPAN"]);
-    // "Go to {heading}" (DRI pick on #1274), spelled out, so a change to
-    // the entry cannot pass by agreeing with itself.
+    expect(chips.map((el) => el.tagName)).toEqual(["BUTTON", "BUTTON", "SPAN"]);
+    // Spelled out, so a change to either entry cannot pass by agreeing
+    // with itself: "Go to book {name}", and "Go to {heading}" (DRI pick on
+    // #1274).
+    expect(chips[0]!.getAttribute("aria-label")).toBe("Go to book Book Mine");
+    expect(chips[0]!.textContent).toBe("Book Mine");
     expect(chips[1]!.getAttribute("aria-label")).toBe("Go to 2:1-4");
     expect(chips[1]!.textContent).toBe("2:1-4");
     expect(chips[2]!.getAttribute("aria-current")).toBe("page");
-    // The book crumb stays a plain chip here: Books is two Backs away and
-    // the nav adapter has no call that chains them.
+    expect(header().querySelectorAll("[aria-current]")).toHaveLength(1);
+  });
+
+  it("runs the two-level Back, and only that, when the book crumb is tapped (#1275)", async () => {
+    const { onRequestBack, onRequestBackToBooks, onExit } = await mount("o4");
+    await tap(header(), strings.goToBook("Book Mine"));
+    expect(onRequestBackToBooks).toHaveBeenCalledTimes(1);
+    // Not the one-level Back as well: the adapter's first level IS that
+    // close, and running it here too would issue a second traversal.
+    expect(onRequestBack).not.toHaveBeenCalled();
+    expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it("leaves the book crumb a plain chip when no two-level Back is handed in (#1275)", async () => {
+    await mount("o4", { withBooks: false });
+    const chips = [...header().querySelectorAll(".o4-crumb")];
+    expect(chips.map((el) => el.tagName)).toEqual(["SPAN", "BUTTON", "SPAN"]);
     expect(chips[0]!.getAttribute("aria-current")).toBeNull();
   });
 
   it("names an unnamed chapter's crumb by its default heading (#1269)", async () => {
     recorderView.chapterName = null;
     await mount("o4");
-    const crumb = header().querySelector("button.o4-crumb")!;
+    // The second linked crumb: the first is the book's (#1275).
+    const crumb = header().querySelectorAll("button.o4-crumb")[1]!;
     expect(crumb.getAttribute("aria-label")).toBe("Go to Chapter 1");
     expect(crumb.textContent).toBe(strings.chapterName(1));
   });
@@ -284,21 +311,26 @@ describe("the recorder header (#1105)", () => {
           release = resolve;
         })
     );
-    const { onRequestBack, onExit } = await mount("o4", {
+    const { onRequestBack, onRequestBackToBooks, onExit } = await mount("o4", {
       recorderState: "recording",
       stopRecording,
     });
     await tap(header(), strings.goToChapter("2:1-4"));
     expect(onRequestBack).toHaveBeenCalledTimes(1);
     expect(stopRecording).toHaveBeenCalledTimes(1);
-    // The close is in flight: Back and the crumb are both disabled, so a
-    // second tap on either cannot start a second exit.
+    // The close is in flight: Back and both crumbs are disabled, so a
+    // second tap on any of them cannot start a second exit (#1275: the
+    // book crumb would otherwise issue a traversal under the one in flight).
     const crumb = button(header(), strings.goToChapter("2:1-4"));
+    const bookCrumb = button(header(), strings.goToBook("Book Mine"));
     const back = button(header(), strings.closeRecorder);
     expect(back.disabled).toBe(true);
     expect(crumb.disabled).toBe(true);
+    expect(bookCrumb.disabled).toBe(true);
     await act(async () => crumb.click());
+    await act(async () => bookCrumb.click());
     expect(onRequestBack).toHaveBeenCalledTimes(1);
+    expect(onRequestBackToBooks).not.toHaveBeenCalled();
     // A capture with audio, so the close saves it and exits.
     await act(async () =>
       release({ samples: new Int16Array([5, 6]), blob: null, error: null })

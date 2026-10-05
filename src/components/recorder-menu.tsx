@@ -128,19 +128,21 @@ export function RecorderMenu({
       // after #608 set the rule on the global menu): this drawer's own
       // dismiss is a single glyph, top-right, and is what dismisses it — no
       // "More" heading, and no chevron, because a chevron pointing LEFT reads
-      // as "move left" on a drawer that docks on the RIGHT. Since #1225 that
-      // glyph is ⋮ (`dismissIcon="more"`), not ≡: this menu acts on the
-      // segment being edited, an object menu under the #608/#683 rule ("kebab
-      // on objects, hamburger for global"), and both of its openers — record
-      // mode's header and the edit toolbar — are ⋮ too, so the dismiss
-      // matches whichever one opened it. ≡ belongs to the Books screen's
-      // global menu alone.
+      // as "move left" on a drawer that docks on the RIGHT. In the current
+      // look that glyph is ⋮ since #1225 (`dismissIcon="more"`), not ≡: this
+      // menu acts on the segment being edited, an object menu under the
+      // #608/#683 rule ("kebab on objects, hamburger for global"), and both
+      // of its openers — record mode's header and the edit toolbar — are ⋮
+      // too, so the dismiss matches whichever one opened it. ≡ belongs to
+      // the Books screen's global menu alone. Under O4 the dismiss is the ✕
+      // every sheet closes with (#1268) and `dismissIcon` is not read.
       hamburger
       dismissIcon="more"
     >
-      {/* ONE <Menu> for both looks, so the surface — its title, the ⋮
-          dismiss, focus trap and Escape — cannot differ between them; only
-          what sits inside it does. The O4 grid ends with the theme tile past
+      {/* ONE <Menu> for both looks, so the surface — its title, its one
+          dismiss control (⋮ in the current look, ✕ under O4, #1268), focus
+          trap and Escape — cannot differ between them; only what sits
+          inside it does. The O4 grid ends with the theme tile past
           the spacer, last for the reason the current rows below give. */}
       {design === "o4" && (
         // Workbench G3's sheet head: the book, chapter and segment crumbs

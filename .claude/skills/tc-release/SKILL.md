@@ -7,9 +7,11 @@ description: Step-by-step checklist for cutting a tC Mobile tester release (a 1.
 
 This is a checklist, not authority. Every merge, publish and scope choice is
 the DRI's, asked in a picker and quoted verbatim on the PR it concerns. The
-reference is `docs/release/promotion-v1.0.0.md` §3a (release candidates) and
-§6 (the final promotion). Read them before starting. Where this skill and the
-runbook disagree, the runbook wins, and fix this file.
+reference is `docs/release/promotion-v1.0.0.md` §3a (release candidates) and,
+for the final promotion, §3 step 3 (the production gate and its checks), with
+§6 as the summary checklist. Read them before starting. Where this skill and
+the runbook disagree, the runbook wins, and fix this file; for the production
+gate the text that wins is §3 step 3, not a summary of it.
 
 Work through the list in order and don't skip a step. If a step can't be
 done, stop and say which one and why.
@@ -41,16 +43,22 @@ go/no-go decision, publishing the `v1.0.0` GitHub Release, pushing the
 TestFlight build. An agent never passes `--admin`. Agent-allowed: preparing PR
 and release-note bodies, the red team, the release branch and promotion PR, the
 tester pre-release publish (only under step 7's two conditions), read-only
-checks (`check:deploy`, the signer and hash checks, the download-back), and
-records.
+checks (`check:deploy`, the `baseRefOid` and merge-parent checks, the signer
+and hash checks, the download-back), and records.
 
-**Three commits name every step below.** Write them down when they exist and
-use no other. Put each in the promotion PR's hold line as it is known, as a
-record. The hold line is not the source: re-resolve each one with `git` or
-`gh` before a step uses it, never from memory or from that text:
+**Three commits name every RC step below**, and the final promotion adds
+`MAIN_SHA`, `HEAD_SHA` and `PROD_SHA` under "Final v1.0.0 additionally". Write
+the three below down when they exist and use no other. Put each in the
+promotion PR's hold line as it is known, as a record. The hold line is not
+the source: re-resolve `CUT_SHA` and `PROMO_SHA` with `git` or `gh` before a
+step uses it, never from memory or from that text. `STAGING_SHA` (like
+`MAIN_SHA` and `HEAD_SHA`) is a frozen baseline instead: re-resolving it means
+`git rev-parse <STAGING_SHA>^{commit}` to confirm the object, never a fresh
+tip, or the base check in step 4 compares a value with itself.
 
-- **`STAGING_SHA`**: the `origin/staging` tip the red team's range starts
-  from. Staging is not frozen, so it can move.
+- **`STAGING_SHA`**: the full oid of the `staging` tip the red team's range
+  starts from, the one its report names. Staging is not frozen, so the tip
+  can move; the record does not.
 
 - **`CUT_SHA`**: the squash commit of the bump PR on `develop`. The bump
   merges **last**, after every picked fix, so `CUT_SHA` is the exact tree
@@ -128,8 +136,12 @@ from.
 
 - [ ] Agent-allowed: just before the merge, check
       `gh pr view <N> --repo unfoldingWord/tc-mobile --json baseRefOid,headRefOid`:
-      `baseRefOid` must still be `STAGING_SHA` and `headRefOid` must be
-      `CUT_SHA`. If `staging` has moved, stop and tell the DRI, because the red
+      `baseRefOid` must still be the recorded `STAGING_SHA` and `headRefOid`
+      must be `CUT_SHA`, and the canonical `staging` tip,
+      `gh api repos/unfoldingWord/tc-mobile/git/ref/heads/staging --jq .object.sha`,
+      must print that same recorded `STAGING_SHA` (`baseRefOid` on an open PR
+      lags the base tip, and a local `origin/staging` can be stale; the
+      `gh api` read is the live one). If `staging` has moved, stop and tell the DRI, because the red
       team did not read that tree. Staging is not frozen, so this check is the
       only guard: a moved base means stop before the push, because the staging
       push starts the Play lane and these docs do not recall it.
@@ -142,13 +154,17 @@ from.
       other base-branch requirement (required checks and reviews), not only
       that ruleset, so the DRI runs it only after every check and review above
       is green. The agent hands this command over unchanged, with the PR number
-      and `CUT_SHA`, and never runs `gh pr merge`. Record the merge commit as `PROMO_SHA`, and check
-      `origin/staging` equals it.
-- [ ] Agent-allowed: check that `git rev-parse <PROMO_SHA>^1 <PROMO_SHA>^2`
-      prints `STAGING_SHA` then `CUT_SHA`. If not, stop.
-- [ ] Agent-allowed: run `npm run check:deploy` until it passes for
-      `PROMO_SHA` (Workers Builds takes a few minutes). Keep the PASS line for
-      the tracker.
+      and `CUT_SHA`, and never runs `gh pr merge`. Record the PR's
+      `mergeCommit.oid` as `PROMO_SHA`.
+- [ ] Agent-allowed: the canonical `staging` tip (the same `gh api` read as
+      the check above, never a local `origin/staging`) equals `PROMO_SHA`,
+      and `git rev-parse <PROMO_SHA>^1 <PROMO_SHA>^2` prints the recorded
+      `STAGING_SHA` then `CUT_SHA`. If not, stop.
+- [ ] Agent-allowed: run
+      `npm run check:deploy -- --sha=<PROMO_SHA> --version=1.0.0-rc.N` (the
+      full oid; the bare form PASSes on whatever `origin/staging`'s tip is)
+      until it passes (Workers Builds takes a few minutes). Keep the PASS
+      line for the tracker.
 - [ ] Agent-allowed: Play lane (`android-play.yml`) runs on the staging push.
       Note its release name (`<version> (<code>) staging@<PROMO_SHA short>`) and
       status (a draft on internal). Human-only: the DRI releases the draft in
@@ -156,10 +172,31 @@ from.
 
 ## 5. Native builds, one commit
 
-- [ ] Human-only: the DRI dispatches, from `staging`, via `!`:
-      `gh workflow run android-apk.yml --repo unfoldingWord/tc-mobile --ref staging` and
-      `gh workflow run ios-testflight.yml --repo unfoldingWord/tc-mobile --ref staging`
-      (each needs the `release-signing` approval).
+- [ ] Agent-allowed: the staging push starts `android-apk.yml` and
+      `ios-testflight.yml` by itself (#1281). Confirm both runs started at
+      `PROMO_SHA` with `event` `push` and no dispatch (and, once #1281 has
+      removed the required reviewer, no approval):
+      `gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --branch staging --limit 3 --json databaseId,headSha,event,status`.
+      A green run is not a build: a push the preflight did not read as a
+      promotion still makes a successful run, with the signing job
+      `skipped`. So read each run's signing job (`Build release APK`,
+      `Build and upload to TestFlight`) with
+      `gh run view <databaseId> --repo unfoldingWord/tc-mobile --json jobs --jq '.jobs[] | select(.name=="<job>") | .conclusion'`:
+      `skipped` means the lane did not start, and only `success` is a build.
+      A run at `PROMO_SHA` that is `cancelled` was replaced while pending
+      (one signing job runs at a time across both branches; a later push or
+      dispatch took the single pending slot) and did not start. Read the
+      tip before deciding: if `origin/staging` is still `PROMO_SHA`, wait
+      for the run that took the slot and, once nothing for `PROMO_SHA` is
+      queued or running, the DRI dispatches it (human-only); if the tip has
+      moved, stop.
+      An empty conclusion with the run still open means the job is waiting
+      for the `release-signing` reviewer or running: it has started, so do
+      not dispatch a second one.
+- [ ] Human-only, only if a lane did not start (its signing job `skipped`):
+      the DRI dispatches it from `staging` via `!`:
+      `gh workflow run <lane> --repo unfoldingWord/tc-mobile --ref staging`.
+      Record why it did not start on its own.
 - [ ] Agent-allowed: both runs' `headSha` equal `PROMO_SHA`, and so do the web
       and Play builds. If not, stop and re-promote. Do not mix refs.
 
@@ -219,12 +256,76 @@ All agent-allowed and read-only.
 
 ## Final v1.0.0 additionally
 
-Follow runbook §3 and §6. Human-only: the `staging → main` merge (a merge
-commit, from the DRI's terminal; the only command is runbook §3 step 3's, with
-`--admin` and `--match-head-commit`, run only after that step's checks and
-reviews are green; an agent never runs it), the tag `v1.0.0` on that
-merge commit, the native dispatches from `main` at the tag, and publishing the
-GitHub Release on `v1.0.0` with the APK, QR and TestFlight build. Agent-allowed:
-`check:deploy:prod`, the APK checks, the download-back, the installation guide
-update, closing the milestone and telling the PR authors the freeze is lifted
-(after the DRI lifts it).
+Follow runbook §3 and §6; §3 step 3 is the reference for this list. Three
+more commits name it:
+
+- **`MAIN_SHA`**: the `main` tip the production PR's checks and reviews
+  went green against. Record it only when the canonical `main` tip,
+  `gh api repos/unfoldingWord/tc-mobile/git/ref/heads/main --jq .object.sha`,
+  and the PR's `baseRefOid` agree, and write that one oid down. If they
+  differ, stop and record neither; a later tip that differs is a stop, never
+  a new baseline. The merge base only; the build production serves is
+  runbook §5's own read, and a commit on `main` is not a deployed build
+  (#143). A local `origin/main` is never the tip: a fork or an unrepointed
+  clone carries a stale `main`.
+- **`HEAD_SHA`**: the production PR's reviewed head, its `headRefOid`. For a
+  `staging → main` PR (the v1.0.0 and v1.0.1 shape, bump through `develop`)
+  that is the `origin/staging` tip and the last `develop → staging`
+  `PROMO_SHA`; if `headRefOid` is not that `PROMO_SHA`, something reached
+  `staging` after the promotion, so stop. For a release branch carrying the
+  bump, it is that branch's reviewed head.
+- **`PROD_SHA`**: the merge commit on `main`, the PR's `mergeCommit.oid`.
+  `v1.0.0` goes on it and on nothing else.
+
+**Exception to the re-resolve rule above:** `MAIN_SHA` and `HEAD_SHA` are the
+full 40-character oids written down when the production PR's checks and
+reviews went green. That record is the baseline. Re-read the canonical
+`main` tip, `baseRefOid` and `headRefOid` fresh at each check below, and never
+rebuild the baseline from those reads, or each check compares a value with
+itself. `PROD_SHA` follows the normal rule.
+
+- [ ] Agent-allowed, immediately before the merge: the canonical `main` tip
+      (the `gh api` read above) prints the recorded `MAIN_SHA`, and
+      `gh pr view <N> --repo unfoldingWord/tc-mobile --json baseRefOid,headRefOid`
+      shows that `MAIN_SHA` and the recorded `HEAD_SHA`. The `gh api` read is
+      the live one: `baseRefOid` on an open PR lags the base tip, and a local
+      `origin/main` can be stale. If `main` has
+      moved, stop and tell the DRI; the DRI does not run the merge.
+      `--match-head-commit` pins only the head and `--admin` skips GitHub's
+      up-to-date rule, so this is the only guard on the base, and it runs
+      before the push because the push deploys production and uploads a Play
+      closed-testing bundle; the parent check below cannot undo either.
+- [ ] Human-only: the `staging → main` merge, a merge commit from the DRI's
+      terminal. The only command is runbook §3 step 3's, with `--admin` and
+      `--match-head-commit <HEAD_SHA>`, run only after that step's checks and
+      reviews are green and after the check above. An agent never runs it.
+- [ ] Agent-allowed: `PROD_SHA` is `mergeCommit.oid`
+      (`gh pr view <N> --repo unfoldingWord/tc-mobile --json mergeCommit`).
+      Stop unless the canonical `main` tip prints `PROD_SHA` and its parents
+      (`gh api repos/unfoldingWord/tc-mobile/commits/<PROD_SHA> --jq '[.parents[].sha] | join(" ")'`,
+      or `git rev-parse <PROD_SHA>^1 <PROD_SHA>^2` after `git fetch origin main`)
+      are the recorded `MAIN_SHA` then `HEAD_SHA`. On a stop: no tag, no
+      dispatch, no Release. Tell the DRI; the revert or rollback is the DRI's
+      pick.
+- [ ] Human-only: the tag `v1.0.0` on `PROD_SHA`, only after the check above
+      passed and a fresh canonical read shows `main` still at `PROD_SHA`
+      (runbook §3 step 4); publishing the GitHub Release on `v1.0.0` with
+      the APK, QR and TestFlight build.
+- [ ] Agent-allowed: the native lanes start on the `main` merge by
+      themselves (#1281). Both runs' `headSha` equal `PROD_SHA` (a run that
+      started on a moved `main` built a commit that is not the tag; runbook
+      §4 says stop and do not label it the release), and each run's signing
+      job concluded `success`, not `skipped` (the step 5 check, on
+      `--branch main`); only a lane whose signing job was `skipped` is a
+      human-only dispatch from `main`.
+      `npm run check:deploy:prod -- --sha=<PROD_SHA> --version=1.0.0` (the
+      full oid, never a 7-character slice, which the checker's prefix match
+      would also accept for a colliding later commit; explicit, so a PASS
+      means `PROD_SHA` and not a later `main` tip; runbook §3 step 5), the APK checks, the download-back, the
+      installation guide update, closing the milestone and telling the PR
+      authors the freeze is lifted (after the DRI lifts it).
+
+The shape, from v1.0.0 (#1287), as 8-character prefixes (records and commands
+take the full oids): `PROD_SHA` `3e77b88d` has parents `7c560ce3`
+(`MAIN_SHA`) then `8a1e4bb7` (`HEAD_SHA`, #1286's `PROMO_SHA`). Runbook §3
+step 3 has that example and v1.0.1's (#1292) in full.

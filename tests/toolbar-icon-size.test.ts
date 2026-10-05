@@ -73,13 +73,21 @@ describe("the O4 bottom-bar glyph size (#1259)", () => {
 
   it("keeps the largest glyph inside the smallest circle with margin", () => {
     // The edit bar's circle bottoms out at the 44px touch floor (its `max(44px,`
-    // clamp); the largest glyph is the quiet token's 24 * 1.25.
+    // clamp); the largest glyph is the quiet token's. Both are read from the
+    // stylesheet: with the glyph written here as a literal, this could not go
+    // red on a larger token once the exact-string test above was updated to
+    // match it (#1262's review, batched in #1278).
     const floor = Number(
       /--o4-secondary:\s*max\(\s*(\d+)px/.exec(
         cssRule(CSS, `${O4} .recorder-toolbar.edit`)
       )?.[1]
     );
-    const glyph = 24 * 1.25;
+    const quiet =
+      /^calc\(\s*(\d+(?:\.\d+)?)px\s*\*\s*(\d+(?:\.\d+)?)\s*\)$/.exec(
+        declarationValue(bar, "--o4-toolbar-icon-quiet")
+      );
+    expect(quiet, "the quiet token is not `calc(<n>px * <k>)`").not.toBeNull();
+    const glyph = Number(quiet![1]) * Number(quiet![2]);
     expect(floor).toBe(44);
     expect((floor - glyph) / 2).toBeGreaterThanOrEqual(6);
   });

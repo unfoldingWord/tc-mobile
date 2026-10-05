@@ -102,6 +102,16 @@ import { reportFailure } from "./report-failure";
  *     under a pending traversal; `lib/nav/history-latch.ts` decides whether it
  *     is written, deferred to the landing, or refused, and every landing
  *     replays what was deferred.
+ *   - `continueToBooks` / `continueOnCommit` — the one continuation a Back
+ *     can carry (#1275, the recorder's book crumb). `goBackToBooks` is
+ *     `goBack` with the first set: the landing takes it off the ref, and only
+ *     the `commit-close-recorder` settle hands it on to its consuming
+ *     landing, where the adapter issues the Segments Back itself — unless
+ *     the chapter clipboard holds a phrase that leaving would clear
+ *     (`chapterClipboardHeld`). A consuming landing that runs before React
+ *     has committed the close sets the second flag instead, and the layout
+ *     effect of that commit finishes it. Every other landing drops both, so
+ *     a refused or declined first level ends where a plain Back would.
  *
  * Amendment C is a centrally-owned cleanup effect (dep array `[screen,
  * recovering, databasePanel]`, primitives only — invariant 6) that clears the
@@ -356,6 +366,18 @@ export interface UseNavStackParams {
   /** The database panel modal is up — outranks screen routing (George R3 P3). */
   readonly databasePanel: boolean;
   /**
+   * `clipboard !== null` — the chapter clipboard holds a cut phrase (#1275,
+   * George rounds 1 and 2 on #1300). `onLeaveToBooks` clears that clipboard
+   * (chapter-scoped, G3), and after a cut that was saved, a cut-to-empty
+   * whose segment is gone, or a superseded stop that rolled a paste back,
+   * the clipboard is the phrase's ONLY copy. A plain Back stops at Segments,
+   * where it can still be pasted; the two-level Back must stop there too
+   * rather than run `onLeaveToBooks` over it in the same gesture. Read at
+   * the consuming landing, after the close's own clipboard writes have
+   * committed (the same commit `screen` is gated on).
+   */
+  readonly chapterClipboardHeld: boolean;
+  /**
    * The recorder's close handle at the moment a commit-close Back lands, or
    * `null` if the sheet is gone. `() => recorderRef.current`.
    */
@@ -396,6 +418,18 @@ export interface UseNavStack {
   ) => void;
   /** One Back path (#168). `beginBack("go-back")`; on refusal, does nothing. */
   readonly goBack: () => void;
+  /**
+   * Two levels in one gesture (#1275): the recorder's book crumb. The same
+   * Back as `goBack` — one `history.back()`, the same guard and refusals —
+   * carrying one continuation: once the recorder's commit-close has consumed
+   * its entry and Segments is the committed screen, the adapter issues the
+   * Segments Back itself, and that landing routes `"to-books"` like any
+   * other. A first level that is refused, or a close that declines (a held
+   * take, an overlay) or stays, drops the continuation; so does a chapter
+   * clipboard that holds audio once the sheet has gone (`chapterClipboardHeld`),
+   * because leaving the chapter clears it. From Segments it is a plain Back.
+   */
+  readonly goBackToBooks: () => void;
   /** The programmatic recorder close (erase's `onExit`); suppressPop-guarded. */
   readonly commitCloseRecorder: (dirty: boolean) => void;
 }
@@ -426,6 +460,15 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // order, once per screen entry (`deferWrite`). Replayed by the `popstate`
   // handler at the end of every landing.
   const deferredWrites = useRef<DeferredWrite[]>([]);
+  // The continuation the outstanding Back carries (#1275): `goBackToBooks`
+  // sets it as it issues, the next landing takes it, and only the
+  // commit-close settle hands it on. Never read anywhere a landing is not.
+  const continueToBooks = useRef(false);
+  // The continuation a consuming landing could not issue because React had
+  // not yet committed the recorder's close; finished by the layout effect
+  // below `continueOnSegments`. While it is set, `issueBack` refuses: the
+  // pending continuation owns the next traversal (George round 3 on #1300).
+  const continueOnCommit = useRef(false);
 
   // Latest-ref the state-half callbacks (menu.tsx onCloseRef pattern) so the
   // returned commands can be identity-stable — recorder.tsx:2213 rebuilds its
@@ -444,6 +487,7 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   const screenRef = useRef(screen);
   const recoveringRef = useRef(params.recovering);
   const databasePanelRef = useRef(params.databasePanel);
+  const chapterClipboardHeldRef = useRef(params.chapterClipboardHeld);
   const onLeaveToBooksRef = useRef(params.onLeaveToBooks);
   // `useLayoutEffect`, NOT `useEffect` (Frank R4 P2 on PR #531; widened to the
   // whole popstate closure by George R1 P2). A passive effect is flushed in a
@@ -472,6 +516,7 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     screenRef.current = screen;
     recoveringRef.current = params.recovering;
     databasePanelRef.current = params.databasePanel;
+    chapterClipboardHeldRef.current = params.chapterClipboardHeld;
     onLeaveToBooksRef.current = params.onLeaveToBooks;
     // Amendment G. Derived from `backEffectFor`, not from `screen === "books"`,
     // so "the floor" stays one definition: the screen whose Back leaves the app
@@ -711,28 +756,74 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     });
   }, []);
 
-  const goBack = useCallback(() => {
-    // One Back path (#168): route through the browser so the on-screen Back gets
-    // the same commit-window protection as the system gesture. `beginBack` is
-    // the pure form of the old `backRequested` double-tap latch: on refusal
-    // (a back() already outstanding) do NOTHING — no history.back(), no push.
-    //
-    // A SUPPRESSED traversal is outstanding too, and `beginBack` cannot see
-    // all of them: `trap-forward`'s cancel sets `suppressPop` and calls
-    // `history.back()` outside the guard (the programmatic recorder close
-    // also sets the guard since #763, so `beginBack` alone would refuse
-    // that one), and the header Back is disabled for exactly that window
-    // (`recorder.tsx`) so it could never land here. The hardware Back (#374)
-    // can — the plugin posts it from the Android UI thread, not behind the
-    // pending `popstate` task — and a second `history.back()` before the
-    // first lands is the coalescing hazard `travel-guard.ts` exists to rule
-    // out (#493). That press is already the Back in flight; issue nothing.
+  // One Back path (#168): route through the browser so the on-screen Back gets
+  // the same commit-window protection as the system gesture. `beginBack` is
+  // the pure form of the old `backRequested` double-tap latch: on refusal
+  // (a back() already outstanding) do NOTHING — no history.back(), no push.
+  //
+  // A SUPPRESSED traversal is outstanding too, and `beginBack` cannot see
+  // all of them: `trap-forward`'s cancel sets `suppressPop` and calls
+  // `history.back()` outside the guard (the programmatic recorder close
+  // also sets the guard since #763, so `beginBack` alone would refuse
+  // that one), and the header Back is disabled for exactly that window
+  // (`recorder.tsx`) so it could never land here. The hardware Back (#374)
+  // can — the plugin posts it from the Android UI thread, not behind the
+  // pending `popstate` task — and a second `history.back()` before the
+  // first lands is the coalescing hazard `travel-guard.ts` exists to rule
+  // out (#493). That press is already the Back in flight; issue nothing.
+  //
+  // `toBooks` is the one continuation a Back can carry (#1275). It is
+  // written only on the path that issues, so a refused request can never
+  // leave it set for a Back it did not issue.
+  //
+  // `continueOnCommit` is the other window outside the guard (George round 3
+  // on #1300): the recorder's entry is consumed, the guard is clear and
+  // `suppressPop` is down, but the sheet is still the committed screen and
+  // the crumb's second level is waiting on the commit that closes it. A Back
+  // issued here would be routed after that commit as a plain Segments Back —
+  // `"to-books"`, past the clipboard gate `continueOnSegments` applies. The
+  // pending continuation owns that traversal; refuse this one. It is swallowed
+  // for one commit at most: the layout effect consumes the flag on the first
+  // commit that shows the sheet gone, and every landing clears it.
+  const issueBack = useCallback((toBooks: boolean) => {
     if (suppressPop.current) return;
+    if (continueOnCommit.current) return;
     const begun = beginBack(travelGuard.current, "go-back");
     if (!begun.ok) return;
     travelGuard.current = begun.next;
+    continueToBooks.current = toBooks;
     window.history.back();
   }, []);
+  const goBack = useCallback(() => issueBack(false), [issueBack]);
+  const goBackToBooks = useCallback(() => issueBack(true), [issueBack]);
+
+  // The second level of `goBackToBooks` (#1275), decided against the
+  // committed close: a plain Segments Back — unless the chapter clipboard
+  // holds a phrase (George rounds 1 and 2 on #1300). The `to-books` landing's
+  // `onLeaveToBooks` clears that clipboard, and once the sheet has gone a
+  // phrase on it may exist nowhere else — a cut that was saved, a cut-to-empty
+  // whose segment is gone, a superseded stop's rolled-back paste. The close's
+  // clipboard writes commit in the same batch as its screen change, so the ref
+  // is the clipboard as the close left it. Stopping at Segments is what a
+  // plain Back does, and is where the phrase can still be pasted.
+  const continueOnSegments = useCallback(() => {
+    if (!chapterClipboardHeldRef.current) goBack();
+  }, [goBack]);
+
+  // The continuation a consuming landing could not issue because React had
+  // not yet committed the recorder's close (see that landing). Finished here,
+  // in the layout phase of the commit that closes the sheet: this effect is
+  // declared after the latest-ref effect, so `screen` and the clipboard ref
+  // are this commit's. One-shot — the flag is consumed on the first commit
+  // that shows the recorder gone, and every landing clears it (a Back the
+  // translator made in between owns the screen). Not the #430 shape: no
+  // dependency array to go unstable, and nothing here fires on a re-render
+  // while the flag is down.
+  useLayoutEffect(() => {
+    if (!continueOnCommit.current || screen === "recorder") return;
+    continueOnCommit.current = false;
+    if (screen === "segments") continueOnSegments();
+  });
 
   const commitCloseRecorder = useCallback(
     (dirty: boolean) => {
@@ -865,6 +956,14 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
       // after a recorder Back and kill on-screen Back for the session
       // (#494 item 2).
       travelGuard.current = settleOutstanding(travelGuard.current);
+      // The continuation this landing may carry (#1275), taken off the ref
+      // here so it lives for exactly one landing: of the routes below only
+      // the commit-close settle hands it on, to its own consuming landing.
+      // A trap, a re-arm, a layer dismissal or a landing already at Books
+      // drops it — the gesture it continued was absorbed or has arrived.
+      const toBooks = continueToBooks.current;
+      continueToBooks.current = false;
+      continueOnCommit.current = false;
       const state = event.state as { index?: number } | null;
       const toIndex = state?.index ?? 0;
       // Our own history.back() (programmatic close, trap-forward, or the
@@ -875,6 +974,34 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
       if (suppressPop.current) {
         suppressPop.current = false;
         navIndex.current = toIndex;
+        if (toBooks) {
+          // The recorder's entry is consumed and the guard is clear, so the
+          // second level is a plain Segments Back, issued so that its
+          // landing is routed through `popAction` against the refs as they
+          // stand then — `"to-books"`, or a trap the close raised
+          // (`SaveFailed`), never a route this adapter decides for itself.
+          //
+          // Issued only against the COMMITTED close. `requestClose` resolved
+          // true after `onRecorderClosed` ran, but React's commit for that
+          // update is a scheduler task of its own, and this landing can run
+          // ahead of it — observed in Chromium when the close awaited an
+          // IndexedDB write (George round 2 on #1300; the e2e "held cut"
+          // case logged exactly that). A Back issued then would land on a
+          // `screenRef` still reading "recorder", route as a second
+          // commit-close and strand a re-arm entry (invariant 2). So when
+          // the recorder is still the committed screen, the second level is
+          // handed to `continueOnCommit`, consumed by the layout effect
+          // declared under `continueOnSegments`: it runs in the layout
+          // phase of the commit that closes the sheet — the same phase that
+          // refreshes every ref this handler reads — and issues it there.
+          // Either site makes the same decision; whichever observes the
+          // committed close first fires, once.
+          if (screenRef.current === "segments") {
+            continueOnSegments();
+          } else {
+            continueOnCommit.current = true;
+          }
+        }
         return;
       }
       const direction = navDirection(navIndex.current, toIndex);
@@ -1023,6 +1150,14 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
               // it. The `onRequestBack` issuers still live during close are
               // `LoadErrorPanel`'s and `PermissionPanel`'s
               // `onBack={onRequestBack}`.
+              //
+              // The continuation (#1275) rides the consuming landing in BOTH
+              // arms: whether this settle issues the consuming back() or
+              // absorbs the outstanding goBack's, that landing is the one
+              // at which the recorder's entry is gone, and it is the only
+              // landing that may issue the second level. Set before the
+              // arms so neither can forget it.
+              continueToBooks.current = toBooks;
               const begun = beginBack(travelGuard.current, "commit-close");
               if (begun.ok) {
                 travelGuard.current = begun.next;
@@ -1091,13 +1226,15 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     // landing between a trap's commit and this effect re-running was routed by
     // the previous render's listener, with `databasePanel` still `false`.
     //
-    // The three that remain never change identity: `pushHistoryEntry` and
-    // `popLayer` are `useCallback([])`, and `replayDeferredWrites` is built
-    // only from callbacks that are (#435). This handler subscribes ONCE for
-    // the hook's life. That is the property to preserve — a dependency that
-    // can change identity would silently reintroduce the re-subscribe window,
-    // so a new value belongs in the layout effect above, not in this array.
-  }, [pushHistoryEntry, popLayer, replayDeferredWrites]);
+    // The four that remain never change identity: `pushHistoryEntry` and
+    // `popLayer` are `useCallback([])`, `continueOnSegments` is built only
+    // from `goBack`, which is built only from `issueBack`, which is (#1275),
+    // and `replayDeferredWrites` is built only from callbacks that are
+    // (#435). This handler subscribes ONCE for the hook's life. That is the
+    // property to preserve — a dependency that can change identity would
+    // silently reintroduce the re-subscribe window, so a new value belongs
+    // in the layout effect above, not in this array.
+  }, [pushHistoryEntry, popLayer, replayDeferredWrites, continueOnSegments]);
 
   // The shell's leg of the same model (#374): a hardware Back arrives as the
   // App plugin's `backButton` event, not as a `popstate`. Registered only
@@ -1131,6 +1268,7 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     openChapter,
     openRecorder,
     goBack,
+    goBackToBooks,
     commitCloseRecorder,
   };
 }
