@@ -346,9 +346,11 @@ freeze note on every new PR to `develop`.
    run that took the slot; if the tip has moved, stop. The slot-holder can
    be a dispatch of `PROMO_SHA` itself, which the tip read does not show, so
    before any dispatch list the lane's runs at that commit
-   (`gh run list --workflow <lane> --commit <PROMO_SHA> --json databaseId,event,status`)
-   and read each one's signing job as above. If any concluded `success`,
-   `PROMO_SHA` is already built: stop, and record that run instead.
+   (`gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --commit <PROMO_SHA> --json databaseId,event,status,conclusion`)
+   and read each one's signing job as above. A diagnostic APK (artifact
+   `android-apk-diagnostic-<sha>`) is not a training build and does not
+   count. If any other concluded `success`, `PROMO_SHA` is already built:
+   stop, and record that run instead.
    Otherwise, once nothing for `PROMO_SHA` is queued or running, the DRI
    dispatches it. While `release-signing` still has a
    required reviewer (#1281's transition window), each signing job waits for
