@@ -175,9 +175,10 @@ file.
 over about 20 minutes may fail on low-RAM phones (#1002 §3). Should the
 listing say 'record in segments of under 20 minutes'?"
 
-**Answer:** no listing warning is needed. The DRI's 2026-09-28 comment on
-#1017 records Q4 as covered by the take cap (#1005), with the doc note from
-#1142. The question's own condition, "until the take cap lands", no longer
+**Answer:** no separate listing warning. The DRI's 2026-09-28 comment on
+#1017, verbatim: "Q4 (long takes) is covered by the take cap (#1005) and
+recorded in #1142." Reading that as "the listing needs no length warning" is
+this file's interpretation of the comment, which does not use those words. The question's own condition, "until the take cap lands", no longer
 holds:
 
 - `src/lib/audio/take-cap.ts` defines `TAKE_CAP_MS = 20 * 60_000` (20
