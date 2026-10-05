@@ -287,9 +287,10 @@ share step writes a file as well: Share Book builds a zip of chapter MP3s
   margin for the share copy above, not a measured figure.
 - Keep the app open while a book is being shared (this is guidance from #1017's
   draft; the tree does not enforce it).
-- Recorded takes stop at 20 minutes and are saved (`take-cap.ts`, #1005), so a
-  translator does not need to plan around a warning, and the listing carries
-  no length limit (#1017 Q4, above).
+- Recorded takes stop at 20 minutes and are saved (`take-cap.ts`, #1005).
+  The listing adds no separate length warning (#1017 Q4, above). A passage
+  longer than 20 minutes needs more than one recording; splitting it into
+  segments is the normal way to work (facilitator runbook §3).
 - RAM and processor class: **not stated.** See the open items.
 
 **Web (PWA)**
