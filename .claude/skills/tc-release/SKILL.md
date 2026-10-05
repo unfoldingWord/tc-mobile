@@ -191,9 +191,17 @@ from.
       slot-holder can be a dispatch of `PROMO_SHA` itself, which the tip
       read does not show, so before any dispatch list the lane's runs at
       that commit
-      (`gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --commit <PROMO_SHA> --json databaseId,event,status`)
-      and read each one's signing job as above. If any concluded `success`,
-      `PROMO_SHA` is already built: stop, and record that run instead.
+      (`gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --commit <PROMO_SHA> --json databaseId,event,status,conclusion`)
+      and read each one's signing job as above (the run's `conclusion` is
+      not the signing job's: a run whose signing job was `skipped` still
+      concludes `success`). A `success` counts only if
+      it is an ordinary build: for the APK lane, the run's artifact must be
+      `android-apk-<PROMO_SHA>`, not `android-apk-diagnostic-<PROMO_SHA>`
+      (`gh api repos/unfoldingWord/tc-mobile/actions/runs/<databaseId>/artifacts --jq '.artifacts[].name'`);
+      a diagnostic APK is not a training build. If an ordinary build
+      concluded `success`, `PROMO_SHA` is already built: stop, and record
+      that run instead. A diagnostic-only success does not stop the
+      dispatch.
       Otherwise, once nothing for `PROMO_SHA` is queued or running, the DRI
       dispatches it (human-only).
       An empty conclusion with the run still open means the job is waiting

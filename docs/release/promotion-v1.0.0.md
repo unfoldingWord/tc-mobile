@@ -347,10 +347,15 @@ freeze note on every new PR to `develop`.
    be a dispatch of `PROMO_SHA` itself, which the tip read does not show, so
    before any dispatch list the lane's runs at that commit
    (`gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --commit <PROMO_SHA> --json databaseId,event,status,conclusion`)
-   and read each one's signing job as above. A diagnostic APK (artifact
-   `android-apk-diagnostic-<sha>`) is not a training build and does not
-   count. If any other concluded `success`, `PROMO_SHA` is already built:
-   stop, and record that run instead.
+   and read each one's signing job as above (the run's `conclusion` is
+   not the signing job's: a run whose signing job was `skipped` still
+   concludes `success`). A `success` counts only if it
+   is an ordinary build: for the APK lane, the run's artifact must be
+   `android-apk-<PROMO_SHA>`, not `android-apk-diagnostic-<PROMO_SHA>`
+   (`gh api repos/unfoldingWord/tc-mobile/actions/runs/<databaseId>/artifacts --jq '.artifacts[].name'`);
+   a diagnostic APK is not a training build. If an ordinary build
+   concluded `success`, `PROMO_SHA` is already built: stop, and record
+   that run instead. A diagnostic-only success does not stop the dispatch.
    Otherwise, once nothing for `PROMO_SHA` is queued or running, the DRI
    dispatches it. While `release-signing` still has a
    required reviewer (#1281's transition window), each signing job waits for
@@ -452,13 +457,22 @@ durable download link. An expiring Actions link alone does not satisfy handoff.
 ## 5. Rollback readiness
 
 Before promotion, record the build production is serving now: the `sha` and
-`version` in `version.json` on both production origins, read directly
-(`curl -fsS "https://tcmobile.app/version.json?t=$(date +%s)" | jq -e 'select(.sha and .version)'`
-and the same on `https://tc-mobile.unfoldingword.workers.dev`), plus the
-available Cloudflare rollback target. `-f` makes an HTTP error exit non-zero
-instead of printing an error page, and `jq -e` exits non-zero unless the body
-carries both `sha` and `version`; a read that fails either is not a deploy
-record, so do not write it down as the rollback target. Do not take it from the bare
+`version` in `version.json` on both production origins, read directly and
+the same way on `https://tcmobile.app` and
+`https://tc-mobile.unfoldingword.workers.dev`:
+
+```bash
+set -o pipefail
+curl -fsS "https://tcmobile.app/version.json?t=$(date +%s)" |
+  jq -e 'select((.sha|type=="string" and length>0) and (.version|type=="string" and length>0))'
+```
+
+plus the available Cloudflare rollback target. `-f` makes an HTTP error exit
+non-zero instead of printing an error page; `pipefail` keeps that exit,
+because `jq -e` on empty input exits 0; and the `jq -e` filter exits non-zero
+unless `sha` and `version` are both non-empty strings. A read that fails any
+of these is not a deploy record, so do not write it down as the rollback
+target. Do not take it from the bare
 `npm run check:deploy:prod`: that command prints the `origin/main` tip first
 as its expectation, prints the served `Deployed:` line only after that, and
 on a non-canonical `origin` refuses before it fetches anything, so in the
