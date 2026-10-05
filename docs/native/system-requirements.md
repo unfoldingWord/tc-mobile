@@ -1,9 +1,19 @@
 # System requirements — status and evidence
 
 **Status: draft statement, RAM floor open.** This is the single source of
-truth #1017 calls for. The section "Requirements statement (draft for the
-listings)" below is the wording the Play listing, the App Store listing and the
-web page / facilitator runbook (#248) should reuse. Its platform floors are read
+truth #1017 calls for. Three of #1017's four questions are decided; only the
+RAM floor is still open:
+
+| #1017 question                   | Status              | Decision and where it is recorded                                                                                                                                     |
+| -------------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Build target vs. device floor | Answered 2026-09-26 | iOS floor raised to 15.4 to match `:has()` (#1052, DRI: "Raise floor to 15.4 (Recommended)"); `build.target` pinned (#1051); Xcode project raised (#1055). See below. |
+| 2. RAM floor                     | **Open**            | Waits on phone-check reports on #974 from at least one low-end Android phone and one older iPhone. No RAM figure is stated anywhere in this file.                     |
+| 3. Keep Android 7?               | Answered 2026-09-28 | DRI pick on #1017 (verbatim): "Keep Android 7 (Recommended)". The floor stays API 24, Capacitor 8's own minimum; the listing reads "Android 7 or later".              |
+| 4. Long takes                    | Answered 2026-09-28 | Covered by the take cap (#1005), per the DRI's #1017 comment; the doc note landed in #1142. See "Open question 4" below.                                              |
+
+The section "Requirements statement (draft for the listings)" below is the
+wording the Play listing, the App Store listing and the web page / facilitator
+runbook (#248) should reuse. Its platform floors are read
 from the build files, and its storage figures are derived by arithmetic shown
 there. **No phone has been measured, and nothing here claims a device test.**
 The RAM floor is deliberately **not** stated: it waits on real phone reports on
@@ -155,29 +165,35 @@ change only; the native project has since caught up.** One of the two places
   requirements statement is finished — not done here, since this file is
   still partial (see the top of this file).
 
-Whether the "kept up to date" WebView caveat is sufficient, and the other
-three open questions in #1017, are unchanged by this section.
+Whether the "kept up to date" WebView caveat is sufficient is not decided by
+this section. The other three questions are in the table at the top of this
+file.
 
-## Open question 4 — long takes (evidence added 2026-09-28; still open)
+## Open question 4 — long takes (answered 2026-09-28: covered by the take cap)
 
 **Question (from #1017):** "Until the take cap (#1005) lands, a single take
 over about 20 minutes may fail on low-RAM phones (#1002 §3). Should the
 listing say 'record in segments of under 20 minutes'?"
 
-**Status: still open, but the premise has changed.** The take cap has since
-landed. `src/lib/audio/take-cap.ts:20` defines
-`TAKE_CAP_MS = 20 * 60_000` (20 minutes), and `src/hooks/use-recorder.ts:521`
-seals and saves a live take once `takeCapStatus(elapsed, true).reached` is
-true (checked on the 100 ms tick started at `src/hooks/use-recorder.ts:513`),
-logging a `"recorder-take-cap"` failure-log row
-(`src/hooks/use-recorder.ts:522-527`, #1005) that records the take was cut
-rather than lost. So the question's own "until the take cap lands" condition
-no longer holds: the app itself now prevents a take from running past 20
-minutes, rather than relying on listing wording to keep a user under that
-length. Whether the listing should still mention a 20-minute recording rhythm
-(as a UX expectation rather than a failure-avoidance warning) is a wording
-call this file does not make; it is left open for whoever finishes the "Done
-when" wording pass.
+**Answer:** no listing warning is needed. The DRI's 2026-09-28 comment on
+#1017 records Q4 as covered by the take cap (#1005), with the doc note from
+#1142. The question's own condition, "until the take cap lands", no longer
+holds:
+
+- `src/lib/audio/take-cap.ts` defines `TAKE_CAP_MS = 20 * 60_000` (20
+  minutes) and `TAKE_WARN_MS = 15 * 60_000`, the DRI's 2026-09-25 decision on
+  #1005, verbatim: "Warn at 15, seal at 20".
+- `src/hooks/use-recorder.ts` (`startTick`, the 100 ms tick that runs only
+  while recording) seals and saves the live take once
+  `takeCapStatus(elapsed, true).reached` is true, and logs one
+  `"recorder-take-cap"` failure-log row recording that the take was cut, not
+  lost.
+- From 15 minutes, `src/components/take-cap-marker.tsx` shows a marker in the
+  recorder (`takeCap.nearLimit`).
+
+None of this has been run on a phone. The 20-minute take on a low-end phone
+is a row on #974. The longer-term fix, decoding in rolling chunks so Stop never
+holds a whole take, is #1093.
 
 ## Requirements statement (draft for the listings)
 
@@ -272,8 +288,8 @@ share step writes a file as well: Share Book builds a zip of chapter MP3s
 - Keep the app open while a book is being shared (this is guidance from #1017's
   draft; the tree does not enforce it).
 - Recorded takes stop at 20 minutes and are saved (`take-cap.ts`, #1005), so a
-  translator does not need to plan around a warning. Whether the listing should
-  still suggest a recording rhythm is a wording call for the DRI.
+  translator does not need to plan around a warning, and the listing carries
+  no length limit (#1017 Q4, above).
 - RAM and processor class: **not stated.** See the open items.
 
 **Web (PWA)**
