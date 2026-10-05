@@ -35,80 +35,77 @@ function startsOnControl(target: EventTarget): boolean {
 
 /**
  * How long after a drag closes a sheet its trailing click may still arrive.
- * Past this, the swallow below is removed unused, so it can never eat the
- * next real tap.
+ * Past this, the swallow below is removed, so it can never eat a later
+ * real tap.
  */
 const TRAILING_CLICK_MS = 400;
 
 /**
- * An event target as a DOM node, else null. Duck-typed like
- * {@link startsOnControl}, not `instanceof Node`, which is false for a node
- * from another realm (an iframe's document, or a test's own DOM).
+ * The control an event target belongs to: its nearest button, link or
+ * `role="button"`, else the target itself, else null. Duck-typed like
+ * {@link startsOnControl}, not `instanceof`, which is false for a node from
+ * another realm (an iframe's document, or a test's own DOM).
  */
-function asNode(target: EventTarget | null): Node | null {
-  return target !== null && "contains" in target ? (target as Node) : null;
+function controlOf(target: EventTarget | null): EventTarget | null {
+  if (target === null) return null;
+  if (!("closest" in target)) return target;
+  return (target as Element).closest('button, a, [role="button"]') ?? target;
 }
+
+/** The keys whose `keydown` a button answers with a click. */
+const ACTIVATION_KEYS = new Set(["Enter", " "]);
 
 /**
  * A drag that closes a sheet ends in a `pointerup`, and the browser follows
  * it with a compatibility `click`. The sheet is already gone by then, so
  * that click would land on whatever it covered under the finger: a book on
  * Books, a row or a record control on Segments (#1273, George round 1).
- * This swallows that one click, in the capture phase on the document so no
- * target sees it, and removes itself on the first click or after
- * {@link TRAILING_CLICK_MS}, whichever comes first. Module scope, not the
- * component's: the Menu has unmounted by the time the click arrives. The ✕'s
- * own tap never arms it.
+ * This swallows clicks, in the capture phase on the document so no target
+ * sees them, until {@link TRAILING_CLICK_MS} has passed. Module scope, not
+ * the component's: the Menu has unmounted by the time the click arrives.
+ * The ✕'s own tap never arms it.
  *
- * A touch drag usually fires no click at all, so the swallow would sit armed
- * and eat a real tap made inside the window (#1278, PR #1273 round 3). So it
- * lets one click through: the click of a NEW gesture, made inside the
- * window. A `pointerdown` names that gesture's target and it is ready at its
- * `pointerup` on the same target; a `keydown` (Enter or Space, whose click
- * has no `pointerup`) is ready at once. A click on that target while ready
- * is delivered and ends the wait. Any other click is still swallowed, so a
- * late trailing click cannot slip through behind a new touch (PR #1318
- * round 1, George). Only the bound or one handled click removes it.
+ * A touch drag usually fires no click at all, so the window must not eat a
+ * real tap made inside it (#1278, PR #1273 round 3). So a click is let
+ * through when it is a NEW gesture's own: a `pointerdown` names that
+ * gesture's control and makes it ready at its `pointerup` on the same
+ * control; an Enter or Space `keydown` (whose click has no `pointerup`)
+ * makes its control ready at once. A ready gesture's click on that control
+ * is delivered, and the gesture is then spent. Every other click in the
+ * window is swallowed, a click on an ancestor included, and nothing but the
+ * bound takes the swallow down (PR #1318 rounds 1 and 2, George).
  */
 function swallowTrailingClick(doc: Document): void {
-  let nextTarget: Node | null = null;
+  let gesture: EventTarget | null = null;
   let ready = false;
-  const sameTarget = (t: EventTarget | null) => {
-    const node = asNode(t);
-    return (
-      nextTarget !== null &&
-      node !== null &&
-      (node === nextTarget ||
-        nextTarget.contains(node) ||
-        node.contains(nextTarget))
-    );
-  };
   const swallow = (ev: Event) => {
-    if (!(ready && sameTarget(ev.target))) {
-      ev.preventDefault();
-      ev.stopPropagation();
+    if (ready && gesture !== null && controlOf(ev.target) === gesture) {
+      ready = false;
+      gesture = null;
+      return;
     }
-    disarm();
+    ev.preventDefault();
+    ev.stopPropagation();
   };
   const onPointerDown = (ev: Event) => {
-    nextTarget = asNode(ev.target);
+    gesture = controlOf(ev.target);
     ready = false;
   };
   const onPointerUp = (ev: Event) => {
-    ready = sameTarget(ev.target);
+    ready = gesture !== null && controlOf(ev.target) === gesture;
   };
   const onKeyDown = (ev: Event) => {
-    nextTarget = asNode(ev.target);
-    ready = true;
+    if (!ACTIVATION_KEYS.has((ev as KeyboardEvent).key)) return;
+    gesture = controlOf(ev.target);
+    ready = gesture !== null;
   };
   const disarm = () => {
-    clearTimeout(timer);
     doc.removeEventListener("click", swallow, true);
     doc.removeEventListener("pointerdown", onPointerDown, true);
     doc.removeEventListener("pointerup", onPointerUp, true);
     doc.removeEventListener("keydown", onKeyDown, true);
   };
-  const timer = setTimeout(disarm, TRAILING_CLICK_MS);
+  setTimeout(disarm, TRAILING_CLICK_MS);
   doc.addEventListener("click", swallow, true);
   doc.addEventListener("pointerdown", onPointerDown, true);
   doc.addEventListener("pointerup", onPointerUp, true);
