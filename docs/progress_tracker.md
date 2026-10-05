@@ -53,7 +53,12 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ### Merged to develop
 
-Each merge was pinned to the head the bench reviewed. Each was made after `npm run verify` passed on the actual merge result, because develop moved after the PRs' CI ran.
+Each merge was pinned to the head the bench reviewed. develop moved after most of these PRs' CI ran, so verification was done like this:
+
+- #1312: its only base change was the #1311 version bump, so no local run.
+- #1319: `npm run verify` on develop `da9c91b3` + its head.
+- #1314, #1313 and #1320: **one** combined run on develop `a14b927d` + all three heads (exit 0, 374 test files), not one run per PR. The three PRs share no files with each other or with develop's changes.
+- #1318: `npm run verify` on develop `f5e447e3` + its head.
 
 | PR    | Issue                                | Merged at  | What                                                                                                                                                                                             |
 | ----- | ------------------------------------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
