@@ -602,6 +602,14 @@ Work is cut from `develop` and merged back by PR. Promotion is `develop` ->
 `staging` -> `main`, each by PR. **The `staging` -> `main` PR is the production
 gate.**
 
+Merge a promotion PR with a merge commit and GitHub's subject left as is. The
+APK and TestFlight lanes build on push only when the tip is `Merge pull request
+#N from unfoldingWord/<head>`, with `develop` or `release/*` onto `staging`,
+`staging` or `release/*` onto `main`. A squash or rebase merge, an edited
+subject, or a hotfix branch not named `release/*` merged straight to `main`
+gets a preflight notice and **no native build**; the DRI dispatches the lane by
+hand (`docs/native/README.md` §4a, §5a).
+
 ### Versions and milestones
 
 `package.json`'s `version` is the build number, and it moves in exactly one

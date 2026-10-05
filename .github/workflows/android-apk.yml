@@ -21,9 +21,10 @@ name: Android APK
 #                                  pick 2026-09-30).
 #
 # One-time setup: create the release keystore (docs/native/README.md §5 step 1)
-# and set the four secrets below in the `release-signing` environment, whose
-# deployment-branch policy is the actor guard (#1281; it replaces the required
-# reviewer of #321). The Android SDK (Platform 36, Build-tools 36.0.0,
+# and set the four secrets below in the `release-signing` environment. Its
+# deployment-branch policy is #1281's target actor guard; until the DRI has
+# run #1281's runbook, the #321 required reviewer still gates every run (see
+# the build job below). The Android SDK (Platform 36, Build-tools 36.0.0,
 # ANDROID_HOME) and Ruby are on the ubuntu-24.04 runner image (verified
 # against actions/runner-images, 2026-09-12). The JDK is NOT left to the
 # image: its default is Java 17, and Capacitor's generated
@@ -145,12 +146,13 @@ jobs:
     # replace a pending promotion build (GitHub keeps one pending run per
     # group and replaces it with a newer one). It carries no ref on purpose:
     # staging and main stamp the same unix-timestamp versionCode for one app
-    # (android-play.yml keeps one group for the same reason), and two branches
-    # building at once could hand an RC a higher code than the production
-    # build behind it, which Android would then refuse as a downgrade. Two
-    # promotions inside one build still queue and the older pending one is
-    # replaced: the release checklist reads a `cancelled` run against the
-    # branch tip before deciding.
+    # (android-play.yml keeps one group for the same reason), so one group
+    # makes versionCodes follow queue order across both branches. It does not
+    # stop an RC queued after a production build from getting the higher
+    # code: the number is taken when the build runs. Two promotions inside
+    # one build still queue and the older pending one is replaced: the
+    # release checklist reads a `cancelled` run against the branch tip before
+    # deciding.
     concurrency:
       group: android-apk
       cancel-in-progress: false
