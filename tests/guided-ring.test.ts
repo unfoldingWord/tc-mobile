@@ -195,14 +195,15 @@ describe("the guide accent is one colour, reached through layer 2 (#604)", () =>
     // must stay inside its own box, because a full-bleed row is flush with a
     // scroll container that clips anything drawn outside it.
     expect(ruleBlock(components, ".is-guided")).toMatch(/box-shadow:\s*inset/);
-    expect(ruleBlock(components, ".control--record.is-guided")).toMatch(
-      /box-shadow:\s*0/
-    );
     // An unrecorded row's mic (#1217) shares the outset ring: its own red
-    // outline sits at the box edge, where an inset ring would be drawn.
-    expect(ruleBlock(components, ".control--mic.is-guided")).toMatch(
-      /box-shadow:\s*0/
-    );
+    // outline is its border, and an inset ring would sit against it. `inset`
+    // may trail the lengths, so its absence is asserted too (PR #1319 George
+    // r1).
+    for (const control of [".control--record", ".control--mic"]) {
+      const block = ruleBlock(components, `${control}.is-guided`);
+      expect(block, control).toMatch(/box-shadow:\s*0/);
+      expect(block, control).not.toMatch(/\binset\b/);
+    }
   });
 
   // The record button and an unrecorded row's mic (#1217, #1233 item 19) both

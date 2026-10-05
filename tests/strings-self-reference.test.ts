@@ -80,6 +80,9 @@ function topLevelNames(source: string): {
   file.forEachChild((node) => {
     if (ts.isImportDeclaration(node)) {
       const clause = node.importClause;
+      // A bare `import "x";` binds nothing, but is recorded so a new one
+      // still has to be argued here.
+      if (!clause) imports.push(`<import ${node.moduleSpecifier.getText()}>`);
       if (clause?.name) imports.push(clause.name.text);
       const bindings = clause?.namedBindings;
       if (bindings && ts.isNamespaceImport(bindings))
@@ -233,6 +236,8 @@ describe("nothing at top level escapes the walker (#169, PR #1221 review)", () =
       topLevelNames(
         [
           'import { heading } from "./heading";',
+          'import { plural as wording } from "./plural";',
+          'import "./side-effect";',
           'import * as words from "./words";',
           "type Skipped = string;",
           "function helper(n: number) { return strings.a(n); }",
@@ -252,7 +257,7 @@ describe("nothing at top level escapes the walker (#169, PR #1221 review)", () =
         "x",
         "z",
       ],
-      imports: ["heading", "words"],
+      imports: ['<import "./side-effect">', "heading", "wording", "words"],
     });
   });
 });
