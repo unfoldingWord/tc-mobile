@@ -365,7 +365,11 @@ freeze note on every new PR to `develop`.
    and wait until every one is `completed`. A run that was still open at the
    first read may have built `PROMO_SHA` while you waited, so repeat read (1)
    now; if an ordinary build has since concluded `success`, stop and record
-   that run. Only if (1) still finds none does the DRI dispatch it, and
+   that run. The wait can move the tip, and `--ref staging` builds the tip
+   at dispatch, so immediately before dispatching re-read the canonical tip
+   (`gh api repos/unfoldingWord/tc-mobile/git/ref/heads/staging --jq .object.sha`);
+   if it is not exactly `PROMO_SHA`, stop. Only if (1) still finds none and
+   the tip is still `PROMO_SHA` does the DRI dispatch it, and
    the agent re-reads the new run until its signing job has started (an
    empty conclusion on an open run). A dispatch `cancelled` while pending
    goes back to the two reads. While `release-signing` still has a
