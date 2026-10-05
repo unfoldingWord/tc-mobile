@@ -11,6 +11,90 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-05 (day) — sprints adopted and numbered from day 1, v1.0.2 promoted to staging, six lane PRs merged after a GitHub Actions outage
+
+### Sprints (DRI decisions, 2026-10-05)
+
+- **Two-week sprints, numbered from project day 1** (the initial commit, Sat 2026-08-22).
+  - Sprint 1 = 08-22 → 09-06 (16 days, the only odd one).
+  - From then on, Monday 00:00 → Sunday 23:59, **UTC**: Sprint 2 = 09-07 → 09-20, Sprint 3 = 09-21 → 10-04, **Sprint 4 = 10-05 → 10-18 (current)**, Sprint 5 = 10-19 → 11-01.
+- **Releases:**
+  - The sprint-end `staging → main` promotion ships the minor. Sprint 4 ships **v1.1.0** on 10-18.
+  - The patch stays one `chore(release)` bump per `develop → staging` promotion.
+- **Milestones: sprint milestones replace version milestones.**
+  - Every closed issue and merged PR now sits in the sprint it closed or merged in: 1,172 items, verified with 0 mismatches.
+  - `v0.2.0` and `v1.0.0` were deleted once empty. Each sprint's description keeps the old titles and due dates and what shipped in that sprint. Tags and Releases are the version record.
+  - **Backlog** (#5) holds 51 open issues not in Sprint 4.
+  - Sprint 4 holds the picked scope plus the 6 issues the DRI chose to keep in the sprint (#1243, #1244, #1259, #1212, #1252, #1271).
+- **Sprint comparison** (issues completed / not planned / PRs merged):
+
+  | Sprint | Completed | Not planned | PRs merged |
+  | ------ | --------- | ----------- | ---------- |
+  | 1      | 59        | 4           | 87         |
+  | 2      | 86        | 12          | 126        |
+  | 3      | 243       | 49          | 487        |
+
+- **Review loops run on the uwreview VM bench:** push, wait for the bench's Codex and Grok comments at the head, then post a triage. No local `scripts/review/*.sh` runs.
+- **Commit identity:** authored as the DRI's GitHub user with a `Co-authored-by: Claude <noreply@anthropic.com>` trailer. This replaces the placeholder `Test <test@example.com>` in this checkout's repo config, which earlier agent commits carried.
+- `AGENTS.md` "Versions and milestones" does not say any of this yet. That PR is the next step.
+
+### v1.0.2 → staging (the training stays on production 1.0.1, DRI pick)
+
+| Step                        | Result                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bump #1311                  | Merged at `79e6037f` = **`CUT_SHA`**. **Deviation, recorded on the PR:** the agent merged it with `--admin` on the DRI's instruction; tc-release marks this human-only.                                                                                                                                                                                                                                                                            |
+| Red team on `CUT_SHA`       | Risk register: 0 BLOCK, 4 FIX-BEFORE-PUBLISH, 17 NOTE. Claim check: 29 TRUE, 0 FALSE, 1 OVERSTATED, 6 MISSING CONTEXT, all corrected in #1311's body. The DRI's picks are recorded verbatim on #1311. F1: testers are on Google Play and the DRI controls TestFlight groups. F2/F3: the two test P2s were accepted for 1.0.2 and fixed on develop in #1319, **after the cut, so not in 1.0.2**. F4: publish as `tester-build-v1.0.2`, pre-release. |
+| `release/v1.0.2`            | Created at `CUT_SHA`.                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Push CI at `CUT_SHA`        | Cancelled twice during the GitHub Actions outage (no runner assigned). **Green after recovery:** run 37364748886 has Secret Scan, Code Quality and Build passing. `CUT_SHA` and #1311's head `0c6fba5a` share tree `d652384650ac08b06176a4352619fc5781f1757c`.                                                                                                                                                                                     |
+| Promotion #1322             | Merged with `--merge --admin --match-head-commit 79e6037f`: **`PROMO_SHA` = `3b5e098da6e182ab149ae21cf1b916df046d5fb1`**, subject unedited. Step-4 pre-flight matched: base `dd997ebf`, head `CUT_SHA`, staging tip `dd997ebf`. **Deviation recorded:** an agent merge with `--admin`, on the DRI's "merge on clean and green".                                                                                                                    |
+| `check:deploy`              | `PASS: https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build.` (`version=1.0.2 sha=3b5e098`, built 2026-10-05T22:07:58Z)                                                                                                                                                                                                                                                                                               |
+| Native lanes at `PROMO_SHA` | APK (run 37380372475) and TestFlight (37380372435) are **waiting on the DRI's `release-signing` approval**. Play (37380372411) was in progress.                                                                                                                                                                                                                                                                                                    |
+| Not yet                     | Confirming every channel's `headSha` = `PROMO_SHA`; the `tester-build-v1.0.2` pre-release.                                                                                                                                                                                                                                                                                                                                                         |
+
+### Merged to develop
+
+Each merge was pinned to the head the bench reviewed. develop moved after most of these PRs' CI ran, so verification was done like this:
+
+- #1312: its only base change was the #1311 version bump, so no local run.
+- #1319: `npm run verify` on develop `da9c91b3` + its head.
+- #1314, #1313 and #1320: **one** combined run on develop `a14b927d` + all three heads (exit 0, 374 test files), not one run per PR. The three PRs share no files with each other or with develop's changes.
+- #1318: `npm run verify` on develop `f5e447e3` + its head.
+
+| PR    | Issue                                | Merged at  | What                                                                                                                                                                                             |
+| ----- | ------------------------------------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| #1312 | #1201 (a)–(e), #1202 item 3          | `da9c91b3` | Waveform and recorder docblocks. The `src/` diff is comments only; all 621 production `dist/` files hash the same.                                                                               |
+| #1319 | #1233 items 14–16, 18, 19; #1317 P2s | `a14b927d` | Pins for the row mic, `--s-live-text` contrast and the guided ring; the #1211 and #1221 surviving mutants are killed.                                                                            |
+| #1314 | #1017, #248                          | `96cd2432` | System requirements reconciled. The four runbook questions from #1297 are marked "Awaiting Tim". New training watch list. #1315 was filed: the icon protocol predates the current recorder.      |
+| #1313 | #1308 items 2–7, #1278 Lows          | `58e756a7` | Native CI and release-runbook docs. Round 6, past the cap: the findings were **siblings** (five holes in one redispatch guard). The DRI accepted the residuals, and **#1321** owns the redesign. |
+| #1320 | #1202 items 1–2, #1092, #549         | `f5e447e3` | The nothing-failed tone check is now scope- and alias-aware; the notice CSS pins are tightened.                                                                                                  |
+| #1318 | #1278 code residuals                 | `a8254211` | The drag-close tap swallow and crumb fixes. Merged **after** the promotion (DRI pick); it ships in the next staging promotion. Device check owed.                                                |
+
+### Close-outs and verification
+
+- **Closed with per-item evidence:** #1241, #951, #936, #828, #1046, #801, #406, #506, #1088 (item 1 moved to #1089), and #245 (superseded by #974).
+- **Still open:** #840 and #838, each with its one remaining item. #1213 is likely a duplicate of #1251, pending an iPhone retest on 1.0.1.
+- **#1210 Android developer verification: done.** `org.unfoldingword.tcmobile` is Registered, with the release key `EE:D2…BA:F2` Verified. The release APKs from 09-23 and 10-02 are signed by that key only. Three other Verified keys match nothing documented; they are tracked in **#1324**.
+
+### Process lessons
+
+- **Messaging a running workflow lane forks a second live copy** in the same worktree. Both copies pushed to #1313. Stop and relaunch instead.
+- **A green badge from before an outage, or from before other merges, is not a pre-flight.** Run `npm run verify` on the actual merge result and record it on the PR.
+
+### Not run
+
+- Nothing today ran on a phone.
+- The 1.0.2 native builds await signing approval.
+
+### Next
+
+1. **The DRI's `release-signing` approval** for the APK and TestFlight runs at `PROMO_SHA`. Then confirm every channel at `PROMO_SHA`, publish `tester-build-v1.0.2` as a pre-release, and assign TestFlight to the testers' group only.
+2. Write the Sprint 4 `AGENTS.md` PR: sprints from day 1, sprint milestones, and the `tester-build-vX.Y.Z` tag name.
+3. Decisions for the DRI: #1089 (was #1088 item 1) and #1092 items 2–3 (accept as fail-closed?). Match #1324's keys against the developer machines' debug keystores.
+4. For Tim, training week: the four #1297 questions, the #249 icon-check owner, and picks on #1284, #1272 and #272.
+5. Phone checks: #1294/#1298 (alarm), #1300, #1318 (drag-close then tap), and the #974 rows.
+
+---
+
 ## 2026-10-02 (day) — freeze lifted, the 17 held PRs merged, develop repaired, eight lane PRs merged
 
 ### Freeze lift and the held PRs
