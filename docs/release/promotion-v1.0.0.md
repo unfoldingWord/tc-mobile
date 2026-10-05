@@ -362,7 +362,10 @@ freeze note on every new PR to `develop`.
    which the `--commit` read does not list, can hold the slot or replace a
    pending dispatch. List the lane's recent runs on every branch
    (`gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --limit 20 --json databaseId,headBranch,headSha,status`)
-   and wait until every one is `completed`. Then the DRI dispatches it, and
+   and wait until every one is `completed`. A run that was still open at the
+   first read may have built `PROMO_SHA` while you waited, so repeat read (1)
+   now; if an ordinary build has since concluded `success`, stop and record
+   that run. Only if (1) still finds none does the DRI dispatch it, and
    the agent re-reads the new run until its signing job has started (an
    empty conclusion on an open run). A dispatch `cancelled` while pending
    goes back to the two reads. While `release-signing` still has a

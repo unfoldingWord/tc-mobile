@@ -203,7 +203,10 @@ from.
       a `main` run, which the `--commit` read does not list, can hold the slot or replace a pending
       dispatch. List the lane's recent runs on every branch
       (`gh run list --repo unfoldingWord/tc-mobile --workflow <lane> --limit 20 --json databaseId,headBranch,headSha,status`)
-      and wait until every one is `completed`. Then the DRI dispatches it
+      and wait until every one is `completed`. A run still open at the
+      first read may have built `PROMO_SHA` while you waited, so repeat read
+      (1); if an ordinary build has since concluded `success`, stop and
+      record that run. Only if (1) still finds none does the DRI dispatch it
       (human-only), and the agent re-reads the new run until its signing job has started. A dispatch `cancelled`
       while pending goes back to the two reads.
       An empty conclusion with the run still open means the job is waiting
