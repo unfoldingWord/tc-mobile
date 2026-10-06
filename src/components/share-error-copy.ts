@@ -17,6 +17,7 @@
 
 import { strings } from "@/lib/strings";
 import type { ShareError } from "@/hooks/share-flow";
+import { isNativeShell } from "@/hooks/share-target";
 import type { ShareGap, ShareProgress } from "@/hooks/share-progress";
 import type {
   LibraryShareProgress,
@@ -116,9 +117,12 @@ export function shareErrorText(
         ? strings.shareNothing
         : strings.shareBookNothing;
     case "failed":
-      return scope === "chapter"
-        ? strings.shareFailed
-        : strings.shareBookFailed;
+      if (scope === "chapter") return strings.shareFailed;
+      // A browser can refuse the book's zip outright (#272), so the web build
+      // points to the app; the native shell keeps the retry line.
+      return isNativeShell()
+        ? strings.shareBookFailed
+        : strings.shareBookFailedWeb;
     case "encoder":
       return strings.shareEncoderStopped;
     default: {
