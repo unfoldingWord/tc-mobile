@@ -512,7 +512,7 @@ test("O4 headers at 360px: tapping the recorder's book crumb lands on Books in o
  * whole span (so the close clears the segment and the phrase lives on the
  * clipboard alone), taps the recorder's book crumb, and expects the chapter
  * screen with its history entry — not Books. The chapter screen's own book
- * crumb, a separate gesture on a screen where the paste was available, still
+ * crumb, a separate gesture on a screen with no paste control, still
  * leaves. The pure half (the adapter's gate) is `tests/nav-back-to-books.test.ts`;
  * this is the real recorder, the real App clipboard and the real adapter
  * together, against the shipped build.
@@ -560,7 +560,8 @@ test.describe("the recorder's book crumb over a held cut (#1275)", () => {
 
     // The sheet closed (the first level ran), and the gesture ended on the
     // chapter screen: Books' controls are absent, the chapter's entry is the
-    // one the stack is on, and the phrase is still pasteable here.
+    // one the stack is on, and the phrase stays on the chapter clipboard for
+    // a recorder reopened from here to paste in Edit mode.
     await expect(
       page.getByRole("button", { name: "Close recorder" })
     ).toHaveCount(0);
@@ -571,8 +572,8 @@ test.describe("the recorder's book crumb over a held cut (#1275)", () => {
     await expect(page.getByRole("button", { name: "New book" })).toHaveCount(0);
     await expect.poll(index).toBe(atRecorder - 1);
 
-    // The chapter screen's book crumb is the translator's own gesture on the
-    // screen where the paste was offered; it leaves as #1269 made it.
+    // The chapter screen's book crumb is the translator's own gesture on a
+    // screen with no paste control; it leaves as #1269 made it.
     await segmentsHead
       .getByRole("button", { name: `Go to book ${book}`, exact: true })
       .click();

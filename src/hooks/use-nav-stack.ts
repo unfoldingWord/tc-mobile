@@ -371,10 +371,11 @@ export interface UseNavStackParams {
    * (chapter-scoped, G3), and after a cut that was saved, a cut-to-empty
    * whose segment is gone, or a superseded stop that rolled a paste back,
    * the clipboard is the phrase's ONLY copy. A plain Back stops at Segments,
-   * where it can still be pasted; the two-level Back must stop there too
-   * rather than run `onLeaveToBooks` over it in the same gesture. Read at
-   * the consuming landing, after the close's own clipboard writes have
-   * committed (the same commit `screen` is gated on).
+   * where the clipboard survives for a reopened recorder's Edit mode to
+   * paste; the two-level Back must stop there too rather than run
+   * `onLeaveToBooks` over it in the same gesture. Read at the consuming
+   * landing, after the close's own clipboard writes have committed (the same
+   * commit `screen` is gated on).
    */
   readonly chapterClipboardHeld: boolean;
   /**
@@ -805,7 +806,8 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // whose segment is gone, a superseded stop's rolled-back paste. The close's
   // clipboard writes commit in the same batch as its screen change, so the ref
   // is the clipboard as the close left it. Stopping at Segments is what a
-  // plain Back does, and is where the phrase can still be pasted.
+  // plain Back does, and keeps the phrase on the clipboard for a recorder
+  // reopened from Segments to paste in Edit mode.
   const continueOnSegments = useCallback(() => {
     if (!chapterClipboardHeldRef.current) goBack();
   }, [goBack]);
@@ -1241,7 +1243,8 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // inside the Capacitor shell — in a browser the gesture is already a history
   // pop and this would be a second listener for the same press. `decide` reads
   // the same layout-written refs the popstate handler does, and only those;
-  // `goBack` is `useCallback([])`, so this subscribes once for the hook's life.
+  // `goBack` is built only from `issueBack`, which is `useCallback([])`, so
+  // this subscribes once for the hook's life.
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     return attachNativeBack(
