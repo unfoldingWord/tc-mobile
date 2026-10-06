@@ -324,8 +324,8 @@ export function chainsToSend(route: ShareRoute): boolean {
  * settles the modal, so by the render that settle produces they would read
  * as whole. The armed value was written once, at `prepare` time, and cannot
  * have raced — pulled out as a pure function so the decision is
- * unit-testable without a renderer (#197), the same shape `classifyShareError`
- * above already uses.
+ * unit-testable by a direct call, without mounting the hook, the same shape
+ * `classifyShareError` above already uses.
  */
 export function sentGap(armed: {
   readonly missing: number;

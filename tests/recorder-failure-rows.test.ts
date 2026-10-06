@@ -6,7 +6,7 @@ import { bodyAfter, matchingBraceClose, stripComments } from "./support";
 
 /**
  * Three recorder-path failure rows reach the funnel (`reportFailure`) from
- * code the Node suite cannot execute:
+ * code this file reads as source rather than runs:
  *
  *   1. `onInterrupted` in `start()` (use-recorder.ts) reports ONE row per
  *      take, context key `"recorder-interrupted-active"`, when an
@@ -209,7 +209,7 @@ describe("source pins (text shape only): start() writes the resume-timeout row i
    *
    * `tests/recorder-resume-race.test.ts` proves the helper's half at
    * runtime (the boolean, and that its timer branch is silent). This gate
-   * pins `start()`'s half, which the Node suite cannot execute: the awaited
+   * pins `start()`'s half, read as source rather than run: the awaited
    * boolean, the report sitting CONTIGUOUSLY after the generation check
    * (not before it, not elsewhere), the message naming the bound, and the
    * key being one site in the file that is NOT inside `raceAudioResume`.

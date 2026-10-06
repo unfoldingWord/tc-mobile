@@ -299,8 +299,9 @@ describe("bundled licence texts", () => {
  * fetch 404s offline), the navigate-fallback stops sparing `.txt`, or the lamejs
  * row loses the relink affordances. They read the wiring files as text — no
  * renderer — and assert the properties #36 exists to guarantee. The rendered
- * behaviour (focus, the failed-fetch Notice) still needs a browser and is not
- * claimed here.
+ * behaviour (focus, the failed-fetch Notice) is mounted in jsdom by
+ * `tests/about-licence-text.test.ts` and `tests/about-focus-return.test.ts`,
+ * and is not claimed here.
  *
  * The files are read with their comments removed (#822). Every pin below is a
  * positive match, so a commented-out copy of the good line could otherwise

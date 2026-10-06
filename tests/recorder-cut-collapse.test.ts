@@ -27,8 +27,9 @@ import { stripComments } from "./support";
  * (`centerlineOverlayShown` is false while a frame is open). That reseed is
  * what `selectionReseed`'s `collapsedByCut` term suspends.
  *
- * Both halves are pure or source-shape on purpose: `recorder.tsx` cannot be
- * rendered here (AGENTS.md — the #197 harness is one component, no effects),
+ * Both halves are pure or source-shape on purpose: this file does not mount
+ * `recorder.tsx` (the #197 harness is one component with no effects, and a
+ * client mount means mocking the sheet's audio hook graph),
  * so the truth table is a function and the wiring is read as text, the same
  * split `tests/recorder-centerline-overlay-gate.test.ts` uses.
  */

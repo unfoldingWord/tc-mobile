@@ -6,9 +6,9 @@ import { planReveal } from "@/lib/a11y/pending-reveal";
  * When a newly created row is scrolled to and focused (#160 L-15).
  *
  * Pinning the CHOICE, in plain Node. The other half — that the `scrollIntoView`
- * and `.focus()` calls land on the right nodes, in the right commit — is DOM
- * ordering and cannot be observed in this repo's Node-only suite (the same gap
- * as #361). Nothing here should be read as covering it.
+ * and `.focus()` calls land on the right nodes, in the right commit — is the
+ * hook's, and `tests/scroll-to-new.test.ts` covers it in jsdom. Nothing here
+ * should be read as covering it.
  */
 
 const A = "a";

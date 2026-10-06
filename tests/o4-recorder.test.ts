@@ -30,8 +30,9 @@ import {
  *   that matches declarations, not bare identifiers;
  * - the one new piece of markup, `RecorderStamp`, through `tests/render.ts`
  *   for the static states and a jsdom client root for the playing clock;
- * - `recorder.tsx`'s wiring, by a source pin, because the sheet mounts the
- *   audio hook graph and no test renders it (`tests/render.ts`'s docblock).
+ * - `recorder.tsx`'s wiring, by a source pin: the sheet mounts the audio hook
+ *   graph, so rendering it means a client mount with that graph mocked
+ *   (`tests/recorder-stop-commits.test.ts`), which this file does not do.
  *
  * What none of this covers: the cascade in a real engine, and any phone.
  */
@@ -429,8 +430,8 @@ describe("PlayheadOverlay takes the O4 playhead colour over its own (#945)", () 
 });
 
 describe("recorder.tsx wires the O4 look through useDesign (#945, source pin)", () => {
-  // The sheet mounts the audio hook graph and no test renders it, so the
-  // wiring is pinned by source — the precedent is
+  // The sheet mounts the audio hook graph and this file does not mount the
+  // sheet, so the wiring is pinned by source — the precedent is
   // `tests/recorder-cut-collapse.test.ts`'s "passes the clipboard's fullness".
   const src = stripComments(read("src/components/recorder.tsx"));
 
