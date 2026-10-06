@@ -34,11 +34,11 @@
  * because the closing edge needs the caller to leave its history alone — see
  * `panelRecoveryFocus` below.
  *
- * Booleans, never elements, so it stays inside `lib/`'s DOM ban and runs in the
- * Node-only suite. The half that reads the DOM and calls `.focus()` lives in
- * `recorder.tsx` and, like `use-focus-restore.ts`, has no automated coverage
- * anywhere in this repo (#361) — it is review and on-device surface, and is
- * not claimed as tested.
+ * Booleans, never elements, so it stays inside `lib/`'s DOM ban and runs in
+ * plain Node. The half that reads the DOM and calls `.focus()` lives in
+ * `recorder.tsx`; `tests/panel-recovery-focus.test.ts` pins its source shape,
+ * but no mounted test drives a panel's recovery edge, so where focus lands is
+ * review and on-device surface (#361), and is not claimed as tested.
  */
 
 interface PanelRecoveryInput {

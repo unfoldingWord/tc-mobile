@@ -9,10 +9,11 @@ import { stripComments } from "./support";
  * write has committed (#542 Part A, DRI decision 2026-09-24: "build the
  * module-scope estimate() invalidation now, bumped by book delete/create").
  *
- * `createBook`/`deleteBook` are `useCallback`s inside `useBooks()`, and this
- * repo has no harness that mounts that hook's real effects/callbacks against
- * fake-indexeddb — the same limitation `tests/use-books-delete-failure-gate.
- * test.ts` names for `deleteBook`'s failure-funnel wiring. This is the same
+ * `createBook`/`deleteBook` are `useCallback`s inside `useBooks()`. The client
+ * mounts of that hook over fake-indexeddb (`tests/use-books-reorder.test.ts`)
+ * could reach them, but this file does not mount it — the same choice
+ * `tests/use-books-delete-failure-gate.test.ts` makes for `deleteBook`'s
+ * failure-funnel wiring. This is the same
  * shape of gate: a structural read of the source, not a behavioural run,
  * scoped to each callback's own body by brace-matching so a `bumpStoragePressure`
  * call anywhere ELSE in the file (or in the wrong callback) does not

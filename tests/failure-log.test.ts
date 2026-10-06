@@ -829,8 +829,9 @@ describe("every read of the log is on the write lane", () => {
    *
    * `readFailureLog` being lane-ordered is worth nothing if a caller goes around
    * it, and nothing else in this repo would notice: knip sees an import that is
-   * used, ESLint sees a legal layer, and no runtime test can reach the share
-   * hook's `prepare` without a renderer. So the rule is asserted directly — one
+   * used, ESLint sees a legal layer, and no runtime test drives the share
+   * hook's `prepare` (it runs on a Send tap, and no client mount here taps
+   * Send). So the rule is asserted directly — one
    * module owns the store, and everything else asks that module.
    */
   /**
@@ -845,8 +846,7 @@ describe("every read of the log is on the write lane", () => {
    *
    * A test rather than a comment because nothing else here would notice. knip
    * sees a used export, ESLint sees a legal layer (`components` may import
-   * `hooks`), and no runtime test can reach either surface's effects without a
-   * renderer.
+   * `hooks`), and no runtime test taps either surface's Send.
    */
   it("only the share flow consumes the log's generation", () => {
     // Both readers, not just the subscribed one: round 9 added a synchronous

@@ -10,11 +10,11 @@ import { strings } from "@/lib/strings";
  * What the Books shelf says for #247's storage-pressure marker.
  *
  * The whole gate is here, not just a tone lookup, for the same reason
- * `encoder-notice.test.ts` pins `encoderNotice` directly: no test currently
- * mounts `BooksScreen` and this effectful hook graph (`useStoragePressure`,
- * `useBooks`, …) through a DOM render — `tests/render.ts` (jsdom +
- * `renderToStaticMarkup`, #197) exists, but nothing wires it to this screen —
- * so a mount predicate left in JSX is pinned by nothing. #540 is what this
+ * `encoder-notice.test.ts` pins `encoderNotice` directly: a mount predicate
+ * left in JSX is reached only by mounting `BooksScreen` and its effectful hook
+ * graph (`useStoragePressure`, `useBooks`, …), which
+ * `tests/storage-banner-o4.test.ts` does for the O4 banner and not for each
+ * branch, while a function is pinned branch by branch. #540 is what this
  * file exists to make impossible to repeat — the core PR's (#537) own
  * published example would have painted the band name on screen in `Notice`'s
  * default `alert` tone.

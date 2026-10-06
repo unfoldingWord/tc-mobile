@@ -2,12 +2,11 @@
  * What the Books shelf says about #247's storage-pressure band — the WHOLE
  * gate, in a DOM-free function.
  *
- * Lifted out of `books-screen.tsx` for the reason `encoder-notice.ts` was: no
- * test currently mounts `BooksScreen` and this effectful hook graph
- * (`useStoragePressure`, `useBooks`, …) through a DOM render — `tests/
- * render.ts` (jsdom + `renderToStaticMarkup`, #197) exists, but nothing wires
- * it to this screen — so a mount predicate left in JSX here is pinned by
- * nothing. #540 (George's review of #537, the core PR this wires up) found
+ * Lifted out of `books-screen.tsx` for the reason `encoder-notice.ts` was: a
+ * mount predicate left in JSX here is reached only by mounting `BooksScreen`
+ * and its effectful hook graph (`useStoragePressure`, `useBooks`, …), which
+ * `tests/storage-banner-o4.test.ts` does for the O4 banner and not for each
+ * branch, while a function is pinned branch by branch. #540 (George's review of #537, the core PR this wires up) found
  * exactly that failure mode in the core PR's own published JSX recipe:
  * `Notice`'s default `tone` is `"alert"`, and `"low" | "critical"` is a valid
  * `ReactNode`, so completing the example the obvious way type-checks while

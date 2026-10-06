@@ -923,8 +923,9 @@ export function useRecorder(): UseRecorder {
           // Bare, deliberately: guarding IT would mean branching on
           // `recorder.state` afterward to decide whether to seal now or keep
           // waiting for `onstop`/the timer — correctness that depends on the
-          // recorder's post-throw state, which is neither observed on a
-          // device nor simulable in this Node-only suite (no `MediaRecorder`).
+          // recorder's post-throw state, which has not been observed on a
+          // device and which a test's fake `MediaRecorder` only reports as
+          // its author chose.
           // That is the J7 shape rounds 3 and 4 oscillated on; the round-5 cap
           // decision left it out. The `finally` below is the J6 shape instead
           // — it reasons about nothing beyond the stream and tap this
@@ -1156,12 +1157,12 @@ export function useRecorder(): UseRecorder {
 
   // Re-arm Web Audio when the app returns to the foreground mid-take (#76).
   // Extracted to `armForegroundResume` so its two guards (recording, visible) and
-  // the add/remove-listener wiring are unit-testable in Node with no renderer,
-  // the way `resumeAudioContext` itself is — `tests/foreground-resume.test.ts`
-  // mutates each guard to prove it. The effect is the one-line call plus the
-  // `[state]` dependency: browser-boundary wiring whose guards are Node-tested,
-  // but the effect actually firing and iOS gesture-withholding are on-device
-  // surface for #76, not exercised here.
+  // the add/remove-listener wiring are unit-testable by a direct call, without
+  // mounting this hook, the way `resumeAudioContext` itself is —
+  // `tests/foreground-resume.test.ts` mutates each guard to prove it. The effect
+  // is the one-line call plus the `[state]` dependency: browser-boundary wiring
+  // whose guards are Node-tested. No test mounts this hook and fires the effect,
+  // and iOS gesture-withholding is on-device surface for #76.
   useEffect(() => armForegroundResume(state === "recording"), [state]);
 
   // Never leave the microphone hot if the screen unmounts mid-recording.

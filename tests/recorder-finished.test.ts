@@ -11,8 +11,9 @@ import { cssRule, stripComments } from "./support";
  * requirements owner's #81 wording: "the whole waveform and everything shifts
  * to a green hue".
  *
- * Two halves, each read from source because the recorder cannot mount under
- * the render harness (#197: one render, no effects): the stylesheet rule that
+ * Two halves, each read from source because this file does not mount the
+ * recorder (the render harness, #197, is one render with no effects, and a
+ * client mount means mocking its audio hook graph): the stylesheet rule that
  * does the painting, and the recorder's wiring of that rule to the same
  * resolved `finishedState` the menu's green check reads. The contrast of the
  * green on the stage is `tests/contrast.test.ts`'s.
