@@ -5,9 +5,9 @@ The canonical contributor guide. Read this before changing anything.
 ## Purpose
 
 tC Mobile is an offline-first PWA for oral Bible translation: record a passage,
-edit the waveform, manage the segments of a chapter, and share a chapter or a
-book as MP3 through the OS share sheet. It targets Android and iOS phones,
-frequently offline, used by people who may not read.
+edit the waveform, manage the segments of a chapter, and share a chapter as an
+MP3 or a book as a zip of chapter MP3s through the OS share sheet. It targets
+Android and iOS phones, frequently offline, used by people who may not read.
 
 The driving deadline is the **East Africa training in the first week of
 October 2026**, with production readiness targeted for **end of September 2026**.
