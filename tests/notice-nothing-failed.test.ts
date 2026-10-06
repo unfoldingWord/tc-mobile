@@ -89,7 +89,8 @@ function bind(rel: string, text?: string): Bound {
 }
 
 /** Does `specifier`, written in `fromRel`, name `notice-tone`? Relative and
- *  `@/` (the `src/` alias) forms; a bare package name never does. */
+ *  `@/` (the `src/` alias) forms, with or without a `.ts`/`.tsx`/`.js`/`.jsx`
+ *  suffix; a bare package name never does. */
 function namesDeclaringModule(fromRel: string, specifier: string): boolean {
   let target: string;
   if (specifier.startsWith("@/")) {
@@ -99,7 +100,7 @@ function namesDeclaringModule(fromRel: string, specifier: string): boolean {
   } else {
     return false;
   }
-  return target.replace(/\.tsx?$/, "") === DECLARING_MODULE;
+  return target.replace(/\.(tsx?|jsx?)$/, "") === DECLARING_MODULE;
 }
 
 function moduleText(decl: ts.ImportDeclaration | ts.ExportDeclaration): string {
@@ -349,9 +350,11 @@ describe("the not-a-failure Notices read one tone (#147)", () => {
     // reading something else. The membership check above binds each file
     // alone, so a re-export straight from `notice-tone` is itself counted as a
     // member (the re-exporting file shows up in the map). Not covered: a
-    // dynamic `import()` of `notice-tone`, and an element access
-    // `T["NOTHING_FAILED_TONE"]` on a namespace import; neither appears in
-    // `src/` today, and both would be a deliberate, odd edit.
+    // dynamic `import()` of `notice-tone`, an element access
+    // `T["NOTHING_FAILED_TONE"]` on a namespace import, and a destructure of
+    // a namespace import (`const { NOTHING_FAILED_TONE } = T`); none appears
+    // in `src/` today, and each would be a deliberate, odd edit. Each reads 0
+    // references, so it is a false green for the membership check.
     const IMPORT = `import { NOTHING_FAILED_TONE } from "./notice-tone";`;
     const NOTICE = `<Notice tone={NOTHING_FAILED_TONE}>{strings.staleChapter}</Notice>`;
 
@@ -384,6 +387,13 @@ export const X = () => <Notice tone={TONE}>{strings.someGenuineFailure}</Notice>
         `import { NOTHING_FAILED_TONE as T } from "@/components/notice-tone";
 export const t = T;`,
         1,
+      ],
+      [
+        "an import that names the module with a `.js` or `.jsx` suffix",
+        `import { NOTHING_FAILED_TONE as A } from "./notice-tone.js";
+import { NOTHING_FAILED_TONE as B } from "@/components/notice-tone.jsx";
+export const t = [A, B];`,
+        2,
       ],
       [
         "a namespace import",
