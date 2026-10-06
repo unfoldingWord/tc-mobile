@@ -241,14 +241,32 @@
           <td>1</td>
           <td class="glyph">
             <svg viewBox="0 0 22 22" aria-hidden="true">
-              <circle cx="11" cy="11" r="6" fill="currentColor" />
+              <rect
+                x="8.3"
+                y="2.8"
+                width="5.5"
+                height="10.1"
+                rx="2.8"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              />
+              <path
+                d="M4.6 10.1a6.4 6.4 0 0 0 12.8 0M11 16.5v2.8"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              />
             </svg>
           </td>
           <td class="name">
             <b>Record</b>
             "Make a recording of this sentence."
             <small
-              >Segments screen, empty row. Pause, then Back, saves it.</small
+              >Segments screen, empty row: the microphone opens the recorder,
+              the red disc there records, the square ends and saves, Back
+              returns.</small
             >
           </td>
           <td class="tick">
@@ -387,7 +405,7 @@
             </svg>
           </td>
           <td class="name">
-            <b>Clear</b>
+            <b>Reset</b>
             "Throw this recording away."
             <small
               >Segment 2's row menu (you open it), the tile before Delete; the
@@ -395,20 +413,20 @@
             >
           </td>
           <td class="tick">
-            <input type="checkbox" class="box" aria-label="Clear: knew it" />
+            <input type="checkbox" class="box" aria-label="Reset: knew it" />
           </td>
           <td class="tick">
             <input
               type="checkbox"
               class="box"
-              aria-label="Clear: after one try"
+              aria-label="Reset: after one try"
             />
           </td>
           <td class="tick">
             <input
               type="checkbox"
               class="box"
-              aria-label="Clear: did not know"
+              aria-label="Reset: did not know"
             />
           </td>
           <td class="notes" contenteditable="true"></td>
@@ -689,7 +707,7 @@
             <b>Delete</b>
             "Get rid of this segment completely."
             <small
-              >Segment 2's row menu (reopen it — it closed after Clear in row
+              >Segment 2's row menu (reopen it — it closed after Reset in row
               5), past the spacer</small
             >
           </td>

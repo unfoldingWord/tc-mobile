@@ -330,13 +330,10 @@ export default defineConfig(({ mode }) => {
       // DRI two options — raise the floor, or rewrite 13 `:has()` sites — and
       // the decision (2026-09-26, "Raise floor to 15.4 (Recommended)") was
       // the former, so the JS/CSS build target here now matches the raised
-      // documented floor. Note: `ios/App/App.xcodeproj/project.pbxproj`'s
-      // `IPHONEOS_DEPLOYMENT_TARGET` still reads `15.0` in this tree — this
-      // change only raises what the requirements doc and this build target
-      // state; moving the actual Xcode deployment target (and the store
-      // listings) is separate, out-of-scope work for whoever picks up
-      // #1052's other side. See `docs/native/system-requirements.md` for the
-      // full resolution and that residual.
+      // documented floor. The Xcode deployment target matches it:
+      // `ios/App/App.xcodeproj/project.pbxproj` sets
+      // `IPHONEOS_DEPLOYMENT_TARGET = 15.4` at all four sites (#1055). See
+      // `docs/native/system-requirements.md` for the full resolution.
       //
       // This is otherwise a forward guard, not a fix for something broken
       // today: a build-artifact scan (`tests/build-target-floor.test.ts`,
