@@ -776,7 +776,7 @@ export async function checkSharedClockOnReturn(): Promise<void> {
  * `raceAudioResume` must never reject. The timer uses the bare global
  * `setTimeout`/`clearTimeout` (never `window.*`): no DOM global is needed,
  * and it is directly exercisable with `vi.useFakeTimers()` in Vitest's
- * default `node` environment, with no jsdom.
+ * default `node` environment.
  */
 export function raceAudioResume(
   rejectionContextKey: string,
