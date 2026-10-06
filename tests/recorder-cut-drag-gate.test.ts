@@ -34,7 +34,7 @@ import { stripComments } from "./support";
  * `tests/edit-control-state.test.ts` ("the toolbar reads one value for both
  * halves") rather than read here (#822).
  */
-describe("Cut's disabled gate carries the #317 drag term, the way Undo/Redo do (#512 George R1 P2-1)", () => {
+describe("Cut's disabled gate wraps its idle/canCut guard in the #317 drag term (#512 George R1 P2-1)", () => {
   // The read is stripped before anything is searched (#822): unstripped,
   // a comment carrying `label={strings.cut}` and the full gate ahead of the
   // live control is what `indexOf` finds, so the live Cut could lose its
@@ -63,7 +63,7 @@ describe("Cut's disabled gate carries the #317 drag term, the way Undo/Redo do (
     return match[1] ?? "";
   })();
 
-  it("wraps its existing gate in heldByDrag, exactly as Undo/Redo do", () => {
+  it("wraps its existing gate in heldByDrag", () => {
     // RED-FIRST kill: on PR #512's pre-fix head this expression was
     // `!idleEditable || !editor.canCut` with no `heldByDrag`/`dragging` term
     // at all, so this fails until the gate reads
