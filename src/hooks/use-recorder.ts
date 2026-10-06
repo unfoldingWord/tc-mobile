@@ -1161,8 +1161,11 @@ export function useRecorder(): UseRecorder {
   // mounting this hook, the way `resumeAudioContext` itself is —
   // `tests/foreground-resume.test.ts` mutates each guard to prove it. The effect
   // is the one-line call plus the `[state]` dependency: browser-boundary wiring
-  // whose guards are Node-tested. No test mounts this hook and fires the effect,
-  // and iOS gesture-withholding is on-device surface for #76.
+  // whose guards are Node-tested. `tests/recorder-pagehide-seal.test.ts` mounts
+  // this hook and fires a visible `visibilitychange` mid-take, so the effect
+  // runs there, but that file asserts no resume call: the guards' assertions
+  // are the direct-call ones above. iOS gesture-withholding is on-device
+  // surface for #76.
   useEffect(() => armForegroundResume(state === "recording"), [state]);
 
   // Never leave the microphone hot if the screen unmounts mid-recording.
