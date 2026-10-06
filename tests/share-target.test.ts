@@ -7,12 +7,10 @@ import {
   type NativeShareSession,
   type ShareEnvironment,
   createNativeShareSession,
-  needsAppToShare,
   resolveProvesDelivery,
   selectShareRoute,
   sharePlatformFrom,
 } from "@/hooks/share-target";
-import { browserOnAndroid } from "@/hooks/browser-os";
 
 /**
  * #336 — where a prepared share File is handed to the OS.
@@ -604,65 +602,5 @@ describe("sharePlatformFrom — Capacitor's platform id, narrowed (#490)", () =>
     expect(sharePlatformFrom("electron")).toBe("web");
     expect(sharePlatformFrom("")).toBe("web");
     expect(sharePlatformFrom("Android")).toBe("web");
-  });
-});
-
-describe("browserOnAndroid — which phone a browser is on (#272)", () => {
-  it("reads Chrome and Samsung Internet on Android as Android", () => {
-    expect(
-      browserOnAndroid({
-        userAgent:
-          "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36",
-      })
-    ).toBe(true);
-    expect(
-      browserOnAndroid({
-        userAgent:
-          "Mozilla/5.0 (Linux; Android 14; SM-A146B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.0.0 Mobile Safari/537.36",
-      })
-    ).toBe(true);
-  });
-
-  it("does not read iOS, desktop or a missing UA as Android", () => {
-    for (const userAgent of [
-      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-      "",
-    ])
-      expect(browserOnAndroid({ userAgent }), userAgent).toBe(false);
-    expect(browserOnAndroid({})).toBe(false);
-  });
-});
-
-describe("needsAppToShare — Share Book is app-only on Android browsers (#272)", () => {
-  const REFUSES: ShareEnvironment = { ...WEB_ONLY, canShareFiles: () => false };
-  const ACCEPTS: ShareEnvironment = { ...WEB_ONLY, canShareFiles: () => true };
-
-  it("is true for an Android browser that has Web Share but refuses the zip", () => {
-    expect(needsAppToShare(REFUSES, true, zip())).toBe(true);
-  });
-
-  it("is false where that browser accepts the file", () => {
-    expect(needsAppToShare(ACCEPTS, true, zip())).toBe(false);
-    expect(
-      needsAppToShare({ ...WEB_ONLY, canShareFiles: null }, true, zip())
-    ).toBe(false);
-  });
-
-  it("is false off Android, so iOS and desktop keep their own outcomes", () => {
-    expect(needsAppToShare(REFUSES, false, zip())).toBe(false);
-  });
-
-  it("is false inside the native shell, whatever the WebView says (#347)", () => {
-    expect(needsAppToShare({ ...REFUSES, native: true }, true, zip())).toBe(
-      false
-    );
-  });
-
-  it("is false for a browser with no Web Share at all, which keeps its failure", () => {
-    expect(needsAppToShare({ ...REFUSES, webShare: false }, true, zip())).toBe(
-      false
-    );
   });
 });

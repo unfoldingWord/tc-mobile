@@ -129,7 +129,6 @@ describe("shareErrorText", () => {
   it("points a refused book share to the app, never to `try again` (#272)", () => {
     const text = shareErrorText("appOnly", "book");
     expect(text).toBe(strings.shareBookAppOnly);
-    expect(text).toMatch(/Google Play/);
     expect(text).not.toMatch(/try again/i);
     expect(text).not.toBe(strings.shareBookFailed);
   });

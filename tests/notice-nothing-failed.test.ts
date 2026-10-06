@@ -317,7 +317,7 @@ describe("the not-a-failure Notices read one tone (#147)", () => {
   });
 
   it("the share error table's `appOnly` takes its tone from the constant (#272)", () => {
-    // A browser on Android that cannot share a book, where the app can. Not
+    // A browser that cannot share a book, where the app can. Not
     // a failure: it says where the share works. Pinned at its own case
     // clause, as `nothing` is above.
     const b = bind("src/components/share-outcome-glyph.ts");

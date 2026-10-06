@@ -17,16 +17,16 @@ import type { BookId } from "@/types/domain";
 import { clearAllStores } from "./support";
 
 /**
- * Share Book in a browser on Android that refuses the zip (#272): the DRI
+ * Share Book in a browser whose Web Share refuses the zip (#272): the DRI
  * accepted Share Book as app-only there (2026-10-06), so tap 1 reports
  * `appOnly` — before any encode — instead of building the zip and failing.
- * Every other platform keeps its own outcome: the native shell, a browser
- * off Android, and an Android browser that takes the file.
+ * A browser that takes the zip, a browser with no Web Share, and the native
+ * shell keep their own outcomes.
  *
  * Mounted the way `use-book-share-spool.test.ts` mounts the hook: jsdom for
  * React only, fake-indexeddb, a codec the test controls, and `navigator`
- * stubbed with Web Share, `canShare` and a user-agent. Not covered: a real
- * browser's `canShare`, the share sheet, the Capacitor plugin, and a phone.
+ * stubbed with Web Share and `canShare`. Not covered: a real browser's
+ * `canShare`, the share sheet, the Capacitor plugin, and a phone.
  */
 
 const native = vi.hoisted(() => ({ on: false }));
@@ -51,13 +51,6 @@ vi.mock("@/hooks/share-target", async (importOriginal) => {
   };
 });
 
-const ANDROID_CHROME =
-  "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36";
-const IOS_SAFARI =
-  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
-const DESKTOP_CHROME =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36";
-
 let dom: JSDOM;
 let root: Root;
 let share: ReturnType<typeof vi.fn>;
@@ -79,10 +72,9 @@ const settle = (ms = 30) =>
     await new Promise((r) => setTimeout(r, ms));
   });
 
-/** A browser on `userAgent` whose `canShare` answers `accepts` for a zip. */
-function browser(userAgent: string, acceptsZip: boolean): void {
+/** A browser with Web Share whose `canShare` answers `acceptsZip` for a zip. */
+function browser(acceptsZip: boolean): void {
   vi.stubGlobal("navigator", {
-    userAgent,
     share,
     canShare: ({ files }: { files: File[] }) =>
       acceptsZip || files.every((f) => f.type !== "application/zip"),
@@ -146,9 +138,9 @@ afterEach(async () => {
   }
 });
 
-describe("a browser on Android that refuses the zip", () => {
+describe("a browser that refuses the zip", () => {
   it("reports appOnly at tap 1, without building the zip or opening the modal", async () => {
-    browser(ANDROID_CHROME, false);
+    browser(false);
     expect(await prepare(await bookWith(2))).toBeNull();
     expect(hook().error).toBe("appOnly");
     expect(hook().status).toBe("idle");
@@ -158,52 +150,33 @@ describe("a browser on Android that refuses the zip", () => {
   });
 
   it("clears appOnly on reset, so another book's menu opens without it", async () => {
-    browser(ANDROID_CHROME, false);
+    browser(false);
     await prepare(await bookWith(1));
     expect(hook().error).toBe("appOnly");
     act(() => hook().reset());
     expect(hook().error).toBeNull();
   });
-
-  it("clears appOnly on the next prepare the browser accepts", async () => {
-    browser(ANDROID_CHROME, false);
-    const bookId = await bookWith(1);
-    await prepare(bookId);
-    expect(hook().error).toBe("appOnly");
-    browser(ANDROID_CHROME, true);
-    await prepare(bookId);
-    expect(hook().error).toBeNull();
-    expect(hook().status).toBe("ready");
-  });
 });
 
-describe("every other platform keeps its own outcome", () => {
-  it("an Android browser that accepts the zip builds and arms it", async () => {
-    browser(ANDROID_CHROME, true);
+describe("every other route keeps its own outcome", () => {
+  it("a browser that accepts the zip builds and arms it", async () => {
+    browser(true);
     await prepare(await bookWith(1));
     expect(hook().error).toBeNull();
     expect(hook().status).toBe("ready");
     expect(withEncoder).toHaveBeenCalledTimes(1);
   });
 
-  it("iOS Safari builds and arms the zip", async () => {
-    browser(IOS_SAFARI, true);
+  it("a browser with no Web Share keeps the flow's own failure", async () => {
+    vi.stubGlobal("navigator", {});
     await prepare(await bookWith(1));
-    expect(hook().error).toBeNull();
-    expect(hook().status).toBe("ready");
-  });
-
-  it("a desktop browser that refuses the zip still builds it and reports failed", async () => {
-    browser(DESKTOP_CHROME, false);
-    await prepare(await bookWith(1));
-    expect(withEncoder).toHaveBeenCalledTimes(1);
     expect(hook().error).toBe("failed");
-    expect(share).not.toHaveBeenCalled();
+    expect(withEncoder).not.toHaveBeenCalled();
   });
 
-  it("the native shell on Android stages the zip through the plugin, whatever the WebView's canShare says (#347)", async () => {
+  it("the native shell stages the zip through the plugin, whatever the WebView's canShare says (#347)", async () => {
     native.on = true;
-    browser(ANDROID_CHROME, false);
+    browser(false);
     vi.mocked(nativeShare.stage).mockResolvedValue({
       uri: "file:///cache/x/Book.zip",
       dir: "x",

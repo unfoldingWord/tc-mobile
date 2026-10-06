@@ -84,9 +84,8 @@ export function noticePresentation(tone: NoticeTone): NoticePresentation {
  *     in the same breath.
  *   - `shareOutcomeGlyph("nothing")` — there is no audio yet to share. Nothing
  *     failed to go; nothing was ever recorded.
- *   - `shareErrorGlyph("appOnly")` — a browser on Android cannot share a book;
- *     the app from Google Play can (#272). Nothing failed; it says where the
- *     share works.
+ *   - `shareErrorGlyph("appOnly")` — this browser cannot share a book; the app
+ *     can (#272). Nothing failed; it says where the share works.
  *
  * Each is "you cannot do this (or any more), and nothing is wrong and nothing
  * is at risk" — a settled fact plus what to do next, which is the `info`

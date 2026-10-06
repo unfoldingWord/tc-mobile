@@ -121,8 +121,8 @@ export function shareErrorText(
         : strings.shareBookFailed;
     case "encoder":
       return strings.shareEncoderStopped;
-    // Only Share Book reports it (`use-book-share.ts`): a browser on Android
-    // refusing the zip. A chapter is an MP3, which that browser shares.
+    // Only Share Book reports it (`use-book-share.ts`): a browser refusing the
+    // zip. Share Chapter never does.
     case "appOnly":
       return strings.shareBookAppOnly;
     default: {

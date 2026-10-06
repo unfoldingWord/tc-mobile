@@ -1,7 +1,6 @@
 import { useCallback, useState } from "react";
 
 import { spoolArchive } from "./archive-spool";
-import { browserOnAndroid } from "./browser-os";
 import { withEncoder } from "./mp3-codec";
 import {
   type ShareError,
@@ -10,14 +9,15 @@ import {
   type ShareSurface,
   useShareFlow,
 } from "./share-flow";
-import { needsAppToShare, readShareEnvironment } from "./share-target";
+import { readShareEnvironment, selectShareRoute } from "./share-target";
 import { exportBookZip } from "@/lib/export/book";
 import type { BookId } from "@/types/domain";
 
 /**
- * {@link ShareError} plus `"appOnly"`: a browser on Android that refuses to
- * share a zip (#272). Sharing a book there needs the app from Google Play
- * (DRI, 2026-10-06), so this is a pointer to it, not a failure.
+ * {@link ShareError} plus `"appOnly"`: a browser whose Web Share refuses the
+ * zip — Android Chrome's allowlist has no `application/zip` (#272). Sharing a
+ * book there works in the app (DRI, 2026-10-06), so this is a pointer to it,
+ * not a failure.
  */
 export type BookShareError = ShareError | "appOnly";
 
@@ -99,16 +99,12 @@ export function useBookShare(): UseBookShare {
       // the flow's own pre-encode gate has no file to ask about, but Share
       // Book's name and type are known now. Should a browser answer the real
       // File differently, the flow's post-encode check still refuses it as
-      // `failed`. Inside the shell, off Android, or where the browser takes
-      // the zip, the flow runs exactly as before.
+      // `failed`. `selectShareRoute` takes the native route first, so inside
+      // the shell this never asks the WebView (#347); a browser with no Web
+      // Share keeps the flow's own `failed`.
+      const env = readShareEnvironment();
       const probe = new File([], zipFilename, { type: ZIP_TYPE });
-      if (
-        needsAppToShare(
-          readShareEnvironment(),
-          browserOnAndroid(navigator),
-          probe
-        )
-      ) {
+      if (env.webShare && selectShareRoute(env, probe) === "unsupported") {
         setAppOnly(true);
         return Promise.resolve(null);
       }
