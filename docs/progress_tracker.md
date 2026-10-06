@@ -11,6 +11,86 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-06 (day) — Sprint 4 day 2: board check, seven lane PRs merged, #272 re-diagnosed, DRI decisions on #1092 / #840 / #272 / #1321
+
+### Sprint 4 board check
+
+- **None of the 41 open Sprint 4 issues was closable as fixed.** Every thread and timeline was read, and each fix was checked against develop `0d88de8e`.
+- **Eleven have merged fixes that wait only on a device or tester confirmation:** #1243, #1244, #1252, #1259, #1267, #1268, #1269, #1276 and #1230 (rc.3 confirmation), plus #1213 and #1251 (iPhone retest). All are in the v1.0.2 cut.
+- **#1294's fix is in the cut but still unproven:** the PR says the fix is inferred, so it needs a repro.
+- After today's merges Sprint 4 has 37 open and 30 closed.
+
+### DRI decisions (2026-10-06)
+
+| Issue        | Decision                                                                                                                                           |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #1092        | Items 2–3 accepted as fail-closed; issue closed with the evidence table                                                                            |
+| #840         | R5/R6 moved to the bench repo as unfoldingWord/review-bot#41 and #42; issue closed                                                                 |
+| #272         | Accept APK/Play-only for sharing a book. Then, after the re-diagnosis below, **copy-only**: on the web build a failed book share points to the app |
+| #1321, #1316 | Deferred to after the 10-09 training, because the shape gets picked first (#1313 took 8 rounds)                                                    |
+| #1315        | No rows added. Rows 1 and 5 just match the tree, as the issue's done-when says                                                                     |
+
+### Merged to develop
+
+Every merge was pinned to the head the bench approved: Frank and George clean at that SHA, a `uwreview` APPROVED review, and CI green. #1325–#1327 had one combined `npm run verify` on develop `0d88de8e` + all three heads, since they share no files (exit 0, 374 files / 5078 tests, test:dist 56/56). A later combined run on develop `9a107166` (with #1328–#1331 in) also exited 0 (5080 tests). Merges were by the DRI except wave 1, which the coordinator merged on the DRI's merge-on-clean-and-green word. After wave 1, the auto-mode classifier blocked further agent merges, so the DRI runs merges from here on.
+
+| PR    | Issue                       | Merged at  | What                                                                                                                                                                                 |
+| ----- | --------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| #1327 | Closes #1315                | `02c0be02` | Icon protocol, sheet and ADR 0010: row 1 is now the mic → record → square stop; row 5 is "Reset". Removes the runbook's interim heads-up. The `vite.config.ts` comment now says 15.4 |
+| #1326 | Closes #1202                | `bb9d47f1` | The nothing-failed gate reads `.js`/`.jsx` specifiers (red-first and mutation proven); the namespace-destructure form is named in "not covered"                                      |
+| #1325 | Closes #838                 | `946d2507` | AGENTS.md (and the 09-04 gate chart) say Share Book exports a zip of chapter MP3s                                                                                                    |
+| #1328 | #1317 (#1125)               | `26f0cab6` | Failed-delete baseline pinned with `toHaveLength` + `toContain`; a new case kills the M4 `report(null)` mutant                                                                       |
+| #1329 | #1317 (#1204, #1215)        | `72113d83` | The share-progress decoy reads through `code()`; capture-failure-copy's probe and sweep share one reader (mutants proven)                                                            |
+| #1330 | #1317 (#1171, #1211, #1300) | `5a434f86` | Stale wording in nav-stack and recorder test comments. `goBack`'s deps were right; only the comment was stale                                                                        |
+| #1331 | Closes #549                 | `9a107166` | The last false "no renderer / jsdom / Node-only" claims, 30 files of comments, with a verdict per site in the PR                                                                     |
+
+### #272 re-diagnosed (PR #1332, open, clean)
+
+- **The issue's premise was wrong.** Frank raised it on #1332, and the lane confirmed it in Chromium source. Chrome's `canShare()` never checks the MIME type. Android refuses the zip inside `share()` with `NotAllowedError`, which `classifyShareError` maps to `failed`.
+- **No signal exists before the encode** without a user-agent read, and #490 forbids that.
+- **The first lane worked around the #490 guard,** moving the user-agent read into a new file the guard doesn't scan. The coordinator reverted that.
+- **The DRI picked copy-only.** #1332 is now 3 files: on the web build a failed book share says "Could not share this book. Sharing a book works in the tC Mobile app." (chosen on `isNativeShell()`).
+- **Review state:** clean at `8c558e55` in round 4. A pre-merge verify on develop `9a107166` + head exited 0 (5081 tests).
+- **#272 stays open** until someone checks it in an Android phone's browser.
+
+### Filed or updated
+
+- **#1333:** Share your work (the library zip) probably fails the same way on Android web. This is an inference, not seen on a device.
+- **#249 comment:** protocol row 4 says "Finished" while the tile caption is "Done", and the sheet's print fit is not re-checked after #1327.
+- **#575 comment:** five comments cite the deleted `tests/recorder-edit-toolbar-glyph.test.ts`.
+- **Milestones:** today's seven merged PRs had no milestone, so they now sit in Sprint 4.
+
+### Other repos (contributor hygiene; Ian leads BT Servant)
+
+- **Portal #342 (Elsy, fabricated versions).**
+  - Diagnosed from staging logs saved on 09-18. KJV/NIV/ESV were made up with no data call. The ASV offer was real (it's in yaapi.bible). The false "ASV not available" came from checking aquifer instead of yaapi.
+  - Findings are on #342. The Hindi was the session's persisted `hindi` language config, not a bug.
+- **Worker PR #446** (#342, option 2, v2.55.6): `get_tool_definitions` returns descriptions, plus a non-overridable rule against naming unchecked versions. Frank and George clean. CI is red only on audit advisories that #445 clears.
+- **Worker PR #445** (v2.55.5) now clears **all six** audit advisories (MCP SDK 1.31 and `proxy-addr` 2.0.8 in production; braces, sharp, source-map-js and vitest in dev). All CI is green, the worker never runs the SDK's changed OAuth code, and it is waiting on Ian. **Merging it first turns every worker PR green.**
+- **Portal #346** (closes #344, v1.16.2) was merged by the DRI as `37f51acd`. Residuals are in portal #347.
+- **uw-zulip-mcp going public:**
+  - The audit found no secrets.
+  - The public Docker Hub `latest` was built locally and contained an internal auth memo. Only that tag is affected; the other 25 were built by CI and are clean.
+  - Cleanup PR uw-zulip-mcp#40 is open. The handoff to Yakob is at `temp/uw-zulip-mcp-public-readiness-handoff.md` and in a Claude doc.
+  - Yakob owns the rest.
+
+### Not verified
+
+- Nothing today ran on a phone.
+- The v1.0.2 APK and TestFlight runs (37380372475, 37380372435) are still waiting on `release-signing`, and `tester-build-v1.0.2` is not published.
+
+### Next
+
+1. **The DRI's `release-signing` approval** for the 1.0.2 APK and TestFlight. Then confirm every channel is at `PROMO_SHA` and publish the `tester-build-v1.0.2` pre-release.
+2. **Merge #1332** (the DRI runs the pinned command). Then the Android-browser check for #272 and #1333.
+3. **#249 before 10-09:** row 4's name and the sheet's print fit.
+4. **Held #1317 items:** #1209 needs a DRI call. #1221 and #1231 wait until Jesse's #1226 merges.
+5. **The Sprint 4 `AGENTS.md` PR** (carried from 10-05). The DRI also still owes #1089.
+6. **Tim, training week:** the #1297 questions, plus #1284, #1272, #595, #461.
+7. **Ian:** #445 first, then #446 and the other worker PRs, which take main by merge commit.
+
+---
+
 ## 2026-10-05 (day) — sprints adopted and numbered from day 1, v1.0.2 promoted to staging, six lane PRs merged after a GitHub Actions outage
 
 ### Sprints (DRI decisions, 2026-10-05)
