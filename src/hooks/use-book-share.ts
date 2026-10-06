@@ -138,12 +138,12 @@ export function useBookShare(): UseBookShare {
           (hasAudio) => {
             if (check !== checkRef.current) return null;
             setAppOnly(hasAudio);
-            return hasAudio ? null : run(() => Promise.resolve("nothing" as const));
+            return hasAudio
+              ? null
+              : run(() => Promise.resolve("nothing" as const));
           },
           (cause: unknown) =>
-            check === checkRef.current
-              ? run(() => Promise.reject(cause))
-              : null
+            check === checkRef.current ? run(() => Promise.reject(cause)) : null
         );
       }
       setAppOnly(false);
