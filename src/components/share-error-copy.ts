@@ -16,8 +16,9 @@
  */
 
 import { strings } from "@/lib/strings";
+import type { ShareError } from "@/hooks/share-flow";
+import { isNativeShell } from "@/hooks/share-target";
 import type { ShareGap, ShareProgress } from "@/hooks/share-progress";
-import type { BookShareError } from "@/hooks/use-book-share";
 import type {
   LibraryShareProgress,
   UseLibraryShare,
@@ -106,7 +107,7 @@ export function shareGapText(
 }
 
 export function shareErrorText(
-  error: BookShareError | null,
+  error: ShareError | null,
   scope: "chapter" | "book"
 ): string | null {
   if (error === null) return null;
@@ -116,15 +117,14 @@ export function shareErrorText(
         ? strings.shareNothing
         : strings.shareBookNothing;
     case "failed":
-      return scope === "chapter"
-        ? strings.shareFailed
-        : strings.shareBookFailed;
+      if (scope === "chapter") return strings.shareFailed;
+      // A browser can refuse the book's zip outright (#272), so the web build
+      // points to the app; the native shell keeps the retry line.
+      return isNativeShell()
+        ? strings.shareBookFailed
+        : strings.shareBookFailedWeb;
     case "encoder":
       return strings.shareEncoderStopped;
-    // Only Share Book reports it (`use-book-share.ts`): a browser refusing the
-    // zip. Share Chapter never does.
-    case "appOnly":
-      return strings.shareBookAppOnly;
     default: {
       const unhandled: never = error;
       return unhandled;

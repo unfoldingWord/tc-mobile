@@ -1,7 +1,7 @@
 import type { IconName } from "./icon";
 import { NOTHING_FAILED_TONE, type NoticeTone } from "./notice-tone";
+import type { ShareError } from "@/hooks/share-flow";
 import type { ShareSettled } from "@/hooks/share-progress";
-import type { BookShareError } from "@/hooks/use-book-share";
 
 /**
  * Which mark each share outcome wears (#178), as one pure table.
@@ -183,13 +183,9 @@ export function shareSettledGlyph(settled: ShareSettled): ShareOutcomeGlyph {
  * lane into a case nobody has asked about. Named rather than defaulted, so the
  * choice is visible instead of looking like an oversight. `undefined` means
  * `Notice`'s defaults for both halves.
- *
- * `appOnly` (#272) is a browser that cannot share a book, where the app can:
- * nothing failed and nothing is at risk, so it takes `NOTHING_FAILED_TONE`
- * and that tone's own ring-and-i, never the failure triangle.
  */
 export function shareErrorGlyph(
-  error: BookShareError | null
+  error: ShareError | null
 ): ShareOutcomeGlyph | undefined {
   if (error === null) return undefined;
   switch (error) {
@@ -199,8 +195,6 @@ export function shareErrorGlyph(
       return shareOutcomeGlyph("failed");
     case "encoder":
       return undefined;
-    case "appOnly":
-      return { icon: "info", tone: NOTHING_FAILED_TONE };
     default: {
       const unhandled: never = error;
       return unhandled;

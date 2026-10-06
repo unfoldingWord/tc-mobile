@@ -836,11 +836,12 @@ export const strings = {
   shareBookPreparing: "Preparing the book to share.",
   shareBookNothing: "Record a segment before sharing this book.",
   shareBookFailed: "Could not share this book. Try again.",
-  // A browser that refuses to share the zip (#272). Not a failure and not
-  // "try again": sharing a book works in the app (DRI, 2026-10-06), so this
-  // names where it works. No store is named: it shows on any browser.
-  shareBookAppOnly:
-    "This browser cannot share a book. Sharing a book works in the tC Mobile app.",
+  // The web build's version (#272). Android Chrome refuses a zip inside
+  // `share()`, after the encode, so trying again cannot help there; the app's
+  // native share sheet takes it. Other browsers can still be retried from the
+  // same menu item, so no "try again" is promised.
+  shareBookFailedWeb:
+    "Could not share this book. Sharing a book works in the tC Mobile app.",
   // `missing` counts whole chapters left out of the zip — a chapter with no
   // resolvable audio at all.
   shareBookMissing: (n: number): string =>
