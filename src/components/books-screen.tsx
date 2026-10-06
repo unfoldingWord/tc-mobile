@@ -1097,9 +1097,10 @@ export function BooksScreen({
   // returns a fresh object literal every render (`use-book-share.ts`) — that
   // object in a dependency array is the round-6 P1 shape this design exists to
   // remove. `reset` ITSELF is stable, though, so the member is the dependency
-  // and the object never is: it is a `useCallback([handoff, modal])` over two
-  // values that are `ref.current ??= …` in `share-flow.ts:388,409`, created
-  // once for the hook's life.
+  // and the object never is: `use-book-share.ts` wraps the flow's own `reset`
+  // in a `useCallback([resetFlow])`, and that one is a
+  // `useCallback([handoff, modal])` over two values that are
+  // `ref.current ??= …` in `share-flow.ts`, created once for the hook's life.
   const resetBookShare = bookShare.reset;
   // The share overlay's own capture/restore pair (#96/#97, George r2 P2-1,
   // #491). See `segments-screen.tsx`'s own copy of this comment for why

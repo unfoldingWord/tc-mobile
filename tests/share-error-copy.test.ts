@@ -126,6 +126,14 @@ describe("shareErrorText", () => {
     expect(shareErrorText("failed", "book")).toBe(strings.shareBookFailed);
   });
 
+  it("points a refused book share to the app, never to `try again` (#272)", () => {
+    const text = shareErrorText("appOnly", "book");
+    expect(text).toBe(strings.shareBookAppOnly);
+    expect(text).toMatch(/Google Play/);
+    expect(text).not.toMatch(/try again/i);
+    expect(text).not.toBe(strings.shareBookFailed);
+  });
+
   it("gives a stalled encoder its own line, on BOTH screens, naming the restart", () => {
     // A nested ternary ending in `: null` is how a new code used to go silent;
     // this is the case that would have shown nothing at all.

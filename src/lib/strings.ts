@@ -836,6 +836,11 @@ export const strings = {
   shareBookPreparing: "Preparing the book to share.",
   shareBookNothing: "Record a segment before sharing this book.",
   shareBookFailed: "Could not share this book. Try again.",
+  // A browser on Android that refuses the zip (#272). Not a failure and not
+  // "try again": sharing a book there needs the app (DRI, 2026-10-06), so this
+  // names where it works.
+  shareBookAppOnly:
+    "Sharing a book works in the tC Mobile app from Google Play. This browser cannot share it.",
   // `missing` counts whole chapters left out of the zip — a chapter with no
   // resolvable audio at all.
   shareBookMissing: (n: number): string =>

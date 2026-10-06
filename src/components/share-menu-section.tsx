@@ -9,7 +9,8 @@ import { shareErrorText } from "./share-error-copy";
 import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
 import { strings } from "@/lib/strings";
 import { readSharePlatform } from "@/hooks/share-target";
-import type { ShareError, ShareStatus } from "@/hooks/share-flow";
+import type { ShareStatus } from "@/hooks/share-flow";
+import type { BookShareError } from "@/hooks/use-book-share";
 
 /**
  * The Share rows inside a ⋮ menu — the two-gesture control and the three
@@ -35,7 +36,7 @@ export interface ShareMenuSectionProps {
   status: ShareStatus;
   /** The last send settled `unproven` and nothing has re-armed (#491). */
   sendUnconfirmed: boolean;
-  error: ShareError | null;
+  error: BookShareError | null;
   /** Which noun the error copy uses. */
   scope: "book" | "chapter";
   /** The screen's focus-restore fallback — both menus keep one. */

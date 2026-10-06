@@ -84,16 +84,19 @@ export function noticePresentation(tone: NoticeTone): NoticePresentation {
  *     in the same breath.
  *   - `shareOutcomeGlyph("nothing")` — there is no audio yet to share. Nothing
  *     failed to go; nothing was ever recorded.
+ *   - `shareErrorGlyph("appOnly")` — a browser on Android cannot share a book;
+ *     the app from Google Play can (#272). Nothing failed; it says where the
+ *     share works.
  *
- * Both are "you cannot do this (or any more), and nothing is wrong and nothing
+ * Each is "you cannot do this (or any more), and nothing is wrong and nothing
  * is at risk" — a settled fact plus what to do next, which is the `info`
  * contract as #147 states it.
  *
  * **`info`, by the DRI's pick on #147** (2026-09-28, "Amber 'info'
- * (Recommended)"). So neither member wears the failure colour or interrupts
- * with `role="alert"` any more. The marks still differ: `staleChapter` passes
- * no `icon`, so it takes this tone's own ring-and-i, while
- * `shareOutcomeGlyph("nothing")` keeps `share-empty` (#178).
+ * (Recommended)"). So no member wears the failure colour or interrupts with
+ * `role="alert"`. `staleChapter` passes no `icon`, so it takes this tone's own
+ * ring-and-i, as `appOnly` names it; `shareOutcomeGlyph("nothing")` keeps
+ * `share-empty` (#178).
  *
  * If the answer ever differs PER SITE, split this constant into the classes
  * that were answered differently — never hardcode a tone back at one call

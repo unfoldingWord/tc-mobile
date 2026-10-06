@@ -218,6 +218,29 @@ export function readShareEnvironment(): ShareEnvironment {
   };
 }
 
+/**
+ * Does sharing `file` need the app from Google Play? True only for a browser on
+ * Android that has Web Share but refuses this file — Chrome's allowlist has no
+ * `application/zip` (#272). The DRI accepted Share Book as app-only there
+ * (2026-10-06), so this case gets a pointer to the app, not "try again".
+ *
+ * False inside the native shell (its plugin carries any file, #347), on a
+ * browser with no Web Share at all, and off Android: those keep their own
+ * outcomes. `android` is `browserOnAndroid` (`browser-os.ts`), a parameter so
+ * the decision stays a pure function of data.
+ */
+export function needsAppToShare(
+  env: ShareEnvironment,
+  android: boolean,
+  file: File
+): boolean {
+  // `selectShareRoute` takes the native route first, so the shell never
+  // reaches "unsupported" here.
+  return (
+    android && env.webShare && selectShareRoute(env, file) === "unsupported"
+  );
+}
+
 /** A File already written to the app cache, waiting to be offered to the OS. */
 export interface StagedShare {
   /** The `file://` URI the share plugin takes. */

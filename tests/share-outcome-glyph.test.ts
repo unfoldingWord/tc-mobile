@@ -12,7 +12,7 @@ import {
 } from "@/components/share-outcome-glyph";
 import { shareControlGlyph } from "@/components/control-affordance";
 import { SHARE_SETTLED, type ShareSettled } from "@/hooks/share-progress";
-import type { ShareError } from "@/hooks/share-flow";
+import type { BookShareError } from "@/hooks/use-book-share";
 import { noticePresentation } from "@/components/notice-tone";
 
 import { stripComments } from "./support";
@@ -182,10 +182,19 @@ describe("shareErrorGlyph (#178)", () => {
     // ended in `: null`, so #166 adding `encoder` compiled cleanly and the menu
     // showed nothing. Every code must be a deliberate answer, including
     // "the default".
-    const codes: ShareError[] = ["nothing", "failed", "encoder"];
+    const codes: BookShareError[] = ["nothing", "failed", "encoder", "appOnly"];
     for (const code of codes)
       expect(() => shareErrorGlyph(code), `${code} is unhandled`).not.toThrow();
-    expect(new Set(codes).size).toBe(3);
+    expect(new Set(codes).size).toBe(4);
+  });
+
+  it("gives `appOnly` the calm heads-up, never the failure triangle (#272)", () => {
+    // A browser that cannot share a book, where the app can: nothing failed.
+    const mark = shareErrorGlyph("appOnly");
+    expect(mark?.tone).toBe("info");
+    expect(mark?.icon).toBe(noticePresentation("info").icon);
+    expect(mark?.icon).not.toBe(shareErrorGlyph("failed")?.icon);
+    expect(noticePresentation(mark!.tone).role).toBe("status");
   });
 });
 

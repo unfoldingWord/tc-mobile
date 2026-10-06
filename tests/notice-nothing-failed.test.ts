@@ -316,6 +316,25 @@ describe("the not-a-failure Notices read one tone (#147)", () => {
     expect(tones).toEqual([true]);
   });
 
+  it("the share error table's `appOnly` takes its tone from the constant (#272)", () => {
+    // A browser on Android that cannot share a book, where the app can. Not
+    // a failure: it says where the share works. Pinned at its own case
+    // clause, as `nothing` is above.
+    const b = bind("src/components/share-outcome-glyph.ts");
+    const tones: boolean[] = [];
+    walk(b.file, (node) => {
+      if (!ts.isCaseClause(node)) return;
+      if (!ts.isStringLiteral(node.expression)) return;
+      if (node.expression.text !== "appOnly") return;
+      walk(node, (inner) => {
+        if (!ts.isPropertyAssignment(inner)) return;
+        if (inner.name.getText() !== "tone") return;
+        tones.push(readsConstant(b, inner.initializer));
+      });
+    });
+    expect(tones).toEqual([true]);
+  });
+
   it("NOTHING ELSE reads the constant — the inverse of the two above", () => {
     // George round 1, Low: the assertions above pin "these sites read the
     // constant" and say nothing about "nothing else does". A genuine FAILURE
@@ -330,7 +349,7 @@ describe("the not-a-failure Notices read one tone (#147)", () => {
     // reasoning.
     const expected: Record<string, number> = {
       "src/components/segments-screen.tsx": 2, // list body + chapter menu
-      "src/components/share-outcome-glyph.ts": 1, // case "nothing"
+      "src/components/share-outcome-glyph.ts": 2, // case "nothing", case "appOnly"
     };
     const actual: Record<string, number> = {};
     for (const file of sourcesUnder("src/")) {

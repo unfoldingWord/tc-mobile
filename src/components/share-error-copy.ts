@@ -16,8 +16,8 @@
  */
 
 import { strings } from "@/lib/strings";
-import type { ShareError } from "@/hooks/share-flow";
 import type { ShareGap, ShareProgress } from "@/hooks/share-progress";
+import type { BookShareError } from "@/hooks/use-book-share";
 import type {
   LibraryShareProgress,
   UseLibraryShare,
@@ -106,7 +106,7 @@ export function shareGapText(
 }
 
 export function shareErrorText(
-  error: ShareError | null,
+  error: BookShareError | null,
   scope: "chapter" | "book"
 ): string | null {
   if (error === null) return null;
@@ -121,6 +121,10 @@ export function shareErrorText(
         : strings.shareBookFailed;
     case "encoder":
       return strings.shareEncoderStopped;
+    // Only Share Book reports it (`use-book-share.ts`): a browser on Android
+    // refusing the zip. A chapter is an MP3, which that browser shares.
+    case "appOnly":
+      return strings.shareBookAppOnly;
     default: {
       const unhandled: never = error;
       return unhandled;
