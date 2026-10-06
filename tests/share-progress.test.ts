@@ -433,6 +433,11 @@ const SOURCES = [
 const readRaw = (rel: string) =>
   readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
 
+// The one strip every TS/TSX read goes through. The decoy cases below call it
+// too, so weakening the strip `read` applies turns them red, not only a
+// change to `blankComments` itself.
+const code = (raw: string) => blankComments(raw);
+
 const read = (rel: string) => {
   if (rel.endsWith(".css")) return readRaw(rel);
   if (!SOURCES.includes(rel)) {
@@ -440,7 +445,7 @@ const read = (rel: string) => {
       `read: ${rel} is not in SOURCES, so nothing checks its strip`
     );
   }
-  return blankComments(readRaw(rel));
+  return code(readRaw(rel));
 };
 
 describe("the source reads see code, not comments (#822)", () => {
@@ -459,7 +464,13 @@ describe("the source reads see code, not comments (#822)", () => {
   it("a block comment cannot stand in for code", () => {
     const decoy = `/* await nativeShare.send( */ void nativeShare.send(x);`;
     expect(decoy).toMatch(/await nativeShare\.send\(/);
-    expect(blankComments(decoy)).not.toMatch(/await nativeShare\.send\(/);
+    expect(code(decoy)).not.toMatch(/await nativeShare\.send\(/);
+  });
+
+  it("a line comment cannot stand in for code", () => {
+    const decoy = `// await nativeShare.send(\nvoid nativeShare.send(x);`;
+    expect(decoy).toMatch(/await nativeShare\.send\(/);
+    expect(code(decoy)).not.toMatch(/await nativeShare\.send\(/);
   });
 });
 
