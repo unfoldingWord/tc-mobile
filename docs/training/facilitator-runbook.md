@@ -422,17 +422,12 @@ your other notes (§5).
    [`icon-recognition-protocol.md`](icon-recognition-protocol.md) and fill in
    its sheet. It takes about ten minutes per participant. Its results also
    decide whether the round buttons need to stand out more from the
-   background, so run it if you can. **The protocol was written for an
-   earlier build. Where it differs from the phone, go by the phone:** an
-   empty segment shows a **microphone**, which opens the recorder. The red
-   **Record** button there starts recording, and the **square** ends and
-   saves it (there is no pause). The menu tile the protocol calls "Clear" now
-   reads **Reset**.
+   background, so run it if you can.
 
 <!-- source and tracking, for maintainers:
      item 1: gh issue #595 (DRI pick 2026-09-28, "After training observations (Recommended)": facilitators note who used cut/paste and who re-recorded; the editor-optional decision is made from those notes); strings.ts rerecord = "Clear and record again" and tileErase = "Reset"; the bottom-bar scissors open editing, Cut is the scissors under the waveform, Paste is the arrow onto a line (§3 above; icon-recognition-protocol.md rows 6, 8, 9). Split per George round 1 P2-1 on PR #1314.
      item 2: gh issue #1284 (long names cut off with "…", no way to read them in full; known limit in §4) and gh issue #1272 (a typed chapter "number" becomes the chapter's name while the badge shows its position — the issue labels this inferred from the code).
-     item 3: the protocol's row 1 (red disc, Pause) and row 5 ("Clear") predate segment-row.tsx icon="mic" (#1217), recorder-toolbars.tsx stop/record (#614) and strings.ts tileErase "Reset"; fixing the protocol, sheet and ADR is gh issue #1315, and this interim note goes when it lands (George round 1 P2-2 on PR #1314). gh issue #249 and ADR 0010 (docs/decisions/0010-icon-recognition.md); gh issue #461 waits on the #249 check (DRI pick 2026-09-28, "Decide after the #249 icon check (Recommended)": if people find controls by the glyph, the button-disc contrast is accepted; if not, a border or a lighter surface ladder is chosen).
+     item 3: gh issue #249 and ADR 0010 (docs/decisions/0010-icon-recognition.md); gh issue #461 waits on the #249 check (DRI pick 2026-09-28, "Decide after the #249 icon check (Recommended)": if people find controls by the glyph, the button-disc contrast is accepted; if not, a border or a lighter surface ladder is chosen).
      Observation notes are per participant and by role, per AGENTS.md "Tester feedback is tagged by kind and source". -->
 
 ## 4. Known limits (as of 2026-10-02, build 1.0.1)

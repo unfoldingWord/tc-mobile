@@ -181,9 +181,14 @@ did not know_ counts, and the result column applies the rule above.
   updated when it has happened); the tasks have not been read aloud by a
   facilitator. The protocol is a plan.
 - The glyph list and their groups are **code-read** from
-  `src/components/icon.tsx` at `develop`. `stop` is in the icon set but no
-  component renders it at `develop` (the record control shows `pause` while
-  recording), so it is in the claim's table and not in the protocol's ten.
+  `src/components/icon.tsx` at `develop`. `stop` is rendered: while
+  recording, the recorder's record control shows the square, which ends and
+  saves the take (`src/components/recorder-toolbars.tsx`, #614). It is in the
+  claim's table and not in the protocol's ten. Protocol row 1 points at the
+  empty segment row's `mic`, which opens the recorder
+  (`src/components/segment-row.tsx`, #1217); the red `record` disc is a
+  second tap, in the recorder. `mic` is not in the claim's table; the rows
+  are #249's.
   `undo` / `redo` and `edit` (the pencil) are rendered but left out of the ten
   for the time budget: undo and redo sit on the editing toolbar and only mean
   something once an edit has been made, and the pencil sits in the same row menu as
