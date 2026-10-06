@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { spoolArchive } from "./archive-spool";
 import { withEncoder } from "./mp3-codec";
@@ -11,7 +11,28 @@ import {
 } from "./share-flow";
 import { readShareEnvironment, selectShareRoute } from "./share-target";
 import { exportBookZip } from "@/lib/export/book";
+import {
+  resolveBookChapters,
+  resolveChapterClipIds,
+} from "@/lib/storage/books";
+import { getClipMeta } from "@/lib/storage/clips";
 import type { BookId } from "@/types/domain";
+
+/**
+ * Does any chapter of the book hold a clip with frames? Metadata only, no
+ * clip read, over the same resolution `estimateLibraryZipBytes` walks.
+ */
+async function bookHasAudio(bookId: BookId): Promise<boolean> {
+  const { chapters } = await resolveBookChapters(bookId);
+  for (const chapter of chapters) {
+    const { clipIds } = await resolveChapterClipIds(chapter.id);
+    for (const clipId of clipIds) {
+      const meta = await getClipMeta(clipId);
+      if (meta && meta.frameCount > 0) return true;
+    }
+  }
+  return false;
+}
 
 /**
  * {@link ShareError} plus `"appOnly"`: a browser whose Web Share refuses the
@@ -88,6 +109,9 @@ export function useBookShare(): UseBookShare {
   // Set when tap 1 finds the browser will refuse the zip, cleared by every
   // new prepare and by reset, like `useLibraryShare`'s `storageShort`.
   const [appOnly, setAppOnly] = useState(false);
+  // Bumped by every prepare and by reset: a metadata read that lands after
+  // either is stale and must not set `appOnly` back over the newer state.
+  const checkRef = useRef(0);
 
   const prepare = useCallback(
     (
@@ -104,9 +128,23 @@ export function useBookShare(): UseBookShare {
       // Share keeps the flow's own `failed`.
       const env = readShareEnvironment();
       const probe = new File([], zipFilename, { type: ZIP_TYPE });
+      const check = (checkRef.current += 1);
       if (env.webShare && selectShareRoute(env, probe) === "unsupported") {
-        setAppOnly(true);
-        return Promise.resolve(null);
+        // A book with no audio is not app-only: the app cannot share it
+        // either (George, #1332 r1 Medium). Read from metadata, so the
+        // refusing browser still pays no encode. A read that throws goes to
+        // the flow as a failed build, which reports it.
+        return bookHasAudio(bookId).then(
+          (hasAudio) => {
+            if (check !== checkRef.current) return null;
+            setAppOnly(hasAudio);
+            return hasAudio ? null : run(() => Promise.resolve("nothing" as const));
+          },
+          (cause: unknown) =>
+            check === checkRef.current
+              ? run(() => Promise.reject(cause))
+              : null
+        );
       }
       setAppOnly(false);
       return run((isCurrent, signal, onStep) =>
@@ -149,6 +187,7 @@ export function useBookShare(): UseBookShare {
   );
 
   const reset = useCallback(() => {
+    checkRef.current += 1;
     setAppOnly(false);
     resetFlow();
   }, [resetFlow]);

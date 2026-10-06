@@ -149,6 +149,16 @@ describe("a browser that refuses the zip", () => {
     expect(share).not.toHaveBeenCalled();
   });
 
+  it("tells an empty book to record first, not to use the app, without encoding (George #1332 r1)", async () => {
+    browser(false);
+    const book = await createBook("empty");
+    await addSegment((await addChapter(book.id)).id);
+    expect(await prepare(book.id)).toBeNull();
+    expect(hook().error).toBe("nothing");
+    expect(withEncoder).not.toHaveBeenCalled();
+    expect(share).not.toHaveBeenCalled();
+  });
+
   it("clears appOnly on reset, so another book's menu opens without it", async () => {
     browser(false);
     await prepare(await bookWith(1));
