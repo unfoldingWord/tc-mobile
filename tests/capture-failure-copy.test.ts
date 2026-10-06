@@ -161,9 +161,13 @@ describe("no layer below components mints this copy (#169)", () => {
   // and its line-leading `//` pattern blanked a line inside a template
   // literal, so a sentence in either place left every case green. The parser
   // keeps string and template text as written, which is what is hunted, and
-  // also drops a `//` trailing live code, which is prose.
+  // also drops a `//` trailing live code, which is prose. The probe below
+  // reads through the same `readSwept`, so weakening the sweep's strip turns
+  // the probe red too.
+  const readSwept = (source: string, rel: string) =>
+    stripCodeComments(source, rel);
   const code = new Map(
-    files.map((rel) => [rel, stripCodeComments(read(rel), rel)] as const)
+    files.map((rel) => [rel, readSwept(read(rel), rel)] as const)
   );
 
   it("reads string text as code and comments as prose", () => {
@@ -176,7 +180,7 @@ describe("no layer below components mints this copy (#169)", () => {
       "`;",
       `const x = 1; // ${EXPECTED.unfinished}`,
     ].join("\n");
-    const stripped = stripCodeComments(probe, "probe.ts");
+    const stripped = readSwept(probe, "probe.ts");
     expect(stripped).toContain(EXPECTED.silence);
     expect(stripped).toContain(EXPECTED.undecodable);
     expect(stripped).not.toContain(EXPECTED.unfinished);
