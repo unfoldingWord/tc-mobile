@@ -55,8 +55,7 @@ const booksO4Css = readFileSync(BOOKS_O4_PATH, "utf8");
  * `.control, .paste-marker, .row { transition: none; }`, and `.row` as the
  * last item of that comma list sits alone on its own line — line-anchored
  * `cssRule` cannot tell that from a standalone `.row {` rule, so it throws
- * "ambiguous" (observed red above the fix, and again here without this
- * carve-out). The reduced-motion block only ever declares `transition`, so
+ * "ambiguous". The reduced-motion block only ever declares `transition`, so
  * filtering candidates by CONTENT, not by position, keeps this from
  * silently picking the wrong match if the file is reordered — an empty or
  * misdeclared block still fails the length check below rather than being

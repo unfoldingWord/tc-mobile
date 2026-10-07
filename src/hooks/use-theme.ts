@@ -196,9 +196,8 @@ function applyTheme(theme: Theme): void {
  * A SECOND RESIDUAL, also unverified: `applyTheme` rewrites
  * `apple-mobile-web-app-status-bar-style` alongside `theme-color`, and whether
  * iOS reads that meta LIVE (on a toggle, after launch) or only once at the
- * launch of an installed PWA needs a device check. `e2e/theme-toggle.spec.ts`
- * checks only
- * that the attribute is written. If iOS reads it at launch only, a toggle to
+ * launch of an installed PWA is not known. `e2e/theme-toggle.spec.ts` checks
+ * only that the attribute is written. If iOS reads it at launch only, a toggle to
  * light gets the right status bar from the NEXT launch AT BEST — and this
  * call does not by itself make that launch right: `index.html` always ships
  * `black-translucent`, and `applyTheme` mutates only the live DOM, so what

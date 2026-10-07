@@ -3,10 +3,10 @@ import { JSDOM } from "jsdom";
 import { vi } from "vitest";
 
 /**
- * The interactive mount pattern #890 item 2 (George r1 on #887) asked for and
- * `recorder-edit-toolbar-glyph.test.ts` introduced: a `react-dom/client` root
- * inside its own jsdom window, `act()`-wrapped — the step up from
- * `./render`'s static harness for behaviour a click drives, not just props.
+ * The interactive mount pattern #890 item 2 (George r1 on #887) asked for: a
+ * `react-dom/client` root inside its own jsdom window, `act()`-wrapped — the
+ * step up from `./render`'s static harness for behaviour a click drives, not
+ * just props.
  * The Vitest environment itself stays `node` (AGENTS.md): this brings its own
  * `window`/`document` rather than swapping the global ones, so `lib/`'s
  * DOM-free boundary is untouched.
