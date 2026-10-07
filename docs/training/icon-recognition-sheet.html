@@ -173,6 +173,27 @@
           padding: 0;
           max-width: none;
         }
+        /* Sized for one A4 or Letter page (#249), with room left over for
+           a wider fallback font where Arial is missing: a wider, slightly
+           smaller task column keeps each task to fewer lines, so most rows
+           stay at the glyph's own height, and the fields and header rows
+           are a little tighter. The glyphs keep their 14 mm; Notes takes
+           what is left. */
+        .fields {
+          gap: 1.5mm 6mm;
+        }
+        th {
+          padding: 1mm;
+        }
+        col.name {
+          width: 75mm;
+        }
+        td.name {
+          font-size: 9pt;
+        }
+        td.name small {
+          font-size: 7pt;
+        }
         tr {
           page-break-inside: avoid;
         }
@@ -367,25 +388,25 @@
             </svg>
           </td>
           <td class="name">
-            <b>Finished</b>
+            <b>Done</b>
             "Tell the app this recording is done."
             <small>Segment 1's row menu (you open it)</small>
           </td>
           <td class="tick">
-            <input type="checkbox" class="box" aria-label="Finished: knew it" />
+            <input type="checkbox" class="box" aria-label="Done: knew it" />
           </td>
           <td class="tick">
             <input
               type="checkbox"
               class="box"
-              aria-label="Finished: after one try"
+              aria-label="Done: after one try"
             />
           </td>
           <td class="tick">
             <input
               type="checkbox"
               class="box"
-              aria-label="Finished: did not know"
+              aria-label="Done: did not know"
             />
           </td>
           <td class="notes" contenteditable="true"></td>
