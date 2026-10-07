@@ -316,7 +316,22 @@ describe("the not-a-failure Notices read one tone (#147)", () => {
     expect(tones).toEqual([true]);
   });
 
-  it("NOTHING ELSE reads the constant — the inverse of the two above", () => {
+  it.each([
+    ["src/components/send-log-control.tsx"],
+    ["src/components/failure-log-panel.tsx"],
+  ])(
+    "the failure log's `nothing` Notice in %s takes its tone from the constant",
+    (rel) => {
+      // "There is nothing to send now." is not a failure: the log emptied
+      // between render and tap (DRI, 2026-10-07, on #1317's #1209 item). The
+      // `failed` and `restart` Notices beside it are failures and keep the
+      // default tone, which the membership map below holds to one site here.
+      const notices = noticesSaying(bind(rel), "shareFailureLogNothing");
+      expect(notices).toEqual([{ tone: "constant" }]);
+    }
+  );
+
+  it("NOTHING ELSE reads the constant — the inverse of the checks above", () => {
     // George round 1, Low: the assertions above pin "these sites read the
     // constant" and say nothing about "nothing else does". A genuine FAILURE
     // Notice that started passing `tone={NOTHING_FAILED_TONE}` would lose the
@@ -331,6 +346,8 @@ describe("the not-a-failure Notices read one tone (#147)", () => {
     const expected: Record<string, number> = {
       "src/components/segments-screen.tsx": 2, // list body + chapter menu
       "src/components/share-outcome-glyph.ts": 1, // case "nothing"
+      "src/components/send-log-control.tsx": 1, // shareFailureLogNothing
+      "src/components/failure-log-panel.tsx": 1, // shareFailureLogNothing
     };
     const actual: Record<string, number> = {};
     for (const file of sourcesUnder("src/")) {

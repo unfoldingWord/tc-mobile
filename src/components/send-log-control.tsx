@@ -5,6 +5,7 @@ import { readSharePlatform } from "@/hooks/share-target";
 import { Control } from "./control";
 import { shareControlGlyph } from "./control-affordance";
 import { Notice } from "./notice";
+import { NOTHING_FAILED_TONE } from "./notice-tone";
 import {
   sendLogHandoffView,
   sendLogLabel,
@@ -112,14 +113,14 @@ export function SendLogControl() {
     });
   }, [share]);
 
+  // `nothing` is not here: it is not a failure, so it renders below as its
+  // own Notice in the not-a-failure tone (#147's class, `notice-tone.ts`).
   const errorText =
-    share.error === "nothing"
-      ? strings.shareFailureLogNothing
-      : share.error === "failed"
-        ? strings.shareFailureLogFailed
-        : share.error === "restart"
-          ? strings.shareFailureLogRestart
-          : null;
+    share.error === "failed"
+      ? strings.shareFailureLogFailed
+      : share.error === "restart"
+        ? strings.shareFailureLogRestart
+        : null;
 
   // The platform's own mark (#490), not a hardcoded tray — `control-affordance
   // .ts`'s own header names this control as one of the three that must share
@@ -165,6 +166,11 @@ export function SendLogControl() {
       </span>
       {share.status === "preparing" && (
         <Notice tone="busy">{strings.shareFailureLogPreparing}</Notice>
+      )}
+      {share.error === "nothing" && (
+        <Notice tone={NOTHING_FAILED_TONE}>
+          {strings.shareFailureLogNothing}
+        </Notice>
       )}
       {errorText && <Notice>{errorText}</Notice>}
       {handoffView && (
