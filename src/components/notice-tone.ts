@@ -84,13 +84,18 @@ export function noticePresentation(tone: NoticeTone): NoticePresentation {
  *     in the same breath.
  *   - `shareOutcomeGlyph("nothing")` — there is no audio yet to share. Nothing
  *     failed to go; nothing was ever recorded.
+ *   - `shareFailureLogNothing` (`send-log-control.tsx` and
+ *     `failure-log-panel.tsx`, once each) — the failure log emptied between
+ *     render and tap, so there is nothing to send. Joined by the DRI's call on
+ *     #1317 (2026-10-07); its `failed` and `restart` siblings are failures and
+ *     keep the default tone.
  *
- * Both are "you cannot do this (or any more), and nothing is wrong and nothing
+ * All are "you cannot do this (or any more), and nothing is wrong and nothing
  * is at risk" — a settled fact plus what to do next, which is the `info`
  * contract as #147 states it.
  *
  * **`info`, by the DRI's pick on #147** (2026-09-28, "Amber 'info'
- * (Recommended)"). So neither member wears the failure colour or interrupts
+ * (Recommended)"). So no member wears the failure colour or interrupts
  * with `role="alert"` any more. The marks still differ: `staleChapter` passes
  * no `icon`, so it takes this tone's own ring-and-i, while
  * `shareOutcomeGlyph("nothing")` keeps `share-empty` (#178).
