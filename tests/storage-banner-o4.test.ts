@@ -255,7 +255,8 @@ describe("state 17, O4", () => {
 
   it.each([
     ["nothing", strings.shareAllNothing],
-    ["failed", strings.shareAllFailed],
+    // Plain Node reads as the web build (#1333).
+    ["failed", strings.shareAllFailedWeb],
     ["storage", strings.shareAllStorage],
     ["encoder", strings.shareEncoderStopped],
   ] as const)("words the %s refusal", (code, text) => {

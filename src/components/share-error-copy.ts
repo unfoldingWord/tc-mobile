@@ -149,7 +149,12 @@ export function libraryShareErrorText(error: LibraryShareError): string | null {
     case "nothing":
       return strings.shareAllNothing;
     case "failed":
-      return strings.shareAllFailed;
+      // The library zip meets the same browser refusal as the book's (#1333,
+      // #272), so the web build points to the app; the native shell keeps
+      // the retry line.
+      return isNativeShell()
+        ? strings.shareAllFailed
+        : strings.shareAllFailedWeb;
     case "storage":
       return strings.shareAllStorage;
     // The encoder is the problem, not what was shared: the same line Share

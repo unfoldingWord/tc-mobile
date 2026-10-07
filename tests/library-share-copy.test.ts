@@ -1,5 +1,6 @@
+import { Capacitor } from "@capacitor/core";
 import { createElement } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   libraryShareErrorText,
@@ -64,7 +65,8 @@ describe("libraryShareProgressText", () => {
     ["dismissed", strings.shareDismissed],
     ["unproven", strings.shareUnproven],
     ["nothing", strings.shareAllNothing],
-    ["failed", strings.shareAllFailed],
+    // Plain Node reads as the web build (#1333).
+    ["failed", strings.shareAllFailedWeb],
     ["encoder", strings.shareEncoderStopped],
   ] as const)("words the %s outcome", (settled, text) => {
     expect(libraryShareProgressText(outcome(settled), null)).toBe(text);
@@ -129,11 +131,37 @@ describe("libraryShareErrorText", () => {
   it.each([
     [null, null],
     ["nothing", strings.shareAllNothing],
-    ["failed", strings.shareAllFailed],
+    // Plain Node reads as the web build (#1333).
+    ["failed", strings.shareAllFailedWeb],
     ["storage", strings.shareAllStorage],
     ["encoder", strings.shareEncoderStopped],
   ] as const)("%s reads %s", (code, text) => {
     expect(libraryShareErrorText(code)).toBe(text);
+  });
+
+  it("points a failed share on the web build to the app, and keeps the native retry line (#1333)", () => {
+    // Plain Node reads as the web build.
+    expect(libraryShareErrorText("failed")).toBe(strings.shareAllFailedWeb);
+    expect(libraryShareProgressText(outcome("failed"), "failed")).toBe(
+      strings.shareAllFailedWeb
+    );
+    expect(strings.shareAllFailedWeb).toMatch(/tC Mobile app/);
+    expect(strings.shareAllFailedWeb).not.toMatch(/try again/i);
+
+    const native = vi
+      .spyOn(Capacitor, "isNativePlatform")
+      .mockReturnValue(true);
+    try {
+      expect(libraryShareErrorText("failed")).toBe(strings.shareAllFailed);
+      expect(libraryShareProgressText(outcome("failed"), "failed")).toBe(
+        strings.shareAllFailed
+      );
+      // A space refusal is not a share-sheet refusal: unchanged either way.
+      expect(libraryShareErrorText("storage")).toBe(strings.shareAllStorage);
+    } finally {
+      native.mockRestore();
+    }
+    expect(libraryShareErrorText("storage")).toBe(strings.shareAllStorage);
   });
 });
 
