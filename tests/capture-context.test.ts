@@ -319,9 +319,18 @@ describe("recorder wiring (#640)", () => {
     )
   );
 
-  it("the Record tap builds the context at the offset it locks", () => {
+  it("the Record tap builds the context at the offset it locks, and its deps carry editor (#1201)", () => {
+    // The pin runs THROUGH `onRecordButton`'s `useCallback` dependency list.
+    // Dropping `editor` from that list is not a stale buffer today:
+    // `useSegmentEditor` returns a fresh object every render, and
+    // `commitTake`, which is still listed, lists `editor` itself, so the
+    // callback is rebuilt on every render either way. The list is pinned
+    // because that coupling is an implementation detail of `commitTake`, not
+    // a contract of this callback. `react-hooks/exhaustive-deps` flags the
+    // drop too; this is the second gate, for the #212 bail-out shape, as in
+    // the Retry pin below.
     expect(src).toMatch(
-      /insertionOffset\.current = win\.centerlineSample;\s*setCaptureContext\(\s*buildCaptureContext\(\s*editor\.working,\s*win\.centerlineSample,\s*editor\.peaks\s*\)\s*\);\s*audio\.startRecording\(\);/
+      /insertionOffset\.current = win\.centerlineSample;\s*setCaptureContext\(\s*buildCaptureContext\(\s*editor\.working,\s*win\.centerlineSample,\s*editor\.peaks\s*\)\s*\);\s*audio\.startRecording\(\);\s*\},\s*\[recording,\s*view,\s*audio,\s*editor,\s*win\.centerlineSample,\s*commitTake\]\s*\);/
     );
   });
 
