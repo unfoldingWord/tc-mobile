@@ -22,7 +22,7 @@ import { restingErase } from "./support";
  * The one exception is the last `describe` below (#903 item 1): a live take's
  * click needs an interactive mount too, and rather than pull in the whole
  * `recorder-rerecord.test.ts` fixture for one case, it uses the same
- * `mountInteractive` helper `recorder-edit-toolbar-glyph.test.ts` uses.
+ * `mountInteractive` helper `recorder-edit-mode-header.test.ts` uses.
  */
 /**
  * The erase surface `App` now owns and passes down (#160, L-12). Resting: a
@@ -206,8 +206,8 @@ describe("the bar's bin does not erase during a live take (#903)", () => {
   // #903 item 1 (George r1 on #898): the case above this `describe` used to
   // claim "erasing under a live take is refused" while only ever checking
   // attributes off a static render — it never clicked. This is the click,
-  // through the interactive mount `recorder-edit-toolbar-glyph.test.ts`
-  // introduced (`mountInteractive`, shared here rather than copied).
+  // through the shared interactive mount (`mountInteractive` from
+  // `./interactive-mount`, shared here rather than copied).
   let mount: InteractiveMount;
 
   beforeEach(() => {
@@ -219,7 +219,7 @@ describe("the bar's bin does not erase during a live take (#903)", () => {
   });
 
   afterEach(async () => {
-    // try/finally, the same reason recorder-edit-toolbar-glyph.test.ts's
+    // try/finally, the same reason recorder-edit-mode-header.test.ts's
     // afterEach has one (#907 item 2): a throwing unmount must not skip the
     // teardown that unstubs the globals.
     try {

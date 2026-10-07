@@ -28,7 +28,7 @@ import { stripComments } from "./support";
  * Source-shape, and only for Cut. Cut lives in `recorder.tsx`, not in the
  * presentational bar, and rendering it means mounting the whole sheet with its
  * hook boundary mocked (the `tests/interactive-mount.ts` shape
- * `tests/recorder-edit-toolbar-glyph.test.ts` uses). This file does not do
+ * `tests/recorder-edit-mode-header.test.ts` uses). This file does not do
  * that, so it reads Cut's `disabled` prop as text. Undo lives
  * in the presentational bar, so its half of the comparison is RENDERED in
  * `tests/edit-control-state.test.ts` ("the toolbar reads one value for both

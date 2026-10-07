@@ -59,8 +59,10 @@ export interface UseAudioSession {
    *
    * Only `playSamples`' `onEnded` knows this — it never fires on a hand stop
    * (`audio-io.ts` sets `stopped` before `source.stop()`) — and it cannot be
-   * reconstructed from the elapsed a row last saw: the ~60 ms push above lands
-   * a tick short of the duration, so "at the end" is a guess and this is not.
+   * reconstructed from the elapsed a row last saw: the ~60 ms push above
+   * usually lands a tick short of the duration, but `elapsed()` clamps to the
+   * duration, so a tick between the source finishing and its ended task can
+   * read it exactly. "At the end" is a guess either way, and this is not.
    * The Segments row rests its scrub dot at the start on a run-out and where it
    * reached on a hand stop, which is the difference between a segment that can
    * be played twice and one that cannot (#601).
