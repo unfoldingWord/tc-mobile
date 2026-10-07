@@ -1194,7 +1194,7 @@ export const strings = {
   // (#272): the library goes out as a zip too, which Android Chrome refuses
   // inside `share()`, after the encode, so trying again cannot help there.
   shareAllFailedWeb:
-    "Could not share your work. Sharing your work works in the tC Mobile app.",
+    "Could not share your work. Use the tC Mobile app to share it.",
   // `roomForExport` said the phone has too little free space to build the
   // archive, checked before any encode. The way out is the one the storage
   // lines above already name: finished segments take much less room.
