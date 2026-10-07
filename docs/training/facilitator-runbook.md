@@ -528,7 +528,7 @@ your other notes (§5).
 - **One current recording per segment.** Recording and editing can add to or
   change it; there is no version history to restore an earlier saved version.
 - **Editing a finished segment re-compresses the audio.** Once a segment is
-  marked Finished, its audio is compressed to save space. Editing it again
+  marked Done, its audio is compressed to save space. Editing it again
   decompresses it, and re-finishing it compresses it a second time. Each
   compression pass loses a small amount of quality, the way saving a photo as
   a JPEG twice does. This is expected, not a bug. <!-- source: docs/decisions/0009-transcode-on-finished.md, section 3 (generation count) -->
@@ -543,7 +543,7 @@ your other notes (§5).
   a different route, and this failure has not been reported from it. <!-- source: gh issue #272, open (moved to v1.0.0 as the Chrome-on-Android PWA path; the APK routes shares through the Capacitor Share plugin and never reaches the Web Share gate, per the 2026-09-16 comment); src/hooks/share-target.ts selectShareRoute docblock ("Android Chrome's Web Share allowlist rejects application/zip (#272)" — the project's claim, not re-run here); src/hooks/use-library-share.ts and src/hooks/use-book-share.ts (both "application/zip"); src/hooks/use-chapter-share.ts ("audio/mpeg"); src/lib/strings.ts shareBookFailed, shareAllFailed; GitHub release v1.0.1 body lists #272 among the known limits; George round 1 P2-2 on PR #1297 -->
 - **If playback is silent or too quiet, check the phone's media volume
   first.** If it persists, record the build, the screen used for playback,
-  and whether it happened before or after marking the segment Finished.
+  and whether it happened before or after marking the segment Done.
   Do not assume volume explains every report. <!-- source: issues #269 and #555 -->
 
 ### If a recording will not save
