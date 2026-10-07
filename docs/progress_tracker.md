@@ -11,6 +11,52 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-07 (day) — Sprint 4 day 3: two waves, seven lane PRs merged; #1333 copy picked by the DRI; uw-zulip-mcp public-readiness re-checks
+
+### Merged to develop
+
+Every merge was pinned to the head the bench approved: Frank and George clean at that SHA, a `uwreview` APPROVED review there, and CI green. No two PRs in a wave shared a file. #1335, #1336 and #1338 also passed one combined `npm run verify` (a local run, not archived) on develop `7ea2187d` + all three heads: 374 files and 5083 tests passed. The first `test:dist` run failed on a symlinked `node_modules`; after a clean `npm ci` it passed 56/56. The DRI ran every merge with `--admin`: the "merge by admins only" ruleset on `develop`/`staging`/`main` (since 09-26) blocks a plain `gh pr merge`.
+
+| PR    | Issue                    | Merged at  | What                                                                                                                                                                                                                                                                                                                                                                          |
+| ----- | ------------------------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #1335 | #1201 (Refs)             | `2dffdc20` | The batched P3s (a)–(e) were already done by #1312, so this PR only pins `onRecordButton`'s deps through the Record-tap pin in `tests/capture-context.test.ts`. In a local mutation run (not archived) with `editor` dropped from the deps, that pin was the only failing test. The pin is green at the merge                                                                 |
+| #1336 | #575 (Refs)              | `2c183f17` | The 5 stale `recorder-edit-toolbar-glyph` citations now point at `recorder-edit-mode-header.test.ts` or the `interactive-mount` module, plus three sweep items. Comments only                                                                                                                                                                                                 |
+| #1338 | #1278 (Refs)             | `44ac13ea` | George's drag-close cases (a gesture on a child of the control; Space), each proven against its mutant in a local run (evidence in the PR body); RTL short book-name alignment e2e. The #1274 items were already fixed by #1318                                                                                                                                               |
+| #1337 | #249 (Refs)              | `468f49e8` | Protocol row 4 renamed to **Done** (DRI pick), to match the tile caption. The sheet was 2 pages at both A4 and Letter on develop, which predates #1327; print CSS fixes it to 1 page in headless Chromium with two font sets                                                                                                                                                  |
+| #1339 | #1333 (Refs)             | `c6426631` | The library share gets #1332's copy-only treatment. The web build's `failed` now says "Could not share your work. Use the tC Mobile app to share it." (DRI's wording); native keeps "Try again."                                                                                                                                                                              |
+| #1341 | #1317, #1209 item (Refs) | `3707c0a5` | DRI decision: "There is nothing to send now." joins #147's nothing-failed class. `nothing` is now its own `NOTHING_FAILED_TONE` Notice at both sites; `failed`/`restart` keep the alert. Membership map +2 rows, red-first and mutation-proven in a local run (evidence in the PR body)                                                                                       |
+| #1340 | —                        | `532efb36` | AGENTS.md "Versions and milestones" now records the 10-05 sprint decisions. Sprints are numbered from day 1 and run Mon→Sun UTC. There is one milestone per sprint, and issues and PRs are filed by the sprint they close or merge in. The sprint-end minor goes to the DRI as a go/no-go. Tester builds are tagged `tester-build-vX.Y.Z`. The live milestones and tags agree |
+
+Wave 1 was #1335–#1339; wave 2 was #1340 and #1341. Develop CI on `c6426631` (the tip after wave 1) passed: Code Quality, Secret Scan and Build. Smoke and Commit Messages are skipped on a push, as on `7ea2187d`.
+
+### Deferred by the bench, carried on the issues
+
+- **#1333:** George's two Lows. The comments state the Android refusal of the library zip as a mechanism nobody has run, and the native spy misses the null-code progress call. His two questions are carried there too.
+- **#1317:** the `notice-tone.ts` mark paragraph doesn't mention the new icon-less members.
+- **#1340, for the DRI:** "pulled in" (current sprint vs Backlog) is undefined, and there is no sprint-title rule across the New Year.
+
+### Other repos (contributor hygiene)
+
+- **uw-zulip-mcp public readiness:** the re-checks against the live repo and Docker Hub were run twice today. The repo owner closed most items, including the Docker `latest` tag. The rest is tracked there, not here.
+
+### Not verified
+
+- Nothing ran on a phone.
+- #1337's sheet has not been printed on paper. The 7 pt hints may be hard to read.
+- #1339 has not been tried in an Android phone's browser.
+- The v1.0.2 APK and TestFlight runs (37380372475, 37380372435) are still waiting on `release-signing`.
+
+### Next
+
+1. **The DRI's `release-signing` approval** for 1.0.2. Then confirm every channel is at `PROMO_SHA` and publish `tester-build-v1.0.2`.
+2. **#249 before 10-09:** a paper test print of the sheet.
+3. **Android-browser check** for #272 and #1333.
+4. **Held #1317 items:** #1221 and #1231 wait on Jesse's #1226 (needs-author since 10-02; nudge).
+5. **DRI wording calls on #1340's two follow-ups.**
+6. **Tim, training week:** the #1297 questions, plus #1284, #1272, #595 and #461.
+
+---
+
 ## 2026-10-06 (day) — Sprint 4 day 2: board check, seven lane PRs merged, #272 re-diagnosed, DRI decisions on #1092 / #840 / #272 / #1321
 
 ### Sprint 4 board check
