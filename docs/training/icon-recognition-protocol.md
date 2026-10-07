@@ -79,6 +79,14 @@ table says so, and it is never a control that has not been asked yet.
 | 10  | **Share** — tray with an arrow   | Leave editing with the **✕** at the bottom right or Back; go back to the Books screen and open **chapter 2**; open the Segments screen's menu (row 3's glyph) and point at Share                                                                                                                                                                                                                                                                            | "Get the app ready to send this chapter to another phone." Done when the **phone's own share screen** appears; you cancel it yourself                                                                                                                                         |
 | 11  | **Delete** — trash (a bin)       | Leave chapter 2 (Back to Books, then **chapter 1**'s Segments screen) and reopen **segment 2**'s row menu (⋮, already asked in row 3) — it closed when Reset was confirmed in row 5. Segment 2 now has no clip, so the menu drops to its 3-tile layout: an empty space takes the eraser's place, and Delete stays at the far end. Delete asks once more on a small panel; the bin there is the same control, so that second tap does not count against them | "Get rid of this segment completely." Done when segment 2 is gone from the list                                                                                                                                                                                               |
 
+**Row 4 is named for the tile's caption.** The tick's tile in segment 1's
+row menu is captioned **Done** in the app (`src/lib/strings.ts`
+`tileFinished`, rendered in `src/components/segment-row.tsx`), so the row is
+called Done here too and a facilitator reading the sheet sees the same word
+the participant sees. The row still tests the **tick**, not the word: point
+at the glyph and score what they say it does. If they answer by reading the
+caption, write that in Notes.
+
 **Rows 6 and 8 draw the same scissors glyph, in two different places doing two
 different jobs.** This is the DRI pick on
 [#999](https://github.com/unfoldingWord/tc-mobile/issues/999), after
@@ -101,14 +109,6 @@ not pick anything on it — and cancel it. On an Android build that has landed
 the Android share glyph (three joined dots, [#490](https://github.com/unfoldingWord/tc-mobile/issues/490)),
 point at that glyph instead and write **which glyph the phone showed** in
 Notes; the sheet draws the tray.
-
-**Row 4 is named for the tile's caption.** The tick's tile in segment 1's
-row menu is captioned **Done** in the app (`src/lib/strings.ts`
-`tileFinished`, rendered in `src/components/segment-row.tsx`), so the row is
-called Done here too and a facilitator reading the sheet sees the same word
-the participant sees. The row still tests the **tick**, not the word: point
-at the glyph and score what they say it does. If they answer by reading the
-caption, write that in Notes.
 
 **Row 11 reuses segment 2's row menu**, already opened once for row 5. The
 bin tile sits in that same menu next to the eraser, so it has been _visible_

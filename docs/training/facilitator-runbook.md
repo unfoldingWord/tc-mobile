@@ -529,7 +529,7 @@ your other notes (§5).
   change it; there is no version history to restore an earlier saved version.
 - **Editing a finished segment re-compresses the audio.** Once a segment is
   marked Done, its audio is compressed to save space. Editing it again
-  decompresses it, and re-finishing it compresses it a second time. Each
+  decompresses it, and marking it Done again compresses it a second time. Each
   compression pass loses a small amount of quality, the way saving a photo as
   a JPEG twice does. This is expected, not a bug. <!-- source: docs/decisions/0009-transcode-on-finished.md, section 3 (generation count) -->
 - **English only.** The app's menus and messages are in English; there is no
