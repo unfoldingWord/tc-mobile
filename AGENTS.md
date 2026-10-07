@@ -626,20 +626,30 @@ place. Decided 2026-09-02, when the repo stopped being solo.
   promoted without this and went unrecorded until a 2026-09-24 PR audit
   caught it (#839, #840 R7); the confirmation belongs in the tracker at
   promotion time, not reconstructed after the fact.
-- **The minor is the milestone.** Every GitHub milestone is named for the
-  version its `staging -> main` promotion ships. That PR bumps the minor and
-  tags `main` (`git tag vX.Y.0` — the first tags this repo will have). A
-  production hotfix between milestones is a patch on the shipped minor.
-
-  | Milestone                        | Due        | Ships                                                  |
-  | -------------------------------- | ---------- | ------------------------------------------------------ |
-  | `v0.2.0 — Sept: production gate` | 2026-09-30 | the first `staging -> main` since the pivot            |
-  | `v1.0.0 — Training build`        | 2026-10-02 | the training build, at the `staging -> main` promotion |
-  | `v1.1.0 — Post-training`         | —          | the first field-validated release                      |
-
-- **Every open issue carries a milestone.** File new issues into one. A
-  milestone closes when its promotion PR merges, and anything still open in it
-  moves to the next one explicitly, never silently.
+- **Sprints are two weeks, Monday 00:00 → Sunday 23:59 UTC**, numbered from
+  project day 1 (the initial commit, Sat 2026-08-22). Sprint 1 ran 08-22 →
+  09-06 (16 days, the only odd one); Sprint 2 = 09-07 → 09-20, Sprint 3 =
+  09-21 → 10-04, Sprint 4 = 10-05 → 10-18, Sprint 5 = 10-19 → 11-01. Decided
+  2026-10-05 by the DRI (`docs/progress_tracker.md`, that day's "Sprints").
+- **The sprint-end `staging -> main` promotion ships the minor.** That PR
+  bumps the minor and tags `main` (`git tag vX.Y.0`), and it goes to the DRI
+  as a go/no-go. Sprint 4 ships `v1.1.0`. A production hotfix between sprint
+  ends is a patch on the shipped minor.
+- **One GitHub milestone per sprint, due on its last day; sprint milestones
+  replace version milestones.** Live titles read `Sprint N (MM-DD → MM-DD)`,
+  with the planned release appended (`Sprint 4 (10-05 → 10-18) — v1.1.0`);
+  that shape is current practice, not a separate decision. **Every closed
+  issue and merged PR goes in the milestone of the sprint it closed or merged
+  in.** Each sprint milestone's description records what shipped in it. Tags
+  and GitHub Releases are the version record.
+- **Every open issue carries a milestone:** the current sprint if it was
+  pulled in, **Backlog** otherwise. File new issues into one. At sprint end,
+  anything still open in the sprint moves to the next sprint or Backlog
+  explicitly, never silently.
+- **A tester build is a GitHub pre-release tagged `tester-build-vX.Y.Z`**
+  (the 1.0.0 release candidates were `tester-build-v1.0.0-rc.N`), with the
+  APK and its QR code (`docs/native/README.md`, #629). The older
+  `android-release-v*` tags stay as published.
 
 ### Cloudflare Workers Builds owns deployment
 
