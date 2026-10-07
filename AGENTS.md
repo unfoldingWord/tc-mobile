@@ -634,22 +634,22 @@ place. Decided 2026-09-02, when the repo stopped being solo.
 - **The sprint-end `staging -> main` promotion ships the minor.** That PR
   bumps the minor and tags `main` (`git tag vX.Y.0`), and it goes to the DRI
   as a go/no-go. Sprint 4 ships `v1.1.0`. A production hotfix between sprint
-  ends is a patch on the shipped minor (`v1.0.1`).
+  ends is a patch on the shipped minor.
 - **One GitHub milestone per sprint, due on its last day; sprint milestones
-  replace version milestones.** The title is `Sprint N (MM-DD → MM-DD)`, with
-  the release appended when the sprint ships one
-  (`Sprint 4 (10-05 → 10-18) — v1.1.0`). **Every closed issue and merged PR
-  goes in the milestone of the sprint it closed or merged in.** Each sprint
-  milestone's description records what shipped in it. Tags and GitHub
-  Releases are the version record.
+  replace version milestones.** Live titles read `Sprint N (MM-DD → MM-DD)`,
+  with the planned release appended (`Sprint 4 (10-05 → 10-18) — v1.1.0`);
+  that shape is current practice, not a separate decision. **Every closed
+  issue and merged PR goes in the milestone of the sprint it closed or merged
+  in.** Each sprint milestone's description records what shipped in it. Tags
+  and GitHub Releases are the version record.
 - **Every open issue carries a milestone:** the current sprint if it was
-  pulled in, **Backlog** otherwise. File new issues into one. A sprint
-  milestone closes when the sprint ends, and anything still open in it moves
-  to the next sprint or Backlog explicitly, never silently.
+  pulled in, **Backlog** otherwise. File new issues into one. At sprint end,
+  anything still open in the sprint moves to the next sprint or Backlog
+  explicitly, never silently.
 - **A tester build is a GitHub pre-release tagged `tester-build-vX.Y.Z`**
-  (release candidates: `tester-build-v1.0.0-rc.N`), with the APK and its QR
-  code (`docs/native/README.md`, #629). The older `android-release-v*` tags
-  stay as published.
+  (the 1.0.0 release candidates were `tester-build-v1.0.0-rc.N`), with the
+  APK and its QR code (`docs/native/README.md`, #629). The older
+  `android-release-v*` tags stay as published.
 
 ### Cloudflare Workers Builds owns deployment
 
