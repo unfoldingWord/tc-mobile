@@ -504,6 +504,54 @@ describe("drag down to close (#1268 item 1)", () => {
       }
     });
 
+    // PR #1318 round 3 (George): a finger lands on what a button holds (its
+    // icon, its label), not on the button. The browser fires the click on
+    // the nearest common ancestor of the pointerdown and pointerup targets,
+    // so a press on the icon that lifts on the label clicks the button
+    // itself. All three name the same control, so the click is delivered.
+    it("delivers a tap made on the parts inside a control, and still eats a click elsewhere", async () => {
+      const { button, hit } = underneath();
+      button.textContent = "";
+      const icon = document.createElement("span");
+      const label = document.createElement("span");
+      label.textContent = "under the sheet";
+      button.append(icon, label);
+      const bodyHit = vi.fn();
+      document.body.addEventListener("click", bodyHit);
+      try {
+        const p = await mountMenu();
+        await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+        pointer(icon, "pointerdown", 300);
+        pointer(label, "pointerup", 300);
+        click(document.body);
+        expect(bodyHit).not.toHaveBeenCalled();
+        click(button);
+        expect(hit).toHaveBeenCalledTimes(1);
+        // The same on one part: down, up and click all on the label.
+        tapOn(label);
+        expect(hit).toHaveBeenCalledTimes(2);
+      } finally {
+        document.body.removeEventListener("click", bodyHit);
+      }
+    });
+
+    // PR #1318 round 3 (George): Space, unlike Enter, clicks on keyup, so its
+    // click comes after a keyup the swallow does not listen for.
+    it("lets Space's click through after its keyup, and still eats a click elsewhere", async () => {
+      const covered = underneath();
+      const next = underneath();
+      const p = await mountMenu();
+      await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+      key(next.button, " ");
+      click(covered.button);
+      expect(covered.hit).not.toHaveBeenCalled();
+      next.button.dispatchEvent(
+        new m.dom.window.KeyboardEvent("keyup", { key: " ", bubbles: true })
+      );
+      click(next.button);
+      expect(next.hit).toHaveBeenCalledTimes(1);
+    });
+
     it("is not armed by a drag that springs back", async () => {
       const { button, hit } = underneath();
       const p = await mountMenu();
