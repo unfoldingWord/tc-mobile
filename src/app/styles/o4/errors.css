@@ -1,14 +1,14 @@
-/* O4 — Mic denied, storage warning, crash (16-18). Owner: #948. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file. */
+/* O4 — Mic denied, storage warning, crash (16-18). Owner: #948. Every selector is prefixed with :root; see o4/index.css's header before editing this file. */
 /* Values are docs/design/o4-design-system.md §3 ("Error circle", "Wide guide
    button"). The circle takes the well role in both themes: the reference says
    raised in dark and well in light, and dark's well and raised are the same
    primitive (2-semantic.css), so one role covers both without this file
    reading the theme. The refusal shake on mic denied is #950's, not here. */
 @layer components {
-  [data-design="o4"] .o4-err {
+  :root .o4-err {
     gap: 22px; /* #939 token */
   }
-  [data-design="o4"] .o4-err-circle {
+  :root .o4-err-circle {
     position: relative;
     display: flex;
     align-items: center;
@@ -20,11 +20,11 @@
     background: var(--s-well);
     color: var(--s-live);
   }
-  [data-design="o4"] .o4-err-circle--denied {
+  :root .o4-err-circle--denied {
     color: var(--s-ink-muted);
   }
   /* The strike through the mic glyph: 64px long, at the workbench's angle. */
-  [data-design="o4"] .o4-err-circle--denied::after {
+  :root .o4-err-circle--denied::after {
     content: "";
     position: absolute;
     width: 64px;
@@ -33,13 +33,13 @@
     background: var(--s-live);
     transform: rotate(-41deg);
   }
-  [data-design="o4"] .o4-err-circle--warn {
+  :root .o4-err-circle--warn {
     width: 170px;
     height: 170px;
     background: var(--s-warn-quiet);
     color: var(--s-warn-text);
   }
-  [data-design="o4"] .o4-err-title {
+  :root .o4-err-title {
     font-size: 22px; /* #939 token */
     font-weight: 800;
     letter-spacing: -0.02em;
@@ -47,7 +47,7 @@
   /* The refusal sentence under the mic-denied title (D15). The workbench draws
      no such line, so it takes the workbench's secondary-text convention: the
      muted ink, below the title's size and weight. */
-  [data-design="o4"] .o4-err-sub {
+  :root .o4-err-sub {
     display: block;
     margin-top: 10px; /* #939 token */
     font-size: 17px; /* #939 token */
@@ -56,7 +56,7 @@
     line-height: 1.35;
     color: var(--s-ink-muted);
   }
-  [data-design="o4"] .o4-err-wide {
+  :root .o4-err-wide {
     width: 280px;
     height: 84px;
     border-radius: 42px; /* #939 token */
@@ -71,7 +71,7 @@
      "irreversible" the way every other armed control in this app does.
      `save-failed-armed.ts` picks this class; the design record has no armed
      variant for the wide guide button at all — see that file's own header. */
-  [data-design="o4"] .o4-err-wide--armed {
+  :root .o4-err-wide--armed {
     background: var(--s-live);
     color: var(--s-live-ink);
   }
