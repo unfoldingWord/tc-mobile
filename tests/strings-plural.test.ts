@@ -144,3 +144,26 @@ describe("the table splits no count by an English ternary (#169)", () => {
     expect(probe).not.toMatch(COUNT_TERNARY);
   });
 });
+
+/**
+ * "Exactly one" is not a plural category (#169, Frank's P2 on #1226).
+ *
+ * `strings.ts` is English-only, so no render-level case can show the
+ * chapter clause misbehaving in Russian; the behaviour is pinned in
+ * `tests/plural.test.ts` (the `"=1"` arm at 21/31/101 in ru, uk, lt). What this
+ * pins is the table's side: the exact-1 wording sits under `"=1"`, and
+ * the `one` key never carries it. The clause is a `plural` call with an
+ * exact arm, not a ternary, so `COUNT_TERNARY` above needs no exemption.
+ */
+describe("the chapter clause keeps `exactly one` off the `one` category (#169)", () => {
+  const file = path.resolve(import.meta.dirname, "../src/lib/strings.ts");
+  const code = stripCodeComments(readFileSync(file, "utf8"), file);
+
+  it("carries the exact-1 wording under `=1`", () => {
+    expect(code).toMatch(/"=1":\s*"an included chapter"/);
+  });
+
+  it("does not key that wording off `one`", () => {
+    expect(code).not.toMatch(/\bone:\s*"an included chapter"/);
+  });
+});
