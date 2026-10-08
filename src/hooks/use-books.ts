@@ -18,6 +18,7 @@ import {
 import { reportFailure } from "./report-failure";
 import { failureKey, type FailureKey } from "./save-failure";
 import { bumpStoragePressure } from "./use-storage-pressure";
+import type { CoverColourKey } from "@/lib/cover-colour";
 import type { Book, BookId, Chapter, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
@@ -530,7 +531,10 @@ export function useBooks() {
   const newBookNumber = useMemo(() => nextBookNumber(books), [books]);
 
   const createBook = useCallback(
-    async (name: string): Promise<CreateBookOutcome> => {
+    async (
+      name: string,
+      coverColourKey: CoverColourKey | null = null
+    ): Promise<CreateBookOutcome> => {
       // The name comes from the New Book field (#314). A blank one leaves the
       // book unnamed on its placeholder slot — derived on disk inside the
       // write's own transaction, so it is race-safe and never a render-time
@@ -542,7 +546,12 @@ export function useBooks() {
       // channel by an earlier action (Frank R1 P3 / George R1 P2-2, raised
       // independently by both lenses). Still never a silent unhandled rejection.
       try {
-        const book = await createBookInStore(name);
+        const book = await createBookInStore(
+          name,
+          null,
+          undefined,
+          coverColourKey
+        );
         // The write is durable now — a new book may hold new chapters/takes
         // before this screen next asks `estimate()` on its own, so a live
         // `useStoragePressure` mount must re-read rather than keep whatever

@@ -706,6 +706,18 @@
     user-select: text;
     -webkit-touch-callout: default;
   }
+  /* A form that carries an extra row (New Book's cover colours, #1190): wrap so
+     the row takes a line of its own, and let the field share the first line
+     with the commit control rather than claim it whole. */
+  .name-edit-with-extra {
+    flex-wrap: wrap;
+  }
+  .name-edit-with-extra > .name-input {
+    flex: 1 1 0;
+  }
+  .name-edit-extra {
+    flex: 0 0 100%;
+  }
   .name-input::placeholder {
     color: var(--s-ink-faint);
   }

@@ -10,7 +10,8 @@ import type { Book, BookId } from "@/types/domain";
  * Set a book's cover colour. Reusable: each caller mounts its own instance.
  *
  * Mounted by the O4 book menu (#949, `books-screen.tsx`). The new-book sheet
- * (#943) does not mount it yet.
+ * (#1190) does not mount it: it hands its pick to `createBook`, so the colour
+ * lands in the create's own write transaction rather than in a second one.
  *
  * Built the way `useEraseSegment` is: the store call lives in a plain async
  * function (`performSetCoverColour`, exercised in Node against the real store
@@ -110,7 +111,7 @@ export interface UseBookCoverColour {
  * one instance for the whole shelf — so the in-flight guard below is keyed
  * by `bookId`, not a single flag, or a write for one book in flight would
  * spuriously refuse an unrelated write for a different book as `"busy"`.
- * The new-book sheet (#943) does not mount this hook (see the docblock
+ * The new-book sheet (#1190) does not mount this hook (see the docblock
  * above); if a second caller ever does, each `useBookCoverColour()` call
  * gets its own React state and its own guard, same as any other hook.
  */
