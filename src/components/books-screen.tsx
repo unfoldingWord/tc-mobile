@@ -560,7 +560,8 @@ export function BooksScreen({
    * would land on `document`. Do not "simplify" that layout effect back.
    */
   const closeDeleteConfirmState = useCallback(() => {
-    if (deleteTargetId !== null) rowReveal.armFocus(deleteTargetId);
+    if (deleteTargetId !== null)
+      rowReveal.armFocus(deleteTargetId, { preventScroll: true });
     setDeleteTargetId(null);
   }, [deleteTargetId, rowReveal]);
 
@@ -1478,7 +1479,8 @@ export function BooksScreen({
     const targetId = deleteTargetId;
     void Promise.resolve().then(() => {
       rowReveal.armFocus(
-        focusTargetAfterDelete("ok", targetId, armedShelf.current)
+        focusTargetAfterDelete("ok", targetId, armedShelf.current),
+        { preventScroll: true }
       );
       setDeleteTargetId(null);
       // The confirm comes down here without any tap, so its layer has to come
@@ -1653,7 +1655,8 @@ export function BooksScreen({
       // case wants is decided by `focusTargetAfterDelete`, which is pure and has
       // a test table — the ordering below is the half no test here can observe.
       rowReveal.armFocus(
-        focusTargetAfterDelete(result, deleteTargetId, shelfBefore)
+        focusTargetAfterDelete(result, deleteTargetId, shelfBefore),
+        { preventScroll: true }
       );
       setDeleteTargetId(null);
       // Both outcomes take the confirm down, so both take its layer down.

@@ -411,7 +411,8 @@ export const SegmentsScreen = forwardRef<
    * `onConfirmDelete` replaces this arm with the row's neighbour.
    */
   const closeDeleteState = useCallback(() => {
-    if (deleteTarget !== null) rowReveal.armFocus(deleteTarget);
+    if (deleteTarget !== null)
+      rowReveal.armFocus(deleteTarget, { preventScroll: true });
     setDeleteTarget(null);
   }, [deleteTarget, rowReveal]);
 
@@ -945,7 +946,8 @@ export const SegmentsScreen = forwardRef<
         const at = orderBefore.indexOf(deleteTarget);
         const next =
           at >= 0 ? (orderBefore[at + 1] ?? orderBefore[at - 1]) : undefined;
-        if (next !== undefined) rowReveal.armFocus(next);
+        if (next !== undefined)
+          rowReveal.armFocus(next, { preventScroll: true });
       }
     })();
   }, [audio, closeDelete, deleteTarget, deleteSegment, rows, rowReveal]);
