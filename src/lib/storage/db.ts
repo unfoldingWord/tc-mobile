@@ -667,7 +667,12 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           const taken = new Set<number>();
           const named: BookV9[] = [];
           for (const row of rows) {
-            if (row.number !== undefined) continue; // already v10
+            if (row.number !== undefined) {
+              // Already v10 — left alone, but an unnamed one's slot is still
+              // shown, so the named rows below must not be handed it too.
+              if (row.name === null) taken.add(row.number);
+              continue;
+            }
             const slot = legacyPlaceholderSlot(row.name);
             if (slot === null) {
               named.push(row);

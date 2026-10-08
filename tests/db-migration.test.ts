@@ -995,6 +995,24 @@ describe("the v9 → v10 book placeholder migration (#169)", () => {
     expect(await fresh.count("books")).toBe(0);
   });
 
+  it("does not hand a named row a slot an already-numbered unnamed row is showing", async () => {
+    // A row that already carries a slot is left alone — and if it is unnamed,
+    // that slot is on screen, so the named rows parked below must step over it.
+    const v9 = await openLegacyV9();
+    await v9.put("books", { ...v9Book("b1", "x"), name: null, number: 1 });
+    await v9.put("books", v9Book("b2", "Mark"));
+    v9.close();
+
+    const v10 = await getDb();
+    const rows = await v10.getAll("books");
+    expect(
+      Object.fromEntries(rows.map((r) => [r.id, [r.name, r.number]]))
+    ).toEqual({
+      b1: [null, 1],
+      b2: ["Mark", 2],
+    });
+  });
+
   it("composes with v9 on a v8 device: a placeholder book gains a colour key AND a slot", async () => {
     // The ladder a 0.2.x device climbs: v9's colour stamp and v10's slot pass
     // run in one open, over the same `books` rows, in that order.

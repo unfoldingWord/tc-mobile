@@ -179,6 +179,19 @@ it("renders the placeholder for an unnamed book, in the row and in its labels", 
 
   // A named book is unaffected: its own name, not a slot.
   expect(() => button(strings.bookMenuOpen("Mark"))).not.toThrow();
+
+  // The book's own menu names it in its head, the same words as the row.
+  await click(strings.bookMenuOpen(PLACEHOLDER));
+  const dialog = document.querySelector('[role="dialog"]');
+  expect(dialog?.textContent).toContain(PLACEHOLDER);
+});
+
+it("pre-fills New Book with the placeholder for the slot the hook offers", async () => {
+  await mount();
+  await click(strings.newBook);
+  // `newBookNumber` is 4 in the mock: the screen renders the words.
+  expect(field()?.value).toBe(strings.bookHeading(null, 4));
+  expect(field()?.value).toBe("Book 004");
 });
 
 it("seeds the rename field with the placeholder an unnamed book shows", async () => {
