@@ -645,9 +645,9 @@ export const strings = {
   // glyphs the way the body notices do (#620): it is spoken
   // inside the ⋮ menu, where the recorder header — and so "Close recorder" —
   // is `inert` and the one live control on screen is the menu's own dismiss,
-  // which since #621 wears a single glyph, ⋮ since #1225 (this menu opts into
-  // `hamburger` with `dismissIcon="more"`, `recorder-menu.tsx`), not a back
-  // chevron. Describing the save control by its
+  // which since #621 wears a single glyph, the ✕ every sheet closes with
+  // since #1268 (this menu opts into `hamburger`, `recorder-menu.tsx`), not a
+  // back chevron. Describing the save control by its
   // looks here would still point at the dismiss, the exact collision the
   // round-1 `back` badge had (`menu-row-state.ts`, `rowHint`'s docblock);
   // #648 round 1 (George P2) caught the words repeating it.

@@ -177,11 +177,14 @@ describe("RecorderMenu on the tile grid (#949 G3)", () => {
     }
   });
 
-  it("draws every tile's glyph at the shared tile size", () => {
+  it("draws every tile's glyph at the shared 30px tile size", () => {
     show();
+    // A literal, not TILE_GLYPH against itself: the tile glyph is pinned at
+    // 30, larger than the 22px default a menu row's Control draws.
+    expect(TILE_GLYPH).toBe(30);
     for (const tile of tiles()) {
       const size = Number(tile.querySelector("svg")?.getAttribute("width"));
-      expect(size).toBe(TILE_GLYPH);
+      expect(size).toBe(30);
     }
   });
 
@@ -233,9 +236,13 @@ describe("RecorderMenu on the tile grid (#949 G3)", () => {
       eraseReason: "no-clip",
       markReason: "no-audio",
     });
-    for (const label of [strings.eraseSegment, strings.markFinished(3)]) {
+    // The exact spoken name: the label, then the reason the tile is grey.
+    for (const [label, reason] of [
+      [strings.eraseSegment, strings.nothingStored],
+      [strings.markFinished(3), strings.nothingRecorded],
+    ] as const) {
       const tile = startingWith(label);
-      expect(tile?.getAttribute("aria-label")).not.toBe(label);
+      expect(tile?.getAttribute("aria-label")).toBe(`${label}. ${reason}`);
       expect(tile?.getAttribute("aria-disabled")).toBe("true");
       expect(tile?.hasAttribute("disabled")).toBe(false);
     }

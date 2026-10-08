@@ -4,7 +4,12 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { stripCodeComments } from "./strip-code-comments";
-import { cssRule, declarationValue, stripCssComments } from "./support";
+import {
+  cssRule,
+  declarationValue,
+  stripComments,
+  stripCssComments,
+} from "./support";
 
 /**
  * The one colour bridge, kept honest (#164 L-14).
@@ -179,7 +184,9 @@ describe("the batch-one pixel bridge stays mapped (#460)", () => {
   ];
   const swept = SWEPT_FILES.map((name) => ({
     name,
-    code: stripCssComments(readFileSync(path.join(COMPONENTS, name), "utf8")),
+    // TS files: `stripComments` drops `//` and `/* */`; none of the swept
+    // files holds either inside a string.
+    code: stripComments(readFileSync(path.join(COMPONENTS, name), "utf8")),
   }));
 
   it("sees all three swept files", () => {
@@ -262,9 +269,9 @@ describe("the batch-one pixel bridge stays mapped (#460)", () => {
  */
 describe("the batch-two pixel bridge stays mapped (#460)", () => {
   const name = "error-boundary.tsx";
-  const code = stripCssComments(
-    readFileSync(path.join(COMPONENTS, name), "utf8")
-  );
+  // `stripComments`, not the CSS helper: a `//` comment must not satisfy
+  // the floor below. The file holds no `//` or `/*` inside a string.
+  const code = stripComments(readFileSync(path.join(COMPONENTS, name), "utf8"));
 
   it("sees the swept file", () => {
     // Vacuity guard: an empty read (renamed or moved file) would otherwise
