@@ -62,11 +62,10 @@ interface EraseConfirmProps {
    *  the segment Delete and the failure log's Clear pass nothing. "eraser" is
    *  the segment's Clear, which removes only the audio (the DRI's 2026-09-28
    *  pick on #1119: one word and one icon for one action). */
-  glyph?: "trash" | "eraser";
+  glyph?: "trash" | "eraser" | "record";
   /** The icon in the badge, when it differs from `glyph`. "record" is O4 G5,
    *  the record-again confirm (#979): the workbench's record badge. The
-   *  confirm button keeps `glyph` whatever this says, because it clears and
-   *  starts no take (#1022). The caller decides. */
+   *  confirm button keeps `glyph` whatever this says. The caller decides. */
   badge?: "trash" | "eraser" | "record";
   /**
    * The "Play what will be lost" row (#979 remainder). Omitted entirely by
@@ -233,7 +232,11 @@ export function EraseConfirm({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="confirm-panel"
+        className={
+          glyph === "record"
+            ? "confirm-panel confirm-panel-record"
+            : "confirm-panel"
+        }
       >
         <Icon name={badge} size={32} className="confirm-glyph" />
         <span className="t-title">{title}</span>

@@ -708,6 +708,11 @@ export const strings = {
   // Delete (#590) — because it is the same control on the same surface
   // saying the same word.
   eraseCancel: "Cancel",
+  // The record bar's bin confirm (O4 G5, #1028): the one tap that clears the
+  // segment AND starts the next take, and the workbench's own "Keep it" for
+  // the safe answer. The ⋮ menu's Clear keeps Clear / Cancel above.
+  recordAgainConfirm: "Record again",
+  recordAgainKeep: "Keep it",
   eraseFailed: "Could not clear the recording. Try again.",
   // The confirm's "Play what will be lost" row (#979 remainder, O4 "13"
   // only): the workbench's own copy, word for word, for the Play/Pause
