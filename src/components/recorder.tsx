@@ -168,6 +168,16 @@ interface RecorderProps {
    */
   databaseUnreachable: boolean;
   /**
+   * Resume the shared audio context inside the current tap
+   * (`UseAudioSession.primeAudioContext`, the helper App already runs in the
+   * tap that opens the sheet). The record-again confirm calls it
+   * synchronously, before its first await, so the context is un-interrupted
+   * while the tap's activation is still live; the take it then starts runs
+   * after the clear's awaits (#1028). Optional so a host without one simply
+   * skips the prime.
+   */
+  primeAudio?: () => void;
+  /**
    * Close the sheet. `dirty` ⇒ the segment changed (a take committed, an edit
    * persisted, or the finished flag toggled), so App reloads the Segments screen
    * behind it.
@@ -269,6 +279,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       clipboard,
       onClipboardChange,
       databaseUnreachable,
+      primeAudio,
       onExit,
       onRequestBack,
       onRequestBackToBooks,
@@ -346,6 +357,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const [confirmFrom, setConfirmFrom] = useState<"erase" | "rerecord">(
       "erase"
     );
+    // Set by a confirmed record-again clear once the segment has been erased
+    // and re-read, and consumed by the effect below `onConfirmErase`, which
+    // starts the take through `onRecordButton` -- the one start path the Record
+    // button uses (#1028). A ref: it is written in an async continuation and
+    // read in an effect keyed on the state it waits for.
+    const recordAfterClearRef = useRef(false);
     // Focus back to whatever opened an overlay, once the overlay is gone (#97).
     // ONE pair for the ⋮ menu and the erase confirm together, because they are
     // one `inert` scope and they chain inside it — the Erase row closes the menu
@@ -2000,6 +2017,18 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       // which both stop it; this is the belt to those suspenders, and matches
       // the Segments list's leave().
       stopPlayback();
+      // The bar's bin is "Record again" (#1028): its confirm clears AND starts
+      // the next take. Read here, in the tap, from the opener that raised the
+      // dialog -- the ⋮ menu's Clear never starts one.
+      const thenRecord = confirmFor === "erase" && confirmFrom === "rerecord";
+      // A start owed from an earlier confirm must not ride this one if it fails.
+      recordAfterClearRef.current = false;
+      // Record again resumes the audio context HERE, in the tap and before the
+      // first await: iOS spends the activation on the first synchronous Web
+      // Audio touch, and the start below runs after the clear's awaits. Not
+      // `getUserMedia` -- that would prompt for the mic even when the clear
+      // then fails. Same helper the sheet-open tap uses.
+      if (thenRecord) primeAudio?.();
       // Clear only when this call will acquire the guard: a "busy" refusal is
       // not an erase this sheet started, so it must not blank the flag from one
       // it did. The ref read and the hook's own check run in the same turn.
@@ -2045,6 +2074,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // does, and "Re-record should drop to draft until finished is
           // manually chosen again", requirements owner 2026-09-09).
           setFinishedIntent(null);
+          // Owed only on a clear that landed: a failed erase below never
+          // sets it, so nothing records over audio that is still on disk.
+          recordAfterClearRef.current = thenRecord;
           setConfirmOpen(false);
         } else if (result !== "busy") {
           // A failed erase leaves the take on disk, so this is not a loss — but
@@ -2068,6 +2100,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     }, [
       erase,
       isErasing,
+      confirmFor,
+      confirmFrom,
+      primeAudio,
       segmentId,
       onExit,
       stopPlayback,
@@ -2081,6 +2116,23 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       setPanState,
     ]);
 
+    // The start a confirmed record-again owes (#1028), through the SAME
+    // `onRecordButton` the Record button runs -- no second start path, so the
+    // mic prompt, the resume bound and the interruption handling all apply and
+    // a refusal reaches the permission panel the Record button's does. It waits
+    // for the sheet to be the empty, idle, un-latched segment the clear left:
+    // starting over the erased buffer would write it back. Runs as an effect
+    // because `onRecordButton` closes over the post-clear editor and window.
+    useEffect(() => {
+      if (!recordAfterClearRef.current) return;
+      if (isClosing || state !== "idle" || hasAudio || !view) return;
+      recordAfterClearRef.current = false;
+      // A microtask, not a call in the effect body: `onRecordButton` sets
+      // state, which react-hooks/set-state-in-effect rejects inline. It runs
+      // before the next paint or event, so nothing can land between.
+      queueMicrotask(onRecordButton);
+    }, [isClosing, state, hasAudio, view, onRecordButton]);
+
     // The record bar's bin (#592): straight to the SAME confirm the ⋮ row opens,
     // with no menu in between. Focus is captured here, in the gesture, for the
     // reason `openMenu` gives; the restore effect below lands it on Record once
@@ -2088,6 +2140,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const onRerecord = useCallback(() => {
       focusRestore.capture();
       stopPlayback();
+      recordAfterClearRef.current = false;
       setConfirmFrom("rerecord");
       setConfirmFor("erase");
       setConfirmOpen(true);
@@ -4085,21 +4138,23 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           }
           // Clear wears the eraser (#1119, DRI 2026-09-28); the clipboard's
           // discard (#862) throws a cut away, so it keeps the bin.
-          glyph={confirmFor === "clip" ? "trash" : "eraser"}
-          // G5 (#979): from the bar's Clear, the workbench's record badge.
-          // The button, Keep and the title stay the 13 dialog's: the button
-          // clears and starts no take, so it keeps the eraser and "Clear"
-          // (#1022). The workbench's "Record again" button records; here that
-          // would start the mic after the clear's awaits, outside the tap
-          // `use-audio-session.ts` startRecording needs. Otherwise the
-          // dialog is badged with `glyph`.
-          badge={g5 && confirmFor !== "clip" ? "record" : undefined}
+          glyph={confirmFor === "clip" ? "trash" : g5 ? "record" : "eraser"}
+          // G5 (#979, #1028): from the bar's bin the confirm is the
+          // workbench's "Record again" -- the record dot, and a confirm that
+          // clears and then starts the take (`onConfirmErase`). The title
+          // stays the 13 dialog's.
           confirmLabel={
             confirmFor === "clip"
               ? strings.discardClipConfirm
-              : strings.eraseConfirm
+              : g5
+                ? strings.recordAgainConfirm
+                : strings.eraseConfirm
           }
-          cancelLabel={strings.eraseCancel}
+          cancelLabel={
+            g5 && confirmFor !== "clip"
+              ? strings.recordAgainKeep
+              : strings.eraseCancel
+          }
           // Busy through the post-erase re-read too (#592): `isClosing` is the
           // latch `onConfirmErase` holds across it, and a confirm is otherwise
           // only reachable at idle, where `isClosing` is false. The discard

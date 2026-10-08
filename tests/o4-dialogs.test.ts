@@ -219,12 +219,39 @@ async function mountConfirmWithPreview() {
 describe("o4/dialogs.css's selectors against EraseConfirm's real markup (#946, #979)", () => {
   const selectors = RULES.flatMap((r) => r.selectors);
   const isPreview = (s: string) => s.includes(".confirm-preview");
+  const isRecord = (s: string) => s.includes(".confirm-panel-record");
 
   it("every non-preview selector matches, no preview passed", async () => {
     await mountConfirm();
-    const rest = selectors.filter((s) => !isPreview(s));
+    const rest = selectors.filter((s) => !isPreview(s) && !isRecord(s));
     expect(rest.length).toBeGreaterThanOrEqual(6);
     for (const s of rest) expect(document.querySelector(s), s).not.toBeNull();
+  });
+
+  it("the record dot's selectors match the G5 dialog (glyph record, #1028)", async () => {
+    await act(async () => {
+      root.render(
+        createElement(EraseConfirm, {
+          open: true,
+          title: "Reset segment and start over",
+          confirmLabel: "Record again",
+          cancelLabel: "Keep it",
+          glyph: "record",
+          onConfirm: vi.fn(),
+          onCancel: vi.fn(),
+        })
+      );
+    });
+    const recordSelectors = selectors.filter(isRecord);
+    expect(recordSelectors.length).toBeGreaterThanOrEqual(2);
+    for (const s of recordSelectors)
+      expect(document.querySelector(s), s).not.toBeNull();
+  });
+
+  it("the record dot's selectors match nothing on the Clear dialog", async () => {
+    await mountConfirm();
+    for (const s of selectors.filter(isRecord))
+      expect(document.querySelector(s), s).toBeNull();
   });
 
   it("the preview row's selectors match once preview is passed", async () => {
