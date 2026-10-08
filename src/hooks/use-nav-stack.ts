@@ -335,9 +335,9 @@ export function attachNativeBack(
 /**
  * Drop `?check=phone` from the current history entry's URL (#1014 item 4), so
  * a later reload of the same tab does not read it again and reopen the phone
- * check. Not a screen transition and not an overlay dismiss — the check never
- * pushes a nav layer of its own (`App` opens it by state alone, and this file
- * never sees `phoneCheckOpen`) — so this is a `replaceState` on the entry
+ * check. Not a screen transition and not an overlay dismiss — the layer the
+ * check registers (`App`) is popped by `popLayer`, which touches no history,
+ * and this file never sees `phoneCheckOpen` — so this is a `replaceState` on the entry
  * already there, carrying `state` through unchanged rather than the `{ tc,
  * index }` shape the rest of this file writes. It lives here regardless, next
  * to `attachNativeBack`, rather than in `App.tsx`, because invariant 1 bans
@@ -408,6 +408,12 @@ export interface UseNavStack {
   readonly pushLayer: (layer: Layer) => void;
   /** Unregister an overlay by id, idempotent (the rearm-layer-dismiss case). */
   readonly popLayer: (id: string) => void;
+  /**
+   * Whether any overlay is registered right now. A live read of the layer ref,
+   * for a click handler that must refuse while a screen's sheet or dialog is
+   * open (the phone check's reveal, #1014 item 3) — never for render.
+   */
+  readonly hasOpenLayer: () => boolean;
   /** Books → Segments: the state half plus the protective push. */
   readonly openChapter: (id: ChapterId) => void;
   /** Segments → Recorder: the state half plus the protective push. `entry`
@@ -892,6 +898,8 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     [decideWrite, performWrite]
   );
 
+  const hasOpenLayer = useCallback(() => layerStack.current.length > 0, []);
+
   const popLayer = useCallback((id: string) => {
     // Idempotent: removing an id that is not present is a no-op. It touches
     // history not at all — closing an overlay leaves the floor entry standing
@@ -1268,6 +1276,7 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   return {
     pushLayer,
     popLayer,
+    hasOpenLayer,
     openChapter,
     openRecorder,
     goBack,

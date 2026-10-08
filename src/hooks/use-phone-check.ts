@@ -77,6 +77,15 @@ export function claimPhoneCheckRun(): (() => void) | null {
 }
 
 /**
+ * Whether a run holds the slot right now. A live read of the module flag, so
+ * the screen's system-Back layer can refuse a Back mid-run without a render
+ * having to see the run first (invariant 4, docs/design/back-navigation.md).
+ */
+export function isPhoneCheckRunning(): boolean {
+  return runInFlight;
+}
+
+/**
  * The state a newly opened phone check starts from: steps 1-3's saved results
  * and, if the memory ceiling's page died mid-step, what its breadcrumb says.
  * Reads only; clearing the breadcrumb is the hook's post-commit effect.
