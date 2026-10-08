@@ -1362,17 +1362,20 @@ describe("shelf order: books stay put (#1185)", () => {
     ]);
   });
 
-  it("orders books created in the same millisecond by id, ascending", async () => {
-    // Pins the tie rule; no line in `listBooks` implements it. `getAll`
-    // returns rows in primary-key order (IndexedDB 3.0, "retrieve multiple
-    // values from an object store") and `Array.prototype.sort` is stable
-    // (ECMA-262 since ES2019), so a `createdAt` tie keeps id order.
+  it("stacks books created in the same millisecond newest on top (#338)", async () => {
+    // Before #338 a `createdAt` tie fell back to id order. The shelf is now
+    // read by the stored position, and each create puts its book at the top,
+    // so the clock no longer decides: the last book made is first. The old
+    // tie rule survives only in the v11 upgrade, which writes down the order
+    // the shelf showed (pinned in `db-migration.test.ts`).
     const a = await createBook("a", null, 5_000);
     const b = await createBook("b", null, 5_000);
     const c = await createBook("c", null, 5_000);
 
-    expect((await listBooks()).map((book) => book.id)).toEqual(
-      [a.id, b.id, c.id].sort()
-    );
+    expect((await listBooks()).map((book) => book.id)).toEqual([
+      c.id,
+      b.id,
+      a.id,
+    ]);
   });
 });
