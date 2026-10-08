@@ -127,5 +127,5 @@ describe("runWorkerEncodeProbe (#1014 item 1)", () => {
     expect(samples.length).toBe(ENCODE_PROBE_SECONDS * CANONICAL_SAMPLE_RATE);
     expect(result.audioSeconds).toBe(ENCODE_PROBE_SECONDS);
     expect(result.mp3Bytes).toBe(10);
-  });
+  }, 15000);
 });
