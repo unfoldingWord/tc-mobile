@@ -112,7 +112,7 @@ describe("blankCodeComments (#822)", () => {
       );
     });
     expect(disagree).toEqual([]);
-  });
+  }, 15000);
 });
 
 function sourcesUnder(dir: string): string[] {

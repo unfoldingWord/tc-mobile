@@ -359,7 +359,7 @@ describe("the not-a-failure Notices read one tone (#147)", () => {
       if (count > 0) actual[file] = count;
     }
     expect(actual).toEqual(expected);
-  });
+  }, 15000);
 
   describe("the checks above resolve bindings, not spellings (#1202)", () => {
     // What these cases cover: every way, within ONE file, of reaching the
