@@ -256,8 +256,7 @@ describe("the batch-one pixel bridge stays mapped (#460)", () => {
  * accounting of both files.
  *
  * One exact match existed in `error-boundary.tsx`: `text-[13px]`, the same
- * `--p-text-md` mapping batch one used (2 occurrences, one per design
- * branch). `gap-[18px]` and `px-[22px]` — both already shown to have no
+ * `--p-text-md` mapping batch one used. `gap-[18px]` and `px-[22px]` — both already shown to have no
  * exact token in batch one's sibling files — recur here for the same
  * reason and are left as-is.
  */
@@ -277,12 +276,12 @@ describe("the batch-two pixel bridge stays mapped (#460)", () => {
     expect(code).not.toMatch(/text-\[13px\]/);
   });
 
-  it("text-[length:var(--p-text-md)] is used at least twice in the swept file", () => {
-    // Both design branches (current look and O4) carry the teach line this
-    // batch converted, so the floor is 2, not 1.
+  it("text-[length:var(--p-text-md)] is used in the swept file", () => {
+    // The crash screen's teach line carries the conversion. It had two
+    // copies, one per design branch, until the old look's branch went (#954).
     const uses = (code.match(/text-\[length:var\(--p-text-md\)\]/g) ?? [])
       .length;
-    expect(uses).toBeGreaterThanOrEqual(2);
+    expect(uses).toBeGreaterThanOrEqual(1);
   });
 
   it("--p-text-md still resolves to the 13px text-[13px] used to mean", () => {

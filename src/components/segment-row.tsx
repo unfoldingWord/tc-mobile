@@ -7,7 +7,6 @@ import {
 } from "react";
 
 import { Control } from "./control";
-import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { rowHint } from "./menu-row-state";
 import { NameEdit } from "./name-edit";
@@ -16,7 +15,6 @@ import { O4SheetHead } from "./o4-crumbs";
 import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
 import { strings } from "@/lib/strings";
 import { reportFailure } from "@/hooks/report-failure";
-import { useDesign } from "@/hooks/use-design";
 import { Waveform } from "./waveform";
 import { cn } from "@/lib/utils";
 import { segmentRowState } from "@/lib/view/segment-rows";
@@ -110,9 +108,9 @@ interface SegmentRowProps {
    */
   guided?: boolean;
   /**
-   * The book and chapter this row sits in, for the O4 segment menu's
-   * breadcrumb head (#949, §7). Read only in the O4 look; absent, the head
-   * shows the segment crumb alone.
+   * The book and chapter this row sits in, for the segment menu's
+   * breadcrumb head (#949, §7). Absent, the head shows the segment crumb
+   * alone.
    */
   bookName?: string;
   /**
@@ -131,7 +129,7 @@ interface SegmentRowProps {
   chapterHeading?: string;
   /**
    * Press-and-hold reorder (#953 PR2a): the screen's `onPointerDown` for this
-   * row's hold area. Attached in the O4 look only, and only to the number
+   * row's hold area. Attached only to the number
    * badge (the open button) and the title line (the DRI's "Badge and title"
    * pick): never to the waveform, which takes the pointer at first touch
    * (`onPointerDown` below), and never to the row's other buttons. A tap
@@ -179,21 +177,22 @@ function playOffsetSeconds(fraction: number, durationMs: number): number {
  * before anything is recorded. Its audio items — Edit / Finished / Erase — are
  * recorded-row only: a never-recorded segment has no audio to erase and, since
  * Finished lives only in that menu, cannot be marked finished — the
- * finished-invariant made structural. The O4 menu (D20) shows Edit and Done on
- * a never-recorded row too, but greyed with their reason and refusing the tap. A never-recorded row opens the recorder
- * from its record button, sized to match play (#82).
+ * finished-invariant made structural. The menu (D20) shows Edit and Done on
+ * a never-recorded row too, but greyed with their reason and refusing the
+ * tap. A never-recorded row opens the recorder from its record button, sized
+ * to match play (#82).
  *
  * **Delete segment lives here, not on Edit/Finished/Erase's terms** (#590,
  * moved to this menu by #1104 from the recorder's ⋮ menu, where #1080 first
  * shipped it). Unlike Erase, Delete does NOT require a recorded row — an
  * accidentally added, never-recorded segment is exactly what it needs to
- * remove. In the O4 tile grid the tiles read left to right as Done, Edit,
- * Clear, Delete (the DRI's 2026-09-28 pick on #1119); the current look also
- * keeps Delete last, after Clear. "Clear" is the visible word for this file's
- * erase (audio only; the segment stays), with the eraser glyph in both looks;
- * the bin is Delete's alone.
+ * remove. In the tile grid the tiles read left to right as Done, Edit,
+ * Clear, Delete (the DRI's 2026-09-28 pick on #1119). "Clear" is the visible
+ * word for this file's erase (audio only; the segment stays), with the
+ * eraser glyph; the bin is Delete's alone.
  *
- * The ordinal always shows; a label, when set, follows it ("3 · verses 3–4").
+ * The ordinal always shows in the badge; a label, when set, is the typed
+ * title over the wave.
  */
 export function SegmentRow({
   row,
@@ -216,9 +215,6 @@ export function SegmentRow({
   onHoldStart,
 }: SegmentRowProps) {
   const state = segmentRowState(row);
-  // The O4 look (#944) branches the markup below; with the switch off every
-  // branch renders exactly what it did before.
-  const o4 = useDesign().design === "o4";
   const [menuOpen, setMenuOpen] = useState(false);
   // The menu is showing its rename field (#591) rather than its action list,
   // the rename write is in flight, and the last one did not land. All three
@@ -473,20 +469,16 @@ export function SegmentRow({
         ? strings.editSegment(ordinal, row.label)
         : strings.openSegment(ordinal, row.label);
 
-  // O4's typed title (#944): a 22px line over a 36px wave, or a 56px wave
-  // when there is no title. The current look keeps its 26px wave.
-  const titled = o4 && row.label != null && row.label !== "";
-  const waveHeight = o4 ? (titled ? 36 : 56) : 26;
-  // O4 paints the part past the playhead in `--s-voice-dim` while playing:
-  // `o4/segments.css` masks the canvas from this fraction on.
-  const o4Playing = o4 && playing;
-  // The hold area's handler and marker, O4 only: the switch-off look gains no
-  // gesture (#953 PR2a). `o4/segments.css` reads `data-reorder-handle` to
-  // keep a long press from selecting text or raising a callout.
-  const holdArea =
-    o4 && onHoldStart
-      ? { onPointerDown: onHoldStart, "data-reorder-handle": "" }
-      : undefined;
+  // The typed title (#944): a 22px line over a 36px wave, or a 56px wave
+  // when there is no title.
+  const titled = row.label != null && row.label !== "";
+  const waveHeight = titled ? 36 : 56;
+  // The hold area's handler and marker (#953 PR2a). `o4/segments.css` reads
+  // `data-reorder-handle` to keep a long press from selecting text or
+  // raising a callout.
+  const holdArea = onHoldStart
+    ? { onPointerDown: onHoldStart, "data-reorder-handle": "" }
+    : undefined;
 
   const wave = hasClip ? (
     <div
@@ -501,13 +493,11 @@ export function SegmentRow({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onKeyDown={onKeyDown}
-      className={
-        o4
-          ? cn("scrub min-w-0", o4Playing && "scrub--playing")
-          : "scrub min-w-0 flex-1"
-      }
+      className={cn("scrub min-w-0", playing && "scrub--playing")}
+      // The part past the playhead paints in `--s-voice-dim` while playing:
+      // `o4/segments.css` masks the canvas from this fraction on.
       style={
-        o4Playing
+        playing
           ? ({ "--row-played": `${fraction * 100}%` } as React.CSSProperties)
           : undefined
       }
@@ -524,7 +514,7 @@ export function SegmentRow({
       />
     </div>
   ) : (
-    <div className={o4 ? "min-w-0" : "min-w-0 flex-1"}>
+    <div className="min-w-0">
       <Waveform peaks={null} height={waveHeight} recorded={false} />
     </div>
   );
@@ -534,7 +524,7 @@ export function SegmentRow({
       className={cn(
         "row",
         state === "finished" && "row--finished",
-        o4 && menuOpen && "row--selected"
+        menuOpen && "row--selected"
       )}
     >
       <button
@@ -545,45 +535,26 @@ export function SegmentRow({
         className="row-open"
         {...holdArea}
       >
-        {o4 ? (
-          // The ordinal stays on every row, finished included (#591); the
-          // finished state is the badge's done fill (#81), not a glyph in
-          // place of the number.
-          <span className="row-badge">{ordinal}</span>
-        ) : (
-          <>
-            <span className="row-status">
-              {state === "finished" && <Icon name="check" size={16} />}
-            </span>
-            <span
-              className="t-ordinal row-heading"
-              // "3 · label": only a label is user text (#1267).
-              dir={row.label ? "auto" : undefined}
-            >
-              {strings.segmentHeading(ordinal, row.label)}
-            </span>
-          </>
-        )}
+        {/* The ordinal stays on every row, finished included (#591); the
+            finished state is the badge's done fill (#81), not a glyph in
+            place of the number. */}
+        <span className="row-badge">{ordinal}</span>
       </button>
 
-      {o4 ? (
-        <div className="row-mid">
-          {titled && (
-            // Visual only: the open button's name already carries the label.
-            <span
-              className="row-title"
-              dir="auto"
-              aria-hidden="true"
-              {...holdArea}
-            >
-              {row.label}
-            </span>
-          )}
-          {wave}
-        </div>
-      ) : (
-        wave
-      )}
+      <div className="row-mid">
+        {titled && (
+          // Visual only: the open button's name already carries the label.
+          <span
+            className="row-title"
+            dir="auto"
+            aria-hidden="true"
+            {...holdArea}
+          >
+            {row.label}
+          </span>
+        )}
+        {wave}
+      </div>
 
       {hasClip ? (
         <Control
@@ -594,7 +565,7 @@ export function SegmentRow({
               : strings.playSegment(ordinal)
           }
           variant="play"
-          size={o4 ? 30 : 20}
+          size={30}
           className="flex-none"
           // Held with the other controls while a save refreshes the list: the
           // row still carries the pre-save durationMs, so an offset computed
@@ -610,7 +581,7 @@ export function SegmentRow({
           icon="mic"
           label={strings.openRecorderSegment(ordinal)}
           variant="mic"
-          size={o4 ? 32 : 22}
+          size={32}
           className="flex-none"
           disabled={busy}
           // Never on a control held inert by a landing save: the ring would
@@ -658,8 +629,8 @@ export function SegmentRow({
             {savingLabel && <Notice tone="busy">{strings.savingName}</Notice>}
             {renameFailed && <Notice>{strings.renameSegmentFailed}</Notice>}
           </>
-        ) : o4 ? (
-          // The O4 segment menu (#949, 07 and G8), as the workbench draws it
+        ) : (
+          // The segment menu (#949, 07 and G8), as the workbench draws it
           // (D20). The head is the breadcrumb (§7, decoration) with Rename as
           // a pencil beside it; then the preview row — badge, name and wave
           // (decoration: every control names its segment) and the row's own
@@ -820,72 +791,6 @@ export function SegmentRow({
                 }}
               />
             </TileGrid>
-          </>
-        ) : (
-          <>
-            {hasClip && (
-              <>
-                <Control
-                  icon="edit"
-                  label={strings.editSegment(ordinal, row.label)}
-                  variant="quiet"
-                  onClick={() => {
-                    closeMenu();
-                    onOpenRecorder("edit");
-                  }}
-                />
-                <Control
-                  icon="check"
-                  // Fixed label, state on `pressed` (#351) — as the tile above.
-                  label={strings.markFinished(ordinal)}
-                  pressed={row.finished}
-                  variant="quiet"
-                  // Green while already finished. A standalone class, not
-                  // inheritance — the menu is portalled to <body>, outside
-                  // `.row--finished`.
-                  className={row.finished ? "is-done" : undefined}
-                  onClick={() => {
-                    closeMenu();
-                    onSetFinished(!row.finished);
-                  }}
-                />
-              </>
-            )}
-            <Control
-              ref={renameControlRef}
-              icon="edit"
-              label={strings.renameSegment}
-              variant="quiet"
-              onClick={() => setRenaming(true)}
-            />
-            {hasClip && (
-              <Control
-                icon="eraser"
-                label={strings.eraseSegment}
-                variant="quiet"
-                onClick={() => {
-                  // Clear FIRST, then close this menu: the screen registers the
-                  // confirm's layer inside `onErase` and this close unregisters
-                  // this menu's, so the stack goes 1 -> 2 -> 1 and never passes
-                  // through empty. Same interleave, and the same reason, as
-                  // Books' `onArmDelete` (#452 PR3).
-                  onErase();
-                  closeMenu();
-                }}
-              />
-            )}
-            {/* Delete (#590, moved here by #1104), last and unconditional —
-                reachable on a never-recorded row, unlike Clear just above.
-                Same 1 -> 2 -> 1 interleave. */}
-            <Control
-              icon="trash"
-              label={strings.deleteSegment}
-              variant="quiet"
-              onClick={() => {
-                onDeleteSegment();
-                closeMenu();
-              }}
-            />
           </>
         )}
       </Menu>

@@ -14,7 +14,7 @@ import { stripComments } from "./support";
  * is flat by design and cannot see an `@keyframes` or an `@media` block, which
  * are exactly what this file is made of.
  *
- * The gate: every rule that sets an animation under the switch is matched,
+ * The gate: every rule that sets an animation is matched,
  * selector for selector, by an `animation: none` rule inside the file's
  * `prefers-reduced-motion: reduce` block, and that rule comes later in the
  * same layer at equal specificity, so it wins. The app has no in-app
@@ -28,7 +28,7 @@ const ROOT = path.resolve(import.meta.dirname, "..");
 const CSS = stripComments(
   readFileSync(path.join(ROOT, "src/app/styles/o4/motion.css"), "utf8")
 );
-const O4 = '[data-design="o4"]';
+const O4 = ":root";
 const REDUCE = "@media (prefers-reduced-motion: reduce)";
 
 interface Block {
@@ -109,8 +109,8 @@ describe("o4/motion.css is read as a tree, not as a string (#950)", () => {
   });
 });
 
-describe("every O4 loop is scoped under the switch (#950)", () => {
-  it("opens every style rule, guards included, with [data-design=o4]", () => {
+describe("every O4 loop carries the :root prefix (#950)", () => {
+  it("opens every style rule, guards included, with :root", () => {
     const all = [...styleRules, ...guardRules].flatMap(selectorsOf);
     expect(all.length).toBeGreaterThanOrEqual(3);
     for (const sel of all) expect(sel.startsWith(`${O4} `)).toBe(true);

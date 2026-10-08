@@ -20,7 +20,7 @@ import {
 
 /**
  * The O4 Recorder (#945, epic #936): states 08 idle, 09 recording, 10
- * recorded, 11 playing and 12 editing, behind the `data-design="o4"` switch.
+ * recorded, 11 playing and 12 editing.
  *
  * Three halves, each read the way this repo already reads its kind:
  *
@@ -52,7 +52,7 @@ function flatten(css: string): string {
   );
 }
 const CSS = flatten(read("src/app/styles/o4/recorder.css"));
-const O4 = '[data-design="o4"]';
+const O4 = ":root";
 
 /** Every selector list that opens a style rule (not an at-rule). */
 function ruleSelectors(css: string): string[] {
@@ -62,15 +62,17 @@ function ruleSelectors(css: string): string[] {
     .filter((s) => s !== "" && !s.startsWith("@"));
 }
 
-describe("o4/recorder.css is scoped and stays on the colour roles (#945)", () => {
+describe("o4/recorder.css is prefixed and stays on the colour roles (#945)", () => {
   const selectors = ruleSelectors(CSS);
 
   it("has the rules this lane adds (non-emptiness floor)", () => {
     expect(selectors.length).toBeGreaterThanOrEqual(10);
   });
 
-  it("scopes every selector in every list under the switch", () => {
-    // With the switch off nothing here may match (#936, "Behind a switch").
+  it("prefixes every selector in every list with :root", () => {
+    // The prefix holds each rule at the specificity it had under the old
+    // `[data-design="o4"]` scope, so the rules it overrides in
+    // 3-components.css still lose (#954, `o4/index.css`'s header).
     for (const list of selectors)
       for (const sel of list.split(","))
         expect(sel.trim().startsWith(`${O4} `), sel).toBe(true);
@@ -236,8 +238,8 @@ describe("the O4 recorder values (#945, design reference §2–§3)", () => {
 
   it("leaves the greyed-control rules alone (#857/#878): no opacity or filter here", () => {
     // The inert look is `3-components.css`'s `.control:disabled` /
-    // `[aria-disabled]` dim and desaturate. Overriding opacity or filter in
-    // O4 would un-grey a control the current look greys.
+    // `[aria-disabled]` dim and desaturate. Overriding opacity or filter
+    // here would un-grey a control 3-components.css greys.
     const stripped = stripCssComments(CSS);
     expect(stripped).not.toMatch(/(^|[\s;{])opacity\s*:/);
     expect(stripped).not.toMatch(/(^|[\s;{])filter\s*:/);
@@ -271,31 +273,10 @@ describe("recorderLook (#945): which O4 state the stage is in", () => {
 describe("RecorderStamp (#945): the mono timestamp, 10 recorded and 11 playing", () => {
   const read = () => null;
 
-  it("renders nothing with the switch off, in every state", () => {
-    for (const look of [
-      "idle",
-      "recording",
-      "recorded",
-      "playing",
-      "editing",
-    ] as const) {
-      const c = render(
-        createElement(RecorderStamp, {
-          design: "current",
-          look,
-          durationMs: 65_000,
-          readElapsedMs: read,
-        })
-      );
-      expect(c.innerHTML, look).toBe("");
-    }
-  });
-
-  it("renders nothing in O4's idle, recording and editing states", () => {
+  it("renders nothing in the idle, recording and editing states", () => {
     for (const look of ["idle", "recording", "editing"] as const) {
       const c = render(
         createElement(RecorderStamp, {
-          design: "o4",
           look,
           durationMs: 65_000,
           readElapsedMs: read,
@@ -308,7 +289,6 @@ describe("RecorderStamp (#945): the mono timestamp, 10 recorded and 11 playing",
   it("10 recorded: shows the duration, hidden from assistive tech", () => {
     const c = render(
       createElement(RecorderStamp, {
-        design: "o4",
         look: "recorded",
         durationMs: 65_000,
         readElapsedMs: read,
@@ -316,15 +296,13 @@ describe("RecorderStamp (#945): the mono timestamp, 10 recorded and 11 playing",
     );
     const stamp = c.querySelector(".recorder-stamp");
     expect(stamp?.textContent).toBe("01:05");
-    // Same accessibility tree in both looks (#936 brief): the stamp is a
-    // visual echo of what the controls already say.
+    // The stamp is a visual echo of what the controls already say.
     expect(stamp?.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("11 playing: position / duration, starting at zero", () => {
     const c = render(
       createElement(RecorderStamp, {
-        design: "o4",
         look: "playing",
         durationMs: 65_000,
         readElapsedMs: read,
@@ -374,7 +352,6 @@ describe("RecorderStamp's playing clock pulls the position on rAF (#945)", () =>
     await act(async () => {
       root.render(
         createElement(RecorderStamp, {
-          design: "o4",
           look: "playing",
           durationMs: 65_000,
           readElapsedMs: () => ms,
@@ -397,7 +374,6 @@ describe("RecorderStamp's playing clock pulls the position on rAF (#945)", () =>
     await act(async () => {
       root.render(
         createElement(RecorderStamp, {
-          design: "o4",
           look: "recorded",
           durationMs: 65_000,
           readElapsedMs: () => 1_000,
@@ -429,29 +405,23 @@ describe("PlayheadOverlay takes the O4 playhead colour over its own (#945)", () 
   });
 });
 
-describe("recorder.tsx wires the O4 look through useDesign (#945, source pin)", () => {
+describe("recorder.tsx wires the stage's look (#945, source pin)", () => {
   // The sheet mounts the audio hook graph and this file does not mount the
   // sheet, so the wiring is pinned by source — the precedent is
   // `tests/recorder-cut-collapse.test.ts`'s "passes the clipboard's fullness".
   const src = stripComments(read("src/components/recorder.tsx"));
 
-  it("reads the design from the hook", () => {
-    expect(src).toMatch(/const \{ design \} = useDesign\(\);/);
-  });
-
-  it("marks the stage with its look only under O4, so the current markup is unchanged", () => {
+  it("marks the stage with its look", () => {
     expect(src).toMatch(
-      /className="recorder-stage flex-1"\s+data-o4-look=\{design === "o4" \? look : undefined\}/
+      /className="recorder-stage flex-1"\s+data-o4-look=\{look\}/
     );
   });
 
-  it("recolours the in-place playhead only under O4", () => {
+  it("recolours the in-place playhead", () => {
     const at = src.indexOf("<PlayheadOverlay");
     expect(at).toBeGreaterThan(-1);
     const tag = src.slice(at, src.indexOf("/>", at));
-    expect(tag).toMatch(
-      /className=\{design === "o4" \? "bg-playhead" : undefined\}/
-    );
+    expect(tag).toMatch(/className="bg-playhead"/);
   });
 
   it("feeds recorderLook the live recording, playing, editing and audio state", () => {
@@ -484,13 +454,12 @@ describe("recorder.tsx wires the O4 look through useDesign (#945, source pin)", 
     expect(last).toMatch(/hint=\{null\}/);
   });
 
-  it("mounts the stamp inside the stage with the live design and look", () => {
+  it("mounts the stamp inside the stage with the live look", () => {
     const at = src.indexOf("<RecorderStamp");
     expect(at).toBeGreaterThan(
       src.indexOf('className="recorder-stage flex-1"')
     );
     const tag = src.slice(at, src.indexOf("/>", at));
-    expect(tag).toMatch(/design=\{design\}/);
     expect(tag).toMatch(/look=\{look\}/);
     expect(tag).toMatch(/durationMs=\{drawnDurationMs\}/);
     expect(tag).toMatch(/readElapsedMs=\{readSoundingElapsed\}/);

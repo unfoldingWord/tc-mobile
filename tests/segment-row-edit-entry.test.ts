@@ -3,7 +3,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { JSDOM } from "jsdom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SegmentRow } from "@/components/segment-row";
-import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 import type { SegmentRow as Row } from "@/types/view";
 import type { SegmentId, ClipId } from "@/types/domain";
@@ -14,14 +13,8 @@ import type { SegmentId, ClipId } from "@/types/domain";
  * passes nothing, so those still open it in record mode. What the sheet does
  * with `"edit"` is `e2e/recorder-open-in-edit.spec.ts`'s half.
  *
- * Both looks, because each draws its own Edit (the O4 tile, the current
- * look's menu row). The design is picked by mocking `useDesign()`, as
- * `tests/o4-menus-chapter-segment.test.ts` does.
+ * The menu's Edit is the tile on the row menu's grid.
  */
-const design = vi.hoisted(() => ({ current: "current" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 
 let dom: JSDOM;
 let root: Root;
@@ -94,11 +87,7 @@ async function click(el: HTMLElement) {
   await act(async () => el.click());
 }
 
-describe.each(["current", "o4"] as const)("%s look", (look) => {
-  beforeEach(() => {
-    design.current = look;
-  });
-
+describe("the row's ways into the recorder", () => {
   it("the menu's Edit opens the recorder in edit mode", async () => {
     await render(recorded);
     await click(button(strings.segmentMenu(1)));

@@ -12,8 +12,9 @@ import { one, render as renderStatic } from "./render";
 import { stripComments } from "./support";
 
 /**
- * #608: the ≡ that opens the global menu stays a ≡ once the menu is open — same
- * glyph, same corner, and the panel carries no visible "Menu" label.
+ * #608: the global menu's panel carries no visible "Menu" label, and its
+ * dismiss control sits alone in the top-right corner. Since #1268 that control
+ * is the ✕ every sheet closes with.
  *
  * `Menu` portals to `document.body` and binds its focus trap in effects, so the
  * static harness in `./render` cannot mount it (`react-dom/server` refuses a
@@ -23,7 +24,7 @@ import { stripComments } from "./support";
  * so the glyph the header wears is compared against the real path, not a
  * hand-copied `d` string that a redraw of the icon would silently orphan.
  *
- * What a screen reader hears is asserted to be UNCHANGED in both states: the
+ * What a screen reader hears is asserted to be the same in both states: the
  * dialog is still named `strings.menuTitle` and the dismiss control is still
  * named `strings.menuClose`, which is what `e2e/back-navigation.spec.ts`,
  * `e2e/theme-toggle.spec.ts` and `e2e/failure-log.spec.ts` locate the menu by.
@@ -38,13 +39,6 @@ import { stripComments } from "./support";
  * scenario). It is a source-wiring contract, not a rendered assertion, and it
  * has the narrow-scan caveat noted at its `matchAll` call below.
  */
-
-// The glyphs pinned here are the CURRENT look's. The O4 look (the default)
-// draws ✕ on every one of these headers (#1268), pinned in
-// `sheet-close-o4.test.ts`; the title and names asserted here hold in both.
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: "current", toggle: () => {} }),
-}));
 
 let dom: JSDOM;
 let root: Root;
@@ -127,7 +121,7 @@ describe("the global menu's header (#608)", () => {
     );
   });
 
-  it("keeps the ≡ glyph top-right with no visible title, and still closes as 'Close menu'", async () => {
+  it("keeps the ✕ top-right with no visible title, and still closes as 'Close menu'", async () => {
     const panel = await mount({ hamburger: true });
 
     // The dialog is still named for AT — the label moved out of sight, not out
@@ -138,23 +132,25 @@ describe("the global menu's header (#608)", () => {
     expect(panel.querySelector(".t-title")).toBeNull();
     expect(panel.textContent).not.toContain(strings.menuTitle);
 
-    // The dismiss control wears the same glyph the opener does.
+    // The dismiss control is the sheets' ✕ (#1268), not the opener's ≡ and
+    // not a back chevron.
     const dismiss = dismissControl(panel);
-    expect(one(dismiss, "path").getAttribute("d")).toBe(glyphPath("menu"));
+    expect(one(dismiss, "path").getAttribute("d")).toBe(glyphPath("close"));
+    expect(one(dismiss, "path").getAttribute("d")).not.toBe(glyphPath("menu"));
     expect(one(dismiss, "path").getAttribute("d")).not.toBe(glyphPath("back"));
 
-    // ...and a tap on it is still the dismiss: one ≡, open then close.
+    // ...and a tap on it is the dismiss.
     await act(async () => dismiss.click());
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("leaves every other menu as it was — a title beside a back chevron (#589 owns those)", async () => {
+  it("leaves every other menu with a title beside the ✕ (#589, #1268)", async () => {
     const panel = await mount({});
 
     expect(panel.getAttribute("aria-label")).toBe(strings.menuTitle);
     expect(one(panel, ".t-title").textContent).toBe(strings.menuTitle);
 
     const dismiss = dismissControl(panel);
-    expect(one(dismiss, "path").getAttribute("d")).toBe(glyphPath("back"));
+    expect(one(dismiss, "path").getAttribute("d")).toBe(glyphPath("close"));
   });
 });

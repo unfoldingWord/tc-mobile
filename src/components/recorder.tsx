@@ -74,7 +74,6 @@ import type { RecorderAudio } from "@/hooks/use-audio-session";
 import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import { useRecorderViewport } from "@/hooks/use-recorder-viewport";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
-import { useDesign } from "@/hooks/use-design";
 import { useRecorderSegment } from "@/hooks/use-recorder-segment";
 import { useSegmentEditor } from "@/hooks/use-segment-editor";
 import { overlayFallbackLabel } from "@/lib/a11y/focus-restore";
@@ -342,9 +341,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const [confirmFor, setConfirmFor] = useState<"erase" | "clip">("erase");
     // Which opener raised it: the bar's bin ("rerecord") or the ⋮ Erase row
     // ("erase"). `onRerecord` sets the first and `openMenu` the second (the
-    // menu is the only road to its Erase row), so it is never left over. Only
-    // O4 reads it (G5, #979: the bin's confirm wears the record badge); the
-    // current look shows one dialog for both.
+    // menu is the only road to its Erase row), so it is never left over. G5
+    // (#979) reads it: the bin's confirm wears the record badge.
     const [confirmFrom, setConfirmFrom] = useState<"erase" | "rerecord">(
       "erase"
     );
@@ -560,12 +558,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     const hasAudio = length > 0;
     const state = audio.recorderState;
     const recording = state === "recording";
-    // The O4 look (#945): which workbench state the stage is in. Read by
-    // `o4/recorder.css` through `data-o4-look`, which is set only under O4 so
-    // the current look's markup is unchanged.
-    const { design } = useDesign();
-    // G5 (#979): the erase confirm, raised from the bar's bin, under O4.
-    const g5 = design === "o4" && confirmFrom === "rerecord";
+    // G5 (#979): the erase confirm, raised from the bar's bin.
+    const g5 = confirmFrom === "rerecord";
+    // Which workbench state the stage is in (#945). Read by
+    // `o4/recorder.css` through `data-o4-look`.
     const look = recorderLook({
       recording,
       playing: audio.playingBuffer,
@@ -3295,8 +3291,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // gate just below). `RecorderAudio`'s `playBuffer`/`playingBuffer` stand in
     // for `SegmentsAudio`'s `playTake`/`playingId` — this sheet has one take in
     // memory, not a list of rows, so there is no id to compare against.
-    // `undefined` outside G5 hands `EraseConfirm` no `preview` prop at all,
-    // exactly as the switch-off and non-G5 dialogs render today.
+    // `undefined` outside G5 hands `EraseConfirm` no `preview` prop at all.
     const g5Preview: EraseConfirmPreview | undefined =
       g5 && confirmFor !== "clip"
         ? {
@@ -3464,7 +3459,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               disabled={heldTake !== null || isClosing}
               onClick={onRequestBack}
             />
-            {design === "o4" && view ? (
+            {view ? (
               // #1105: the same chips the O4 menus show, not a restyled
               // reading of the text trail below. NOT `aria-hidden`: unlike the
               // menu, where `O4SheetHead`'s chips sit under a dialog title, no
@@ -3472,9 +3467,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
               // `closeRecorder` names the action — so the chip text is the one
               // place book, chapter and segment reach assistive tech, as the
               // plain-text trail did before (George round 2). The chapter chip
-              // is the chapter's NAME, resolved by `chapterHeading` the same
-              // way the old-look trail below resolves it (#1230, superseding
-              // #1105's number) — so it is also the name spoken here. The
+              // is the chapter's NAME, resolved by `chapterHeading` (#1230,
+              // superseding #1105's number) — so it is also the name spoken
+              // here. The
               // ⋮ menu's sheet head is handed the same text (`chapterHeading`
               // on `RecorderMenu` below). The segment state
               // mirrors `RecorderMenu`'s own `marked`/`state` derivation
@@ -3530,25 +3525,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 />
               </div>
             ) : (
-              <span className="text-ink min-w-0 flex-1 truncate" dir="auto">
-                {view
-                  ? strings.recorderBreadcrumb(
-                      view.bookName,
-                      // Resolved here, the same way the Segments header resolves
-                      // it, so a renamed chapter (#264) reads the same on both
-                      // screens. Passing the number let this trail spell the
-                      // default name itself and ignore the label (#169). The
-                      // segment's own label rides alongside and is resolved by
-                      // `segmentHeading` inside the entry (#591).
-                      strings.chapterHeading(
-                        view.chapterName,
-                        view.chapterNumber
-                      ),
-                      view.ordinal,
-                      view.segmentLabel
-                    )
-                  : ""}
-              </span>
+              // Before the segment loads: an empty spacer, so the ⋮ opener
+              // keeps the header's top-right corner.
+              <span className="min-w-0 flex-1" />
             )}
             {/* The menu opener stays in the header's top right in BOTH modes
               (#1243, the requirements owner, reversing #863's edit-toolbar
@@ -3641,10 +3620,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 </div>
               )}
               <RecorderStatus state={state} isClosing={isClosing} />
-              <div
-                className="recorder-stage flex-1"
-                data-o4-look={design === "o4" ? look : undefined}
-              >
+              <div className="recorder-stage flex-1" data-o4-look={look}>
                 {mode === "edit" && (
                   <div className="recorder-paste flex justify-center">
                     {/* Always mounted in edit mode, like `.recorder-cut` below
@@ -3880,7 +3856,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     startFraction={waveView.startFraction}
                     endFraction={waveView.endFraction}
                     clampToEdge={stage.render === "inPlace"}
-                    className={design === "o4" ? "bg-playhead" : undefined}
+                    className="bg-playhead"
                   />
                   {mode === "edit" &&
                     editor.selectionActive &&
@@ -3998,11 +3974,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                     {strings.editingMarker}
                   </span>
                 ) : (
-                  // O4 only (#945): renders nothing under the current look.
-                  // Not in edit mode: the marker above takes its corner, so an
-                  // edit-mode audition does not draw the clock under it.
+                  // Not in edit mode (#945): the marker above takes its corner,
+                  // so an edit-mode audition does not draw the clock under it.
                   <RecorderStamp
-                    design={design}
                     look={look}
                     durationMs={drawnDurationMs}
                     readElapsedMs={readSoundingElapsed}
@@ -4082,10 +4056,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           mode={mode}
           ordinal={view?.ordinal ?? null}
           finishedState={finishedState}
-          editReason={editReason}
           markReason={markReason}
           eraseReason={eraseReason}
-          onEnterEdit={onEnterEdit}
           onToggleFinished={onToggleFinished}
           onErase={() => {
             setMenuOpen(false);
@@ -4114,13 +4086,13 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           // Clear wears the eraser (#1119, DRI 2026-09-28); the clipboard's
           // discard (#862) throws a cut away, so it keeps the bin.
           glyph={confirmFor === "clip" ? "trash" : "eraser"}
-          // O4 G5 (#979): from the bar's Clear, the workbench's record badge.
+          // G5 (#979): from the bar's Clear, the workbench's record badge.
           // The button, Keep and the title stay the 13 dialog's: the button
           // clears and starts no take, so it keeps the eraser and "Clear"
           // (#1022). The workbench's "Record again" button records; here that
           // would start the mic after the clear's awaits, outside the tap
-          // `use-audio-session.ts` startRecording needs. Switch off: one
-          // dialog, as before, badged with `glyph`.
+          // `use-audio-session.ts` startRecording needs. Otherwise the
+          // dialog is badged with `glyph`.
           badge={g5 && confirmFor !== "clip" ? "record" : undefined}
           confirmLabel={
             confirmFor === "clip"

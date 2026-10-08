@@ -1,7 +1,7 @@
 /**
  * Which of the O4 workbench's five recorder states the stage is in (#945,
  * epic #936). `recorder.tsx` writes the answer to the stage's `data-o4-look`
- * attribute, only under O4, and `app/styles/o4/recorder.css` keys its
+ * attribute, and `app/styles/o4/recorder.css` keys its
  * per-state rules off it; `RecorderStamp` (`recorder-o4.tsx`) reads it too.
  */
 

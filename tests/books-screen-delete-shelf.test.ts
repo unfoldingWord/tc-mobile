@@ -6,7 +6,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
-import type { Design } from "@/lib/design";
 import {
   createBook,
   deleteBook,
@@ -26,7 +25,7 @@ import type { Book, BookId } from "@/types/domain";
  * #1106 pinned the hook half (`useBooks`'s `books` value drops the card) and
  * named the screen as not rendered. This file mounts the real `BooksScreen`
  * over the real `useBooks` and fake-indexeddb, taps through the real menu and
- * confirm in both looks, and holds every `listBooks` after the first load
+ * the in-sheet delete ask, and holds every `listBooks` after the first load
  * open forever, so no later read can repair a shelf the delete left stale.
  * What is asserted is the DOM: no row, no ⋮ opener for the deleted book.
  *
@@ -37,10 +36,6 @@ import type { Book, BookId } from "@/types/domain";
  * none of which jsdom does. It drives React through `act`, not a real frame.
  */
 
-const design = vi.hoisted(() => ({ current: "o4" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 vi.mock("@/hooks/report-failure", () => ({ reportFailure: vi.fn() }));
 vi.mock("@/lib/storage/books", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/storage/books")>();
@@ -98,7 +93,6 @@ afterEach(async () => {
     await act(async () => root.unmount());
   } finally {
     vi.unstubAllGlobals();
-    design.current = "o4";
   }
 });
 
@@ -125,11 +119,10 @@ function tapTargets(name: string): HTMLButtonElement[] {
   ];
 }
 
-/** Two stored books, the screen mounted over them in `look`, first load landed. */
-async function mountShelf(look: Design): Promise<BookId> {
+/** Two stored books, the screen mounted over them, first load landed. */
+async function mountShelf(): Promise<BookId> {
   const mark = await createBook("Mark");
   await createBook("Ruth");
-  design.current = look;
   await act(async () => {
     root.render(
       createElement(BooksScreen, {
@@ -146,13 +139,11 @@ async function mountShelf(look: Design): Promise<BookId> {
   return mark.id;
 }
 
-/** The ⋮, Delete, then the look's own confirm control. */
-async function deleteThroughMenu(look: Design, name: string) {
+/** The ⋮, Delete, then the ask's own Delete (#980). */
+async function deleteThroughMenu(name: string) {
   await click(strings.bookMenuOpen(name));
   await click(strings.deleteBook);
-  await click(
-    look === "o4" ? strings.deleteBookYes : strings.deleteBookConfirm
-  );
+  await click(strings.deleteBookYes);
   // The confirm's handler awaits the store write; let it run to its end.
   await act(async () => {
     await vi.waitFor(() =>
@@ -161,34 +152,31 @@ async function deleteThroughMenu(look: Design, name: string) {
   });
 }
 
-describe.each<Design>(["o4", "current"])(
-  "the shelf after a delete, %s look (#361 row 3)",
-  (look) => {
-    it("a deleted book's row and ⋮ are gone on the delete, with every later shelf read held", async () => {
-      const mark = await mountShelf(look);
-      holdEveryLaterRead();
+describe("the shelf after a delete (#361 row 3)", () => {
+  it("a deleted book's row and ⋮ are gone on the delete, with every later shelf read held", async () => {
+    const mark = await mountShelf();
+    holdEveryLaterRead();
 
-      await deleteThroughMenu(look, "Mark");
+    await deleteThroughMenu("Mark");
 
-      // The write landed, and the read that would reconcile the shelf was
-      // asked for but never answered — so the screen moved on the delete.
-      expect(await getBook(mark)).toBeUndefined();
-      expect(vi.mocked(listBooks).mock.calls.length).toBeGreaterThan(1);
-      expect(tapTargets("Mark")).toEqual([]);
-      // The other book is untouched, so this is not an emptied shelf.
-      expect(tapTargets("Ruth")).toHaveLength(2);
-    });
+    // The write landed, and the read that would reconcile the shelf was
+    // asked for but never answered — so the screen moved on the delete.
+    expect(await getBook(mark)).toBeUndefined();
+    expect(vi.mocked(listBooks).mock.calls.length).toBeGreaterThan(1);
+    expect(tapTargets("Mark")).toEqual([]);
+    // The other book is untouched, so this is not an emptied shelf.
+    expect(tapTargets("Ruth")).toHaveLength(2);
+  });
 
-    it("control: a delete the store refuses leaves the book tappable", async () => {
-      const mark = await mountShelf(look);
-      holdEveryLaterRead();
-      vi.mocked(deleteBook).mockRejectedValueOnce(new Error("quota"));
+  it("control: a delete the store refuses leaves the book tappable", async () => {
+    const mark = await mountShelf();
+    holdEveryLaterRead();
+    vi.mocked(deleteBook).mockRejectedValueOnce(new Error("quota"));
 
-      await deleteThroughMenu(look, "Mark");
+    await deleteThroughMenu("Mark");
 
-      expect(await getBook(mark)).toBeDefined();
-      expect(tapTargets("Mark")).toHaveLength(2);
-      expect(tapTargets("Ruth")).toHaveLength(2);
-    });
-  }
-);
+    expect(await getBook(mark)).toBeDefined();
+    expect(tapTargets("Mark")).toHaveLength(2);
+    expect(tapTargets("Ruth")).toHaveLength(2);
+  });
+});

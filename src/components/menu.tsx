@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
-import { useDesign } from "@/hooks/use-design";
 import { cn } from "@/lib/utils";
 import { Control } from "./control";
 import { FOCUSABLE, wrapTab } from "./focus-trap";
@@ -146,23 +145,13 @@ interface MenuProps {
    */
   focusKey?: string | number;
   /**
-   * The panel shows no visible title, and the dismiss control sits alone in
-   * the top-right corner. In the current look that control wears the glyph
-   * `dismissIcon` names — one glyph, one place, and the glyph is the label;
-   * under O4 it is the ✕ every sheet closes with (#1268, the `back` docblock
-   * below), whatever `dismissIcon` says. Which glyph is `dismissIcon`'s call: `menu` (≡,
-   * the default) for the global menu (#608), where it is also the glyph of
-   * the control that opened it; `more` (⋮) for an object's menu that opts in.
-   * The recorder's overflow drawer opts in (#621, the requirements owner's
-   * call on that panel): its "More" heading said nothing the glyph did not,
-   * and a left-pointing chevron reads as "move left" on a drawer that docks
-   * on the RIGHT. Since #1225 that drawer acts on the segment being edited,
-   * so it is an object menu: both of its openers are ⋮ and its dismiss
-   * passes `dismissIcon="more"` to match, which leaves the Books screen's
-   * global menu as the only ≡. Off (the default) the header is a title
-   * beside the dismiss control — a back chevron in the current look, the ✕
-   * under O4 — which every other menu keeps: the book, chapter and segment
-   * menus (opened from a ⋮ since #589) and the New Book dialog.
+   * The panel shows no visible title, and the dismiss control — the ✕ every
+   * sheet closes with (#1268, the `back` docblock below) — sits alone in the
+   * top-right corner. The recorder's overflow drawer opts in (#621, the
+   * requirements owner's call on that panel): its "More" heading said
+   * nothing its ⋮ opener did not. Off (the default) the header is a title
+   * beside the ✕, which every other menu keeps: the book, chapter and
+   * segment menus and the New Book dialog.
    * What a screen reader hears does not change either way: `title` still
    * names the dialog and `closeLabel` still names the control ("Close menu"
    * dismisses, as before), which is also what the e2e specs locate the menu
@@ -170,22 +159,14 @@ interface MenuProps {
    */
   hamburger?: boolean;
   /**
-   * The glyph `hamburger` paints on the dismiss control. Read only when
-   * `hamburger` is on; the back chevron of the default header is not
-   * configurable. Defaults to `menu` (≡), the global menu's glyph.
-   */
-  dismissIcon?: "menu" | "more";
-  /**
    * The header control steps BACK one level inside this panel rather than
-   * closing it, so it keeps the back chevron in both looks. About's licence
-   * view is the one caller (#36): its control is "Back to the list".
+   * closing it, so it keeps the back chevron. About's licence view is the one
+   * caller (#36): its control is "Back to the list".
    *
-   * Everywhere else, the O4 look draws the header control as ✕ (#1268, the
-   * requirements owner: "Can we use a standard close button (some form of
-   * X)?"), whatever `hamburger` and `dismissIcon` say: one closer, in the
-   * same top-right place, on every sheet. Its name is still `closeLabel`
-   * ("Close menu" by default). The current look keeps the chevron, ≡ and ⋮
-   * described above.
+   * Everywhere else the header control is ✕ (#1268, the requirements owner:
+   * "Can we use a standard close button (some form of X)?"), whatever
+   * `hamburger` says: one closer, in the same top-right place, on every
+   * sheet. Its name is still `closeLabel` ("Close menu" by default).
    */
   back?: boolean;
   /**
@@ -259,7 +240,6 @@ export function Menu({
   closeLabel = strings.menuClose,
   focusKey,
   hamburger = false,
-  dismissIcon = "menu",
   back = false,
   inert,
   liveRegion,
@@ -300,18 +280,10 @@ export function Menu({
     onCloseRef.current = onClose;
   });
 
-  const { design } = useDesign();
-  const o4 = design === "o4";
-  const dismissGlyph: IconName = back
-    ? "back"
-    : o4
-      ? "close"
-      : hamburger
-        ? dismissIcon
-        : "back";
+  const dismissGlyph: IconName = back ? "back" : "close";
 
   // DRAG DOWN TO CLOSE (#1268, the requirements owner: "it should work as
-  // drag down to close"). O4 only, and only where the grip is drawn: a
+  // drag down to close"). Only where the grip is drawn: a
   // bottom sheet, which `o4/sheets.css` keys on what the panel holds. The
   // side drawer (About) draws none, so a press there never starts a drag.
   //
@@ -413,8 +385,8 @@ export function Menu({
     settle();
   };
 
-  // Bound in both looks; the current look renders no grip, and a press
-  // without a grip on screen never starts a drag (`onDragStart`).
+  // Bound on every panel; where the grip is not drawn (the side drawer), a
+  // press never starts a drag (`onDragStart`).
   const dragHandlers = {
     onPointerDown: onDragStart,
     onPointerMove: onDragMove,
@@ -512,19 +484,17 @@ export function Menu({
             `children` stay direct flex items of `.menu-panel` above —
             `inert` changes reachability, never layout. */}
         <div className="contents" inert={inert || undefined}>
-          {/* The O4 grip (#1268): drawn, and a place to start dragging the
+          {/* The grip (#1268): drawn, and a place to start dragging the
               sheet down, but not a control. It is `aria-hidden` and takes no
               focus; the ✕ below is the accessible close. Inside the `inert`
               subtree, so a sheet another overlay owns cannot be dragged
               away either. */}
-          {o4 && (
-            <div
-              ref={gripRef}
-              className="menu-grip"
-              aria-hidden="true"
-              {...dragHandlers}
-            />
-          )}
+          <div
+            ref={gripRef}
+            className="menu-grip"
+            aria-hidden="true"
+            {...dragHandlers}
+          />
           {/* `justify-end` when the title is dropped keeps the one remaining
               child — the dismiss control — in the top-right corner, where the
               opener of this panel was; `justify-between` alone would slide

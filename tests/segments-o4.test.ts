@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SegmentRow } from "@/components/segment-row";
 import { SegmentsHead } from "@/components/segments-head";
-import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 import type { ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
@@ -20,22 +19,12 @@ import { stripCssComments } from "./support";
  * The O4 Segments screen (#944, epic #936): states 05 (empty chapter), 06
  * (chapter with segments) and G10 (adding a segment).
  *
- * The switch is read through `useDesign()`, mocked here so each case picks its
- * look — the pattern `tests/use-design.test.ts` points at. The current look is
- * asserted beside O4 in every case that could drift, because "switch off means
- * unchanged" is half of what this lane promises; the existing SegmentRow suites
- * run against the real hook (which answers "current" in Node) unedited.
- *
- * What this file does NOT cover: the cascade. It proves the markup each look
- * emits and that `o4/segments.css` holds scoped rules with the issue's values;
+ * What this file does NOT cover: the cascade. It proves the markup the row
+ * emits and that `o4/segments.css` holds `:root`-prefixed rules with the
+ * issue's values;
  * whether those rules win on a real page is a browser question, and nothing
  * here has been run on a phone.
  */
-
-const design = vi.hoisted(() => ({ current: "current" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 
 const recorded: Row = {
   segmentId: "segment-3" as SegmentId,
@@ -71,8 +60,7 @@ function rowProps(row: Row, extra: Record<string, unknown> = {}) {
   };
 }
 
-function renderRow(look: Design, row: Row, extra?: Record<string, unknown>) {
-  design.current = look;
+function renderRow(row: Row, extra?: Record<string, unknown>) {
   return render(createElement(SegmentRow, rowProps(row, extra)));
 }
 
@@ -86,22 +74,18 @@ function names(container: Element): string[] {
     );
 }
 
-afterEach(() => {
-  design.current = "current";
-});
-
 describe("O4 segment row (#944)", () => {
   it("puts the ordinal in a 44 badge on every row state, finished included (#591, #81)", () => {
     for (const row of [recorded, empty, finished, titled]) {
-      const container = renderRow("o4", row);
+      const container = renderRow(row);
       expect(one(container, ".row-badge").textContent).toBe("3");
     }
-    const done = renderRow("o4", finished);
+    const done = renderRow(finished);
     expect(one(done, ".row").classList.contains("row--finished")).toBe(true);
   });
 
   it("shows a typed title as a 22px line over a 36px wave, and a 56px wave without one", () => {
-    const withTitle = renderRow("o4", titled);
+    const withTitle = renderRow(titled);
     const title = one(withTitle, ".row-title");
     expect(title.textContent).toBe("verses 3–4");
     // The open button's name already carries the label (#591), so the line
@@ -111,7 +95,7 @@ describe("O4 segment row (#944)", () => {
       "36px"
     );
 
-    const without = renderRow("o4", recorded);
+    const without = renderRow(recorded);
     expect(without.querySelector(".row-title")).toBeNull();
     expect((one(without, "canvas") as HTMLCanvasElement).style.height).toBe(
       "56px"
@@ -119,7 +103,7 @@ describe("O4 segment row (#944)", () => {
   });
 
   it("marks the played fraction on the scrub while playing, and only then", () => {
-    const playing = renderRow("o4", recorded, {
+    const playing = renderRow(recorded, {
       playing: true,
       playbackElapsedMs: 250,
     });
@@ -127,43 +111,46 @@ describe("O4 segment row (#944)", () => {
     expect(scrub.classList.contains("scrub--playing")).toBe(true);
     expect(scrub.style.getPropertyValue("--row-played")).toBe("25%");
 
-    const idle = one(renderRow("o4", recorded), ".scrub") as HTMLElement;
+    const idle = one(renderRow(recorded), ".scrub") as HTMLElement;
     expect(idle.classList.contains("scrub--playing")).toBe(false);
   });
 
-  it("exposes the same accessible names in both looks", () => {
-    for (const row of [recorded, empty, finished, titled]) {
-      const current = names(renderRow("current", row));
-      const o4 = names(renderRow("o4", row));
-      expect(current.length).toBeGreaterThanOrEqual(3);
-      expect(o4).toEqual(current);
-    }
+  it("exposes the row's accessible names, in reading order", () => {
+    // Pinned exactly: the badge and the title line are decoration, so the
+    // names are the open button's, the scrub's (recorded rows), the
+    // transport's and the ⋮'s, and nothing else.
+    expect(names(renderRow(recorded))).toEqual([
+      `button:${strings.editSegment(3, null)}`,
+      `slider:${strings.scrubSegment(3)}`,
+      `button:${strings.playSegment(3)}`,
+      `button:${strings.segmentMenu(3)}`,
+    ]);
+    expect(names(renderRow(finished))).toEqual([
+      `button:${strings.editSegmentFinished(3, null)}`,
+      `slider:${strings.scrubSegment(3)}`,
+      `button:${strings.playSegment(3)}`,
+      `button:${strings.segmentMenu(3)}`,
+    ]);
+    expect(names(renderRow(titled))).toEqual([
+      `button:${strings.editSegment(3, "verses 3–4")}`,
+      `slider:${strings.scrubSegment(3)}`,
+      `button:${strings.playSegment(3)}`,
+      `button:${strings.segmentMenu(3)}`,
+    ]);
+    expect(names(renderRow(empty))).toEqual([
+      `button:${strings.openSegment(3, null)}`,
+      `button:${strings.openRecorderSegment(3)}`,
+      `button:${strings.segmentMenu(3)}`,
+    ]);
   });
 
-  it("keeps the guided ring on the empty row's mic in O4 (#604)", () => {
-    const container = renderRow("o4", empty, { guided: true });
+  it("keeps the guided ring on the empty row's mic (#604)", () => {
+    const container = renderRow(empty, { guided: true });
     const record = one(
       container,
       `button[aria-label="${strings.openRecorderSegment(3)}"]`
     );
     expect(record.classList.contains("is-guided")).toBe(true);
-  });
-
-  it("leaves the current look's markup alone", () => {
-    const container = renderRow("current", titled);
-    expect(container.querySelector(".row-badge")).toBeNull();
-    expect(container.querySelector(".row-title")).toBeNull();
-    expect(container.querySelector(".row-mid")).toBeNull();
-    expect(one(container, ".row-heading").textContent).toBe("3 · verses 3–4");
-    expect((one(container, "canvas") as HTMLCanvasElement).style.height).toBe(
-      "26px"
-    );
-    const playing = one(
-      renderRow("current", recorded, { playing: true, playbackElapsedMs: 250 }),
-      ".scrub"
-    ) as HTMLElement;
-    expect(playing.classList.contains("scrub--playing")).toBe(false);
-    expect(playing.style.getPropertyValue("--row-played")).toBe("");
   });
 });
 
@@ -190,8 +177,7 @@ describe("O4 selected row (#944)", () => {
     vi.unstubAllGlobals();
   });
 
-  async function openMenu(look: Design): Promise<Element> {
-    design.current = look;
+  async function openMenu(): Promise<Element> {
     await act(async () => {
       root.render(createElement(SegmentRow, rowProps(recorded)));
     });
@@ -205,14 +191,9 @@ describe("O4 selected row (#944)", () => {
     return row;
   }
 
-  it("outlines the row whose menu is open in O4", async () => {
-    const row = await openMenu("o4");
+  it("outlines the row whose menu is open", async () => {
+    const row = await openMenu();
     expect(row.classList.contains("row--selected")).toBe(true);
-  });
-
-  it("does not add the class in the current look", async () => {
-    const row = await openMenu("current");
-    expect(row.classList.contains("row--selected")).toBe(false);
   });
 });
 
@@ -284,10 +265,10 @@ describe("o4/segments.css (#944)", () => {
     expect(rules.length).toBeGreaterThanOrEqual(10);
   });
 
-  it("scopes every selector under the switch", () => {
+  it("prefixes every selector with :root (o4/index.css's specificity hold)", () => {
     for (const rule of rules) {
       for (const sel of rule.selectors) {
-        expect(sel.startsWith('[data-design="o4"] '), sel).toBe(true);
+        expect(sel.startsWith(":root "), sel).toBe(true);
       }
     }
   });
@@ -302,7 +283,7 @@ describe("o4/segments.css (#944)", () => {
   });
 
   it("carries the issue's geometry and roles", () => {
-    const O4 = '[data-design="o4"]';
+    const O4 = ":root";
     const row = block(`${O4} .row`);
     expect(row).toEqual(
       expect.arrayContaining(["min-height: 90px", "border-radius: 16px"])

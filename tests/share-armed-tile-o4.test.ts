@@ -28,6 +28,7 @@ const base: ShareMenuSectionProps = {
   gapText: "",
   onPrepare: () => {},
   onSend: () => {},
+  tiles: {},
 };
 
 function armedCount(props: Partial<ShareMenuSectionProps>): number {
@@ -36,19 +37,16 @@ function armedCount(props: Partial<ShareMenuSectionProps>): number {
 }
 
 describe("the Share now tile is armed only while the file is ready (#1087)", () => {
-  it("wears the armed class on the ready tile under O4", () => {
-    expect(armedCount({ status: "ready", tiles: {} })).toBe(1);
+  it("wears the armed class on the ready tile", () => {
+    expect(armedCount({ status: "ready" })).toBe(1);
     expect(
       render(
-        createElement(ShareMenuSection, { ...base, status: "ready", tiles: {} })
+        createElement(ShareMenuSection, { ...base, status: "ready" })
       ).querySelectorAll(".o4-tile--send.is-armed")
     ).toHaveLength(1);
   });
   it.each(["idle", "preparing"] as const)("not while %s", (status) => {
-    expect(armedCount({ status, tiles: {} })).toBe(0);
-  });
-  it("not in the current look, even when ready", () => {
-    expect(armedCount({ status: "ready" })).toBe(0);
+    expect(armedCount({ status })).toBe(0);
   });
 });
 
@@ -58,7 +56,7 @@ describe("the armed loop is slow and colours through a layer-2 role (#1087)", ()
     "utf8"
   );
   it("runs armedPulse on --p-ambient-armed", () => {
-    const rule = cssRule(css, '[data-design="o4"] .o4-tile--send.is-armed');
+    const rule = cssRule(css, ":root .o4-tile--send.is-armed");
     expect(declarationValue(rule, "animation")).toBe(
       "armedPulse var(--p-ambient-armed, 1.6s) ease-in-out infinite"
     );

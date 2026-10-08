@@ -42,7 +42,6 @@ export type IconName =
   | "share-sent"
   | "share-closed"
   | "share-android"
-  | "share-busy"
   | "close"
   // The O4 batch (#940, part of #936): the 13 icons the O4 screens use,
   // redrawn from the 24-unit, stroke-2.2 reference sprite
@@ -615,45 +614,6 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <circle cx="15.5" cy="5" r="2.2" fill="currentColor" />
       <circle cx="6.5" cy="11" r="2.2" fill="currentColor" />
       <circle cx="15.5" cy="17" r="2.2" fill="currentColor" />
-    </>
-  ),
-  /* The share overlay's busy mark (#850): a ring of eight dots, the
-     iOS/Material indeterminate activity indicator a translator has already
-     seen in every camera roll and app-store download — not the static
-     `retry` arrow the overlay used to borrow from `notice-tone.ts`'s shared
-     `busy` entry for every OTHER wait in the app.
-
-     The eight dots are drawn pre-faded, each one dimmer than the last going
-     clockwise from the top. `.share-scrim[data-outcome="busy"]
-     .share-progress-glyph` (3-components.css) already rotates whatever sits
-     in the busy slot on the same `control-spin` keyframes every
-     `aria-busy` control uses, and already drops to a still frame under
-     `prefers-reduced-motion: reduce` — that rule predates this glyph, so
-     spinning the pre-faded ring is the whole animation; nothing new was
-     added to the stylesheet. The pre-fade also matters for the
-     reduced-motion case: eight EQUALLY lit dots sitting still would read as
-     a plain ring, not a paused spinner, so the fade itself has to be baked
-     into the glyph rather than done by the animation.
-
-     Scoped to the share overlay only. `notice-tone.ts`'s own `busy` entry —
-     the retry arc every other wait in the app still wears — is unchanged;
-     widening this to every `Notice` is out of #850's scope. */
-  "share-busy": (
-    <>
-      <circle cx="11" cy="3.6" r="1.5" fill="currentColor" opacity="1" />
-      <circle cx="16.23" cy="5.77" r="1.5" fill="currentColor" opacity="0.85" />
-      <circle cx="18.4" cy="11" r="1.5" fill="currentColor" opacity="0.7" />
-      <circle
-        cx="16.23"
-        cy="16.23"
-        r="1.5"
-        fill="currentColor"
-        opacity="0.55"
-      />
-      <circle cx="11" cy="18.4" r="1.5" fill="currentColor" opacity="0.4" />
-      <circle cx="5.77" cy="16.23" r="1.5" fill="currentColor" opacity="0.28" />
-      <circle cx="3.6" cy="11" r="1.5" fill="currentColor" opacity="0.18" />
-      <circle cx="5.77" cy="5.77" r="1.5" fill="currentColor" opacity="0.12" />
     </>
   ),
   // The speaker glyph — "hear the name/title" buttons. A filled speaker cone

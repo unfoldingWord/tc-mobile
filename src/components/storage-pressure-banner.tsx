@@ -17,24 +17,18 @@ import type { UseLibraryShare } from "@/hooks/use-library-share";
 interface StoragePressureBannerProps {
   /** `storagePressureNotice()`'s line — whether it shows at all is decided there. */
   notice: StoragePressureNotice;
-  /** Draw state 17 of the O4 workbench (#983) rather than the #247 Notice. */
-  o4: boolean;
   /**
    * The Books screen's `useLibraryShare()` (#1045). The screen owns the flow,
    * not this banner, because the screen is what renders the share overlay
    * for it and makes the shelf inert while that overlay owns the screen —
-   * both in the same render the timeline changes in. The current look reads
-   * none of it.
+   * both in the same render the timeline changes in.
    */
   share: UseLibraryShare;
 }
 
 /**
- * The Books shelf's storage-pressure line (#247), in either look.
- *
- * With the switch off it is exactly the `<Notice>` the shelf always rendered.
- * With it on it is the workbench's state 17: a warn-washed banner with a
- * phone icon and a "Share your work" button that shares every book at once
+ * The Books shelf's storage-pressure line (#247), drawn as the workbench's
+ * state 17 (#983): a warn-washed banner with a phone icon and a "Share your work" button that shares every book at once
  * (#948's D14 — the library share #987 built, not the problem report's Send).
  *
  * The share's busy and outcome timeline is not drawn here: the Books screen
@@ -43,20 +37,8 @@ interface StoragePressureBannerProps {
  */
 export function StoragePressureBanner({
   notice,
-  o4,
   share,
 }: StoragePressureBannerProps) {
-  if (!o4) return <Notice tone={notice.tone}>{notice.text}</Notice>;
-  return <O4StorageBanner notice={notice} share={share} />;
-}
-
-function O4StorageBanner({
-  notice,
-  share,
-}: {
-  notice: StoragePressureNotice;
-  share: UseLibraryShare;
-}) {
   // The overlay takes focus while it owns the screen and the shelf this
   // banner sits in goes inert, so the tapped control loses focus. Capture it
   // in the tap itself and hand it back once the shelf's `inert` has lifted,

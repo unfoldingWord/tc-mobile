@@ -10,7 +10,6 @@ import { shareOverlayGlyph } from "./share-overlay-glyph";
 import { shareO4View, type ShareItem } from "./share-o4-view";
 import { ShareProgressPanel } from "./share-progress-panel";
 import type { ShareProgress as ShareProgressState } from "@/hooks/share-progress";
-import { useDesign } from "@/hooks/use-design";
 import type {
   LibraryShareProgress,
   UseLibraryShare,
@@ -43,9 +42,8 @@ interface ItemShareProgressProps extends ShareProgressCommonProps {
   scope: "chapter" | "book";
   /**
    * The items the share walks over, in order, from what the screen already
-   * holds: the chapter's segments, or the book's chapters. Only the O4 look
-   * reads them, for its numbered chips (#947 D21); the current look ignores
-   * them.
+   * holds: the chapter's segments, or the book's chapters. They are the
+   * numbered chips (#947 D21).
    */
   items?: readonly ShareItem[];
 }
@@ -207,10 +205,6 @@ export function ShareProgress(props: ShareProgressProps) {
   const { progress, text, items } = overlayInput(props);
   const visible = progress.phase !== "hidden";
   const busy = progress.phase === "busy";
-  // O4 (#947) swaps the glyph for the 140-in-176 circle, its filling ring and
-  // its numbered chips; the current look passes nothing and renders as it
-  // always has.
-  const { design } = useDesign();
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   // Read from the keydown listener without re-subscribing it — mirrors
@@ -335,9 +329,8 @@ export function ShareProgress(props: ShareProgressProps) {
       <ShareProgressPanel
         ref={panelRef}
         role={role}
-        icon={glyph.icon}
         text={text}
-        o4={design === "o4" ? shareO4View(progress, scope, items) : undefined}
+        o4={shareO4View(progress, scope, items)}
       />
     </div>,
     document.body

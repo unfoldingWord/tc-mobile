@@ -58,13 +58,11 @@ export interface ShareMenuSectionProps {
   onPrepare: () => void;
   onSend: () => void;
   /**
-   * The O4 tile grid (#949), opted into from a menu's O4 branch: the share
-   * control becomes a send tile in one `TileGrid` with `before` ahead of it
-   * and `after` behind it, and the Notices follow the grid rather than sit in
-   * it. Same control, name, ref and two gestures either way. Absent, the
-   * current rows render exactly as before.
+   * The tile grid (#949): the share control is a send tile in one `TileGrid`
+   * with `before` ahead of it and `after` behind it, and the Notices follow
+   * the grid rather than sit in it.
    */
-  tiles?: { before?: ReactNode; after?: ReactNode };
+  tiles: { before?: ReactNode; after?: ReactNode };
 }
 
 export function ShareMenuSection({
@@ -91,22 +89,9 @@ export function ShareMenuSection({
   const errorText = shareErrorText(error, scope);
   const errorMark = shareErrorGlyph(error);
 
-  // The O4 grid (#949) dresses the SAME two controls as send tiles — the same
-  // element, name, ref, `busy` and `autoFocus` — so neither the two gestures
-  // nor focus change with the look. The ready mark's class still rides along;
-  // the tile's own ink rule outranks its colour, so ready reads from the
-  // check glyph `affordance.icon` swaps in.
-  const look = tiles
-    ? {
-        size: TILE_GLYPH,
-        caption: strings.tileShare,
-        className: (extra?: string) => tileClass("send", extra),
-      }
-    : {
-        size: undefined,
-        caption: undefined,
-        className: (extra?: string) => extra,
-      };
+  // The grid (#949) dresses the two controls as send tiles. The ready mark's
+  // class still rides along; the tile's own ink rule outranks its colour, so
+  // ready reads from the check glyph `affordance.icon` swaps in.
 
   const control =
     /* Two gestures, same spot: tap 1 encodes; once armed the control becomes
@@ -118,12 +103,9 @@ export function ShareMenuSection({
         ref={controlRef}
         icon={affordance.icon}
         label={strings.shareSend}
-        variant={tiles ? undefined : affordance.variant}
-        className={look.className(
-          cn(affordance.className, tiles && "is-armed")
-        )}
-        size={look.size}
-        caption={look.caption}
+        className={tileClass("send", cn(affordance.className, "is-armed"))}
+        size={TILE_GLYPH}
+        caption={strings.tileShare}
         autoFocus
         onClick={onSend}
       />
@@ -143,10 +125,9 @@ export function ShareMenuSection({
               ? unconfirmedLabel
               : idleLabel
         }
-        variant={tiles ? undefined : affordance.variant}
-        className={look.className()}
-        size={look.size}
-        caption={look.caption}
+        className={tileClass("send")}
+        size={TILE_GLYPH}
+        caption={strings.tileShare}
         busy={affordance.busy}
         onClick={onPrepare}
       />
@@ -155,18 +136,14 @@ export function ShareMenuSection({
   // Feedback rides inside the panel because the flow keeps the menu open:
   // the busy state while encoding, a gap warning once armed (`info`, not
   // `busy` — it is ready, this is a heads-up about what it lacks, #112), and
-  // any error code mapped above. After the grid in O4, never inside it.
+  // any error code mapped above. After the grid, never inside it.
   return (
     <>
-      {tiles ? (
-        <TileGrid>
-          {tiles.before}
-          {control}
-          {tiles.after}
-        </TileGrid>
-      ) : (
-        control
-      )}
+      <TileGrid>
+        {tiles.before}
+        {control}
+        {tiles.after}
+      </TileGrid>
       {status === "preparing" && <Notice tone="busy">{preparingLabel}</Notice>}
       {status === "ready" && hasGap && (
         // Its own mark, not `info`'s generic ring-and-i (#178): that glyph

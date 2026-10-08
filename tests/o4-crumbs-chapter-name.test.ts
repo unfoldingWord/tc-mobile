@@ -22,7 +22,7 @@ import { cssRule, declarationValue } from "./support";
 
 const read = (rel: string) =>
   readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
-const O4 = '[data-design="o4"]';
+const O4 = ":root";
 
 describe("O4Crumbs' chapter chip (#1230)", () => {
   it("renders a chapter name as the chip's text", () => {
