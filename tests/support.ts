@@ -6,9 +6,13 @@ import {
   MP3_TOTAL_DELAY,
   mp3GranuleCount,
 } from "@/lib/audio/mp3-align";
+import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import { newClipId } from "@/lib/storage/clips";
 import { closeDb, getDb } from "@/lib/storage/db";
+import { saveTake } from "@/lib/storage/takes";
 import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import type { AudioCodec, Clip, Mp3Stream } from "@/types/audio";
+import type { ClipId, SegmentId, Take } from "@/types/domain";
 
 /**
  * Shared test plumbing for the storage and export suites.
@@ -87,6 +91,36 @@ export async function clearAllStores(): Promise<void> {
   const stores = Array.from(db.objectStoreNames);
   const tx = db.transaction(stores, "readwrite");
   await Promise.all([...stores.map((s) => tx.objectStore(s).clear()), tx.done]);
+}
+
+/**
+ * Record a take for a segment through the app's own commit write, `saveTake`.
+ *
+ * The setup a suite needs when it only wants "this segment is recorded": a
+ * fresh clip id (or the one passed, to build a shared or retried clip), `frames`
+ * constant samples at the canonical rate, and the clip and take written in ONE
+ * transaction exactly as the recorder's save does. There is deliberately no
+ * store write that points a segment at a clip without writing the clip: a take
+ * naming absent audio is damage, and a suite that wants it deletes the clip
+ * after this returns (#159 S-13).
+ */
+export function recordTake(
+  segmentId: SegmentId,
+  opts: {
+    clipId?: ClipId;
+    frames?: number;
+    finished?: boolean;
+    now?: number;
+  } = {}
+): Promise<Take> {
+  const { clipId = newClipId(), frames = 100, ...take } = opts;
+  return saveTake(
+    segmentId,
+    clipId,
+    new Int16Array(frames).fill(1000),
+    CANONICAL_SAMPLE_RATE,
+    take
+  );
 }
 
 /**

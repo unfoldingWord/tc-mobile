@@ -399,7 +399,7 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
     // The same live guard Retry takes, and for the same window: between a Retry
     // tap and its re-render the armed Delete is still on screen and still live.
     // Discarding there races the write Retry just started — the clip deleted
-    // out from under a take `addTake` has already made active, or the write
+    // out from under a take `saveTake` has already made active, or the write
     // landing after the discard so a recording the translator confirmed
     // deleting comes back. Both are the silent loss this slot exists to prevent.
     if (savingRef.current) return;

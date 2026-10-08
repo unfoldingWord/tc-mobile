@@ -14,7 +14,7 @@ import {
  * not depend on it.
  *
  * What is NOT covered here: the save-failure path itself. Nothing below calls
- * `saveTake`, makes `putClip` or `addTake` reject, or asserts that a failed
+ * `saveTake`, makes it reject, or asserts that a failed
  * save keeps its samples. Those transitions are covered by
  * `tests/pending-take.test.ts`, and the storage writes by
  * `tests/storage.test.ts`.

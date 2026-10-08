@@ -395,7 +395,7 @@ describe("markRowReason — the third row in the same menu (round 3)", () => {
   });
 
   // The gate that separates this row from Edit/Erase: Mark rides the take
-  // through `addTake`, so it stays live while recording or paused — only the
+  // through `saveTake`, so it stays live while recording or paused — only the
   // commit window (isClosing / requesting / processing) freezes it. A copy of
   // the Edit row's `takeActive` here would break record-and-mark-in-one-sheet.
   it("stays enabled through a live or paused take — only the commit window freezes it", () => {

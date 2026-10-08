@@ -151,7 +151,7 @@ export async function loadRecorderSegmentView(
  * (`setSegmentFinished` enforces the never-finish-empty invariant) and patches
  * the local flag. The recorder no longer calls it on every checkbox tap: the
  * toggle is deferred to `close()` and, when a take commits, rides that take
- * through `addTake` instead — so this write is the caller's, on close, for the
+ * through `saveTake` instead — so this write is the caller's, on close, for the
  * no-new-take path. The Segments screen reloads on close and reflects it then.
  */
 export function useRecorderSegment(segmentId: SegmentId) {

@@ -16,7 +16,7 @@ import {
   getSegment,
   listBooks,
 } from "@/lib/storage/books";
-import { addTake, setSegmentFinished, saveTake } from "@/lib/storage/takes";
+import { setSegmentFinished, saveTake } from "@/lib/storage/takes";
 import { getClip, getClipMeta, newClipId, putClip } from "@/lib/storage/clips";
 import { getDb } from "@/lib/storage/db";
 import { resolveSegmentAudio } from "@/lib/storage/segment-audio";
@@ -269,12 +269,12 @@ describe("deleteBook", () => {
   it("keeps a clip that a surviving take in another book still references", async () => {
     // Clips are NOT content-addressed today — `newClipId()` is a fresh UUID per
     // save, so nothing shares a clip in the shipped app. This state is reached
-    // through the public store API all the same (`addTake` takes a caller-supplied
+    // through the public store API all the same (`saveTake` takes a caller-supplied
     // ClipId), and it is the state a future content-addressed import would make
     // ordinary. Deleting a book deletes MANY clips at once, so an unconditional
     // delete here would punch a whole book's worth of holes in another book's
     // audio. Reference-counting is the same guard `clearSegmentTake` already
-    // holds (takes.ts) and that #68 tracks for `addTake`.
+    // holds (takes.ts) and that #68 added to the take write.
     const doomedBook = await createBook("Practice");
     const doomedChapter = await addChapter(doomedBook.id);
     const doomedSegment = await addSegment(doomedChapter.id);
@@ -289,7 +289,12 @@ describe("deleteBook", () => {
     const keeperBook = await createBook("Mark");
     const keeperChapter = await addChapter(keeperBook.id);
     const keeperSegment = await addSegment(keeperChapter.id);
-    const keeperTake = await addTake(keeperSegment.id, shared, 10);
+    const keeperTake = await saveTake(
+      keeperSegment.id,
+      shared,
+      samples(300),
+      CANONICAL_SAMPLE_RATE
+    );
 
     await deleteBook(doomedBook.id);
 
@@ -314,7 +319,7 @@ describe("deleteBook", () => {
     const second = await addSegment(chapter.id);
     const shared = newClipId();
     await saveTake(first.id, shared, samples(300), CANONICAL_SAMPLE_RATE);
-    await addTake(second.id, shared, 10);
+    await saveTake(second.id, shared, samples(300), CANONICAL_SAMPLE_RATE);
 
     await deleteBook(book.id);
 
