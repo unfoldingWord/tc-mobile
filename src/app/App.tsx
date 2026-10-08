@@ -538,6 +538,7 @@ export function App() {
           clipboard={clipboard}
           onClipboardChange={setClipboard}
           databaseUnreachable={databaseUnreachable}
+          primeAudio={primeAudioContext}
           onExit={commitCloseRecorder}
           onRequestBack={goBack}
           // The book crumb's two-level Back (#1275) — the adapter's, not the

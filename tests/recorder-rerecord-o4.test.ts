@@ -83,6 +83,7 @@ beforeEach(() => {
   );
   vi.stubGlobal("requestAnimationFrame", () => 1);
   vi.stubGlobal("cancelAnimationFrame", () => {});
+  prime.mockReset();
   storage.clear.mockReset();
   storage.clear.mockResolvedValue(undefined);
   boundary.view = recorded;
@@ -102,6 +103,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+const prime = vi.fn();
 let rerender: () => Promise<void> = async () => {};
 async function setup() {
   const ref = createRef<RecorderHandle>();
@@ -146,6 +148,7 @@ async function setup() {
       clipboard: null,
       onClipboardChange: vi.fn(),
       databaseUnreachable: false,
+      primeAudio: prime,
       onExit: vi.fn(),
       onRequestBack: () => {
         void ref.current?.requestClose();
@@ -291,6 +294,34 @@ describe("the record-again confirm (G5, #979)", () => {
     expect(document.querySelector(".o4-err-sub")?.textContent).toBe(
       "Microphone blocked"
     );
+  });
+
+  it("resumes the audio context in the tap, before the clear settles, for Record again only", async () => {
+    let settle!: () => void;
+    storage.clear.mockReturnValue(
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      })
+    );
+    await setup();
+    boundary.reloads = [erased];
+    await act(async () => barRerecord().click());
+    expect(prime).not.toHaveBeenCalled();
+    // Synchronously inside the click, while the clear is still pending.
+    const confirm = dialog().confirm;
+    act(() => confirm.click());
+    expect(prime).toHaveBeenCalledOnce();
+    expect(storage.clear).toHaveBeenCalledOnce();
+    await act(async () => settle());
+    expect(prime).toHaveBeenCalledOnce();
+  });
+
+  it("the ⋮ menu's Clear does not prime the audio context", async () => {
+    await setup();
+    boundary.reloads = [erased];
+    await openFromMenu();
+    await act(async () => dialog().confirm.click());
+    expect(prime).not.toHaveBeenCalled();
   });
 
   it("a second tap during the sequence does nothing", async () => {

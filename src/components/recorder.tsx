@@ -168,6 +168,16 @@ interface RecorderProps {
    */
   databaseUnreachable: boolean;
   /**
+   * Resume the shared audio context inside the current tap
+   * (`UseAudioSession.primeAudioContext`, the helper App already runs in the
+   * tap that opens the sheet). The record-again confirm calls it
+   * synchronously, before its first await, so the context is un-interrupted
+   * while the tap's activation is still live; the take it then starts runs
+   * after the clear's awaits (#1028). Optional so a host without one simply
+   * skips the prime.
+   */
+  primeAudio?: () => void;
+  /**
    * Close the sheet. `dirty` ⇒ the segment changed (a take committed, an edit
    * persisted, or the finished flag toggled), so App reloads the Segments screen
    * behind it.
@@ -269,6 +279,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       clipboard,
       onClipboardChange,
       databaseUnreachable,
+      primeAudio,
       onExit,
       onRequestBack,
       onRequestBackToBooks,
@@ -2012,6 +2023,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       const thenRecord = confirmFor === "erase" && confirmFrom === "rerecord";
       // A start owed from an earlier confirm must not ride this one if it fails.
       recordAfterClearRef.current = false;
+      // Record again resumes the audio context HERE, in the tap and before the
+      // first await: iOS spends the activation on the first synchronous Web
+      // Audio touch, and the start below runs after the clear's awaits. Not
+      // `getUserMedia` -- that would prompt for the mic even when the clear
+      // then fails. Same helper the sheet-open tap uses.
+      if (thenRecord) primeAudio?.();
       // Clear only when this call will acquire the guard: a "busy" refusal is
       // not an erase this sheet started, so it must not blank the flag from one
       // it did. The ref read and the hook's own check run in the same turn.
@@ -2085,6 +2102,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       isErasing,
       confirmFor,
       confirmFrom,
+      primeAudio,
       segmentId,
       onExit,
       stopPlayback,
