@@ -47,6 +47,7 @@ const segment = (n: number, hasClip = false): SegmentRow => ({
 const book = (n: number, chapters: readonly ChapterRow[] = []): BookCard => ({
   bookId: bookId(n),
   name: `Book ${n}`,
+  number: n,
   chapters,
 });
 

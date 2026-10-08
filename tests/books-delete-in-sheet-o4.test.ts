@@ -44,7 +44,7 @@ const state = vi.hoisted(() => ({
 vi.mock("@/hooks/use-books", () => ({
   useBooks: () => ({
     books: state.books,
-    newBookPlaceholder: "Book 001",
+    newBookNumber: 1,
     loading: false,
     loaded: true,
     error: null,
@@ -85,8 +85,14 @@ vi.mock("@/hooks/mp3-codec", () => ({
 const mark = "book-0000-4000-8000-000000000001" as BookId;
 const ruth = "book-0000-4000-8000-000000000002" as BookId;
 const shelf = (): BookCard[] => [
-  { bookId: mark, name: "Mark", coverColourKey: "teal", chapters: [] },
-  { bookId: ruth, name: "Ruth", coverColourKey: null, chapters: [] },
+  {
+    bookId: mark,
+    name: "Mark",
+    number: 1,
+    coverColourKey: "teal",
+    chapters: [],
+  },
+  { bookId: ruth, name: "Ruth", number: 1, coverColourKey: null, chapters: [] },
 ];
 
 let root: Root;

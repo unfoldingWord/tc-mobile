@@ -59,11 +59,28 @@ export interface SegmentRef {
 export interface Book {
   readonly id: BookId;
   /**
-   * User-facing. Auto-named "Book NNN" on create (B2), renamed in place by the
-   * facilitator for the passage being translated — "Mark" (#264). Always
-   * non-empty: a rename to blank keeps the current name.
+   * The facilitator's own name for the book — "Mark" (#264) — or `null` while
+   * it has none, which is how every book starts (B2).
+   *
+   * Nullable for the reason `Chapter.name` is (#169): what an unnamed book
+   * shows is a PLACEHOLDER, and a placeholder is UI copy. Storing the rendered
+   * "Book 001" froze English into IndexedDB, so a second UI language could
+   * never rename the books already on a phone. The slot is stored instead
+   * ({@link Book.number}) and the words are rendered at the screen.
+   *
+   * A rename to blank keeps the current value, so an unnamed book stays
+   * unnamed rather than acquiring the placeholder as a real name.
    */
-  readonly name: string;
+  readonly name: string | null;
+  /**
+   * The placeholder slot: 1-based, the first one not already shown on the
+   * shelf when this book was created.
+   *
+   * Only ever SHOWN while {@link Book.name} is `null` — a named book keeps its
+   * slot dormant, and dormant slots are free for a later book to take, so the
+   * number is not an identity and is not unique across the shelf.
+   */
+  readonly number: number;
   /** BCP-47 tag of the language being recorded, when known. */
   readonly languageCode: string | null;
   readonly chapterIds: readonly ChapterId[];

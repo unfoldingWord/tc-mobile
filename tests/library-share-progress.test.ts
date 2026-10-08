@@ -81,7 +81,7 @@ const shelfBooks = vi.hoisted(() => [
 vi.mock("@/hooks/use-books", () => ({
   useBooks: () => ({
     books: shelfBooks,
-    newBookPlaceholder: "Book 001",
+    newBookNumber: 1,
     loading: false,
     loaded: true,
     error: null,

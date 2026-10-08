@@ -49,6 +49,7 @@ const row = (id: string, number: number): ChapterRow => ({
 const card = (id: string, chapters: ChapterRow[]): BookCard => ({
   bookId: id as BookId,
   name: id,
+  number: 1,
   chapters,
   coverColourKey: null,
 });

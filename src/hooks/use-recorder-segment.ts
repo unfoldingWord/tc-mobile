@@ -9,9 +9,15 @@ import { coverColourHex, resolveCoverKey } from "@/lib/cover-colour";
 import { getBook, getChapter, getSegment } from "@/lib/storage/books";
 import { isFinished, setSegmentFinished } from "@/lib/storage/takes";
 import { loadSegmentClip } from "@/lib/storage/segment-audio";
+import { strings } from "@/lib/strings";
 import type { SegmentId } from "@/types/domain";
 
 export interface RecorderSegmentView {
+  /**
+   * The book's display heading — its own name, or the placeholder rendered
+   * from its slot (#169, `strings.bookHeading`) — or `""` when the segment's
+   * book could not be read.
+   */
   readonly bookName: string;
   /**
    * The book's resolved cover colour (#949, #957), already a hex string —
@@ -114,7 +120,7 @@ export async function loadRecorderSegmentView(
             clip.meta.frameCount
           );
   return {
-    bookName: book?.name ?? "",
+    bookName: book ? strings.bookHeading(book.name, book.number) : "",
     bookCoverHex: book
       ? coverColourHex(
           resolveCoverKey({ id: book.id, coverColourKey: book.coverColourKey })

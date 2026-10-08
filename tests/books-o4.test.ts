@@ -47,7 +47,7 @@ const shelfState = vi.hoisted(() => ({ books: [] as BookCard[] }));
 vi.mock("@/hooks/use-books", () => ({
   useBooks: () => ({
     books: shelfState.books,
-    newBookPlaceholder: "Book 001",
+    newBookNumber: 1,
     loading: false,
     loaded: true,
     error: null,
@@ -291,12 +291,14 @@ describe("O4 Books list, state 03 (#942)", () => {
     const chosen: BookCard = {
       bookId: bookId(1),
       name: "Mark",
+      number: 1,
       coverColourKey: stored,
       chapters: [],
     };
     const unchosen: BookCard = {
       bookId: bookId(2),
       name: "Ruth",
+      number: 1,
       coverColourKey: null,
       chapters: [chapter(2, 1)],
     };
@@ -329,6 +331,7 @@ describe("O4 Books list, state 03 (#942)", () => {
       {
         bookId: bookId(1),
         name: "Mark",
+        number: 1,
         coverColourKey: null,
         chapters: [
           chapter(1, 1),
@@ -370,6 +373,7 @@ describe("O4 Books list, state 03 (#942)", () => {
       {
         bookId: bookId(1),
         name: "Mark",
+        number: 1,
         coverColourKey: null,
         chapters: [
           chapter(1, 1, { totalCount: 6, finishedCount: 2, recordedCount: 3 }),
@@ -402,7 +406,13 @@ describe("O4 Books list, state 03 (#942)", () => {
       })
     );
     await mount("o4", [
-      { bookId: bookId(1), name: "Mark", coverColourKey: null, chapters },
+      {
+        bookId: bookId(1),
+        name: "Mark",
+        number: 1,
+        coverColourKey: null,
+        chapters,
+      },
     ]);
     await act(async () => button(strings.bookRow("Mark", 26, false)).click());
 
@@ -438,6 +448,7 @@ describe("O4 Books list, state 03 (#942)", () => {
       {
         bookId: bookId(1),
         name: "Mark",
+        number: 1,
         coverColourKey: null,
         chapters: [
           chapter(1, 1, { totalCount: 8 }),
@@ -464,13 +475,20 @@ describe("O4 Books list, state 03 (#942)", () => {
       {
         bookId: bookId(1),
         name: "Mark",
+        number: 1,
         coverColourKey: "teal",
         chapters: [
           chapter(1, 1, { totalCount: 4, finishedCount: 1, recordedCount: 2 }),
           chapter(1, 2, { name: "The sower" }),
         ],
       },
-      { bookId: bookId(2), name: "Ruth", coverColourKey: null, chapters: [] },
+      {
+        bookId: bookId(2),
+        name: "Ruth",
+        number: 1,
+        coverColourKey: null,
+        chapters: [],
+      },
     ];
     const names: Record<Design, string[]> = { current: [], o4: [] };
     for (const look of ["current", "o4"] as const) {
@@ -488,6 +506,7 @@ describe("O4 Books list, state 03 (#942)", () => {
       {
         bookId: bookId(1),
         name: "Mark",
+        number: 1,
         coverColourKey: "teal",
         chapters: [chapter(1, 1, { totalCount: 4, name: "The sower" })],
       },
@@ -517,7 +536,13 @@ describe("O4 Books header and empty shelf, state 01 (#942)", () => {
 
   it("makes the header's New book #941's shared square button once the shelf has books", async () => {
     await mount("o4", [
-      { bookId: bookId(1), name: "Mark", coverColourKey: null, chapters: [] },
+      {
+        bookId: bookId(1),
+        name: "Mark",
+        number: 1,
+        coverColourKey: null,
+        chapters: [],
+      },
     ]);
     const add = button(strings.newBook);
     // The shared 56 × 56 r14 well from `o4-controls.tsx`, not a local copy.
@@ -540,10 +565,17 @@ describe("the guided ring lands on the same control in both looks (#604, #834)",
     [
       "add-chapter: a new book's + (#834), with another book on the shelf",
       [
-        { bookId: bookId(2), name: "Ruth", coverColourKey: null, chapters: [] },
+        {
+          bookId: bookId(2),
+          name: "Ruth",
+          number: 1,
+          coverColourKey: null,
+          chapters: [],
+        },
         {
           bookId: bookId(1),
           name: "Mark",
+          number: 1,
           coverColourKey: null,
           chapters: [chapter(1, 1)],
         },
@@ -556,6 +588,7 @@ describe("the guided ring lands on the same control in both looks (#604, #834)",
         {
           bookId: bookId(1),
           name: "Mark",
+          number: 1,
           coverColourKey: null,
           chapters: [chapter(1, 1)],
         },
@@ -568,6 +601,7 @@ describe("the guided ring lands on the same control in both looks (#604, #834)",
         {
           bookId: bookId(1),
           name: "Mark",
+          number: 1,
           coverColourKey: null,
           chapters: [chapter(1, 1)],
         },
@@ -720,6 +754,7 @@ describe("right-to-left names on the shelf (#1267)", () => {
     {
       bookId: bookId(1),
       name: HEBREW,
+      number: 1,
       coverColourKey: null,
       chapters: [chapter(1, 1), chapter(1, 2, { name: ARABIC })],
     },

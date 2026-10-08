@@ -8,6 +8,7 @@ import { Notice } from "@/components/notice";
 import { StoragePressureBanner } from "@/components/storage-pressure-banner";
 import type { StoragePressureNotice } from "@/components/storage-pressure-notice";
 import type { UseLibraryShare } from "@/hooks/use-library-share";
+import type { BookLabel } from "@/lib/export/book";
 import type { Design } from "@/lib/design";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { StoragePressureMarker } from "@/lib/storage/pressure";
@@ -45,9 +46,9 @@ const share = vi.hoisted(() => ({
   prepare: vi.fn<
     (
       zipFilename: string,
-      nameBook: (bookName: string) => string,
+      nameBook: (book: BookLabel) => string,
       nameChapter: (
-        bookName: string,
+        book: BookLabel,
         chapterNumber: number,
         chapterName: string | null
       ) => string
@@ -90,7 +91,7 @@ const shelf = vi.hoisted(() => ({ books: [] as BookCard[] }));
 vi.mock("@/hooks/use-books", () => ({
   useBooks: () => ({
     books: shelf.books,
-    newBookPlaceholder: "Book 001",
+    newBookNumber: 1,
     loading: false,
     loaded: true,
     error: null,
@@ -298,10 +299,22 @@ describe("the button runs the library share", () => {
     expect(share.prepare).toHaveBeenCalledTimes(1);
     const [zip, nameBook, nameChapter] = share.prepare.mock.calls[0]!;
     expect(zip).toBe(strings.shareAllFilename);
-    expect(nameBook("Mark/Luke")).toBe(strings.shareAllFolder("Mark/Luke"));
-    expect(nameChapter("Mark", 3, null)).toBe(strings.shareFilename("Mark", 3));
+    const mark = { name: "Mark", number: 1 };
+    expect(nameBook({ name: "Mark/Luke", number: 1 })).toBe(
+      strings.shareAllFolder("Mark/Luke")
+    );
+    expect(nameChapter(mark, 3, null)).toBe(strings.shareFilename("Mark", 3));
     // The chapter's own name reaches the MP3, as in Share Book (#1218).
-    expect(nameChapter("Mark", 3, "The sower")).toBe("Mark - The sower.mp3");
+    expect(nameChapter(mark, 3, "The sower")).toBe("Mark - The sower.mp3");
+    // An unnamed book is labelled by the placeholder its slot renders, the
+    // same words its shelf row shows (#169) — never an empty folder name.
+    const unnamed = { name: null, number: 4 };
+    expect(nameBook(unnamed)).toBe(
+      strings.shareAllFolder(strings.bookHeading(null, 4))
+    );
+    expect(nameChapter(unnamed, 2, null)).toBe(
+      strings.shareFilename(strings.bookHeading(null, 4), 2)
+    );
     expect(share.send).not.toHaveBeenCalled();
   });
 
@@ -361,6 +374,7 @@ describe("Books shows the banner where the #247 line was", () => {
   const recorded: BookCard = {
     bookId: "book-0000-4000-8000-000000000001" as BookId,
     name: "Mark",
+    number: 1,
     chapters: [
       {
         chapterId: "chapter-1-4000-8000-000000000001" as ChapterId,

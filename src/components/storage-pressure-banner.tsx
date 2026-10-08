@@ -94,10 +94,18 @@ function O4StorageBanner({
 
   const onPrepare = () => {
     focusRestore.capture();
+    // Each book is labelled the way its shelf row is: its own name, or the
+    // placeholder its slot renders (#169).
     void share.prepare(
       strings.shareAllFilename,
-      strings.shareAllFolder,
-      strings.shareFilename
+      (book) =>
+        strings.shareAllFolder(strings.bookHeading(book.name, book.number)),
+      (book, n, chapterName) =>
+        strings.shareFilename(
+          strings.bookHeading(book.name, book.number),
+          n,
+          chapterName
+        )
     );
   };
   const onSend = () => {

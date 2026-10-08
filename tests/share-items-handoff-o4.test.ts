@@ -78,7 +78,7 @@ const chapters: ChapterRow[] = [
     recordedCount: 1,
   },
 ];
-const shelf: BookCard[] = [{ bookId, name: bookName, chapters }];
+const shelf: BookCard[] = [{ bookId, name: bookName, number: 1, chapters }];
 
 const bookMocks = vi.hoisted(() => ({
   progress: { phase: "hidden" as const } as ShareProgress,
@@ -86,7 +86,7 @@ const bookMocks = vi.hoisted(() => ({
 vi.mock("@/hooks/use-books", () => ({
   useBooks: () => ({
     books: shelf,
-    newBookPlaceholder: "Book 001",
+    newBookNumber: 1,
     loading: false,
     loaded: true,
     error: null,

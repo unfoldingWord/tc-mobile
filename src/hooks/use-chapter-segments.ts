@@ -27,6 +27,7 @@ import {
   isMissingChapterFailure,
   isMissingSegmentFailure,
 } from "@/lib/storage/stale-target";
+import { strings } from "@/lib/strings";
 import { ROW_PEAK_BUCKETS } from "@/lib/view/segment-rows";
 import type { ClipMeta, Peaks } from "@/types/audio";
 import type { ChapterId, ClipId, Segment, SegmentId } from "@/types/domain";
@@ -104,6 +105,11 @@ async function loadSegmentRow(segment: Segment): Promise<SegmentRow> {
 
 /** The breadcrumb + rows a chapter needs, loaded together. */
 interface ChapterView {
+  /**
+   * The book's display heading — its own name, or the placeholder rendered
+   * from its slot (#169, `strings.bookHeading`) — or `""` when the chapter's
+   * book could not be read.
+   */
   readonly bookName: string;
   /**
    * The book's resolved cover colour (#949, #957), or `null` when the
@@ -139,7 +145,7 @@ export async function loadChapterView(
     rows.push(await loadSegmentRow(segment));
   }
   return {
-    bookName: book?.name ?? "",
+    bookName: book ? strings.bookHeading(book.name, book.number) : "",
     bookCoverHex: book
       ? coverColourHex(
           resolveCoverKey({ id: book.id, coverColourKey: book.coverColourKey })
