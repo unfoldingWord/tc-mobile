@@ -391,8 +391,15 @@ let livePlaybacks = 0;
 let pendingClaims = 0;
 
 /** Count one pending claim. The release is once-only, and applies a drop
- * that waited for it. */
-function claimSharedContext(): () => void {
+ * that waited for it.
+ *
+ * Exported for the two callers that hold the shared context across an await
+ * of their own, before `raceAudioResume` or `playSamples` take theirs
+ * (#1265): `start()` across `getUserMedia`, and `playTake` across its clip
+ * read. A `devicechange` or a hide inside that window only marks the drop;
+ * it lands at the release. Call it after `resumeAudioContext()`, whose top
+ * applies a waiting drop, and release it once the callee holds its own. */
+export function claimSharedContext(): () => void {
   pendingClaims++;
   let released = false;
   return () => {
@@ -461,6 +468,25 @@ export function dropSharedContextWhenIdle(): void {
   if (sharedContext === null) return;
   idleDropPending = sharedContext;
   applyPendingIdleDrop();
+}
+
+/**
+ * The drop for a context whose clock was seen stopped (#1251): the Play's
+ * stall, a level tap's stall, and the visible-again check. Unlike a drop
+ * from `playSamples`' #1213 fail-closed path, it also stands aside for a
+ * Play that is sounding or a claim on its way to the context (closing it
+ * would silence that source with no end the UI could hear about), and when
+ * `discardSharedContext` refuses for any reason it marks the context
+ * (`idleDropPending`) so the drop lands once the refusal clears, instead of
+ * being forgotten (#1265). Returns whether it dropped the context now.
+ */
+function dropStalledContext(ctx: AudioContext): boolean {
+  if (sharedContext !== ctx) return false;
+  if (livePlaybacks === 0 && pendingClaims === 0 && discardSharedContext(ctx)) {
+    return true;
+  }
+  idleDropPending = ctx;
+  return false;
 }
 
 let routeWatchInstalled = false;
@@ -692,7 +718,9 @@ export async function checkSharedClockOnReturn(): Promise<void> {
     () => livePlaybacks > 0 || pendingClaims > 0
   );
   if (verdict !== "stalled") return;
-  if (!discardSharedContext(ctx)) return;
+  // Refused (a Play, a claim, a hold, a pending close): marked, and it lands
+  // when the refusal clears; no row is written for a drop not made here.
+  if (!dropStalledContext(ctx)) return;
   reportFailure(
     new Error(
       `the shared context reported "running" but its currentTime did not advance within ${CLOCK_STALL_TIMEOUT_MS} ms of the page becoming visible; the context was dropped (#1251)`
@@ -1055,7 +1083,7 @@ export function createLevelTap(stream: MediaStream): LevelTap {
     disconnect(analyser);
     disconnect(sink);
     releaseHold();
-    if (clockStalled) discardSharedContext(ctx);
+    if (clockStalled) dropStalledContext(ctx);
   };
 
   return {
@@ -1530,7 +1558,9 @@ export async function playSamples(
     // handle whose playhead never moves and whose audio never sounds, and no
     // row would be written. Wait for the clock to move before handing the
     // handle back. A source that has already ended is not judged: a short
-    // take can end before the first poll, and it only ends if the clock ran.
+    // take can end before the first poll. (A real source ends only once the
+    // clock has run; the Node test fake ends inside `start()`, so its test
+    // pins this skip, not a moving clock.)
     // A claim superseded during the wait is not judged either; the caller's
     // `settle` stops its handle as it always has.
     const clock = await watchClock(
@@ -1553,12 +1583,14 @@ export async function playSamples(
       // (`reportPlaybackFailure`, `use-audio-session.ts`), and the `finally`
       // below writes #469 rows only, keyed on `hadRejection`/`unusableError`.
       reportFailure(stall, "playback-clock-stalled");
-      // Drop the stuck context through the same path as #1213, with all its
-      // refusals (a hold, a pending close, an already-replaced context). The
-      // next Play's in-tap `resumeAudioContext()` builds the replacement
-      // inside that tap. This press is not retried: it is past its gesture.
-      discardSharedContext(ctx);
+      // Drop the stuck context after this Play stops counting as live, with
+      // all of `discardSharedContext`'s refusals (a hold, a pending close, an
+      // already-replaced context). A refused drop is marked and lands when the
+      // refusal clears (#1265). The next Play's in-tap `resumeAudioContext()`
+      // builds the replacement inside that tap. This press is not retried: it
+      // is past its gesture.
       endLive();
+      dropStalledContext(ctx);
       throw stall;
     }
 

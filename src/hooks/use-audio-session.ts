@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   checkSharedClockOnReturn,
   decodeMp3ToCanonical,
+  claimSharedContext,
   dropSharedContextWhenIdle,
   playSamples,
   resumeAudioContext,
@@ -463,6 +464,10 @@ export function useAudioSession(): UseAudioSession {
       void resumeAudioContext().catch((cause: unknown) => {
         console.error("Could not resume the audio context", cause);
       });
+      // Held across the clip read and decode below, until `playSamples` has
+      // taken its own claim: a `devicechange` or a hide in that window only
+      // marks the context for a drop, which lands at the release (#1265).
+      const releaseTapClaim = claimSharedContext();
 
       // Optimistic, so the row responds to the tap rather than to the disk.
       setPlaying(row.segmentId);
@@ -523,6 +528,8 @@ export function useAudioSession(): UseAudioSession {
             setPlaying(null);
             setPlaybackError(strings.playbackFailed);
           }
+        } finally {
+          releaseTapClaim();
         }
       })();
     },
