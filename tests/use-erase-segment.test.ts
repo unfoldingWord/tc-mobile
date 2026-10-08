@@ -9,8 +9,8 @@ import {
   createBook,
   getSegment,
 } from "@/lib/storage/books";
-import { addTake, clearSegmentTake } from "@/lib/storage/takes";
-import { getClip, getClipMeta, newClipId, putClip } from "@/lib/storage/clips";
+import { clearSegmentTake, saveTake } from "@/lib/storage/takes";
+import { getClip, getClipMeta, newClipId } from "@/lib/storage/clips";
 import { closeDb, getDb } from "@/lib/storage/db";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import {
@@ -65,8 +65,7 @@ const recordedSegment = async (): Promise<{
   const chapter = await addChapter(book.id);
   const segment = await addSegment(chapter.id);
   const clipId = newClipId();
-  const meta = await putClip(clipId, samples(100), CANONICAL_SAMPLE_RATE);
-  await addTake(segment.id, clipId, meta.durationMs);
+  await saveTake(segment.id, clipId, samples(100), CANONICAL_SAMPLE_RATE);
   return { segmentId: segment.id, clipId };
 };
 

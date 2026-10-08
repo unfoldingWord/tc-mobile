@@ -32,7 +32,6 @@ import {
   setBookCoverColour,
 } from "@/lib/storage/books";
 import {
-  addTake,
   clearSegmentTake,
   isFinished,
   saveTake,
@@ -45,25 +44,10 @@ import {
 } from "@/lib/storage/segment-audio";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import type { Book, BookId, RecordingStatus } from "@/types/domain";
-import { samplesOf } from "./support";
+import { recordTake, samplesOf } from "./support";
 
 const samples = (n: number, value = 1000): Int16Array =>
   Int16Array.from({ length: n }, () => value);
-
-/**
- * A clip id with audio actually behind it.
- *
- * `addTake` takes a `ClipId` on trust, so `addTake(seg, newClipId(), …)`
- * builds a take pointing at nothing. That is a real state — it is what a
- * failed or half-rolled-back save leaves — but it is not what "recorded"
- * means, and tests that used it as a stand-in were the reason the export path
- * could return clip ids for audio that did not exist.
- */
-const storedClip = async (frames = 100) => {
-  const id = newClipId();
-  await putClip(id, samples(frames), CANONICAL_SAMPLE_RATE);
-  return id;
-};
 
 /** A book → chapter → one segment, and the ids to address it by. */
 const oneSegment = async () => {
@@ -268,7 +252,7 @@ describe("book tree", () => {
 
   it("maps the finished toggle onto the status enum", async () => {
     const { segmentId } = await oneSegment();
-    await addTake(segmentId, await storedClip(), 100);
+    await recordTake(segmentId);
     const db = await getDb();
 
     await setSegmentFinished(segmentId, true);
@@ -316,13 +300,13 @@ describe("book tree", () => {
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
     await addSegment(chapter.id); // s3: never recorded
-    await addTake(s1.id, await storedClip(), 100);
+    await recordTake(s1.id);
     await setSegmentFinished(s1.id, true);
     // s2 is recorded but NOT finished ("draft") — the case `recorded` exists
     // for (#542 Part B): it has reclaimable bytes behind it, but would not
     // count as `finished`, and a mutation collapsing `recorded` back to
     // `finished` must fail this exact assertion.
-    await addTake(s2.id, await storedClip(), 100);
+    await recordTake(s2.id);
 
     expect(await chapterProgress(chapter.id)).toEqual({
       finished: 1,
@@ -344,13 +328,13 @@ describe("book tree", () => {
     // M2: a segment has at most ONE take. Re-recording REPLACES it — no stacked
     // history, and the old PCM is reclaimed, not left unreachable (#2/D3).
     const { segmentId } = await oneSegment();
-    const firstClip = await storedClip();
-    const first = await addTake(segmentId, firstClip, 1000);
+    const first = await recordTake(segmentId, { frames: 1000 });
+    const firstClip = first.clipId;
     // Approve it, so the re-record's demotion is observable.
     await setSegmentFinished(segmentId, true);
 
-    const secondClip = await storedClip();
-    const second = await addTake(segmentId, secondClip, 1200);
+    const second = await recordTake(segmentId, { frames: 1200 });
+    const secondClip = second.clipId;
 
     const db = await getDb();
     // Exactly one take row for the segment, and it is the newest.
@@ -376,11 +360,11 @@ describe("book tree", () => {
 
   it("lands a take finished when the recorder carried an explicit mark", async () => {
     // The recorder's Finished checkbox rides the take rather than a separate
-    // write after it: addTake sets the final status in the SAME transaction, so
+    // write after it: saveTake sets the final status in the SAME transaction, so
     // a save-failure retry re-applies the mark instead of dropping it. `true`
     // means the translator explicitly marked THIS take done.
     const { segmentId } = await oneSegment();
-    const take = await addTake(segmentId, await storedClip(), 100, {
+    const take = await recordTake(segmentId, {
       finished: true,
     });
     const db = await getDb();
@@ -393,17 +377,17 @@ describe("book tree", () => {
   it("defaults a take to draft, so an unmarked re-record demotes", async () => {
     // The default is what protects the demote invariant: a re-record the
     // translator did NOT mark finished must not carry an earlier approval
-    // forward. `addTake` with no finished option, and with `false`, both land
+    // forward. `saveTake` with no finished option, and with `false`, both land
     // draft.
     const { segmentId } = await oneSegment();
-    await addTake(segmentId, await storedClip(), 100, { finished: true });
+    await recordTake(segmentId, { finished: true });
 
-    const demoted = await addTake(segmentId, await storedClip(), 120);
+    const demoted = await recordTake(segmentId);
     const db = await getDb();
     expect((await db.get("segments", segmentId))?.status).toBe("draft");
     void demoted;
 
-    await addTake(segmentId, await storedClip(), 130, { finished: false });
+    await recordTake(segmentId, { finished: false });
     expect((await db.get("segments", segmentId))?.status).toBe("draft");
   });
 
@@ -413,23 +397,21 @@ describe("book tree", () => {
     const book = await createBook("b", null, 1000);
     const chapter = await addChapter(book.id);
     const segment = await addSegment(chapter.id);
-    await addTake(segment.id, await storedClip(), 100, { now: 5000 });
+    await recordTake(segment.id, { now: 5000 });
     expect((await getBook(book.id))?.updatedAt).toBe(5000);
   });
 
   it("keeps the audio when a re-record reuses the same clip id", async () => {
     // The pending-take retry path re-runs the save with the SAME clipId
-    // (retrySave keeps it; putClip is an upsert). addTake then sees
-    // prior.clipId === new clipId, and deleting "the superseded clip" would
-    // strand the take it just wrote — the guard at takes.ts is the only thing
-    // stopping that, and nothing else exercises it.
+    // (retrySave keeps it; the clip write is an upsert). The take write then
+    // sees prior.clipId === new clipId, and deleting "the superseded clip"
+    // would strand the take it just wrote — the reference check in takes.ts is
+    // what stops that.
     const { segmentId } = await oneSegment();
-    const clipId = await storedClip(1000);
-    await addTake(segmentId, clipId, 1000);
+    const { clipId } = await recordTake(segmentId, { frames: 1000 });
 
-    // Same id again, as a retry does: re-store (upsert) then re-add.
-    await putClip(clipId, samples(1000), CANONICAL_SAMPLE_RATE);
-    const second = await addTake(segmentId, clipId, 1000);
+    // Same id again, as a retry does.
+    const second = await recordTake(segmentId, { clipId, frames: 1000 });
 
     const db = await getDb();
     expect((await db.get("segments", segmentId))?.activeTakeId).toBe(second.id);
@@ -445,8 +427,8 @@ describe("book tree", () => {
     // 0-frame take (which would resolve as a real, silent recording). The take,
     // the pointer, and the PCM all go, and the segment reads not-started again.
     const { segmentId } = await oneSegment();
-    const clipId = await storedClip(1000);
-    const take = await addTake(segmentId, clipId, 1000, { finished: true });
+    const take = await recordTake(segmentId, { frames: 1000, finished: true });
+    const clipId = take.clipId;
 
     await clearSegmentTake(segmentId);
 
@@ -479,9 +461,9 @@ describe("book tree", () => {
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
-    const shared = await storedClip(500);
-    await addTake(s1.id, shared, 100);
-    await addTake(s2.id, shared, 100); // both point at the same clip
+    const shared = newClipId();
+    await recordTake(s1.id, { clipId: shared, frames: 500 });
+    await recordTake(s2.id, { clipId: shared, frames: 500 }); // both point at the same clip
 
     await clearSegmentTake(s1.id);
 
@@ -498,8 +480,8 @@ describe("book tree", () => {
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
-    await addTake(s1.id, await storedClip(), 100);
-    const keep = await addTake(s2.id, await storedClip(), 100);
+    await recordTake(s1.id);
+    const keep = await recordTake(s2.id);
 
     await clearSegmentTake(s1.id);
 
@@ -516,8 +498,8 @@ describe("book tree", () => {
     const s2 = await addSegment(chapter.id); // left unrecorded
     const s3 = await addSegment(chapter.id);
 
-    const t1 = await addTake(s1.id, await storedClip(), 100);
-    const t3 = await addTake(s3.id, await storedClip(), 100);
+    const t1 = await recordTake(s1.id);
+    const t3 = await recordTake(s3.id);
     void s2;
 
     const { clipIds, missing } = await resolveChapterClipIds(chapter.id);
@@ -535,8 +517,8 @@ describe("book tree", () => {
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
-    const t1 = await addTake(s1.id, await storedClip(), 100);
-    const dangling = await addTake(s2.id, await storedClip(), 100);
+    const t1 = await recordTake(s1.id);
+    const dangling = await recordTake(s2.id);
 
     const db = await getDb();
     await db.delete("takes", dangling.id);
@@ -552,20 +534,15 @@ describe("book tree", () => {
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
 
-    const t1 = await addTake(s1.id, await storedClip(), 100);
-    // The take row is fine. The audio it names was never written — a save
-    // that failed after `addTake`, or a clip deleted from under it.
-    await addTake(s2.id, newClipId(), 100);
+    const t1 = await recordTake(s1.id);
+    // The take row is fine. The audio it names is gone — deleted from under
+    // it, since the commit write stores the clip in the take's own transaction.
+    const lost = await recordTake(s2.id);
+    await deleteClip(lost.clipId);
 
     const { clipIds, missing } = await resolveChapterClipIds(chapter.id);
     expect(clipIds).toEqual([t1.clipId]);
     expect(missing).toBe(1);
-  });
-
-  it("rejects takes against an unknown segment", async () => {
-    await expect(addTake("nope" as never, newClipId(), 100)).rejects.toThrow(
-      /No such segment/
-    );
   });
 });
 
@@ -1007,8 +984,7 @@ describe("rename segment (#591)", () => {
     const chapter = await addChapter(book.id);
     await addSegment(chapter.id);
     const second = await addSegment(chapter.id);
-    const clipId = await storedClip();
-    await addTake(second.id, clipId, 100);
+    await recordTake(second.id);
     await setSegmentFinished(second.id, true);
     const before = await getSegment(second.id);
     const chapterBefore = await getChapter(chapter.id);
@@ -1096,7 +1072,7 @@ describe("isStaleBookFailure", () => {
  * The atomic commit write — clip and take in ONE transaction (#38).
  *
  * The regression these catch: the old commit was two transactions (`putClip`
- * then `addTake`). A failure on the second left the clip durable with no take
+ * then a separate take write). A failure on the second left the clip durable with no take
  * referencing it — an orphan that consumed the space the recovery screen tells
  * the translator to free, so freeing space and retrying failed again. The
  * atomicity test below fails against that two-transaction flow (the clip would
@@ -1204,8 +1180,8 @@ describe("atomic take save (saveTake)", () => {
 describe("segment audio resolution", () => {
   it("resolves a segment whose take has stored audio", async () => {
     const { segmentId } = await oneSegment();
-    const clipId = await storedClip(150);
-    const take = await addTake(segmentId, clipId, 1000);
+    const take = await recordTake(segmentId, { frames: 150 });
+    const clipId = take.clipId;
 
     const meta = await resolveSegmentAudio(segmentId);
     expect(meta.kind).toBe("resolved");
@@ -1234,7 +1210,7 @@ describe("segment audio resolution", () => {
 
   it("reports a segment whose active take row is gone", async () => {
     const { segmentId } = await oneSegment();
-    const take = await addTake(segmentId, await storedClip(), 100);
+    const take = await recordTake(segmentId);
     const db = await getDb();
     await db.delete("takes", take.id);
 
@@ -1250,9 +1226,10 @@ describe("segment audio resolution", () => {
 
   it("reports a take whose clip was never stored", async () => {
     const { segmentId } = await oneSegment();
-    // `addTake` takes the clip id on trust — nothing checks the clip exists,
-    // which is how a chapter can hold takes pointing at no audio at all.
-    const take = await addTake(segmentId, newClipId(), 100);
+    // Nothing checks on read that a take's clip exists, which is how a chapter
+    // can hold takes pointing at no audio at all once a clip is lost.
+    const take = await recordTake(segmentId);
+    await deleteClip(take.clipId);
 
     for (const audio of [
       await resolveSegmentAudio(segmentId),
@@ -1265,8 +1242,7 @@ describe("segment audio resolution", () => {
 
   it("reports a clip whose samples went without its metadata", async () => {
     const { segmentId } = await oneSegment();
-    const clipId = await storedClip();
-    await addTake(segmentId, clipId, 100);
+    const { clipId } = await recordTake(segmentId);
     const db = await getDb();
     await db.delete("clipData", clipId);
 
@@ -1279,8 +1255,7 @@ describe("segment audio resolution", () => {
 
   it("counts a metadata-only clip as missing from a chapter export", async () => {
     const { chapterId, segmentId } = await oneSegment();
-    const clipId = await storedClip();
-    await addTake(segmentId, clipId, 100);
+    const { clipId } = await recordTake(segmentId);
     const db = await getDb();
     await db.delete("clipData", clipId);
 
@@ -1300,8 +1275,8 @@ describe("segment audio resolution", () => {
 
   it("resolves again once the missing clip is stored", async () => {
     const { segmentId } = await oneSegment();
-    const clipId = newClipId();
-    await addTake(segmentId, clipId, 100);
+    const { clipId } = await recordTake(segmentId);
+    await deleteClip(clipId);
     expect((await loadSegmentClip(segmentId)).kind).toBe("clip-missing");
 
     // The resolver reads; it does not repair and it does not latch. Storing
@@ -1329,7 +1304,7 @@ describe("shelf order: books stay put (#1185)", () => {
     const book = await createBook(name);
     const chapter = await addChapter(book.id);
     const segment = await addSegment(chapter.id);
-    await addTake(segment.id, await storedClip(), 100);
+    await recordTake(segment.id);
     return { bookId: book.id, chapterId: chapter.id, segmentId: segment.id };
   };
 
@@ -1341,10 +1316,7 @@ describe("shelf order: books stay put (#1185)", () => {
     ["a cover colour change", (t) => setBookCoverColour(t.bookId, "forest")],
     ["a chapter rename", (t) => renameChapter(t.chapterId, "Mark 6")],
     ["deleting a segment", (t) => deleteSegment(t.segmentId)],
-    [
-      "recording a take",
-      async (t) => addTake(t.segmentId, await storedClip(), 100),
-    ],
+    ["recording a take", async (t) => recordTake(t.segmentId)],
     ["clearing a take", (t) => clearSegmentTake(t.segmentId)],
   ])("%s leaves the listBooks order unchanged", async (_label, write) => {
     const oldest = await recordedBook("oldest");

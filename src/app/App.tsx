@@ -296,7 +296,7 @@ export function App() {
   //
   //   THREE writer paths, all landing in `lib/storage/takes.ts`:
   //     - a take commit — `writeTakeInTx` stamps the status atomically with the
-  //       take, so `addTake`/`saveTake` set it on every recording;
+  //       take, so `saveTake` sets it on every recording;
   //     - `clearSegmentTake`, which returns an erased segment to "not-started";
   //     - `setSegmentFinished`, the explicit toggle.
   //

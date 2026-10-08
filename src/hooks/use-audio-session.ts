@@ -721,7 +721,7 @@ export function useAudioSession(): UseAudioSession {
     // Synchronous and total. Navigation is not a moment to be waiting on a
     // promise: the microphone has to be released in the same task as the tap.
     //
-    // A take in progress is abandoned, not saved. `addTake` makes every new
+    // A take in progress is abandoned, not saved. `saveTake` makes every new
     // take the active one, so committing a fragment here would quietly replace
     // a good recording with a truncated one. Losing an unconfirmed take is
     // recoverable by recording again; that is not.

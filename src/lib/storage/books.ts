@@ -6,7 +6,7 @@
  * and the order of that concatenation is a decision the user makes, not a
  * property of the data.
  *
- * The take writes and the finished flag are NOT here: `addTake`, `saveTake`,
+ * The take writes and the finished flag are NOT here: `saveTake`,
  * `clearSegmentTake`, `setSegmentFinished` and `isFinished` are in `takes.ts`
  * (#160, L-16), which keeps every take-lifecycle status transition and the
  * read the view layer calls in one place. `addSegment` below is the one
@@ -347,7 +347,7 @@ type DeleteBookTx = ReturnType<typeof openDeleteBookTx>;
  *     the intent and not the current implementation — but this deletes many
  *     clips at once, so an unconditional delete would, the day an import
  *     dedupes, punch a book's worth of holes in another book's audio. Same
- *     guard `clearSegmentTake` already holds; `addTake`'s is #68.
+ *     guard `clearSegmentTake` already holds; the take write's is #68.
  *
  * **The walk goes by the parent links, not the ordering arrays.** `chapterIds`
  * and `segmentIds` are denormalised order; `chapter.bookId` and
@@ -1112,7 +1112,7 @@ export async function getSegmentsOfChapter(
  * Known corner (documented, cheap to revisit): an externally-corrupted
  * `affirmed`-but-dangling segment counts as finished (and recorded) here while
  * its row renders as never-recorded. It is near-unreachable by construction —
- * `addTake` demotes `affirmed → draft` and `setSegmentFinished(true)` requires
+ * `saveTake` demotes `affirmed → draft` and `setSegmentFinished(true)` requires
  * an active take, so only external clip loss produces it — and a full audio
  * walk per segment on every render is not worth its cost.
  */

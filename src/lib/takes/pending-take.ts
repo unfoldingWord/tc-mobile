@@ -76,7 +76,7 @@ export interface PendingTake {
   /**
    * The explicit Finished mark for this take. Carried through every transition
    * so the commit — first attempt or a retry — applies it atomically with the
-   * take (`addTake`), rather than a separate write the recovery path never
+   * take (`saveTake`), rather than a separate write the recovery path never
    * reaches. False is the default a plain recording lands in.
    */
   readonly finished: boolean;

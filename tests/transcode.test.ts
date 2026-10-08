@@ -119,7 +119,7 @@ describe("listPcmFinishedSegments", () => {
 
   it("skips a finished segment whose take or clip is dangling", async () => {
     // Nothing to encode from: a sweep must not try to load audio the database
-    // cannot produce. (Corrupt by construction; `addTake` demotes so only external
+    // cannot produce. (Corrupt by construction; a take write demotes so only external
     // loss reaches this.)
     const { segmentId } = await recordedSegment();
     await setSegmentFinished(segmentId, true);

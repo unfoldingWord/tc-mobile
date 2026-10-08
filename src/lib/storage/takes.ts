@@ -4,9 +4,8 @@
  * Split out of `books.ts` (#160, L-16), which had grown to hold the whole tree
  * plus every write that touches audio. What lives here is one cohesive thing:
  * the transaction shape a take write needs, the 1:1 replace itself, and the
- * two write paths over it — `addTake` (clip already on disk) and `saveTake`
- * (clip written in the same transaction, the #38 atomicity fix) — plus the
- * clear and the finished mark.
+ * one write path over it — `saveTake`, the clip and the take in one
+ * transaction (the #38 atomicity fix) — plus the clear and the finished mark.
  *
  * The finished flag comes with them, and that is the point of the seam rather
  * than an accident of where the lines fell: the binary "finished" UI is one
@@ -46,12 +45,10 @@ const uuid = (): string => crypto.randomUUID();
 /**
  * Open the transaction a take write needs: the take row and segment pointer, the
  * clip both `saveTake` writes and a superseded take's clip is deleted from, and
- * the book/chapter parents read to bump the book's `updatedAt`. `addTake` and
- * `saveTake` open the identical transaction — `saveTake` just also writes the
- * clip inside it — so the store list and the take logic are shared, not
- * duplicated. `clearSegmentTake` opens it too, so the clip reference check
- * both share runs on one transaction type. `TakeTx` is derived from this call's return so the helper's
- * parameter type cannot drift from what actually opens.
+ * the book/chapter parents read to bump the book's `updatedAt`. `saveTake` and
+ * `clearSegmentTake` both open it, so the clip reference check they share runs
+ * on one transaction type. `TakeTx` is derived from this call's return so the
+ * helper's parameter type cannot drift from what actually opens.
  */
 function openTakeTx(db: IDBPDatabase<TcMobileDb>) {
   return db.transaction(
@@ -101,7 +98,7 @@ export function isFinished(status: RecordingStatus): boolean {
  * The caller's transaction spans the take, segment, and clip stores, so the
  * delete of the old audio cannot land without the new audio and pointer
  * landing too: an interrupted replace never strands the new recording. That
- * atomicity is a property of the transaction `addTake`/`saveTake` open around
+ * atomicity is a property of the transaction `saveTake` opens around
  * this call, not of this helper alone — see the "Does NOT open or close the
  * transaction" note below.
  *
@@ -117,10 +114,8 @@ export function isFinished(status: RecordingStatus): boolean {
  * what lets the mark survive a save-failure retry (which re-runs this) instead
  * of being lost to a separate write the recovery path never reaches.
  *
- * Shared by `addTake` (clip already on disk) and `saveTake` (clip written in the
- * same transaction), so the 1:1 replace, the finished-mark, the prior-clip
- * cleanup and the book's `updatedAt` bump exist once. Does NOT open or close the transaction:
- * the caller owns its lifetime, which is what lets `saveTake` make the clip write
+ * Its one caller is `saveTake`. Does NOT open or close the transaction: the
+ * caller owns its lifetime, which is what lets `saveTake` make the clip write
  * and this take write atomic together.
  */
 async function writeTakeInTx(
@@ -221,30 +216,10 @@ async function priorClipGeneration(
 }
 
 /**
- * Point a segment at an already-stored clip as its active take.
- *
- * Assumes the clip is on disk (its caller `putClip`s first). For the record/edit
- * commit path, prefer `saveTake`, which writes the clip in the SAME transaction
- * so a failure cannot strand an orphan.
- */
-export async function addTake(
-  segmentId: SegmentId,
-  clipId: ClipId,
-  durationMs: number,
-  opts: { finished?: boolean; now?: number } = {}
-): Promise<Take> {
-  const db = await getDb();
-  const tx = openTakeTx(db);
-  const take = await writeTakeInTx(tx, segmentId, clipId, durationMs, opts);
-  await tx.done;
-  return take;
-}
-
-/**
  * Persist a recording — the clip AND the take — in ONE transaction.
  *
  * This is the commit path's write, and its atomicity is the #38 fix. The old
- * flow was `putClip` (transaction A) then `addTake` (transaction B): if the
+ * flow was `putClip` (transaction A) then a take write (transaction B): if the
  * second failed — quota on the take/segment write, or the clip write itself
  * succeeding and then the process dying — the clip was already durable with no
  * take referencing it. That orphan consumed the very space the recovery screen
@@ -254,9 +229,9 @@ export async function addTake(
  *
  * The clip write is the same shape as `putClip` (build meta, reject a 0-frame
  * clip, copy through a fresh ArrayBuffer so a trimmed view does not serialise its
- * whole backing buffer); the take write is `writeTakeInTx`, shared with
- * `addTake`. `putClip` is an upsert on `clipId`, so a retry with the same id
- * overwrites rather than duplicating.
+ * whole backing buffer); the take write is `writeTakeInTx`. The clip write is
+ * an upsert on `clipId`, so a retry with the same id overwrites rather than
+ * duplicating.
  */
 export async function saveTake(
   segmentId: SegmentId,
@@ -324,7 +299,7 @@ export async function saveTake(
  * be counted finished. Instead the take and its clip are removed and the segment
  * returns to "not-started" (the same shape B6's Erase Segment will reuse, G4).
  *
- * One atomic transaction, like `addTake`: the pointer reset, the take-row delete
+ * One atomic transaction, like `saveTake`: the pointer reset, the take-row delete
  * and the clip delete land together, so an interrupted clear never strands a
  * segment pointing at a take that is gone. Idempotent — a segment with no active
  * take is left "not-started" and nothing is deleted — so a repeated close, or a

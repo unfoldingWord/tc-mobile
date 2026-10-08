@@ -162,7 +162,7 @@ export interface Segment {
    * The one take behind this segment, or `null` ⇒ never recorded.
    *
    * 1:1 per D1/A2 — there is no take history. Re-recording REPLACES the take
-   * (see `addTake` in `storage/takes.ts`). A stacked `takeIds[]` was the
+   * (see `saveTake` in `storage/takes.ts`). A stacked `takeIds[]` was the
    * pre-pivot model A2 removed; it leaks unreachable PCM (#2/D3).
    */
   readonly activeTakeId: TakeId | null;
