@@ -16,6 +16,7 @@ import { useAudioSession } from "@/hooks/use-audio-session";
 import { useDatabaseStatus } from "@/hooks/use-database-status";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import { clearPhoneCheckQueryParam, useNavStack } from "@/hooks/use-nav-stack";
+import { isPhoneCheckRunning } from "@/hooks/use-phone-check";
 import { useSaveTake } from "@/hooks/use-save-take";
 import {
   holdsUnsavedAudio,
@@ -24,6 +25,9 @@ import {
 } from "@/lib/takes/pending-take";
 import type { ChapterId, SegmentId } from "@/types/domain";
 import type { RecorderEntry } from "@/types/view";
+
+/** The phone check's system-Back layer (#1014 item 5). */
+const PHONE_CHECK_LAYER_ID = "phone-check";
 
 /**
  * The pivot app: Books → Segments → Recorder (a sheet over Segments).
@@ -92,16 +96,6 @@ export function App() {
   const [phoneCheckOpen, setPhoneCheckOpen] = useState(
     () => new URLSearchParams(window.location.search).get("check") === "phone"
   );
-  // Close drops `?check=phone` from the URL too (#1014 item 4), or a later
-  // reload of this same tab would read it again and reopen the check. The
-  // `window.history` call itself lives in `use-nav-stack.ts`
-  // (`clearPhoneCheckQueryParam`), the one file invariant 1 permits one in
-  // (docs/design/back-navigation.md); this is only the state half.
-  const closePhoneCheck = useCallback(() => {
-    clearPhoneCheckQueryParam();
-    setPhoneCheckOpen(false);
-  }, []);
-
   const audio = useAudioSession();
   const { leave, primeAudioContext } = audio;
   // ONE erase for both entry points — the recorder menu and the Segments-row
@@ -373,6 +367,7 @@ export function App() {
   const {
     pushLayer,
     popLayer,
+    hasOpenLayer,
     openChapter,
     openRecorder,
     goBack,
@@ -392,6 +387,36 @@ export function App() {
     onLeaveToBooks: backToBooks,
     onRecorderClosed: recorderClosedState,
   });
+
+  // Close drops `?check=phone` from the URL too (#1014 item 4), or a later
+  // reload of this same tab would read it again and reopen the check. The
+  // `window.history` call itself lives in `use-nav-stack.ts`
+  // (`clearPhoneCheckQueryParam`), the one file invariant 1 permits one in
+  // (docs/design/back-navigation.md); this is only the state half. It also
+  // unregisters the system-Back layer the reveal registered (idempotent, and
+  // a no-op on the `?check=phone` launch path, which registers none).
+  const closePhoneCheck = useCallback(() => {
+    clearPhoneCheckQueryParam();
+    popLayer(PHONE_CHECK_LAYER_ID);
+    setPhoneCheckOpen(false);
+  }, [popLayer]);
+
+  // The stamp's way in (#1014 items 3 and 5), called from the tap itself.
+  // Refused while ANY screen overlay is registered: `canRevealPhoneCheck` sees
+  // only App's own state, not a Books sheet, dialog or Share Book in progress,
+  // and the check replaces Books outright. It registers a system-Back layer so
+  // Back closes the check instead of leaving the app; `busy` reads the run
+  // slot live, so Back is refused while a probe runs, as Close is.
+  const revealPhoneCheck = () => {
+    if (hasOpenLayer()) return;
+    leave();
+    pushLayer({
+      id: PHONE_CHECK_LAYER_ID,
+      busy: isPhoneCheckRunning,
+      dismiss: closePhoneCheck,
+    });
+    setPhoneCheckOpen(true);
+  };
 
   // Ahead of everything: a held take whose save has failed keeps the microphone
   // and any sound off under the modal with no control to reach them. (`recovery`
@@ -521,14 +546,7 @@ export function App() {
         />
       )}
       <BuildStamp
-        onReveal={
-          canRevealPhoneCheck
-            ? () => {
-                leave();
-                setPhoneCheckOpen(true);
-              }
-            : undefined
-        }
+        onReveal={canRevealPhoneCheck ? revealPhoneCheck : undefined}
       />
     </main>
   );
