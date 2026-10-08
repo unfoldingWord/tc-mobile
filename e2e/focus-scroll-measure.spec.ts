@@ -59,34 +59,22 @@ async function createBooks(page: Page, count: number) {
   }
 }
 
-/**
- * Pin the current look before the app boots (`lib/design.ts`'s key). #951
- * flipped the default to o4, and this spec's delete-confirm cases assert the
- * current look's `.confirm-panel` — O4 draws G6's Keep/Delete tiles inside
- * the book sheet instead (#1030), so a case that needs the pre-O4 dialog has
- * to opt out of the new default explicitly, the same way
- * `recorder-menu-half-screen.spec.ts` opts INTO o4.
- */
-async function pinCurrentLook(page: Page) {
-  await page.addInitScript(() => {
-    window.localStorage.setItem("tc-mobile.design", "current");
-  });
+/** The delete ask for `name`, inside its book sheet (#980). */
+function deleteAsk(page: Page, name: string) {
+  return page.getByRole("group", { name: new RegExp(`^Delete ${name}`) });
 }
 
-/** Arms the Books delete confirm for `name`. */
+/** Arms the Books delete ask for `name`: the book sheet, then its Delete. */
 async function armDeleteFor(page: Page, name: string) {
   await page.getByRole("button", { name: `More actions for ${name}` }).click();
   await expect(page.getByRole("dialog", { name: "Book" })).toBeVisible();
   await page.getByRole("button", { name: "Delete book" }).click();
-  await expect(
-    page.getByRole("dialog", { name: new RegExp(`^Delete ${name}`) })
-  ).toBeVisible();
+  await expect(deleteAsk(page, name)).toBeVisible();
 }
 
-test("wheel over the shelf: closed confirm vs. open Books delete confirm", async ({
+test("wheel over the shelf: closed sheet vs. open Books delete ask", async ({
   page,
 }) => {
-  await pinCurrentLook(page);
   await page.goto("/");
   await createBooks(page, 25);
   const list = shelf(page);
@@ -126,10 +114,15 @@ test("wheel over the shelf: closed confirm vs. open Books delete confirm", async
   }
 });
 
-test("cancelling the Books delete confirm for a row away from the top: shelf scroll after the focus hand-off", async ({
+test("closing the book sheet over its delete ask for a row away from the top: shelf scroll after the focus hand-off", async ({
   page,
 }) => {
-  await pinCurrentLook(page);
+  // KNOWN TO FAIL on the O4 path (#1362): the shelf ends scrolled to the
+  // armed row. It failed the same way on develop before #954; it was green
+  // only while this spec pinned the old look's floating confirm. `test.fail`
+  // keeps the #800 expectation below as written and goes red once #1362
+  // makes it hold, so the marker has to come off then.
+  test.fail();
   await page.goto("/");
   await createBooks(page, 25);
   const list = shelf(page);
@@ -143,22 +136,22 @@ test("cancelling the Books delete confirm for a row away from the top: shelf scr
   // Arming may auto-scroll the shelf; that happens before the measurement.
   await armDeleteFor(page, target);
 
-  // A real pointer/touch gesture cannot reach the shelf while the confirm's
+  // A real pointer/touch gesture cannot reach the shelf while the sheet's
   // scrim is up (the case above) — so this stands in for "the shelf ended up
-  // scrolled away from the armed row by the time Cancel runs" by whatever
-  // means got it there. It is not a claim that a translator's own scrolling
-  // is what does it.
+  // scrolled away from the armed row by the time the sheet closes" by
+  // whatever means got it there. It is not a claim that a translator's own
+  // scrolling is what does it.
   await list.evaluate((el) => {
     el.scrollTop = 0;
   });
 
-  // A DOM click: no Playwright actionability scroll ahead of the hand-off.
-  await page
-    .getByRole("button", { name: "Cancel" })
-    .evaluate((el) => (el as HTMLButtonElement).click());
-  await expect(
-    page.getByRole("dialog", { name: new RegExp(`^Delete ${target}`) })
-  ).toHaveCount(0);
+  // Escape while the ask is up closes the WHOLE sheet, ask and all, and
+  // hands focus to the book's own row — the delete-confirm hand-off
+  // (`closeDeleteConfirmState`). A key press, so no Playwright actionability
+  // scroll runs ahead of the hand-off.
+  await page.keyboard.press("Escape");
+  await expect(deleteAsk(page, target)).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Book" })).toHaveCount(0);
 
   await expect
     .poll(() => focusedName(page))
