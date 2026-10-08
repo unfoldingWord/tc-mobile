@@ -213,7 +213,7 @@ describe("playback stops when the confirm closes, either button or Back (#979 re
     const { audio } = await setup(true);
     await act(async () => barRerecord().click());
     (audio.stopBuffer as ReturnType<typeof vi.fn>).mockClear();
-    await act(async () => button(strings.eraseCancel).click());
+    await act(async () => button(strings.recordAgainKeep).click());
     expect(audio.stopBuffer).toHaveBeenCalledTimes(1);
     expect(document.querySelector(".confirm-panel")).toBeNull();
   });
@@ -225,7 +225,7 @@ describe("playback stops when the confirm closes, either button or Back (#979 re
     const { audio } = await setup(true);
     await act(async () => barRerecord().click());
     (audio.stopBuffer as ReturnType<typeof vi.fn>).mockClear();
-    await act(async () => button(strings.eraseConfirm).click());
+    await act(async () => button(strings.recordAgainConfirm).click());
     expect(audio.stopBuffer).toHaveBeenCalled();
   });
 
@@ -241,7 +241,7 @@ describe("playback stops when the confirm closes, either button or Back (#979 re
     );
     const { audio } = await setup();
     await act(async () => barRerecord().click());
-    await act(async () => button(strings.eraseConfirm).click());
+    await act(async () => button(strings.recordAgainConfirm).click());
     await act(async () => button(strings.eraseConfirmPreviewPlay).click());
     expect(audio.playBuffer).not.toHaveBeenCalled();
     await act(async () => reject(new Error("store failed")));

@@ -8,22 +8,26 @@ import { Recorder, type RecorderHandle } from "@/components/recorder";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
+import {
+  subscribeToFailures,
+  type FailureReport,
+} from "@/hooks/report-failure";
 import type { SegmentId } from "@/types/domain";
 import { render } from "./render";
 
 /**
- * O4 G5, "Record again asks first" (#979): the record bar's Clear opens the
- * 13 confirm with the workbench's record badge. The confirm button keeps the
- * eraser and "Clear" (#1119, DRI 2026-09-28), because that is all it does: it
- * clears and leaves the segment empty with Record ready, and it starts no
- * take. The workbench's "Record again" starts one; here that would call
- * getUserMedia after the clear's awaits, outside the tap, which
- * `use-audio-session.ts` (startRecording) says iOS treats as unprompted. The
- * ⋮ menu's Clear opens the 13 dialog, eraser and all.
+ * O4 G5, "Record again" (#979, #1022, #1028): the record bar's bin opens the
+ * 13 confirm with the workbench's record dot, "Record again" and "Keep it".
+ * One tap on the confirm clears the segment and then starts the next take
+ * through the sheet's one start path (`onRecordButton` -> `audio.startRecording`),
+ * only if the clear landed. The ⋮ menu's Clear opens the 13 dialog, eraser and
+ * all, and starts nothing.
  *
  * The harness is `tests/recorder-rerecord.test.ts`'s — the real `Recorder`,
  * the real erase hook and the real confirm, with the store and the segment
- * loader replaced at their boundary.
+ * loader replaced at their boundary. `audio.startRecording` is a fake: the
+ * microphone, the iOS gesture rule and the resume bounds are the on-device
+ * question (#245), not this file's.
  *
  * What this cannot see: the cascade (whether `o4/dialogs.css` wins on a real
  * page), layout, and anything on a phone.
@@ -98,6 +102,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+let rerender: () => Promise<void> = async () => {};
 async function setup() {
   const ref = createRef<RecorderHandle>();
   const audio: UseAudioSession = {
@@ -146,7 +151,8 @@ async function setup() {
         void ref.current?.requestClose();
       },
     });
-  await act(async () => root.render(createElement(Host)));
+  rerender = async () => act(async () => root.render(createElement(Host)));
+  await rerender();
   return audio;
 }
 
@@ -197,28 +203,123 @@ function dialog() {
 }
 
 describe("the record-again confirm (G5, #979)", () => {
-  it("the bar's Clear opens it with the record badge and the eraser Clear button", async () => {
+  it("the bar's bin opens it with the record dot, Record again and Keep it", async () => {
     await setup();
     await act(async () => barRerecord().click());
     const d = dialog();
     expect(d.badge).toBe(iconInner("record"));
-    // The button names and draws what it does: it clears, it does not record.
-    expect(d.confirmIcon).toBe(iconInner("eraser"));
-    expect(d.confirm.getAttribute("aria-label")).toBe(strings.eraseConfirm);
-    // Keep stays the 13 control, and focus still lands on it.
-    expect(d.cancel.getAttribute("aria-label")).toBe(strings.eraseCancel);
+    expect(d.confirmIcon).toBe(iconInner("record"));
+    expect(d.confirm.getAttribute("aria-label")).toBe(
+      strings.recordAgainConfirm
+    );
+    expect(d.cancel.getAttribute("aria-label")).toBe(strings.recordAgainKeep);
     expect(d.cancel.querySelector("svg")!.innerHTML).toBe(iconInner("back"));
+    expect(d.panel.classList.contains("confirm-panel-record")).toBe(true);
+    // Destructive: focus still lands on the safe answer.
     expect(document.activeElement).toBe(d.cancel);
   });
 
-  it("its Clear clears through the shared hook and starts no take", async () => {
+  it("its confirm clears through the shared hook, then starts one take", async () => {
     const audio = await setup();
     boundary.reloads = [erased];
     await act(async () => barRerecord().click());
     await act(async () => dialog().confirm.click());
     expect(storage.clear).toHaveBeenCalledExactlyOnceWith("segment");
     expect(document.querySelector(".confirm-panel")).toBeNull();
-    // Why the button says Clear and not Record again: nothing records.
+    expect(audio.startRecording).toHaveBeenCalledOnce();
+    // Clear first, then start: the order is the whole contract.
+    expect(storage.clear.mock.invocationCallOrder[0]).toBeLessThan(
+      (audio.startRecording as ReturnType<typeof vi.fn>).mock
+        .invocationCallOrder[0]!
+    );
+  });
+
+  it("starts nothing until the clear has settled", async () => {
+    let settle!: () => void;
+    storage.clear.mockReturnValue(
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      })
+    );
+    const audio = await setup();
+    boundary.reloads = [erased];
+    await act(async () => barRerecord().click());
+    await act(async () => dialog().confirm.click());
+    expect(storage.clear).toHaveBeenCalledOnce();
+    expect(audio.startRecording).not.toHaveBeenCalled();
+    await act(async () => settle());
+    expect(audio.startRecording).toHaveBeenCalledOnce();
+  });
+
+  it("a failed clear is reported as erase-segment and starts nothing", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    storage.clear.mockRejectedValue(new Error("quota"));
+    const reports: FailureReport[] = [];
+    const off = subscribeToFailures((r) => reports.push(r));
+    const audio = await setup();
+    await act(async () => barRerecord().click());
+    await act(async () => dialog().confirm.click());
+    off();
+    expect(reports.map((r) => r.context)).toEqual(["erase-segment"]);
+    expect(document.querySelector(".confirm-panel")).toBeNull();
+    expect(audio.startRecording).not.toHaveBeenCalled();
+    // ...and the failed clear does not leave a start owed to a later render.
+    await rerender();
+    expect(audio.startRecording).not.toHaveBeenCalled();
+  });
+
+  it("a start that fails after the clear leaves the segment cleared and shows the existing mic panel", async () => {
+    const audio = await setup();
+    boundary.reloads = [erased];
+    (audio.startRecording as ReturnType<typeof vi.fn>).mockImplementation(
+      () => {
+        const mutable = audio as {
+          recorderError: string | null;
+          error: string | null;
+        };
+        mutable.recorderError = "Microphone blocked";
+        mutable.error = "Microphone blocked";
+      }
+    );
+    await act(async () => barRerecord().click());
+    await act(async () => dialog().confirm.click());
+    await rerender();
+    expect(storage.clear).toHaveBeenCalledOnce();
+    expect(audio.startRecording).toHaveBeenCalledOnce();
+    // State in place, no text toast: the full-body panel with the refusal.
+    expect(document.querySelector(".o4-err")).not.toBeNull();
+    expect(document.querySelector(".o4-err-sub")?.textContent).toBe(
+      "Microphone blocked"
+    );
+  });
+
+  it("a second tap during the sequence does nothing", async () => {
+    let settle!: () => void;
+    storage.clear.mockReturnValue(
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      })
+    );
+    const audio = await setup();
+    boundary.reloads = [erased];
+    await act(async () => barRerecord().click());
+    const confirm = dialog().confirm;
+    // Two activations in one turn, before any await has resolved.
+    await act(async () => {
+      confirm.click();
+      confirm.click();
+    });
+    await act(async () => settle());
+    expect(storage.clear).toHaveBeenCalledOnce();
+    expect(audio.startRecording).toHaveBeenCalledOnce();
+  });
+
+  it("the ⋮ menu's Clear clears and starts no take", async () => {
+    const audio = await setup();
+    boundary.reloads = [erased];
+    await openFromMenu();
+    await act(async () => dialog().confirm.click());
+    expect(storage.clear).toHaveBeenCalledOnce();
     expect(audio.startRecording).not.toHaveBeenCalled();
   });
 

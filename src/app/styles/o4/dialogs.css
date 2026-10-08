@@ -72,6 +72,16 @@
     width: 60px; /* #939 token */
     height: 60px; /* #939 token */
   }
+  /* The record dot (icon.tsx: r=6 in a 22 viewBox) draws at about 70% of the
+     workbench's, in the G5 badge and on its confirm button (#1028, the #1022
+     P3). Scale the circle only, inside its own box, so the badge's round wash
+     stays 76px. Scoped to the record dialog: no other glyph is touched. */
+  :root .confirm-panel-record .confirm-glyph circle,
+  :root .confirm-panel-record .confirm-actions > :last-child circle {
+    transform: scale(1.43);
+    transform-box: fill-box;
+    transform-origin: center;
+  }
   /* Two equal columns across the panel: Cancel (keep) then Erase / Delete. */
   :root .confirm-actions {
     align-self: stretch;

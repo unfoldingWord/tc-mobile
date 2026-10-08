@@ -205,7 +205,7 @@ it("the bar control opens the erase confirm, erases once, and leaves the sheet r
   expect(confirmDialog()).not.toBeNull();
   expect(storage.clear).not.toHaveBeenCalled();
 
-  await act(async () => button(strings.eraseConfirm).click());
+  await act(async () => button(strings.recordAgainConfirm).click());
 
   // One erase, through the shared hook, against this segment.
   expect(storage.clear).toHaveBeenCalledExactlyOnceWith("segment");
@@ -230,7 +230,7 @@ it("after the erase, Back writes nothing and still tells the list to reload", as
   const s = await setup();
   boundary.reloads = [erased];
   await act(async () => barRerecord().click());
-  await act(async () => button(strings.eraseConfirm).click());
+  await act(async () => button(strings.recordAgainConfirm).click());
 
   await act(async () => {
     expect(await s.ref.current!.requestClose()).toBe(true);
@@ -248,7 +248,7 @@ it("holds the confirm and refuses Back while the sheet re-reads the erased segme
     release = resolve;
   });
   await act(async () => barRerecord().click());
-  await act(async () => button(strings.eraseConfirm).click());
+  await act(async () => button(strings.recordAgainConfirm).click());
   expect(storage.clear).toHaveBeenCalledOnce();
   expect(boundary.reload).toHaveBeenCalledOnce();
 
@@ -259,7 +259,7 @@ it("holds the confirm and refuses Back while the sheet re-reads the erased segme
   });
   expect(confirmDialog()).not.toBeNull();
   // …and the confirm's own Erase stays busy across the re-read.
-  expect(button(strings.eraseConfirm).disabled).toBe(true);
+  expect(button(strings.recordAgainConfirm).disabled).toBe(true);
   expect(s.onExit).not.toHaveBeenCalled();
 
   await act(async () => release());
@@ -276,7 +276,7 @@ it("a Finished mark made before the erase does not ride the next take", async ()
   await act(async () => button(strings.markFinished(1)).click());
   await act(async () => button(strings.menuClose).click());
   await act(async () => barRerecord().click());
-  await act(async () => button(strings.eraseConfirm).click());
+  await act(async () => button(strings.recordAgainConfirm).click());
   expect(storage.clear).toHaveBeenCalledOnce();
 
   s.audio.recorderState = "recording";
@@ -312,7 +312,7 @@ it("a failed erase keeps the take and the sheet, and drops the confirm", async (
   storage.clear.mockRejectedValue(new Error("quota"));
   const s = await setup();
   await act(async () => barRerecord().click());
-  await act(async () => button(strings.eraseConfirm).click());
+  await act(async () => button(strings.recordAgainConfirm).click());
 
   expect(storage.clear).toHaveBeenCalledOnce();
   expect(boundary.reload).not.toHaveBeenCalled();
