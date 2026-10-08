@@ -182,9 +182,11 @@
      black shadow in both themes, so no layer-2 role applies to it. A lifted
      segment row keeps its --s-surface ground (§3 gives --s-raised to a
      lifted chapter row only). The Books screen's lifted chapter item shares
-     this one rule (#953 PR2b): o4/books.css keeps colour literals out. */
+     this one rule (#953 PR2b), and so does a lifted book card (#338):
+     o4/books.css keeps colour literals out. */
   :root .segments-item--lifted > .row,
-  :root .books-lifted {
+  :root .books-lifted,
+  :root .books-card-lifted {
     box-shadow: 0 14px 30px rgba(0, 0, 0, 0.38);
   }
 

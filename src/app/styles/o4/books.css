@@ -253,10 +253,27 @@
   :root .books-lifted > .books-chapter {
     background: var(--s-raised);
   }
+  /* The same lift for a whole book card on the shelf (#338): the hold area
+     is the card's row button (cover and name), which the card already keeps
+     from selecting text or raising the callout. The lift shadow is
+     o4/segments.css's one rule, as for a chapter. */
+  :root .books-list[data-reordering] > li {
+    transform: translateY(var(--reorder-y, 0px));
+    transition: transform 160ms ease;
+  }
+  :root .books-list[data-reordering] > .books-card-lifted {
+    position: relative;
+    z-index: 8;
+    transform: translateY(var(--reorder-y, 0px)) scale(1.03);
+    transition: none;
+  }
   /* The neighbours jump rather than slide under reduced motion. The lift's
      scale is a state, not a movement, so it stays. */
   @media (prefers-reduced-motion: reduce) {
     :root .books-chapters[data-reordering] > li {
+      transition: none;
+    }
+    :root .books-list[data-reordering] > li {
       transition: none;
     }
   }
