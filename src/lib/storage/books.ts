@@ -123,10 +123,11 @@ export async function createBook(
   const db = await getDb();
   const tx = db.transaction("books", "readwrite");
   const trimmed = name.trim();
+  const shelf = await tx.store.getAll();
   const book: Book = {
     id: uuid() as BookId,
     name: trimmed === "" ? null : trimmed,
-    number: nextBookNumber(await tx.store.getAll()),
+    number: nextBookNumber(shelf),
     languageCode,
     chapterIds: [],
     createdAt: now,
@@ -137,22 +138,63 @@ export async function createBook(
     // rather than in a second one after it. Like `setBookCoverColour`, this
     // does not validate against the live palette; the picker only offers it.
     coverColourKey,
+    // A new book lands at the TOP of the shelf (#338), as it always has; the
+    // books already there move down one, in the order the user left them.
+    shelfPosition: 0,
   };
   await tx.store.put(book);
+  for (const [index, row] of byShelfPosition(shelf).entries()) {
+    if (row.shelfPosition !== index + 1) {
+      await tx.store.put({ ...row, shelfPosition: index + 1 });
+    }
+  }
   await tx.done;
   return book;
 }
 
 /**
- * Every book, newest-CREATED first (#1185, DRI 2026-09-28: "books stay put").
- * A new book lands at the top; no later write moves a book, because nothing
- * writes `createdAt` after `createBook`. `updatedAt` is still bumped by the
- * writes that are activity on a book, but it does not order the shelf.
+ * `books` in shelf order: by `shelfPosition`, top first. Pure, and the one
+ * definition of that order, shared by {@link listBooks} and the two writes
+ * that renumber the shelf ({@link createBook}, {@link moveBook}). A tie —
+ * which only a database a second copy of the app wrote at the same moment
+ * could hold — falls back to the pre-#338 rule, newest created first, and
+ * then to key order (`getAll`'s order; the sort is stable).
+ */
+function byShelfPosition(books: readonly Book[]): Book[] {
+  return books
+    .slice()
+    .sort(
+      (a, b) => a.shelfPosition - b.shelfPosition || b.createdAt - a.createdAt
+    );
+}
+
+/**
+ * Every book, in the user's shelf order (#338): `shelfPosition`, top first.
  *
- * Books with the same `createdAt` keep primary-key (id) order: `getAll`
- * returns rows in key order, and `Array.prototype.sort` is stable.
+ * A new book lands at the top ({@link createBook}); after that a book moves
+ * only when the user moves it ({@link moveBook}). Nothing else writes the
+ * position — a rename, a cover colour or work inside a book bumps `updatedAt`
+ * at most, and `updatedAt` does not order the shelf (#1185, DRI 2026-09-28:
+ * "books stay put"). The v11 upgrade wrote the order the shelf showed before
+ * this field existed (newest created first), so nothing moved on upgrade.
  */
 export async function listBooks(): Promise<Book[]> {
+  const db = await getDb();
+  return byShelfPosition(await db.getAll("books"));
+}
+
+/**
+ * Every book, newest-CREATED first — the shelf's order before #338, and the
+ * order the library share ("Share your work", `lib/export/book.ts`) still
+ * zips books in.
+ *
+ * Kept for the share on purpose: whether that zip should follow the user's
+ * shelf order is one of #1186's open questions for the requirements owner, so
+ * until it is answered the share does what it did. Books with the same
+ * `createdAt` keep primary-key (id) order: `getAll` returns rows in key order,
+ * and `Array.prototype.sort` is stable.
+ */
+export async function listBooksNewestFirst(): Promise<Book[]> {
   const db = await getDb();
   return (await db.getAll("books")).sort((a, b) => b.createdAt - a.createdAt);
 }
@@ -763,6 +805,62 @@ export async function moveChapter(
     }
     await tx.done;
     return renumbered;
+  } catch (cause) {
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw cause;
+  }
+}
+
+/**
+ * Move one book to an absolute position on the shelf (#338 — press-and-hold
+ * reorder on the Books screen; the book twin of {@link moveChapter}).
+ *
+ * `toIndex` counts the books in shelf order ({@link listBooks}), which is
+ * exactly the cards `use-books.ts` holds. An out-of-range target clamps to the
+ * top or the bottom ({@link moveToIndex}).
+ *
+ * The rules, and why — each one {@link moveChapter}'s:
+ *
+ *   - **ONE readwrite transaction** over `books`, get-then-put, aborted on a
+ *     thrown error, so the shelf's positions commit together or not at all.
+ *   - **Dense**: every book's `shelfPosition` becomes its place in the new
+ *     order, 0..N-1, and only rows whose position changes are written.
+ *   - **No `updatedAt` bump**: moving a book is not activity on it.
+ *   - **Idempotent.** The target is absolute, so a re-run lands in the same
+ *     state; a move that leaves the order as it was writes nothing at all.
+ *
+ * Returns every book in the new shelf order, with the positions they now
+ * hold.
+ */
+export async function moveBook(
+  bookId: BookId,
+  toIndex: number
+): Promise<Book[]> {
+  assertReorderTarget(toIndex);
+  const db = await getDb();
+  const tx = db.transaction("books", "readwrite");
+  try {
+    const shelf = byShelfPosition(await tx.store.getAll());
+    const from = shelf.findIndex((book) => book.id === bookId);
+    if (from === -1) throw new Error(`No such book: ${bookId}`);
+    const order = moveToIndex(shelf, from, toIndex);
+    if (order.every((book, i) => book === shelf[i])) {
+      await tx.done; // idempotent no-op: no write.
+      return shelf;
+    }
+    const placed: Book[] = [];
+    for (const [position, book] of order.entries()) {
+      if (book.shelfPosition === position) {
+        placed.push(book);
+        continue;
+      }
+      // No `updatedAt`: a reorder is not activity on the book.
+      const updated: Book = { ...book, shelfPosition: position };
+      await tx.store.put(updated);
+      placed.push(updated);
+    }
+    await tx.done;
+    return placed;
   } catch (cause) {
     await abortQuietly(() => tx.abort(), tx.done);
     throw cause;

@@ -36,6 +36,7 @@ const fakeBook = (): Book => ({
   createdAt: 0,
   updatedAt: 0,
   coverColourKey: null,
+  shelfPosition: 0,
 });
 
 // What `useBooks().createBook` actually resolves to (`use-books.ts`'s

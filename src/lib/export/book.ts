@@ -36,7 +36,7 @@ import {
   exportChapterMp3,
 } from "@/lib/export/chapter";
 import {
-  listBooks,
+  listBooksNewestFirst,
   resolveBookChapters,
   resolveChapterClipIds,
 } from "@/lib/storage/books";
@@ -432,7 +432,9 @@ export type BookLabel = Pick<Book, "name" | "number">;
 /**
  * Share your work (#987): every book in one zip, one folder per book, each
  * folder holding exactly the entries Share Book would put in that book's own
- * zip. Books go in shelf order (`listBooks`). Returns `null` for an empty
+ * zip. Books go newest-created first (`listBooksNewestFirst`) — the shelf's
+ * order before #338 let the user set their own; whether the zip should follow
+ * the user's order is still open with the requirements owner. Returns `null` for an empty
  * library, a library with no resolvable audio anywhere, or a run cancelled
  * part-way — a clean no-op for the caller, not an error.
  *
@@ -464,7 +466,7 @@ export async function exportLibraryZip(
   sink: ArchiveSink,
   shouldContinue?: () => boolean
 ): Promise<LibraryExport | null> {
-  const books = await listBooks();
+  const books = await listBooksNewestFirst();
   const zip = await openZipSink(sink);
   const takenFolders = new Set<string>();
   let included = 0;
@@ -547,7 +549,7 @@ export async function estimateLibraryZipBytes(
 ): Promise<number | null> {
   const gapFrames = Math.round(SEGMENT_GAP_SECONDS * CANONICAL_SAMPLE_RATE);
   let bytes = 0;
-  for (const book of await listBooks()) {
+  for (const book of await listBooksNewestFirst()) {
     if (shouldContinue && !shouldContinue()) return null;
     const { chapters } = await resolveBookChapters(book.id);
     for (const chapter of chapters) {

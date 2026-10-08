@@ -40,6 +40,7 @@ async function seedFinishedPcmSegments(count: number): Promise<void> {
     createdAt: 0,
     updatedAt: 0,
     coverColourKey: null,
+    shelfPosition: 0,
   });
   await tx.objectStore("chapters").put({
     id: chid("ch1"),
