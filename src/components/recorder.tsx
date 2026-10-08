@@ -668,7 +668,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
       pan,
       win,
       insertionPan,
-      windowAt,
+      seedWindow,
     } = useRecorderViewport(
       mode,
       editor.selectionActive,
@@ -699,7 +699,6 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     });
     if (reseed !== "none") {
       if (reseed === "seed") {
-        const seedWindow = windowAt(insertionPan);
         // The span STARTS at the line (#554) and slides left only as far as
         // the end of the buffer forces. The rule is geometry, so it lives in
         // `lib/audio/viewport` with the rest of the window math and is tested

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 
 import {
   effectivePan,
@@ -33,10 +33,20 @@ export interface RecorderViewport {
   readonly pan: number;
   /** The window `pan` and `zoom` put on screen. */
   readonly win: WaveformViewport;
-  /** Where a new recording is spliced — `panState`, clamped to the buffer. */
+  /**
+   * Where a new recording is spliced — `panState`, upper-clamped to the buffer
+   * here. The lower bound is upstream: every producer of `panState` returns
+   * through `panOrRest` (`recorder-stage.ts`), which clamps at 0.
+   */
   readonly insertionPan: number;
-  /** The window a given pan would put on screen, at the current zoom. */
-  windowAt: (pan: number) => WaveformViewport;
+  /**
+   * The window the INSERTION pan would put on screen, at the current zoom: what
+   * a selection opened at the record point is seeded from. Computed here,
+   * beside `insertionPan`, so the pairing is structural — there is no function
+   * that will build a window for an arbitrary pan, so a caller cannot seed
+   * from the drawn `pan` by passing the wrong one (#826).
+   */
+  readonly seedWindow: WaveformViewport;
 }
 
 /**
@@ -99,14 +109,7 @@ export function useRecorderViewport(
     length,
   });
 
-  // Stable across renders that don't change what it reads — length, zoom and
-  // centerFraction are its only inputs (#826 item 3). Latent today (no
-  // dependency array reads `windowAt`), but the next `useEffect`/`useCallback`
-  // consumer would otherwise re-arm on every render's fresh closure.
-  const windowAt = useCallback(
-    (at: number) => viewportWindow(length, at, zoom, centerFraction),
-    [length, zoom, centerFraction]
-  );
+  const insertionPan = Math.min(panState ?? length, length);
 
   return {
     setPanState,
@@ -116,7 +119,7 @@ export function useRecorderViewport(
     setZoom,
     pan,
     win: viewportWindow(length, pan, zoom, centerFraction),
-    insertionPan: Math.min(panState ?? length, length),
-    windowAt,
+    insertionPan,
+    seedWindow: viewportWindow(length, insertionPan, zoom, centerFraction),
   };
 }
