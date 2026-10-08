@@ -441,6 +441,7 @@ save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 (`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
 segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
 failed chapter reorder (`hooks/use-books.ts`, `"chapter-reorder"`, #953), a
+failed book reorder (`hooks/use-books.ts`, `"book-reorder"`, #338), a
 failed segment reorder (`hooks/use-chapter-segments.ts`, `"segment-reorder"`,
 #953), a failed segment delete, through the store's own `deleteSegment`
 (`hooks/use-chapter-segments.ts`'s optimistic list delete, called from

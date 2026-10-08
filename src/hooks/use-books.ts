@@ -10,6 +10,7 @@ import {
   getChapter,
   isStaleBookFailure,
   listBooks,
+  moveBook as moveBookInStore,
   moveChapter as moveChapterInStore,
   moveToIndex,
   nextBookNumber,
@@ -192,8 +193,8 @@ interface Failure {
  * that reload's own read from landing on top of a newer patch.
  *
  * The patched card keeps its index on the shelf (#1185): `listBooks` orders
- * by `createdAt`, which adding a chapter does not change, so the reload that
- * follows finds the card where the patch left it.
+ * by `shelfPosition` (#338), which adding a chapter does not change, so the
+ * reload that follows finds the card where the patch left it.
  *
  * Chapters themselves are appended, not prepended: `ChapterRow` order is the
  * book's chapter order, and a new chapter is the next one, not the first.
@@ -249,7 +250,8 @@ export function patchNewChapter(
  * Mirrors `renameBookInStore`'s own idempotency: a blank rename keeps the
  * current name and writes nothing, so a name-unchanged result returns `books`
  * itself. A genuine rename replaces the card at its index (#1185): the order
- * `listBooks` reads, `createdAt`, is not something a rename changes.
+ * `listBooks` reads, `shelfPosition` (#338), is not something a rename
+ * changes.
  */
 export function patchRenamedBook(
   books: readonly BookCard[],
@@ -306,6 +308,35 @@ export function patchMovedChapter(
   const next = books.slice();
   next[index] = { ...original, chapters };
   return next;
+}
+
+/**
+ * Move one book card on the shelf, in the same turn as the drop (#338) — the
+ * book twin of {@link patchMovedChapter}.
+ *
+ * The optimistic half of `moveBook` below: the card lands where the
+ * translator dropped it before the write resolves. `toIndex` means exactly
+ * what it means to the store's `moveBook` — an absolute place among the
+ * shelf's cards, which are `listBooks` in shelf order — and goes through the
+ * same `moveToIndex`, so the patch and the write cannot put the card in
+ * different places. Cards carry no position of their own: their order on the
+ * shelf is the position.
+ *
+ * A move that changes nothing, or names a book no card holds, returns `books`
+ * itself.
+ */
+export function patchMovedBook(
+  books: readonly BookCard[],
+  bookId: BookId,
+  toIndex: number
+): BookCard[] {
+  const from = books.findIndex((card) => card.bookId === bookId);
+  if (from === -1) return books as BookCard[]; // stale card
+  const moved = moveToIndex(books, from, toIndex);
+  if (moved.every((card, i) => card === books[i])) {
+    return books as BookCard[]; // dropped where it started
+  }
+  return moved;
 }
 
 /**
@@ -569,9 +600,9 @@ export function useBooks() {
         // now has a book on it, a second Confirm there writing a second book
         // only a manual delete (#337) recovers from; and the screen's
         // scroll/focus effect could not run at all, leaving focus on the
-        // document (George R2 P2-1). Prepended because `listBooks` sorts by
-        // `createdAt`, newest first, and this book is the newest, so the
-        // optimistic order is the order the reload confirms.
+        // document (George R2 P2-1). Prepended because a new book lands at
+        // the top of the shelf (`createBook` gives it `shelfPosition` 0,
+        // #338), so the optimistic order is the order the reload confirms.
         //
         // `reload()` DOES follow this. An earlier round dropped it on the
         // theory that the new card is already fully correct so a reload could
@@ -810,6 +841,48 @@ export function useBooks() {
     [reload]
   );
 
+  /**
+   * Move a book to an absolute place on the shelf (#338) — `moveChapter`
+   * above, one level up, and the same contract in every respect.
+   *
+   * Optimistic: the card moves in THIS turn via `patchMovedBook`, with the
+   * generation bumped in the same step so a load already in flight cannot
+   * snap it back; either outcome then `reload()`s, to confirm the order on
+   * success and to bring the STORED order back on failure (the write rolled
+   * back whole).
+   *
+   * A failure goes to the funnel as `"book-reorder"` and nowhere else: the
+   * card returning to where it was is the state-in-place signal (#172), and
+   * the shared Notice slot is not touched. A non-integer target is refused
+   * and reported before the generation or the shelf is touched.
+   *
+   * Resolves `true` when the move landed (a no-op move included), `false`
+   * when it failed. Not latched, like `moveChapter`: the store applies each
+   * `toIndex` to the order already committed when its transaction runs.
+   */
+  const moveBook = useCallback(
+    async (bookId: BookId, toIndex: number): Promise<boolean> => {
+      try {
+        assertReorderTarget(toIndex);
+      } catch (cause) {
+        reportFailure(cause, "book-reorder");
+        return false;
+      }
+      loadGen.current += 1;
+      setBooks((prev) => patchMovedBook(prev, bookId, toIndex));
+      try {
+        await moveBookInStore(bookId, toIndex);
+        reload();
+        return true;
+      } catch (cause) {
+        reportFailure(cause, "book-reorder");
+        reload();
+        return false;
+      }
+    },
+    [reload]
+  );
+
   const deleteBook = useCallback(
     async (bookId: BookId): Promise<DeleteBookResult> => {
       // Refused, not failed: the first call owns the outcome, and a caller that
@@ -899,6 +972,7 @@ export function useBooks() {
     addChapter,
     renameBook,
     moveChapter,
+    moveBook,
     deleteBook,
     deleting,
     isDeleting,

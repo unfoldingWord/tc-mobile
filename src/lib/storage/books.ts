@@ -215,7 +215,7 @@ export async function getBook(id: BookId): Promise<Book | undefined> {
  * — `null` included — writes nothing and does NOT bump `updatedAt`, so a re-run
  * is a true no-op. Any real rename bumps `updatedAt` — labelling a book is
  * activity — and the book keeps its place on the shelf ({@link listBooks}
- * orders by `createdAt`).
+ * orders by `shelfPosition`, #338).
  *
  * Concurrent renames deliberately use transaction-creation-order last-write-wins
  * (#394). The read and write stay in one readwrite transaction. The same-tab
@@ -690,7 +690,8 @@ export async function getChapter(id: ChapterId): Promise<Chapter | undefined> {
  * A real rename also bumps the parent book's `updatedAt` in the SAME transaction
  * — labelling a chapter is activity on its book, exactly as `addChapter`,
  * `renameBook` and recording are (G4). The book keeps its place on the shelf
- * ({@link listBooks} orders by `createdAt`). The no-op path skips the bump.
+ * ({@link listBooks} orders by `shelfPosition`, #338). The no-op path skips
+ * the bump.
  *
  * Concurrent renames use the same transaction-order last-write-wins policy as
  * {@link renameBook} (#394). The scope overlaps `renameBook` on `books`, so a
@@ -757,7 +758,7 @@ export async function renameChapter(
  *   - **No `updatedAt` bump** (scope Q4): a reorder is not recorded as
  *     activity on the book. This is the one tree edit that differs from
  *     `renameChapter` here, on purpose. (The shelf order does not depend on
- *     it: {@link listBooks} orders by `createdAt`, #1185.)
+ *     it: {@link listBooks} orders by `shelfPosition`, #338.)
  *   - **Idempotent.** The target is absolute, so a re-run lands in the same
  *     state; a move that leaves the order as it was writes nothing at all.
  *
@@ -1078,7 +1079,7 @@ const DELETE_SEGMENT_STORES = [
  *   - **Editing is activity**: the book's `updatedAt` is bumped in the same
  *     transaction — the bump `clearSegmentTake`/`writeTakeInTx` make for
  *     exactly this reason. The book keeps its place on the shelf
- *     ({@link listBooks} orders by `createdAt`, #1185).
+ *     ({@link listBooks} orders by `shelfPosition`, #338).
  *     **Inference, not a recorded decision**: `moveSegment`/`moveChapter`
  *     deliberately do NOT bump for a pure reorder (scope Q4), but a delete
  *     also discards a recording (or the last trace of an empty row), which is

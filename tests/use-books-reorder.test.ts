@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { JSDOM } from "jsdom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { patchMovedChapter, useBooks } from "@/hooks/use-books";
+import { patchMovedBook, patchMovedChapter, useBooks } from "@/hooks/use-books";
 import { reportFailure } from "@/hooks/report-failure";
 import {
   addChapter,
@@ -13,6 +13,7 @@ import {
   createBook,
   getBook,
   listBooks,
+  moveBook,
   moveChapter,
 } from "@/lib/storage/books";
 import type { Book, BookId, ChapterId } from "@/types/domain";
@@ -35,6 +36,7 @@ vi.mock("@/lib/storage/books", async (importOriginal) => {
     listBooks: vi.fn(actual.listBooks),
     chapterProgress: vi.fn(actual.chapterProgress),
     moveChapter: vi.fn(actual.moveChapter),
+    moveBook: vi.fn(actual.moveBook),
   };
 });
 
@@ -289,5 +291,144 @@ describe("useBooks().moveChapter (#953)", () => {
       releaseWrite();
       await pending;
     });
+  });
+});
+
+describe("patchMovedBook (#338)", () => {
+  const shelf = [card("a", []), card("b", []), card("c", [row("x", 1)])];
+
+  it("moves the card to an absolute place on the shelf, keeping every card as it was", () => {
+    const next = patchMovedBook(shelf, "c" as BookId, 0);
+    expect(next.map((c) => c.bookId)).toEqual(["c", "a", "b"]);
+    expect(next[0]).toBe(shelf[2]);
+    expect(next[1]).toBe(shelf[0]);
+  });
+
+  it("clamps a target past either end, as the store does", () => {
+    expect(
+      patchMovedBook(shelf, "a" as BookId, 99).map((c) => c.bookId)
+    ).toEqual(["b", "c", "a"]);
+  });
+
+  it("returns the shelf itself for a drop where it started, or an unknown book", () => {
+    expect(patchMovedBook(shelf, "b" as BookId, 1)).toBe(shelf);
+    expect(patchMovedBook(shelf, "zz" as BookId, 0)).toBe(shelf);
+  });
+});
+
+describe("useBooks().moveBook (#338)", () => {
+  /** Three books on a rising clock: the shelf shows Ruth, Luke, Mark. */
+  async function mountThree(): Promise<[BookId, BookId, BookId]> {
+    const mark = await createBook("Mark", null, 1_000);
+    const luke = await createBook("Luke", null, 2_000);
+    const ruth = await createBook("Ruth", null, 3_000);
+    await act(async () => {
+      root.render(createElement(Probe));
+    });
+    await vi.waitFor(() => expect(hook().loaded).toBe(true));
+    return [mark.id, luke.id, ruth.id];
+  }
+  const shelfIds = () => hook().books.map((c) => c.bookId);
+
+  it("moves the card, writes the store, and is not activity on the book", async () => {
+    const [mark, luke, ruth] = await mountThree();
+    expect(shelfIds()).toEqual([ruth, luke, mark]);
+    const before = await getBook(mark);
+
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await hook().moveBook(mark, 0);
+    });
+
+    expect(ok).toBe(true);
+    await vi.waitFor(() => expect(shelfIds()).toEqual([mark, ruth, luke]));
+    expect((await listBooks()).map((b) => b.id)).toEqual([mark, ruth, luke]);
+    expect((await getBook(mark))!.updatedAt).toBe(before!.updatedAt);
+    expect(reportFailure).not.toHaveBeenCalled();
+  });
+
+  it("refuses a non-integer target without touching the shelf", async () => {
+    const [mark, luke, ruth] = await mountThree();
+
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await hook().moveBook(mark, Number.NaN);
+    });
+
+    expect(ok).toBe(false);
+    expect(moveBook).not.toHaveBeenCalled();
+    expect(reportFailure).toHaveBeenCalledWith(
+      expect.any(RangeError),
+      "book-reorder"
+    );
+    expect(shelfIds()).toEqual([ruth, luke, mark]);
+  });
+
+  it("reports a failed move as book-reorder, shows nothing, and restores the stored order", async () => {
+    const [mark, luke, ruth] = await mountThree();
+    const cause = new Error("UnknownError: the transaction was aborted");
+    vi.mocked(moveBook).mockRejectedValueOnce(cause);
+
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await hook().moveBook(mark, 0);
+    });
+
+    expect(ok).toBe(false);
+    expect(reportFailure).toHaveBeenCalledTimes(1);
+    expect(reportFailure).toHaveBeenCalledWith(cause, "book-reorder");
+    // Nothing extra on screen (#172): the shared Notice slot stays empty.
+    expect(hook().error).toBeNull();
+    await vi.waitFor(() => expect(shelfIds()).toEqual([ruth, luke, mark]));
+  });
+
+  it("does not let a load that read the pre-move shelf snap the card back", async () => {
+    const [mark, luke, ruth] = await mountThree();
+
+    // A reload is in flight, holding a shelf read taken BEFORE the move.
+    const stale = await listBooks();
+    let releaseLoad!: (books: Book[]) => void;
+    vi.mocked(listBooks).mockImplementationOnce(
+      () => new Promise<Book[]>((resolve) => (releaseLoad = resolve))
+    );
+    await act(async () => {
+      hook().reload();
+    });
+    await vi.waitFor(() => expect(releaseLoad).toBeDefined());
+
+    // The write is held too, so the only thing on screen is the patch.
+    let releaseWrite!: () => void;
+    const real = (
+      await vi.importActual<typeof import("@/lib/storage/books")>(
+        "@/lib/storage/books"
+      )
+    ).moveBook;
+    vi.mocked(moveBook).mockImplementationOnce(
+      (id, to) =>
+        new Promise((resolve, reject) => {
+          releaseWrite = () => {
+            real(id, to).then(resolve, reject);
+          };
+        })
+    );
+    let pending!: Promise<boolean>;
+    await act(async () => {
+      pending = hook().moveBook(mark, 0);
+    });
+    expect(shelfIds()).toEqual([mark, ruth, luke]);
+
+    // The pre-move read lands while the write is still in flight. None of
+    // the three books has a chapter, so the load has nothing else to read.
+    await act(async () => {
+      releaseLoad(stale);
+      await Promise.resolve();
+    });
+    expect(shelfIds()).toEqual([mark, ruth, luke]);
+
+    await act(async () => {
+      releaseWrite();
+      await pending;
+    });
+    await vi.waitFor(() => expect(shelfIds()).toEqual([mark, ruth, luke]));
   });
 });

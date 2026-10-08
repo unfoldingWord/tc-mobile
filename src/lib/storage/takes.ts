@@ -162,7 +162,7 @@ async function writeTakeInTx(
 
   // Recording is activity: bump the book's `updatedAt`, in the SAME
   // transaction so the take and the timestamp land together. The book keeps
-  // its place on the shelf (listBooks orders by createdAt, #1185). A dangling chapter/book parent is skipped rather than
+  // its place on the shelf (listBooks orders by shelfPosition, #338). A dangling chapter/book parent is skipped rather than
   // failing a save that otherwise succeeded.
   const chapter = await tx.objectStore("chapters").get(segment.chapterId);
   const book = chapter
