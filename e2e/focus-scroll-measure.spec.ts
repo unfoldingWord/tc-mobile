@@ -163,17 +163,9 @@ test("cancelling the Books delete confirm for a row away from the top: shelf scr
   await expect
     .poll(() => focusedName(page))
     .toBe(`${target}, 0 chapters, expanded`);
-  await expect
-    .poll(() =>
-      list.evaluate((el) => {
-        const a = el.getBoundingClientRect();
-        const b = document.activeElement!.getBoundingClientRect();
-        return (
-          el.scrollTop > 0 && b.top >= a.top - 1 && b.bottom <= a.bottom + 1
-        );
-      })
-    )
-    .toBe(true);
+  // #800 (DRI: split it): the delete-confirm lift passes `preventScroll`, so
+  // the hand-off leaves the shelf where it was instead of scrolling the row in.
+  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBe(0);
 });
 
 test("a fresh book create: end state of the new top row", async ({ page }) => {
