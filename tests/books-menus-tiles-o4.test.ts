@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
 import type { CoverColourKey } from "@/lib/cover-colour";
-import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { BookId } from "@/types/domain";
@@ -25,11 +24,6 @@ import type { BookCard } from "@/types/view";
  * What this cannot show: the cascade, layout, or real `inert` hit-testing.
  * Nothing here was run on a phone.
  */
-
-const design = vi.hoisted(() => ({ current: "o4" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 
 const state = vi.hoisted(() => ({
   books: [] as BookCard[],
@@ -138,11 +132,9 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   vi.unstubAllGlobals();
-  design.current = "o4";
 });
 
-async function mount(look: Design = "o4") {
-  design.current = look;
+async function mount() {
   await act(async () => {
     root.render(
       createElement(BooksScreen, {
@@ -245,7 +237,7 @@ describe("O4: the book menu on the tile grid (04)", () => {
     }
   });
 
-  it("lands first focus on Rename, as the current look does, and returns focus to the ⋮ on Escape", async () => {
+  it("lands first focus on Rename, and returns focus to the ⋮ on Escape", async () => {
     await mount();
     await openFrom(strings.bookMenuOpen("Mark"));
     expect(document.activeElement).toBe(button(strings.renameBook));
@@ -408,37 +400,17 @@ describe("the app ≡ menu holds no way back to the old look (#1244)", () => {
   // Books ≡, so the old look cannot be reached from the app. That switch was
   // the only pressable control in this menu — the theme control names its
   // destination instead of carrying `aria-pressed` — so a pressed state or a
-  // "new look" name anywhere in the menu is the switch coming back. Checked
-  // in both looks: a device that saved the old look before #1244 still
-  // renders it (the DRI kept `readStoredDesign` as it is), and must not find
-  // the switch there either.
-  for (const look of ["o4", "current"] as const) {
-    it(`draws no design switch in the ${look} look`, async () => {
-      await mount(look);
-      await openFrom(strings.menuOpen);
-      const menu = appMenu();
-      expect(menu).not.toBeNull();
-      const all = [...menu!.querySelectorAll<HTMLButtonElement>("button")];
-      expect(all.length).toBeGreaterThan(0);
-      expect(menu!.querySelectorAll("[aria-pressed]")).toHaveLength(0);
-      for (const b of all)
-        expect(b.getAttribute("aria-label") ?? "").not.toMatch(/new look/i);
-    });
-  }
-});
-
-describe("switch off: both menus are the current rows", () => {
-  it("draws no tiles and no Cover colour control in the book menu", async () => {
-    await mount("current");
-    await openFrom(strings.bookMenuOpen("Mark"));
-    expect(bookSheet()!.querySelector(".o4-tiles")).toBeNull();
-    expect(buttons(strings.coverColourLabel)).toHaveLength(0);
-    expect(button(strings.renameBook).classList).not.toContain("o4-head-pen");
-  });
-
-  it("draws no tiles in the app menu", async () => {
-    await mount("current");
+  // "new look" name anywhere in the menu is the switch coming back. #954
+  // then deleted the old look itself.
+  it("draws no design switch", async () => {
+    await mount();
     await openFrom(strings.menuOpen);
-    expect(appMenu()!.querySelector(".o4-tiles")).toBeNull();
+    const menu = appMenu();
+    expect(menu).not.toBeNull();
+    const all = [...menu!.querySelectorAll<HTMLButtonElement>("button")];
+    expect(all.length).toBeGreaterThan(0);
+    expect(menu!.querySelectorAll("[aria-pressed]")).toHaveLength(0);
+    for (const b of all)
+      expect(b.getAttribute("aria-label") ?? "").not.toMatch(/new look/i);
   });
 });

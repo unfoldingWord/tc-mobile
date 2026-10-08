@@ -31,7 +31,6 @@ import { shareOverlayOwnsScreen } from "@/hooks/share-progress";
 import type { SegmentsAudio } from "@/hooks/use-audio-session";
 import { useChapterSegments } from "@/hooks/use-chapter-segments";
 import { useChapterShare } from "@/hooks/use-chapter-share";
-import { useDesign } from "@/hooks/use-design";
 import type { FailureKey } from "@/hooks/save-failure";
 import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import { useFocusRestore } from "@/hooks/use-focus-restore";
@@ -175,9 +174,6 @@ export const SegmentsScreen = forwardRef<
   // The passage heading the breadcrumb shows: the facilitator's label, else
   // "Chapter {number}" (#264).
   const chapterHeading = strings.chapterHeading(chapterName, chapterNumber);
-  // The O4 look (#944): the chapter head, the list's own classes and the
-  // header's add button branch on it; with the switch off nothing here does.
-  const o4 = useDesign().design === "o4";
 
   // Erase Segment from a row's overflow menu (B6, D-TWO-ENTRIES). One hook and
   // one confirm for the whole list — the same implementation the recorder menu
@@ -1067,7 +1063,7 @@ export const SegmentsScreen = forwardRef<
     rowReveal.reveal(listInert || refreshing, focusFallback);
   }, [rows, listInert, refreshing, rowReveal, focusFallback]);
 
-  // ── Press-and-hold reorder (#953 PR2a, O4 only) ───────────────────────────
+  // ── Press-and-hold reorder (#953 PR2a) ───────────────────────────
   //
   // Hold a row's number badge or title for 450 ms, then drag (§4, §7; D11:
   // drag only for the training). The gesture is `hooks/use-reorder-gesture.ts`
@@ -1080,13 +1076,13 @@ export const SegmentsScreen = forwardRef<
   // with nothing extra on screen (#172). Every cancel writes nothing, and the
   // rows never left the stored order, so there is nothing to restore.
   //
-  // Off with the switch off, and whenever a row could not take a tap anyway:
+  // Off whenever a row could not take a tap anyway:
   // an overlay has the list `inert`, a save is landing (`refreshing` disables
   // the rows' buttons), the first load has not finished, or the chapter is
   // gone.
   const [reorderStatus, setReorderStatus] = useState("");
   const reorder = useReorderGesture<SegmentId>({
-    enabled: o4 && !listInert && !refreshing && !loading && !staleTarget,
+    enabled: !listInert && !refreshing && !loading && !staleTarget,
     ids: rows.map((row) => row.segmentId),
     nodeFor: rowReveal.nodeFor,
     scrollRef,
@@ -1131,7 +1127,7 @@ export const SegmentsScreen = forwardRef<
       if (row) setReorderStatus(strings.reorderStayed(row.ordinal));
     },
   });
-  const drag = o4 ? reorder.drag : null;
+  const drag = reorder.drag;
 
   const onAppend = useCallback(async () => {
     // Only the first append comes from the invite (the corner + is hidden while
@@ -1156,31 +1152,30 @@ export const SegmentsScreen = forwardRef<
     [setFinished]
   );
 
-  // The confirm's "Play what will be lost" row (#979 remainder, O4 "13"
-  // only — the switch-off dialog stays unchanged). `rows` is short (a
+  // The confirm's "Play what will be lost" row (#979 remainder, "13").
+  // `rows` is short (a
   // chapter's segments), so a plain find each render is cheap; `eraseTarget`
   // is only ever non-null while the dialog itself is open. `undefined` (a
   // stale target racing a reload) falls through to `eraseRowPreview` below
-  // being `undefined` too, and the O4 branch there hands `EraseConfirm` no
+  // being `undefined` too, which hands `EraseConfirm` no
   // `preview` prop at all rather than one with made-up peaks.
   const eraseTargetRow =
     eraseTarget !== null
       ? rows.find((row) => row.segmentId === eraseTarget)
       : undefined;
-  const eraseRowPreview: EraseConfirmPreview | undefined =
-    o4 && eraseTargetRow
-      ? {
-          peaks: eraseTargetRow.peaks,
-          playing: audio.playingId === eraseTargetRow.segmentId,
-          // Always from the start (offset 0): this is a preview of "what will
-          // be lost", not the scrub-and-resume transport `SegmentRow` gives
-          // the list itself.
-          onTogglePlay: () => audio.playTake(eraseTargetRow, 0),
-          playLabel: strings.eraseConfirmPreviewPlay,
-          pauseLabel: strings.eraseConfirmPreviewPause,
-          finished: eraseTargetRow.finished,
-        }
-      : undefined;
+  const eraseRowPreview: EraseConfirmPreview | undefined = eraseTargetRow
+    ? {
+        peaks: eraseTargetRow.peaks,
+        playing: audio.playingId === eraseTargetRow.segmentId,
+        // Always from the start (offset 0): this is a preview of "what will
+        // be lost", not the scrub-and-resume transport `SegmentRow` gives
+        // the list itself.
+        onTogglePlay: () => audio.playTake(eraseTargetRow, 0),
+        playLabel: strings.eraseConfirmPreviewPlay,
+        pauseLabel: strings.eraseConfirmPreviewPause,
+        finished: eraseTargetRow.finished,
+      }
+    : undefined;
 
   return (
     <div className="flex h-full flex-col gap-[14px]">
@@ -1194,10 +1189,9 @@ export const SegmentsScreen = forwardRef<
           variant="quiet"
           onClick={onBack}
         />
-        {o4 ? (
-          /* #1269, the requirements owner: "Yes, make the header crumbs
-             tappable for navigation". In this look the crumbs are no longer
-             one Back button (#1105): the book crumb is its own button, named
+        {/* #1269, the requirements owner: "Yes, make the header crumbs
+             tappable for navigation". The crumbs are not one Back button
+             (#1105): the book crumb is its own button, named
              for where it goes (`goToBook`), and runs `onBack`, the same
              handler the Back control beside it runs, so it leaves by the
              one Back path (`goBack`) with that path's guards, and is inert
@@ -1205,40 +1199,26 @@ export const SegmentsScreen = forwardRef<
              the Books shelf, the screen Back lands on (App.tsx,
              `backToBooks`). The chapter crumb is this screen, so it is not a
              button: it carries `aria-current="page"`, and its text is
-             exposed, which is what now names the chapter to assistive tech
-             in place of the old button's `chapterBreadcrumb` label. The
-             chapter menu's and each row menu's sheet heads keep the same
-             chip text (#1230) and stay decoration. */
-          <div className="o4-crumbs-bar">
-            <O4Crumbs
-              className="min-w-0"
-              book={bookName}
-              chapter={chapterHeading}
-              links={{
-                book: { label: strings.goToBook(bookName), onClick: onBack },
-              }}
-              current="chapter"
-            />
-          </div>
-        ) : (
-          /* A control-sized hit area, not a ~20px text run (#164 R-10): its
-             action is Back, the same as the 44px control beside it, and two
-             adjacent ways to do one thing should not be two different sizes
-             to a thumb. Geometry lives in `.breadcrumb` (layer 3) rather
-             than in arbitrary utilities here, so the 44px floor reads the
-             same `--c-control-md` every other control does. */
-          <button type="button" onClick={onBack} className="breadcrumb">
-            <span dir="auto">
-              {strings.chapterBreadcrumb(bookName, chapterHeading)}
-            </span>
-          </button>
-        )}
+             exposed, which is what names the chapter to assistive tech.
+             The chapter menu's and each row menu's sheet heads keep the
+             same chip text (#1230) and stay decoration. */}
+        <div className="o4-crumbs-bar">
+          <O4Crumbs
+            className="min-w-0"
+            book={bookName}
+            chapter={chapterHeading}
+            links={{
+              book: { label: strings.goToBook(bookName), onClick: onBack },
+            }}
+            current="chapter"
+          />
+        </div>
         {!showEmpty && (
           <Control
             icon="plus"
             label={strings.addSegment}
             variant="quiet"
-            className={o4 ? "segments-add" : undefined}
+            className="segments-add"
             disabled={staleTarget || loading || refreshing || loadFailed}
             onClick={() => void onAppend()}
           />
@@ -1257,9 +1237,7 @@ export const SegmentsScreen = forwardRef<
         />
       </header>
 
-      {o4 && !staleTarget && (
-        <SegmentsHead chapterName={chapterName} rows={rows} />
-      )}
+      {!staleTarget && <SegmentsHead chapterName={chapterName} rows={rows} />}
 
       {/* One line, one place: a load failure or a playback failure (a
           dangling/undecodable clip routes to audio.error) — never only the
@@ -1284,9 +1262,7 @@ export const SegmentsScreen = forwardRef<
 
       <div
         ref={scrollRef}
-        className={
-          o4 ? "segments-body flex-1 overflow-y-auto" : "flex-1 overflow-y-auto"
-        }
+        className="segments-body flex-1 overflow-y-auto"
         inert={listInert || undefined}
       >
         {staleTarget ? null : showEmpty ? (
@@ -1299,15 +1275,12 @@ export const SegmentsScreen = forwardRef<
             onCta={() => void onAppend()}
           />
         ) : (
-          <ul
-            className={o4 ? "segments-list" : "flex flex-col gap-[8px]"}
-            data-reordering={drag ? "" : undefined}
-          >
+          <ul className="segments-list" data-reordering={drag ? "" : undefined}>
             {rows.map((row, index) => (
               <li
                 key={row.segmentId}
                 ref={(el) => rowReveal.setNode(row.segmentId, el)}
-                // While a row is lifted (O4 only): it follows the finger and
+                // While a row is lifted: it follows the finger and
                 // its neighbours slide one slot to make room. Paint only;
                 // the rows' order is not touched until the drop.
                 className={
@@ -1356,7 +1329,7 @@ export const SegmentsScreen = forwardRef<
                   bookName={bookName}
                   bookCoverHex={bookCoverHex ?? undefined}
                   chapterHeading={chapterHeading}
-                  onHoldStart={o4 ? reorder.holdStart(index) : undefined}
+                  onHoldStart={reorder.holdStart(index)}
                 />
               </li>
             ))}
@@ -1364,21 +1337,19 @@ export const SegmentsScreen = forwardRef<
         )}
       </div>
 
-      {/* The reorder's spoken half (#953 PR2a, O4 only): which row was
+      {/* The reorder's spoken half (#953 PR2a): which row was
           lifted, where it landed, or that it went back. Outside the list's
           `inert` subtree, and mounted for the screen's whole life so a
           screen reader hears the first change. D11 leaves no keyboard or
           switch path to move a row; this only tells what a drag did. */}
-      {o4 && (
-        <span
-          className="sr-only"
-          role="status"
-          aria-live="polite"
-          data-reorder-status=""
-        >
-          {reorderStatus}
-        </span>
-      )}
+      <span
+        className="sr-only"
+        role="status"
+        aria-live="polite"
+        data-reorder-status=""
+      >
+        {reorderStatus}
+      </span>
 
       <EraseConfirm
         key={confirmMount}
@@ -1503,14 +1474,12 @@ export const SegmentsScreen = forwardRef<
               <Notice>{chapterErrorText}</Notice>
             )}
           </>
-        ) : o4 ? (
-          // The O4 chapter menu (#949, G2): the breadcrumb head, then Rename,
-          // Share and — past a gap — the theme tile. The same three controls,
-          // names, refs and order as the rows below, so the open-edge focus
-          // lands on Rename in both looks and every restore below finds the
-          // same node. Rename is a tile rather than the workbench's header
-          // pencil because a header control ahead of the grid would be a
-          // second first-focus candidate the current look does not have.
+        ) : (
+          // The chapter menu (#949, G2): the breadcrumb head, then Rename,
+          // Share and — past a gap — the theme tile, LAST so the open-edge
+          // focus lands on Rename (#149). Rename is a tile rather than the
+          // workbench's header pencil because a header control ahead of the
+          // grid would be a second first-focus candidate.
           <>
             <O4SheetHead
               book={bookName}
@@ -1552,61 +1521,6 @@ export const SegmentsScreen = forwardRef<
                 ),
               }}
             />
-          </>
-        ) : (
-          <>
-            <Control
-              ref={renameChapterControlRef}
-              icon="edit"
-              label={strings.renameChapter}
-              variant="quiet"
-              // No `shareOverlayOwnsScreen` guard here any more (#491): this
-              // control sits inside the panel's `inert` subtree above (see
-              // `<Menu>`'s own `inert` prop), so it is unreachable by click,
-              // keyboard or AT activation for the whole time the guard used
-              // to check — the primitive covers it now, not a per-handler
-              // check.
-              onClick={() => setRenamingChapter(true)}
-            />
-            {/* Two gestures, same spot: "Share chapter" encodes (tap 1); once
-                armed it becomes a primary "Share now" that hands the File to the
-                sheet in a fresh activation (tap 2). autoFocus moves focus onto it
-                as it appears, since the Menu only lands focus on its open edge. */}
-            <ShareMenuSection
-              status={share.status}
-              sendUnconfirmed={share.sendUnconfirmed}
-              error={share.error}
-              scope="chapter"
-              controlRef={shareControlRef}
-              idleLabel={strings.shareChapter}
-              preparingLabel={strings.sharePreparing}
-              unconfirmedLabel={strings.shareChapterUnconfirmed}
-              hasGap={share.missing > 0}
-              gapText={shareGapText(
-                { missing: share.missing, partial: 0, partialChapters: 0 },
-                "chapter"
-              )}
-              onPrepare={onPrepareShare}
-              onSend={onSendShare}
-            />
-            {/* The theme toggle, the one global entry that follows you into a
-                chapter (#149). LAST on purpose: `Menu` lands focus on its
-                first actionable child, and that must stay Rename/Share — the
-                reasons you opened this menu — not a control that repaints the
-                screen. Which holds here unconditionally, unlike in the
-                recorder: Rename above carries no `disabled` and no `hint`, so
-                it is always the first actionable child. If a later change
-                gives it a hinted state, focus moves here in that state, and
-                the recorder's comment is where that trade is argued.
-
-                Books-only was right while the global menu held a
-                licence notice; it stopped being right when the menu grew a
-                control for direct sun, which arrives mid-session.
-
-                It is inside the panel's `inert` subtree above (#491), so a
-                share overlay that owns the screen covers this too, with no
-                guard of its own. */}
-            <ThemeControl />
           </>
         )}
       </Menu>

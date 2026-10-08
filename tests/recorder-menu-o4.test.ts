@@ -7,7 +7,7 @@ import {
   RecorderMenu,
   type RecorderMenuProps,
 } from "@/components/recorder-menu";
-import type { Design } from "@/lib/design";
+import { TILE_GLYPH } from "@/components/o4-tile-look";
 import { strings } from "@/lib/strings";
 
 import { areaRules, declsFor } from "./o4-area-css";
@@ -17,15 +17,9 @@ import { areaRules, declsFor } from "./o4-area-css";
  * edit-mode menu the header's ⋮ opens while editing (#1243) — both are this
  * one component.
  *
- * The switch is read through `useDesign()`, mocked so each case picks its
- * look (`tests/segments-o4.test.ts` is the pattern). The first case below is
- * the "switch off means unchanged" guard.
- *
- * G3 (workbench round 4) drops Edit from this menu in O4 — the recorder
- * screen carries its own edit control — so the record-mode O4 menu is Mark,
- * Erase and the theme tile. Every other row keeps the accessible name, gating
- * and hint it has in the current look; the cases below re-ask the current
- * suite's questions of the O4 branch.
+ * G3 (workbench round 4) drops Edit from this menu — the recorder screen
+ * carries its own edit control — so the record-mode menu is Mark, Erase and
+ * the theme tile.
  *
  * Delete segment (#590) lived here too, from #1080 until #1104 (the
  * requirements owner's 2026-09-26 decision) pulled it back out of this menu
@@ -43,11 +37,6 @@ import { areaRules, declsFor } from "./o4-area-css";
  * change does not touch. Nothing here has run on a phone.
  */
 
-const design = vi.hoisted(() => ({ current: "o4" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
-
 /** The part of the #927 cap's selector the component itself must satisfy. */
 const CAP_PANEL = ".menu-panel:has(.recorder-menu-tile)";
 
@@ -60,24 +49,21 @@ const base: RecorderMenuProps = {
   mode: "record",
   ordinal: 3,
   finishedState: "empty",
-  editReason: null,
   markReason: null,
   eraseReason: null,
-  onEnterEdit: vi.fn(),
   onToggleFinished: vi.fn(),
   onErase: vi.fn(),
 };
 
-function show(over: Partial<RecorderMenuProps> = {}, look: Design = "o4") {
-  design.current = look;
+function show(over: Partial<RecorderMenuProps> = {}) {
   act(() => root.render(createElement(RecorderMenu, { ...base, ...over })));
-  // A floor for every O4 case: a case that loops over the tiles, or asks a
+  // A floor for every case: a case that loops over the tiles, or asks a
   // row question, must be asking it of the tile grid and not of rows. Three
   // in record mode: Mark, Erase, theme (#1104 removed the fourth, Delete —
   // see the negative case near the end of this file). Two in edit mode:
   // Erase, theme (#1252 removed the Done tile).
-  if (look === "o4" && (over.open ?? true))
-    expect(tiles().length, "no O4 tiles rendered").toBe(
+  if (over.open ?? true)
+    expect(tiles().length, "no tiles rendered").toBe(
       over.mode === "edit" ? 2 : 3
     );
 }
@@ -106,14 +92,7 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-describe("RecorderMenu in O4 (#949 G3)", () => {
-  it("keeps the current look's rows when the switch is off", () => {
-    show({}, "current");
-    expect(tiles()).toHaveLength(0);
-    expect(document.querySelector(".o4-tiles")).toBeNull();
-    expect(named(strings.enterEdit)).toBeDefined();
-  });
-
+describe("RecorderMenu on the tile grid (#949 G3)", () => {
   it("lays record mode out as Mark, Erase, then the theme tile past a spacer", () => {
     show();
     const grid = document.querySelector(".o4-tiles");
@@ -198,17 +177,14 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
     }
   });
 
-  it("draws larger glyphs on the tiles than the current look's rows", () => {
-    show({}, "current");
-    const rowSize = Number(
-      named(strings.markFinished(3))
-        ?.querySelector("svg")
-        ?.getAttribute("width")
-    );
+  it("draws every tile's glyph at the shared 30px tile size", () => {
     show();
+    // A literal, not TILE_GLYPH against itself: the tile glyph is pinned at
+    // 30, larger than the 22px default a menu row's Control draws.
+    expect(TILE_GLYPH).toBe(30);
     for (const tile of tiles()) {
       const size = Number(tile.querySelector("svg")?.getAttribute("width"));
-      expect(size).toBeGreaterThan(rowSize);
+      expect(size).toBe(30);
     }
   });
 
@@ -260,9 +236,13 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
       eraseReason: "no-clip",
       markReason: "no-audio",
     });
-    for (const label of [strings.eraseSegment, strings.markFinished(3)]) {
+    // The exact spoken name: the label, then the reason the tile is grey.
+    for (const [label, reason] of [
+      [strings.eraseSegment, strings.nothingStored],
+      [strings.markFinished(3), strings.nothingRecorded],
+    ] as const) {
       const tile = startingWith(label);
-      expect(tile?.getAttribute("aria-label")).not.toBe(label);
+      expect(tile?.getAttribute("aria-label")).toBe(`${label}. ${reason}`);
       expect(tile?.getAttribute("aria-disabled")).toBe("true");
       expect(tile?.hasAttribute("disabled")).toBe(false);
     }
@@ -279,7 +259,7 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
     expect(mark?.getAttribute("aria-disabled")).toBeNull();
   });
 
-  it("hands each tap to the same prop the current look does", () => {
+  it("hands each tap to its prop", () => {
     const onErase = vi.fn();
     const onToggleFinished = vi.fn();
     const onClose = vi.fn();
@@ -304,7 +284,7 @@ describe("RecorderMenu in O4 (#949 G3)", () => {
 
 describe("o4/menus.css, recorder-menu section (#949 G3)", () => {
   const rules = areaRules("menus");
-  const panel = `[data-design="o4"] ${CAP_PANEL}`;
+  const panel = `:root ${CAP_PANEL}`;
 
   it("keeps the recorder sheet under half the screen", () => {
     expect(declsFor(rules, panel).get("max-height")).toBe("50dvh");

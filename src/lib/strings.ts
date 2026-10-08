@@ -293,7 +293,7 @@ export const strings = {
   scrubSegment: (n: number): string => `Position in segment ${n}`,
   // "done", not "finished" (D17, #949): the O4 tile's caption is the
   // workbench's "Done", and the label must hold the caption (label-in-name).
-  // One string for both looks and both menus (segment row and recorder). It
+  // One string for both menus (segment row and recorder). It
   // does not flip to "not done": `aria-pressed` carries the state (#351).
   markFinished: (n: number): string => `Mark segment ${n} done`,
   /**
@@ -401,9 +401,7 @@ export const strings = {
   // promise an extent (Frank + George, round 1 — both lenses, independently).
   zoomAtWhole: "Zoomed to the whole segment. Zoom in to a quarter.",
   zoomAtQuarter: "Zoomed to a quarter. Zoom out to the whole segment.",
-  micNeededTitle: "Microphone access is needed to record",
-  // The O4 look's mic-denied title (D15, #948), from the O4 original. O4 only:
-  // the current look keeps `micNeededTitle` until O4 becomes the default.
+  // The mic-denied title (D15, #948), from the O4 original.
   micOffTitle: "Microphone is off",
   micRetry: "Try again",
   micBack: "Go back",
@@ -647,9 +645,9 @@ export const strings = {
   // glyphs the way the body notices do (#620): it is spoken
   // inside the ⋮ menu, where the recorder header — and so "Close recorder" —
   // is `inert` and the one live control on screen is the menu's own dismiss,
-  // which since #621 wears a single glyph, ⋮ since #1225 (this menu opts into
-  // `hamburger` with `dismissIcon="more"`, `recorder-menu.tsx`), not a back
-  // chevron. Describing the save control by its
+  // which since #621 wears a single glyph, the ✕ every sheet closes with
+  // since #1268 (this menu opts into `hamburger`, `recorder-menu.tsx`), not a
+  // back chevron. Describing the save control by its
   // looks here would still point at the dismiss, the exact collision the
   // round-1 `back` badge had (`menu-row-state.ts`, `rowHint`'s docblock);
   // #648 round 1 (George P2) caught the words repeating it.
@@ -678,7 +676,7 @@ export const strings = {
   // segment over — because the sheet stays open, ready for the next take.
   rerecord: "Clear and record again",
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
-  // Press-and-hold reorder on the Segments list (#953, O4 only), spoken by
+  // Press-and-hold reorder on the Segments list (#953), spoken by
   // the list's live region: the row that was lifted, where it landed, or that
   // it went back. Segments renumber after a move (the DRI's "Renumber" pick),
   // so the landing is said as the segment's new number.
@@ -717,19 +715,16 @@ export const strings = {
   discardClipConfirm: "Throw away",
 
   // ── Delete a book (#337) ─────────────────────────────────────────────────
-  // The book ⋮-menu row, and the two-tap confirm behind it — the same dialog
-  // the segment Clear uses, not a second one.
+  // The book sheet's Delete tile, and the ask behind it (#980).
   deleteBook: "Delete book",
-  // Names the book, because this dialog's title is also its accessible name and
-  // it is the only thing that says WHICH shelf row is about to go. "everything
+  // Names the book, because this is the ask's accessible name and it is the
+  // only thing that says WHICH shelf row is about to go. "everything
   // in it" is the honest scope: the chapters, the segments and every recording.
   deleteBookConfirmTitle: (book: string): string =>
     `Delete ${book} and everything in it?`,
-  deleteBookConfirm: "Delete",
-  // The O4 look asks inside the book sheet instead (#980, G6; #949 D16): the
-  // sheet's actions swap for these two, under the book's cover and name. The
+  // The ask is inside the book sheet (#980, G6; #949 D16): the sheet's
+  // actions swap for these two, under the book's cover and name. The
   // workbench's own labels, word for word — the DRI prefers the originals.
-  // O4 only; the current look keeps `eraseCancel`/`deleteBookConfirm` above.
   keepBook: "Keep the book",
   deleteBookYes: "Yes, delete the book",
   // A destructive op that did NOT happen has to say so in its own words. The

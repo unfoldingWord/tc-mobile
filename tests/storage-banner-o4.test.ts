@@ -4,12 +4,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
-import { Notice } from "@/components/notice";
 import { StoragePressureBanner } from "@/components/storage-pressure-banner";
 import type { StoragePressureNotice } from "@/components/storage-pressure-notice";
 import type { UseLibraryShare } from "@/hooks/use-library-share";
 import type { BookLabel } from "@/lib/export/book";
-import type { Design } from "@/lib/design";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { StoragePressureMarker } from "@/lib/storage/pressure";
 import { strings } from "@/lib/strings";
@@ -77,10 +75,6 @@ vi.mock("@/hooks/use-library-share", () => ({
 
 // The screen-level cases below mount `BooksScreen`, so its data hooks are
 // mocked the way `tests/books-o4.test.ts` mocks them.
-const design = vi.hoisted(() => ({ current: "current" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 const pressure = vi.hoisted(() => ({
   current: null as StoragePressureMarker | null,
 }));
@@ -135,9 +129,9 @@ const critical: StoragePressureNotice = {
   text: strings.storageCritical,
 };
 
-const banner = (notice: StoragePressureNotice, o4: boolean) =>
+const banner = (notice: StoragePressureNotice) =>
   render(
-    createElement(StoragePressureBanner, { notice, o4, share: shareSurface() })
+    createElement(StoragePressureBanner, { notice, share: shareSurface() })
   );
 
 let root: Root | null = null;
@@ -150,7 +144,6 @@ beforeEach(() => {
   share.incompleteBooks = 0;
   share.prepare.mockClear();
   share.send.mockClear();
-  design.current = "current";
   pressure.current = null;
   shelf.books = [];
   document.body.innerHTML = "<div id='root'></div>";
@@ -172,27 +165,9 @@ async function mount(element: ReturnType<typeof createElement>) {
   return document.getElementById("root")!;
 }
 
-describe("the current look is the #247 Notice, unchanged", () => {
-  it.each([
-    ["low", low],
-    ["critical", critical],
-  ])("%s renders exactly what <Notice> renders", (_band, notice) => {
-    const expected = render(
-      createElement(Notice, { tone: notice.tone, children: notice.text })
-    );
-    expect(banner(notice, false).innerHTML).toBe(expected.innerHTML);
-  });
-
-  it("carries no O4 markup and no share button", () => {
-    const container = banner(critical, false);
-    expect(container.querySelector(".o4-storage")).toBeNull();
-    expect(container.querySelector("button")).toBeNull();
-  });
-});
-
-describe("state 17, O4", () => {
+describe("state 17", () => {
   it("draws the banner with the phone icon as decoration", () => {
-    const container = banner(low, true);
+    const container = banner(low);
     one(container, ".o4-storage");
     const icon = one(container, ".o4-storage-icon");
     expect(icon.getAttribute("aria-hidden")).toBe("true");
@@ -202,7 +177,7 @@ describe("state 17, O4", () => {
   });
 
   it("leads with the workbench's line and keeps the #247 reason", () => {
-    const container = banner(critical, true);
+    const container = banner(critical);
     expect(one(container, ".o4-storage-title").textContent).toBe(
       strings.storageShareSoon
     );
@@ -217,7 +192,7 @@ describe("state 17, O4", () => {
   ])(
     "%s keeps the Notice's urgency on its words, not on the button",
     (_band, notice, role) => {
-      const container = banner(notice, true);
+      const container = banner(notice);
       const words = one(container, ".o4-storage-words");
       expect(words.getAttribute("role")).toBe(role);
       expect(words.querySelector("button")).toBeNull();
@@ -228,14 +203,14 @@ describe("state 17, O4", () => {
   );
 
   it("offers Share your work, not Send log (#948 D14)", () => {
-    const button = one(banner(low, true), "button.o4-storage-share");
+    const button = one(banner(low), "button.o4-storage-share");
     expect(button.getAttribute("aria-label")).toBe(strings.shareAll);
     expect(button.hasAttribute("aria-busy")).toBe(false);
   });
 
   it("says it is preparing, and stays focusable, while tap 1 runs", () => {
     share.status = "preparing";
-    const container = banner(low, true);
+    const container = banner(low);
     const button = one(container, "button.o4-storage-share");
     expect(button.getAttribute("aria-label")).toBe(strings.shareAllPreparing);
     expect(button.getAttribute("aria-busy")).toBe("true");
@@ -244,13 +219,13 @@ describe("state 17, O4", () => {
 
   it("becomes Share now once armed", () => {
     share.status = "ready";
-    const button = one(banner(low, true), "button.o4-storage-share");
+    const button = one(banner(low), "button.o4-storage-share");
     expect(button.getAttribute("aria-label")).toBe(strings.shareSend);
   });
 
   it("names an unconfirmed last attempt", () => {
     share.sendUnconfirmed = true;
-    const button = one(banner(low, true), "button.o4-storage-share");
+    const button = one(banner(low), "button.o4-storage-share");
     expect(button.getAttribute("aria-label")).toBe(strings.shareAllUnconfirmed);
   });
 
@@ -262,7 +237,7 @@ describe("state 17, O4", () => {
     ["encoder", strings.shareEncoderStopped],
   ] as const)("words the %s refusal", (code, text) => {
     share.error = code;
-    const container = banner(low, true);
+    const container = banner(low);
     expect(one(container, ".o4-storage .notice").textContent).toBe(text);
   });
 
@@ -271,7 +246,7 @@ describe("state 17, O4", () => {
     share.missing = 2;
     share.incompleteChapters = 1;
     share.incompleteBooks = 1;
-    const container = banner(low, true);
+    const container = banner(low);
     expect(one(container, ".o4-storage .notice").textContent).toBe(
       `${strings.shareAllMissing(2)} ${strings.shareAllIncomplete(1)}`
     );
@@ -279,7 +254,7 @@ describe("state 17, O4", () => {
 
   it("says nothing about a gap before the archive is ready", () => {
     share.missing = 2;
-    expect(banner(low, true).querySelector(".notice")).toBeNull();
+    expect(banner(low).querySelector(".notice")).toBeNull();
   });
 });
 
@@ -288,7 +263,6 @@ describe("the button runs the library share", () => {
     const container = await mount(
       createElement(StoragePressureBanner, {
         notice: low,
-        o4: true,
         share: shareSurface(),
       })
     );
@@ -323,7 +297,6 @@ describe("the button runs the library share", () => {
     const container = await mount(
       createElement(StoragePressureBanner, {
         notice: low,
-        o4: true,
         share: shareSurface(),
       })
     );
@@ -349,7 +322,6 @@ describe("tap 1 -> tap 2 hands focus to the armed Send (#1046 item 2)", () => {
     await mount(
       createElement(StoragePressureBanner, {
         notice: low,
-        o4: true,
         share: shareSurface(),
       })
     );
@@ -358,7 +330,6 @@ describe("tap 1 -> tap 2 hands focus to the armed Send (#1046 item 2)", () => {
       root!.render(
         createElement(StoragePressureBanner, {
           notice: low,
-          o4: true,
           share: shareSurface(),
         })
       )
@@ -387,8 +358,7 @@ describe("Books shows the banner where the #247 line was", () => {
     ],
   };
 
-  async function screen(look: Design) {
-    design.current = look;
+  async function screen() {
     pressure.current = "critical";
     shelf.books = [recorded];
     const layers = new Map<string, Layer>();
@@ -403,24 +373,12 @@ describe("Books shows the banner where the #247 line was", () => {
     );
   }
 
-  it("O4 draws state 17", async () => {
-    const container = await screen("o4");
+  it("draws state 17", async () => {
+    const container = await screen();
     one(container, ".o4-storage");
     expect(one(container, ".o4-storage-why").textContent).toBe(
       strings.storageCritical
     );
-  });
-
-  it("the current look keeps its Notice and no share button", async () => {
-    const container = await screen("current");
-    expect(container.querySelector(".o4-storage")).toBeNull();
-    const line = [...container.querySelectorAll(".notice")].find(
-      (n) => n.textContent === strings.storageCritical
-    );
-    expect(line?.getAttribute("data-tone")).toBe("alert");
-    expect(
-      container.querySelector(`button[aria-label="${strings.shareAll}"]`)
-    ).toBeNull();
   });
 });
 
@@ -433,16 +391,15 @@ describe("o4/books.css, the banner rules", () => {
     expect(rules.length).toBeGreaterThanOrEqual(4);
   });
 
-  it("are all scoped to the O4 look", () => {
+  it("all carry the :root prefix that holds their specificity (o4/index.css)", () => {
     for (const rule of rules)
       for (const selector of rule.selectors)
-        expect(selector.startsWith('[data-design="o4"] ')).toBe(true);
+        expect(selector.startsWith(":root ")).toBe(true);
   });
 
   it("paint the warn wash and warn ink, per state 17", () => {
     const decls = (sel: string) =>
-      rules.find((r) => r.selectors.includes(`[data-design="o4"] ${sel}`))
-        ?.decls;
+      rules.find((r) => r.selectors.includes(`:root ${sel}`))?.decls;
     expect(decls(".o4-storage")?.get("background")).toBe("var(--s-warn-quiet)");
     expect(decls(".o4-storage-title")?.get("color")).toBe("var(--s-warn-text)");
     expect(decls(".o4-storage-icon")?.get("color")).toBe("var(--s-warn-text)");
@@ -464,13 +421,12 @@ describe("o4/books.css, the banner rules", () => {
       ".o4-storage-why",
       ".o4-storage-words",
     ])
-      expect(selectors).toContain(`[data-design="o4"] ${cls}`);
+      expect(selectors).toContain(`:root ${cls}`);
   });
 
   it("pins the workbench's 72/84/19/15 px sizes (state 17)", () => {
     const decls = (sel: string) =>
-      rules.find((r) => r.selectors.includes(`[data-design="o4"] ${sel}`))
-        ?.decls;
+      rules.find((r) => r.selectors.includes(`:root ${sel}`))?.decls;
     expect(decls(".o4-storage-icon")?.get("width")).toBe("72px");
     expect(decls(".o4-storage-icon")?.get("height")).toBe("72px");
     expect(decls(".o4-storage-share")?.get("width")).toBe("84px");

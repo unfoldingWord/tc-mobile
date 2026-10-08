@@ -9,7 +9,6 @@ import {
 import { quiesceTranscodeSweep } from "@/hooks/finish-transcode";
 import { isTerminalOpenRefusal } from "@/lib/storage/db";
 import { reportFailure } from "@/hooks/report-failure";
-import { useDesign } from "@/hooks/use-design";
 import { Control } from "./control";
 import { Icon } from "./icon";
 import { Notice } from "./notice";
@@ -135,25 +134,23 @@ async function reload(): Promise<boolean> {
  * quietly went un-busy while nothing had changed would be the dead button again,
  * wearing a spinner first.
  */
-function RestartControl({ className }: { className?: string }) {
+function RestartControl() {
   const [restarting, setRestarting] = useState(false);
   // The reload was declined because the crash row was refused by storage. The
   // screen stays, and it says why: a control that returns to idle having done
   // nothing is indistinguishable from a dead button.
   const [held, setHeld] = useState(false);
-  // O4 draws this wide button with the restart glyph, not retry's circular
-  // arrow (workbench state 18) — the same swap `PermissionPanel`'s O4 branch
-  // already makes for its own wide Restart. Presentation only: the current
-  // look keeps `retry`, unchanged.
-  const { design } = useDesign();
+  // The wide button carries the restart glyph, not retry's circular arrow
+  // (workbench state 18) — the same glyph `PermissionPanel`'s wide Restart
+  // uses.
   return (
     <>
       <Control
-        icon={design === "o4" ? "restart" : "retry"}
+        icon="restart"
         label={restarting ? strings.appReloading : strings.appReload}
         variant="primary"
-        size={className ? 34 : 30}
-        className={className}
+        size={34}
+        className="o4-err-wide"
         busy={restarting}
         onClick={() => {
           setHeld(false);
@@ -210,11 +207,11 @@ function focusOnMount(node: HTMLParagraphElement | null): void {
  *     than the glyph alone. The cause — with React's component tree beside it —
  *     goes to the sink, which is where a maintainer reads it.
  *   - **It is the app's other full-screen recovery surface, and looks like
- *     it.** Same shape as `SaveFailed`: a named `role="alertdialog"`, the 56px
- *     alert mark in `--s-live`, a `t-title` line, and one `--primary` control
- *     at `size={30}` — the 68px button, well over the 44px touch floor. A
- *     translator who cannot read should recognise "this failed, press the big
- *     round thing" from the shape alone, and the shape should be one shape.
+ *     it.** Same shape as `SaveFailed`: a named `role="alertdialog"`, the
+ *     alert mark in its `o4-err-circle`, an `o4-err-title` line, and one wide
+ *     `--primary` control (`o4-err-wide`). A translator who cannot read
+ *     should recognise "this failed, press the big button" from the shape
+ *     alone, and the shape should be one shape.
  *   - **The mark carries the meaning, the sentence only supports it.** Two
  *     short lines: what happened, and what the button will do.
  *
@@ -263,58 +260,14 @@ export class ErrorBoundary extends Component<
 }
 
 /**
- * The fallback itself, split out of `ErrorBoundary.render` only so it can read
- * `useDesign()` — a class cannot call a hook. The current look's markup below
- * is unchanged by the split; the O4 branch is state 18 (#948).
+ * The fallback itself, state 18 (#948). Same dialog, names, focus target,
+ * Restart and `SendLogControl` (#456) the boundary has always had. The
+ * workbench's "Recordings are safe" line is not here: a take held in RAM after
+ * a failed save is gone by the time this screen shows (see `ErrorBoundary`'s
+ * docblock), so the line would not always be true. Nor is its speaker button:
+ * there is no prompt-audio path to wire it to.
  */
 function CrashScreen() {
-  const { design } = useDesign();
-  if (design === "o4") {
-    // Same dialog, names, focus target, Restart and the SAME `SendLogControl`
-    // (#456) as the current look; only the paint differs. The workbench's
-    // "Recordings are safe" line is not here: a take held in RAM after a
-    // failed save is gone by the time this screen shows (see `ErrorBoundary`'s
-    // docblock), so the line would not always be true. Nor is its speaker
-    // button: there is no prompt-audio path to wire it to.
-    return (
-      <main className="app-shell grid h-full place-items-center">
-        <div
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby={TITLE_ID}
-          aria-describedby={TEACH_ID}
-          className="o4-err flex w-full max-w-md flex-col items-center px-[22px] text-center"
-        >
-          <span
-            className="o4-err-circle o4-err-circle--warn"
-            aria-hidden="true"
-          >
-            <Icon name="alert" size={72} />
-          </span>
-
-          <p
-            id={TITLE_ID}
-            ref={focusOnMount}
-            tabIndex={-1}
-            className="o4-err-title text-ink"
-          >
-            {strings.appFailed}
-          </p>
-
-          <p
-            id={TEACH_ID}
-            className="text-ink-muted text-[length:var(--p-text-md)]"
-          >
-            {strings.appReloadTeach}
-          </p>
-
-          <RestartControl className="o4-err-wide" />
-
-          <SendLogControl />
-        </div>
-      </main>
-    );
-  }
   return (
     <main className="app-shell grid h-full place-items-center">
       <div
@@ -322,17 +275,17 @@ function CrashScreen() {
         aria-modal="true"
         aria-labelledby={TITLE_ID}
         aria-describedby={TEACH_ID}
-        className="flex w-full max-w-md flex-col items-center gap-[18px] px-[22px] text-center"
+        className="o4-err flex w-full max-w-md flex-col items-center px-[22px] text-center"
       >
-        <span className="text-live">
-          <Icon name="alert" size={56} />
+        <span className="o4-err-circle o4-err-circle--warn" aria-hidden="true">
+          <Icon name="alert" size={72} />
         </span>
 
         <p
           id={TITLE_ID}
           ref={focusOnMount}
           tabIndex={-1}
-          className="t-title text-ink"
+          className="o4-err-title text-ink"
         >
           {strings.appFailed}
         </p>
@@ -346,7 +299,6 @@ function CrashScreen() {
 
         <RestartControl />
 
-        {/* The log's only door once the tree is gone. */}
         <SendLogControl />
       </div>
     </main>

@@ -1,4 +1,4 @@
-/* O4 — Ambient motion, with a reduced-motion guard. Owner: #950. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file. */
+/* O4 — Ambient motion, with a reduced-motion guard. Owner: #950. Every selector is prefixed with :root; see o4/index.css's header before editing this file. */
 
 /*
  * The design reference's section 4 loops, on the targets that exist today:
@@ -34,17 +34,17 @@
  */
 @layer components {
   /* --- guidePulse: the guide ring on the next action -------------------- */
-  [data-design="o4"] .control--record.is-guided,
-  [data-design="o4"] .control--mic.is-guided,
-  [data-design="o4"] .record-guide.is-guided {
+  :root .control--record.is-guided,
+  :root .control--mic.is-guided,
+  :root .record-guide.is-guided {
     animation: guidePulse var(--p-ambient-guide-pulse, 1.8s) ease-in-out
       infinite;
   }
-  [data-design="o4"] [inert] .is-guided,
-  [data-design="o4"] .is-guided[inert],
-  [data-design="o4"] .control--record.is-guided:focus-visible,
-  [data-design="o4"] .control--mic.is-guided:focus-visible,
-  [data-design="o4"] .record-guide.is-guided:has(> .control:focus-visible) {
+  :root [inert] .is-guided,
+  :root .is-guided[inert],
+  :root .control--record.is-guided:focus-visible,
+  :root .control--mic.is-guided:focus-visible,
+  :root .record-guide.is-guided:has(> .control:focus-visible) {
     animation: none;
   }
   @keyframes guidePulse {
@@ -68,12 +68,12 @@
      Stops while the menu is inert (the overlay covers it) and while the tile
      has keyboard focus, where globals.css pushes the focus outline out past
      the pulse's ring (autoFocus lands focus here as the tile appears). */
-  [data-design="o4"] .o4-tile--send.is-armed {
+  :root .o4-tile--send.is-armed {
     animation: armedPulse var(--p-ambient-armed, 1.6s) ease-in-out infinite;
   }
-  [data-design="o4"] [inert] .o4-tile--send.is-armed,
-  [data-design="o4"] .o4-tile--send.is-armed[inert],
-  [data-design="o4"] .o4-tile--send.is-armed:focus-visible {
+  :root [inert] .o4-tile--send.is-armed,
+  :root .o4-tile--send.is-armed[inert],
+  :root .o4-tile--send.is-armed:focus-visible {
     animation: none;
   }
   @keyframes armedPulse {
@@ -89,7 +89,7 @@
 
   /* --- liveEdge: the recorder stage edge while recording ---------------- */
   /* On recorder.css's edge layer, which draws above the canvas. */
-  [data-design="o4"] .recorder-stage[data-o4-look="recording"]::after {
+  :root .recorder-stage[data-o4-look="recording"]::after {
     animation: liveEdge var(--p-ambient-live-edge, 1.2s) ease-in-out infinite;
   }
   @keyframes liveEdge {
@@ -103,8 +103,8 @@
   }
 
   /* --- blink: the recording dot beside the timer ------------------------ */
-  /* Replaces the current look's slower fade on the same dot under O4. */
-  [data-design="o4"] .recorder-status .rec-dot {
+  /* Replaces 3-components.css's slower fade on the same dot. */
+  :root .recorder-status .rec-dot {
     animation: blink var(--p-ambient-blink, 1s) steps(2) infinite;
   }
   @keyframes blink {
@@ -121,7 +121,7 @@
      the ask is up (components/o4-book-delete-ask.tsx), so this rule fires on
      mount rather than needing a trigger class of its own — the hook posted
      on #950 (2026-09-26). */
-  [data-design="o4"] .books-delete-ask > .o4-sheet-head {
+  :root .books-delete-ask > .o4-sheet-head {
     animation: shake var(--p-ambient-shake, 0.35s) ease-in-out 2;
   }
   @keyframes shake {
@@ -139,13 +139,13 @@
 
   /* --- the off switch --------------------------------------------------- */
   @media (prefers-reduced-motion: reduce) {
-    [data-design="o4"] .control--record.is-guided,
-    [data-design="o4"] .control--mic.is-guided,
-    [data-design="o4"] .record-guide.is-guided,
-    [data-design="o4"] .o4-tile--send.is-armed,
-    [data-design="o4"] .recorder-stage[data-o4-look="recording"]::after,
-    [data-design="o4"] .recorder-status .rec-dot,
-    [data-design="o4"] .books-delete-ask > .o4-sheet-head {
+    :root .control--record.is-guided,
+    :root .control--mic.is-guided,
+    :root .record-guide.is-guided,
+    :root .o4-tile--send.is-armed,
+    :root .recorder-stage[data-o4-look="recording"]::after,
+    :root .recorder-status .rec-dot,
+    :root .books-delete-ask > .o4-sheet-head {
       animation: none;
     }
   }

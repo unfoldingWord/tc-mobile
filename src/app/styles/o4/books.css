@@ -1,4 +1,4 @@
-/* O4 — Books (01, 03), covers and progress dots. Owner: #942. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file.
+/* O4 — Books (01, 03), covers and progress dots. Owner: #942. Every selector is prefixed with :root; see o4/index.css's header before editing this file.
 
    Values are the design reference's (docs/design/o4-design-system.md, §2 and
    §3). Type sizes, weights and radii read #967's structural primitives where
@@ -16,7 +16,7 @@
    more specific O4 rule would erase the ring. */
 @layer components {
   /* --- the header (01, 03) ----------------------------------------------- */
-  [data-design="o4"] .books-header {
+  :root .books-header {
     display: flex;
     align-items: center;
     justify-content: flex-end;
@@ -26,7 +26,7 @@
   }
   /* 44 × 48 r12: no shared wrapper has this shape (o4-controls.tsx carries
      52, 56, 72 and the pill), so it stays local. */
-  [data-design="o4"] .books-ghost {
+  :root .books-ghost {
     width: 44px;
     height: 48px;
     border-radius: var(--p-radius-12);
@@ -35,14 +35,14 @@
   }
 
   /* --- the empty shelf (01) ---------------------------------------------- */
-  [data-design="o4"] .books-empty {
+  :root .books-empty {
     display: flex;
     flex-direction: column;
     align-items: stretch;
     height: 100%;
     padding-top: 24px;
   }
-  [data-design="o4"] .books-empty-outline {
+  :root .books-empty-outline {
     display: grid;
     place-items: center;
     flex: none;
@@ -53,11 +53,11 @@
     border-radius: var(--p-radius-12);
     color: var(--s-ink-faint);
   }
-  [data-design="o4"] .books-empty .t-title {
+  :root .books-empty .t-title {
     font-size: var(--p-text-lg);
     font-weight: var(--p-weight-bold);
   }
-  [data-design="o4"] .books-empty .control--primary {
+  :root .books-empty .control--primary {
     width: 104px;
     height: 104px;
     background: var(--s-surface);
@@ -65,7 +65,7 @@
   }
 
   /* --- the list and its book cards (03) ---------------------------------- */
-  [data-design="o4"] .books-list {
+  :root .books-list {
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -73,7 +73,7 @@
     padding: 0;
     list-style: none;
   }
-  [data-design="o4"] .books-card {
+  :root .books-card {
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -91,13 +91,13 @@
     user-select: none;
     -webkit-touch-callout: none;
   }
-  [data-design="o4"] .books-card-head {
+  :root .books-card-head {
     display: flex;
     align-items: center;
     gap: 6px;
     min-width: 0;
   }
-  [data-design="o4"] .books-card-hit {
+  :root .books-card-hit {
     display: flex;
     flex: 1;
     align-items: center;
@@ -112,7 +112,7 @@
     color: var(--s-ink);
     text-align: left;
   }
-  [data-design="o4"] .books-cover {
+  :root .books-cover {
     position: relative;
     display: grid;
     place-items: center;
@@ -128,7 +128,7 @@
      reference draws it as an inset shadow of black at 16%; a brightness of
      0.84 over the inherited fill is the same darkening without a colour
      literal in this file. */
-  [data-design="o4"] .books-cover::before {
+  :root .books-cover::before {
     content: "";
     position: absolute;
     inset: 0 auto 0 0;
@@ -136,7 +136,7 @@
     background: inherit;
     filter: brightness(0.84);
   }
-  [data-design="o4"] .books-name {
+  :root .books-name {
     flex: 1 1 auto; /* the whole row, so a right-to-left name sits at its end (#1267) */
     min-width: 0;
     overflow: hidden;
@@ -147,7 +147,7 @@
   }
 
   /* --- the chapter rows (03) --------------------------------------------- */
-  [data-design="o4"] .books-chapters {
+  :root .books-chapters {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -155,7 +155,7 @@
     padding: 0;
     list-style: none;
   }
-  [data-design="o4"] .books-chapter {
+  :root .books-chapter {
     display: flex;
     align-items: center;
     gap: 14px;
@@ -171,7 +171,7 @@
     color: var(--s-ink);
     text-align: left;
   }
-  [data-design="o4"] .books-chapter-num {
+  :root .books-chapter-num {
     display: grid;
     place-items: center;
     flex: none;
@@ -188,12 +188,12 @@
      lead, so the number steps back: no fill, faint ink, and the well's colour
      as a 2px inset ring. The ring is on the badge, never on the row button
      that carries the guide ring. */
-  [data-design="o4"] .books-chapter-num.is-dim {
+  :root .books-chapter-num.is-dim {
     background: transparent;
     color: var(--s-ink-faint);
     box-shadow: inset 0 0 0 2px var(--s-well);
   }
-  [data-design="o4"] .books-chapter-mid {
+  :root .books-chapter-mid {
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -204,7 +204,7 @@
   }
   /* flex: none so the dots can never shrink the title line below its 20px
      (#1229): only the dots' block may take more height. */
-  [data-design="o4"] .books-chapter-title {
+  :root .books-chapter-title {
     display: block;
     flex: none;
     height: 20px;
@@ -216,7 +216,7 @@
     font-weight: var(--p-weight-heavy);
     color: var(--s-ink);
   }
-  [data-design="o4"] .books-chapter-go {
+  :root .books-chapter-go {
     display: grid;
     flex: none;
     color: var(--s-ink-muted);
@@ -226,7 +226,7 @@
      The same lift as o4/segments.css gives a segment row. The hold area is
      the whole chapter row; a long press there must not select text or raise
      the phone's callout. */
-  [data-design="o4"] .books-chapter[data-reorder-handle] {
+  :root .books-chapter[data-reorder-handle] {
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
@@ -234,7 +234,7 @@
   /* While a row is lifted, every row reads its offset from --reorder-y, set
      inline by the screen: the lifted row's follows the finger, and the rows
      between its slot and the target slide one slot to make room. */
-  [data-design="o4"] .books-chapters[data-reordering] > li {
+  :root .books-chapters[data-reordering] > li {
     transform: translateY(var(--reorder-y, 0px));
     transition: transform 160ms ease;
   }
@@ -242,7 +242,7 @@
      the guide ring (the header above). Its value is a colour literal, which
      this file keeps out, so it is o4/segments.css's one lift-shadow rule,
      shared; the radius here is what rounds it to the row. */
-  [data-design="o4"] .books-chapters[data-reordering] > .books-lifted {
+  :root .books-chapters[data-reordering] > .books-lifted {
     position: relative;
     z-index: 8;
     border-radius: var(--p-radius-12);
@@ -250,13 +250,13 @@
     transition: none;
   }
   /* §3: a lifted chapter row takes --s-raised. */
-  [data-design="o4"] .books-lifted > .books-chapter {
+  :root .books-lifted > .books-chapter {
     background: var(--s-raised);
   }
   /* The neighbours jump rather than slide under reduced motion. The lift's
      scale is a state, not a movement, so it stays. */
   @media (prefers-reduced-motion: reduce) {
-    [data-design="o4"] .books-chapters[data-reordering] > li {
+    :root .books-chapters[data-reordering] > li {
       transition: none;
     }
   }
@@ -268,7 +268,7 @@
      step holds, the dots keep wrapping and the row grows to hold them
      (#1229). The max-width is the design reference's cap on a wide screen,
      not the width the fit assumes. */
-  [data-design="o4"] .books-dots {
+  :root .books-dots {
     display: flex;
     flex-wrap: wrap;
     align-content: center;
@@ -278,7 +278,7 @@
     min-width: 0;
     overflow: hidden;
   }
-  [data-design="o4"] .books-dots > i {
+  :root .books-dots > i {
     display: block;
     flex: none;
     width: var(--dot);
@@ -286,10 +286,10 @@
     border-radius: 50%;
     background: var(--s-mark-empty);
   }
-  [data-design="o4"] .books-dots > [data-state="recorded"] {
+  :root .books-dots > [data-state="recorded"] {
     background: var(--s-voice);
   }
-  [data-design="o4"] .books-dots > [data-state="finished"] {
+  :root .books-dots > [data-state="finished"] {
     background: var(--s-done);
   }
 
@@ -302,21 +302,21 @@
      two buttons under the head are components/o4-book-delete-ask.tsx
      reusing the confirm dialog's actions markup, so their shape comes from
      o4/dialogs.css. */
-  [data-design="o4"] .books-delete-ask {
+  :root .books-delete-ask {
     display: flex;
     flex-direction: column;
     gap: 18px;
   }
   /* The workbench's cov sm: 52 x 64, r7, a 5px spine. */
-  [data-design="o4"] .books-cover.is-sm {
+  :root .books-cover.is-sm {
     width: 52px;
     height: 64px;
     border-radius: 7px; /* one-off: no 7px primitive */
   }
-  [data-design="o4"] .books-cover.is-sm::before {
+  :root .books-cover.is-sm::before {
     width: 5px;
   }
-  [data-design="o4"] .books-sheet-name {
+  :root .books-sheet-name {
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -333,7 +333,7 @@
      warn, the 19px bold line, and an 84px r14 button on the voice fill.
      The workbench draws one line; the #247 reason under it is ours, since
      its speaker button, which speaks that reason, is not built (#952). */
-  [data-design="o4"] .o4-storage {
+  :root .o4-storage {
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -342,12 +342,12 @@
     background: var(--s-warn-quiet);
     border: 1.5px solid color-mix(in srgb, var(--s-warn) 55%, transparent);
   }
-  [data-design="o4"] .o4-storage-row {
+  :root .o4-storage-row {
     display: flex;
     align-items: center;
     gap: 12px;
   }
-  [data-design="o4"] .o4-storage-icon {
+  :root .o4-storage-icon {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -358,25 +358,25 @@
     background: color-mix(in srgb, var(--s-warn) 28%, transparent);
     color: var(--s-warn-text);
   }
-  [data-design="o4"] .o4-storage-words {
+  :root .o4-storage-words {
     display: flex;
     flex: 1;
     flex-direction: column;
     gap: 4px;
     min-width: 0;
   }
-  [data-design="o4"] .o4-storage-title {
+  :root .o4-storage-title {
     font-size: var(--p-text-19);
     font-weight: var(--p-weight-bold);
     line-height: 1.25;
     color: var(--s-warn-text);
   }
-  [data-design="o4"] .o4-storage-why {
+  :root .o4-storage-why {
     font-size: var(--p-text-15);
     line-height: 1.3;
     color: var(--s-warn-text);
   }
-  [data-design="o4"] .o4-storage-share {
+  :root .o4-storage-share {
     flex-shrink: 0;
     width: 84px;
     height: 84px;
@@ -393,23 +393,23 @@
      layer-2 colour. The swatches are the workbench's new-book swatches: 56
      square, radius 9, 12 apart, the chosen one ringed in ink over a gap of
      the sheet's own surface. */
-  [data-design="o4"] .books-menu-head {
+  :root .books-menu-head {
     flex: 1;
   }
-  [data-design="o4"] .o4-tile--cover::before {
+  :root .o4-tile--cover::before {
     background: var(--book-cover);
   }
-  [data-design="o4"] .books-cover-pick {
+  :root .books-cover-pick {
     flex: 1;
     min-width: 0;
   }
-  [data-design="o4"] .books-cover-pick .cover-swatch-row {
+  :root .books-cover-pick .cover-swatch-row {
     gap: 12px;
   }
-  [data-design="o4"] .books-cover-pick .cover-swatch {
+  :root .books-cover-pick .cover-swatch {
     border-radius: 9px; /* one-off: no 9px primitive */
   }
-  [data-design="o4"] .books-cover-pick .cover-swatch[aria-pressed="true"] {
+  :root .books-cover-pick .cover-swatch[aria-pressed="true"] {
     border-color: transparent;
     box-shadow:
       0 0 0 3px var(--s-surface),

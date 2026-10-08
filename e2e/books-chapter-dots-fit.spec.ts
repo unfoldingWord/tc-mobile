@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 import { seedToSegments } from "./support/seed";
 
@@ -14,13 +14,6 @@ import { seedToSegments } from "./support/seed";
  * half of `tests/books-o4.test.ts`'s arithmetic.
  */
 
-/** Opt into the O4 look before the app boots (`lib/design.ts`'s key). */
-async function useO4(page: Page) {
-  await page.addInitScript(() => {
-    window.localStorage.setItem("tc-mobile.design", "o4");
-  });
-}
-
 // Past the three rows of 22 dots the 154px column holds at the 5/2 step.
 const SEGMENTS = 80;
 
@@ -29,7 +22,6 @@ test(`an O4 chapter row with ${SEGMENTS} segments keeps its title line and every
 }) => {
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 320, height: 800 });
-  await useO4(page);
   await seedToSegments(page);
   for (let i = 0; i < SEGMENTS; i++) {
     await page

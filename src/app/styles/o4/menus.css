@@ -1,4 +1,4 @@
-/* O4 — Tile menu primitive and screen menus onto the tile grid. Owners: #941, #949. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file.
+/* O4 — Tile menu primitive and screen menus onto the tile grid. Owners: #941, #949. Every selector is prefixed with :root; see o4/index.css's header before editing this file.
 
    #941's half: the tile primitive (`components/o4-tile-menu.tsx`) and the
    bottom-sheet shell a menu takes on while it holds a tile grid. #949
@@ -14,15 +14,15 @@
    holds tiles becomes a bottom sheet — the name sheets that share the same
    menu surface are #943's, in sheets.css, and are untouched here. */
 @layer components {
-  [data-design="o4"] .o4-tiles {
+  :root .o4-tiles {
     display: flex;
     align-items: flex-start;
     gap: 10px;
   }
-  [data-design="o4"] .o4-tiles-gap {
+  :root .o4-tiles-gap {
     flex: 1;
   }
-  [data-design="o4"] .o4-tile {
+  :root .o4-tile {
     grid-template-rows: 76px auto;
     row-gap: 8px;
     width: 76px;
@@ -31,17 +31,17 @@
     background: transparent;
     color: var(--s-tile-ink);
   }
-  [data-design="o4"] .o4-tile::before {
+  :root .o4-tile::before {
     content: "";
     grid-area: 1 / 1;
     width: 76px;
     height: 76px;
     border-radius: 20px; /* #939 token */
   }
-  [data-design="o4"] .o4-tile > svg {
+  :root .o4-tile > svg {
     grid-area: 1 / 1;
   }
-  [data-design="o4"] .o4-tile > .control-caption {
+  :root .o4-tile > .control-caption {
     grid-area: 2 / 1;
     color: var(--s-ink-muted);
     font-size: 14px; /* #939 token */
@@ -71,42 +71,42 @@
      (360-wide) content width by simple arithmetic (4 × 64 + 3 × 6 = 274),
      with margin left for a real device's `env(safe-area-inset)`, which a
      Playwright viewport carries as 0. */
-  [data-design="o4"] .o4-tiles--compact {
+  :root .o4-tiles--compact {
     gap: 6px;
   }
-  [data-design="o4"] .o4-tiles--compact .o4-tile {
+  :root .o4-tiles--compact .o4-tile {
     grid-template-rows: 64px auto;
     width: 64px;
   }
-  [data-design="o4"] .o4-tiles--compact .o4-tile::before {
+  :root .o4-tiles--compact .o4-tile::before {
     width: 64px;
     height: 64px;
   }
 
-  [data-design="o4"] .o4-tile--edit::before {
+  :root .o4-tile--edit::before {
     background: var(--s-edit);
   }
-  [data-design="o4"] .o4-tile--name::before {
+  :root .o4-tile--name::before {
     background: var(--s-name);
   }
-  [data-design="o4"] .o4-tile--send::before {
+  :root .o4-tile--send::before {
     background: var(--s-send);
   }
-  [data-design="o4"] .o4-tile--erase {
+  :root .o4-tile--erase {
     color: var(--s-live);
   }
-  [data-design="o4"] .o4-tile--erase::before {
+  :root .o4-tile--erase::before {
     background: var(--s-live-quiet);
     box-shadow: inset 0 0 0 2px var(--s-live);
   }
-  [data-design="o4"] .o4-tile--plain {
+  :root .o4-tile--plain {
     color: var(--s-ink);
   }
-  [data-design="o4"] .o4-tile--plain::before {
+  :root .o4-tile--plain::before {
     background: var(--s-well);
   }
 
-  [data-design="o4"] .menu-scrim:has(.o4-tiles) {
+  :root .menu-scrim:has(.o4-tiles) {
     align-items: flex-end;
     justify-content: center;
     padding: 8px calc(8px + env(safe-area-inset-right))
@@ -114,7 +114,7 @@
       calc(8px + env(safe-area-inset-left));
     background: var(--s-dim);
   }
-  [data-design="o4"] .menu-panel:has(.o4-tiles) {
+  :root .menu-panel:has(.o4-tiles) {
     width: 100%;
     height: auto;
     max-height: 100%;
@@ -128,13 +128,13 @@
      sheets have an 18px gap where the name sheets have 16, so the grip gives
      back 2px more below, as the handle they drew before did. The header row
      is the other place a drag starts. */
-  [data-design="o4"] .menu-panel:has(.o4-tiles) .menu-grip,
-  [data-design="o4"] .menu-panel:has(.books-delete-ask) .menu-grip {
+  :root .menu-panel:has(.o4-tiles) .menu-grip,
+  :root .menu-panel:has(.books-delete-ask) .menu-grip {
     display: flex;
     margin-bottom: -12px;
   }
-  [data-design="o4"] .menu-panel:has(.o4-tiles) .menu-head,
-  [data-design="o4"] .menu-panel:has(.books-delete-ask) .menu-head {
+  :root .menu-panel:has(.o4-tiles) .menu-head,
+  :root .menu-panel:has(.books-delete-ask) .menu-head {
     touch-action: none;
   }
 
@@ -156,29 +156,29 @@
      text.
 
      THE PREVIEW is the segment's badge, name and wave on the floor. */
-  [data-design="o4"] .o4-tile--done {
+  :root .o4-tile--done {
     color: var(--s-done-ink);
   }
-  [data-design="o4"] .o4-tile--done::before {
+  :root .o4-tile--done::before {
     background: var(--s-done);
   }
-  [data-design="o4"] .o4-tile--doneoff {
+  :root .o4-tile--doneoff {
     color: var(--s-ink-faint);
   }
-  [data-design="o4"] .o4-tile--doneoff::before {
+  :root .o4-tile--doneoff::before {
     background: var(--s-well);
   }
 
-  [data-design="o4"] .menu-panel:has(.o4-sheet-head) .t-title {
+  :root .menu-panel:has(.o4-sheet-head) .t-title {
     visibility: hidden;
   }
-  [data-design="o4"] .o4-sheet-head {
+  :root .o4-sheet-head {
     display: flex;
     align-items: center;
     gap: 12px;
     min-width: 0;
   }
-  [data-design="o4"] .o4-crumbs {
+  :root .o4-crumbs {
     display: flex;
     align-items: center;
     min-width: 0;
@@ -193,7 +193,7 @@
      than the default shrink, which cuts both by the same fraction and so
      cuts a short name as soon as the other is long. The segment crumb is a
      short number carrying the state tint, so it never shrinks. */
-  [data-design="o4"] .o4-crumb {
+  :root .o4-crumb {
     display: flex;
     align-items: center;
     flex: 1 1 0;
@@ -219,7 +219,7 @@
     );
     clip-path: var(--o4-crumb-shape);
   }
-  [data-design="o4"] .o4-crumb:first-child {
+  :root .o4-crumb:first-child {
     margin-left: 0;
     padding-left: 12px;
     border-radius: 10px 0 0 10px; /* #939 token */
@@ -231,11 +231,11 @@
       0 100%
     );
   }
-  [data-design="o4"] .o4-crumb > span {
+  :root .o4-crumb > span {
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  [data-design="o4"] .o4-crumb[data-state] {
+  :root .o4-crumb[data-state] {
     flex: none;
   }
   /* A CRUMB THAT NAVIGATES (#1269). A header's crumb for a place above the
@@ -254,7 +254,7 @@
      unclipped rectangle over the last 6px of the one before it, so by that
      geometry (not measured on a phone) a tap on the book crumb's chevron
      tip runs the chapter crumb's one-level Back instead. */
-  [data-design="o4"] button.o4-crumb {
+  :root button.o4-crumb {
     position: relative;
     isolation: isolate;
     height: var(--c-control-md);
@@ -270,7 +270,7 @@
     user-select: none;
     -webkit-touch-callout: none;
   }
-  [data-design="o4"] button.o4-crumb::before {
+  :root button.o4-crumb::before {
     content: "";
     position: absolute;
     inset: 2px 0;
@@ -279,18 +279,18 @@
     background: var(--s-well);
     clip-path: var(--o4-crumb-shape);
   }
-  [data-design="o4"] button.o4-crumb:focus-visible {
+  :root button.o4-crumb:focus-visible {
     outline: var(--c-focus-ring);
     outline-offset: var(--c-focus-offset);
   }
   /* Disabled with the header's Back, and dimmed the way Back is. */
-  [data-design="o4"] button.o4-crumb:disabled {
+  :root button.o4-crumb:disabled {
     cursor: default;
     opacity: 0.4;
   }
   /* The chapter screen's crumb row, in the place and at the size of the
-     `.breadcrumb` button it replaces in this look (#1269). */
-  [data-design="o4"] .o4-crumbs-bar {
+     `.breadcrumb` button it replaced (#1269). */
+  :root .o4-crumbs-bar {
     display: flex;
     flex: 1 1 auto;
     align-items: center;
@@ -301,16 +301,16 @@
     user-select: none;
     -webkit-touch-callout: none;
   }
-  [data-design="o4"] .o4-crumb[data-state="recorded"] {
+  :root .o4-crumb[data-state="recorded"] {
     background: var(--s-voice-quiet);
     color: var(--s-voice-text);
   }
-  [data-design="o4"] .o4-crumb[data-state="finished"] {
+  :root .o4-crumb[data-state="finished"] {
     background: var(--s-done-quiet); /* D19: the pale wash */
     color: var(--s-done-text);
   }
 
-  [data-design="o4"] .o4-menu-preview {
+  :root .o4-menu-preview {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -319,10 +319,10 @@
     border-radius: 14px; /* #939 token */
     background: var(--s-floor);
   }
-  [data-design="o4"] .o4-menu-preview[data-state="finished"] {
+  :root .o4-menu-preview[data-state="finished"] {
     --c-wave-stroke: var(--s-done);
   }
-  [data-design="o4"] .o4-menu-badge {
+  :root .o4-menu-badge {
     display: flex;
     flex: none;
     align-items: center;
@@ -335,11 +335,11 @@
     font-size: 17px; /* #939 token */
     font-weight: 800; /* #939 token */
   }
-  [data-design="o4"] .o4-menu-badge[data-state="finished"] {
+  :root .o4-menu-badge[data-state="finished"] {
     background: var(--s-done-quiet); /* D19: the pale wash */
     color: var(--s-done-text);
   }
-  [data-design="o4"] .o4-menu-preview-mid {
+  :root .o4-menu-preview-mid {
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -347,7 +347,7 @@
     gap: 2px;
     min-width: 0;
   }
-  [data-design="o4"] .o4-menu-title {
+  :root .o4-menu-title {
     overflow: hidden;
     color: var(--s-ink);
     font-size: 16px; /* #939 token */
@@ -360,14 +360,14 @@
      pencil in the head, after the crumbs (workbench `penbtn`); Play sits at
      the end of the preview row (`tp play`, done fill on a finished segment);
      a refused tile on a never-recorded segment is greyed (`tile.off`). */
-  [data-design="o4"] .o4-sheet-bar {
+  :root .o4-sheet-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     min-width: 0;
   }
-  [data-design="o4"] .o4-head-pen {
+  :root .o4-head-pen {
     flex: none;
     width: 52px;
     height: 52px;
@@ -375,17 +375,17 @@
     background: var(--s-name);
     color: var(--s-tile-ink);
   }
-  [data-design="o4"] .o4-menu-play {
+  :root .o4-menu-play {
     flex: none;
     width: 60px;
     height: 60px;
     border-radius: 50%;
   }
-  [data-design="o4"] .o4-menu-preview[data-state="finished"] .o4-menu-play {
+  :root .o4-menu-preview[data-state="finished"] .o4-menu-play {
     background: var(--s-done);
     color: var(--s-done-ink);
   }
-  [data-design="o4"] .o4-tile[aria-disabled="true"] {
+  :root .o4-tile[aria-disabled="true"] {
     opacity: 0.35;
   }
 
@@ -399,7 +399,7 @@
      ask: the waveform above it stays in view). Where the cap bites, the
      sheet scrolls rather than climbing over the waveform. It keys on
      recorder-menu-tile, which only this menu's tiles carry. */
-  [data-design="o4"] .menu-panel:has(.recorder-menu-tile) {
+  :root .menu-panel:has(.recorder-menu-tile) {
     max-height: 50dvh;
     overflow-y: auto;
   }
@@ -414,7 +414,7 @@
      Delete rather than tiles, so the shell is restated for that state,
      keyed on the ask. Without it the sheet would jump from the bottom sheet
      to the side drawer between the tap and the ask. */
-  [data-design="o4"] .menu-scrim:has(.books-delete-ask) {
+  :root .menu-scrim:has(.books-delete-ask) {
     align-items: flex-end;
     justify-content: center;
     padding: 8px calc(8px + env(safe-area-inset-right))
@@ -422,7 +422,7 @@
       calc(8px + env(safe-area-inset-left));
     background: var(--s-dim);
   }
-  [data-design="o4"] .menu-panel:has(.books-delete-ask) {
+  :root .menu-panel:has(.books-delete-ask) {
     width: 100%;
     height: auto;
     max-height: 100%;

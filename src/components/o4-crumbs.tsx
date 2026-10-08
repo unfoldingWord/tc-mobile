@@ -191,8 +191,8 @@ interface O4SheetHeadProps {
  * name and the segment, the trail `strings.chapterBreadcrumb` /
  * `strings.recorderBreadcrumb` spell (#1230). It is drawn only when both the
  * book and the chapter are given, as every call site in `src/` gives them.
- * The dialog's own name is left alone: the e2e suite and the current look
- * find these menus by it.
+ * The dialog's own name is left alone: the e2e suite finds these menus by
+ * it.
  *
  * Used by the chapter, segment and recorder menus.
  *

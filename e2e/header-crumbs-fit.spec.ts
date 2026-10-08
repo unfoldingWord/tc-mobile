@@ -42,13 +42,6 @@ test.use({
  * whole width and hands the rest to the other.
  */
 
-/** Opt into the O4 look before the app boots (`lib/design.ts`'s key). */
-async function optIntoO4(page: Page) {
-  await page.addInitScript(() => {
-    window.localStorage.setItem("tc-mobile.design", "o4");
-  });
-}
-
 async function createBook(page: Page, name: string) {
   await page.getByRole("button", { name: "New book" }).click();
   const sheet = page.getByRole("dialog", { name: "Name your new book" });
@@ -221,7 +214,6 @@ function expectMenuMatches(menu: MenuHead, header: Measured, place: string) {
  */
 async function walk(page: Page, width: number, book: string, chapter: string) {
   await page.setViewportSize({ width, height: 800 });
-  await optIntoO4(page);
   await page.goto("/");
   await createBook(page, book);
   await createChapter(page, chapter);

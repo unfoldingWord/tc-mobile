@@ -1,22 +1,8 @@
 import { existsSync } from "node:fs";
 
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 
 import { clickEditRecording, editRecordingButton } from "./recorder-fixtures";
-
-/**
- * Pin the current look before the app boots (`lib/design.ts`'s key). #951
- * flipped the default to o4, and the cases below assert current-look
- * structure — `.confirm-panel` (O4 draws G6's Keep/Delete tiles in the book
- * sheet instead, #1030) and the edit toolbar's DOM order (O4's toolbar
- * differs, #949) — so they opt out of the new default explicitly, the same
- * way `recorder-menu-half-screen.spec.ts` opts INTO o4.
- */
-async function pinCurrentLook(page: Page) {
-  await page.addInitScript(() => {
-    window.localStorage.setItem("tc-mobile.design", "current");
-  });
-}
 
 // Shipped-build computed styles cover the real cascade, including Tailwind and
 // inline overrides. Chromium cannot verify the iOS callout; that is issue #564.
@@ -36,7 +22,6 @@ async function expectSelectionSuppressed(root: Locator) {
 test("selection stays scoped to recorder and panels, with editable names", async ({
   page,
 }) => {
-  await pinCurrentLook(page);
   await page.goto("/");
   await expect(page.locator("body")).not.toHaveCSS("user-select", "none");
   await expect(page.locator("#root")).not.toHaveCSS("user-select", "none");
@@ -50,8 +35,12 @@ test("selection stays scoped to recorder and panels, with editable names", async
   await expect(page.locator(".name-input")).toHaveValue("Selection check");
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Delete book", exact: true }).click();
-  await expectSelectionSuppressed(page.locator(".confirm-panel"));
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  // The delete ask stays inside the book sheet (#980).
+  await expectSelectionSuppressed(page.locator(".books-delete-ask"));
+  await page
+    .getByRole("button", { name: "Keep the book", exact: true })
+    .click();
+  await expect(page.locator(".books-delete-ask")).toHaveCount(0);
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /^Add chapter to/ }).click();
   // Add chapter opens a naming prompt now (#609); Confirm alone accepts the
@@ -503,7 +492,6 @@ test.describe("edit mode: one-row bar, ⋮ top right, Editing in the stage (#370
       page,
     }) => {
       await page.setViewportSize({ width, height: 740 });
-      await pinCurrentLook(page);
       await page.goto("/");
       await page.getByRole("button", { name: "New book" }).click();
       await page.getByRole("button", { name: "Create book" }).click();
@@ -548,20 +536,25 @@ test.describe("edit mode: one-row bar, ⋮ top right, Editing in the stage (#370
         await expect(
           toolbar.getByRole("button", { name: "More actions", exact: true })
         ).toHaveCount(0);
-        const boxes: { x: number; y: number; right: number }[] = [];
+        const boxes: { x: number; midY: number; right: number }[] = [];
         for (let i = 0; i < 5; i++) {
           const box = await controls.nth(i).boundingBox();
           expect(box).not.toBeNull();
-          boxes.push({ x: box!.x, y: box!.y, right: box!.x + box!.width });
+          boxes.push({
+            x: box!.x,
+            midY: box!.y + box!.height / 2,
+            right: box!.x + box!.width,
+          });
         }
         // One row: nothing wrapped to a second line, the failure #370 named.
-        // Tolerance is 3px, not 1: the trailing toggle (index 4) is the 44px
-        // `--c-control-md` box against the other four 40px `quiet` boxes,
-        // and `align-items: center` centres each within the shared row
-        // height, so its top sits ~2px higher than theirs even on one row.
-        const firstY = boxes[0]!.y;
+        // Compared on vertical centres, not tops: the trailing toggle (index
+        // 4) is a larger box than the other four, and `align-items: center`
+        // centres each within the shared row, so their tops differ by half
+        // the size difference even on one row. A wrapped control's centre
+        // moves by a whole row.
+        const firstMid = boxes[0]!.midY;
         for (const b of boxes) {
-          expect(Math.abs(b.y - firstY)).toBeLessThanOrEqual(3);
+          expect(Math.abs(b.midY - firstMid)).toBeLessThanOrEqual(1);
         }
         // Left-to-right in DOM order, the toggle last.
         for (let i = 1; i < boxes.length; i++) {

@@ -9,7 +9,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { O4Crumbs } from "@/components/o4-crumbs";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import { SegmentsScreen } from "@/components/segments-screen";
-import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { StopResult } from "@/hooks/use-recorder";
@@ -35,19 +34,10 @@ import { cssRule, declarationValue, restingErase } from "./support";
  * `aria-label` is built from the same resolved heading, and each menu's
  * sheet head carries the same place as one screen-reader-only line.
  *
- * The current (non-O4) look is asserted UNCHANGED: it still resolves and
- * shows the chapter's typed name through `chapterHeading`, in a plain text
- * trail, with no `.o4-crumb` anywhere.
- *
  * What this does NOT cover: layout, the CSS cascade and truncation (jsdom
  * has none of the three). `e2e/header-crumbs-fit.spec.ts` measures those in
  * Chromium against the shipped build; a real phone is not covered by either.
  */
-
-const design = vi.hoisted(() => ({ current: "o4" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 
 const recorderView = vi.hoisted(() => ({
   bookName: "Book Mine",
@@ -128,7 +118,6 @@ beforeEach(() => {
   vi.stubGlobal("cancelAnimationFrame", () => {});
   HTMLElement.prototype.scrollIntoView = vi.fn();
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
-  design.current = "o4";
   segmentsMocks.rows = [];
   segmentsMocks.chapterName = "2:1-4";
   recorderView.chapterName = "2:1-4";
@@ -185,7 +174,6 @@ function header(): Element {
 
 describe("the recorder header (#1105)", () => {
   async function mount(
-    look: Design,
     options: {
       recorderState?: UseAudioSession["recorderState"];
       stopRecording?: UseAudioSession["stopRecording"];
@@ -193,7 +181,6 @@ describe("the recorder header (#1105)", () => {
       withBooks?: boolean;
     } = {}
   ) {
-    design.current = look;
     const ref = createRef<RecorderHandle>();
     const onExit = vi.fn();
     // What App hands the recorder: the one Back path, which lands on the
@@ -254,7 +241,7 @@ describe("the recorder header (#1105)", () => {
   }
 
   it("makes the book and chapter crumbs buttons to their places and the segment crumb the current place (#1269, #1275)", async () => {
-    await mount("o4");
+    await mount();
     const chips = [...header().querySelectorAll(".o4-crumb")];
     expect(chips.map((el) => el.tagName)).toEqual(["BUTTON", "BUTTON", "SPAN"]);
     // Spelled out, so a change to either entry cannot pass by agreeing
@@ -269,7 +256,7 @@ describe("the recorder header (#1105)", () => {
   });
 
   it("runs the two-level Back, and only that, when the book crumb is tapped (#1275)", async () => {
-    const { onRequestBack, onRequestBackToBooks, onExit } = await mount("o4");
+    const { onRequestBack, onRequestBackToBooks, onExit } = await mount();
     await tap(header(), strings.goToBook("Book Mine"));
     expect(onRequestBackToBooks).toHaveBeenCalledTimes(1);
     // Not the one-level Back as well: the adapter's first level IS that
@@ -279,7 +266,7 @@ describe("the recorder header (#1105)", () => {
   });
 
   it("leaves the book crumb a plain chip when no two-level Back is handed in (#1275)", async () => {
-    await mount("o4", { withBooks: false });
+    await mount({ withBooks: false });
     const chips = [...header().querySelectorAll(".o4-crumb")];
     expect(chips.map((el) => el.tagName)).toEqual(["SPAN", "BUTTON", "SPAN"]);
     expect(chips[0]!.getAttribute("aria-current")).toBeNull();
@@ -287,7 +274,7 @@ describe("the recorder header (#1105)", () => {
 
   it("names an unnamed chapter's crumb by its default heading (#1269)", async () => {
     recorderView.chapterName = null;
-    await mount("o4");
+    await mount();
     // The second linked crumb: the first is the book's (#1275).
     const crumb = header().querySelectorAll("button.o4-crumb")[1]!;
     expect(crumb.getAttribute("aria-label")).toBe("Go to Chapter 1");
@@ -295,7 +282,7 @@ describe("the recorder header (#1105)", () => {
   });
 
   it("runs the header's own Back when the chapter crumb is tapped (#1269)", async () => {
-    const { onRequestBack, onExit } = await mount("o4");
+    const { onRequestBack, onExit } = await mount();
     await tap(header(), strings.goToChapter("2:1-4"));
     expect(onRequestBack).toHaveBeenCalledTimes(1);
     // That Back is the recorder's own close, which exits the sheet.
@@ -313,7 +300,7 @@ describe("the recorder header (#1105)", () => {
           release = resolve;
         })
     );
-    const { onRequestBack, onRequestBackToBooks, onExit } = await mount("o4", {
+    const { onRequestBack, onRequestBackToBooks, onExit } = await mount({
       recorderState: "recording",
       stopRecording,
     });
@@ -351,7 +338,7 @@ describe("the recorder header (#1105)", () => {
       blob: new Blob(["kept"]),
       error: "undecodable",
     }));
-    const { onRequestBack, onRequestBackToBooks, onExit } = await mount("o4", {
+    const { onRequestBack, onRequestBackToBooks, onExit } = await mount({
       recorderState: "recording",
       stopRecording,
     });
@@ -371,7 +358,7 @@ describe("the recorder header (#1105)", () => {
   });
 
   it("shows a renamed chapter's typed name in the chapter chip (#1230)", async () => {
-    await mount("o4");
+    await mount();
     expect(crumbs(header())).toEqual([
       { text: "Book Mine", state: null },
       { text: "2:1-4", state: null }, // the name, not the number 1
@@ -384,7 +371,7 @@ describe("the recorder header (#1105)", () => {
 
   it("shows the default name for a chapter with no stored name (#1230)", async () => {
     recorderView.chapterName = null;
-    await mount("o4");
+    await mount();
     expect(crumbs(header())[1]).toEqual({
       text: strings.chapterName(1),
       state: null,
@@ -392,7 +379,7 @@ describe("the recorder header (#1105)", () => {
   });
 
   it("exposes the chips to assistive tech: the only thing in the header naming the place", async () => {
-    await mount("o4");
+    await mount();
     const row = header().querySelector(".o4-crumbs")!;
     // Not hidden: `closeRecorder` names the action, not the take, so hiding
     // the chips would drop book/chapter/segment from the tree (George R2).
@@ -408,7 +395,7 @@ describe("the recorder header (#1105)", () => {
     "agrees with the ⋮ menu's own crumbs, chip for chip, and the menu speaks the chapter (name %s)",
     async (name) => {
       recorderView.chapterName = name;
-      await mount("o4");
+      await mount();
       const headerCrumbs = crumbs(header());
       await tap(document, strings.recorderMenuOpen);
       const panel = document.querySelector(".menu-panel")!;
@@ -425,15 +412,9 @@ describe("the recorder header (#1105)", () => {
     }
   );
 
-  it("keeps the current look's plain-text trail, resolving the renamed chapter's name (unchanged)", async () => {
-    await mount("current");
-    expect(header().querySelector(".o4-crumb")).toBeNull();
-    expect(header().textContent).toContain("Book Mine > 2:1-4 > 1");
-  });
-
   it("sets a typed name's direction on the chips, the menu's head and its spoken place, not on the segment number (#1267)", async () => {
     recorderView.chapterName = "שלום.";
-    await mount("o4");
+    await mount();
     const dirs = (scope: ParentNode) =>
       [...scope.querySelectorAll(".o4-crumb > span")].map((el) =>
         el.getAttribute("dir")
@@ -445,14 +426,6 @@ describe("the recorder header (#1105)", () => {
     expect(panel.querySelector(".o4-sheet-place")?.getAttribute("dir")).toBe(
       "auto"
     );
-  });
-
-  it("current look: the trail's span sets its direction (#1267)", async () => {
-    await mount("current");
-    const trail = [...header().querySelectorAll("span")].find((el) =>
-      el.textContent?.includes("Book Mine > ")
-    );
-    expect(trail?.getAttribute("dir")).toBe("auto");
   });
 });
 
@@ -476,8 +449,7 @@ describe("the segments header (#1105)", () => {
   } as UseAudioSession;
   const erase = restingErase();
 
-  async function mount(look: Design, onBack = vi.fn()) {
-    design.current = look;
+  async function mount(onBack = vi.fn()) {
     segmentsMocks.rows = [recorded];
     layers.clear();
     await act(async () =>
@@ -498,15 +470,8 @@ describe("the segments header (#1105)", () => {
     return onBack;
   }
 
-  function breadcrumbButton(): HTMLButtonElement {
-    const found =
-      header().querySelector<HTMLButtonElement>("button.breadcrumb");
-    expect(found, "the breadcrumb button").not.toBeNull();
-    return found!;
-  }
-
   it("shows a renamed chapter's typed name in the chapter chip (#1230)", async () => {
-    await mount("o4");
+    await mount();
     expect(crumbs(header())).toEqual([
       { text: "Book Mine", state: null },
       { text: "2:1-4", state: null },
@@ -515,7 +480,7 @@ describe("the segments header (#1105)", () => {
 
   it("shows the default name for a chapter with no stored name (#1230)", async () => {
     segmentsMocks.chapterName = null;
-    await mount("o4");
+    await mount();
     expect(crumbs(header())[1]).toEqual({
       text: strings.chapterName(1),
       state: null,
@@ -523,7 +488,7 @@ describe("the segments header (#1105)", () => {
   });
 
   it("makes the book crumb a button to Books and the chapter crumb the current place (#1269)", async () => {
-    await mount("o4");
+    await mount();
     const chips = [...header().querySelectorAll(".o4-crumb")];
     expect(chips.map((el) => el.tagName)).toEqual(["BUTTON", "SPAN"]);
     // Named for where it goes, and holding the text it shows (WCAG 2.5.3).
@@ -547,7 +512,7 @@ describe("the segments header (#1105)", () => {
   });
 
   it("runs the header's own Back when the book crumb is tapped (#1269)", async () => {
-    const onBack = await mount("o4");
+    const onBack = await mount();
     await tap(header(), strings.goToBook("Book Mine"));
     expect(onBack).toHaveBeenCalledTimes(1);
     // The same handler the Back control runs, not a second exit.
@@ -560,7 +525,7 @@ describe("the segments header (#1105)", () => {
   });
 
   it("puts the book crumb out of reach with the rest of the header while an overlay is up (#1269)", async () => {
-    await mount("o4");
+    await mount();
     await tap(document, strings.chapterMenuOpen);
     expect(document.querySelector(".menu-panel")).not.toBeNull();
     const book = button(header(), strings.goToBook("Book Mine"));
@@ -568,7 +533,7 @@ describe("the segments header (#1105)", () => {
   });
 
   it("never shares an accessible name with the plain Back control beside it", async () => {
-    await mount("o4");
+    await mount();
     const named = (name: string) =>
       [...document.querySelectorAll("button")].filter(
         (el) => el.getAttribute("aria-label") === name
@@ -585,7 +550,7 @@ describe("the segments header (#1105)", () => {
     "agrees with the chapter menu's own crumbs, chip for chip, and the menu speaks the chapter (name %s)",
     async (name) => {
       segmentsMocks.chapterName = name;
-      await mount("o4");
+      await mount();
       const headerCrumbs = crumbs(header());
       await tap(document, strings.chapterMenuOpen);
       const panel = document.querySelector(".menu-panel")!;
@@ -601,7 +566,7 @@ describe("the segments header (#1105)", () => {
     "names the chapter the same way in a segment's own menu (name %s)",
     async (name) => {
       segmentsMocks.chapterName = name;
-      await mount("o4");
+      await mount();
       const headerCrumbs = crumbs(header());
       await tap(document, strings.segmentMenu(1));
       const panel = document.querySelector(".menu-panel")!;
@@ -619,29 +584,13 @@ describe("the segments header (#1105)", () => {
     }
   );
 
-  it("keeps the current look's plain-text trail and implicit accessible name (unchanged)", async () => {
-    await mount("current");
-    expect(header().querySelector(".o4-crumb")).toBeNull();
-    const btn = breadcrumbButton();
-    expect(btn.getAttribute("aria-label")).toBeNull();
-    expect(btn.textContent).toBe(
-      strings.chapterBreadcrumb("Book Mine", "2:1-4")
-    );
-  });
-
-  it("sets the direction of the name chips, and of the current look's trail (#1267)", async () => {
-    await mount("o4");
+  it("sets the direction of the name chips (#1267)", async () => {
+    await mount();
     expect(
       [...header().querySelectorAll(".o4-crumb > span")].map((el) =>
         el.getAttribute("dir")
       )
     ).toEqual(["auto", "auto"]);
-    await act(async () => root.unmount());
-    root = createRoot(container);
-    await mount("current");
-    expect(breadcrumbButton().querySelector("span")?.getAttribute("dir")).toBe(
-      "auto"
-    );
   });
 });
 
@@ -672,7 +621,7 @@ describe("a linked crumb, the #1274 Lows (#1278)", () => {
       path.resolve(import.meta.dirname, "..", "src/app/styles/o4/menus.css"),
       "utf8"
     );
-    const rule = cssRule(css, '[data-design="o4"] button.o4-crumb');
+    const rule = cssRule(css, ":root button.o4-crumb");
     expect(declarationValue(rule, "appearance")).toBe("none");
     expect(declarationValue(rule, "-webkit-appearance")).toBe("none");
   });

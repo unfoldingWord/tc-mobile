@@ -9,15 +9,6 @@ import {
 } from "@/hooks/report-failure";
 import { strings } from "@/lib/strings";
 
-// This file asserts the CURRENT look's markup (the 56px/30px glyph sizes,
-// `control--primary`/`control--quiet`), not O4's `o4-err-circle` (#948). #951
-// flipped the design default to o4, so pin the current look explicitly here
-// rather than rely on nothing-stored — the O4 shape of this same screen is
-// `tests/o4-errors.test.ts`'s.
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: "current" as const, toggle: () => {} }),
-}));
-
 /**
  * What this can and cannot prove.
  *
@@ -104,16 +95,17 @@ describe("ErrorBoundary", () => {
     expect(html).toContain('aria-describedby="app-failed-teach"');
     expect(html).toContain('id="app-failed-teach"');
     expect(html).toContain(strings.appReloadTeach);
-    // The 56px alert mark — what a translator who does not read actually sees,
-    // and the size the other recovery screen uses.
-    expect(html).toContain('width="56"');
+    // The 72px alert mark in the warn circle (state 18, #948) — what a
+    // translator who does not read actually sees.
+    expect(html).toContain("o4-err-circle--warn");
+    expect(html).toContain('width="72"');
     // Restart, labelled for what it does — not the Books shelf's `tryAgain` —
-    // and large: `--primary` is 68px, over the 44px touch floor.
+    // and the wide guide button, `--primary`, with a 34px glyph rather than
+    // the 22px default.
     expect(html).toContain(`aria-label="${strings.appReload}"`);
     expect(html).toContain("control--primary");
-    // `size={30}` — the same retry mark `SaveFailed` draws inside its 68px
-    // button, not the 22px default.
-    expect(html).toContain('width="30"');
+    expect(html).toContain("o4-err-wide");
+    expect(html).toContain('width="34"');
     expect(html).not.toContain(`aria-label="${strings.tryAgain}"`);
 
     // The log's second door (#205, George round 2). The boundary REPLACES the

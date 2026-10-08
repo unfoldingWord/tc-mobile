@@ -103,7 +103,6 @@ function draw(chips: readonly ShareChip[]) {
     root.render(
       createElement(ShareProgressPanel, {
         role: "status",
-        icon: "share",
         text: "Preparing",
         o4,
       })

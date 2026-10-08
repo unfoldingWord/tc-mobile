@@ -1,10 +1,9 @@
 import { createElement } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { RecorderToolbar } from "@/components/recorder-toolbars";
 import type { RecorderToolbarProps } from "@/components/recorder-toolbars";
 import { SegmentRow } from "@/components/segment-row";
-import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 import type { ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
@@ -19,15 +18,6 @@ import { one, render } from "./render";
  * are read from the class the control carries, and nothing here has been run
  * on a phone.
  */
-const design = vi.hoisted(() => ({ current: "current" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
-
-afterEach(() => {
-  design.current = "current";
-});
-
 const base: Row = {
   segmentId: "segment-3" as SegmentId,
   ordinal: 3,
@@ -40,8 +30,7 @@ const base: Row = {
 };
 const empty: Row = { ...base, hasClip: false, clipId: null, durationMs: null };
 
-function renderRow(look: Design, row: Row, onOpenRecorder = () => {}) {
-  design.current = look;
+function renderRow(row: Row, onOpenRecorder = () => {}) {
   return render(
     createElement(SegmentRow, {
       row,
@@ -64,22 +53,19 @@ const isMicGlyph = (svg: Element) =>
   svg.querySelector("rect") !== null && svg.querySelector("circle") === null;
 
 describe("the unrecorded row's control (#1217)", () => {
-  it.each<Design>(["current", "o4"])(
-    "is the microphone, not the Record button, in the %s look",
-    (look) => {
-      const container = renderRow(look, empty);
-      const control = one(
-        container,
-        `button[aria-label="${strings.openRecorderSegment(3)}"]`
-      );
-      expect(control.classList.contains("control--mic")).toBe(true);
-      expect(control.classList.contains("control--record")).toBe(false);
-      const svg = one(control, "svg");
-      expect(isMicGlyph(svg)).toBe(true);
-      expect(isRecordGlyph(svg)).toBe(false);
-      expect(container.querySelector(".control--record")).toBeNull();
-    }
-  );
+  it("is the microphone, not the Record button", () => {
+    const container = renderRow(empty);
+    const control = one(
+      container,
+      `button[aria-label="${strings.openRecorderSegment(3)}"]`
+    );
+    expect(control.classList.contains("control--mic")).toBe(true);
+    expect(control.classList.contains("control--record")).toBe(false);
+    const svg = one(control, "svg");
+    expect(isMicGlyph(svg)).toBe(true);
+    expect(isRecordGlyph(svg)).toBe(false);
+    expect(container.querySelector(".control--record")).toBeNull();
+  });
 
   it("names what a tap does: it opens the recorder, it does not record", () => {
     const label = strings.openRecorderSegment(3);
@@ -91,9 +77,9 @@ describe("the unrecorded row's control (#1217)", () => {
     // Counts controls only. That a click on the mic opens the recorder is
     // `segment-row-edit-entry.test.ts`'s "an empty row's mic opens it in
     // record mode" (#1233 item 16).
-    const container = renderRow("current", empty);
+    const container = renderRow(empty);
     expect(container.querySelectorAll(".control--mic")).toHaveLength(1);
-    const recorded = renderRow("current", base);
+    const recorded = renderRow(base);
     expect(recorded.querySelector(".control--mic")).toBeNull();
     expect(recorded.querySelector(".control--play")).not.toBeNull();
   });

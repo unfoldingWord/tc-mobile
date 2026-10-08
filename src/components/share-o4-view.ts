@@ -9,12 +9,12 @@ import type { ChapterRow, SegmentRow } from "@/types/view";
  * core's progress bar reads, and one numbered chip per item. A plain
  * function, like `shareOverlayGlyph`, so the DRI's choices are behaviour
  * tests call rather than JSX a test has to read. `share-progress.tsx` calls
- * it only under O4; the current look never sees it.
+ * it.
  *
  * - D13: the ring is driven by real progress (the step count #986 and #996
  *   put on `ShareProgress`).
  * - D14: after the hand-off the core shows the workbench's plain `check`, not
- *   #850's `share-sent`. The current look keeps `share-sent`.
+ *   #850's `share-sent`.
  * - D15: while packing, the share glyph with the filling ring. There is no
  *   interim look, so with no count yet there is no ring and no chip.
  * - D16: every other outcome keeps its #850 glyph; its colours are CSS.

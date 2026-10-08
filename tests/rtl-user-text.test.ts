@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { createElement } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { NameEdit } from "@/components/name-edit";
 import { O4BookDeleteAsk } from "@/components/o4-book-delete-ask";
@@ -10,7 +10,6 @@ import { O4BookHead } from "@/components/o4-book-menu";
 import { O4Crumbs, O4SheetHead } from "@/components/o4-crumbs";
 import { SegmentRow } from "@/components/segment-row";
 import { SegmentsHead } from "@/components/segments-head";
-import type { Design } from "@/lib/design";
 import type { ClipId, SegmentId } from "@/types/domain";
 import type { SegmentRow as Row } from "@/types/view";
 
@@ -35,11 +34,6 @@ import { cssRule, declarationValue, stripCssComments } from "./support";
  * `e2e/header-crumbs-fit.spec.ts` and on no phone.
  */
 
-const design = vi.hoisted(() => ({ current: "o4" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
-
 // Right-to-left names, each ending in the period the tester's report is about.
 const HEBREW = "שלום עולם.";
 const ARABIC = "مرقس.";
@@ -55,8 +49,7 @@ const row: Row = {
   durationMs: 1000,
 };
 
-function renderRow(look: Design, over: Partial<Row>) {
-  design.current = look;
+function renderRow(over: Partial<Row>) {
   return render(
     createElement(SegmentRow, {
       row: { ...row, ...over },
@@ -104,7 +97,7 @@ describe("the O4 crumbs (#1267)", () => {
           "utf8"
         )
       ),
-      '[data-design="o4"] .o4-crumb > span'
+      ":root .o4-crumb > span"
     );
     expect(declarationValue(rule, "text-overflow")).toBe("ellipsis");
   });
@@ -160,20 +153,17 @@ describe("the chapter head (#1267)", () => {
 });
 
 describe("the segment row (#1267)", () => {
-  it("O4: sets the typed title's direction", () => {
-    const root = renderRow("o4", { label: HEBREW });
+  it("sets the typed title's direction", () => {
+    const root = renderRow({ label: HEBREW });
     expect(one(root, ".row-title").getAttribute("dir")).toBe("auto");
   });
 
-  it("current look: sets the heading's direction when it carries a label, not for the bare ordinal", () => {
-    expect(
-      one(renderRow("current", { label: ARABIC }), ".row-heading").getAttribute(
-        "dir"
-      )
-    ).toBe("auto");
-    expect(
-      one(renderRow("current", {}), ".row-heading").hasAttribute("dir")
-    ).toBe(false);
+  it("leaves the badge's bare ordinal alone, labelled or not", () => {
+    for (const over of [{ label: ARABIC }, {}]) {
+      const badge = one(renderRow(over), ".row-badge");
+      expect(badge.textContent).toBe("3");
+      expect(badge.hasAttribute("dir")).toBe(false);
+    }
   });
 });
 

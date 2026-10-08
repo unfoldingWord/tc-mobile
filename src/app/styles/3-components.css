@@ -105,8 +105,9 @@
     --c-hint-size: 18px;
     --c-hint-radius: var(--p-radius-full);
 
-    /* The notice line (#164 L-14) and the screen breadcrumb (#164 R-10), the
-       two parts this file gained in #457. Their geometry is named here, not
+    /* The notice line (#164 L-14) and the screen breadcrumb (#164 R-10, now
+       the chapter crumb row's inset), the two parts this file gained in
+       #457. Their geometry is named here, not
        read from layer 1 inside the rules, so a primitive-scale revision has one
        place per part to be inspected or held (Frank R3 P2 on #457). The notice
        gap is `--p-space-3`, not `--c-gap-parts` (`--p-space-2`): reusing the
@@ -117,7 +118,6 @@
     --c-notice-radius: var(--p-radius-md);
     --c-notice-text: var(--p-text-md);
     --c-breadcrumb-inset: var(--p-space-2);
-    --c-breadcrumb-radius: var(--p-radius-md);
 
     --c-focus-ring: 2px solid var(--s-focus);
     --c-focus-offset: 3px;
@@ -457,58 +457,6 @@
     color: var(--s-warn);
   }
 
-  /* --- the screen breadcrumb (#164 R-10) ---------------------------------- */
-
-  /* The Segments header's "Book > Chapter n" line is a BUTTON whose action is
-     Back — the same action as the real Back control sitting immediately to its
-     left. It was `p-0` with no minimum height, so the hit area was the text's
-     own ~20px line box: a second, smaller Back beside a 44px one.
-
-     Kept interactive rather than made inert, because a breadcrumb that looks
-     like a path and does nothing is its own defect; given the height of a
-     control instead, so the two adjacent ways Back are the same size to a
-     thumb. `--c-control-md` (44px), never `--c-control-sm` — the 40px
-     exception named in this file's token block is scoped to
-     `.control--quiet`'s toolbar row and #362, and does not extend here.
-
-     Text-left and truncating: this is a path, not a centred label, and the
-     book name is arbitrary-length user data. */
-  .breadcrumb {
-    min-width: 0;
-    flex: 1 1 auto;
-    min-height: var(--c-control-md);
-    display: flex;
-    align-items: center;
-    padding: 0 var(--c-breadcrumb-inset);
-    border: none;
-    background: transparent;
-    color: var(--s-ink);
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-    border-radius: var(--c-breadcrumb-radius);
-    /* Extends #559's opt-out to the Segments header (#563): a control-only
-       surface in the same sense the recorder sheet, the menu drawer and the
-       erase confirm already are, and the exact long-pressable element the
-       reported screenshot selected text in. */
-    -webkit-user-select: none;
-    user-select: none;
-    -webkit-touch-callout: none;
-  }
-  .breadcrumb > span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .breadcrumb:hover {
-    background: var(--s-raised);
-  }
-  .breadcrumb:focus-visible {
-    outline: var(--c-focus-ring);
-    outline-offset: var(--c-focus-offset);
-  }
-
   /* --- rows ------------------------------------------------------------- */
   .row {
     display: flex;
@@ -520,8 +468,8 @@
     border: 1px solid transparent;
     transition: background var(--p-dur-base) var(--p-ease);
     /* Extends #559's opt-out to the Segments rows (#563), the control-only
-       surface #556 itself named as a reasonable second target. Shared by
-       both looks (segment-row.tsx always carries "row"), and inheritance
+       surface #556 itself named as a reasonable second target.
+       segment-row.tsx always carries "row", and inheritance
        reaches the ordinal, the title and the scrub track the same way it
        reaches the recorder sheet's chrome — no rename field or other text
        input lives inside a row, so there is no opt-back-in to pair with
@@ -532,25 +480,6 @@
   }
 
   /* --- type roles -------------------------------------------------------- */
-  .t-count {
-    font-size: var(--p-text-sm);
-    font-weight: var(--p-weight-medium);
-    color: var(--s-ink-muted);
-    /* A numeric role declares its own tabular figures rather than depending on
-       inheriting them from `.app-shell` — so a count rendered in a portaled
-       surface (a menu, a future relocated sheet) can't silently regress to
-       proportional. Redundant in today's in-shell tree; hardening, not a fix. */
-    font-variant-numeric: tabular-nums;
-  }
-  .t-ordinal {
-    font-size: var(--p-text-xs);
-    font-weight: var(--p-weight-strong);
-    line-height: 1;
-    /* The third numeric role: self-sufficient tabular figures like `.t-count`
-       (a 9→10 segment ordinal shifts width otherwise, and the row could be
-       reused in a portaled surface out of `.app-shell`'s inheritance). */
-    font-variant-numeric: tabular-nums;
-  }
   .t-title {
     font-size: var(--p-text-lg);
     font-weight: var(--p-weight-strong);
@@ -560,7 +489,8 @@
     font-size: var(--p-text-xl);
     font-weight: var(--p-weight-strong);
     letter-spacing: -0.02em;
-    /* Self-sufficient tabular figures on the live clock (see `.t-count`). */
+    /* Self-sufficient tabular figures on the live clock: a numeric role
+       declares its own rather than inheriting them from `.app-shell`. */
     font-variant-numeric: tabular-nums;
   }
 }
@@ -815,54 +745,6 @@
   .share-progress-text {
     color: var(--s-ink-muted);
     font-size: var(--c-notice-text);
-  }
-  /* The glyph's ink, keyed on the OUTCOME, not the tone: the wait is the same
-     muted ink `.notice[data-tone="busy"]` wears; handed-over is the "yes, this
-     is so" ink `.control-ready` already uses; a dismissed sheet is not news
-     and not a failure, so it is muted too; the three error codes wear the
-     live edge every alert Notice does. Layer-2 roles only. */
-  .share-scrim[data-outcome="busy"] .share-progress-glyph {
-    color: var(--s-ink-muted);
-  }
-  .share-scrim[data-outcome="sent"] .share-progress-glyph {
-    color: var(--s-done);
-  }
-  /* Handed over, but with a gap (P1, this lane's own review round): the same
-     ink `.notice[data-tone="info"]` wears for the ready-state gap Notice this
-     reuses the mark and the tone from — not the plain success ink `sent`
-     wears above, which is exactly the collision this outcome exists to
-     avoid. */
-  .share-scrim[data-outcome="partial"] .share-progress-glyph {
-    color: var(--s-warn);
-  }
-  .share-scrim[data-outcome="dismissed"] .share-progress-glyph {
-    color: var(--s-ink-muted);
-  }
-  /* Unproven (Frank a446708 P2, #491): a native Android resolve this platform
-     cannot vouch for. The same muted ink `dismissed` wears above, not the
-     `sent` success ink — `shareSettledGlyph` reuses `dismissed`'s glyph entry
-     for the identical reason. */
-  .share-scrim[data-outcome="unproven"] .share-progress-glyph {
-    color: var(--s-ink-muted);
-  }
-  .share-scrim[data-outcome="nothing"] .share-progress-glyph {
-    color: var(--s-live);
-  }
-  .share-scrim[data-outcome="failed"] .share-progress-glyph {
-    color: var(--s-live);
-  }
-  .share-scrim[data-outcome="encoder"] .share-progress-glyph {
-    color: var(--s-live);
-  }
-  /* The wait spins, on the same keyframes the busy Control uses, and stops
-     under reduced motion the same way. */
-  .share-scrim[data-outcome="busy"] .share-progress-glyph {
-    animation: control-spin 900ms linear infinite;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .share-scrim[data-outcome="busy"] .share-progress-glyph {
-      animation: none;
-    }
   }
 }
 
@@ -1292,30 +1174,10 @@
     opacity: 0.5;
     cursor: default;
   }
-  /* The status slot: a fixed 22px box that reserves space so ordinals stay
-     left-aligned down the list. Holds the green check-circle only on a finished
-     row (the fill is applied by `.row--finished .row-status`). */
-  .row-status {
-    display: grid;
-    place-items: center;
-    width: 22px;
-    height: 22px;
-    flex: none;
-    border-radius: var(--p-radius-full);
-  }
-
   /* --- the ordinal and its label (#591) ---------------------------------- */
-  /* A label is free text up to 80 characters, so the left zone is capped and
-     the heading truncates: the waveform keeps its share of the row, and the
-     ordinal, which leads the heading, is never the part cut off. */
+  /* The left zone is capped so the waveform keeps its share of the row. */
   .row-open {
     max-width: 45%;
-  }
-  .row-heading {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   /* #82: inside a row the record button matches the play button's 44px box, so
@@ -1328,42 +1190,31 @@
     height: var(--c-control-md);
   }
 
-  /* The "yes, this is so" mark, in one weight for both of the things that wear
-     it. A standalone class rather than a `.row--finished` descendant: the menu
-     is portalled to <body>, outside the row, so inheritance cannot reach it.
-
-     `.is-done` — the menu's Finished entry, green while already finished.
-     `.is-on`   — a two-state TOGGLE that is on: the edit toolbar's zoom (#91).
+  /* The "yes, this is so" mark on a two-state TOGGLE that is on: the edit
+     toolbar's zoom (#91).
                   The first external tester asked for exactly this consistency
                   ("make the edit icon green for edit mode, just like the check
                   icon turns green"). The recorder menu's level-meter toggle
                   wore this mark too until #286 item 3 removed the control (the
                   bars themselves stay, unconditional, in the record toolbar).
 
-     INK ONLY, and identical for both. An earlier draft gave `.is-on` a
-     `--s-done-quiet` wash as well, to survive on the toolbar — but the
-     since-removed level-meter toggle was ON BY DEFAULT, so every open of the
-     record menu painted a filled green chip next to the ink-only Finished
-     check, making the meaningful green the weaker of two in one dialog (George
-     R1 P3). A wash is also not available as a neutral alternative: `--s-raised`
-     and `--s-surface` are the same colour in the light theme, so a non-colour
-     "filled" mark is invisible there. Equal weight it is; Finished is told
-     apart by its check glyph, not by loudness.
+     INK ONLY. A wash is not available as a neutral alternative: `--s-raised`
+     and `--s-surface` are the same colour in the light theme, so a
+     non-colour "filled" mark is invisible there.
 
      Paints only — the box does NOT change size. A toggle that grows on tap
      reflows the toolbar around it, and the control next to this one is already
      the one the tester was unsure about. Applied on `aria-pressed="true"`, which
      is `Control`'s `pressed` prop and nothing else.
 
-     Both sit after `.control--quiet:hover`, so at equal specificity they win the
+     It sits after `.control--quiet:hover`, so at equal specificity it wins the
      colour back from it — including the sticky :hover an iOS Safari tap leaves
      behind, right after the tap that turned the toggle on. */
-  .control.is-done,
   .control.is-on {
     color: var(--s-done);
   }
 
-  /* Share's ready-to-send mark (#354): the SAME ink `is-done`/`is-on` wear,
+  /* Share's ready-to-send mark (#354): the SAME ink `is-on` wears,
      on the check glyph `control-affordance.ts` already swaps in for `ready` —
      not `pressed`/`is-on` itself, because a ready-to-send Control is not a
      two-state toggle (there is nothing to press back off). A plain class, not
@@ -1380,10 +1231,6 @@
     --c-wave-stroke: var(--s-done);
     background: color-mix(in srgb, var(--s-done) 8%, var(--s-surface));
     border-color: color-mix(in srgb, var(--s-done) 35%, transparent);
-  }
-  .row--finished .row-status {
-    background: var(--s-done);
-    color: var(--s-done-ink);
   }
   .row--finished .control--play {
     background: var(--s-done);

@@ -35,17 +35,12 @@ export function shareOverlayGlyph(
   progress: Exclude<ShareProgressState, { readonly phase: "hidden" }>
 ): ShareOutcomeGlyph {
   switch (progress.phase) {
-    // The wait wears its own ring-of-dots mark (#850, `icon.tsx`'s
-    // "share-busy"), not `Notice`'s shared `busy` retry arc — spun by the
-    // stylesheet either way (`.share-scrim[data-outcome="busy"]
-    // .share-progress-glyph` in 3-components.css, which predates this glyph
-    // and needed no change: it already rotates whatever icon sits in the
-    // busy slot and already drops to a still frame under
-    // `prefers-reduced-motion: reduce`). Scoped to the share overlay only:
-    // `notice-tone.ts`'s own `busy` entry, worn by every other wait in the
-    // app, is untouched.
+    // The wait wears the plain share glyph (D15, #947) — the mark
+    // `shareO4View` draws in the circle's core while a prepare or a send is
+    // in flight — not `Notice`'s shared `busy` retry arc. Its `busy` tone is
+    // what sets the overlay's role.
     case "busy":
-      return { icon: "share-busy", tone: "busy" };
+      return { icon: "share", tone: "busy" };
     case "outcome":
       return shareSettledGlyph(progress.settled);
     default: {

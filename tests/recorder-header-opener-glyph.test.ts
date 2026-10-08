@@ -1,9 +1,8 @@
 import { createElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { Icon, type IconName } from "@/components/icon";
 import { Recorder } from "@/components/recorder";
-import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
@@ -14,7 +13,7 @@ import { restingErase } from "./support";
 /**
  * #1225 (DRI pick on the issue, verbatim: "Switch to ⋮ in rc.2
  * (Recommended)"): the recorder's record-mode header opener wears the `more`
- * glyph (⋮), not `menu` (≡), in BOTH looks. The recorder's menu acts on the
+ * glyph (⋮), not `menu` (≡). The recorder's menu acts on the
  * segment being edited, so it is an object menu under #608's rule; ≡ is the
  * Books screen's global menu alone.
  *
@@ -29,10 +28,6 @@ import { restingErase } from "./support";
  * opener in edit mode (#1243) in `tests/recorder-edit-mode-header.test.ts`.
  */
 
-const design = vi.hoisted(() => ({ current: "current" as string }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 vi.mock("@/hooks/use-recorder-segment", () => {
   const samples = new Int16Array(100).fill(3);
   const view = {
@@ -95,8 +90,7 @@ function glyph(name: IconName): string {
   return one(render(createElement(Icon, { name })), "svg").innerHTML;
 }
 
-function headerOpenerGlyph(look: Design): string {
-  design.current = look;
+function headerOpenerGlyph(): string {
   const container = render(
     createElement(Recorder, {
       segmentId: "segment" as SegmentId,
@@ -115,23 +109,14 @@ function headerOpenerGlyph(look: Design): string {
   const openers = [...header.querySelectorAll("button")].filter(
     (button) => button.getAttribute("aria-label") === strings.recorderMenuOpen
   );
-  expect(
-    openers,
-    `one "More actions" opener in the ${look} header`
-  ).toHaveLength(1);
+  expect(openers, 'one "More actions" opener in the header').toHaveLength(1);
   return one(openers[0]!, "svg").innerHTML;
 }
 
 describe("the recorder's record-mode header opener wears ⋮, not ≡ (#1225)", () => {
-  beforeEach(() => {
-    design.current = "current";
+  it("draws the `more` glyph", () => {
+    const drawn = headerOpenerGlyph();
+    expect(drawn).toBe(glyph("more"));
+    expect(drawn).not.toBe(glyph("menu"));
   });
-
-  it.each(["current", "o4"] as const)(
-    "draws the `more` glyph in the %s look",
-    (look) => {
-      const drawn = headerOpenerGlyph(look);
-      expect(drawn).toBe(glyph("more"));
-    }
-  );
 });

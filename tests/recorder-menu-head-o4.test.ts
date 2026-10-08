@@ -5,7 +5,6 @@ import {
   RecorderMenu,
   type RecorderMenuProps,
 } from "@/components/recorder-menu";
-import type { Design } from "@/lib/design";
 
 import { render } from "./render";
 
@@ -22,17 +21,12 @@ import { render } from "./render";
  * reads. Nothing else about `Menu` changes, and no assertion below is about
  * where the panel mounts.
  *
- * `useDesign()` is mocked so each case picks its look. What this file does
- * NOT cover: the cascade (the crumbs' paint is `o4/menus.css`'s, asserted as
+ * What this file does NOT cover: the cascade (the crumbs' paint is `o4/menus.css`'s, asserted as
  * declarations in `tests/o4-menus-chapter-segment.test.ts`), and the
  * recorder screen passing its view's book and chapter in, which
  * `tests/recorder-menu-head-wiring.test.ts` renders through the real sheet.
  */
 
-const design = vi.hoisted(() => ({ current: "o4" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 vi.mock("react-dom", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react-dom")>()),
   createPortal: (children: ReactNode) => children,
@@ -47,10 +41,8 @@ const base: RecorderMenuProps = {
   mode: "record",
   ordinal: 3,
   finishedState: "empty",
-  editReason: null,
   markReason: null,
   eraseReason: null,
-  onEnterEdit: () => {},
   onToggleFinished: () => {},
   onErase: () => {},
   bookName: "Ruth",
@@ -58,8 +50,7 @@ const base: RecorderMenuProps = {
   chapterNumber: 2,
 };
 
-function show(over: Partial<RecorderMenuProps> = {}, look: Design = "o4") {
-  design.current = look;
+function show(over: Partial<RecorderMenuProps> = {}) {
   return render(createElement(RecorderMenu, { ...base, ...over }));
 }
 
@@ -69,7 +60,7 @@ const crumbs = (el: Element) =>
     state: c.getAttribute("data-state"),
   }));
 
-describe("the recorder menu's O4 sheet head (G3)", () => {
+describe("the recorder menu's sheet head (G3)", () => {
   it.each(["record", "edit"] as const)(
     "heads the %s-mode sheet with the book, chapter and segment crumbs, decoration only",
     (mode) => {
@@ -148,15 +139,5 @@ describe("the recorder menu's O4 sheet head (G3)", () => {
   it("leaves the square out when there is no book crumb either, even with a colour to give", () => {
     const el = show({ bookName: undefined, chapterNumber: undefined });
     expect(el.querySelector(".books-cover")).toBeNull();
-  });
-
-  it("adds nothing in the current look, and its markup ignores the head's props", () => {
-    const withHead = show({}, "current");
-    expect(withHead.querySelector(".o4-sheet-head")).toBeNull();
-    const without = show(
-      { bookName: undefined, chapterNumber: undefined },
-      "current"
-    );
-    expect(withHead.innerHTML).toBe(without.innerHTML);
   });
 });

@@ -2,29 +2,15 @@ import { expect, test, type Page } from "@playwright/test";
 
 /**
  * Rename a segment (#591), through the real Segments screen and recorder sheet
- * against the shipped `dist/` build: the row menu's Rename, the label beside
- * the ordinal on the row and in the recorder breadcrumb, clearing it back to
- * the ordinal alone, and the label surviving a reload (IndexedDB).
+ * against the shipped `dist/` build: the row menu's Rename, the label as the
+ * row's title line over the wave and in the row's name, the recorder header's
+ * crumbs, clearing it back to the ordinal alone, and the label surviving a
+ * reload (IndexedDB).
  *
  * The segment is never recorded — this project has no microphone — which is
  * also the case that matters most here: a facilitator labels segments while
  * setting a chapter up, before anything is recorded.
  */
-
-/**
- * Pin the current look before the app boots (`lib/design.ts`'s key). #951
- * flipped the default to o4, and the case below asserts the current look's
- * visible row heading ("1 · verses 3–4") and recorder breadcrumb text
- * ("Book 001 > Chapter 1 > …") — O4 draws the label differently (the row
- * heading stays the bare ordinal, and the breadcrumb is `O4SheetHead`'s
- * aria-hidden decoration, #949) — so it opts out of the new default
- * explicitly, the same way `recorder-menu-half-screen.spec.ts` opts INTO o4.
- */
-async function pinCurrentLook(page: Page) {
-  await page.addInitScript(() => {
-    window.localStorage.setItem("tc-mobile.design", "current");
-  });
-}
 
 async function seedOneSegment(page: Page) {
   await page.goto("/");
@@ -42,10 +28,15 @@ async function seedOneSegment(page: Page) {
 
 /**
  * The row's left zone. Its accessible name is the action plus the heading
- * ("Open segment 1 · verses 3–4"), its text the heading alone.
+ * ("Open segment 1 · verses 3–4"); its text is the ordinal badge alone.
  */
 function rowHeading(page: Page) {
   return page.getByRole("button", { name: /^Open segment 1( · .*)?$/ });
+}
+
+/** The row's typed title line (#944), drawn over the wave only when set. */
+function rowTitle(page: Page) {
+  return page.locator(".row-title");
 }
 
 async function renameTo(page: Page, label: string) {
@@ -58,14 +49,16 @@ async function renameTo(page: Page, label: string) {
   await expect(page.getByRole("dialog", { name: "More" })).toHaveCount(0);
 }
 
-test("a segment's label shows after its ordinal on the row and in the recorder, clears back to the ordinal, and survives a reload", async ({
+test("a segment's label shows as the row's title and in its name, clears back to the ordinal, and survives a reload", async ({
   page,
 }) => {
-  await pinCurrentLook(page);
   await seedOneSegment(page);
+  await expect(rowTitle(page)).toHaveCount(0);
 
   await renameTo(page, "verses 3–4");
-  await expect(rowHeading(page)).toHaveText("1 · verses 3–4");
+  // The badge keeps the ordinal; the label is the title line over the wave.
+  await expect(rowHeading(page)).toHaveText("1");
+  await expect(rowTitle(page)).toHaveText("verses 3–4");
   await expect(rowHeading(page)).toHaveAccessibleName(
     "Open segment 1 · verses 3–4"
   );
@@ -74,7 +67,11 @@ test("a segment's label shows after its ordinal on the row and in the recorder, 
     .getByRole("button", { name: "Open recorder for segment 1" })
     .click();
   const sheet = page.getByRole("dialog", { name: "Recorder" });
-  await expect(sheet).toContainText("Book 001 > Chapter 1 > 1 · verses 3–4");
+  // The header's crumbs: book, chapter, and this segment's ordinal as the
+  // current place. The label is not one of them.
+  const crumbs = sheet.locator("header .o4-crumbs .o4-crumb");
+  await expect(crumbs).toHaveText(["Book 001", "Chapter 1", "1"]);
+  await expect(crumbs.nth(2)).toHaveAttribute("aria-current", "page");
   await page.getByRole("button", { name: "Close recorder" }).click();
   await expect(sheet).toHaveCount(0);
 
@@ -84,11 +81,15 @@ test("a segment's label shows after its ordinal on the row and in the recorder, 
     .getByRole("button", { name: "Book 001, 1 chapter, collapsed" })
     .click();
   await page.getByRole("button", { name: "Open Chapter 1" }).click();
-  await expect(rowHeading(page)).toHaveText("1 · verses 3–4");
+  await expect(rowTitle(page)).toHaveText("verses 3–4");
+  await expect(rowHeading(page)).toHaveAccessibleName(
+    "Open segment 1 · verses 3–4"
+  );
 
   // A blank rename clears the label: the ordinal stands alone again.
   await renameTo(page, "   ");
-  await expect(rowHeading(page)).toHaveText("1");
+  await expect(rowTitle(page)).toHaveCount(0);
+  await expect(rowHeading(page)).toHaveAccessibleName("Open segment 1");
 });
 
 /** The accessible name of whatever holds focus, or "BODY" when nothing does. */

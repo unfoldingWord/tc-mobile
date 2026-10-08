@@ -14,25 +14,24 @@ import { stripCssComments } from "./support";
  * The O4 confirm dialog (#946: states 13 Erase confirm, G5 Record again asks
  * first, G6 Delete book asks first).
  *
- * All three are the one `EraseConfirm`: the segment Erase, the recorder's
- * Erase-and-record-again path and the Books delete-book confirm each render
- * it with their own copy. The O4 look is CSS only, in
- * `src/app/styles/o4/dialogs.css`, and the component's markup is not touched.
- * Inference, not a test result: focus landing and the Tab trap therefore run on
- * the same DOM in both looks. The last describe below pins the two with the
- * switch on; focus return belongs to each caller, not to this component, and
- * is not exercised here.
+ * 13 and G5 are the one `EraseConfirm`: the segment Erase and the recorder's
+ * Erase-and-record-again path each render it with their own copy. G6 asks
+ * inside the book sheet instead (`o4-book-delete-ask.tsx`, #980), reusing
+ * this file's button rules. The look is CSS, in
+ * `src/app/styles/o4/dialogs.css`. The last describe below pins focus landing
+ * and the Tab trap; focus return belongs to each caller, not to this
+ * component, and is not exercised here.
  *
  * Two halves, because each alone can pass vacuously:
- *   1. the stylesheet's declarations carry the design values, every rule is
- *      scoped under the switch, and no colour primitive leaks past layer 2
+ *   1. the stylesheet's declarations carry the design values, every rule
+ *      carries the `:root` prefix (`o4/index.css`), and no colour primitive
+ *      leaks past layer 2
  *      (the `share-progress.test.ts` shape: rule blocks are sliced and their
  *      declaration VALUES matched, with comments stripped first, so a comment
  *      that names a selector cannot capture the test — AGENTS.md);
- *   2. every selector in that stylesheet matches real EraseConfirm markup
- *      with the switch on, and none with it off — a renamed class in the
- *      component would otherwise leave the O4 rules matching nothing while
- *      half 1 stayed green.
+ *   2. every selector in that stylesheet matches real EraseConfirm markup —
+ *      a renamed class in the component would otherwise leave the O4 rules
+ *      matching nothing while half 1 stayed green.
  */
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -43,7 +42,7 @@ const CSS = stripCssComments(
   )
 );
 
-const SCOPE = '[data-design="o4"]';
+const SCOPE = ":root";
 
 interface Rule {
   readonly selectors: readonly string[];
@@ -79,7 +78,7 @@ describe("o4/dialogs.css — the confirm dialog's O4 values (#946)", () => {
     expect(RULES.length).toBeGreaterThanOrEqual(8);
   });
 
-  it("scopes every rule under the switch, so switch-off is unchanged", () => {
+  it("prefixes every rule with :root, holding the specificity o4/index.css documents", () => {
     for (const { selectors } of RULES)
       for (const s of selectors)
         expect(s.startsWith(`${SCOPE} `), s).toBe(true);
@@ -221,35 +220,23 @@ describe("o4/dialogs.css's selectors against EraseConfirm's real markup (#946, #
   const selectors = RULES.flatMap((r) => r.selectors);
   const isPreview = (s: string) => s.includes(".confirm-preview");
 
-  it("every non-preview selector matches with the switch on, no preview passed", async () => {
-    document.documentElement.setAttribute("data-design", "o4");
+  it("every non-preview selector matches, no preview passed", async () => {
     await mountConfirm();
     const rest = selectors.filter((s) => !isPreview(s));
     expect(rest.length).toBeGreaterThanOrEqual(6);
     for (const s of rest) expect(document.querySelector(s), s).not.toBeNull();
   });
 
-  it("the preview row's selectors match with the switch on, once preview is passed", async () => {
-    document.documentElement.setAttribute("data-design", "o4");
+  it("the preview row's selectors match once preview is passed", async () => {
     await mountConfirmWithPreview();
     const previewSelectors = selectors.filter(isPreview);
     expect(previewSelectors.length).toBeGreaterThanOrEqual(2);
     for (const s of previewSelectors)
       expect(document.querySelector(s), s).not.toBeNull();
   });
-
-  it("no selector matches with the switch off, even with preview passed", async () => {
-    document.documentElement.setAttribute("data-design", "current");
-    await mountConfirmWithPreview();
-    // The dialog, and the preview row itself, are up — so a null below is the
-    // scope prefix doing its job, not an empty page or an unrendered row.
-    expect(document.querySelector(".confirm-panel")).not.toBeNull();
-    expect(document.querySelector(".confirm-preview")).not.toBeNull();
-    for (const s of selectors) expect(document.querySelector(s), s).toBeNull();
-  });
 });
 
-describe("EraseConfirm's focus with the switch on (#946)", () => {
+describe("EraseConfirm's focus (#946)", () => {
   function tab(shiftKey = false) {
     const e = new dom.window.KeyboardEvent("keydown", {
       key: "Tab",
@@ -261,7 +248,6 @@ describe("EraseConfirm's focus with the switch on (#946)", () => {
   }
 
   it("lands on Cancel, and Tab wraps both ways inside the panel", async () => {
-    document.documentElement.setAttribute("data-design", "o4");
     await mountConfirm();
     const buttons = [
       ...document.querySelectorAll<HTMLButtonElement>(".confirm-panel button"),

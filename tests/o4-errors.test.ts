@@ -2,12 +2,11 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { createElement, type ReactElement } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ErrorBoundary } from "@/components/error-boundary";
 import { PermissionPanel } from "@/components/permission-panel";
 import { SaveFailed } from "@/components/save-failed";
-import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 
 import { one, render } from "./render";
@@ -19,24 +18,7 @@ import { stripCssComments } from "./support";
  * shape. Props-to-markup only, through `tests/render.ts` — no effects, no
  * cascade, no browser. Whether the rules in `o4/errors.css` paint what the
  * workbench shows is not something this file can answer.
- *
- * The design is set by mocking `useDesign()`, not by writing `localStorage`:
- * the server render reads the hook's snapshot, and a mock is the one seam
- * that reaches all three components (one of them a class's fallback) the
- * same way. The "current" arm is asserted here too, so a branch that leaked
- * O4 markup into the current look fails in this file and not only in the
- * existing, unedited suites for these components.
  */
-let design: Design = "o4";
-
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design, toggle: () => {} }),
-}));
-
-beforeEach(() => {
-  design = "o4";
-});
-
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -93,12 +75,6 @@ describe("mic denied, O4 (state 16)", () => {
     expect(retry.classList.contains("o4-err-wide")).toBe(true);
     expect(retry.hasAttribute("autofocus")).toBe(true);
   });
-
-  it("renders none of it in the current look", () => {
-    design = "current";
-    const container = panel();
-    expect(container.querySelector("[class*='o4-']")).toBeNull();
-  });
 });
 
 describe("crash / recovery, O4 (state 18)", () => {
@@ -123,15 +99,15 @@ describe("crash / recovery, O4 (state 18)", () => {
     const restart = one(container, `[aria-label="${strings.appReload}"]`);
     expect(restart.classList.contains("o4-err-wide")).toBe(true);
     // The restart glyph, not retry's circular-arrow-with-notch: workbench
-    // state 18 draws the restart mark on this button, and `PermissionPanel`'s
-    // O4 branch already makes the same swap for its own wide Restart.
+    // state 18 draws the restart mark on this button, as `PermissionPanel`
+    // does on its own wide Restart.
     expect(restart.querySelector("svg path")?.getAttribute("d")).toBe(
       "M18.3 11a7.3 7.3 0 1 1-2.1-5.2"
     );
     // The Send-log control is the existing one, untouched: same name, quiet.
     const send = one(container, `[aria-label="${strings.shareFailureLog}"]`);
     expect(send.classList.contains("control--quiet")).toBe(true);
-    // Restart first, Send after it — the order the current look documents.
+    // Restart first, Send after it (`ErrorBoundary`'s docblock).
     expect(
       restart.compareDocumentPosition(send) &
         restart.ownerDocument.defaultView!.Node.DOCUMENT_POSITION_FOLLOWING
@@ -150,11 +126,6 @@ describe("crash / recovery, O4 (state 18)", () => {
     // Positive floor, so an empty render cannot pass the negative below.
     expect(container.textContent).toContain(strings.appFailed);
     expect(container.textContent).not.toContain("zzq");
-  });
-
-  it("renders none of it in the current look", () => {
-    design = "current";
-    expect(crashScreen().querySelector("[class*='o4-']")).toBeNull();
   });
 });
 
@@ -180,12 +151,6 @@ describe("SaveFailed, O4", () => {
     // plain spinner glyph so the two states cannot read alike.
     expect(container.querySelector(".o4-err-circle")).toBeNull();
   });
-
-  it("renders none of it in the current look", () => {
-    design = "current";
-    const container = render(createElement(SaveFailed, saveFailedProps));
-    expect(container.querySelector("[class*='o4-']")).toBeNull();
-  });
 });
 
 describe("o4/errors.css", () => {
@@ -201,11 +166,11 @@ describe("o4/errors.css", () => {
     ([, selector, body]) => ({ selector: selector!.trim(), body: body! })
   );
 
-  it("scopes every selector under the switch", () => {
+  it("prefixes every selector with :root, holding the specificity o4/index.css documents", () => {
     expect(rules.length).toBeGreaterThanOrEqual(6);
     for (const { selector } of rules)
       for (const part of selector.split(","))
-        expect(part.trim(), selector).toMatch(/^\[data-design="o4"\] /);
+        expect(part.trim(), selector).toMatch(/^:root /);
   });
 
   it("takes every colour from a layer-2 role", () => {

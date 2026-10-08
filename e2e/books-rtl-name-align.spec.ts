@@ -10,13 +10,6 @@ import { expect, test, type Page } from "@playwright/test";
  * hides both, so these names are short enough to leave the row mostly empty.
  */
 
-/** Opt into the O4 look before the app boots (`lib/design.ts`'s key). */
-async function optIntoO4(page: Page) {
-  await page.addInitScript(() => {
-    window.localStorage.setItem("tc-mobile.design", "o4");
-  });
-}
-
 async function createBook(page: Page, name: string) {
   await page.getByRole("button", { name: "New book" }).click();
   const sheet = page.getByRole("dialog", { name: "Name your new book" });
@@ -68,7 +61,6 @@ for (const width of [320, 412]) {
     page,
   }) => {
     await page.setViewportSize({ width, height: 800 });
-    await optIntoO4(page);
     await page.goto("/");
     await createBook(page, RTL_SHORT);
     await createBook(page, LTR_SHORT);

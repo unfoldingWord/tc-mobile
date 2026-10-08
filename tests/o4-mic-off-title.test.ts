@@ -1,34 +1,19 @@
 import { createElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { PermissionPanel } from "@/components/permission-panel";
-import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 
 import { one, render } from "./render";
 
 /**
- * D15 (#948) and the DRI's follow-up pick on PR #1033: in the O4 look the
- * mic-denied title is always `strings.micOffTitle`, and the recorder's refusal
- * sentence, when there is one, is a second line under it. The current look
- * keeps `message ?? strings.micNeededTitle`. Both looks are asserted here, so
- * a change that swaps the key or the layout in the wrong branch fails in this
- * file.
+ * D15 (#948) and the DRI's follow-up pick on PR #1033: the mic-denied title
+ * is always `strings.micOffTitle`, and the recorder's refusal sentence, when
+ * there is one, is a second line under it.
  *
  * Props-to-markup only, through `tests/render.ts`: no cascade, so whether the
  * second line LOOKS like a second line is not something this file can answer.
- * The design is set by mocking `useDesign()`, the same seam
- * `tests/o4-errors.test.ts` uses.
  */
-let design: Design = "o4";
-
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design, toggle: () => {} }),
-}));
-
-beforeEach(() => {
-  design = "o4";
-});
 
 function alertOf(message: string | null): Element {
   const container = render(
@@ -51,12 +36,8 @@ function titleText(alert: Element): string {
 
 describe("mic-denied title, O4 (D15)", () => {
   it("is a key of its own, holding the DRI's wording", () => {
-    // The wording D15 picked, from the O4 original; the current look's key
-    // keeps its own wording until O4 becomes the default.
+    // The wording D15 picked, from the O4 original.
     expect(strings.micOffTitle).toBe("Microphone is off");
-    expect(strings.micNeededTitle).toBe(
-      "Microphone access is needed to record"
-    );
   });
 
   it("reads the O4 key, with no second line, when there is no sentence", () => {
@@ -77,21 +58,5 @@ describe("mic-denied title, O4 (D15)", () => {
     // Last, after the title, so it reads as the line under it.
     expect(alert.lastChild).toBe(sub);
     expect(alert.querySelectorAll(".o4-err-sub")).toHaveLength(1);
-  });
-});
-
-describe("mic-denied title, current look", () => {
-  beforeEach(() => {
-    design = "current";
-  });
-
-  it("keeps the existing key when there is no sentence", () => {
-    expect(alertOf(null).textContent).toBe(strings.micNeededTitle);
-  });
-
-  it("still lets the refusal sentence replace the title, with no second line", () => {
-    const alert = alertOf(strings.micSiteBlocked);
-    expect(alert.textContent).toBe(strings.micSiteBlocked);
-    expect(alert.querySelector(".o4-err-sub")).toBeNull();
   });
 });

@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Icon, type IconName } from "@/components/icon";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
-import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
@@ -20,21 +19,15 @@ import { render } from "./render";
  * take. The workbench's "Record again" starts one; here that would call
  * getUserMedia after the clear's awaits, outside the tap, which
  * `use-audio-session.ts` (startRecording) says iOS treats as unprompted. The
- * ⋮ menu's Clear opens the 13 dialog, eraser and all, and with the switch off
- * both openers show today's dialog.
+ * ⋮ menu's Clear opens the 13 dialog, eraser and all.
  *
  * The harness is `tests/recorder-rerecord.test.ts`'s — the real `Recorder`,
  * the real erase hook and the real confirm, with the store and the segment
- * loader replaced at their boundary — plus `useDesign()` mocked so each case
- * picks its look (`tests/recorder-menu-o4.test.ts` is the pattern).
+ * loader replaced at their boundary.
  *
  * What this cannot see: the cascade (whether `o4/dialogs.css` wins on a real
  * page), layout, and anything on a phone.
  */
-const design = vi.hoisted(() => ({ current: "o4" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 
 const storage = vi.hoisted(() => ({ clear: vi.fn() }));
 vi.mock("@/lib/storage/takes", async (importOriginal) => ({
@@ -86,7 +79,6 @@ beforeEach(() => {
   );
   vi.stubGlobal("requestAnimationFrame", () => 1);
   vi.stubGlobal("cancelAnimationFrame", () => {});
-  design.current = "o4";
   storage.clear.mockReset();
   storage.clear.mockResolvedValue(undefined);
   boundary.view = recorded;
@@ -106,8 +98,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function setup(look: Design) {
-  design.current = look;
+async function setup() {
   const ref = createRef<RecorderHandle>();
   const audio: UseAudioSession = {
     playingId: null,
@@ -205,9 +196,9 @@ function dialog() {
   };
 }
 
-describe("the record-again confirm with the switch on (G5, #979)", () => {
+describe("the record-again confirm (G5, #979)", () => {
   it("the bar's Clear opens it with the record badge and the eraser Clear button", async () => {
-    await setup("o4");
+    await setup();
     await act(async () => barRerecord().click());
     const d = dialog();
     expect(d.badge).toBe(iconInner("record"));
@@ -221,7 +212,7 @@ describe("the record-again confirm with the switch on (G5, #979)", () => {
   });
 
   it("its Clear clears through the shared hook and starts no take", async () => {
-    const audio = await setup("o4");
+    const audio = await setup();
     boundary.reloads = [erased];
     await act(async () => barRerecord().click());
     await act(async () => dialog().confirm.click());
@@ -232,7 +223,7 @@ describe("the record-again confirm with the switch on (G5, #979)", () => {
   });
 
   it("the ⋮ menu's Clear still opens the 13 dialog: eraser badge, Clear", async () => {
-    await setup("o4");
+    await setup();
     await openFromMenu();
     const d = dialog();
     expect(d.badge).toBe(iconInner("eraser"));
@@ -241,7 +232,7 @@ describe("the record-again confirm with the switch on (G5, #979)", () => {
   });
 
   it("a cancelled record-again does not leak its look into a later ⋮ Clear", async () => {
-    await setup("o4");
+    await setup();
     await act(async () => barRerecord().click());
     await act(async () => dialog().cancel.click());
     expect(document.querySelector(".confirm-panel")).toBeNull();
@@ -249,25 +240,5 @@ describe("the record-again confirm with the switch on (G5, #979)", () => {
     const d = dialog();
     expect(d.badge).toBe(iconInner("eraser"));
     expect(d.confirm.getAttribute("aria-label")).toBe(strings.eraseConfirm);
-  });
-});
-
-describe("the record-again confirm with the switch off (unchanged)", () => {
-  it("the bar's Clear opens today's dialog: eraser badge, eraser button, Clear", async () => {
-    await setup("current");
-    await act(async () => barRerecord().click());
-    const d = dialog();
-    expect(d.badge).toBe(iconInner("eraser"));
-    expect(d.confirmIcon).toBe(iconInner("eraser"));
-    expect(d.confirm.getAttribute("aria-label")).toBe(strings.eraseConfirm);
-  });
-
-  it("the bar's Clear and the ⋮ Clear open byte-identical dialogs", async () => {
-    await setup("current");
-    await act(async () => barRerecord().click());
-    const fromBar = dialog().panel.outerHTML;
-    await act(async () => dialog().cancel.click());
-    await openFromMenu();
-    expect(dialog().panel.outerHTML).toBe(fromBar);
   });
 });

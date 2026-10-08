@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BooksScreen } from "@/components/books-screen";
 import { withEncoder } from "@/hooks/mp3-codec";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import type { Design } from "@/lib/design";
 import type { Layer } from "@/lib/nav/layer-stack";
 import { addChapter, addSegment, createBook } from "@/lib/storage/books";
 import { newClipId } from "@/lib/storage/clips";
@@ -47,10 +46,6 @@ vi.mock("@/hooks/mp3-codec", async (importOriginal) => {
     subscribeToEncoderHealth: () => () => {},
   };
 });
-const design = vi.hoisted(() => ({ current: "o4" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 const pressure = vi.hoisted(() => ({
   current: "critical" as StoragePressureMarker | null,
 }));
@@ -149,7 +144,6 @@ beforeEach(async () => {
   vi.clearAllMocks();
   layers.clear();
   await clearAllStores();
-  design.current = "o4";
   pressure.current = "critical";
   codec = testCodec();
   vi.mocked(withEncoder).mockImplementation(async (_signal, work) =>
@@ -435,21 +429,5 @@ describe("O4: system Back is refused while Share your work owns the screen (#105
     await act(async () => scrim()!.click());
     expect(scrim()).toBeNull();
     expect(layers.has("books:library-share")).toBe(false);
-  });
-});
-
-describe("the current look: no library share, no overlay, no inert", () => {
-  it("draws no share button and never makes the shelf inert", async () => {
-    design.current = "current";
-    await bookWith("Mark", [[CANONICAL_SAMPLE_RATE]]);
-    await mountBooks();
-
-    expect(document.querySelector("button.o4-storage-share")).toBeNull();
-    expect(
-      document.querySelector(`button[aria-label="${strings.shareAll}"]`)
-    ).toBeNull();
-    expect(scrim()).toBeNull();
-    expect(shelf().hasAttribute("inert")).toBe(false);
-    expect(withEncoder).not.toHaveBeenCalled();
   });
 });

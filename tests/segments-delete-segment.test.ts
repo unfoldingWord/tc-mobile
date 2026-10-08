@@ -3,22 +3,11 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SegmentsScreen } from "@/components/segments-screen";
-import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { ChapterId, SegmentId } from "@/types/domain";
 import type { SegmentRow } from "@/types/view";
-
-// The app defaults to O4 (#951), so every case below exercises the O4 tile
-// grid's Delete tile unless a case explicitly switches this to "current" —
-// see the last case, which pins the CURRENT look's own Delete row wiring
-// (`segment-row.tsx`'s non-O4 branch) does not silently share a mutation
-// blind spot with the O4 tile above it.
-const design = vi.hoisted(() => ({ current: "o4" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 
 /**
  * Delete segment on the chapter view (#590, moved here from the recorder's ⋮
@@ -79,7 +68,6 @@ const audio = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  design.current = "o4";
   document.body.innerHTML = '<div id="root"></div>';
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -396,22 +384,5 @@ it("a REJECTING deleteSegment does not leave the confirm stuck: it still closes,
   await openDeleteConfirm();
   expect(dialogTitle()).not.toBeNull();
   await act(async () => button(strings.eraseCancel).click());
-  expect(dialogTitle()).toBeNull();
-});
-
-it("wires the CURRENT look's own Delete row to the same confirm (not only the O4 tile above)", async () => {
-  // Every case above runs O4 (the app's default, #951) end to end through
-  // `strings.deleteSegment` — which is also the O4 tile's accessible name, so
-  // a mutation in ONLY the current look's row (`segment-row.tsx`'s non-O4
-  // branch) would pass every case above silently. This one forces the
-  // current look and re-asks the one question that matters: does tapping
-  // Delete there reach the same store call.
-  design.current = "current";
-  mocks.deleteSegment.mockResolvedValueOnce(true);
-  await act(async () => root.render(createElement(Host)));
-  await openDeleteConfirm();
-  await act(async () => button(strings.deleteSegmentConfirm).click());
-  expect(mocks.deleteSegment).toHaveBeenCalledTimes(1);
-  expect(mocks.deleteSegment).toHaveBeenCalledWith("segment");
   expect(dialogTitle()).toBeNull();
 });

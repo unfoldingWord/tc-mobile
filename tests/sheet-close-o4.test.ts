@@ -11,7 +11,6 @@ import {
   type RecorderMenuProps,
 } from "@/components/recorder-menu";
 import { SHEET_CLOSE_DISTANCE_PX } from "@/components/sheet-drag";
-import type { Design } from "@/lib/design";
 import { licenseTexts } from "@/components/licenses";
 import { strings } from "@/lib/strings";
 
@@ -39,10 +38,6 @@ import { stripComments } from "./support";
  * a finger on a phone. The pure decision is `tests/sheet-drag.test.ts`.
  */
 
-const design = vi.hoisted(() => ({ current: "o4" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 // About's footer reads build defines the test env does not have.
 vi.mock("@/components/build-stamp", () => ({ BuildStamp: () => null }));
 
@@ -51,7 +46,6 @@ const onClose = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
-  design.current = "o4";
   m = mountInteractive();
   // jsdom has no pointer capture; the browser's is what keeps a drag's
   // moves on the grip once the finger leaves it.
@@ -112,10 +106,9 @@ async function mountMenu(props: Partial<Parameters<typeof Menu>[0]> = {}) {
 const MODES = {
   "a titled sheet (book, chapter, segment, name sheets)": {},
   "the global ≡ menu": { hamburger: true },
-  "the recorder's ⋮ menu": { hamburger: true, dismissIcon: "more" as const },
 };
 
-describe("one ✕ closes every sheet in O4 (#1268 item 2)", () => {
+describe("one ✕ closes every sheet (#1268 item 2)", () => {
   for (const [mode, props] of Object.entries(MODES)) {
     it(`${mode}: the header's closer is ✕, top right, named as before`, async () => {
       const p = await mountMenu(props);
@@ -143,10 +136,8 @@ describe("one ✕ closes every sheet in O4 (#1268 item 2)", () => {
       mode: "record",
       ordinal: 3,
       finishedState: "empty",
-      editReason: null,
       markReason: null,
       eraseReason: null,
-      onEnterEdit: vi.fn(),
       onToggleFinished: vi.fn(),
       onErase: vi.fn(),
     };
@@ -195,22 +186,6 @@ describe("one ✕ closes every sheet in O4 (#1268 item 2)", () => {
     });
     expect(backs).toEqual(["components/about-panel.tsx"]);
   });
-});
-
-describe("the current look keeps its closers", () => {
-  const cases: [string, object, IconName][] = [
-    ["titled", {}, "back"],
-    ["≡", { hamburger: true }, "menu"],
-    ["⋮", { hamburger: true, dismissIcon: "more" }, "more"],
-  ];
-  for (const [mode, props, glyph] of cases) {
-    it(`${mode}: ${glyph}, and no grip`, async () => {
-      design.current = "current";
-      const p = await mountMenu(props);
-      expect(glyphOf(named(strings.menuClose))).toBe(glyphPath(glyph));
-      expect(p.querySelector(".menu-grip")).toBeNull();
-    });
-  }
 });
 
 /** Dispatch a pointer event the way a finger would. */
@@ -574,14 +549,6 @@ describe("drag down to close (#1268 item 1)", () => {
     document.head.append(style);
     const p = await mountMenu();
     await drag(one(p, ".menu-grip"), [100, 100 + 2 * SHEET_CLOSE_DISTANCE_PX]);
-    expect(onClose).not.toHaveBeenCalled();
-  });
-
-  it("the current look has no drag at all", async () => {
-    design.current = "current";
-    const p = await mountMenu();
-    const head = p.querySelector(".menu-head") ?? p;
-    await drag(head, [100, 100 + 2 * SHEET_CLOSE_DISTANCE_PX]);
     expect(onClose).not.toHaveBeenCalled();
   });
 });

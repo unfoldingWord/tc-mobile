@@ -25,7 +25,7 @@ import { one, render } from "./render";
 const button = (el: Parameters<typeof render>[0]) => one(render(el), "button");
 
 describe("Control's caption (#941)", () => {
-  it("renders nothing extra when no caption is passed — the switch-off markup", () => {
+  it("renders nothing extra when no caption is passed", () => {
     const el = button(createElement(Control, { icon: "play", label: "Play" }));
     expect(el.querySelector(".control-caption")).toBeNull();
     expect(el.children.length).toBe(1);
@@ -38,8 +38,7 @@ describe("Control's caption (#941)", () => {
     const caption = one(el, ".control-caption");
     expect(caption.textContent).toBe("Send");
     expect(caption.getAttribute("aria-hidden")).toBe("true");
-    // The name is still the label, never the caption: the accessible name
-    // must be the same in both looks (#936's switch contract).
+    // The name is still the label, never the caption.
     expect(el.getAttribute("aria-label")).toBe("Share");
   });
 });
@@ -114,12 +113,12 @@ describe("the O4 control wrappers (#941)", () => {
 describe("o4/controls.css (#941)", () => {
   const rules = areaRules("controls");
 
-  it("scopes every rule under the switch", () => {
+  it("prefixes every rule with :root, holding the specificity o4/index.css documents", () => {
     // Non-emptiness floor: an empty parse must not pass the loop vacuously.
     expect(rules.length).toBeGreaterThanOrEqual(4);
     for (const rule of rules)
       for (const selector of rule.selectors)
-        expect(selector).toMatch(/^\[data-design="o4"\] /);
+        expect(selector).toMatch(/^:root /);
   });
 
   it("paints colour only through layer-2 roles", () => {
@@ -134,7 +133,7 @@ describe("o4/controls.css (#941)", () => {
   });
 
   it("sizes the speaker 52, circle, on the well with the hear glyph", () => {
-    const d = declsFor(rules, '[data-design="o4"] .o4-speaker');
+    const d = declsFor(rules, ":root .o4-speaker");
     expect(d.get("width")).toBe("52px");
     expect(d.get("height")).toBe("52px");
     expect(d.get("background")).toBe("var(--s-well)");
@@ -142,7 +141,7 @@ describe("o4/controls.css (#941)", () => {
   });
 
   it("sizes the square 56 with radius 14, on the well", () => {
-    const d = declsFor(rules, '[data-design="o4"] .o4-square');
+    const d = declsFor(rules, ":root .o4-square");
     expect(d.get("width")).toBe("56px");
     expect(d.get("height")).toBe("56px");
     expect(d.get("border-radius")).toBe("var(--p-radius-lg)");
@@ -150,13 +149,13 @@ describe("o4/controls.css (#941)", () => {
   });
 
   it("sizes the row transport 72", () => {
-    const d = declsFor(rules, '[data-design="o4"] .o4-transport');
+    const d = declsFor(rules, ":root .o4-transport");
     expect(d.get("width")).toBe("72px");
     expect(d.get("height")).toBe("72px");
   });
 
   it("sizes the pill 60 tall with radius 30, 17/700, on the well", () => {
-    const d = declsFor(rules, '[data-design="o4"] .o4-pill');
+    const d = declsFor(rules, ":root .o4-pill");
     expect(d.get("height")).toBe("60px");
     expect(d.get("border-radius")).toBe("30px");
     expect(d.get("font-size")).toBe("17px");

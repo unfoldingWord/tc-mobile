@@ -197,7 +197,6 @@ describe("the O4 circle for the library scope", () => {
     const container = render(
       createElement(ShareProgressPanel, {
         role: "status",
-        icon: "share-busy",
         text: libraryShareProgressText(busy("prepare"), null),
         o4: shareO4View(PACKING, "library"),
       })

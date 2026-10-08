@@ -25,7 +25,7 @@ import { cssRule, declarationValue } from "./support";
 const noop = () => {};
 const read = (rel: string) =>
   readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
-const O4 = '[data-design="o4"]';
+const O4 = ":root";
 
 describe("O4Crumbs with links (#1269)", () => {
   it("renders a linked book crumb as a button named for its destination", () => {

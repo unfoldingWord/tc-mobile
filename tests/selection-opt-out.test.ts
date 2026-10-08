@@ -9,7 +9,9 @@ import { cssRule, declarationValue, stripCssComments } from "./support";
  * Extends #559's selection opt-out (#563, the DRI's "Extend it with the same
  * CSS" pick, 2026-09-28): the same three declarations #559 put on
  * `.recorder-sheet`, `.menu-panel` and `.confirm-panel` now also sit on the
- * Segments rows (`.row`), the Segments header/breadcrumb (`.breadcrumb`), the
+ * Segments rows (`.row`), the Segments header's crumb row (`.o4-crumbs-bar`,
+ * which replaced the `.breadcrumb` button in #1269 and carries the same
+ * three declarations), the
  * Books rows (`.books-card`, which reaches its chapter rows by inheritance —
  * `.books-chapters` is a DOM child of `.books-card`) and the ShareProgress
  * portal root (`.share-scrim`). No new class, same three declarations, same
@@ -46,8 +48,15 @@ const BOOKS_O4_PATH = path.resolve(
   "src/app/styles/o4/books.css"
 );
 
+const MENUS_O4_PATH = path.resolve(
+  import.meta.dirname,
+  "..",
+  "src/app/styles/o4/menus.css"
+);
+
 const componentsCss = readFileSync(COMPONENTS_PATH, "utf8");
 const booksO4Css = readFileSync(BOOKS_O4_PATH, "utf8");
+const menusO4Css = readFileSync(MENUS_O4_PATH, "utf8");
 
 /**
  * `.row`'s own real ambiguity, worked around rather than hidden: the
@@ -97,12 +106,12 @@ function expectOptOut(css: string, selector: string): void {
 }
 
 describe("selection opt-out extended to the Segments and Books rows, the header, and ShareProgress (#563)", () => {
-  it("opts the Segments rows out (.row, 3-components.css — shared by both looks)", () => {
+  it("opts the Segments rows out (.row, 3-components.css)", () => {
     expectOptOut(componentsCss, ".row");
   });
 
-  it("opts the Segments header/breadcrumb out (.breadcrumb, 3-components.css)", () => {
-    expectOptOut(componentsCss, ".breadcrumb");
+  it("opts the Segments header's crumb row out (.o4-crumbs-bar, o4/menus.css)", () => {
+    expectOptOut(menusO4Css, ":root .o4-crumbs-bar");
   });
 
   it("opts the ShareProgress portal root out (.share-scrim, 3-components.css)", () => {
@@ -110,22 +119,22 @@ describe("selection opt-out extended to the Segments and Books rows, the header,
   });
 
   it("opts the Books rows out (.books-card, o4/books.css — reaches .books-chapter by inheritance)", () => {
-    expectOptOut(booksO4Css, '[data-design="o4"] .books-card');
+    expectOptOut(booksO4Css, ":root .books-card");
   });
 
   it("does not opt the rename field back in inside any of these roots", () => {
     // Unlike .menu-panel, none of the four roots above contains a
     // .name-input — both book/chapter/segment rename fields render inside
-    // the portalled Menu, never inline in a row, a breadcrumb or the share
+    // the portalled Menu, never inline in a row, the crumb row or the share
     // portal — so there is no opt-back-in rule to pin here. This asserts the
     // premise rather than a text-input UX claim: a `.name-input` rule inside
     // any of these four selectors' source blocks would mean a rename field
     // moved somewhere this opt-out would now silently swallow.
     for (const [css, selector] of [
       [componentsCss, ".row"],
-      [componentsCss, ".breadcrumb"],
+      [menusO4Css, ":root .o4-crumbs-bar"],
       [componentsCss, ".share-scrim"],
-      [booksO4Css, '[data-design="o4"] .books-card'],
+      [booksO4Css, ":root .books-card"],
     ] as const) {
       const body =
         selector === ".row" ? rowRuleBody(css) : cssRule(css, selector);

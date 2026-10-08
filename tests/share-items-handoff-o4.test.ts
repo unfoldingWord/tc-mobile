@@ -7,7 +7,6 @@ import { BooksScreen } from "@/components/books-screen";
 import { SegmentsScreen } from "@/components/segments-screen";
 import { bookShareItems, chapterShareItems } from "@/components/share-o4-view";
 import { strings } from "@/lib/strings";
-import type { Design } from "@/lib/design";
 import type { ShareProgress } from "@/hooks/share-progress";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { Layer } from "@/lib/nav/layer-stack";
@@ -39,11 +38,6 @@ import { restingErase } from "./support";
  * What this does NOT cover: the cascade, layout, or anything on a phone —
  * jsdom renders no boxes and no device has run this file.
  */
-
-const design = vi.hoisted(() => ({ current: "o4" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 
 const bookId = "book-0000-4000-8000-000000000001" as BookId;
 const bookName = "Mark";

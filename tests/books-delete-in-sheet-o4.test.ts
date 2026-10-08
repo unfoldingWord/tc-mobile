@@ -4,7 +4,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
-import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { BookId } from "@/types/domain";
@@ -12,10 +11,9 @@ import type { BookCard } from "@/types/view";
 
 /**
  * Deleting a book asks in place, inside the book menu sheet (#980, G6; #949
- * D16 → B). With the O4 switch on, Delete swaps the sheet's contents for Keep
- * and Delete under the book's small cover and name; the floating
- * `EraseConfirm` card no longer opens for this flow. With the switch off the
- * current confirm is unchanged — the last describe block pins that half.
+ * D16 → B). Delete swaps the sheet's contents for Keep and Delete under the
+ * book's small cover and name; the floating `EraseConfirm` card does not open
+ * for this flow.
  *
  * The whole screen is mounted with react-dom + `act()` in jsdom — the step up
  * `tests/render.ts` names for effects, focus and events — and the data hooks
@@ -27,11 +25,6 @@ import type { BookCard } from "@/types/view";
  * What this cannot show: the cascade, layout, or real `inert` hit-testing.
  * jsdom does none of them. Nothing here was run on a phone.
  */
-
-const design = vi.hoisted(() => ({ current: "o4" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 
 const state = vi.hoisted(() => ({
   books: [] as BookCard[],
@@ -114,11 +107,9 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   vi.unstubAllGlobals();
-  design.current = "o4";
 });
 
-async function mount(look: Design = "o4") {
-  design.current = look;
+async function mount() {
   await act(async () => {
     root.render(
       createElement(BooksScreen, {
@@ -364,36 +355,5 @@ describe("O4: focus when the delete goes in flight (#980)", () => {
     await mount();
     expect(button(strings.deleteBookYes).disabled).toBe(true);
     expect(document.activeElement).toBe(button(strings.keepBook));
-  });
-});
-
-describe("switch off: the current delete confirm is unchanged (#980)", () => {
-  it("closes the book menu and opens the floating EraseConfirm, focus on Cancel", async () => {
-    await mount("current");
-    await click(strings.bookMenuOpen("Mark"));
-    await click(strings.deleteBook);
-    expect(bookSheet()).toBeNull();
-    const panel = document.querySelector<HTMLElement>(".confirm-panel");
-    expect(panel).not.toBeNull();
-    expect(panel!.getAttribute("aria-label")).toBe(
-      strings.deleteBookConfirmTitle("Mark")
-    );
-    expect(document.querySelector(".books-delete-ask")).toBeNull();
-    expect(buttons(strings.keepBook)).toHaveLength(0);
-    expect(document.activeElement).toBe(button(strings.eraseCancel));
-    expect([...layers.keys()]).toEqual(["books:delete-confirm"]);
-  });
-
-  it("Cancel returns to the shelf, focus on the book's row, as before", async () => {
-    await mount("current");
-    await click(strings.bookMenuOpen("Mark"));
-    await click(strings.deleteBook);
-    await click(strings.eraseCancel);
-    expect(document.querySelector(".confirm-panel")).toBeNull();
-    expect(bookSheet()).toBeNull();
-    expect(layers.size).toBe(0);
-    expect(document.activeElement).toBe(
-      button(strings.bookRow("Mark", 0, false))
-    );
   });
 });
