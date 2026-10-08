@@ -902,16 +902,16 @@ export const strings = {
   // The SEGMENT noun goes through `plural` like every other count-varying
   // string in this table (#169) — a CLDR category, not an English `n === 1`.
   //
-  // The CHAPTER scope does NOT, and must not. It branches on
-  // `partialChapters > 1`, the producer's count of DISTINCT included chapters,
-  // and it stays an explicit branch rather than a forms table because CLDR's
-  // `one` is not "exactly 1" — Russian selects it for 21, 31, 101. Keying the
-  // singular "an included chapter" off a plural category would let a second
-  // locale assert one chapter about twenty-one segments spread across an
-  // unknown number of them, which is the #400/#423 bug in a new place. This
-  // branch is a claim that the count IS exactly one, not an agreement with it.
-  // A locale needing `few`/`many` for the segment noun gets it from `plural`
-  // above; the chapter-scope branch stays a branch.
+  // The CHAPTER scope counts `partialChapters`, the producer's count of
+  // DISTINCT included chapters, and also goes through `plural` — but its
+  // singular "an included chapter" is NOT keyed off `one`. CLDR's `one` is not
+  // "exactly 1": Russian selects it for 21, 31, 101. Keying that wording off a
+  // plural category would let a second locale assert one chapter about
+  // twenty-one of them, which is the #400/#423 bug in a new place. The wording
+  // is a claim that the count IS exactly one, so it rides `plural`'s explicit
+  // `"=1"` arm (ICU's `=1`, matched on the number, not the category). The `one`
+  // form is the counted "{n} included chapter", which stays true at 21. A
+  // locale needing `few`/`many` adds those keys and changes no code.
   //
   // An earlier draft of this paragraph said the clause was "NOT `plural`'s
   // `one` form" and described a `segments === 1` case. That case is gone —
@@ -942,17 +942,27 @@ export const strings = {
   // translator knows how many chapters to go back to. "included" keeps the
   // locator George #423 round 3 required: the segments sit in chapters that
   // are in the zip, not in the one(s) the first sentence says were not.
+  //
+  // The chapter clause goes through `plural`, not an English `> 1` ternary
+  // (#169), with the exact-1 arm described above. The count is floored at 1 because a
+  // segment gap sits in at least one included chapter: the caller passes
+  // `partialChapters ?? 0` from an optional field (`share-error-copy.ts`), and
+  // a missing count must still read "an included chapter", as the ternary
+  // did, rather than claim "0 included chapters" about a gap that exists.
   shareBookMissingAndPartial: (
     chapters: number,
     segments: number,
     partialChapters: number
   ): string =>
     `${strings.shareBookMissing(chapters)} ${couldNotBeIncluded(
-      `${plural(segments, { one: "{n} segment", other: "{n} segments" })} of ${
-        partialChapters > 1
-          ? `${partialChapters} included chapters`
-          : "an included chapter"
-      }`
+      `${plural(segments, { one: "{n} segment", other: "{n} segments" })} of ${plural(
+        Math.max(partialChapters, 1),
+        {
+          "=1": "an included chapter",
+          one: "{n} included chapter",
+          other: "{n} included chapters",
+        }
+      )}`
     )}`,
   // The encoder went silent mid-share and was restarted (#166). Chapter and book
   // alike: the cause is the phone, not what was being shared. Try again is still

@@ -49,6 +49,16 @@ type PluralCategory = "zero" | "one" | "two" | "few" | "many" | "other";
  */
 type PluralForms = {
   readonly other: string;
+  /**
+   * An EXACT-1 arm, ICU's `=1`: chosen when `n === 1` and for no other count,
+   * ahead of the category. It is not `one`. CLDR's `one` is a category the
+   * locale defines — Russian, Ukrainian and Lithuanian select it for 21, 31
+   * and 101 too, and some locales select it for 0 — so wording that means
+   * "exactly one" ("an included chapter") keyed off `one` would assert one of
+   * a count that is not one. A table that carries `"=1"` states that claim
+   * outright; the category forms then only have to agree with their count.
+   */
+  readonly "=1"?: string;
 } & {
   readonly [K in Exclude<PluralCategory, "other">]?: string;
 };
@@ -100,7 +110,9 @@ export function plural(
   locale: string = SHIPPED_LOCALE.tag
 ): string {
   const category = rulesFor(locale).select(n) as PluralCategory;
-  const form = forms[category] ?? forms.other;
+  // The exact arm is matched on the number, never on the locale's category.
+  const exact = n === 1 ? forms["=1"] : undefined;
+  const form = exact ?? forms[category] ?? forms.other;
   // A FUNCTION replacer, not a string one. `replaceAll` reads `$&`, `` $` ``,
   // `$'`, `$$` and `$n` in a STRING replacement as substitution patterns. A
   // `number` through `String()` can only be digits, `-`, `.`, `e`, `+`, `NaN`
