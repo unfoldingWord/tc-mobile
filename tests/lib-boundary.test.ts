@@ -2,7 +2,13 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, posix } from "node:path";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+// Every case spawns tsc or eslint through execFileSync (0.6-4 s each); under a
+// loaded machine the default 5 s budget expires. 15 s follows
+// nav-history-boundary.test.ts. vitest cannot interrupt execFileSync, so this
+// only marks a slow case failed after it returns; it is not a hang guard.
+vi.setConfig({ testTimeout: 15_000, hookTimeout: 60_000 });
 
 /**
  * The lib/ boundary, asserted rather than described.
