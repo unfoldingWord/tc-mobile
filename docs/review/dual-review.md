@@ -3,18 +3,38 @@
 Two independent reviewers run on every PR before merge, with **deliberately
 different lenses** so they do not both find the same class of defect.
 
-|       | Reviewer   | Runs as             | Lens                                                                                     |
-| ----- | ---------- | ------------------- | ---------------------------------------------------------------------------------------- |
-| **A** | **Frank**  | `codex` (Codex CLI) | **Diff-local** — defects inside the change itself                                        |
-| **B** | **George** | `grok` (Grok CLI)   | **Deep-tree** — defects in the interaction between changed code and the _unchanged_ tree |
+|       | Reviewer   | Backed by | Lens                                                                                     |
+| ----- | ---------- | --------- | ---------------------------------------------------------------------------------------- |
+| **A** | **Frank**  | Codex     | **Diff-local** — defects inside the change itself                                        |
+| **B** | **George** | Grok      | **Deep-tree** — defects in the interaction between changed code and the _unchanged_ tree |
 
 The split is the point. Reviewer A reads the diff closely; Reviewer B chases
 every changed symbol out into the rest of the repository — call sites,
 invariants defined elsewhere, lifecycle and cache interactions, contract
 mismatches. A single reviewer doing both does neither well.
 
-Both are read-only. Terminal commands are forbidden in the review prompt so a
-reviewer cannot mutate the branch it is judging.
+## Who runs the reviews
+
+**The uwreview bench runs both lenses**, on the review VM, and posts its rounds
+on the PR (retired 2026-10-08: the local `scripts/review/*` harness, #1343;
+since 2026-09-28 the bench has been the review path). **Nobody runs a reviewer
+locally — not the author, not a lane, not the coordinator.** A lane builds,
+runs `npm run verify` and `npm run check:prepush`, marks the PR ready, and
+stops; the review happens on the PR.
+
+What the bench's comments look like, as observed on PRs #1346 and #1351
+(2026-10-08):
+
+- One comment per lens per round, authored by `uwreview`, headed with the head
+  SHA and ending in a `VERDICT:` line and a machine marker such as
+  `<!-- uw:review frank round=1 verdict=clean sha=<short> -->`.
+- A combined verdict review (`uw:review verdict=approve sha=<short> tier=<T>
+builders=<who> frank=<verdict> george=<verdict> checks=<pass|…>`) quoting
+  both lenses, with the tier it derived.
+
+What this file does **not** know, because the repo does not say: how the bench
+words a non-clean round, how it decides a round number after a push, and how it
+treats an exempted tier. Do not describe those from memory; read the PR.
 
 ## Severity, and the merge bar
 
@@ -24,42 +44,29 @@ reviewer cannot mutate the branch it is judging.
 | **P2** | Should fix            | Yes — medium and above blocks |
 | **P3** | Nit                   | No; may become an issue       |
 
-Every finding carries `file:line`, a **concrete failure scenario**, and a
-minimal fix. A reviewer that finds nothing at a severity says so explicitly
-rather than staying silent. Each run ends on a verdict line: `APPROVE` or
-`REQUEST_CHANGES`.
+A finding worth acting on carries `file:line`, a **concrete failure scenario**,
+and a minimal fix. A lens that finds nothing at a severity should say so
+rather than stay silent.
 
-After fixing review findings, **push and re-run both reviewers.** Repeat until
-both approve with no P1 or P2 outstanding. A stale review is not a review.
-
-## Running them
-
-```bash
-scripts/review/frank.sh [base]     # Reviewer A — diff-local
-scripts/review/george.sh [base]    # Reviewer B — deep-tree
-scripts/review/both.sh [base]      # both, sequentially
-```
-
-`base` defaults to `origin/develop` — work is cut from `develop`, so an omitted
-base reviews only the branch's own change rather than its whole divergence from
-`main`. Reports are written to `.review/` (git-ignored).
+After fixing review findings, **push and wait for the bench to review the new
+head.** Repeat until both lenses are clean with no P1 or P2 outstanding. A
+stale review is not a review: a push voids the round for **both** lenses.
 
 ## Merge policy
 
-This repo is **solo** — there is no second human reviewer to wait on, so Frank
-and George _are_ the review. Once they are clean, merge is an admin merge.
+Frank and George _are_ the review. Once both are clean at the current head SHA
+and CI is green, the DRI merges with `--admin` (the branch ruleset requires it;
+a pinned command carries the full head SHA).
 
-| Change                                                                             | Bar to merge                                                                                                                                                          |
-| ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Application code                                                                   | **Both reviewers clean @ the current head SHA**, CI green, then admin merge                                                                                           |
-| Documentation and content                                                          | CI green, then admin merge                                                                                                                                            |
-| Process/meta artifacts — `ci.yml`, `AGENTS.md`, `scripts/review/**`, deploy config | Normally both reviewers, because these are _executed as instructions_. Exempting them is allowed but the **decision must be recorded on the PR**, never a silent skip |
+| Change                                                                          | Bar to merge                                                                                                                                                          |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Application code                                                                | **Both reviewers clean @ the current head SHA**, CI green, then admin merge                                                                                           |
+| Documentation and content                                                       | CI green, then admin merge                                                                                                                                            |
+| Process/meta artifacts — `ci.yml`, `AGENTS.md`, `docs/review/**`, deploy config | Normally both reviewers, because these are _executed as instructions_. Exempting them is allowed but the **decision must be recorded on the PR**, never a silent skip |
 
 **A test-only PR takes the tier of the code it covers, not a tier of its
-own.** This rule is permanent, not freeze-specific. While the freeze-budget
-table below is in force, it governs _how many reviewers and rounds_ apply at
-that tier; after it expires, the mapping at the end of this rule does. Which
-tier a test-only PR lands on is decided here. Classify in this order, and
+own.** The tier sets _how many reviewers and rounds_ apply (the mapping at the
+end of this rule). Which tier a test-only PR lands on is decided here. Classify in this order, and
 stop at the first match:
 
 1. A **gate test** — one that enforces a repo-wide rule, such as the drift
@@ -88,9 +95,8 @@ to a PR that only adds or changes tests — there is no new code path for a
 device to exercise. A test-only PR classified T2 gets T2's reviewer bar, not
 the device check.
 
-**After the freeze, the tier maps onto the table above.** A Harness test
-takes the process/meta row, because the freeze table groups Harness with meta
-and a gate test is executed as an instruction. A T1, T2 or T3 test takes the
+**The tier maps onto the table above.** A Harness test takes the process/meta
+row, because a gate test is executed as an instruction. A T1, T2 or T3 test takes the
 application-code row.
 
 Added 2026-09-24 after the #839 audit found six test-only PRs (#797, #796,
@@ -104,34 +110,17 @@ just do.
 escalation: it blocks merge until the residual findings are named and
 explicitly accepted, recorded on the PR.
 
-## Freeze budget — 2026-09-21 to 2026-10-04
+## Freeze budget — expired
 
-Decided by the DRI on 2026-09-21 for the run-up to the v1.0.0 handoff, and
-expiring with it. The reasoning: the harness's machine cost is small (about
-18 s for `npm run verify` locally, about 2 min in CI), and the cost that was
-eating the week was rounds — every documented five-round chain that week was
-on the harness's own tests (#547, #572), not on the product.
-
-| Change                                                         | Bar until 2026-10-04                                                                                |
-| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| T1 (`lib/audio/*`, `lib/storage/*`, the schema)                | Unchanged: both reviewers, cap 4, judgment sheet at the cap                                         |
-| T2 (`hooks/*`, export and share paths)                         | Unchanged                                                                                           |
-| T3 (`components/*`, `app/*`, copy, styling, docs, the tracker) | George only, one round, P1/P2 only; the exemption is recorded on the PR                             |
-| Harness and meta (`scripts/**`, gate tests, `ci.yml`, hooks)   | Both reviewers, hard cap 2; residuals are accepted on the PR by the DRI, never carried into a round |
-| Any tier                                                       | A P3 never triggers a round: every P3 is batched into one follow-up issue at triage                 |
-
-How to tier a test-only PR — gate test first, then the strictest tier it
-covers, and what T2's on-device check does and does not require of one — is
-in "Merge policy" above, not repeated here: it is a standing rule, not a
-freeze-specific one.
-
-After 2026-10-04 this table is void and the merge policy above applies again
-unchanged.
+The freeze budget (decided 2026-09-21) was written to expire 2026-10-04, at
+the v1.0.0 handoff. That date has passed and the section is removed: the
+merge-policy table above applies unchanged, with no reduced-round tiers. A
+future freeze needs a new DRI decision and a new section with its own dates.
 
 ## Gate comment template
 
 Added 2026-09-28 after the #839 audit (#840 R2). Auditing 40 merged PRs found
-the freeze exemption recorded on some T3 gate comments (#803, #819) and
+the freeze exemption (since expired) recorded on some T3 gate comments (#803, #819) and
 missing on others (#769, #762, #759, #768, #785, #794, #787) — same bar,
 inconsistent record — and found gate comments citing `docs/review-policy.md`
 and "RULINGS D6–D16", neither of which exists anywhere in this repo.
@@ -142,18 +131,16 @@ bar it was assigned — states, in one place, on one comment:
 1. **The tier**: T1, T2, T3, or Harness/meta, per the "Risk tiers" table in
    `AGENTS.md` and the classify order in "Merge policy" above.
 2. **The bar that applies**, naming the section of this file it comes from —
-   "Merge policy" or, while it is in force, "Freeze budget" — by heading, not
+   "Merge policy" — by heading, not
    only by line number. A bare line number drifts: the exemption line quoted
    in #839 cited `dual-review.md:77`, and at this file's current head that
-   line falls inside the "Merge policy" classify list, not the freeze table,
-   because the file has been edited since. Cite the heading first; a line
+   line falls inside the "Merge policy" classify list, not the freeze table
+   that existed then, because the file has been edited since. Cite the heading first; a line
    number may be added alongside it as a same-day convenience, never as the
    only anchor.
 3. **Any exemption taken**, in the same comment, never a silent skip — for
-   example:
-
-   > Freeze exemption: T3, George only, one round, P1/P2 ("Freeze budget"
-   > table, `docs/review/dual-review.md`).
+   example: "Docs-only: merges on green CI, no reviewer round ("Merge policy"
+   table, `docs/review/dual-review.md`)."
 
 A gate comment may cite only a document that is either committed in this repo
 (this file, `AGENTS.md`, `CONTRIBUTING.md`) or linked by URL. Naming a policy
@@ -175,11 +162,11 @@ The loop, per lane:
 
 1. Pick the next lane — prefer the one others depend on, and lanes touching
    shared files before lanes that do not.
-2. **Pre-flight:** mergeable, CI green, both reviewers clean @ the _current_
-   head.
+2. **Pre-flight:** mergeable, CI green, both lenses clean @ the _current_
+   head, as posted by the bench.
 3. Merge.
 4. **Re-base and re-check every remaining lane.** If a lane's diff changed
-   materially, its reviews are stale — re-run both.
+   materially, its reviews are stale — the bench re-reviews the new head.
 
 Lanes that touch the same files should not be in flight simultaneously in the
 first place; the lane brief is where that is prevented (see the
@@ -188,17 +175,12 @@ first place; the lane brief is where that is prevented (see the
 ## The triage comment — mandatory, every round
 
 **One triage comment per round, on the PR.** No exceptions, including a round
-where both reviewers found nothing.
-
-```bash
-scripts/review/both.sh <base>        # run both reviewers
-scripts/review/triage.sh <round> <pr>  # build the comment, then post it
-```
-
-`triage.sh` extracts every finding from both reports, attributes each to the
-lens that raised it, pulls both verdicts, and stamps the head SHA. You fill in
-the disposition for each — **FIXED** with a commit, **REFUTED** with file:line
-evidence, or **DEFERRED** with a tracking issue — and post it.
+where both lenses found nothing. The bench posts the reviews; the triage
+comment is the **PR author's (or the coordinator's) disposition of them**, and
+the bench does not write it. It is written by hand, since the script that
+drafted it is gone: list each finding under the lens that raised it, with the
+head SHA, and give each a disposition — **FIXED** with a commit, **REFUTED**
+with file:line evidence, or **DEFERRED** with a tracking issue.
 
 Why it is not optional: _"the agent addressed it"_ with nothing posted on the
 PR is not verifiable later. The comment is the audit trail. **Never silently
@@ -212,16 +194,16 @@ ignored, never silently fixed.**
   any push after a clean statement invalidates **both** reviewers until each
   re-posts.
 - **A clean round still gets a comment** — `round N clean (Frank + George) @
-<sha>`. Silence is not sign-off.
-- **Never write "Frank + George" when only one has posted.** Say so per
-  reviewer.
+<sha>`, which may simply point at the bench's clean verdict. Silence is not sign-off.
+- **Never write "Frank + George" when only one lens has posted.** Say so per
+  lens. A one-lens round is a deviation, never clean.
 - **Low-severity findings are deferred to an issue, not dropped** — unless the
   fix is trivial enough to just do, in which case it is FIXED like any other.
 
 ### Convergences are worth calling out
 
 Findings both lenses raise independently are historically the highest-confidence
-class in a round. The triage template has a section for them; use it.
+class in a round. Call them out in the triage comment.
 
 ### Capped is not clean
 
@@ -268,45 +250,14 @@ the first time: the question no round had asked (which guard's correctness
 depended on the unobserved state), a false spec claim in two docblocks, and
 the cost of "close" that the escalation had left implicit.
 
-## Traps, each of which cost a dead run
+## Rules that outlived the local scripts
 
-These are not theoretical. They were paid for across many review rounds on an
-earlier project and are handled in the scripts.
+### A push voids the round
 
-### Codex (Frank)
-
-- **`-c sandbox_mode="danger-full-access"` is required.** Codex's bubblewrap
-  sandbox cannot create a namespace in this container (no unprivileged userns).
-  A sandboxed run cannot read the diff at all and returns a _"could not
-  inspect"_ non-review — which **reads like a clean pass if you only skim the
-  verdict**. Treat any such output as a FAILED run, never as approval. The
-  container is the isolation boundary, and the tree is verified unchanged after.
-- **`codex exec review --base` and a custom prompt are mutually exclusive.**
-  Passing `--base` silently discards the persona and the lens and runs Codex's
-  generic review. Frank therefore goes through plain `codex exec`.
-- Codex reviews the **committed** diff, so uncommitted edits do not affect it.
-
-### Grok (George)
-
-- **The default permission mode silently cancels** the session the moment the
-  model reaches for a terminal command. Grant `--allow read_file --allow grep
---allow list_dir` explicitly _and_ state in the prompt that terminal is
-  forbidden.
-- **Prompts over ~14KB are offloaded to a file** the model must read back — so
-  never tell it "you have no tools", or it cannot recover its own prompt.
-- **Output ending on narration is a stalled run, not a pass.** Require that the
-  final message be the complete report, and treat narration-only output as a
-  retry.
-- George reads **files from disk** via `--cwd`, not the committed diff.
-
-### The loop rule
-
-> **Wait for BOTH reviewers to finish before applying any fix, and commit
-> before launching the next round.**
-
-Frank reads the committed diff; George reads the worktree. Editing files while
-George is running corrupts its review — it sees the diff and the disk disagree.
-Frank usually finishes first and tempts an immediate edit. Don't.
+A clean statement names a head SHA. Any push after it, including a rebase or a
+base merge into the PR branch, voids **both** lenses until the bench posts
+again at the new head. Re-read the head SHA right before handing a merge
+command over.
 
 ### Knowing when to stop looping
 
@@ -319,34 +270,11 @@ stop fixing case by case and open a follow-up issue for a systematic pass.
 
 The two lenses have already diverged in practice: the diff-local pass has come
 back clean where the deep-tree pass found a real authorization gap in untouched
-code. **The asymmetry is the point — never run one as a fallback for the
+code. **The asymmetry is the point — never treat one as a fallback for the
 other.**
 
-## Guard design notes
+### Failed local runs are gone, the lesson is not
 
-Two guards exist, and both were wrong on the first attempt:
-
-1. **Read-only verification** compares content hashes, not `--stat`. Frank's
-   own review of this pipeline caught that a stat comparison misses an edit
-   preserving insertion/deletion counts, and misses content changes to
-   untracked files entirely.
-2. **Failed-run detection** keys on the report's _shape_ (no verdict, or
-   "P1: Not assessed"), never on scanning for error strings. The transcript
-   echoes the diff, so when the review scripts are themselves under review a
-   substring match finds its own source and reports a false failure.
-
-## Provenance
-
-The George preamble carries over the prompt an earlier project used. Frank's was
-reconstructed from the lens description inside George's prompt ("Reviewer A
-covers the diff-local lens; do not spend your effort on style or diff-local
-nits") and adapted to this repo. Treat Frank's as a faithful reconstruction
-rather than an exact copy.
-
-## A known review-noise item
-
-Each agent reads its **own** instruction file — Claude reads `CLAUDE.md`, Codex
-reads `AGENTS.md`. Where those two files disagree, Frank flags the mismatch on
-review. Declining, with an explicit reference to the instruction file the
-authoring agent follows, is the correct response. This repo's `CLAUDE.md` simply
-defers to `AGENTS.md`, so the conflict should not arise here.
+A non-review ("could not inspect", narration only, no verdict) is a failed run,
+never an approval. That was learned on the local scripts; if a bench comment
+ever reads that way, treat it the same.
