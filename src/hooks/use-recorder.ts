@@ -21,6 +21,7 @@ import {
 import { strings } from "@/lib/strings";
 
 import {
+  claimSharedContext,
   createLevelTap,
   decodeToCanonical,
   isRecordingSupported,
@@ -557,6 +558,11 @@ export function useRecorder(): UseRecorder {
     // other reference to it, and a throw in that window would otherwise leave
     // the microphone open for the life of the page.
     let stream: MediaStream | null = null;
+    // Held across the `getUserMedia` await (#1265): a `devicechange` there
+    // (granting the microphone can itself fire one) or a hide only marks the
+    // shared context for a drop, which lands at the release below, right
+    // before `raceAudioResume` builds the replacement. Once only.
+    const releaseMicClaim = claimSharedContext();
 
     try {
       // #1111: declare a record-capable audio session BEFORE the microphone
@@ -577,6 +583,7 @@ export function useRecorder(): UseRecorder {
           autoGainControl: true,
         },
       });
+      releaseMicClaim();
 
       if (generation !== generationRef.current) {
         abandonStream(stream);
@@ -779,6 +786,7 @@ export function useRecorder(): UseRecorder {
       startTick();
       return true;
     } catch (cause) {
+      releaseMicClaim();
       if (stream) abandonStream(stream);
       // A `cancel()` or a newer `start()` owns the state and the message now.
       // Reporting this failure over theirs is the stale-message problem

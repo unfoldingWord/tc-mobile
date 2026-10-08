@@ -79,6 +79,7 @@ vi.mock("@/hooks/audio-io", () => ({
   raceAudioResume: vi.fn().mockResolvedValue(false),
   RESUME_TIMEOUT_MS: 1000,
   resumeAudioContext: vi.fn().mockResolvedValue(undefined),
+  claimSharedContext: vi.fn(() => vi.fn()),
   setRecordAudioSession: vi.fn(),
   stopTracks: vi.fn((stream: { getTracks: () => { stop: () => void }[] }) => {
     stream.getTracks().forEach((track) => track.stop());
