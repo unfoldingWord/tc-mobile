@@ -899,11 +899,20 @@ easy to regress.
   Field testers and facilitators are asked for _bug reports_; those go into
   the queue as `bug` with `source: tester`, and the body records who (by
   role, never by name), when, and on which build. _Feature requests_ from
-  testers are documented, never dropped, and tagged `post-v1` with the source
-  and the rationale in the body; they are not scheduled until they are
-  reviewed against the plan after the training. Where a tester ask matches an
-  issue already open, it lands as an evidence comment on that issue, not as a
-  new one. `v1-required` means V1 = the v1.0.0 training build.
+  testers are documented, never dropped: they are filed as `enhancement` with
+  `source: tester` into the **Backlog** milestone, with the source and the
+  rationale in the body, and are scheduled only when pulled into a sprint.
+  Where a tester ask matches an issue already open, it lands as an evidence
+  comment on that issue, not as a new one. `v1-required`, `v1-desired` and
+  `post-v1` were retired on 2026-10-08, after v1.0.0 shipped; they remain only
+  on closed issues, as history.
+- **Every issue carries one type, one `area:` label, and the `a11y:` labels
+  that apply** (decided 2026-10-08). The type is one of `bug`, `enhancement`,
+  `documentation`, `chore` or `question`. The area is the feature family,
+  which is what an issue count is broken down by. The `a11y:` labels
+  (`low-vision`, `non-reader`, `motor`, `hearing`), alongside `accessibility`,
+  say which need an issue touches. They classify; they are not a commitment
+  to build for every need.
 
 ## Review — every PR, both reviewers
 
