@@ -172,6 +172,12 @@ jobs:
       - name: Test
         run: npm test
 
+      # The src/lib/** coverage floor (#159 Q-16); thresholds live in
+      # vitest.config.ts. A second full run, kept out of `npm test` so the
+      # instrumented, slower run only gates here.
+      - name: Coverage floor for src/lib
+        run: npm run test:coverage
+
       - name: Security audit
         run: npm audit --omit=dev --audit-level=moderate
 
