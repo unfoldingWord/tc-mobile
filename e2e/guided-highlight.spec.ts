@@ -55,23 +55,13 @@ async function ringOf(page: Page): Promise<string> {
   return found[0]!.shadow;
 }
 
-/**
- * Pin the current look before the app boots (`lib/design.ts`'s key). #951
- * flipped the default to o4, and the cases below assert the current look's
- * guide-ring accent (`rgb(46, 125, 246)`) — O4's guide ring is a different
- * token — so they opt out of the new default explicitly, the same way
- * `recorder-menu-half-screen.spec.ts` opts INTO o4.
- */
-async function pinCurrentLook(page: Page) {
-  await page.addInitScript(() => {
-    window.localStorage.setItem("tc-mobile.design", "current");
-  });
-}
-
 test("the ring moves through the chain and marks exactly one control at a time", async ({
   page,
 }) => {
-  await pinCurrentLook(page);
+  // The ring at rest. The guide pulse (`o4/motion.css`, #950) animates the
+  // ring's shadow, so a computed read mid-pulse catches an interpolated
+  // colour; reduced motion is the app's own still frame of the same ring.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
 
   // Step 1 — an empty shelf. The header + is hidden here, so the invite's own
@@ -317,7 +307,10 @@ test.describe("disabled recorder guide", () => {
             });
         };
       });
-      await pinCurrentLook(page);
+      // The ring at rest. The guide pulse (`o4/motion.css`, #950) animates the
+      // ring's shadow, so a computed read mid-pulse catches an interpolated
+      // colour; reduced motion is the app's own still frame of the same ring.
+      await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto("/");
       await page.evaluate((value) => {
         document.documentElement.dataset.theme = value;

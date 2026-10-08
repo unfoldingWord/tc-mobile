@@ -20,13 +20,6 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 test.use({ viewport: { width: 360, height: 740 } });
 
-/** Opt into the O4 look before the app boots (`lib/design.ts`'s key). */
-async function optIntoO4(page: Page) {
-  await page.addInitScript(() => {
-    window.localStorage.setItem("tc-mobile.design", "o4");
-  });
-}
-
 async function openMenu(page: Page): Promise<Locator> {
   await page.getByRole("button", { name: "Open menu" }).click();
   const menu = page.getByRole("dialog", { name: "Menu" });
@@ -47,7 +40,6 @@ async function dragGrip(page: Page, menu: Locator, dy: number) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await optIntoO4(page);
   await page.goto("/");
 });
 
