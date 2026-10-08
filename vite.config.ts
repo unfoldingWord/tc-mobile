@@ -377,6 +377,10 @@ export default defineConfig(({ mode }) => {
       ...(isNativeBuild ? [nativeTeardownSwPlugin()] : []),
       VitePWA({
         registerType: "autoUpdate",
+        // The manifest's three icon PNGs already match `globPatterns` (`png`),
+        // so letting the plugin add them again precached each twice (#161).
+        // tests/precache-manifest.test.ts pins one entry per url.
+        includeManifestIcons: false,
         // `dev-dist` lets us verify offline behaviour in `vite dev` instead of
         // discovering service-worker problems only after a deploy.
         devOptions: { enabled: true, type: "module" },

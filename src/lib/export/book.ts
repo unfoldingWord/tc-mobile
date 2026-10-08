@@ -44,7 +44,7 @@ import { getClipMeta } from "@/lib/storage/clips";
 import { filenameSafe } from "@/lib/utils";
 import type { AudioCodec } from "@/types/audio";
 import type { Book, BookId, Chapter } from "@/types/domain";
-import { Zip, ZipPassThrough } from "fflate";
+import type { Zip, ZipPassThrough } from "fflate";
 
 /**
  * Where a streaming archive's bytes go, in archive order, as fflate produces
@@ -175,6 +175,8 @@ function uniqueEntryName(taken: Set<string>, name: string): string {
  */
 interface ZipSink {
   readonly zip: Zip;
+  /** A stored (pass-through) entry for `name`, ready for `zip.add`. */
+  entry(name: string): ZipPassThrough;
   /** The first error fflate reported, if any. */
   error(): Error | null;
   /**
@@ -186,7 +188,10 @@ interface ZipSink {
   drain(): Promise<void>;
 }
 
-function openZipSink(sink: ArchiveSink): ZipSink {
+async function openZipSink(sink: ArchiveSink): Promise<ZipSink> {
+  // Loaded when a zip is first needed, not at startup: fflate is only used by
+  // Share Book and Share your work, so it stays out of the entry chunk (#161).
+  const { Zip, ZipPassThrough } = await import("fflate");
   let pending: Promise<void>[] = [];
   let zipError: Error | null = null;
   const zip = new Zip((err, chunk) => {
@@ -200,6 +205,7 @@ function openZipSink(sink: ArchiveSink): ZipSink {
   });
   return {
     zip,
+    entry: (name) => new ZipPassThrough(name),
     error: () => zipError,
     drain: async () => {
       const writes = pending;
@@ -280,7 +286,7 @@ async function addChaptersToZip(
     // Stored entry: fflate computes the CRC over the MP3 and emits the buffer
     // itself as the data chunk. `result.mp3` is dropped after this iteration;
     // the archive's reference to it is the one copy that remains.
-    const entry = new ZipPassThrough(`${folder}${name}`);
+    const entry = sink.entry(`${folder}${name}`);
     sink.zip.add(entry);
     entry.push(result.mp3, true);
     // This chapter's bytes reach the sink before the next chapter is encoded
@@ -367,7 +373,7 @@ export async function exportBookZip(
   // dangling chapter would export as if whole.
   const { chapters, missing: danglingChapters } =
     await resolveBookChapters(bookId);
-  const zip = openZipSink(sink);
+  const zip = await openZipSink(sink);
   const added = await addChaptersToZip(
     zip,
     chapters,
@@ -459,7 +465,7 @@ export async function exportLibraryZip(
   shouldContinue?: () => boolean
 ): Promise<LibraryExport | null> {
   const books = await listBooks();
-  const zip = openZipSink(sink);
+  const zip = await openZipSink(sink);
   const takenFolders = new Set<string>();
   let included = 0;
   let missing = 0;

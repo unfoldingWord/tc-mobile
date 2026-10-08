@@ -387,6 +387,27 @@ describe.skipIf(GATE === "skip")(
         "version.json must never be precached: a post-promotion check fetching it has to reach the origin, not a service-worker cache (AGENTS.md, 'Confirming a deploy and rolling one back')"
       ).toEqual([]);
     });
+
+    it("lists every url once, including the manifest icons (#161)", () => {
+      // vite-plugin-pwa adds the manifest's icons to the precache on top of
+      // the glob unless `includeManifestIcons` is false, so each icon PNG was
+      // listed twice (two entries, one fetch each at install).
+      const urls = precachedUrls();
+      expect(urls.length).toBeGreaterThan(0);
+      const duplicated = urls.filter((url, i) => urls.indexOf(url) !== i);
+      expect(duplicated).toEqual([]);
+    });
+
+    it("still precaches the three manifest icons, once each (#161)", () => {
+      const urls = precachedUrls();
+      for (const icon of [
+        "icons/icon-192.png",
+        "icons/icon-512.png",
+        "icons/icon-maskable-512.png",
+      ]) {
+        expect(urls.filter((url) => url === icon)).toEqual([icon]);
+      }
+    });
   }
 );
 
