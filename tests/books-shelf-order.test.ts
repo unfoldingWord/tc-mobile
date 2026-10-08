@@ -28,8 +28,7 @@ import { clearAllStores, testCodec } from "./support";
  * The rules under test: the shelf reads the stored position, not `createdAt`;
  * a move writes a dense 0..N-1 order in one transaction and is not activity
  * on the book (no `updatedAt`); a new book lands at the top; and the library
- * share keeps the order it had before #338 (newest created first) until the
- * requirements owner says otherwise.
+ * share zips books in the shelf order (DRI pick on PR #1367).
  */
 
 beforeEach(clearAllStores);
@@ -177,7 +176,7 @@ describe("moveBook (#338)", () => {
   });
 });
 
-describe("the library share keeps creation order (#338: assumption, needs the requirements owner)", () => {
+describe("the library share follows the shelf order (#338, DRI pick on #1367)", () => {
   const nameBook = (book: { name: string | null; number: number }) =>
     strings.bookHeading(book.name, book.number);
   const nameChapter = (
@@ -198,7 +197,7 @@ describe("the library share keeps creation order (#338: assumption, needs the re
     return book.id;
   }
 
-  it("zips books newest-created first even after the user reorders the shelf", async () => {
+  it("zips books in the user's shelf order, not creation order", async () => {
     const earlier = await recordedBook("Earlier", 1_000);
     await recordedBook("Later", 2_000);
     await moveBook(earlier, 0);
@@ -218,8 +217,8 @@ describe("the library share keeps creation order (#338: assumption, needs the re
       at += chunk.length;
     }
     expect(Object.keys(unzipSync(bytes))).toEqual([
-      "Later/Later - Chapter 1.mp3",
       "Earlier/Earlier - Chapter 1.mp3",
+      "Later/Later - Chapter 1.mp3",
     ]);
   });
 });

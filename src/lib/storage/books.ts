@@ -183,22 +183,6 @@ export async function listBooks(): Promise<Book[]> {
   return byShelfPosition(await db.getAll("books"));
 }
 
-/**
- * Every book, newest-CREATED first — the shelf's order before #338, and the
- * order the library share ("Share your work", `lib/export/book.ts`) still
- * zips books in.
- *
- * Kept for the share on purpose: whether that zip should follow the user's
- * shelf order is one of #1186's open questions for the requirements owner, so
- * until it is answered the share does what it did. Books with the same
- * `createdAt` keep primary-key (id) order: `getAll` returns rows in key order,
- * and `Array.prototype.sort` is stable.
- */
-export async function listBooksNewestFirst(): Promise<Book[]> {
-  const db = await getDb();
-  return (await db.getAll("books")).sort((a, b) => b.createdAt - a.createdAt);
-}
-
 export async function getBook(id: BookId): Promise<Book | undefined> {
   return (await getDb()).get("books", id);
 }
