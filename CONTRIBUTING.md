@@ -105,22 +105,21 @@ Shared files, where collisions actually happen:
 
 ## Review
 
-Two independent reviewers run on every code PR: **Frank** (codex, diff-local)
-and **George** (grok, deep-tree) — two lenses, never a primary and a fallback.
+Two independent reviewers run on every code PR: **Frank** (Codex, diff-local)
+and **George** (Grok, deep-tree) — two lenses, never a primary and a fallback.
 
-```bash
-scripts/review/both.sh                    # both reviewers; base defaults to origin/develop
-scripts/review/triage.sh <round> <pr>    # build the round's triage comment
-```
-
-- **A non-author runs the review.** The author never reviews their own PR.
+- **The uwreview bench runs both lenses** on the review VM and posts its rounds
+  on the PR. Do not run a reviewer locally; the `scripts/review/*` harness is
+  gone (#1343). Push, then wait for the bench's comments at your head.
 - **A PR is clean only when both reviewers are clean at the current head SHA.**
-  A push voids the round — both reviewers must re-post.
-- **After a conflict-free rebase, post `git range-diff`.** If the patch is
-  unchanged apart from context, the reviewer records acceptance instead of
-  running a fresh round. A rebase that changes the patch gets a confirming
-  round.
-- **One triage comment per round**, including clean rounds. Every finding gets a
+  A push voids the round — the bench must review the new head.
+- **A rebase or base merge is a push.** It changes the head SHA and voids both
+  lenses until the bench posts at the new head. After a conflict-free rebase,
+  post `git range-diff` on the PR so the new round can see the patch did not
+  change; recording acceptance does not replace that round, and an approval on
+  the pre-rebase SHA does not count.
+- **One triage comment per round**, including clean rounds, written by hand on
+  the PR. Every finding gets a
   disposition — **FIXED** with a commit, **REFUTED** with file:line evidence, or
   **DEFERRED** with a tracking issue — attributed to the reviewer that raised it
   and stamped with the head SHA.
@@ -131,12 +130,12 @@ scripts/review/triage.sh <round> <pr>    # build the round's triage comment
   defect class: the fix approach is wrong) — and ask. Hitting the cap with
   findings open is an escalation, not an approval.
 - **A one-reviewer round is recorded as a deviation**, never as clean.
-- When both are clean, the reviewer posts a **GitHub approval**. The **DRI
+- When both are clean, the bench posts a **GitHub approval** (observed on #1346 and #1351). The **DRI
   admin-merges** after that approval and green CI, whoever wrote the PR,
   pinned to the approved head SHA. An approval on an earlier head does not
   count. Merges into `develop` normally use a **merge commit**; a release bump
   must, so that its promotion carries the same bump commit (#918).
-- **Process artifacts** — `ci.yml`, `AGENTS.md`, `scripts/review/**`, deploy
+- **Process artifacts** — `ci.yml`, `AGENTS.md`, `docs/review/**`, deploy
   config — need both reviewers, because they are executed as instructions.
   Exempting them is allowed; the decision is recorded on the PR, never skipped
   silently.
@@ -253,7 +252,7 @@ Most work here is done with an agent, at speed. The rules that keep that safe:
 - **Every agent-authored PR body and comment ends with the session link the
   agent provides**, so the work is traceable.
 - **A QA pass by an agent is review input, not the dual review.** It does not
-  substitute for Frank and George, and it does not satisfy the non-author rule.
+  substitute for Frank and George, and it does not satisfy the two-lens rule.
 
 **Questions:** open an issue, or bring it to
 [forum.door43.org](https://forum.door43.org).

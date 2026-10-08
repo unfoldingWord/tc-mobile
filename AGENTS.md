@@ -916,17 +916,19 @@ easy to regress.
 
 ## Review — every PR, both reviewers
 
-Two independent reviewers run on every code PR: **Frank** (codex, diff-local)
-and **George** (grok, deep-tree). They are two lenses, never a primary and a
+Two independent reviewers run on every code PR: **Frank** (Codex, diff-local)
+and **George** (Grok, deep-tree). They are two lenses, never a primary and a
 fallback — a PR is review-clean only when **both** are clean.
 
-```bash
-scripts/review/both.sh <base>          # run both
-scripts/review/triage.sh <round> <pr>  # build the round's triage comment
-```
+**The uwreview bench runs both lenses on the review VM and posts its rounds on
+the PR.** Nobody runs a reviewer locally: lanes and authors do not run codex or
+grok, and the local `scripts/review/*` harness was retired (#1343, 2026-10-08).
+A lane builds, runs `npm run verify` and `npm run check:prepush`, marks the PR
+ready, and stops. A push voids the round for both lenses.
 
-**A triage comment is mandatory every round**, including clean rounds. Every
-finding gets an explicit disposition — FIXED with a commit, REFUTED with
+**A triage comment is mandatory every round**, including clean rounds. It is
+written by hand on the PR (the bench posts the reviews, not the dispositions).
+Every finding gets an explicit disposition — FIXED with a commit, REFUTED with
 file:line evidence, or DEFERRED with a tracking issue — attributed to the
 reviewer that raised it and stamped with the head SHA. A finding that was
 "addressed" with nothing posted is not verifiable later.
@@ -941,12 +943,10 @@ again**. The cap prompts a decision; it is not a gate the loop closes on its
 own. Hitting it with findings open is an **escalation, not an approval**: name
 the residual findings on the PR and have them explicitly accepted.
 
-**Freeze budget (decided 2026-09-21, expires 2026-10-04).** Until the v1.0.0
-handoff, T3 and docs changes take one George round (P1/P2 only), harness and
-meta PRs cap at two rounds with residuals accepted on the PR, and a P3 never
-triggers a round on any tier — it is batched into one follow-up issue at
-triage. T1 and T2 are unchanged. The table is in
-`docs/review/dual-review.md` ("Freeze budget").
+**The freeze budget has expired.** It was decided 2026-09-21 to run until
+2026-10-04, the v1.0.0 handoff; that date has passed, so the reduced-round
+tiers no longer apply and every tier takes the bar in `docs/review/dual-review.md`
+("Merge policy"). A new freeze needs a new DRI decision with its own dates.
 
 **Decompose before any post-cap round (decided 2026-09-18).** The DRI's pick
 at the cap is made from a _judgment sheet_, not from the round narrative:
@@ -962,10 +962,10 @@ spec claim in both docblocks that the current spec contradicts. Chain versus
 siblings still gets stated; the sheet is what the pick is made from. The shape
 is in `docs/review/dual-review.md` ("Decompose before the DRI picks").
 
-**Merging.** This repo is solo, so Frank and George _are_ the review: once both
-are clean at the current head SHA and CI is green, merge is an admin merge.
-Documentation and content merge on green alone. Process/meta artifacts —
-`ci.yml`, `AGENTS.md`, `scripts/review/**`, deploy config — normally need both
+**Merging.** Frank and George _are_ the review: once both are clean at the
+current head SHA and CI is green, the DRI merges with `--admin` (the ruleset
+requires it). Documentation and content merge on green alone. Process/meta
+artifacts — `ci.yml`, `AGENTS.md`, `docs/review/**`, deploy config — normally need both
 reviewers because they are _executed as instructions_; exempting them is
 allowed, but **the decision is recorded on the PR**, never skipped silently.
 
