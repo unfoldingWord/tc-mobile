@@ -113,10 +113,11 @@ and **George** (Grok, deep-tree) — two lenses, never a primary and a fallback.
   gone (#1343). Push, then wait for the bench's comments at your head.
 - **A PR is clean only when both reviewers are clean at the current head SHA.**
   A push voids the round — the bench must review the new head.
-- **After a conflict-free rebase, post `git range-diff`.** If the patch is
-  unchanged apart from context, record acceptance on the PR. Whether the bench
-  still posts a fresh round in that case is not stated in this repo; check the
-  PR.
+- **A rebase or base merge is a push.** It changes the head SHA and voids both
+  lenses until the bench posts at the new head. After a conflict-free rebase,
+  post `git range-diff` on the PR so the new round can see the patch did not
+  change; recording acceptance does not replace that round, and an approval on
+  the pre-rebase SHA does not count.
 - **One triage comment per round**, including clean rounds, written by hand on
   the PR. Every finding gets a
   disposition — **FIXED** with a commit, **REFUTED** with file:line evidence, or
