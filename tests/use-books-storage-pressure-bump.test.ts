@@ -77,7 +77,7 @@ describe("createBook bumps storage-pressure after its write commits (#542 Part A
   });
 
   it("calls it AFTER createBookInStore's write has landed, not before", () => {
-    const writeAt = createBookBody.indexOf("await createBookInStore(name)");
+    const writeAt = createBookBody.indexOf("await createBookInStore(");
     const bumpAt = createBookBody.indexOf("bumpStoragePressure()");
     expect(writeAt).toBeGreaterThan(-1);
     expect(bumpAt).toBeGreaterThan(writeAt);

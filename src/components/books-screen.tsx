@@ -23,6 +23,7 @@ import { Icon } from "./icon";
 import { Menu } from "./menu";
 import { NameEdit } from "./name-edit";
 import { O4BookDeleteAsk } from "./o4-book-delete-ask";
+import { CoverPicker } from "./cover-picker";
 import { CoverTile, O4BookHead, O4CoverPick } from "./o4-book-menu";
 import { Tile, TileGrid, TileSpacer } from "./o4-tile-menu";
 import { Notice } from "./notice";
@@ -267,6 +268,12 @@ export function BooksScreen({
   // closed, which is what resets a half-typed name), and so Confirm can tell an
   // untouched field from a typed one.
   const [newBookSeed, setNewBookSeed] = useState<string | null>(null);
+  // The cover colour tapped in the New Book sheet (#1190); `null` is the
+  // default, an id-derived colour, exactly what a create without a pick has
+  // always written. Reset on every open and every dismissal, with the seed.
+  const [newBookColour, setNewBookColour] = useState<CoverColourKey | null>(
+    null
+  );
   // A failed create, scoped to THIS dialog. Not the hook's shared `error`: that
   // channel also carries an addChapter or rename failure, which would then be
   // announced (Notice is `role="alert"`) inside a New Book dialog that has not
@@ -474,6 +481,7 @@ export function BooksScreen({
   const cancelNewBookState = useCallback(() => {
     if (creatingBook.current) return false;
     setNewBookSeed(null);
+    setNewBookColour(null);
     setNewBookError(null);
     return true;
   }, []);
@@ -865,6 +873,7 @@ export function BooksScreen({
     // (#169), and the seed is what the field shows AND what Confirm compares a
     // typed name against, so both halves read the same rendering.
     setNewBookSeed(strings.bookHeading(null, newBookNumber));
+    setNewBookColour(null);
     // Registered in the SAME handler that opens it (invariant 6), and after
     // the state above for the same reason that ordering is documented as
     // unobservable in `use-nav-stack.ts`'s `openChapter`: the layer is on the
@@ -920,7 +929,7 @@ export function BooksScreen({
       // or whitespace-only one is not an error either and lands on the same
       // fallback, in the store.
       const name = typed.trim() === newBookSeed ? "" : typed;
-      const outcome = await createBook(name);
+      const outcome = await createBook(name, newBookColour);
       if (!outcome.ok) {
         // A failed create keeps the dialog OPEN with the reason in its own
         // Notice — the screen's Notice sits behind the scrim — and the typed
@@ -934,6 +943,7 @@ export function BooksScreen({
       const { book } = outcome;
       newBookReturnFocus.current = null;
       setNewBookSeed(null);
+      setNewBookColour(null);
       // The dialog comes down on the success path too, so its layer must —
       // NOT through `onCancelNewBook`, whose own guard would refuse here
       // (`creatingBook` stays held until the next open edge, deliberately).
@@ -951,7 +961,7 @@ export function BooksScreen({
       // See its declaration — releasing it here reopens the double-create window
       // between the write resolving and the panel actually unmounting.
     },
-    [createBook, layers, newBookSeed, rowReveal]
+    [createBook, layers, newBookColour, newBookSeed, rowReveal]
   );
 
   // A book row's `+` no longer creates anything either: it opens the naming
@@ -2151,7 +2161,20 @@ export function BooksScreen({
           busy={creatingBookBusy}
           busyLabel={strings.creatingBook}
           guided={guide?.kind === "create-book"}
-        />
+        >
+          {/* The cover colour (#1190). Optional: nothing is marked until a
+              swatch is tapped, and a book created without a pick is written
+              exactly as before. Tapping the marked swatch again clears it. The
+              colour rides into the create's own write transaction. Frozen while
+              the create is in flight, like the field. */}
+          <CoverPicker
+            selected={newBookColour}
+            onSelect={(key) =>
+              setNewBookColour((prev) => (prev === key ? null : key))
+            }
+            disabled={creatingBookBusy}
+          />
+        </NameEdit>
         {/* New Book's own busy AT channel (#395 item 2) — the third busy
             `NameEdit` caller, and the one that had none: the field
             `autoFocus`es and Enter submits without moving focus to Confirm,

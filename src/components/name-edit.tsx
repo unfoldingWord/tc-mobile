@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
 import { Control } from "./control";
 import { confirmControlAffordance } from "./control-affordance";
@@ -58,6 +58,14 @@ interface NameEditProps {
    * optional part. The rename call sites are not steps in the chain.
    */
   guided?: boolean;
+  /**
+   * Extra content on its own row beneath the field and the commit control, kept
+   * INSIDE the form (#1190). The form's mousedown guard keeps focus in the field
+   * through a press (#1099); a control outside it would blur the field, and the
+   * O4 sheet docks only while `.name-edit:focus-within` holds. Only New Book
+   * passes it (the cover-colour row).
+   */
+  children?: ReactNode;
 }
 
 /**
@@ -91,13 +99,14 @@ export function NameEdit({
   busy = false,
   busyLabel = strings.savingName,
   guided,
+  children,
 }: NameEditProps) {
   const [value, setValue] = useState(initialValue);
   const selectedInitialValue = useRef(false);
   const affordance = confirmControlAffordance(busy);
   return (
     <form
-      className="name-edit"
+      className={children ? "name-edit name-edit-with-extra" : "name-edit"}
       onSubmit={(e) => {
         e.preventDefault();
         // Enter still submits the form while busy (the input is `readOnly`,
@@ -203,6 +212,7 @@ export function NameEdit({
         guided={guided && !busy}
         onClick={() => onSave(value)}
       />
+      {children ? <div className="name-edit-extra">{children}</div> : null}
     </form>
   );
 }

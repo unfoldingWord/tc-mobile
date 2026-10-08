@@ -117,7 +117,8 @@ export function nextBookNumber(
 export async function createBook(
   name: string,
   languageCode: string | null = null,
-  now: number = Date.now()
+  now: number = Date.now(),
+  coverColourKey: string | null = null
 ): Promise<Book> {
   const db = await getDb();
   const tx = db.transaction("books", "readwrite");
@@ -131,8 +132,11 @@ export async function createBook(
     createdAt: now,
     updatedAt: now,
     // Unset by default — the facilitator has not chosen one yet (#957).
-    // `resolveCoverKey` derives a colour from the id until they do.
-    coverColourKey: null,
+    // `resolveCoverKey` derives a colour from the id until they do. The New
+    // Book sheet may pass one (#1190) so the colour lands in this same write
+    // rather than in a second one after it. Like `setBookCoverColour`, this
+    // does not validate against the live palette; the picker only offers it.
+    coverColourKey,
   };
   await tx.store.put(book);
   await tx.done;
