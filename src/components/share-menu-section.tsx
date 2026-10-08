@@ -8,6 +8,7 @@ import { Notice } from "./notice";
 import { shareErrorText } from "./share-error-copy";
 import { shareErrorGlyph, shareOutcomeGlyph } from "./share-outcome-glyph";
 import { strings } from "@/lib/strings";
+import { cn } from "@/lib/utils";
 import { readSharePlatform } from "@/hooks/share-target";
 import type { ShareError, ShareStatus } from "@/hooks/share-flow";
 
@@ -118,7 +119,9 @@ export function ShareMenuSection({
         icon={affordance.icon}
         label={strings.shareSend}
         variant={tiles ? undefined : affordance.variant}
-        className={look.className(affordance.className)}
+        className={look.className(
+          cn(affordance.className, tiles && "is-armed")
+        )}
         size={look.size}
         caption={look.caption}
         autoFocus

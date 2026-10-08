@@ -139,6 +139,11 @@ describe("every O4 loop is scoped under the switch (#950)", () => {
       "liveEdge var(--p-ambient-live-edge, 1.2s) ease-in-out infinite",
     ],
     [
+      "armedPulse",
+      [`${O4} .o4-tile--send.is-armed`],
+      "armedPulse var(--p-ambient-armed, 1.6s) ease-in-out infinite",
+    ],
+    [
       "blink",
       [`${O4} .recorder-status .rec-dot`],
       "blink var(--p-ambient-blink, 1s) steps(2) infinite",

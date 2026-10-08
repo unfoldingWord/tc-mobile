@@ -5,7 +5,7 @@
  * the guide pulse on the guided record control (#604's outset ring), the
  * recorder stage's live edge, the recording dot's blink (#945's states), and
  * the refusal shake on the book delete ask's head (#1030's markup). The mic
- * pulse, the armed share ring, the shake's mic-denied target and the audible
+ * pulse, the shake's mic-denied target and the audible
  * ping land with the screens that carry them (2026-09-26 remainder audit,
  * issue #950).
  *
@@ -58,6 +58,32 @@
       box-shadow:
         0 0 0 5px var(--s-floor),
         0 0 0 14px color-mix(in srgb, var(--s-guide) 30%, transparent);
+    }
+  }
+
+  /* --- armedPulse: the Share now tile once the file is ready (#1087) ----- */
+  /* Derived from the share's `status === "ready"` (share-menu-section.tsx
+     adds `is-armed` to the ready tile), not from a progress phase: the menu,
+     not the overlay, is on screen while the file waits for its second tap.
+     Stops while the menu is inert (the overlay covers it) and while the tile
+     has keyboard focus, where globals.css pushes the focus outline out past
+     the pulse's ring (autoFocus lands focus here as the tile appears). */
+  [data-design="o4"] .o4-tile--send.is-armed {
+    animation: armedPulse var(--p-ambient-armed, 1.6s) ease-in-out infinite;
+  }
+  [data-design="o4"] [inert] .o4-tile--send.is-armed,
+  [data-design="o4"] .o4-tile--send.is-armed[inert],
+  [data-design="o4"] .o4-tile--send.is-armed:focus-visible {
+    animation: none;
+  }
+  @keyframes armedPulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 var(--s-send-ring);
+    }
+    50% {
+      box-shadow: 0 0 0 6px
+        color-mix(in srgb, var(--s-send-ring) 35%, transparent);
     }
   }
 
@@ -116,6 +142,7 @@
     [data-design="o4"] .control--record.is-guided,
     [data-design="o4"] .control--mic.is-guided,
     [data-design="o4"] .record-guide.is-guided,
+    [data-design="o4"] .o4-tile--send.is-armed,
     [data-design="o4"] .recorder-stage[data-o4-look="recording"]::after,
     [data-design="o4"] .recorder-status .rec-dot,
     [data-design="o4"] .books-delete-ask > .o4-sheet-head {
