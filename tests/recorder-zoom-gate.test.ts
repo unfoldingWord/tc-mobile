@@ -100,8 +100,7 @@ describe("Zoom's disabled gate covers the leftover-preview close window (#396)",
     //
     // It is `toBe` on the WHOLE expression, not `toContain`: a containment
     // check on the same string is still a substring match, so prepending `!`
-    // slips through it too. That was measured, not assumed — the first repair
-    // here used `toContain` and the negation mutant stayed green.
+    // slips through it too.
     expect(zoomDisabledExpr.trim()).toBe(
       "windowControlsInert || !idleEditable"
     );

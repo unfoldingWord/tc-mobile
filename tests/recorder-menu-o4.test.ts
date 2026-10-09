@@ -126,8 +126,7 @@ describe("RecorderMenu on the tile grid (#949 G3)", () => {
   it("never renders a Delete segment tile, in either mode (#1104 — Delete moved to the chapter view)", () => {
     // #590/#1080 first shipped a Delete tile here; the requirements owner's
     // 2026-09-26 decision on #1104 pulled it back out: "the menu inside the
-    // segment editor (recorder) shows Erase only." A red run of this exact
-    // case (against the pre-#1104 tree) failed on both modes.
+    // segment editor (recorder) shows Erase only."
     show();
     expect(named(strings.deleteSegment)).toBeUndefined();
     show({ mode: "edit" });

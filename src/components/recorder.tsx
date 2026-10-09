@@ -489,7 +489,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     /**
      * The finished checkbox's desired state, or null when the translator has not
      * touched it this session. The write is deferred to `close()` and applied
-     * AFTER any take commit (G5-#2): `addTake` demotes an approved segment to
+     * AFTER any take commit (G5-#2): `saveTake` demotes an approved segment to
      * draft, so a mark written eagerly is clobbered by a re-record on the same
      * close — and would also hit `setSegmentFinished` before the take it needs
      * exists. The checkbox reflects this immediately; the store learns it on
@@ -1426,7 +1426,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         if (verdict.kind === "take") {
           // Splice the take into the WORKING buffer at the locked offset,
           // exactly as `close()` does; the mark rides the take through
-          // `addTake`. UNLIKE `close()`, whose next step is always onExit,
+          // `saveTake`. UNLIKE `close()`, whose next step is always onExit,
           // this path means to STAY — so it MUST branch on saveRecording's
           // boolean. A quota/IDB failure returns false and turns into App's
           // recovery screen, which early-returns SaveFailed and unmounts this
@@ -2466,12 +2466,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // in `tests/close-plan.test.ts` (#180). At most one of save-take /
         // save-edit / clear / mark happens: a committed take already carries the
         // pending edits (its splice base is the edited buffer, Model A) and already
-        // carries the finished mark (applied atomically in `addTake`, so a separate
+        // carries the finished mark (applied atomically in `saveTake`, so a separate
         // write cannot be clobbered by the same close's demote-to-draft).
         const plan = planClose({ capture, ...pendingWork() });
         switch (plan.action) {
           case "save-take":
-            // The Finished mark rides the take (applied atomically in addTake, on
+            // The Finished mark rides the take (applied atomically in saveTake, on
             // this attempt or a retry). The boolean saveRecording returns is
             // deliberately not branched on here: on a failure App shows the recovery
             // screen and the mark is preserved in the held take, so close() has
@@ -3035,7 +3035,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // Enabled once a take WILL exist on close, not only when one already does.
     // `takeActive` covers the FIRST take — recording/closing before any clip
     // exists — so the day-1 path can record and mark done in one sheet (G8); the
-    // mark rides the take through `addTake`. `hasAudio` (the WORKING buffer) covers
+    // mark rides the take through `saveTake`. `hasAudio` (the WORKING buffer) covers
     // an existing clip and a B5 edit alike — including a paste into an empty
     // segment. Deliberately NOT keyed on the stale `view.hasClip`: that never
     // updates mid-sheet, so a clip edited down to nothing (cut-all) would still
@@ -3055,7 +3055,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
 
     // The Mark-finished row's reason (#135 round 3). Narrower than the Edit/Erase
     // gate on purpose: Mark stays live while recording, because the mark
-    // rides the take through `addTake` (G8/G10) — only the commit window freezes it.
+    // rides the take through `saveTake` (G8/G10) — only the commit window freezes it.
     // The ⋮ menu is NEVER up while the permission panel owns the body. The opener
     // is disabled on `denied`, but that only blocks OPENING: `denied` can turn on
     // while the menu is already up — Record, ⋮, then `getUserMedia` rejects — and
