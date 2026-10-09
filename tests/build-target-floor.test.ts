@@ -25,7 +25,7 @@ import { resolveDistGate } from "./dist-gate";
  * Vite 8's own default, when `build.target` is unset, is the string
  * `"baseline-widely-available"` — a rolling snapshot bumped on every Vite
  * major release (`ESBUILD_BASELINE_WIDELY_AVAILABLE_TARGET` in
- * `node_modules/vite/dist/node/chunks/node.js`) that, at the vite@8.3.0
+ * `node_modules/vite/dist/node/chunks/node.js`) that, at the vite@8.3.1
  * pinned here, resolves to `["chrome111","edge111","firefox114","safari16.4",
  * "ios16.4"]` — still above 15.4. Nothing in `vite.config.ts` overrode it
  * before PR #1051.

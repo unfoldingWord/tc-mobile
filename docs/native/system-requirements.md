@@ -50,7 +50,7 @@ match what the CSS already needed (#1052).
 
 ### JS: latent, now pinned
 
-Vite 8.3.0 (the version pinned in `package.json`), when `build.target` is left
+Vite 8.3.1 (the version pinned in `package.json`), when `build.target` is left
 unset, resolves it to the string `"baseline-widely-available"` — a rolling
 snapshot bumped on every Vite major release
 (`ESBUILD_BASELINE_WIDELY_AVAILABLE_TARGET`,
