@@ -67,6 +67,23 @@ const STORAGE_PROBE_CHUNK_BYTES = 5 * MB;
 
 const STORE = "chunks";
 
+/**
+ * Whether `cause` is the rejection `signal`'s abort produced: the signal's own
+ * reason, by identity, while the signal is aborted. Identity is enough:
+ * `throwIfAborted()` throws `signal.reason`, the encoder rejects with
+ * `abortReason(signal)` (`mp3-codec.ts`), which returns `signal.reason`, and
+ * `abort()` always sets a reason (an `AbortError` `DOMException` when none is
+ * given). A name match is deliberately absent: an IndexedDB transaction abort
+ * is also named `AbortError`, and a real failure racing the unmount must still
+ * reach the funnel (#1379 item 1).
+ */
+export function isAbortCause(
+  cause: unknown,
+  signal: AbortSignal | undefined
+): boolean {
+  return signal !== undefined && signal.aborted && cause === signal.reason;
+}
+
 /** Run a probe; a throw is reported to the funnel and becomes a `failed` outcome. */
 export async function settleProbe<T>(
   run: () => Promise<T>,
@@ -77,7 +94,7 @@ export async function settleProbe<T>(
   } catch (cause) {
     // An abort is the screen going away (#1014 item 6), not a probe defect:
     // it is not reported, and the caller drops the outcome.
-    if (!signal?.aborted) reportFailure(cause, PHONE_CHECK_CONTEXT);
+    if (!isAbortCause(cause, signal)) reportFailure(cause, PHONE_CHECK_CONTEXT);
     return { status: "failed", errorName: errorName(cause) };
   }
 }

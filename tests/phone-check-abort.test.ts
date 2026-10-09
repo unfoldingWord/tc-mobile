@@ -8,6 +8,7 @@ import {
   isPhoneCheckRunning,
   runMemoryCheck,
   runPhoneChecks,
+  untilDoneOrAborted,
   usePhoneCheck,
 } from "@/hooks/use-phone-check";
 import { subscribeToFailures } from "@/hooks/report-failure";
@@ -141,6 +142,94 @@ describe("settleProbe and an abort", () => {
     off();
     expect(seen).toHaveLength(0);
     expect(outcome.status).toBe("failed");
+  });
+
+  it("does not report the reason of an abort(customReason)", async () => {
+    const seen: unknown[] = [];
+    const off = subscribeToFailures((r) => void seen.push(r));
+    const run = new AbortController();
+    const reason = new Error("custom reason");
+    run.abort(reason);
+    await settleProbe(() => Promise.reject(reason), run.signal);
+    off();
+    expect(seen).toHaveLength(0);
+  });
+
+  it("reports a foreign AbortError after a no-argument abort", async () => {
+    const seen: unknown[] = [];
+    const off = subscribeToFailures((r) => void seen.push(r));
+    const run = new AbortController();
+    run.abort();
+    await settleProbe(
+      () => Promise.reject(new DOMException("tx aborted", "AbortError")),
+      run.signal
+    );
+    off();
+    expect(seen).toHaveLength(1);
+  });
+
+  it("still reports an unrelated error raised after the abort", async () => {
+    const seen: unknown[] = [];
+    const off = subscribeToFailures((r) => void seen.push(r));
+    const outcome = await settleProbe(
+      () => Promise.reject(new TypeError("not the abort")),
+      aborted()
+    );
+    off();
+    expect(seen).toHaveLength(1);
+    expect(outcome).toEqual({ status: "failed", errorName: "TypeError" });
+  });
+
+  it("still reports an AbortError while the signal is not aborted", async () => {
+    const seen: unknown[] = [];
+    const off = subscribeToFailures((r) => void seen.push(r));
+    await settleProbe(
+      () => Promise.reject(new DOMException("stray", "AbortError")),
+      new AbortController().signal
+    );
+    off();
+    expect(seen).toHaveLength(1);
+  });
+});
+
+describe("untilDoneOrAborted and an abort", () => {
+  it("swallows the signal's own reason", async () => {
+    const signal = aborted();
+    await expect(
+      untilDoneOrAborted(signal, () => Promise.reject(signal.reason))
+    ).resolves.toBeUndefined();
+  });
+
+  it("swallows the reason of an abort(customReason)", async () => {
+    const run = new AbortController();
+    const reason = new Error("custom reason");
+    run.abort(reason);
+    await expect(
+      untilDoneOrAborted(run.signal, () => Promise.reject(reason))
+    ).resolves.toBeUndefined();
+  });
+
+  it("rethrows a foreign AbortError after a no-argument abort", async () => {
+    const foreign = new DOMException("tx aborted", "AbortError");
+    await expect(
+      untilDoneOrAborted(aborted(), () => Promise.reject(foreign))
+    ).rejects.toBe(foreign);
+  });
+
+  it("rethrows an unrelated error raised after the abort", async () => {
+    const boom = new TypeError("not the abort");
+    await expect(
+      untilDoneOrAborted(aborted(), () => Promise.reject(boom))
+    ).rejects.toBe(boom);
+  });
+
+  it("rethrows an error when the signal never aborted", async () => {
+    const boom = new Error("defect");
+    await expect(
+      untilDoneOrAborted(new AbortController().signal, () =>
+        Promise.reject(boom)
+      )
+    ).rejects.toBe(boom);
   });
 });
 

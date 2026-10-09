@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   pauseTranscodeSweep,
@@ -7,6 +7,7 @@ import {
 } from "./finish-transcode";
 import {
   browserAllocationDeps,
+  isAbortCause,
   readAllocationBreadcrumb,
   readDeviceInfo,
   readSavedChecks,
@@ -201,7 +202,7 @@ export function runMemoryCheck(
  * other rejection is a defect and goes on to the app-wide unhandled-rejection
  * listener, as before.
  */
-async function untilDoneOrAborted(
+export async function untilDoneOrAborted(
   signal: AbortSignal,
   work: () => Promise<void>
 ): Promise<void> {
@@ -209,7 +210,7 @@ async function untilDoneOrAborted(
     await work();
   } catch (cause) {
     // The screen unmounted mid-run (#1014 item 6): the run stopped on purpose.
-    if (!signal.aborted) throw cause;
+    if (!isAbortCause(cause, signal)) throw cause;
   }
 }
 
@@ -238,18 +239,17 @@ export function usePhoneCheck(): {
   const [state, setState] = useState<PhoneCheckState>(() =>
     initialPhoneCheckState(crumbStore)
   );
-  // The runs this screen started that have not finished. A stable set rather
-  // than a ref so the unmount cleanup below can read it (#1014 item 6).
-  const [liveRuns] = useState(() => new Set<AbortController>());
+  // The runs this screen started that have not finished (#1014 item 6).
+  const liveRuns = useRef(new Set<AbortController>());
 
   // The screen going away stops what it started: each probe ends at its next
   // boundary and the run slot is released, instead of measuring under Books.
-  useEffect(
-    () => () => {
-      for (const run of liveRuns) run.abort();
-    },
-    [liveRuns]
-  );
+  useEffect(() => {
+    const runs = liveRuns.current;
+    return () => {
+      for (const run of runs) run.abort();
+    };
+  }, []);
 
   // The read above is the report; clearing is a side effect, so it waits for
   // the commit rather than running inside the initializer.
@@ -262,7 +262,7 @@ export function usePhoneCheck(): {
     if (release === null) return;
     const run = new AbortController();
     const { signal } = run;
-    liveRuns.add(run);
+    liveRuns.current.add(run);
     let saved: SavedChecks = { device: null, encode: null, storage: null };
     // Each result is saved the moment it lands, so a reload later — in this
     // run or in the memory ceiling after it — keeps what finished.
@@ -291,19 +291,19 @@ export function usePhoneCheck(): {
           )
         );
       } finally {
-        liveRuns.delete(run);
+        liveRuns.current.delete(run);
         release();
         busyWith(null);
       }
     })();
-  }, [crumbStore, liveRuns]);
+  }, [crumbStore]);
 
   const runMemory = useCallback(() => {
     const release = claimPhoneCheckRun();
     if (release === null) return;
     const run = new AbortController();
     const { signal } = run;
-    liveRuns.add(run);
+    liveRuns.current.add(run);
     const busyWith = (activity: PhoneCheckActivity) =>
       setState((prev) => ({ ...prev, activity }));
     const deps = browserAllocationDeps(
@@ -321,13 +321,13 @@ export function usePhoneCheck(): {
           setState((prev) => ({ ...prev, allocation }));
         });
       } finally {
-        liveRuns.delete(run);
+        liveRuns.current.delete(run);
         deps.release();
         release();
         busyWith(null);
       }
     })();
-  }, [crumbStore, liveRuns]);
+  }, [crumbStore]);
 
   return { state, runChecks, runMemory };
 }
