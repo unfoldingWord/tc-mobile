@@ -7,7 +7,6 @@ import {
   getClip,
   getClipMeta,
   newClipId,
-  putClip,
   totalClipBytes,
 } from "@/lib/storage/clips";
 import { closeDb, getDb } from "@/lib/storage/db";
@@ -44,7 +43,7 @@ import {
 } from "@/lib/storage/segment-audio";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import type { Book, BookId, RecordingStatus } from "@/types/domain";
-import { recordTake, samplesOf } from "./support";
+import { recordTake, samplesOf, storeOrphanClip } from "./support";
 
 const samples = (n: number, value = 1000): Int16Array =>
   Int16Array.from({ length: n }, () => value);
@@ -71,11 +70,19 @@ beforeEach(async () => {
   await Promise.all([...stores.map((s) => tx.objectStore(s).clear()), tx.done]);
 });
 
+/**
+ * Clip bytes and metadata, written through the app's only clip write,
+ * `saveTake` (#1365: the clip-only `putClip` had no caller in `src/` and was
+ * deleted, the same call the DRI made for `addTake` in #1364). The subarray
+ * copy and the 0-frame refusal are pinned once, in "atomic take save
+ * (saveTake)" below, not twice.
+ */
 describe("clip storage", () => {
   it("round-trips samples exactly", async () => {
+    const { segmentId } = await oneSegment();
     const id = newClipId();
     const original = Int16Array.from([0, -32768, 32767, 42]);
-    await putClip(id, original, CANONICAL_SAMPLE_RATE);
+    await saveTake(segmentId, id, original, CANONICAL_SAMPLE_RATE);
 
     const loaded = await getClip(id);
     expect(loaded?.encoding).toBe("pcm");
@@ -86,9 +93,10 @@ describe("clip storage", () => {
     // B8: every clip written through the record/edit path is PCM straight off
     // the microphone. `encoding`/`generation` are what the transcode sweep and
     // the readers key on, `byteLength` what storage pressure is summed from.
-    const id = newClipId();
-    await putClip(id, samples(150), CANONICAL_SAMPLE_RATE);
-    const meta = await getClipMeta(id);
+    // A never-recorded segment has no prior clip to carry a generation from.
+    const { segmentId } = await oneSegment();
+    const { clipId } = await recordTake(segmentId, { frames: 150 });
+    const meta = await getClipMeta(clipId);
     expect(meta?.encoding).toBe("pcm");
     expect(meta?.generation).toBe(0);
     expect(meta?.byteLength).toBe(300);
@@ -96,28 +104,21 @@ describe("clip storage", () => {
   });
 
   it("derives duration from the frame count", async () => {
-    const id = newClipId();
-    await putClip(id, samples(CANONICAL_SAMPLE_RATE), CANONICAL_SAMPLE_RATE);
-    const meta = await getClipMeta(id);
+    const { segmentId } = await oneSegment();
+    const { clipId } = await recordTake(segmentId, {
+      frames: CANONICAL_SAMPLE_RATE,
+    });
+    const meta = await getClipMeta(clipId);
     expect(meta?.durationMs).toBe(1000);
     expect(meta?.frameCount).toBe(CANONICAL_SAMPLE_RATE);
-  });
-
-  it("stores only the trimmed audio when given a subarray view", async () => {
-    // Guards the copy in putClip: a view onto a large buffer must not drag
-    // the whole backing buffer into IndexedDB.
-    const backing = samples(10_000);
-    const id = newClipId();
-    await putClip(id, backing.subarray(0, 100), CANONICAL_SAMPLE_RATE);
-    expect(samplesOf(await getClip(id)).length).toBe(100);
   });
 
   it("makes a deleted clip unreadable", async () => {
     // The name is deliberately narrow: these two calls both go through
     // `clipMeta`, so they say nothing about the samples. That is the test
     // below.
-    const id = newClipId();
-    await putClip(id, samples(10), CANONICAL_SAMPLE_RATE);
+    const { segmentId } = await oneSegment();
+    const { clipId: id } = await recordTake(segmentId, { frames: 10 });
     await deleteClip(id);
     expect(await getClipMeta(id)).toBeUndefined();
     expect(await getClip(id)).toBeUndefined();
@@ -125,14 +126,13 @@ describe("clip storage", () => {
 
   it("deletes the samples too, not just the metadata", async () => {
     // The test above cannot see this: `getClip` returns undefined as soon as
-    // the metadata is gone (clips.ts:58), so a `deleteClip` that dropped only
-    // `clipMeta` and left the PCM in `clipData` passes it, and
-    // `totalClipBytes` sums `clipMeta` so it cannot see the orphan either.
-    // Discarding a failed take deletes its clip precisely to give the bytes
-    // back on a phone that has just run out of room, so the data store is
-    // checked directly.
-    const id = newClipId();
-    await putClip(id, samples(1000), CANONICAL_SAMPLE_RATE);
+    // the metadata is gone, so a `deleteClip` that dropped only `clipMeta` and
+    // left the PCM in `clipData` passes it, and `totalClipBytes` sums
+    // `clipMeta` so it cannot see the orphan either. Discarding a failed take
+    // deletes its clip precisely to give the bytes back on a phone that has
+    // just run out of room, so the data store is checked directly.
+    const { segmentId } = await oneSegment();
+    const { clipId: id } = await recordTake(segmentId, { frames: 1000 });
     const db = await getDb();
     expect(await db.get("clipData", id)).toBeDefined();
 
@@ -140,18 +140,12 @@ describe("clip storage", () => {
     expect(await db.get("clipData", id)).toBeUndefined();
   });
 
-  it("refuses to store a 0-frame clip", async () => {
-    // George R4: a 0-frame clip resolves as playable silent audio and can be
-    // counted finished — the ghost take. The store rejects it rather than
-    // trusting callers, the same way setSegmentFinished guards its own invariant.
-    await expect(
-      putClip(newClipId(), new Int16Array(0), CANONICAL_SAMPLE_RATE)
-    ).rejects.toThrow();
-  });
-
   it("reports total bytes held on device", async () => {
-    await putClip(newClipId(), samples(100), CANONICAL_SAMPLE_RATE);
-    await putClip(newClipId(), samples(50), CANONICAL_SAMPLE_RATE);
+    // Two segments, so the second save does not replace (and reap) the first.
+    const { chapterId, segmentId } = await oneSegment();
+    const second = await addSegment(chapterId);
+    await recordTake(segmentId, { frames: 100 });
+    await recordTake(second.id, { frames: 50 });
     expect(await totalClipBytes()).toBe(300); // 150 frames * 2 bytes
   });
 
@@ -1071,8 +1065,8 @@ describe("isStaleBookFailure", () => {
 /**
  * The atomic commit write — clip and take in ONE transaction (#38).
  *
- * The regression these catch: the old commit was two transactions (`putClip`
- * then a separate take write). A failure on the second left the clip durable with no take
+ * The regression these catch: the old commit was two transactions (a clip
+ * write then a separate take write). A failure on the second left the clip durable with no take
  * referencing it — an orphan that consumed the space the recovery screen tells
  * the translator to free, so freeing space and retrying failed again. The
  * atomicity test below fails against that two-transaction flow (the clip would
@@ -1099,11 +1093,10 @@ describe("atomic take save (saveTake)", () => {
   });
 
   it("stores only the trimmed audio when given a subarray view", async () => {
-    // Guards the copy in saveTake independently of putClip's (George R1 P3):
-    // saveTake writes the clip through its own `new Int16Array(samples)`, so a
-    // view onto a large edit buffer must not drag the whole backing buffer into
-    // IndexedDB — the quota pressure #38 exists to close. Dropping saveTake's
-    // copy while keeping putClip's would leave putClip's test green; this fails.
+    // Guards the copy in saveTake (George R1 P3): saveTake writes the clip
+    // through its own `new Int16Array(samples)`, so a view onto a large edit
+    // buffer must not drag the whole backing buffer into IndexedDB — the quota
+    // pressure #38 exists to close.
     const { segmentId } = await oneSegment();
     const backing = samples(10_000);
     const clipId = newClipId();
@@ -1280,8 +1273,9 @@ describe("segment audio resolution", () => {
     expect((await loadSegmentClip(segmentId)).kind).toBe("clip-missing");
 
     // The resolver reads; it does not repair and it does not latch. Storing
-    // the audio under the id the take already names is enough.
-    await putClip(clipId, samples(40), CANONICAL_SAMPLE_RATE);
+    // the audio under the id the take already names is enough. Stored
+    // directly: no app write puts a clip back under a take it does not write.
+    await storeOrphanClip(clipId, samples(40));
     expect((await loadSegmentClip(segmentId)).kind).toBe("resolved");
   });
 });

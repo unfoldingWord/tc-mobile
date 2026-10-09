@@ -110,11 +110,11 @@ async function walk<C>(
     : await tx.objectStore("clipData").getKey(take.clipId);
   await tx.done;
 
-  // Both halves, always. `putClip` and `deleteClip` each span the two stores
-  // in one transaction, so metadata standing without samples is not reachable
-  // through this repository — but `resolved` is the word the export path
-  // trusts, and a guarantee resting on an argument rather than a check is the
-  // kind this module exists to stop.
+  // Both halves, always. Every clip write (`saveTake`, `commitTranscode`) and
+  // `deleteClip` span the two stores in one transaction, so metadata standing
+  // without samples is not reachable through this repository — but `resolved`
+  // is the word the export path trusts, and a guarantee resting on an argument
+  // rather than a check is the kind this module exists to stop.
   if (!meta || data === undefined) {
     return { kind: "clip-missing", segment, take };
   }
