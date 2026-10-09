@@ -364,6 +364,9 @@ describe("useBooks().moveBook (#338)", () => {
         expandedBooks: new Set(),
       });
 
+    // Hold the create's reconciling reload, so what the guide reads below is
+    // the optimistic card `createBook` puts on the shelf, not the store's.
+    vi.mocked(listBooks).mockImplementationOnce(() => new Promise(() => {}));
     let created: BookId | undefined;
     await act(async () => {
       const outcome = await hook().createBook("Ruth");
