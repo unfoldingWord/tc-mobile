@@ -24,7 +24,8 @@ import { cssRule, declarationValue, stripCssComments } from "./support";
  * `tests/reorder-gesture.test.ts`.
  *
  * Layout is faked: jsdom has none, so each book `<li>` reports a 150px card
- * at a 200px pitch and everything else a 700px box. What this cannot see:
+ * at a 200px pitch (or, in the open-book cases, a short-tall-short shelf) and
+ * everything else a 700px box. What this cannot see:
  * real touch panning, the cascade, and anything on a device.
  */
 
@@ -122,6 +123,8 @@ function rect(top: number, height: number): DOMRect {
   } as DOMRect;
 }
 
+/** Book card `i`'s faked layout. Equal cards unless a case says otherwise. */
+let cardRect: (i: number) => DOMRect;
 let root: Root;
 let moveBook: ReturnType<
   typeof vi.fn<(id: BookId, toIndex: number) => Promise<boolean>>
@@ -140,12 +143,13 @@ beforeEach(() => {
   );
   vi.stubGlobal("cancelAnimationFrame", vi.fn());
   HTMLElement.prototype.scrollIntoView = vi.fn();
+  cardRect = (i) => rect(i * 200, 150);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
     function (this: HTMLElement) {
       const list = this.parentElement;
       if (this.tagName === "LI" && list?.classList.contains("books-list")) {
         const i = [...list.children].indexOf(this);
-        return rect(i * 200, 150);
+        return cardRect(i);
       }
       return rect(0, 700);
     }
@@ -381,6 +385,68 @@ describe("the drag and the one write (#338)", () => {
     await render();
     expect(document.activeElement).toBe(toggle(0));
     expect(toggle(0).querySelector(".books-name")!.textContent).toBe("Ruth");
+  });
+});
+
+describe("an open book is a tall card, and still moves by its row (#338)", () => {
+  // Mark 0–120, Ruth open 192–2592, Luke 2604–2724: a 12px gap below Ruth,
+  // 72px below Mark. Ruth's pitch is 2412px, Mark's 192px. The scroller sits
+  // at the top of the viewport with `scrollTop` 0, so it cannot auto-scroll
+  // up, and a client y is a content y.
+  beforeEach(() => {
+    const tall = [rect(0, 120), rect(192, 2400), rect(2604, 120)];
+    cardRect = (i) => tall[i]!;
+  });
+  const shifts = () =>
+    cards().map((li) => li.style.getPropertyValue("--reorder-y"));
+
+  it("drags a tall open book up to the top by its row", async () => {
+    await render();
+    await act(async () => toggle(1).click());
+    expect(toggle(1).getAttribute("aria-expanded")).toBe("true");
+    await hold(toggle(1), 192);
+    await act(async () => pointer(toggle(1), "pointermove", 0));
+    // Mark makes room by one step of Ruth's own pitch; Ruth follows the finger.
+    expect(shifts()).toEqual(["2412px", "-192px", "0px"]);
+    await act(async () => pointer(toggle(1), "pointerup", 0));
+    expect(moveBook).toHaveBeenCalledTimes(1);
+    expect(moveBook).toHaveBeenCalledWith(ruth, 0);
+  });
+
+  it("drags a tall open book down past a short one once its bottom has passed it, not before", async () => {
+    await render();
+    await act(async () => toggle(1).click());
+    await hold(toggle(1), 192);
+    // 100px down: Ruth's bottom (2692) is still above Luke's (2724), and the
+    // slot below Luke would start at 324, under the finger at 292.
+    await act(async () => pointer(toggle(1), "pointermove", 292));
+    expect(shifts()).toEqual(["0px", "100px", "0px"]);
+    // 140px down: Ruth's bottom (2732) has passed Luke's.
+    await act(async () => pointer(toggle(1), "pointermove", 332));
+    expect(shifts()).toEqual(["0px", "140px", "-2412px"]);
+    await act(async () => pointer(toggle(1), "pointerup", 332));
+    expect(moveBook).toHaveBeenCalledTimes(1);
+    expect(moveBook).toHaveBeenCalledWith(ruth, 2);
+  });
+
+  it("does not jump a short book ahead of the finger past a tall one", async () => {
+    await render();
+    await act(async () => toggle(1).click());
+    await hold(toggle(0), 60);
+    // The finger is on Ruth's own row, far above where Mark would land below
+    // her: Mark stays where he is.
+    await act(async () => pointer(toggle(0), "pointermove", 260));
+    expect(shifts()).toEqual(["200px", "0px", "0px"]);
+    await act(async () => pointer(toggle(0), "pointerup", 260));
+    expect(moveBook).not.toHaveBeenCalled();
+
+    // Once Mark's bottom has passed Ruth's, he lands below her, and only her.
+    await hold(toggle(0), 60);
+    await act(async () => pointer(toggle(0), "pointermove", 2540));
+    expect(shifts()).toEqual(["2480px", "-192px", "0px"]);
+    await act(async () => pointer(toggle(0), "pointerup", 2540));
+    expect(moveBook).toHaveBeenCalledTimes(1);
+    expect(moveBook).toHaveBeenCalledWith(mark, 1);
   });
 });
 

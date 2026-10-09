@@ -180,7 +180,13 @@ export function useReorderGesture<Id>(
         const top = el.getBoundingClientRect().top - el.scrollTop;
         scrollMax.current = Math.max(0, el.scrollHeight - el.clientHeight);
         const rects = nodes.map((n) => n!.getBoundingClientRect());
-        const midpoints = rects.map((r) => r.top - top + r.height / 2);
+        // Each row's edges, not its centre: the target follows the lifted
+        // row's leading edge, which keeps every slot reachable when the rows
+        // differ in height (an open book on the shelf, #338).
+        const spans = rects.map((r) => ({
+          top: r.top - top,
+          bottom: r.bottom - top,
+        }));
         const own = rects[index]!;
         const next = rects[index + 1] ?? rects[index - 1]!;
         const gap =
@@ -203,7 +209,7 @@ export function useReorderGesture<Id>(
         }
         opts.current.onLift(index);
         frame.current = window.requestAnimationFrame(scrollFrame);
-        return midpoints;
+        return spans;
       },
       drag: ({ fromIndex, toIndex, offset }) => {
         setDrag((d) => (d ? { ...d, fromIndex, toIndex, offset } : d));
@@ -300,7 +306,7 @@ export function useReorderGesture<Id>(
 
   // The list changed under the finger (a reload landed, a row was added or
   // erased, a previous drop's write settled) or the gesture was switched
-  // off: the measured midpoints no longer describe the rows, so let go
+  // off: the measured row edges no longer describe the rows, so let go
   // without a write. A drop's own reorder arrives after the gesture is
   // already idle, where a cancel is a no-op.
   const idsKey = options.ids.join("\u0000");
