@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { JSDOM } from "jsdom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { guidedStep } from "@/components/guided-step";
 import { patchMovedBook, patchMovedChapter, useBooks } from "@/hooks/use-books";
 import { reportFailure } from "@/hooks/report-failure";
 import {
@@ -345,6 +346,47 @@ describe("useBooks().moveBook (#338)", () => {
     expect((await listBooks()).map((b) => b.id)).toEqual([mark, ruth, luke]);
     expect((await getBook(mark))!.updatedAt).toBe(before!.updatedAt);
     expect(reportFailure).not.toHaveBeenCalled();
+  });
+
+  it("keeps the Add-chapter guide on a created book moved off the top, across a remount", async () => {
+    const mark = await createBook("Mark", null, 1_000);
+    await act(async () => {
+      root.render(createElement(Probe));
+    });
+    await vi.waitFor(() => expect(hook().loaded).toBe(true));
+    const guide = () =>
+      guidedStep({
+        screen: "books",
+        loaded: true,
+        naming: false,
+        namingChapter: false,
+        books: hook().books,
+        expandedBooks: new Set(),
+      });
+
+    let created: BookId | undefined;
+    await act(async () => {
+      const outcome = await hook().createBook("Ruth");
+      if (outcome.ok) created = outcome.book.id;
+    });
+    const ruth = created!;
+    expect(guide()).toEqual({ kind: "add-chapter", bookId: ruth });
+
+    await act(async () => {
+      await hook().moveBook(ruth, 1);
+    });
+    await vi.waitFor(() => expect(shelfIds()).toEqual([mark.id, ruth]));
+    expect(guide()).toEqual({ kind: "add-chapter", bookId: ruth });
+
+    // Back from Segments or a reload: the shelf is read from the store again.
+    await act(async () => root.unmount());
+    root = createRoot(dom.window.document.getElementById("root")!);
+    probe.current = null;
+    await act(async () => {
+      root.render(createElement(Probe));
+    });
+    await vi.waitFor(() => expect(shelfIds()).toEqual([mark.id, ruth]));
+    expect(guide()).toEqual({ kind: "add-chapter", bookId: ruth });
   });
 
   it("refuses a non-integer target without touching the shelf", async () => {
