@@ -58,7 +58,7 @@ let share: ReturnType<typeof vi.fn>;
 let hold = false;
 let finishEncode: () => void = () => undefined;
 /** Resolves when a held encode has started and `finishEncode` is set. */
-let encodeStarted: Promise<void>;
+let encodeStarted!: Promise<void>;
 let markEncodeStarted: () => void = () => undefined;
 let encodeError: Error | null = null;
 

@@ -175,15 +175,16 @@ it("lets a load started after a rename show a second writer's label (Frank r1 on
   const staleSnapshot: Segment[] = await getSegmentsOfChapter(chapterId);
   // Created up front: `loadChapterView` reaches `getSegmentsOfChapter` only
   // after two IndexedDB awaits, so a resolver captured inside the mock may not
-  // exist yet when the test wants to call it. The test then waits for the
-  // mock to be entered, so the read is in flight before the rename lands.
+  // exist yet when the test wants to call it.
   let resolveStaleRead: ((segments: Segment[]) => void) | null = null;
   const staleRead = new Promise<Segment[]>((resolve) => {
     resolveStaleRead = resolve;
   });
+  // Set inside the mock, so awaiting it proves the load has ENTERED the read
+  // (the in-flight window this test is named for) before anything lands.
   let markStaleReadStarted!: () => void;
-  const staleReadStarted = new Promise<void>((r) => {
-    markStaleReadStarted = r;
+  const staleReadStarted = new Promise<void>((resolve) => {
+    markStaleReadStarted = resolve;
   });
   vi.mocked(getSegmentsOfChapter).mockImplementationOnce(() => {
     markStaleReadStarted();
