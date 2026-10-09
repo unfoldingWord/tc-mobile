@@ -35,12 +35,58 @@ export function formatDuration(ms: number): string {
  * whitespace then collapse and the ends are trimmed, so the result is a readable
  * label and never a path.
  *
+ * Each label is also capped by UTF-8 bytes, cut at a grapheme boundary so a
+ * base letter is never parted from its combining marks (#1233 item 22): a name
+ * of 80 characters is about 240 bytes in a 3-byte script (Ge'ez, most Indic),
+ * and the filename holds two labels against a 255-byte filesystem limit.
+ *
  * Only the EXPORT form is sanitised. The stored display name is untouched — the
  * shelf still shows exactly what was typed.
  */
 export function filenameSafe(label: string): string {
-  return label
+  const clean = label
     .replace(/[/\\:*?"<>|\p{Cc}]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+  return capUtf8Bytes(clean, FILENAME_LABEL_MAX_BYTES).trim();
+}
+
+/**
+ * Per-label byte cap. A share filename is `<book> - <chapter>.mp3`: two labels,
+ * a 3-byte separator and a 4-byte extension, so 2 x 120 + 7 = 247 stays inside
+ * the 255-byte limit with the extension intact (#1233 item 22).
+ */
+export const FILENAME_LABEL_MAX_BYTES = 120;
+
+const encoder = new TextEncoder();
+let graphemes: Intl.Segmenter | null = null;
+
+/**
+ * Whole-grapheme pieces of `text`, from `Intl.Segmenter` when the engine has it
+ * (built lazily and cached, never at module load: the build targets Firefox 114
+ * and Firefox shipped the API in 125, so a module-scope construction would stop
+ * the app starting there). Without it the pieces are code points, which never
+ * split a surrogate pair; a combining mark may then be parted from its base.
+ * That is the documented degradation on an engine without the Segmenter.
+ */
+function pieces(text: string): string[] {
+  if (typeof Intl.Segmenter === "function") {
+    graphemes ??= new Intl.Segmenter(undefined, { granularity: "grapheme" });
+    return Array.from(graphemes.segment(text), (s) => s.segment);
+  }
+  return Array.from(text);
+}
+
+/** The longest whole-piece prefix of `text` that fits in `maxBytes` of UTF-8. */
+function capUtf8Bytes(text: string, maxBytes: number): string {
+  if (encoder.encode(text).length <= maxBytes) return text;
+  let out = "";
+  let used = 0;
+  for (const segment of pieces(text)) {
+    const bytes = encoder.encode(segment).length;
+    if (used + bytes > maxBytes) break;
+    out += segment;
+    used += bytes;
+  }
+  return out;
 }
