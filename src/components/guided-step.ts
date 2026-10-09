@@ -116,12 +116,14 @@ function booksStep(
     // the placeholder (#314), so Confirm alone completes the create and typing
     // is optional.
     return view.naming ? { kind: "create-book" } : { kind: "new-book" };
-  const book = books[0];
+  const book = newestBook(books);
   if (!book) return null;
-  // `listBooks` sorts newest-created first (`lib/storage/books.ts`, #1185),
-  // and `use-books.ts` prepends a created book, so `books[0]` is always
-  // the book that was just created. A book with no chapters yet gets the
-  // Add-chapter ring whether or not other books already exist on the shelf —
+  // The book just added is the NEWEST one, found by `createdAt` and named by
+  // its id, not by where it sits: a create puts it at the top of the shelf,
+  // but a drag can move it down since #338, and the ring has to stay on it
+  // (and an older book dragged above it must not take the ring). If the newest
+  // book has no chapters yet it gets the Add-chapter ring whether or not
+  // other books already exist on the shelf —
   // #834, Tim's decision: "once a book is added, the blue ring goes around
   // that book's + for adding a chapter." `naming` gates this off because the
   // New Book dialog for a FURTHER book then sits on top of the shelf, and that
@@ -158,6 +160,22 @@ function booksStep(
   return view.expandedBooks.has(book.bookId)
     ? { kind: "open-chapter", chapterId: first.chapterId }
     : { kind: "expand-book", bookId: book.bookId };
+}
+
+/**
+ * The newest book on the shelf by `createdAt`, wherever it sits. A tie goes to
+ * the higher card, which is the later create (`createBook` puts each new book
+ * at the top), and a card without a `createdAt` (a test fixture) counts as
+ * older than one with it, so a shelf of such cards answers its top card.
+ */
+function newestBook(books: readonly BookCard[]): BookCard | undefined {
+  let newest = books[0];
+  for (const book of books) {
+    if ((book.createdAt ?? -Infinity) > (newest?.createdAt ?? -Infinity)) {
+      newest = book;
+    }
+  }
+  return newest;
 }
 
 /**

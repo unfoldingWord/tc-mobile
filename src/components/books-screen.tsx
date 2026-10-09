@@ -164,6 +164,7 @@ export function BooksScreen({
     isDeleting,
     deleteFailed,
     moveChapter,
+    moveBook,
   } = useBooks();
   // A first-mount shelf-read failure leaves `books` at [] with `error` set —
   // indistinguishable from a genuinely empty shelf unless we say so. Reading it
@@ -1729,6 +1730,67 @@ export function BooksScreen({
       setReorderStatus(strings.chapterReorderStayed(row.number)),
   };
 
+  // ── Press-and-hold reorder of books (#338) ────────────────────────────────
+  //
+  // The chapter reorder above, one level up: hold a book's row (its expand
+  // toggle — cover and name) for 450 ms, then drag it up or down the shelf.
+  // The same gesture (`hooks/use-reorder-gesture.ts`), the same enable rule
+  // (off under an overlay and before the first load), the same live region,
+  // and the same focus rule. A book moves whether it is open or closed; an
+  // open one moves with its chapters, as one card.
+  //
+  // One write, on the drop: `moveBook` patches the shelf optimistically, does
+  // not count as activity on the book, and on failure puts the stored order
+  // back and reports "book-reorder", with nothing extra on screen (#172).
+  // Every cancel writes nothing. Like the chapter reorder, there is no
+  // keyboard or switch path to move a book (D11); the live region only says
+  // what a drag did.
+  const bookHeadingOf = (book: BookCard) =>
+    strings.bookHeading(book.name, book.number);
+  const bookGesture = useReorderGesture<BookId>({
+    enabled: !shelfInert && !loading,
+    ids: books.map((book) => book.bookId),
+    nodeFor: rowReveal.nodeFor,
+    scrollRef: shelfRef,
+    onLift: (index) => {
+      const book = books[index];
+      if (book)
+        setReorderStatus(strings.bookReorderLifted(bookHeadingOf(book)));
+    },
+    onDrop: (bookId, _fromIndex, toIndex) => {
+      const book = books.find((b) => b.bookId === bookId);
+      if (!book) return;
+      const heading = bookHeadingOf(book);
+      // Keep focus with the book that moved — on its row, which is what the
+      // hand-off lands on — only when focus was on that row or nowhere, so a
+      // drop never pulls focus off something else.
+      const active = document.activeElement;
+      const hit = rowReveal.nodeFor(bookId)?.querySelector(".books-card-hit");
+      if (active === document.body || (hit && hit === active)) {
+        rowReveal.armFocus(bookId);
+      }
+      // The landing is the book's new place on the shelf, counted from 1.
+      const moved = strings.bookReorderMoved(heading, toIndex + 1);
+      setReorderStatus(moved);
+      // A write that did not land puts the book back (`moveBook` resolves
+      // false, having reported it), so the spoken line must not keep saying
+      // it moved. Only if nothing newer has been said since.
+      void moveBook(bookId, toIndex).then((landed) => {
+        if (!landed) {
+          setReorderStatus((s) =>
+            s === moved ? strings.bookReorderStayed(heading) : s
+          );
+        }
+      });
+    },
+    onCancel: (index) => {
+      const book = books[index];
+      if (book)
+        setReorderStatus(strings.bookReorderStayed(bookHeadingOf(book)));
+    },
+  });
+  const bookDrag = bookGesture.drag;
+
   return (
     <div
       className="flex h-full flex-col gap-[14px]"
@@ -1905,11 +1967,30 @@ export function BooksScreen({
             />
           </div>
         ) : (
-          <ul className="books-list">
-            {books.map((book) => (
+          <ul
+            className="books-list"
+            data-reordering={bookDrag ? "" : undefined}
+          >
+            {books.map((book, index) => (
               <BookItem
                 key={book.bookId}
                 book={book}
+                onHoldStart={bookGesture.holdStart(index)}
+                lifted={bookDrag?.fromIndex === index}
+                // While a book is lifted: it follows the finger and the books
+                // between its slot and the target slide one slot to make
+                // room. Paint only; the order is not touched until the drop.
+                reorderY={
+                  bookDrag
+                    ? bookDrag.fromIndex === index
+                      ? bookDrag.offset
+                      : reorderShift(
+                          index,
+                          bookDrag.fromIndex,
+                          bookDrag.toIndex
+                        ) * bookDrag.pitch
+                    : null
+                }
                 expanded={expanded.has(book.bookId)}
                 onToggle={() => toggle(book.bookId)}
                 onNewChapter={() => onNewChapter(book.bookId)}
@@ -1932,12 +2013,12 @@ export function BooksScreen({
         )}
       </div>
 
-      {/* The chapter reorder's spoken half (#953 PR2b), as on the
-          Segments list: which chapter was lifted, where it landed, or that it
-          went back. Outside the shelf's scroll box, and mounted for the
-          screen's whole life so a screen reader hears the first change. D11
-          leaves no keyboard or switch path to move a chapter; this only
-          tells what a drag did. */}
+      {/* The reorder's spoken half — chapters (#953 PR2b) and books (#338)
+          share it — as on the Segments list: which row was lifted, where it
+          landed, or that it went back. Outside the shelf's scroll box, and
+          mounted for the screen's whole life so a screen reader hears the
+          first change. D11 leaves no keyboard or switch path to move a
+          chapter or a book; this only tells what a drag did. */}
       <span
         className="sr-only"
         role="status"
@@ -2313,6 +2394,17 @@ interface BookItemProps {
   guidedChapterId: ChapterId | null;
   setNode: (id: string, el: HTMLElement | null) => void;
   reorder: ChapterReorder;
+  /**
+   * Press-and-hold reorder of the book itself (#338): the shelf's
+   * `onPointerDown` for this book's row. The whole row button — cover and
+   * name — is the hold area; a tap released before the hold still opens or
+   * closes the book.
+   */
+  onHoldStart?: (e: ReactPointerEvent) => void;
+  /** This book is the one lifted. */
+  lifted: boolean;
+  /** Its paint offset while a book is lifted, in px; `null` when none is. */
+  reorderY: number | null;
 }
 
 function BookItem({
@@ -2327,6 +2419,9 @@ function BookItem({
   guidedChapterId,
   setNode,
   reorder,
+  onHoldStart,
+  lifted,
+  reorderY,
 }: BookItemProps) {
   const listId = `chapters-${book.bookId}`;
   // This book's chapter reorder (#953 PR2b): the Segments list's gesture over
@@ -2355,11 +2450,24 @@ function BookItem({
   // (#169) — `ChapterItem`'s `heading` one level up the tree.
   const heading = strings.bookHeading(book.name, book.number);
   return (
-    <li className="books-card" ref={(el) => setNode(book.bookId, el)}>
+    <li
+      className={cn("books-card", lifted && "books-card-lifted")}
+      ref={(el) => setNode(book.bookId, el)}
+      style={
+        reorderY === null
+          ? undefined
+          : ({ "--reorder-y": `${reorderY}px` } as CSSProperties)
+      }
+    >
       <div className="books-card-head">
         <button
           type="button"
           onClick={onToggle}
+          onPointerDown={onHoldStart}
+          // The book's hold area (#338). The card already keeps a long press
+          // from selecting text or raising the phone's callout
+          // (`o4/books.css`, `.books-card`).
+          data-reorder-handle={onHoldStart ? "" : undefined}
           aria-expanded={expanded}
           aria-controls={listId}
           aria-label={strings.bookRow(heading, book.chapters.length, expanded)}

@@ -123,10 +123,11 @@ export async function createBook(
   const db = await getDb();
   const tx = db.transaction("books", "readwrite");
   const trimmed = name.trim();
+  const shelf = await tx.store.getAll();
   const book: Book = {
     id: uuid() as BookId,
     name: trimmed === "" ? null : trimmed,
-    number: nextBookNumber(await tx.store.getAll()),
+    number: nextBookNumber(shelf),
     languageCode,
     chapterIds: [],
     createdAt: now,
@@ -137,24 +138,49 @@ export async function createBook(
     // rather than in a second one after it. Like `setBookCoverColour`, this
     // does not validate against the live palette; the picker only offers it.
     coverColourKey,
+    // A new book lands at the TOP of the shelf (#338), as it always has; the
+    // books already there move down one, in the order the user left them.
+    shelfPosition: 0,
   };
   await tx.store.put(book);
+  for (const [index, row] of byShelfPosition(shelf).entries()) {
+    if (row.shelfPosition !== index + 1) {
+      await tx.store.put({ ...row, shelfPosition: index + 1 });
+    }
+  }
   await tx.done;
   return book;
 }
 
 /**
- * Every book, newest-CREATED first (#1185, DRI 2026-09-28: "books stay put").
- * A new book lands at the top; no later write moves a book, because nothing
- * writes `createdAt` after `createBook`. `updatedAt` is still bumped by the
- * writes that are activity on a book, but it does not order the shelf.
+ * `books` in shelf order: by `shelfPosition`, top first. Pure, and the one
+ * definition of that order, shared by {@link listBooks} and the two writes
+ * that renumber the shelf ({@link createBook}, {@link moveBook}). A tie —
+ * which only a database a second copy of the app wrote at the same moment
+ * could hold — falls back to the pre-#338 rule, newest created first, and
+ * then to key order (`getAll`'s order; the sort is stable).
+ */
+function byShelfPosition(books: readonly Book[]): Book[] {
+  return books
+    .slice()
+    .sort(
+      (a, b) => a.shelfPosition - b.shelfPosition || b.createdAt - a.createdAt
+    );
+}
+
+/**
+ * Every book, in the user's shelf order (#338): `shelfPosition`, top first.
  *
- * Books with the same `createdAt` keep primary-key (id) order: `getAll`
- * returns rows in key order, and `Array.prototype.sort` is stable.
+ * A new book lands at the top ({@link createBook}); after that a book moves
+ * only when the user moves it ({@link moveBook}). Nothing else writes the
+ * position — a rename, a cover colour or work inside a book bumps `updatedAt`
+ * at most, and `updatedAt` does not order the shelf (#1185, DRI 2026-09-28:
+ * "books stay put"). The v11 upgrade wrote the order the shelf showed before
+ * this field existed (newest created first), so nothing moved on upgrade.
  */
 export async function listBooks(): Promise<Book[]> {
   const db = await getDb();
-  return (await db.getAll("books")).sort((a, b) => b.createdAt - a.createdAt);
+  return byShelfPosition(await db.getAll("books"));
 }
 
 export async function getBook(id: BookId): Promise<Book | undefined> {
@@ -173,7 +199,7 @@ export async function getBook(id: BookId): Promise<Book | undefined> {
  * — `null` included — writes nothing and does NOT bump `updatedAt`, so a re-run
  * is a true no-op. Any real rename bumps `updatedAt` — labelling a book is
  * activity — and the book keeps its place on the shelf ({@link listBooks}
- * orders by `createdAt`).
+ * orders by `shelfPosition`, #338).
  *
  * Concurrent renames deliberately use transaction-creation-order last-write-wins
  * (#394). The read and write stay in one readwrite transaction. The same-tab
@@ -648,7 +674,8 @@ export async function getChapter(id: ChapterId): Promise<Chapter | undefined> {
  * A real rename also bumps the parent book's `updatedAt` in the SAME transaction
  * — labelling a chapter is activity on its book, exactly as `addChapter`,
  * `renameBook` and recording are (G4). The book keeps its place on the shelf
- * ({@link listBooks} orders by `createdAt`). The no-op path skips the bump.
+ * ({@link listBooks} orders by `shelfPosition`, #338). The no-op path skips
+ * the bump.
  *
  * Concurrent renames use the same transaction-order last-write-wins policy as
  * {@link renameBook} (#394). The scope overlaps `renameBook` on `books`, so a
@@ -715,7 +742,7 @@ export async function renameChapter(
  *   - **No `updatedAt` bump** (scope Q4): a reorder is not recorded as
  *     activity on the book. This is the one tree edit that differs from
  *     `renameChapter` here, on purpose. (The shelf order does not depend on
- *     it: {@link listBooks} orders by `createdAt`, #1185.)
+ *     it: {@link listBooks} orders by `shelfPosition`, #338.)
  *   - **Idempotent.** The target is absolute, so a re-run lands in the same
  *     state; a move that leaves the order as it was writes nothing at all.
  *
@@ -763,6 +790,62 @@ export async function moveChapter(
     }
     await tx.done;
     return renumbered;
+  } catch (cause) {
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw cause;
+  }
+}
+
+/**
+ * Move one book to an absolute position on the shelf (#338 — press-and-hold
+ * reorder on the Books screen; the book twin of {@link moveChapter}).
+ *
+ * `toIndex` counts the books in shelf order ({@link listBooks}), which is
+ * exactly the cards `use-books.ts` holds. An out-of-range target clamps to the
+ * top or the bottom ({@link moveToIndex}).
+ *
+ * The rules, and why — each one {@link moveChapter}'s:
+ *
+ *   - **ONE readwrite transaction** over `books`, get-then-put, aborted on a
+ *     thrown error, so the shelf's positions commit together or not at all.
+ *   - **Dense**: every book's `shelfPosition` becomes its place in the new
+ *     order, 0..N-1, and only rows whose position changes are written.
+ *   - **No `updatedAt` bump**: moving a book is not activity on it.
+ *   - **Idempotent.** The target is absolute, so a re-run lands in the same
+ *     state; a move that leaves the order as it was writes nothing at all.
+ *
+ * Returns every book in the new shelf order, with the positions they now
+ * hold.
+ */
+export async function moveBook(
+  bookId: BookId,
+  toIndex: number
+): Promise<Book[]> {
+  assertReorderTarget(toIndex);
+  const db = await getDb();
+  const tx = db.transaction("books", "readwrite");
+  try {
+    const shelf = byShelfPosition(await tx.store.getAll());
+    const from = shelf.findIndex((book) => book.id === bookId);
+    if (from === -1) throw new Error(`No such book: ${bookId}`);
+    const order = moveToIndex(shelf, from, toIndex);
+    if (order.every((book, i) => book === shelf[i])) {
+      await tx.done; // idempotent no-op: no write.
+      return shelf;
+    }
+    const placed: Book[] = [];
+    for (const [position, book] of order.entries()) {
+      if (book.shelfPosition === position) {
+        placed.push(book);
+        continue;
+      }
+      // No `updatedAt`: a reorder is not activity on the book.
+      const updated: Book = { ...book, shelfPosition: position };
+      await tx.store.put(updated);
+      placed.push(updated);
+    }
+    await tx.done;
+    return placed;
   } catch (cause) {
     await abortQuietly(() => tx.abort(), tx.done);
     throw cause;
@@ -980,7 +1063,7 @@ const DELETE_SEGMENT_STORES = [
  *   - **Editing is activity**: the book's `updatedAt` is bumped in the same
  *     transaction — the bump `clearSegmentTake`/`writeTakeInTx` make for
  *     exactly this reason. The book keeps its place on the shelf
- *     ({@link listBooks} orders by `createdAt`, #1185).
+ *     ({@link listBooks} orders by `shelfPosition`, #338).
  *     **Inference, not a recorded decision**: `moveSegment`/`moveChapter`
  *     deliberately do NOT bump for a pure reorder (scope Q4), but a delete
  *     also discards a recording (or the last trace of an empty row), which is

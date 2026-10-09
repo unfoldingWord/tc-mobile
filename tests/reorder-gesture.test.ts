@@ -9,6 +9,7 @@ import {
   reorderShift,
   reorderTarget,
   type ReorderCallbacks,
+  type ReorderSpan,
 } from "@/lib/view/reorder-gesture";
 
 /**
@@ -22,15 +23,33 @@ import {
  * auto-scrolls within 64px of an edge.
  */
 
-// Three 90px rows with a 10px gap, as content-coordinate midpoints.
+// Three 90px rows with a 10px gap, named by their content-coordinate
+// midpoints.
 const MIDS = [45, 145, 245] as const;
+
+/** 90px rows centred on `mids`, as the extents the lift measures. */
+const spansAround = (mids: readonly number[]): ReorderSpan[] =>
+  mids.map((m) => ({ top: m - 45, bottom: m + 45 }));
+
+/**
+ * `reorderTarget` over 90px rows centred on `mids`, asked where the lifted
+ * row lands with its CENTRE at `centre`. The cases below were written for the
+ * centre rule the targeting used before #338; over rows of one height the
+ * edge rule must answer every one of them the same.
+ */
+const centreTarget = (
+  mids: readonly number[],
+  fromIndex: number,
+  centre: number
+): number =>
+  reorderTarget(spansAround(mids), fromIndex, centre - mids[fromIndex]!);
 
 function harness(midpoints: readonly number[] | null = MIDS) {
   const calls: string[] = [];
   const cb: ReorderCallbacks = {
     lift: vi.fn((index: number) => {
       calls.push(`lift ${index}`);
-      return midpoints;
+      return midpoints && spansAround(midpoints);
     }),
     drag: vi.fn(({ fromIndex, toIndex, offset }) => {
       calls.push(`drag ${fromIndex}->${toIndex} ${offset}`);
@@ -272,29 +291,91 @@ describe("the drag and the one write", () => {
 describe("reorderTarget", () => {
   it("counts the other rows whose midpoint the dragged centre has passed", () => {
     // In place: every row above is passed, none below.
-    expect(reorderTarget(MIDS, 0, 45)).toBe(0);
-    expect(reorderTarget(MIDS, 1, 145)).toBe(1);
-    expect(reorderTarget(MIDS, 2, 245)).toBe(2);
+    expect(centreTarget(MIDS, 0, 45)).toBe(0);
+    expect(centreTarget(MIDS, 1, 145)).toBe(1);
+    expect(centreTarget(MIDS, 2, 245)).toBe(2);
     // Down: from 0, past row 1's midpoint and then row 2's.
-    expect(reorderTarget(MIDS, 0, 144)).toBe(0);
-    expect(reorderTarget(MIDS, 0, 146)).toBe(1);
-    expect(reorderTarget(MIDS, 0, 246)).toBe(2);
+    expect(centreTarget(MIDS, 0, 144)).toBe(0);
+    expect(centreTarget(MIDS, 0, 146)).toBe(1);
+    expect(centreTarget(MIDS, 0, 246)).toBe(2);
     // Up: from 2, above row 1's midpoint and then row 0's.
-    expect(reorderTarget(MIDS, 2, 146)).toBe(2);
-    expect(reorderTarget(MIDS, 2, 144)).toBe(1);
-    expect(reorderTarget(MIDS, 2, 44)).toBe(0);
+    expect(centreTarget(MIDS, 2, 146)).toBe(2);
+    expect(centreTarget(MIDS, 2, 144)).toBe(1);
+    expect(centreTarget(MIDS, 2, 44)).toBe(0);
   });
 
   it("stays inside the list however far the finger goes", () => {
-    expect(reorderTarget(MIDS, 1, -10_000)).toBe(0);
-    expect(reorderTarget(MIDS, 1, 10_000)).toBe(2);
+    expect(centreTarget(MIDS, 1, -10_000)).toBe(0);
+    expect(centreTarget(MIDS, 1, 10_000)).toBe(2);
   });
 
   it("is an absolute index: the same pointer position gives the same target", () => {
     // `moveSegment` takes an absolute target (idempotent); a relative step
     // would move a second time on a repeat.
-    expect(reorderTarget(MIDS, 0, 246)).toBe(reorderTarget(MIDS, 0, 246));
-    expect(reorderTarget([45, 145, 245, 345], 3, 150)).toBe(2);
+    expect(centreTarget(MIDS, 0, 246)).toBe(centreTarget(MIDS, 0, 246));
+    expect(centreTarget([45, 145, 245, 345], 3, 150)).toBe(2);
+  });
+});
+
+describe("reorderTarget over rows of different heights (#338)", () => {
+  // A short row, a tall one (an open book), a short one: a 72px gap under the
+  // first, 12px under the second.
+  const SHELF: readonly ReorderSpan[] = [
+    { top: 0, bottom: 120 },
+    { top: 192, bottom: 2592 },
+    { top: 2604, bottom: 2724 },
+  ];
+
+  it("takes a tall row up past a short one once its top reaches that row's top", () => {
+    expect(reorderTarget(SHELF, 1, -191)).toBe(1);
+    expect(reorderTarget(SHELF, 1, -192)).toBe(0);
+  });
+
+  it("takes a tall row down past a short one once its bottom passes that row's bottom", () => {
+    expect(reorderTarget(SHELF, 1, 131)).toBe(1);
+    expect(reorderTarget(SHELF, 1, 132)).toBe(1);
+    expect(reorderTarget(SHELF, 1, 133)).toBe(2);
+  });
+
+  it("does not take a short row past a tall one before its leading edge is past it", () => {
+    // Down from the top: not until its bottom passes the tall row's bottom.
+    expect(reorderTarget(SHELF, 0, 200)).toBe(0);
+    expect(reorderTarget(SHELF, 0, 2472)).toBe(0);
+    expect(reorderTarget(SHELF, 0, 2473)).toBe(1);
+    // Up from the bottom: not until its top reaches the tall row's top.
+    expect(reorderTarget(SHELF, 2, -200)).toBe(2);
+    expect(reorderTarget(SHELF, 2, -2411)).toBe(2);
+    expect(reorderTarget(SHELF, 2, -2412)).toBe(1);
+    expect(reorderTarget(SHELF, 2, -2604)).toBe(0);
+  });
+
+  it("answers the centre rule exactly wherever the rows share one height", () => {
+    // The targeting before #338, as an oracle: the other rows whose midpoint
+    // the lifted row's centre has passed. Uneven gaps on purpose — only the
+    // HEIGHTS have to match for the two rules to agree.
+    const centreRule = (
+      rows: readonly ReorderSpan[],
+      from: number,
+      offset: number
+    ) => {
+      const mid = (r: ReorderSpan) => (r.top + r.bottom) / 2;
+      const centre = mid(rows[from]!) + offset;
+      return rows.filter((r, i) => i !== from && mid(r) < centre).length;
+    };
+    const rows: ReorderSpan[] = [0, 70, 200, 260, 410].map((top) => ({
+      top,
+      bottom: top + 56,
+    }));
+    let compared = 0;
+    for (let from = 0; from < rows.length; from++) {
+      for (let offset = -500; offset <= 500; offset++) {
+        expect(reorderTarget(rows, from, offset)).toBe(
+          centreRule(rows, from, offset)
+        );
+        compared++;
+      }
+    }
+    expect(compared).toBe(5 * 1001);
   });
 });
 

@@ -110,6 +110,21 @@ export interface Book {
    * reader never meets `undefined`.
    */
   readonly coverColourKey: string | null;
+  /**
+   * Where the book sits on the Books screen: 0 is the top (#338). The shelf
+   * is read in this order (`listBooks`), so it is the user's to set — by
+   * press-and-hold on the book (`moveBook`) — rather than a property of the
+   * data like `createdAt`.
+   *
+   * Dense (0..N-1) after every create and every move: a new book takes 0 and
+   * the rest move down one, and a move renumbers the whole shelf. A delete
+   * leaves a gap, which changes no order and is closed by the next create or
+   * move. Not activity on the book: nothing that sets it touches `updatedAt`.
+   * Every row carries the field (the v11 step gives each pre-#338 book the
+   * position the shelf already showed it at), so a reader never meets
+   * `undefined`.
+   */
+  readonly shelfPosition: number;
 }
 
 export interface Chapter {

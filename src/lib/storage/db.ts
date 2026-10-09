@@ -102,6 +102,16 @@
  * stamped with a slot no unnamed book is showing. Additive: no store is
  * dropped, no name a person chose is rewritten, and a v9 device's recordings
  * come through intact.
+ *
+ * ── v11 (#338): the user's own shelf order — append-only ──
+ *
+ * `Book` gained `shelfPosition` (0 is the top), which is what the shelf is now
+ * read by, so a facilitator can put books in their own order. Until v11 the
+ * order was derived — newest `createdAt` first, ties in key order — and the
+ * v11 step writes exactly that order down, densely, so nobody's shelf moves on
+ * upgrade: what was on top stays on top. Additive like v9: no store dropped,
+ * no other field touched, and the chapters, segments, takes and clips behind a
+ * book are never read.
  */
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
@@ -121,16 +131,25 @@ import type { ClipMeta } from "@/types/audio";
 import type { StoredFailure } from "@/types/failure";
 
 const DB_NAME = "tc-mobile";
-const DB_VERSION = 10;
+const DB_VERSION = 11;
 
 /**
  * A `books` row as v9 and earlier stored it: the placeholder rendered into
  * `name`, and no `number` at all. Only the v10 backfill reads it — the typed
  * store below already speaks the v10 shape.
  */
-type BookV9 = Omit<Book, "name" | "number"> & {
+type BookV9 = Omit<Book, "name" | "number" | "shelfPosition"> & {
   readonly name: string | null;
   readonly number?: number;
+};
+
+/**
+ * A `books` row as v10 and earlier stored it: no `shelfPosition`. Only the v11
+ * pass reads it; optional, because a row a newer build already placed is left
+ * alone.
+ */
+type BookV10 = Omit<Book, "shelfPosition"> & {
+  readonly shelfPosition?: number;
 };
 
 /**
@@ -690,6 +709,38 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
             while (taken.has(next)) next++;
             taken.add(next);
             await store.put({ ...row, number: next } as Book);
+          }
+        }
+
+        // v11 (#338): write down the order the shelf already shows, so the
+        // user can change it. Until v11 `listBooks` derived it — newest
+        // `createdAt` first, ties in key order — and this is that very sort:
+        // `getAll` returns rows in key order and `Array.prototype.sort` is
+        // stable. Dense from 0, so the top of the shelf is position 0.
+        //
+        // Keys on `shelfPosition` being ABSENT, like every backfill above: a
+        // row a newer build already placed keeps its place, and the rest are
+        // parked below the lowest one placed, in the old order. On a real v10
+        // shelf no row is placed, and this writes 0..N-1. `getAll` rather
+        // than a cursor because the order needs the whole shelf first; the
+        // store holds book metadata alone, as v10's pass already relies on.
+        // A position that is not a finite number counts as absent: kept, it
+        // would make `next` NaN or Infinity for every row parked after it.
+        if (oldVersion < 11) {
+          const store = tx.objectStore("books");
+          const rows = (await store.getAll()) as unknown as BookV10[];
+          let next = 0;
+          for (const row of rows) {
+            const at = row.shelfPosition;
+            if (at !== undefined && Number.isFinite(at)) {
+              next = Math.max(next, at + 1);
+            }
+          }
+          const unplaced = rows
+            .filter((row) => !Number.isFinite(row.shelfPosition))
+            .sort((a, b) => b.createdAt - a.createdAt);
+          for (const row of unplaced) {
+            await store.put({ ...row, shelfPosition: next++ });
           }
         }
       },

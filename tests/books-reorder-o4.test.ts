@@ -239,7 +239,10 @@ describe("the O4 hold area (#953 PR2b: the chapter row)", () => {
     expect(items()[1]!.classList.contains("books-lifted")).toBe(true);
   });
 
-  it("never starts on the book's own buttons", async () => {
+  // The book's own row is now the BOOK's hold area (#338,
+  // `books-shelf-reorder-o4.test.ts`); `lifted()` reads the chapter lift, so
+  // this still pins that no chapter is lifted or moved from there.
+  it("never lifts a chapter from the book's own buttons", async () => {
     await mount();
     const head = document.querySelector(".books-card-head")!;
     for (const target of head.querySelectorAll("button")) {
@@ -447,10 +450,14 @@ describe("the drag and the one write", () => {
 describe("the hold area's markers", () => {
   it("marks exactly the chapter rows as the hold area", async () => {
     await mount();
+    // Inside the chapter list: the book rows are hold areas too, for the book
+    // reorder (#338), and are pinned in `books-shelf-reorder-o4.test.ts`.
     expect(
-      [...document.querySelectorAll("[data-reorder-handle]")].map(
-        (el) => el.className
-      )
+      [
+        ...document.querySelectorAll(
+          "#chapters-" + mark + " [data-reorder-handle]"
+        ),
+      ].map((el) => el.className)
     ).toEqual(["books-chapter", "books-chapter", "books-chapter"]);
   });
 });

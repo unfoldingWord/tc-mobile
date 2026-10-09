@@ -3,6 +3,7 @@ import "fake-indexeddb/auto";
 import { openDB } from "idb";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { listBooks } from "@/lib/storage/books";
 import { closeDb, getDb } from "@/lib/storage/db";
 
 // db.ts keeps DB_NAME private; a migration test necessarily knows the name it
@@ -12,7 +13,7 @@ const DB_NAME = "tc-mobile";
 // The version `getDb` opens. Like DB_NAME, kept in sync with db.ts by hand —
 // a migration test necessarily knows the ladder it is climbing. Asserted rather
 // than assumed, so a bump that forgets to add its own case fails here first.
-const APP_VERSION = 10;
+const APP_VERSION = 11;
 
 /**
  * Delete the database outright so each test starts from a true fresh install.
@@ -226,6 +227,8 @@ describe("v9 book cover-colour backfill (append-only)", () => {
       createdAt: 3,
       updatedAt: 7,
       coverColourKey: null,
+      // v11 (#338): the only book on the shelf is at its top.
+      shelfPosition: 0,
     });
   });
 
@@ -915,6 +918,8 @@ describe("the v9 → v10 book placeholder migration (#169)", () => {
       createdAt: 11,
       updatedAt: 22,
       coverColourKey: null,
+      // v11 (#338): the only book on the shelf is at its top.
+      shelfPosition: 0,
     });
   });
 
@@ -1038,6 +1043,175 @@ describe("the v9 → v10 book placeholder migration (#169)", () => {
       createdAt: 5,
       updatedAt: 6,
       coverColourKey: null,
+      // v11 (#338): the only book on the shelf is at its top.
+      shelfPosition: 0,
+    });
+  });
+});
+
+/**
+ * Stand up the v10 schema — v9's stores, unchanged (v10 was a book-row pass,
+ * not a structure change), holding books the way v10 wrote them: a nullable
+ * name, a slot, a colour, and no shelf position.
+ */
+async function openLegacyV10() {
+  const legacy = await openLegacyV9();
+  legacy.close();
+  return openDB(DB_NAME, 10);
+}
+
+/** A v10 `books` row: everything but the shelf position. */
+const v10Book = (id: string, createdAt: number, number = 1) => ({
+  id,
+  name: null as string | null,
+  number,
+  languageCode: null as string | null,
+  chapterIds: [] as string[],
+  createdAt,
+  updatedAt: createdAt,
+  coverColourKey: null as string | null,
+});
+
+/**
+ * The order the shelf showed before v11, written out from the rule v10's
+ * `listBooks` used: newest `createdAt` first, ties in primary-key order
+ * (`getAll` returns key order and the sort is stable).
+ */
+const v10ShelfOrder = (
+  rows: ReadonlyArray<{ id: string; createdAt: number }>
+) =>
+  rows
+    .slice()
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .map((r) => r.id);
+
+describe("the v10 → v11 shelf position (#338)", () => {
+  it("gives every book the position the shelf showed it at, so nobody's shelf jumps", async () => {
+    // Out of key order and out of time order on purpose, with a createdAt tie
+    // (b2/b3) that only the key order breaks.
+    const rows = [
+      v10Book("b5", 7),
+      v10Book("b1", 5),
+      v10Book("b3", 9),
+      v10Book("b4", 1),
+      v10Book("b2", 9),
+    ];
+    const v10 = await openLegacyV10();
+    for (const row of rows) await v10.put("books", row);
+    v10.close();
+
+    const db = await getDb();
+    expect(db.version).toBe(APP_VERSION);
+    const stored = await db.getAll("books");
+    expect(
+      Object.fromEntries(stored.map((r) => [r.id, r.shelfPosition]))
+    ).toEqual({ b2: 0, b3: 1, b5: 2, b1: 3, b4: 4 });
+    // And the shelf the app reads is the one it showed before the upgrade.
+    expect((await listBooks()).map((b) => b.id)).toEqual(v10ShelfOrder(rows));
+  });
+
+  it("adds the position and touches nothing else on the row", async () => {
+    const v10 = await openLegacyV10();
+    await v10.put("books", {
+      ...v10Book("b1", 11, 3),
+      name: "Mark",
+      languageCode: "swh",
+      chapterIds: ["ch1"],
+      updatedAt: 22,
+      coverColourKey: "forest",
+    });
+    v10.close();
+
+    const db = await getDb();
+    expect(await db.get("books", "b1" as never)).toEqual({
+      id: "b1",
+      name: "Mark",
+      number: 3,
+      languageCode: "swh",
+      chapterIds: ["ch1"],
+      createdAt: 11,
+      updatedAt: 22,
+      coverColourKey: "forest",
+      shelfPosition: 0,
+    });
+  });
+
+  it("leaves a row that already carries a position alone, and parks the rest below it", async () => {
+    // Keys on the field being ABSENT, like every backfill before it. The
+    // positioned row is the OLDEST, so a pass that re-derived it from
+    // createdAt would move it.
+    const v10 = await openLegacyV10();
+    await v10.put("books", { ...v10Book("b1", 1), shelfPosition: 0 });
+    await v10.put("books", v10Book("b2", 9));
+    await v10.put("books", v10Book("b3", 5));
+    v10.close();
+
+    const db = await getDb();
+    const stored = await db.getAll("books");
+    expect(
+      Object.fromEntries(stored.map((r) => [r.id, r.shelfPosition]))
+    ).toEqual({ b1: 0, b2: 1, b3: 2 });
+  });
+
+  it("treats a non-finite position as absent, so it cannot poison the rest", async () => {
+    // No v10 row carries the field, but one that does must not turn `next`
+    // into NaN or Infinity for every row parked after it.
+    const v10 = await openLegacyV10();
+    await v10.put("books", { ...v10Book("b1", 1), shelfPosition: 0 });
+    await v10.put("books", { ...v10Book("b2", 9), shelfPosition: Number.NaN });
+    await v10.put("books", {
+      ...v10Book("b3", 5),
+      shelfPosition: Number.POSITIVE_INFINITY,
+    });
+    await v10.put("books", v10Book("b4", 3));
+    v10.close();
+
+    const db = await getDb();
+    const stored = await db.getAll("books");
+    expect(
+      Object.fromEntries(stored.map((r) => [r.id, r.shelfPosition]))
+    ).toEqual({ b1: 0, b2: 1, b3: 2, b4: 3 });
+  });
+
+  it("runs over an empty shelf, and on a fresh install, without complaint", async () => {
+    const v10 = await openLegacyV10();
+    v10.close();
+    const db = await getDb();
+    expect(db.version).toBe(APP_VERSION);
+    expect(await db.count("books")).toBe(0);
+
+    await wipe();
+    const fresh = await getDb();
+    expect(fresh.version).toBe(APP_VERSION);
+    expect(await fresh.count("books")).toBe(0);
+  });
+
+  it("climbs v9 → v10 → v11 in one open: a placeholder book gains a slot AND a position", async () => {
+    // A device still on v9 skips v10 entirely: both passes run in one
+    // upgrade, over the same rows, in order.
+    const v9 = await openLegacyV9();
+    await v9.put("books", { ...v9Book("b1", "Book 002"), createdAt: 4 });
+    await v9.put("books", { ...v9Book("b2", "Mark"), createdAt: 8 });
+    v9.close();
+
+    const db = await getDb();
+    expect(db.version).toBe(APP_VERSION);
+    expect(await db.get("books", "b1" as never)).toEqual({
+      id: "b1",
+      name: null,
+      number: 2,
+      languageCode: null,
+      chapterIds: [],
+      createdAt: 4,
+      updatedAt: 0,
+      coverColourKey: null,
+      shelfPosition: 1,
+    });
+    expect(await db.get("books", "b2" as never)).toMatchObject({
+      name: "Mark",
+      number: 1,
+      shelfPosition: 0,
     });
   });
 });

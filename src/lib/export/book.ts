@@ -432,7 +432,8 @@ export type BookLabel = Pick<Book, "name" | "number">;
 /**
  * Share your work (#987): every book in one zip, one folder per book, each
  * folder holding exactly the entries Share Book would put in that book's own
- * zip. Books go in shelf order (`listBooks`). Returns `null` for an empty
+ * zip. Books go in the person's shelf order (`listBooks`, #338) — the order
+ * the Books screen shows (DRI decision on PR #1367). Returns `null` for an empty
  * library, a library with no resolvable audio anywhere, or a run cancelled
  * part-way — a clean no-op for the caller, not an error.
  *
