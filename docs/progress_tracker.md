@@ -11,6 +11,71 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-08 (day, ran into 10-09 UTC) — Sprint 4 day 4: full issue triage and relabel, five lane waves, 22 PRs merged
+
+### Triage and labels
+
+- **Every open issue was re-triaged: 87 down to 74.** 16 were closed with evidence comments, and folds were recorded on the issues: #1213 → #1251, #439 → #221, #1316 → #1321, and #1186 → #338.
+- **New labels:** 12 `area:` labels (the feature families), 4 `a11y:` labels (`low-vision`, `non-reader`, `motor`, `hearing`), and `chore`. Every open issue now carries one type and one area. The DRI's note on the a11y labels is that they classify, not commit. The rule is in AGENTS.md (#1345).
+- **`v1-required` / `v1-desired` / `post-v1` are retired.** They were removed from open issues and kept as labels. Six issues moved from Sprint 4 to Backlog.
+- **#357 is retitled to the 26 Strategic Languages**, levels 3+4 of the DRI's Airtable export. That source has no group of 35.
+
+### Merged to develop
+
+Each lane PR merged only after three checks: a `uwreview` APPROVED review at its head, green CI, and a local combined check (tsc, knip, `test:coverage`, plus build and `test:dist` where the build was touched) on develop plus the head. The DRI merged #1345; the coordinator merged the rest with `--admin` under the DRI's session permission, one at a time, pinned with `--match-head-commit`.
+
+| PR    | Merged at  | What                                                                                                                                                                                     |
+| ----- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #1345 | `e12dff31` | AGENTS.md: retire the v1 labels; labelling rule                                                                                                                                          |
+| #1346 | `b71ef2d7` | Book placeholder stored as a number, schema v10 (takeover of #685; closes #685)                                                                                                          |
+| #1347 | `454cba80` | `@vitejs/plugin-react` 5 → 6 (#238)                                                                                                                                                      |
+| #1348 | `b86b4be1` | Phone check: system-Back layer, Books-overlay gate (#1014)                                                                                                                               |
+| #1349 | `61526019` | e2e: edit-mode theme flip repaints the waveform (#861)                                                                                                                                   |
+| #1350 | `2111bde0` | Audio-context recovery windows hardened (#1265)                                                                                                                                          |
+| #1351 | `6ae95ccf` | Share now tile pulses when the file is ready (#1087; DRI pick: ring on the tile)                                                                                                         |
+| #1353 | `03c39c01` | Partial-share chapter clause through plural (#169; takeover of #1226)                                                                                                                    |
+| #1354 | `d9333b0b` | Local review harness retired; docs point at uwreview (#1343)                                                                                                                             |
+| #1355 | `26d41e54` | Cover colour chosen in the New Book sheet (#1190)                                                                                                                                        |
+| #1356 | `b0b40990` | Viewport kept on the delete-confirm focus hand-off (#800)                                                                                                                                |
+| #1357 | `54bc0eb2` | Precache icons once, lazy-load fflate, retire CHANGELOG (Refs #161)                                                                                                                      |
+| #1358 | `0e5e3a26` | Seed window moved into the viewport hook (#826, closed on merge per the DRI)                                                                                                             |
+| #1359 | `20699ee3` | Three share tests wait for the encode instead of sleeping (#1352)                                                                                                                        |
+| #1361 | `97875a7a` | `src/lib` coverage floor and lib-boundary timeout (#159; DRI: keep the gate)                                                                                                             |
+| #1364 | `54f8ab77` | Test-only `addTake` deleted, its tests moved onto `saveTake` (#159 S-13)                                                                                                                 |
+| #1363 | `0e0c6e68` | Old look and the design switch deleted (#954). The bench packet truncated; DRI pick: merge with the residual recorded (#1362)                                                            |
+| #1366 | `0ffc7548` | Record again clears the segment and starts a take (Refs #1028)                                                                                                                           |
+| #1367 | `2d5a18c2` | Press-and-hold book reorder, schema v11 (closes #338). Three rounds: shelf-order share zip (DRI pick), edge-based drag targeting in the shared gesture, guide ring by newest `createdAt` |
+| #1370 | `97de8aa4` | Comment residuals from #1278 / #1317 (Refs)                                                                                                                                              |
+| #1371 | `05df2aa2` | Rename and eraser-wording pins (Refs #1233)                                                                                                                                              |
+| #1372 | `9b985dbc` | Stale `addTake` comments and run-result prose (Refs #575)                                                                                                                                |
+
+#377 was closed with no PR: #614 removed its trigger, and its first fix is already pinned by `tests/playhead-overlay-hide-timing.test.ts`.
+
+### DRI decisions (2026-10-08)
+
+- **#338 / #1367:** reorder works whether a book is open or closed; a new book lands at the top; the library zip follows the shelf order.
+- **#1366:** merge when bench-clean. The iPhone check of Record again is owed at the next tester build.
+- **#1201 item 4:** re-test on the Moto G first (row added to #974).
+- **#1346:** keep #685's placeholder rule.
+
+### Filed
+
+#1343, #1344 (spoken-prompt umbrella, Backlog), #1352 (fixed), #1360 (audit the remaining captured callbacks), #1362 (O4 sheet close scrolls the shelf; the e2e is `test.fail`), #1365, #1368 (reorder announcement "number N" copy), #1369 (`createBook` abort on a failed renumber).
+
+### Not verified
+
+- Nothing ran on a phone. Book reorder, Record again (iOS `getUserMedia` after the erase's awaits) and the Share now pulse are all unrun on a device.
+- The v1.0.2 APK and TestFlight runs (37380372475, 37380372435) are still waiting on `release-signing`. The DRI doesn't need a build now.
+
+### Next
+
+1. **#1281 settings step (DRI only):** switch `release-signing` to a staging/main branch policy and drop the required reviewer.
+2. **Next tester build:** iPhone check of Record again (#1028), a device pass on book reorder, and the Moto G re-test (#1201).
+3. **Leftovers on the Refs PRs:** #1233 items 22–23 (unblocked now that #1346 has merged), the rest of #575 (the reviewer-round attributions and the workflow run ids), and #1278 N5 / #1317's #1209 tone item (DRI calls).
+4. **Follow-ups:** #1360, #1362, #1369, #1368.
+
+---
+
 ## 2026-10-07 (day) — Sprint 4 day 3: two waves, seven lane PRs merged; #1333 copy picked by the DRI; uw-zulip-mcp public-readiness re-checks
 
 ### Merged to develop
