@@ -97,8 +97,10 @@ export function noticePresentation(tone: NoticeTone): NoticePresentation {
  * **`info`, by the DRI's pick on #147** (2026-09-28, "Amber 'info'
  * (Recommended)"). So no member wears the failure colour or interrupts
  * with `role="alert"` any more. The marks still differ: `staleChapter` passes
- * no `icon`, so it takes this tone's own ring-and-i, while
- * `shareOutcomeGlyph("nothing")` keeps `share-empty` (#178).
+ * no `icon`, and so do the two `shareFailureLogNothing` Notices
+ * (`send-log-control.tsx`, `failure-log-panel.tsx`), so all three take this
+ * tone's own ring-and-i, while `shareOutcomeGlyph("nothing")` keeps
+ * `share-empty` (#178).
  *
  * If the answer ever differs PER SITE, split this constant into the classes
  * that were answered differently — never hardcode a tone back at one call

@@ -17,8 +17,9 @@ import { stripCodeComments } from "./strip-code-comments";
  *
  * `shareMissing`, `shareBookPartial` and `shareBookMissingAndPartial` are
  * pinned in `tests/share-book-partial-copy.test.ts` instead, where the reasons
- * their wording is what it is already live (#400, #423). The four here had no
- * pin at all.
+ * their wording is what it is already live (#400, #423). `shareItemsGoOut` is
+ * pinned in `tests/share-progress-o4-render.test.ts`, beside the render that
+ * carries it. The four here had no pin at all.
  */
 describe("count-varying strings", () => {
   describe("bookRow", () => {
