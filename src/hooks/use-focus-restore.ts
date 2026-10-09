@@ -54,10 +54,15 @@ export interface FocusRestore {
    *   on #368 caught precisely that: a "first focusable in the sheet" fallback
    *   resolved to the recorder's Back, and Back is `close()`). Prefer the
    *   control that owns the overlay; prefer `null` over anything dangerous.
+   * @param preventScroll pass `true` to land focus without scrolling the
+   *   target into view (both the trigger and the fallback). For a caller whose
+   *   scroll position must survive the close (#1362). Defaults to `false`, the
+   *   browser's own behaviour.
    */
   restore: (options: {
     suppressed: boolean;
     fallback: HTMLElement | null;
+    preventScroll?: boolean;
   }) => void;
 }
 
@@ -106,9 +111,11 @@ export function useFocusRestore(): FocusRestore {
     ({
       suppressed,
       fallback,
+      preventScroll = false,
     }: {
       suppressed: boolean;
       fallback: HTMLElement | null;
+      preventScroll?: boolean;
     }) => {
       const trigger = triggerRef.current;
       triggerRef.current = null;
@@ -136,17 +143,18 @@ export function useFocusRestore(): FocusRestore {
       });
       if (target === "none") return;
       if (target === "fallback") {
-        fallback?.focus();
+        fallback?.focus({ preventScroll });
         return;
       }
-      trigger?.focus();
+      trigger?.focus({ preventScroll });
       // The belt to the table's braces. The predicates above enumerate the
       // conditions this app actually produces; they cannot enumerate every way
       // a browser refuses focus (an ancestor gone `display: none` or
       // `visibility: hidden`, a detail iOS decides differently). If the focus
       // did not land, the landmark is still better than the document — which is
       // the state #97 was filed about.
-      if (document.activeElement !== trigger) fallback?.focus();
+      if (document.activeElement !== trigger)
+        fallback?.focus({ preventScroll });
     },
     []
   );
