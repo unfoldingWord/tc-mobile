@@ -69,12 +69,15 @@ const STORE = "chunks";
 
 /** Run a probe; a throw is reported to the funnel and becomes a `failed` outcome. */
 export async function settleProbe<T>(
-  run: () => Promise<T>
+  run: () => Promise<T>,
+  signal?: AbortSignal
 ): Promise<ProbeOutcome<T>> {
   try {
     return { status: "ok", value: await run() };
   } catch (cause) {
-    reportFailure(cause, PHONE_CHECK_CONTEXT);
+    // An abort is the screen going away (#1014 item 6), not a probe defect:
+    // it is not reported, and the caller drops the outcome.
+    if (!signal?.aborted) reportFailure(cause, PHONE_CHECK_CONTEXT);
     return { status: "failed", errorName: errorName(cause) };
   }
 }
@@ -121,9 +124,11 @@ export async function readDeviceInfo(
  * exactly as any other encode does. The samples are built before the clock
  * starts; only the encode is timed.
  */
-export function runWorkerEncodeProbe(): Promise<EncodeResult> {
+export function runWorkerEncodeProbe(
+  signal?: AbortSignal
+): Promise<EncodeResult> {
   const samples = speechLikePcm(ENCODE_PROBE_SECONDS);
-  return withEncoder(undefined, (codec) =>
+  return withEncoder(signal, (codec) =>
     runEncodeProbe(codec, samples, CANONICAL_SAMPLE_RATE, () =>
       performance.now()
     )
@@ -146,6 +151,8 @@ export interface StorageProbeOptions {
   readonly now?: () => number;
   /** Called after each chunk is built, before it is written: the timing test's seam. */
   readonly onChunkFilled?: () => void;
+  /** Stops the probe between chunks; the database is still deleted (#1014 item 6). */
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -179,6 +186,7 @@ export async function runStorageProbe(
     // `get` and two compares, so both sides measure the database alone.
     let writeMs = 0;
     for (let c = 0; c < chunks; c++) {
+      options.signal?.throwIfAborted();
       const samples = new Int16Array(chunkSamples);
       for (let i = 0; i < chunkSamples; i++) samples[i] = chunkSample(c, i);
       options.onChunkFilled?.();
@@ -190,6 +198,7 @@ export async function runStorageProbe(
 
     const readStart = now();
     for (let c = 0; c < chunks; c++) {
+      options.signal?.throwIfAborted();
       const value: unknown = await db.get(STORE, c);
       const last = chunkSamples - 1;
       if (
@@ -295,7 +304,8 @@ export function writeSavedChecks(
  */
 export function browserAllocationDeps(
   store: BreadcrumbStore | null,
-  onStep: (attemptingMb: number) => void
+  onStep: (attemptingMb: number) => void,
+  signal?: AbortSignal
 ): AllocationDeps & { readonly release: () => void } {
   let held: Int16Array[] = [];
   return {
@@ -307,6 +317,7 @@ export function browserAllocationDeps(
     writeBreadcrumb: (crumb) => writeAllocationBreadcrumb(store, crumb),
     yieldTurn: () => new Promise((resolve) => setTimeout(resolve, 0)),
     onStep,
+    signal,
     release() {
       held = [];
     },

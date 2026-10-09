@@ -133,12 +133,14 @@ const PHONE_CHECK_SWEEP_PAUSE = "phone-check";
  */
 async function withTranscodeHeld<T>(
   busyWith: (activity: PhoneCheckActivity) => void,
-  work: () => Promise<T>
+  work: () => Promise<T>,
+  signal?: AbortSignal
 ): Promise<T> {
   busyWith({ kind: "waiting" });
   pauseTranscodeSweep(PHONE_CHECK_SWEEP_PAUSE);
   try {
     await transcodeSweepSettled();
+    signal?.throwIfAborted();
     return await work();
   } finally {
     resumeTranscodeSweep(PHONE_CHECK_SWEEP_PAUSE);
@@ -153,18 +155,29 @@ async function withTranscodeHeld<T>(
 export function runPhoneChecks(
   probes: CheckProbes,
   land: (next: Partial<SavedChecks>) => void,
-  busyWith: (activity: PhoneCheckActivity) => void
+  busyWith: (activity: PhoneCheckActivity) => void,
+  signal?: AbortSignal
 ): Promise<void> {
-  return withTranscodeHeld(busyWith, async () => {
-    // A new run replaces the last one whole, never a mix of the two.
-    land({ device: null, encode: null, storage: null });
-    busyWith({ kind: "device" });
-    land({ device: await probes.device() });
-    busyWith({ kind: "encode" });
-    land({ encode: await probes.encode() });
-    busyWith({ kind: "storage" });
-    land({ storage: await probes.storage() });
-  });
+  return withTranscodeHeld(
+    busyWith,
+    async () => {
+      // A new run replaces the last one whole, never a mix of the two.
+      land({ device: null, encode: null, storage: null });
+      busyWith({ kind: "device" });
+      const device = await probes.device();
+      signal?.throwIfAborted();
+      land({ device });
+      busyWith({ kind: "encode" });
+      const encode = await probes.encode();
+      signal?.throwIfAborted();
+      land({ encode });
+      busyWith({ kind: "storage" });
+      const storage = await probes.storage();
+      signal?.throwIfAborted();
+      land({ storage });
+    },
+    signal
+  );
 }
 
 /**
@@ -176,7 +189,28 @@ export function runMemoryCheck(
   deps: AllocationDeps,
   busyWith: (activity: PhoneCheckActivity) => void
 ): Promise<AllocationResult> {
-  return withTranscodeHeld(busyWith, () => runAllocationSteps(deps));
+  return withTranscodeHeld(
+    busyWith,
+    () => runAllocationSteps(deps),
+    deps.signal
+  );
+}
+
+/**
+ * Await a run's work, swallowing only the rejection an abort caused. Any
+ * other rejection is a defect and goes on to the app-wide unhandled-rejection
+ * listener, as before.
+ */
+async function untilDoneOrAborted(
+  signal: AbortSignal,
+  work: () => Promise<void>
+): Promise<void> {
+  try {
+    await work();
+  } catch (cause) {
+    // The screen unmounted mid-run (#1014 item 6): the run stopped on purpose.
+    if (!signal.aborted) throw cause;
+  }
 }
 
 /**
@@ -204,6 +238,18 @@ export function usePhoneCheck(): {
   const [state, setState] = useState<PhoneCheckState>(() =>
     initialPhoneCheckState(crumbStore)
   );
+  // The runs this screen started that have not finished. A stable set rather
+  // than a ref so the unmount cleanup below can read it (#1014 item 6).
+  const [liveRuns] = useState(() => new Set<AbortController>());
+
+  // The screen going away stops what it started: each probe ends at its next
+  // boundary and the run slot is released, instead of measuring under Books.
+  useEffect(
+    () => () => {
+      for (const run of liveRuns) run.abort();
+    },
+    [liveRuns]
+  );
 
   // The read above is the report; clearing is a side effect, so it waits for
   // the commit rather than running inside the initializer.
@@ -214,6 +260,9 @@ export function usePhoneCheck(): {
   const runChecks = useCallback(() => {
     const release = claimPhoneCheckRun();
     if (release === null) return;
+    const run = new AbortController();
+    const { signal } = run;
+    liveRuns.add(run);
     let saved: SavedChecks = { device: null, encode: null, storage: null };
     // Each result is saved the moment it lands, so a reload later — in this
     // run or in the memory ceiling after it — keeps what finished.
@@ -226,44 +275,59 @@ export function usePhoneCheck(): {
       setState((prev) => ({ ...prev, activity }));
     void (async () => {
       try {
-        await runPhoneChecks(
-          {
-            device: () => settleProbe(() => readDeviceInfo(navigator)),
-            encode: () => settleProbe(runWorkerEncodeProbe),
-            storage: () => settleProbe(() => runStorageProbe()),
-          },
-          land,
-          busyWith
+        await untilDoneOrAborted(signal, () =>
+          runPhoneChecks(
+            {
+              device: () =>
+                settleProbe(() => readDeviceInfo(navigator), signal),
+              encode: () =>
+                settleProbe(() => runWorkerEncodeProbe(signal), signal),
+              storage: () =>
+                settleProbe(() => runStorageProbe({ signal }), signal),
+            },
+            land,
+            busyWith,
+            signal
+          )
         );
       } finally {
+        liveRuns.delete(run);
         release();
         busyWith(null);
       }
     })();
-  }, [crumbStore]);
+  }, [crumbStore, liveRuns]);
 
   const runMemory = useCallback(() => {
     const release = claimPhoneCheckRun();
     if (release === null) return;
+    const run = new AbortController();
+    const { signal } = run;
+    liveRuns.add(run);
     const busyWith = (activity: PhoneCheckActivity) =>
       setState((prev) => ({ ...prev, activity }));
-    const deps = browserAllocationDeps(crumbStore, (mb) =>
-      busyWith({ kind: "memory", mb })
+    const deps = browserAllocationDeps(
+      crumbStore,
+      (mb) => busyWith({ kind: "memory", mb }),
+      signal
     );
     // No catch: a failed ALLOCATION is a result, returned by the loop, and
     // anything else that rejects here is a defect for the app-wide
     // unhandled-rejection listener, which reports it to the funnel.
     void (async () => {
       try {
-        const allocation = await runMemoryCheck(deps, busyWith);
-        setState((prev) => ({ ...prev, allocation }));
+        await untilDoneOrAborted(signal, async () => {
+          const allocation = await runMemoryCheck(deps, busyWith);
+          setState((prev) => ({ ...prev, allocation }));
+        });
       } finally {
+        liveRuns.delete(run);
         deps.release();
         release();
         busyWith(null);
       }
     })();
-  }, [crumbStore]);
+  }, [crumbStore, liveRuns]);
 
   return { state, runChecks, runMemory };
 }

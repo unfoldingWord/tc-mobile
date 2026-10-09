@@ -87,6 +87,12 @@ export interface AllocationDeps {
   /** Told each total as it is about to be tried. */
   readonly onStep?: (attemptingMb: number) => void;
   readonly steps?: readonly number[];
+  /**
+   * Aborts the run at the next step boundary (#1014 item 6). The loop rejects
+   * with the signal's reason, clearing the breadcrumb on the way out; an
+   * allocation already underway is synchronous and finishes first.
+   */
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -104,9 +110,11 @@ export async function runAllocationSteps(
   let lastOkMb = 0;
   try {
     for (const total of steps) {
+      deps.signal?.throwIfAborted();
       deps.writeBreadcrumb({ attemptingMb: total, lastOkMb });
       deps.onStep?.(total);
       await deps.yieldTurn();
+      deps.signal?.throwIfAborted();
       try {
         deps.allocate(total - lastOkMb);
       } catch (cause) {
