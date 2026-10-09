@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { ESLint } from "eslint";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
@@ -27,7 +28,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  *   - it STAYS GREEN on a legitimate file — one that only mentions `popstate`
  *     in a comment (AST-invisible) and touches other browser APIs
  *     (`localStorage`), never `history`.
- *   - the file-identity exemption is checked with `--print-config`, not by
+ *   - the file-identity exemption is checked with ESLint's `calculateConfigForFile` (the config `--print-config` prints), not by
  *     linting `src/` for violations: the two history-OBJECT rules
  *     (`no-restricted-globals` / `no-restricted-properties`) resolve to `off`
  *     for `src/hooks/use-nav-stack.ts` and to `error` for another hook, while
@@ -101,16 +102,16 @@ function lintProbe(name: string, source: string): string[] {
     .filter((id): id is string => id !== null);
 }
 
-/** The resolved level (0/1/2) of `ruleId` for `file`, via `eslint --print-config`.
- * This inspects the config for a path without linting the file's contents, so
- * the file-identity exemption is checked without sweeping `src/`. */
-function ruleLevelFor(file: string, ruleId: string): number {
-  const stdout = execFileSync(
-    process.execPath,
-    [ESLINT, "--print-config", file],
-    { cwd: REPO, encoding: "utf8", stdio: "pipe", timeout: ESLINT_TIMEOUT_MS }
-  );
-  const config = JSON.parse(stdout) as {
+/** The resolved level (0/1/2) of `ruleId` for `file`, via the ESLint Node API's
+ * `calculateConfigForFile` — the same resolution `--print-config` prints. This
+ * inspects the config for a path without linting the file's contents, so the
+ * file-identity exemption is checked without sweeping `src/`. One in-process
+ * instance is shared, so the flat config is loaded once rather than once per
+ * spawned `eslint` child (#1382). */
+const configEslint = new ESLint({ cwd: REPO });
+
+async function ruleLevelFor(file: string, ruleId: string): Promise<number> {
+  const config = (await configEslint.calculateConfigForFile(file)) as {
     rules?: Record<string, [number | string, ...unknown[]] | number | string>;
   };
   const entry = config.rules?.[ruleId];
@@ -183,7 +184,7 @@ export function useThing(): string | null {
     expect(rules).not.toContain("no-restricted-syntax");
   }, 15000);
 
-  it("EXEMPTS src/hooks/use-nav-stack.ts by file identity — the history-OBJECT rules resolve off there and error in another hook; no-restricted-syntax stays enabled, its popstate selector narrowed out (George R3 P3-4)", () => {
+  it("EXEMPTS src/hooks/use-nav-stack.ts by file identity — the history-OBJECT rules resolve off there and error in another hook; no-restricted-syntax stays enabled, its popstate selector narrowed out (George R3 P3-4)", async () => {
     const adapter = "src/hooks/use-nav-stack.ts";
     const otherHook = "src/hooks/use-recorder.ts";
     // The history OBJECT bans (`history` global, `window.history`,
@@ -192,16 +193,16 @@ export function useThing(): string | null {
       "no-restricted-globals",
       "no-restricted-properties",
     ]) {
-      expect(ruleLevelFor(adapter, ruleId)).toBe(0); // off for the adapter
-      expect(ruleLevelFor(otherHook, ruleId)).toBe(2); // error for other hooks
+      expect(await ruleLevelFor(adapter, ruleId)).toBe(0); // off for the adapter
+      expect(await ruleLevelFor(otherHook, ruleId)).toBe(2); // error for other hooks
     }
     // no-restricted-syntax is NOT blanket-off for the adapter (George R3 P3-4):
     // the rule stays enabled with only the history popstate selector subtracted,
     // so a future non-history hooks selector still reaches this file.
-    // `--print-config` reports only the level, not the selector set, so it reads
+    // the resolved config reports only the level, not the selector set, so it reads
     // `error` (2) here just as for any other hook. These level assertions
     // do not check the adapter's selector set or lint its popstate listener.
-    expect(ruleLevelFor(adapter, "no-restricted-syntax")).toBe(2);
-    expect(ruleLevelFor(otherHook, "no-restricted-syntax")).toBe(2);
+    expect(await ruleLevelFor(adapter, "no-restricted-syntax")).toBe(2);
+    expect(await ruleLevelFor(otherHook, "no-restricted-syntax")).toBe(2);
   }, 15000);
 });
