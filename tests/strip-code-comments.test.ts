@@ -85,34 +85,59 @@ describe("blankCodeComments (#822)", () => {
     expect(blankCodeComments(source, "probe.tsx")).toBe(source);
   });
 
-  it("agrees with the printer on every file in src/", () => {
-    // Printed WITH comments, the blanked text must equal the original printed
-    // WITHOUT them: nothing but comments was blanked, and no comment is left.
-    const root = path.resolve(import.meta.dirname, "..", "src");
-    const files = sourcesUnder(root);
-    expect(files.length).toBeGreaterThan(100);
-    const print = (text: string, name: string, removeComments: boolean) =>
-      ts
-        .createPrinter({ removeComments })
-        .printFile(
-          ts.createSourceFile(
-            name,
-            text,
-            ts.ScriptTarget.Latest,
-            true,
-            name.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
-          )
+  // One case per top-level slice of src/ (each directory, plus the files
+  // directly under src/), so no single test carries the whole tree (#1382).
+  const root = path.resolve(import.meta.dirname, "..", "src");
+  const loose = "(files directly under src/)";
+  const dirs = readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  const filesIn = (slice: string): string[] =>
+    slice === loose
+      ? readdirSync(root, { withFileTypes: true })
+          .filter((e) => e.isFile() && /\.tsx?$/.test(e.name))
+          .map((e) => path.join(root, e.name))
+      : sourcesUnder(path.join(root, slice));
+
+  // A directory with no .ts/.tsx (src/data holds JSON) has no case to run.
+  const slices = [...dirs, loose].filter((s) => filesIn(s).length > 0);
+
+  it("the per-slice sweep below still covers the whole tree", () => {
+    const covered = slices.flatMap(filesIn);
+    expect(covered.length).toBe(sourcesUnder(root).length);
+    expect(covered.length).toBeGreaterThan(100);
+  });
+
+  it.each(slices)(
+    "agrees with the printer on every file in src/%s",
+    (slice) => {
+      // Printed WITH comments, the blanked text must equal the original printed
+      // WITHOUT them: nothing but comments was blanked, and no comment is left.
+      const files = filesIn(slice);
+      expect(files.length).toBeGreaterThan(0);
+      const print = (text: string, name: string, removeComments: boolean) =>
+        ts
+          .createPrinter({ removeComments })
+          .printFile(
+            ts.createSourceFile(
+              name,
+              text,
+              ts.ScriptTarget.Latest,
+              true,
+              name.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+            )
+          );
+      const disagree = files.filter((file) => {
+        const text = readFileSync(file, "utf8");
+        const blanked = blankCodeComments(text, file);
+        return (
+          blanked.length !== text.length ||
+          print(blanked, file, false) !== print(text, file, true)
         );
-    const disagree = files.filter((file) => {
-      const text = readFileSync(file, "utf8");
-      const blanked = blankCodeComments(text, file);
-      return (
-        blanked.length !== text.length ||
-        print(blanked, file, false) !== print(text, file, true)
-      );
-    });
-    expect(disagree).toEqual([]);
-  }, 15000);
+      });
+      expect(disagree).toEqual([]);
+    }
+  );
 });
 
 function sourcesUnder(dir: string): string[] {
