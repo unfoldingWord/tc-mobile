@@ -22,8 +22,8 @@ import {
   createBook,
   getSegment,
 } from "@/lib/storage/books";
-import { clearSegmentTake } from "@/lib/storage/takes";
-import { getClip, getClipMeta, newClipId, putClip } from "@/lib/storage/clips";
+import { clearSegmentTake, saveTake } from "@/lib/storage/takes";
+import { getClip, getClipMeta, newClipId } from "@/lib/storage/clips";
 import { closeDb, getDb } from "@/lib/storage/db";
 import {
   subscribeToFailures,
@@ -31,6 +31,7 @@ import {
 } from "@/hooks/report-failure";
 import { startSave, type PendingTake } from "@/lib/takes/pending-take";
 import type { ClipId, SegmentId } from "@/types/domain";
+import { storeOrphanClip } from "./support";
 
 /**
  * The save orchestration — the wiring between the pure transitions and the store.
@@ -408,7 +409,8 @@ describe("performDiscardTake", () => {
     // out — on the one device that has just run out of it.
     const segmentId = await freshSegment();
     const clipId = newClipId();
-    await putClip(clipId, samples(10), CANONICAL_SAMPLE_RATE);
+    // Stored with no take: the bytes a failed attempt is assumed to have left.
+    await storeOrphanClip(clipId, samples(10));
     const s = slot(heldTake({ segmentId, clipId }));
 
     await performDiscardTake(s.held(), s.update);
@@ -422,8 +424,14 @@ describe("performDiscardTake", () => {
     // A discard tapped with an empty slot must not delete anything: there is no
     // orphan to report, and a delete keyed on a stale id would take live audio.
     const segmentId = await freshSegment();
+    // Live audio on another segment, saved the way the recorder saves it.
     const other = newClipId();
-    await putClip(other, samples(10), CANONICAL_SAMPLE_RATE);
+    await saveTake(
+      await freshSegment(),
+      other,
+      samples(10),
+      CANONICAL_SAMPLE_RATE
+    );
     const s = slot(null);
 
     await performDiscardTake(s.held(), s.update);

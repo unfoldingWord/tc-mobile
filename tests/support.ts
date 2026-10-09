@@ -7,7 +7,7 @@ import {
   mp3GranuleCount,
 } from "@/lib/audio/mp3-align";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import { newClipId } from "@/lib/storage/clips";
+import { buildClipMeta, newClipId } from "@/lib/storage/clips";
 import { closeDb, getDb } from "@/lib/storage/db";
 import { saveTake } from "@/lib/storage/takes";
 import type { UseEraseSegment } from "@/hooks/use-erase-segment";
@@ -121,6 +121,32 @@ export function recordTake(
     CANONICAL_SAMPLE_RATE,
     take
   );
+}
+
+/**
+ * Store a PCM clip that no take references — a damaged state, not a write path.
+ *
+ * No code in `src/` writes a clip on its own: `saveTake` writes the clip and
+ * its take in one transaction (#38), so an unreferenced clip is reachable only
+ * as damage or as a race a suite sets up on purpose (a stale take row's audio,
+ * a clip re-stored under an id its segment no longer names, the bytes a failed
+ * attempt is assumed to have left). This builds that state directly, the way
+ * other suites write a bare `takes` row. The meta comes from `buildClipMeta`,
+ * the same builder `saveTake` uses. A property of the clip write itself belongs
+ * on `saveTake` (`recordTake` above), never here (#1365).
+ */
+export async function storeOrphanClip(
+  clipId: ClipId,
+  samples: Int16Array
+): Promise<void> {
+  const meta = buildClipMeta(clipId, samples, CANONICAL_SAMPLE_RATE);
+  const db = await getDb();
+  const tx = db.transaction(["clipMeta", "clipData"], "readwrite");
+  await Promise.all([
+    tx.objectStore("clipMeta").put(meta),
+    tx.objectStore("clipData").put(new Int16Array(samples).buffer, clipId),
+    tx.done,
+  ]);
 }
 
 /**

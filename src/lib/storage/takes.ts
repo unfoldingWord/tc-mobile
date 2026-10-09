@@ -219,19 +219,19 @@ async function priorClipGeneration(
  * Persist a recording — the clip AND the take — in ONE transaction.
  *
  * This is the commit path's write, and its atomicity is the #38 fix. The old
- * flow was `putClip` (transaction A) then a take write (transaction B): if the
- * second failed — quota on the take/segment write, or the clip write itself
+ * flow was a clip write (transaction A) then a take write (transaction B): if
+ * the second failed — quota on the take/segment write, or the clip write itself
  * succeeding and then the process dying — the clip was already durable with no
  * take referencing it. That orphan consumed the very space the recovery screen
  * tells the translator to free, so freeing space and retrying failed again: the
  * quota death spiral. One transaction removes the half-written state entirely —
  * a quota failure rolls back the clip too, so there is nothing to reap.
  *
- * The clip write is the same shape as `putClip` (build meta, reject a 0-frame
- * clip, copy through a fresh ArrayBuffer so a trimmed view does not serialise its
- * whole backing buffer); the take write is `writeTakeInTx`. The clip write is
- * an upsert on `clipId`, so a retry with the same id overwrites rather than
- * duplicating.
+ * The clip write builds its meta with `buildClipMeta` (which rejects a 0-frame
+ * clip) and copies through a fresh ArrayBuffer so a trimmed view does not
+ * serialise its whole backing buffer; the take write is `writeTakeInTx`. The
+ * clip write is an upsert on `clipId`, so a retry with the same id overwrites
+ * rather than duplicating.
  */
 export async function saveTake(
   segmentId: SegmentId,

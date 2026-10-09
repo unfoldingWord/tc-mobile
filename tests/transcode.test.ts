@@ -20,7 +20,6 @@ import {
   getClip,
   getClipMeta,
   newClipId,
-  putClip,
   totalClipBytes,
 } from "@/lib/storage/clips";
 import { getDb } from "@/lib/storage/db";
@@ -34,7 +33,7 @@ import {
   recordTranscodeStall,
 } from "@/lib/storage/transcode";
 import type { ClipId, SegmentId } from "@/types/domain";
-import { clearAllStores, samplesOf } from "./support";
+import { clearAllStores, samplesOf, storeOrphanClip } from "./support";
 
 /**
  * Transcode on Finished (B8, D3) — the storage half, T1.
@@ -229,7 +228,7 @@ describe("commitTranscode", () => {
         finished: true,
       }
     );
-    await putClip(clipId, pcm, CANONICAL_SAMPLE_RATE); // the old clip, back as an orphan
+    await storeOrphanClip(clipId, pcm); // the old clip, back as an orphan
 
     expect(await commitTranscode(segmentId, clipId, mp3, peaks)).toBe("stale");
 
@@ -282,7 +281,7 @@ describe("commitTranscode", () => {
   });
 
   it("stores only the MP3 bytes when handed a view onto a larger buffer", async () => {
-    // The same trap `putClip` guards: a subarray view would serialise its whole
+    // The same trap `saveTake` guards: a subarray view would serialise its whole
     // backing buffer into IndexedDB.
     const { segmentId, clipId, pcm } = await recordedSegment();
     await setSegmentFinished(segmentId, true);

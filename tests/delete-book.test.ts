@@ -17,12 +17,12 @@ import {
   listBooks,
 } from "@/lib/storage/books";
 import { setSegmentFinished, saveTake } from "@/lib/storage/takes";
-import { getClip, getClipMeta, newClipId, putClip } from "@/lib/storage/clips";
+import { getClip, getClipMeta, newClipId } from "@/lib/storage/clips";
 import { getDb } from "@/lib/storage/db";
 import { resolveSegmentAudio } from "@/lib/storage/segment-audio";
 import { commitTranscode } from "@/lib/storage/transcode";
 import type { BookId, ClipId, SegmentId, TakeId } from "@/types/domain";
-import { clearAllStores } from "./support";
+import { clearAllStores, storeOrphanClip } from "./support";
 
 /**
  * Delete a Book (#337) — T1.
@@ -410,7 +410,7 @@ describe("deleteBook", () => {
     // segment does NOT point at. Written directly, like the orphan fixture
     // above, because no code path in the app produces this state.
     const staleClip = newClipId();
-    await putClip(staleClip, samples(120), CANONICAL_SAMPLE_RATE);
+    await storeOrphanClip(staleClip, samples(120));
     const staleTakeId = crypto.randomUUID() as TakeId;
     const db = await getDb();
     await db.put("takes", {
