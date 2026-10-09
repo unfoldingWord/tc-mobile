@@ -724,17 +724,20 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
         // shelf no row is placed, and this writes 0..N-1. `getAll` rather
         // than a cursor because the order needs the whole shelf first; the
         // store holds book metadata alone, as v10's pass already relies on.
+        // A position that is not a finite number counts as absent: kept, it
+        // would make `next` NaN or Infinity for every row parked after it.
         if (oldVersion < 11) {
           const store = tx.objectStore("books");
           const rows = (await store.getAll()) as unknown as BookV10[];
           let next = 0;
           for (const row of rows) {
-            if (row.shelfPosition !== undefined) {
-              next = Math.max(next, row.shelfPosition + 1);
+            const at = row.shelfPosition;
+            if (at !== undefined && Number.isFinite(at)) {
+              next = Math.max(next, at + 1);
             }
           }
           const unplaced = rows
-            .filter((row) => row.shelfPosition === undefined)
+            .filter((row) => !Number.isFinite(row.shelfPosition))
             .sort((a, b) => b.createdAt - a.createdAt);
           for (const row of unplaced) {
             await store.put({ ...row, shelfPosition: next++ });

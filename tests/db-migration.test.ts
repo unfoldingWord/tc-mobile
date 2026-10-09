@@ -1154,6 +1154,26 @@ describe("the v10 → v11 shelf position (#338)", () => {
     ).toEqual({ b1: 0, b2: 1, b3: 2 });
   });
 
+  it("treats a non-finite position as absent, so it cannot poison the rest", async () => {
+    // No v10 row carries the field, but one that does must not turn `next`
+    // into NaN or Infinity for every row parked after it.
+    const v10 = await openLegacyV10();
+    await v10.put("books", { ...v10Book("b1", 1), shelfPosition: 0 });
+    await v10.put("books", { ...v10Book("b2", 9), shelfPosition: Number.NaN });
+    await v10.put("books", {
+      ...v10Book("b3", 5),
+      shelfPosition: Number.POSITIVE_INFINITY,
+    });
+    await v10.put("books", v10Book("b4", 3));
+    v10.close();
+
+    const db = await getDb();
+    const stored = await db.getAll("books");
+    expect(
+      Object.fromEntries(stored.map((r) => [r.id, r.shelfPosition]))
+    ).toEqual({ b1: 0, b2: 1, b3: 2, b4: 3 });
+  });
+
   it("runs over an empty shelf, and on a fresh install, without complaint", async () => {
     const v10 = await openLegacyV10();
     v10.close();
