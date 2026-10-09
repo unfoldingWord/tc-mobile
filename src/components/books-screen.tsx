@@ -1407,7 +1407,14 @@ export function BooksScreen({
   useLayoutEffect(() => {
     if (shareMenuBookId !== null) return;
     if (shareOverlayOwnsScreen(bookShare.progress)) return;
-    menuFocusRestore.restore({ suppressed: false, fallback: null });
+    // `preventScroll`: closing the sheet over its delete ask lands the ⋮ here
+    // first, and a bare focus scrolled the shelf to that row before the
+    // delete-confirm hand-off (`preventScroll`) ran (#1362).
+    menuFocusRestore.restore({
+      suppressed: false,
+      fallback: null,
+      preventScroll: true,
+    });
   }, [shareMenuBookId, bookShare.progress, menuFocusRestore]);
   // Share speaks inside its own menu, not the shelf: the two-gesture flow keeps
   // the menu open across prepare → ready → send. The control's glyph, the gap

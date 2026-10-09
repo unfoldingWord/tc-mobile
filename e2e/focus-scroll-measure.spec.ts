@@ -153,14 +153,8 @@ test("closing the book sheet over its delete ask for a row away from the top: sh
   // #800 (DRI: split it): the delete-confirm lift passes `preventScroll`, so
   // the hand-off leaves the shelf where it was instead of scrolling the row in.
   //
-  // KNOWN TO FAIL on the O4 path (#1362): the shelf ends scrolled to the
-  // armed row. It failed the same way on develop before #954; it was green
-  // only while this spec pinned the old look's floating confirm. The marker
-  // is set HERE, after every step above has passed as a normal assertion, so
-  // only this last check can satisfy it — a setup or precondition failure
-  // above fails the run. It goes red once #1362 makes the check hold, and
-  // has to come off then.
-  test.fail(true, "#1362: the O4 sheet close scrolls the shelf to the row");
+  // The sheet's own focus restore to the ⋮ also passes `preventScroll`
+  // (#1362); before that it was the call that scrolled the shelf.
   await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBe(0);
 });
 
