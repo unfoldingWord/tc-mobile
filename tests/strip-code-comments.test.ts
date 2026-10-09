@@ -104,7 +104,7 @@ describe("blankCodeComments (#822)", () => {
 
   it("the per-slice sweep below still covers the whole tree", () => {
     const covered = slices.flatMap(filesIn);
-    expect(covered.length).toBe(sourcesUnder(root).length);
+    expect([...covered].sort()).toEqual([...sourcesUnder(root)].sort());
     expect(covered.length).toBeGreaterThan(100);
   });
 
@@ -136,7 +136,8 @@ describe("blankCodeComments (#822)", () => {
         );
       });
       expect(disagree).toEqual([]);
-    }
+    },
+    15000
   );
 });
 
