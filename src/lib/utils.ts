@@ -35,12 +35,42 @@ export function formatDuration(ms: number): string {
  * whitespace then collapse and the ends are trimmed, so the result is a readable
  * label and never a path.
  *
+ * Each label is also capped by UTF-8 bytes, cut at a grapheme boundary so a
+ * base letter is never parted from its combining marks (#1233 item 22): a name
+ * of 80 characters is about 240 bytes in a 3-byte script (Ge'ez, most Indic),
+ * and the filename holds two labels against a 255-byte filesystem limit.
+ *
  * Only the EXPORT form is sanitised. The stored display name is untouched — the
  * shelf still shows exactly what was typed.
  */
 export function filenameSafe(label: string): string {
-  return label
+  const clean = label
     .replace(/[/\\:*?"<>|\p{Cc}]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+  return capUtf8Bytes(clean, FILENAME_LABEL_MAX_BYTES).trim();
+}
+
+/**
+ * Per-label byte cap. A share filename is `<book> - <chapter>.mp3`: two labels,
+ * a 3-byte separator and a 4-byte extension, so 2 x 120 + 7 = 247 stays inside
+ * the 255-byte limit with the extension intact (#1233 item 22).
+ */
+export const FILENAME_LABEL_MAX_BYTES = 120;
+
+const encoder = new TextEncoder();
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/** The longest whole-grapheme prefix of `text` that fits in `maxBytes` of UTF-8. */
+function capUtf8Bytes(text: string, maxBytes: number): string {
+  if (encoder.encode(text).length <= maxBytes) return text;
+  let out = "";
+  let used = 0;
+  for (const { segment } of graphemes.segment(text)) {
+    const bytes = encoder.encode(segment).length;
+    if (used + bytes > maxBytes) break;
+    out += segment;
+    used += bytes;
+  }
+  return out;
 }

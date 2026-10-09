@@ -845,7 +845,7 @@ export const strings = {
   ): string => {
     const label = filenameSafe(chapterName ?? "");
     return `${filenameSafe(book)} - ${
-      label === "" ? strings.chapterName(chapter) : label
+      label === "" ? filenameSafe(strings.chapterName(chapter)) : label
     }.mp3`;
   },
 
