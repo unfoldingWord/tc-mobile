@@ -144,17 +144,17 @@ describe("settleProbe and an abort", () => {
     expect(outcome.status).toBe("failed");
   });
 
-  it("does not report an AbortError the abort caused", async () => {
+  it("still reports a foreign AbortError raised after the abort", async () => {
     const seen: unknown[] = [];
     const off = subscribeToFailures((r) => void seen.push(r));
-    const run = new AbortController();
-    run.abort(new Error("custom reason"));
+    // A no-argument abort, as on unmount: the reason is itself an AbortError,
+    // and an IDB transaction abort racing it must not pass for it by name.
     await settleProbe(
-      () => Promise.reject(new DOMException("cancelled", "AbortError")),
-      run.signal
+      () => Promise.reject(new DOMException("tx aborted", "AbortError")),
+      aborted()
     );
     off();
-    expect(seen).toHaveLength(0);
+    expect(seen).toHaveLength(1);
   });
 
   it("still reports an unrelated error raised after the abort", async () => {
@@ -189,12 +189,11 @@ describe("untilDoneOrAborted and an abort", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("swallows an AbortError once aborted", async () => {
+  it("rethrows a foreign AbortError raised after the abort", async () => {
+    const foreign = new DOMException("tx aborted", "AbortError");
     await expect(
-      untilDoneOrAborted(aborted(), () =>
-        Promise.reject(new DOMException("cancelled", "AbortError"))
-      )
-    ).resolves.toBeUndefined();
+      untilDoneOrAborted(aborted(), () => Promise.reject(foreign))
+    ).rejects.toBe(foreign);
   });
 
   it("rethrows an unrelated error raised after the abort", async () => {

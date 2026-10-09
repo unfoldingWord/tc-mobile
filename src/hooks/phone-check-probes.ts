@@ -69,23 +69,20 @@ const STORE = "chunks";
 
 /**
  * Whether `cause` is the rejection `signal`'s abort produced: the signal's own
- * reason (what `throwIfAborted()` throws), or an `AbortError` (what the
- * encoder rejects with when the signal carries no reason, `abortReason` in
- * `mp3-codec.ts`). False while the signal is not aborted, and false for any
- * other cause: a `TypeError` or an IDB failure that races the abort is a
- * defect and must still reach the funnel (#1379 item 1).
+ * reason, matched by identity. That covers `throwIfAborted()` and the encoder,
+ * whose `abortReason` (`mp3-codec.ts`) rejects with `signal.reason` — a
+ * no-argument `abort()` still sets one, an `AbortError`. A cause is never
+ * matched by name: an IDB transaction abort is also an `AbortError`. False
+ * while the signal is not aborted, and false for any other cause: a
+ * `TypeError` or an IDB failure that races the abort is a defect and must
+ * still reach the funnel (#1379 item 1).
  */
 export function isAbortCause(
   cause: unknown,
   signal: AbortSignal | undefined
 ): boolean {
   if (signal === undefined || !signal.aborted) return false;
-  if (cause === signal.reason) return true;
-  return (
-    typeof cause === "object" &&
-    cause !== null &&
-    (cause as { name?: unknown }).name === "AbortError"
-  );
+  return cause === signal.reason;
 }
 
 /** Run a probe; a throw is reported to the funnel and becomes a `failed` outcome. */
