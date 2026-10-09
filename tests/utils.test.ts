@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   FILENAME_LABEL_MAX_BYTES,
@@ -114,5 +114,46 @@ describe("filenameSafe byte cap", () => {
   it("does not leave a trailing space where the cut falls", () => {
     const label = `${"a".repeat(FILENAME_LABEL_MAX_BYTES - 1)} bcd`;
     expect(filenameSafe(label)).toBe("a".repeat(FILENAME_LABEL_MAX_BYTES - 1));
+  });
+});
+
+/**
+ * The build targets Firefox 114, which has no `Intl.Segmenter` (shipped in
+ * 125): the module must load without it, and the cap must still hold.
+ */
+describe("filenameSafe without Intl.Segmenter", () => {
+  const bytes = (s: string): number => new TextEncoder().encode(s).length;
+
+  async function loadWithoutSegmenter(): Promise<typeof import("@/lib/utils")> {
+    vi.resetModules();
+    vi.stubGlobal(
+      "Intl",
+      Object.create(Intl, { Segmenter: { value: undefined } })
+    );
+    return import("@/lib/utils");
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("importing the module does not throw", async () => {
+    await expect(loadWithoutSegmenter()).resolves.toBeDefined();
+  });
+
+  it("still caps by bytes, keeps .mp3, and never emits a lone surrogate", async () => {
+    const mod = await loadWithoutSegmenter();
+    // 4-byte astral code points: 31 of them is 124 bytes, over the cap.
+    const label = "\u{1F600}".repeat(31);
+    const out = mod.filenameSafe(label);
+    expect(bytes(out)).toBeLessThanOrEqual(mod.FILENAME_LABEL_MAX_BYTES);
+    expect(out).toBe("\u{1F600}".repeat(30));
+    expect(out).not.toMatch(
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+    );
+    const name = `${out} - ${mod.filenameSafe("ሰላም".repeat(27))}.mp3`;
+    expect(bytes(name)).toBeLessThanOrEqual(255);
+    expect(name.endsWith(".mp3")).toBe(true);
   });
 });

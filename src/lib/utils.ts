@@ -59,14 +59,30 @@ export function filenameSafe(label: string): string {
 export const FILENAME_LABEL_MAX_BYTES = 120;
 
 const encoder = new TextEncoder();
-const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+let graphemes: Intl.Segmenter | null = null;
 
-/** The longest whole-grapheme prefix of `text` that fits in `maxBytes` of UTF-8. */
+/**
+ * Whole-grapheme pieces of `text`, from `Intl.Segmenter` when the engine has it
+ * (built lazily and cached, never at module load: the build targets Firefox 114
+ * and Firefox shipped the API in 125, so a module-scope construction would stop
+ * the app starting there). Without it the pieces are code points, which never
+ * split a surrogate pair; a combining mark may then be parted from its base.
+ * That is the documented degradation on an engine without the Segmenter.
+ */
+function pieces(text: string): string[] {
+  if (typeof Intl.Segmenter === "function") {
+    graphemes ??= new Intl.Segmenter(undefined, { granularity: "grapheme" });
+    return Array.from(graphemes.segment(text), (s) => s.segment);
+  }
+  return Array.from(text);
+}
+
+/** The longest whole-piece prefix of `text` that fits in `maxBytes` of UTF-8. */
 function capUtf8Bytes(text: string, maxBytes: number): string {
   if (encoder.encode(text).length <= maxBytes) return text;
   let out = "";
   let used = 0;
-  for (const { segment } of graphemes.segment(text)) {
+  for (const segment of pieces(text)) {
     const bytes = encoder.encode(segment).length;
     if (used + bytes > maxBytes) break;
     out += segment;
