@@ -696,9 +696,10 @@ export const strings = {
   // The same three lines for a book on the Books screen (#338). Said by the
   // book's heading (its name, or its placeholder), since a book has no number
   // that follows its place; the landing is its new place on the shelf, from 1.
+  // Said as "position", never "number": "number" is the Book N placeholder (#1368).
   bookReorderLifted: (heading: string): string => `Moving ${heading}.`,
   bookReorderMoved: (heading: string, to: number): string =>
-    `${heading} is now number ${to} on the shelf.`,
+    `${heading} is now position ${to} on the shelf.`,
   bookReorderStayed: (heading: string): string =>
     `${heading} stayed where it was.`,
   eraseConfirmTitle: "Reset segment and start over",

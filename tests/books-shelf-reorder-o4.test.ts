@@ -278,6 +278,15 @@ describe("the hold area: the book's own row (#338)", () => {
   });
 });
 
+describe("the book-reorder landing wording (#1368)", () => {
+  it("says the shelf position, not 'number', which already names the Book N placeholder", () => {
+    expect(strings.bookReorderMoved("Mark", 3)).toBe(
+      "Mark is now position 3 on the shelf."
+    );
+    expect(strings.bookReorderMoved("Mark", 3)).not.toMatch(/number/i);
+  });
+});
+
 describe("the drag and the one write (#338)", () => {
   it("shifts the other books while dragging, writes nothing until the drop, then writes once", async () => {
     await render();
