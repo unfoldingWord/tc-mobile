@@ -144,17 +144,28 @@ describe("settleProbe and an abort", () => {
     expect(outcome.status).toBe("failed");
   });
 
-  it("does not report an AbortError the abort caused", async () => {
+  it("does not report the reason of an abort(customReason)", async () => {
     const seen: unknown[] = [];
     const off = subscribeToFailures((r) => void seen.push(r));
     const run = new AbortController();
-    run.abort(new Error("custom reason"));
+    const reason = new Error("custom reason");
+    run.abort(reason);
+    await settleProbe(() => Promise.reject(reason), run.signal);
+    off();
+    expect(seen).toHaveLength(0);
+  });
+
+  it("reports a foreign AbortError after a no-argument abort", async () => {
+    const seen: unknown[] = [];
+    const off = subscribeToFailures((r) => void seen.push(r));
+    const run = new AbortController();
+    run.abort();
     await settleProbe(
-      () => Promise.reject(new DOMException("cancelled", "AbortError")),
+      () => Promise.reject(new DOMException("tx aborted", "AbortError")),
       run.signal
     );
     off();
-    expect(seen).toHaveLength(0);
+    expect(seen).toHaveLength(1);
   });
 
   it("still reports an unrelated error raised after the abort", async () => {
@@ -189,12 +200,20 @@ describe("untilDoneOrAborted and an abort", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("swallows an AbortError once aborted", async () => {
+  it("swallows the reason of an abort(customReason)", async () => {
+    const run = new AbortController();
+    const reason = new Error("custom reason");
+    run.abort(reason);
     await expect(
-      untilDoneOrAborted(aborted(), () =>
-        Promise.reject(new DOMException("cancelled", "AbortError"))
-      )
+      untilDoneOrAborted(run.signal, () => Promise.reject(reason))
     ).resolves.toBeUndefined();
+  });
+
+  it("rethrows a foreign AbortError after a no-argument abort", async () => {
+    const foreign = new DOMException("tx aborted", "AbortError");
+    await expect(
+      untilDoneOrAborted(aborted(), () => Promise.reject(foreign))
+    ).rejects.toBe(foreign);
   });
 
   it("rethrows an unrelated error raised after the abort", async () => {
