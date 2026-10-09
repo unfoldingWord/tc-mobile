@@ -173,14 +173,30 @@ it("does not let an own-rename override outlive the store catching up to it", as
 it("lets a load started after a rename show a second writer's label (Frank r1 on #809)", async () => {
   const { chapterId, segmentId } = await mountChapter();
   const staleSnapshot: Segment[] = await getSegmentsOfChapter(chapterId);
+  // Created up front: `loadChapterView` reaches `getSegmentsOfChapter` only
+  // after two IndexedDB awaits, so a resolver captured inside the mock may not
+  // exist yet when the test wants to call it.
   let resolveStaleRead: ((segments: Segment[]) => void) | null = null;
-  vi.mocked(getSegmentsOfChapter).mockImplementationOnce(
-    () => new Promise<Segment[]>((resolve) => (resolveStaleRead = resolve))
-  );
+  const staleRead = new Promise<Segment[]>((resolve) => {
+    resolveStaleRead = resolve;
+  });
+  // Set inside the mock, so awaiting it proves the load has ENTERED the read
+  // (the in-flight window this test is named for) before anything lands.
+  let markStaleReadStarted!: () => void;
+  const staleReadStarted = new Promise<void>((resolve) => {
+    markStaleReadStarted = resolve;
+  });
+  vi.mocked(getSegmentsOfChapter).mockImplementationOnce(() => {
+    markStaleReadStarted();
+    return staleRead;
+  });
   act(() => {
     hook().reload();
   });
   await vi.waitFor(() => expect(hook().refreshing).toBe(true));
+  await act(async () => {
+    await staleReadStarted;
+  });
   await act(async () => {
     expect(await hook().renameSegment(segmentId, "verses 3–4")).toBe(true);
   });

@@ -303,9 +303,11 @@ describe("goBackToBooks from the recorder (#1275)", () => {
       });
     await act(async () => fake.nav!.goBackToBooks());
     await settle();
-    // The first level landed and the close is pending.
+    // The first level landed and the close is pending. The landing is a
+    // jsdom task and `requestClose` runs after it, so wait for the resolver
+    // to exist rather than trusting the fixed sleep above to have covered it.
+    await vi.waitFor(() => expect(resolveClose).not.toBeNull());
     expect(landings).toEqual([1]);
-    expect(resolveClose).not.toBeNull();
 
     await act(async () => {
       // A hardware Back, admitted: the landing settled the guard. Then the

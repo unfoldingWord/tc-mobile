@@ -57,6 +57,9 @@ let share: ReturnType<typeof vi.fn>;
 /** Resolves the encode the export is waiting on, when `hold` is set. */
 let hold = false;
 let finishEncode: () => void = () => undefined;
+/** Resolves when a held encode has started and `finishEncode` is set. */
+let encodeStarted!: Promise<void>;
+let markEncodeStarted: () => void = () => undefined;
 let encodeError: Error | null = null;
 
 const probe: { current: ReturnType<typeof useBookShare> | null } = {
@@ -113,6 +116,9 @@ beforeEach(async () => {
   native.on = false;
   hold = false;
   encodeError = null;
+  encodeStarted = new Promise<void>((r) => {
+    markEncodeStarted = r;
+  });
   opfs = fakeOpfs();
   const codec: AudioCodec = {
     encodeMp3: () => {
@@ -120,6 +126,7 @@ beforeEach(async () => {
       if (!hold) return Promise.resolve(new Uint8Array(4096).fill(7));
       return new Promise((resolve) => {
         finishEncode = () => resolve(new Uint8Array(4096).fill(7));
+        markEncodeStarted();
       });
     },
     decodeMp3: () => Promise.reject(new Error("no MP3 clip expected")),
@@ -237,7 +244,9 @@ describe("the web route", () => {
     act(() => {
       prepared = hook().prepare(bookId, "Book.zip", (n) => `Chapter ${n}.mp3`);
     });
-    await settle();
+    await act(async () => {
+      await encodeStarted;
+    });
     // The spool is open and the first chapter is encoding.
     expect(opfs.files()).toHaveLength(1);
     act(() => hook().reset());
