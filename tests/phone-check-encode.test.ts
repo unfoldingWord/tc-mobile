@@ -119,7 +119,7 @@ describe("runWorkerEncodeProbe (#1014 item 1)", () => {
 
     const result = await runWorkerEncodeProbe();
 
-    // No AbortSignal: the phone check never cancels its own encode.
+    // Called with no signal, `withEncoder` gets none.
     expect(seam.calls).toEqual([undefined]);
     expect(seam.encodeMp3).toHaveBeenCalledTimes(1);
     const samples = seam.encodeMp3.mock.calls[0]?.[0];
@@ -127,5 +127,15 @@ describe("runWorkerEncodeProbe (#1014 item 1)", () => {
     expect(samples.length).toBe(ENCODE_PROBE_SECONDS * CANONICAL_SAMPLE_RATE);
     expect(result.audioSeconds).toBe(ENCODE_PROBE_SECONDS);
     expect(result.mp3Bytes).toBe(10);
+  }, 15000);
+
+  it("hands the caller's AbortSignal to withEncoder (#1014 item 6)", async () => {
+    seam.calls.length = 0;
+    const { runWorkerEncodeProbe } = await import("@/hooks/phone-check-probes");
+    const { signal } = new AbortController();
+
+    await runWorkerEncodeProbe(signal);
+
+    expect(seam.calls).toEqual([signal]);
   }, 15000);
 });
