@@ -217,7 +217,7 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "vite",
-    version: "8.3.0",
+    version: "8.3.1",
     spdx: "MIT",
     role: "module-preload polyfill and preload helper, written into the app at build time",
     copyright: "© 2019-present VoidZero Inc. and Vite contributors",
