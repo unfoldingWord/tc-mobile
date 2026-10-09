@@ -125,6 +125,19 @@ function field(): HTMLInputElement {
   return input!;
 }
 
+async function type(value: string) {
+  await act(async () => {
+    const input = field();
+    // React tracks the value setter on the instance; go through the prototype
+    // so the change is seen as a user edit.
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value"
+    )!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
 async function openRename() {
   await mount();
   await click(strings.chapterMenuOpen);
@@ -147,6 +160,34 @@ describe("the chapter rename sheet (#1219)", () => {
     await openRename();
     await click(strings.saveName);
     expect(mocks.renameChapter).toHaveBeenCalledTimes(1);
+    expect(mocks.renameChapter).toHaveBeenCalledWith("");
+  });
+
+  it("arrives with the default selected, and a typed name does not (#1233 item 25)", async () => {
+    await openRename();
+    expect([field().selectionStart, field().selectionEnd]).toEqual([
+      0,
+      strings.chapterName(3).length,
+    ]);
+    await act(async () => root.unmount());
+    root = createRoot(document.getElementById("root")!);
+    layers.clear();
+    mocks.chapterName = "The sower";
+    await openRename();
+    expect(field().selectionStart).toBe(field().selectionEnd);
+  });
+
+  it("stores a label when the default is edited into a real name (#1233 item 24)", async () => {
+    await openRename();
+    await type("The sower");
+    await click(strings.saveName);
+    expect(mocks.renameChapter).toHaveBeenCalledWith("The sower");
+  });
+
+  it("treats the default with a stray trailing space as the default (#1233 item 24)", async () => {
+    await openRename();
+    await type(`${strings.chapterName(3)} `);
+    await click(strings.saveName);
     expect(mocks.renameChapter).toHaveBeenCalledWith("");
   });
 
