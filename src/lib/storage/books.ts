@@ -123,33 +123,40 @@ export async function createBook(
   const db = await getDb();
   const tx = db.transaction("books", "readwrite");
   const trimmed = name.trim();
-  const shelf = await tx.store.getAll();
-  const book: Book = {
-    id: uuid() as BookId,
-    name: trimmed === "" ? null : trimmed,
-    number: nextBookNumber(shelf),
-    languageCode,
-    chapterIds: [],
-    createdAt: now,
-    updatedAt: now,
-    // Unset by default — the facilitator has not chosen one yet (#957).
-    // `resolveCoverKey` derives a colour from the id until they do. The New
-    // Book sheet may pass one (#1190) so the colour lands in this same write
-    // rather than in a second one after it. Like `setBookCoverColour`, this
-    // does not validate against the live palette; the picker only offers it.
-    coverColourKey,
-    // A new book lands at the TOP of the shelf (#338), as it always has; the
-    // books already there move down one, in the order the user left them.
-    shelfPosition: 0,
-  };
-  await tx.store.put(book);
-  for (const [index, row] of byShelfPosition(shelf).entries()) {
-    if (row.shelfPosition !== index + 1) {
-      await tx.store.put({ ...row, shelfPosition: index + 1 });
+  try {
+    const shelf = await tx.store.getAll();
+    const book: Book = {
+      id: uuid() as BookId,
+      name: trimmed === "" ? null : trimmed,
+      number: nextBookNumber(shelf),
+      languageCode,
+      chapterIds: [],
+      createdAt: now,
+      updatedAt: now,
+      // Unset by default — the facilitator has not chosen one yet (#957).
+      // `resolveCoverKey` derives a colour from the id until they do. The New
+      // Book sheet may pass one (#1190) so the colour lands in this same write
+      // rather than in a second one after it. Like `setBookCoverColour`, this
+      // does not validate against the live palette; the picker only offers it.
+      coverColourKey,
+      // A new book lands at the TOP of the shelf (#338), as it always has; the
+      // books already there move down one, in the order the user left them.
+      shelfPosition: 0,
+    };
+    await tx.store.put(book);
+    for (const [index, row] of byShelfPosition(shelf).entries()) {
+      if (row.shelfPosition !== index + 1) {
+        await tx.store.put({ ...row, shelfPosition: index + 1 });
+      }
     }
+    await tx.done;
+    return book;
+  } catch (cause) {
+    // One transaction: a put that threw mid-renumber must not commit the new
+    // row and a partly renumbered shelf (#1369), as in moveBook.
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw cause;
   }
-  await tx.done;
-  return book;
 }
 
 /**
