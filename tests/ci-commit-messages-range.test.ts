@@ -75,7 +75,7 @@ describe("commit-messages CI gate judges only the PR's own commits (#865 follow-
     const job = commitMessagesCode();
     // `github.sha` on a `pull_request` event is GitHub's synthetic merge-ref
     // commit — it contains the base branch's CURRENT tip, not just the PR's
-    // commits. This is the exact defect observed on #869 (run 36033907345).
+    // commits. The gate must not read it (#869).
     expect(job).not.toMatch(/\$\{\{\s*github\.sha\s*\}\}/);
     expect(job).toMatch(
       /HEAD_SHA:\s*\$\{\{\s*github\.event\.pull_request\.head\.sha\s*\}\}/
