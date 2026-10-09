@@ -862,6 +862,10 @@ export function raceAudioResume(
         ) {
           // Late, and on a context `discardSharedContext` closed: the close
           // caused it, and the Play already wrote its one row (#1213).
+          // This skip is not caller-specific: the recorder's start also
+          // races its resume here (`recorder-start-resume`). Play and record
+          // do not overlap, so no recorder rejection is expected to land on a
+          // dropped context (inference from the floor claim, not traced; #1233).
           return;
         } else {
           reportFailure(cause, rejectionContextKey);

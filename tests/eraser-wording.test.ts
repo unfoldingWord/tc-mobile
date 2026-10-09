@@ -13,7 +13,7 @@ describe("eraser wording (#1220)", () => {
   });
 
   it("keeps the tile caption as one word of that name", () => {
-    expect(strings.tileErase).toBe("Reset");
+    expect(strings.eraseSegment.split(" ")).toContain(strings.tileErase);
   });
 
   it("titles the confirm dialog with the same line", () => {
