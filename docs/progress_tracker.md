@@ -11,6 +11,65 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-09 (day) — Sprint 4 day 5: cleanup, no 1.0.2 release, two lane waves, 10 PRs merged
+
+### Decisions (DRI, 2026-10-09)
+
+- **No v1.0.2 release.** The DRI said (verbatim): "im not going to sign a 1.0.2 release, waiting for maybe 1.1." The two native runs waiting on `release-signing` since 10-05 (APK 37380372475, TestFlight 37380372435) were cancelled. No `tester-build-v1.0.2` exists. The device checks owed from 10-08 ride the 1.1 tester build.
+- **Cleanup scope:** "Merged only (Recommended)".
+- **Wave 6:** "Recommended four".
+- **Wave 7:** "Yes, the four above (Recommended)".
+- **Merges this session:** "Yes, merge when clean (Recommended)". A PR merges with a `uwreview` APPROVED review at its head, green CI, and a local combined check, one at a time, pinned with `--match-head-commit`, using `--admin`.
+- **#1368 wording:** "Ship \"position N\" (Recommended)". This is the strings-owner agreement the issue asked for.
+
+### Cleanup
+
+- **Worktrees:** 179 merged worktrees removed. Each was clean with 0 unpushed commits when removed, and none needed `--force`. Twelve remain: the main checkout, this session's, the locked `lane-1003b`, five that aren't on develop and have no merged PR, and the open lanes.
+- **Remote branches:** 549 merged branches deleted (535 from merged PRs, plus the 14 `release/*`). Tags were not touched. Kept: 42 branches from closed-unmerged PRs and 5 branches with no PR.
+- **Local branches:** 143 deleted. Two unmerged ones were kept: `worktree-agent-a59b05f0f5124ef43` and `lane/1119-clear`.
+- **Dependabot #1310:** it conflicted, and Dependabot can't rebase a PR someone else has edited, so it was taken over by #1380.
+
+### Merged to develop
+
+Each merge had a `uwreview` APPROVED review at its head, green CI, and a local combined check on the head merged with the develop of its moment. The check ran after a fresh `npm ci`: `typecheck`, `typecheck:lib`, `knip`, `test:coverage`, and the two #1382 files run alone.
+
+| PR    | Merged at  | What                                                                                                                                                                                                                                                                      |
+| ----- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #1375 | `451130b0` | `createBook` aborts its transaction on a failed renumber put, like `moveBook` (closes #1369)                                                                                                                                                                              |
+| #1376 | `321d65f8` | Phone-check probes stop when the screen unmounts; #1014 item 6, the last open item (closes #1014)                                                                                                                                                                         |
+| #1380 | `ac7a8979` | Takeover of Dependabot #1310: 9 dev-dependency bumps plus `@vitest/coverage-v8`. vite 8.3.1 is reflected in the licence notices. `@oxc-project/runtime` stays at 0.150.0 (Rolldown embeds those helpers)                                                                  |
+| #1377 | `103fd898` | Test-only `putClip` deleted and its tests moved onto `saveTake`, per the #1364 precedent (closes #1365)                                                                                                                                                                   |
+| #1374 | `d346b2a3` | Share-filename labels capped at 120 UTF-8 bytes on a grapheme boundary; the fallback chapter name is sanitised (#1233 items 22–23). Bench r1 caught `Intl.Segmenter` breaking startup on Firefox 114–124; it is now created only on first use, with a code-point fallback |
+| #1383 | `b5e7b829` | Closing the book sheet over its delete ask no longer scrolls the shelf: the Books menu focus restore passes `preventScroll`, and the e2e's `test.fail` is removed (closes #1362)                                                                                          |
+| #1388 | `10e0bd49` | Reorder announcement says "position N", not "number N" (closes #1368)                                                                                                                                                                                                     |
+| #1386 | `7281f89a` | Four racy test captures now wait for the code under test, in the #1359 shape (Refs #1360)                                                                                                                                                                                 |
+| #1384 | `d1c482ac` | The phone-check cancel filter swallows only `signal.reason`, by identity, and reports every other error. `liveRuns` is a ref (#1379 items 1–3, Refs)                                                                                                                      |
+| #1385 | `3a8e8f2d` | The two whole-tree tests are cheaper: an in-process ESLint config read, and a `src/` sweep split per directory with a 15 s timeout per slice (closes #1382)                                                                                                               |
+
+### Filed
+
+- **#1378:** harden the `createBook` abort tests. The `storeOrphanClip` docblock note from #1377 was added to it.
+- **#1379:** the phone-check follow-ups. Items 4–5 and the mid-encode identity question are open.
+- **#1381:** derive disclosed dependency versions from the installed manifest.
+- **#1382:** the 15 s load flake; fixed by #1385.
+- **#1387:** one focus move instead of two on the delete path, plus an iOS VoiceOver check.
+- **#1389:** follow-ups from #1385.
+- **Added to existing issues:** #1233 (three Lows from #1374) and #1360 (audit the phone-check test files; an order marker for the rename race).
+
+### Not verified
+
+- Nothing ran on a phone. Pending at the next tester build: book-sheet close scroll (#1383, including iOS VoiceOver, #1387), Record again (#1028), book reorder (#1367), Moto G (#1201), and the Share now pulse (#1351).
+- #1385's headroom under heavy load is inferred. The lane measured on a lightly loaded host (#1389 item 3).
+
+### Next
+
+1. **#1281 settings step (DRI only):** do it before the 1.1 cut.
+2. **The v1.1.0 cut at Sprint 4's end (10-18).** It comes with the device pass above.
+3. **Leftovers:** #1360 (the phone-check test audit), #1379 items 4–5, #1233 (the remaining Lows and items), #575 (run it alone).
+4. **Small follow-ups:** #1378, #1381, #1387, #1389.
+
+---
+
 ## 2026-10-08 (day, ran into 10-09 UTC) — Sprint 4 day 4: full issue triage and relabel, five lane waves, 22 PRs merged
 
 ### Triage and labels
