@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { strings } from "@/lib/strings";
 import {
   FILENAME_LABEL_MAX_BYTES,
   filenameSafe,
@@ -89,7 +90,7 @@ describe("filenameSafe byte cap", () => {
 
   it("keeps a worst-case book and chapter filename under 255 bytes with .mp3 intact", () => {
     const geez = "ሰላም".repeat(27).slice(0, 80);
-    const name = `${filenameSafe(geez)} - ${filenameSafe(geez)}.mp3`;
+    const name = strings.shareFilename(geez, 1, geez);
     expect(bytes(name)).toBeLessThanOrEqual(255);
     expect(name.endsWith(".mp3")).toBe(true);
   });
@@ -98,12 +99,33 @@ describe("filenameSafe byte cap", () => {
     // Each grapheme is "e" + U+0301 = 3 bytes; 41 of them is 123 bytes, so the
     // cap (120) falls exactly after the 40th grapheme, and a cut at a code-unit
     // or code-point boundary would strand a bare accent or split the pair.
-    const accented = "é".repeat(41);
+    const pair = "e\u0301";
+    const accented = pair.repeat(41);
     const out = filenameSafe(accented);
-    expect(out).toBe("é".repeat(40));
+    expect(out).toBe(pair.repeat(40));
     // A budget that lands mid-grapheme: 119 bytes of ASCII then one pair.
-    const mid = `${"a".repeat(119)}é`;
+    const mid = `${"a".repeat(119)}${pair}`;
     expect(filenameSafe(mid)).toBe("a".repeat(119));
+  });
+
+  it("cuts inside a single over-budget cluster rather than returning an empty label (#1233)", () => {
+    // One base letter with 70 combining marks (2 bytes each) is one grapheme
+    // of 141 bytes, over the 120-byte budget on its own.
+    const cluster = `e${"\u0301".repeat(70)}`;
+    expect(bytes(cluster)).toBeGreaterThan(FILENAME_LABEL_MAX_BYTES);
+    const out = filenameSafe(cluster);
+    expect(out.length).toBeGreaterThan(0);
+    expect(bytes(out)).toBeLessThanOrEqual(FILENAME_LABEL_MAX_BYTES);
+    expect(cluster.startsWith(out)).toBe(true);
+  });
+
+  it("keeps a custom chapter title whose first cluster is over budget", () => {
+    const cluster = `e${"\u0301".repeat(70)}`;
+    const name = strings.shareFilename("Book", 3, cluster);
+    expect(name).not.toBe(strings.shareFilename("Book", 3));
+    expect(name.startsWith("Book - e")).toBe(true);
+    expect(name.endsWith(".mp3")).toBe(true);
+    expect(bytes(name)).toBeLessThanOrEqual(255);
   });
 
   it("leaves a label within the cap untouched", () => {

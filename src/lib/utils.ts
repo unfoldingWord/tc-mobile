@@ -77,12 +77,23 @@ function pieces(text: string): string[] {
   return Array.from(text);
 }
 
-/** The longest whole-piece prefix of `text` that fits in `maxBytes` of UTF-8. */
+/**
+ * The longest whole-piece prefix of `text` that fits in `maxBytes` of UTF-8.
+ * When the first grapheme cluster alone is over budget (one base character
+ * carrying many combining marks) no whole cluster fits, and an empty result
+ * would make a caller treat a real label as missing (#1233). That one case
+ * falls back to the code-point walk, which keeps a valid prefix of the cluster.
+ */
 function capUtf8Bytes(text: string, maxBytes: number): string {
   if (encoder.encode(text).length <= maxBytes) return text;
+  const cut = takeWithin(pieces(text), maxBytes);
+  return cut === "" ? takeWithin(Array.from(text), maxBytes) : cut;
+}
+
+function takeWithin(parts: string[], maxBytes: number): string {
   let out = "";
   let used = 0;
-  for (const segment of pieces(text)) {
+  for (const segment of parts) {
     const bytes = encoder.encode(segment).length;
     if (used + bytes > maxBytes) break;
     out += segment;
