@@ -67,7 +67,7 @@ The Apache Software Foundation (http://www.apache.org/).
 
 ========================================================================
 
-@capacitor/app 8.1.1 — MIT
+@capacitor/app 8.1.2 — MIT
 https://capacitorjs.com/docs/apis/app
 
 Copyright 2020-present Ionic
@@ -96,7 +96,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ========================================================================
 
-@capacitor/filesystem 8.1.3 — MIT
+@capacitor/filesystem 8.1.4 — MIT
 https://capacitorjs.com/docs/apis/filesystem
 
 MIT License
@@ -123,7 +123,7 @@ SOFTWARE.
 
 ========================================================================
 
-@capacitor/share 8.0.2 — MIT
+@capacitor/share 8.0.3 — MIT
 https://capacitorjs.com/docs/apis/share
 
 Copyright 2020-present Ionic
@@ -152,10 +152,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ========================================================================
 
-ion-ios-filesystem 1.x — MIT
+ion-ios-filesystem 2.x — MIT
 https://github.com/ionic-team/ion-ios-filesystem
 
-Declared by @capacitor/filesystem as 1.1.1 or newer within 1.x.
+Declared by @capacitor/filesystem as 2.0.0 or newer within 2.x.
 
 MIT License
 

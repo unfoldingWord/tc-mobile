@@ -121,7 +121,7 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "idb",
-    version: "8.0.3",
+    version: "8.0.4",
     spdx: "ISC",
     copyright: "© 2016 Jake Archibald",
     noticeMarker: "Jake Archibald",
@@ -157,21 +157,21 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "@capacitor/app",
-    version: "8.1.1",
+    version: "8.1.2",
     spdx: "MIT",
     copyright: "© 2020-present Ionic",
     noticeMarker: "Ionic",
   },
   {
     name: "@capacitor/filesystem",
-    version: "8.1.3",
+    version: "8.1.4",
     spdx: "MIT",
     copyright: "© 2025 Ionic",
     noticeMarker: "Ionic",
   },
   {
     name: "@capacitor/share",
-    version: "8.0.2",
+    version: "8.0.3",
     spdx: "MIT",
     copyright: "© 2020-present Ionic",
     noticeMarker: "Ionic",
@@ -217,7 +217,7 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "vite",
-    version: "8.3.1",
+    version: "8.3.3",
     spdx: "MIT",
     role: "module-preload polyfill and preload helper, written into the app at build time",
     copyright: "© 2019-present VoidZero Inc. and Vite contributors",
@@ -225,7 +225,7 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "rolldown",
-    version: "1.2.9",
+    version: "1.2.13",
     spdx: "MIT",
     role: "bundler module runtime, written into the app at build time",
     copyright: "© 2024-present VoidZero Inc. & Contributors",
@@ -233,7 +233,7 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "@oxc-project/runtime",
-    version: "0.150.0",
+    version: "0.153.0",
     spdx: "MIT",
     role: "Oxc's helpers (copied from Babel's), written into the app at build time",
     copyright: "© 2024-present VoidZero Inc. & Contributors; © 2023 Boshen",
