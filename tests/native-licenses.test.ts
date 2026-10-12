@@ -5,6 +5,10 @@ import { describe, expect, it } from "vitest";
 
 import { licenseTexts, licenseTextsFor } from "@/components/licenses";
 
+import {
+  expandNoticeVersions,
+  installedVersions,
+} from "../scripts/licence-versions.mjs";
 import { blankGradleSwiftComments } from "./support";
 
 /**
@@ -48,9 +52,23 @@ interface Section {
   readonly body: string;
 }
 
+/**
+ * A notice file as the app ships it: each `{{version:<package>}}` replaced by
+ * the installed version, as the build does into `dist/licenses/` (#1381). The
+ * Gradle coordinates and the Swift floors are written out in the file; those
+ * are declared in the native projects, not by an npm manifest.
+ */
+function notice(href: string): string {
+  return expandNoticeVersions(
+    read(path.join("public", href)),
+    (pkg) => installedVersions(ROOT, [pkg])[pkg],
+    href
+  );
+}
+
 /** A notice file's sections: `name version — SPDX` headers between `=` rules. */
 function sections(href: string): Section[] {
-  const text = read(path.join("public", href));
+  const text = notice(href);
   return text
     .split(/\n=+\n/)
     .slice(1) // the preamble
@@ -279,7 +297,7 @@ describe.each([
   });
 
   it("closes with the full Apache License 2.0 text", () => {
-    const text = read(path.join("public", href));
+    const text = notice(href);
     const tail = text.split(/\n=+\n/).at(-1) ?? "";
     expect(tail).toContain("Apache License 2.0 — full text");
     expect(tail).toContain("Version 2.0, January 2004");

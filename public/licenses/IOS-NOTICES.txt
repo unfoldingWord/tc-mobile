@@ -8,7 +8,7 @@ the Apache License 2.0, whose full text closes this file.
 
 ========================================================================
 
-capacitor-swift-pm 8.5.2 — MIT
+capacitor-swift-pm {{version:@capacitor/ios}} — MIT
 https://github.com/ionic-team/capacitor-swift-pm
 
 The Capacitor and Cordova frameworks, prebuilt from Capacitor's iOS
@@ -28,7 +28,7 @@ Third-party components, software, and/or libraries (collectively, "components") 
 
 ========================================================================
 
-@capacitor/ios 8.5.2 — MIT
+@capacitor/ios {{version:@capacitor/ios}} — MIT
 https://capacitorjs.com/
 
 MIT License
@@ -67,7 +67,7 @@ The Apache Software Foundation (http://www.apache.org/).
 
 ========================================================================
 
-@capacitor/app 8.1.2 — MIT
+@capacitor/app {{version:@capacitor/app}} — MIT
 https://capacitorjs.com/docs/apis/app
 
 Copyright 2020-present Ionic
@@ -96,7 +96,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ========================================================================
 
-@capacitor/filesystem 8.1.4 — MIT
+@capacitor/filesystem {{version:@capacitor/filesystem}} — MIT
 https://capacitorjs.com/docs/apis/filesystem
 
 MIT License
@@ -123,7 +123,7 @@ SOFTWARE.
 
 ========================================================================
 
-@capacitor/share 8.0.3 — MIT
+@capacitor/share {{version:@capacitor/share}} — MIT
 https://capacitorjs.com/docs/apis/share
 
 Copyright 2020-present Ionic

@@ -20,10 +20,12 @@ import { stripComments } from "./support";
  * pinned by tests/dist-source-offer.test.ts under `npm run test:dist`.
  */
 
+// Synthetic manifests handed to `virtualModuleOwner` as its reader: nothing
+// here is the installed vite, so a real bump never touches these (#1381).
 const installed: Record<string, Manifest> = {
   "@scope/pkg": { version: "1.2.3", license: "MIT" },
   plain: { version: "4.5.6", license: "ISC" },
-  vite: { version: "8.3.1", license: "MIT" },
+  vite: { version: "0.0.0-fixture", license: "MIT" },
   unlicensed: { version: "1.0.0" },
 };
 const read = (pkg: string) => installed[pkg] ?? null;
@@ -48,7 +50,7 @@ describe("virtualModuleOwner", () => {
   it("keeps attributing an unversioned id by its first segment", () => {
     expect(virtualModuleOwner("\0vite/preload-helper.js", read)).toEqual({
       package: "vite",
-      version: "8.3.1",
+      version: "0.0.0-fixture",
       license: "MIT",
     });
   });

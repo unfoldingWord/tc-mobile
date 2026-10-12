@@ -5,6 +5,12 @@ import { describe, expect, it } from "vitest";
 
 import { licenseTexts, thirdPartyLicenses } from "@/components/licenses";
 
+import {
+  expandNoticeVersions,
+  installedManifest,
+  installedVersions,
+  noticeVersionTokens,
+} from "../scripts/licence-versions.mjs";
 import { stripCodeComments } from "./strip-code-comments";
 
 /**
@@ -14,7 +20,10 @@ import { stripCodeComments } from "./strip-code-comments";
  *
  * - every bundled runtime dependency is disclosed (a new `dependencies` entry
  *   with no notice fails here — Frank F1, round 1),
- * - every disclosed version matches the installed package (George G6), and
+ * - every disclosed version is the installed package's (George G6) — derived
+ *   from the installed manifest, not retyped (#1381), with the installed
+ *   package's `license` held to the disclosed SPDX so a licence change still
+ *   fails, and
  * - every shipped licence text exists and is non-empty, and each dependency's
  *   own copyright travels in its section of the notices file (Frank F1, r2).
  *
@@ -33,16 +42,28 @@ function read(href: string): string {
   return readFileSync(path.join(PUBLIC_DIR, href.replace(/^\//, "")), "utf8");
 }
 
-function installedVersion(name: string): string {
-  return (
-    JSON.parse(
-      readFileSync(
-        path.join(REPO_ROOT, "node_modules", name, "package.json"),
-        "utf8"
-      )
-    ) as { version: string }
-  ).version;
+/**
+ * A notice file as the app ships it: each `{{version:<package>}}` replaced by
+ * the installed version (the build does the same into `dist/licenses/`), so
+ * the sections can be located by `name version` without a hand-kept number.
+ */
+function notices(href: string): string {
+  return expandNoticeVersions(
+    read(href),
+    (pkg) => installedVersions(REPO_ROOT, [pkg])[pkg],
+    href
+  );
 }
+
+/**
+ * Installed packages whose `license` field names something other than the
+ * licence text they ship, disclosed as the text (and said so in the row's
+ * `note`). The installed field is pinned too, so upstream correcting it
+ * surfaces here instead of leaving a stale exception.
+ */
+const LICENSE_FIELD_EXCEPTIONS: Readonly<Record<string, string>> = {
+  "@capacitor/synapse": "ISC",
+};
 
 /**
  * The production runtime packages the **web app** actually pulls: the
@@ -154,11 +175,77 @@ describe("third-party licence disclosure", () => {
     expect(lamejs?.spdx).toBe("LGPL-3.0");
   });
 
-  it.each(thirdPartyLicenses)("pins $name to the installed version", (lib) => {
-    // A drift here means a bundled component was bumped but the notice and the
-    // panel still advertise the old version (George G6). Workbox shows its
-    // family name but resolves to `workbox-build` in node_modules.
-    expect(lib.version).toBe(installedVersion(lib.pinPackage ?? lib.name));
+  it.each(thirdPartyLicenses)(
+    "$name is installed, at the version the app and notices show",
+    (lib) => {
+      // `version` is defined from the installed manifest (#1381), so what this
+      // catches is a disclosed package that is no longer installed: the define
+      // leaves it out and the row would show a blank version. Workbox shows its
+      // family name but resolves to `workbox-build` in node_modules.
+      const pkg = lib.pinPackage ?? lib.name;
+      expect(
+        installedManifest(REPO_ROOT, pkg),
+        `${lib.name} is disclosed but ${pkg} is not installed`
+      ).not.toBeNull();
+      expect(lib.version).toBe(installedVersions(REPO_ROOT, [pkg])[pkg]);
+      expect(lib.version, `${lib.name} has no version`).not.toBe("");
+    }
+  );
+
+  it.each(thirdPartyLicenses)(
+    "holds $name's disclosed SPDX to the licence its installed package names",
+    (lib) => {
+      // The version is derived, so a bump needs no edit — but a bump that moves
+      // the package to another licence must not slip through with the old SPDX
+      // on the row and in the notice header (#1381; the part of the old
+      // version pin that was really a licence check).
+      const installed = installedManifest(
+        REPO_ROOT,
+        lib.pinPackage ?? lib.name
+      )?.license;
+      expect(
+        installed,
+        `${lib.name}'s installed package.json names no licence`
+      ).toBeDefined();
+      const exception = LICENSE_FIELD_EXCEPTIONS[lib.name];
+      if (exception) {
+        expect(installed, `${lib.name}'s exception is stale`).toBe(exception);
+        expect(lib.note, `${lib.name}'s exception is not disclosed`).toContain(
+          exception
+        );
+      } else {
+        expect(installed, `${lib.name}'s licence changed`).toBe(lib.spdx);
+      }
+    }
+  );
+
+  it.each(thirdPartyLicenses)(
+    "writes $name's notice version as a token, not a typed number",
+    (lib) => {
+      // A literal version in a header is a hand-kept copy again: it would pass
+      // only until the next bump. The token names the package the row pins.
+      const raw = read("/licenses/THIRD-PARTY-NOTICES.txt");
+      expect(
+        raw,
+        `${lib.name}'s header should read "${lib.name} {{version:${lib.pinPackage ?? lib.name}}} — ${lib.spdx}"`
+      ).toContain(
+        `\n${lib.name} {{version:${lib.pinPackage ?? lib.name}}} — ${lib.spdx}\n`
+      );
+    }
+  );
+
+  it("leaves no unexpanded version token in any notice it expands", () => {
+    // `expandNoticeVersions` throws on a package that is not installed; this
+    // pins that the raw files really use the token, so the expansion is not
+    // vacuous, and that nothing is left after it.
+    for (const href of [
+      "/licenses/THIRD-PARTY-NOTICES.txt",
+      "/licenses/ANDROID-NOTICES.txt",
+      "/licenses/IOS-NOTICES.txt",
+    ]) {
+      expect(noticeVersionTokens(read(href)).length, href).toBeGreaterThan(0);
+      expect(notices(href), href).not.toMatch(/\{\{version:/);
+    }
   });
 });
 
@@ -193,7 +280,7 @@ describe("bundled licence texts", () => {
       // of `=`), find this package's section, and assert its marker is IN that
       // section — so dropping one package's copyright fails that package alone,
       // which a single global /Copyright/ match did not (Frank F1, round 2).
-      const sections = read("/licenses/THIRD-PARTY-NOTICES.txt").split(
+      const sections = notices("/licenses/THIRD-PARTY-NOTICES.txt").split(
         /\n=+\n/
       );
       // Match the unique section header (`name version`), not a bare name — the
@@ -243,7 +330,7 @@ describe("bundled licence texts", () => {
       // whitespace or end of line, so "foo 1.2.3" cannot match "foo 1.2.30",
       // "foo 1.2.3-beta"; exactly one section may carry it.
       const needle = `${lib.name} ${lib.version}`;
-      const matches = read("/licenses/THIRD-PARTY-NOTICES.txt")
+      const matches = notices("/licenses/THIRD-PARTY-NOTICES.txt")
         .split(/\n=+\n/)
         .filter((s) =>
           s.split("\n").some((l) => {
@@ -270,7 +357,7 @@ describe("bundled licence texts", () => {
       // licence` header over the verbatim text. All three must agree, or the
       // phone names one licence and hands over another (Frank F1, bench round 2
       // on #144: @capacitor/synapse was labelled ISC over the MIT text).
-      const sections = read("/licenses/THIRD-PARTY-NOTICES.txt").split(
+      const sections = notices("/licenses/THIRD-PARTY-NOTICES.txt").split(
         /\n=+\n/
       );
       const section = sections.find((s) =>

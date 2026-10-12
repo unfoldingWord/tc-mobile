@@ -22,7 +22,12 @@ import {
   virtualModuleOwner,
 } from "./src/lib/build-provenance.ts";
 import { SHIPPED_LOCALE, withLocaleAttributes } from "./src/lib/locale.ts";
+import { disclosedComponents } from "./src/components/licenses.ts";
 import { NATIVE_TEARDOWN_SW } from "./src/lib/service-worker-policy.ts";
+import {
+  expandNoticeVersions,
+  installedVersions,
+} from "./scripts/licence-versions.mjs";
 
 // The exact commit a build came from, for the footer stamp (with the version).
 // git works in the Cloudflare Workers build (it clones the repo) and in local
@@ -111,6 +116,68 @@ function localeHtmlPlugin(): Plugin {
     transformIndexHtml: {
       order: "pre",
       handler: (html) => withLocaleAttributes(html, SHIPPED_LOCALE),
+    },
+  };
+}
+
+// The versions the licence disclosure shows (#1381). `licenses.ts` holds no
+// version and the notices write `{{version:<package>}}`; both are filled from
+// the manifests installed at build time (scripts/licence-versions.mjs), so a
+// bump that changes no licence needs no hand edit. A disclosed package that is
+// not installed fails the build here rather than shipping a blank version.
+const disclosedPackages = disclosedComponents.map(
+  (c) => c.pinPackage ?? c.name
+);
+const depVersions = installedVersions(import.meta.dirname, disclosedPackages);
+const notInstalled = disclosedPackages.filter((p) => !(p in depVersions));
+if (notInstalled.length > 0) {
+  throw new Error(
+    `licenses.ts discloses packages that are not installed: ${notInstalled.join(", ")}`
+  );
+}
+
+// Fills `{{version:<package>}}` in the `.txt` notices under `public/licenses/` from the installed
+// manifests: in `dist/` after Vite has copied public/ (`writeBundle`, which
+// runs before vite-plugin-pwa's `closeBundle` hashes the precache, so the
+// precached revision is the expanded file), and in the dev server. An unknown
+// package throws, so a notice for a package that left the tree fails loudly.
+function licenceNoticeVersionsPlugin(): Plugin {
+  const root = import.meta.dirname;
+  const versionOf = (pkg: string) => installedVersions(root, [pkg])[pkg];
+  let outDir = "";
+  let publicDir = "";
+  return {
+    name: "licence-notice-versions",
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+      publicDir = config.publicDir;
+    },
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const m = /^\/licenses\/([\w-]+\.txt)(?:\?.*)?$/.exec(req.url ?? "");
+        const file = m ? path.join(publicDir, "licenses", m[1]!) : "";
+        if (!m || !existsSync(file)) return next();
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.end(
+          expandNoticeVersions(readFileSync(file, "utf8"), versionOf, m[1])
+        );
+      });
+    },
+    writeBundle: {
+      order: "post",
+      sequential: true,
+      handler() {
+        const dir = path.join(outDir, "licenses");
+        if (!existsSync(dir)) return;
+        for (const name of readdirSync(dir)) {
+          if (!name.endsWith(".txt")) continue;
+          const file = path.join(dir, name);
+          writeFileSync(
+            file,
+            expandNoticeVersions(readFileSync(file, "utf8"), versionOf, name)
+          );
+        }
+      },
     },
   };
 }
@@ -304,6 +371,7 @@ export default defineConfig(({ mode }) => {
       __APP_VERSION__: JSON.stringify(pkg.version),
       __BUILD_SHA__: JSON.stringify(buildSha),
       __BUILD_SHA_FULL__: JSON.stringify(buildShaFull),
+      __DEP_VERSIONS__: JSON.stringify(depVersions),
     },
     build: {
       // Pinned to the app's stated floor (#1017 open question 1) rather than
@@ -373,6 +441,7 @@ export default defineConfig(({ mode }) => {
       react(),
       versionJsonPlugin(),
       localeHtmlPlugin(),
+      licenceNoticeVersionsPlugin(),
       provenance.app,
       ...(isNativeBuild ? [nativeTeardownSwPlugin()] : []),
       VitePWA({
