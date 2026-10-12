@@ -249,7 +249,7 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "vite-plugin-pwa",
-    version: "1.3.0",
+    version: "2.0.0",
     spdx: "MIT",
     role: "service-worker registration script, generated at build time",
     copyright: "© 2020-present Anthony Fu",
