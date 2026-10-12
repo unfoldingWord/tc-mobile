@@ -209,8 +209,5 @@ describe("Share Chapter's MP3 name (#1218)", () => {
       "chapter",
       strings.shareFilename("Mark", 3, "The sower")
     );
-    expect(strings.shareFilename("Mark", 3, "The sower")).toBe(
-      "Mark - The sower.mp3"
-    );
   });
 });

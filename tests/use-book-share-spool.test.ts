@@ -9,7 +9,12 @@ import { withEncoder } from "@/hooks/mp3-codec";
 import { nativeShare } from "@/hooks/share-target";
 import { useBookShare } from "@/hooks/use-book-share";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import { addChapter, addSegment, createBook } from "@/lib/storage/books";
+import {
+  addChapter,
+  addSegment,
+  createBook,
+  renameChapter,
+} from "@/lib/storage/books";
 import { newClipId } from "@/lib/storage/clips";
 import { saveTake } from "@/lib/storage/takes";
 import type { AudioCodec } from "@/types/audio";
@@ -307,5 +312,42 @@ describe("the native route", () => {
     expect(hook().status).toBe("idle");
     await filesBecome(0);
     error.mockRestore();
+  });
+});
+
+describe("the chapter namer seam (#1233 item 28)", () => {
+  it("hands the caller's namer to the export with each chapter's own number and name, so the zip entries carry them", async () => {
+    const book = await createBook("b");
+    const first = await addChapter(book.id);
+    const second = await addChapter(book.id);
+    for (const chapter of [first, second]) {
+      const seg = await addSegment(chapter.id);
+      await saveTake(
+        seg.id,
+        newClipId(),
+        new Int16Array(100).fill(100),
+        CANONICAL_SAMPLE_RATE
+      );
+    }
+    await renameChapter(first.id, "Sower");
+    let prepared!: Promise<unknown>;
+    act(() => {
+      prepared = hook().prepare(
+        book.id,
+        "Book.zip",
+        (n, name) => `${n}-${name ?? "unnamed"}.mp3`
+      );
+    });
+    await settle();
+    await act(async () => prepared);
+    await send();
+    const [{ files }] = share.mock.calls[0] as [{ files: File[] }];
+    // A zip stores each entry's name uncompressed in its local file header,
+    // so the names the namer returned can be read straight off the bytes.
+    const text = new TextDecoder("latin1").decode(
+      await files[0]!.arrayBuffer()
+    );
+    expect(text).toContain("1-Sower.mp3");
+    expect(text).toContain("2-unnamed.mp3");
   });
 });
