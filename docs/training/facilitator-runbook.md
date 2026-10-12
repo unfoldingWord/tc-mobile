@@ -138,6 +138,18 @@ default, the text there says to keep using it.
    an ancestor of this branch
    -->
 
+   **Once a phone has updated to 1.1.0, do not put an older build back on it.**
+   The newer build changes how recordings are stored, and an older build
+   cannot read them again: they stay on the phone, but out of reach, until a
+   1.1.0 or newer build is installed over it. If the app says "This copy is
+   out of date" and restarting does not clear it, do not uninstall, because
+   that deletes every recording. Write down the stamp and what you saw, as in
+   section 5, and report it. (On Android, the phone itself refuses to install
+   an older build over a newer one; see
+   [docs/native/README.md](../native/README.md) §5a.) <!-- source: AGENTS.md
+   "What rollback does not do"; src/lib/storage/db.ts DB_VERSION 11; screen
+   text read from src/lib/strings.ts dbOutOfDate, not seen on a device -->
+
    **The same rules apply to testers and to participants.** On an iPhone,
    open TestFlight, choose the newest build of tC Mobile and tap **Update**
    (or **Install**). On Android, open the newest `app-release.apk` and

@@ -65,8 +65,8 @@ a pinned command carries the full head SHA).
 | Process/meta artifacts — `ci.yml`, `AGENTS.md`, `docs/review/**`, deploy config | Normally both reviewers, because these are _executed as instructions_. Exempting them is allowed but the **decision must be recorded on the PR**, never a silent skip |
 
 **A test-only PR takes the tier of the code it covers, not a tier of its
-own.** The tier sets _how many reviewers and rounds_ apply (the mapping at the
-end of this rule). Which tier a test-only PR lands on is decided here. Classify in this order, and
+own.** The tier sets _the reviewer bar_ that applies (the mapping at the
+end of this rule); the round cap of 4 is in `AGENTS.md`. Which tier a test-only PR lands on is decided here. Classify in this order, and
 stop at the first match:
 
 1. A **gate test** — one that enforces a repo-wide rule, such as the drift
@@ -87,7 +87,7 @@ stop at the first match:
    other unlisted `src/**` path is T1. A test covering `hooks/*` and
    `lib/storage/*` is T1.
 
-**The tier sets which reviewers run and how many rounds — not T2's on-device
+**The tier sets which reviewers run and the merge bar — not T2's on-device
 check.** `AGENTS.md`'s "Risk tiers" table gives T2 a bar of "tests where
 possible + on-device check on both Android and iOS"; that on-device check
 verifies a change to the hook _code_ running on a device, and does not apply
@@ -165,8 +165,10 @@ The loop, per lane:
 2. **Pre-flight:** mergeable, CI green, both lenses clean @ the _current_
    head, as posted by the bench.
 3. Merge.
-4. **Re-base and re-check every remaining lane.** If a lane's diff changed
-   materially, its reviews are stale — the bench re-reviews the new head.
+4. **Re-base and re-check every remaining lane.** A rebase or base merge is
+   a push, and any push voids the round for both lenses, however small the
+   change: the lane's reviews are stale until the bench posts again at the new
+   head (see "A push voids the round" below).
 
 Lanes that touch the same files should not be in flight simultaneously in the
 first place; the lane brief is where that is prevented (see the

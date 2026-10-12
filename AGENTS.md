@@ -869,6 +869,26 @@ on a phone that already has the app open or installed, and `check:deploy`
 confirming the origin has rolled back is not the same claim as confirming a
 given device has.
 
+**A rollback is not free once a phone has opened a build with a newer database
+schema.** `DB_VERSION` in `src/lib/storage/db.ts` only goes up, and IndexedDB
+refuses to open a database at a version lower than the one it already holds.
+So a device that has opened the newer build cannot run older code against its
+own data again, whether the older code arrives by a Worker rollback, by a
+stale service worker, or by an older native build if one ever runs. The
+recordings are not deleted: the older code's `getDb()` rejects with
+`DatabaseDowngradeError` and nothing is written. They are unreachable until a
+build at that schema or later is served or installed again. On staging
+(`3b5e098d`, schema 9) a refused open calls `coordinator?.onYielded()`,
+`use-database-status.ts` maps that to `reloadNeeded`, and `database-panel.tsx`
+shows `dbOutOfDate` and `dbOutOfDateTeach` ("This copy is out of date." and
+"Restart to use the new version."); Restart leads back to the same screen
+(inference). All of this was read from the code, not seen on a device. v1.1.0 is the current instance: it moves the schema from 9 to 11
+(v10 and v11 in #1346 and #1367). **Roll forward with a fix rather than back
+when the build to undo raised the schema, and never uninstall to clear the
+screen: uninstalling deletes the recordings.** The Node run that showed this
+(staging's `db.ts` against a v11 database) is the only run; no device has
+seen it. `docs/release/promotion-v1.0.0.md` §5 has the procedure.
+
 ## Device testing — the HTTPS caveat
 
 `getUserMedia` requires a secure context. `localhost` qualifies;
