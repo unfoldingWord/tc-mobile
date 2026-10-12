@@ -87,7 +87,7 @@ Develop CI was green at `34b1b6af` (Code Quality and Build). #1420 merged after 
 
 Five read-only passes and a delta pass. Summary on #1419 (comment 6133186290). **0 BLOCK.** Four items for the DRI to fix or accept:
 
-1. **"Record again" on iPhone (#1366), inferred.** The old take is erased and the microphone is requested afterwards, outside the tap. If iOS refuses, the old take is gone and "Microphone is off" shows. Nothing is lost without the confirm tap.
+1. **"Record again" on iPhone (#1366), inferred.** After the confirm tap the old take is erased, and only then is the microphone requested, outside the tap. If iOS refuses that request, the old take is already gone and "Microphone is off" shows. The confirm tap is the only thing in front of the erase.
 2. **iOS `MARKETING_VERSION` is still `1.0`, inferred.** If App Store version 1.0 is approved, the 1.1.0 TestFlight upload is refused.
 3. **A rollback strands phones that opened 1.1.0.** Observed in Node: staging's `db.ts` rejects a v11 database with `DatabaseDowngradeError` and deletes nothing. Recordings are intact but unreachable until schema 11 or later is served again. No runbook said so; docs PR #1420 added it.
 4. **`docs/review/dual-review.md` contradicted the staleness rule** (an unanswered Medium on #1354). #1420 fixed it.
@@ -95,7 +95,7 @@ Five read-only passes and a delta pass. Summary on #1419 (comment 6133186290). *
 What the passes ran:
 
 - **Upgrade:** a v9 database built by hand with staging's record shapes (24 takes, 12 MP3 and 12 PCM clips) opened at v11 with every recording and clip byte intact. Node on `fake-indexeddb`.
-- **PWA update:** a headless desktop Chromium on a build of staging took this build's service worker and ran offline afterwards.
+- **PWA update:** a headless desktop Chromium on a build of staging took the service worker of a build of develop `34b1b6af` and ran offline afterwards.
 - **Review records:** on all 78 carried PRs, both lenses' last round is at the merged head.
 - **Claim check:** 2 false and 6 overstated claims in the announcement draft and the bump body, all corrected.
 
@@ -110,7 +110,7 @@ What the passes ran:
 
 1. **DRI:** decide red-team items 1 and 2 (fix in this build, or accept). A fix means a new bump head and a delta pass.
 2. **DRI:** merge #1419, pinned to its head, after this entry is on develop (#1420 already is). That squash commit is `CUT_SHA`.
-3. Then, per `.claude/skills/tc-release`: confirm `CUT_SHA`'s tree against the red-teamed head, create `release/v1.1.0` at `CUT_SHA`, open the promotion PR to `staging` with a hold line, and take the DRI's go or no-go. The promotion must be a merge commit from a head named `release/*` (the checklist's name is `release/v1.1.0`) or from `develop`; with a squash or any other head, the APK and TestFlight lanes build nothing (`.github/workflows/android-apk.yml:105`, `ios-testflight.yml:97`). The Play lane has no such test: it runs on any push to `staging` while `PLAY_UPLOAD_ENABLED` is on.
+3. Then, per `.claude/skills/tc-release`: confirm `CUT_SHA`'s tree against the red-teamed head (`git diff 94122153a7563d89e7d310b163ef7cfc58e3d897 <CUT_SHA> --stat` may list only this file and #1420's four documents: `AGENTS.md`, `docs/release/promotion-v1.0.0.md`, `docs/review/dual-review.md` and `docs/training/facilitator-runbook.md`; anything else needs a new delta pass), create `release/v1.1.0` at `CUT_SHA`, open the promotion PR to `staging` with a hold line, and take the DRI's go or no-go. The promotion must be a merge commit from a head named `release/*` (the checklist's name is `release/v1.1.0`) or from `develop`; with a squash or any other head, the APK and TestFlight lanes build nothing (`.github/workflows/android-apk.yml:105`, `ios-testflight.yml:97`). The Play lane has no such test: it runs on any push to `staging` that is not documentation only (`paths-ignore` for `docs/**` and `**/*.md`, `.github/workflows/android-play.yml:32-34`) while `PLAY_UPLOAD_ENABLED` is on.
 4. **#1281 settings step (DRI only):** `release-signing` still has one required reviewer.
 5. The tester announcement is drafted with the claim check applied; its build placeholders are filled after the APK exists.
 
