@@ -128,7 +128,11 @@ function untilAborted<T>(
   signal: AbortSignal | undefined
 ): Promise<T> {
   if (signal === undefined) return pending;
-  if (signal.aborted) return Promise.reject(signal.reason);
+  if (signal.aborted) {
+    // Abandoned unraced: handle a late rejection here so it is not unhandled.
+    pending.catch(() => {});
+    return Promise.reject(signal.reason);
+  }
   return new Promise<T>((resolve, reject) => {
     const onAbort = () => reject(signal.reason);
     signal.addEventListener("abort", onAbort, { once: true });
@@ -153,6 +157,8 @@ export async function readDeviceInfo(
   source: DeviceSource,
   signal?: AbortSignal
 ): Promise<DeviceInfo> {
+  // A run already cancelled does not start the browser queries at all.
+  signal?.throwIfAborted();
   const estimate = source.storage?.estimate
     ? await untilAborted(source.storage.estimate(), signal)
     : null;

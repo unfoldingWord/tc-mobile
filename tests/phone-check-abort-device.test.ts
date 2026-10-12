@@ -43,9 +43,34 @@ describe("readDeviceInfo and an abort", () => {
   it("calls nothing on an already-aborted signal and rejects with its reason", async () => {
     const run = new AbortController();
     run.abort(new Error("custom reason"));
+    const estimate = vi.fn(() => Promise.reject(new Error("quota")));
+    const persisted = vi.fn(() => Promise.reject(new Error("persist")));
     await expect(
-      readDeviceInfo({ storage: { estimate: () => NEVER } }, run.signal)
+      readDeviceInfo({ storage: { estimate, persisted } }, run.signal)
     ).rejects.toBe(run.signal.reason);
+    expect(estimate).not.toHaveBeenCalled();
+    expect(persisted).not.toHaveBeenCalled();
+  });
+
+  it("leaves no unhandled rejection when the call it abandons rejects later", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (cause: unknown) => void unhandled.push(cause);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const run = new AbortController();
+      // The abort lands between the call and the race: the abandoned path.
+      const estimate = () => {
+        run.abort();
+        return Promise.reject(new Error("quota"));
+      };
+      await expect(
+        readDeviceInfo({ storage: { estimate } }, run.signal)
+      ).rejects.toBe(run.signal.reason);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).toHaveLength(0);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 
   it("is recognised as the abort by settleProbe, so nothing reaches the funnel", async () => {
