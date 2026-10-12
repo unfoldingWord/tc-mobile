@@ -31,21 +31,6 @@
  * three — "typed out a second time further down the same file" — as the reason
  * this table moved; that was true before #700 and is not the case this move
  * rests on now.
- *
- * SOME ENTRIES CALL THE TABLE BY ITS MODULE NAME, and that is the trap for
- * `strings[locale]`, the rest of #169 (George, #698). `chapterHeading` calls
- * `strings.chapterName`, `shareBookPartial` calls `strings.shareMissing`, and
- * a few more reach `couldNotBeIncluded` or `trail`, whose words are English.
- * Every one is right while there is one table. Once there are several, an
- * entry in a second locale's table that calls the module-level `strings`
- * formats its embedded part from the default table, and the equality pins
- * (`chapterHeading(null, n) === chapterName(n)`) STAY GREEN while it does,
- * because both sides resolve through the same wrong table. The slice that
- * adds a second table has to make each of these resolve within its own table
- * (`this`, a table parameter, or a factory that closes over the right one),
- * and needs a test that one locale's entry does not reach another's.
- * `tests/strings-self-reference.test.ts` pins which entries these are, so a
- * new one fails there and is sent back here.
  */
 import { plural } from "@/lib/plural";
 import { filenameSafe } from "@/lib/utils";
@@ -98,9 +83,10 @@ function trail(...parts: readonly string[]): string {
 /**
  * An entry that reuses another entry calls it through this binding:
  * `chapterHeading` falls back to `strings.chapterName`, `shareBookPartial`
- * returns `strings.shareMissing`, and the rest follow the same pattern
- * (`grep -n "strings\." src/lib/strings.ts` finds them, along with comments
- * that mention an entry). With one table, that is correct, and it is the
+ * returns `strings.shareMissing`, and a few more reach `couldNotBeIncluded` or
+ * `trail`, whose words are English. `tests/strings-self-reference.test.ts`
+ * pins which entries these are, so a new one fails there and is sent back
+ * here. With one table, that is correct, and it is the
  * reason the aliases exist. Byte-for-byte copies drifted, and an alias cannot.
  *
  * It is also what breaks when `strings[locale]` lands (#169). A second
@@ -182,7 +168,7 @@ export const strings = {
    * `tests/breadcrumb.test.ts` counts the spellings in this file instead
    * (#169). The alias is also the one that breaks under per-locale tables,
    * and the pin that it equals `chapterName` does not see that break: see the
-   * paragraph on module-name calls at the top of this file.
+   * docblock above `strings`.
    */
   chapterHeading: (name: string | null, n: number): string =>
     name ?? strings.chapterName(n),
