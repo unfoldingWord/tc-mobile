@@ -25,8 +25,8 @@ name: Android APK
 # deployment-branch policy is #1281's target actor guard; until the DRI has
 # run #1281's runbook, the #321 required reviewer still gates every run (see
 # the build job below). The Android SDK (Platform 36, Build-tools 36.0.0,
-# ANDROID_HOME) and Ruby are on the ubuntu-24.04 runner image (verified
-# against actions/runner-images, 2026-09-12). The JDK is NOT left to the
+# ANDROID_HOME) and Ruby are on the ubuntu-24.04 runner image (see
+# actions/runner-images for the current contents). The JDK is NOT left to the
 # image: its default is Java 17, and Capacitor's generated
 # android/app/capacitor.build.gradle compiles at Java 21, so the lane pins
 # JDK 21 below — the same class of trap as the macos-15 default Xcode in the
