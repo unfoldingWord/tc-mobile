@@ -378,6 +378,9 @@ export function BooksScreen({
   // Segments row menu, where Erase closes the row menu and the screen holds the
   // target. `null` means no confirm is up.
   const [deleteTargetId, setDeleteTargetId] = useState<BookId | null>(null);
+  // Set when the sheet closes over its delete ask, whose hand-off then owns the
+  // next focus; read by the sheet's focus restore so focus moves once (#1387).
+  const deleteAskOwnsFocus = useRef(false);
   // A monotonic token for the current book-menu session. It advances whenever the
   // menu closes, switches to another book, or arms a share — every transition
   // after which a late-resolving rename must NOT run its close, or it would drop
@@ -561,8 +564,10 @@ export function BooksScreen({
    * would land on `document`. Do not "simplify" that layout effect back.
    */
   const closeDeleteConfirmState = useCallback(() => {
-    if (deleteTargetId !== null)
+    if (deleteTargetId !== null) {
+      deleteAskOwnsFocus.current = true;
       rowReveal.armFocus(deleteTargetId, { preventScroll: true });
+    }
     setDeleteTargetId(null);
   }, [deleteTargetId, rowReveal]);
 
@@ -1132,6 +1137,7 @@ export function BooksScreen({
       // `inert`, which blurs this button to `<body>` in the mutation phase,
       // before any effect could read it.
       menuFocusRestore.capture();
+      deleteAskOwnsFocus.current = false;
       bookMenuSession.current += 1;
       setShareMenuBookId(bookId);
       setPickingCover(false);
@@ -1410,8 +1416,10 @@ export function BooksScreen({
     // `preventScroll`: closing the sheet over its delete ask lands the ⋮ here
     // first, and a bare focus scrolled the shelf to that row before the
     // delete-confirm hand-off (`preventScroll`) ran (#1362).
+    const suppressed = deleteAskOwnsFocus.current;
+    deleteAskOwnsFocus.current = false;
     menuFocusRestore.restore({
-      suppressed: false,
+      suppressed,
       fallback: null,
       preventScroll: true,
     });

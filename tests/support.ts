@@ -130,7 +130,10 @@ export function recordTake(
  * its take in one transaction (#38), so an unreferenced clip is reachable only
  * as damage or as a race a suite sets up on purpose (a stale take row's audio,
  * a clip re-stored under an id its segment no longer names, the bytes a failed
- * attempt is assumed to have left). This builds that state directly, the way
+ * attempt is assumed to have left). It is also how a suite restores bytes under an
+ * id a take STILL names (the resolver's re-store case in `storage.test.ts`), so
+ * "no take references it" holds for the helper's contract, not for every caller;
+ * do not rewrite that test into a real orphan. This builds that state directly, the way
  * other suites write a bare `takes` row. The meta comes from `buildClipMeta`,
  * the same builder `saveTake` uses. A property of the clip write itself belongs
  * on `saveTake` (`recordTake` above), never here (#1365).

@@ -230,7 +230,8 @@ describe("goBackToBooks from the recorder (#1275)", () => {
       // may exist nowhere else — a cut the close saved, a cut-to-empty whose
       // segment is gone, a paste a superseded stop rolled back — so the
       // continuation is dropped: the entry is still consumed, and the tap
-      // ends at Segments, where the phrase can still be pasted.
+      // ends at Segments, with the phrase still on the chapter clipboard so a
+      // recorder reopened from there can paste it in Edit mode.
       if (heldBefore) {
         await act(async () => fake.set!.setClipboardHeld(true));
       }

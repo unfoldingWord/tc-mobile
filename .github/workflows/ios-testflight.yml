@@ -317,10 +317,7 @@ jobs:
         # `--frozen` flag: bundler 2.6 deprecates the flag because it "relies on
         # being remembered across bundler invocations", which a future runner
         # image could stop doing without any change here — the config form is
-        # explicit per checkout. The first real dispatch (run 34694213885,
-        # 2026-09-12) proved the guard works: it refused a lock resolved under a
-        # pre-3.2 Ruby (CFPropertyList 3.0.9, `ruby < 3.2`) on the runner's
-        # 3.3.12 instead of quietly re-resolving. Bundler is pinned to the lock's
+        # explicit per checkout. Bundler is pinned to the lock's
         # `BUNDLED WITH` so it never rewrites the lock underneath us. Install
         # into vendor/bundle (not the system gem dir, which is often not
         # writable on the runner).
