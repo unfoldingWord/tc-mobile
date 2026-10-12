@@ -130,9 +130,12 @@ and **George** (Grok, deep-tree) — two lenses, never a primary and a fallback.
   defect class: the fix approach is wrong) — and ask. Hitting the cap with
   findings open is an escalation, not an approval.
 - **A one-reviewer round is recorded as a deviation**, never as clean.
-- When both are clean, the bench posts a **GitHub approval** (observed on #1346 and #1351). The **DRI
-  admin-merges** after that approval and green CI, whoever wrote the PR,
-  pinned to the approved head SHA. An approval on an earlier head does not
+- **Whoever wrote the PR, the DRI merges it** (with `--admin`; the ruleset
+  requires it), and only on the DRI's say-so; an agent never merges. The
+  merge needs both lenses clean at the current head SHA, which the bench shows
+  by posting a **GitHub approval** (observed on #1346 and #1351), and green CI.
+  Pin the merge to that head: `gh pr merge --match-head-commit <sha>`, with the
+  full SHA read from `gh` at the time. An approval on an earlier head does not
   count. Merges into `develop` normally use a **merge commit**; a release bump
   must, so that its promotion carries the same bump commit (#918).
 - **Process artifacts** — `ci.yml`, `AGENTS.md`, `docs/review/**`, deploy
