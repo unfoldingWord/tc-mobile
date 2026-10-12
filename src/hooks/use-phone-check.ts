@@ -241,6 +241,12 @@ export function usePhoneCheck(): {
   );
   // The runs this screen started that have not finished (#1014 item 6).
   const liveRuns = useRef(new Set<AbortController>());
+  // The last report this screen holds, read when a run starts so an aborted
+  // run can put it back (#1379 item 4).
+  const reportRef = useRef(state);
+  useEffect(() => {
+    reportRef.current = state;
+  }, [state]);
 
   // The screen going away stops what it started: each probe ends at its next
   // boundary and the run slot is released, instead of measuring under Books.
@@ -263,6 +269,12 @@ export function usePhoneCheck(): {
     const run = new AbortController();
     const { signal } = run;
     liveRuns.current.add(run);
+    const previous: SavedChecks = {
+      device: reportRef.current.device,
+      encode: reportRef.current.encode,
+      storage: reportRef.current.storage,
+    };
+    let finished = false;
     let saved: SavedChecks = { device: null, encode: null, storage: null };
     // Each result is saved the moment it lands, so a reload later — in this
     // run or in the memory ceiling after it — keeps what finished.
@@ -275,8 +287,8 @@ export function usePhoneCheck(): {
       setState((prev) => ({ ...prev, activity }));
     void (async () => {
       try {
-        await untilDoneOrAborted(signal, () =>
-          runPhoneChecks(
+        await untilDoneOrAborted(signal, async () => {
+          await runPhoneChecks(
             {
               device: () =>
                 settleProbe(() => readDeviceInfo(navigator, signal), signal),
@@ -288,9 +300,19 @@ export function usePhoneCheck(): {
             land,
             busyWith,
             signal
-          )
-        );
+          );
+          // Set only when the run reached its end: an abort is swallowed by
+          // `untilDoneOrAborted`, so returning from it does not mean finished.
+          finished = true;
+        });
       } finally {
+        // An aborted run leaves the earlier report in place (#1379 item 4,
+        // DRI 2026-10-12). Only the abort path: a finished run replaced the
+        // report whole, and a defect rethrown above keeps today's behaviour.
+        if (!finished && signal.aborted) {
+          writeSavedChecks(crumbStore, previous);
+          setState((prev) => ({ ...prev, ...previous }));
+        }
         liveRuns.current.delete(run);
         release();
         busyWith(null);
