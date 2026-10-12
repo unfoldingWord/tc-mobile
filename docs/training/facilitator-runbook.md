@@ -83,6 +83,12 @@ default, the text there says to keep using it.
    and recorded before anyone taps it. <!-- source: gh issue #248, tester
    report 2026-09-22 (contributing developer, source: tester) -->
 
+   **Keep only the right file.** A browser may warn that an app file can "harm
+   your device". Before a participant chooses to keep it, check that the file
+   the warning names is `app-release.apk` from the releases page. A warning on
+   any other file means stop: do not keep it. <!-- source: docs/tester-install.md
+   "Android" step 2 (the same guard); gh issue #248, comment 2026-09-24 -->
+
    **In short:** an Android phone opens `app-release.apk` from the newest
    release on <https://github.com/unfoldingWord/tc-mobile/releases> (the
    durable address <https://github.com/unfoldingWord/tc-mobile/releases/latest>
@@ -183,7 +189,15 @@ default, the text there says to keep using it.
 
 2. **Allow the microphone when asked.** The first time someone taps record,
    the phone will ask for microphone access. Tap **Allow**. Without it,
-   recording will not work at all.
+   recording will not work at all. If the choices are **Allow**, **While
+   using the app** and **Only this time**, pick **Allow** or **While using
+   the app** for anyone who will record more than once, such as over a
+   training day. **Only this time** may end once the app is left, and the
+   phone would ask again at a later recording. On some older Android
+   versions the refusing button says **Deny**; it means **Don't allow**.
+   <!-- inference, not repo evidence: how long an "Only this time" grant lasts
+   is Android platform behaviour and has not been tested here; same wording
+   as docs/tester-install.md step 5; gh issue #248, comment 2026-09-24 -->
 3. **If the app never asks, or recording fails after allowing it:** open the
    phone's own settings — **Settings → Apps → tC Mobile → Permissions →
    Microphone** — and turn it on. (Standard Android path; wording varies by
