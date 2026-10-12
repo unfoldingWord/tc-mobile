@@ -76,6 +76,22 @@ describe("filenameSafe", () => {
 });
 
 /** #1233 item 22: a label is capped by UTF-8 bytes, at a grapheme boundary. */
+describe("filenameSafe Windows reserved stems", () => {
+  it.each(["CON", "con", "PRN", "Aux", "NUL", "COM1", "lpt9", "CON.txt"])(
+    "prefixes %s so the bare label is not a device name",
+    (label) => {
+      expect(filenameSafe(label)).toBe(`_${label}`);
+    }
+  );
+
+  it.each(["Console", "CONTACTS", "COM10", "Aux Book", "COMX", "Nulls"])(
+    "leaves %s alone",
+    (label) => {
+      expect(filenameSafe(label)).toBe(label);
+    }
+  );
+});
+
 describe("filenameSafe byte cap", () => {
   const bytes = (s: string): number => new TextEncoder().encode(s).length;
 
