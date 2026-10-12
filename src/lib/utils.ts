@@ -48,8 +48,19 @@ export function filenameSafe(label: string): string {
     .replace(/[/\\:*?"<>|\p{Cc}]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return capUtf8Bytes(clean, FILENAME_LABEL_MAX_BYTES).trim();
+  const named = WINDOWS_RESERVED_STEM.test(clean) ? `_${clean}` : clean;
+  return capUtf8Bytes(named, FILENAME_LABEL_MAX_BYTES).trim();
 }
+
+/**
+ * Windows device names. Windows treats them as the device whatever follows the
+ * first dot (`CON.zip`, `con.txt`), so a book named `CON` could not be
+ * extracted as a Share Book `.zip` or a Share your work folder. The whole-
+ * filename share form `<book> - <chapter>.mp3` can never BE one of these, but
+ * `shareBookFilename` and the library folder are the bare label (#163 Q-18).
+ */
+const WINDOWS_RESERVED_STEM =
+  /^(?:con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(?:\.|$)/i;
 
 /**
  * Per-label byte cap. A share filename is `<book> - <chapter>.mp3`: two labels,
