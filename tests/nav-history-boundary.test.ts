@@ -102,22 +102,46 @@ function lintProbe(name: string, source: string): string[] {
     .filter((id): id is string => id !== null);
 }
 
-/** The resolved level (0/1/2) of `ruleId` for `file`, via the ESLint Node API's
+/** The resolved config entry of `ruleId` for `file`, via the ESLint Node API's
  * `calculateConfigForFile` — the same resolution `--print-config` prints. This
  * inspects the config for a path without linting the file's contents, so the
  * file-identity exemption is checked without sweeping `src/`. One in-process
  * instance is shared, so the flat config is loaded once rather than once per
  * spawned `eslint` child (#1382). It is built on first use, so only the case
- * that needs it pays for it and a broken flat config fails that case alone
- * instead of failing collection for the whole file (#1389). */
+ * that needs it pays for it. That is a cost choice, not a safety one:
+ * constructing the instance does not read the flat config, which is read
+ * inside `calculateConfigForFile`, so a broken config surfaces in the cases
+ * that resolve it (and in the probe cases through their spawned `eslint`), not
+ * at collection (#1389). */
 let configEslint: ESLint | undefined;
 
-async function ruleLevelFor(file: string, ruleId: string): Promise<number> {
+type RuleEntry = [number | string, ...unknown[]] | number | string | undefined;
+
+async function ruleEntryFor(file: string, ruleId: string): Promise<RuleEntry> {
   configEslint ??= new ESLint({ cwd: REPO });
   const config = (await configEslint.calculateConfigForFile(file)) as {
-    rules?: Record<string, [number | string, ...unknown[]] | number | string>;
+    rules?: Record<string, RuleEntry>;
   };
-  const entry = config.rules?.[ruleId];
+  return config.rules?.[ruleId];
+}
+
+/** The `selector` strings in `ruleId`'s resolved options for `file`. */
+async function restrictedSelectorsFor(
+  file: string,
+  ruleId: string
+): Promise<string[]> {
+  const entry = await ruleEntryFor(file, ruleId);
+  const options = Array.isArray(entry) ? entry.slice(1) : [];
+  return options.flatMap((o) =>
+    typeof o === "object" && o !== null && "selector" in o
+      ? [String((o as { selector: unknown }).selector)]
+      : []
+  );
+}
+
+/** The resolved level (0/1/2) of `ruleId` for `file`. */
+async function ruleLevelFor(file: string, ruleId: string): Promise<number> {
+  const entry = await ruleEntryFor(file, ruleId);
   const level = Array.isArray(entry) ? entry[0] : entry;
   if (level === "off" || level === 0) return 0;
   if (level === "warn" || level === 1) return 1;
@@ -202,10 +226,30 @@ export function useThing(): string | null {
     // no-restricted-syntax is NOT blanket-off for the adapter (George R3 P3-4):
     // the rule stays enabled with only the history popstate selector subtracted,
     // so a future non-history hooks selector still reaches this file.
-    // `ruleLevelFor` returns only the level (it discards the rule's options),
-    // so it reads `error` (2) here just as for any other hook. These level
-    // assertions do not check the adapter's selector set or lint its popstate listener.
+    // `ruleLevelFor` returns only the level, so it reads `error` (2) here just
+    // as for any other hook; the selector set is pinned by the next case.
     expect(await ruleLevelFor(adapter, "no-restricted-syntax")).toBe(2);
     expect(await ruleLevelFor(otherHook, "no-restricted-syntax")).toBe(2);
+  }, 15000);
+
+  it("no-restricted-syntax keeps the popstate selector for other hooks and subtracts only that one for the adapter", async () => {
+    const adapter = "src/hooks/use-nav-stack.ts";
+    const otherHook = "src/hooks/use-recorder.ts";
+    const adapterSelectors = await restrictedSelectorsFor(
+      adapter,
+      "no-restricted-syntax"
+    );
+    const otherSelectors = await restrictedSelectorsFor(
+      otherHook,
+      "no-restricted-syntax"
+    );
+    const notPopstate = (s: string) => !s.includes("popstate");
+    // Subtracted for the adapter, present for every other hook.
+    expect(otherSelectors.filter((s) => !notPopstate(s))).toHaveLength(1);
+    expect(adapterSelectors.filter((s) => !notPopstate(s))).toEqual([]);
+    // Still enabled for the next selector: the adapter's list is the other
+    // hooks' list minus popstate, and it is not empty.
+    expect(adapterSelectors.length).toBeGreaterThan(0);
+    expect(adapterSelectors).toEqual(otherSelectors.filter(notPopstate));
   }, 15000);
 });
