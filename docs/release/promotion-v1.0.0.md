@@ -479,16 +479,33 @@ the same way on `https://tcmobile.app` and
 `https://tc-mobile.unfoldingword.workers.dev`:
 
 ```bash
-set -o pipefail
-for origin in https://tcmobile.app https://tc-mobile.unfoldingword.workers.dev; do
-  curl -fsS "$origin/version.json?t=$(date +%s)" |
-    jq -en 'input | select((.sha|type=="string" and length>0) and (.version|type=="string" and length>0))' ||
-    echo "FAIL: $origin gave no deploy record"
-done
+(
+  set -o pipefail
+  rc=0
+  for origin in https://tcmobile.app https://tc-mobile.unfoldingword.workers.dev; do
+    if rec=$(curl -fsS --connect-timeout 10 --max-time 30 "$origin/version.json?t=$(date +%s)" |
+      jq -enr 'input | select([.sha, .version] | all(type=="string" and length>0 and (test("[[:cntrl:]]")|not))) | "sha=\(.sha|@json) version=\(.version|@json)"'); then
+      echo "OK: $origin $rec"
+    else
+      echo "FAIL: $origin gave no deploy record"
+      rc=1
+    fi
+  done
+  exit "$rc"
+)
 ```
 
-plus the available Cloudflare rollback target. `-f` makes an HTTP error exit
-non-zero instead of printing an error page, and `pipefail` keeps that exit.
+plus the available Cloudflare rollback target. A failed origin is recorded and
+the subshell exits 1 after both origins have been tried, so the step fails as
+a whole (a bare `|| echo` leaves the exit status 0, and `pipefail` does not
+imply `errexit`); the subshell keeps `exit` from closing your terminal. Write
+down only the `sha=… version=…` it prints after `OK:` (each value in JSON
+quotes, so a space cannot shift it; drop the quotes when you pass it on), and
+read every line, because `FAIL:` goes to stdout beside `OK:`. `-f` makes an
+HTTP error exit non-zero instead of printing an error page, and `pipefail`
+keeps that exit. The timeouts make a silent origin fail instead of hanging.
+A `sha` or `version` holding a control character (CR, LF, ESC) fails too, so
+a bad record cannot print a second `OK:` line or overwrite the one shown.
 `jq -en 'input | …'` exits non-zero on an empty body (a redirect `curl`
 does not follow, or an empty 200), on a body that is not JSON, and unless
 `sha` and `version` are both non-empty strings; plain `jq -e` on an empty
