@@ -43,19 +43,23 @@ describe("runStorageProbe with an aborted signal", () => {
   it("does not read back once aborted before the read", async () => {
     const run = new AbortController();
     const chunks = SMALL.bytes / SMALL.chunkBytes;
-    let calls = 0;
     const onChunkFilled = vi.fn();
-    // Two clock reads per chunk written, then the read-back's start.
-    const now = () => {
-      calls += 1;
-      if (calls === 2 * chunks + 1) run.abort();
-      return 0;
-    };
-    await expect(
-      runStorageProbe({ ...SMALL, now, onChunkFilled, signal: run.signal })
-    ).rejects.toThrow(/abort/i);
+    // The probe's own read-phase seam, not a clock-read count: the abort lands
+    // when the read phase starts, whatever else reads the clock.
+    const onReadStart = vi.fn(() => run.abort());
+    const rejection = await runStorageProbe({
+      ...SMALL,
+      onReadStart,
+      onChunkFilled,
+      signal: run.signal,
+    }).then(
+      () => "resolved",
+      (cause: unknown) => cause
+    );
+    expect(rejection).toBe(run.signal.reason);
     // Every chunk was written first, so the abort landed in the read phase and
-    // not in the write loop (an extra clock read would fail this).
+    // not in the write loop.
+    expect(onReadStart).toHaveBeenCalledTimes(1);
     expect(onChunkFilled).toHaveBeenCalledTimes(chunks);
     expect(await databaseNames()).not.toContain(PHONE_CHECK_DB_NAME);
   });

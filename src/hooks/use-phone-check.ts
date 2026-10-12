@@ -279,7 +279,7 @@ export function usePhoneCheck(): {
           runPhoneChecks(
             {
               device: () =>
-                settleProbe(() => readDeviceInfo(navigator), signal),
+                settleProbe(() => readDeviceInfo(navigator, signal), signal),
               encode: () =>
                 settleProbe(() => runWorkerEncodeProbe(signal), signal),
               storage: () =>
