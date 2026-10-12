@@ -11,6 +11,110 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-12 (day) — Sprint 4 day 8: four lane waves, 20 PRs merged, the v1.1.0 bump opened and red-teamed
+
+### Decisions (DRI, 2026-10-12)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **Wave 1:** "Launch W1 as listed (Recommended)".
+- **Dependabot #1391 and #1392:** "Two takeovers, then #1381 (Recommended)".
+- **Closures:** "#1278, #861, #1265".
+- **Merges this session:** "I merge, same rule as 10-09 (Recommended)", and later in the day "approved to merge on clean and green today". A PR merged with a `uwreview` APPROVED review at its head, green CI and a local combined check, one at a time, pinned with `--match-head-commit`, using `--admin`. The DRI merged #1403.
+- **#1360:** "Close, move Lows (Recommended)".
+- **#1379 item 4** (a cancelled phone check wiped the last report): "Keep the last report (Recommended)".
+- **Dependabot #1410:** "Takeover lane (Recommended)".
+- **Next wave:** "Cut the v1.1.0 tester build".
+- **Version:** "1.1.0". Option text: "Bump straight to 1.1.0 now. The tester build and the sprint-end production build would share a version number unless a fix forces 1.1.1."
+- **Cut scope:** "Wait for both (Recommended)" (#1417 and #1418).
+- **Red team:** "Full red team (Recommended)".
+- **End of session:** "check for merge ready and proceed, after prod red team, stop and eod and merge the docs pr."
+
+### Merged to develop
+
+Each merge had a `uwreview` APPROVED review at its head and green CI. All but two also had a local combined check on the head merged with the develop of its moment (`npm ci`, `typecheck`, `typecheck:lib`, `knip`, `test:coverage`, and the two whole-tree test files alone). The two without were #1393 and #1397, whose base had moved only by a docs file or not at all; each triage comment says so. The combined check does not run e2e, the build or `test:dist`; CI ran those on each PR head.
+
+| PR    | Merged at  | What                                                                                                                                                                           |
+| ----- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| #1393 | `80d395fd` | CONTRIBUTING's merge bullet reworded, author clause first, the pin command named (Refs #962)                                                                                   |
+| #1397 | `6322f5a2` | Takeover of Dependabot #1391: the npm minor/patch group. `@oxc-project/runtime` pinned to 0.153.0, the version Rolldown 1.2.13 requires                                        |
+| #1395 | `d6b67485` | One focus move when the book sheet closes over its delete ask (Refs #1387)                                                                                                     |
+| #1394 | `d1fdad22` | A share label whose first grapheme cluster is over the byte budget is kept, with a code-point fallback (Refs #1233)                                                            |
+| #1399 | `b2040e13` | `createBook` abort tests keyed on the record, plus a rejection case (closed #1378)                                                                                             |
+| #1400 | `2530556a` | The native side of the outcome-only library failure line is pinned (Refs #1333)                                                                                                |
+| #1402 | `60aac616` | Run ids and run-outcome prose removed from workflow comments (Refs #575)                                                                                                       |
+| #1401 | `4e9383b7` | `ruleLevelFor` comment, lazy ESLint instance, nav-back-to-books wording (closed #1389)                                                                                         |
+| #1404 | `5f454ea2` | Facilitator runbook: the keep-file guard and the microphone grant wording (Refs #248)                                                                                          |
+| #1407 | `b1ac6ba6` | Takeover of Dependabot #1392: `vite-plugin-pwa` 2.0.0                                                                                                                          |
+| #1396 | `1db6c5fd` | Phone check: the device read honours the abort, and a read-phase seam (Refs #1379). Titled `test`, but it adds production code                                                 |
+| #1406 | `1e6cf82a` | The deferred test items from #1233: namer seam, dots fit, close latch                                                                                                          |
+| #1398 | `43144b68` | Release runbook §5: the rollback read fails the step on any bad origin and rejects control characters (Refs #1321)                                                             |
+| #1409 | `f133fc99` | `filenameSafe` prefixes `_` to a label whose stem is a Windows device name (Refs #163)                                                                                         |
+| #1411 | `3ebb2766` | Order marker in the segment-rename reload race test; the phone-check callback audit found no racy site (Refs #1360)                                                            |
+| #1413 | `f8f71a86` | The popstate selector subtraction pinned; the duplicated `strings.ts` docblock trimmed (Refs #1317)                                                                            |
+| #1412 | `c730a070` | Disclosed dependency versions are read from the installed packages, and the notices' versions are filled at build time (closed #1381). Titled `test`, but it changes the build |
+| #1403 | `3e4aecb9` | Dependabot: three GitHub Actions pins (merged by the DRI)                                                                                                                      |
+| #1417 | `3111fb3d` | Phone check: an aborted run writes the earlier report back (Refs #1379, item 4)                                                                                                |
+| #1418 | `34b1b6af` | Takeover of Dependabot #1410: Capacitor 8.5.2 to 8.5.3 on both shells with the Swift package pin, Vite 8.3.4, Playwright, knip, wrangler                                       |
+
+Develop CI was green at `34b1b6af` (Code Quality and Build).
+
+### Closed
+
+- With evidence comments: #1278, #861, #1265, #1317 (every item checked on develop; the #1125 mutant now fails the suite), #1360.
+- By merge: #1378, #1389, #1381.
+- Dependabot #1391, #1392 and #1410, each superseded by its takeover.
+
+### Filed
+
+- **#1408:** Lows from #1399.
+- **#1414:** three Lows on the popstate selector pin (#1413).
+- **#1415:** the licence version fill: fail the build on an unfilled notice, pin the precache revision (#1412).
+- **#1416:** three follow-ups on the rename-race order marker, moved off #1360.
+- **#1421:** the red team's batched follow-ups (Sprint 5).
+- **Added to existing issues:** #1233, #962, #163, #1321, #1379 (six follow-ups from #1417, one of them the coordinator's unverified reading that a screen reopened while an aborted run winds down shows an empty report once), and device rows on #974.
+
+### The v1.1.0 cut
+
+- **Bump PR #1419** (`chore(release): v1.1.0`) is open at head `94122153a7563d89e7d310b163ef7cfc58e3d897`, tree `3957527da8846f47ff3d7a7c9824a1a034335873`. It changes three version strings. Both lenses are clean, the bench approved, CI is green. **It is not merged:** the release checklist makes that merge the DRI's. It carries 78 PRs from staging `3b5e098da6e182ab149ae21cf1b916df046d5fb1`.
+- **This entry's PR merges to develop before the bump**, so the bump's squash commit will carry this file on top of the tree the red team read. The check before the release ref is cut is on #1419.
+- **`DB_VERSION` goes 9 to 11** (#1346, #1367). Both steps open only the `books` store.
+- **Docs PR #1420** (the rollback warning and the staleness rule) was open and in review when this entry was written.
+- **The red-team reports, the carried-PR classification and the tester announcement draft** are in the coordinator's scratch folder, `temp/tc-mobile-release-1.1.0/` in the uW workspace, not in this repository.
+
+### Release red team (at tree `34b1b6af`, bump head `94122153`)
+
+Five read-only passes and a delta pass. Summary on #1419 (comment 6133186290). **0 BLOCK.** Four items for the DRI to fix or accept:
+
+1. **"Record again" on iPhone (#1366), inferred.** The old take is erased and the microphone is requested afterwards, outside the tap. If iOS refuses, the old take is gone and "Microphone is off" shows. Nothing is lost without the confirm tap.
+2. **iOS `MARKETING_VERSION` is still `1.0`, inferred.** If App Store version 1.0 is approved, the 1.1.0 TestFlight upload is refused.
+3. **A rollback strands phones that opened 1.1.0.** Observed in Node: staging's `db.ts` rejects a v11 database with `DatabaseDowngradeError` and deletes nothing. Recordings are intact but unreachable until schema 11 or later is served again. No runbook said so; docs PR #1420 adds it.
+4. **`docs/review/dual-review.md` contradicted the staleness rule** (an unanswered Medium on #1354). #1420 fixes it.
+
+What the passes ran:
+
+- **Upgrade:** a v9 database built by hand with staging's record shapes (24 takes, 12 MP3 and 12 PCM clips) opened at v11 with every recording and clip byte intact. Node on `fake-indexeddb`.
+- **PWA update:** a headless desktop Chromium on a build of staging took this build's service worker and ran offline afterwards.
+- **Review records:** on all 78 carried PRs, both lenses' last round is at the merged head.
+- **Claim check:** 2 false and 6 overstated claims in the announcement draft and the bump body, all corrected.
+
+### Not verified
+
+- **Nothing ran on a phone, in Safari or in a native shell.** No Android or iOS compile has happened since 2026-10-05; the Play lane on the promotion merge will be the first.
+- Owed at the tester build, on #974: the upgrade in place with real recordings, Record again on iPhone, the web update then offline, both shells after Capacitor 8.5.3, the phone-check cancel and reopen, and the rows carried from 10-09.
+- The App Store Connect and Play Console states were not visible.
+- `check:deploy` was not run; nothing was promoted.
+
+### Next
+
+1. **DRI:** decide red-team items 1 and 2 (fix in this build, or accept). A fix means a new bump head and a delta pass.
+2. **DRI:** merge #1419, pinned to its head, after this entry (and #1420, if wanted) is on develop. That squash commit is `CUT_SHA`.
+3. Then, per `.claude/skills/tc-release`: confirm `CUT_SHA`'s tree against the red-teamed head, create `release/v1.1.0` at `CUT_SHA`, open the promotion PR to `staging` with a hold line, and take the DRI's go or no-go. The head must be named `release/v1.1.0` and merged with a merge commit, or the native lanes build nothing.
+4. **#1281 settings step (DRI only):** `release-signing` still has one required reviewer.
+5. The tester announcement is drafted with the claim check applied; its build placeholders are filled after the APK exists.
+
+---
+
 ## 2026-10-09 (day) — Sprint 4 day 5: cleanup, no 1.0.2 release, two lane waves, 10 PRs merged
 
 ### Decisions (DRI, 2026-10-09)
