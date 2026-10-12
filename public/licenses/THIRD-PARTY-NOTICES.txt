@@ -89,7 +89,7 @@ SOFTWARE.
 
 ========================================================================
 
-idb 8.0.3 — ISC
+idb 8.0.4 — ISC
 https://www.npmjs.com/package/idb
 
 ISC License (ISC)
@@ -425,7 +425,7 @@ Copyright 2018 Google Inc.
 
 ========================================================================
 
-vite 8.3.1 — MIT
+vite 8.3.3 — MIT
 https://vite.dev
 
 Copyright (c) 2019-present, VoidZero Inc. and Vite contributors
@@ -450,7 +450,7 @@ SOFTWARE.
 
 ========================================================================
 
-rolldown 1.2.9 — MIT
+rolldown 1.2.13 — MIT
 https://rolldown.rs/
 
 Copyright (c) 2024-present VoidZero Inc. & Contributors
@@ -479,7 +479,7 @@ The licenses of externally maintained libraries from which parts of the Software
 
 ========================================================================
 
-@oxc-project/runtime 0.150.0 — MIT
+@oxc-project/runtime 0.153.0 — MIT
 https://oxc.rs
 
 MIT License
@@ -610,7 +610,7 @@ SOFTWARE.
 
 ========================================================================
 
-@capacitor/app 8.1.1 — MIT
+@capacitor/app 8.1.2 — MIT
 https://github.com/ionic-team/capacitor-plugins
 
 Copyright 2020-present Ionic
@@ -639,7 +639,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ========================================================================
 
-@capacitor/filesystem 8.1.3 — MIT
+@capacitor/filesystem 8.1.4 — MIT
 https://github.com/ionic-team/capacitor-filesystem
 
 MIT License
@@ -666,7 +666,7 @@ SOFTWARE.
 
 ========================================================================
 
-@capacitor/share 8.0.2 — MIT
+@capacitor/share 8.0.3 — MIT
 https://github.com/ionic-team/capacitor-plugins
 
 Copyright 2020-present Ionic
