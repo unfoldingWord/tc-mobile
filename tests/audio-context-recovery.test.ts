@@ -425,10 +425,18 @@ describe("playSamples — dropping the shared context after a failed resume (#12
       expect(FakeContext.made[1]!.closeCalls).toBe(1);
       await timedOutPlay(playSamples, RESUME_TIMEOUT_MS);
       expect(FakeContext.made).toHaveLength(3);
+      // The second flight: context 2's close() hangs too (the fake copies the
+      // flag onto each context it builds), so the latch is armed again and
+      // context 3 is neither closed nor replaced by another failed Play.
+      expect(FakeContext.made[2]!.closeCalls).toBe(0);
+      await timedOutPlay(playSamples, RESUME_TIMEOUT_MS);
+      expect(FakeContext.made).toHaveLength(3);
+      expect(FakeContext.made[2]!.closeCalls).toBe(0);
     });
 
     it("a close() that rejects also ends the wait, so the next failed Play drops again", async () => {
-      FakeContext.nextCloseRejects = new Error("close rejected");
+      const cause = new Error("close rejected");
+      FakeContext.nextCloseRejects = cause;
       const { playSamples, RESUME_TIMEOUT_MS } = await loadAudioIo();
 
       await timedOutPlay(playSamples, RESUME_TIMEOUT_MS);
@@ -437,15 +445,21 @@ describe("playSamples — dropping the shared context after a failed resume (#12
 
       expect(FakeContext.made).toHaveLength(2);
       expect(FakeContext.made[1]!.closeCalls).toBe(1);
+      // Clearing the wait does not stop the failure being reported.
+      expect(reportFailure).toHaveBeenCalledWith(
+        cause,
+        "playback-context-close"
+      );
     });
 
     it("a close() that throws synchronously also ends the wait", async () => {
       const { playSamples, RESUME_TIMEOUT_MS } = await loadAudioIo();
+      const cause = new Error("close threw");
       const spy = vi
         .spyOn(FakeContext.prototype, "close")
         .mockImplementationOnce(function (this: FakeContext) {
           this.closeCalls++;
-          throw new Error("close threw");
+          throw cause;
         });
 
       await timedOutPlay(playSamples, RESUME_TIMEOUT_MS);
@@ -453,6 +467,10 @@ describe("playSamples — dropping the shared context after a failed resume (#12
 
       expect(FakeContext.made).toHaveLength(2);
       expect(FakeContext.made[1]!.closeCalls).toBe(1);
+      expect(reportFailure).toHaveBeenCalledWith(
+        cause,
+        "playback-context-close"
+      );
       spy.mockRestore();
     });
   });
