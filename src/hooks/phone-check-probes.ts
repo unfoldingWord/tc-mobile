@@ -114,15 +114,56 @@ function finiteOrNull(n: unknown): number | null {
   return typeof n === "number" && Number.isFinite(n) ? n : null;
 }
 
-/** What the phone says about itself. A method the browser lacks reads as `null`. */
+/**
+ * Settle with `pending`, or reject with the signal's own reason the moment it
+ * aborts, whichever comes first. For a browser call that has no signal of its
+ * own and may never answer (`navigator.storage.estimate()` and `persisted()`):
+ * without this a cancel could not end the device read, and the run would keep
+ * the run slot, and Close disabled, for as long as the browser stayed silent
+ * (#1379 item 5). The abandoned promise is left to settle on its own; the race
+ * has already attached to it, so a late rejection is not unhandled.
+ */
+function untilAborted<T>(
+  pending: Promise<T>,
+  signal: AbortSignal | undefined
+): Promise<T> {
+  if (signal === undefined) return pending;
+  if (signal.aborted) {
+    // Abandoned unraced: handle a late rejection here so it is not unhandled.
+    pending.catch(() => {});
+    return Promise.reject(signal.reason);
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    pending.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (cause: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(cause);
+      }
+    );
+  });
+}
+
+/**
+ * What the phone says about itself. A method the browser lacks reads as `null`.
+ * `signal` ends the read early with its own reason (#1379 item 5).
+ */
 export async function readDeviceInfo(
-  source: DeviceSource
+  source: DeviceSource,
+  signal?: AbortSignal
 ): Promise<DeviceInfo> {
+  // A run already cancelled does not start the browser queries at all.
+  signal?.throwIfAborted();
   const estimate = source.storage?.estimate
-    ? await source.storage.estimate()
+    ? await untilAborted(source.storage.estimate(), signal)
     : null;
   const persisted = source.storage?.persisted
-    ? await source.storage.persisted()
+    ? await untilAborted(source.storage.persisted(), signal)
     : null;
   return {
     userAgent: source.userAgent ?? "",
@@ -168,6 +209,8 @@ export interface StorageProbeOptions {
   readonly now?: () => number;
   /** Called after each chunk is built, before it is written: the timing test's seam. */
   readonly onChunkFilled?: () => void;
+  /** Called once, after the last chunk is written and before the read phase's first abort check: the read-side test's seam. */
+  readonly onReadStart?: () => void;
   /** Stops the probe between chunks; the database is still deleted (#1014 item 6). */
   readonly signal?: AbortSignal;
 }
@@ -213,6 +256,7 @@ export async function runStorageProbe(
       writeMs += now() - writeStart;
     }
 
+    options.onReadStart?.();
     const readStart = now();
     for (let c = 0; c < chunks; c++) {
       options.signal?.throwIfAborted();

@@ -24,6 +24,7 @@ import { runAllocationSteps } from "@/lib/phone-check/allocation";
 
 const probeSeam = vi.hoisted(() => ({
   signals: [] as Array<AbortSignal | undefined>,
+  deviceSignals: [] as Array<AbortSignal | undefined>,
   deviceGate: null as Promise<void> | null,
 }));
 
@@ -40,7 +41,8 @@ vi.mock("@/hooks/phone-check-probes", async (importOriginal) => {
     await importOriginal<typeof import("@/hooks/phone-check-probes")>();
   return {
     ...real,
-    readDeviceInfo: async () => {
+    readDeviceInfo: async (_source: unknown, signal?: AbortSignal) => {
+      probeSeam.deviceSignals.push(signal);
       await probeSeam.deviceGate;
       return {
         userAgent: "t",
@@ -354,6 +356,7 @@ describe("usePhoneCheck unmounting mid-run", () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     window.sessionStorage.clear();
     probeSeam.signals.length = 0;
+    probeSeam.deviceSignals.length = 0;
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -401,6 +404,22 @@ describe("usePhoneCheck unmounting mid-run", () => {
     });
     expect(probeSeam.signals).toHaveLength(1);
     expect(probeSeam.signals[0]?.aborted).toBe(false);
+    await act(async () => root.unmount());
+  });
+
+  it("hands the live run's signal to the device read too (#1379 item 5)", async () => {
+    probeSeam.deviceGate = null;
+    let start: (() => void) | undefined;
+    const expose = (run: () => void) => {
+      start = run;
+    };
+    await act(async () => root.render(createElement(Owner, { expose })));
+    await act(async () => start?.());
+    await vi.waitFor(() => {
+      expect(isPhoneCheckRunning()).toBe(false);
+    });
+    expect(probeSeam.deviceSignals).toHaveLength(1);
+    expect(probeSeam.deviceSignals[0]).toBe(probeSeam.signals[0]);
     await act(async () => root.unmount());
   });
 });
