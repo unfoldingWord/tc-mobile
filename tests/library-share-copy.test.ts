@@ -156,6 +156,10 @@ describe("libraryShareErrorText", () => {
       expect(libraryShareProgressText(outcome("failed"), "failed")).toBe(
         strings.shareAllFailed
       );
+      // The outcome-only call (no error code) takes the same fork (#1333).
+      expect(libraryShareProgressText(outcome("failed"), null)).toBe(
+        strings.shareAllFailed
+      );
       // A space refusal is not a share-sheet refusal: unchanged either way.
       expect(libraryShareErrorText("storage")).toBe(strings.shareAllStorage);
     } finally {
