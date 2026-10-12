@@ -8,7 +8,7 @@ offered under the Apache License 2.0, whose full text closes this file.
 
 ========================================================================
 
-@capacitor/android 8.5.2 — MIT
+@capacitor/android {{version:@capacitor/android}} — MIT
 https://capacitorjs.com/
 
 MIT License
@@ -95,7 +95,7 @@ SOFTWARE.
 
 ========================================================================
 
-@capacitor/app 8.1.2 — MIT
+@capacitor/app {{version:@capacitor/app}} — MIT
 https://capacitorjs.com/docs/apis/app
 
 Copyright 2020-present Ionic
@@ -124,7 +124,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ========================================================================
 
-@capacitor/filesystem 8.1.4 — MIT
+@capacitor/filesystem {{version:@capacitor/filesystem}} — MIT
 https://capacitorjs.com/docs/apis/filesystem
 
 MIT License
@@ -151,7 +151,7 @@ SOFTWARE.
 
 ========================================================================
 
-@capacitor/share 8.0.3 — MIT
+@capacitor/share {{version:@capacitor/share}} — MIT
 https://capacitorjs.com/docs/apis/share
 
 Copyright 2020-present Ionic

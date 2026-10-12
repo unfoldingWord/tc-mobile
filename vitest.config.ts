@@ -1,7 +1,22 @@
 import path from "node:path";
 import { defineConfig } from "vitest/config";
 
+import { disclosedComponents } from "./src/components/licenses.ts";
+import { installedVersions } from "./scripts/licence-versions.mjs";
+
 export default defineConfig({
+  // The same installed-manifest versions the build defines (vite.config.ts), so
+  // `thirdPartyLicenses` carries real versions under test. A disclosed package
+  // that is not installed is left out here and fails tests/licenses.test.ts by
+  // name, instead of taking every test file down at config load (#1381).
+  define: {
+    __DEP_VERSIONS__: JSON.stringify(
+      installedVersions(
+        import.meta.dirname,
+        disclosedComponents.map((c) => c.pinPackage ?? c.name)
+      )
+    ),
+  },
   resolve: {
     alias: { "@": path.resolve(import.meta.dirname, "./src") },
   },

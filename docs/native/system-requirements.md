@@ -50,11 +50,12 @@ match what the CSS already needed (#1052).
 
 ### JS: latent, now pinned
 
-Vite 8.3.1 (the version pinned in `package.json`), when `build.target` is left
-unset, resolves it to the string `"baseline-widely-available"` — a rolling
+Vite 8.3.1 (the version measured for #1017, a dated observation and not a pin;
+later 8.x patches install without this section being re-measured), when
+`build.target` is left unset, resolves it to the string `"baseline-widely-available"` — a rolling
 snapshot bumped on every Vite major release
 (`ESBUILD_BASELINE_WIDELY_AVAILABLE_TARGET`,
-`node_modules/vite/dist/node/chunks/node.js`) that at this pinned version is
+`node_modules/vite/dist/node/chunks/node.js`) that at that version was
 `["chrome111","edge111","firefox114","safari16.4","ios16.4"]`. `vite.config.ts`
 set no `build.target` before this change, so the app was building against that
 default — a Safari/iOS floor of 16.4, above the app's original stated 15.0 (and
