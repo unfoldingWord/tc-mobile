@@ -1,10 +1,10 @@
 import "fake-indexeddb/auto";
 
-import { openDB } from "idb";
+import { openDB, type IDBPDatabase } from "idb";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { listBooks } from "@/lib/storage/books";
-import { closeDb, getDb } from "@/lib/storage/db";
+import { closeDb, getDb, type TcMobileDb } from "@/lib/storage/db";
 
 // db.ts keeps DB_NAME private; a migration test necessarily knows the name it
 // is migrating. Kept in sync by hand — there is nothing else to key it off.
@@ -1213,5 +1213,268 @@ describe("the v10 → v11 shelf position (#338)", () => {
       number: 1,
       shelfPosition: 0,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A whole shelf, upgraded: every recording still resolves (#1421)
+// ---------------------------------------------------------------------------
+//
+// The cases above prove the upgrade steps row by row. These two start from a
+// shelf shaped like a tester's — several books, chapters, segments and takes,
+// finished (MP3) and unfinished (PCM) clips side by side — written with raw
+// `put`s in the record shapes v1.0.x wrote (no app helper), and ask the
+// question that matters: after the upgrade, does every recording still resolve
+// to the bytes it had, with the encoding it had.
+
+type SeedBook = {
+  id: string;
+  name: string | null;
+  createdAt: number;
+  /** Present from v10 on. */
+  number?: number;
+};
+
+type SeededClip = {
+  clipId: string;
+  segmentId: string;
+  encoding: "mp3" | "pcm";
+};
+
+/**
+ * Six books, two chapters each, three segments per chapter, and a take on the
+ * first two segments of every chapter (the third stays unrecorded): 6 books,
+ * 12 chapters, 36 segments, 24 takes. The takes alternate MP3 / PCM, so 12
+ * clips of each encoding. Segment status follows the encoding (a finished
+ * segment holds an MP3). Clip bytes differ per clip, so a swapped or truncated
+ * clip cannot pass for the right one.
+ */
+async function seedShelf(
+  db: Awaited<ReturnType<typeof openLegacyV9>>,
+  books: readonly SeedBook[]
+): Promise<SeededClip[]> {
+  const clips: SeededClip[] = [];
+  let clipCount = 0;
+  for (const book of books) {
+    const chapterIds = [1, 2].map((n) => `${book.id}-ch${n}`);
+    await db.put("books", {
+      ...book,
+      languageCode: null,
+      chapterIds,
+      updatedAt: book.createdAt + 1,
+      coverColourKey: null,
+    });
+    for (const [chapterIndex, chapterId] of chapterIds.entries()) {
+      const segmentIds = [1, 2, 3].map((n) => `${chapterId}-s${n}`);
+      await db.put("chapters", {
+        id: chapterId,
+        bookId: book.id,
+        number: chapterIndex + 1,
+        name: chapterIndex === 0 ? "Mark 6" : null,
+        segmentIds,
+      });
+      for (const [segmentIndex, segmentId] of segmentIds.entries()) {
+        const recorded = segmentIndex < 2;
+        const encoding = clipCount % 2 === 0 ? "mp3" : "pcm";
+        const clipId = `${segmentId}-clip`;
+        const takeId = `${segmentId}-take`;
+        await db.put("segments", {
+          id: segmentId,
+          chapterId,
+          index: segmentIndex + 1,
+          reference: null,
+          label: segmentIndex === 0 ? "verses 1-2" : null,
+          activeTakeId: recorded ? takeId : null,
+          status: !recorded
+            ? "not-started"
+            : encoding === "mp3"
+              ? "affirmed"
+              : "draft",
+        });
+        if (!recorded) continue;
+        clipCount++;
+        clips.push({ clipId, segmentId, encoding });
+        await db.put("takes", {
+          id: takeId,
+          segmentId,
+          clipId,
+          createdAt: 100 + clipCount,
+          durationMs: 1000 + clipCount,
+        });
+        const bytes =
+          encoding === "mp3"
+            ? Uint8Array.from([0xff, 0xfb, clipCount, clipCount + 1, 7])
+            : new Uint8Array(
+                Int16Array.from([clipCount, -clipCount, 3, 4]).buffer
+              );
+        await db.put("clipMeta", {
+          id: clipId,
+          sampleRate: 44100,
+          frameCount: encoding === "mp3" ? 1152 : 4,
+          durationMs: 1000 + clipCount,
+          createdAt: 100 + clipCount,
+          encoding,
+          generation: encoding === "mp3" ? 1 : 0,
+          byteLength: bytes.byteLength,
+          peaks: null,
+          transcodeStallCount: 0,
+        });
+        await db.put("clipData", bytes.buffer.slice(0), clipId);
+      }
+    }
+  }
+  return clips;
+}
+
+/** Every row of every store but `books`, and the clip bytes as plain arrays. */
+async function snapshotNonBookStores(db: IDBPDatabase<TcMobileDb>) {
+  const stores = ["chapters", "segments", "takes", "clipMeta"] as const;
+  const rows = Object.fromEntries(
+    await Promise.all(stores.map(async (s) => [s, await db.getAll(s)] as const))
+  );
+  const keys = (await db.getAllKeys("clipData")) as string[];
+  const data = Object.fromEntries(
+    await Promise.all(
+      keys.map(
+        async (k) =>
+          [
+            k,
+            Array.from(
+              new Uint8Array(
+                (await db.get("clipData", k as never)) as ArrayBuffer
+              )
+            ),
+          ] as const
+      )
+    )
+  );
+  return { rows, data };
+}
+
+async function expectEveryRecordingResolves(clips: readonly SeededClip[]) {
+  const { loadSegmentClip } = await import("@/lib/storage/segment-audio");
+  expect(clips).toHaveLength(24);
+  expect(clips.filter((c) => c.encoding === "mp3")).toHaveLength(12);
+  const db = await getDb();
+  for (const { clipId, segmentId, encoding } of clips) {
+    const audio = await loadSegmentClip(segmentId as never);
+    expect(audio.kind).toBe("resolved");
+    if (audio.kind !== "resolved") continue;
+    expect(audio.clip.encoding).toBe(encoding);
+    expect(audio.clip.meta.id).toBe(clipId);
+    const stored = new Uint8Array(
+      (await db.get("clipData", clipId as never)) as ArrayBuffer
+    );
+    const read =
+      audio.clip.encoding === "mp3"
+        ? audio.clip.mp3
+        : new Uint8Array(audio.clip.samples.buffer);
+    expect(Array.from(read)).toEqual(Array.from(stored));
+  }
+}
+
+// Newest first; "Book 2" is a typed look-alike (not the 3-digit placeholder),
+// and b4/b5 tie on createdAt so only the key order separates them.
+const SHELF: readonly SeedBook[] = [
+  { id: "b1", name: "Book 001", createdAt: 10 },
+  { id: "b2", name: "Mark", createdAt: 60 },
+  { id: "b3", name: "Book 2", createdAt: 30 },
+  { id: "b4", name: "Book 1000", createdAt: 50 },
+  { id: "b5", name: "Luke", createdAt: 50 },
+  { id: "b6", name: "Book 003", createdAt: 20 },
+];
+const SHELF_ORDER_1_0_X = ["b2", "b4", "b5", "b3", "b6", "b1"];
+
+describe("a whole shelf survives the upgrade to the current version (#1421)", () => {
+  it("v9 → v11: every non-book row and clip byte is identical and every recording resolves", async () => {
+    const v9 = await openLegacyV9();
+    const clips = await seedShelf(v9, SHELF);
+    const before = await snapshotNonBookStores(
+      v9 as unknown as IDBPDatabase<TcMobileDb>
+    );
+    expect(before.rows.chapters).toHaveLength(12);
+    expect(before.rows.segments).toHaveLength(36);
+    expect(before.rows.takes).toHaveLength(24);
+    v9.close();
+
+    const db = await getDb();
+    expect(db.version).toBe(APP_VERSION);
+    expect(await snapshotNonBookStores(db)).toEqual(before);
+    await expectEveryRecordingResolves(clips);
+
+    // The shelf reads in the order 1.0.x showed it.
+    expect((await listBooks()).map((b) => b.id)).toEqual(SHELF_ORDER_1_0_X);
+    const { strings } = await import("@/lib/strings");
+    const headings = Object.fromEntries(
+      (await listBooks()).map((b) => [
+        b.id,
+        strings.bookHeading(b.name, b.number),
+      ])
+    );
+    expect(headings).toEqual({
+      b1: "Book 001",
+      b2: "Mark",
+      b3: "Book 2",
+      b4: "Book 1000",
+      b5: "Luke",
+      b6: "Book 003",
+    });
+    // The rendered placeholder is taken back off the row and becomes a slot;
+    // a typed name (including the look-alike "Book 2") is kept, with a free slot.
+    expect(
+      Object.fromEntries(
+        (await db.getAll("books")).map((b) => [b.id, [b.name, b.number]])
+      )
+    ).toEqual({
+      b1: [null, 1],
+      b2: ["Mark", 2],
+      b3: ["Book 2", 4],
+      b4: [null, 1000],
+      b5: ["Luke", 5],
+      b6: [null, 3],
+    });
+    // Only the book rows changed, and only in the fields the steps own.
+    for (const book of await db.getAll("books")) {
+      const seeded = SHELF.find((s) => s.id === book.id);
+      expect(book).toMatchObject({
+        createdAt: seeded?.createdAt,
+        updatedAt: (seeded?.createdAt ?? 0) + 1,
+        coverColourKey: null,
+        chapterIds: [`${book.id}-ch1`, `${book.id}-ch2`],
+      });
+    }
+  });
+
+  it("v10 → v11: the same shelf, with slots already written", async () => {
+    const v10 = await openLegacyV10();
+    const slots: Record<string, [string | null, number]> = {
+      b1: [null, 1],
+      b2: ["Mark", 2],
+      b3: ["Book 2", 3],
+      b4: [null, 1000],
+      b5: ["Luke", 4],
+      b6: [null, 3],
+    };
+    const clips = await seedShelf(
+      v10,
+      SHELF.map((b) => ({
+        ...b,
+        name: slots[b.id]![0],
+        number: slots[b.id]![1],
+      }))
+    );
+    const before = await snapshotNonBookStores(
+      v10 as unknown as IDBPDatabase<TcMobileDb>
+    );
+    v10.close();
+
+    const db = await getDb();
+    expect(db.version).toBe(APP_VERSION);
+    expect(await snapshotNonBookStores(db)).toEqual(before);
+    await expectEveryRecordingResolves(clips);
+    expect((await listBooks()).map((b) => b.id)).toEqual(SHELF_ORDER_1_0_X);
+    expect(
+      (await db.getAll("books")).map((b) => [b.id, b.name, b.number])
+    ).toEqual(SHELF.map((b) => [b.id, slots[b.id]![0], slots[b.id]![1]]));
   });
 });
