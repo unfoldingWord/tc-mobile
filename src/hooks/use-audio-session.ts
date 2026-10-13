@@ -19,6 +19,7 @@ import {
   useRecorder,
   type RecorderState,
   type RetryDecodeResult,
+  type StartOptions,
   type StopResult,
 } from "./use-recorder";
 import type { CaptureScope } from "@/lib/audio/capture-peaks";
@@ -132,7 +133,14 @@ export interface UseAudioSession {
    * before `playingBuffer` does).
    */
   readPlaybackPosition: () => PlaybackPosition | null;
-  startRecording: () => void;
+  /**
+   * Open the microphone and start a take: the one start path. Call it
+   * synchronously in the tap. Resolves `true` when capture is live, `false`
+   * when it is not (refused, failed, superseded, or declined by
+   * `beforeCapture`); it does not reject. `options` is passed to the
+   * recorder's `start()`, see `StartOptions` in `use-recorder.ts`.
+   */
+  startRecording: (options?: StartOptions) => Promise<boolean>;
   /**
    * Stop the microphone and return what it captured, or the reason it captured
    * nothing (`StopResult`). Never rejects.
@@ -655,37 +663,42 @@ export function useAudioSession(): UseAudioSession {
     return () => clearInterval(id);
   }, [playingId]);
 
-  const startRecording = useCallback(() => {
-    // A device that cannot record never takes the floor. `start()` only sets a
-    // message there and leaves the recorder idle, so a claim would be one that
-    // nothing ever hands back — and playback would be refused from then on.
-    const token = supported ? claimFloor("mic") : null;
-    if (supported) micTokenRef.current = token;
-    // Nothing is awaited before `start()`: getUserMedia has to run in the same
-    // task as the tap, or iOS treats the prompt as unprompted.
-    void beginRecording()
-      .then((started) => {
-        if (started) {
-          // The page can go hidden while `start()` waits on the microphone,
-          // when there is no take for the hidden change to seal yet. The take
-          // that opens afterwards would record in the background, so it is
-          // sealed here instead (#836).
-          if (document.visibilityState === "hidden") sealRecording();
-          return;
-        }
-        if (token === null) return;
-        // The floor is handed back HERE, on the completion path, rather than
-        // left to the effect below. A denied permission takes the recorder
-        // idle -> requesting -> idle, and nothing guarantees a consumer ever
-        // observes the middle state; an imperative claim is released on a
-        // completion, not on a render.
-        if (micTokenRef.current === token) micTokenRef.current = null;
-        if (session.isCurrent(token)) session.stopAll();
-      })
-      .catch((cause: unknown) => {
-        console.error("Starting the recorder failed", cause);
-      });
-  }, [beginRecording, claimFloor, sealRecording, session, supported]);
+  const startRecording = useCallback(
+    (options?: StartOptions) => {
+      // A device that cannot record never takes the floor. `start()` only sets a
+      // message there and leaves the recorder idle, so a claim would be one that
+      // nothing ever hands back — and playback would be refused from then on.
+      const token = supported ? claimFloor("mic") : null;
+      if (supported) micTokenRef.current = token;
+      // Nothing is awaited before `start()`: getUserMedia has to run in the same
+      // task as the tap, or iOS treats the prompt as unprompted.
+      return beginRecording(options)
+        .then((started) => {
+          if (started) {
+            // The page can go hidden while `start()` waits on the microphone,
+            // when there is no take for the hidden change to seal yet. The take
+            // that opens afterwards would record in the background, so it is
+            // sealed here instead (#836).
+            if (document.visibilityState === "hidden") sealRecording();
+            return true;
+          }
+          if (token === null) return false;
+          // The floor is handed back HERE, on the completion path, rather than
+          // left to the effect below. A denied permission takes the recorder
+          // idle -> requesting -> idle, and nothing guarantees a consumer ever
+          // observes the middle state; an imperative claim is released on a
+          // completion, not on a render.
+          if (micTokenRef.current === token) micTokenRef.current = null;
+          if (session.isCurrent(token)) session.stopAll();
+          return false;
+        })
+        .catch((cause: unknown) => {
+          console.error("Starting the recorder failed", cause);
+          return false;
+        });
+    },
+    [beginRecording, claimFloor, sealRecording, session, supported]
+  );
 
   const stopRecording = useCallback(async (): Promise<StopResult> => {
     // Snapshot BEFORE the await. `startRecording` writes every new claim into

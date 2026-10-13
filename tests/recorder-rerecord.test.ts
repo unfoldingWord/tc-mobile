@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
+import type { StartOptions } from "@/hooks/use-recorder";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import type { SegmentId } from "@/types/domain";
 
@@ -141,7 +142,10 @@ async function setup() {
       playBuffer: vi.fn(),
       stopBuffer: vi.fn(),
       readPlaybackPosition: () => null,
-      startRecording: vi.fn(),
+      // The microphone is granted: run the erase the start carries (#1028).
+      startRecording: vi.fn(async (options?: StartOptions) =>
+        options?.beforeCapture ? options.beforeCapture() : true
+      ),
       stopRecording: vi.fn(async () => {
         audio.recorderState = "idle";
         return { samples: captured, blob: null, error: null };
