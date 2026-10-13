@@ -114,7 +114,12 @@
  * book are never read.
  */
 
-import { openDB, type DBSchema, type IDBPDatabase } from "idb";
+import {
+  openDB,
+  type DBSchema,
+  type IDBPDatabase,
+  type OpenDBCallbacks,
+} from "idb";
 
 import type {
   Book,
@@ -518,7 +523,7 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
   const openToken = {};
 
   const raced = new Promise<IDBPDatabase<TcMobileDb>>((resolve, reject) => {
-    const opening = openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
+    const callbacks: OpenDBCallbacks<TcMobileDb> = {
       async upgrade(db, oldVersion, _newVersion, tx) {
         // One-time destructive recreate to the pivot schema (v3). See the header
         // for why append-only is waived here. Gated on `oldVersion < 3` so this
@@ -670,10 +675,13 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
         }
 
         // v10 (#169): give every book a placeholder slot, and take the rendered
-        // English back off the rows that were only ever showing one. Additive —
-        // a name a facilitator typed is never rewritten, and the pass keys on
-        // `number` being ABSENT, so a row already carrying one (from a newer
-        // build) is left alone.
+        // English back off the rows that were only ever showing one. A name is
+        // rewritten only when it is exactly the string the old writer produced
+        // (`legacyPlaceholderSlot`): that rendering is all the row records, so
+        // a name typed by hand to read exactly like it ("Book 003") cannot be
+        // told apart and is read as the placeholder. Any other typed name is
+        // kept as it is. The pass keys on `number` being ABSENT, so a row
+        // already carrying one (from a newer build) is left alone.
         //
         // `getAll` and two passes, not one cursor walk, because the slot a
         // NAMED row gets has to avoid every slot the unnamed rows claim — and
@@ -842,6 +850,45 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           markYielded();
         }
       },
+    };
+
+    /**
+     * The error an `upgrade` step threw, if one did (#1421). Kept so the open
+     * rejects with it rather than with the bare `AbortError` the abort below
+     * produces, which names nothing.
+     */
+    let upgradeFault: unknown;
+
+    const opening = openDB<TcMobileDb>(DB_NAME, DB_VERSION, {
+      ...callbacks,
+      // `idb` calls the upgrade callback and does not await what it returns, so
+      // an error thrown after the first `await` (every backfill) used to leave
+      // the `versionchange` transaction to COMMIT what it had written, at the
+      // new version: the steps that had not run never ran again. Aborting it
+      // rolls the whole upgrade back and fails the open instead, so the stored
+      // version stays where it was and the next open runs every step again —
+      // each keys on its field being absent, so a rerun is safe. A failed
+      // IndexedDB request already aborts the transaction by itself; this covers
+      // the thrown error that does not.
+      upgrade(db, oldVersion, newVersion, tx, event) {
+        void Promise.resolve(
+          callbacks.upgrade?.(db, oldVersion, newVersion, tx, event)
+        ).catch((cause: unknown) => {
+          upgradeFault = cause;
+          try {
+            tx.abort();
+          } catch {
+            // Already finished: nothing left to roll back. Reached only if the
+            // transaction committed before the error surfaced, and then the
+            // original error is still what the open reports below.
+          }
+        });
+        // The abort also rejects the transaction's own `done` promise, which
+        // nothing else reads on this path; the open's rejection carries the
+        // outcome, so this one is dropped on purpose rather than left to
+        // surface as a second, unattributed unhandled rejection.
+        tx.done.catch(() => undefined);
+      },
     });
 
     pendingOpen = opening;
@@ -886,7 +933,7 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
         wasBlocked = false;
         if (settled) return;
         settled = true;
-        reject(cause);
+        reject(upgradeFault ?? cause);
       }
     );
   });
