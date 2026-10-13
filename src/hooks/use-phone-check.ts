@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import {
   pauseTranscodeSweep,
@@ -239,21 +245,30 @@ export function usePhoneCheck(): {
   const [state, setState] = useState<PhoneCheckState>(() =>
     initialPhoneCheckState(crumbStore)
   );
-  // The runs this screen started that have not finished (#1014 item 6).
-  const liveRuns = useRef(new Set<AbortController>());
+  // The runs this screen started that have not finished (#1014 item 6), each
+  // with what puts its earlier report back, or `null` when it has none.
+  const liveRuns = useRef(new Map<AbortController, (() => void) | null>());
   // The last report this screen holds, read when a run starts so an aborted
   // run can put it back (#1379 item 4).
   const reportRef = useRef(state);
-  useEffect(() => {
+  // A layout effect, not a render-time write: the lint rule `react-hooks/refs`
+  // bans the latter, and this runs before paint and before any tap can Start.
+  useLayoutEffect(() => {
     reportRef.current = state;
   }, [state]);
 
   // The screen going away stops what it started: each probe ends at its next
   // boundary and the run slot is released, instead of measuring under Books.
+  // The earlier report goes back into storage HERE, not only in the run's
+  // `finally`: that runs when the probe in flight reaches its boundary, and a
+  // screen opened before then would read the opening blanks (#1379).
   useEffect(() => {
     const runs = liveRuns.current;
     return () => {
-      for (const run of runs) run.abort();
+      for (const [run, restore] of runs) {
+        run.abort();
+        restore?.();
+      }
     };
   }, []);
 
@@ -268,7 +283,6 @@ export function usePhoneCheck(): {
     if (release === null) return;
     const run = new AbortController();
     const { signal } = run;
-    liveRuns.current.add(run);
     const previous: SavedChecks = {
       device: reportRef.current.device,
       encode: reportRef.current.encode,
@@ -276,6 +290,11 @@ export function usePhoneCheck(): {
     };
     let finished = false;
     let saved: SavedChecks = { device: null, encode: null, storage: null };
+    // Idempotent: the unmount and the run's `finally` both call it.
+    const restore = () => {
+      if (!finished) writeSavedChecks(crumbStore, previous);
+    };
+    liveRuns.current.set(run, restore);
     // Each result is saved the moment it lands, so a reload later — in this
     // run or in the memory ceiling after it — keeps what finished.
     const land = (next: Partial<SavedChecks>) => {
@@ -309,13 +328,16 @@ export function usePhoneCheck(): {
         // An aborted run leaves the earlier report in place (#1379 item 4,
         // DRI 2026-10-12). Only the abort path: a finished run replaced the
         // report whole, and a defect rethrown above keeps today's behaviour.
-        if (!finished && signal.aborted) {
-          writeSavedChecks(crumbStore, previous);
-          setState((prev) => ({ ...prev, ...previous }));
+        try {
+          if (!finished && signal.aborted) {
+            restore();
+            setState((prev) => ({ ...prev, ...previous }));
+          }
+        } finally {
+          liveRuns.current.delete(run);
+          release();
+          busyWith(null);
         }
-        liveRuns.current.delete(run);
-        release();
-        busyWith(null);
       }
     })();
   }, [crumbStore]);
@@ -325,7 +347,7 @@ export function usePhoneCheck(): {
     if (release === null) return;
     const run = new AbortController();
     const { signal } = run;
-    liveRuns.current.add(run);
+    liveRuns.current.set(run, null);
     const busyWith = (activity: PhoneCheckActivity) =>
       setState((prev) => ({ ...prev, activity }));
     const deps = browserAllocationDeps(
