@@ -202,6 +202,23 @@ const STOP_FLUSH_TIMEOUT_MS = 5_000;
  * moved docblock in `audio-io.ts`.
  */
 
+/**
+ * What a caller may ask of one `start()`.
+ *
+ * `beforeCapture` is for a start that has something irreversible riding on it
+ * (Record again, which erases the stored take). It is awaited once the
+ * microphone has been granted and the audio context resume has settled, with
+ * this start still the current one, and before a `MediaRecorder` exists.
+ * Resolving `false` declines the take: the stream is released, the recorder
+ * returns to `idle` with no error, and `start()` resolves `false`. It is not
+ * called at all when the microphone is refused or the start is superseded.
+ * A rejection is handled as a failed start, by the same `catch` a refused
+ * microphone reaches.
+ */
+export interface StartOptions {
+  readonly beforeCapture?: () => Promise<boolean>;
+}
+
 export interface UseRecorder {
   readonly state: RecorderState;
   readonly readState: () => RecorderState;
@@ -219,8 +236,10 @@ export interface UseRecorder {
    * an intermediate `state`, which a React batch can hide. An already-live take
    * is deliberately NOT this case — releasing the floor while capture continues
    * would strand a live microphone with no floor holder.
+   *
+   * `options.beforeCapture`: see {@link StartOptions}.
    */
-  start: () => Promise<boolean>;
+  start: (options?: StartOptions) => Promise<boolean>;
   /**
    * Stop and return the captured audio as canonical mono 16-bit PCM, or the
    * reason it produced none — an empty capture, an undecodable one, or a
@@ -529,299 +548,322 @@ export function useRecorder(): UseRecorder {
     }, 100);
   }, [clearTick, seal]);
 
-  const start = useCallback(async (): Promise<boolean> => {
-    if (!supported) {
-      setError(strings.recordingUnsupported);
-      return false;
-    }
-    // Refuse to open a SECOND microphone while one is already live. Unreachable
-    // through the current UI — Record maps to the commit path while recording and
-    // the permission panel only renders at idle — but a future caller start()
-    // mid-take would otherwise overwrite streamRef, stranding the old stream as a
-    // hot mic while its recorder kept capturing into an orphaned array (#60). Leave
-    // the running take's state and error untouched; just decline to open a new one.
-    //
-    // Resolve `true`, NOT `false`: `false` is the caller's floor-release signal
-    // (`startRecording` calls `session.stopAll()` on it), and releasing the mic
-    // floor while capture continues would let playback claim the floor under a
-    // live microphone — the exact invariant the session refuses to gate on which
-    // buttons happen to be rendered. Capture is already happening, so the honest
-    // answer is "yes, the mic is live"; the caller keeps the floor it holds.
-    const live = recorderRef.current;
-    if (live && live.state !== "inactive") return true;
-    setError(null);
-    setState("requesting");
-    const generation = ++generationRef.current;
-
-    // Declared out here so the catch below can still reach the stream: from
-    // `getUserMedia` resolving until the recorder is assigned there is no
-    // other reference to it, and a throw in that window would otherwise leave
-    // the microphone open for the life of the page.
-    let stream: MediaStream | null = null;
-    // Held across the `getUserMedia` await (#1265): a `devicechange` there
-    // (granting the microphone can itself fire one) or a hide only marks the
-    // shared context for a drop, which lands at the release below, right
-    // before `raceAudioResume` builds the replacement. Once only.
-    const releaseMicClaim = claimSharedContext();
-
-    try {
-      // #1111: declare a record-capable audio session BEFORE the microphone
-      // opens. WebKit's `"playback"` type (`setPlaybackAudioSession`,
-      // `audio-io.ts`) — asserted on every Play so recordings stay audible
-      // through the iPhone silent switch — is documented for playback only;
-      // switching here, ahead of `getUserMedia`, is the "if needed" case
-      // #1111 asks this fix to cover so a session left on `"playback"` by an
-      // earlier Play cannot fight the mic. Feature-checked and a no-op on
-      // every non-WebKit engine, and inside the native iOS shell (#1251),
-      // where the launch-time `.playAndRecord` category is not switched.
-      setRecordAudioSession();
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          // Speech in a noisy room, recorded on a phone held in the hand.
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-      releaseMicClaim();
-
-      if (generation !== generationRef.current) {
-        abandonStream(stream);
+  const start = useCallback(
+    async (options?: StartOptions) => {
+      if (!supported) {
+        setError(strings.recordingUnsupported);
         return false;
       }
-      // Reachable by `cancel()` from here on, which is what matters across the
-      // await below.
-      streamRef.current = stream;
-      probeCaptureTrack(stream);
-
-      // Unlock Web Audio while we still have the user gesture that started
-      // this recording — iOS will not resume the context later without one.
-      // Bounded (#108): WebKit's resume() from "interrupted" has been
-      // observed to hang, and an unbounded await here left the recorder
-      // stuck in "requesting" forever with the mic already hot. `true` when
-      // the bound elapsed before resume() settled — reported below, behind
-      // the generation check, never by the helper (George R1 P2 on #498).
-      const resumeTimedOut = await raceAudioResume("recorder-start-resume");
-
-      // The resume is a real await on the first recording of a session — iOS
-      // starts the context suspended — so a `cancel()` from navigation, the
-      // pagehide handler or unmount can land here. A `cancel()` has already
-      // stopped this stream through `releaseStream`; a newer `start()` has
-      // not, which is why the stream is abandoned by identity. Either way no
-      // recorder is opened: one started after the teardown would report
-      // "recording" with the session floor already released. This check
-      // absorbs a cancel() landing during raceAudioResume's bounded wait
-      // exactly as it already did during the previous unbounded await.
-      if (generation !== generationRef.current) {
-        abandonStream(stream);
-        return false;
-      }
-      // The bound firing on a start that is STILL CURRENT is the #108 fact
-      // the log exists to carry (#475): every tester phone becomes a
-      // measurement of how often resume() takes longer than
-      // `RESUME_TIMEOUT_MS`. Placed after the generation check on
-      // purpose — a start() that cancel() discarded during the wait (Back
-      // or pagehide while "requesting") is not a #108 event and must not
-      // light the Books `≡`. This row fires on EVERY live start() whose
-      // resume overruns the bound; if a phone's resume-from-interrupted is
-      // routinely slow it competes for the failure ring, and the constant is
-      // the one knob. The row cannot tell a WebKit resume() that hung from a
-      // page frozen mid-wait by background throttling — both elapse the same
-      // timer — so which one a device row records is an inference for the
-      // reader, not a fact the row carries.
-      if (resumeTimedOut) {
-        reportFailure(
-          new Error(
-            `resumeAudioContext() did not settle within ${RESUME_TIMEOUT_MS} ms; the bounded wait in start() elapsed (#108)`
-          ),
-          "recorder-start-resume-timeout"
-        );
-      }
-
-      const mimeType = pickMimeType();
-      const recorder = new MediaRecorder(
-        stream,
-        mimeType ? { mimeType } : undefined
-      );
-      recorderRef.current = recorder;
-
-      // Bound to the array THIS recording owns, not to the ref.
+      // Refuse to open a SECOND microphone while one is already live. Unreachable
+      // through the current UI — Record maps to the commit path while recording and
+      // the permission panel only renders at idle — but a future caller start()
+      // mid-take would otherwise overwrite streamRef, stranding the old stream as a
+      // hot mic while its recorder kept capturing into an orphaned array (#60). Leave
+      // the running take's state and error untouched; just decline to open a new one.
       //
-      // MediaRecorder delivers its last slice as a `dataavailable` after
-      // `stop()` is invoked and before `onstop`. A handler that followed the
-      // ref would write that slice into whatever array the ref happens to
-      // name by then — and `cancel()` (pagehide, navigation, unmount) puts a
-      // fresh one there. For a take shorter than one 250 ms timeslice, and on
-      // WebKit builds that ignore the timeslice and emit a single blob on
-      // stop, that diverted slice is the entire recording. Following the array
-      // also stops an old recorder's final slice landing on a newer take.
-      const chunks: Blob[] = [];
-      chunksRef.current = chunks;
+      // Resolve `true`, NOT `false`: `false` is the caller's floor-release signal
+      // (`startRecording` calls `session.stopAll()` on it), and releasing the mic
+      // floor while capture continues would let playback claim the floor under a
+      // live microphone — the exact invariant the session refuses to gate on which
+      // buttons happen to be rendered. Capture is already happening, so the honest
+      // answer is "yes, the mic is live"; the caller keeps the floor it holds.
+      const live = recorderRef.current;
+      if (live && live.state !== "inactive") return true;
+      setError(null);
+      setState("requesting");
+      const generation = ++generationRef.current;
 
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunks.push(event.data);
-      };
+      // Declared out here so the catch below can still reach the stream: from
+      // `getUserMedia` resolving until the recorder is assigned there is no
+      // other reference to it, and a throw in that window would otherwise leave
+      // the microphone open for the life of the page.
+      let stream: MediaStream | null = null;
+      // Held across the `getUserMedia` await (#1265): a `devicechange` there
+      // (granting the microphone can itself fire one) or a hide only marks the
+      // shared context for a drop, which lands at the release below, right
+      // before `raceAudioResume` builds the replacement. Once only.
+      const releaseMicClaim = claimSharedContext();
 
-      // The mic can be taken mid-take — an incoming call, a Bluetooth device
-      // change, an OS audio interruption — which ends the capture track and
-      // inactivates the recorder on its own. Without this the hook never learns:
-      // state stays "recording", the timer keeps ticking, Record stays a live
-      // no-op, and the chunks captured before the interruption are stranded
-      // (#59). Freeze the UI into `processing` so Record is dead and the timer
-      // stops, and leave the state where the sheet's own commit path can stop
-      // it — `stop()` then recovers those chunks instead of dropping the take.
-      // Since #614 the sheet does not wait for Back to do that: `processing`
-      // with no close in flight is an ended take, and the recorder commits it
-      // in place through the same path the Stop tap runs. Guarded by generation so an interruption on a superseded
-      // recorder cannot repaint a newer one. `MediaStreamTrack.stop()` (our own
-      // teardown) does NOT fire `ended`, so this only reacts to real losses.
-      //
-      // A track the platform MUTES instead of ending is the same loss to the
-      // translator (#1294): the spec's "temporarily unable to provide data",
-      // which an OS audio interruption such as an alarm can produce, fires
-      // `mute` and neither `ended` nor `error`. Left unbound, the state stayed
-      // "recording" over a take the engine had stopped filling — the timer
-      // kept counting and the live scope scrolled the analyser's zeros as a
-      // flat line until Stop. So `mute` is bound to this same handler. The
-      // recorder is still active then, so the still-active arm leaves its
-      // tracks up for `stop()`'s flush; the sheet's commit runs that `stop()`
-      // in the same commit as the freeze. Sealing on a mute is a product
-      // reading, not only an engineering one: an interruption ends the take
-      // (#836), and the translator appends to it afterwards if they wish. An
-      // `unmute` is never waited for.
-      //
-      // The still-active arm (recorder not yet "inactive") is reported once
-      // per take so tester phones show whether it is ever reached (#478).
-      // The row carries only what this frame can observe — `recorder.state`
-      // and `event.type`, i.e. which feed fired (`error` from the recorder,
-      // `ended` or `mute` from a track). Whether the mic is still hot is NOT
-      // observable here: on `ended` the track is already dead, and an `error`
-      // at "recording" may be followed by an `ended` that reaches the inactive
-      // arm and releases everything — so the row must not assert it.
-      //
-      // Per take, not per call: a fresh binding per start() closure, like
-      // `chunks` above. `onInterrupted` is bound to `onerror` AND every
-      // track's `onended` and `onmute`, so one interruption can invoke it more
-      // than once, in different tasks — and the funnel's own dedup collapses only the
-      // same Error identity within one microtask, which a synthesized Error
-      // per call is not. Never reset: a take that hits the still-active arm
-      // is frozen at "processing" and cannot resume, so per-take and
-      // per-interruption coincide today. If a take ever continues after an
-      // interruption, this boolean would suppress a second, genuine one.
-      let interruptionReported = false;
-      const onInterrupted = (event: Event) => {
-        if (generation !== generationRef.current) return;
-        clearTick();
-        // DISCONNECT the tap's graph (readLevel -> 0) always. Whether its cloned
-        // tracks are stopped depends on the recorder state below, exactly as for
-        // the original tracks.
-        tapRef.current?.disconnect();
-        // Cut the live-scope push synchronously, like the tap above — a queued
-        // rAF must not fold a post-interrupt column into the frozen freeze (R3).
-        recordingRef.current = false;
-        setState("processing");
-        // Release the mic the moment the recorder has actually ended. On the
-        // `error` path the track can still be live — a hot mic on a frozen sheet
-        // until Back, potentially minutes. Only once inactive: the chunks are
-        // then final, so stopping the track drops no audio; on the `ended` path
-        // the track is already dead and this is a no-op.
-        if (recorder.state === "inactive") {
-          // Chunks final — stop BOTH the original tracks AND the VU clone. A
-          // cloned getUserMedia track is independent, so disconnect() alone left
-          // it live and kept the mic device captured until Back (a hot mic the
-          // original-track stop was written to prevent — George R-B6). Safe here
-          // for the same reason the original stop is: the chunks are final. NOT
-          // on the error path (recorder still active), where clone-stop could
-          // truncate the slice stop() will recover.
-          if (stream) stopTracks(stream, "recorder-release-track");
-          closeTap();
-        } else if (!interruptionReported) {
-          interruptionReported = true;
+      try {
+        // #1111: declare a record-capable audio session BEFORE the microphone
+        // opens. WebKit's `"playback"` type (`setPlaybackAudioSession`,
+        // `audio-io.ts`) — asserted on every Play so recordings stay audible
+        // through the iPhone silent switch — is documented for playback only;
+        // switching here, ahead of `getUserMedia`, is the "if needed" case
+        // #1111 asks this fix to cover so a session left on `"playback"` by an
+        // earlier Play cannot fight the mic. Feature-checked and a no-op on
+        // every non-WebKit engine, and inside the native iOS shell (#1251),
+        // where the launch-time `.playAndRecord` category is not switched.
+        setRecordAudioSession();
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            // Speech in a noisy room, recorded on a phone held in the hand.
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+        releaseMicClaim();
+
+        if (generation !== generationRef.current) {
+          abandonStream(stream);
+          return false;
+        }
+        // Reachable by `cancel()` from here on, which is what matters across the
+        // await below.
+        streamRef.current = stream;
+        probeCaptureTrack(stream);
+
+        // Unlock Web Audio while we still have the user gesture that started
+        // this recording — iOS will not resume the context later without one.
+        // Bounded (#108): WebKit's resume() from "interrupted" has been
+        // observed to hang, and an unbounded await here left the recorder
+        // stuck in "requesting" forever with the mic already hot. `true` when
+        // the bound elapsed before resume() settled — reported below, behind
+        // the generation check, never by the helper (George R1 P2 on #498).
+        const resumeTimedOut = await raceAudioResume("recorder-start-resume");
+
+        // The resume is a real await on the first recording of a session — iOS
+        // starts the context suspended — so a `cancel()` from navigation, the
+        // pagehide handler or unmount can land here. A `cancel()` has already
+        // stopped this stream through `releaseStream`; a newer `start()` has
+        // not, which is why the stream is abandoned by identity. Either way no
+        // recorder is opened: one started after the teardown would report
+        // "recording" with the session floor already released. This check
+        // absorbs a cancel() landing during raceAudioResume's bounded wait
+        // exactly as it already did during the previous unbounded await.
+        if (generation !== generationRef.current) {
+          abandonStream(stream);
+          return false;
+        }
+        // The bound firing on a start that is STILL CURRENT is the #108 fact
+        // the log exists to carry (#475): every tester phone becomes a
+        // measurement of how often resume() takes longer than
+        // `RESUME_TIMEOUT_MS`. Placed after the generation check on
+        // purpose — a start() that cancel() discarded during the wait (Back
+        // or pagehide while "requesting") is not a #108 event and must not
+        // light the Books `≡`. This row fires on EVERY live start() whose
+        // resume overruns the bound; if a phone's resume-from-interrupted is
+        // routinely slow it competes for the failure ring, and the constant is
+        // the one knob. The row cannot tell a WebKit resume() that hung from a
+        // page frozen mid-wait by background throttling — both elapse the same
+        // timer — so which one a device row records is an inference for the
+        // reader, not a fact the row carries.
+        if (resumeTimedOut) {
           reportFailure(
             new Error(
-              `Recorder interrupted via "${event.type}" while still "${recorder.state}" (still-active arm, #478)`,
-              // The `error` feed's event carries the native failure as
-              // `.error` (lib.dom types `MediaRecorder.onerror`'s event as
-              // `ErrorEvent`; `MediaRecorderErrorEvent` is not declared at
-              // TypeScript 5.9.3, so this narrows structurally rather than
-              // by that name). `describeCause` walks `.cause`, so the durable
-              // row names the DOMException — `NotReadableError`,
-              // `InvalidStateError` — instead of only that an error arrived
-              // (George R1 P3 on #498). The `ended` feed has no such field:
-              // `undefined` keeps that row's shape unchanged.
-              { cause: "error" in event ? event.error : undefined }
+              `resumeAudioContext() did not settle within ${RESUME_TIMEOUT_MS} ms; the bounded wait in start() elapsed (#108)`
             ),
-            "recorder-interrupted-active"
+            "recorder-start-resume-timeout"
           );
         }
-      };
-      recorder.onerror = onInterrupted;
-      stream.getTracks().forEach((track) => {
-        track.onended = onInterrupted;
-        track.onmute = onInterrupted;
-      });
 
-      recorder.start(250);
-      // A new take starts from an empty live-waveform scope (#120) — the ring
-      // must not carry the previous take's tail into this one.
-      scopeRef.current?.reset();
-      // Open the VU tap on the live stream. Non-fatal: a device with a quirky
-      // Web Audio implementation should still record even if the meter cannot
-      // be wired, so a failure here is logged and the recorder runs meterless.
-      try {
-        tapRef.current = createLevelTap(stream);
-        setMeterFailed(false);
-      } catch (tapCause) {
-        console.error("Could not open the level meter", tapCause);
-        tapRef.current = null;
-        setMeterFailed(true);
-      }
-      startedAtRef.current = performance.now();
-      setElapsedMs(0);
-      // The ring may advance from the next rAF on — set before the state edge.
-      recordingRef.current = true;
-      takeOpenRef.current = true;
-      setState("recording");
+        // The caller's last word before capture (`StartOptions`). Here, and not
+        // earlier: the microphone is granted and this start is still current, so
+        // what the caller does in it (Record again erases the stored take) is
+        // done only when the take is about to open. The stream is in
+        // `streamRef`, so a `cancel()` during the wait releases it, and the
+        // generation check below then opens no recorder.
+        if (options?.beforeCapture) {
+          const proceed = await options.beforeCapture();
+          if (generation !== generationRef.current) {
+            abandonStream(stream);
+            return false;
+          }
+          if (!proceed) {
+            // Declined, not failed: release the microphone and say nothing.
+            releaseStream();
+            setState("idle");
+            return false;
+          }
+        }
 
-      startTick();
-      return true;
-    } catch (cause) {
-      releaseMicClaim();
-      if (stream) abandonStream(stream);
-      // A `cancel()` or a newer `start()` owns the state and the message now.
-      // Reporting this failure over theirs is the stale-message problem
-      // `cancel()` clears `error` to avoid.
-      if (generation !== generationRef.current) return false;
-      releaseStream();
-      setState("idle");
-      const name = cause instanceof DOMException ? cause.name : undefined;
-      // Immediate message from the exception alone — the permission state is not
-      // in hand yet, so classify as `unknown` (a NotAllowedError → the honest
-      // "allow it, or check settings" line). No blank while the query resolves.
-      setError(micRefusalMessage(classifyMicRefusal(name, "unknown")));
-      // Refine once the Permissions API answers, which splits the site block from
-      // the OS block (#203/#195). It is async, so re-check the generation before
-      // applying — a `cancel()`/newer `start()` may have taken over meanwhile —
-      // and only for the refusal it can sharpen. iOS returns `unknown` and this
-      // no-ops, leaving the immediate line.
-      if (name === "NotAllowedError") {
-        void queryMicPermission().then((permission) => {
-          if (permission === "unknown") return;
+        const mimeType = pickMimeType();
+        const recorder = new MediaRecorder(
+          stream,
+          mimeType ? { mimeType } : undefined
+        );
+        recorderRef.current = recorder;
+
+        // Bound to the array THIS recording owns, not to the ref.
+        //
+        // MediaRecorder delivers its last slice as a `dataavailable` after
+        // `stop()` is invoked and before `onstop`. A handler that followed the
+        // ref would write that slice into whatever array the ref happens to
+        // name by then — and `cancel()` (pagehide, navigation, unmount) puts a
+        // fresh one there. For a take shorter than one 250 ms timeslice, and on
+        // WebKit builds that ignore the timeslice and emit a single blob on
+        // stop, that diverted slice is the entire recording. Following the array
+        // also stops an old recorder's final slice landing on a newer take.
+        const chunks: Blob[] = [];
+        chunksRef.current = chunks;
+
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) chunks.push(event.data);
+        };
+
+        // The mic can be taken mid-take — an incoming call, a Bluetooth device
+        // change, an OS audio interruption — which ends the capture track and
+        // inactivates the recorder on its own. Without this the hook never learns:
+        // state stays "recording", the timer keeps ticking, Record stays a live
+        // no-op, and the chunks captured before the interruption are stranded
+        // (#59). Freeze the UI into `processing` so Record is dead and the timer
+        // stops, and leave the state where the sheet's own commit path can stop
+        // it — `stop()` then recovers those chunks instead of dropping the take.
+        // Since #614 the sheet does not wait for Back to do that: `processing`
+        // with no close in flight is an ended take, and the recorder commits it
+        // in place through the same path the Stop tap runs. Guarded by generation so an interruption on a superseded
+        // recorder cannot repaint a newer one. `MediaStreamTrack.stop()` (our own
+        // teardown) does NOT fire `ended`, so this only reacts to real losses.
+        //
+        // A track the platform MUTES instead of ending is the same loss to the
+        // translator (#1294): the spec's "temporarily unable to provide data",
+        // which an OS audio interruption such as an alarm can produce, fires
+        // `mute` and neither `ended` nor `error`. Left unbound, the state stayed
+        // "recording" over a take the engine had stopped filling — the timer
+        // kept counting and the live scope scrolled the analyser's zeros as a
+        // flat line until Stop. So `mute` is bound to this same handler. The
+        // recorder is still active then, so the still-active arm leaves its
+        // tracks up for `stop()`'s flush; the sheet's commit runs that `stop()`
+        // in the same commit as the freeze. Sealing on a mute is a product
+        // reading, not only an engineering one: an interruption ends the take
+        // (#836), and the translator appends to it afterwards if they wish. An
+        // `unmute` is never waited for.
+        //
+        // The still-active arm (recorder not yet "inactive") is reported once
+        // per take so tester phones show whether it is ever reached (#478).
+        // The row carries only what this frame can observe — `recorder.state`
+        // and `event.type`, i.e. which feed fired (`error` from the recorder,
+        // `ended` or `mute` from a track). Whether the mic is still hot is NOT
+        // observable here: on `ended` the track is already dead, and an `error`
+        // at "recording" may be followed by an `ended` that reaches the inactive
+        // arm and releases everything — so the row must not assert it.
+        //
+        // Per take, not per call: a fresh binding per start() closure, like
+        // `chunks` above. `onInterrupted` is bound to `onerror` AND every
+        // track's `onended` and `onmute`, so one interruption can invoke it more
+        // than once, in different tasks — and the funnel's own dedup collapses only the
+        // same Error identity within one microtask, which a synthesized Error
+        // per call is not. Never reset: a take that hits the still-active arm
+        // is frozen at "processing" and cannot resume, so per-take and
+        // per-interruption coincide today. If a take ever continues after an
+        // interruption, this boolean would suppress a second, genuine one.
+        let interruptionReported = false;
+        const onInterrupted = (event: Event) => {
           if (generation !== generationRef.current) return;
-          setError(micRefusalMessage(classifyMicRefusal(name, permission)));
+          clearTick();
+          // DISCONNECT the tap's graph (readLevel -> 0) always. Whether its cloned
+          // tracks are stopped depends on the recorder state below, exactly as for
+          // the original tracks.
+          tapRef.current?.disconnect();
+          // Cut the live-scope push synchronously, like the tap above — a queued
+          // rAF must not fold a post-interrupt column into the frozen freeze (R3).
+          recordingRef.current = false;
+          setState("processing");
+          // Release the mic the moment the recorder has actually ended. On the
+          // `error` path the track can still be live — a hot mic on a frozen sheet
+          // until Back, potentially minutes. Only once inactive: the chunks are
+          // then final, so stopping the track drops no audio; on the `ended` path
+          // the track is already dead and this is a no-op.
+          if (recorder.state === "inactive") {
+            // Chunks final — stop BOTH the original tracks AND the VU clone. A
+            // cloned getUserMedia track is independent, so disconnect() alone left
+            // it live and kept the mic device captured until Back (a hot mic the
+            // original-track stop was written to prevent — George R-B6). Safe here
+            // for the same reason the original stop is: the chunks are final. NOT
+            // on the error path (recorder still active), where clone-stop could
+            // truncate the slice stop() will recover.
+            if (stream) stopTracks(stream, "recorder-release-track");
+            closeTap();
+          } else if (!interruptionReported) {
+            interruptionReported = true;
+            reportFailure(
+              new Error(
+                `Recorder interrupted via "${event.type}" while still "${recorder.state}" (still-active arm, #478)`,
+                // The `error` feed's event carries the native failure as
+                // `.error` (lib.dom types `MediaRecorder.onerror`'s event as
+                // `ErrorEvent`; `MediaRecorderErrorEvent` is not declared at
+                // TypeScript 5.9.3, so this narrows structurally rather than
+                // by that name). `describeCause` walks `.cause`, so the durable
+                // row names the DOMException — `NotReadableError`,
+                // `InvalidStateError` — instead of only that an error arrived
+                // (George R1 P3 on #498). The `ended` feed has no such field:
+                // `undefined` keeps that row's shape unchanged.
+                { cause: "error" in event ? event.error : undefined }
+              ),
+              "recorder-interrupted-active"
+            );
+          }
+        };
+        recorder.onerror = onInterrupted;
+        stream.getTracks().forEach((track) => {
+          track.onended = onInterrupted;
+          track.onmute = onInterrupted;
         });
+
+        recorder.start(250);
+        // A new take starts from an empty live-waveform scope (#120) — the ring
+        // must not carry the previous take's tail into this one.
+        scopeRef.current?.reset();
+        // Open the VU tap on the live stream. Non-fatal: a device with a quirky
+        // Web Audio implementation should still record even if the meter cannot
+        // be wired, so a failure here is logged and the recorder runs meterless.
+        try {
+          tapRef.current = createLevelTap(stream);
+          setMeterFailed(false);
+        } catch (tapCause) {
+          console.error("Could not open the level meter", tapCause);
+          tapRef.current = null;
+          setMeterFailed(true);
+        }
+        startedAtRef.current = performance.now();
+        setElapsedMs(0);
+        // The ring may advance from the next rAF on — set before the state edge.
+        recordingRef.current = true;
+        takeOpenRef.current = true;
+        setState("recording");
+
+        startTick();
+        return true;
+      } catch (cause) {
+        releaseMicClaim();
+        if (stream) abandonStream(stream);
+        // A `cancel()` or a newer `start()` owns the state and the message now.
+        // Reporting this failure over theirs is the stale-message problem
+        // `cancel()` clears `error` to avoid.
+        if (generation !== generationRef.current) return false;
+        releaseStream();
+        setState("idle");
+        const name = cause instanceof DOMException ? cause.name : undefined;
+        // Immediate message from the exception alone — the permission state is not
+        // in hand yet, so classify as `unknown` (a NotAllowedError → the honest
+        // "allow it, or check settings" line). No blank while the query resolves.
+        setError(micRefusalMessage(classifyMicRefusal(name, "unknown")));
+        // Refine once the Permissions API answers, which splits the site block from
+        // the OS block (#203/#195). It is async, so re-check the generation before
+        // applying — a `cancel()`/newer `start()` may have taken over meanwhile —
+        // and only for the refusal it can sharpen. iOS returns `unknown` and this
+        // no-ops, leaving the immediate line.
+        if (name === "NotAllowedError") {
+          void queryMicPermission().then((permission) => {
+            if (permission === "unknown") return;
+            if (generation !== generationRef.current) return;
+            setError(micRefusalMessage(classifyMicRefusal(name, permission)));
+          });
+        }
+        return false;
       }
-      return false;
-    }
-  }, [
-    abandonStream,
-    clearTick,
-    closeTap,
-    releaseStream,
-    setState,
-    startTick,
-    supported,
-  ]);
+    },
+    [
+      abandonStream,
+      clearTick,
+      closeTap,
+      releaseStream,
+      setState,
+      startTick,
+      supported,
+    ]
+  );
 
   const stop = useCallback(async (): Promise<StopResult> => {
     const recorder = recorderRef.current;

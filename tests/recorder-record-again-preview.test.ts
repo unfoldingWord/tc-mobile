@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Recorder, type RecorderHandle } from "@/components/recorder";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
+import type { StartOptions } from "@/hooks/use-recorder";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import type { SegmentId } from "@/types/domain";
 
@@ -110,7 +111,10 @@ async function setup(playingBuffer = false) {
     playBuffer: vi.fn(),
     stopBuffer: vi.fn(),
     readPlaybackPosition: () => null,
-    startRecording: vi.fn(),
+    // The microphone is granted: run the erase the start carries (#1028).
+    startRecording: vi.fn(async (options?: StartOptions) =>
+      options?.beforeCapture ? options.beforeCapture() : true
+    ),
     stopRecording: vi.fn(async () => ({
       samples: new Int16Array(0),
       blob: null,
@@ -247,6 +251,33 @@ describe("playback stops when the confirm closes, either button or Back (#979 re
     await act(async () => reject(new Error("store failed")));
     expect(document.querySelector(".confirm-panel")).toBeNull();
     expect(audio.playBuffer).not.toHaveBeenCalled();
+  });
+
+  it("Play cannot start while Record again is waiting on the microphone, and can again once that is refused", async () => {
+    // #1028: the confirm is answered at the tap, but the erase waits for the
+    // grant. Nothing may start sounding behind the answered dialog, and a
+    // refusal must hand the dialog back whole.
+    const { audio } = await setup();
+    let refuse!: () => void;
+    (audio.startRecording as ReturnType<typeof vi.fn>).mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          refuse = () => resolve(false);
+        })
+    );
+    await act(async () => barRerecord().click());
+    await act(async () => button(strings.recordAgainConfirm).click());
+    await act(async () => button(strings.eraseConfirmPreviewPlay).click());
+    expect(audio.playBuffer).not.toHaveBeenCalled();
+
+    await act(async () => refuse());
+    expect(document.querySelector(".confirm-panel")).toBeNull();
+    expect(storage.clear).not.toHaveBeenCalled();
+    // The same confirm again, not left busy by the refused run.
+    await act(async () => barRerecord().click());
+    expect(button(strings.recordAgainConfirm).disabled).toBe(false);
+    await act(async () => button(strings.eraseConfirmPreviewPlay).click());
+    expect(audio.playBuffer).toHaveBeenCalledTimes(1);
   });
 
   it("a system Back stops it", async () => {

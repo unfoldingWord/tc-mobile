@@ -319,18 +319,21 @@ describe("recorder wiring (#640)", () => {
     )
   );
 
-  it("the Record tap builds the context at the offset it locks, and its deps carry editor (#1201)", () => {
-    // The pin runs THROUGH `onRecordButton`'s `useCallback` dependency list.
-    // Dropping `editor` from that list is not a stale buffer today:
-    // `useSegmentEditor` returns a fresh object every render, and
-    // `commitTake`, which is still listed, lists `editor` itself, so the
-    // callback is rebuilt on every render either way. The list is pinned
-    // because that coupling is an implementation detail of `commitTake`, not
-    // a contract of this callback. `react-hooks/exhaustive-deps` flags the
-    // drop too; this is the second gate, for the #212 bail-out shape, as in
-    // the Retry pin below.
+  it("a take's start builds the context at the offset it locks, and its deps carry editor (#1201)", () => {
+    // The pin runs THROUGH `startTake`'s `useCallback` dependency list.
+    // `startTake` is the start the Record tap and a confirmed Record again
+    // (#1028) both make, so the pin moved there with the statements.
+    // Dropping `editor` from that list is not caught by anything else here;
+    // `react-hooks/exhaustive-deps` flags the drop too, and this is the
+    // second gate, for the #212 bail-out shape, as in the Retry pin below.
     expect(src).toMatch(
-      /insertionOffset\.current = win\.centerlineSample;\s*setCaptureContext\(\s*buildCaptureContext\(\s*editor\.working,\s*win\.centerlineSample,\s*editor\.peaks\s*\)\s*\);\s*audio\.startRecording\(\);\s*\},\s*\[recording,\s*view,\s*audio,\s*editor,\s*win\.centerlineSample,\s*commitTake\]\s*\);/
+      /insertionOffset\.current = win\.centerlineSample;\s*setCaptureContext\(\s*buildCaptureContext\(\s*editor\.working,\s*win\.centerlineSample,\s*editor\.peaks\s*\)\s*\);\s*return beforeCapture\s*\?\s*audio\.startRecording\(\{ beforeCapture \}\)\s*:\s*audio\.startRecording\(\);\s*\},\s*\[audio,\s*editor,\s*win\.centerlineSample\]\s*\);/
+    );
+  });
+
+  it("the Record tap starts through it", () => {
+    expect(src).toMatch(
+      /void startTake\(\);\s*\},\s*\[recording,\s*view,\s*startTake,\s*commitTake\]\s*\);/
     );
   });
 
@@ -350,8 +353,15 @@ describe("recorder wiring (#640)", () => {
   });
 
   it("every mic start is one of those two", () => {
-    expect(src.match(/audio\.startRecording\(\);/g)).toHaveLength(2);
-    expect(src.match(/setCaptureContext\(/g)).toHaveLength(2);
+    // `startTake`'s two arms (with and without `beforeCapture`), and Retry.
+    expect(src.match(/audio\.startRecording\(/g)).toHaveLength(3);
+    expect(
+      src.match(/setCaptureContext\(\s*buildCaptureContext\(/g)
+    ).toHaveLength(2);
+    // The third write is Record again's (#1028): once the erase has landed
+    // there is nothing left to flank the take, so the context is null.
+    expect(src.match(/setCaptureContext\(/g)).toHaveLength(3);
+    expect(src.match(/setCaptureContext\(null\);/g)).toHaveLength(1);
   });
 
   it("the live scope is handed the context", () => {
