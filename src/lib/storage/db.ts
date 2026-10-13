@@ -879,8 +879,10 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
             tx.abort();
           } catch {
             // Already finished: nothing left to roll back. Reached only if the
-            // transaction committed before the error surfaced, and then the
-            // original error is still what the open reports below.
+            // transaction committed before the error surfaced. On that branch
+            // the open SUCCEEDS and the error is not reported: `upgradeFault`
+            // is read only when the open rejects. Not reachable from the
+            // current steps, which await IDB requests only.
           }
         });
         // The abort also rejects the transaction's own `done` promise, which
