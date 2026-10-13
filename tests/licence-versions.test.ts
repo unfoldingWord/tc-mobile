@@ -8,7 +8,10 @@ import {
   expandNoticeVersions,
   installedManifest,
   installedVersions,
+  missingVersionReason,
+  noticeNameForUrl,
   noticeVersionTokens,
+  unversionedPackages,
 } from "../scripts/licence-versions.mjs";
 
 /**
@@ -46,6 +49,73 @@ describe("installedVersions", () => {
     const root = fakeRoot({ nameless: {} });
     expect(installedVersions(root, ["missing", "nameless"])).toEqual({});
     expect(installedManifest(root, "missing")).toBeNull();
+  });
+});
+
+describe("saying what is wrong with a package (#1415)", () => {
+  it("tells a missing package from one whose manifest names no usable version", () => {
+    const root = fakeRoot({
+      nameless: {},
+      emptied: { version: "" },
+      fine: { version: "1.0.0" },
+    });
+    expect(missingVersionReason(root, "missing")).toBe("is not installed");
+    expect(missingVersionReason(root, "nameless")).toMatch(
+      /installed but its package\.json has no usable version/
+    );
+    expect(missingVersionReason(root, "emptied")).toMatch(/no usable version/);
+    expect(missingVersionReason(root, "fine")).toBeNull();
+  });
+
+  it("lists the unversioned packages with their reasons", () => {
+    const root = fakeRoot({ nameless: {}, fine: { version: "1.0.0" } });
+    expect(
+      unversionedPackages(root, ["fine", "missing", "nameless", "missing"])
+    ).toEqual([
+      { pkg: "missing", reason: "is not installed" },
+      {
+        pkg: "nameless",
+        reason: "is installed but its package.json has no usable version",
+      },
+    ]);
+  });
+
+  it("does not take an Object.prototype member for a versioned package", () => {
+    // `"constructor" in {}` is true; membership must be an own-property test.
+    const root = fakeRoot({});
+    expect(unversionedPackages(root, ["constructor", "toString"])).toEqual([
+      { pkg: "constructor", reason: "is not installed" },
+      { pkg: "toString", reason: "is not installed" },
+    ]);
+  });
+
+  it("puts the reason in the expandNoticeVersions error", () => {
+    expect(() =>
+      expandNoticeVersions(
+        "x {{version:x}}",
+        () => undefined,
+        "X.txt",
+        () => "is installed but its package.json has no usable version"
+      )
+    ).toThrow(/names a package that is installed but its package\.json has no/);
+  });
+});
+
+describe("noticeNameForUrl (dev server, #1415)", () => {
+  it("matches a notice at the root base, with or without a query", () => {
+    expect(noticeNameForUrl("/licenses/MIT.txt")).toBe("MIT.txt");
+    expect(noticeNameForUrl("/licenses/MIT.txt?t=1", "/")).toBe("MIT.txt");
+  });
+
+  it("matches under a base other than /, and not without it", () => {
+    expect(noticeNameForUrl("/x/licenses/MIT.txt", "/x/")).toBe("MIT.txt");
+    expect(noticeNameForUrl("/licenses/MIT.txt", "/x/")).toBeNull();
+  });
+
+  it("refuses a path that is not a notice", () => {
+    expect(noticeNameForUrl("/licenses/../secret.txt")).toBeNull();
+    expect(noticeNameForUrl("/other/MIT.txt")).toBeNull();
+    expect(noticeNameForUrl("/licenses/MIT.json")).toBeNull();
   });
 });
 

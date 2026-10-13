@@ -48,7 +48,7 @@ already-shipping gap that pinning `build.target` could not fix — resolved not
 by changing the CSS, but by the DRI raising the documented floor to 15.4 to
 match what the CSS already needed (#1052).
 
-### JS: latent, now pinned
+### JS: a latent default, now set explicitly
 
 Vite 8.3.1 (the version measured for #1017, a dated observation and not a pin;
 later 8.x patches install without this section being re-measured), when

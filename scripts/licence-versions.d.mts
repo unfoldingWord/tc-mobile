@@ -6,6 +6,21 @@ export declare function installedManifest(
   pkg: string
 ): { version?: string; license?: string } | null;
 
+export declare function missingVersionReason(
+  root: string,
+  pkg: string
+): string | null;
+
+export declare function unversionedPackages(
+  root: string,
+  packages: Iterable<string>
+): { pkg: string; reason: string }[];
+
+export declare function noticeNameForUrl(
+  url: string,
+  base?: string
+): string | null;
+
 export declare function installedVersions(
   root: string,
   packages: Iterable<string>
@@ -16,5 +31,6 @@ export declare function noticeVersionTokens(text: string): string[];
 export declare function expandNoticeVersions(
   text: string,
   versionOf: (pkg: string) => string | undefined,
-  label?: string
+  label?: string,
+  reasonOf?: (pkg: string) => string | null
 ): string;

@@ -27,6 +27,9 @@ import { NATIVE_TEARDOWN_SW } from "./src/lib/service-worker-policy.ts";
 import {
   expandNoticeVersions,
   installedVersions,
+  missingVersionReason,
+  noticeNameForUrl,
+  unversionedPackages,
 } from "./scripts/licence-versions.mjs";
 
 // The exact commit a build came from, for the footer stamp (with the version).
@@ -129,10 +132,12 @@ const disclosedPackages = disclosedComponents.map(
   (c) => c.pinPackage ?? c.name
 );
 const depVersions = installedVersions(import.meta.dirname, disclosedPackages);
-const notInstalled = disclosedPackages.filter((p) => !(p in depVersions));
-if (notInstalled.length > 0) {
+const unversioned = unversionedPackages(import.meta.dirname, disclosedPackages);
+if (unversioned.length > 0) {
   throw new Error(
-    `licenses.ts discloses packages that are not installed: ${notInstalled.join(", ")}`
+    `licenses.ts discloses packages with no installed version: ${unversioned
+      .map(({ pkg, reason }) => `${pkg} (${reason})`)
+      .join(", ")}`
   );
 }
 
@@ -144,6 +149,7 @@ if (notInstalled.length > 0) {
 function licenceNoticeVersionsPlugin(): Plugin {
   const root = import.meta.dirname;
   const versionOf = (pkg: string) => installedVersions(root, [pkg])[pkg];
+  const reasonOf = (pkg: string) => missingVersionReason(root, pkg);
   let outDir = "";
   let publicDir = "";
   return {
@@ -154,12 +160,17 @@ function licenceNoticeVersionsPlugin(): Plugin {
     },
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        const m = /^\/licenses\/([\w-]+\.txt)(?:\?.*)?$/.exec(req.url ?? "");
-        const file = m ? path.join(publicDir, "licenses", m[1]!) : "";
-        if (!m || !existsSync(file)) return next();
+        const name = noticeNameForUrl(req.url ?? "", server.config.base);
+        const file = name ? path.join(publicDir, "licenses", name) : "";
+        if (!name || !existsSync(file)) return next();
         res.setHeader("Content-Type", "text/plain; charset=utf-8");
         res.end(
-          expandNoticeVersions(readFileSync(file, "utf8"), versionOf, m[1])
+          expandNoticeVersions(
+            readFileSync(file, "utf8"),
+            versionOf,
+            name,
+            reasonOf
+          )
         );
       });
     },
@@ -167,15 +178,33 @@ function licenceNoticeVersionsPlugin(): Plugin {
       order: "post",
       sequential: true,
       handler() {
+        // Every build mode (web, e2e, native) copies public/, so a missing
+        // directory means the notices did not ship: fail rather than skip
+        // (#1415).
         const dir = path.join(outDir, "licenses");
-        if (!existsSync(dir)) return;
+        if (!existsSync(dir)) {
+          throw new Error(
+            `licence-notice-versions: ${dir} is missing, so no licence notice shipped`
+          );
+        }
         for (const name of readdirSync(dir)) {
           if (!name.endsWith(".txt")) continue;
           const file = path.join(dir, name);
-          writeFileSync(
-            file,
-            expandNoticeVersions(readFileSync(file, "utf8"), versionOf, name)
+          const filled = expandNoticeVersions(
+            readFileSync(file, "utf8"),
+            versionOf,
+            name,
+            reasonOf
           );
+          // The fill only matches well-formed tokens, so a malformed one
+          // (`{{version: react}}`) would pass through it: look for the bare
+          // opener, as tests/licenses.test.ts does.
+          if (filled.includes("{{version:")) {
+            throw new Error(
+              `licence-notice-versions: ${name} still holds a "{{version:" token after the fill`
+            );
+          }
+          writeFileSync(file, filled);
         }
       },
     },
