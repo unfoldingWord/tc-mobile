@@ -187,10 +187,15 @@ it("lets a load started after a rename show a second writer's label (Frank r1 on
     markStaleReadStarted = resolve;
   });
   // Order marker: the label the hook was showing at the instant the load
-  // entered the read. `undefined` means the read never started. If the rename
-  // lands first (the await below removed), this sees the renamed label.
+  // entered the read, plus a flag set only inside the mock, so "the read never
+  // started" and "no row matched" are not both `undefined`. The assertions
+  // after the rename go red two ways: the read had not started by then (the
+  // flag is still false), or it started after the hook already showed the
+  // renamed label (the marker holds that label, not null).
+  let readStarted = false;
   let labelWhenReadStarted: string | null | undefined = undefined;
   vi.mocked(getSegmentsOfChapter).mockImplementationOnce(() => {
+    readStarted = true;
     labelWhenReadStarted = hook().rows.find(
       (r) => r.segmentId === segmentId
     )?.label;
@@ -207,7 +212,8 @@ it("lets a load started after a rename show a second writer's label (Frank r1 on
   await act(async () => {
     expect(await hook().renameSegment(segmentId, "verses 3–4")).toBe(true);
   });
-  // The read began while the label was still unset, i.e. before the rename.
+  // The read began, and while the label was still unset, i.e. before the rename.
+  expect(readStarted).toBe(true);
   expect(labelWhenReadStarted).toBeNull();
   // A second writer lands BEFORE the stale read settles, so no load ever
   // reads this hook's own label back from the store.
