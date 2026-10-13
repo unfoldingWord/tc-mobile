@@ -26,6 +26,7 @@ import { disclosedComponents } from "./src/components/licenses.ts";
 import { NATIVE_TEARDOWN_SW } from "./src/lib/service-worker-policy.ts";
 import {
   expandNoticeVersions,
+  installedVersion,
   installedVersions,
   missingVersionReason,
   noticeNameForUrl,
@@ -148,7 +149,7 @@ if (unversioned.length > 0) {
 // package throws, so a notice for a package that left the tree fails loudly.
 function licenceNoticeVersionsPlugin(): Plugin {
   const root = import.meta.dirname;
-  const versionOf = (pkg: string) => installedVersions(root, [pkg])[pkg];
+  const versionOf = (pkg: string) => installedVersion(root, pkg);
   const reasonOf = (pkg: string) => missingVersionReason(root, pkg);
   let outDir = "";
   let publicDir = "";
@@ -187,8 +188,13 @@ function licenceNoticeVersionsPlugin(): Plugin {
             `licence-notice-versions: ${dir} is missing, so no licence notice shipped`
           );
         }
-        for (const name of readdirSync(dir)) {
-          if (!name.endsWith(".txt")) continue;
+        const notices = readdirSync(dir).filter((n) => n.endsWith(".txt"));
+        if (notices.length === 0) {
+          throw new Error(
+            `licence-notice-versions: ${dir} holds no .txt, so no licence notice shipped`
+          );
+        }
+        for (const name of notices) {
           const file = path.join(dir, name);
           const filled = expandNoticeVersions(
             readFileSync(file, "utf8"),

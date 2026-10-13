@@ -63,6 +63,16 @@ export function installedVersions(root, packages) {
 }
 
 /**
+ * The installed version of one package, or undefined. Own-property lookup, so
+ * a token naming `constructor` or `toString` is "not installed" rather than an
+ * inherited function that would be written into a notice (#1415).
+ */
+export function installedVersion(root, pkg) {
+  const versions = installedVersions(root, [pkg]);
+  return Object.hasOwn(versions, pkg) ? versions[pkg] : undefined;
+}
+
+/**
  * The packages of `packages` with no usable installed version, each with the
  * reason, in order. Membership is `Object.hasOwn`, not `in`: a package named
  * like an `Object.prototype` member (`constructor`) must not look versioned
@@ -81,7 +91,9 @@ export function unversionedPackages(root, packages) {
 /**
  * The notice file name a dev-server request URL asks for, or null. A plugin
  * middleware runs BEFORE Vite strips `base`, so under `--base /x/` the real
- * URL is `/x/licenses/NAME.txt`; the base is removed here (#1415).
+ * URL is `/x/licenses/NAME.txt`; the base is removed here (#1415). An absolute
+ * `base` (a full URL) is not a prefix of `req.url`, so the middleware passes
+ * the request through; no `base` is configured today.
  */
 export function noticeNameForUrl(url, base = "/") {
   const prefix = base.endsWith("/") ? base : `${base}/`;

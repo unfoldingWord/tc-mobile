@@ -21,6 +21,11 @@ export declare function noticeNameForUrl(
   base?: string
 ): string | null;
 
+export declare function installedVersion(
+  root: string,
+  pkg: string
+): string | undefined;
+
 export declare function installedVersions(
   root: string,
   packages: Iterable<string>

@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   expandNoticeVersions,
   installedManifest,
+  installedVersion,
   installedVersions,
   missingVersionReason,
   noticeNameForUrl,
@@ -116,6 +117,28 @@ describe("noticeNameForUrl (dev server, #1415)", () => {
     expect(noticeNameForUrl("/licenses/../secret.txt")).toBeNull();
     expect(noticeNameForUrl("/other/MIT.txt")).toBeNull();
     expect(noticeNameForUrl("/licenses/MIT.json")).toBeNull();
+  });
+});
+
+describe("installedVersion (#1415)", () => {
+  it("reads an installed version and nothing else", () => {
+    const root = fakeRoot({ plain: { version: "1.2.3" } });
+    expect(installedVersion(root, "plain")).toBe("1.2.3");
+    expect(installedVersion(root, "missing")).toBeUndefined();
+  });
+
+  it("makes a token named like an Object.prototype member fail the fill", () => {
+    const root = fakeRoot({});
+    for (const name of ["constructor", "toString"]) {
+      expect(installedVersion(root, name)).toBeUndefined();
+      expect(() =>
+        expandNoticeVersions(
+          `x {{version:${name}}}`,
+          (pkg) => installedVersion(root, pkg),
+          "X.txt"
+        )
+      ).toThrow(/names a package that is not installed/);
+    }
   });
 });
 
