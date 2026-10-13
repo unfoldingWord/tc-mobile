@@ -19,6 +19,7 @@
 
 import type { IDBPDatabase } from "idb";
 
+import type { CoverColourKey } from "@/lib/cover-colour";
 import { getDb, type TcMobileDb } from "./db";
 import { resolveSegmentAudio } from "./segment-audio";
 import { isFinished } from "./takes";
@@ -118,7 +119,7 @@ export async function createBook(
   name: string,
   languageCode: string | null = null,
   now: number = Date.now(),
-  coverColourKey: string | null = null
+  coverColourKey: CoverColourKey | null = null
 ): Promise<Book> {
   const db = await getDb();
   const tx = db.transaction("books", "readwrite");
