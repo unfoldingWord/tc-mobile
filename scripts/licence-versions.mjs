@@ -35,6 +35,20 @@ export function installedManifest(root, pkg) {
 }
 
 /**
+ * Why `pkg` has no entry in `installedVersions()`, in words for an error
+ * message: no manifest at all, or a manifest that names no usable `version`
+ * (absent, empty or not a string). Two different repairs, so two sentences
+ * (#1415). Returns null when the package does have a usable version.
+ */
+export function missingVersionReason(root, pkg) {
+  const manifest = installedManifest(root, pkg);
+  if (manifest === null) return "is not installed";
+  const version = manifest.version;
+  if (typeof version === "string" && version !== "") return null;
+  return "is installed but its package.json has no usable version";
+}
+
+/**
  * `{ [package]: installed version }` for each name in `packages`. A package
  * that is not installed is simply absent from the result: the caller decides
  * whether that is fatal (the build) or a failing assertion (the tests).
@@ -48,6 +62,47 @@ export function installedVersions(root, packages) {
   return out;
 }
 
+/**
+ * The installed version of one package, or undefined. Own-property lookup, so
+ * a token naming `constructor` or `toString` is "not installed" rather than an
+ * inherited function that would be written into a notice (#1415).
+ */
+export function installedVersion(root, pkg) {
+  const versions = installedVersions(root, [pkg]);
+  return Object.hasOwn(versions, pkg) ? versions[pkg] : undefined;
+}
+
+/**
+ * The packages of `packages` with no usable installed version, each with the
+ * reason, in order. Membership is `Object.hasOwn`, not `in`: a package named
+ * like an `Object.prototype` member (`constructor`) must not look versioned
+ * (#1415).
+ */
+export function unversionedPackages(root, packages) {
+  const versions = installedVersions(root, packages);
+  return [...new Set(packages)]
+    .filter((pkg) => !Object.hasOwn(versions, pkg))
+    .map((pkg) => ({
+      pkg,
+      reason: missingVersionReason(root, pkg) ?? "has no usable version",
+    }));
+}
+
+/**
+ * The notice file name a dev-server request URL asks for, or null. A plugin
+ * middleware runs BEFORE Vite strips `base`, so under `--base /x/` the real
+ * URL is `/x/licenses/NAME.txt`; the base is removed here (#1415). An absolute
+ * `base` (a full URL) is not a prefix of `req.url`, so the middleware passes
+ * the request through; no `base` is configured today.
+ */
+export function noticeNameForUrl(url, base = "/") {
+  const prefix = base.endsWith("/") ? base : `${base}/`;
+  const rest = url.startsWith(prefix) ? url.slice(prefix.length) : null;
+  const m =
+    rest === null ? null : /^licenses\/([\w-]+\.txt)(?:\?.*)?$/.exec(rest);
+  return m ? m[1] : null;
+}
+
 /** The packages a notice text asks a version for, in order of appearance. */
 export function noticeVersionTokens(text) {
   return [...text.matchAll(TOKEN)].map((m) => m[1]);
@@ -57,13 +112,19 @@ export function noticeVersionTokens(text) {
  * `text` with every `{{version:<package>}}` replaced by `versionOf(package)`.
  * Throws on a package `versionOf` cannot name, so a notice for a package that
  * is no longer installed fails the build instead of shipping a token.
+ * `reasonOf(package)` words WHY it cannot (default: "is not installed").
  */
-export function expandNoticeVersions(text, versionOf, label = "notice") {
+export function expandNoticeVersions(
+  text,
+  versionOf,
+  label = "notice",
+  reasonOf = () => "is not installed"
+) {
   return text.replace(TOKEN, (_, pkg) => {
     const version = versionOf(pkg);
     if (!version) {
       throw new Error(
-        `${label}: {{version:${pkg}}} names a package that is not installed`
+        `${label}: {{version:${pkg}}} names a package that ${reasonOf(pkg) ?? "is not installed"}`
       );
     }
     return version;
