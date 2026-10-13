@@ -92,11 +92,12 @@ describe("an abort during the encode", () => {
 
   it("rejects with the custom reason after abort(customReason)", async () => {
     const run = new AbortController();
-    const { settled } = await encodeUntilPosted(run.signal);
+    const { worker, settled } = await encodeUntilPosted(run.signal);
     run.abort(new Error("custom reason"));
     const cause = await settled;
     expect(cause).toBe(run.signal.reason);
     expect(isAbortCause(cause, run.signal)).toBe(true);
+    expect(worker.terminated).toBe(true);
   });
 
   it("is not reported to the failure funnel by settleProbe", async () => {
