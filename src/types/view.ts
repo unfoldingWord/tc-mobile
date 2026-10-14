@@ -44,7 +44,10 @@ export interface ChapterRow {
 
 export interface BookCard {
   readonly bookId: BookId;
-  readonly name: string;
+  /** The facilitator's name, or null ⇒ render the placeholder from `number`. */
+  readonly name: string | null;
+  /** The placeholder slot, shown only while `name` is null (#169). */
+  readonly number: number;
   readonly chapters: readonly ChapterRow[];
   /**
    * `Book.coverColourKey` (#957), carried through unresolved so the O4 cover
@@ -55,6 +58,14 @@ export interface BookCard {
    * resolves exactly like a `null`: the id-derived fallback.
    */
   readonly coverColourKey?: string | null;
+  /**
+   * `Book.createdAt`, so the guide (`components/guided-step.ts`) can find the
+   * book that was just created wherever it now sits on the shelf: a book can
+   * be moved off the top (#338). Both production builders in
+   * `hooks/use-books.ts` set it. Optional so a test fixture can omit it; the
+   * guide then takes the top card, which is where a create puts a book.
+   */
+  readonly createdAt?: number;
 }
 
 // ── Segments screen (B3) ───────────────────────────────────────────────────

@@ -7,7 +7,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
-import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
@@ -16,12 +15,11 @@ import { stripCssComments } from "./support";
 
 /**
  * Press-and-hold reorder of CHAPTERS on the Books screen (#953 PR2b), wired:
- * the real `BooksScreen`, with `useBooks` and `useDesign` replaced at their
- * boundary (the `books-delete-in-sheet-o4` pattern), so these cases are about
- * the call sites — that the hold starts on the chapter row (the workbench's
- * `data-reorder="ch"` sits on the whole row button), that the O4 switch gates
- * it, and that the one `moveChapter` call happens on the drop and nowhere
- * else. The gesture itself is `hooks/use-reorder-gesture.ts`, shared with
+ * the real `BooksScreen`, with `useBooks` replaced at its boundary (the
+ * `books-delete-in-sheet-o4` pattern), so these cases are about the call
+ * sites — that the hold starts on the chapter row (the workbench's
+ * `data-reorder="ch"` sits on the whole row button), and that the one
+ * `moveChapter` call happens on the drop and nowhere else. The gesture itself is `hooks/use-reorder-gesture.ts`, shared with
  * the Segments list and pinned in `tests/segments-reorder-o4.test.ts` and
  * `tests/reorder-gesture.test.ts`.
  *
@@ -30,11 +28,6 @@ import { stripCssComments } from "./support";
  * real touch panning, the cascade (whether `o4/books.css` paints the lift),
  * and anything on a device.
  */
-
-const design = vi.hoisted(() => ({ current: "o4" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 
 const state = vi.hoisted(() => ({
   books: [] as BookCard[],
@@ -47,7 +40,7 @@ const state = vi.hoisted(() => ({
 vi.mock("@/hooks/use-books", () => ({
   useBooks: () => ({
     books: state.books,
-    newBookPlaceholder: "Book 001",
+    newBookNumber: 1,
     loading: false,
     loaded: true,
     error: null,
@@ -105,10 +98,11 @@ const shelf = (): BookCard[] => [
   {
     bookId: mark,
     name: "Mark",
+    number: 1,
     coverColourKey: "teal",
     chapters: [chapter(0), chapter(1), chapter(2, { name: "Mark 3" })],
   },
-  { bookId: ruth, name: "Ruth", coverColourKey: null, chapters: [] },
+  { bookId: ruth, name: "Ruth", number: 1, coverColourKey: null, chapters: [] },
 ];
 
 function rect(top: number, height: number): DOMRect {
@@ -151,7 +145,6 @@ beforeEach(() => {
       return rect(0, 700);
     }
   );
-  design.current = "o4";
   state.books = shelf();
   moveChapter = vi.fn<(id: ChapterId, toIndex: number) => Promise<boolean>>(
     () => Promise.resolve(true)
@@ -166,7 +159,6 @@ afterEach(async () => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  design.current = "o4";
 });
 
 async function render() {
@@ -182,8 +174,7 @@ async function render() {
 }
 
 /** Mount, then open Mark so its chapters show (books start collapsed). */
-async function mount(look: Design = "o4") {
-  design.current = look;
+async function mount() {
   await render();
   const toggle = [...document.querySelectorAll("button")].find(
     (b) => b.getAttribute("aria-label") === strings.bookRow("Mark", 3, false)
@@ -248,7 +239,10 @@ describe("the O4 hold area (#953 PR2b: the chapter row)", () => {
     expect(items()[1]!.classList.contains("books-lifted")).toBe(true);
   });
 
-  it("never starts on the book's own buttons", async () => {
+  // The book's own row is now the BOOK's hold area (#338,
+  // `books-shelf-reorder-o4.test.ts`); `lifted()` reads the chapter lift, so
+  // this still pins that no chapter is lifted or moved from there.
+  it("never lifts a chapter from the book's own buttons", async () => {
     await mount();
     const head = document.querySelector(".books-card-head")!;
     for (const target of head.querySelectorAll("button")) {
@@ -453,26 +447,17 @@ describe("the drag and the one write", () => {
   });
 });
 
-describe("the switch-off look does not gain the gesture", () => {
-  it("renders no hold area and no live region, and a held row lifts nothing", async () => {
-    await mount("current");
-    expect(items()).toHaveLength(3);
-    expect(document.querySelector("[data-reorder-handle]")).toBeNull();
-    expect(document.querySelector("[data-reorder-status]")).toBeNull();
-    await hold(row(0), 34);
-    await act(async () => pointer(row(0), "pointermove", 249));
-    await act(async () => pointer(row(0), "pointerup", 249));
-    expect(lifted()).toBeNull();
-    expect(document.querySelector("[data-reordering]")).toBeNull();
-    expect(moveChapter).not.toHaveBeenCalled();
-  });
-
-  it("marks exactly the chapter rows as the hold area in O4", async () => {
+describe("the hold area's markers", () => {
+  it("marks exactly the chapter rows as the hold area", async () => {
     await mount();
+    // Inside the chapter list: the book rows are hold areas too, for the book
+    // reorder (#338), and are pinned in `books-shelf-reorder-o4.test.ts`.
     expect(
-      [...document.querySelectorAll("[data-reorder-handle]")].map(
-        (el) => el.className
-      )
+      [
+        ...document.querySelectorAll(
+          "#chapters-" + mark + " [data-reorder-handle]"
+        ),
+      ].map((el) => el.className)
     ).toEqual(["books-chapter", "books-chapter", "books-chapter"]);
   });
 });
@@ -500,7 +485,7 @@ describe("o4/books.css: the lift (§3, §4)", () => {
       .map((d) => d.replace(/\s+/g, " ").trim())
       .filter(Boolean);
   }
-  const O4 = '[data-design="o4"]';
+  const O4 = ":root";
 
   it("lifts the row at scale 1.03 on z 8 and slides the neighbours over 160 ms", () => {
     expect(

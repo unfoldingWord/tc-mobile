@@ -96,7 +96,6 @@ describe("App holds ONE ordinal, and the sheet's saves stamp it on the take (#16
     // `setRecordingOrdinal(null)` sits next to a clear — but neither asks what
     // the surviving call PASSES. `setRecordingOrdinal(0)`, and a decoupling
     // that writes `ordinal + 1` after `setRecorder`, both survived those two.
-    // Confirmed by running them, not reasoned about.
     //
     // So read the open handler's own body and pin the pair. Adjacency is the
     // claim: the ordinal is captured for the segment being opened, in the same

@@ -44,11 +44,11 @@ import { matchingBraceClose, stripComments } from "./support";
  *      its own) releases the stream and closes the same LOCAL tap after the
  *      blob is sealed (#485 finding 2).
  *
- * WHY A TEXTUAL GATE AND NOT A BEHAVIOURAL TEST. There is no `MediaRecorder`
- * in this Node-only suite, and the render harness (#197) runs no effects and
- * does not `act()`, so `cancel()` and `stop()` — both
- * `useCallback`s inside `useRecorder()` — cannot be exercised at all, and a
- * throw from either native teardown call cannot be simulated. Removing
+ * WHY A TEXTUAL GATE AND NOT A BEHAVIOURAL TEST. `cancel()` and `stop()` are
+ * both `useCallback`s inside `useRecorder()`. The client mounts of that hook
+ * (`tests/use-recorder-release-refs.test.ts`) reach them over a fake
+ * `MediaRecorder`, but no fake there throws from a native teardown call, and
+ * the render harness (#197) runs no effects. Removing
  * either guard leaves every other test in the repo green. That is precisely
  * the mutation-survives case AGENTS.md says to close with a gate rather than
  * leave to a reviewer's memory, and it is the same answer #108 reached one

@@ -9,8 +9,8 @@ import {
   createBook,
   renameSegment,
 } from "@/lib/storage/books";
-import { addTake, setSegmentFinished } from "@/lib/storage/takes";
-import { newClipId, putClip } from "@/lib/storage/clips";
+import { saveTake, setSegmentFinished } from "@/lib/storage/takes";
+import { newClipId } from "@/lib/storage/clips";
 import { commitTranscode } from "@/lib/storage/transcode";
 import { closeDb, getDb } from "@/lib/storage/db";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
@@ -89,8 +89,7 @@ describe("loadRecorderSegmentView", () => {
     const segmentId = await freshSegment();
     const clipId = newClipId();
     const pcm = samples(500);
-    const meta = await putClip(clipId, pcm, CANONICAL_SAMPLE_RATE);
-    await addTake(segmentId, clipId, meta.durationMs);
+    await saveTake(segmentId, clipId, pcm, CANONICAL_SAMPLE_RATE);
     const computePeaksSpy = vi.spyOn(peaksModule, "computePeaks");
 
     const view = await loadRecorderSegmentView(segmentId);
@@ -112,8 +111,7 @@ describe("loadRecorderSegmentView", () => {
   it("carries the finished flag through for a finished PCM segment", async () => {
     const segmentId = await freshSegment();
     const clipId = newClipId();
-    const meta = await putClip(clipId, samples(500), CANONICAL_SAMPLE_RATE);
-    await addTake(segmentId, clipId, meta.durationMs);
+    await saveTake(segmentId, clipId, samples(500), CANONICAL_SAMPLE_RATE);
     await setSegmentFinished(segmentId, true);
 
     const view = await loadRecorderSegmentView(segmentId);
@@ -136,8 +134,7 @@ describe("loadRecorderSegmentView", () => {
     const segmentId = await freshSegment();
     const clipId = newClipId();
     const pcm = samples(500);
-    const meta = await putClip(clipId, pcm, CANONICAL_SAMPLE_RATE);
-    await addTake(segmentId, clipId, meta.durationMs);
+    await saveTake(segmentId, clipId, pcm, CANONICAL_SAMPLE_RATE);
     await setSegmentFinished(segmentId, true);
     const outcome = await commitTranscode(
       segmentId,

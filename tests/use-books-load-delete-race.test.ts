@@ -191,7 +191,13 @@ it("a retried delete takes the previous attempt's failure down when it starts, n
   await act(async () => {
     expect(await hook().deleteBook(mark)).toBe("failed");
   });
+  expect(hook().deleting).toBe(false);
   expect(hook().deleteFailed).toBe(true);
+  expect(hook().error).not.toBeNull();
+  // Length and membership, not order: the two books can share an `updatedAt`
+  // millisecond, and `listBooks` breaks that tie by IndexedDB key order.
+  expect(shelfIds()).toHaveLength(2);
+  expect(shelfIds()).toContain(mark);
 
   // Hold the retry's store write open, so the attempt is running and has not
   // reached a settle path. The success path clears the slot on its own, so a
@@ -216,5 +222,41 @@ it("a retried delete takes the previous attempt's failure down when it starts, n
     expect(await retry).toBe("ok");
   });
   expect(hook().deleting).toBe(false);
+  expect(shelfIds()).toEqual([luke]);
+});
+
+it("a successful delete takes down a failure raised while its store write was in flight", async () => {
+  const { mark, luke } = await mountTwoBooks();
+
+  // Hold the delete's store write open past its start-of-op clear.
+  let finish!: () => void;
+  vi.mocked(deleteBook).mockImplementationOnce(
+    () => new Promise<void>((r) => (finish = r))
+  );
+  let pending!: Promise<unknown>;
+  await act(async () => {
+    pending = hook().deleteBook(mark);
+    await settle();
+  });
+
+  // A load fails while the write is pending, so the slot holds a failure the
+  // start-of-op clear never saw.
+  vi.mocked(listBooks).mockRejectedValueOnce(new Error("blocked"));
+  await act(async () => {
+    hook().reload();
+    await settle();
+  });
+  expect(hook().deleting).toBe(true);
+  expect(hook().error).not.toBeNull();
+
+  // The delete's reconciling read never lands, so only the success path's own
+  // clear can take that failure down.
+  neverListBooks();
+  await act(async () => {
+    finish();
+    expect(await pending).toBe("ok");
+  });
+  expect(hook().deleting).toBe(false);
+  expect(hook().error).toBeNull();
   expect(shelfIds()).toEqual([luke]);
 });

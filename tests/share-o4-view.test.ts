@@ -62,7 +62,6 @@ function goOutLabel(view: ShareO4View): string | null {
   const container = render(
     createElement(ShareProgressPanel, {
       role: "status",
-      icon: "share-busy",
       text: "status",
       o4: view,
     })
@@ -77,7 +76,7 @@ function row(chips: readonly ShareChip[]): string {
 }
 
 describe("shareO4View: the glyph in the core", () => {
-  it("busy wears the plain share glyph (D15), not the current look's share-busy", () => {
+  it("busy wears the plain share glyph (D15)", () => {
     expect(shareO4View(busy(), "chapter").icon).toBe("share");
     expect(shareO4View(busy(undefined, "send"), "book").icon).toBe("share");
   });
@@ -141,7 +140,6 @@ describe("shareO4View: a zero total is guarded, not left to divide into NaN", ()
     const container = render(
       createElement(ShareProgressPanel, {
         role: "status",
-        icon: "share-busy",
         text: "status",
         o4: view,
       })

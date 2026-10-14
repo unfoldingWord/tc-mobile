@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   pauseTranscodeSweep,
@@ -7,6 +7,7 @@ import {
 } from "./finish-transcode";
 import {
   browserAllocationDeps,
+  isAbortCause,
   readAllocationBreadcrumb,
   readDeviceInfo,
   readSavedChecks,
@@ -77,6 +78,15 @@ export function claimPhoneCheckRun(): (() => void) | null {
 }
 
 /**
+ * Whether a run holds the slot right now. A live read of the module flag, so
+ * the screen's system-Back layer can refuse a Back mid-run without a render
+ * having to see the run first (invariant 4, docs/design/back-navigation.md).
+ */
+export function isPhoneCheckRunning(): boolean {
+  return runInFlight;
+}
+
+/**
  * The state a newly opened phone check starts from: steps 1-3's saved results
  * and, if the memory ceiling's page died mid-step, what its breadcrumb says.
  * Reads only; clearing the breadcrumb is the hook's post-commit effect.
@@ -124,12 +134,14 @@ const PHONE_CHECK_SWEEP_PAUSE = "phone-check";
  */
 async function withTranscodeHeld<T>(
   busyWith: (activity: PhoneCheckActivity) => void,
-  work: () => Promise<T>
+  work: () => Promise<T>,
+  signal?: AbortSignal
 ): Promise<T> {
   busyWith({ kind: "waiting" });
   pauseTranscodeSweep(PHONE_CHECK_SWEEP_PAUSE);
   try {
     await transcodeSweepSettled();
+    signal?.throwIfAborted();
     return await work();
   } finally {
     resumeTranscodeSweep(PHONE_CHECK_SWEEP_PAUSE);
@@ -144,18 +156,29 @@ async function withTranscodeHeld<T>(
 export function runPhoneChecks(
   probes: CheckProbes,
   land: (next: Partial<SavedChecks>) => void,
-  busyWith: (activity: PhoneCheckActivity) => void
+  busyWith: (activity: PhoneCheckActivity) => void,
+  signal?: AbortSignal
 ): Promise<void> {
-  return withTranscodeHeld(busyWith, async () => {
-    // A new run replaces the last one whole, never a mix of the two.
-    land({ device: null, encode: null, storage: null });
-    busyWith({ kind: "device" });
-    land({ device: await probes.device() });
-    busyWith({ kind: "encode" });
-    land({ encode: await probes.encode() });
-    busyWith({ kind: "storage" });
-    land({ storage: await probes.storage() });
-  });
+  return withTranscodeHeld(
+    busyWith,
+    async () => {
+      // A new run replaces the last one whole, never a mix of the two.
+      land({ device: null, encode: null, storage: null });
+      busyWith({ kind: "device" });
+      const device = await probes.device();
+      signal?.throwIfAborted();
+      land({ device });
+      busyWith({ kind: "encode" });
+      const encode = await probes.encode();
+      signal?.throwIfAborted();
+      land({ encode });
+      busyWith({ kind: "storage" });
+      const storage = await probes.storage();
+      signal?.throwIfAborted();
+      land({ storage });
+    },
+    signal
+  );
 }
 
 /**
@@ -167,7 +190,28 @@ export function runMemoryCheck(
   deps: AllocationDeps,
   busyWith: (activity: PhoneCheckActivity) => void
 ): Promise<AllocationResult> {
-  return withTranscodeHeld(busyWith, () => runAllocationSteps(deps));
+  return withTranscodeHeld(
+    busyWith,
+    () => runAllocationSteps(deps),
+    deps.signal
+  );
+}
+
+/**
+ * Await a run's work, swallowing only the rejection an abort caused. Any
+ * other rejection is a defect and goes on to the app-wide unhandled-rejection
+ * listener, as before.
+ */
+export async function untilDoneOrAborted(
+  signal: AbortSignal,
+  work: () => Promise<void>
+): Promise<void> {
+  try {
+    await work();
+  } catch (cause) {
+    // The screen unmounted mid-run (#1014 item 6): the run stopped on purpose.
+    if (!isAbortCause(cause, signal)) throw cause;
+  }
 }
 
 /**
@@ -195,6 +239,23 @@ export function usePhoneCheck(): {
   const [state, setState] = useState<PhoneCheckState>(() =>
     initialPhoneCheckState(crumbStore)
   );
+  // The runs this screen started that have not finished (#1014 item 6).
+  const liveRuns = useRef(new Set<AbortController>());
+  // The last report this screen holds, read when a run starts so an aborted
+  // run can put it back (#1379 item 4).
+  const reportRef = useRef(state);
+  useEffect(() => {
+    reportRef.current = state;
+  }, [state]);
+
+  // The screen going away stops what it started: each probe ends at its next
+  // boundary and the run slot is released, instead of measuring under Books.
+  useEffect(() => {
+    const runs = liveRuns.current;
+    return () => {
+      for (const run of runs) run.abort();
+    };
+  }, []);
 
   // The read above is the report; clearing is a side effect, so it waits for
   // the commit rather than running inside the initializer.
@@ -205,6 +266,15 @@ export function usePhoneCheck(): {
   const runChecks = useCallback(() => {
     const release = claimPhoneCheckRun();
     if (release === null) return;
+    const run = new AbortController();
+    const { signal } = run;
+    liveRuns.current.add(run);
+    const previous: SavedChecks = {
+      device: reportRef.current.device,
+      encode: reportRef.current.encode,
+      storage: reportRef.current.storage,
+    };
+    let finished = false;
     let saved: SavedChecks = { device: null, encode: null, storage: null };
     // Each result is saved the moment it lands, so a reload later — in this
     // run or in the memory ceiling after it — keeps what finished.
@@ -217,16 +287,33 @@ export function usePhoneCheck(): {
       setState((prev) => ({ ...prev, activity }));
     void (async () => {
       try {
-        await runPhoneChecks(
-          {
-            device: () => settleProbe(() => readDeviceInfo(navigator)),
-            encode: () => settleProbe(runWorkerEncodeProbe),
-            storage: () => settleProbe(() => runStorageProbe()),
-          },
-          land,
-          busyWith
-        );
+        await untilDoneOrAborted(signal, async () => {
+          await runPhoneChecks(
+            {
+              device: () =>
+                settleProbe(() => readDeviceInfo(navigator, signal), signal),
+              encode: () =>
+                settleProbe(() => runWorkerEncodeProbe(signal), signal),
+              storage: () =>
+                settleProbe(() => runStorageProbe({ signal }), signal),
+            },
+            land,
+            busyWith,
+            signal
+          );
+          // Set only when the run reached its end: an abort is swallowed by
+          // `untilDoneOrAborted`, so returning from it does not mean finished.
+          finished = true;
+        });
       } finally {
+        // An aborted run leaves the earlier report in place (#1379 item 4,
+        // DRI 2026-10-12). Only the abort path: a finished run replaced the
+        // report whole, and a defect rethrown above keeps today's behaviour.
+        if (!finished && signal.aborted) {
+          writeSavedChecks(crumbStore, previous);
+          setState((prev) => ({ ...prev, ...previous }));
+        }
+        liveRuns.current.delete(run);
         release();
         busyWith(null);
       }
@@ -236,19 +323,27 @@ export function usePhoneCheck(): {
   const runMemory = useCallback(() => {
     const release = claimPhoneCheckRun();
     if (release === null) return;
+    const run = new AbortController();
+    const { signal } = run;
+    liveRuns.current.add(run);
     const busyWith = (activity: PhoneCheckActivity) =>
       setState((prev) => ({ ...prev, activity }));
-    const deps = browserAllocationDeps(crumbStore, (mb) =>
-      busyWith({ kind: "memory", mb })
+    const deps = browserAllocationDeps(
+      crumbStore,
+      (mb) => busyWith({ kind: "memory", mb }),
+      signal
     );
     // No catch: a failed ALLOCATION is a result, returned by the loop, and
     // anything else that rejects here is a defect for the app-wide
     // unhandled-rejection listener, which reports it to the funnel.
     void (async () => {
       try {
-        const allocation = await runMemoryCheck(deps, busyWith);
-        setState((prev) => ({ ...prev, allocation }));
+        await untilDoneOrAborted(signal, async () => {
+          const allocation = await runMemoryCheck(deps, busyWith);
+          setState((prev) => ({ ...prev, allocation }));
+        });
       } finally {
+        liveRuns.current.delete(run);
         deps.release();
         release();
         busyWith(null);

@@ -18,7 +18,7 @@ import { cssRule, declarationValue } from "./support";
  * fixed height, so extra dot rows grow the row. Whether the cascade lays that
  * out is `e2e/books-chapter-dots-fit.spec.ts`'s job, against the built app.
  */
-const O4 = '[data-design="o4"]';
+const O4 = ":root";
 const css = readFileSync(
   path.resolve(import.meta.dirname, "..", "src/app/styles/o4/books.css"),
   "utf8"

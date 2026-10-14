@@ -7,8 +7,9 @@ import { strings } from "@/lib/strings";
  * What the Books shelf says when the encoder has stopped working (#166).
  *
  * The WHOLE gate is here, not just a tone lookup — the same call
- * `processing-status.ts` makes, and for the same reason: this repo has no DOM
- * test runner, so a mount predicate left in JSX is pinned by nothing. Three
+ * `processing-status.ts` makes, and for the same reason: a mount predicate left
+ * in a screen's JSX is reached only by mounting that whole screen, and no test
+ * does that for this line. Three
  * claims, each of which a wrong line in `books-screen.tsx` would break silently:
  * a healthy encoder shows NOTHING, a failing one shows exactly one line, and
  * that line wears the `info` mark rather than the red `alert` one.

@@ -59,11 +59,28 @@ export interface SegmentRef {
 export interface Book {
   readonly id: BookId;
   /**
-   * User-facing. Auto-named "Book NNN" on create (B2), renamed in place by the
-   * facilitator for the passage being translated — "Mark" (#264). Always
-   * non-empty: a rename to blank keeps the current name.
+   * The facilitator's own name for the book — "Mark" (#264) — or `null` while
+   * it has none, which is how every book starts (B2).
+   *
+   * Nullable for the reason `Chapter.name` is (#169): what an unnamed book
+   * shows is a PLACEHOLDER, and a placeholder is UI copy. Storing the rendered
+   * "Book 001" froze English into IndexedDB, so a second UI language could
+   * never rename the books already on a phone. The slot is stored instead
+   * ({@link Book.number}) and the words are rendered at the screen.
+   *
+   * A rename to blank keeps the current value, so an unnamed book stays
+   * unnamed rather than acquiring the placeholder as a real name.
    */
-  readonly name: string;
+  readonly name: string | null;
+  /**
+   * The placeholder slot: 1-based, the first one not already shown on the
+   * shelf when this book was created.
+   *
+   * Only ever SHOWN while {@link Book.name} is `null` — a named book keeps its
+   * slot dormant, and dormant slots are free for a later book to take, so the
+   * number is not an identity and is not unique across the shelf.
+   */
+  readonly number: number;
   /** BCP-47 tag of the language being recorded, when known. */
   readonly languageCode: string | null;
   readonly chapterIds: readonly ChapterId[];
@@ -93,6 +110,21 @@ export interface Book {
    * reader never meets `undefined`.
    */
   readonly coverColourKey: string | null;
+  /**
+   * Where the book sits on the Books screen: 0 is the top (#338). The shelf
+   * is read in this order (`listBooks`), so it is the user's to set — by
+   * press-and-hold on the book (`moveBook`) — rather than a property of the
+   * data like `createdAt`.
+   *
+   * Dense (0..N-1) after every create and every move: a new book takes 0 and
+   * the rest move down one, and a move renumbers the whole shelf. A delete
+   * leaves a gap, which changes no order and is closed by the next create or
+   * move. Not activity on the book: nothing that sets it touches `updatedAt`.
+   * Every row carries the field (the v11 step gives each pre-#338 book the
+   * position the shelf already showed it at), so a reader never meets
+   * `undefined`.
+   */
+  readonly shelfPosition: number;
 }
 
 export interface Chapter {
@@ -145,7 +177,7 @@ export interface Segment {
    * The one take behind this segment, or `null` ⇒ never recorded.
    *
    * 1:1 per D1/A2 — there is no take history. Re-recording REPLACES the take
-   * (see `addTake` in `storage/takes.ts`). A stacked `takeIds[]` was the
+   * (see `saveTake` in `storage/takes.ts`). A stacked `takeIds[]` was the
    * pre-pivot model A2 removed; it leaks unreachable PCM (#2/D3).
    */
   readonly activeTakeId: TakeId | null;

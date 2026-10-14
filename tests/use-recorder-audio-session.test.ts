@@ -30,6 +30,8 @@ import { useRecorder, type UseRecorder } from "@/hooks/use-recorder";
  */
 
 const callOrder: string[] = [];
+/** #1265: the shared-context claim around `getUserMedia`, in call order. */
+const claimLog: string[] = [];
 
 class FakeTrack {
   readonly kind = "audio";
@@ -72,9 +74,18 @@ vi.mock("@/hooks/audio-io", () => ({
   pickMimeType: () => undefined,
   createLevelTap: vi.fn(() => fakeTap),
   probeCaptureTrack: vi.fn(),
-  raceAudioResume: vi.fn().mockResolvedValue(false),
+  raceAudioResume: vi.fn(async () => {
+    claimLog.push("raceAudioResume");
+    return false;
+  }),
   RESUME_TIMEOUT_MS: 1000,
   resumeAudioContext: vi.fn().mockResolvedValue(undefined),
+  claimSharedContext: vi.fn(() => {
+    claimLog.push("claim");
+    return () => {
+      claimLog.push("release");
+    };
+  }),
   stopTracks: vi.fn((stream: FakeStream) => {
     stream.getTracks().forEach((track) => track.stop());
   }),
@@ -95,6 +106,7 @@ let container: HTMLDivElement;
 
 beforeEach(() => {
   callOrder.length = 0;
+  claimLog.length = 0;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
   const stream = new FakeStream([new FakeTrack()]);
@@ -102,6 +114,7 @@ beforeEach(() => {
     value: {
       getUserMedia: vi.fn().mockImplementation(async () => {
         callOrder.push("getUserMedia");
+        claimLog.push("getUserMedia");
         return stream;
       }),
     },
@@ -149,5 +162,41 @@ describe("start() declares a record-capable audio session before opening the mic
     expect(
       callOrder.filter((call) => call === "setRecordAudioSession")
     ).toHaveLength(1);
+  });
+});
+
+describe("start() holds a shared-context claim across the microphone open (#1265)", () => {
+  it("claims before the microphone opens and releases right after it resolves, before the resume race", async () => {
+    const api = await mountedRecorder();
+
+    await act(async () => {
+      await api.start();
+    });
+
+    expect(claimLog).toEqual([
+      "claim",
+      "getUserMedia",
+      "release",
+      "raceAudioResume",
+    ]);
+  });
+
+  it("releases the claim when the microphone is refused", async () => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      value: {
+        getUserMedia: vi.fn().mockImplementation(async () => {
+          claimLog.push("getUserMedia");
+          throw new DOMException("refused", "NotAllowedError");
+        }),
+      },
+      configurable: true,
+    });
+    const api = await mountedRecorder();
+
+    await act(async () => {
+      await api.start();
+    });
+
+    expect(claimLog).toEqual(["claim", "getUserMedia", "release"]);
   });
 });

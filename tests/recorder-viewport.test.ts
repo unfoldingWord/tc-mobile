@@ -112,11 +112,11 @@ describe("useRecorderViewport", () => {
     expect(Object.keys(api).sort()).toEqual([
       "insertionPan",
       "pan",
+      "seedWindow",
       "setPanState",
       "setZoom",
       "setZoomPan",
       "win",
-      "windowAt",
       "zoom",
       "zoomPan",
     ]);
@@ -200,20 +200,10 @@ describe("useRecorderViewport", () => {
     expect(api.win.centerlineSample).toBe(500);
   });
 
-  it("keeps windowAt's identity across a render that doesn't change its inputs (#826 item 3)", () => {
-    // `windowAt` reads only `length`, `zoom` and `centerFraction` — a
-    // `panState` change alone must not hand back a new function. Nothing in
-    // this suite exercises an effect/callback keyed on `windowAt`, so this
-    // pins the referential contract directly rather than a caller of it.
-    mount("record", false);
-    const first = api.windowAt;
-    act(() => api.setPanState(400));
-    expect(api.windowAt).toBe(first);
-  });
-
-  it("answers for a pan it is not currently at, at the current zoom", () => {
-    // `windowAt` is what seeds a selection from the INSERTION pan while the
-    // view sits somewhere else — so it must read the zoom, not the pan.
+  it("seeds from the INSERTION pan while the view sits elsewhere, at the current zoom", () => {
+    // `seedWindow` is what seeds a selection while a zoom has moved the VIEW
+    // away from the record point — so it must follow `insertionPan`, never the
+    // drawn `pan`, and read the zoom.
     mount("edit", true);
     act(() => {
       api.setPanState(400);
@@ -221,7 +211,7 @@ describe("useRecorderViewport", () => {
       api.setZoom(4);
     });
     expect(api.win.centerlineSample).toBe(250);
-    expect(api.windowAt(api.insertionPan).centerlineSample).toBe(400);
-    expect(api.windowAt(api.insertionPan).visibleSamples).toBe(LENGTH / 4);
+    expect(api.seedWindow.centerlineSample).toBe(400);
+    expect(api.seedWindow.visibleSamples).toBe(LENGTH / 4);
   });
 });

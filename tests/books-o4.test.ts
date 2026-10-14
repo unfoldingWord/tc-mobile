@@ -12,7 +12,6 @@ import {
   coverColourHex,
   resolveCoverKey,
 } from "@/lib/cover-colour";
-import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { BookId, ChapterId } from "@/types/domain";
@@ -26,9 +25,7 @@ import { stripCssComments } from "./support";
  *
  * The whole screen is mounted, not a row in isolation, because two of the
  * promises are about the composition: the guided ring (#604, #834) landing
- * on the same control in both looks, and the accessible names and their order
- * staying the same when the switch flips. `useDesign()` is mocked so each
- * case picks its look — the pattern `tests/segments-o4.test.ts` follows. The
+ * on the intended control, and the accessible names and their order. The
  * data hooks are mocked the way `tests/books-share-overlay-delete-guard.test.ts`
  * mocks them.
  *
@@ -38,16 +35,11 @@ import { stripCssComments } from "./support";
  * — derived below from the stylesheets' own declarations, not measured.
  */
 
-const design = vi.hoisted(() => ({ current: "current" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
-
 const shelfState = vi.hoisted(() => ({ books: [] as BookCard[] }));
 vi.mock("@/hooks/use-books", () => ({
   useBooks: () => ({
     books: shelfState.books,
-    newBookPlaceholder: "Book 001",
+    newBookNumber: 1,
     loading: false,
     loaded: true,
     error: null,
@@ -118,18 +110,10 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   vi.unstubAllGlobals();
-  design.current = "current";
   shelfState.books = [];
 });
 
-/** A fresh root, so a second look starts from a collapsed shelf. */
-async function fresh() {
-  await act(async () => root.unmount());
-  root = createRoot(document.getElementById("root")!);
-}
-
-async function mount(look: Design, books: BookCard[]) {
-  design.current = look;
+async function mount(books: BookCard[]) {
   shelfState.books = books;
   await act(async () => {
     root.render(
@@ -241,7 +225,7 @@ const NARROWEST_VIEWPORT = 320;
  * stylesheets, so a change to any of them moves this number.
  */
 function narrowestDotColumn(chevronWidth: number): number {
-  const O4 = '[data-design="o4"]';
+  const O4 = ":root";
   const books = "src/app/styles/o4/books.css";
   const shell = declarations("src/app/styles/3-components.css", ".app-shell")
     .get("padding")!
@@ -291,16 +275,18 @@ describe("O4 Books list, state 03 (#942)", () => {
     const chosen: BookCard = {
       bookId: bookId(1),
       name: "Mark",
+      number: 1,
       coverColourKey: stored,
       chapters: [],
     };
     const unchosen: BookCard = {
       bookId: bookId(2),
       name: "Ruth",
+      number: 1,
       coverColourKey: null,
       chapters: [chapter(2, 1)],
     };
-    await mount("o4", [chosen, unchosen]);
+    await mount([chosen, unchosen]);
 
     const cards = all(".books-card");
     expect(cards).toHaveLength(2);
@@ -325,10 +311,11 @@ describe("O4 Books list, state 03 (#942)", () => {
   });
 
   it("gives a chapter row a 44 badge, a chevron, and a title line with its name, the default when it has none (#1219)", async () => {
-    await mount("o4", [
+    await mount([
       {
         bookId: bookId(1),
         name: "Mark",
+        number: 1,
         coverColourKey: null,
         chapters: [
           chapter(1, 1),
@@ -366,10 +353,11 @@ describe("O4 Books list, state 03 (#942)", () => {
   });
 
   it("draws one dot per segment, finished, then recorded, then empty", async () => {
-    await mount("o4", [
+    await mount([
       {
         bookId: bookId(1),
         name: "Mark",
+        number: 1,
         coverColourKey: null,
         chapters: [
           chapter(1, 1, { totalCount: 6, finishedCount: 2, recordedCount: 3 }),
@@ -401,8 +389,14 @@ describe("O4 Books list, state 03 (#942)", () => {
         name: i % 2 === 0 ? `Passage ${i + 1}` : null,
       })
     );
-    await mount("o4", [
-      { bookId: bookId(1), name: "Mark", coverColourKey: null, chapters },
+    await mount([
+      {
+        bookId: bookId(1),
+        name: "Mark",
+        number: 1,
+        coverColourKey: null,
+        chapters,
+      },
     ]);
     await act(async () => button(strings.bookRow("Mark", 26, false)).click());
 
@@ -434,10 +428,11 @@ describe("O4 Books list, state 03 (#942)", () => {
   });
 
   it("takes the largest size that fits: 13/6, stepping down to 5/2", async () => {
-    await mount("o4", [
+    await mount([
       {
         bookId: bookId(1),
         name: "Mark",
+        number: 1,
         coverColourKey: null,
         chapters: [
           chapter(1, 1, { totalCount: 8 }),
@@ -459,49 +454,49 @@ describe("O4 Books list, state 03 (#942)", () => {
     expect(dotGeometry(titled41!)).toEqual({ size: 5, gap: 2 });
   });
 
-  it("keeps every accessible name, in the same order, as the current look", async () => {
+  it("names every button, in reading order", async () => {
     const shelf: BookCard[] = [
       {
         bookId: bookId(1),
         name: "Mark",
+        number: 1,
         coverColourKey: "teal",
         chapters: [
           chapter(1, 1, { totalCount: 4, finishedCount: 1, recordedCount: 2 }),
           chapter(1, 2, { name: "The sower" }),
         ],
       },
-      { bookId: bookId(2), name: "Ruth", coverColourKey: null, chapters: [] },
-    ];
-    const names: Record<Design, string[]> = { current: [], o4: [] };
-    for (const look of ["current", "o4"] as const) {
-      await fresh();
-      await mount(look, shelf);
-      await act(async () => button(strings.bookRow("Mark", 2, false)).click());
-      names[look] = buttonNames();
-    }
-    expect(names.o4.length).toBeGreaterThanOrEqual(7);
-    expect(names.o4).toEqual(names.current);
-  });
-
-  it("adds none of its markup with the switch off", async () => {
-    await mount("current", [
       {
-        bookId: bookId(1),
-        name: "Mark",
-        coverColourKey: "teal",
-        chapters: [chapter(1, 1, { totalCount: 4, name: "The sower" })],
+        bookId: bookId(2),
+        name: "Ruth",
+        number: 1,
+        coverColourKey: null,
+        chapters: [],
       },
+    ];
+    await mount(shelf);
+    await act(async () => button(strings.bookRow("Mark", 2, false)).click());
+    // Pinned whole, so a dropped, added or reordered button fails: the
+    // header, then each book's toggle, + and ⋮, with an open book's chapter
+    // rows under its own controls.
+    expect(buttonNames()).toEqual([
+      strings.newBook,
+      strings.menuOpen,
+      strings.bookRow("Mark", 2, true),
+      strings.addChapter("Mark"),
+      strings.bookMenuOpen("Mark"),
+      strings.openChapter(strings.chapterName(1)),
+      strings.openChapter("The sower"),
+      strings.bookRow("Ruth", 0, false),
+      strings.addChapter("Ruth"),
+      strings.bookMenuOpen("Ruth"),
     ]);
-    await act(async () => button(strings.bookRow("Mark", 1, false)).click());
-    expect(button(strings.openChapter("The sower"))).toBeTruthy();
-    expect(document.querySelectorAll("[class*='books-']")).toHaveLength(0);
-    expect(document.querySelectorAll("[style]")).toHaveLength(0);
   });
 });
 
 describe("O4 Books header and empty shelf, state 01 (#942)", () => {
   it("draws the header as 56px with a ghost menu button, and the empty shelf's outline", async () => {
-    await mount("o4", []);
+    await mount([]);
     only(".books-header");
     expect(button(strings.menuOpen).classList.contains("books-ghost")).toBe(
       true
@@ -516,8 +511,14 @@ describe("O4 Books header and empty shelf, state 01 (#942)", () => {
   });
 
   it("makes the header's New book #941's shared square button once the shelf has books", async () => {
-    await mount("o4", [
-      { bookId: bookId(1), name: "Mark", coverColourKey: null, chapters: [] },
+    await mount([
+      {
+        bookId: bookId(1),
+        name: "Mark",
+        number: 1,
+        coverColourKey: null,
+        chapters: [],
+      },
     ]);
     const add = button(strings.newBook);
     // The shared 56 × 56 r14 well from `o4-controls.tsx`, not a local copy.
@@ -526,12 +527,12 @@ describe("O4 Books header and empty shelf, state 01 (#942)", () => {
   });
 });
 
-describe("the guided ring lands on the same control in both looks (#604, #834)", () => {
-  async function guidedIn(look: Design, books: BookCard[], expand?: string) {
-    await mount(look, books);
+describe("the guided ring lands on the intended control (#604, #834)", () => {
+  async function guidedIn(books: BookCard[], expand?: string) {
+    await mount(books);
     if (expand) await act(async () => button(expand).click());
     const marked = all("#root .is-guided");
-    expect(marked, `${look}: one guided control`).toHaveLength(1);
+    expect(marked, "one guided control").toHaveLength(1);
     return marked[0]!.getAttribute("aria-label");
   }
 
@@ -540,10 +541,17 @@ describe("the guided ring lands on the same control in both looks (#604, #834)",
     [
       "add-chapter: a new book's + (#834), with another book on the shelf",
       [
-        { bookId: bookId(2), name: "Ruth", coverColourKey: null, chapters: [] },
+        {
+          bookId: bookId(2),
+          name: "Ruth",
+          number: 1,
+          coverColourKey: null,
+          chapters: [],
+        },
         {
           bookId: bookId(1),
           name: "Mark",
+          number: 1,
           coverColourKey: null,
           chapters: [chapter(1, 1)],
         },
@@ -556,6 +564,7 @@ describe("the guided ring lands on the same control in both looks (#604, #834)",
         {
           bookId: bookId(1),
           name: "Mark",
+          number: 1,
           coverColourKey: null,
           chapters: [chapter(1, 1)],
         },
@@ -568,6 +577,7 @@ describe("the guided ring lands on the same control in both looks (#604, #834)",
         {
           bookId: bookId(1),
           name: "Mark",
+          number: 1,
           coverColourKey: null,
           chapters: [chapter(1, 1)],
         },
@@ -579,9 +589,7 @@ describe("the guided ring lands on the same control in both looks (#604, #834)",
 
   for (const [step, books, expected, expand] of cases) {
     it(step, async () => {
-      expect(await guidedIn("current", books, expand)).toBe(expected);
-      await fresh();
-      expect(await guidedIn("o4", books, expand)).toBe(expected);
+      expect(await guidedIn(books, expand)).toBe(expected);
     });
   }
 });
@@ -606,7 +614,7 @@ describe("o4/books.css (#942)", () => {
       .map((d) => d.replace(/\s+/g, " ").trim())
       .filter(Boolean),
   }));
-  const O4 = '[data-design="o4"]';
+  const O4 = ":root";
 
   /** A rule's declarations, each `var(--p-*)` resolved to its value. */
   function block(sel: string): string[] {
@@ -615,7 +623,7 @@ describe("o4/books.css (#942)", () => {
     return hits[0]!.declarations.map(resolvePrimitives);
   }
 
-  it("holds its rules inside the components layer, every one scoped under the switch", () => {
+  it("holds its rules inside the components layer, every one carrying the :root prefix (o4/index.css)", () => {
     expect(layerOpen).toBeGreaterThanOrEqual(0);
     expect(rules.length).toBeGreaterThanOrEqual(12);
     for (const rule of rules) {
@@ -720,13 +728,14 @@ describe("right-to-left names on the shelf (#1267)", () => {
     {
       bookId: bookId(1),
       name: HEBREW,
+      number: 1,
       coverColourKey: null,
       chapters: [chapter(1, 1), chapter(1, 2, { name: ARABIC })],
     },
   ];
 
-  it("O4: the book's name and a typed chapter title carry dir=auto, the default chapter name does not", async () => {
-    await mount("o4", shelf());
+  it("the book's name and a typed chapter title carry dir=auto, the default chapter name does not", async () => {
+    await mount(shelf());
     await act(async () => button(strings.bookRow(HEBREW, 2, false)).click());
     expect(only(".books-name").getAttribute("dir")).toBe("auto");
     const typed = button(strings.openChapter(ARABIC));
@@ -736,16 +745,5 @@ describe("right-to-left names on the shelf (#1267)", () => {
     // "Chapter 1" is a UI string: it follows the app locale.
     const plain = button(strings.openChapter(strings.chapterName(1)));
     expect(only(".books-chapter-title", plain).hasAttribute("dir")).toBe(false);
-  });
-
-  it("current look: the same, on its own row markup", async () => {
-    await mount("current", shelf());
-    await act(async () => button(strings.bookRow(HEBREW, 2, false)).click());
-    const toggle = button(strings.bookRow(HEBREW, 2, true));
-    expect(only("span.t-title", toggle).getAttribute("dir")).toBe("auto");
-    const typed = button(strings.openChapter(ARABIC));
-    expect(only("span.truncate", typed).getAttribute("dir")).toBe("auto");
-    const plain = button(strings.openChapter(strings.chapterName(1)));
-    expect(only("span.truncate", plain).hasAttribute("dir")).toBe(false);
   });
 });

@@ -4,23 +4,23 @@ import { JSDOM } from "jsdom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ShareProgress as ShareProgressState } from "@/hooks/share-progress";
-import { DESIGN_STORAGE_KEY } from "@/lib/design";
 
 /**
- * The O4 switch at the ONE call site that decides which look the share
- * overlay draws (#947): `share-progress.tsx` passes `shareO4View(...)` to its
- * panel only when `useDesign()` reads `"o4"`. `tests/share-progress-o4-render.test.ts`
- * renders the panel with and without an `o4` prop, but the panel alone
- * cannot show that the SWITCH picks the prop, and `ShareProgress` itself
- * portals to `document.body`, which `tests/render.ts`'s server renderer
- * cannot render. So this mounts the real component with `createRoot` and
- * `act` in a manual jsdom, the harness `tests/use-design.test.ts` uses for
- * the same hook, and reads the portalled panel out of the document.
+ * The ONE call site that hands the share overlay its circle (#947):
+ * `share-progress.tsx` passes `shareO4View(progress, scope, items)` to its
+ * panel. `tests/share-progress-o4-render.test.ts` renders the panel with a
+ * given view, but the panel alone cannot show that `ShareProgress` builds
+ * that view from its own props, and `ShareProgress` itself portals to
+ * `document.body`, which `tests/render.ts`'s server renderer cannot render.
+ * So this mounts the real component with `createRoot` and `act` in a manual
+ * jsdom and reads the portalled panel out of the document.
  *
- * A named origin, a fresh module per test and the stubbed globals are all
- * for the reasons `tests/use-design.test.ts`'s docblock gives: `useDesign`
- * keeps its live value in module scope, and jsdom's opaque default origin
- * makes `localStorage` throw.
+ * (The file name is from when this also proved the O4 design switch picked
+ * the view; #954 deleted the switch.)
+ *
+ * A named origin, a fresh module per test and the stubbed globals keep each
+ * mount independent: jsdom's opaque default origin makes `localStorage`
+ * throw.
  */
 
 let dom: JSDOM;
@@ -78,19 +78,8 @@ async function mount(progress: ShareProgressState, items = ALL_GO) {
   return panel!;
 }
 
-describe("ShareProgress follows the O4 switch (#947)", () => {
-  it("with the switch off, draws the current look's glyph and no O4 node", async () => {
-    // #951 flipped the default to o4, so "off" now has to be written
-    // explicitly — nothing-stored no longer means the current look.
-    dom.window.localStorage.setItem(DESIGN_STORAGE_KEY, "current");
-    const panel = await mount(BUSY);
-    expect(panel.querySelector(".share-progress-glyph")).not.toBeNull();
-    expect(panel.querySelector("[class*='share-o4']")).toBeNull();
-    expect(panel.querySelector("[role='progressbar']")).toBeNull();
-  });
-
-  it("with the switch on, draws the O4 circle, its ring and its chips instead", async () => {
-    dom.window.localStorage.setItem(DESIGN_STORAGE_KEY, "o4");
+describe("ShareProgress draws the O4 circle from its own props (#947)", () => {
+  it("draws the O4 circle, its ring and its chips, and no plain glyph", async () => {
     const panel = await mount(BUSY);
     expect(
       panel.querySelector(".share-o4-frame .share-o4-core")
@@ -104,7 +93,6 @@ describe("ShareProgress follows the O4 switch (#947)", () => {
   });
 
   it("while packing, a go-out chip still waiting is the same bare chip as one that stays (Q1, vShare)", async () => {
-    dom.window.localStorage.setItem(DESIGN_STORAGE_KEY, "o4");
     // One chapter into a four-chapter book whose last chapter has no audio:
     // chip 1 finished, chip 2 current, chip 3 waiting, chip 4 stays.
     const panel = await mount(
@@ -134,7 +122,6 @@ describe("ShareProgress follows the O4 switch (#947)", () => {
   });
 
   it("once handed over (sent), the core stays a progress bar at 100 (Q3, vShare's system phase)", async () => {
-    dom.window.localStorage.setItem(DESIGN_STORAGE_KEY, "o4");
     const panel = await mount({ phase: "outcome", settled: "sent", since: 0 });
     const bar = panel.querySelector(".share-o4-core[role='progressbar']");
     expect(bar, "the handed-over core is not a progress bar").not.toBeNull();
@@ -143,7 +130,6 @@ describe("ShareProgress follows the O4 switch (#947)", () => {
   });
 
   it("on any other outcome the core is not a progress bar", async () => {
-    dom.window.localStorage.setItem(DESIGN_STORAGE_KEY, "o4");
     const panel = await mount({
       phase: "outcome",
       settled: "failed",

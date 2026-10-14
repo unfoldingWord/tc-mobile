@@ -105,7 +105,7 @@ it("rests the dot at the start when the take runs out, so the next Play sounds i
   await show(false, 0);
   await show(true, 0);
   // The dot is pushed on a ~60 ms interval, so the last elapsed a run-out
-  // reports is a tick short of the duration, never exactly it.
+  // reports is usually a tick short of the duration, as it is here.
   await show(true, 970);
   // The session clears its elapsed as it reports the end (`setPlaying(null)`).
   await show(false, 0, true);

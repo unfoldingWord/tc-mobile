@@ -29,8 +29,8 @@ const recorder = stripComments(
  * The recovery-path focus decision (#199).
  *
  * A truth table, not a phone, for the same reason `focus-restore.ts` is one:
- * the DOM half has no automated coverage in this repo (#361) and is not
- * claimed as tested. What is pinned here is WHEN focus must be handed back
+ * no mounted test drives a panel's recovery edge, so the DOM half is not
+ * claimed as tested (#361). What is pinned here is WHEN focus must be handed back
  * into the sheet — which is the part #199 asked to be decided explicitly
  * rather than left an omission.
  */

@@ -433,6 +433,11 @@ const SOURCES = [
 const readRaw = (rel: string) =>
   readFileSync(path.resolve(import.meta.dirname, "..", rel), "utf8");
 
+// The one strip every TS/TSX read goes through. The decoy cases below call it
+// too, so weakening the strip `read` applies turns them red, not only a
+// change to `blankComments` itself.
+const code = (raw: string) => blankComments(raw);
+
 const read = (rel: string) => {
   if (rel.endsWith(".css")) return readRaw(rel);
   if (!SOURCES.includes(rel)) {
@@ -440,7 +445,7 @@ const read = (rel: string) => {
       `read: ${rel} is not in SOURCES, so nothing checks its strip`
     );
   }
-  return blankComments(readRaw(rel));
+  return code(readRaw(rel));
 };
 
 describe("the source reads see code, not comments (#822)", () => {
@@ -459,7 +464,13 @@ describe("the source reads see code, not comments (#822)", () => {
   it("a block comment cannot stand in for code", () => {
     const decoy = `/* await nativeShare.send( */ void nativeShare.send(x);`;
     expect(decoy).toMatch(/await nativeShare\.send\(/);
-    expect(blankComments(decoy)).not.toMatch(/await nativeShare\.send\(/);
+    expect(code(decoy)).not.toMatch(/await nativeShare\.send\(/);
+  });
+
+  it("a line comment cannot stand in for code", () => {
+    const decoy = `// await nativeShare.send(\nvoid nativeShare.send(x);`;
+    expect(decoy).toMatch(/await nativeShare\.send\(/);
+    expect(code(decoy)).not.toMatch(/await nativeShare\.send\(/);
   });
 });
 
@@ -1224,18 +1235,16 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
     );
   });
 
-  it("the stylesheet inks busy and every settled outcome, with layer-2 roles only", () => {
+  it("the stylesheet paints the scrim and panel with layer-2 roles only", () => {
+    // The per-outcome glyph inks moved out of this file with the old look
+    // (#954): the O4 core and glyph ink for busy and every settled outcome
+    // are pinned value for value by `tests/share-o4-circle-css.test.ts`
+    // ("every outcome's core and glyph ink follow D16's table").
+    //
     // Comments stripped first (#533): a header comment naming the selector
     // used to be found by the block search below before the rule itself was
-    // (#529 round 3), which is why the stylesheet had to spell it without its
-    // leading dot. A comment can no longer be the match.
+    // (#529 round 3). A comment can no longer be the match.
     const css = stripCssComments(read("src/app/styles/3-components.css"));
-    for (const key of ["busy", ...SHARE_SETTLED]) {
-      const rule = new RegExp(
-        `\\.share-scrim\\[data-outcome="${key}"\\][^{]*\\{[^}]*color:\\s*var\\(--s-`
-      );
-      expect(css, `no glyph ink for "${key}"`).toMatch(rule);
-    }
     // No colour primitive anywhere in the block: every ink, fill and edge is a
     // layer-2 role, or a theme cannot switch it. Spacing and radius primitives
     // are the same ones `.confirm-panel` uses and are not the leak this guards.
@@ -1251,7 +1260,9 @@ describe("the hook drives the machine, and the screens render it (#491)", () => 
     const declarations = [
       ...block.matchAll(/(color|background|border(?:-color)?):\s*([^;]+);/g),
     ];
-    expect(declarations.length).toBeGreaterThanOrEqual(8);
+    // The scrim's and the panel's backgrounds, the panel's edge and the
+    // status line's ink.
+    expect(declarations.length).toBeGreaterThanOrEqual(4);
     for (const [, prop, value] of declarations)
       expect(value, `${prop} reaches past layer 2`).not.toMatch(/--p-/);
   });

@@ -21,10 +21,10 @@
  * rather than a claim in a comment.
  *
  * It takes booleans, never elements: that keeps it inside `lib/`'s DOM ban and
- * lets the table run in the Node-only suite. The half that reads the DOM and
- * calls `.focus()` is `hooks/use-focus-restore.ts`, and that half has no
- * automated coverage anywhere in this repo (#361) — it is review and on-device
- * surface, and is not claimed as tested.
+ * lets the table run in plain Node. The half that reads the DOM and calls
+ * `.focus()` is `hooks/use-focus-restore.ts`; jsdom client mounts of the
+ * screens exercise it, but jsdom does not model `inert`, so the inert half is
+ * review and on-device surface (#361) — that hook's docblock says which tests.
  */
 
 /**

@@ -35,12 +35,80 @@ export function formatDuration(ms: number): string {
  * whitespace then collapse and the ends are trimmed, so the result is a readable
  * label and never a path.
  *
+ * Each label is also capped by UTF-8 bytes, cut at a grapheme boundary so a
+ * base letter is never parted from its combining marks (#1233 item 22): a name
+ * of 80 characters is about 240 bytes in a 3-byte script (Ge'ez, most Indic),
+ * and the filename holds two labels against a 255-byte filesystem limit.
+ *
  * Only the EXPORT form is sanitised. The stored display name is untouched — the
  * shelf still shows exactly what was typed.
  */
 export function filenameSafe(label: string): string {
-  return label
+  const clean = label
     .replace(/[/\\:*?"<>|\p{Cc}]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+  const named = WINDOWS_RESERVED_STEM.test(clean) ? `_${clean}` : clean;
+  return capUtf8Bytes(named, FILENAME_LABEL_MAX_BYTES).trim();
+}
+
+/**
+ * Windows device names. Windows treats them as the device whatever follows the
+ * first dot (`CON.zip`, `con.txt`), so a book named `CON` could not be
+ * extracted as a Share Book `.zip` or a Share your work folder. The whole-
+ * filename share form `<book> - <chapter>.mp3` can never BE one of these, but
+ * `shareBookFilename` and the library folder are the bare label (#163 Q-18).
+ */
+const WINDOWS_RESERVED_STEM =
+  /^(?:con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(?:\.|$)/i;
+
+/**
+ * Per-label byte cap. A share filename is `<book> - <chapter>.mp3`: two labels,
+ * a 3-byte separator and a 4-byte extension, so 2 x 120 + 7 = 247 stays inside
+ * the 255-byte limit with the extension intact (#1233 item 22).
+ */
+export const FILENAME_LABEL_MAX_BYTES = 120;
+
+const encoder = new TextEncoder();
+let graphemes: Intl.Segmenter | null = null;
+
+/**
+ * Whole-grapheme pieces of `text`, from `Intl.Segmenter` when the engine has it
+ * (built lazily and cached, never at module load: the build targets Firefox 114
+ * and Firefox shipped the API in 125, so a module-scope construction would stop
+ * the app starting there). Without it the pieces are code points, which never
+ * split a surrogate pair; a combining mark may then be parted from its base.
+ * That is the documented degradation on an engine without the Segmenter.
+ */
+function pieces(text: string): string[] {
+  if (typeof Intl.Segmenter === "function") {
+    graphemes ??= new Intl.Segmenter(undefined, { granularity: "grapheme" });
+    return Array.from(graphemes.segment(text), (s) => s.segment);
+  }
+  return Array.from(text);
+}
+
+/**
+ * The longest whole-piece prefix of `text` that fits in `maxBytes` of UTF-8.
+ * When the first grapheme cluster alone is over budget (one base character
+ * carrying many combining marks) no whole cluster fits, and an empty result
+ * would make a caller treat a real label as missing (#1233). That one case
+ * falls back to the code-point walk, which keeps a valid prefix of the cluster.
+ */
+function capUtf8Bytes(text: string, maxBytes: number): string {
+  if (encoder.encode(text).length <= maxBytes) return text;
+  const cut = takeWithin(pieces(text), maxBytes);
+  return cut === "" ? takeWithin(Array.from(text), maxBytes) : cut;
+}
+
+function takeWithin(parts: string[], maxBytes: number): string {
+  let out = "";
+  let used = 0;
+  for (const segment of parts) {
+    const bytes = encoder.encode(segment).length;
+    if (used + bytes > maxBytes) break;
+    out += segment;
+    used += bytes;
+  }
+  return out;
 }

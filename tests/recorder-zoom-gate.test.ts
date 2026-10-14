@@ -26,9 +26,10 @@ import { stripComments } from "./support";
  * which is strictly more than the one this was filed for.
  *
  * Source-shape, the reason `tests/recorder-cut-drag-gate.test.ts` documents:
- * `recorder.tsx` mounts the audio hook graph, so no test — including the
- * render harness (#197) — mounts it, and a `disabled` prop on one Control
- * cannot be rendered and inspected there — only read as text. The assertion
+ * `recorder.tsx` mounts the audio hook graph, so rendering one Control's
+ * `disabled` prop means a client mount of the whole sheet with that graph
+ * mocked (`tests/recorder-stop-commits.test.ts`). This file does not do that,
+ * so it reads the prop as text. The assertion
  * below names the kill condition (reverting
  * the prop to `stage.windowControlsInert` alone fails it), which the
  * recorder's own commit-window e2e cannot reach today.
@@ -99,8 +100,7 @@ describe("Zoom's disabled gate covers the leftover-preview close window (#396)",
     //
     // It is `toBe` on the WHOLE expression, not `toContain`: a containment
     // check on the same string is still a substring match, so prepending `!`
-    // slips through it too. That was measured, not assumed — the first repair
-    // here used `toContain` and the negation mutant stayed green.
+    // slips through it too.
     expect(zoomDisabledExpr.trim()).toBe(
       "windowControlsInert || !idleEditable"
     );

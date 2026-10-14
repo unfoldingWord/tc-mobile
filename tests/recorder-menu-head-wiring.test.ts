@@ -4,7 +4,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Recorder, type RecorderHandle } from "@/components/recorder";
-import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { SegmentId } from "@/types/domain";
@@ -14,18 +13,13 @@ import { restingErase } from "./support";
 /**
  * The recorder screen hands its view's book name and the chapter's resolved
  * name (`strings.chapterHeading`, #1230; this view has no typed name, so the
- * default "Chapter 4") to the ⋮ menu's O4 sheet head (#949 G3). `tests/recorder-menu-head-o4.test.ts`
+ * default "Chapter 4") to the ⋮ menu's sheet head (#949 G3). `tests/recorder-menu-head-o4.test.ts`
  * covers the head given those props; this file covers the one link it cannot
  * see, the `recorder.tsx` call site, by opening the menu on the real sheet.
  *
  * The harness is `tests/recorder-menu-header.test.ts`'s — paint and audio
- * acquisition mocked, the recorder, its menu and the strings real — plus
- * `useDesign()` mocked so each case picks its look.
+ * acquisition mocked, the recorder, its menu and the strings real.
  */
-const design = vi.hoisted(() => ({ current: "o4" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 
 const view = {
   bookName: "Ruth",
@@ -80,8 +74,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function openMenu(look: Design): Promise<Element> {
-  design.current = look;
+async function openMenu(): Promise<Element> {
   const ref = createRef<RecorderHandle>();
   const audio: UseAudioSession = {
     playingId: null,
@@ -139,8 +132,8 @@ async function openMenu(look: Design): Promise<Element> {
 }
 
 describe("the recorder screen's ⋮ menu head (G3)", () => {
-  it("crumbs the view's book, chapter and segment, the segment tinted done (o4)", async () => {
-    const panel = await openMenu("o4");
+  it("crumbs the view's book, chapter and segment, the segment tinted done", async () => {
+    const panel = await openMenu();
     expect(
       [...panel.querySelectorAll(".o4-sheet-head .o4-crumb")].map((c) => [
         c.textContent,
@@ -153,13 +146,8 @@ describe("the recorder screen's ⋮ menu head (G3)", () => {
     ]);
   });
 
-  it("draws no head in the current look", async () => {
-    const panel = await openMenu("current");
-    expect(panel.querySelector(".o4-sheet-head")).toBeNull();
-  });
-
   it("carries the view's cover colour to the head's square (#949, #957)", async () => {
-    const panel = await openMenu("o4");
+    const panel = await openMenu();
     const cover = panel.querySelector(
       ".o4-sheet-head .books-cover.is-sm"
     ) as HTMLElement | null;

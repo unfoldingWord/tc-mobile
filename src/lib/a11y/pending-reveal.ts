@@ -23,7 +23,7 @@
  * Expressed as a plan rather than as a pair of calls, "held ⇒ retained, never
  * consumed" is a line a mutation kills (`tests/pending-reveal.test.ts`) instead
  * of a claim in a comment. It takes ids and a boolean, never elements, so it
- * stays inside `lib/`'s DOM ban and runs in the Node-only suite. The half that
+ * stays inside `lib/`'s DOM ban and runs in plain Node. The half that
  * reads the DOM and calls `scrollIntoView` / `.focus()` is
  * `hooks/use-scroll-to-new.ts`, and that half is covered in jsdom by
  * `tests/scroll-to-new.test.ts` — including this rule as the hook behaves it,

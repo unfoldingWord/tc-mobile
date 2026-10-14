@@ -1,15 +1,13 @@
-/* O4 — Recorder (08-12). Owner: #945. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file. */
+/* O4 — Recorder (08-12). Owner: #945. Every selector is prefixed with :root; see o4/index.css's header before editing this file. */
 
 /*
  * The five workbench states are read off one attribute, data-o4-look, which
- * recorder.tsx sets on the stage ONLY under O4 (recorder-o4.tsx's
- * recorderLook): idle, recording, recorded, playing, editing.
+ * recorder.tsx sets on the stage (recorder-look.ts's recorderLook): idle, recording, recorded, playing, editing.
  *
  * Static states only. The live edge's pulse and the recording dot's blink are
- * #950's; the edge here is its resting frame. The current look's own
- * rec-pulse on the dot is left running, not replaced.
+ * #950's; the edge here is its resting frame.
  *
- * Deliberately NOT touched, so they behave the same in both looks: opacity and
+ * Deliberately NOT touched here: opacity and
  * filter on any control (the #857/#878 greyed states live in
  * 3-components.css), the stage's gating (#835), and the ⋮ opener's wiring —
  * it is the header's in both modes (#1243).
@@ -19,14 +17,14 @@
  */
 @layer components {
   /* --- stage (08-12) ---------------------------------------------------- */
-  [data-design="o4"] .recorder-stage {
+  :root .recorder-stage {
     border-radius: 20px; /* #939 token */
     background: var(--s-surface);
   }
   /* The hairline and the live edge are drawn on a layer ABOVE the stage's
      children: an inset box-shadow on the stage itself paints under the
      full-width canvas. Pointer-transparent, so it never takes the pan. */
-  [data-design="o4"] .recorder-stage::after {
+  :root .recorder-stage::after {
     content: "";
     position: absolute;
     inset: 0;
@@ -35,22 +33,22 @@
     pointer-events: none;
     box-shadow: inset 0 0 0 1px var(--s-card-edge);
   }
-  [data-design="o4"] .recorder-stage[data-o4-look="recording"]::after {
+  :root .recorder-stage[data-o4-look="recording"]::after {
     box-shadow: inset 0 0 0 2px var(--s-live);
   }
 
   /* --- timer and recording dot (09) ------------------------------------- */
-  [data-design="o4"] .recorder-status {
+  :root .recorder-status {
     top: 16px;
     left: 18px;
     z-index: 3;
   }
-  [data-design="o4"] .recorder-status .t-timer {
+  :root .recorder-status .t-timer {
     font-size: 32px; /* #939 token */
     font-weight: 800; /* #939 token */
     font-variant-numeric: tabular-nums;
   }
-  [data-design="o4"] .recorder-status .rec-dot svg {
+  :root .recorder-status .rec-dot svg {
     width: 12px;
     height: 12px;
   }
@@ -58,13 +56,13 @@
      it — proposed here, not a workbench-signed state (docs/design/
      o4-design-system.md's screen map names no near-limit variant for 09
      Recording); see the PR body. */
-  [data-design="o4"] .recorder-status .recorder-take-warn {
+  :root .recorder-status .recorder-take-warn {
     font-size: 15px; /* #939 token */
     font-weight: 500;
   }
 
   /* --- timestamp (10 recorded, 11 playing) ------------------------------ */
-  [data-design="o4"] .recorder-stamp {
+  :root .recorder-stamp {
     position: absolute;
     top: 20px;
     right: 18px;
@@ -82,7 +80,7 @@
      with the bg-live utility; a components-layer background cannot beat a
      utility, so the playhead colour is painted over it. The in-place
      audition's line takes bg-playhead from recorder.tsx instead. */
-  [data-design="o4"]
+  :root
     .recorder-stage[data-o4-look="playing"]
     [data-testid="centerline-overlay"]::after {
     content: "";
@@ -95,7 +93,7 @@
   /* The hit box widens to the knob, and the clamp that keeps a zoom-fitted
      edge inside the canvas (#707) reads this same property. Unchanged by
      #1102: the 30px hit box and the #707 edge clamp both still read this. */
-  [data-design="o4"] .selection-handle {
+  :root .selection-handle {
     --c-selection-hit: 30px;
   }
   /* #1102 (requirements owner test session, v0.2.13): the knob sat at the
@@ -105,7 +103,7 @@
      `top: 0; bottom: 0` (3-components.css), so `bottom: 0` here sits at the
      canvas's own bottom edge — fully inside it, nothing clipped by
      `.recorder-canvas`'s `overflow: hidden`. */
-  [data-design="o4"] .selection-handle::after {
+  :root .selection-handle::after {
     content: "";
     position: absolute;
     bottom: 0;
@@ -134,11 +132,11 @@
      `.recorder-cut`'s reserved height reads (3-components.css). Colour is
      unaffected — this row inks nothing itself, `.recorder-cut`'s existing
      `color: var(--s-voice)` still carries down to the icon. */
-  [data-design="o4"] .recorder-cut {
+  :root .recorder-cut {
     position: relative;
     width: 100%;
   }
-  [data-design="o4"] .recorder-cut .cut-anchor {
+  :root .recorder-cut .cut-anchor {
     position: absolute;
     left: clamp(
       calc(var(--c-control-sm) / 2),
@@ -155,7 +153,7 @@
      rather than a percentage, because Record sits inside its guide-ring span
      and a hinted control inside its hint span, so a percentage would resolve
      against the wrong box. */
-  [data-design="o4"] .recorder-toolbar.pair {
+  :root .recorder-toolbar.pair {
     container-type: inline-size;
     --o4-big: max(
       44px,
@@ -164,18 +162,18 @@
     grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr) 64px;
     height: calc(80px + var(--p-space-3));
   }
-  [data-design="o4"] .recorder-toolbar.pair .control--record {
+  :root .recorder-toolbar.pair .control--record {
     width: var(--o4-big);
     height: var(--o4-big);
   }
-  [data-design="o4"] .recorder-toolbar.pair .control--play {
+  :root .recorder-toolbar.pair .control--play {
     width: var(--o4-big);
     height: var(--o4-big);
   }
   /* Erase and the edit toggle: the 64 secondary circle on the well. No ink
      here or on the edit bar: the zoom toggle's green ink (is-on) and the
      variants' own inks must keep winning. */
-  [data-design="o4"]
+  :root
     .recorder-toolbar.pair
     .control:not(.control--record):not(.control--play) {
     width: 64px;
@@ -187,7 +185,7 @@
      as the pair's) leaves. The bar is the pair's height, so the toggle keeps
      its vertical centre across the flip and the stage does not resize
      (3-components.css holds the same rule). */
-  [data-design="o4"] .recorder-toolbar.edit {
+  :root .recorder-toolbar.edit {
     container-type: inline-size;
     --o4-secondary: max(
       44px,
@@ -196,7 +194,7 @@
     grid-template-columns: repeat(4, minmax(0, 1fr)) 64px;
     height: calc(80px + var(--p-space-3));
   }
-  [data-design="o4"] .recorder-toolbar.edit .control {
+  :root .recorder-toolbar.edit .control {
     justify-self: center;
     width: var(--o4-secondary);
     height: var(--o4-secondary);
@@ -206,10 +204,7 @@
   /* The toggle is the bar's last child, always wrapped by its hint span, and
      stays the pair's 64 in its own 64 slot rather than shrinking with the
      five. */
-  [data-design="o4"]
-    .recorder-toolbar.edit
-    > .control-hinted:last-child
-    .control {
+  :root .recorder-toolbar.edit > .control-hinted:last-child .control {
     width: 64px;
     height: 64px;
   }
@@ -227,15 +222,15 @@
      as before. Fit: the smallest circle is the
      44px touch floor (the edit bar at 320px), so the 30px glyph leaves 7px on
      each side; the 64 and 80 circles leave more. Colour is untouched. */
-  [data-design="o4"] .recorder-toolbar {
+  :root .recorder-toolbar {
     --o4-toolbar-icon: calc(22px * 1.25); /* #939 token */
     --o4-toolbar-icon-quiet: calc(24px * 1.25); /* #939 token */
   }
-  [data-design="o4"] .recorder-toolbar .control svg {
+  :root .recorder-toolbar .control svg {
     width: var(--o4-toolbar-icon);
     height: var(--o4-toolbar-icon);
   }
-  [data-design="o4"] .recorder-toolbar.edit .control--quiet svg {
+  :root .recorder-toolbar.edit .control--quiet svg {
     width: var(--o4-toolbar-icon-quiet);
     height: var(--o4-toolbar-icon-quiet);
   }
@@ -245,7 +240,7 @@
      timestamp above holds in 10/11 — the stamp is not drawn in edit mode, so
      the two never share it. The workbench's edit-badge type (17/800); the
      voice ink, without the old pill's wash. */
-  [data-design="o4"] .recorder-editing {
+  :root .recorder-editing {
     top: 20px;
     right: 18px;
     z-index: 3;

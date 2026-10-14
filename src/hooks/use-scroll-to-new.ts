@@ -21,12 +21,19 @@ export interface ScrollToNew<Id> {
    * `null` arms nothing, so a caller can pass a decision that may legitimately
    * have no target (`focusTargetAfterDelete`) without branching.
    *
+   * `preventScroll: true` keeps the viewport where the translator left it. Pass
+   * it for a hand-off that is not a create: the delete-confirm lift lands on a
+   * row the translator was already looking at, and a bare `.focus()` there
+   * scrolls the shelf back to it (#800, DRI "split it"). A fresh create
+   * leaves it off and gets its scroll from {@link armScroll}. The option
+   * belongs to the arm and is retained with it while the hand-off is held.
+   *
    * Hand focus off whenever the control that had it is about to unmount — an
    * empty state's CTA that the create destroys, a dialog that closes on
    * Confirm. Without it focus falls to the document, and the next Tab starts at
    * the first header stop, which on these screens is Back.
    */
-  armFocus: (id: Id | null) => void;
+  armFocus: (id: Id | null, options?: { preventScroll?: boolean }) => void;
   /**
    * The row's registered element, or `null` when no row is registered under
    * that id — because it is not on screen, or not committed yet.
@@ -132,9 +139,18 @@ export function useScrollToNew<Id>(focusSelector: string): ScrollToNew<Id> {
     pending.current = { ...pending.current, scroll: id };
   }, []);
 
-  const armFocus = useCallback((id: Id | null) => {
-    pending.current = { ...pending.current, focus: id };
-  }, []);
+  // Beside `pending`, not inside it: `planReveal` is a pure table-tested
+  // decision about WHICH row, and how the focus call is made is not its
+  // business. Set by every `armFocus`, so a later plain arm resets it.
+  const focusPreventScroll = useRef(false);
+
+  const armFocus = useCallback(
+    (id: Id | null, options?: { preventScroll?: boolean }) => {
+      pending.current = { ...pending.current, focus: id };
+      focusPreventScroll.current = options?.preventScroll === true;
+    },
+    []
+  );
 
   const nodeFor = useCallback((id: Id) => nodes.current.get(id) ?? null, []);
 
@@ -158,15 +174,13 @@ export function useScrollToNew<Id>(focusSelector: string): ScrollToNew<Id> {
       // exactly the duplication this hook exists to remove from the screens —
       // and it is the copy a later `controlIn` change would silently skip.
       if (plan.scroll !== null) scrollTo(plan.scroll);
-      // A bare `.focus()`, as both screens called it before this hook existed.
-      // The HTML focus steps scroll the target into view unless
-      // `preventScroll: true` is passed, so a hand-off can move the viewport
-      // even on a commit that plans no scroll of its own. Carried over
-      // deliberately: changing it is a behaviour change, which a no-change
-      // extraction is the wrong place for. Filed rather than decided here
-      // (George round 1 finding 2, #800).
+      // `preventScroll` is the arm's choice (see `armFocus`): without it the
+      // HTML focus steps scroll the target into view, which is wanted for a
+      // fresh create and not for a delete-confirm lift (#800).
       if (plan.focus === null) return;
-      controlIn(plan.focus)?.focus();
+      const preventScroll = focusPreventScroll.current;
+      if (plan.rest.focus === null) focusPreventScroll.current = false;
+      controlIn(plan.focus)?.focus({ preventScroll });
       // If the hand-off did not take (no row, or a control that refused
       // focus), focus is still where the unmount that armed it left it:
       // `<body>`. Only then does the fallback run (#1124).

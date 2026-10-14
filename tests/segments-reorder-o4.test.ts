@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SegmentRow } from "@/components/segment-row";
 import { SegmentsScreen } from "@/components/segments-screen";
-import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { ChapterId, ClipId, SegmentId } from "@/types/domain";
@@ -19,10 +18,10 @@ import { restingErase, stripCssComments } from "./support";
 
 /**
  * Press-and-hold reorder on the Segments list (#953 PR2a), wired: the real
- * `SegmentsScreen` and `SegmentRow`, with `useChapterSegments` and
- * `useDesign` replaced at their boundary (the `segments-erase-preview-o4`
- * pattern), so these cases are about the call sites — that the hold starts
- * only on the badge and title, that the O4 switch gates it, and that the one
+ * `SegmentsScreen` and `SegmentRow`, with `useChapterSegments` replaced at
+ * its boundary (the `segments-erase-preview-o4` pattern), so these cases are
+ * about the call sites — that the hold starts only on the badge and title,
+ * and that the one
  * `moveSegment` call happens on the drop and nowhere else.
  *
  * Layout is faked: jsdom has none, so each `<li>` reports a 90px row at a
@@ -31,11 +30,6 @@ import { restingErase, stripCssComments } from "./support";
  * row on a phone), the cascade (whether `o4/segments.css` paints the lift),
  * and anything on a device.
  */
-
-const design = vi.hoisted(() => ({ current: "o4" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 
 const mocks = vi.hoisted(() => ({ chapter: vi.fn() }));
 vi.mock("@/hooks/use-chapter-segments", () => ({
@@ -141,7 +135,6 @@ beforeEach(() => {
       return rect(0, 700);
     }
   );
-  design.current = "o4";
   rows = [makeRow(0), makeRow(1), makeRow(2, { label: "verses 5-6" })];
   moveSegment = vi.fn(() => Promise.resolve(true));
   onOpenRecorder = vi.fn<(segmentId: SegmentId, ordinal: number) => void>();
@@ -172,7 +165,6 @@ async function mount() {
   );
 }
 
-// Both looks: the O4 list's class is itself O4-only.
 const items = () =>
   [...document.querySelectorAll("ul > li")].filter(
     (li) => li.querySelector(".row") !== null
@@ -491,21 +483,8 @@ describe("the drag and the one write", () => {
   });
 });
 
-describe("the switch-off look does not gain the gesture", () => {
-  it("renders no hold area and no live region, and a held badge lifts nothing", async () => {
-    design.current = "current";
-    await mount();
-    expect(document.querySelector("[data-reorder-handle]")).toBeNull();
-    expect(document.querySelector("[data-reorder-status]")).toBeNull();
-    await hold(badge(0), 45);
-    await act(async () => pointer(badge(0), "pointermove", 260));
-    await act(async () => pointer(badge(0), "pointerup", 260));
-    expect(document.querySelector(".segments-item--lifted")).toBeNull();
-    expect(document.querySelector("[data-reordering]")).toBeNull();
-    expect(moveSegment).not.toHaveBeenCalled();
-  });
-
-  it("marks only the badge and the title as the hold area in O4, and nothing in the current look", () => {
+describe("the row's hold area", () => {
+  it("marks only the badge and the title as the hold area, and nothing without a hold handler", () => {
     const props = {
       row: makeRow(2, { label: "verses 5-6" }),
       playing: false,
@@ -518,7 +497,6 @@ describe("the switch-off look does not gain the gesture", () => {
       onRename: () => Promise.resolve(true),
       onHoldStart: () => {},
     };
-    design.current = "o4";
     const o4 = render(createElement(SegmentRow, props));
     expect(
       [...o4.querySelectorAll("[data-reorder-handle]")].map(
@@ -527,9 +505,12 @@ describe("the switch-off look does not gain the gesture", () => {
     ).toEqual(["row-open", "row-title"]);
     expect(o4.querySelector(".scrub[data-reorder-handle]")).toBeNull();
 
-    design.current = "current";
-    const current = render(createElement(SegmentRow, props));
-    expect(current.querySelector("[data-reorder-handle]")).toBeNull();
+    // The row gains the gesture only from the screen's handler.
+    const bare = render(
+      createElement(SegmentRow, { ...props, onHoldStart: undefined })
+    );
+    expect(bare.querySelector(".row-open")).not.toBeNull();
+    expect(bare.querySelector("[data-reorder-handle]")).toBeNull();
   });
 });
 
@@ -556,7 +537,7 @@ describe("o4/segments.css: the lift (§3, §4)", () => {
       .map((d) => d.replace(/\s+/g, " ").trim())
       .filter(Boolean);
   }
-  const O4 = '[data-design="o4"]';
+  const O4 = ":root";
 
   it("lifts the row at scale 1.03 on z 8 and slides the neighbours over 160 ms", () => {
     expect(

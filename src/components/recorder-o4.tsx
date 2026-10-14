@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 
-import type { Design } from "@/lib/design";
 import { formatDuration } from "@/lib/utils";
 import type { RecorderLook } from "./recorder-look";
 
@@ -12,7 +11,6 @@ import type { RecorderLook } from "./recorder-look";
  */
 
 interface RecorderStampProps {
-  readonly design: Design;
   readonly look: RecorderLook;
   /** The drawn buffer's duration — the same denominator the playhead uses. */
   readonly durationMs: number;
@@ -22,18 +20,17 @@ interface RecorderStampProps {
 
 /**
  * The mono timestamp in the stage's top-right corner: the duration while
- * recorded (10), and position / duration while playing (11). O4 only.
+ * recorded (10), and position / duration while playing (11).
  *
  * Pull-model while playing, like `PlayheadOverlay`: it reads the position on
  * its own rAF and writes the text node directly, so playback re-renders
  * nothing. A null read (playback just ended) keeps the last position rather
  * than flashing back to zero for the frame before `look` changes.
  *
- * `aria-hidden`: the brief asks for the same accessibility tree in both looks,
- * and a clock that changes every frame is noise to a screen reader.
+ * `aria-hidden`: a clock that changes every frame is noise to a screen
+ * reader.
  */
 export function RecorderStamp({
-  design,
   look,
   durationMs,
   readElapsedMs,
@@ -44,7 +41,7 @@ export function RecorderStamp({
     readRef.current = readElapsedMs;
   }, [readElapsedMs]);
 
-  const playing = design === "o4" && look === "playing";
+  const playing = look === "playing";
   useEffect(() => {
     if (!playing) return;
     let raf = 0;
@@ -59,7 +56,6 @@ export function RecorderStamp({
     return () => cancelAnimationFrame(raf);
   }, [playing, durationMs]);
 
-  if (design !== "o4") return null;
   if (look === "recorded")
     return (
       <span className="recorder-stamp" aria-hidden="true">

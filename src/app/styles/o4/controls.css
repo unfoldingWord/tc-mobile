@@ -1,4 +1,4 @@
-/* O4 — Shared controls. Owner: #941. Scoped under [data-design="o4"]; see o4/index.css's header before editing this file.
+/* O4 — Shared controls. Owner: #941. Every selector is prefixed with :root; see o4/index.css's header before editing this file.
 
    The four shapes `components/o4-controls.tsx` puts on a `Control`
    (docs/design/o4-design-system.md §3). Each is layered onto the base
@@ -7,24 +7,24 @@
    The row transport takes its fill and ink from the play and record variants
    it wears, so it sets size alone. */
 @layer components {
-  [data-design="o4"] .o4-speaker {
+  :root .o4-speaker {
     width: 52px;
     height: 52px;
     background: var(--s-well);
     color: var(--s-hear);
   }
-  [data-design="o4"] .o4-square {
+  :root .o4-square {
     width: 56px;
     height: 56px;
     border-radius: var(--p-radius-lg);
     background: var(--s-well);
     color: var(--s-ink);
   }
-  [data-design="o4"] .o4-transport {
+  :root .o4-transport {
     width: 72px;
     height: 72px;
   }
-  [data-design="o4"] .o4-pill {
+  :root .o4-pill {
     display: inline-flex;
     align-items: center;
     gap: 12px;

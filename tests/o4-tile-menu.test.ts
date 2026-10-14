@@ -118,11 +118,11 @@ describe("TileGrid and TileSpacer (#941)", () => {
 describe("o4/menus.css (#941)", () => {
   const rules = areaRules("menus");
 
-  it("scopes every rule under the switch", () => {
+  it("prefixes every rule with :root, holding the specificity o4/index.css documents", () => {
     expect(rules.length).toBeGreaterThanOrEqual(8);
     for (const rule of rules)
       for (const selector of rule.selectors)
-        expect(selector).toMatch(/^\[data-design="o4"\] /);
+        expect(selector).toMatch(/^:root /);
   });
 
   it("paints colour only through layer-2 roles", () => {
@@ -139,17 +139,14 @@ describe("o4/menus.css (#941)", () => {
   });
 
   it("draws the tile box 76 × 76, radius 20, with the caption 8 below at 14px", () => {
-    const box = declsFor(rules, '[data-design="o4"] .o4-tile::before');
+    const box = declsFor(rules, ":root .o4-tile::before");
     expect(box.get("width")).toBe("76px");
     expect(box.get("height")).toBe("76px");
     expect(box.get("border-radius")).toBe("20px");
-    const tile = declsFor(rules, '[data-design="o4"] .o4-tile');
+    const tile = declsFor(rules, ":root .o4-tile");
     expect(tile.get("width")).toBe("76px");
     expect(tile.get("row-gap")).toBe("8px");
-    const caption = declsFor(
-      rules,
-      '[data-design="o4"] .o4-tile > .control-caption'
-    );
+    const caption = declsFor(rules, ":root .o4-tile > .control-caption");
     expect(caption.get("font-size")).toBe("14px");
   });
 
@@ -160,44 +157,32 @@ describe("o4/menus.css (#941)", () => {
       ["send", "--s-send"],
     ] as const) {
       expect(
-        declsFor(rules, `[data-design="o4"] .o4-tile--${tone}::before`).get(
-          "background"
-        ),
+        declsFor(rules, `:root .o4-tile--${tone}::before`).get("background"),
         tone
       ).toBe(`var(${role})`);
     }
-    expect(declsFor(rules, '[data-design="o4"] .o4-tile').get("color")).toBe(
+    expect(declsFor(rules, ":root .o4-tile").get("color")).toBe(
       "var(--s-tile-ink)"
     );
     expect(
-      declsFor(rules, '[data-design="o4"] .o4-tile--erase::before').get(
-        "background"
-      )
+      declsFor(rules, ":root .o4-tile--erase::before").get("background")
     ).toBe("var(--s-live-quiet)");
     expect(
-      declsFor(rules, '[data-design="o4"] .o4-tile--plain::before').get(
-        "background"
-      )
+      declsFor(rules, ":root .o4-tile--plain::before").get("background")
     ).toBe("var(--s-well)");
   });
 
   it("gives a menu holding the grid the bottom-sheet shell: radius 26 and a 56 × 5 handle", () => {
-    const panel = declsFor(
-      rules,
-      '[data-design="o4"] .menu-panel:has(.o4-tiles)'
-    );
+    const panel = declsFor(rules, ":root .menu-panel:has(.o4-tiles)");
     expect(panel.get("border-radius")).toBe("26px");
     // The handle is `menu.tsx`'s grip (#1268): drawn in o4/sheets.css,
     // shown on a tile sheet here.
     const handle = declsFor(
       rules,
-      '[data-design="o4"] .menu-panel:has(.o4-tiles) .menu-grip'
+      ":root .menu-panel:has(.o4-tiles) .menu-grip"
     );
     expect(handle.get("display")).toBe("flex");
-    const scrim = declsFor(
-      rules,
-      '[data-design="o4"] .menu-scrim:has(.o4-tiles)'
-    );
+    const scrim = declsFor(rules, ":root .menu-scrim:has(.o4-tiles)");
     expect(scrim.get("background")).toBe("var(--s-dim)");
     expect(scrim.get("padding")).toMatch(/^8px /);
   });

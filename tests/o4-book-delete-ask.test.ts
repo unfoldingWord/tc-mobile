@@ -79,7 +79,7 @@ describe("O4BookDeleteAsk markup (#980)", () => {
 });
 
 describe("o4/books.css: the delete ask's rules match its markup (#980)", () => {
-  const O4 = '[data-design="o4"] ';
+  const O4 = ":root ";
   const rules = areaRules("books");
   const added = [
     ".books-delete-ask",

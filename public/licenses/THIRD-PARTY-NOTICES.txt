@@ -8,7 +8,7 @@ tools write into the app rather than runtime dependencies (for example the
 service worker, preload helpers, the bundler's module runtime and base
 styles); each build lists those in build-provenance.json.
 
-react 19.3.0 — MIT
+react {{version:react}} — MIT
 https://react.dev/
 
 MIT License
@@ -35,7 +35,7 @@ SOFTWARE.
 
 ========================================================================
 
-react-dom 19.3.0 — MIT
+react-dom {{version:react-dom}} — MIT
 https://react.dev/
 
 MIT License
@@ -62,7 +62,7 @@ SOFTWARE.
 
 ========================================================================
 
-scheduler 0.28.0 — MIT
+scheduler {{version:scheduler}} — MIT
 https://react.dev/
 
 MIT License
@@ -89,7 +89,7 @@ SOFTWARE.
 
 ========================================================================
 
-idb 8.0.3 — ISC
+idb {{version:idb}} — ISC
 https://www.npmjs.com/package/idb
 
 ISC License (ISC)
@@ -101,7 +101,7 @@ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH RE
 
 ========================================================================
 
-clsx 2.1.1 — MIT
+clsx {{version:clsx}} — MIT
 https://www.npmjs.com/package/clsx
 
 MIT License
@@ -116,7 +116,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ========================================================================
 
-tailwind-merge 3.7.0 — MIT
+tailwind-merge {{version:tailwind-merge}} — MIT
 https://github.com/dcastil/tailwind-merge
 
 MIT License
@@ -143,7 +143,7 @@ SOFTWARE.
 
 ========================================================================
 
-fflate 0.8.3 — MIT
+fflate {{version:fflate}} — MIT
 https://101arrowz.github.io/fflate
 
 MIT License
@@ -170,7 +170,7 @@ SOFTWARE.
 
 ========================================================================
 
-@breezystack/lamejs 1.2.7 — LGPL-3.0
+@breezystack/lamejs {{version:@breezystack/lamejs}} — LGPL-3.0
 https://github.com/shijinyu/lamejs#readme
 
 Can I use LAME in my commercial program?  
@@ -188,7 +188,7 @@ way to do this is to:
 
 ========================================================================
 
-workbox 7.4.1 — MIT
+workbox {{version:workbox-build}} — MIT
 https://developer.chrome.com/docs/workbox
 
 Copyright 2018 Google LLC
@@ -213,7 +213,7 @@ THE SOFTWARE.
 
 ========================================================================
 
-@trickfilm400/rollup-plugin-off-main-thread 3.0.0-pre1 — Apache-2.0
+@trickfilm400/rollup-plugin-off-main-thread {{version:@trickfilm400/rollup-plugin-off-main-thread}} — Apache-2.0
 https://github.com/Trickfilm400/rollup-plugin-off-main-thread
 
 The module loader at the top of the service worker (sw.js), written into it
@@ -425,7 +425,7 @@ Copyright 2018 Google Inc.
 
 ========================================================================
 
-vite 8.3.0 — MIT
+vite {{version:vite}} — MIT
 https://vite.dev
 
 Copyright (c) 2019-present, VoidZero Inc. and Vite contributors
@@ -450,7 +450,7 @@ SOFTWARE.
 
 ========================================================================
 
-rolldown 1.2.9 — MIT
+rolldown {{version:rolldown}} — MIT
 https://rolldown.rs/
 
 Copyright (c) 2024-present VoidZero Inc. & Contributors
@@ -479,7 +479,7 @@ The licenses of externally maintained libraries from which parts of the Software
 
 ========================================================================
 
-@oxc-project/runtime 0.150.0 — MIT
+@oxc-project/runtime {{version:@oxc-project/runtime}} — MIT
 https://oxc.rs
 
 MIT License
@@ -533,7 +533,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ========================================================================
 
-tailwindcss 4.3.3 — MIT
+tailwindcss {{version:tailwindcss}} — MIT
 https://tailwindcss.com
 
 Copyright (c) Tailwind Labs, Inc.
@@ -558,7 +558,7 @@ SOFTWARE.
 
 ========================================================================
 
-vite-plugin-pwa 1.3.0 — MIT
+vite-plugin-pwa {{version:vite-plugin-pwa}} — MIT
 https://github.com/vite-pwa/vite-plugin-pwa
 
 Copyright (c) 2020-PRESENT Anthony Fu <https://github.com/antfu>
@@ -583,7 +583,7 @@ SOFTWARE.
 
 ========================================================================
 
-@capacitor/core 8.5.2 — MIT
+@capacitor/core {{version:@capacitor/core}} — MIT
 https://capacitorjs.com
 
 MIT License
@@ -610,7 +610,7 @@ SOFTWARE.
 
 ========================================================================
 
-@capacitor/app 8.1.1 — MIT
+@capacitor/app {{version:@capacitor/app}} — MIT
 https://github.com/ionic-team/capacitor-plugins
 
 Copyright 2020-present Ionic
@@ -639,7 +639,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ========================================================================
 
-@capacitor/filesystem 8.1.3 — MIT
+@capacitor/filesystem {{version:@capacitor/filesystem}} — MIT
 https://github.com/ionic-team/capacitor-filesystem
 
 MIT License
@@ -666,7 +666,7 @@ SOFTWARE.
 
 ========================================================================
 
-@capacitor/share 8.0.2 — MIT
+@capacitor/share {{version:@capacitor/share}} — MIT
 https://github.com/ionic-team/capacitor-plugins
 
 Copyright 2020-present Ionic
@@ -695,7 +695,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ========================================================================
 
-@capacitor/synapse 1.0.4 — MIT
+@capacitor/synapse {{version:@capacitor/synapse}} — MIT
 https://www.npmjs.com/package/@capacitor/synapse
 (Its package.json declares ISC; the LICENSE.md it ships is the MIT text below.)
 
@@ -723,7 +723,7 @@ SOFTWARE.
 
 ========================================================================
 
-tslib 2.8.1 — 0BSD
+tslib {{version:tslib}} — 0BSD
 https://www.typescriptlang.org/
 
 Copyright (c) Microsoft Corporation.

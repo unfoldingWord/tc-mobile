@@ -17,7 +17,7 @@ import { one, render } from "./render";
  * so a comment naming a selector cannot stand in for the rule.
  */
 
-const O4 = '[data-design="o4"] ';
+const O4 = ":root ";
 
 describe("O4BookHead (04's sheet head)", () => {
   it("draws the book's small cover and name as decoration, then its children", () => {

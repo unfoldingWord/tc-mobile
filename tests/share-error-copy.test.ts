@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { Capacitor } from "@capacitor/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -123,7 +124,23 @@ describe("shareErrorText", () => {
     expect(shareErrorText("nothing", "chapter")).toBe(strings.shareNothing);
     expect(shareErrorText("failed", "chapter")).toBe(strings.shareFailed);
     expect(shareErrorText("nothing", "book")).toBe(strings.shareBookNothing);
-    expect(shareErrorText("failed", "book")).toBe(strings.shareBookFailed);
+  });
+
+  it("points a failed book share on the web build to the app, and keeps the native retry line (#272)", () => {
+    // Plain Node reads as the web build.
+    expect(shareErrorText("failed", "book")).toBe(strings.shareBookFailedWeb);
+    expect(strings.shareBookFailedWeb).toMatch(/tC Mobile app/);
+    expect(strings.shareBookFailedWeb).not.toMatch(/try again/i);
+
+    const native = vi
+      .spyOn(Capacitor, "isNativePlatform")
+      .mockReturnValue(true);
+    try {
+      expect(shareErrorText("failed", "book")).toBe(strings.shareBookFailed);
+      expect(shareErrorText("failed", "chapter")).toBe(strings.shareFailed);
+    } finally {
+      native.mockRestore();
+    }
   });
 
   it("gives a stalled encoder its own line, on BOTH screens, naming the restart", () => {
@@ -191,7 +208,7 @@ describe("shareProgressText", () => {
       strings.shareFailed
     );
     expect(shareProgressText(outcome("failed"), "book")).toBe(
-      strings.shareBookFailed
+      strings.shareBookFailedWeb
     );
     expect(shareProgressText(outcome("encoder"), "chapter")).toBe(
       strings.shareEncoderStopped

@@ -29,12 +29,8 @@ interface CutAnchorProps {
  * `.recorder-cut`'s own `justify-content: center` (3-components.css) still
  * centers it at the stage — unchanged from before #1102.
  *
- * The actual positioning is CSS, scoped under `[data-design="o4"]`
- * (`o4/recorder.css`): this component always sets `--o4-cut-left` when there is
- * a selection, in every look, but the "current" look's stylesheet has no
- * matching rule for `.cut-anchor`, so the property sits unused there and the
- * wrapper renders as an ordinary flex child — the same centered position
- * `justify-content: center` already gave it.
+ * The actual positioning is CSS (`o4/recorder.css`): this component sets
+ * `--o4-cut-left` whenever there is a selection.
  */
 export function CutAnchor({ selection, win, children }: CutAnchorProps) {
   const percent = cutAnchorPercent(selection, win);

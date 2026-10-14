@@ -195,29 +195,34 @@ describe("the guide accent is one colour, reached through layer 2 (#604)", () =>
     // must stay inside its own box, because a full-bleed row is flush with a
     // scroll container that clips anything drawn outside it.
     expect(ruleBlock(components, ".is-guided")).toMatch(/box-shadow:\s*inset/);
-    expect(ruleBlock(components, ".control--record.is-guided")).toMatch(
-      /box-shadow:\s*0/
-    );
+    // An unrecorded row's mic (#1217) shares the outset ring: its own red
+    // outline is its border, and an inset ring would sit against it. `inset`
+    // may trail the lengths, so its absence is asserted too (PR #1319 George
+    // r1).
+    for (const control of [".control--record", ".control--mic"]) {
+      const block = ruleBlock(components, `${control}.is-guided`);
+      expect(block, control).toMatch(/box-shadow:\s*0/);
+      expect(block, control).not.toMatch(/\binset\b/);
+    }
   });
 
-  it("holds the focus ring off the record ring, which shares its side", () => {
-    // Everywhere else the guide is inside the box and focus is outside it, so
-    // they are separated by construction. On the record button both are
-    // outside, and at the base offset they would touch: the guide covers
-    // 0-3px out and the outline starts at 3px. The offset has to be pushed by
-    // at least the ring's own width for the two to read as two.
-    const block = ruleBlock(
-      globals,
-      ".control--record.is-guided:focus-visible"
-    );
-    expect(block).toMatch(/outline-offset:\s*calc\(/);
-    expect(block).toContain("--c-focus-offset");
-    expect(block).toContain("--c-guide-ring");
-    expect(globals).not.toMatch(/@layer\b/);
-    expect(components).not.toContain(
-      ".control--record.is-guided:focus-visible"
-    );
-  });
+  // The record button and an unrecorded row's mic (#1217, #1233 item 19) both
+  // wear the outset ring, so both need the focus separation.
+  for (const control of [".control--record", ".control--mic"] as const) {
+    it(`holds the focus ring off the ${control} ring, which shares its side`, () => {
+      // Everywhere else the guide is inside the box and focus is outside it,
+      // so they are separated by construction. On these controls both are
+      // outside, and at the base offset they would touch: the guide covers
+      // 0-3px out and the outline starts at 3px. The offset has to be pushed
+      // by at least the ring's own width for the two to read as two.
+      const block = ruleBlock(globals, `${control}.is-guided:focus-visible`);
+      expect(block).toMatch(/outline-offset:\s*calc\(/);
+      expect(block).toContain("--c-focus-offset");
+      expect(block).toContain("--c-guide-ring");
+      expect(globals).not.toMatch(/@layer\b/);
+      expect(components).not.toContain(`${control}.is-guided:focus-visible`);
+    });
+  }
 });
 
 describe("every step of the chain reaches a control (#604)", () => {

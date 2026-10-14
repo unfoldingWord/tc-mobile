@@ -212,7 +212,8 @@ describe("the light theme is reachable (#171)", () => {
     expect(control).toMatch(/useTheme\(\)/);
     expect(control).toMatch(/onClick=\{theme\.toggle\}/);
     const screen = code("src/components/books-screen.tsx");
-    expect(screen).toMatch(/<ThemeControl\s*\/>/);
+    // The tile form: every menu draws its actions on the tile grid (#949).
+    expect(screen).toMatch(/<ThemeControl\s+tile\s*\/>/);
     // A `<Menu>` with CHILDREN — before this it was a self-closing empty panel.
     //
     // The close handler is matched loosely on purpose (#452 PR3): it was the
@@ -260,26 +261,24 @@ describe("the light theme is reachable (#171)", () => {
     // fast when a mount is DELETED, which is the way this regresses: both
     // screens are large, and neither reviewer's eye is a gate.
     //
-    // COUNTED, not merely present. The recorder menu has two mutually
-    // exclusive branches — record mode and edit mode — and each mounts the
-    // toggle, so a `toMatch` over the file passes with one of them deleted:
-    // the first draft of this case was mutated that way and survived. The
-    // e2e spec drives the sheet in RECORD mode only, so the edit-mode mount
-    // has no other gate at all.
+    // COUNTED, not merely present, so a second mount or a lost one both
+    // fail. The recorder menu draws ONE tile grid for record and edit mode
+    // alike (the mode only changes the tiles ahead of the spacer), so its one
+    // mount serves both modes.
     //
     // Matched as `<ThemeControl`, never as the bare identifier, for the
     // comment-capture reason above.
     const mounts = (file: string) =>
-      code(file).match(/<ThemeControl\s*\/>/g)?.length ?? 0;
+      code(file).match(/<ThemeControl\s+tile\s*\/>/g)?.length ?? 0;
     // The chapter `⋮`'s one action branch (the stale and rename branches are
     // transient sub-states with no action list of their own).
     expect(mounts("src/components/segments-screen.tsx")).toBe(1);
-    // Record mode and edit mode — in `recorder-menu.tsx` since #662 lifted the
-    // recorder's `⋮` out of `recorder.tsx` into its own component. The count
-    // follows the menu rather than the screen, and `recorder.tsx` is asserted
-    // to hold NONE, so a half-finished move that leaves one mount behind in
-    // the screen fails here instead of silently double-mounting.
-    expect(mounts("src/components/recorder-menu.tsx")).toBe(2);
+    // In `recorder-menu.tsx` since #662 lifted the recorder's `⋮` out of
+    // `recorder.tsx` into its own component. The count follows the menu
+    // rather than the screen, and `recorder.tsx` is asserted to hold NONE, so
+    // a half-finished move that leaves one mount behind in the screen fails
+    // here instead of silently double-mounting.
+    expect(mounts("src/components/recorder-menu.tsx")).toBe(1);
     expect(mounts("src/components/recorder.tsx")).toBe(0);
 
     // ORDER, not just presence (George, this head). The e2e focus assertion
@@ -292,17 +291,13 @@ describe("the light theme is reachable (#171)", () => {
     // first ACTIONABLE child, so while Edit/Done and the chapter's Rename are
     // actionable they must come first, and the toggle must not displace them.
     // The Books case below already pins its own order this way.
-    // Checked per BRANCH, which took three tries and two failed mutations to
-    // get right, both recorded on the PR. `lastIndexOf` over the whole file
-    // passed with the record branch's mount above Edit. So did a per-`</Menu>`
-    // check, because `recorder-menu.tsx` is ONE `<Menu>` holding a ternary —
-    // its two row sets share a single closing tag.
-    //
-    // So each mount is checked against the end of ITS OWN branch: the first
-    // of `) : (`, `)}` or `</Menu>` that follows it. No row may open in
-    // between. `Menu` lands open-edge focus on the first ACTIONABLE child, so
-    // while Edit/Done and the chapter's Rename are actionable they must come
-    // first and the toggle must not displace them.
+    // Each mount is checked against the end of ITS OWN group: the first of
+    // `</TileGrid>` (the recorder and Books grids) or `</>` (the chapter
+    // menu's `tiles.after` fragment, which `ShareMenuSection` renders last in
+    // its grid) that follows it. No tile or control may open in between.
+    // `Menu` lands open-edge focus on the first ACTIONABLE child, so while
+    // Done/Erase and the chapter's Rename are actionable they must come first
+    // and the toggle must not displace them.
     const toggleClosesEveryBranch = (file: string) => {
       const body = code(file);
       const mounts = [...body.matchAll(/<ThemeControl\b/g)].map((m) => m.index);
@@ -311,22 +306,28 @@ describe("the light theme is reachable (#171)", () => {
       );
       return mounts.every((mount) => {
         const rest = body.slice(mount);
-        const ends = [") : (", ")}", "</Menu>"]
+        const ends = ["</TileGrid>", "</>"]
           .map((token) => rest.indexOf(token))
           .filter((at) => at !== -1);
         expect(
           ends.length,
           `no branch end after a mount in ${file}`
         ).toBeGreaterThan(0);
-        // `<ThemeControl` is not a substring of `<Control`, so the mount
-        // itself cannot satisfy this.
-        return rest.slice(0, Math.min(...ends)).indexOf("<Control") === -1;
+        // Any component element counts — a `<Tile>`, a `<Control>`, or a
+        // group of them such as `<RecorderMenuTiles>` — except the spacer,
+        // which only pushes the toggle to the far end. Sliced from 1 so the
+        // mount's own `<ThemeControl` is not the match.
+        const between = rest.slice(1, Math.min(...ends));
+        return !/<(?!TileSpacer\b)[A-Z]\w*/.test(between);
       });
     };
     expect(toggleClosesEveryBranch("src/components/recorder-menu.tsx")).toBe(
       true
     );
     expect(toggleClosesEveryBranch("src/components/segments-screen.tsx")).toBe(
+      true
+    );
+    expect(toggleClosesEveryBranch("src/components/books-screen.tsx")).toBe(
       true
     );
 

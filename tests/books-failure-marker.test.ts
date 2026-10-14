@@ -53,6 +53,7 @@ vi.mock("@/hooks/use-storage-persistence", () => ({
 const book: BookCard = {
   bookId: "book" as BookId,
   name: "Genesis",
+  number: 1,
   chapters: [],
 };
 
@@ -65,7 +66,7 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   mocks.books.mockReturnValue({
     books: [book],
-    newBookPlaceholder: "Book 002",
+    newBookNumber: 2,
     loading: false,
     loaded: true,
     error: null,

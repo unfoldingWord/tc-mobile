@@ -14,21 +14,14 @@ import { strings } from "@/lib/strings";
 
 import { stripComments } from "./support";
 
-// This file asserts the CURRENT look's menu rows (plain items, the `is-done`
-// class), not O4's tile grid (#949). #951 flipped the design default to o4,
-// so pin the current look explicitly here rather than rely on
-// nothing-stored — the O4 shape of this menu is `tests/recorder-menu-o4.test.ts`'s.
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: "current" as const, toggle: () => {} }),
-}));
-
 /**
  * The recorder's ⋮ menu, now that it is its own component (#160, L-1).
  *
  * It had no test while it was a hundred lines inside a 4000-line component —
  * reaching it meant mounting the whole recorder with a mocked audio session.
  * As a component whose every input is a derived value, it is a props → rows
- * question, which is what these ask.
+ * question, which is what these ask. The tile grid's own layout, tones and
+ * gating are `tests/recorder-menu-o4.test.ts`'s.
  *
  * `Menu` portals to `<body>`, so the queries go through `document`, not the
  * container.
@@ -43,10 +36,8 @@ const base: RecorderMenuProps = {
   mode: "record",
   ordinal: 3,
   finishedState: "empty",
-  editReason: null,
   markReason: null,
   eraseReason: null,
-  onEnterEdit: vi.fn(),
   onToggleFinished: vi.fn(),
   onErase: vi.fn(),
 };
@@ -81,11 +72,12 @@ describe("RecorderMenu", () => {
     expect(buttons()).toHaveLength(0);
   });
 
-  it("offers Edit, Mark finished and Erase in record mode", () => {
+  it("offers Mark finished and Erase in record mode, and no Edit (G3)", () => {
     show();
-    expect(named(strings.enterEdit)).toBeDefined();
     expect(named(strings.markFinished(3))).toBeDefined();
     expect(named(strings.eraseSegment)).toBeDefined();
+    // G3: the recorder screen carries its own edit control.
+    expect(startingWith(strings.enterEdit)).toBeUndefined();
   });
 
   it("offers Erase in edit mode, and no Done or Mark (#1252)", () => {
@@ -116,31 +108,6 @@ describe("RecorderMenu", () => {
     expect(named(strings.deleteSegment)).toBeUndefined();
   });
 
-  it("keeps the Mark row's label fixed and says its state with aria-pressed and the green mark (#351)", () => {
-    // George R1: the paint and the state both key on `finishedState` — the
-    // state the store will actually write — never on the displayed intent,
-    // which can still read "finished" for a segment that was emptied.
-    //
-    // #351: the label no longer flips to "not done". With `aria-pressed`
-    // beside it, a flipped label announces "Mark segment 3 not done, pressed",
-    // naming the opposite of the state; one fixed label is the pattern
-    // the zoom and level-meter toggles already follow.
-    show({ finishedState: "finished" });
-    const marked = named(strings.markFinished(3));
-    expect(marked).toBeDefined();
-    expect(marked?.getAttribute("aria-pressed")).toBe("true");
-    expect(marked?.className).toContain("is-done");
-    expect(named("Mark segment 3 not done")).toBeUndefined();
-
-    show({ finishedState: "empty" });
-    const unmarked = named(strings.markFinished(3));
-    expect(unmarked).toBeDefined();
-    // "false", not absent: an absent `aria-pressed` is a plain button, and
-    // this row is a toggle in both states.
-    expect(unmarked?.getAttribute("aria-pressed")).toBe("false");
-    expect(unmarked?.className).not.toContain("is-done");
-  });
-
   it("carries aria-pressed beside aria-disabled on a greyed, marked row (#351)", () => {
     // The pair #351 asked to check: a marked row frozen while its take commits
     // (`markRowReason`'s "uncommitted-take", which has a hint, #135)
@@ -153,66 +120,6 @@ describe("RecorderMenu", () => {
     expect(row?.getAttribute("aria-label")).toBe(
       `${strings.markFinished(3)}. ${strings.blockedByTake}`
     );
-  });
-
-  it("keeps the paint and the label agreeing when the ordinal is missing", () => {
-    // The two used to be separate expressions with different conditions: the
-    // label required a non-null ordinal, the class did not. So this pair —
-    // ordinal null, `finishedState` "finished" — painted the row GREEN under a
-    // "Mark finished" label numbered 0, which is a row contradicting itself.
-    //
-    // The parent never sends this pair — a null ordinal means the view has not
-    // loaded, and the `ordinal` prop's docblock traces why that always arrives
-    // greyed. So this is defensive: it pins that the component stays
-    // self-consistent without relying on its caller. That
-    // is the whole reason the two expressions were collapsed into one, and
-    // without this case reverting the collapse passes (George R1).
-    show({ ordinal: null, finishedState: "finished" });
-    const row = startingWith(strings.markFinished(0));
-    expect(
-      row,
-      "the unmarked label is what a null ordinal shows"
-    ).toBeDefined();
-    expect(row?.className).not.toContain("is-done");
-    expect(named("Mark segment 0 not done")).toBeUndefined();
-  });
-
-  it("does NOT paint the green mark on a disabled-finished row", () => {
-    // "disabled" is a never-recorded or emptied segment: the mark cannot
-    // stick, so the row must not look as if it has.
-    show({ finishedState: "disabled", markReason: "no-audio" });
-    expect(startingWith(strings.markFinished(3))?.className).not.toContain(
-      "is-done"
-    );
-  });
-
-  it("greys a row and gives it a reason, rather than greying it silently", () => {
-    // #135: a row that goes grey with no explanation is the defect. The reason
-    // is passed in, so the gate and the hint cannot disagree.
-    show({ editReason: "uncommitted-take" });
-    const edit = startingWith(strings.enterEdit);
-    // The reason is IN the accessible name, not only in a glyph.
-    expect(edit?.getAttribute("aria-label")).toBe(
-      `${strings.enterEdit}. ${strings.blockedByTake}`
-    );
-    // Reachable by keyboard WHILE it explains itself — `aria-disabled`, not
-    // the native `disabled` that would drop it out of the Tab trap and strand
-    // a switch user behind the scrim.
-    expect(edit?.getAttribute("aria-disabled")).toBe("true");
-    expect(edit?.hasAttribute("disabled")).toBe(false);
-  });
-
-  it("HARD-disables a row whose reason has nothing to say", () => {
-    // The other half of the same rule, and the reason the hint is derived from
-    // the reason rather than passed beside it: `rowHint` returns null for
-    // "no-segment", so there is no explanation to keep focusable, and the row
-    // takes the native `disabled` instead. A row that is soft-disabled with no
-    // hint would be focusable AND silent — worse than either.
-    show({ editReason: "no-segment" });
-    const edit = named(strings.enterEdit);
-    // Nothing appended: there was no reason with words to append.
-    expect(edit?.hasAttribute("disabled")).toBe(true);
-    expect(edit?.getAttribute("aria-disabled")).toBeNull();
   });
 
   it("gates Erase in BOTH modes from the same reason", () => {

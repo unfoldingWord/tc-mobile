@@ -14,12 +14,12 @@ export function newClipId(): ClipId {
 /**
  * Build a PCM clip's metadata, rejecting a 0-frame clip.
  *
- * Pure and exported so the clip-write invariant lives in one place: `putClip`
- * writes clip+meta on its own, and `saveTake` (takes.ts) writes them inside the
- * take's transaction for atomicity (#38) — both must reject a 0-frame clip and
- * compute duration the same way. A 0-frame clip is not a recording: it resolves
- * as playable, silent audio and can be counted finished (the ghost take
- * `clearSegmentTake` exists to avoid). Rejecting it here makes the store, not
+ * Pure and exported so the clip-write invariant lives apart from the write:
+ * `saveTake` (takes.ts), the only path that writes a PCM clip, builds the meta
+ * here before its transaction opens, then writes clip and meta inside the
+ * take's transaction for atomicity (#38). A 0-frame clip is not a recording:
+ * it resolves as playable, silent audio and can be counted finished (the ghost
+ * take `clearSegmentTake` exists to avoid). Rejecting it here makes the store, not
  * just the hook, the authority, the same way `setSegmentFinished` enforces its
  * own empty invariant rather than trusting a disabled control.
  *
@@ -67,37 +67,6 @@ export function clipFromRecord(meta: ClipMeta, data: ArrayBuffer): Clip {
     : { encoding: "pcm", meta, samples: new Int16Array(data) };
 }
 
-/**
- * Persist samples and their metadata in a single transaction spanning both
- * stores, so a failure can never leave metadata pointing at absent audio.
- * Strict durability: this can be the only copy of a take's audio on disk, the
- * same bar every other write that removes or creates the only copy of a take
- * already meets (#179, #163).
- */
-export async function putClip(
-  id: ClipId,
-  samples: Int16Array,
-  sampleRate: number,
-  createdAt: number = Date.now()
-): Promise<ClipMeta> {
-  const meta = buildClipMeta(id, samples, sampleRate, createdAt);
-
-  const db = await getDb();
-  const tx = db.transaction(["clipMeta", "clipData"], "readwrite", {
-    durability: "strict",
-  });
-  // Copy through a fresh ArrayBuffer: a subarray view would serialise the
-  // entire backing buffer, which for a trimmed clip can be far larger than
-  // the audio it represents.
-  const bytes = new Int16Array(samples);
-  await Promise.all([
-    tx.objectStore("clipMeta").put(meta),
-    tx.objectStore("clipData").put(bytes.buffer, id),
-    tx.done,
-  ]);
-  return meta;
-}
-
 export async function getClipMeta(id: ClipId): Promise<ClipMeta | undefined> {
   return (await getDb()).get("clipMeta", id);
 }
@@ -115,9 +84,9 @@ export async function getClip(id: ClipId): Promise<Clip | undefined> {
 }
 
 /**
- * Strict durability: same bar as {@link putClip} (#179, #163) — the write and
- * the delete of a take's only copy of its audio are held to the same
- * guarantee.
+ * Strict durability: the same bar as `saveTake`'s clip write (#179, #163) —
+ * the write and the delete of a take's only copy of its audio are held to the
+ * same guarantee.
  */
 export async function deleteClip(id: ClipId): Promise<void> {
   const db = await getDb();

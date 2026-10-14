@@ -302,7 +302,7 @@ interface MarkRowInputs {
    * Deliberately narrower than the Erase row's `takeActive` (the Edit row no
    * longer uses `takeActive` — since #134 it reaches Edit on a live/paused take
    * and splits that input into `committing`/`hasTake`): Mark finished stays live
-   * while recording or paused, because the mark rides the take through `addTake`
+   * while recording or paused, because the mark rides the take through `saveTake`
    * (the record-and-mark-done-in-one-sheet flow, G8/G10).
    */
   readonly takeCommitting: boolean;

@@ -1,16 +1,10 @@
 import { createElement } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { PermissionPanel } from "@/components/permission-panel";
+import { strings } from "@/lib/strings";
 
 import { one, render } from "./render";
-
-// This file asserts the current look's `strings.micNeededTitle` copy, not
-// O4's `strings.micOffTitle` (D15, #948). #951 flipped the design default to
-// o4, so pin the current look explicitly rather than rely on nothing-stored.
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: "current" as const, toggle: () => {} }),
-}));
 
 /**
  * #276: `role="alert"` scoped to the title alone, not the panel's outer
@@ -77,7 +71,11 @@ describe("PermissionPanel (#276)", () => {
       })
     );
 
+    // D15 (#948): the title stays "Microphone is off" and the refined
+    // sentence is the second line INSIDE the alert, so the refine is still
+    // announced by the live region.
     const alert = one(container, '[role="alert"]');
-    expect(alert.textContent).toBe(message);
+    expect(one(alert, ".o4-err-sub").textContent).toBe(message);
+    expect(alert.textContent).toBe(strings.micOffTitle + message);
   });
 });

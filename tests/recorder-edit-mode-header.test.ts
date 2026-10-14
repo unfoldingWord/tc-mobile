@@ -393,10 +393,10 @@ describe("the Editing marker's corner (#1243)", () => {
     expect(declarationValue(body, "color")).toBe("var(--s-voice-text)");
   });
 
-  it("takes the O4 stamp's corner under O4", () => {
+  it("takes the stamp's corner", () => {
     const o4 = read("src/app/styles/o4/recorder.css");
-    const marker = cssRule(o4, '[data-design="o4"] .recorder-editing');
-    const stamp = cssRule(o4, '[data-design="o4"] .recorder-stamp');
+    const marker = cssRule(o4, ":root .recorder-editing");
+    const stamp = cssRule(o4, ":root .recorder-stamp");
     for (const property of ["top", "right", "z-index"]) {
       expect(declarationValue(marker, property), property).toBe(
         declarationValue(stamp, property)

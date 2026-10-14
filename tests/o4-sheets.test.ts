@@ -83,7 +83,7 @@ function rule(selector: string): ReadonlyMap<string, string> {
   return hit!.declarations;
 }
 
-const O4 = '[data-design="o4"]';
+const O4 = ":root";
 const SCRIM = `${O4} .menu-scrim:has(.name-edit)`;
 const SHEET = `${O4} .menu-panel:has(.name-edit)`;
 
@@ -93,7 +93,7 @@ describe("o4/sheets.css — the name sheet (02, G4)", () => {
     expect(count).toBeGreaterThanOrEqual(20);
   });
 
-  it("scopes every selector under the O4 switch, so the current look is untouched", () => {
+  it("prefixes every rule with :root, holding the specificity o4/index.css documents", () => {
     for (const { selectors } of RULES) {
       for (const selector of selectors) {
         expect(selector.startsWith(`${O4} `), selector).toBe(true);

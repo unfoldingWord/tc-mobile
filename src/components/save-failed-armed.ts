@@ -1,6 +1,6 @@
 /**
  * The wide guide button's `className`, for `SaveFailed`'s terminal
- * (`downgrade`) Restart arm, in each look (#1088 S9).
+ * (`downgrade`) Restart arm (#1088 S9).
  *
  * O4's `.o4-err-wide` fills the button with `--s-guide` (blue) — the wide
  * guide button's own colour, `docs/design/o4-design-system.md` §3. Arming it
@@ -18,15 +18,10 @@
  * `--s-live-ink` is the same solid-red-circle pairing `.control--record`
  * already uses for "this is live" (`3-components.css`), so the glyph stays
  * legible AND the colour still reads "irreversible", the same signal every
- * OTHER armed control in this app gives (the Discard button below this one,
- * the current look's own Restart) — just carried by the fill instead of the
- * text, because this button's fill is already spoken for by `--s-guide`.
- * `tests/contrast.test.ts` gates `--s-live-ink` on `--s-live`.
- *
- * The current look is unaffected: `.control--primary` has no `background` of
- * its own, so it inherits `.control`'s neutral `--s-raised` — a surface red
- * TEXT already reads fine on, which is why armed there keeps `text-live`
- * unchanged.
+ * OTHER armed control in this app gives (the Discard button below this one)
+ * — just carried by the fill instead of the text, because this button's fill
+ * is already spoken for by `--s-guide`. `tests/contrast.test.ts` gates
+ * `--s-live-ink` on `--s-live`.
  *
  * Pure and exported so the fix is behaviour a test calls directly:
  * `restartArmed` is derived component state, set by a tap, which
@@ -35,10 +30,6 @@
  * `tests/save-failed-armed.test.ts` is the only place a red-first test for
  * this fix could live.
  */
-export function restartWideButtonClass(
-  o4: boolean,
-  armed: boolean
-): string | undefined {
-  if (o4) return armed ? "o4-err-wide o4-err-wide--armed" : "o4-err-wide";
-  return armed ? "text-live" : undefined;
+export function restartWideButtonClass(armed: boolean): string {
+  return armed ? "o4-err-wide o4-err-wide--armed" : "o4-err-wide";
 }

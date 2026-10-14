@@ -196,7 +196,7 @@ describe("what Share Book holds while it builds (#1003)", () => {
     const heldAtEncode: number[] = [];
     codec.onEncode(() => heldAtEncode.push(lazy.held()));
     const result = await exportLibraryZip(
-      (name) => name,
+      (book) => book.name ?? "",
       (_book, n) => nameChapter(n),
       codec,
       lazy.sink

@@ -70,6 +70,10 @@ const built = (release: () => Promise<void>) => ({
 it("releases the File's spool when a reset lands after the build returned but before the flow armed it", async () => {
   const release = vi.fn(() => Promise.resolve());
   let finishBuild!: () => void;
+  let markBuildStarted!: () => void;
+  const buildStarted = new Promise<void>((r) => {
+    markBuildStarted = r;
+  });
   let prepared!: Promise<unknown>;
   act(() => {
     prepared = hook().prepare(
@@ -78,10 +82,13 @@ it("releases the File's spool when a reset lands after the build returned but be
           // The build is done and hands its File back only once the run is
           // already stale: nothing checks `isCurrent` after this.
           finishBuild = () => resolve(built(release));
+          markBuildStarted();
         })
     );
   });
-  await settle();
+  await act(async () => {
+    await buildStarted;
+  });
   act(() => hook().reset());
   finishBuild();
   await act(async () => prepared);

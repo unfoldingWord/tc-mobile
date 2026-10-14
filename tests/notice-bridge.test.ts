@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { Notice } from "@/components/notice";
 import { noticePresentation, type NoticeTone } from "@/components/notice-tone";
 import { one, render } from "./render";
-import { cssRule, declarationValue } from "./support";
+import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
  * `notice-tone.ts` is the SPECIFICATION; `.notice` in layer 3 is the
@@ -53,6 +53,44 @@ const CSS = readFileSync(
 const TONES: NoticeTone[] = ["alert", "busy", "info"];
 
 /**
+ * Every property a rule `body` declares, lower-cased, in order. Strings and
+ * `url(…)` are masked first, as `declarationValue` masks them, so a `color:`
+ * inside a quoted value is not read as a declaration.
+ */
+function declaredProperties(body: string): string[] {
+  const masked = stripCssComments(body).replace(
+    /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\burl\([^)]*\)/g,
+    "_"
+  );
+  return [...masked.matchAll(/(?<=^|;)\s*(-?[\w-]+)\s*:/g)].map((m) =>
+    m[1]!.toLowerCase()
+  );
+}
+
+/** A declaration that paints an edge: any `border*` but the radius, which is
+ *  shape. */
+const isEdge = (property: string): boolean =>
+  property.startsWith("border") && !property.endsWith("radius");
+
+/**
+ * The base `.notice` box, held to the neutral edge, surface and ink as the
+ * WHOLE of what it declares for each (#1092 item 1): one `border` shorthand
+ * and no other edge declaration after it, one `background`, one `color`. A
+ * later `border-color: var(--s-live)` in the same rule would otherwise give
+ * every tone the failure edge while the shorthand still read neutral.
+ */
+function baseBox(): void {
+  const base = cssRule(CSS, ".notice");
+  expect(declarationValue(base, "border")).toBe("1px solid var(--s-edge)");
+  expect(declaredProperties(base).filter(isEdge)).toEqual(["border"]);
+  expect(declarationValue(base, "background")).toBe("var(--s-surface)");
+  expect(
+    declaredProperties(base).filter((p) => p.startsWith("background"))
+  ).toEqual(["background"]);
+  expect(declarationValue(base, "color")).toBe("var(--s-ink)");
+}
+
+/**
  * `cssRule` (`./support`, #533) already throws — rather than returning `""`
  * or `null` — when a rule is absent or ambiguous, which is what closed this
  * file's own vacuous-`info` finding (#533): `ruleBody(...) ?? ""` used to
@@ -64,6 +102,12 @@ const TONES: NoticeTone[] = ["alert", "busy", "info"];
  * `toneOverride`; an ambiguous or empty `info` rule must still go red.
  */
 function toneOverride(tone: NoticeTone): string {
+  // Two policies here are deliberately fail-closed (#1092 items 2 and 3).
+  // `cssRule` matches a rule nested in `@media`/`@supports` too, so a second,
+  // conditional rule for a tone reads as ambiguous and goes red: a legitimate
+  // one has to bring its own assertion. And `info` may have NO override, not
+  // merely no edge or ink one: a non-colour override is a state decision, not
+  // a free change.
   const selector = `.notice[data-tone="${tone}"]`;
   if (tone !== "info") return cssRule(CSS, selector);
   // Info intentionally uses the base box; its glyph has a separate rule.
@@ -76,11 +120,8 @@ function toneOverride(tone: NoticeTone): string {
 
 describe("the .notice rule honours the tone table (#164 L-14)", () => {
   it("has a base rule at all, which is the thing inline styles made impossible", () => {
-    const base = cssRule(CSS, ".notice");
     // The box the component used to paint on itself.
-    expect(base).toMatch(/background:\s*var\(--s-surface\)/);
-    expect(base).toMatch(/border:\s*1px solid var\(--s-edge\)/);
-    expect(declarationValue(base, "color")).toBe("var(--s-ink)");
+    baseBox();
   });
 
   // Rendered, not read as text (#822): a comment in `notice.tsx` carrying
@@ -117,26 +158,25 @@ describe("the .notice rule honours the tone table (#164 L-14)", () => {
     });
 
     it(`${tone}: \`failure\` decides the live edge, and only for a failure`, () => {
-      expect(cssRule(CSS, ".notice")).toMatch(
-        /(?:^|;)\s*border:\s*1px solid var\(--s-edge\)\s*;/
-      );
+      baseBox();
       const body = toneOverride(tone);
       if (spec.failure) {
-        expect(body).toMatch(/(?:^|;)\s*border-color:\s*var\(--s-live\)\s*;/);
+        expect(declarationValue(body, "border-color")).toBe("var(--s-live)");
+        expect(declaredProperties(body).filter(isEdge)).toEqual([
+          "border-color",
+        ]);
       } else {
-        expect(body).not.toMatch(/(?:^|;)\s*border(?:-[\w-]+)?:/);
+        expect(declaredProperties(body).filter(isEdge)).toEqual([]);
       }
     });
 
     it(`${tone}: \`muted\` decides the muted ink, and only for a wait`, () => {
-      expect(cssRule(CSS, ".notice")).toMatch(
-        /(?:^|;)\s*color:\s*var\(--s-ink\)\s*;/
-      );
+      baseBox();
       const body = toneOverride(tone);
       if (spec.muted) {
-        expect(body).toMatch(/(?:^|;)\s*color:\s*var\(--s-ink-muted\)\s*;/);
+        expect(declarationValue(body, "color")).toBe("var(--s-ink-muted)");
       } else {
-        expect(body).not.toMatch(/(?:^|;)\s*color:/);
+        expect(declaredProperties(body)).not.toContain("color");
       }
     });
   }

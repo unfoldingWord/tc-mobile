@@ -115,7 +115,6 @@ describe("the browser-smoke path filter (#457 QA P2)", () => {
     ".github/workflows/ci.yml",
     ".github/dependabot.yml",
     "scripts/check-deploy.mjs",
-    "scripts/review/both.sh",
     "wrangler.toml",
     ".gitignore",
     "LICENSE",

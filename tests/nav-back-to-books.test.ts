@@ -230,7 +230,8 @@ describe("goBackToBooks from the recorder (#1275)", () => {
       // may exist nowhere else — a cut the close saved, a cut-to-empty whose
       // segment is gone, a paste a superseded stop rolled back — so the
       // continuation is dropped: the entry is still consumed, and the tap
-      // ends at Segments, where the phrase can still be pasted.
+      // ends at Segments, with the phrase still on the chapter clipboard so a
+      // recorder reopened from there can paste it in Edit mode.
       if (heldBefore) {
         await act(async () => fake.set!.setClipboardHeld(true));
       }
@@ -303,9 +304,11 @@ describe("goBackToBooks from the recorder (#1275)", () => {
       });
     await act(async () => fake.nav!.goBackToBooks());
     await settle();
-    // The first level landed and the close is pending.
+    // The first level landed and the close is pending. The landing is a
+    // jsdom task and `requestClose` runs after it, so wait for the resolver
+    // to exist rather than trusting the fixed sleep above to have covered it.
+    await vi.waitFor(() => expect(resolveClose).not.toBeNull());
     expect(landings).toEqual([1]);
-    expect(resolveClose).not.toBeNull();
 
     await act(async () => {
       // A hardware Back, admitted: the landing settled the guard. Then the

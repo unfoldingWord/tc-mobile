@@ -60,7 +60,7 @@ function valueFor(selector: string, prop: string): string | undefined {
   return hits[0]?.decls.get(prop);
 }
 
-const O4 = '[data-design="o4"]';
+const O4 = ":root";
 const outcome = (s: ShareSettled | "busy", part: string) =>
   `${O4} .share-scrim[data-outcome="${s}"] ${part}`;
 
@@ -77,14 +77,12 @@ const CORE: Record<ShareSettled | "busy", readonly [string, string]> = {
 };
 
 describe("O4 share circle stylesheet (#947)", () => {
-  it("has rules, and scopes every one of them under the O4 switch", () => {
+  it("has rules, and prefixes every one of them with :root (o4/index.css)", () => {
     // A floor, so a parse that finds nothing cannot pass the loop below.
     expect(RULES.length).toBeGreaterThanOrEqual(10);
     for (const rule of RULES)
       for (const selector of rule.selectors)
-        expect(selector, `unscoped selector: ${selector}`).toMatch(
-          /^\[data-design="o4"\] /
-        );
+        expect(selector, `unscoped selector: ${selector}`).toMatch(/^:root /);
   });
 
   it("colours only through layer-2 roles", () => {

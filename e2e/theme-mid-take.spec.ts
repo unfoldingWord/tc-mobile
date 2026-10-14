@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 
 import { expect, test, type Page } from "@playwright/test";
 
+import { editRecordingButton } from "./recorder-fixtures";
 import { seedToRecorder } from "./support/seed";
 import { LIGHT_FLOOR, floorOf, resolved } from "./support/theme";
 
@@ -297,4 +298,91 @@ test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the 
   await expect(rerecord).not.toHaveAttribute("aria-disabled", "true");
   // Still light after the commit — the theme outlived the take it spanned.
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+});
+
+/**
+ * The first painted pixel's colour on the recorder stage's waveform canvas,
+ * as `rgba(...)`, or null when nothing is painted (#861).
+ *
+ * Read off the canvas bitmap, which is what a person in the sun looks at. A
+ * painter that never subscribes to the theme keeps the bitmap it drew under
+ * the old tokens, so its pixel does not change when the theme flips.
+ */
+const stagePixel = (page: Page) =>
+  page
+    .getByRole("dialog", { name: "Recorder", exact: true })
+    .locator(".recorder-canvas canvas")
+    .evaluate((node) => {
+      const canvas = node as HTMLCanvasElement;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < data.length; i += 4) {
+        const [r, g, b, a] = data.subarray(i, i + 4);
+        if (a !== undefined && a > 0) {
+          return `rgba(${r},${g},${b},${a})`;
+        }
+      }
+      return null;
+    });
+
+/**
+ * Edit mode, behaviourally (#861 item 2, and the round 23 note on #623 that
+ * `tests/theme.test.ts`'s subscriber sweep cannot see a painter that never
+ * subscribes). Records a short take, enters edit mode, flips the theme from
+ * the recorder menu, and asserts the stage canvas's painted colour changed.
+ *
+ * Narrow on purpose: it covers the one canvas on the edit-mode stage, not
+ * every painter in the tree, so the sweep's blind spot is narrowed for this
+ * surface and not closed. It also says nothing about readability in sun.
+ */
+test("an edit-mode theme flip repaints the stage waveform", async ({
+  page,
+}) => {
+  await seedToRecorder(page);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  await page.getByRole("button", { name: "Record", exact: true }).click();
+  const stop = page.getByRole("button", {
+    name: "Stop recording",
+    exact: true,
+  });
+  await expect(stop).toBeVisible();
+  await page.waitForTimeout(1200);
+  await stop.click();
+  await expect(
+    page.getByRole("button", { name: "Record", exact: true })
+  ).toBeVisible();
+  // The commit has landed once the toolbar's Edit is no longer busy.
+  await expect(editRecordingButton(page)).not.toHaveAttribute(
+    "aria-busy",
+    "true"
+  );
+
+  await editRecordingButton(page).click();
+  await expect(editRecordingButton(page)).toHaveAccessibleName("Stop editing");
+  await expect(
+    page.getByLabel("Selection start", { exact: true })
+  ).toBeVisible();
+
+  // The canvas has bars to compare: a null here would make the flip check
+  // below compare two nulls.
+  await expect.poll(() => stagePixel(page)).not.toBeNull();
+  const dark = await stagePixel(page);
+
+  await page.getByRole("button", { name: "More actions", exact: true }).click();
+  const menu = page.getByRole("dialog", { name: "More", exact: true });
+  await menu.getByRole("button", { name: /light screen/i }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  expect(await resolved(page, await floorOf(page))).toBe(LIGHT_FLOOR);
+
+  // Polled: the repaint is an effect that runs after the attribute lands.
+  await expect
+    .poll(() => stagePixel(page), { message: "the canvas kept its dark paint" })
+    .not.toBe(dark);
+
+  // And back: a canvas that repaints once but then sticks is caught too.
+  await menu.getByRole("button", { name: /dark screen/i }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect.poll(() => stagePixel(page)).toBe(dark);
 });

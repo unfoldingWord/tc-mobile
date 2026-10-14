@@ -3,7 +3,13 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { stripComments, stripCssComments, stripHtmlComments } from "./support";
+import {
+  cssRule,
+  declarationValue,
+  stripComments,
+  stripCssComments,
+  stripHtmlComments,
+} from "./support";
 
 /**
  * The two zoom/touch policies #164 found wrong, gated so they cannot drift
@@ -14,8 +20,8 @@ import { stripComments, stripCssComments, stripHtmlComments } from "./support";
  * pinch zoom, the per-surface touch-action rules that replaced the blanket
  * restriction, and the rename field's font-size floor, which is what now
  * keeps a focused input from auto-zooming in place of the removed viewport
- * lock. The fourth, the breadcrumb's target token and class wiring, ties to
- * R-10. None of them measure rendered hit areas or exercise gestures on a
+ * lock. The fourth, the chapter screen's crumb row's target token and class
+ * wiring, ties to R-10. None of them measure rendered hit areas or exercise gestures on a
  * device; the static render harness in tests/render.ts does not provide
  * layout or cascade.
  */
@@ -30,6 +36,10 @@ const components = stripCssComments(
     path.join(ROOT, "src", "app", "styles", "3-components.css"),
     "utf8"
   )
+);
+const menusCss = readFileSync(
+  path.join(ROOT, "src", "app", "styles", "o4", "menus.css"),
+  "utf8"
 );
 
 describe("the viewport does not forbid pinch zoom (#164 R-11)", () => {
@@ -82,22 +92,21 @@ describe("the rename field keeps its 16px floor (#164 R-11)", () => {
   });
 });
 
-describe("the breadcrumb is a control-sized target (#164 R-10)", () => {
-  const rule = /\.breadcrumb\s*\{([^}]*)\}/s.exec(components);
-
-  it("has a .breadcrumb rule in the component layer", () => {
-    expect(rule?.[1], "no .breadcrumb rule in 3-components.css").toBeTruthy();
-  });
+describe("the chapter screen's crumb row is a control-sized target (#164 R-10)", () => {
+  // The `.breadcrumb` button this gate was written for went with the old
+  // look (#954); the row that took its place in the Segments header is
+  // `.o4-crumbs-bar` (#1269), in the O4 menus stylesheet.
+  const body = cssRule(menusCss, ":root .o4-crumbs-bar");
 
   // Reads the TOKEN, not a raw pixel value: the 44px floor is stated once in
-  // this file's token block, and a rule that hard-codes 44 drifts silently
-  // when that block changes. `--c-control-sm` (40px) is the named exception
-  // scoped to `.control--quiet`'s toolbar row and #362 — it must not spread
-  // here, which is the mistake a copy-paste from a neighbouring quiet control
-  // would make.
+  // 3-components.css's token block, and a rule that hard-codes 44 drifts
+  // silently when that block changes. `--c-control-sm` (40px) is the named
+  // exception scoped to `.control--quiet`'s toolbar row and #362 — it must
+  // not spread here, which is the mistake a copy-paste from a neighbouring
+  // quiet control would make.
   it("takes its height from --c-control-md, not a literal or the 40px exception", () => {
-    expect(rule?.[1] ?? "").toMatch(/min-height:\s*var\(--c-control-md\)\s*;/);
-    expect(rule?.[1] ?? "").not.toMatch(/--c-control-sm/);
+    expect(declarationValue(body, "min-height")).toBe("var(--c-control-md)");
+    expect(body).not.toMatch(/--c-control-sm/);
   });
 
   it("--c-control-md is still at or above the 44px floor the tokens claim", () => {
@@ -108,7 +117,7 @@ describe("the breadcrumb is a control-sized target (#164 R-10)", () => {
 
   // The defect was `p-0`: geometry in an arbitrary utility on the element,
   // where the component layer could not see it. If the class comes off the
-  // button, the rule above is dead and this gate would pass on nothing.
+  // row, the rule above is dead and this gate would pass on nothing.
   it("is the class the Segments header actually uses", () => {
     // `stripComments` is string-blind: a `//` or `/*` inside a string literal
     // in segments-screen.tsx would cut real code from what this reads.
@@ -118,7 +127,7 @@ describe("the breadcrumb is a control-sized target (#164 R-10)", () => {
         "utf8"
       )
     );
-    expect(screen).toMatch(/className="breadcrumb"/);
+    expect(screen).toMatch(/className="o4-crumbs-bar"/);
     expect(screen, "the p-0 hit area is back").not.toMatch(
       /truncate border-0 bg-transparent p-0/
     );

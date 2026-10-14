@@ -41,6 +41,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/hooks/audio-io", () => ({
   playSamples: mocks.playSamples,
   resumeAudioContext: vi.fn().mockResolvedValue(undefined),
+  claimSharedContext: vi.fn(() => vi.fn()),
   decodeMp3ToCanonical: vi.fn(),
 }));
 

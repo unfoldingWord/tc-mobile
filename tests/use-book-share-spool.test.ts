@@ -9,7 +9,12 @@ import { withEncoder } from "@/hooks/mp3-codec";
 import { nativeShare } from "@/hooks/share-target";
 import { useBookShare } from "@/hooks/use-book-share";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import { addChapter, addSegment, createBook } from "@/lib/storage/books";
+import {
+  addChapter,
+  addSegment,
+  createBook,
+  renameChapter,
+} from "@/lib/storage/books";
 import { newClipId } from "@/lib/storage/clips";
 import { saveTake } from "@/lib/storage/takes";
 import type { AudioCodec } from "@/types/audio";
@@ -57,6 +62,9 @@ let share: ReturnType<typeof vi.fn>;
 /** Resolves the encode the export is waiting on, when `hold` is set. */
 let hold = false;
 let finishEncode: () => void = () => undefined;
+/** Resolves when a held encode has started and `finishEncode` is set. */
+let encodeStarted!: Promise<void>;
+let markEncodeStarted: () => void = () => undefined;
 let encodeError: Error | null = null;
 
 const probe: { current: ReturnType<typeof useBookShare> | null } = {
@@ -113,6 +121,9 @@ beforeEach(async () => {
   native.on = false;
   hold = false;
   encodeError = null;
+  encodeStarted = new Promise<void>((r) => {
+    markEncodeStarted = r;
+  });
   opfs = fakeOpfs();
   const codec: AudioCodec = {
     encodeMp3: () => {
@@ -120,6 +131,7 @@ beforeEach(async () => {
       if (!hold) return Promise.resolve(new Uint8Array(4096).fill(7));
       return new Promise((resolve) => {
         finishEncode = () => resolve(new Uint8Array(4096).fill(7));
+        markEncodeStarted();
       });
     },
     decodeMp3: () => Promise.reject(new Error("no MP3 clip expected")),
@@ -237,7 +249,9 @@ describe("the web route", () => {
     act(() => {
       prepared = hook().prepare(bookId, "Book.zip", (n) => `Chapter ${n}.mp3`);
     });
-    await settle();
+    await act(async () => {
+      await encodeStarted;
+    });
     // The spool is open and the first chapter is encoding.
     expect(opfs.files()).toHaveLength(1);
     act(() => hook().reset());
@@ -298,5 +312,42 @@ describe("the native route", () => {
     expect(hook().status).toBe("idle");
     await filesBecome(0);
     error.mockRestore();
+  });
+});
+
+describe("the chapter namer seam (#1233 item 28)", () => {
+  it("hands the caller's namer to the export with each chapter's own number and name, so the zip entries carry them", async () => {
+    const book = await createBook("b");
+    const first = await addChapter(book.id);
+    const second = await addChapter(book.id);
+    for (const chapter of [first, second]) {
+      const seg = await addSegment(chapter.id);
+      await saveTake(
+        seg.id,
+        newClipId(),
+        new Int16Array(100).fill(100),
+        CANONICAL_SAMPLE_RATE
+      );
+    }
+    await renameChapter(first.id, "Sower");
+    let prepared!: Promise<unknown>;
+    act(() => {
+      prepared = hook().prepare(
+        book.id,
+        "Book.zip",
+        (n, name) => `${n}-${name ?? "unnamed"}.mp3`
+      );
+    });
+    await settle();
+    await act(async () => prepared);
+    await send();
+    const [{ files }] = share.mock.calls[0] as [{ files: File[] }];
+    // A zip stores each entry's name uncompressed in its local file header,
+    // so the names the namer returned can be read straight off the bytes.
+    const text = new TextDecoder("latin1").decode(
+      await files[0]!.arrayBuffer()
+    );
+    expect(text).toContain("1-Sower.mp3");
+    expect(text).toContain("2-unnamed.mp3");
   });
 });

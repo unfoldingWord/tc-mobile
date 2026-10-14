@@ -10,7 +10,7 @@ import { bodyAfter, region, stripComments, uniqueIndexOf } from "./support";
  * and, confirmed, empties the clipboard and lets a selection frame back.
  *
  * Source shape, for the reason `tests/recorder-cut-collapse.test.ts` gives:
- * `recorder.tsx` cannot be rendered here. The behaviour itself — cancel keeps
+ * this file does not mount `recorder.tsx`. The behaviour itself — cancel keeps
  * the cut, confirm empties it and the frame returns, the erase door still
  * asks the erase question — is `e2e/recorder-discard-clip.spec.ts`, against
  * the shipped build in Chromium. Neither is a device check.

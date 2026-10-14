@@ -151,7 +151,7 @@ export async function commitTranscode(
   }
   // Copy into a fresh, right-sized ArrayBuffer BEFORE the transaction: a view
   // onto a larger buffer would serialise the whole backing store (the same
-  // trap `putClip` guards), and an allocation failure here must not abort a
+  // trap `saveTake` guards), and an allocation failure here must not abort a
   // transaction that has already opened.
   const bytes = new Uint8Array(mp3);
 

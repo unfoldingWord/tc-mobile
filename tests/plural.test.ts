@@ -155,3 +155,57 @@ describe("plural's default locale", () => {
     expect(plural(21, forms)).toBe("21 chapters");
   });
 });
+
+/**
+ * The exact-1 arm, `"=1"` (ICU's `=1`), is how wording that means "exactly one"
+ * is kept off CLDR's `one` category (#169, Frank's P2 on #1226). `one` is the
+ * locale's own category: it covers 21, 31, 101 in Russian, Ukrainian and
+ * Lithuanian, so "an included chapter" selected by it would be asserted about
+ * twenty-one chapters. The categories below come from `Intl.PluralRules`
+ * itself, so a runtime whose data stops saying that fails the first case
+ * rather than quietly weakening the rest.
+ */
+describe("plural, the exact-1 arm", () => {
+  const chapters = {
+    "=1": "an included chapter",
+    one: "{n} included chapter",
+    other: "{n} included chapters",
+  } as const;
+
+  it.each(["ru", "uk", "lt"])(
+    "%s: the category `one` covers 21, 31 and 101",
+    (locale) => {
+      const rules = new Intl.PluralRules(locale, { type: "cardinal" });
+      for (const n of [21, 31, 101]) {
+        expect(rules.select(n), `${locale} ${n}`).toBe("one");
+      }
+    }
+  );
+
+  it.each(["ru", "uk", "lt"])(
+    "%s: 21, 31 and 101 take the counted form, never the exact-1 wording",
+    (locale) => {
+      expect(plural(21, chapters, locale)).toBe("21 included chapter");
+      expect(plural(31, chapters, locale)).toBe("31 included chapter");
+      expect(plural(101, chapters, locale)).toBe("101 included chapter");
+    }
+  );
+
+  it.each(["en", "ru", "uk", "lt", "pl", "sw"])(
+    "%s: exactly 1 takes the exact-1 arm",
+    (locale) => {
+      expect(plural(1, chapters, locale)).toBe("an included chapter");
+    }
+  );
+
+  it("English: 2 and 21 are plural, so the exact arm is not a category", () => {
+    expect(plural(2, chapters, "en")).toBe("2 included chapters");
+    expect(plural(21, chapters, "en")).toBe("21 included chapters");
+  });
+
+  it("a table without the arm selects by category as before", () => {
+    expect(plural(1, { one: "{n} chapter", other: "{n} chapters" }, "en")).toBe(
+      "1 chapter"
+    );
+  });
+});

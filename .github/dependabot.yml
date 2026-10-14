@@ -15,6 +15,15 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # Bumped by hand together with Vite/Rolldown. The exact pin must equal the
+      # version in the helper ids Rolldown emits (the `\0@oxc-project+runtime@…`
+      # modules), or dist/build-provenance.json records nulls and the
+      # attribution gate fails (see the comment above `Provenance` in
+      # vite.config.ts). Dependabot bumped it ahead of Rolldown in #1391. A
+      # dependency-name entry with no `versions` or `update-types` ignores this
+      # one package only; every other npm dependency is still offered.
+      - dependency-name: "@oxc-project/runtime"
 
   - package-ecosystem: github-actions
     directory: "/"

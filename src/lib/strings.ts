@@ -31,21 +31,6 @@
  * three — "typed out a second time further down the same file" — as the reason
  * this table moved; that was true before #700 and is not the case this move
  * rests on now.
- *
- * SOME ENTRIES CALL THE TABLE BY ITS MODULE NAME, and that is the trap for
- * `strings[locale]`, the rest of #169 (George, #698). `chapterHeading` calls
- * `strings.chapterName`, `shareBookPartial` calls `strings.shareMissing`, and
- * a few more reach `couldNotBeIncluded` or `trail`, whose words are English.
- * Every one is right while there is one table. Once there are several, an
- * entry in a second locale's table that calls the module-level `strings`
- * formats its embedded part from the default table, and the equality pins
- * (`chapterHeading(null, n) === chapterName(n)`) STAY GREEN while it does,
- * because both sides resolve through the same wrong table. The slice that
- * adds a second table has to make each of these resolve within its own table
- * (`this`, a table parameter, or a factory that closes over the right one),
- * and needs a test that one locale's entry does not reach another's.
- * `tests/strings-self-reference.test.ts` pins which entries these are, so a
- * new one fails there and is sent back here.
  */
 import { plural } from "@/lib/plural";
 import { filenameSafe } from "@/lib/utils";
@@ -98,9 +83,10 @@ function trail(...parts: readonly string[]): string {
 /**
  * An entry that reuses another entry calls it through this binding:
  * `chapterHeading` falls back to `strings.chapterName`, `shareBookPartial`
- * returns `strings.shareMissing`, and the rest follow the same pattern
- * (`grep -n "strings\." src/lib/strings.ts` finds them, along with comments
- * that mention an entry). With one table, that is correct, and it is the
+ * returns `strings.shareMissing`, and a few more reach `couldNotBeIncluded` or
+ * `trail`, whose words are English. `tests/strings-self-reference.test.ts`
+ * pins which entries these are, so a new one fails there and is sent back
+ * here. With one table, that is correct, and it is the
  * reason the aliases exist. Byte-for-byte copies drifted, and an alias cannot.
  *
  * It is also what breaks when `strings[locale]` lands (#169). A second
@@ -152,6 +138,22 @@ export const strings = {
     })}, ${expanded ? "expanded" : "collapsed"}`,
   addChapter: (bookName: string): string => `Add chapter to ${bookName}`,
   openChapter: (heading: string): string => `Open ${heading}`,
+  /**
+   * The book's display heading: the facilitator's own name when set (#264),
+   * otherwise the placeholder rendered from the slot the store gave it (#169).
+   * The chapter's rule below, one level up the tree — and for the same reason:
+   * the placeholder is copy, so it is rendered here and never persisted, which
+   * is what lets a second UI language rename the books already on a phone.
+   *
+   * Three digits, zero-padded, so a shelf of practice books sorts and scans as
+   * a column rather than ragged text. Above 999 the number simply grows.
+   *
+   * `number` is nullable for the callers that may have no book at all: a
+   * breadcrumb or share filename whose book was deleted under it says nothing
+   * rather than naming a phantom "Book 000".
+   */
+  bookHeading: (name: string | null, number: number | null): string =>
+    name ?? (number === null ? "" : `Book ${String(number).padStart(3, "0")}`),
   chapterName: (n: number): string => `Chapter ${n}`,
   /**
    * The chapter's display heading: the facilitator's passage label when set
@@ -166,7 +168,7 @@ export const strings = {
    * `tests/breadcrumb.test.ts` counts the spellings in this file instead
    * (#169). The alias is also the one that breaks under per-locale tables,
    * and the pin that it equals `chapterName` does not see that break: see the
-   * paragraph on module-name calls at the top of this file.
+   * docblock above `strings`.
    */
   chapterHeading: (name: string | null, n: number): string =>
     name ?? strings.chapterName(n),
@@ -277,7 +279,7 @@ export const strings = {
   scrubSegment: (n: number): string => `Position in segment ${n}`,
   // "done", not "finished" (D17, #949): the O4 tile's caption is the
   // workbench's "Done", and the label must hold the caption (label-in-name).
-  // One string for both looks and both menus (segment row and recorder). It
+  // One string for both menus (segment row and recorder). It
   // does not flip to "not done": `aria-pressed` carries the state (#351).
   markFinished: (n: number): string => `Mark segment ${n} done`,
   /**
@@ -385,9 +387,7 @@ export const strings = {
   // promise an extent (Frank + George, round 1 — both lenses, independently).
   zoomAtWhole: "Zoomed to the whole segment. Zoom in to a quarter.",
   zoomAtQuarter: "Zoomed to a quarter. Zoom out to the whole segment.",
-  micNeededTitle: "Microphone access is needed to record",
-  // The O4 look's mic-denied title (D15, #948), from the O4 original. O4 only:
-  // the current look keeps `micNeededTitle` until O4 becomes the default.
+  // The mic-denied title (D15, #948), from the O4 original.
   micOffTitle: "Microphone is off",
   micRetry: "Try again",
   micBack: "Go back",
@@ -631,9 +631,9 @@ export const strings = {
   // glyphs the way the body notices do (#620): it is spoken
   // inside the ⋮ menu, where the recorder header — and so "Close recorder" —
   // is `inert` and the one live control on screen is the menu's own dismiss,
-  // which since #621 wears a single glyph, ⋮ since #1225 (this menu opts into
-  // `hamburger` with `dismissIcon="more"`, `recorder-menu.tsx`), not a back
-  // chevron. Describing the save control by its
+  // which since #621 wears a single glyph, the ✕ every sheet closes with
+  // since #1268 (this menu opts into `hamburger`, `recorder-menu.tsx`), not a
+  // back chevron. Describing the save control by its
   // looks here would still point at the dismiss, the exact collision the
   // round-1 `back` badge had (`menu-row-state.ts`, `rowHint`'s docblock);
   // #648 round 1 (George P2) caught the words repeating it.
@@ -662,7 +662,7 @@ export const strings = {
   // segment over — because the sheet stays open, ready for the next take.
   rerecord: "Clear and record again",
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
-  // Press-and-hold reorder on the Segments list (#953, O4 only), spoken by
+  // Press-and-hold reorder on the Segments list (#953), spoken by
   // the list's live region: the row that was lifted, where it landed, or that
   // it went back. Segments renumber after a move (the DRI's "Renumber" pick),
   // so the landing is said as the segment's new number.
@@ -679,6 +679,15 @@ export const strings = {
     `${strings.chapterName(from)} is now chapter ${to}.`,
   chapterReorderStayed: (n: number): string =>
     `${strings.chapterName(n)} stayed where it was.`,
+  // The same three lines for a book on the Books screen (#338). Said by the
+  // book's heading (its name, or its placeholder), since a book has no number
+  // that follows its place; the landing is its new place on the shelf, from 1.
+  // Said as "position", never "number": "number" is the Book N placeholder (#1368).
+  bookReorderLifted: (heading: string): string => `Moving ${heading}.`,
+  bookReorderMoved: (heading: string, to: number): string =>
+    `${heading} is now position ${to} on the shelf.`,
+  bookReorderStayed: (heading: string): string =>
+    `${heading} stayed where it was.`,
   eraseConfirmTitle: "Reset segment and start over",
   eraseConfirm: "Clear",
   // The safe action of the confirm dialog (`erase-confirm.tsx`). One string
@@ -686,6 +695,11 @@ export const strings = {
   // Delete (#590) — because it is the same control on the same surface
   // saying the same word.
   eraseCancel: "Cancel",
+  // The record bar's bin confirm (O4 G5, #1028): the one tap that clears the
+  // segment AND starts the next take, and the workbench's own "Keep it" for
+  // the safe answer. The ⋮ menu's Clear keeps Clear / Cancel above.
+  recordAgainConfirm: "Record again",
+  recordAgainKeep: "Keep it",
   eraseFailed: "Could not clear the recording. Try again.",
   // The confirm's "Play what will be lost" row (#979 remainder, O4 "13"
   // only): the workbench's own copy, word for word, for the Play/Pause
@@ -701,19 +715,16 @@ export const strings = {
   discardClipConfirm: "Throw away",
 
   // ── Delete a book (#337) ─────────────────────────────────────────────────
-  // The book ⋮-menu row, and the two-tap confirm behind it — the same dialog
-  // the segment Clear uses, not a second one.
+  // The book sheet's Delete tile, and the ask behind it (#980).
   deleteBook: "Delete book",
-  // Names the book, because this dialog's title is also its accessible name and
-  // it is the only thing that says WHICH shelf row is about to go. "everything
+  // Names the book, because this is the ask's accessible name and it is the
+  // only thing that says WHICH shelf row is about to go. "everything
   // in it" is the honest scope: the chapters, the segments and every recording.
   deleteBookConfirmTitle: (book: string): string =>
     `Delete ${book} and everything in it?`,
-  deleteBookConfirm: "Delete",
-  // The O4 look asks inside the book sheet instead (#980, G6; #949 D16): the
-  // sheet's actions swap for these two, under the book's cover and name. The
+  // The ask is inside the book sheet (#980, G6; #949 D16): the sheet's
+  // actions swap for these two, under the book's cover and name. The
   // workbench's own labels, word for word — the DRI prefers the originals.
-  // O4 only; the current look keeps `eraseCancel`/`deleteBookConfirm` above.
   keepBook: "Keep the book",
   deleteBookYes: "Yes, delete the book",
   // A destructive op that did NOT happen has to say so in its own words. The
@@ -821,7 +832,7 @@ export const strings = {
   ): string => {
     const label = filenameSafe(chapterName ?? "");
     return `${filenameSafe(book)} - ${
-      label === "" ? strings.chapterName(chapter) : label
+      label === "" ? filenameSafe(strings.chapterName(chapter)) : label
     }.mp3`;
   },
 
@@ -836,6 +847,12 @@ export const strings = {
   shareBookPreparing: "Preparing the book to share.",
   shareBookNothing: "Record a segment before sharing this book.",
   shareBookFailed: "Could not share this book. Try again.",
+  // The web build's version (#272). Android Chrome refuses a zip inside
+  // `share()`, after the encode, so trying again cannot help there; the app's
+  // native share sheet takes it. Other browsers can still be retried from the
+  // same menu item, so no "try again" is promised.
+  shareBookFailedWeb:
+    "Could not share this book. Sharing a book works in the tC Mobile app.",
   // `missing` counts whole chapters left out of the zip — a chapter with no
   // resolvable audio at all.
   shareBookMissing: (n: number): string =>
@@ -880,16 +897,16 @@ export const strings = {
   // The SEGMENT noun goes through `plural` like every other count-varying
   // string in this table (#169) — a CLDR category, not an English `n === 1`.
   //
-  // The CHAPTER scope does NOT, and must not. It branches on
-  // `partialChapters > 1`, the producer's count of DISTINCT included chapters,
-  // and it stays an explicit branch rather than a forms table because CLDR's
-  // `one` is not "exactly 1" — Russian selects it for 21, 31, 101. Keying the
-  // singular "an included chapter" off a plural category would let a second
-  // locale assert one chapter about twenty-one segments spread across an
-  // unknown number of them, which is the #400/#423 bug in a new place. This
-  // branch is a claim that the count IS exactly one, not an agreement with it.
-  // A locale needing `few`/`many` for the segment noun gets it from `plural`
-  // above; the chapter-scope branch stays a branch.
+  // The CHAPTER scope counts `partialChapters`, the producer's count of
+  // DISTINCT included chapters, and also goes through `plural` — but its
+  // singular "an included chapter" is NOT keyed off `one`. CLDR's `one` is not
+  // "exactly 1": Russian selects it for 21, 31, 101. Keying that wording off a
+  // plural category would let a second locale assert one chapter about
+  // twenty-one of them, which is the #400/#423 bug in a new place. The wording
+  // is a claim that the count IS exactly one, so it rides `plural`'s explicit
+  // `"=1"` arm (ICU's `=1`, matched on the number, not the category). The `one`
+  // form is the counted "{n} included chapter", which stays true at 21. A
+  // locale needing `few`/`many` adds those keys and changes no code.
   //
   // An earlier draft of this paragraph said the clause was "NOT `plural`'s
   // `one` form" and described a `segments === 1` case. That case is gone —
@@ -920,17 +937,27 @@ export const strings = {
   // translator knows how many chapters to go back to. "included" keeps the
   // locator George #423 round 3 required: the segments sit in chapters that
   // are in the zip, not in the one(s) the first sentence says were not.
+  //
+  // The chapter clause goes through `plural`, not an English `> 1` ternary
+  // (#169), with the exact-1 arm described above. The count is floored at 1 because a
+  // segment gap sits in at least one included chapter: the caller passes
+  // `partialChapters ?? 0` from an optional field (`share-error-copy.ts`), and
+  // a missing count must still read "an included chapter", as the ternary
+  // did, rather than claim "0 included chapters" about a gap that exists.
   shareBookMissingAndPartial: (
     chapters: number,
     segments: number,
     partialChapters: number
   ): string =>
     `${strings.shareBookMissing(chapters)} ${couldNotBeIncluded(
-      `${plural(segments, { one: "{n} segment", other: "{n} segments" })} of ${
-        partialChapters > 1
-          ? `${partialChapters} included chapters`
-          : "an included chapter"
-      }`
+      `${plural(segments, { one: "{n} segment", other: "{n} segments" })} of ${plural(
+        Math.max(partialChapters, 1),
+        {
+          "=1": "an included chapter",
+          one: "{n} included chapter",
+          other: "{n} included chapters",
+        }
+      )}`
     )}`,
   // The encoder went silent mid-share and was restarted (#166). Chapter and book
   // alike: the cause is the phone, not what was being shared. Try again is still
@@ -1184,6 +1211,11 @@ export const strings = {
   shareAllPreparing: "Preparing your work to share.",
   shareAllNothing: "Record a segment before sharing your work.",
   shareAllFailed: "Could not share your work. Try again.",
+  // The web build's version (#1333), as `shareBookFailedWeb` is for the book
+  // (#272): the library goes out as a zip too, which Android Chrome refuses
+  // inside `share()`, after the encode, so trying again cannot help there.
+  shareAllFailedWeb:
+    "Could not share your work. Use the tC Mobile app to share it.",
   // `roomForExport` said the phone has too little free space to build the
   // archive, checked before any encode. The way out is the one the storage
   // lines above already name: finished segments take much less room.

@@ -10,11 +10,12 @@ import { region } from "./support";
 /**
  * SaveFailed carries the same Send-log control the crash screen has (#456).
  *
- * Same constraint `tests/error-boundary.test.ts` documents: this suite does
- * not mount in jsdom (`vitest.config.ts` sets `environment: "node"`), so only
- * the markup a first render produces is checked here — the armed/preparing paint
+ * Same constraint `tests/error-boundary.test.ts` documents: this suite renders
+ * with `renderToStaticMarkup` and does no client mount, so only the markup a
+ * first render produces is checked here — the armed/preparing paint
  * `SendLogControl`'s own hook (`useFailureLogShare`) reaches after a tap
- * needs a browser and is not exercised in this suite.
+ * takes a client mount with `act()` (`tests/interactive-mount.ts`) and is not
+ * exercised in this suite.
  *
  * `DatabasePanel` is explicitly out of scope for #456 (its own screen calls
  * it a design call) and carries no assertion here.

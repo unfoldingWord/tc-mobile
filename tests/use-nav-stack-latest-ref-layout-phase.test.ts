@@ -10,9 +10,8 @@ import { useNavStack } from "@/hooks/use-nav-stack";
  * #361, M14): `useNavStack`'s whole `popstate`-read closure — `screenRef`,
  * `recoveringRef`, `databasePanelRef`, `onLeaveToBooksRef`, `atFloor` — is
  * refreshed in a `useLayoutEffect` with no dependency array
- * (`use-nav-stack.ts:409`). Mutating that effect to `useEffect` survived the
- * whole suite when #361 was filed, because nothing in `tests/` mounted the
- * hook under jsdom yet. #735/#739 changed that
+ * (`use-nav-stack.ts:409`). Nothing in `tests/` mounted the hook under jsdom when
+ * #361 was filed; #735/#739 changed that
  * (`tests/use-audio-session-supersession.test.ts`), which is what this
  * file's harness copies.
  *

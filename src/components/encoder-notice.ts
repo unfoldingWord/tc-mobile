@@ -3,8 +3,9 @@
  * the whole gate, in a DOM-free function.
  *
  * Lifted out of `books-screen.tsx` for the reason `processing-status.ts` was
- * lifted out of the recorder: this repo has no DOM test runner, so a mount
- * predicate left in JSX is pinned by nothing. Three decisions live here rather
+ * lifted out of the recorder: a mount predicate left in a screen's JSX is
+ * reached only by mounting that whole screen, and no test does that for this
+ * line, while a function is pinned by a direct call. Three decisions live here rather
  * than in a `&&` — whether the line appears at all, which mark it wears, and
  * which string it says — and each of them is wrong in a way no type-check would
  * catch.

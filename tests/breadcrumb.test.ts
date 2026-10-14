@@ -35,6 +35,12 @@ import { stripComments } from "./support";
  * renamed (#264) showed its label on the Segments screen and the default name
  * one tap deeper, on the surface a translator spends the session inside.
  *
+ * Since #954 both headers draw crumb chips (`o4-crumbs.tsx`) rather than a
+ * text trail, and the trail survives only as the menus' spoken place line in
+ * `O4SheetHead`. That the headers SHOW a renamed chapter's name is rendered
+ * in `tests/o4-header-crumbs.test.ts` (#1230); the source checks below pin
+ * where the trail is built and where the recorder resolves the name.
+ *
  * WHY SOME ASSERTIONS READ SOURCE. A duplicate and an alias produce identical
  * output today, so no call of these functions can tell them apart — that is
  * what makes the duplicate survive. The only observation that separates them
@@ -162,17 +168,21 @@ describe("the default chapter name is written once", () => {
   });
 });
 
-describe("both screens read the table", () => {
-  it("the Segments header calls the table instead of assembling JSX", () => {
+describe("the trail and the heading are read from the table", () => {
+  it("the one place that draws the trail calls the table instead of assembling JSX", () => {
+    const crumbs = source("src/components/o4-crumbs.tsx");
+    expect(crumbs.length, "no crumbs module to read").toBeGreaterThan(1000);
+    expect(crumbs).toContain("strings.chapterBreadcrumb(");
+    expect(crumbs).toContain("strings.recorderBreadcrumb(");
+    // The separator that used to live in the Segments markup. Its absence
+    // from both the drawing module and the screen is the whole claim.
+    expect(crumbs).not.toContain("&gt;");
     const screen = source("src/components/segments-screen.tsx");
     expect(screen.length, "no Segments screen to read").toBeGreaterThan(1000);
-    expect(screen).toContain("strings.chapterBreadcrumb(");
-    // The separator that used to live in the markup. It appears nowhere else
-    // in `src/components`, so its absence here is the whole claim.
     expect(screen).not.toContain("&gt;");
   });
 
-  it("the recorder header resolves the heading before it builds the trail", () => {
+  it("the recorder header resolves the chapter's stored name into its heading", () => {
     const sheet = source("src/components/recorder.tsx");
     expect(sheet.length, "no recorder to read").toBeGreaterThan(1000);
     // The index is what gets the floor, NOT the slice's length. `indexOf`
@@ -183,12 +193,22 @@ describe("both screens read the table", () => {
     // this one was an instance of it. The call's own text is now bounded by
     // paren depth (`callArguments`, #764), not a fixed character window, so
     // whitespace and comment length in the source no longer matter here.
-    const at = sheet.indexOf("strings.recorderBreadcrumb(");
-    expect(at, "recorderBreadcrumb is not called").toBeGreaterThanOrEqual(0);
+    //
+    // The header's heading is the `chapterHeading` the crumbs are handed
+    // (`chapter={chapterHeading}`), so the call checked is the one that
+    // defines it.
+    const decl = sheet.indexOf("const chapterHeading =");
+    expect(
+      decl,
+      "the header's chapterHeading is not defined"
+    ).toBeGreaterThanOrEqual(0);
+    const at = sheet.indexOf("strings.chapterHeading(", decl);
+    expect(at, "chapterHeading is not called").toBeGreaterThanOrEqual(0);
+    // The call belongs to that declaration: nothing but its own ternary
+    // stands between the two.
+    expect(sheet.slice(decl, at)).not.toContain(";");
     const call = callArguments(sheet, at);
-    // Inside this call's own arguments, not merely somewhere later in the file.
-    expect(call).toContain("strings.chapterHeading(");
-    // AND the STORED NAME is what it resolves. Requiring only the call left the
+    // The STORED NAME is what it resolves. Requiring only the call left the
     // regression this whole PR exists to kill wide open (George, #698 round 8):
     //
     //     strings.chapterHeading(null, view.chapterNumber)
@@ -198,10 +218,7 @@ describe("both screens read the table", () => {
     // deeper, which is the original bug verbatim. The storage test proves the
     // VIEW carries the name; only this proves the HEADER reads it.
     expect(call).toContain("view.chapterName");
-    // The segment half stays the entry's business (#591): the caller hands it
-    // the raw label and `segmentHeading` inside the table resolves it, exactly
-    // as `chapterHeading` resolves the chapter half out here.
-    expect(call).toContain("view.segmentLabel");
+    expect(sheet).toContain("chapter={chapterHeading}");
   });
 });
 

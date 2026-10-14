@@ -990,3 +990,106 @@ async function loadAudioIoWithoutDevices() {
   vi.stubGlobal("navigator", {});
   return loadAudioIo();
 }
+
+describe("claimSharedContext — a caller's own await (#1265 items 1 and 2)", () => {
+  it("a devicechange during the claim only marks the drop; the release lands it", async () => {
+    FakeContext.nextClock = "advancing";
+    const { io, deviceChange } = await loadAudioIoWithDevices();
+    await io.resumeAudioContext();
+    const ctx = FakeContext.made[0]!;
+    const release = io.claimSharedContext();
+
+    deviceChange();
+    expect(ctx.closeCalls).toBe(0);
+
+    release();
+    expect(ctx.closeCalls).toBe(1);
+    // Once only: a second release neither re-drops nor underflows the count.
+    release();
+    expect(ctx.closeCalls).toBe(1);
+    expect(reportFailure).not.toHaveBeenCalled();
+  });
+
+  it("without the claim the same devicechange drops at once (the window the claim closes)", async () => {
+    FakeContext.nextClock = "advancing";
+    const { io, deviceChange } = await loadAudioIoWithDevices();
+    await io.resumeAudioContext();
+    const ctx = FakeContext.made[0]!;
+
+    deviceChange();
+    expect(ctx.closeCalls).toBe(1);
+  });
+
+  it("the return check stands aside while the claim is held", async () => {
+    const io = await loadAudioIo();
+    const ctx = await interruptedThenFrozen(io);
+    const release = io.claimSharedContext();
+
+    const check = io.checkSharedClockOnReturn();
+    await vi.advanceTimersByTimeAsync(io.CLOCK_STALL_TIMEOUT_MS + 100);
+    await check;
+
+    expect(ctx.closeCalls).toBe(0);
+    expect(rowsFor("audio-clock-stalled-on-return")).toHaveLength(0);
+    release();
+  });
+});
+
+describe("a stalled-clock drop that is refused is kept, not forgotten (#1265 item 3)", () => {
+  it("a Play's stall under a live level tap closes nothing now, and drops once the tap lets go", async () => {
+    const { playSamples, createLevelTap, CLOCK_STALL_TIMEOUT_MS } =
+      await loadAudioIo();
+    const tap = createLevelTap(fakeStream);
+    const ctx = FakeContext.made[0]!;
+
+    const outcome = playSamples(samples, { isStillCurrent: () => true }).catch(
+      (cause: unknown) => cause
+    );
+    await vi.advanceTimersByTimeAsync(CLOCK_STALL_TIMEOUT_MS + 100);
+    await outcome;
+    expect(ctx.closeCalls).toBe(0);
+
+    tap.close();
+    expect(ctx.closeCalls).toBe(1);
+    expect(rowsFor("playback-clock-stalled")).toHaveLength(1);
+  });
+
+  it("a level tap's stall while a Play is sounding does not close the context under that Play; it drops when the Play stops", async () => {
+    FakeContext.nextClock = "advancing";
+    const { playSamples, createLevelTap, CLOCK_STALL_TIMEOUT_MS } =
+      await loadAudioIo();
+    const play = playSamples(samples, { isStillCurrent: () => true });
+    await vi.advanceTimersByTimeAsync(100);
+    const handle = await play;
+    const ctx = FakeContext.made[0]!;
+    const tap = createLevelTap(fakeStream);
+
+    ctx.clockMode = "frozen";
+    tap.readFrame();
+    vi.setSystemTime(CLOCK_STALL_TIMEOUT_MS * 3);
+    tap.readFrame();
+    expect(rowsFor("recorder-tap-clock-stalled")).toHaveLength(1);
+
+    tap.close();
+    expect(ctx.closeCalls).toBe(0);
+
+    handle.stop();
+    expect(ctx.closeCalls).toBe(1);
+  });
+
+  it("the return check's stall under a level tap closes nothing now, and the context drops once the tap lets go", async () => {
+    const io = await loadAudioIo();
+    const ctx = await interruptedThenFrozen(io);
+    const tap = io.createLevelTap(fakeStream);
+
+    const check = io.checkSharedClockOnReturn();
+    await vi.advanceTimersByTimeAsync(io.CLOCK_STALL_TIMEOUT_MS + 100);
+    await check;
+    expect(ctx.closeCalls).toBe(0);
+
+    tap.disconnect();
+    expect(ctx.closeCalls).toBe(1);
+    // A drop it did not make writes no return row.
+    expect(rowsFor("audio-clock-stalled-on-return")).toHaveLength(0);
+  });
+});

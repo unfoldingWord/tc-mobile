@@ -11,7 +11,6 @@ import {
   type RecorderMenuProps,
 } from "@/components/recorder-menu";
 import { SHEET_CLOSE_DISTANCE_PX } from "@/components/sheet-drag";
-import type { Design } from "@/lib/design";
 import { licenseTexts } from "@/components/licenses";
 import { strings } from "@/lib/strings";
 
@@ -39,10 +38,6 @@ import { stripComments } from "./support";
  * a finger on a phone. The pure decision is `tests/sheet-drag.test.ts`.
  */
 
-const design = vi.hoisted(() => ({ current: "o4" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 // About's footer reads build defines the test env does not have.
 vi.mock("@/components/build-stamp", () => ({ BuildStamp: () => null }));
 
@@ -51,7 +46,6 @@ const onClose = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
-  design.current = "o4";
   m = mountInteractive();
   // jsdom has no pointer capture; the browser's is what keeps a drag's
   // moves on the grip once the finger leaves it.
@@ -112,10 +106,9 @@ async function mountMenu(props: Partial<Parameters<typeof Menu>[0]> = {}) {
 const MODES = {
   "a titled sheet (book, chapter, segment, name sheets)": {},
   "the global ≡ menu": { hamburger: true },
-  "the recorder's ⋮ menu": { hamburger: true, dismissIcon: "more" as const },
 };
 
-describe("one ✕ closes every sheet in O4 (#1268 item 2)", () => {
+describe("one ✕ closes every sheet (#1268 item 2)", () => {
   for (const [mode, props] of Object.entries(MODES)) {
     it(`${mode}: the header's closer is ✕, top right, named as before`, async () => {
       const p = await mountMenu(props);
@@ -143,10 +136,8 @@ describe("one ✕ closes every sheet in O4 (#1268 item 2)", () => {
       mode: "record",
       ordinal: 3,
       finishedState: "empty",
-      editReason: null,
       markReason: null,
       eraseReason: null,
-      onEnterEdit: vi.fn(),
       onToggleFinished: vi.fn(),
       onErase: vi.fn(),
     };
@@ -195,22 +186,6 @@ describe("one ✕ closes every sheet in O4 (#1268 item 2)", () => {
     });
     expect(backs).toEqual(["components/about-panel.tsx"]);
   });
-});
-
-describe("the current look keeps its closers", () => {
-  const cases: [string, object, IconName][] = [
-    ["titled", {}, "back"],
-    ["≡", { hamburger: true }, "menu"],
-    ["⋮", { hamburger: true, dismissIcon: "more" }, "more"],
-  ];
-  for (const [mode, props, glyph] of cases) {
-    it(`${mode}: ${glyph}, and no grip`, async () => {
-      design.current = "current";
-      const p = await mountMenu(props);
-      expect(glyphOf(named(strings.menuClose))).toBe(glyphPath(glyph));
-      expect(p.querySelector(".menu-grip")).toBeNull();
-    });
-  }
 });
 
 /** Dispatch a pointer event the way a finger would. */
@@ -334,6 +309,17 @@ describe("drag down to close (#1268 item 1)", () => {
         })
       );
 
+    /** A whole tap: pointerdown, pointerup, then its click. */
+    const tapOn = (el: Element) => {
+      pointer(el, "pointerdown", 300);
+      pointer(el, "pointerup", 300);
+      click(el);
+    };
+    const key = (el: Element, k: string) =>
+      el.dispatchEvent(
+        new m.dom.window.KeyboardEvent("keydown", { key: k, bubbles: true })
+      );
+
     it("does not reach what was under the finger", async () => {
       const { button, hit } = underneath();
       const p = await mountMenu();
@@ -341,8 +327,11 @@ describe("drag down to close (#1268 item 1)", () => {
       expect(onClose).toHaveBeenCalledTimes(1);
       click(button);
       expect(hit).not.toHaveBeenCalled();
-      // One click only: the next tap is a real one.
+      // A second bare click in the window (no gesture of its own) is
+      // swallowed too (PR #1318 round 2, George); a real tap gets through.
       click(button);
+      expect(hit).not.toHaveBeenCalled();
+      tapOn(button);
       expect(hit).toHaveBeenCalledTimes(1);
     });
 
@@ -356,6 +345,186 @@ describe("drag down to close (#1268 item 1)", () => {
       await new Promise((resolve) => setTimeout(resolve, 450));
       click(button);
       expect(hit).toHaveBeenCalledTimes(1);
+    });
+
+    // #1278 (PR #1273 round 3, Frank P3): a touch drag that closes the sheet
+    // fires no click, so the swallow stays armed. A real tap inside the
+    // window is a whole new gesture on its own target, so its click must land.
+    it("lets a new tap's click through inside the window", async () => {
+      const { button, hit } = underneath();
+      const p = await mountMenu();
+      await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+      expect(onClose).toHaveBeenCalledTimes(1);
+      pointer(button, "pointerdown", 300);
+      pointer(button, "pointerup", 300);
+      click(button);
+      expect(hit).toHaveBeenCalledTimes(1);
+    });
+
+    it("lets a keyboard click through inside the window", async () => {
+      const { button, hit } = underneath();
+      const p = await mountMenu();
+      await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+      button.dispatchEvent(
+        new m.dom.window.KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+        })
+      );
+      click(button);
+      expect(hit).toHaveBeenCalledTimes(1);
+    });
+
+    // PR #1318 round 1 (George): a new gesture must not uninstall the
+    // swallow. A click that is not that gesture's own (here, on what the
+    // sheet covered) is still eaten inside the window.
+    it("still eats a click elsewhere after a new pointerdown, then lets that tap's click through", async () => {
+      const covered = underneath();
+      const next = underneath();
+      const p = await mountMenu();
+      await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+      pointer(next.button, "pointerdown", 300);
+      click(covered.button);
+      expect(covered.hit).not.toHaveBeenCalled();
+      pointer(next.button, "pointerup", 300);
+      click(next.button);
+      expect(next.hit).toHaveBeenCalledTimes(1);
+    });
+
+    it("still eats a click elsewhere after a keydown, then lets the key's click through", async () => {
+      const covered = underneath();
+      const next = underneath();
+      const p = await mountMenu();
+      await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+      next.button.dispatchEvent(
+        new m.dom.window.KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+        })
+      );
+      click(covered.button);
+      expect(covered.hit).not.toHaveBeenCalled();
+      click(next.button);
+      expect(next.hit).toHaveBeenCalledTimes(1);
+    });
+
+    it("eats a click on the new tap's target that arrives before its pointerup", async () => {
+      const { button, hit } = underneath();
+      const p = await mountMenu();
+      await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+      pointer(button, "pointerdown", 300);
+      click(button);
+      expect(hit).not.toHaveBeenCalled();
+    });
+
+    // PR #1318 round 2 (George): the swallow stays for the whole window,
+    // a delivered click does not take it down, and only the new gesture's
+    // own control gets its click.
+    it("stays armed after a delivered tap: a later stray click is eaten, a later tap is not", async () => {
+      const a = underneath();
+      const b = underneath();
+      const p = await mountMenu();
+      await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+      tapOn(b.button);
+      expect(b.hit).toHaveBeenCalledTimes(1);
+      // The gesture is spent: a second bare click on the same control is
+      // not a new tap.
+      click(b.button);
+      expect(b.hit).toHaveBeenCalledTimes(1);
+      click(a.button);
+      expect(a.hit).not.toHaveBeenCalled();
+      tapOn(a.button);
+      expect(a.hit).toHaveBeenCalledTimes(1);
+    });
+
+    it("stays armed after Enter's click: a later stray click is eaten", async () => {
+      const a = underneath();
+      const b = underneath();
+      const p = await mountMenu();
+      await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+      key(b.button, "Enter");
+      click(b.button);
+      expect(b.hit).toHaveBeenCalledTimes(1);
+      click(a.button);
+      expect(a.hit).not.toHaveBeenCalled();
+    });
+
+    it.each([["a"], ["Escape"]])(
+      "a keydown of %s lets no click through",
+      async (k) => {
+        const { button, hit } = underneath();
+        const p = await mountMenu();
+        await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+        key(button, k);
+        click(button);
+        expect(hit).not.toHaveBeenCalled();
+      }
+    );
+
+    it("eats a click on an ancestor of the new gesture's control", async () => {
+      const { button, hit } = underneath();
+      const bodyHit = vi.fn();
+      document.body.addEventListener("click", bodyHit);
+      try {
+        const p = await mountMenu();
+        await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+        pointer(button, "pointerdown", 300);
+        pointer(button, "pointerup", 300);
+        click(document.body);
+        expect(bodyHit).not.toHaveBeenCalled();
+        click(button);
+        expect(hit).toHaveBeenCalledTimes(1);
+      } finally {
+        document.body.removeEventListener("click", bodyHit);
+      }
+    });
+
+    // PR #1318 round 3 (George): a finger lands on what a button holds (its
+    // icon, its label), not on the button. The browser fires the click on
+    // the nearest common ancestor of the pointerdown and pointerup targets,
+    // so a press on the icon that lifts on the label clicks the button
+    // itself. All three name the same control, so the click is delivered.
+    it("delivers a tap made on the parts inside a control, and still eats a click elsewhere", async () => {
+      const { button, hit } = underneath();
+      button.textContent = "";
+      const icon = document.createElement("span");
+      const label = document.createElement("span");
+      label.textContent = "under the sheet";
+      button.append(icon, label);
+      const bodyHit = vi.fn();
+      document.body.addEventListener("click", bodyHit);
+      try {
+        const p = await mountMenu();
+        await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+        pointer(icon, "pointerdown", 300);
+        pointer(label, "pointerup", 300);
+        click(document.body);
+        expect(bodyHit).not.toHaveBeenCalled();
+        click(button);
+        expect(hit).toHaveBeenCalledTimes(1);
+        // The same on one part: down, up and click all on the label.
+        tapOn(label);
+        expect(hit).toHaveBeenCalledTimes(2);
+      } finally {
+        document.body.removeEventListener("click", bodyHit);
+      }
+    });
+
+    // PR #1318 round 3 (George): Space, unlike Enter, clicks on keyup, so its
+    // click comes after a keyup the swallow does not listen for.
+    it("lets Space's click through after its keyup, and still eats a click elsewhere", async () => {
+      const covered = underneath();
+      const next = underneath();
+      const p = await mountMenu();
+      await drag(one(p, ".menu-grip"), [100, 100 + SHEET_CLOSE_DISTANCE_PX]);
+      key(next.button, " ");
+      click(covered.button);
+      expect(covered.hit).not.toHaveBeenCalled();
+      next.button.dispatchEvent(
+        new m.dom.window.KeyboardEvent("keyup", { key: " ", bubbles: true })
+      );
+      click(next.button);
+      expect(next.hit).toHaveBeenCalledTimes(1);
     });
 
     it("is not armed by a drag that springs back", async () => {
@@ -380,14 +549,6 @@ describe("drag down to close (#1268 item 1)", () => {
     document.head.append(style);
     const p = await mountMenu();
     await drag(one(p, ".menu-grip"), [100, 100 + 2 * SHEET_CLOSE_DISTANCE_PX]);
-    expect(onClose).not.toHaveBeenCalled();
-  });
-
-  it("the current look has no drag at all", async () => {
-    design.current = "current";
-    const p = await mountMenu();
-    const head = p.querySelector(".menu-head") ?? p;
-    await drag(head, [100, 100 + 2 * SHEET_CLOSE_DISTANCE_PX]);
     expect(onClose).not.toHaveBeenCalled();
   });
 });

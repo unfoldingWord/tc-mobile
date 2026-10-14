@@ -6,9 +6,13 @@ import {
   MP3_TOTAL_DELAY,
   mp3GranuleCount,
 } from "@/lib/audio/mp3-align";
+import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
+import { buildClipMeta, newClipId } from "@/lib/storage/clips";
 import { closeDb, getDb } from "@/lib/storage/db";
+import { saveTake } from "@/lib/storage/takes";
 import type { UseEraseSegment } from "@/hooks/use-erase-segment";
 import type { AudioCodec, Clip, Mp3Stream } from "@/types/audio";
+import type { ClipId, SegmentId, Take } from "@/types/domain";
 
 /**
  * Shared test plumbing for the storage and export suites.
@@ -87,6 +91,65 @@ export async function clearAllStores(): Promise<void> {
   const stores = Array.from(db.objectStoreNames);
   const tx = db.transaction(stores, "readwrite");
   await Promise.all([...stores.map((s) => tx.objectStore(s).clear()), tx.done]);
+}
+
+/**
+ * Record a take for a segment through the app's own commit write, `saveTake`.
+ *
+ * The setup a suite needs when it only wants "this segment is recorded": a
+ * fresh clip id (or the one passed, to build a shared or retried clip), `frames`
+ * constant samples at the canonical rate, and the clip and take written in ONE
+ * transaction exactly as the recorder's save does. There is deliberately no
+ * store write that points a segment at a clip without writing the clip: a take
+ * naming absent audio is damage, and a suite that wants it deletes the clip
+ * after this returns (#159 S-13).
+ */
+export function recordTake(
+  segmentId: SegmentId,
+  opts: {
+    clipId?: ClipId;
+    frames?: number;
+    finished?: boolean;
+    now?: number;
+  } = {}
+): Promise<Take> {
+  const { clipId = newClipId(), frames = 100, ...take } = opts;
+  return saveTake(
+    segmentId,
+    clipId,
+    new Int16Array(frames).fill(1000),
+    CANONICAL_SAMPLE_RATE,
+    take
+  );
+}
+
+/**
+ * Store a PCM clip that no take references — a damaged state, not a write path.
+ *
+ * No code in `src/` writes a clip on its own: `saveTake` writes the clip and
+ * its take in one transaction (#38), so an unreferenced clip is reachable only
+ * as damage or as a race a suite sets up on purpose (a stale take row's audio,
+ * a clip re-stored under an id its segment no longer names, the bytes a failed
+ * attempt is assumed to have left). It is also how a suite restores bytes under an
+ * id a take STILL names (the resolver's re-store case in `storage.test.ts`), so
+ * "no take references it" holds for the helper's contract, not for every caller;
+ * do not rewrite that test into a real orphan. This builds that state directly, the way
+ * other suites write a bare `takes` row. The meta comes from `buildClipMeta`,
+ * the same builder `saveTake` uses. A property of the clip write itself belongs
+ * on `saveTake` (`recordTake` above), never here (#1365).
+ */
+export async function storeOrphanClip(
+  clipId: ClipId,
+  samples: Int16Array
+): Promise<void> {
+  const meta = buildClipMeta(clipId, samples, CANONICAL_SAMPLE_RATE);
+  const db = await getDb();
+  const tx = db.transaction(["clipMeta", "clipData"], "readwrite");
+  await Promise.all([
+    tx.objectStore("clipMeta").put(meta),
+    tx.objectStore("clipData").put(new Int16Array(samples).buffer, clipId),
+    tx.done,
+  ]);
 }
 
 /**

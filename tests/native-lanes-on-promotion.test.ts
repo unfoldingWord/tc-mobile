@@ -102,10 +102,11 @@ describe.each(Object.keys(LANES) as Lane[])("%s triggers (#1281)", (lane) => {
     // pending promotion build (George, #1307 round 1). On the signing job
     // the group is only ever entered by a run that builds. The group carries
     // no ref: staging and main stamp the same unix-timestamp build number
-    // (versionCode, CFBundleVersion) for one app, so two branches building
-    // at once could hand an RC a higher number than the production build
-    // behind it (George, #1307 round 2; android-play.yml keeps one group for
-    // the same reason).
+    // (versionCode, CFBundleVersion) for one app, so one group makes build
+    // numbers follow queue order across both branches (George, #1307 round
+    // 2; android-play.yml keeps one group for the same reason). It does not
+    // order an RC behind a production build: the number is taken at build
+    // time (#1308).
     expect(text).not.toMatch(/^concurrency:/m);
     const job = LANES[lane];
     const group = job === "build" ? "android-apk" : "ios-testflight";

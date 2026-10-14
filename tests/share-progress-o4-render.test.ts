@@ -14,69 +14,28 @@ import { one, render } from "./render";
  * the numbered chips (D21), the 140 core inside the 176 frame, the filling
  * ring, and the core's progress bar (D22). `shareO4View`
  * (tests/share-o4-view.test.ts) decides WHAT to draw; this proves the panel
- * draws it, and that with no `o4` view the panel draws only the current
- * look's glyph and text. It does not compare against the base branch's
- * markup; tests/share-progress-design-switch.test.ts proves the switch is
- * what withholds the `o4` view.
+ * draws it. tests/share-progress-design-switch.test.ts proves the real
+ * `ShareProgress` hands the panel that view.
  */
 
 const TEXT = "Preparing the chapter to share";
-
-function current() {
-  return render(
-    createElement(ShareProgressPanel, {
-      role: "status",
-      icon: "share-busy",
-      text: TEXT,
-    })
-  );
-}
 
 function o4(view: Partial<ShareO4View>, role: "status" | "alert" = "status") {
   return render(
     createElement(ShareProgressPanel, {
       role,
-      icon: "share-busy",
       text: TEXT,
       o4: { icon: "share", ring: null, meter: null, chips: [], ...view },
     })
   );
 }
 
-describe("ShareProgressPanel with the switch off", () => {
-  it("renders only the current look's glyph and text, with no O4 node", () => {
-    const container = current();
-    const panel = one(container, ".share-progress");
-    expect([...panel.children].map((c) => c.getAttribute("class"))).toEqual([
-      "share-progress-glyph",
-      "share-progress-text",
-    ]);
-    expect(container.querySelector("[class*='share-o4']")).toBeNull();
-    expect(container.querySelector("[role='progressbar']")).toBeNull();
-  });
-
-  it("is identical whether `o4` is left out or passed as undefined", () => {
-    const withUndefined = render(
-      createElement(ShareProgressPanel, {
-        role: "status",
-        icon: "share-busy",
-        text: TEXT,
-        o4: undefined,
-      })
-    );
-    expect(withUndefined.innerHTML).toBe(current().innerHTML);
-  });
-});
-
-describe("ShareProgressPanel under O4", () => {
+describe("ShareProgressPanel draws the O4 circle", () => {
   it("draws the glyph inside the core, inside the 176 frame", () => {
     const container = o4({});
     const frame = one(container, ".share-o4-frame");
     const core = one(frame, ".share-o4-core");
     one(core, "svg.share-o4-glyph");
-    // The current look's glyph class is absent, so none of its per-outcome
-    // inks or its spin reach the O4 glyph.
-    expect(container.querySelector(".share-progress-glyph")).toBeNull();
     // The line under the circle is unchanged and still carries the words.
     expect(one(container, ".share-progress-text").textContent).toBe(TEXT);
   });
@@ -233,7 +192,6 @@ describe("the progress bar's name at 100 follows the visible status (DRI pick (c
       const container = render(
         createElement(ShareProgressPanel, {
           role: "status",
-          icon: "share",
           text,
           o4: shareO4View(progress, "book", []),
         })
@@ -252,7 +210,6 @@ describe("a skipped item at the hand-off (the carried hollow snapshot)", () => {
     const container = render(
       createElement(ShareProgressPanel, {
         role: "status",
-        icon: "share",
         text: TEXT,
         o4: shareO4View(
           {

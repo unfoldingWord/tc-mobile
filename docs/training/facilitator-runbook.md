@@ -8,6 +8,17 @@ not a developer guide. Plain language, short steps.
 are stored only in the phone's own app storage and never travel anywhere
 unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-backend-in-phase-1.md; grep -rn "fetch(\|XMLHttpRequest\|WebSocket" src/ returned no matches, checked 2026-09-15 --> Tell every participant this up front — it was the very first question the first outside tester asked. <!-- source: gh issue #248, comment 2026-09-14 -->
 
+**Four points are awaiting Tim**, the requirements owner. Each is marked
+"Awaiting Tim" where it comes up. Where the runbook already has a safe
+default, the text there says to keep using it.
+
+1. Whether to offer the browser version at the training (§2, step 1).
+2. Whether "share a very long book chapter by chapter" is a rule (§3).
+3. Whether participants file their own problem reports (§5, "Where reports go").
+4. Which private address the problem-report file goes to (§5, "Where reports go").
+
+<!-- source: PR #1297 body, "For the requirements owner to confirm" items 1-4; no answer to any of them is on gh issue #248 as of 2026-10-05 -->
+
 ## 1. Before the training
 
 1. Make sure you have the install link or invitation ready for every phone you
@@ -72,6 +83,12 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    and recorded before anyone taps it. <!-- source: gh issue #248, tester
    report 2026-09-22 (contributing developer, source: tester) -->
 
+   **Keep only the right file.** A browser may warn that an app file can "harm
+   your device". Before a participant chooses to keep it, check that the file
+   the warning names is `app-release.apk` from the releases page. A warning on
+   any other file means stop: do not keep it. <!-- source: docs/tester-install.md
+   "Android" step 2 (the same guard); gh issue #248, comment 2026-09-24 -->
+
    **In short:** an Android phone opens `app-release.apk` from the newest
    release on <https://github.com/unfoldingWord/tc-mobile/releases> (the
    durable address <https://github.com/unfoldingWord/tc-mobile/releases/latest>
@@ -95,8 +112,8 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    app in a browser before the training must Share anything they want to
    keep before switching to the installed app — the installed app opening
    empty does not mean the browser recordings are gone, but nothing moves
-   them. Whether to offer the browser route at the training at all is for
-   the requirements owner to confirm. <!-- source: capacitor.config.ts (webDir "dist", no `server` block — the installed app loads its bundled files, not tcmobile.app); browser storage is per origin (gh issue #1295), so the WebView's own origin and the two HTTPS addresses are three stores — the exact WebView origin string is not in the committed config, and the "three stores" claim is an inference from per-origin storage plus the absence of any import path (src/lib/storage/persistence.ts docblock), confidence high; George round 1 P2-3 on PR #1297;
+   them. **Awaiting Tim (requirements owner): whether to offer the browser
+   route at the training at all.** Until he decides, use the installed apps. <!-- source: capacitor.config.ts (webDir "dist", no `server` block — the installed app loads its bundled files, not tcmobile.app); browser storage is per origin (gh issue #1295), so the WebView's own origin and the two HTTPS addresses are three stores — the exact WebView origin string is not in the committed config, and the "three stores" claim is an inference from per-origin storage plus the absence of any import path (src/lib/storage/persistence.ts docblock), confidence high; George round 1 P2-3 on PR #1297;
    docs/progress_tracker.md 2026-10-02 (tcmobile.app connected, serves
    1.0.1; "keep workers.dev with no redirect (recordings are stored per
    address)"); gh issue #1295; docs/tester-install.md "Web browser (no
@@ -120,6 +137,18 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
    closure is not confirmation; PR #934 merged 2026-09-26 (merge e5218643),
    an ancestor of this branch
    -->
+
+   **Once a phone has updated to 1.1.0, do not put an older build back on it.**
+   The newer build changes how recordings are stored, and an older build
+   cannot read them again: they stay on the phone, but out of reach, until a
+   1.1.0 or newer build is installed over it. If the app says "This copy is
+   out of date" and restarting does not clear it, do not uninstall, because
+   that deletes every recording. Write down the stamp and what you saw, as in
+   section 5, and report it. (On Android, the phone itself refuses to install
+   an older build over a newer one; see
+   [docs/native/README.md](../native/README.md) §5a.) <!-- source: AGENTS.md
+   "What rollback does not do"; src/lib/storage/db.ts DB_VERSION 11; screen
+   text read from src/lib/strings.ts dbOutOfDate, not seen on a device -->
 
    **The same rules apply to testers and to participants.** On an iPhone,
    open TestFlight, choose the newest build of tC Mobile and tap **Update**
@@ -172,7 +201,15 @@ unless someone deliberately taps Share. <!-- source: docs/decisions/0005-no-back
 
 2. **Allow the microphone when asked.** The first time someone taps record,
    the phone will ask for microphone access. Tap **Allow**. Without it,
-   recording will not work at all.
+   recording will not work at all. If the choices are **Allow**, **While
+   using the app** and **Only this time**, pick **Allow** or **While using
+   the app** for anyone who will record more than once, such as over a
+   training day. **Only this time** may end once the app is left, and the
+   phone would ask again at a later recording. On some older Android
+   versions the refusing button says **Deny**; it means **Don't allow**.
+   <!-- inference, not repo evidence: how long an "Only this time" grant lasts
+   is Android platform behaviour and has not been tested here; same wording
+   as docs/tester-install.md step 5; gh issue #248, comment 2026-09-24 -->
 3. **If the app never asks, or recording fails after allowing it:** open the
    phone's own settings — **Settings → Apps → tC Mobile → Permissions →
    Microphone** — and turn it on. (Standard Android path; wording varies by
@@ -234,8 +271,8 @@ been measured on a device yet.
   book (Psalms-sized) now streams to a temporary file instead of holding the
   whole book in memory, but no phone has run that path. Until one has,
   sharing chapter by chapter is the safer route for a long book at the
-  training. **Whether to tell facilitators this as a rule is for the
-  requirements owner to confirm.** <!-- source: gh issue #1003, closed 2026-09-28 ("Not verified: no phone has run either path yet, and the low-end phone measurement hasn't been done"); gh issue #248 comment on #1002's known limits -->
+  training. **Awaiting Tim (requirements owner): whether this is a rule for
+  every facilitator.** Until he decides, treat it as the safer default. <!-- source: gh issue #1003, closed 2026-09-28 ("Not verified: no phone has run either path yet, and the low-end phone measurement hasn't been done"); gh issue #248 comment on #1002's known limits -->
 - **Keep the phone awake and the app open while a book is being shared.** A
   large book can take many minutes on a slow phone. If the app is closed
   partway, a temporary file may be left on the phone, taking up space. <!-- source: GitHub release v1.0.1 body, "Known limits in 1.0.1" (Share Book); gh issue #1004 (closed 2026-09-26); gh issue #248 comment on #1002's known limits -->
@@ -382,6 +419,43 @@ been measured on a device yet.
      the app to erase it; sharing can be tried again. Native share changes
      still need acceptance on the training phones. <!-- source: src/hooks/share-flow.ts; issues #336 and #245 -->
 
+### What to watch for at the training
+
+Some changes to the app will be decided from what you see at the training. For
+each participant, write down the three things below. Write the person's
+role, never their name. Pass the notes along at the end of each day with
+your other notes (§5).
+
+1. **Fixing a mistake.** When a participant wanted to change something they
+   said, what did they do? Write which of these they used:
+   - **Edited the recording:** opened editing with the scissors in the
+     bottom bar, then cut a piece out (the scissors under the sound picture)
+     or put a cut piece back (paste, the arrow onto a line).
+   - **Said it all again:** the eraser in the recorder ("Clear and record
+     again"), or **Reset** in the segment's ⋮ menu.
+
+   Write whether they found it alone or someone showed them. Opening editing
+   and then leaving it without cutting counts as "looked at editing", not as
+   an edit.
+
+2. **The names they typed.** Copy down exactly what they typed for each
+   book, chapter and segment name. If a name is a person's name or phone
+   number, write "a person's name" or "a phone number" instead. Note any
+   name that was cut off with "…", and whether that confused them. If they
+   typed a number as a chapter name (for example "22"), note what they
+   expected the chapter's number to be.
+3. **The icons.** If you are running the icon check, follow
+   [`icon-recognition-protocol.md`](icon-recognition-protocol.md) and fill in
+   its sheet. It takes about ten minutes per participant. Its results also
+   decide whether the round buttons need to stand out more from the
+   background, so run it if you can.
+
+<!-- source and tracking, for maintainers:
+     item 1: gh issue #595 (DRI pick 2026-09-28, "After training observations (Recommended)": facilitators note who used cut/paste and who re-recorded; the editor-optional decision is made from those notes); strings.ts rerecord = "Clear and record again" and tileErase = "Reset"; the bottom-bar scissors open editing, Cut is the scissors under the waveform, Paste is the arrow onto a line (§3 above; icon-recognition-protocol.md rows 6, 8, 9). Split per George round 1 P2-1 on PR #1314.
+     item 2: gh issue #1284 (long names cut off with "…", no way to read them in full; known limit in §4) and gh issue #1272 (a typed chapter "number" becomes the chapter's name while the badge shows its position — the issue labels this inferred from the code).
+     item 3: gh issue #249 and ADR 0010 (docs/decisions/0010-icon-recognition.md); gh issue #461 waits on the #249 check (DRI pick 2026-09-28, "Decide after the #249 icon check (Recommended)": if people find controls by the glyph, the button-disc contrast is accepted; if not, a border or a lighter surface ladder is chosen).
+     Observation notes are per participant and by role, per AGENTS.md "Tester feedback is tagged by kind and source". -->
+
 ## 4. Known limits (as of 2026-10-02, build 1.0.1)
 
 - **The iPhone app is iPhone-only.** There is no iPad version, and the app
@@ -480,8 +554,8 @@ been measured on a device yet.
 - **One current recording per segment.** Recording and editing can add to or
   change it; there is no version history to restore an earlier saved version.
 - **Editing a finished segment re-compresses the audio.** Once a segment is
-  marked Finished, its audio is compressed to save space. Editing it again
-  decompresses it, and re-finishing it compresses it a second time. Each
+  marked Done, its audio is compressed to save space. Editing it again
+  decompresses it, and marking it Done again compresses it a second time. Each
   compression pass loses a small amount of quality, the way saving a photo as
   a JPEG twice does. This is expected, not a bug. <!-- source: docs/decisions/0009-transcode-on-finished.md, section 3 (generation count) -->
 - **English only.** The app's menus and messages are in English; there is no
@@ -495,7 +569,7 @@ been measured on a device yet.
   a different route, and this failure has not been reported from it. <!-- source: gh issue #272, open (moved to v1.0.0 as the Chrome-on-Android PWA path; the APK routes shares through the Capacitor Share plugin and never reaches the Web Share gate, per the 2026-09-16 comment); src/hooks/share-target.ts selectShareRoute docblock ("Android Chrome's Web Share allowlist rejects application/zip (#272)" — the project's claim, not re-run here); src/hooks/use-library-share.ts and src/hooks/use-book-share.ts (both "application/zip"); src/hooks/use-chapter-share.ts ("audio/mpeg"); src/lib/strings.ts shareBookFailed, shareAllFailed; GitHub release v1.0.1 body lists #272 among the known limits; George round 1 P2-2 on PR #1297 -->
 - **If playback is silent or too quiet, check the phone's media volume
   first.** If it persists, record the build, the screen used for playback,
-  and whether it happened before or after marking the segment Finished.
+  and whether it happened before or after marking the segment Done.
   Do not assume volume explains every report. <!-- source: issues #269 and #555 -->
 
 ### If a recording will not save
@@ -551,12 +625,12 @@ recording, or when the app came back to the screen. In the exported file these t
 show as `playback-clock-stalled` (Play started but no sound followed),
 `recorder-tap-clock-stalled` (the level meter's clock stopped during a
 recording) and `audio-clock-stalled-on-return` (found when the app came back
-to the screen). Each one also puts the red mark on Books **≡**. <!-- source: src/app/install-failure-listeners.ts (uncaught-error, unhandled-rejection); src/components/error-boundary.tsx (render); src/hooks/mp3-codec.ts (encoder-health, encoder-recover); src/hooks/finish-transcode.ts (transcode-sweep, transcode-segment); src/hooks/share-flow.ts:101 (share-prepare); src/hooks/use-recorder.ts (recorder-interrupted-active #478 — onInterrupted's still-active arm; recorder-start-resume #470 — raceAudioResume's rejection branch; recorder-start-resume-timeout #475 — start()'s own report after the await, only once its generation check has passed (a cancelled or superseded start writes nothing) and only when raceAudioResume's 1000 ms timer won; recorder-cancel-stop #474 — cancel()'s native stop() guard; recorder-stop-flush #485 — stop()'s own catch on its bounded flush, which then seals the slices already delivered and carries them through the ordinary tail, so a Stop whose teardown threw is written down AND keeps whatever audio was in hand; recorder-release-track #479 — a track stop() that throws while the mic stream is released, reported per track so the other tracks are still stopped; recorder-take-cap #1005 — the elapsed tick sealing a take at the 20-minute cap, which the sheet then saves; not a failure, the one record that a take was cut); src/hooks/audio-io.ts (recorder-tap-clone-stop #479 — the level tap's cloned track throwing on its own stop()); src/hooks/use-audio-session.ts stopRecording's backstop catch (recorder-stop-backstop #480 — fires only when endRecording() REJECTS, which the flush catch above never does; a Stop whose failure rides the StopResult to the sheet's Notice does not reach it); src/hooks/use-save-take.ts:97 (save-take, #456); src/hooks/use-save-take.ts:202 (erase-segment, #456 — performClearEditedSegment's cut-to-empty close, not the segment-store erase below); src/hooks/use-books.ts:644 (book-delete, #456 — deleteBook's catch, structurally pinned in tests/use-books-delete-failure-gate.test.ts since this hook cannot be rendered in this Node-only suite); src/hooks/use-erase-segment.ts:44 (erase-segment, #456 — the store-failure catch only, not the separate post-erase-notification one); src/hooks/use-chapter-segments.ts renameSegment's catch and src/components/segment-row.tsx's rejection handler (segment-rename, #591 — not the vanished-segment case, which shows the stale-segment state instead); src/hooks/audio-io.ts's playSamples (a single try/finally is now the ONE report site for all three keys below — dev lead pick, option A, 2026-09-19 judgment sheet, closing the row-accounting class George round-2 P3 and Frank rounds 1 and 3 each found one more exit of: playback-resume #469 — raceAudioResume's own rejection report, or playSamples's single exit reporting a captured one; fires for a LATE rejection arriving after the 1000 ms bound already won the race, for an early rejection whose OWN resume() call failed but the shared context turned out usable anyway because a DIFFERENT, concurrent resumeAudioContext() call elsewhere (playTake/playBuffer's own fire-and-forget in-gesture unlock) won first (Frank round-1 P2), OR for an early rejection on a claim that was superseded (a Stop, a competing Play) before either fail-closed check below ever ran — previously dropped with no row at all (Frank round-3 P2 @ audio-io.ts:678), now still reported since the finally is reached from every exit, superseded or not; an early rejection that leaves the context still unusable is instead folded into playback-resume-unusable below, carrying the REAL captured cause rather than a synthetic stand-in (previously always synthetic even when a real cause existed — Frank round-3 P2 @ audio-io.ts:694), so one failed Play never writes more than one row (George round-2 P3); playback-resume-timeout #469 — the single exit's fail-closed report when the 1000 ms bound was what left the context still needing resume; playback-resume-unusable #469 — the same single exit when the context still needs resume without the bound firing: an early rejection, a resume() that resolved but left the context still needing resume, or a fresh interruption arriving during the buffer-fill/yield after resume had already succeeded (George round-2 P2)); src/hooks/use-audio-session.ts playTake's and playBuffer's catches and the dangling-clip branch (playback-take, playback-buffer, playback-dangling, #1213 — each skips the #469 error, whose row playSamples already wrote, and writes nothing for a superseded Play); src/hooks/audio-io.ts playSamples, createLevelTap and checkSharedClockOnReturn (playback-clock-stalled, recorder-tap-clock-stalled, audio-clock-stalled-on-return, #1251 — a shared context reporting running whose currentTime did not advance for 1000 ms: after a Play's source.start, across the level tap's frames during a take, or after the page became visible again; the Play one fails that Play, and playTake/playBuffer's catches skip its error the way they skip the #469 one); src/hooks/audio-io.ts discardSharedContext (playback-context-close, #1213 — a failed close() of the shared context a fail-closed Play dropped) --> What is **not** written
+to the screen). Each one also puts the red mark on Books **≡**. <!-- source: src/app/install-failure-listeners.ts (uncaught-error, unhandled-rejection); src/components/error-boundary.tsx (render); src/hooks/mp3-codec.ts (encoder-health, encoder-recover); src/hooks/finish-transcode.ts (transcode-sweep, transcode-segment); src/hooks/share-flow.ts:101 (share-prepare); src/hooks/use-recorder.ts (recorder-interrupted-active #478 — onInterrupted's still-active arm; recorder-start-resume #470 — raceAudioResume's rejection branch; recorder-start-resume-timeout #475 — start()'s own report after the await, only once its generation check has passed (a cancelled or superseded start writes nothing) and only when raceAudioResume's 1000 ms timer won; recorder-cancel-stop #474 — cancel()'s native stop() guard; recorder-stop-flush #485 — stop()'s own catch on its bounded flush, which then seals the slices already delivered and carries them through the ordinary tail, so a Stop whose teardown threw is written down AND keeps whatever audio was in hand; recorder-release-track #479 — a track stop() that throws while the mic stream is released, reported per track so the other tracks are still stopped; recorder-take-cap #1005 — the elapsed tick sealing a take at the 20-minute cap, which the sheet then saves; not a failure, the one record that a take was cut); src/hooks/audio-io.ts (recorder-tap-clone-stop #479 — the level tap's cloned track throwing on its own stop()); src/hooks/use-audio-session.ts stopRecording's backstop catch (recorder-stop-backstop #480 — fires only when endRecording() REJECTS, which the flush catch above never does; a Stop whose failure rides the StopResult to the sheet's Notice does not reach it); src/hooks/use-save-take.ts:97 (save-take, #456); src/hooks/use-save-take.ts:202 (erase-segment, #456 — performClearEditedSegment's cut-to-empty close, not the segment-store erase below); src/hooks/use-books.ts:644 (book-delete, #456 — deleteBook's catch, structurally pinned in tests/use-books-delete-failure-gate.test.ts since this hook cannot be rendered in this Node-only suite); src/hooks/use-erase-segment.ts:44 (erase-segment, #456 — the store-failure catch only, not the separate post-erase-notification one); src/hooks/use-chapter-segments.ts renameSegment's catch and src/components/segment-row.tsx's rejection handler (segment-rename, #591 — not the vanished-segment case, which shows the stale-segment state instead); src/hooks/audio-io.ts's playSamples (a single try/finally is now the ONE report site for all three keys below — dev lead pick, option A, 2026-09-19 judgment sheet, closing the row-accounting class George round-2 P3 and Frank rounds 1 and 3 each found one more exit of: playback-resume #469 — raceAudioResume's own rejection report, or playSamples's single exit reporting a captured one; fires for a LATE rejection arriving after the 1000 ms bound already won the race (except one on a context `discardSharedContext` closed, which `raceAudioResume` drops because that Play already wrote its row, #1213), for an early rejection whose OWN resume() call failed but the shared context turned out usable anyway because a DIFFERENT, concurrent resumeAudioContext() call elsewhere (playTake/playBuffer's own fire-and-forget in-gesture unlock) won first (Frank round-1 P2), OR for an early rejection on a claim that was superseded (a Stop, a competing Play) before either fail-closed check below ever ran — previously dropped with no row at all (Frank round-3 P2 @ audio-io.ts:678), now still reported since the finally is reached from every exit, superseded or not; an early rejection that leaves the context still unusable is instead folded into playback-resume-unusable below, carrying the REAL captured cause rather than a synthetic stand-in (previously always synthetic even when a real cause existed — Frank round-3 P2 @ audio-io.ts:694), so one failed Play never writes more than one row (George round-2 P3); playback-resume-timeout #469 — the single exit's fail-closed report when the 1000 ms bound was what left the context still needing resume; playback-resume-unusable #469 — the same single exit when the context still needs resume without the bound firing: an early rejection, a resume() that resolved but left the context still needing resume, or a fresh interruption arriving during the buffer-fill/yield after resume had already succeeded (George round-2 P2)); src/hooks/use-audio-session.ts playTake's and playBuffer's catches and the dangling-clip branch (playback-take, playback-buffer, playback-dangling, #1213 — each skips the #469 error, whose row playSamples already wrote, and writes nothing for a superseded Play); src/hooks/audio-io.ts playSamples, createLevelTap and checkSharedClockOnReturn (playback-clock-stalled, recorder-tap-clock-stalled, audio-clock-stalled-on-return, #1251 — a shared context reporting running whose currentTime did not advance for 1000 ms: after a Play's source.start, across the level tap's frames during a take, or after the page became visible again; the Play one fails that Play, and playTake/playBuffer's catches skip its error the way they skip the #469 one); src/hooks/audio-io.ts discardSharedContext (playback-context-close, #1213 — a failed close() of the shared context a fail-closed Play dropped) --> What is **not** written
 down today is the microphone refusing to start, a Stop that fails the way you
 see it — the recorder's own notice that no sound was recorded or that the
 recording could not be decoded — and the share sheet failing
 at the moment of sending. Those show their own message on screen and leave no
-entry behind. <!-- source: src/hooks/use-audio-session.ts — the four console.error sites that report nothing: audio-context resume before Play (take and buffer, two sites — priming calls distinct from playSamples's own raceAudioResume, which now reports under playback-resume/-timeout/-unusable above), record-start, and primeAudioContext on sheet open (NOT stopRecording's backstop catch, which reports under recorder-stop-backstop since #480; a Stop that returns its error in the StopResult never enters that catch — and "Could not finish this recording." is deliberately NOT in this list: both of its sources, the backstop and use-recorder.ts's flush catch (recorder-stop-flush #485), write a row); src/components/recorder.tsx (commit/preview); src/hooks/share-flow.ts:460 — all still end at console.error; gh issue #205 round-2 G2 --> So
+entry behind. <!-- source: src/hooks/use-audio-session.ts — the console.error sites that report nothing: audio-context resume before Play (take and buffer, two sites — priming calls distinct from playSamples's own raceAudioResume, which now reports under playback-resume/-timeout/-unusable above), record-start, and primeAudioContext on sheet open (NOT stopRecording's backstop catch, which reports under recorder-stop-backstop since #480; a Stop that returns its error in the StopResult never enters that catch — and "Could not finish this recording." is deliberately NOT in this list: both of its sources, the backstop and use-recorder.ts's flush catch (recorder-stop-flush #485), write a row); src/components/recorder.tsx (commit/preview); src/hooks/share-flow.ts:460 — all still end at console.error; gh issue #205 round-2 G2 --> So
 when the microphone or the share sheet fails in front of you, **write it down yourself** (§5.2) and do
 not assume this report carries it. Routing those to the record is follow-up
 work, not something this build does. <!-- source: src/hooks/report-failure.ts:41 -->
@@ -649,9 +723,9 @@ problem, with the notes above. This is the requirements owner's decision of
 2026-09-30; an email address may replace it later. <!-- source: gh issue #248, requirements owner (Tim) 2026-09-30: "point testers to the GitHub repository instead of an email address for reporting problems: https://github.com/unfoldingWord/tc-mobile/issues (the repo is public). An email alias can replace it later." This superseded the DRI's 2026-09-28 "Hold until we have an alias" on an email address. -->
 
 - **Filing needs a GitHub account.** A participant without one gives the notes
-  to you, and you file them. Whether participants are expected to file their
-  own reports, or everything goes through the facilitator, is for the
-  requirements owner to confirm. <!-- inference about GitHub, not repo evidence: creating an issue requires being signed in; confidence high -->
+  to you, and you file them. **Awaiting Tim (requirements owner): whether
+  participants file their own reports, or everything goes through the
+  facilitator.** <!-- inference about GitHub, not repo evidence: creating an issue requires being signed in; confidence high -->
 - **The page is public.** Write what happened and which build; attach a photo
   of the screen only if it shows no personal information. Do **not** attach a
   recording, the app's problem-report file, or anyone's name or phone number.
@@ -661,6 +735,6 @@ problem, with the notes above. This is the requirements owner's decision of
   repository names no tester channel for it: the privacy policy and the store
   listings give `support@unfoldingword.org` as the public support contact,
   and the DRI's 2026-09-28 note held a tester email alias until one exists.
-  **Which address the problem-report file should be sent to is for the
-  requirements owner to confirm.** Until then, keep the file on the phone (do
+  **Awaiting Tim (requirements owner): which private address the
+  problem-report file goes to.** Until he decides, keep the file on the phone (do
   not tap the bin) and say in the GitHub issue that a report file exists. <!-- source: PRIVACY.md "Contact" (support@unfoldingword.org, listed as the privacy contact); docs/progress_tracker.md 2026-10-02 ("support: GitHub issues plus support@unfoldingword.org" for the store listings); gh issue #248, DRI 2026-09-28 ("Hold until we have an alias") and Tim 2026-09-30 (GitHub for now); src/components/failure-log-panel.tsx (the bin clears the record; there is no undo) -->

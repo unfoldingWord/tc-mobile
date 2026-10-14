@@ -10,14 +10,16 @@ import {
   getChapter,
   isStaleBookFailure,
   listBooks,
+  moveBook as moveBookInStore,
   moveChapter as moveChapterInStore,
   moveToIndex,
-  nextBookName,
+  nextBookNumber,
   renameBook as renameBookInStore,
 } from "@/lib/storage/books";
 import { reportFailure } from "./report-failure";
 import { failureKey, type FailureKey } from "./save-failure";
 import { bumpStoragePressure } from "./use-storage-pressure";
+import type { CoverColourKey } from "@/lib/cover-colour";
 import type { Book, BookId, Chapter, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
 
@@ -55,8 +57,10 @@ async function loadBookCard(book: Book): Promise<BookCard> {
   return {
     bookId: book.id,
     name: book.name,
+    number: book.number,
     chapters: chapters.filter((c): c is ChapterRow => c !== null),
     coverColourKey: book.coverColourKey,
+    createdAt: book.createdAt,
   };
 }
 
@@ -190,8 +194,8 @@ interface Failure {
  * that reload's own read from landing on top of a newer patch.
  *
  * The patched card keeps its index on the shelf (#1185): `listBooks` orders
- * by `createdAt`, which adding a chapter does not change, so the reload that
- * follows finds the card where the patch left it.
+ * by `shelfPosition` (#338), which adding a chapter does not change, so the
+ * reload that follows finds the card where the patch left it.
  *
  * Chapters themselves are appended, not prepended: `ChapterRow` order is the
  * book's chapter order, and a new chapter is the next one, not the first.
@@ -247,7 +251,8 @@ export function patchNewChapter(
  * Mirrors `renameBookInStore`'s own idempotency: a blank rename keeps the
  * current name and writes nothing, so a name-unchanged result returns `books`
  * itself. A genuine rename replaces the card at its index (#1185): the order
- * `listBooks` reads, `createdAt`, is not something a rename changes.
+ * `listBooks` reads, `shelfPosition` (#338), is not something a rename
+ * changes.
  */
 export function patchRenamedBook(
   books: readonly BookCard[],
@@ -307,6 +312,35 @@ export function patchMovedChapter(
 }
 
 /**
+ * Move one book card on the shelf, in the same turn as the drop (#338) — the
+ * book twin of {@link patchMovedChapter}.
+ *
+ * The optimistic half of `moveBook` below: the card lands where the
+ * translator dropped it before the write resolves. `toIndex` means exactly
+ * what it means to the store's `moveBook` — an absolute place among the
+ * shelf's cards, which are `listBooks` in shelf order — and goes through the
+ * same `moveToIndex`, so the patch and the write cannot put the card in
+ * different places. Cards carry no position of their own: their order on the
+ * shelf is the position.
+ *
+ * A move that changes nothing, or names a book no card holds, returns `books`
+ * itself.
+ */
+export function patchMovedBook(
+  books: readonly BookCard[],
+  bookId: BookId,
+  toIndex: number
+): BookCard[] {
+  const from = books.findIndex((card) => card.bookId === bookId);
+  if (from === -1) return books as BookCard[]; // stale card
+  const moved = moveToIndex(books, from, toIndex);
+  if (moved.every((card, i) => card === books[i])) {
+    return books as BookCard[]; // dropped where it started
+  }
+  return moved;
+}
+
+/**
  * Whether an Add-chapter tap for `bookId` should proceed, given the set of
  * books currently mid-create. The guard itself — not just the ref that holds
  * it — gets a red-first test: a second tap for the SAME book while the first
@@ -361,7 +395,8 @@ type CreateBookOutcome =
  * nullable book, because a failed create has to speak INSIDE the New Book dialog
  * (the screen's Notice sits behind its scrim) and must not be confused with
  * whatever last wrote the shared channel (#314; Frank R1 P3, George R1 P2-2).
- * `newBookPlaceholder` is the name that dialog pre-fills its field with.
+ * `newBookNumber` is the placeholder slot that dialog pre-fills its field
+ * with, rendered into words by the screen.
  */
 export function useBooks() {
   const [books, setBooks] = useState<BookCard[]>([]);
@@ -515,25 +550,27 @@ export function useBooks() {
   }, []);
 
   /**
-   * The name a blank New Book confirm would be given, for the dialog to pre-fill
-   * its field with (#314).
+   * The placeholder SLOT a blank New Book confirm would be given, for the
+   * dialog to pre-fill its field with (#314). The screen renders the words
+   * (`strings.bookHeading`); this layer never holds copy (#169).
    *
    * Derived from `books` rather than held as its own state, so it cannot lag the
    * shelf by a render: the optimistic insert below moves both in one commit, and
-   * a second `+` immediately after a create offers the NEXT name rather than the
+   * a second `+` immediately after a create offers the NEXT slot rather than the
    * one just taken (George R2 P2-1). Same pure function the store's own fallback
-   * uses, over the same names, so the field shows what a blank confirm writes.
+   * uses, over the same shelf, so the field shows what a blank confirm writes.
    */
-  const newBookPlaceholder = useMemo(
-    () => nextBookName(books.map((b) => b.name)),
-    [books]
-  );
+  const newBookNumber = useMemo(() => nextBookNumber(books), [books]);
 
   const createBook = useCallback(
-    async (name: string): Promise<CreateBookOutcome> => {
-      // The name comes from the New Book field (#314). A blank one falls back to
-      // the "Book NNN" placeholder — derived on disk inside the write's own
-      // transaction, so it is race-safe and never a render-time snapshot.
+    async (
+      name: string,
+      coverColourKey: CoverColourKey | null = null
+    ): Promise<CreateBookOutcome> => {
+      // The name comes from the New Book field (#314). A blank one leaves the
+      // book unnamed on its placeholder slot — derived on disk inside the
+      // write's own transaction, so it is race-safe and never a render-time
+      // snapshot, and the words stay the screen's to render (#169).
       //
       // The reason is RETURNED rather than pushed onto the shared `error`: this
       // failure has to appear inside the New Book dialog, and that dialog must
@@ -541,7 +578,12 @@ export function useBooks() {
       // channel by an earlier action (Frank R1 P3 / George R1 P2-2, raised
       // independently by both lenses). Still never a silent unhandled rejection.
       try {
-        const book = await createBookInStore(name);
+        const book = await createBookInStore(
+          name,
+          null,
+          undefined,
+          coverColourKey
+        );
         // The write is durable now — a new book may hold new chapters/takes
         // before this screen next asks `estimate()` on its own, so a live
         // `useStoragePressure` mount must re-read rather than keep whatever
@@ -559,9 +601,9 @@ export function useBooks() {
         // now has a book on it, a second Confirm there writing a second book
         // only a manual delete (#337) recovers from; and the screen's
         // scroll/focus effect could not run at all, leaving focus on the
-        // document (George R2 P2-1). Prepended because `listBooks` sorts by
-        // `createdAt`, newest first, and this book is the newest, so the
-        // optimistic order is the order the reload confirms.
+        // document (George R2 P2-1). Prepended because a new book lands at
+        // the top of the shelf (`createBook` gives it `shelfPosition` 0,
+        // #338), so the optimistic order is the order the reload confirms.
         //
         // `reload()` DOES follow this. An earlier round dropped it on the
         // theory that the new card is already fully correct so a reload could
@@ -583,8 +625,10 @@ export function useBooks() {
           {
             bookId: book.id,
             name: book.name,
+            number: book.number,
             chapters: [],
             coverColourKey: book.coverColourKey,
+            createdAt: book.createdAt,
           },
           ...prev,
         ]);
@@ -799,6 +843,48 @@ export function useBooks() {
     [reload]
   );
 
+  /**
+   * Move a book to an absolute place on the shelf (#338) — `moveChapter`
+   * above, one level up, and the same contract in every respect.
+   *
+   * Optimistic: the card moves in THIS turn via `patchMovedBook`, with the
+   * generation bumped in the same step so a load already in flight cannot
+   * snap it back; either outcome then `reload()`s, to confirm the order on
+   * success and to bring the STORED order back on failure (the write rolled
+   * back whole).
+   *
+   * A failure goes to the funnel as `"book-reorder"` and nowhere else: the
+   * card returning to where it was is the state-in-place signal (#172), and
+   * the shared Notice slot is not touched. A non-integer target is refused
+   * and reported before the generation or the shelf is touched.
+   *
+   * Resolves `true` when the move landed (a no-op move included), `false`
+   * when it failed. Not latched, like `moveChapter`: the store applies each
+   * `toIndex` to the order already committed when its transaction runs.
+   */
+  const moveBook = useCallback(
+    async (bookId: BookId, toIndex: number): Promise<boolean> => {
+      try {
+        assertReorderTarget(toIndex);
+      } catch (cause) {
+        reportFailure(cause, "book-reorder");
+        return false;
+      }
+      loadGen.current += 1;
+      setBooks((prev) => patchMovedBook(prev, bookId, toIndex));
+      try {
+        await moveBookInStore(bookId, toIndex);
+        reload();
+        return true;
+      } catch (cause) {
+        reportFailure(cause, "book-reorder");
+        reload();
+        return false;
+      }
+    },
+    [reload]
+  );
+
   const deleteBook = useCallback(
     async (bookId: BookId): Promise<DeleteBookResult> => {
       // Refused, not failed: the first call owns the outcome, and a caller that
@@ -876,7 +962,7 @@ export function useBooks() {
 
   return {
     books,
-    newBookPlaceholder,
+    newBookNumber,
     loading,
     loaded,
     // Derived from the one failure slot, so the key and its delete label
@@ -888,6 +974,7 @@ export function useBooks() {
     addChapter,
     renameBook,
     moveChapter,
+    moveBook,
     deleteBook,
     deleting,
     isDeleting,

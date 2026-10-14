@@ -9,9 +9,10 @@ import { Icon } from "./icon";
 
 export interface CoverPickerProps {
   /** The book's resolved colour (`lib/cover-colour.ts`'s `resolveCoverKey`) —
-   *  always one live palette key, never `null`: a book always shows SOME
-   *  colour, chosen or derived, and this row is what marks which one. */
-  selected: CoverColourKey;
+   *  one live palette key for an existing book, which always shows SOME
+   *  colour, chosen or derived. `null` only on the New Book sheet before a
+   *  choice: then no swatch is marked. */
+  selected: CoverColourKey | null;
   /** Called with the tapped swatch's key. The caller (the sheets lane's
    *  new-book sheet, #943, or the menus lane's book menu, #949) owns the
    *  write — this component is presentation only and holds no store call. */
@@ -24,8 +25,10 @@ export interface CoverPickerProps {
 /**
  * A row of cover-colour swatches (#957, from #937's D7/D8).
  *
- * Mounted in the O4 book menu (#949, `o4-book-menu.tsx`'s `O4CoverPick`).
- * The new-book sheet (#943) does not mount it yet.
+ * Mounted in the O4 book menu (#949, `o4-book-menu.tsx`'s `O4CoverPick`) and
+ * in the New Book sheet (#1190, `books-screen.tsx`). The sheet passes `null`
+ * until a swatch is tapped: a book not yet created has no id to derive a
+ * colour from, so no swatch is marked and the create stays on the default.
  *
  * Each swatch is a real `<button>`, not a coloured `<div>` with a click
  * handler: `aria-pressed` is the machine-readable half of its selected state

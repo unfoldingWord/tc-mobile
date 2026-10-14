@@ -13,12 +13,12 @@ import { restartWideButtonClass } from "@/components/save-failed-armed";
  * without one.
  */
 describe("restartWideButtonClass (#1088 S9)", () => {
-  it("O4, unarmed: the plain wide guide button, nothing else", () => {
-    expect(restartWideButtonClass(true, false)).toBe("o4-err-wide");
+  it("unarmed: the plain wide guide button, nothing else", () => {
+    expect(restartWideButtonClass(false)).toBe("o4-err-wide");
   });
 
-  it("O4, armed: swaps to the armed variant — never the old red-on-blue text utility", () => {
-    const className = restartWideButtonClass(true, true);
+  it("armed: swaps to the armed variant — never the old red-on-blue text utility", () => {
+    const className = restartWideButtonClass(true);
     expect(className).toBe("o4-err-wide o4-err-wide--armed");
     // The regression this table exists to close: a red TEXT utility layered
     // on top of the still-blue `.o4-err-wide` fill (S9). Also guards against
@@ -26,13 +26,5 @@ describe("restartWideButtonClass (#1088 S9)", () => {
     // `o4-err-wide` would drop the 280×84 wide-guide-button geometry too.
     expect(className).not.toMatch(/\btext-live\b/);
     expect(className).toMatch(/\bo4-err-wide\b/);
-  });
-
-  it("current look, unarmed: no className at all", () => {
-    expect(restartWideButtonClass(false, false)).toBeUndefined();
-  });
-
-  it("current look, armed: keeps the red TEXT utility — the current look's button is a neutral --s-raised, where red text already reads fine", () => {
-    expect(restartWideButtonClass(false, true)).toBe("text-live");
   });
 });

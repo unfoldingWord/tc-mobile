@@ -4,6 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "@/app/App";
+import { claimPhoneCheckRun } from "@/hooks/use-phone-check";
+import type { Layer } from "@/lib/nav/layer-stack";
 import type { ChapterId, SegmentId } from "@/types/domain";
 
 /**
@@ -48,6 +50,9 @@ const seam = vi.hoisted(() => {
     },
     buildStamp: null as null | { onReveal?: () => void },
     phoneCheck: null as null | { onClose: () => void },
+    layers: [] as Layer[],
+    popped: [] as string[],
+    layerOpen: false,
     writes: [] as Settle[],
   };
 });
@@ -113,8 +118,13 @@ vi.mock("@/hooks/use-nav-stack", async (importOriginal) => {
       onLeaveToBooks: () => void;
       onRecorderClosed: (dirty: boolean) => void;
     }) => ({
-      pushLayer: () => {},
-      popLayer: () => {},
+      pushLayer: (layer: Layer) => {
+        seam.layers.push(layer);
+      },
+      popLayer: (id: string) => {
+        seam.popped.push(id);
+      },
+      hasOpenLayer: () => seam.layerOpen,
       openChapter: params.onOpenChapter,
       openRecorder: params.onOpenRecorder,
       goBack: params.onLeaveToBooks,
@@ -153,6 +163,9 @@ beforeEach(() => {
   seam.buildStamp = null;
   seam.phoneCheck = null;
   seam.writes = [];
+  seam.layers = [];
+  seam.popped = [];
+  seam.layerOpen = false;
   window.history.replaceState(null, "", "/");
   container = document.createElement("div");
   document.body.append(container);
@@ -240,5 +253,54 @@ describe("Close drops ?check=phone from the URL (#1014 item 4)", () => {
     await act(async () => seam.buildStamp?.onReveal?.());
     await act(async () => seam.phoneCheck!.onClose());
     expect(window.location.href).toBe(before);
+  });
+});
+
+describe("The phone check is a system-Back layer and honours Books overlays (#1014 items 3 and 5)", () => {
+  it("refuses the reveal while a screen overlay is registered, and opens nothing", async () => {
+    await act(async () => root.render(createElement(App)));
+    seam.layerOpen = true;
+    await act(async () => seam.buildStamp?.onReveal?.());
+    expect(seam.phoneCheck).toBeNull();
+    expect(seam.layers).toHaveLength(0);
+
+    // Control: the same tap with no overlay open does reveal it.
+    seam.layerOpen = false;
+    await act(async () => seam.buildStamp?.onReveal?.());
+    expect(seam.phoneCheck).not.toBeNull();
+  });
+
+  it("registers one layer on reveal whose dismiss closes the check and pops it", async () => {
+    await act(async () => root.render(createElement(App)));
+    await act(async () => seam.buildStamp?.onReveal?.());
+    expect(seam.layers.map((l) => l.id)).toEqual(["phone-check"]);
+
+    seam.phoneCheck = null;
+    await act(async () => seam.layers[0]!.dismiss());
+    expect(seam.popped).toContain("phone-check");
+    expect(seam.phoneCheck).toBeNull();
+    expect(typeof seam.buildStamp?.onReveal).toBe("function");
+  });
+
+  it("reports the layer busy exactly while a run holds the slot", async () => {
+    await act(async () => root.render(createElement(App)));
+    await act(async () => seam.buildStamp?.onReveal?.());
+    const layer = seam.layers[0]!;
+    expect(layer.busy()).toBe(false);
+    const release = claimPhoneCheckRun();
+    expect(release).not.toBeNull();
+    try {
+      expect(layer.busy()).toBe(true);
+    } finally {
+      release?.();
+    }
+    expect(layer.busy()).toBe(false);
+  });
+
+  it("pops the layer when Close is tapped", async () => {
+    await act(async () => root.render(createElement(App)));
+    await act(async () => seam.buildStamp?.onReveal?.());
+    await act(async () => seam.phoneCheck!.onClose());
+    expect(seam.popped).toContain("phone-check");
   });
 });

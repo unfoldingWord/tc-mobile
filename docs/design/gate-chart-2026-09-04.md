@@ -9,9 +9,10 @@ where the two disagree, that file wins. · **Tree:** `develop` `0ba3687`,
 
 An offline-first PWA for oral Bible translation on shared Android and iOS
 phones, used by people who may not read: record a segment, edit the waveform in
-place, mark it Finished, share a chapter or a book as MP3. Production-ready by
-2026-09-30 (`v0.2.0`), in facilitators' hands at the East Africa training in the
-first week of October (`v0.3.0`). Everything else is `v1.0.0`.
+place, mark it Finished, share a chapter as an MP3 or a book as a zip of chapter
+MP3s. Production-ready by 2026-09-30 (`v0.2.0`), in facilitators' hands at the
+East Africa training in the first week of October (`v0.3.0`). Everything else is
+`v1.0.0`.
 
 ## What is built against that intent
 

@@ -40,6 +40,15 @@ const defaultTimers: ReorderTimers = {
   clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
 
+/**
+ * One row's vertical extent, in content coordinates: its top edge and its
+ * bottom edge, measured at the lift.
+ */
+export interface ReorderSpan {
+  readonly top: number;
+  readonly bottom: number;
+}
+
 interface ReorderDragUpdate {
   readonly fromIndex: number;
   readonly toIndex: number;
@@ -49,12 +58,12 @@ interface ReorderDragUpdate {
 
 export interface ReorderCallbacks {
   /**
-   * The hold completed on row `index`. Returns every row's midpoint in
+   * The hold completed on row `index`. Returns every row's extent in
    * content coordinates, measured now, or `null` to refuse the lift (nothing
    * to measure); a refused or throwing lift ends the gesture with
    * `cancel(false)` (nothing was lifted, so nothing is put back).
    */
-  lift(index: number): readonly number[] | null;
+  lift(index: number): readonly ReorderSpan[] | null;
   /** The lifted row moved. Called on every move, never writes. */
   drag(update: ReorderDragUpdate): void;
   /** The one write: the lifted row was released at a different index. */
@@ -97,7 +106,7 @@ type State =
       readonly pointerId: number;
       readonly index: number;
       readonly liftY: number;
-      readonly midpoints: readonly number[];
+      readonly rows: readonly ReorderSpan[];
       toIndex: number;
     };
 
@@ -123,14 +132,14 @@ export function createReorderGesture(
     // A refusal or a throw still ends the gesture through `cancel(false)`, so
     // the caller lets go of what it holds for the press (George round 1 on
     // #1057: a silent refusal left the DOM half's listeners attached).
-    let midpoints: readonly number[] | null;
+    let rows: readonly ReorderSpan[] | null;
     try {
-      midpoints = cb.lift(index);
+      rows = cb.lift(index);
     } catch (cause) {
       cb.cancel(false);
       throw cause;
     }
-    if (!midpoints || index >= midpoints.length) {
+    if (!rows || index >= rows.length) {
       cb.cancel(false);
       return;
     }
@@ -139,7 +148,7 @@ export function createReorderGesture(
       pointerId,
       index,
       liftY: lastY,
-      midpoints,
+      rows,
       toIndex: index,
     };
   };
@@ -181,11 +190,7 @@ export function createReorderGesture(
         return;
       }
       const offset = y - state.liftY;
-      const toIndex = reorderTarget(
-        state.midpoints,
-        state.index,
-        state.midpoints[state.index]! + offset
-      );
+      const toIndex = reorderTarget(state.rows, state.index, offset);
       state.toIndex = toIndex;
       cb.drag({ fromIndex: state.index, toIndex, offset });
     },
@@ -204,19 +209,41 @@ export function createReorderGesture(
 }
 
 /**
- * The index a lifted row lands at when its centre is at `draggedCenter`: the
- * number of OTHER rows whose midpoint it has passed. Absolute, so it is the
- * target `moveSegment` and `moveChapter` take as-is, and clamped to the list
- * by construction. Dropped where it started, it answers `fromIndex`.
+ * The index a lifted row lands at once it has moved `offset` px from its own
+ * slot (down is positive): the number of OTHER rows that still sit before it.
+ *
+ * Judged by the lifted row's LEADING edge against the same edge of each row
+ * it moves over. Going up, it passes a row once its top reaches that row's
+ * top; going down, once its bottom passes that row's bottom. Either way that
+ * is the moment the slot it would land in begins where its leading edge now
+ * is, so the target never runs ahead of the row under the finger, and every
+ * slot is reachable whatever the heights: a tall row reaches the slot above a
+ * short one by moving that short row's pitch, not half its own height (#338:
+ * an open book is one card with its chapters inside it).
+ *
+ * Where the rows are all one height this is the earlier centre rule exactly:
+ * tops, bottoms and midpoints are then the same distances apart, so a row
+ * passed by its edge is a row passed by its centre, and the chapter and
+ * segment lists move as they did.
+ *
+ * Absolute, so it is the target `moveSegment`, `moveChapter` and `moveBook`
+ * take as-is, and clamped to the list by construction. Dropped where it
+ * started, it answers `fromIndex`.
  */
 export function reorderTarget(
-  midpoints: readonly number[],
+  rows: readonly ReorderSpan[],
   fromIndex: number,
-  draggedCenter: number
+  offset: number
 ): number {
+  const own = rows[fromIndex]!;
+  const top = own.top + offset;
+  const bottom = own.bottom + offset;
   let to = 0;
-  for (let i = 0; i < midpoints.length; i++) {
-    if (i !== fromIndex && midpoints[i]! < draggedCenter) to++;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!;
+    if (i < fromIndex ? row.top < top : i > fromIndex && row.bottom < bottom) {
+      to++;
+    }
   }
   return to;
 }

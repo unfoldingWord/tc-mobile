@@ -65,10 +65,9 @@ function builtCssPath(): string | null {
 const CSS_PATH = builtCssPath();
 const GATE = resolveDistGate(CSS_PATH !== null, "dist/assets/*.css");
 
-// The exact minified shape observed in a real build: Lightning CSS/esbuild
-// drops the quotes an attribute selector does not need (`[data-design=o4]`,
-// not `[data-design="o4"]`) and collapses whitespace inside the declaration.
-const O4_SCOPE_RULE = "[data-design=o4]{--o4-scope:1}";
+// The exact minified shape of `o4/index.css`'s `:root { --o4-scope: 1; }`:
+// the minifier collapses whitespace inside the declaration.
+const O4_SCOPE_RULE = ":root{--o4-scope:1}";
 
 describe.skipIf(GATE === "skip")(
   "the O4 stylesheet folder's position in the built components layer (dist/assets/*.css, requires a prior `npm run build`)",
@@ -100,7 +99,7 @@ describe.skipIf(GATE === "skip")(
       // If a later `@import` or plugin re-opened `@layer components` after
       // o4/index.css's position, something could land AFTER this file and
       // still tie into the same layer at a later source position — silently
-      // reopening the very gap this switch depends on staying closed. There
+      // reopening the very gap the O4 overrides depend on staying closed. There
       // is exactly one `@layer components{` per production build today.
       const opens = css.match(/@layer components\{/g) ?? [];
       expect(opens.length).toBe(1);

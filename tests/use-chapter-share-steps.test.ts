@@ -53,6 +53,7 @@ const hook = () => probe.current!;
 /** An encode the test finishes by hand, reporting whatever progress it is told. */
 let progress: (fraction: number) => void;
 let finish: () => void;
+let encodeStarted: Promise<void>;
 
 async function chapterWith(segments: number): Promise<ChapterId> {
   const book = await createBook("b");
@@ -74,20 +75,25 @@ const steps = () => {
   return state.phase === "busy" ? state.steps : undefined;
 };
 
-/** Let the gather's IndexedDB reads and the encode's start settle. */
+/** Wait until the gather is done and the codec holds its handles. */
 const settle = () =>
   act(async () => {
-    await new Promise((r) => setTimeout(r, 30));
+    await encodeStarted;
   });
 
 beforeEach(async () => {
   vi.clearAllMocks();
   await clearAllStores();
+  let markEncodeStarted!: () => void;
+  encodeStarted = new Promise<void>((r) => {
+    markEncodeStarted = r;
+  });
   const codec: AudioCodec = {
     encodeMp3: (_samples, onProgress) =>
       new Promise((resolve) => {
         progress = (fraction) => onProgress?.(fraction);
         finish = () => resolve(new Uint8Array([0xff]));
+        markEncodeStarted();
       }),
     decodeMp3: () => Promise.reject(new Error("no MP3 clip expected")),
   };

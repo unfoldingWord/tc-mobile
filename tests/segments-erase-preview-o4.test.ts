@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SegmentsScreen } from "@/components/segments-screen";
 import { strings } from "@/lib/strings";
-import type { Design } from "@/lib/design";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { ChapterId, SegmentId } from "@/types/domain";
@@ -16,17 +15,15 @@ import type { SegmentRow } from "@/types/view";
  * The segment Erase confirm's "Play what will be lost" row (#979 remainder,
  * after #1022 built the badge/button half). The workbench draws it as a
  * waveform plus a Play/Pause transport between the title and the two
- * buttons, on the O4 "13" dialog only — with the switch off the dialog is
- * unchanged (#979's own Done-when, restated for this half).
+ * buttons, on the "13" dialog.
  *
  * This is the wiring test: `EraseConfirm`'s own `preview` prop is covered in
  * `tests/erase-confirm-preview.test.ts` (a bare, portalled mount, the
  * `erase-confirm-glyph.test.ts` pattern). Here the real `SegmentsScreen` is
- * mounted, with `useChapterSegments` and `useDesign` replaced at their
- * boundary (the `recorder-rerecord-o4.test.ts` pattern) and a real
- * `useEraseSegment`, so the assertions below are about the ACTUAL call site
- * in `segments-screen.tsx` — that `o4` gates the prop, that the row handed
- * in is the one armed, and that Play calls the real `SegmentsAudio.playTake`
+ * mounted, with `useChapterSegments` replaced at its boundary (the
+ * `recorder-rerecord-o4.test.ts` pattern) and a real `useEraseSegment`, so
+ * the assertions below are about the ACTUAL call site in
+ * `segments-screen.tsx` — that the row handed in is the one armed, and that Play calls the real `SegmentsAudio.playTake`
  * seam segments-screen.tsx already had — not a re-statement of the component
  * test.
  *
@@ -35,11 +32,6 @@ import type { SegmentRow } from "@/types/view";
  * below the same way `recorder-rerecord-o4.test.ts` mocks it — jsdom has no
  * canvas 2D context), or anything on a phone.
  */
-
-const design = vi.hoisted(() => ({ current: "o4" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 
 const mocks = vi.hoisted(() => ({ chapter: vi.fn(), clear: vi.fn() }));
 vi.mock("@/hooks/use-chapter-segments", () => ({
@@ -102,7 +94,6 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   HTMLElement.prototype.scrollIntoView = vi.fn();
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
-  design.current = "o4";
   playTake = vi.fn();
   audio = {
     error: null,
@@ -167,15 +158,9 @@ async function openConfirm() {
 const previewRow = () => document.querySelector(".confirm-preview");
 
 describe("segments-screen.tsx's confirm preview wiring (#979 remainder)", () => {
-  it("does not render the preview row with the switch off (unchanged)", async () => {
-    design.current = "current";
+  it("renders the armed row's preview, idle", async () => {
     await openConfirm();
     expect(document.querySelector(".confirm-panel")).not.toBeNull();
-    expect(previewRow()).toBeNull();
-  });
-
-  it("renders the armed row's preview, idle, with the switch on", async () => {
-    await openConfirm();
     expect(previewRow()).not.toBeNull();
     expect(button(strings.eraseConfirmPreviewPlay)).not.toBeUndefined();
   });

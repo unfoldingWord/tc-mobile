@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 
 import { unzipSync } from "fflate";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import {
@@ -82,6 +82,19 @@ describe("strings.shareFilename (#1218)", () => {
     );
   });
 
+  it("routes the fallback label through filenameSafe too (#1233 item 23)", () => {
+    // The default is app copy and safe today; this pins that a future edit to
+    // it (a `/` or `:` in the wording) still cannot reach a filename.
+    const spy = vi
+      .spyOn(strings, "chapterName")
+      .mockImplementation((n) => `Ch/${n}: x`);
+    try {
+      expect(strings.shareFilename("Mark", 4, null)).toBe("Mark - Ch 4 x.mp3");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("falls back to the default when nothing of the name survives sanitising", () => {
     expect(strings.shareFilename("Mark", 4, ":/?")).toBe(
       `Mark - ${strings.chapterName(4)}.mp3`
@@ -150,8 +163,8 @@ describe("the chapter name reaches the zip entry (#1218)", () => {
     await bookNamed("Mark", ["The sower", null]);
     const sink = memoryArchiveSink();
     const result = await exportLibraryZip(
-      (book) => book,
-      strings.shareFilename,
+      (book) => book.name ?? "",
+      (book, n, name) => strings.shareFilename(book.name ?? "", n, name),
       testCodec(),
       sink
     );

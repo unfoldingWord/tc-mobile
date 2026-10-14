@@ -54,10 +54,15 @@ export interface FocusRestore {
    *   on #368 caught precisely that: a "first focusable in the sheet" fallback
    *   resolved to the recorder's Back, and Back is `close()`). Prefer the
    *   control that owns the overlay; prefer `null` over anything dangerous.
+   * @param preventScroll pass `true` to land focus without scrolling the
+   *   target into view (both the trigger and the fallback). For a caller whose
+   *   scroll position must survive the close (#1362). Defaults to `false`, the
+   *   browser's own behaviour.
    */
   restore: (options: {
     suppressed: boolean;
     fallback: HTMLElement | null;
+    preventScroll?: boolean;
   }) => void;
 }
 
@@ -76,15 +81,18 @@ export interface FocusRestore {
  * and Back is `close()`, which SAVES. Landing on the ⋮ instead puts the next Tab
  * past Back and into the body.
  *
- * ## What is NOT verified
+ * ## What is and is not verified
  *
- * Everything in this file. The decision it delegates to is table-tested
- * (`tests/focus-restore.test.ts`); the DOM around it — reading
- * `document.activeElement` at tap time, `closest("[inert]")`, `.focus()`, and
- * the layout-effect ordering that is the point of the whole thing — has no
- * automated coverage and cannot have any in a Node-only suite. That gap is
- * #361. It is review and on-device surface; do not write "verified" on it
- * without a device.
+ * The decision it delegates to is table-tested (`tests/focus-restore.test.ts`).
+ * The DOM around it — reading `document.activeElement` at tap time,
+ * `.focus()`, and the layout-effect ordering — runs in the jsdom client mounts
+ * of the screens that call it: `tests/books-menus-tiles-o4.test.ts` and
+ * `tests/o4-menus-chapter-segment.test.ts` return focus to the ⋮ on Escape
+ * through this hook. What jsdom does not model is `inert` itself (it neither
+ * blurs a newly inert subtree nor refuses `.focus()` inside one), so the
+ * `inert` half of the contract, and what a screen reader or switch user
+ * actually lands on, stay review and on-device surface (#361); do not write
+ * "verified" on those without a device.
  */
 export function useFocusRestore(): FocusRestore {
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -103,9 +111,11 @@ export function useFocusRestore(): FocusRestore {
     ({
       suppressed,
       fallback,
+      preventScroll = false,
     }: {
       suppressed: boolean;
       fallback: HTMLElement | null;
+      preventScroll?: boolean;
     }) => {
       const trigger = triggerRef.current;
       triggerRef.current = null;
@@ -133,17 +143,18 @@ export function useFocusRestore(): FocusRestore {
       });
       if (target === "none") return;
       if (target === "fallback") {
-        fallback?.focus();
+        fallback?.focus({ preventScroll });
         return;
       }
-      trigger?.focus();
+      trigger?.focus({ preventScroll });
       // The belt to the table's braces. The predicates above enumerate the
       // conditions this app actually produces; they cannot enumerate every way
       // a browser refuses focus (an ancestor gone `display: none` or
       // `visibility: hidden`, a detail iOS decides differently). If the focus
       // did not land, the landmark is still better than the document — which is
       // the state #97 was filed about.
-      if (document.activeElement !== trigger) fallback?.focus();
+      if (document.activeElement !== trigger)
+        fallback?.focus({ preventScroll });
     },
     []
   );

@@ -16,7 +16,7 @@ import {
   getSegmentsOfChapter,
   resolveChapterClipIds,
 } from "@/lib/storage/books";
-import { addTake, saveTake, setSegmentFinished } from "@/lib/storage/takes";
+import { saveTake, setSegmentFinished } from "@/lib/storage/takes";
 import { getClip, getClipMeta, newClipId } from "@/lib/storage/clips";
 import { getDb } from "@/lib/storage/db";
 import { commitTranscode } from "@/lib/storage/transcode";
@@ -141,7 +141,7 @@ describe("deleteSegment", () => {
     const [s1, s2] = segmentIds as [SegmentId, SegmentId];
     const shared = newClipId();
     await saveTake(s1, shared, samples(300), CANONICAL_SAMPLE_RATE);
-    await addTake(s2, shared, 10);
+    await saveTake(s2, shared, samples(300), CANONICAL_SAMPLE_RATE);
 
     await deleteSegment(s1);
 

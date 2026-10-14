@@ -35,6 +35,80 @@ const FILE = path.resolve(import.meta.dirname, "../src/lib/strings.ts");
 const HELPERS = new Set(["couldNotBeIncluded", "trail"]);
 
 /**
+ * The names `strings.ts` imports. Neither carries wording: `plural` picks a
+ * form the caller supplies and `filenameSafe` strips characters, so neither
+ * belongs in `HELPERS` (the per-locale slice of #169 decides `plural`'s fate
+ * on its own). Pinned so a new import cannot bring a wording helper in from
+ * outside the walker's sight.
+ */
+const IMPORTS = ["filenameSafe", "plural"];
+
+/**
+ * Every name `strings.ts` binds at top level, by kind: values (functions,
+ * variables, classes, enums) and imports. Types and interfaces carry no
+ * wording, so they are skipped. Any other top-level statement is recorded by
+ * its syntax kind, so a shape this reader does not know fails the pin below
+ * instead of being skipped.
+ *
+ * `HELPERS` is a fixed list, so without this a new helper, an alias of the
+ * binding or a wording constant declared beside them is invisible to
+ * `outwardReferences`: an entry reaching the binding through
+ * `function heading(n) { return strings.chapterName(n); }`, `const t =
+ * strings;` or `const CHAPTER = "Chapter";` stayed green (PR #1221 review,
+ * 2026-10-02). Pinning the top-level names forces that new name through an
+ * edit here, where it has to be put in `HELPERS` or argued out of it.
+ */
+function topLevelNames(source: string): {
+  values: string[];
+  imports: string[];
+} {
+  const file = ts.createSourceFile(
+    "strings.ts",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS
+  );
+  const values: string[] = [];
+  const imports: string[] = [];
+  const bindingNames = (name: ts.BindingName): string[] =>
+    ts.isIdentifier(name)
+      ? [name.text]
+      : name.elements.flatMap((element) =>
+          ts.isOmittedExpression(element) ? [] : bindingNames(element.name)
+        );
+  file.forEachChild((node) => {
+    if (ts.isImportDeclaration(node)) {
+      const clause = node.importClause;
+      // A bare `import "x";` binds nothing, but is recorded so a new one
+      // still has to be argued here.
+      if (!clause) imports.push(`<import ${node.moduleSpecifier.getText()}>`);
+      if (clause?.name) imports.push(clause.name.text);
+      const bindings = clause?.namedBindings;
+      if (bindings && ts.isNamespaceImport(bindings))
+        imports.push(bindings.name.text);
+      else if (bindings)
+        for (const element of bindings.elements)
+          imports.push(element.name.text);
+    } else if (ts.isFunctionDeclaration(node)) {
+      values.push(node.name?.text ?? "<anonymous function>");
+    } else if (ts.isVariableStatement(node)) {
+      for (const decl of node.declarationList.declarations)
+        values.push(...bindingNames(decl.name));
+    } else if (ts.isClassDeclaration(node) || ts.isEnumDeclaration(node)) {
+      values.push(node.name?.text ?? "<anonymous class>");
+    } else if (
+      !ts.isTypeAliasDeclaration(node) &&
+      !ts.isInterfaceDeclaration(node) &&
+      node.kind !== ts.SyntaxKind.EndOfFileToken
+    ) {
+      values.push(`<${ts.SyntaxKind[node.kind]}>`);
+    }
+  });
+  return { values: values.sort(), imports: imports.sort() };
+}
+
+/**
  * Every entry of `export const strings = { ... }` that references the binding
  * or a helper, mapped to what it references, sorted. A bare `strings` that is
  * not the object of a property access (an alias, a spread, an element access)
@@ -143,6 +217,47 @@ describe("table entries that reach outside their own arguments (#169)", () => {
       shareBookPartial: ["strings.shareMissing"],
       shareFilename: ["strings.chapterName"],
       shareMissing: ["couldNotBeIncluded"],
+    });
+  });
+});
+
+describe("nothing at top level escapes the walker (#169, PR #1221 review)", () => {
+  it("binds no value beyond the table and HELPERS, and imports only IMPORTS", () => {
+    expect(topLevelNames(readFileSync(FILE, "utf8"))).toEqual({
+      values: [...HELPERS, "strings"].sort(),
+      imports: IMPORTS,
+    });
+  });
+
+  it("sees a new helper, an alias, a constant and an import", () => {
+    // The reader's own both-states check: each shape the pin above exists
+    // for is reported, so the pin cannot go green by not seeing it.
+    expect(
+      topLevelNames(
+        [
+          'import { heading } from "./heading";',
+          'import { plural as wording } from "./plural";',
+          'import "./side-effect";',
+          'import * as words from "./words";',
+          "type Skipped = string;",
+          "function helper(n: number) { return strings.a(n); }",
+          "const t = strings, { x, y: [z] } = other;",
+          'const CHAPTER = "Chapter";',
+          "export const strings = { a: (n: number) => `${n}` } as const;",
+          "export { t as alias };",
+        ].join("\n")
+      )
+    ).toEqual({
+      values: [
+        "<ExportDeclaration>",
+        "CHAPTER",
+        "helper",
+        "strings",
+        "t",
+        "x",
+        "z",
+      ],
+      imports: ['<import "./side-effect">', "heading", "wording", "words"],
     });
   });
 });

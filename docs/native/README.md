@@ -152,7 +152,7 @@ Generated project facts (evidence, from the scaffolded projects):
   `version` at build time (`0.2.3` as of this writing — was the Capacitor
   template default `"1.0"` until #410).
 - **iOS:** deployment target `15.4`, bundle id `org.unfoldingword.tcmobile`,
-  `MARKETING_VERSION 1.0`, `CURRENT_PROJECT_VERSION 1`, display name `tC Mobile`.
+  `MARKETING_VERSION 1.1` (raised from 1.0 for the v1.1.0 release), `CURRENT_PROJECT_VERSION 1`, display name `tC Mobile`.
 
 ---
 
@@ -277,9 +277,9 @@ profile (`.mobileprovision`) are decoded from secrets into a temporary keychain;
 the App Store Connect **API key** authenticates the **upload only**, not signing.
 No `match`, no certs repo. It **starts on a promotion** (#1281): a push to
 `staging` or `main` whose tip is a promotion merge (`Merge pull request #N
-from unfoldingWord/release/*` or `…/develop` onto staging, `…/staging` for
-the production promotion; a squash, a hotfix branch or an edited subject is
-not one)
+from unfoldingWord/release/*` or `…/develop` onto staging, `…/staging` or
+`…/release/*` onto main; a squash, an edited subject, or a hotfix branch not
+named `release/*` is not one)
 builds and uploads with no dispatch (and no approval once #1281's runbook has
 removed the required reviewer; step 4 below); any other push to those
 two branches ends at the preflight job with a notice and no build. For a
@@ -314,8 +314,8 @@ strictly increasing with no round-trip to App Store Connect. (Reading the latest
 build and adding one would race the no-wait upload: a rerun fired before Apple
 indexes the previous build reads a stale latest and uploads a duplicate.) The
 user-facing **marketing version** stays `MARKETING_VERSION` from the project —
-**`1.0`** today, the native-shell version, deliberately independent of the PWA's
-`package.json` version ([§6](#6-versioning)); TestFlight therefore shows `1.0`, not
+**`1.1`** today (raised from `1.0` for the v1.1.0 release), the native-shell version, deliberately independent of the PWA's
+`package.json` version ([§6](#6-versioning)); TestFlight therefore shows `1.1`, not
 the web `0.x`. Bump it in `ios/App/App.xcodeproj/project.pbxproj` for a user-facing
 change.
 
@@ -813,7 +813,7 @@ stays native/CI-owned either way — a unix timestamp stamped at build or upload
 time, never read from `package.json`.
 
 - **iOS:** `MARKETING_VERSION` (user-facing) is **independent** of
-  `package.json` by design — still `1.0` — + `CURRENT_PROJECT_VERSION`
+  `package.json` by design — currently `1.1` (raised from `1.0` for the v1.1.0 release) — + `CURRENT_PROJECT_VERSION`
   (build, must increase every upload — and the CI lane uploads unix-timestamp
   builds, so a later manual build must exceed the last `CFBundleVersion` on
   TestFlight, not the committed `1`; §4a).

@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
-import { useDesign } from "@/hooks/use-design";
 import { cn } from "@/lib/utils";
 import { Control } from "./control";
 import { FOCUSABLE, wrapTab } from "./focus-trap";
@@ -35,36 +34,81 @@ function startsOnControl(target: EventTarget): boolean {
 
 /**
  * How long after a drag closes a sheet its trailing click may still arrive.
- * Past this, the swallow below is removed unused, so it can never eat the
- * next real tap.
+ * Past this, the swallow below is removed, so it can never eat a later
+ * real tap.
  */
 const TRAILING_CLICK_MS = 400;
+
+/**
+ * The control an event target belongs to: its nearest button, link or
+ * `role="button"`, else the target itself, else null. Duck-typed like
+ * {@link startsOnControl}, not `instanceof`, which is false for a node from
+ * another realm (an iframe's document, or a test's own DOM).
+ */
+function controlOf(target: EventTarget | null): EventTarget | null {
+  if (target === null) return null;
+  if (!("closest" in target)) return target;
+  return (target as Element).closest('button, a, [role="button"]') ?? target;
+}
+
+/** The keys whose `keydown` a button answers with a click. */
+const ACTIVATION_KEYS = new Set(["Enter", " "]);
 
 /**
  * A drag that closes a sheet ends in a `pointerup`, and the browser follows
  * it with a compatibility `click`. The sheet is already gone by then, so
  * that click would land on whatever it covered under the finger: a book on
  * Books, a row or a record control on Segments (#1273, George round 1).
- * This swallows that one click, in the capture phase on the document so no
- * target sees it, and removes itself on the first click or after
- * {@link TRAILING_CLICK_MS}, whichever comes first. Module scope, not the
- * component's: the Menu has unmounted by the time the click arrives. The ✕'s
- * own tap never arms it.
+ * This swallows clicks, in the capture phase on the document so no target
+ * sees them, until {@link TRAILING_CLICK_MS} has passed. Module scope, not
+ * the component's: the Menu has unmounted by the time the click arrives.
+ * The ✕'s own tap never arms it.
+ *
+ * A touch drag usually fires no click at all, so the window must not eat a
+ * real tap made inside it (#1278, PR #1273 round 3). So a click is let
+ * through when it is a NEW gesture's own: a `pointerdown` names that
+ * gesture's control and makes it ready at its `pointerup` on the same
+ * control; an Enter or Space `keydown` (whose click has no `pointerup`)
+ * makes its control ready at once. A ready gesture's click on that control
+ * is delivered, and the gesture is then spent. Every other click in the
+ * window is swallowed, a click on an ancestor included, and nothing but the
+ * bound takes the swallow down (PR #1318 rounds 1 and 2, George).
  */
 function swallowTrailingClick(doc: Document): void {
+  let gesture: EventTarget | null = null;
+  let ready = false;
   const swallow = (ev: Event) => {
+    if (ready && gesture !== null && controlOf(ev.target) === gesture) {
+      ready = false;
+      gesture = null;
+      return;
+    }
     ev.preventDefault();
     ev.stopPropagation();
-    disarm();
   };
-  const timer = setTimeout(() => {
-    doc.removeEventListener("click", swallow, true);
-  }, TRAILING_CLICK_MS);
+  const onPointerDown = (ev: Event) => {
+    gesture = controlOf(ev.target);
+    ready = false;
+  };
+  const onPointerUp = (ev: Event) => {
+    ready = gesture !== null && controlOf(ev.target) === gesture;
+  };
+  const onKeyDown = (ev: Event) => {
+    if (!ACTIVATION_KEYS.has((ev as KeyboardEvent).key)) return;
+    gesture = controlOf(ev.target);
+    ready = gesture !== null;
+  };
   const disarm = () => {
-    clearTimeout(timer);
     doc.removeEventListener("click", swallow, true);
+    doc.removeEventListener("pointerdown", onPointerDown, true);
+    doc.removeEventListener("pointerup", onPointerUp, true);
+    doc.removeEventListener("keydown", onKeyDown, true);
   };
+  setTimeout(disarm, TRAILING_CLICK_MS);
   doc.addEventListener("click", swallow, true);
+  doc.addEventListener("pointerdown", onPointerDown, true);
+  doc.addEventListener("pointerup", onPointerUp, true);
+  doc.addEventListener("keydown", onKeyDown, true);
 }
 
 /** A drag in progress, one pointer at a time. */
@@ -101,23 +145,13 @@ interface MenuProps {
    */
   focusKey?: string | number;
   /**
-   * The panel shows no visible title, and the dismiss control sits alone in
-   * the top-right corner. In the current look that control wears the glyph
-   * `dismissIcon` names — one glyph, one place, and the glyph is the label;
-   * under O4 it is the ✕ every sheet closes with (#1268, the `back` docblock
-   * below), whatever `dismissIcon` says. Which glyph is `dismissIcon`'s call: `menu` (≡,
-   * the default) for the global menu (#608), where it is also the glyph of
-   * the control that opened it; `more` (⋮) for an object's menu that opts in.
-   * The recorder's overflow drawer opts in (#621, the requirements owner's
-   * call on that panel): its "More" heading said nothing the glyph did not,
-   * and a left-pointing chevron reads as "move left" on a drawer that docks
-   * on the RIGHT. Since #1225 that drawer acts on the segment being edited,
-   * so it is an object menu: both of its openers are ⋮ and its dismiss
-   * passes `dismissIcon="more"` to match, which leaves the Books screen's
-   * global menu as the only ≡. Off (the default) the header is a title
-   * beside the dismiss control — a back chevron in the current look, the ✕
-   * under O4 — which every other menu keeps: the book, chapter and segment
-   * menus (opened from a ⋮ since #589) and the New Book dialog.
+   * The panel shows no visible title, and the dismiss control — the ✕ every
+   * sheet closes with (#1268, the `back` docblock below) — sits alone in the
+   * top-right corner. The recorder's overflow drawer opts in (#621, the
+   * requirements owner's call on that panel): its "More" heading said
+   * nothing its ⋮ opener did not. Off (the default) the header is a title
+   * beside the ✕, which every other menu keeps: the book, chapter and
+   * segment menus and the New Book dialog.
    * What a screen reader hears does not change either way: `title` still
    * names the dialog and `closeLabel` still names the control ("Close menu"
    * dismisses, as before), which is also what the e2e specs locate the menu
@@ -125,22 +159,14 @@ interface MenuProps {
    */
   hamburger?: boolean;
   /**
-   * The glyph `hamburger` paints on the dismiss control. Read only when
-   * `hamburger` is on; the back chevron of the default header is not
-   * configurable. Defaults to `menu` (≡), the global menu's glyph.
-   */
-  dismissIcon?: "menu" | "more";
-  /**
    * The header control steps BACK one level inside this panel rather than
-   * closing it, so it keeps the back chevron in both looks. About's licence
-   * view is the one caller (#36): its control is "Back to the list".
+   * closing it, so it keeps the back chevron. About's licence view is the one
+   * caller (#36): its control is "Back to the list".
    *
-   * Everywhere else, the O4 look draws the header control as ✕ (#1268, the
-   * requirements owner: "Can we use a standard close button (some form of
-   * X)?"), whatever `hamburger` and `dismissIcon` say: one closer, in the
-   * same top-right place, on every sheet. Its name is still `closeLabel`
-   * ("Close menu" by default). The current look keeps the chevron, ≡ and ⋮
-   * described above.
+   * Everywhere else the header control is ✕ (#1268, the requirements owner:
+   * "Can we use a standard close button (some form of X)?"), whatever
+   * `hamburger` says: one closer, in the same top-right place, on every
+   * sheet. Its name is still `closeLabel` ("Close menu" by default).
    */
   back?: boolean;
   /**
@@ -214,7 +240,6 @@ export function Menu({
   closeLabel = strings.menuClose,
   focusKey,
   hamburger = false,
-  dismissIcon = "menu",
   back = false,
   inert,
   liveRegion,
@@ -255,18 +280,10 @@ export function Menu({
     onCloseRef.current = onClose;
   });
 
-  const { design } = useDesign();
-  const o4 = design === "o4";
-  const dismissGlyph: IconName = back
-    ? "back"
-    : o4
-      ? "close"
-      : hamburger
-        ? dismissIcon
-        : "back";
+  const dismissGlyph: IconName = back ? "back" : "close";
 
   // DRAG DOWN TO CLOSE (#1268, the requirements owner: "it should work as
-  // drag down to close"). O4 only, and only where the grip is drawn: a
+  // drag down to close"). Only where the grip is drawn: a
   // bottom sheet, which `o4/sheets.css` keys on what the panel holds. The
   // side drawer (About) draws none, so a press there never starts a drag.
   //
@@ -368,8 +385,8 @@ export function Menu({
     settle();
   };
 
-  // Bound in both looks; the current look renders no grip, and a press
-  // without a grip on screen never starts a drag (`onDragStart`).
+  // Bound on every panel; where the grip is not drawn (the side drawer), a
+  // press never starts a drag (`onDragStart`).
   const dragHandlers = {
     onPointerDown: onDragStart,
     onPointerMove: onDragMove,
@@ -467,19 +484,17 @@ export function Menu({
             `children` stay direct flex items of `.menu-panel` above —
             `inert` changes reachability, never layout. */}
         <div className="contents" inert={inert || undefined}>
-          {/* The O4 grip (#1268): drawn, and a place to start dragging the
+          {/* The grip (#1268): drawn, and a place to start dragging the
               sheet down, but not a control. It is `aria-hidden` and takes no
               focus; the ✕ below is the accessible close. Inside the `inert`
               subtree, so a sheet another overlay owns cannot be dragged
               away either. */}
-          {o4 && (
-            <div
-              ref={gripRef}
-              className="menu-grip"
-              aria-hidden="true"
-              {...dragHandlers}
-            />
-          )}
+          <div
+            ref={gripRef}
+            className="menu-grip"
+            aria-hidden="true"
+            {...dragHandlers}
+          />
           {/* `justify-end` when the title is dropped keeps the one remaining
               child — the dismiss control — in the top-right corner, where the
               opener of this panel was; `justify-between` alone would slide

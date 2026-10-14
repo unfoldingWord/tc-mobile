@@ -33,8 +33,7 @@ interface O4BookDeleteAskProps {
  * row (`o4/menus.css`); the cover and name rules are the Books area's
  * (`o4/books.css`).
  *
- * Presentational: every outcome arrives by prop. O4 only — the current look
- * keeps the floating `EraseConfirm` card.
+ * Presentational: every outcome arrives by prop.
  */
 export function O4BookDeleteAsk({
   name,
@@ -48,8 +47,8 @@ export function O4BookDeleteAsk({
     <div
       className="books-delete-ask"
       role="group"
-      // The question the floating card's title asked, so a screen reader
-      // entering the group still hears which book is about to go.
+      // The question names the book, so a screen reader entering the group
+      // hears which book is about to go.
       aria-label={strings.deleteBookConfirmTitle(name)}
     >
       <div className="o4-sheet-head">

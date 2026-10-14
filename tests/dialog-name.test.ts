@@ -15,9 +15,11 @@ import { blankCodeComments } from "./strip-code-comments";
  * choice — and #155's round-1 triage had already recorded it as FIXED when what
  * shipped was a `role="alert"` on the recovery panel, a different thing.
  *
- * WHY THIS SHAPE. #197 records that this repo has no DOM/renderer runner, so
- * "the sheet announces as Recorder" is not assertable here and this test does
- * not claim it. What it asserts is the one thing source can carry: that no
+ * WHY THIS SHAPE. A render (`tests/render.ts`, or a jsdom client mount) reads
+ * the naming attribute of only the dialogs a test mounts, and what a screen
+ * reader announces is not observable in jsdom at all, so "the sheet announces
+ * as Recorder" is not asserted here. What it asserts is what source carries
+ * for every component at once: that no
  * `role="dialog"`/`role="alertdialog"` element is missing a naming attribute.
  * That makes it a gate on the DEFECT CLASS rather than on the one instance —
  * the next dialog added without a name fails here, which is the part a

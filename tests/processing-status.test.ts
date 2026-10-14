@@ -12,10 +12,11 @@ import { recorderStatusKind } from "@/components/processing-status";
  * The words themselves live in `lib/strings.ts`; nothing below asserts
  * copy. That the interruption path actually freezes into `processing`, and that
  * a commit holds `isClosing` across the save, are `use-recorder`/`recorder`
- * behaviours: state transitions across an async save need effects, which the
- * render harness (#197) does not run, and the interrupted path lives inside
- * `recorder.tsx`, which no test mounts because it mounts the audio hook graph —
- * browser surface, checkable on-device only.
+ * behaviours, not this classifier's: state transitions across an async save
+ * need effects, which the render harness (#197) does not run. The client
+ * mounts of the real sheet over a faked browser boundary
+ * (`tests/recorder-track-mute-seal.test.ts`) drive an interruption to a frozen
+ * take; what a real engine's interruption does is checkable on-device only.
  *
  * The gate has ONE answer since #614. It used to have two: a frozen #59 take
  * with no close in flight showed "interrupted", telling the translator to tap

@@ -47,6 +47,7 @@ const segment = (n: number, hasClip = false): SegmentRow => ({
 const book = (n: number, chapters: readonly ChapterRow[] = []): BookCard => ({
   bookId: bookId(n),
   name: `Book ${n}`,
+  number: n,
   chapters,
 });
 
@@ -165,8 +166,8 @@ describe("the Books screen's link in the chain (#604)", () => {
   it("#834: the newest book's Add chapter still guides even with other books on the shelf", () => {
     // Tim's decision (#834): "once a book is added, the blue ring goes around
     // that book's + for adding a chapter" — whether or not other books
-    // already exist. `listBooks` sorts newest-created first
-    // (`lib/storage/books.ts`), so the just-created book is always `books[0]`.
+    // already exist. These fixtures carry no `createdAt`, so the guide takes
+    // the top card as the newest; the #338 cases below give the times.
     expect(guidedStep(books({ books: [book(1), book(2)] }))).toEqual({
       kind: "add-chapter",
       bookId: bookId(1),
@@ -201,6 +202,36 @@ describe("the Books screen's link in the chain (#604)", () => {
         })
       )
     ).toEqual({ kind: "create-chapter" });
+  });
+
+  it("#338: the created book keeps the Add-chapter ring after it is moved off the top", () => {
+    // A book can be dragged down the shelf now, so the top is no longer the
+    // book that was just created. The guide follows the newest `createdAt`.
+    const older = { ...book(1), createdAt: 100 };
+    const created = { ...book(2), createdAt: 200 };
+    expect(guidedStep(books({ books: [older, created] }))).toEqual({
+      kind: "add-chapter",
+      bookId: bookId(2),
+    });
+  });
+
+  it("#338: an older empty book moved to the top does not take the ring", () => {
+    // The newest book already has its chapter, so the Add-chapter step is
+    // done; an older empty book above it is not "the book just added".
+    const older = { ...book(1), createdAt: 100 };
+    const created = { ...book(2, [chapter(1)]), createdAt: 200 };
+    expect(guidedStep(books({ books: [older, created] }))).toBeNull();
+  });
+
+  it("#338: books created in the same millisecond go to the higher one on the shelf", () => {
+    // The store's own tie rule puts the later create on top (`createBook`
+    // gives it position 0), so the higher card is the newer of the two.
+    const a = { ...book(1), createdAt: 100 };
+    const b = { ...book(2), createdAt: 100 };
+    expect(guidedStep(books({ books: [b, a] }))).toEqual({
+      kind: "add-chapter",
+      bookId: bookId(2),
+    });
   });
 
   it("stops the terminal chain (not Add chapter) once there is more than one book", () => {
@@ -270,8 +301,8 @@ describe("the Segments screen's link in the chain (#604)", () => {
 
   it("hands the chain on to the row that opens the recorder", () => {
     // The hop the issue's own list skips: a segment exists, nothing has been
-    // recorded into it, and the next required action is the row's red Record —
-    // the only door to the recorder. Without this the guide goes dark exactly
+    // recorded into it, and the next required action is the row's mic (Open
+    // recorder) — the only door to the recorder. Without this the guide goes dark exactly
     // where a first-time user has never been.
     expect(guidedStep(segments(true, [segment(1)]))).toEqual({
       kind: "open-segment",

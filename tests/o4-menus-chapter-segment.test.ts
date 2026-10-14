@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Icon, type IconName } from "@/components/icon";
 import { SegmentsScreen } from "@/components/segments-screen";
-import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
 import type { Layer } from "@/lib/nav/layer-stack";
@@ -22,24 +21,15 @@ import { restingErase } from "./support";
  *
  * Mounted through the whole `SegmentsScreen`, so the row menu gets the
  * breadcrumb parts the screen hands it, and both menus are opened the way a
- * translator opens them — a tap on their ⋮. The design is picked by mocking
- * `useDesign()` (the pattern `tests/segments-o4.test.ts` uses). The chapter
- * menu's switch contract is that the tiles change the paint, never the names
- * a screen reader hears or where focus lands on open. The segment menu's O4
- * branch changes both on purpose (D20: Rename in the head, Play in the
- * preview, Edit and Done greyed on an empty segment), so each look is pinned
- * separately there. In both menus and both looks, focus still goes back to
- * the ⋮ on close (#679 / #676 / #799 / #395).
+ * translator opens them — a tap on their ⋮. The segment menu is D20's
+ * (Rename in the head, Play in the preview, Edit and Done greyed on an empty
+ * segment). In both menus, focus goes back to the ⋮ on close (#679 / #676 /
+ * #799 / #395).
  *
  * What this does NOT cover: the cascade, layout and paint. jsdom has none, so
  * whether the sheet looks like the workbench's G2 and 07 is a browser and
  * phone question this file does not answer.
  */
-
-const design = vi.hoisted(() => ({ current: "current" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 
 const mocks = vi.hoisted(() => ({
   rows: [] as SegmentRow[],
@@ -116,13 +106,11 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   document.body.innerHTML = "";
-  design.current = "current";
   mocks.bookCoverHex = "#11796d";
   vi.unstubAllGlobals();
 });
 
-async function mount(look: Design, row: SegmentRow = recorded) {
-  design.current = look;
+async function mount(row: SegmentRow = recorded) {
   mocks.rows = [row];
   await act(async () =>
     root.render(
@@ -238,61 +226,19 @@ function gridOrder(): string[] {
   );
 }
 
-const LOOKS = ["current", "o4"] as const;
-
 describe("the segment menu (07) on the tile grid", () => {
   const openRow = () => tap(strings.segmentMenu(3));
 
-  // The two looks no longer expose the same names in this menu: D20 (#949,
-  // DRI 2026-09-25) moves Rename into the O4 head, adds Play to the preview
-  // row and greys Edit and Done on a never-recorded segment. So each look is
-  // pinned on its own: the current look exactly as before, O4 as the workbench
-  // draws 07 (first focus on the head's pencil, its first control).
+  // D20 (#949, DRI 2026-09-25): first focus on the head's pencil, its first
+  // control.
   it.each([
     ["recorded", recorded],
     ["finished", finished],
     ["titled", titled],
   ] as const)(
-    "keeps the current look's names and first focus (%s)",
+    "puts Rename in the head, Play in the preview, then the tiles, and lands on Rename (D20, %s)",
     async (_, row) => {
-      await mount("current", row);
-      await openRow();
-      // Delete (#590, moved here by #1104) is last, after Clear, as in the
-      // O4 tile grid (#1119); `eraseSegment` is Clear's name.
-      expect(dialogNames()).toEqual([
-        strings.menuClose,
-        strings.editSegment(3, row.label),
-        strings.markFinished(3),
-        strings.renameSegment,
-        strings.eraseSegment,
-        strings.deleteSegment,
-      ]);
-      expect(focusedName()).toBe(strings.editSegment(3, row.label));
-    }
-  );
-
-  it("keeps the current look's never-recorded menu: Rename then Delete, focused on Rename (#590/#1104)", async () => {
-    await mount("current", empty);
-    await openRow();
-    // Delete is reachable here too, unconditionally — the whole point of
-    // #590's narrower gate: an accidentally added, never-recorded segment is
-    // exactly what it exists to remove.
-    expect(dialogNames()).toEqual([
-      strings.menuClose,
-      strings.renameSegment,
-      strings.deleteSegment,
-    ]);
-    expect(focusedName()).toBe(strings.renameSegment);
-  });
-
-  it.each([
-    ["recorded", recorded],
-    ["finished", finished],
-    ["titled", titled],
-  ] as const)(
-    "puts Rename in the head, Play in the preview, then the tiles, and lands on Rename (o4, D20, %s)",
-    async (_, row) => {
-      await mount("o4", row);
+      await mount(row);
       await openRow();
       // Tile order is Done, Edit, Clear, Delete (the DRI's 2026-09-28 pick
       // on #1119) — NOT the Edit-then-Done order the workbench itself draws,
@@ -312,7 +258,7 @@ describe("the segment menu (07) on the tile grid", () => {
   );
 
   it("draws Done, Edit, Clear and Delete with no gap, compact, with Rename as the head's pencil (#859, D20; order and compact per #1119)", async () => {
-    await mount("o4", recorded);
+    await mount(recorded);
     await openRow();
     // Edit and Done carry a hint slot (#135), so each sits in its
     // `.control-hinted` wrapper; read the grid's buttons, not its children.
@@ -368,24 +314,21 @@ describe("the segment menu (07) on the tile grid", () => {
       return svg!.innerHTML;
     }
 
-    it.each(LOOKS)(
-      "never gives Clear and Delete the same glyph (%s)",
-      async (look) => {
-        await mount(look, recorded);
-        await openRow();
-        // Exact glyphs, against the `Icon` component's own markup: Clear
-        // draws the eraser and Delete the bin, and the two references are
-        // themselves different drawings.
-        const eraser = iconMarkup("eraser");
-        const bin = iconMarkup("trash");
-        expect(eraser === bin).toBe(false);
-        expect(glyphOf(button(strings.eraseSegment))).toBe(eraser);
-        expect(glyphOf(button(strings.deleteSegment))).toBe(bin);
-      }
-    );
+    it("never gives Clear and Delete the same glyph", async () => {
+      await mount(recorded);
+      await openRow();
+      // Exact glyphs, against the `Icon` component's own markup: Clear
+      // draws the eraser and Delete the bin, and the two references are
+      // themselves different drawings.
+      const eraser = iconMarkup("eraser");
+      const bin = iconMarkup("trash");
+      expect(eraser === bin).toBe(false);
+      expect(glyphOf(button(strings.eraseSegment))).toBe(eraser);
+      expect(glyphOf(button(strings.deleteSegment))).toBe(bin);
+    });
 
-    it("gives the destructive fill to Delete alone in the O4 segment menu", async () => {
-      await mount("o4", recorded);
+    it("gives the destructive fill to Delete alone in the segment menu", async () => {
+      await mount(recorded);
       await openRow();
       const tiles = [...dialog().querySelectorAll(".o4-tiles button.o4-tile")];
       expect(tiles.length).toBe(4);
@@ -396,40 +339,37 @@ describe("the segment menu (07) on the tile grid", () => {
       expect(tone(tile(strings.eraseSegment))).toBe("plain");
     });
 
-    it.each(LOOKS)(
-      "carries each glyph into its own confirm: eraser for Clear, bin for Delete (%s)",
-      async (look) => {
-        await mount(look, recorded);
-        const confirmGlyphs = () => {
-          const panel = document.querySelector(".confirm-panel");
-          expect(panel, "the confirm is up").not.toBeNull();
-          const badge = panel!.querySelector("svg.confirm-glyph");
-          const buttons = panel!.querySelectorAll(".confirm-actions > button");
-          expect(buttons).toHaveLength(2);
-          return [badge!.innerHTML, glyphOf(buttons[1]!)];
-        };
-        await openRow();
-        const clearGlyph = glyphOf(button(strings.eraseSegment));
-        const deleteGlyph = glyphOf(button(strings.deleteSegment));
-        await tap(strings.eraseSegment);
-        expect(confirmGlyphs()).toEqual([clearGlyph, clearGlyph]);
-        await tap(strings.eraseCancel);
-        await openRow();
-        await tap(strings.deleteSegment);
-        expect(confirmGlyphs()).toEqual([deleteGlyph, deleteGlyph]);
-      }
-    );
+    it("carries each glyph into its own confirm: eraser for Clear, bin for Delete", async () => {
+      await mount(recorded);
+      const confirmGlyphs = () => {
+        const panel = document.querySelector(".confirm-panel");
+        expect(panel, "the confirm is up").not.toBeNull();
+        const badge = panel!.querySelector("svg.confirm-glyph");
+        const buttons = panel!.querySelectorAll(".confirm-actions > button");
+        expect(buttons).toHaveLength(2);
+        return [badge!.innerHTML, glyphOf(buttons[1]!)];
+      };
+      await openRow();
+      const clearGlyph = glyphOf(button(strings.eraseSegment));
+      const deleteGlyph = glyphOf(button(strings.deleteSegment));
+      await tap(strings.eraseSegment);
+      expect(confirmGlyphs()).toEqual([clearGlyph, clearGlyph]);
+      await tap(strings.eraseCancel);
+      await openRow();
+      await tap(strings.deleteSegment);
+      expect(confirmGlyphs()).toEqual([deleteGlyph, deleteGlyph]);
+    });
   });
 
   it("marks done grey until it is done, then the whole tile green (G8)", async () => {
-    await mount("o4", recorded);
+    await mount(recorded);
     await openRow();
     expect(tone(tile(strings.markFinished(3)))).toBe("doneoff");
     await escape();
     await act(async () => root.unmount());
     root = createRoot(document.getElementById("root")!);
 
-    await mount("o4", finished);
+    await mount(finished);
     await openRow();
     expect(tone(tile(strings.markFinished(3)))).toBe("done");
     expectCaptionInName();
@@ -438,30 +378,25 @@ describe("the segment menu (07) on the tile grid", () => {
   // #351: the Done control keeps one label and says its state with
   // `aria-pressed`, as the recorder menu's does. "false", not absent: an
   // absent `aria-pressed` is a plain button, and this is a toggle both ways.
-  it.each(LOOKS)(
-    "keeps the Done label fixed and carries the state on aria-pressed (%s, #351)",
-    async (look) => {
-      await mount(look, recorded);
-      await openRow();
-      expect(button(strings.markFinished(3)).getAttribute("aria-pressed")).toBe(
-        "false"
-      );
-      await escape();
-      await act(async () => root.unmount());
-      root = createRoot(document.getElementById("root")!);
+  it("keeps the Done label fixed and carries the state on aria-pressed (#351)", async () => {
+    await mount(recorded);
+    await openRow();
+    expect(button(strings.markFinished(3)).getAttribute("aria-pressed")).toBe(
+      "false"
+    );
+    await escape();
+    await act(async () => root.unmount());
+    root = createRoot(document.getElementById("root")!);
 
-      await mount(look, finished);
-      await openRow();
-      const done = button(strings.markFinished(3));
-      expect(done.getAttribute("aria-pressed")).toBe("true");
-      expect(dialogNames().some((name) => name.includes("not done"))).toBe(
-        false
-      );
-    }
-  );
+    await mount(finished);
+    await openRow();
+    const done = button(strings.markFinished(3));
+    expect(done.getAttribute("aria-pressed")).toBe("true");
+    expect(dialogNames().some((name) => name.includes("not done"))).toBe(false);
+  });
 
-  it("shows Edit and Done greyed on a never-recorded segment, each saying why, and keeps Delete reachable (o4, D20, #590/#1104)", async () => {
-    await mount("o4", empty);
+  it("shows Edit and Done greyed on a never-recorded segment, each saying why, and keeps Delete reachable (D20, #590/#1104)", async () => {
+    await mount(empty);
     await openRow();
     const why = strings.nothingRecorded;
     const edit = `${strings.editSegment(3, null)}. ${why}`;
@@ -501,11 +436,11 @@ describe("the segment menu (07) on the tile grid", () => {
     ).not.toBeNull();
   });
 
-  it("plays the segment from the preview row through the row's own play path, menu left open (o4, D20)", async () => {
+  it("plays the segment from the preview row through the row's own play path, menu left open (D20)", async () => {
     const playTake = vi.fn();
     Object.assign(audio, { playTake });
     try {
-      await mount("o4", recorded);
+      await mount(recorded);
       await openRow();
       // Scoped to the dialog: the row's own Play behind the scrim has the
       // same name.
@@ -525,7 +460,7 @@ describe("the segment menu (07) on the tile grid", () => {
   });
 
   it("heads the sheet with the book, chapter and segment crumbs (§7), decoration only", async () => {
-    await mount("o4", finished);
+    await mount(finished);
     await openRow();
     const head = dialog().querySelector(".o4-sheet-head");
     expect(head).not.toBeNull();
@@ -540,7 +475,7 @@ describe("the segment menu (07) on the tile grid", () => {
   });
 
   it("draws the book's cover-colour square before the crumbs (#949, #957)", async () => {
-    await mount("o4", recorded);
+    await mount(recorded);
     await openRow();
     const head = dialog().querySelector(".o4-sheet-head");
     const cover = head!.querySelector(".books-cover.is-sm");
@@ -555,9 +490,9 @@ describe("the segment menu (07) on the tile grid", () => {
     ).toBeTruthy();
   });
 
-  it("leaves the square out when the hook has no colour to give (a book race, not a design state)", async () => {
+  it("leaves the square out when the hook has no colour to give (a book race)", async () => {
     mocks.bookCoverHex = null;
-    await mount("o4", recorded);
+    await mount(recorded);
     await openRow();
     const head = dialog().querySelector(".o4-sheet-head");
     expect(head!.querySelector(".books-cover")).toBeNull();
@@ -568,7 +503,7 @@ describe("the segment menu (07) on the tile grid", () => {
   });
 
   it("moves the segment's name into the preview row, beside its badge and wave", async () => {
-    await mount("o4", titled);
+    await mount(titled);
     await openRow();
     const preview = dialog().querySelector(".o4-menu-preview");
     expect(preview).not.toBeNull();
@@ -594,7 +529,7 @@ describe("the segment menu (07) on the tile grid", () => {
   });
 
   it("sets the direction of the segment's typed name in the preview row (#1267)", async () => {
-    await mount("o4", titled);
+    await mount(titled);
     await openRow();
     expect(dialog().querySelector(".o4-menu-title")?.getAttribute("dir")).toBe(
       "auto"
@@ -605,47 +540,32 @@ describe("the segment menu (07) on the tile grid", () => {
     );
   });
 
-  it("adds none of it in the current look", async () => {
-    await mount("current", titled);
+  it("returns focus to the ⋮ on Escape, and to Rename when the field is cancelled", async () => {
+    await mount(recorded);
     await openRow();
-    expect(dialog().querySelector(".o4-tiles")).toBeNull();
-    expect(dialog().querySelector(".o4-sheet-head")).toBeNull();
-    expect(dialog().querySelector(".o4-menu-preview")).toBeNull();
-    expect(dialog().querySelector(".o4-tile")).toBeNull();
+    await tap(strings.renameSegment);
+    await cancelField(strings.segmentNameField);
+    expect(focusedName()).toBe(strings.renameSegment);
+    await escape();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(focusedName()).toBe(strings.segmentMenu(3));
   });
-
-  it.each(LOOKS)(
-    "returns focus to the ⋮ on Escape, and to Rename when the field is cancelled (%s)",
-    async (look) => {
-      await mount(look, recorded);
-      await openRow();
-      await tap(strings.renameSegment);
-      await cancelField(strings.segmentNameField);
-      expect(focusedName()).toBe(strings.renameSegment);
-      await escape();
-      expect(document.querySelector('[role="dialog"]')).toBeNull();
-      expect(focusedName()).toBe(strings.segmentMenu(3));
-    }
-  );
 });
 
 describe("the chapter menu (G2) on the tile grid", () => {
   const openChapter = () => tap(strings.chapterMenuOpen);
 
-  it("exposes the same names and lands focus on the same action in both looks", async () => {
-    const seen: { names: string[]; focus: string }[] = [];
-    for (const look of LOOKS) {
-      await mount(look);
-      await openChapter();
-      seen.push({ names: dialogNames(), focus: focusedName() });
-      await escape();
-    }
-    expect(seen[0]!.names.length).toBeGreaterThanOrEqual(3);
-    expect(seen[1]).toEqual(seen[0]);
+  it("exposes the close and the grid's tiles, and lands focus on Rename", async () => {
+    await mount();
+    await openChapter();
+    const tiles = gridOrder().filter((name) => name !== "|");
+    expect(tiles).toHaveLength(3);
+    expect(dialogNames()).toEqual([strings.menuClose, ...tiles]);
+    expect(focusedName()).toBe(strings.renameChapter);
   });
 
   it("draws Rename and Share, then the theme tile past a gap", async () => {
-    await mount("o4");
+    await mount();
     await openChapter();
     const order = gridOrder();
     expect(order.slice(0, 3)).toEqual([
@@ -661,7 +581,7 @@ describe("the chapter menu (G2) on the tile grid", () => {
   });
 
   it("heads the sheet with the book and chapter crumbs, decoration only", async () => {
-    await mount("o4");
+    await mount();
     await openChapter();
     const head = dialog().querySelector(".o4-sheet-head");
     expect(head?.getAttribute("aria-hidden")).toBe("true");
@@ -671,7 +591,7 @@ describe("the chapter menu (G2) on the tile grid", () => {
   });
 
   it("draws the book's cover-colour square before the crumbs (#949, #957)", async () => {
-    await mount("o4");
+    await mount();
     await openChapter();
     const head = dialog().querySelector(".o4-sheet-head");
     const cover = head!.querySelector(".books-cover.is-sm");
@@ -683,32 +603,22 @@ describe("the chapter menu (G2) on the tile grid", () => {
 
   it("leaves the square out when the hook has no colour to give", async () => {
     mocks.bookCoverHex = null;
-    await mount("o4");
+    await mount();
     await openChapter();
     const head = dialog().querySelector(".o4-sheet-head");
     expect(head!.querySelector(".books-cover")).toBeNull();
   });
 
-  it("adds none of it in the current look", async () => {
-    await mount("current");
+  it("returns focus to the ⋮ on Escape, and to Rename when the field is cancelled", async () => {
+    await mount();
     await openChapter();
-    expect(dialog().querySelector(".o4-tiles")).toBeNull();
-    expect(dialog().querySelector(".o4-sheet-head")).toBeNull();
+    await tap(strings.renameChapter);
+    await cancelField(strings.chapterNameField);
+    expect(focusedName()).toBe(strings.renameChapter);
+    await escape();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(focusedName()).toBe(strings.chapterMenuOpen);
   });
-
-  it.each(LOOKS)(
-    "returns focus to the ⋮ on Escape, and to Rename when the field is cancelled (%s)",
-    async (look) => {
-      await mount(look);
-      await openChapter();
-      await tap(strings.renameChapter);
-      await cancelField(strings.chapterNameField);
-      expect(focusedName()).toBe(strings.renameChapter);
-      await escape();
-      expect(document.querySelector('[role="dialog"]')).toBeNull();
-      expect(focusedName()).toBe(strings.chapterMenuOpen);
-    }
-  );
 });
 
 describe("marking-done copy (D17)", () => {
@@ -720,7 +630,7 @@ describe("marking-done copy (D17)", () => {
 
 describe("o4/menus.css, #949's chapter and segment menu section", () => {
   const rules = areaRules("menus");
-  const O4 = '[data-design="o4"]';
+  const O4 = ":root";
 
   it("pins the erase tile's live ink (#973's deferral)", () => {
     expect(declsFor(rules, `${O4} .o4-tile--erase`).get("color")).toBe(

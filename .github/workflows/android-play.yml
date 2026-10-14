@@ -45,7 +45,10 @@ concurrency:
   # One run for this Play app at a time, across BOTH branches: staging and main
   # share one package and one service account, a second Play edit invalidates
   # the first, and versionCode (date +%s) must increase per app, not per track.
-  # Never cancel an in-flight upload; queued runs each get their own build.
+  # Never cancel an in-flight upload. This group is on the whole run, so
+  # GitHub keeps one pending run and replaces it with a newer one: a push or
+  # dispatch queued behind an in-flight upload can be replaced by a later one
+  # and never build. Read a `cancelled` run against the branch tip (#1308).
   group: android-play
   cancel-in-progress: false
 
@@ -161,7 +164,7 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           cache: "npm"
@@ -178,7 +181,7 @@ jobs:
       # iOS lane's macOS runner already ships 3.3. No `bundler-cache`: the
       # "Install fastlane" step pins bundler and installs the frozen lock
       # itself, after the checks below and before any secret reaches disk.
-      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+      - uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
         with:
           ruby-version: "3.3"
 
@@ -329,7 +332,7 @@ jobs:
 
       # Keep the exact bundle that was uploaded, for audit and for a manual
       # re-upload if Play rejected it for a console-side reason.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && steps.aab.outcome == 'success'
         with:
           name: android-aab-${{ github.ref_name }}-${{ steps.aab.outputs.version_code }}

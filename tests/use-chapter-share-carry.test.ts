@@ -49,6 +49,8 @@ function Probe() {
 const hook = () => probe.current!;
 
 let finish: () => void;
+// Resolves when the hook's gather has reached the codec and `finish` is set.
+let encodeStarted: Promise<void>;
 
 async function chapterWith(
   segments: number
@@ -70,18 +72,18 @@ async function chapterWith(
   return { chapterId: chapter.id, clipIds };
 }
 
-const settle = () =>
-  act(async () => {
-    await new Promise((r) => setTimeout(r, 30));
-  });
-
 beforeEach(async () => {
   vi.clearAllMocks();
   await clearAllStores();
+  let markEncodeStarted!: () => void;
+  encodeStarted = new Promise<void>((r) => {
+    markEncodeStarted = r;
+  });
   const codec: AudioCodec = {
     encodeMp3: () =>
       new Promise((resolve) => {
         finish = () => resolve(new Uint8Array([0xff]));
+        markEncodeStarted();
       }),
     decodeMp3: () => Promise.reject(new Error("no MP3 clip expected")),
   };
@@ -126,7 +128,9 @@ it("the send's busy state carries the prepare's hollow positions, item count and
   act(() => {
     prepared = hook().prepare(chapterId, "c.mp3");
   });
-  await settle();
+  await act(async () => {
+    await encodeStarted;
+  });
   spy.mockRestore();
   await act(async () => {
     finish();

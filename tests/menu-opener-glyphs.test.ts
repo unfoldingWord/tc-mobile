@@ -90,6 +90,7 @@ vi.mock("@/hooks/use-chapter-share", () => ({
 const book: BookCard = {
   bookId: "book" as BookId,
   name: "Genesis",
+  number: 1,
   chapters: [],
 };
 const recorded: Row = {
@@ -113,7 +114,7 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   mocks.books.mockReturnValue({
     books: [book],
-    newBookPlaceholder: "Book 002",
+    newBookNumber: 2,
     loading: false,
     loaded: true,
     error: null,
@@ -191,7 +192,9 @@ describe("which glyph opens which menu (#589)", () => {
     expect(global).toBe(glyph("menu"));
     expect(global).not.toBe(glyph("more"));
 
-    expectKebab(strings.bookMenuOpen(book.name));
+    expectKebab(
+      strings.bookMenuOpen(strings.bookHeading(book.name, book.number))
+    );
   });
 
   it("gives the Segments header's chapter menu ⋮", async () => {

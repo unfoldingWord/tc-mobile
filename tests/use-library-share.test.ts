@@ -87,8 +87,8 @@ async function prepare(): Promise<void> {
   await act(async () => {
     await hook().prepare(
       "Everything.zip",
-      (name) => name,
-      (name, n) => `${name} - Chapter ${n}.mp3`
+      (book) => book.name ?? "",
+      (book, n) => `${book.name ?? ""} - Chapter ${n}.mp3`
     );
   });
 }
@@ -292,8 +292,8 @@ it("does not let a superseded run's space refusal mark a newer run's failure as 
   await act(async () => {
     runA = hook().prepare(
       "A.zip",
-      (name) => name,
-      (name, n) => `${name} - Chapter ${n}.mp3`
+      (book) => book.name ?? "",
+      (book, n) => `${book.name ?? ""} - Chapter ${n}.mp3`
     );
   });
   for (let i = 0; i < 100 && estimate!.mock.calls.length === 0; i++) {

@@ -15,5 +15,5 @@
     "noUncheckedIndexedAccess": true,
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "vitest.config.ts"]
+  "include": ["vite.config.ts", "vitest.config.ts", "src/globals.d.ts"]
 }

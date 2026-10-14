@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { stripCssComments } from "./support";
+import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
  * The AA gate for the roles that paint SMALL TEXT (#164 R-9, and the contrast
@@ -221,8 +221,8 @@ describe("the ink and voice roles that paint small text meet AA (#164 R-9, #171)
 
 describe("the guide ring is visible on every surface it is drawn on (#604)", () => {
   // The ring is INSET on a control's own box and on the chapter row, and
-  // OUTSET on either red Record — the recorder's and the segment row's, which
-  // the stylesheet covers with one variant-keyed rule. What the ring has to
+  // OUTSET on the recorder's red Record and on an unrecorded row's mic
+  // (#1217), which the stylesheet covers with one variant-keyed rule. What the ring has to
   // stand out from therefore differs by call site, and each one is scored
   // against what is actually behind it.
   const behind = [
@@ -232,7 +232,7 @@ describe("the guide ring is visible on every surface it is drawn on (#604)", () 
     ],
     [
       "--s-surface",
-      "Add chapter, the segment row's red Record — `.row`'s own surface — and outset around O4's green name-sheet Confirm",
+      "Add chapter, outset around an unrecorded row's mic — `.row`'s own surface — and outset around O4's green name-sheet Confirm",
     ],
     [
       "--s-floor",
@@ -379,6 +379,45 @@ describe("the O4 colour values #937 decided hold", () => {
   it("light: --s-send-ring is #12a090 (D2)", () => {
     expect(resolve("light", "--s-send-ring")).toBe("#12a090");
   });
+});
+
+describe("an unrecorded row's mic glyph reads on its own disc (#1217, #1233 item 14)", () => {
+  // `.control--mic` paints a red microphone on a grey disc. Both tokens are
+  // read from the rule itself rather than restated here, so swapping either
+  // one in the stylesheet re-scores the pair instead of leaving this test
+  // checking a pairing nothing paints. The glyph is held to the small-text
+  // floor, not the non-text one: `--s-live-text` is the red role made for
+  // reading, and the hand computation on #1223 put it at about 5.5:1 dark
+  // and 5.9:1 light, so the floor was never in question for the tokens as
+  // they stand.
+  const rule = cssRule(
+    readFileSync(path.join(STYLES, "3-components.css"), "utf8"),
+    ".control--mic"
+  );
+  const token = (property: string): string => {
+    const ref = /^var\((--[a-z0-9-]+)\)$/i.exec(
+      declarationValue(rule, property)
+    );
+    if (!ref?.[1]) throw new Error(`.control--mic ${property} is not a var()`);
+    return ref[1];
+  };
+
+  it("the rule paints --s-live-text on --s-well", () => {
+    expect([token("color"), token("background")]).toEqual([
+      "--s-live-text",
+      "--s-well",
+    ]);
+  });
+
+  for (const theme of ["dark", "light"] as const) {
+    it(`${theme}: the mic glyph clears AA on the disc`, () => {
+      const ratio = contrast(
+        resolve(theme, token("color")),
+        resolve(theme, token("background"))
+      );
+      expect(ratio).toBeGreaterThanOrEqual(AA_SMALL_TEXT);
+    });
+  }
 });
 
 describe("a Finished segment's green reads on the recorder stage (#926)", () => {

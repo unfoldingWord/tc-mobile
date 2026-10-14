@@ -29,12 +29,12 @@ import { bodyAfter, matchingBraceClose, stripComments } from "./support";
  *
  * WHY A TEXT GATE AND NOT A BEHAVIOURAL TEST. `onInterrupted` is a closure
  * created inside `start()`, itself a `useCallback` inside `useRecorder()`.
- * `tests/recorder-failure-rows.test.ts` already established that this suite
- * cannot mount the hook or reach this handler at runtime: jsdom implements
- * neither `MediaRecorder` nor `AudioContext`. `stopTracks` itself already has
- * a behavioural, throwing-track test in `tests/stop-tracks.test.ts` (#780) —
- * what is new and unverifiable at runtime here is that THIS call site was
- * wired through it. So this is a source-text pin, in the same style
+ * jsdom implements neither `MediaRecorder` nor `AudioContext`; the client
+ * mounts that fake both (`tests/recorder-track-mute-seal.test.ts`) reach this
+ * handler, but none hands it a track that throws from `stop()`. `stopTracks`
+ * itself already has a behavioural, throwing-track test in
+ * `tests/stop-tracks.test.ts` (#780) — what this file pins is that THIS call
+ * site was wired through it. So this is a source-text pin, in the same style
  * `tests/stop-tracks.test.ts` already uses for `releaseStream` and
  * `abandonStream`: the guarded helper call is present, and the unguarded
  * `.stop()` it replaces is gone, inside the exact brace-counted block.

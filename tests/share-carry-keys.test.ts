@@ -62,12 +62,11 @@ function row(chips: readonly ShareChip[]): string {
   return chips.map((c) => mark[c.state]).join("");
 }
 
-/** The chip row's accessible label, as the O4 panel renders it. */
+/** The chip row's accessible label, as the panel renders it. */
 function goOutLabel(view: ShareO4View): string | null {
   const container = render(
     createElement(ShareProgressPanel, {
       role: "status",
-      icon: "share-busy",
       text: "status",
       o4: view,
     })

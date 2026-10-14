@@ -102,6 +102,7 @@ describe("reportUnlessStale", () => {
 const card = (id: string, name = id): BookCard => ({
   bookId: id as BookId,
   name,
+  number: 1,
   chapters: [],
 });
 
@@ -166,6 +167,7 @@ const chapterCard = (
 ): BookCard => ({
   bookId: bookId_,
   name: `Book ${bookId_}`,
+  number: 1,
   chapters,
 });
 
@@ -181,11 +183,13 @@ const chapter = (overrides: Partial<Chapter> = {}): Chapter => ({
 const book = (overrides: Partial<Book> = {}): Book => ({
   id: chapterBookId("b-1"),
   name: "Mark",
+  number: 1,
   languageCode: null,
   chapterIds: [],
   createdAt: 0,
   updatedAt: 0,
   coverColourKey: null,
+  shelfPosition: 0,
   ...overrides,
 });
 

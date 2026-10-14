@@ -33,6 +33,7 @@ const chapter = (recordedCount: number, n = 1): ChapterRow => ({
 const book = (n: number, chapters: readonly ChapterRow[] = []): BookCard => ({
   bookId: bookId(n),
   name: `Book ${n}`,
+  number: n,
   chapters,
 });
 

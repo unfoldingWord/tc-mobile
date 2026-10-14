@@ -25,9 +25,10 @@ name: iOS TestFlight
 # wait for Apple's server-side processing (see the Fastfile).
 #
 # One-time setup lives in docs/native/README.md §4a: the seven secrets below
-# (in the `release-signing` environment, whose deployment-branch policy is the
-# actor guard — #1281, replacing the required reviewer of #321), the App Store
-# Connect app record, and the API key's role.
+# (in the `release-signing` environment, whose deployment-branch policy is
+# #1281's target actor guard; until the DRI has run #1281's runbook, the #321
+# required reviewer still gates every run), the App Store Connect app record,
+# and the API key's role.
 on:
   push:
     branches: ["staging", "main"]
@@ -131,11 +132,12 @@ jobs:
     # replace a pending promotion build (GitHub keeps one pending run per
     # group and replaces it with a newer one). It carries no ref on purpose:
     # staging and main stamp the same unix-timestamp CFBundleVersion for one
-    # app, and two branches building at once could hand an RC a higher build
-    # number than the production build behind it, which TestFlight would then
-    # treat as the newer build. Two promotions inside one build still queue
-    # and the older pending one is replaced: the release checklist reads a
-    # `cancelled` run against the branch tip before deciding.
+    # app, so one group makes build numbers follow queue order across both
+    # branches. It does not stop an RC queued after a production build from
+    # getting the higher number: the number is taken when the build runs.
+    # Two promotions inside one build still queue and the older pending one
+    # is replaced: the release checklist reads a `cancelled` run against the
+    # branch tip before deciding.
     concurrency:
       group: ios-testflight
       cancel-in-progress: false
@@ -176,7 +178,7 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           cache: "npm"
@@ -315,10 +317,7 @@ jobs:
         # `--frozen` flag: bundler 2.6 deprecates the flag because it "relies on
         # being remembered across bundler invocations", which a future runner
         # image could stop doing without any change here — the config form is
-        # explicit per checkout. The first real dispatch (run 34694213885,
-        # 2026-09-12) proved the guard works: it refused a lock resolved under a
-        # pre-3.2 Ruby (CFPropertyList 3.0.9, `ruby < 3.2`) on the runner's
-        # 3.3.12 instead of quietly re-resolving. Bundler is pinned to the lock's
+        # explicit per checkout. Bundler is pinned to the lock's
         # `BUNDLED WITH` so it never rewrites the lock underneath us. Install
         # into vendor/bundle (not the system gem dir, which is often not
         # writable on the runner).

@@ -94,9 +94,6 @@ function recorder() {
   return { calls, items, onStep };
 }
 
-/** Let the gather's IndexedDB reads and the encode's start settle. */
-const settle = () => new Promise((r) => setTimeout(r, 20));
-
 /**
  * A codec whose encode the TEST drives: it reports progress and resolves (or
  * rejects) only when told to, so a case can look at the count at every point
@@ -107,6 +104,10 @@ function scriptedCodec() {
   let finish!: () => void;
   let fail!: (cause: unknown) => void;
   let started = false;
+  let markStarted!: () => void;
+  const whenStarted = new Promise<void>((r) => {
+    markStarted = r;
+  });
   const codec: AudioCodec = {
     encodeMp3: (_samples, progress) =>
       new Promise((resolve, reject) => {
@@ -114,12 +115,15 @@ function scriptedCodec() {
         onProgress = progress;
         finish = () => resolve(new Uint8Array([0xff]));
         fail = reject;
+        markStarted();
       }),
     decodeMp3: () => Promise.reject(new Error("no MP3 clip expected")),
   };
   return {
     codec,
     started: () => started,
+    // Resolves once the gather is done and the codec holds its handles.
+    whenStarted: () => whenStarted,
     progress: (fraction: number) => onProgress?.(fraction),
     finish: () => finish(),
     fail: (cause: unknown) => fail(cause),
@@ -147,7 +151,7 @@ describe("withEncodeSteps — the encode is on Share Chapter's count (#996)", ()
     const s = scriptedCodec();
     const { calls, onStep } = recorder();
     const done = shareChapter(chapterId, s.codec, onStep);
-    await settle();
+    await s.whenStarted();
     s.finish();
     await done;
     const total = 2 + ENCODE_STEPS;
@@ -168,7 +172,7 @@ describe("withEncodeSteps — the encode is on Share Chapter's count (#996)", ()
     const s = scriptedCodec();
     const { items, onStep } = recorder();
     const done = shareChapter(chapterId, s.codec, onStep);
-    await settle();
+    await s.whenStarted();
     s.progress(0.5);
     s.finish();
     await done;
@@ -196,7 +200,7 @@ describe("withEncodeSteps — the encode is on Share Chapter's count (#996)", ()
           countedStep
         )
     )(s.codec);
-    await settle();
+    await s.whenStarted();
     s.progress(0.25);
     s.progress(0.75);
     s.finish();
@@ -212,7 +216,7 @@ describe("withEncodeSteps — the encode is on Share Chapter's count (#996)", ()
     const s = scriptedCodec();
     const { calls, onStep } = recorder();
     const done = shareChapter(chapterId, s.codec, onStep);
-    await settle();
+    await s.whenStarted();
     expect(s.started()).toBe(true);
     const total = 2 + ENCODE_STEPS;
     s.progress(0.25);
@@ -233,7 +237,7 @@ describe("withEncodeSteps — the encode is on Share Chapter's count (#996)", ()
     const s = scriptedCodec();
     const { calls, onStep } = recorder();
     const done = shareChapter(chapterId, s.codec, onStep);
-    await settle();
+    await s.whenStarted();
     const total = 2 + ENCODE_STEPS;
     s.progress(0.999);
     s.progress(1);
@@ -250,7 +254,7 @@ describe("withEncodeSteps — the encode is on Share Chapter's count (#996)", ()
     const s = scriptedCodec();
     const { calls, onStep } = recorder();
     const done = shareChapter(chapterId, s.codec, onStep);
-    await settle();
+    await s.whenStarted();
     s.progress(0.5);
     const before = calls.length;
     s.progress(0.5);
@@ -269,7 +273,7 @@ describe("withEncodeSteps — the encode is on Share Chapter's count (#996)", ()
     const { calls, onStep } = recorder();
     let live = true;
     const done = shareChapter(chapterId, s.codec, onStep, () => live);
-    await settle();
+    await s.whenStarted();
     s.progress(0.3);
     const seen = calls.length;
     live = false;
@@ -291,7 +295,7 @@ describe("withEncodeSteps — the encode is on Share Chapter's count (#996)", ()
       () => true,
       (counted) => counted.encodeMp3(new Int16Array(4))
     )(s.codec);
-    await settle();
+    await s.whenStarted();
     s.progress(0.5);
     s.finish();
     await done;
@@ -303,7 +307,7 @@ describe("withEncodeSteps — the encode is on Share Chapter's count (#996)", ()
     const s = scriptedCodec();
     const { calls, onStep } = recorder();
     const done = shareChapter(chapterId, s.codec, onStep);
-    await settle();
+    await s.whenStarted();
     s.progress(0.4);
     s.fail(new DOMException("cancelled", "AbortError"));
     await expect(done).rejects.toThrow("cancelled");
@@ -347,7 +351,7 @@ describe("withEncodeSteps — the encode is on Share Chapter's count (#996)", ()
     const s = scriptedCodec();
     const { calls, onStep } = recorder();
     const done = shareChapter(chapterId, s.codec, onStep);
-    await settle();
+    await s.whenStarted();
     spy.mockRestore();
     s.finish();
     await done;

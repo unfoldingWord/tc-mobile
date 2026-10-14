@@ -22,7 +22,12 @@ import {
   virtualModuleOwner,
 } from "./src/lib/build-provenance.ts";
 import { SHIPPED_LOCALE, withLocaleAttributes } from "./src/lib/locale.ts";
+import { disclosedComponents } from "./src/components/licenses.ts";
 import { NATIVE_TEARDOWN_SW } from "./src/lib/service-worker-policy.ts";
+import {
+  expandNoticeVersions,
+  installedVersions,
+} from "./scripts/licence-versions.mjs";
 
 // The exact commit a build came from, for the footer stamp (with the version).
 // git works in the Cloudflare Workers build (it clones the repo) and in local
@@ -111,6 +116,68 @@ function localeHtmlPlugin(): Plugin {
     transformIndexHtml: {
       order: "pre",
       handler: (html) => withLocaleAttributes(html, SHIPPED_LOCALE),
+    },
+  };
+}
+
+// The versions the licence disclosure shows (#1381). `licenses.ts` holds no
+// version and the notices write `{{version:<package>}}`; both are filled from
+// the manifests installed at build time (scripts/licence-versions.mjs), so a
+// bump that changes no licence needs no hand edit. A disclosed package that is
+// not installed fails the build here rather than shipping a blank version.
+const disclosedPackages = disclosedComponents.map(
+  (c) => c.pinPackage ?? c.name
+);
+const depVersions = installedVersions(import.meta.dirname, disclosedPackages);
+const notInstalled = disclosedPackages.filter((p) => !(p in depVersions));
+if (notInstalled.length > 0) {
+  throw new Error(
+    `licenses.ts discloses packages that are not installed: ${notInstalled.join(", ")}`
+  );
+}
+
+// Fills `{{version:<package>}}` in the `.txt` notices under `public/licenses/` from the installed
+// manifests: in `dist/` after Vite has copied public/ (`writeBundle`, which
+// runs before vite-plugin-pwa's `closeBundle` hashes the precache, so the
+// precached revision is the expanded file), and in the dev server. An unknown
+// package throws, so a notice for a package that left the tree fails loudly.
+function licenceNoticeVersionsPlugin(): Plugin {
+  const root = import.meta.dirname;
+  const versionOf = (pkg: string) => installedVersions(root, [pkg])[pkg];
+  let outDir = "";
+  let publicDir = "";
+  return {
+    name: "licence-notice-versions",
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+      publicDir = config.publicDir;
+    },
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const m = /^\/licenses\/([\w-]+\.txt)(?:\?.*)?$/.exec(req.url ?? "");
+        const file = m ? path.join(publicDir, "licenses", m[1]!) : "";
+        if (!m || !existsSync(file)) return next();
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.end(
+          expandNoticeVersions(readFileSync(file, "utf8"), versionOf, m[1])
+        );
+      });
+    },
+    writeBundle: {
+      order: "post",
+      sequential: true,
+      handler() {
+        const dir = path.join(outDir, "licenses");
+        if (!existsSync(dir)) return;
+        for (const name of readdirSync(dir)) {
+          if (!name.endsWith(".txt")) continue;
+          const file = path.join(dir, name);
+          writeFileSync(
+            file,
+            expandNoticeVersions(readFileSync(file, "utf8"), versionOf, name)
+          );
+        }
+      },
     },
   };
 }
@@ -304,6 +371,7 @@ export default defineConfig(({ mode }) => {
       __APP_VERSION__: JSON.stringify(pkg.version),
       __BUILD_SHA__: JSON.stringify(buildSha),
       __BUILD_SHA_FULL__: JSON.stringify(buildShaFull),
+      __DEP_VERSIONS__: JSON.stringify(depVersions),
     },
     build: {
       // Pinned to the app's stated floor (#1017 open question 1) rather than
@@ -330,13 +398,10 @@ export default defineConfig(({ mode }) => {
       // DRI two options — raise the floor, or rewrite 13 `:has()` sites — and
       // the decision (2026-09-26, "Raise floor to 15.4 (Recommended)") was
       // the former, so the JS/CSS build target here now matches the raised
-      // documented floor. Note: `ios/App/App.xcodeproj/project.pbxproj`'s
-      // `IPHONEOS_DEPLOYMENT_TARGET` still reads `15.0` in this tree — this
-      // change only raises what the requirements doc and this build target
-      // state; moving the actual Xcode deployment target (and the store
-      // listings) is separate, out-of-scope work for whoever picks up
-      // #1052's other side. See `docs/native/system-requirements.md` for the
-      // full resolution and that residual.
+      // documented floor. The Xcode deployment target matches it:
+      // `ios/App/App.xcodeproj/project.pbxproj` sets
+      // `IPHONEOS_DEPLOYMENT_TARGET = 15.4` at all four sites (#1055). See
+      // `docs/native/system-requirements.md` for the full resolution.
       //
       // This is otherwise a forward guard, not a fix for something broken
       // today: a build-artifact scan (`tests/build-target-floor.test.ts`,
@@ -376,10 +441,15 @@ export default defineConfig(({ mode }) => {
       react(),
       versionJsonPlugin(),
       localeHtmlPlugin(),
+      licenceNoticeVersionsPlugin(),
       provenance.app,
       ...(isNativeBuild ? [nativeTeardownSwPlugin()] : []),
       VitePWA({
         registerType: "autoUpdate",
+        // The manifest's three icon PNGs already match `globPatterns` (`png`),
+        // so letting the plugin add them again precached each twice (#161).
+        // tests/precache-manifest.test.ts pins one entry per url.
+        includeManifestIcons: false,
         // `dev-dist` lets us verify offline behaviour in `vite dev` instead of
         // discovering service-worker problems only after a deploy.
         devOptions: { enabled: true, type: "module" },

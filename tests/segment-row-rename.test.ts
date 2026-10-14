@@ -11,18 +11,9 @@ import { reportFailure } from "@/hooks/report-failure";
 // Read back, not run: the row hands a rejected rename's cause to the log.
 vi.mock("@/hooks/report-failure", () => ({ reportFailure: vi.fn() }));
 
-// This file asserts the CURRENT look's row heading ("3", then
-// "3 · verses 3–4"), not O4's markup. #951 flipped the design default to o4,
-// so pin the current look explicitly here rather than rely on
-// nothing-stored — the O4 row is covered elsewhere (`tests/segments-o4.test.ts`
-// and friends).
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: "current" as const, toggle: () => {} }),
-}));
-
 /**
- * Rename in the segment row's menu (#591): the label rides beside the ordinal,
- * and the menu reaches it on EVERY row — an empty one included, because the
+ * Rename in the segment row's menu (#591): the ordinal stays in the badge and
+ * the label is the typed title over the wave, and the menu reaches it on EVERY row — an empty one included, because the
  * facilitator labels segments while setting a chapter up, before anything is
  * recorded (#264's Nairobi workflow). The audio items stay recorded-row only.
  *
@@ -107,14 +98,18 @@ function field() {
   );
 }
 const dialog = () => document.querySelector('[role="dialog"]');
-const heading = () => document.querySelector(".row-open")?.textContent;
+const badge = () => document.querySelector(".row-open .row-badge")?.textContent;
+const title = () => document.querySelector(".row-title")?.textContent ?? null;
 
 describe("segment row rename (#591)", () => {
-  it("shows the ordinal alone while unlabelled, and the label after it once set", async () => {
+  it("shows the ordinal alone while unlabelled, and the label as the title once set", async () => {
     await render(recorded);
-    expect(heading()).toBe("3");
+    expect(badge()).toBe("3");
+    expect(title()).toBeNull();
     await render({ ...recorded, label: "verses 3–4" });
-    expect(heading()).toBe("3 · verses 3–4");
+    // The ordinal stays in the badge (#591); the label is the title line.
+    expect(badge()).toBe("3");
+    expect(title()).toBe("verses 3–4");
   });
 
   it("carries the label into the row's accessible names, so AT hears what is painted", async () => {

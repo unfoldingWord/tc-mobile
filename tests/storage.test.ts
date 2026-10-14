@@ -7,7 +7,6 @@ import {
   getClip,
   getClipMeta,
   newClipId,
-  putClip,
   totalClipBytes,
 } from "@/lib/storage/clips";
 import { closeDb, getDb } from "@/lib/storage/db";
@@ -23,7 +22,7 @@ import {
   getSegmentsOfChapter,
   isStaleBookFailure,
   listBooks,
-  nextBookName,
+  nextBookNumber,
   nextChapterNumber,
   renameBook,
   renameChapter,
@@ -32,7 +31,6 @@ import {
   setBookCoverColour,
 } from "@/lib/storage/books";
 import {
-  addTake,
   clearSegmentTake,
   isFinished,
   saveTake,
@@ -44,26 +42,11 @@ import {
   resolveSegmentAudio,
 } from "@/lib/storage/segment-audio";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import type { BookId, RecordingStatus } from "@/types/domain";
-import { samplesOf } from "./support";
+import type { Book, BookId, RecordingStatus } from "@/types/domain";
+import { recordTake, samplesOf, storeOrphanClip } from "./support";
 
 const samples = (n: number, value = 1000): Int16Array =>
   Int16Array.from({ length: n }, () => value);
-
-/**
- * A clip id with audio actually behind it.
- *
- * `addTake` takes a `ClipId` on trust, so `addTake(seg, newClipId(), …)`
- * builds a take pointing at nothing. That is a real state — it is what a
- * failed or half-rolled-back save leaves — but it is not what "recorded"
- * means, and tests that used it as a stand-in were the reason the export path
- * could return clip ids for audio that did not exist.
- */
-const storedClip = async (frames = 100) => {
-  const id = newClipId();
-  await putClip(id, samples(frames), CANONICAL_SAMPLE_RATE);
-  return id;
-};
 
 /** A book → chapter → one segment, and the ids to address it by. */
 const oneSegment = async () => {
@@ -87,11 +70,19 @@ beforeEach(async () => {
   await Promise.all([...stores.map((s) => tx.objectStore(s).clear()), tx.done]);
 });
 
+/**
+ * Clip bytes and metadata, written through the app's only clip write,
+ * `saveTake` (#1365: the clip-only `putClip` had no caller in `src/` and was
+ * deleted, the same call the DRI made for `addTake` in #1364). The subarray
+ * copy and the 0-frame refusal are pinned once, in "atomic take save
+ * (saveTake)" below, not twice.
+ */
 describe("clip storage", () => {
   it("round-trips samples exactly", async () => {
+    const { segmentId } = await oneSegment();
     const id = newClipId();
     const original = Int16Array.from([0, -32768, 32767, 42]);
-    await putClip(id, original, CANONICAL_SAMPLE_RATE);
+    await saveTake(segmentId, id, original, CANONICAL_SAMPLE_RATE);
 
     const loaded = await getClip(id);
     expect(loaded?.encoding).toBe("pcm");
@@ -102,9 +93,10 @@ describe("clip storage", () => {
     // B8: every clip written through the record/edit path is PCM straight off
     // the microphone. `encoding`/`generation` are what the transcode sweep and
     // the readers key on, `byteLength` what storage pressure is summed from.
-    const id = newClipId();
-    await putClip(id, samples(150), CANONICAL_SAMPLE_RATE);
-    const meta = await getClipMeta(id);
+    // A never-recorded segment has no prior clip to carry a generation from.
+    const { segmentId } = await oneSegment();
+    const { clipId } = await recordTake(segmentId, { frames: 150 });
+    const meta = await getClipMeta(clipId);
     expect(meta?.encoding).toBe("pcm");
     expect(meta?.generation).toBe(0);
     expect(meta?.byteLength).toBe(300);
@@ -112,28 +104,21 @@ describe("clip storage", () => {
   });
 
   it("derives duration from the frame count", async () => {
-    const id = newClipId();
-    await putClip(id, samples(CANONICAL_SAMPLE_RATE), CANONICAL_SAMPLE_RATE);
-    const meta = await getClipMeta(id);
+    const { segmentId } = await oneSegment();
+    const { clipId } = await recordTake(segmentId, {
+      frames: CANONICAL_SAMPLE_RATE,
+    });
+    const meta = await getClipMeta(clipId);
     expect(meta?.durationMs).toBe(1000);
     expect(meta?.frameCount).toBe(CANONICAL_SAMPLE_RATE);
-  });
-
-  it("stores only the trimmed audio when given a subarray view", async () => {
-    // Guards the copy in putClip: a view onto a large buffer must not drag
-    // the whole backing buffer into IndexedDB.
-    const backing = samples(10_000);
-    const id = newClipId();
-    await putClip(id, backing.subarray(0, 100), CANONICAL_SAMPLE_RATE);
-    expect(samplesOf(await getClip(id)).length).toBe(100);
   });
 
   it("makes a deleted clip unreadable", async () => {
     // The name is deliberately narrow: these two calls both go through
     // `clipMeta`, so they say nothing about the samples. That is the test
     // below.
-    const id = newClipId();
-    await putClip(id, samples(10), CANONICAL_SAMPLE_RATE);
+    const { segmentId } = await oneSegment();
+    const { clipId: id } = await recordTake(segmentId, { frames: 10 });
     await deleteClip(id);
     expect(await getClipMeta(id)).toBeUndefined();
     expect(await getClip(id)).toBeUndefined();
@@ -141,14 +126,13 @@ describe("clip storage", () => {
 
   it("deletes the samples too, not just the metadata", async () => {
     // The test above cannot see this: `getClip` returns undefined as soon as
-    // the metadata is gone (clips.ts:58), so a `deleteClip` that dropped only
-    // `clipMeta` and left the PCM in `clipData` passes it, and
-    // `totalClipBytes` sums `clipMeta` so it cannot see the orphan either.
-    // Discarding a failed take deletes its clip precisely to give the bytes
-    // back on a phone that has just run out of room, so the data store is
-    // checked directly.
-    const id = newClipId();
-    await putClip(id, samples(1000), CANONICAL_SAMPLE_RATE);
+    // the metadata is gone, so a `deleteClip` that dropped only `clipMeta` and
+    // left the PCM in `clipData` passes it, and `totalClipBytes` sums
+    // `clipMeta` so it cannot see the orphan either. Discarding a failed take
+    // deletes its clip precisely to give the bytes back on a phone that has
+    // just run out of room, so the data store is checked directly.
+    const { segmentId } = await oneSegment();
+    const { clipId: id } = await recordTake(segmentId, { frames: 1000 });
     const db = await getDb();
     expect(await db.get("clipData", id)).toBeDefined();
 
@@ -156,18 +140,12 @@ describe("clip storage", () => {
     expect(await db.get("clipData", id)).toBeUndefined();
   });
 
-  it("refuses to store a 0-frame clip", async () => {
-    // George R4: a 0-frame clip resolves as playable silent audio and can be
-    // counted finished — the ghost take. The store rejects it rather than
-    // trusting callers, the same way setSegmentFinished guards its own invariant.
-    await expect(
-      putClip(newClipId(), new Int16Array(0), CANONICAL_SAMPLE_RATE)
-    ).rejects.toThrow();
-  });
-
   it("reports total bytes held on device", async () => {
-    await putClip(newClipId(), samples(100), CANONICAL_SAMPLE_RATE);
-    await putClip(newClipId(), samples(50), CANONICAL_SAMPLE_RATE);
+    // Two segments, so the second save does not replace (and reap) the first.
+    const { chapterId, segmentId } = await oneSegment();
+    const second = await addSegment(chapterId);
+    await recordTake(segmentId, { frames: 100 });
+    await recordTake(second.id, { frames: 50 });
     expect(await totalClipBytes()).toBe(300); // 150 frames * 2 bytes
   });
 
@@ -177,16 +155,15 @@ describe("clip storage", () => {
 });
 
 describe("book tree", () => {
-  it("auto-names concurrent blank New Book confirms distinctly (race-safe)", async () => {
-    // Two confirms before the first write lands must not both become
-    // "Book 001": the fallback name is derived from what is on disk INSIDE the
-    // one readwrite transaction that writes the row, and IndexedDB serialises
-    // overlapping readwrite transactions, so the second sees the first.
+  it("gives concurrent blank New Book confirms distinct slots (race-safe)", async () => {
+    // Two confirms before the first write lands must not both take slot 1: the
+    // fallback is derived from what is on disk INSIDE the one readwrite
+    // transaction that writes the row, and IndexedDB serialises overlapping
+    // readwrite transactions, so the second sees the first.
     const [a, b] = await Promise.all([createBook(""), createBook("")]);
-    const names = [a.name, b.name].sort();
-    expect(names).toEqual(["Book 001", "Book 002"]);
+    expect([a.number, b.number].sort()).toEqual([1, 2]);
     const third = await createBook("");
-    expect(third.name).toBe("Book 003");
+    expect(third.number).toBe(3);
   });
 
   it("creates and lists books newest-created first", async () => {
@@ -269,7 +246,7 @@ describe("book tree", () => {
 
   it("maps the finished toggle onto the status enum", async () => {
     const { segmentId } = await oneSegment();
-    await addTake(segmentId, await storedClip(), 100);
+    await recordTake(segmentId);
     const db = await getDb();
 
     await setSegmentFinished(segmentId, true);
@@ -317,13 +294,13 @@ describe("book tree", () => {
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
     await addSegment(chapter.id); // s3: never recorded
-    await addTake(s1.id, await storedClip(), 100);
+    await recordTake(s1.id);
     await setSegmentFinished(s1.id, true);
     // s2 is recorded but NOT finished ("draft") — the case `recorded` exists
     // for (#542 Part B): it has reclaimable bytes behind it, but would not
     // count as `finished`, and a mutation collapsing `recorded` back to
     // `finished` must fail this exact assertion.
-    await addTake(s2.id, await storedClip(), 100);
+    await recordTake(s2.id);
 
     expect(await chapterProgress(chapter.id)).toEqual({
       finished: 1,
@@ -345,13 +322,13 @@ describe("book tree", () => {
     // M2: a segment has at most ONE take. Re-recording REPLACES it — no stacked
     // history, and the old PCM is reclaimed, not left unreachable (#2/D3).
     const { segmentId } = await oneSegment();
-    const firstClip = await storedClip();
-    const first = await addTake(segmentId, firstClip, 1000);
+    const first = await recordTake(segmentId, { frames: 1000 });
+    const firstClip = first.clipId;
     // Approve it, so the re-record's demotion is observable.
     await setSegmentFinished(segmentId, true);
 
-    const secondClip = await storedClip();
-    const second = await addTake(segmentId, secondClip, 1200);
+    const second = await recordTake(segmentId, { frames: 1200 });
+    const secondClip = second.clipId;
 
     const db = await getDb();
     // Exactly one take row for the segment, and it is the newest.
@@ -377,11 +354,11 @@ describe("book tree", () => {
 
   it("lands a take finished when the recorder carried an explicit mark", async () => {
     // The recorder's Finished checkbox rides the take rather than a separate
-    // write after it: addTake sets the final status in the SAME transaction, so
+    // write after it: saveTake sets the final status in the SAME transaction, so
     // a save-failure retry re-applies the mark instead of dropping it. `true`
     // means the translator explicitly marked THIS take done.
     const { segmentId } = await oneSegment();
-    const take = await addTake(segmentId, await storedClip(), 100, {
+    const take = await recordTake(segmentId, {
       finished: true,
     });
     const db = await getDb();
@@ -394,17 +371,17 @@ describe("book tree", () => {
   it("defaults a take to draft, so an unmarked re-record demotes", async () => {
     // The default is what protects the demote invariant: a re-record the
     // translator did NOT mark finished must not carry an earlier approval
-    // forward. `addTake` with no finished option, and with `false`, both land
+    // forward. `saveTake` with no finished option, and with `false`, both land
     // draft.
     const { segmentId } = await oneSegment();
-    await addTake(segmentId, await storedClip(), 100, { finished: true });
+    await recordTake(segmentId, { finished: true });
 
-    const demoted = await addTake(segmentId, await storedClip(), 120);
+    const demoted = await recordTake(segmentId);
     const db = await getDb();
     expect((await db.get("segments", segmentId))?.status).toBe("draft");
     void demoted;
 
-    await addTake(segmentId, await storedClip(), 130, { finished: false });
+    await recordTake(segmentId, { finished: false });
     expect((await db.get("segments", segmentId))?.status).toBe("draft");
   });
 
@@ -414,23 +391,21 @@ describe("book tree", () => {
     const book = await createBook("b", null, 1000);
     const chapter = await addChapter(book.id);
     const segment = await addSegment(chapter.id);
-    await addTake(segment.id, await storedClip(), 100, { now: 5000 });
+    await recordTake(segment.id, { now: 5000 });
     expect((await getBook(book.id))?.updatedAt).toBe(5000);
   });
 
   it("keeps the audio when a re-record reuses the same clip id", async () => {
     // The pending-take retry path re-runs the save with the SAME clipId
-    // (retrySave keeps it; putClip is an upsert). addTake then sees
-    // prior.clipId === new clipId, and deleting "the superseded clip" would
-    // strand the take it just wrote — the guard at takes.ts is the only thing
-    // stopping that, and nothing else exercises it.
+    // (retrySave keeps it; the clip write is an upsert). The take write then
+    // sees prior.clipId === new clipId, and deleting "the superseded clip"
+    // would strand the take it just wrote — the reference check in takes.ts is
+    // what stops that.
     const { segmentId } = await oneSegment();
-    const clipId = await storedClip(1000);
-    await addTake(segmentId, clipId, 1000);
+    const { clipId } = await recordTake(segmentId, { frames: 1000 });
 
-    // Same id again, as a retry does: re-store (upsert) then re-add.
-    await putClip(clipId, samples(1000), CANONICAL_SAMPLE_RATE);
-    const second = await addTake(segmentId, clipId, 1000);
+    // Same id again, as a retry does.
+    const second = await recordTake(segmentId, { clipId, frames: 1000 });
 
     const db = await getDb();
     expect((await db.get("segments", segmentId))?.activeTakeId).toBe(second.id);
@@ -446,8 +421,8 @@ describe("book tree", () => {
     // 0-frame take (which would resolve as a real, silent recording). The take,
     // the pointer, and the PCM all go, and the segment reads not-started again.
     const { segmentId } = await oneSegment();
-    const clipId = await storedClip(1000);
-    const take = await addTake(segmentId, clipId, 1000, { finished: true });
+    const take = await recordTake(segmentId, { frames: 1000, finished: true });
+    const clipId = take.clipId;
 
     await clearSegmentTake(segmentId);
 
@@ -480,9 +455,9 @@ describe("book tree", () => {
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
-    const shared = await storedClip(500);
-    await addTake(s1.id, shared, 100);
-    await addTake(s2.id, shared, 100); // both point at the same clip
+    const shared = newClipId();
+    await recordTake(s1.id, { clipId: shared, frames: 500 });
+    await recordTake(s2.id, { clipId: shared, frames: 500 }); // both point at the same clip
 
     await clearSegmentTake(s1.id);
 
@@ -499,8 +474,8 @@ describe("book tree", () => {
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
-    await addTake(s1.id, await storedClip(), 100);
-    const keep = await addTake(s2.id, await storedClip(), 100);
+    await recordTake(s1.id);
+    const keep = await recordTake(s2.id);
 
     await clearSegmentTake(s1.id);
 
@@ -517,8 +492,8 @@ describe("book tree", () => {
     const s2 = await addSegment(chapter.id); // left unrecorded
     const s3 = await addSegment(chapter.id);
 
-    const t1 = await addTake(s1.id, await storedClip(), 100);
-    const t3 = await addTake(s3.id, await storedClip(), 100);
+    const t1 = await recordTake(s1.id);
+    const t3 = await recordTake(s3.id);
     void s2;
 
     const { clipIds, missing } = await resolveChapterClipIds(chapter.id);
@@ -536,8 +511,8 @@ describe("book tree", () => {
     const chapter = await addChapter(book.id);
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
-    const t1 = await addTake(s1.id, await storedClip(), 100);
-    const dangling = await addTake(s2.id, await storedClip(), 100);
+    const t1 = await recordTake(s1.id);
+    const dangling = await recordTake(s2.id);
 
     const db = await getDb();
     await db.delete("takes", dangling.id);
@@ -553,128 +528,164 @@ describe("book tree", () => {
     const s1 = await addSegment(chapter.id);
     const s2 = await addSegment(chapter.id);
 
-    const t1 = await addTake(s1.id, await storedClip(), 100);
-    // The take row is fine. The audio it names was never written — a save
-    // that failed after `addTake`, or a clip deleted from under it.
-    await addTake(s2.id, newClipId(), 100);
+    const t1 = await recordTake(s1.id);
+    // The take row is fine. The audio it names is gone — deleted from under
+    // it, since the commit write stores the clip in the take's own transaction.
+    const lost = await recordTake(s2.id);
+    await deleteClip(lost.clipId);
 
     const { clipIds, missing } = await resolveChapterClipIds(chapter.id);
     expect(clipIds).toEqual([t1.clipId]);
     expect(missing).toBe(1);
   });
-
-  it("rejects takes against an unknown segment", async () => {
-    await expect(addTake("nope" as never, newClipId(), 100)).rejects.toThrow(
-      /No such segment/
-    );
-  });
 });
 
-/** The placeholder for ordinal `n`, as this namer spells it. */
-const nextBookNameFor = (n: number): string =>
-  `Book ${String(n).padStart(3, "0")}`;
+/** An unnamed book holding slot `n` — what `nextBookNumber` counts. */
+const unnamed = (n: number): Pick<Book, "name" | "number"> => ({
+  name: null,
+  number: n,
+});
+
+/** A book a facilitator named, parked on slot `n`. */
+const named = (name: string, n: number): Pick<Book, "name" | "number"> => ({
+  name,
+  number: n,
+});
 
 /**
- * The "Book NNN" placeholder — computed, shown, and fallen back to (#314, #360).
+ * The book placeholder — computed, shown, and fallen back to (#314, #360, #169).
  *
  * #314 moved the placeholder from "what a book is silently named" to "what the
- * New Book field is pre-filled with", so the same computation now has two
- * callers: the Books screen, which renders it off the shelf it has already
- * loaded, and `createBook`'s blank fallback inside the write transaction.
- * `nextBookName` is the one pure function both go through.
+ * New Book field is pre-filled with", so the same computation has two callers:
+ * the Books screen, which renders it off the shelf it has already loaded, and
+ * `createBook`'s blank fallback inside the write transaction. `nextBookNumber`
+ * is the one pure function both go through.
  *
- * The rendered name is DISPLAY only — an untouched field is confirmed as `""` —
- * so the name that actually lands is always the transaction's, never the
+ * What the field shows is DISPLAY only — an untouched field is confirmed as
+ * `""` — so the row that actually lands is always the transaction's, never the
  * snapshot's. That is what keeps the one-tap create as race-safe as the
  * pre-#314 `createNextBook` was.
  *
- * #360 is the rule the namer encodes: the first UNUSED name, not `count + 1`.
- * Once a book can be deleted, a count-based name repeats — and the delete
- * confirm names the book in its accessible name, so two identical rows make a
+ * #360 is the rule it encodes: the first UNUSED slot, not `count + 1`. Once a
+ * book can be deleted, a count-based name repeats — and the delete confirm
+ * names the book in its accessible name, so two identical rows make a
  * destructive dialog unable to say which book it is about to destroy.
+ *
+ * #169 is what it counts over. The placeholder's WORDS are copy and are
+ * rendered at the screen (`strings.bookHeading`); the store keeps a slot, so a
+ * phone that switches UI language renames the books already on its shelf.
  */
-describe("book auto-naming (#314, #360)", () => {
-  it("starts at Book 001 on an empty shelf", () => {
-    expect(nextBookName([])).toBe("Book 001");
+describe("book placeholder slots (#314, #360, #169)", () => {
+  it("starts at slot 1 on an empty shelf", () => {
+    expect(nextBookNumber([])).toBe(1);
   });
 
-  it("zero-pads to three digits and counts up past the padding", () => {
-    expect(nextBookName(["Book 001", "Book 002"])).toBe("Book 003");
-    // Not capped at 999: the padding is a minimum width, not a limit.
-    const upTo999 = Array.from({ length: 999 }, (_, i) =>
-      nextBookNameFor(i + 1)
-    );
-    expect(nextBookName(upTo999)).toBe("Book 1000");
+  it("counts up past the padding the screen renders", () => {
+    expect(nextBookNumber([unnamed(1), unnamed(2)])).toBe(3);
+    // Not capped at 999: the screen's zero-padding is a minimum width, and the
+    // slot itself has no limit.
+    const upTo999 = Array.from({ length: 999 }, (_, i) => unnamed(i + 1));
+    expect(nextBookNumber(upTo999)).toBe(1000);
   });
 
-  it("picks the FIRST unused name, so a delete does not make one repeat (#360)", () => {
-    // The #360 reproduction, as data: 001 and 002 exist, 001 is deleted. A
-    // count-based namer sees one book and says "Book 002" — a duplicate row.
-    expect(nextBookName(["Book 002"])).toBe("Book 001");
-    expect(nextBookName(["Book 002"])).not.toBe("Book 002");
+  it("picks the FIRST unused slot, so a delete does not make one repeat (#360)", () => {
+    // The #360 reproduction, as data: 1 and 2 exist, 1 is deleted. A
+    // count-based namer sees one book and says 2 — a duplicate row.
+    expect(nextBookNumber([unnamed(2)])).toBe(1);
+    expect(nextBookNumber([unnamed(2)])).not.toBe(2);
     // A hole in the middle is filled before the end is extended.
-    expect(nextBookName(["Book 001", "Book 003"])).toBe("Book 002");
+    expect(nextBookNumber([unnamed(1), unnamed(3)])).toBe(2);
   });
 
-  it("ignores names that are not placeholders, and unpadded look-alikes", () => {
-    // A facilitator's real names ("Mark") occupy no placeholder slot — the
-    // shelf is not a numbering authority, the placeholder set is.
-    expect(nextBookName(["Mark", "Luke"])).toBe("Book 001");
-    // "Book 1" is not the string this namer would ever write, so it does not
-    // block "Book 001". Exact match on the stored name is the whole rule.
-    expect(nextBookName(["Book 1"])).toBe("Book 001");
+  it("ignores the slot parked under a name (#169)", () => {
+    // A facilitator's real names ("Mark") occupy no slot — the shelf is not a
+    // numbering authority, the set of placeholders actually on SHOW is.
+    expect(nextBookNumber([named("Mark", 1), named("Luke", 2)])).toBe(1);
+    // Including a name that reads like this locale's placeholder. Before #169
+    // the comparison was on the stored string, so typing "Book 001" reserved
+    // it; now nothing a person types is a placeholder, in any language.
+    expect(nextBookNumber([named("Book 001", 1)])).toBe(1);
   });
 
-  it("does not repeat a name after a book is deleted from the shelf (#360)", async () => {
+  it("does not repeat a slot after a book is deleted from the shelf (#360)", async () => {
     // The same rule end to end, through storage. `deleteBook` is #344 and is not
-    // on develop yet, so the row is removed directly — this pins the NAMER
+    // on develop yet, so the row is removed directly — this pins the DERIVATION
     // against a shelf with a hole in it, which is the state any delete leaves.
     const first = await createBook("");
     const second = await createBook("");
-    expect([first.name, second.name]).toEqual(["Book 001", "Book 002"]);
+    expect([first.number, second.number]).toEqual([1, 2]);
 
     const db = await getDb();
     await db.delete("books", first.id);
 
     const third = await createBook("");
-    expect(third.name).toBe("Book 001");
-    expect(third.name).not.toBe(second.name);
+    expect(third.number).toBe(1);
+    expect(third.number).not.toBe(second.number);
   });
 
-  it("names the shelf the screen would render the same as the next blank create", async () => {
-    // The screen derives the pre-fill by calling this namer over the books it
-    // has loaded; the store derives the written name by calling it over the
-    // books in its write transaction. Same function, same shelf, same answer —
-    // which is why a bare Confirm lands on the name the field displayed.
+  it("offers the shelf the screen would render the same slot as the next blank create", async () => {
+    // The screen derives the pre-fill by calling this over the books it has
+    // loaded; the store derives the written slot by calling it over the books
+    // in its write transaction. Same function, same shelf, same answer — which
+    // is why a bare Confirm lands on the placeholder the field displayed.
     await createBook("");
     const shelf = await listBooks();
-    const displayed = nextBookName(shelf.map((b) => b.name));
-    expect(displayed).toBe("Book 002");
-    expect((await createBook("")).name).toBe(displayed);
+    const displayed = nextBookNumber(shelf);
+    expect(displayed).toBe(2);
+    expect((await createBook("")).number).toBe(displayed);
+  });
+
+  it("stores no words for an unnamed book (#169)", async () => {
+    // The whole point: nothing on disk is in a UI language, so switching
+    // language renames every book that never got a name of its own.
+    const first = await createBook("");
+    expect(first.name).toBeNull();
+    expect(JSON.stringify(first)).not.toContain("Book");
+    // And it survives the round trip — the read is not re-deriving a name.
+    expect((await getBook(first.id))?.name).toBeNull();
+  });
+
+  it("gives a NAMED book a real free slot, dormant behind its name (#169)", async () => {
+    // Every row carries a slot, so the field means one thing on the whole
+    // shelf. It is free for the next unnamed book, because nothing shows it.
+    const mark = await createBook("Mark");
+    expect(mark.number).toBe(1);
+    expect((await createBook("")).number).toBe(1);
   });
 
   it("does not make a SUPPLIED name unique", async () => {
     // Deliberate, and long-standing: a facilitator may have two books called
     // "Mark", and renameBook has always allowed it. It is also why the New Book
-    // dialog sends "" rather than the "Book NNN" string it displayed — a
-    // supplied placeholder would take THIS path and two documents open on the
-    // same shelf would both write "Book 001" (George R1 P2-3).
+    // dialog sends "" rather than the placeholder string it displayed — a
+    // supplied placeholder would take THIS path (George R1 P2-3).
     const first = await createBook("Mark");
     const second = await createBook("Mark");
     expect([first.name, second.name]).toEqual(["Mark", "Mark"]);
     expect(first.id).not.toBe(second.id);
   });
 
-  it("falls back to the placeholder for a blank or whitespace-only name (#314)", async () => {
+  it("leaves a blank or whitespace-only name unnamed (#314)", async () => {
     // "Empty or whitespace-only input falls back to the placeholder, never
     // errors" — enforced in the store, next to renameBook's own normalisation,
     // so the rule holds however the name arrives.
-    expect((await createBook("   ")).name).toBe("Book 001");
-    expect((await createBook("\t\n ")).name).toBe("Book 002");
+    expect(await createBook("   ")).toMatchObject({ name: null, number: 1 });
+    expect(await createBook("\t\n ")).toMatchObject({ name: null, number: 2 });
   });
 
   it("trims a typed name, like renameBook does", async () => {
     expect((await createBook("  Mark  ")).name).toBe("Mark");
+  });
+
+  it("keeps an unnamed book unnamed through a blank rename (#169)", async () => {
+    // `renameBook`'s "blank keeps what is there" now has a second job: it must
+    // not turn the rendered placeholder into a stored name. The screen sends
+    // "" for an untouched field, and this is the half of that contract the
+    // store owns.
+    const book = await createBook("");
+    const after = await renameBook(book.id, "   ");
+    expect(after.name).toBeNull();
+    expect(after.number).toBe(book.number);
+    expect(after.updatedAt).toBe(book.updatedAt); // a no-op, so no recency bump
   });
 });
 
@@ -690,7 +701,7 @@ describe("book auto-naming (#314, #360)", () => {
  *   - `nextChapterNumber` is the ONE derivation of that ordinal, called both
  *     inside `addChapter`'s write transaction and by the screen over the
  *     chapters it has already loaded — the same "one pure function both go
- *     through" shape `nextBookName` holds for books. Unlike `nextBookName` it
+ *     through" shape `nextBookNumber` holds for books. Unlike it, this one
  *     is `max + 1`, NOT the first unused: a chapter's `number` is its export
  *     position, not a label, so filling a hole would reorder the concatenation
  *     a Share Chapter/Book produces.
@@ -967,8 +978,7 @@ describe("rename segment (#591)", () => {
     const chapter = await addChapter(book.id);
     await addSegment(chapter.id);
     const second = await addSegment(chapter.id);
-    const clipId = await storedClip();
-    await addTake(second.id, clipId, 100);
+    await recordTake(second.id);
     await setSegmentFinished(second.id, true);
     const before = await getSegment(second.id);
     const chapterBefore = await getChapter(chapter.id);
@@ -1055,8 +1065,8 @@ describe("isStaleBookFailure", () => {
 /**
  * The atomic commit write — clip and take in ONE transaction (#38).
  *
- * The regression these catch: the old commit was two transactions (`putClip`
- * then `addTake`). A failure on the second left the clip durable with no take
+ * The regression these catch: the old commit was two transactions (a clip
+ * write then a separate take write). A failure on the second left the clip durable with no take
  * referencing it — an orphan that consumed the space the recovery screen tells
  * the translator to free, so freeing space and retrying failed again. The
  * atomicity test below fails against that two-transaction flow (the clip would
@@ -1083,11 +1093,10 @@ describe("atomic take save (saveTake)", () => {
   });
 
   it("stores only the trimmed audio when given a subarray view", async () => {
-    // Guards the copy in saveTake independently of putClip's (George R1 P3):
-    // saveTake writes the clip through its own `new Int16Array(samples)`, so a
-    // view onto a large edit buffer must not drag the whole backing buffer into
-    // IndexedDB — the quota pressure #38 exists to close. Dropping saveTake's
-    // copy while keeping putClip's would leave putClip's test green; this fails.
+    // Guards the copy in saveTake (George R1 P3): saveTake writes the clip
+    // through its own `new Int16Array(samples)`, so a view onto a large edit
+    // buffer must not drag the whole backing buffer into IndexedDB — the quota
+    // pressure #38 exists to close.
     const { segmentId } = await oneSegment();
     const backing = samples(10_000);
     const clipId = newClipId();
@@ -1164,8 +1173,8 @@ describe("atomic take save (saveTake)", () => {
 describe("segment audio resolution", () => {
   it("resolves a segment whose take has stored audio", async () => {
     const { segmentId } = await oneSegment();
-    const clipId = await storedClip(150);
-    const take = await addTake(segmentId, clipId, 1000);
+    const take = await recordTake(segmentId, { frames: 150 });
+    const clipId = take.clipId;
 
     const meta = await resolveSegmentAudio(segmentId);
     expect(meta.kind).toBe("resolved");
@@ -1194,7 +1203,7 @@ describe("segment audio resolution", () => {
 
   it("reports a segment whose active take row is gone", async () => {
     const { segmentId } = await oneSegment();
-    const take = await addTake(segmentId, await storedClip(), 100);
+    const take = await recordTake(segmentId);
     const db = await getDb();
     await db.delete("takes", take.id);
 
@@ -1210,9 +1219,10 @@ describe("segment audio resolution", () => {
 
   it("reports a take whose clip was never stored", async () => {
     const { segmentId } = await oneSegment();
-    // `addTake` takes the clip id on trust — nothing checks the clip exists,
-    // which is how a chapter can hold takes pointing at no audio at all.
-    const take = await addTake(segmentId, newClipId(), 100);
+    // Nothing checks on read that a take's clip exists, which is how a chapter
+    // can hold takes pointing at no audio at all once a clip is lost.
+    const take = await recordTake(segmentId);
+    await deleteClip(take.clipId);
 
     for (const audio of [
       await resolveSegmentAudio(segmentId),
@@ -1225,8 +1235,7 @@ describe("segment audio resolution", () => {
 
   it("reports a clip whose samples went without its metadata", async () => {
     const { segmentId } = await oneSegment();
-    const clipId = await storedClip();
-    await addTake(segmentId, clipId, 100);
+    const { clipId } = await recordTake(segmentId);
     const db = await getDb();
     await db.delete("clipData", clipId);
 
@@ -1239,8 +1248,7 @@ describe("segment audio resolution", () => {
 
   it("counts a metadata-only clip as missing from a chapter export", async () => {
     const { chapterId, segmentId } = await oneSegment();
-    const clipId = await storedClip();
-    await addTake(segmentId, clipId, 100);
+    const { clipId } = await recordTake(segmentId);
     const db = await getDb();
     await db.delete("clipData", clipId);
 
@@ -1260,13 +1268,14 @@ describe("segment audio resolution", () => {
 
   it("resolves again once the missing clip is stored", async () => {
     const { segmentId } = await oneSegment();
-    const clipId = newClipId();
-    await addTake(segmentId, clipId, 100);
+    const { clipId } = await recordTake(segmentId);
+    await deleteClip(clipId);
     expect((await loadSegmentClip(segmentId)).kind).toBe("clip-missing");
 
     // The resolver reads; it does not repair and it does not latch. Storing
-    // the audio under the id the take already names is enough.
-    await putClip(clipId, samples(40), CANONICAL_SAMPLE_RATE);
+    // the audio under the id the take already names is enough. Stored
+    // directly: no app write puts a clip back under a take it does not write.
+    await storeOrphanClip(clipId, samples(40));
     expect((await loadSegmentClip(segmentId)).kind).toBe("resolved");
   });
 });
@@ -1289,7 +1298,7 @@ describe("shelf order: books stay put (#1185)", () => {
     const book = await createBook(name);
     const chapter = await addChapter(book.id);
     const segment = await addSegment(chapter.id);
-    await addTake(segment.id, await storedClip(), 100);
+    await recordTake(segment.id);
     return { bookId: book.id, chapterId: chapter.id, segmentId: segment.id };
   };
 
@@ -1301,10 +1310,7 @@ describe("shelf order: books stay put (#1185)", () => {
     ["a cover colour change", (t) => setBookCoverColour(t.bookId, "forest")],
     ["a chapter rename", (t) => renameChapter(t.chapterId, "Mark 6")],
     ["deleting a segment", (t) => deleteSegment(t.segmentId)],
-    [
-      "recording a take",
-      async (t) => addTake(t.segmentId, await storedClip(), 100),
-    ],
+    ["recording a take", async (t) => recordTake(t.segmentId)],
     ["clearing a take", (t) => clearSegmentTake(t.segmentId)],
   ])("%s leaves the listBooks order unchanged", async (_label, write) => {
     const oldest = await recordedBook("oldest");
@@ -1350,17 +1356,20 @@ describe("shelf order: books stay put (#1185)", () => {
     ]);
   });
 
-  it("orders books created in the same millisecond by id, ascending", async () => {
-    // Pins the tie rule; no line in `listBooks` implements it. `getAll`
-    // returns rows in primary-key order (IndexedDB 3.0, "retrieve multiple
-    // values from an object store") and `Array.prototype.sort` is stable
-    // (ECMA-262 since ES2019), so a `createdAt` tie keeps id order.
+  it("stacks books created in the same millisecond newest on top (#338)", async () => {
+    // Before #338 a `createdAt` tie fell back to id order. The shelf is now
+    // read by the stored position, and each create puts its book at the top,
+    // so the clock no longer decides: the last book made is first. The old
+    // tie rule survives only in the v11 upgrade, which writes down the order
+    // the shelf showed (pinned in `db-migration.test.ts`).
     const a = await createBook("a", null, 5_000);
     const b = await createBook("b", null, 5_000);
     const c = await createBook("c", null, 5_000);
 
-    expect((await listBooks()).map((book) => book.id)).toEqual(
-      [a.id, b.id, c.id].sort()
-    );
+    expect((await listBooks()).map((book) => book.id)).toEqual([
+      c.id,
+      b.id,
+      a.id,
+    ]);
   });
 });

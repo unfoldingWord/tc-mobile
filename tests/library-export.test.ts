@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import {
+  type BookLabel,
   estimateLibraryZipBytes,
   exportBookZip,
   exportLibraryZip,
@@ -31,9 +32,10 @@ import { clearAllStores, testCodec } from "./support";
  * folder namer is the raw book name, so the export's own path-safety is what
  * the sanitising test below exercises.
  */
-const nameBook = (bookName: string): string => bookName;
-const nameChapter = (bookName: string, n: number): string =>
-  strings.shareFilename(bookName, n);
+const nameBook = (book: BookLabel): string =>
+  strings.bookHeading(book.name, book.number);
+const nameChapter = (book: BookLabel, n: number): string =>
+  strings.shareFilename(strings.bookHeading(book.name, book.number), n);
 
 const samples = (n: number, value: number): Int16Array =>
   Int16Array.from({ length: n }, () => value);
@@ -110,7 +112,7 @@ describe("exportLibraryZip", () => {
       const soloSink = memoryArchiveSink();
       const solo = await exportBookZip(
         bookId,
-        (n) => nameChapter(name, n),
+        (n) => nameChapter({ name, number: 1 }, n),
         testCodec(),
         soloSink
       );

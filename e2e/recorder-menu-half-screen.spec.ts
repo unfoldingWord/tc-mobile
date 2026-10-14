@@ -41,13 +41,6 @@ test.use({
   },
 });
 
-/** Opt into the O4 look before the app boots (`lib/design.ts`'s key). */
-async function useO4(page: Page) {
-  await page.addInitScript(() => {
-    window.localStorage.setItem("tc-mobile.design", "o4");
-  });
-}
-
 async function recordShortTake(page: Page) {
   await page.getByRole("button", { name: "Record", exact: true }).click();
   const stop = page.getByRole("button", {
@@ -77,9 +70,7 @@ for (const viewport of VIEWPORTS) {
       width: viewport.width,
       height: viewport.height,
     });
-    await useO4(page);
     await seedToRecorder(page);
-    await expect(page.locator("html")).toHaveAttribute("data-design", "o4");
     await recordShortTake(page);
 
     await page

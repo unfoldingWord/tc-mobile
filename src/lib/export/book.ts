@@ -43,8 +43,8 @@ import {
 import { getClipMeta } from "@/lib/storage/clips";
 import { filenameSafe } from "@/lib/utils";
 import type { AudioCodec } from "@/types/audio";
-import type { BookId, Chapter } from "@/types/domain";
-import { Zip, ZipPassThrough } from "fflate";
+import type { Book, BookId, Chapter } from "@/types/domain";
+import type { Zip, ZipPassThrough } from "fflate";
 
 /**
  * Where a streaming archive's bytes go, in archive order, as fflate produces
@@ -175,6 +175,8 @@ function uniqueEntryName(taken: Set<string>, name: string): string {
  */
 interface ZipSink {
   readonly zip: Zip;
+  /** A stored (pass-through) entry for `name`, ready for `zip.add`. */
+  entry(name: string): ZipPassThrough;
   /** The first error fflate reported, if any. */
   error(): Error | null;
   /**
@@ -186,7 +188,10 @@ interface ZipSink {
   drain(): Promise<void>;
 }
 
-function openZipSink(sink: ArchiveSink): ZipSink {
+async function openZipSink(sink: ArchiveSink): Promise<ZipSink> {
+  // Loaded when a zip is first needed, not at startup: fflate is only used by
+  // Share Book and Share your work, so it stays out of the entry chunk (#161).
+  const { Zip, ZipPassThrough } = await import("fflate");
   let pending: Promise<void>[] = [];
   let zipError: Error | null = null;
   const zip = new Zip((err, chunk) => {
@@ -200,6 +205,7 @@ function openZipSink(sink: ArchiveSink): ZipSink {
   });
   return {
     zip,
+    entry: (name) => new ZipPassThrough(name),
     error: () => zipError,
     drain: async () => {
       const writes = pending;
@@ -280,7 +286,7 @@ async function addChaptersToZip(
     // Stored entry: fflate computes the CRC over the MP3 and emits the buffer
     // itself as the data chunk. `result.mp3` is dropped after this iteration;
     // the archive's reference to it is the one copy that remains.
-    const entry = new ZipPassThrough(`${folder}${name}`);
+    const entry = sink.entry(`${folder}${name}`);
     sink.zip.add(entry);
     entry.push(result.mp3, true);
     // This chapter's bytes reach the sink before the next chapter is encoded
@@ -367,7 +373,7 @@ export async function exportBookZip(
   // dangling chapter would export as if whole.
   const { chapters, missing: danglingChapters } =
     await resolveBookChapters(bookId);
-  const zip = openZipSink(sink);
+  const zip = await openZipSink(sink);
   const added = await addChaptersToZip(
     zip,
     chapters,
@@ -417,14 +423,23 @@ function folderStem(label: string, position: number): string {
 }
 
 /**
+ * What a library export hands its naming callbacks about a book: the
+ * facilitator's name, or `null` with the placeholder slot to render (#169).
+ * The words stay the caller's — this layer holds no copy.
+ */
+export type BookLabel = Pick<Book, "name" | "number">;
+
+/**
  * Share your work (#987): every book in one zip, one folder per book, each
  * folder holding exactly the entries Share Book would put in that book's own
- * zip. Books go in shelf order (`listBooks`). Returns `null` for an empty
+ * zip. Books go in the person's shelf order (`listBooks`, #338) — the order
+ * the Books screen shows (DRI decision on PR #1367). Returns `null` for an empty
  * library, a library with no resolvable audio anywhere, or a run cancelled
  * part-way — a clean no-op for the caller, not an error.
  *
  * `nameBook` names each folder and `nameChapter` each MP3 inside it, both from
- * the book's display name (and, for an MP3, the chapter's number and name):
+ * the book's label — its own name, or `null` and the placeholder slot the
+ * caller renders (#169) — and, for an MP3, the chapter's number and name:
  * copy is injected, as for `exportBookZip`. A folder name is disambiguated
  * against its siblings with ` (2)`, ` (3)`, … so two books with one name keep
  * both books' audio. Names that differ only in case
@@ -440,9 +455,9 @@ function folderStem(label: string, position: number): string {
  * share.
  */
 export async function exportLibraryZip(
-  nameBook: (bookName: string) => string,
+  nameBook: (book: BookLabel) => string,
   nameChapter: (
-    bookName: string,
+    book: BookLabel,
     chapterNumber: number,
     chapterName: string | null
   ) => string,
@@ -451,7 +466,7 @@ export async function exportLibraryZip(
   shouldContinue?: () => boolean
 ): Promise<LibraryExport | null> {
   const books = await listBooks();
-  const zip = openZipSink(sink);
+  const zip = await openZipSink(sink);
   const takenFolders = new Set<string>();
   let included = 0;
   let missing = 0;
@@ -464,7 +479,7 @@ export async function exportLibraryZip(
     );
     const folder = uniqueName(
       takenFolders,
-      folderStem(nameBook(book.name), index + 1),
+      folderStem(nameBook(book), index + 1),
       "",
       folderKey
     );
@@ -472,7 +487,7 @@ export async function exportLibraryZip(
       zip,
       chapters,
       `${folder}/`,
-      (n, name) => nameChapter(book.name, n, name),
+      (n, name) => nameChapter(book, n, name),
       codec,
       shouldContinue
     );

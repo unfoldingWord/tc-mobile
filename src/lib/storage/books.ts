@@ -6,7 +6,7 @@
  * and the order of that concatenation is a decision the user makes, not a
  * property of the data.
  *
- * The take writes and the finished flag are NOT here: `addTake`, `saveTake`,
+ * The take writes and the finished flag are NOT here: `saveTake`,
  * `clearSegmentTake`, `setSegmentFinished` and `isFinished` are in `takes.ts`
  * (#160, L-16), which keeps every take-lifecycle status transition and the
  * read the view layer calls in one place. `addSegment` below is the one
@@ -38,15 +38,16 @@ const uuid = (): string => crypto.randomUUID();
 // ── Books ──────────────────────────────────────────────────────────────────
 
 /**
- * The placeholder name for a new book: the FIRST "Book NNN" not already on the
- * shelf, three-digit padded ("Book 001", "Book 002" …).
+ * The placeholder SLOT for a new book: the first one no unnamed book on the
+ * shelf is already showing. 1-based, and rendered as "Book 001" by the string
+ * table, never here (#169).
  *
- * Pure, and the single definition of the placeholder — both callers go through
- * it, so the name the New Book field is pre-filled with (the Books screen, off
- * the shelf it has already loaded) and the name a blank confirm actually writes
+ * Pure, and the single definition of the slot — both callers go through it, so
+ * the placeholder the New Book field is pre-filled with (the Books screen, off
+ * the shelf it has already loaded) and the slot a blank confirm actually writes
  * ({@link createBook}) cannot drift (#314). The pre-fill is DISPLAY only: an
- * untouched field is confirmed as `""`, so the name that lands is always the one
- * derived inside the write transaction below, never the rendered string.
+ * untouched field is confirmed as `""`, so the row that lands is always derived
+ * inside the write transaction below, never from the rendered string.
  *
  * **First unused, not `count + 1`** (#360). The count-based namer this replaces
  * assumed books are only ever added. Once a book can be deleted, deleting
@@ -57,16 +58,28 @@ const uuid = (): string => crypto.randomUUID();
  * book it is about to destroy — on a screen built for people who may not read,
  * where discarding practice books is the normal training workflow.
  *
- * Matching is exact on the stored name. A facilitator's own name ("Mark")
- * occupies no slot, and "Book 1" is not a string this ever writes, so neither
- * blocks "Book 001". The loop is bounded by the number of names + 1: with N
- * names, at most N of the first N + 1 candidates can be taken.
+ * **Only UNNAMED books hold a slot against this** — that is what makes the rule
+ * survive translation. Before #169 the placeholder was matched as a stored
+ * string, so a facilitator who typed the literal "Book 003" reserved slot 3 and
+ * a book renamed away from it released one. Now the comparison is over slots,
+ * which no UI language changes: a typed name occupies nothing (as "Mark" never
+ * did), and a renamed book releases the slot it is no longer showing. The one
+ * narrowing is a facilitator who types this locale's placeholder wording by
+ * hand — two rows can then read alike, exactly as two "Mark"s already can, and
+ * unlike the #360 case it takes a deliberate retype to reach.
+ *
+ * The loop is bounded by the number of books + 1: with N books, at most N of
+ * the first N + 1 slots can be taken.
  */
-export function nextBookName(existingNames: Iterable<string>): string {
-  const taken = new Set(existingNames);
+export function nextBookNumber(
+  books: Iterable<Pick<Book, "name" | "number">>
+): number {
+  const taken = new Set<number>();
+  for (const book of books) {
+    if (book.name === null) taken.add(book.number);
+  }
   for (let n = 1; ; n++) {
-    const candidate = `Book ${String(n).padStart(3, "0")}`;
-    if (!taken.has(candidate)) return candidate;
+    if (!taken.has(n)) return n;
   }
 }
 
@@ -75,18 +88,24 @@ export function nextBookName(existingNames: Iterable<string>): string {
  *
  * The name is trimmed, exactly as {@link renameBook} trims it — one validation
  * rule for the one naming field, wherever it is shown. A blank or
- * whitespace-only name is not an error: it falls back to the "Book NNN"
- * placeholder, which is what preserves the one-tap New Book the corner `+` used
- * to be.
+ * whitespace-only name is not an error: the book is simply stored UNNAMED and
+ * shows its placeholder, which is what preserves the one-tap New Book the
+ * corner `+` used to be. Nothing writes the placeholder's words to disk (#169).
  *
- * The fallback is derived INSIDE the one readwrite transaction that writes the
+ * The slot is derived INSIDE the one readwrite transaction that writes the
  * row, never from a screen's render state: two rapid blank confirms both reading
- * an empty shelf from the same render would both persist "Book 001". IndexedDB
+ * an empty shelf from the same render would both persist slot 1. IndexedDB
  * serialises overlapping readwrite transactions, so deriving and putting in one
- * transaction gives the second confirm the first's write — "Book 001", then
- * "Book 002". That race-safety is the property `createNextBook` held before
- * #314 split naming off from creating, and it is preserved here rather than
- * moved to the caller.
+ * transaction gives the second confirm the first's write — slot 1, then slot 2.
+ * That race-safety is the property `createNextBook` held before #314 split
+ * naming off from creating, and it is preserved here rather than moved to the
+ * caller.
+ *
+ * The shelf read is now UNCONDITIONAL, where the string-named version skipped
+ * it whenever a name was typed. Every row carries a slot, so the field means
+ * one thing on every book rather than holding a placeholder value on the ones
+ * born named; and the read is a `getAll` over a metadata-only store (no clip
+ * bytes live here) at the frequency a person taps Create.
  *
  * A supplied name is never made unique: a facilitator may deliberately have two
  * books called "Mark", and {@link renameBook} has always allowed it. That is
@@ -98,45 +117,77 @@ export function nextBookName(existingNames: Iterable<string>): string {
 export async function createBook(
   name: string,
   languageCode: string | null = null,
-  now: number = Date.now()
+  now: number = Date.now(),
+  coverColourKey: string | null = null
 ): Promise<Book> {
   const db = await getDb();
   const tx = db.transaction("books", "readwrite");
   const trimmed = name.trim();
-  // Read the shelf only when the name is actually blank — a typed name needs no
-  // placeholder, and `getAll` is the expensive half of this transaction.
-  const resolvedName =
-    trimmed === ""
-      ? nextBookName((await tx.store.getAll()).map((b) => b.name))
-      : trimmed;
-  const book: Book = {
-    id: uuid() as BookId,
-    name: resolvedName,
-    languageCode,
-    chapterIds: [],
-    createdAt: now,
-    updatedAt: now,
-    // Unset by default — the facilitator has not chosen one yet (#957).
-    // `resolveCoverKey` derives a colour from the id until they do.
-    coverColourKey: null,
-  };
-  await tx.store.put(book);
-  await tx.done;
-  return book;
+  try {
+    const shelf = await tx.store.getAll();
+    const book: Book = {
+      id: uuid() as BookId,
+      name: trimmed === "" ? null : trimmed,
+      number: nextBookNumber(shelf),
+      languageCode,
+      chapterIds: [],
+      createdAt: now,
+      updatedAt: now,
+      // Unset by default — the facilitator has not chosen one yet (#957).
+      // `resolveCoverKey` derives a colour from the id until they do. The New
+      // Book sheet may pass one (#1190) so the colour lands in this same write
+      // rather than in a second one after it. Like `setBookCoverColour`, this
+      // does not validate against the live palette; the picker only offers it.
+      coverColourKey,
+      // A new book lands at the TOP of the shelf (#338), as it always has; the
+      // books already there move down one, in the order the user left them.
+      shelfPosition: 0,
+    };
+    await tx.store.put(book);
+    for (const [index, row] of byShelfPosition(shelf).entries()) {
+      if (row.shelfPosition !== index + 1) {
+        await tx.store.put({ ...row, shelfPosition: index + 1 });
+      }
+    }
+    await tx.done;
+    return book;
+  } catch (cause) {
+    // One transaction: a put that threw mid-renumber must not commit the new
+    // row and a partly renumbered shelf (#1369), as in moveBook.
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw cause;
+  }
 }
 
 /**
- * Every book, newest-CREATED first (#1185, DRI 2026-09-28: "books stay put").
- * A new book lands at the top; no later write moves a book, because nothing
- * writes `createdAt` after `createBook`. `updatedAt` is still bumped by the
- * writes that are activity on a book, but it does not order the shelf.
+ * `books` in shelf order: by `shelfPosition`, top first. Pure, and the one
+ * definition of that order, shared by {@link listBooks} and the two writes
+ * that renumber the shelf ({@link createBook}, {@link moveBook}). A tie —
+ * which only a database a second copy of the app wrote at the same moment
+ * could hold — falls back to the pre-#338 rule, newest created first, and
+ * then to key order (`getAll`'s order; the sort is stable).
+ */
+function byShelfPosition(books: readonly Book[]): Book[] {
+  return books
+    .slice()
+    .sort(
+      (a, b) => a.shelfPosition - b.shelfPosition || b.createdAt - a.createdAt
+    );
+}
+
+/**
+ * Every book, in the user's shelf order (#338): `shelfPosition`, top first.
  *
- * Books with the same `createdAt` keep primary-key (id) order: `getAll`
- * returns rows in key order, and `Array.prototype.sort` is stable.
+ * A new book lands at the top ({@link createBook}); after that a book moves
+ * only when the user moves it ({@link moveBook}). Nothing else writes the
+ * position — a rename, a cover colour or work inside a book bumps `updatedAt`
+ * at most, and `updatedAt` does not order the shelf (#1185, DRI 2026-09-28:
+ * "books stay put"). The v11 upgrade wrote the order the shelf showed before
+ * this field existed (newest created first), so nothing moved on upgrade.
  */
 export async function listBooks(): Promise<Book[]> {
   const db = await getDb();
-  return (await db.getAll("books")).sort((a, b) => b.createdAt - a.createdAt);
+  return byShelfPosition(await db.getAll("books"));
 }
 
 export async function getBook(id: BookId): Promise<Book | undefined> {
@@ -149,11 +200,13 @@ export async function getBook(id: BookId): Promise<Book | undefined> {
  *
  * Get-then-put in ONE readwrite transaction — the idempotency bar, never a
  * read-tx-then-write-tx seam. The new name is trimmed; a blank/whitespace-only
- * rename is refused (a book must always have a non-empty name) and keeps the
- * current one. Renaming to the current name writes nothing and does NOT bump
- * `updatedAt`, so a re-run is a true no-op. Any real rename bumps `updatedAt`
- * — labelling a book is activity — and the book keeps its place on the shelf
- * ({@link listBooks} orders by `createdAt`).
+ * rename is refused and keeps the current value, so a book that has never been
+ * named stays unnamed and goes on showing its placeholder rather than acquiring
+ * that placeholder's words as a real name (#169). Renaming to the current name
+ * — `null` included — writes nothing and does NOT bump `updatedAt`, so a re-run
+ * is a true no-op. Any real rename bumps `updatedAt` — labelling a book is
+ * activity — and the book keeps its place on the shelf ({@link listBooks}
+ * orders by `shelfPosition`, #338).
  *
  * Concurrent renames deliberately use transaction-creation-order last-write-wins
  * (#394). The read and write stay in one readwrite transaction. The same-tab
@@ -173,7 +226,9 @@ export async function renameBook(
   if (!book) throw new Error(`No such book: ${id}`);
 
   const trimmed = name.trim();
-  // Blank keeps the current name — the invariant that a book is always named.
+  // Blank keeps the current value — a named book keeps its name, and an
+  // unnamed one stays unnamed (#169). The invariant is that a book is always
+  // LABELLED: by the facilitator's name, or by the placeholder its slot renders.
   const nextName = trimmed === "" ? book.name : trimmed;
   if (nextName === book.name) {
     await tx.done; // idempotent no-op: no write, no recency bump.
@@ -193,10 +248,10 @@ export async function renameBook(
  * The `renameBook` rules, deliberately: get-then-put in ONE readwrite
  * transaction — the idempotency bar. `key` is stored as given — a palette key
  * such as `"forest"`, or `null` to clear back to the derived fallback
- * (`lib/cover-colour.ts`'s `resolveCoverKey`). Unlike a book's name, `null` is
- * a real, first-class value here rather than something trimming falls back
- * to: a book is always named, but "no chosen colour" is the normal starting
- * state for every book, so there is nothing to refuse.
+ * (`lib/cover-colour.ts`'s `resolveCoverKey`). Unlike a rename, a `null` here
+ * is something a caller may set: a blank rename keeps the current name, but
+ * "no chosen colour" is the normal starting state for every book and a caller
+ * may return to it, so there is nothing to refuse.
  *
  * This function does not validate `key` against the live palette. That is a
  * deliberate split, not an oversight, and it holds even though the ten keys
@@ -325,7 +380,7 @@ type DeleteBookTx = ReturnType<typeof openDeleteBookTx>;
  *     the intent and not the current implementation — but this deletes many
  *     clips at once, so an unconditional delete would, the day an import
  *     dedupes, punch a book's worth of holes in another book's audio. Same
- *     guard `clearSegmentTake` already holds; `addTake`'s is #68.
+ *     guard `clearSegmentTake` already holds; the take write's is #68.
  *
  * **The walk goes by the parent links, not the ordering arrays.** `chapterIds`
  * and `segmentIds` are denormalised order; `chapter.bookId` and
@@ -537,10 +592,10 @@ async function abortQuietly(
  * its own write transaction, and the Books screen calls it over the chapters it
  * has already loaded to pre-fill the Add-chapter prompt (#609). One function,
  * so the "Chapter N" the field offers and the `number` the write derives cannot
- * drift, the way {@link nextBookName} already ties the New Book field to
+ * drift, the way {@link nextBookNumber} already ties the New Book field to
  * {@link createBook}.
  *
- * **`max + 1`, deliberately NOT {@link nextBookName}'s first-unused rule.** A
+ * **`max + 1`, deliberately NOT {@link nextBookNumber}'s first-unused rule.** A
  * book's placeholder is a label and reusing a freed one is the point (#360); a
  * chapter's `number` is its position in the export concatenation, so filling a
  * hole left by a removed chapter would drop the new recording into the middle
@@ -626,7 +681,8 @@ export async function getChapter(id: ChapterId): Promise<Chapter | undefined> {
  * A real rename also bumps the parent book's `updatedAt` in the SAME transaction
  * — labelling a chapter is activity on its book, exactly as `addChapter`,
  * `renameBook` and recording are (G4). The book keeps its place on the shelf
- * ({@link listBooks} orders by `createdAt`). The no-op path skips the bump.
+ * ({@link listBooks} orders by `shelfPosition`, #338). The no-op path skips
+ * the bump.
  *
  * Concurrent renames use the same transaction-order last-write-wins policy as
  * {@link renameBook} (#394). The scope overlaps `renameBook` on `books`, so a
@@ -693,7 +749,7 @@ export async function renameChapter(
  *   - **No `updatedAt` bump** (scope Q4): a reorder is not recorded as
  *     activity on the book. This is the one tree edit that differs from
  *     `renameChapter` here, on purpose. (The shelf order does not depend on
- *     it: {@link listBooks} orders by `createdAt`, #1185.)
+ *     it: {@link listBooks} orders by `shelfPosition`, #338.)
  *   - **Idempotent.** The target is absolute, so a re-run lands in the same
  *     state; a move that leaves the order as it was writes nothing at all.
  *
@@ -741,6 +797,62 @@ export async function moveChapter(
     }
     await tx.done;
     return renumbered;
+  } catch (cause) {
+    await abortQuietly(() => tx.abort(), tx.done);
+    throw cause;
+  }
+}
+
+/**
+ * Move one book to an absolute position on the shelf (#338 — press-and-hold
+ * reorder on the Books screen; the book twin of {@link moveChapter}).
+ *
+ * `toIndex` counts the books in shelf order ({@link listBooks}), which is
+ * exactly the cards `use-books.ts` holds. An out-of-range target clamps to the
+ * top or the bottom ({@link moveToIndex}).
+ *
+ * The rules, and why — each one {@link moveChapter}'s:
+ *
+ *   - **ONE readwrite transaction** over `books`, get-then-put, aborted on a
+ *     thrown error, so the shelf's positions commit together or not at all.
+ *   - **Dense**: every book's `shelfPosition` becomes its place in the new
+ *     order, 0..N-1, and only rows whose position changes are written.
+ *   - **No `updatedAt` bump**: moving a book is not activity on it.
+ *   - **Idempotent.** The target is absolute, so a re-run lands in the same
+ *     state; a move that leaves the order as it was writes nothing at all.
+ *
+ * Returns every book in the new shelf order, with the positions they now
+ * hold.
+ */
+export async function moveBook(
+  bookId: BookId,
+  toIndex: number
+): Promise<Book[]> {
+  assertReorderTarget(toIndex);
+  const db = await getDb();
+  const tx = db.transaction("books", "readwrite");
+  try {
+    const shelf = byShelfPosition(await tx.store.getAll());
+    const from = shelf.findIndex((book) => book.id === bookId);
+    if (from === -1) throw new Error(`No such book: ${bookId}`);
+    const order = moveToIndex(shelf, from, toIndex);
+    if (order.every((book, i) => book === shelf[i])) {
+      await tx.done; // idempotent no-op: no write.
+      return shelf;
+    }
+    const placed: Book[] = [];
+    for (const [position, book] of order.entries()) {
+      if (book.shelfPosition === position) {
+        placed.push(book);
+        continue;
+      }
+      // No `updatedAt`: a reorder is not activity on the book.
+      const updated: Book = { ...book, shelfPosition: position };
+      await tx.store.put(updated);
+      placed.push(updated);
+    }
+    await tx.done;
+    return placed;
   } catch (cause) {
     await abortQuietly(() => tx.abort(), tx.done);
     throw cause;
@@ -958,7 +1070,7 @@ const DELETE_SEGMENT_STORES = [
  *   - **Editing is activity**: the book's `updatedAt` is bumped in the same
  *     transaction — the bump `clearSegmentTake`/`writeTakeInTx` make for
  *     exactly this reason. The book keeps its place on the shelf
- *     ({@link listBooks} orders by `createdAt`, #1185).
+ *     ({@link listBooks} orders by `shelfPosition`, #338).
  *     **Inference, not a recorded decision**: `moveSegment`/`moveChapter`
  *     deliberately do NOT bump for a pure reorder (scope Q4), but a delete
  *     also discards a recording (or the last trace of an empty row), which is
@@ -1090,7 +1202,7 @@ export async function getSegmentsOfChapter(
  * Known corner (documented, cheap to revisit): an externally-corrupted
  * `affirmed`-but-dangling segment counts as finished (and recorded) here while
  * its row renders as never-recorded. It is near-unreachable by construction —
- * `addTake` demotes `affirmed → draft` and `setSegmentFinished(true)` requires
+ * `saveTake` demotes `affirmed → draft` and `setSegmentFinished(true)` requires
  * an active take, so only external clip loss produces it — and a full audio
  * walk per segment on every render is not worth its cost.
  */

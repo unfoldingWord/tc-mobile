@@ -261,6 +261,75 @@ describe("arm, then reveal", () => {
     expect(document.activeElement?.id).toBe("a-open");
   });
 
+  describe("how `.focus()` is called (#800, DRI: split it)", () => {
+    // A spy on the prototype pins the ARGUMENTS, which `document.activeElement`
+    // cannot: a hand-off with and without `preventScroll` focuses the same node.
+    const realFocus = HTMLElement.prototype.focus;
+    let calls: { id: string; options: FocusOptions | undefined }[];
+
+    beforeEach(() => {
+      calls = [];
+      HTMLElement.prototype.focus = function (
+        this: HTMLElement,
+        options?: FocusOptions
+      ) {
+        calls.push({ id: this.id, options });
+        realFocus.call(this, options);
+      };
+    });
+
+    afterEach(() => {
+      HTMLElement.prototype.focus = realFocus;
+    });
+
+    it("a delete-confirm lift keeps the viewport: preventScroll true", () => {
+      act(() => {
+        api().armFocus("a", { preventScroll: true });
+        api().reveal(false);
+      });
+      expect(calls).toEqual([
+        { id: "a-open", options: { preventScroll: true } },
+      ]);
+    });
+
+    it("a fresh create scrolls the row in, and its focus is the ordinary one", () => {
+      act(() => {
+        api().armScroll("a");
+        api().armFocus("a");
+        api().reveal(false);
+      });
+      expect(scrolled).toEqual(["a"]);
+      expect(calls).toEqual([
+        { id: "a-open", options: { preventScroll: false } },
+      ]);
+    });
+
+    it("keeps preventScroll on a held hand-off until the hold lifts", () => {
+      act(() => {
+        api().armFocus("a", { preventScroll: true });
+        api().reveal(true);
+      });
+      expect(calls).toEqual([]);
+      act(() => api().reveal(false));
+      expect(calls).toEqual([
+        { id: "a-open", options: { preventScroll: true } },
+      ]);
+    });
+
+    it("a later plain arm does not inherit an earlier preventScroll", () => {
+      act(() => {
+        api().armFocus("a", { preventScroll: true });
+        api().reveal(false);
+        api().armFocus("b");
+        api().reveal(false);
+      });
+      expect(calls.map((c) => c.options)).toEqual([
+        { preventScroll: true },
+        { preventScroll: false },
+      ]);
+    });
+  });
+
   it("arming null focuses nothing, so a decision with no target needs no branch", () => {
     // Hook policy, not a reachable screen path — the same shape as the
     // never-arrived case above. `armFocus` takes `Id | null` so a caller can

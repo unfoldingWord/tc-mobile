@@ -7,7 +7,7 @@ import { cssRule, declarationValue, stripCssComments } from "./support";
 
 /**
  * #1259: the glyphs inside the round bottom-bar buttons are drawn 25% larger
- * under O4, and the circles keep their size. `Icon` writes width/height as
+ * (O4), and the circles keep their size. `Icon` writes width/height as
  * SVG attributes (22 by default, 24 for the edit bar's quiet controls); a CSS
  * declaration beats an attribute, so the size is a rule in
  * `o4/recorder.css` and a declared-value read is what can pin it here
@@ -16,7 +16,7 @@ import { cssRule, declarationValue, stripCssComments } from "./support";
  */
 const ROOT = path.resolve(import.meta.dirname, "..");
 const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8");
-const O4 = '[data-design="o4"]';
+const O4 = ":root";
 
 /** Prettier wraps long selectors; `cssRule` matches one on the opening line. */
 function flatten(css: string): string {

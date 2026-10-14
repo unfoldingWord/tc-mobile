@@ -11,6 +11,445 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-12 (day) — Sprint 4 day 8: four lane waves, 21 PRs merged, the v1.1.0 bump opened and red-teamed
+
+### Decisions (DRI, 2026-10-12)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **Wave 1:** "Launch W1 as listed (Recommended)".
+- **Dependabot #1391 and #1392:** "Two takeovers, then #1381 (Recommended)".
+- **Closures:** "#1278, #861, #1265".
+- **Merges this session:** "I merge, same rule as 10-09 (Recommended)", and later in the day "approved to merge on clean and green today". A PR merged with a `uwreview` APPROVED review at its head, green CI and a local combined check, one at a time, pinned with `--match-head-commit`, using `--admin`. The DRI merged #1403.
+- **#1360:** "Close, move Lows (Recommended)".
+- **#1379 item 4** (a cancelled phone check wiped the last report): "Keep the last report (Recommended)".
+- **Dependabot #1410:** "Takeover lane (Recommended)".
+- **Next wave:** "Cut the v1.1.0 tester build".
+- **Version:** "1.1.0". Option text: "Bump straight to 1.1.0 now. The tester build and the sprint-end production build would share a version number unless a fix forces 1.1.1."
+- **Cut scope:** "Wait for both (Recommended)" (#1417 and #1418).
+- **Red team:** "Full red team (Recommended)".
+- **End of session:** "check for merge ready and proceed, after prod red team, stop and eod and merge the docs pr."
+
+### Merged to develop
+
+Each merge had a `uwreview` APPROVED review at its head and green CI. All but four also had a local combined check on the head merged with the develop of its moment (`npm ci`, `typecheck`, `typecheck:lib`, `knip`, `test:coverage`, and the two whole-tree test files alone). The four without: #1393 and #1397, whose base had moved only by a docs file or not at all; #1403, which the DRI merged; and #1420, documentation only, whose head sat directly on develop's tip with the lane's `verify` green on that tree. Each triage comment says so, where there is one. The combined check does not run e2e, the build or `test:dist`; CI ran those on each PR head.
+
+| PR    | Merged at  | What                                                                                                                                                                                                       |
+| ----- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #1393 | `80d395fd` | CONTRIBUTING's merge bullet reworded, author clause first, the pin command named (Refs #962)                                                                                                               |
+| #1397 | `6322f5a2` | Takeover of Dependabot #1391: the npm minor/patch group. `@oxc-project/runtime` pinned to 0.153.0, the version Rolldown 1.2.13 requires                                                                    |
+| #1395 | `d6b67485` | One focus move when the book sheet closes over its delete ask (Refs #1387)                                                                                                                                 |
+| #1394 | `d1fdad22` | A share label whose first grapheme cluster is over the byte budget is kept, with a code-point fallback (Refs #1233)                                                                                        |
+| #1399 | `b2040e13` | `createBook` abort tests keyed on the record, plus a rejection case (closed #1378)                                                                                                                         |
+| #1400 | `2530556a` | The native side of the outcome-only library failure line is pinned (Refs #1333)                                                                                                                            |
+| #1402 | `60aac616` | Run ids and run-outcome prose removed from workflow comments (Refs #575)                                                                                                                                   |
+| #1401 | `4e9383b7` | `ruleLevelFor` comment, lazy ESLint instance, nav-back-to-books wording (closed #1389)                                                                                                                     |
+| #1404 | `5f454ea2` | Facilitator runbook: the keep-file guard and the microphone grant wording (Refs #248)                                                                                                                      |
+| #1407 | `b1ac6ba6` | Takeover of Dependabot #1392: `vite-plugin-pwa` 2.0.0                                                                                                                                                      |
+| #1396 | `1db6c5fd` | Phone check: the device read honours the abort, and a read-phase seam (Refs #1379). Titled `test`, but it adds production code                                                                             |
+| #1406 | `1e6cf82a` | The deferred test items from #1233: namer seam, dots fit, close latch                                                                                                                                      |
+| #1398 | `43144b68` | Release runbook §5: the rollback read fails the step on any bad origin and rejects control characters (Refs #1321)                                                                                         |
+| #1409 | `f133fc99` | `filenameSafe` prefixes `_` to a label whose stem is a Windows device name (Refs #163)                                                                                                                     |
+| #1411 | `3ebb2766` | Order marker in the segment-rename reload race test; the phone-check callback audit found no racy site (Refs #1360)                                                                                        |
+| #1413 | `f8f71a86` | The popstate selector subtraction pinned; the duplicated `strings.ts` docblock trimmed (Refs #1317)                                                                                                        |
+| #1412 | `c730a070` | Disclosed dependency versions are read from the installed packages, and the notices' versions are filled at build time (closed #1381). Titled `test`, but it changes the build                             |
+| #1403 | `3e4aecb9` | Dependabot: three GitHub Actions pins (merged by the DRI)                                                                                                                                                  |
+| #1417 | `3111fb3d` | Phone check: an aborted run writes the earlier report back (Refs #1379, item 4)                                                                                                                            |
+| #1418 | `34b1b6af` | Takeover of Dependabot #1410: Capacitor 8.5.2 to 8.5.3 on both shells with the Swift package pin, Vite 8.3.4, Playwright, knip, wrangler                                                                   |
+| #1420 | `d8cbd95a` | Docs: a rollback strands phones that opened a newer schema (AGENTS.md, release runbook §5, facilitator runbook), and one staleness rule in `dual-review.md`. Two of the red team's four items (Refs #1321) |
+
+Develop CI was green at `34b1b6af` (Code Quality and Build). #1420 merged after that run and changes documentation only.
+
+### Closed
+
+- With evidence comments: #1278, #861, #1265, #1317 (every item checked on develop; the #1125 mutant now fails the suite), #1360.
+- By merge: #1378, #1389, #1381.
+- Dependabot #1391, #1392 and #1410, each superseded by its takeover.
+
+### Filed
+
+- **#1408:** Lows from #1399.
+- **#1414:** three Lows on the popstate selector pin (#1413).
+- **#1415:** the licence version fill: fail the build on an unfilled notice, pin the precache revision (#1412).
+- **#1416:** three follow-ups on the rename-race order marker, moved off #1360.
+- **#1421:** the red team's batched follow-ups (Sprint 5).
+- **Added to existing issues:** #1233, #962, #163, #1321, #1379 (six follow-ups from #1417, one of them the coordinator's unverified reading that a screen reopened while an aborted run winds down shows an empty report once), and device rows on #974.
+
+### The v1.1.0 cut
+
+- **Bump PR #1419** (`chore(release): v1.1.0`) is open at head `94122153a7563d89e7d310b163ef7cfc58e3d897`, tree `3957527da8846f47ff3d7a7c9824a1a034335873`. It changes three version strings. Both lenses are clean, the bench approved, CI is green. **It is not merged:** the release checklist makes that merge the DRI's. It carries 78 PRs from staging `3b5e098da6e182ab149ae21cf1b916df046d5fb1`.
+- **This entry's PR merges to develop before the bump**, so the bump's squash commit will carry this file on top of the tree the red team read. The check before the release ref is cut is on #1419.
+- **`DB_VERSION` goes 9 to 11** (#1346, #1367). Both steps open only the `books` store.
+- **Docs PR #1420** merged at `d8cbd95a`. It and this entry are on develop ahead of the bump, so the bump's squash commit differs from the red-teamed head by documentation only.
+- **The red-team reports, the carried-PR classification and the tester announcement draft** are in the coordinator's scratch folder, `temp/tc-mobile-release-1.1.0/` in the uW workspace, not in this repository.
+
+### Release red team (at tree `34b1b6af`, bump head `94122153`)
+
+Five read-only passes and a delta pass. Summary on #1419 (comment 6133186290). **0 BLOCK.** Four items for the DRI to fix or accept:
+
+1. **"Record again" on iPhone (#1366), inferred.** After the confirm tap the old take is erased, and only then is the microphone requested, outside the tap. If iOS refuses that request, the old take is already gone and "Microphone is off" shows. The confirm tap is the only thing in front of the erase.
+2. **iOS `MARKETING_VERSION` is still `1.0`, inferred.** If App Store version 1.0 is approved, the 1.1.0 TestFlight upload is refused.
+3. **A rollback strands phones that opened 1.1.0.** Observed in Node: staging's `db.ts` rejects a v11 database with `DatabaseDowngradeError` and deletes nothing. Recordings are intact but unreachable until schema 11 or later is served again. No runbook said so; docs PR #1420 added it.
+4. **`docs/review/dual-review.md` contradicted the staleness rule** (an unanswered Medium on #1354). #1420 fixed it.
+
+What the passes ran:
+
+- **Upgrade:** a v9 database built by hand with staging's record shapes (24 takes, 12 MP3 and 12 PCM clips) opened at v11 with every recording and clip byte intact. Node on `fake-indexeddb`.
+- **PWA update:** a headless desktop Chromium on a build of staging took the service worker of a build of develop `34b1b6af` and ran offline afterwards.
+- **Review records:** on all 78 carried PRs, both lenses' last round is at the merged head.
+- **Claim check:** 2 false and 6 overstated claims in the announcement draft and the bump body, all corrected.
+
+### Not verified
+
+- **Nothing ran on a phone, in Safari or in a native shell.** No Android or iOS compile has happened since 2026-10-05; the Play lane on the promotion merge will be the first.
+- Owed at the tester build, on #974: the upgrade in place with real recordings, Record again on iPhone, the web update then offline, both shells after Capacitor 8.5.3, the phone-check cancel and reopen, and the rows carried from 10-09.
+- The App Store Connect and Play Console states were not visible.
+- `check:deploy` was not run; nothing was promoted.
+
+### Next
+
+1. **DRI:** decide red-team items 1 and 2 (fix in this build, or accept). A fix means a new bump head and a delta pass.
+2. **DRI:** merge #1419, pinned to its head, after this entry is on develop (#1420 already is). That squash commit is `CUT_SHA`.
+3. Then, per `.claude/skills/tc-release`: confirm `CUT_SHA`'s tree against the red-teamed head (`git diff 94122153a7563d89e7d310b163ef7cfc58e3d897 <CUT_SHA> --stat` may list only this file and #1420's four documents: `AGENTS.md`, `docs/release/promotion-v1.0.0.md`, `docs/review/dual-review.md` and `docs/training/facilitator-runbook.md`; anything else needs a new delta pass), create `release/v1.1.0` at `CUT_SHA`, open the promotion PR to `staging` with a hold line, and take the DRI's go or no-go. The promotion must be a merge commit from a head named `release/*` (the checklist's name is `release/v1.1.0`) or from `develop`; with a squash or any other head, the APK and TestFlight lanes build nothing (`.github/workflows/android-apk.yml:105`, `ios-testflight.yml:97`). The Play lane has no such test: it runs on any push to `staging` that is not documentation only (`paths-ignore` for `docs/**` and `**/*.md`, `.github/workflows/android-play.yml:32-34`) while `PLAY_UPLOAD_ENABLED` is on.
+4. **#1281 settings step (DRI only):** `release-signing` still has one required reviewer.
+5. The tester announcement is drafted with the claim check applied; its build placeholders are filled after the APK exists.
+
+---
+
+## 2026-10-09 (day) — Sprint 4 day 5: cleanup, no 1.0.2 release, two lane waves, 10 PRs merged
+
+### Decisions (DRI, 2026-10-09)
+
+- **No v1.0.2 release.** The DRI said (verbatim): "im not going to sign a 1.0.2 release, waiting for maybe 1.1." The two native runs waiting on `release-signing` since 10-05 (APK 37380372475, TestFlight 37380372435) were cancelled. No `tester-build-v1.0.2` exists. The device checks owed from 10-08 ride the 1.1 tester build.
+- **Cleanup scope:** "Merged only (Recommended)".
+- **Wave 6:** "Recommended four".
+- **Wave 7:** "Yes, the four above (Recommended)".
+- **Merges this session:** "Yes, merge when clean (Recommended)". A PR merges with a `uwreview` APPROVED review at its head, green CI, and a local combined check, one at a time, pinned with `--match-head-commit`, using `--admin`.
+- **#1368 wording:** "Ship \"position N\" (Recommended)". This is the strings-owner agreement the issue asked for.
+
+### Cleanup
+
+- **Worktrees:** 179 merged worktrees removed. Each was clean with 0 unpushed commits when removed, and none needed `--force`. Twelve remain: the main checkout, this session's, the locked `lane-1003b`, five that aren't on develop and have no merged PR, and the open lanes.
+- **Remote branches:** 549 merged branches deleted (535 from merged PRs, plus the 14 `release/*`). Tags were not touched. Kept: 42 branches from closed-unmerged PRs and 5 branches with no PR.
+- **Local branches:** 143 deleted. Two unmerged ones were kept: `worktree-agent-a59b05f0f5124ef43` and `lane/1119-clear`.
+- **Dependabot #1310:** it conflicted, and Dependabot can't rebase a PR someone else has edited, so it was taken over by #1380.
+
+### Merged to develop
+
+Each merge had a `uwreview` APPROVED review at its head, green CI, and a local combined check on the head merged with the develop of its moment. The check ran after a fresh `npm ci`: `typecheck`, `typecheck:lib`, `knip`, `test:coverage`, and the two #1382 files run alone.
+
+| PR    | Merged at  | What                                                                                                                                                                                                                                                                      |
+| ----- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #1375 | `451130b0` | `createBook` aborts its transaction on a failed renumber put, like `moveBook` (closes #1369)                                                                                                                                                                              |
+| #1376 | `321d65f8` | Phone-check probes stop when the screen unmounts; #1014 item 6, the last open item (closes #1014)                                                                                                                                                                         |
+| #1380 | `ac7a8979` | Takeover of Dependabot #1310: 9 dev-dependency bumps plus `@vitest/coverage-v8`. vite 8.3.1 is reflected in the licence notices. `@oxc-project/runtime` stays at 0.150.0 (Rolldown embeds those helpers)                                                                  |
+| #1377 | `103fd898` | Test-only `putClip` deleted and its tests moved onto `saveTake`, per the #1364 precedent (closes #1365)                                                                                                                                                                   |
+| #1374 | `d346b2a3` | Share-filename labels capped at 120 UTF-8 bytes on a grapheme boundary; the fallback chapter name is sanitised (#1233 items 22–23). Bench r1 caught `Intl.Segmenter` breaking startup on Firefox 114–124; it is now created only on first use, with a code-point fallback |
+| #1383 | `b5e7b829` | Closing the book sheet over its delete ask no longer scrolls the shelf: the Books menu focus restore passes `preventScroll`, and the e2e's `test.fail` is removed (closes #1362)                                                                                          |
+| #1388 | `10e0bd49` | Reorder announcement says "position N", not "number N" (closes #1368)                                                                                                                                                                                                     |
+| #1386 | `7281f89a` | Four racy test captures now wait for the code under test, in the #1359 shape (Refs #1360)                                                                                                                                                                                 |
+| #1384 | `d1c482ac` | The phone-check cancel filter swallows only `signal.reason`, by identity, and reports every other error. `liveRuns` is a ref (#1379 items 1–3, Refs)                                                                                                                      |
+| #1385 | `3a8e8f2d` | The two whole-tree tests are cheaper: an in-process ESLint config read, and a `src/` sweep split per directory with a 15 s timeout per slice (closes #1382)                                                                                                               |
+
+### Filed
+
+- **#1378:** harden the `createBook` abort tests. The `storeOrphanClip` docblock note from #1377 was added to it.
+- **#1379:** the phone-check follow-ups. Items 4–5 and the mid-encode identity question are open.
+- **#1381:** derive disclosed dependency versions from the installed manifest.
+- **#1382:** the 15 s load flake; fixed by #1385.
+- **#1387:** one focus move instead of two on the delete path, plus an iOS VoiceOver check.
+- **#1389:** follow-ups from #1385.
+- **Added to existing issues:** #1233 (three Lows from #1374) and #1360 (audit the phone-check test files; an order marker for the rename race).
+
+### Not verified
+
+- Nothing ran on a phone. Pending at the next tester build: book-sheet close scroll (#1383, including iOS VoiceOver, #1387), Record again (#1028), book reorder (#1367), Moto G (#1201), and the Share now pulse (#1351).
+- #1385's headroom under heavy load is inferred. The lane measured on a lightly loaded host (#1389 item 3).
+
+### Next
+
+1. **#1281 settings step (DRI only):** do it before the 1.1 cut.
+2. **The v1.1.0 cut at Sprint 4's end (10-18).** It comes with the device pass above.
+3. **Leftovers:** #1360 (the phone-check test audit), #1379 items 4–5, #1233 (the remaining Lows and items), #575 (run it alone).
+4. **Small follow-ups:** #1378, #1381, #1387, #1389.
+
+---
+
+## 2026-10-08 (day, ran into 10-09 UTC) — Sprint 4 day 4: full issue triage and relabel, five lane waves, 22 PRs merged
+
+### Triage and labels
+
+- **Every open issue was re-triaged: 87 down to 74.** 16 were closed with evidence comments, and folds were recorded on the issues: #1213 → #1251, #439 → #221, #1316 → #1321, and #1186 → #338.
+- **New labels:** 12 `area:` labels (the feature families), 4 `a11y:` labels (`low-vision`, `non-reader`, `motor`, `hearing`), and `chore`. Every open issue now carries one type and one area. The DRI's note on the a11y labels is that they classify, not commit. The rule is in AGENTS.md (#1345).
+- **`v1-required` / `v1-desired` / `post-v1` are retired.** They were removed from open issues and kept as labels. Six issues moved from Sprint 4 to Backlog.
+- **#357 is retitled to the 26 Strategic Languages**, levels 3+4 of the DRI's Airtable export. That source has no group of 35.
+
+### Merged to develop
+
+Each lane PR merged only after three checks: a `uwreview` APPROVED review at its head, green CI, and a local combined check (tsc, knip, `test:coverage`, plus build and `test:dist` where the build was touched) on develop plus the head. The DRI merged #1345; the coordinator merged the rest with `--admin` under the DRI's session permission, one at a time, pinned with `--match-head-commit`.
+
+| PR    | Merged at  | What                                                                                                                                                                                     |
+| ----- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #1345 | `e12dff31` | AGENTS.md: retire the v1 labels; labelling rule                                                                                                                                          |
+| #1346 | `b71ef2d7` | Book placeholder stored as a number, schema v10 (takeover of #685; closes #685)                                                                                                          |
+| #1347 | `454cba80` | `@vitejs/plugin-react` 5 → 6 (#238)                                                                                                                                                      |
+| #1348 | `b86b4be1` | Phone check: system-Back layer, Books-overlay gate (#1014)                                                                                                                               |
+| #1349 | `61526019` | e2e: edit-mode theme flip repaints the waveform (#861)                                                                                                                                   |
+| #1350 | `2111bde0` | Audio-context recovery windows hardened (#1265)                                                                                                                                          |
+| #1351 | `6ae95ccf` | Share now tile pulses when the file is ready (#1087; DRI pick: ring on the tile)                                                                                                         |
+| #1353 | `03c39c01` | Partial-share chapter clause through plural (#169; takeover of #1226)                                                                                                                    |
+| #1354 | `d9333b0b` | Local review harness retired; docs point at uwreview (#1343)                                                                                                                             |
+| #1355 | `26d41e54` | Cover colour chosen in the New Book sheet (#1190)                                                                                                                                        |
+| #1356 | `b0b40990` | Viewport kept on the delete-confirm focus hand-off (#800)                                                                                                                                |
+| #1357 | `54bc0eb2` | Precache icons once, lazy-load fflate, retire CHANGELOG (Refs #161)                                                                                                                      |
+| #1358 | `0e5e3a26` | Seed window moved into the viewport hook (#826, closed on merge per the DRI)                                                                                                             |
+| #1359 | `20699ee3` | Three share tests wait for the encode instead of sleeping (#1352)                                                                                                                        |
+| #1361 | `97875a7a` | `src/lib` coverage floor and lib-boundary timeout (#159; DRI: keep the gate)                                                                                                             |
+| #1364 | `54f8ab77` | Test-only `addTake` deleted, its tests moved onto `saveTake` (#159 S-13)                                                                                                                 |
+| #1363 | `0e0c6e68` | Old look and the design switch deleted (#954). The bench packet truncated; DRI pick: merge with the residual recorded (#1362)                                                            |
+| #1366 | `0ffc7548` | Record again clears the segment and starts a take (Refs #1028)                                                                                                                           |
+| #1367 | `2d5a18c2` | Press-and-hold book reorder, schema v11 (closes #338). Three rounds: shelf-order share zip (DRI pick), edge-based drag targeting in the shared gesture, guide ring by newest `createdAt` |
+| #1370 | `97de8aa4` | Comment residuals from #1278 / #1317 (Refs)                                                                                                                                              |
+| #1371 | `05df2aa2` | Rename and eraser-wording pins (Refs #1233)                                                                                                                                              |
+| #1372 | `9b985dbc` | Stale `addTake` comments and run-result prose (Refs #575)                                                                                                                                |
+
+#377 was closed with no PR: #614 removed its trigger, and its first fix is already pinned by `tests/playhead-overlay-hide-timing.test.ts`.
+
+### DRI decisions (2026-10-08)
+
+- **#338 / #1367:** reorder works whether a book is open or closed; a new book lands at the top; the library zip follows the shelf order.
+- **#1366:** merge when bench-clean. The iPhone check of Record again is owed at the next tester build.
+- **#1201 item 4:** re-test on the Moto G first (row added to #974).
+- **#1346:** keep #685's placeholder rule.
+
+### Filed
+
+#1343, #1344 (spoken-prompt umbrella, Backlog), #1352 (fixed), #1360 (audit the remaining captured callbacks), #1362 (O4 sheet close scrolls the shelf; the e2e is `test.fail`), #1365, #1368 (reorder announcement "number N" copy), #1369 (`createBook` abort on a failed renumber).
+
+### Not verified
+
+- Nothing ran on a phone. Book reorder, Record again (iOS `getUserMedia` after the erase's awaits) and the Share now pulse are all unrun on a device.
+- The v1.0.2 APK and TestFlight runs (37380372475, 37380372435) are still waiting on `release-signing`. The DRI doesn't need a build now.
+
+### Next
+
+1. **#1281 settings step (DRI only):** switch `release-signing` to a staging/main branch policy and drop the required reviewer.
+2. **Next tester build:** iPhone check of Record again (#1028), a device pass on book reorder, and the Moto G re-test (#1201).
+3. **Leftovers on the Refs PRs:** #1233 items 22–23 (unblocked now that #1346 has merged), the rest of #575 (the reviewer-round attributions and the workflow run ids), and #1278 N5 / #1317's #1209 tone item (DRI calls).
+4. **Follow-ups:** #1360, #1362, #1369, #1368.
+
+---
+
+## 2026-10-07 (day) — Sprint 4 day 3: two waves, seven lane PRs merged; #1333 copy picked by the DRI; uw-zulip-mcp public-readiness re-checks
+
+### Merged to develop
+
+Every merge was pinned to the head the bench approved: Frank and George clean at that SHA, a `uwreview` APPROVED review there, and CI green. No two PRs in a wave shared a file. #1335, #1336 and #1338 also passed one combined `npm run verify` (a local run, not archived) on develop `7ea2187d` + all three heads: 374 files and 5083 tests passed. The first `test:dist` run failed on a symlinked `node_modules`; after a clean `npm ci` it passed 56/56. The DRI ran every merge with `--admin`: the "merge by admins only" ruleset on `develop`/`staging`/`main` (since 09-26) blocks a plain `gh pr merge`.
+
+| PR    | Issue                    | Merged at  | What                                                                                                                                                                                                                                                                                                                                                                          |
+| ----- | ------------------------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #1335 | #1201 (Refs)             | `2dffdc20` | The batched P3s (a)–(e) were already done by #1312, so this PR only pins `onRecordButton`'s deps through the Record-tap pin in `tests/capture-context.test.ts`. In a local mutation run (not archived) with `editor` dropped from the deps, that pin was the only failing test. The pin is green at the merge                                                                 |
+| #1336 | #575 (Refs)              | `2c183f17` | The 5 stale `recorder-edit-toolbar-glyph` citations now point at `recorder-edit-mode-header.test.ts` or the `interactive-mount` module, plus three sweep items. Comments only                                                                                                                                                                                                 |
+| #1338 | #1278 (Refs)             | `44ac13ea` | George's drag-close cases (a gesture on a child of the control; Space), each proven against its mutant in a local run (evidence in the PR body); RTL short book-name alignment e2e. The #1274 items were already fixed by #1318                                                                                                                                               |
+| #1337 | #249 (Refs)              | `468f49e8` | Protocol row 4 renamed to **Done** (DRI pick), to match the tile caption. The sheet was 2 pages at both A4 and Letter on develop, which predates #1327; print CSS fixes it to 1 page in headless Chromium with two font sets                                                                                                                                                  |
+| #1339 | #1333 (Refs)             | `c6426631` | The library share gets #1332's copy-only treatment. The web build's `failed` now says "Could not share your work. Use the tC Mobile app to share it." (DRI's wording); native keeps "Try again."                                                                                                                                                                              |
+| #1341 | #1317, #1209 item (Refs) | `3707c0a5` | DRI decision: "There is nothing to send now." joins #147's nothing-failed class. `nothing` is now its own `NOTHING_FAILED_TONE` Notice at both sites; `failed`/`restart` keep the alert. Membership map +2 rows, red-first and mutation-proven in a local run (evidence in the PR body)                                                                                       |
+| #1340 | —                        | `532efb36` | AGENTS.md "Versions and milestones" now records the 10-05 sprint decisions. Sprints are numbered from day 1 and run Mon→Sun UTC. There is one milestone per sprint, and issues and PRs are filed by the sprint they close or merge in. The sprint-end minor goes to the DRI as a go/no-go. Tester builds are tagged `tester-build-vX.Y.Z`. The live milestones and tags agree |
+
+Wave 1 was #1335–#1339; wave 2 was #1340 and #1341. Develop CI on `c6426631` (the tip after wave 1) passed: Code Quality, Secret Scan and Build. Smoke and Commit Messages are skipped on a push, as on `7ea2187d`.
+
+### Deferred by the bench, carried on the issues
+
+- **#1333:** George's two Lows. The comments state the Android refusal of the library zip as a mechanism nobody has run, and the native spy misses the null-code progress call. His two questions are carried there too.
+- **#1317:** the `notice-tone.ts` mark paragraph doesn't mention the new icon-less members.
+- **#1340, for the DRI:** "pulled in" (current sprint vs Backlog) is undefined, and there is no sprint-title rule across the New Year.
+
+### Other repos (contributor hygiene)
+
+- **uw-zulip-mcp public readiness:** the re-checks against the live repo and Docker Hub were run twice today. The repo owner closed most items, including the Docker `latest` tag. The rest is tracked there, not here.
+
+### Not verified
+
+- Nothing ran on a phone.
+- #1337's sheet has not been printed on paper. The 7 pt hints may be hard to read.
+- #1339 has not been tried in an Android phone's browser.
+- The v1.0.2 APK and TestFlight runs (37380372475, 37380372435) are still waiting on `release-signing`.
+
+### Next
+
+1. **The DRI's `release-signing` approval** for 1.0.2. Then confirm every channel is at `PROMO_SHA` and publish `tester-build-v1.0.2`.
+2. **#249 before 10-09:** a paper test print of the sheet.
+3. **Android-browser check** for #272 and #1333.
+4. **Held #1317 items:** #1221 and #1231 wait on Jesse's #1226 (needs-author since 10-02; nudge).
+5. **DRI wording calls on #1340's two follow-ups.**
+6. **Tim, training week:** the #1297 questions, plus #1284, #1272, #595 and #461.
+
+---
+
+## 2026-10-06 (day) — Sprint 4 day 2: board check, seven lane PRs merged, #272 re-diagnosed, DRI decisions on #1092 / #840 / #272 / #1321
+
+### Sprint 4 board check
+
+- **None of the 41 open Sprint 4 issues was closable as fixed.** Every thread and timeline was read, and each fix was checked against develop `0d88de8e`.
+- **Eleven have merged fixes that wait only on a device or tester confirmation:** #1243, #1244, #1252, #1259, #1267, #1268, #1269, #1276 and #1230 (rc.3 confirmation), plus #1213 and #1251 (iPhone retest). All are in the v1.0.2 cut.
+- **#1294's fix is in the cut but still unproven:** the PR says the fix is inferred, so it needs a repro.
+- After today's merges Sprint 4 has 37 open and 30 closed.
+
+### DRI decisions (2026-10-06)
+
+| Issue        | Decision                                                                                                                                           |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #1092        | Items 2–3 accepted as fail-closed; issue closed with the evidence table                                                                            |
+| #840         | R5/R6 moved to the bench repo as unfoldingWord/review-bot#41 and #42; issue closed                                                                 |
+| #272         | Accept APK/Play-only for sharing a book. Then, after the re-diagnosis below, **copy-only**: on the web build a failed book share points to the app |
+| #1321, #1316 | Deferred to after the 10-09 training, because the shape gets picked first (#1313 took 8 rounds)                                                    |
+| #1315        | No rows added. Rows 1 and 5 just match the tree, as the issue's done-when says                                                                     |
+
+### Merged to develop
+
+Every merge was pinned to the head the bench approved: Frank and George clean at that SHA, a `uwreview` APPROVED review, and CI green. #1325–#1327 had one combined `npm run verify` on develop `0d88de8e` + all three heads, since they share no files (exit 0, 374 files / 5078 tests, test:dist 56/56). A later combined run on develop `9a107166` (with #1328–#1331 in) also exited 0 (5080 tests). Merges were by the DRI except wave 1, which the coordinator merged on the DRI's merge-on-clean-and-green word. After wave 1, the auto-mode classifier blocked further agent merges, so the DRI runs merges from here on.
+
+| PR    | Issue                       | Merged at  | What                                                                                                                                                                                 |
+| ----- | --------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| #1327 | Closes #1315                | `02c0be02` | Icon protocol, sheet and ADR 0010: row 1 is now the mic → record → square stop; row 5 is "Reset". Removes the runbook's interim heads-up. The `vite.config.ts` comment now says 15.4 |
+| #1326 | Closes #1202                | `bb9d47f1` | The nothing-failed gate reads `.js`/`.jsx` specifiers (red-first and mutation proven); the namespace-destructure form is named in "not covered"                                      |
+| #1325 | Closes #838                 | `946d2507` | AGENTS.md (and the 09-04 gate chart) say Share Book exports a zip of chapter MP3s                                                                                                    |
+| #1328 | #1317 (#1125)               | `26f0cab6` | Failed-delete baseline pinned with `toHaveLength` + `toContain`; a new case kills the M4 `report(null)` mutant                                                                       |
+| #1329 | #1317 (#1204, #1215)        | `72113d83` | The share-progress decoy reads through `code()`; capture-failure-copy's probe and sweep share one reader (mutants proven)                                                            |
+| #1330 | #1317 (#1171, #1211, #1300) | `5a434f86` | Stale wording in nav-stack and recorder test comments. `goBack`'s deps were right; only the comment was stale                                                                        |
+| #1331 | Closes #549                 | `9a107166` | The last false "no renderer / jsdom / Node-only" claims, 30 files of comments, with a verdict per site in the PR                                                                     |
+
+### #272 re-diagnosed (PR #1332, open, clean)
+
+- **The issue's premise was wrong.** Frank raised it on #1332, and the lane confirmed it in Chromium source. Chrome's `canShare()` never checks the MIME type. Android refuses the zip inside `share()` with `NotAllowedError`, which `classifyShareError` maps to `failed`.
+- **No signal exists before the encode** without a user-agent read, and #490 forbids that.
+- **The first lane worked around the #490 guard,** moving the user-agent read into a new file the guard doesn't scan. The coordinator reverted that.
+- **The DRI picked copy-only.** #1332 is now 3 files: on the web build a failed book share says "Could not share this book. Sharing a book works in the tC Mobile app." (chosen on `isNativeShell()`).
+- **Review state:** clean at `8c558e55` in round 4. A pre-merge verify on develop `9a107166` + head exited 0 (5081 tests).
+- **#272 stays open** until someone checks it in an Android phone's browser.
+
+### Filed or updated
+
+- **#1333:** Share your work (the library zip) probably fails the same way on Android web. This is an inference, not seen on a device.
+- **#249 comment:** protocol row 4 says "Finished" while the tile caption is "Done", and the sheet's print fit is not re-checked after #1327.
+- **#575 comment:** five comments cite the deleted `tests/recorder-edit-toolbar-glyph.test.ts`.
+- **Milestones:** today's seven merged PRs had no milestone, so they now sit in Sprint 4.
+
+### Other repos (contributor hygiene; Ian leads BT Servant)
+
+- **Portal #342 (Elsy, fabricated versions).**
+  - Diagnosed from staging logs saved on 09-18. KJV/NIV/ESV were made up with no data call. The ASV offer was real (it's in yaapi.bible). The false "ASV not available" came from checking aquifer instead of yaapi.
+  - Findings are on #342. The Hindi was the session's persisted `hindi` language config, not a bug.
+- **Worker PR #446** (#342, option 2, v2.55.6): `get_tool_definitions` returns descriptions, plus a non-overridable rule against naming unchecked versions. Frank and George clean. CI is red only on audit advisories that #445 clears.
+- **Worker PR #445** (v2.55.5) now clears **all six** audit advisories (MCP SDK 1.31 and `proxy-addr` 2.0.8 in production; braces, sharp, source-map-js and vitest in dev). All CI is green, the worker never runs the SDK's changed OAuth code, and it is waiting on Ian. **Merging it first turns every worker PR green.**
+- **Portal #346** (closes #344, v1.16.2) was merged by the DRI as `37f51acd`. Residuals are in portal #347.
+- **uw-zulip-mcp going public:**
+  - The audit found no secrets.
+  - The public Docker Hub `latest` was built locally and contained an internal auth memo. Only that tag is affected; the other 25 were built by CI and are clean.
+  - Cleanup PR uw-zulip-mcp#40 is open. The handoff to Yakob is at `temp/uw-zulip-mcp-public-readiness-handoff.md` and in a Claude doc.
+  - Yakob owns the rest.
+
+### Not verified
+
+- Nothing today ran on a phone.
+- The v1.0.2 APK and TestFlight runs (37380372475, 37380372435) are still waiting on `release-signing`, and `tester-build-v1.0.2` is not published.
+
+### Next
+
+1. **The DRI's `release-signing` approval** for the 1.0.2 APK and TestFlight. Then confirm every channel is at `PROMO_SHA` and publish the `tester-build-v1.0.2` pre-release.
+2. **Merge #1332** (the DRI runs the pinned command). Then the Android-browser check for #272 and #1333.
+3. **#249 before 10-09:** row 4's name and the sheet's print fit.
+4. **Held #1317 items:** #1209 needs a DRI call. #1221 and #1231 wait until Jesse's #1226 merges.
+5. **The Sprint 4 `AGENTS.md` PR** (carried from 10-05). The DRI also still owes #1089.
+6. **Tim, training week:** the #1297 questions, plus #1284, #1272, #595, #461.
+7. **Ian:** #445 first, then #446 and the other worker PRs, which take main by merge commit.
+
+---
+
+## 2026-10-05 (day) — sprints adopted and numbered from day 1, v1.0.2 promoted to staging, six lane PRs merged after a GitHub Actions outage
+
+### Sprints (DRI decisions, 2026-10-05)
+
+- **Two-week sprints, numbered from project day 1** (the initial commit, Sat 2026-08-22).
+  - Sprint 1 = 08-22 → 09-06 (16 days, the only odd one).
+  - From then on, Monday 00:00 → Sunday 23:59, **UTC**: Sprint 2 = 09-07 → 09-20, Sprint 3 = 09-21 → 10-04, **Sprint 4 = 10-05 → 10-18 (current)**, Sprint 5 = 10-19 → 11-01.
+- **Releases:**
+  - The sprint-end `staging → main` promotion ships the minor. Sprint 4 ships **v1.1.0** on 10-18.
+  - The patch stays one `chore(release)` bump per `develop → staging` promotion.
+- **Milestones: sprint milestones replace version milestones.**
+  - Every closed issue and merged PR now sits in the sprint it closed or merged in: 1,172 items, verified with 0 mismatches.
+  - `v0.2.0` and `v1.0.0` were deleted once empty. Each sprint's description keeps the old titles and due dates and what shipped in that sprint. Tags and Releases are the version record.
+  - **Backlog** (#5) holds 51 open issues not in Sprint 4.
+  - Sprint 4 holds the picked scope plus the 6 issues the DRI chose to keep in the sprint (#1243, #1244, #1259, #1212, #1252, #1271).
+- **Sprint comparison** (issues completed / not planned / PRs merged):
+
+  | Sprint | Completed | Not planned | PRs merged |
+  | ------ | --------- | ----------- | ---------- |
+  | 1      | 59        | 4           | 87         |
+  | 2      | 86        | 12          | 126        |
+  | 3      | 243       | 49          | 487        |
+
+- **Review loops run on the uwreview VM bench:** push, wait for the bench's Codex and Grok comments at the head, then post a triage. No local `scripts/review/*.sh` runs.
+- **Commit identity:** authored as the DRI's GitHub user with a `Co-authored-by: Claude <noreply@anthropic.com>` trailer. This replaces the placeholder `Test <test@example.com>` in this checkout's repo config, which earlier agent commits carried.
+- `AGENTS.md` "Versions and milestones" does not say any of this yet. That PR is the next step.
+
+### v1.0.2 → staging (the training stays on production 1.0.1, DRI pick)
+
+| Step                        | Result                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bump #1311                  | Merged at `79e6037f` = **`CUT_SHA`**. **Deviation, recorded on the PR:** the agent merged it with `--admin` on the DRI's instruction; tc-release marks this human-only.                                                                                                                                                                                                                                                                            |
+| Red team on `CUT_SHA`       | Risk register: 0 BLOCK, 4 FIX-BEFORE-PUBLISH, 17 NOTE. Claim check: 29 TRUE, 0 FALSE, 1 OVERSTATED, 6 MISSING CONTEXT, all corrected in #1311's body. The DRI's picks are recorded verbatim on #1311. F1: testers are on Google Play and the DRI controls TestFlight groups. F2/F3: the two test P2s were accepted for 1.0.2 and fixed on develop in #1319, **after the cut, so not in 1.0.2**. F4: publish as `tester-build-v1.0.2`, pre-release. |
+| `release/v1.0.2`            | Created at `CUT_SHA`.                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Push CI at `CUT_SHA`        | Cancelled twice during the GitHub Actions outage (no runner assigned). **Green after recovery:** run 37364748886 has Secret Scan, Code Quality and Build passing. `CUT_SHA` and #1311's head `0c6fba5a` share tree `d652384650ac08b06176a4352619fc5781f1757c`.                                                                                                                                                                                     |
+| Promotion #1322             | Merged with `--merge --admin --match-head-commit 79e6037f`: **`PROMO_SHA` = `3b5e098da6e182ab149ae21cf1b916df046d5fb1`**, subject unedited. Step-4 pre-flight matched: base `dd997ebf`, head `CUT_SHA`, staging tip `dd997ebf`. **Deviation recorded:** an agent merge with `--admin`, on the DRI's "merge on clean and green".                                                                                                                    |
+| `check:deploy`              | `PASS: https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build.` (`version=1.0.2 sha=3b5e098`, built 2026-10-05T22:07:58Z)                                                                                                                                                                                                                                                                                               |
+| Native lanes at `PROMO_SHA` | APK (run 37380372475) and TestFlight (37380372435) are **waiting on the DRI's `release-signing` approval**. Play (37380372411) was in progress.                                                                                                                                                                                                                                                                                                    |
+| Not yet                     | Confirming every channel's `headSha` = `PROMO_SHA`; the `tester-build-v1.0.2` pre-release.                                                                                                                                                                                                                                                                                                                                                         |
+
+### Merged to develop
+
+Each merge was pinned to the head the bench reviewed. develop moved after most of these PRs' CI ran, so verification was done like this:
+
+- #1312: its only base change was the #1311 version bump, so no local run.
+- #1319: `npm run verify` on develop `da9c91b3` + its head.
+- #1314, #1313 and #1320: **one** combined run on develop `a14b927d` + all three heads (exit 0, 374 test files), not one run per PR. The three PRs share no files with each other or with develop's changes.
+- #1318: `npm run verify` on develop `f5e447e3` + its head.
+
+| PR    | Issue                                | Merged at  | What                                                                                                                                                                                             |
+| ----- | ------------------------------------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| #1312 | #1201 (a)–(e), #1202 item 3          | `da9c91b3` | Waveform and recorder docblocks. The `src/` diff is comments only; all 621 production `dist/` files hash the same.                                                                               |
+| #1319 | #1233 items 14–16, 18, 19; #1317 P2s | `a14b927d` | Pins for the row mic, `--s-live-text` contrast and the guided ring; the #1211 and #1221 surviving mutants are killed.                                                                            |
+| #1314 | #1017, #248                          | `96cd2432` | System requirements reconciled. The four runbook questions from #1297 are marked "Awaiting Tim". New training watch list. #1315 was filed: the icon protocol predates the current recorder.      |
+| #1313 | #1308 items 2–7, #1278 Lows          | `58e756a7` | Native CI and release-runbook docs. Round 6, past the cap: the findings were **siblings** (five holes in one redispatch guard). The DRI accepted the residuals, and **#1321** owns the redesign. |
+| #1320 | #1202 items 1–2, #1092, #549         | `f5e447e3` | The nothing-failed tone check is now scope- and alias-aware; the notice CSS pins are tightened.                                                                                                  |
+| #1318 | #1278 code residuals                 | `a8254211` | The drag-close tap swallow and crumb fixes. Merged **after** the promotion (DRI pick); it ships in the next staging promotion. Device check owed.                                                |
+
+### Close-outs and verification
+
+- **Closed with per-item evidence:** #1241, #951, #936, #828, #1046, #801, #406, #506, #1088 (item 1 moved to #1089), and #245 (superseded by #974).
+- **Still open:** #840 and #838, each with its one remaining item. #1213 is likely a duplicate of #1251, pending an iPhone retest on 1.0.1.
+- **#1210 Android developer verification: done.** `org.unfoldingword.tcmobile` is Registered, with the release key `EE:D2…BA:F2` Verified. The release APKs from 09-23 and 10-02 are signed by that key only. Three other Verified keys match nothing documented; they are tracked in **#1324**.
+
+### Process lessons
+
+- **Messaging a running workflow lane forks a second live copy** in the same worktree. Both copies pushed to #1313. Stop and relaunch instead.
+- **A green badge from before an outage, or from before other merges, is not a pre-flight.** Run `npm run verify` on the actual merge result and record it on the PR.
+
+### Not run
+
+- Nothing today ran on a phone.
+- The 1.0.2 native builds await signing approval.
+
+### Next
+
+1. **The DRI's `release-signing` approval** for the APK and TestFlight runs at `PROMO_SHA`. Then confirm every channel at `PROMO_SHA`, publish `tester-build-v1.0.2` as a pre-release, and assign TestFlight to the testers' group only.
+2. Write the Sprint 4 `AGENTS.md` PR: sprints from day 1, sprint milestones, and the `tester-build-vX.Y.Z` tag name.
+3. Decisions for the DRI: #1089 (was #1088 item 1) and #1092 items 2–3 (accept as fail-closed?). Match #1324's keys against the developer machines' debug keystores.
+4. For Tim, training week: the four #1297 questions, the #249 icon-check owner, and picks on #1284, #1272 and #272.
+5. Phone checks: #1294/#1298 (alarm), #1300, #1318 (drag-close then tap), and the #974 rows.
+
+---
+
 ## 2026-10-02 (day) — freeze lifted, the 17 held PRs merged, develop repaired, eight lane PRs merged
 
 ### Freeze lift and the held PRs

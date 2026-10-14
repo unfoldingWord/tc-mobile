@@ -14,7 +14,7 @@ import { stripComments } from "./support";
  * is flat by design and cannot see an `@keyframes` or an `@media` block, which
  * are exactly what this file is made of.
  *
- * The gate: every rule that sets an animation under the switch is matched,
+ * The gate: every rule that sets an animation is matched,
  * selector for selector, by an `animation: none` rule inside the file's
  * `prefers-reduced-motion: reduce` block, and that rule comes later in the
  * same layer at equal specificity, so it wins. The app has no in-app
@@ -28,7 +28,7 @@ const ROOT = path.resolve(import.meta.dirname, "..");
 const CSS = stripComments(
   readFileSync(path.join(ROOT, "src/app/styles/o4/motion.css"), "utf8")
 );
-const O4 = '[data-design="o4"]';
+const O4 = ":root";
 const REDUCE = "@media (prefers-reduced-motion: reduce)";
 
 interface Block {
@@ -109,8 +109,8 @@ describe("o4/motion.css is read as a tree, not as a string (#950)", () => {
   });
 });
 
-describe("every O4 loop is scoped under the switch (#950)", () => {
-  it("opens every style rule, guards included, with [data-design=o4]", () => {
+describe("every O4 loop carries the :root prefix (#950)", () => {
+  it("opens every style rule, guards included, with :root", () => {
     const all = [...styleRules, ...guardRules].flatMap(selectorsOf);
     expect(all.length).toBeGreaterThanOrEqual(3);
     for (const sel of all) expect(sel.startsWith(`${O4} `)).toBe(true);
@@ -137,6 +137,11 @@ describe("every O4 loop is scoped under the switch (#950)", () => {
       "liveEdge",
       [`${O4} .recorder-stage[data-o4-look="recording"]::after`],
       "liveEdge var(--p-ambient-live-edge, 1.2s) ease-in-out infinite",
+    ],
+    [
+      "armedPulse",
+      [`${O4} .o4-tile--send.is-armed`],
+      "armedPulse var(--p-ambient-armed, 1.6s) ease-in-out infinite",
     ],
     [
       "blink",
@@ -217,6 +222,22 @@ describe("the guide pulse keeps the base ring's own exceptions (#950)", () => {
     expect(selectorsOf(stop!)).toContain(
       `${O4} .record-guide.is-guided:has(> .control:focus-visible)`
     );
+    expect(stop!.at).toBeGreaterThan(pulse.at);
+  });
+
+  // An unrecorded row's mic (#1217) pulses too, and its focus outline is
+  // pushed out the same way, so the same stop has to cover it (#1233 item 19).
+  it("stops the pulse while the guided row mic has keyboard focus", () => {
+    const pulse = animated.find(
+      (b) => animationName(b.decls.get("animation")!) === "guidePulse"
+    )!;
+    expect(selectorsOf(pulse)).toContain(`${O4} .control--mic.is-guided`);
+    const stop = styleRules.find(
+      (b) =>
+        b.decls.get("animation") === "none" &&
+        selectorsOf(b).includes(`${O4} .control--mic.is-guided:focus-visible`)
+    );
+    expect(stop).toBeDefined();
     expect(stop!.at).toBeGreaterThan(pulse.at);
   });
 });

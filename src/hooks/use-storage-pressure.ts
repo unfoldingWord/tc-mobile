@@ -235,8 +235,8 @@ function subscribeToGeneration(onChange: () => void): () => void {
  * `subscribeToEncoderHealth`): nothing in the app needs a synchronous read of
  * this outside `useStoragePressure`'s own `useSyncExternalStore` snapshot, so
  * this exists to let a Node test pin the counter's own contract — that a bump
- * always advances it, and by exactly one per call — without a DOM renderer to
- * mount the hook in.
+ * always advances it, and by exactly one per call — without mounting the
+ * hook.
  */
 export function storagePressureGeneration(): number {
   return generation;

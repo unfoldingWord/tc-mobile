@@ -335,9 +335,9 @@ export function attachNativeBack(
 /**
  * Drop `?check=phone` from the current history entry's URL (#1014 item 4), so
  * a later reload of the same tab does not read it again and reopen the phone
- * check. Not a screen transition and not an overlay dismiss — the check never
- * pushes a nav layer of its own (`App` opens it by state alone, and this file
- * never sees `phoneCheckOpen`) — so this is a `replaceState` on the entry
+ * check. Not a screen transition and not an overlay dismiss — the layer the
+ * check registers (`App`) is popped by `popLayer`, which touches no history,
+ * and this file never sees `phoneCheckOpen` — so this is a `replaceState` on the entry
  * already there, carrying `state` through unchanged rather than the `{ tc,
  * index }` shape the rest of this file writes. It lives here regardless, next
  * to `attachNativeBack`, rather than in `App.tsx`, because invariant 1 bans
@@ -371,10 +371,11 @@ export interface UseNavStackParams {
    * (chapter-scoped, G3), and after a cut that was saved, a cut-to-empty
    * whose segment is gone, or a superseded stop that rolled a paste back,
    * the clipboard is the phrase's ONLY copy. A plain Back stops at Segments,
-   * where it can still be pasted; the two-level Back must stop there too
-   * rather than run `onLeaveToBooks` over it in the same gesture. Read at
-   * the consuming landing, after the close's own clipboard writes have
-   * committed (the same commit `screen` is gated on).
+   * where the clipboard survives for a reopened recorder's Edit mode to
+   * paste; the two-level Back must stop there too rather than run
+   * `onLeaveToBooks` over it in the same gesture. Read at the consuming
+   * landing, after the close's own clipboard writes have committed (the same
+   * commit `screen` is gated on).
    */
   readonly chapterClipboardHeld: boolean;
   /**
@@ -407,6 +408,12 @@ export interface UseNavStack {
   readonly pushLayer: (layer: Layer) => void;
   /** Unregister an overlay by id, idempotent (the rearm-layer-dismiss case). */
   readonly popLayer: (id: string) => void;
+  /**
+   * Whether any overlay is registered right now. A live read of the layer ref,
+   * for a click handler that must refuse while a screen's sheet or dialog is
+   * open (the phone check's reveal, #1014 item 3) — never for render.
+   */
+  readonly hasOpenLayer: () => boolean;
   /** Books → Segments: the state half plus the protective push. */
   readonly openChapter: (id: ChapterId) => void;
   /** Segments → Recorder: the state half plus the protective push. `entry`
@@ -805,7 +812,8 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // whose segment is gone, a superseded stop's rolled-back paste. The close's
   // clipboard writes commit in the same batch as its screen change, so the ref
   // is the clipboard as the close left it. Stopping at Segments is what a
-  // plain Back does, and is where the phrase can still be pasted.
+  // plain Back does, and keeps the phrase on the clipboard for a recorder
+  // reopened from Segments to paste in Edit mode.
   const continueOnSegments = useCallback(() => {
     if (!chapterClipboardHeldRef.current) goBack();
   }, [goBack]);
@@ -889,6 +897,8 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
     },
     [decideWrite, performWrite]
   );
+
+  const hasOpenLayer = useCallback(() => layerStack.current.length > 0, []);
 
   const popLayer = useCallback((id: string) => {
     // Idempotent: removing an id that is not present is a no-op. It touches
@@ -1241,7 +1251,8 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   // inside the Capacitor shell — in a browser the gesture is already a history
   // pop and this would be a second listener for the same press. `decide` reads
   // the same layout-written refs the popstate handler does, and only those;
-  // `goBack` is `useCallback([])`, so this subscribes once for the hook's life.
+  // `goBack` is built only from `issueBack`, which is `useCallback([])`, so
+  // this subscribes once for the hook's life.
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     return attachNativeBack(
@@ -1265,6 +1276,7 @@ export function useNavStack(params: UseNavStackParams): UseNavStack {
   return {
     pushLayer,
     popLayer,
+    hasOpenLayer,
     openChapter,
     openRecorder,
     goBack,

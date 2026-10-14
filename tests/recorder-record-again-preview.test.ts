@@ -4,9 +4,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Recorder, type RecorderHandle } from "@/components/recorder";
-import type { Design } from "@/lib/design";
 import { strings } from "@/lib/strings";
 import type { UseAudioSession } from "@/hooks/use-audio-session";
+import type { StartOptions } from "@/hooks/use-recorder";
 import { useEraseSegment } from "@/hooks/use-erase-segment";
 import type { SegmentId } from "@/types/domain";
 
@@ -22,18 +22,13 @@ import type { SegmentId } from "@/types/domain";
  *
  * The harness is `tests/recorder-rerecord-o4.test.ts`'s: the real `Recorder`,
  * the real erase hook and the real confirm, with the store and the segment
- * loader replaced at their boundary and `useDesign()` mocked so each case
- * picks its look.
+ * loader replaced at their boundary.
  *
  * What this cannot see: the cascade (whether `o4/dialogs.css` wins on a real
  * page), the drawn waveform bars (`Waveform` is mocked out, the same way
  * `recorder-rerecord-o4.test.ts` does, since jsdom has no canvas 2D context),
  * or anything on a phone.
  */
-const design = vi.hoisted(() => ({ current: "o4" as Design }));
-vi.mock("@/hooks/use-design", () => ({
-  useDesign: () => ({ design: design.current, toggle: () => {} }),
-}));
 
 const storage = vi.hoisted(() => ({ clear: vi.fn() }));
 vi.mock("@/lib/storage/takes", async (importOriginal) => ({
@@ -83,7 +78,6 @@ beforeEach(() => {
   );
   vi.stubGlobal("requestAnimationFrame", () => 1);
   vi.stubGlobal("cancelAnimationFrame", () => {});
-  design.current = "o4";
   storage.clear.mockReset();
   storage.clear.mockResolvedValue(undefined);
   boundary.view = recorded;
@@ -99,8 +93,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function setup(look: Design, playingBuffer = false) {
-  design.current = look;
+async function setup(playingBuffer = false) {
   const ref = createRef<RecorderHandle>();
   const audio: UseAudioSession = {
     playingId: null,
@@ -118,7 +111,10 @@ async function setup(look: Design, playingBuffer = false) {
     playBuffer: vi.fn(),
     stopBuffer: vi.fn(),
     readPlaybackPosition: () => null,
-    startRecording: vi.fn(),
+    // The microphone is granted: run the erase the start carries (#1028).
+    startRecording: vi.fn(async (options?: StartOptions) =>
+      options?.beforeCapture ? options.beforeCapture() : true
+    ),
     stopRecording: vi.fn(async () => ({
       samples: new Int16Array(0),
       blob: null,
@@ -174,29 +170,29 @@ async function openFromMenu() {
 }
 const previewRow = () => document.querySelector(".confirm-preview");
 
-describe("the record-again confirm's 'Play what will be lost' row (#979 remainder), switch on", () => {
+describe("the record-again confirm's 'Play what will be lost' row (#979 remainder)", () => {
   it("renders no row when opened via the ⋮ menu's Erase (not the bin)", async () => {
-    await setup("o4");
+    await setup();
     await openFromMenu();
     expect(document.querySelector(".confirm-panel")).not.toBeNull();
     expect(previewRow()).toBeNull();
   });
 
   it("renders the row, idle, when opened from the bin", async () => {
-    await setup("o4");
+    await setup();
     await act(async () => barRerecord().click());
     expect(previewRow()).not.toBeNull();
     expect(button(strings.eraseConfirmPreviewPlay)).not.toBeUndefined();
   });
 
   it("labels the row Pause when the buffer is already sounding", async () => {
-    await setup("o4", true);
+    await setup(true);
     await act(async () => barRerecord().click());
     expect(button(strings.eraseConfirmPreviewPause)).not.toBeUndefined();
   });
 
   it("Play sounds the working buffer from its start, mirroring segments' playTake(row, 0)", async () => {
-    const { audio } = await setup("o4");
+    const { audio } = await setup();
     await act(async () => barRerecord().click());
     await act(async () => button(strings.eraseConfirmPreviewPlay).click());
     expect(audio.playBuffer).toHaveBeenCalledTimes(1);
@@ -207,7 +203,7 @@ describe("the record-again confirm's 'Play what will be lost' row (#979 remainde
   });
 
   it("Pause stops the buffer instead of starting a second play", async () => {
-    const { audio } = await setup("o4", true);
+    const { audio } = await setup(true);
     await act(async () => barRerecord().click());
     (audio.stopBuffer as ReturnType<typeof vi.fn>).mockClear();
     await act(async () => button(strings.eraseConfirmPreviewPause).click());
@@ -216,27 +212,12 @@ describe("the record-again confirm's 'Play what will be lost' row (#979 remainde
   });
 });
 
-describe("the row does not reach the switch-off dialog or the non-G5 dialogs", () => {
-  it("switch off: no row from the bin", async () => {
-    await setup("current");
-    await act(async () => barRerecord().click());
-    expect(document.querySelector(".confirm-panel")).not.toBeNull();
-    expect(previewRow()).toBeNull();
-  });
-
-  it("switch off: no row from the ⋮ menu either", async () => {
-    await setup("current");
-    await openFromMenu();
-    expect(previewRow()).toBeNull();
-  });
-});
-
 describe("playback stops when the confirm closes, either button or Back (#979 remainder)", () => {
   it("Cancel stops it", async () => {
-    const { audio } = await setup("o4", true);
+    const { audio } = await setup(true);
     await act(async () => barRerecord().click());
     (audio.stopBuffer as ReturnType<typeof vi.fn>).mockClear();
-    await act(async () => button(strings.eraseCancel).click());
+    await act(async () => button(strings.recordAgainKeep).click());
     expect(audio.stopBuffer).toHaveBeenCalledTimes(1);
     expect(document.querySelector(".confirm-panel")).toBeNull();
   });
@@ -245,10 +226,10 @@ describe("playback stops when the confirm closes, either button or Back (#979 re
     // Pre-existing behaviour (`onConfirmErase`'s own `stopPlayback()`, plus
     // `onExitEdit`'s on the success path this fixture takes) — not a count
     // this PR's code controls, so "at least once" is the honest assertion.
-    const { audio } = await setup("o4", true);
+    const { audio } = await setup(true);
     await act(async () => barRerecord().click());
     (audio.stopBuffer as ReturnType<typeof vi.fn>).mockClear();
-    await act(async () => button(strings.eraseConfirm).click());
+    await act(async () => button(strings.recordAgainConfirm).click());
     expect(audio.stopBuffer).toHaveBeenCalled();
   });
 
@@ -262,9 +243,9 @@ describe("playback stops when the confirm closes, either button or Back (#979 re
         reject = rej;
       })
     );
-    const { audio } = await setup("o4");
+    const { audio } = await setup();
     await act(async () => barRerecord().click());
-    await act(async () => button(strings.eraseConfirm).click());
+    await act(async () => button(strings.recordAgainConfirm).click());
     await act(async () => button(strings.eraseConfirmPreviewPlay).click());
     expect(audio.playBuffer).not.toHaveBeenCalled();
     await act(async () => reject(new Error("store failed")));
@@ -272,8 +253,35 @@ describe("playback stops when the confirm closes, either button or Back (#979 re
     expect(audio.playBuffer).not.toHaveBeenCalled();
   });
 
+  it("Play cannot start while Record again is waiting on the microphone, and can again once that is refused", async () => {
+    // #1028: the confirm is answered at the tap, but the erase waits for the
+    // grant. Nothing may start sounding behind the answered dialog, and a
+    // refusal must hand the dialog back whole.
+    const { audio } = await setup();
+    let refuse!: () => void;
+    (audio.startRecording as ReturnType<typeof vi.fn>).mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          refuse = () => resolve(false);
+        })
+    );
+    await act(async () => barRerecord().click());
+    await act(async () => button(strings.recordAgainConfirm).click());
+    await act(async () => button(strings.eraseConfirmPreviewPlay).click());
+    expect(audio.playBuffer).not.toHaveBeenCalled();
+
+    await act(async () => refuse());
+    expect(document.querySelector(".confirm-panel")).toBeNull();
+    expect(storage.clear).not.toHaveBeenCalled();
+    // The same confirm again, not left busy by the refused run.
+    await act(async () => barRerecord().click());
+    expect(button(strings.recordAgainConfirm).disabled).toBe(false);
+    await act(async () => button(strings.eraseConfirmPreviewPlay).click());
+    expect(audio.playBuffer).toHaveBeenCalledTimes(1);
+  });
+
   it("a system Back stops it", async () => {
-    const { ref, audio } = await setup("o4", true);
+    const { ref, audio } = await setup(true);
     await act(async () => barRerecord().click());
     (audio.stopBuffer as ReturnType<typeof vi.fn>).mockClear();
     await act(async () => {

@@ -15,6 +15,7 @@ import {
   storageEstimateSourceOf,
 } from "./use-storage-pressure";
 import {
+  type BookLabel,
   InsufficientStorageError,
   estimateLibraryZipBytes,
   exportLibraryZip,
@@ -135,9 +136,9 @@ export interface UseLibraryShare
    */
   prepare: (
     zipFilename: string,
-    nameBook: (bookName: string) => string,
+    nameBook: (book: BookLabel) => string,
     nameChapter: (
-      bookName: string,
+      book: BookLabel,
       chapterNumber: number,
       chapterName: string | null
     ) => string
@@ -189,9 +190,9 @@ export function useLibraryShare(): UseLibraryShare {
   const prepare = useCallback(
     (
       zipFilename: string,
-      nameBook: (bookName: string) => string,
+      nameBook: (book: BookLabel) => string,
       nameChapter: (
-        bookName: string,
+        book: BookLabel,
         chapterNumber: number,
         chapterName: string | null
       ) => string

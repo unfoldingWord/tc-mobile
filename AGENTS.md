@@ -5,9 +5,9 @@ The canonical contributor guide. Read this before changing anything.
 ## Purpose
 
 tC Mobile is an offline-first PWA for oral Bible translation: record a passage,
-edit the waveform, manage the segments of a chapter, and share a chapter or a
-book as MP3 through the OS share sheet. It targets Android and iOS phones,
-frequently offline, used by people who may not read.
+edit the waveform, manage the segments of a chapter, and share a chapter as an
+MP3 or a book as a zip of chapter MP3s through the OS share sheet. It targets
+Android and iOS phones, frequently offline, used by people who may not read.
 
 The driving deadline is the **East Africa training in the first week of
 October 2026**, with production readiness targeted for **end of September 2026**.
@@ -441,6 +441,7 @@ save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed book delete
 (`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
 segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
 failed chapter reorder (`hooks/use-books.ts`, `"chapter-reorder"`, #953), a
+failed book reorder (`hooks/use-books.ts`, `"book-reorder"`, #338), a
 failed segment reorder (`hooks/use-chapter-segments.ts`, `"segment-reorder"`,
 #953), a failed segment delete, through the store's own `deleteSegment`
 (`hooks/use-chapter-segments.ts`'s optimistic list delete, called from
@@ -602,6 +603,14 @@ Work is cut from `develop` and merged back by PR. Promotion is `develop` ->
 `staging` -> `main`, each by PR. **The `staging` -> `main` PR is the production
 gate.**
 
+Merge a promotion PR with a merge commit and GitHub's subject left as is. The
+APK and TestFlight lanes build on push only when the tip is `Merge pull request
+#N from unfoldingWord/<head>`, with `develop` or `release/*` onto `staging`,
+`staging` or `release/*` onto `main`. A squash or rebase merge, an edited
+subject, or a hotfix branch not named `release/*` merged straight to `main`
+gets a preflight notice and **no native build**; the DRI dispatches the lane by
+hand (`docs/native/README.md` §4a, §5a).
+
 ### Versions and milestones
 
 `package.json`'s `version` is the build number, and it moves in exactly one
@@ -618,20 +627,30 @@ place. Decided 2026-09-02, when the repo stopped being solo.
   promoted without this and went unrecorded until a 2026-09-24 PR audit
   caught it (#839, #840 R7); the confirmation belongs in the tracker at
   promotion time, not reconstructed after the fact.
-- **The minor is the milestone.** Every GitHub milestone is named for the
-  version its `staging -> main` promotion ships. That PR bumps the minor and
-  tags `main` (`git tag vX.Y.0` — the first tags this repo will have). A
-  production hotfix between milestones is a patch on the shipped minor.
-
-  | Milestone                        | Due        | Ships                                                  |
-  | -------------------------------- | ---------- | ------------------------------------------------------ |
-  | `v0.2.0 — Sept: production gate` | 2026-09-30 | the first `staging -> main` since the pivot            |
-  | `v1.0.0 — Training build`        | 2026-10-02 | the training build, at the `staging -> main` promotion |
-  | `v1.1.0 — Post-training`         | —          | the first field-validated release                      |
-
-- **Every open issue carries a milestone.** File new issues into one. A
-  milestone closes when its promotion PR merges, and anything still open in it
-  moves to the next one explicitly, never silently.
+- **Sprints are two weeks, Monday 00:00 → Sunday 23:59 UTC**, numbered from
+  project day 1 (the initial commit, Sat 2026-08-22). Sprint 1 ran 08-22 →
+  09-06 (16 days, the only odd one); Sprint 2 = 09-07 → 09-20, Sprint 3 =
+  09-21 → 10-04, Sprint 4 = 10-05 → 10-18, Sprint 5 = 10-19 → 11-01. Decided
+  2026-10-05 by the DRI (`docs/progress_tracker.md`, that day's "Sprints").
+- **The sprint-end `staging -> main` promotion ships the minor.** That PR
+  bumps the minor and tags `main` (`git tag vX.Y.0`), and it goes to the DRI
+  as a go/no-go. Sprint 4 ships `v1.1.0`. A production hotfix between sprint
+  ends is a patch on the shipped minor.
+- **One GitHub milestone per sprint, due on its last day; sprint milestones
+  replace version milestones.** Live titles read `Sprint N (MM-DD → MM-DD)`,
+  with the planned release appended (`Sprint 4 (10-05 → 10-18) — v1.1.0`);
+  that shape is current practice, not a separate decision. **Every closed
+  issue and merged PR goes in the milestone of the sprint it closed or merged
+  in.** Each sprint milestone's description records what shipped in it. Tags
+  and GitHub Releases are the version record.
+- **Every open issue carries a milestone:** the current sprint if it was
+  pulled in, **Backlog** otherwise. File new issues into one. At sprint end,
+  anything still open in the sprint moves to the next sprint or Backlog
+  explicitly, never silently.
+- **A tester build is a GitHub pre-release tagged `tester-build-vX.Y.Z`**
+  (the 1.0.0 release candidates were `tester-build-v1.0.0-rc.N`), with the
+  APK and its QR code (`docs/native/README.md`, #629). The older
+  `android-release-v*` tags stay as published.
 
 ### Cloudflare Workers Builds owns deployment
 
@@ -850,6 +869,26 @@ on a phone that already has the app open or installed, and `check:deploy`
 confirming the origin has rolled back is not the same claim as confirming a
 given device has.
 
+**A rollback is not free once a phone has opened a build with a newer database
+schema.** `DB_VERSION` in `src/lib/storage/db.ts` only goes up, and IndexedDB
+refuses to open a database at a version lower than the one it already holds.
+So a device that has opened the newer build cannot run older code against its
+own data again, whether the older code arrives by a Worker rollback, by a
+stale service worker, or by an older native build if one ever runs. The
+recordings are not deleted: the older code's `getDb()` rejects with
+`DatabaseDowngradeError` and nothing is written. They are unreachable until a
+build at that schema or later is served or installed again. On staging
+(`3b5e098d`, schema 9) a refused open calls `coordinator?.onYielded()`,
+`use-database-status.ts` maps that to `reloadNeeded`, and `database-panel.tsx`
+shows `dbOutOfDate` and `dbOutOfDateTeach` ("This copy is out of date." and
+"Restart to use the new version."); Restart leads back to the same screen
+(inference). All of this was read from the code, not seen on a device. v1.1.0 is the current instance: it moves the schema from 9 to 11
+(v10 and v11 in #1346 and #1367). **Roll forward with a fix rather than back
+when the build to undo raised the schema, and never uninstall to clear the
+screen: uninstalling deletes the recordings.** The Node run that showed this
+(staging's `db.ts` against a v11 database) is the only run; no device has
+seen it. `docs/release/promotion-v1.0.0.md` §5 has the procedure.
+
 ## Device testing — the HTTPS caveat
 
 `getUserMedia` requires a secure context. `localhost` qualifies;
@@ -881,25 +920,36 @@ easy to regress.
   Field testers and facilitators are asked for _bug reports_; those go into
   the queue as `bug` with `source: tester`, and the body records who (by
   role, never by name), when, and on which build. _Feature requests_ from
-  testers are documented, never dropped, and tagged `post-v1` with the source
-  and the rationale in the body; they are not scheduled until they are
-  reviewed against the plan after the training. Where a tester ask matches an
-  issue already open, it lands as an evidence comment on that issue, not as a
-  new one. `v1-required` means V1 = the v1.0.0 training build.
+  testers are documented, never dropped: they are filed as `enhancement` with
+  `source: tester` into the **Backlog** milestone, with the source and the
+  rationale in the body, and are scheduled only when pulled into a sprint.
+  Where a tester ask matches an issue already open, it lands as an evidence
+  comment on that issue, not as a new one. `v1-required`, `v1-desired` and
+  `post-v1` were retired on 2026-10-08, after v1.0.0 shipped; they remain only
+  on closed issues, as history.
+- **Every issue carries one type, one `area:` label, and the `a11y:` labels
+  that apply** (decided 2026-10-08). The type is one of `bug`, `enhancement`,
+  `documentation`, `chore` or `question`. The area is the feature family,
+  which is what an issue count is broken down by. The `a11y:` labels
+  (`low-vision`, `non-reader`, `motor`, `hearing`), alongside `accessibility`,
+  say which need an issue touches. They classify; they are not a commitment
+  to build for every need.
 
 ## Review — every PR, both reviewers
 
-Two independent reviewers run on every code PR: **Frank** (codex, diff-local)
-and **George** (grok, deep-tree). They are two lenses, never a primary and a
+Two independent reviewers run on every code PR: **Frank** (Codex, diff-local)
+and **George** (Grok, deep-tree). They are two lenses, never a primary and a
 fallback — a PR is review-clean only when **both** are clean.
 
-```bash
-scripts/review/both.sh <base>          # run both
-scripts/review/triage.sh <round> <pr>  # build the round's triage comment
-```
+**The uwreview bench runs both lenses on the review VM and posts its rounds on
+the PR.** Nobody runs a reviewer locally: lanes and authors do not run codex or
+grok, and the local `scripts/review/*` harness was retired (#1343, 2026-10-08).
+A lane builds, runs `npm run verify` and `npm run check:prepush`, marks the PR
+ready, and stops. A push voids the round for both lenses.
 
-**A triage comment is mandatory every round**, including clean rounds. Every
-finding gets an explicit disposition — FIXED with a commit, REFUTED with
+**A triage comment is mandatory every round**, including clean rounds. It is
+written by hand on the PR (the bench posts the reviews, not the dispositions).
+Every finding gets an explicit disposition — FIXED with a commit, REFUTED with
 file:line evidence, or DEFERRED with a tracking issue — attributed to the
 reviewer that raised it and stamped with the head SHA. A finding that was
 "addressed" with nothing posted is not verifiable later.
@@ -914,12 +964,10 @@ again**. The cap prompts a decision; it is not a gate the loop closes on its
 own. Hitting it with findings open is an **escalation, not an approval**: name
 the residual findings on the PR and have them explicitly accepted.
 
-**Freeze budget (decided 2026-09-21, expires 2026-10-04).** Until the v1.0.0
-handoff, T3 and docs changes take one George round (P1/P2 only), harness and
-meta PRs cap at two rounds with residuals accepted on the PR, and a P3 never
-triggers a round on any tier — it is batched into one follow-up issue at
-triage. T1 and T2 are unchanged. The table is in
-`docs/review/dual-review.md` ("Freeze budget").
+**The freeze budget has expired.** It was decided 2026-09-21 to run until
+2026-10-04, the v1.0.0 handoff; that date has passed, so the reduced-round
+tiers no longer apply and every tier takes the bar in `docs/review/dual-review.md`
+("Merge policy"). A new freeze needs a new DRI decision with its own dates.
 
 **Decompose before any post-cap round (decided 2026-09-18).** The DRI's pick
 at the cap is made from a _judgment sheet_, not from the round narrative:
@@ -935,10 +983,10 @@ spec claim in both docblocks that the current spec contradicts. Chain versus
 siblings still gets stated; the sheet is what the pick is made from. The shape
 is in `docs/review/dual-review.md` ("Decompose before the DRI picks").
 
-**Merging.** This repo is solo, so Frank and George _are_ the review: once both
-are clean at the current head SHA and CI is green, merge is an admin merge.
-Documentation and content merge on green alone. Process/meta artifacts —
-`ci.yml`, `AGENTS.md`, `scripts/review/**`, deploy config — normally need both
+**Merging.** Frank and George _are_ the review: once both are clean at the
+current head SHA and CI is green, the DRI merges with `--admin` (the ruleset
+requires it). Documentation and content merge on green alone. Process/meta
+artifacts — `ci.yml`, `AGENTS.md`, `docs/review/**`, deploy config — normally need both
 reviewers because they are _executed as instructions_; exempting them is
 allowed, but **the decision is recorded on the PR**, never skipped silently.
 

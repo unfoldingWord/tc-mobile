@@ -34,13 +34,6 @@ test.use({
   },
 });
 
-/** Opt into the O4 look before the app boots (`lib/design.ts`'s key). */
-async function useO4(page: Page) {
-  await page.addInitScript(() => {
-    window.localStorage.setItem("tc-mobile.design", "o4");
-  });
-}
-
 /** One book, one chapter, one RECORDED segment — landed back on Segments. */
 async function seedRecordedSegment(page: Page) {
   await page.goto("/");
@@ -91,7 +84,6 @@ for (const width of WIDTHS) {
     page,
   }) => {
     await page.setViewportSize({ width, height: 800 });
-    await useO4(page);
     await seedRecordedSegment(page);
 
     await page

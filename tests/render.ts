@@ -11,8 +11,8 @@ import { JSDOM } from "jsdom";
  * A whole class of this repo's contracts is carried by a single JSX attribute
  * and reachable by no test. #197's finding is the type case: the tone the
  * recorder's interrupted branch passes (#154), which lived inline in
- * `recorder.tsx` — a component no `tests/` file renders, because it mounts the
- * audio hook graph. The same shape covers `Control`'s `busy` × `disabled` cell
+ * `recorder.tsx` — a component that mounts the audio hook graph, so reaching
+ * it takes a client mount with that graph mocked. The same shape covers `Control`'s `busy` × `disabled` cell
  * (#155 F1), the recovery panels' `role="alert"` and the ⋮-row's absent badge (#1239):
  * each is a prop-to-attribute guarantee with no runner behind it.
  *

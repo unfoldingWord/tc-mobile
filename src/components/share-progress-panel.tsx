@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
 
-import { Icon, type IconName } from "./icon";
+import { Icon } from "./icon";
 import type { ShareO4View } from "./share-o4-view";
 import { useKeepInView } from "@/hooks/use-keep-in-view";
 import { strings } from "@/lib/strings";
@@ -10,19 +10,15 @@ interface ShareProgressPanelProps {
    *  dialog role; see `share-progress.tsx`'s own header on why this never
    *  wears `role="dialog"`. */
   role: "alert" | "status";
-  /** `"share-busy"` while the overlay is busy, or one of
-   *  `shareSettledGlyph`'s outcome marks once it has settled. */
-  icon: IconName;
   /** `shareProgressText(progress, scope)` — the secondary line under the
    *  glyph; the glyph itself carries the meaning (#491). `null` only for the
    *  `hidden` phase, which `ShareProgress` never reaches this panel for. */
   text: string | null;
   /**
-   * What the O4 circle draws (`shareO4View`), present only while the O4
-   * design is on (#947). Absent, the panel renders exactly the markup it
-   * always has, which is what keeps the current look unchanged.
+   * What the circle, its filling ring and its numbered chips draw
+   * (`shareO4View`, #947).
    */
-  o4?: ShareO4View;
+  o4: ShareO4View;
 }
 
 /**
@@ -47,14 +43,7 @@ interface ShareProgressPanelProps {
 export const ShareProgressPanel = forwardRef<
   HTMLDivElement,
   ShareProgressPanelProps
->(function ShareProgressPanel({ role, icon, text, o4 }, ref) {
-  if (o4 === undefined)
-    return (
-      <div ref={ref} tabIndex={-1} role={role} className="share-progress">
-        <Icon name={icon} size={48} className="share-progress-glyph" />
-        <span className="share-progress-text">{text}</span>
-      </div>
-    );
+>(function ShareProgressPanel({ role, text, o4 }, ref) {
   return (
     <div ref={ref} tabIndex={-1} role={role} className="share-progress">
       {o4.chips.length > 0 && <O4Chips chips={o4.chips} />}
@@ -115,7 +104,7 @@ const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
  * while the view gives it a meter (D22), labelled from `strings.ts` and
  * valued 0 to 100, with no value before the first count and 100 once
  * handed over; on any other outcome it is a plain box and the panel's role
- * and text carry the state, as in the current look.
+ * and text carry the state.
  *
  * The bar's name is "Preparing to share" while a prepare counts. At 100 on
  * the hand-off and on `sent` (`view.meterFromStatus`) it is `status`, the

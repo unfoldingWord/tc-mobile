@@ -12,14 +12,10 @@ import { Control } from "./control";
  * a second button. `Control` already carries every accessibility guarantee
  * this app has paid for — `busy` keeping focus (#137), a hinted control
  * staying focusable and speaking its reason (#135), `pressed` (#286), the
- * guide ring (#604) — so a screen that swaps a `Control` for one of these in
- * its O4 branch keeps the same name and the same inert behaviour, which is
- * what #936's switch contract asks of every lane.
+ * guide ring (#604) — so one of these keeps a `Control`'s name and inert
+ * behaviour.
  *
- * The shapes live in `app/styles/o4/controls.css`, scoped under
- * `[data-design="o4"]`. These components do not read `useDesign()`
- * themselves: a screen renders them only in its O4 branch, and with the
- * switch off the class names match nothing.
+ * The shapes live in `app/styles/o4/controls.css`.
  */
 type ControlProps = ComponentProps<typeof Control>;
 

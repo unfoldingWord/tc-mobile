@@ -14,11 +14,10 @@ import { seedToRecorder } from "./support/seed";
  * `working`, and a handle move changes the span the audition is OF, so without
  * that call the sheet keeps sounding audio the segment no longer holds, or a
  * span the translator has already moved off. Neither call is reachable from
- * the unit suite, which does not render the recorder, so deleting either one
- * left it green. The Scissors and the handles both stay live while a span
- * sounds (neither is in `stageView`'s `windowControlsInert` class), so both
- * paths are reachable from the UI and this spec drives them in the shipped
- * build.
+ * the unit suite, which does not render the recorder. The Scissors and the
+ * handles both stay live while a span sounds (neither is in `stageView`'s
+ * `windowControlsInert` class), so both paths are reachable from the UI and
+ * this spec drives them in the shipped build.
  *
  * `onPaste` makes the same call and is not driven here: the paste marker
  * unmounts while a buffer sounds (`recorder-discard-clip.spec.ts` pins that),

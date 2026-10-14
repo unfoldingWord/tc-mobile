@@ -30,7 +30,8 @@
  * `capture-context.ts`), so the Record tap does not change the scale. This
  * module's own reasoning below about a punch-in's canvas staying fitted
  * describes the paths that still reach `Waveform` with committed audio
- * present: idle, and a failed mic tap mid-take (`liveScopeShown`,
+ * present: idle, `requesting` (the wait for the microphone before capture
+ * starts), and a failed mic tap mid-take (`liveScopeShown`,
  * `recorder-stage.ts`) — not the live recording itself.
  */
 
@@ -112,7 +113,8 @@ type RecorderTakeState = "idle" | "requesting" | "recording" | "processing";
  * This used to take a single `capturing`/`takeActive` boolean the caller
  * computed itself (#373). Narrowing that caller-side expression to
  * `recording || paused` let this go false the instant Back was tapped on a
- * first-take preview, while the very same preview stayed on stage —
+ * first-take preview (the #101 preview, retired by #614), while the very same
+ * preview stayed on stage —
  * the jump this flag exists to prevent (George R3 #2) — and nothing made a
  * caller that dropped `isClosing` fail to type-check: `tests/display-gain.test.ts`
  * could pin the CONTRACT for a given boolean, but nothing observed what
@@ -173,23 +175,32 @@ function loudestPeak(peaks: Peaks): number {
  * translator's finger.
  *
  * `firstTakeInFlight` is narrow on purpose: a take being made — the WHOLE
- * take-in-flight window (recording, `processing`, the `isClosing` close wait;
- * George R3 #2) — on a segment that has **no committed audio yet**. It forces
+ * take-in-flight window (`requesting`, recording, `processing`, the
+ * `isClosing` close wait; George R3 #2) — on a segment that has **no committed
+ * audio yet**. It forces
  * 1, and it is not a nicety: an uncommitted take must read at the same
  * absolute level on every canvas that shows it, or a quiet microphone looks
  * healthy on one of them (George R1 P2). The path that earned it was the #101
  * paused-take preview, which mounted this drawer mid-take on the decoded take
  * and swapped back to the live scope on Resume; #614 retired the paused take,
  * and `recorder.tsx`'s call site names the mid-take states that still reach
- * this drawer with nothing committed.
+ * this drawer with nothing committed. In every one of them `Waveform` has no
+ * peaks to fit (`use-segment-editor.ts` computes none for an empty buffer)
+ * and draws the dotted never-recorded rule without calling this function, so
+ * `Waveform`'s prop currently guards a path that draws no bars. Whether to
+ * remove that prop is the DRI's call (#1201).
  *
- * It is deliberately NOT "a take is in flight". A punch-in draws the segment's
- * ALREADY COMMITTED audio while capturing — `working` does not grow until the
- * new recording is spliced at the commit — so treating that canvas as
+ * It is deliberately NOT "a take is in flight". Where `Waveform` shows a
+ * punch-in — idle, `requesting`, or a failed mic tap for the whole take — it
+ * draws the segment's ALREADY COMMITTED audio, since `working` does not grow
+ * until the new recording is spliced at the commit. Treating that canvas as
  * in-flight would collapse the stored speech to a tenth of the lane at the
  * exact moment the translator is aiming at the centreline with it. That is
  * #358's own complaint, reintroduced on the insert path (George R2 P2).
- * Committed audio stays fitted through the whole take.
+ * Committed audio stays fitted through the whole take. A punch-in with a
+ * working tap is drawn by `LiveScope` instead, at its capture context's gain,
+ * which `capture-context.ts` fits with this function and a literal `false`;
+ * this flag does not reach that canvas.
  *
  * Four cases, in order:
  *

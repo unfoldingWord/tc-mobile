@@ -1,10 +1,20 @@
 /**
- * src/app/styles/o4/ — the O4 design's own stylesheets (#938, epic #936).
+ * src/app/styles/o4/ — the O4 design's stylesheets (#938, epic #936), part
+ * of the component layer.
  *
- * Every rule any file in this folder ever adds is scoped under
- * [data-design="o4"]. With the switch off (`lib/design.ts`,
- * `hooks/use-design.ts`) `data-design` is absent or `"current"`, so nothing
- * here can ever match and the current look renders exactly as it does today.
+ * O4 is the app's only look. Until #954 every rule here was scoped under
+ * `[data-design="o4"]`, an attribute the design switch put on `<html>`; #954
+ * deleted the switch and the old look it switched to.
+ *
+ * WHY EVERY SELECTOR STILL STARTS WITH `:root`. The prefix is not a scope —
+ * `:root` is `<html>`, so it matches on every page — it holds each rule at
+ * the specificity it had under `[data-design="o4"]` (an attribute selector
+ * and a pseudo-class both count (0,1,0)). These rules override
+ * `3-components.css` rules, and with the prefix gone a rule here would drop
+ * one class below a `3-components.css` rule it beats today. Static analysis
+ * cannot tell which of those pairs ever meet on one element, so the prefix
+ * stays until a computed-style comparison of the built app can show a
+ * flattened rule paints the same. A new rule here takes the prefix too.
  *
  * ONE FILE PER AREA, pre-created here so parallel batch-1 lanes never collide
  * on this index (#938 follow-up, ahead of batch 1 branching):
@@ -30,8 +40,8 @@
  * rather than opening a new, later-declared layer — a later-declared layer
  * would outrank `components` entirely regardless of specificity, which is a
  * stronger and different guarantee than the one this batch's "Done when"
- * clause asks for. Sharing the layer means an O4 rule and an unscoped
- * component rule of EQUAL specificity are decided by source order within
+ * clause asks for. Sharing the layer means an O4 rule and a
+ * `3-components.css` rule of EQUAL specificity are decided by source order within
  * that one shared layer (CSS Cascade Layers, §6: cascade layers are compared
  * first, and rules with no layer difference fall through to the ordinary
  * cascade, where later wins ties) — so a future O4 rule only need not be
@@ -48,11 +58,8 @@
  * minifiers preserve for license banners, and which Tailwind's own is — so an
  * empty `@layer components {}` compiles away to zero bytes, indistinguishable
  * from the file not existing. Only a real declaration survives, which is why
- * the one below exists. It is inert:
- * nothing reads `--o4-scope` today, it paints nothing, and it exists under
- * the switch's own selector so it changes nothing about "byte-for-byte
- * unchanged with the switch off". Batch 1 lanes add real rules to their own
- * area file instead; this line does not need to move for that.
+ * the one below exists. It is inert: nothing reads `--o4-scope`, and it
+ * paints nothing.
  */
 @import "./books.css";
 @import "./sheets.css";
@@ -66,7 +73,7 @@
 @import "./motion.css";
 
 @layer components {
-  [data-design="o4"] {
+  :root {
     --o4-scope: 1;
   }
 }

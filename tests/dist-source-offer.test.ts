@@ -138,10 +138,16 @@ describe.skipIf(gate === "skip")(
       expect(packages).toContain("rolldown");
       expect(packages).toContain("vite");
 
-      const sections = readFileSync(
-        path.join(ROOT, "public/licenses/THIRD-PARTY-NOTICES.txt"),
+      // The notices as SHIPPED: the build fills each `{{version:<package>}}`
+      // into dist/ (#1381), so this reads the built file, not public/'s source.
+      const shipped = readFileSync(
+        path.join(DIST, "licenses/THIRD-PARTY-NOTICES.txt"),
         "utf8"
-      ).split(/\n=+\n/);
+      );
+      expect(shipped, "dist notices carry an unexpanded token").not.toContain(
+        "{{version:"
+      );
+      const sections = shipped.split(/\n=+\n/);
       for (const e of entries) {
         // A null package is an injected file the plugin could not attribute.
         expect(e.package, `${e.module} has no owning package`).not.toBeNull();

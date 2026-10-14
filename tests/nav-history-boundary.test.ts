@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { ESLint } from "eslint";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
@@ -27,7 +28,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  *   - it STAYS GREEN on a legitimate file — one that only mentions `popstate`
  *     in a comment (AST-invisible) and touches other browser APIs
  *     (`localStorage`), never `history`.
- *   - the file-identity exemption is checked with `--print-config`, not by
+ *   - the file-identity exemption is checked with ESLint's `calculateConfigForFile` (the config `--print-config` prints), not by
  *     linting `src/` for violations: the two history-OBJECT rules
  *     (`no-restricted-globals` / `no-restricted-properties`) resolve to `off`
  *     for `src/hooks/use-nav-stack.ts` and to `error` for another hook, while
@@ -101,19 +102,46 @@ function lintProbe(name: string, source: string): string[] {
     .filter((id): id is string => id !== null);
 }
 
-/** The resolved level (0/1/2) of `ruleId` for `file`, via `eslint --print-config`.
- * This inspects the config for a path without linting the file's contents, so
- * the file-identity exemption is checked without sweeping `src/`. */
-function ruleLevelFor(file: string, ruleId: string): number {
-  const stdout = execFileSync(
-    process.execPath,
-    [ESLINT, "--print-config", file],
-    { cwd: REPO, encoding: "utf8", stdio: "pipe", timeout: ESLINT_TIMEOUT_MS }
-  );
-  const config = JSON.parse(stdout) as {
-    rules?: Record<string, [number | string, ...unknown[]] | number | string>;
+/** The resolved config entry of `ruleId` for `file`, via the ESLint Node API's
+ * `calculateConfigForFile` — the same resolution `--print-config` prints. This
+ * inspects the config for a path without linting the file's contents, so the
+ * file-identity exemption is checked without sweeping `src/`. One in-process
+ * instance is shared, so the flat config is loaded once rather than once per
+ * spawned `eslint` child (#1382). It is built on first use, so only the case
+ * that needs it pays for it. That is a cost choice, not a safety one:
+ * constructing the instance does not read the flat config, which is read
+ * inside `calculateConfigForFile`, so a broken config surfaces in the cases
+ * that resolve it (and in the probe cases through their spawned `eslint`), not
+ * at collection (#1389). */
+let configEslint: ESLint | undefined;
+
+type RuleEntry = [number | string, ...unknown[]] | number | string | undefined;
+
+async function ruleEntryFor(file: string, ruleId: string): Promise<RuleEntry> {
+  configEslint ??= new ESLint({ cwd: REPO });
+  const config = (await configEslint.calculateConfigForFile(file)) as {
+    rules?: Record<string, RuleEntry>;
   };
-  const entry = config.rules?.[ruleId];
+  return config.rules?.[ruleId];
+}
+
+/** The `selector` strings in `ruleId`'s resolved options for `file`. */
+async function restrictedSelectorsFor(
+  file: string,
+  ruleId: string
+): Promise<string[]> {
+  const entry = await ruleEntryFor(file, ruleId);
+  const options = Array.isArray(entry) ? entry.slice(1) : [];
+  return options.flatMap((o) =>
+    typeof o === "object" && o !== null && "selector" in o
+      ? [String((o as { selector: unknown }).selector)]
+      : []
+  );
+}
+
+/** The resolved level (0/1/2) of `ruleId` for `file`. */
+async function ruleLevelFor(file: string, ruleId: string): Promise<number> {
+  const entry = await ruleEntryFor(file, ruleId);
   const level = Array.isArray(entry) ? entry[0] : entry;
   if (level === "off" || level === 0) return 0;
   if (level === "warn" || level === 1) return 1;
@@ -183,7 +211,7 @@ export function useThing(): string | null {
     expect(rules).not.toContain("no-restricted-syntax");
   }, 15000);
 
-  it("EXEMPTS src/hooks/use-nav-stack.ts by file identity — the history-OBJECT rules resolve off there and error in another hook; no-restricted-syntax stays enabled, its popstate selector narrowed out (George R3 P3-4)", () => {
+  it("EXEMPTS src/hooks/use-nav-stack.ts by file identity — the history-OBJECT rules resolve off there and error in another hook; no-restricted-syntax stays enabled, its popstate selector narrowed out (George R3 P3-4)", async () => {
     const adapter = "src/hooks/use-nav-stack.ts";
     const otherHook = "src/hooks/use-recorder.ts";
     // The history OBJECT bans (`history` global, `window.history`,
@@ -192,16 +220,36 @@ export function useThing(): string | null {
       "no-restricted-globals",
       "no-restricted-properties",
     ]) {
-      expect(ruleLevelFor(adapter, ruleId)).toBe(0); // off for the adapter
-      expect(ruleLevelFor(otherHook, ruleId)).toBe(2); // error for other hooks
+      expect(await ruleLevelFor(adapter, ruleId)).toBe(0); // off for the adapter
+      expect(await ruleLevelFor(otherHook, ruleId)).toBe(2); // error for other hooks
     }
     // no-restricted-syntax is NOT blanket-off for the adapter (George R3 P3-4):
     // the rule stays enabled with only the history popstate selector subtracted,
     // so a future non-history hooks selector still reaches this file.
-    // `--print-config` reports only the level, not the selector set, so it reads
-    // `error` (2) here just as for any other hook. These level assertions
-    // do not check the adapter's selector set or lint its popstate listener.
-    expect(ruleLevelFor(adapter, "no-restricted-syntax")).toBe(2);
-    expect(ruleLevelFor(otherHook, "no-restricted-syntax")).toBe(2);
+    // `ruleLevelFor` returns only the level, so it reads `error` (2) here just
+    // as for any other hook; the selector set is pinned by the next case.
+    expect(await ruleLevelFor(adapter, "no-restricted-syntax")).toBe(2);
+    expect(await ruleLevelFor(otherHook, "no-restricted-syntax")).toBe(2);
+  }, 15000);
+
+  it("no-restricted-syntax keeps the popstate selector for other hooks and subtracts only that one for the adapter", async () => {
+    const adapter = "src/hooks/use-nav-stack.ts";
+    const otherHook = "src/hooks/use-recorder.ts";
+    const adapterSelectors = await restrictedSelectorsFor(
+      adapter,
+      "no-restricted-syntax"
+    );
+    const otherSelectors = await restrictedSelectorsFor(
+      otherHook,
+      "no-restricted-syntax"
+    );
+    const notPopstate = (s: string) => !s.includes("popstate");
+    // Subtracted for the adapter, present for every other hook.
+    expect(otherSelectors.filter((s) => !notPopstate(s))).toHaveLength(1);
+    expect(adapterSelectors.filter((s) => !notPopstate(s))).toEqual([]);
+    // Still enabled for the next selector: the adapter's list is the other
+    // hooks' list minus popstate, and it is not empty.
+    expect(adapterSelectors.length).toBeGreaterThan(0);
+    expect(adapterSelectors).toEqual(otherSelectors.filter(notPopstate));
   }, 15000);
 });

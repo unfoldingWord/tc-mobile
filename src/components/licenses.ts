@@ -13,14 +13,16 @@
  * One table so the notice cannot silently drift from what is installed:
  * `tests/licenses.test.ts` walks the `package-lock.json` non-dev runtime closure
  * and asserts every package in it is disclosed here (so a transitive dependency
- * cannot slip through), pins every entry's version to the resolved package, and
- * asserts the linked texts actually ship.
+ * cannot slip through), holds every entry's SPDX to the installed package's
+ * `license`, and asserts the linked texts actually ship. No entry carries a
+ * version: the build defines `__DEP_VERSIONS__` from the installed manifests
+ * (`scripts/licence-versions.mjs`, #1381), so a bump that changes no licence
+ * needs no edit here.
  */
 
 /** A bundled component and the licence it is offered under. */
-interface ThirdPartyLicense {
+interface DisclosedComponent {
   readonly name: string;
-  readonly version: string;
   readonly spdx: string;
   readonly copyright: string;
   /** What it does here, in plain terms. Only the ones worth naming carry it. */
@@ -56,6 +58,11 @@ interface ThirdPartyLicense {
   readonly noticeMarker: string;
 }
 
+/** A disclosed component with the version that is installed and built. */
+interface ThirdPartyLicense extends DisclosedComponent {
+  readonly version: string;
+}
+
 /**
  * Everything bundled into the app: the `package.json` runtime dependencies plus
  * the code the build itself writes into `dist/` from dev dependencies, which the
@@ -67,13 +74,11 @@ interface ThirdPartyLicense {
  * lamejs is first and carries the copyleft note; the rest are permissive
  * (MIT/ISC/0BSD/Apache-2.0) and their verbatim notices ride in
  * `THIRD-PARTY-NOTICES.txt`.
- * Versions are the installed ones — the tests pin every entry and keep the set
- * complete.
+ * The set is kept complete by the tests; each version is the installed one.
  */
-export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
+export const disclosedComponents: readonly DisclosedComponent[] = [
   {
     name: "@breezystack/lamejs",
-    version: "1.2.7",
     spdx: "LGPL-3.0",
     role: "MP3 encoder",
     // Attribution, not a © notice: the bundled LICENSE carries no copyright line,
@@ -99,21 +104,18 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "react",
-    version: "19.3.0",
     spdx: "MIT",
     copyright: "© Meta Platforms, Inc. and affiliates",
     noticeMarker: "Meta Platforms",
   },
   {
     name: "react-dom",
-    version: "19.3.0",
     spdx: "MIT",
     copyright: "© Meta Platforms, Inc. and affiliates",
     noticeMarker: "Meta Platforms",
   },
   {
     name: "scheduler",
-    version: "0.28.0",
     spdx: "MIT",
     role: "react-dom's cooperative scheduler (bundled transitively)",
     copyright: "© Meta Platforms, Inc. and affiliates",
@@ -121,35 +123,30 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "idb",
-    version: "8.0.3",
     spdx: "ISC",
     copyright: "© 2016 Jake Archibald",
     noticeMarker: "Jake Archibald",
   },
   {
     name: "clsx",
-    version: "2.1.1",
     spdx: "MIT",
     copyright: "© Luke Edwards",
     noticeMarker: "Luke Edwards",
   },
   {
     name: "tailwind-merge",
-    version: "3.7.0",
     spdx: "MIT",
     copyright: "© 2021 Dany Castillo",
     noticeMarker: "Dany Castillo",
   },
   {
     name: "fflate",
-    version: "0.8.3",
     spdx: "MIT",
     copyright: "© 2026 Arjun Barrett",
     noticeMarker: "Arjun Barrett",
   },
   {
     name: "@capacitor/core",
-    version: "8.5.2",
     spdx: "MIT",
     role: "native-shell bridge, imported by the web code (share, storage, Back)",
     copyright: "© 2017-present Drifty Co.",
@@ -157,28 +154,24 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "@capacitor/app",
-    version: "8.1.1",
     spdx: "MIT",
     copyright: "© 2020-present Ionic",
     noticeMarker: "Ionic",
   },
   {
     name: "@capacitor/filesystem",
-    version: "8.1.3",
     spdx: "MIT",
     copyright: "© 2025 Ionic",
     noticeMarker: "Ionic",
   },
   {
     name: "@capacitor/share",
-    version: "8.0.2",
     spdx: "MIT",
     copyright: "© 2020-present Ionic",
     noticeMarker: "Ionic",
   },
   {
     name: "@capacitor/synapse",
-    version: "1.0.4",
     // Labelled by the licence text it actually ships (LICENSE.md is the MIT
     // text, carried verbatim in THIRD-PARTY-NOTICES.txt); the upstream
     // package.json's ISC field is disclosed in the note rather than hidden here.
@@ -190,7 +183,6 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "tslib",
-    version: "2.8.1",
     spdx: "0BSD",
     role: "declared runtime dependency of @capacitor/core",
     copyright: "© Microsoft Corporation",
@@ -198,7 +190,6 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "workbox",
-    version: "7.4.1",
     spdx: "MIT",
     role: "service worker, built by vite-plugin-pwa",
     copyright: "© Google LLC",
@@ -209,7 +200,6 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
     // Written outside Vite's module graph, so build-provenance.json cannot
     // record it; tests/dist-source-offer.test.ts pins it from dist/sw.js (#823).
     name: "@trickfilm400/rollup-plugin-off-main-thread",
-    version: "3.0.0-pre1",
     spdx: "Apache-2.0",
     role: "the service worker's module loader, written into it by Workbox at build time",
     copyright: "© 2018 Google Inc.",
@@ -217,7 +207,6 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "vite",
-    version: "8.3.0",
     spdx: "MIT",
     role: "module-preload polyfill and preload helper, written into the app at build time",
     copyright: "© 2019-present VoidZero Inc. and Vite contributors",
@@ -225,7 +214,6 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "rolldown",
-    version: "1.2.9",
     spdx: "MIT",
     role: "bundler module runtime, written into the app at build time",
     copyright: "© 2024-present VoidZero Inc. & Contributors",
@@ -233,7 +221,6 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "@oxc-project/runtime",
-    version: "0.150.0",
     spdx: "MIT",
     role: "Oxc's helpers (copied from Babel's), written into the app at build time",
     copyright: "© 2024-present VoidZero Inc. & Contributors; © 2023 Boshen",
@@ -241,7 +228,6 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "tailwindcss",
-    version: "4.3.3",
     spdx: "MIT",
     role: "base styles and theme, written into the app's stylesheet at build time",
     copyright: "© Tailwind Labs, Inc.",
@@ -249,13 +235,28 @@ export const thirdPartyLicenses: readonly ThirdPartyLicense[] = [
   },
   {
     name: "vite-plugin-pwa",
-    version: "1.3.0",
     spdx: "MIT",
     role: "service-worker registration script, generated at build time",
     copyright: "© 2020-present Anthony Fu",
     noticeMarker: "Anthony Fu",
   },
 ];
+
+/**
+ * The disclosure as the About screen and the tests read it. The version comes
+ * from the build's `__DEP_VERSIONS__`; it is empty only where nothing defined
+ * it (the config files importing this module for `disclosedComponents`), and
+ * `tests/licenses.test.ts` fails on an empty one. The spread copies `source`
+ * by reference, so its `href` getter is still not read until render time.
+ */
+export const thirdPartyLicenses: readonly ThirdPartyLicense[] =
+  disclosedComponents.map((component) => ({
+    ...component,
+    version:
+      (typeof __DEP_VERSIONS__ === "undefined"
+        ? undefined
+        : __DEP_VERSIONS__[component.pinPackage ?? component.name]) ?? "",
+  }));
 
 /** A verbatim licence text shipped under `public/licenses/`, read in-drawer. */
 export interface LicenseText {

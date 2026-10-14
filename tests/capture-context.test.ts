@@ -319,29 +319,49 @@ describe("recorder wiring (#640)", () => {
     )
   );
 
-  it("the Record tap builds the context at the offset it locks", () => {
+  it("a take's start builds the context at the offset it locks, and its deps carry editor (#1201)", () => {
+    // The pin runs THROUGH `startTake`'s `useCallback` dependency list.
+    // `startTake` is the start the Record tap and a confirmed Record again
+    // (#1028) both make, so the pin moved there with the statements.
+    // Dropping `editor` from that list is not caught by anything else here;
+    // `react-hooks/exhaustive-deps` flags the drop too, and this is the
+    // second gate, for the #212 bail-out shape, as in the Retry pin below.
     expect(src).toMatch(
-      /insertionOffset\.current = win\.centerlineSample;\s*setCaptureContext\(\s*buildCaptureContext\(\s*editor\.working,\s*win\.centerlineSample,\s*editor\.peaks\s*\)\s*\);\s*audio\.startRecording\(\);/
+      /insertionOffset\.current = win\.centerlineSample;\s*setCaptureContext\(\s*buildCaptureContext\(\s*editor\.working,\s*win\.centerlineSample,\s*editor\.peaks\s*\)\s*\);\s*return beforeCapture\s*\?\s*audio\.startRecording\(\{ beforeCapture \}\)\s*:\s*audio\.startRecording\(\);\s*\},\s*\[audio,\s*editor,\s*win\.centerlineSample\]\s*\);/
+    );
+  });
+
+  it("the Record tap starts through it", () => {
+    expect(src).toMatch(
+      /void startTake\(\);\s*\},\s*\[recording,\s*view,\s*startTake,\s*commitTake\]\s*\);/
     );
   });
 
   it("the permission Retry builds it from the offset already locked, and its deps carry editor.peaks (#1201)", () => {
     // The pin runs THROUGH the `useCallback` dependency list, not just the
-    // call: with `editor.peaks` dropped from it, the Retry closure would
-    // still compile and still pass the argument match above, but hand
-    // `buildCaptureContext` the peaks of whatever render first created the
-    // callback — a stale fit for the context's `gain` (George R1 on #1199).
-    // `react-hooks/exhaustive-deps` also flags that drop today; this is the
-    // second gate, for the #212 bail-out shape that silences that rule for a
-    // whole hook body without failing lint.
+    // call. Dropping `editor.peaks` from that list is not a stale fit today:
+    // `editor.peaks` is a `useMemo` over `working` (`use-segment-editor.ts`),
+    // so it changes only when `editor.working` does, and `editor.working` is
+    // still listed. The list is pinned because that coupling is an
+    // implementation detail of the hook, not a contract of this callback.
+    // `react-hooks/exhaustive-deps` flags the drop too; this is the second
+    // gate, for the #212 bail-out shape that silences that rule for a whole
+    // hook body without failing lint.
     expect(src).toMatch(
       /setCaptureContext\(\s*buildCaptureContext\(\s*editor\.working,\s*insertionOffset\.current,\s*editor\.peaks\s*\)\s*\);\s*audio\.startRecording\(\);\s*\},\s*\[audio,\s*editor\.working,\s*editor\.peaks\]\s*\);/
     );
   });
 
   it("every mic start is one of those two", () => {
-    expect(src.match(/audio\.startRecording\(\);/g)).toHaveLength(2);
-    expect(src.match(/setCaptureContext\(/g)).toHaveLength(2);
+    // `startTake`'s two arms (with and without `beforeCapture`), and Retry.
+    expect(src.match(/audio\.startRecording\(/g)).toHaveLength(3);
+    expect(
+      src.match(/setCaptureContext\(\s*buildCaptureContext\(/g)
+    ).toHaveLength(2);
+    // The third write is Record again's (#1028): once the erase has landed
+    // there is nothing left to flank the take, so the context is null.
+    expect(src.match(/setCaptureContext\(/g)).toHaveLength(3);
+    expect(src.match(/setCaptureContext\(null\);/g)).toHaveLength(1);
   });
 
   it("the live scope is handed the context", () => {
