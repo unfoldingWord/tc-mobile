@@ -1242,7 +1242,7 @@ Before these, and still this session: the v0.2.11 bump (#885) and promotion (#88
 2. Finish #905, #908 and #910 through review, then cut v0.2.12 (#678 and everything above are on develop and not yet on staging).
 3. The requirements owner signs off `stopToEdit` ("Stop recording to edit.") and `stopToErase` ("Stop recording to erase."), tracked in #903.
 4. #843 item 3 is a DRI call: keep or clear the storage warning when a re-read fails.
-5. AGENTS.md's milestone table names "v0.3.0 — Oct: October 2026 training", but the milestone is "v0.3.0 — Oct: training". Fix it with the next AGENTS.md change.
+5. AGENTS.md's milestone table names v0.3.0 with a place-name, but the milestone is "v0.3.0 — Oct: training". Fix it with the next AGENTS.md change.
 
 ---
 
