@@ -38,7 +38,7 @@ import { DARK_FLOOR, LIGHT_FLOOR, floorOf, resolved } from "./support/theme";
  * equatorial sun, which is the condition it was written for. That is a device
  * check on a phone outdoors, and it is still owed (#245 for Android at all,
  * #249 for whether the glyph is recognised). Headless Chromium on a container
- * is not a screen in Nairobi.
+ * is not a screen at the training.
  */
 
 const themeColor = (page: import("@playwright/test").Page) =>

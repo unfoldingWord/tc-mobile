@@ -1242,7 +1242,7 @@ Before these, and still this session: the v0.2.11 bump (#885) and promotion (#88
 2. Finish #905, #908 and #910 through review, then cut v0.2.12 (#678 and everything above are on develop and not yet on staging).
 3. The requirements owner signs off `stopToEdit` ("Stop recording to edit.") and `stopToErase` ("Stop recording to erase."), tracked in #903.
 4. #843 item 3 is a DRI call: keep or clear the storage warning when a re-read fails.
-5. AGENTS.md's milestone table names "v0.3.0 — Oct: East Africa training", but the milestone is "v0.3.0 — Oct: training". Fix it with the next AGENTS.md change.
+5. AGENTS.md's milestone table names "v0.3.0 — Oct: October 2026 training", but the milestone is "v0.3.0 — Oct: training". Fix it with the next AGENTS.md change.
 
 ---
 
@@ -2576,7 +2576,7 @@ Closed #16, #170, #251 (completed); #182→#192, #150→#36 (duplicates); #285 (
 
 - **Tim (@timjore):** #284 (audition — built, waiting); #316/#317 reversals; #286 level-meter toggle keep/remove; Q6 (#243) → #115/#116/#24/#252. Seth is drafting the Slack post himself.
 - **Seth:** merge go per PR as they clear; iOS secrets into `release-signing` (5 of 7) + Android keystore (#318 step 2); re-cut APK from staging `977f544` and run #245 from step 2 (list playback #269, share #336/#272, background, call, restart); read the Moto G peak/RMS for #358/#359.
-- **Elsy:** second tester (Caleb, Android) into the APK loop; Signal group for field testing.
+- **Project manager:** second tester (a training facilitator, Android) into the APK loop; Signal group for field testing.
 
 ### Artifacts
 
@@ -3494,7 +3494,7 @@ PRs**, so this entry follows 2026-09-03 in the committed tracker with a gap.
 
 - **V1 = end of September**, in **three one-week sprints**. **Sprint 1 (→ Mon 2026-09-14):
   installable apps** — wrap the PWA with Capacitor → **iOS TestFlight + Android APK** so the
-  Nairobi testers (**Caleb, Javi**) hit real devices early.
+  training testers (**the two training facilitators**) hit real devices early.
 - **Team:** **Elsy** PM (not Birch — AGENTS.md DRI block is stale), **Tim** product owner,
   **Seth** dev lead. Weekly sync, same time.
 - **V1-required / v1-desired** labels are the must-have axis (they already existed); 25 v1-required

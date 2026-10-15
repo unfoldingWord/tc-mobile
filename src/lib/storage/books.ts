@@ -196,7 +196,7 @@ export async function getBook(id: BookId): Promise<Book | undefined> {
 }
 
 /**
- * Rename a book in place (#264 — the Nairobi manual workflow names a book for
+ * Rename a book in place (#264 — the training manual workflow names a book for
  * the passage, e.g. "Mark").
  *
  * Get-then-put in ONE readwrite transaction — the idempotency bar, never a

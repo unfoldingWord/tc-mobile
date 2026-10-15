@@ -9,8 +9,8 @@ edit the waveform, manage the segments of a chapter, and share a chapter as an
 MP3 or a book as a zip of chapter MP3s through the OS share sheet. It targets
 Android and iOS phones, frequently offline, used by people who may not read.
 
-The driving deadline is the **East Africa training in the first week of
-October 2026**, with production readiness targeted for **end of September 2026**.
+The driving deadline is the **October 2026 training (the first week of
+October 2026)**, with production readiness targeted for **end of September 2026**.
 
 ## The pivot — read this before the rest of the file
 

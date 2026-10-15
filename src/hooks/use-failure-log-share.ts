@@ -144,7 +144,7 @@ export interface UseFailureLogShare extends ShareGestures<FailureLogShareError> 
  *
  * The log is durable, which makes it retrievable by a maintainer holding the
  * phone. That is not the situation the October training is: the phone is in a
- * translator's hand in Nairobi and the maintainer is not in the room. So the
+ * translator's hand at the training and the maintainer is not in the room. So the
  * log needs the same exit every recording has — the OS share sheet, which on
  * both platforms reaches mail, a messaging app, or a file the facilitator can
  * collect later, with no network of our own and no telemetry.

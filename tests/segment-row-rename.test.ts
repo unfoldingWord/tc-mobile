@@ -15,7 +15,7 @@ vi.mock("@/hooks/report-failure", () => ({ reportFailure: vi.fn() }));
  * Rename in the segment row's menu (#591): the ordinal stays in the badge and
  * the label is the typed title over the wave, and the menu reaches it on EVERY row — an empty one included, because the
  * facilitator labels segments while setting a chapter up, before anything is
- * recorded (#264's Nairobi workflow). The audio items stay recorded-row only.
+ * recorded (#264's training workflow). The audio items stay recorded-row only.
  *
  * Scope: the row alone, with `onRename` standing in for the screen. The store's
  * normalisation (trim, blank ⇒ null) is `tests/storage.test.ts`'s; typing into
