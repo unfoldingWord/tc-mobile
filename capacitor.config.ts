@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 /**
  * Capacitor wraps the existing PWA in a native WebView so the same app code
- * ships to TestFlight and as an Android APK for the Nairobi training (#262).
+ * ships to TestFlight and as an Android APK for the October 2026 training (#262).
  * This is the shell only — no product changes.
  *
  * `webDir` is the Vite output directory (`dist`) — but the NATIVE build is

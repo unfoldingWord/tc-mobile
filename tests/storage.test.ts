@@ -767,7 +767,7 @@ describe("chapter naming at creation (#609)", () => {
 });
 
 /**
- * Renaming a book and a chapter in place (#264, the Nairobi manual workflow).
+ * Renaming a book and a chapter in place (#264, the training manual workflow).
  *
  * A facilitator names a book for the passage ("Mark") and a chapter for the
  * span ("Mark 6"). Each rename is a get-then-put in ONE transaction — the

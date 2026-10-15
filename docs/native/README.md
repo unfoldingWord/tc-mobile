@@ -1,7 +1,7 @@
 # Native packaging (Capacitor) — build & ship runbook
 
 **Issue:** [#262](https://github.com/unfoldingWord/tc-mobile/issues/262) —
-installable iOS (TestFlight) + Android (APK) for the Nairobi training.
+installable iOS (TestFlight) + Android (APK) for the October 2026 training.
 **Decision basis:** `docs/research/native-packaging.md` (recommendation) and
 its counter-case (#86). **Status:** shell only, no product changes.
 
@@ -103,12 +103,12 @@ route).
 Some steps depend on people, money, or approvals outside this repo. Start these
 early — a membership or an access grant can take **more than a day**.
 
-| Gate                                   | Platform | Cost   | Lead time                      | Needed for                                              |
-| -------------------------------------- | -------- | ------ | ------------------------------ | ------------------------------------------------------- |
-| **Apple Developer Program** membership | iOS      | Paid   | Enrollment can take **a day+** | Any signed iOS install; TestFlight                      |
-| **unfoldingWord Apple Team**           | iOS      | —      | Access grant                   | Signing under the org identity                          |
-| **App Store Connect** access           | iOS      | —      | Access grant                   | Adding the build + testers (Caleb, Javi, Tim)           |
-| Android signing                        | Android  | **$0** | **None**                       | Nothing external — debug APK, or a self-signed keystore |
+| Gate                                   | Platform | Cost   | Lead time                      | Needed for                                                                         |
+| -------------------------------------- | -------- | ------ | ------------------------------ | ---------------------------------------------------------------------------------- |
+| **Apple Developer Program** membership | iOS      | Paid   | Enrollment can take **a day+** | Any signed iOS install; TestFlight                                                 |
+| **unfoldingWord Apple Team**           | iOS      | —      | Access grant                   | Signing under the org identity                                                     |
+| **App Store Connect** access           | iOS      | —      | Access grant                   | Adding the build + testers (the two training facilitators, the requirements owner) |
+| Android signing                        | Android  | **$0** | **None**                       | Nothing external — debug APK, or a self-signed keystore                            |
 
 **Android has no external gatekeeper.** You either use the auto-signed debug APK
 above, or generate your own release keystore locally (§5 step 1) — no account,
@@ -262,7 +262,7 @@ TestFlight only; **App Store submission is out of scope** (#262).
 6. In the Organizer: **Distribute App → TestFlight (Internal/External)** →
    upload to App Store Connect.
 7. In **App Store Connect → TestFlight**, add the build to a tester group
-   (Caleb, Javi, Tim). External testers need a one-time Beta App Review.
+   (the two training facilitators, the requirements owner). External testers need a one-time Beta App Review.
 8. **Testers install** via the **TestFlight** app using the invite link/email.
 
 ---
