@@ -130,9 +130,11 @@ describe("filenameSafe byte cap", () => {
     const cluster = `e${"\u0301".repeat(70)}`;
     expect(bytes(cluster)).toBeGreaterThan(FILENAME_LABEL_MAX_BYTES);
     const out = filenameSafe(cluster);
-    expect(out.length).toBeGreaterThan(0);
-    expect(bytes(out)).toBeLessThanOrEqual(FILENAME_LABEL_MAX_BYTES);
-    expect(cluster.startsWith(out)).toBe(true);
+    // The exact value: "e" (1 byte) + 59 marks (2 bytes each) = 119 bytes; a
+    // 60th mark would make 121. A cutter that kept only the first code point,
+    // or stopped early, would still satisfy a prefix-and-budget check.
+    expect(out).toBe(`e${"́".repeat(59)}`);
+    expect(bytes(out)).toBe(119);
   });
 
   it("keeps a custom chapter title whose first cluster is over budget", () => {
