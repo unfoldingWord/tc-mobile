@@ -41,7 +41,8 @@
     "check:deploy": "node scripts/check-deploy.mjs",
     "check:deploy:prod": "node scripts/check-deploy-prod.mjs",
     "check:commit-msg": "node scripts/check-commit-messages.mjs",
-    "check:prepush": "node scripts/prepush-check.mjs"
+    "check:prepush": "node scripts/prepush-check.mjs",
+    "check:pr-body": "node scripts/check-pr-body.mjs"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs}": [
