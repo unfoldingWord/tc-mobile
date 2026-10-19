@@ -65,16 +65,15 @@ Share Chapter and Share Book are unchanged (pivot-plan A4).
   quota handling and the transaction discipline were built around. Splitting
   the record between IndexedDB and a removable card adds failure modes the
   current code does not have — a card that is missing, full, read-only or
-  swapped between sessions, and a database row that points at a file that is
-  no longer there. Each needs a defined behaviour and a test before it ships.
+  swapped between sessions, a database row that points at a file that is no
+  longer there, and a partial file left on the card when the app is killed
+  mid-write while that file is the only copy. Each needs a defined behaviour
+  and a test before it ships.
   The product owner's note settles that a card pulled mid-recording gets a
   warning, not recovery design; it does not settle the rest.
 - **Nothing is built yet.** No code writes to removable storage, no code
   writes a Scripture Bundle, and no device has run either. This ADR records a
   decision, not a capability.
-- **Share Book must work on Android first.** The project export rides the same
-  share path, and Share Book on Android is an open defect
-  ([#272](https://github.com/unfoldingWord/tc-mobile/issues/272)).
 - **The web build probably cannot follow.** Recording to the card is expected
   to be a native (Android) path, beside the IndexedDB path the web build
   keeps. That is an inference, not something the decisions say, and it has
@@ -97,6 +96,12 @@ These are for the requirements owner. This ADR does not decide them.
 - **Where a backup goes on a phone with no card.** iPhones have no microSD
   slot, and some Android phones have none. Where a backup goes on those phones,
   short of the desired cloud sync, is not decided.
+- **Which share path the project export uses on Android.** No decision ties
+  the export to Share Book, and none makes a working Share Book in an Android
+  browser a prerequisite. Share Book in an Android browser is an open defect
+  ([#272](https://github.com/unfoldingWord/tc-mobile/issues/272)); whether the
+  export rides only the installed app's share path, or must also work in the
+  web build, is not decided.
 - **What tC Desktop needs to open the package.** The D3-export note says "tC
   Desktop does/will read/write Scripture Bundle format." Which flavour and
   which manifest fields it reads is not recorded.

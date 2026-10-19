@@ -411,7 +411,7 @@ v2 D4-collections are different decisions.
 | **D2-microsd**     | What does v2 do with the microSD card on Android?            | "Record straight onto the card, and back up to it"                | "Removing a card mid-recording is highly unlikely, so should be warned against, but not worried about."                                                                                                                                                                               | 10 (replaces pivot-plan D4; see ADR 0011); 11 in part (card removal while recording).                 |
 | **D3-export**      | Does v2 also import a project exported from another phone?   | "Export in v2, import later"                                      | "For v2, we are looking to be able to safeguard data off-device. We need to use Scripture Bundle format (tragically misnamed as "Scripture Burrito" for a long time up until it was corrected, so don't be confused by it). tC Desktop does/will read/write Scripture Bundle format." | 12 (import is later; the format is Scripture Bundle, which tC Desktop reads and writes per the note). |
 | **D4-collections** | Which collection is required, and what comes inside the app? | "Bundle OBS, the collection and the New Testament books"          | None.                                                                                                                                                                                                                                                                                 | 6 in part (the starter set; no app-size budget is set). 5 stays open: the collection is not named.    |
-| **D5-licence**     | How do licences work when someone shares?                    | "Books made from a template are CC BY-SA 4.0; other books choose" | "All OBS recordings are CC BY-SA 4.0 (as per the license); recordings of Scripture propose CC BY-SA 4.0 as the default with the rationale: "You keep your copyright in the work and also allow others to freely and legally share this work with others.""                            | 9.                                                                                                    |
+| **D5-licence**     | How do licences work when someone shares?                    | "Books made from a template are CC BY-SA 4.0; other books choose" | "All OBS recordings are CC BY-SA 4.0 (as per the license); recordings of Scripture propose CC BY-SA 4.0 as the default with the rationale: "You keep your copyright in the work and also allow others to freely and legally share this work with others.""                            | 9 in part. Other licences, the file-name tag and the Bible-template conflict stay open (below).       |
 | **D6-languages**   | How do the 26 languages arrive?                              | "The 10 level-4 languages in v2, the 16 level-3 languages after"  | None.                                                                                                                                                                                                                                                                                 | 1 in part (order). Arabic is level 4, so right-to-left layout is in v2.                               |
 
 ### Delivery (owner: Seth)
@@ -444,6 +444,17 @@ v2 D4-collections are different decisions.
 - **Question 5** — which passage collection is required. D4-collections bundles
   "the collection" without naming it.
 - **Question 6, second half** — the app-size budget for the starter set.
+- **Question 9, in part** — which licences besides CC BY-SA the checklist
+  offers, and the file-name tag format; neither D5-licence's option nor its
+  note names them. The two also differ on Bible-book templates: the option
+  makes every template-derived book CC BY-SA 4.0, and the note has recordings
+  of Scripture only propose it as the default. Which one holds is open.
+- **D1-dataset and D6-languages** — D1-dataset puts titles in all 26
+  languages in v2, and D6-languages brings the 16 level-3 languages "after".
+  Whether level-3 titles ship in v2 ahead of the app text is not recorded.
+- **Q4-chapters and Q8-chapter-play** — a segment may cross a chapter
+  boundary, and chapter play is on the chapter row. Which chapter's play
+  includes such a segment is not recorded.
 - **Question 11, restore** — D3-export puts import after v2, and Q11-backup
   puts the backup in Scripture Bundle format. Read together (an inference, not
   a decision), a v2 backup can be written but the app cannot restore it. Whether
