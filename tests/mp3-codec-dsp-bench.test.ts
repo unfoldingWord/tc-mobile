@@ -179,6 +179,34 @@ describe("codec.benchDsp — the client half (#1433 T2)", () => {
     expect(codecModule.encoderHealth()).toBe("failing");
   });
 
+  it("a bench answered with an encode's done is the bench's failure and does not clear a standing encode failure count", async () => {
+    const fail = async () => {
+      const outcome = await start(encode());
+      live().emit({ kind: "error", message: "lame broke" });
+      await outcome.settled;
+    };
+    await fail();
+    await fail();
+    const outcome = await start(bench());
+    live().emit({ kind: "done", mp3: Uint8Array.of(1).buffer });
+    expect(await outcome.settled).toBeInstanceOf(
+      codecModule.DspBenchFailedError
+    );
+    await fail();
+    expect(codecModule.encoderHealth()).toBe("failing");
+  });
+
+  it("an encode answered with a bench-result counts as an encode failure", async () => {
+    for (let i = 0; i < codecModule.ENCODER_FAILURE_THRESHOLD; i++) {
+      const outcome = await start(encode());
+      live().emit({ kind: "bench-result", result: RESULT });
+      expect(await outcome.settled).toBeInstanceOf(
+        codecModule.EncoderFailedError
+      );
+    }
+    expect(codecModule.encoderHealth()).toBe("failing");
+  });
+
   it("a bench that stays silent past the deadline is a stall: the lane is released and the next encode runs", async () => {
     const outcome = await start(bench());
     await vi.advanceTimersByTimeAsync(

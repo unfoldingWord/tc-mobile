@@ -1448,15 +1448,29 @@ function runEncodeOnWorker(
         return;
       }
       release();
-      if (response.kind === "bench-result") {
-        resolve({ bench: response.result });
-      } else if (response.kind === "bench-error") {
-        reject(new DspBenchFailedError(response.message));
-      } else if (response.kind === "error" && isBench) {
-        // The worker refused the request itself (a protocol version this
-        // build does not speak): the benchmark's failure, not the encoder's.
-        reject(new DspBenchFailedError(response.message));
-      } else if (response.kind === "done") {
+      // Dispatch on the REQUEST first: no answer to a bench reaches the health
+      // books below, and no encode is closed by a bench's answer kinds.
+      if (isBench) {
+        if (response.kind === "bench-result") {
+          resolve({ bench: response.result });
+        } else if (
+          response.kind === "bench-error" ||
+          response.kind === "error"
+        ) {
+          // `error`: the worker refused the request itself (a protocol
+          // version this build does not speak) - the benchmark's failure,
+          // not the encoder's.
+          reject(new DspBenchFailedError(response.message));
+        } else {
+          reject(
+            new DspBenchFailedError(
+              "The worker answered the benchmark with something else"
+            )
+          );
+        }
+        return;
+      }
+      if (response.kind === "done") {
         noteEncodeSucceeded();
         resolve(response.mp3);
       } else if (response.kind === "stream-ack") {
@@ -1464,10 +1478,14 @@ function runEncodeOnWorker(
         // the `done` that ends the stream.
         resolve(null);
       } else {
+        // `error`, or a bench's answer to an encode: either way the encoder
+        // did not produce what it was asked for.
         noteEncodeFailed();
-        reject(
-          new EncoderFailedError(`MP3 encoding failed: ${response.message}`)
-        );
+        const why =
+          response.kind === "bench-result"
+            ? "the worker answered with a benchmark result"
+            : response.message;
+        reject(new EncoderFailedError(`MP3 encoding failed: ${why}`));
       }
     };
     worker.onerror = (event) => {
