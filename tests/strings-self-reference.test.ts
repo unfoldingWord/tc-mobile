@@ -208,7 +208,9 @@ describe("table entries that reach outside their own arguments (#169)", () => {
         "strings.takeRecoverDiscardArmed",
       ],
       saveFailedDiscardHint: ["strings.takeRecoverDiscardHint"],
+      shareAllFolder: ["strings.shareNameFallback"],
       shareAllMissing: ["couldNotBeIncluded"],
+      shareBookFilename: ["strings.shareNameFallback"],
       shareBookMissing: ["couldNotBeIncluded"],
       shareBookMissingAndPartial: [
         "couldNotBeIncluded",

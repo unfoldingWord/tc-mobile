@@ -969,7 +969,11 @@ export const strings = {
     "Could not prepare this to share. Try again — if it keeps happening, restart the app.",
   // Sanitised like shareFilename: the book name is the .zip File name and must
   // not carry a path separator or a reserved character (G3).
-  shareBookFilename: (book: string): string => `${filenameSafe(book)}.zip`,
+  shareBookFilename: (book: string): string =>
+    `${filenameSafe(book) || strings.shareNameFallback}.zip`,
+  // What a book is called in a share filename or folder when its name
+  // sanitises to nothing ("///"), so no file is ".zip" and no folder is "".
+  shareNameFallback: "Book",
 
   // ── The save that failed (#38) ───────────────────────────────────────────
   // The text layer of the screen that stands between a failed save and losing
@@ -1232,7 +1236,8 @@ export const strings = {
     }),
   shareAllFilename: "My work.zip",
   // Each book's folder inside the zip, sanitised like shareBookFilename.
-  shareAllFolder: (book: string): string => filenameSafe(book),
+  shareAllFolder: (book: string): string =>
+    filenameSafe(book) || strings.shareNameFallback,
 
   // ── The database is unreachable (#221) ───────────────────────────────────
   // Two full-screen states, one in each copy of the app, when a newer copy
