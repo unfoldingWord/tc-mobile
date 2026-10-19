@@ -1,0 +1,43 @@
+name: PR Body
+
+# Its own workflow, not a job in ci.yml: a body edit only fires pull_request
+# when `edited` is in `types`, and ci.yml cancels its in-flight run on every
+# pull_request event, so adding `edited` there would restart the whole CI each
+# time a title or body is touched. This one costs a single Node step.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-body:
+    name: PR Body
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Full history: the size check diffs origin/<base>...<head sha>.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      # Fetched live, like ci.yml's commit-messages job: the PR's own commits
+      # against the base's current tip, never the synthetic merge ref.
+      - name: Fetch the base branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch origin "$BASE_REF"
+
+      # The body, title and author come from the event payload file, never
+      # through a `${{ }}` into this shell, so a PR body cannot inject a command.
+      - name: Check the PR body and size
+        run: node scripts/check-pr-body.mjs --event "$GITHUB_EVENT_PATH"

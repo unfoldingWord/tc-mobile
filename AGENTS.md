@@ -74,6 +74,7 @@ npm run deploy         # wrangler deploy (production)
 npm run check:deploy      # confirm a develop -> staging deploy; see "Confirming a deploy" below
 npm run check:deploy:prod # confirm a staging -> main deploy; checks both production origins, each named explicitly
 npm run check:prepush  # review-bench findings on this branch's commits and added lines; runs in pre-push. Checklist: .claude/skills/tc-prepush
+npm run check:pr-body -- --body-file <path>  # check a drafted PR body (and the size cap) before opening; see "Issue pipeline"
 ```
 
 ## Architecture — onion layers
@@ -724,8 +725,9 @@ API token lives in Cloudflare's build settings, **not** in a GitHub secret —
 Actions does not deploy the PWA, so it needs no Cloudflare credentials (the
 TestFlight lane authenticates to App Store Connect with its own secrets, and
 the Android lane signs with its own keystore secrets — neither is Cloudflare's).
-Besides `ci.yml` and `dependabot.yml`, `.github/` holds only the three native
-lanes, `ios-testflight.yml`, `android-apk.yml` and `android-play.yml`.
+Besides `ci.yml`, `dependabot.yml` and `pr-body.yml` (the PR-body check, which
+deploys nothing; see "Issue pipeline" below), `.github/` holds only the three
+native lanes, `ios-testflight.yml`, `android-apk.yml` and `android-play.yml`.
 
 ### Confirming a deploy and rolling one back
 
@@ -1042,6 +1044,65 @@ A test-only PR is tiered by what it covers, and a gate test is its own tier
 (Harness); the tier sets which reviewers run and how many rounds, not this
 table's on-device check — a test-only PR never gets the device check, only
 code changes do — see `docs/review/dual-review.md` ("Merge policy").
+
+## Issue pipeline (dev1–dev7)
+
+Every issue moves through seven stages: **dev1 Scope** (a scope contract on the
+issue), **dev2 Plan** (tasks, each with a done-when and a test-first pair),
+**dev3 Build** (a branch from `develop`, red test first), **dev4 Check** (the
+quality gate), **dev5 Ship** (open the PR), **dev6 Validate** (a second agent
+checks the merged base), **dev7 Close** (issues, learnings, tracker). The stage
+table is the DRI's.
+
+**dev4 is a gate, not a review.** It runs `npm run verify` and
+`npm run check:prepush`, confirms each done-when with evidence, and walks the
+seven Collateral surfaces. It blocks the PR if anything fails. The review is
+the uwreview bench's (Frank and George, see "Review"); no stage reviews its own
+diff, and a stage's own report is never "independent" or "clean".
+
+**The PR body is one template and one gate.** `.github/pull_request_template.md`
+is the template; `scripts/check-pr-body.mjs` is the gate, run by
+`.github/workflows/pr-body.yml` on every open, edit and push, and locally with
+`npm run check:pr-body -- --body-file <path>`. It requires a closer line
+(`Closes #N`, `Part-of #N — <delivers> / remaining: <…>` or
+`no-issue: <reason>`; a negated "does not close #N" is not one), a `Tier:`
+token (T1, T2 or T3), `Test-first:` (`N/A` needs a reason), a `Check:` on every
+Done-when item, all seven Collateral lines answered, `Taste impact:`, the
+Definition-of-done lines, Review evidence and Device checks. A bare `N/A`,
+`TBD`, `later` or an unfilled `<…>` is not an answer, and text inside HTML
+comments or code fences does not count. Dependabot, promotion PRs (base
+`staging` or `main`) and `chore(release):` bumps into `develop` are exempt.
+`tests/check-pr-body.test.ts` pins that the template's headings and field
+lines equal the gate's list, so the two cannot drift. Whether the check is a required status is a branch
+protection call, and the DRI's.
+
+**The seven Collateral surfaces** are the DRI's fixed list. Each line in a PR
+is what changed, or `N/A — <reason>`:
+
+- `release-notes`: a line in `RELEASE_NOTES_UNRELEASED.md` at the repo root
+  (Added, Changed, Fixed, Removed, Security), moved into the `chore(release)`
+  PR body at promotion.
+- `legal-content`: PRIVACY.md, licence notices (`public/licenses/`, Menu →
+  About & licenses, ADR 0003 and 0006), store listing disclosures.
+- `help-articles`: `docs/training/facilitator-runbook.md` and tester notes.
+- `feature-doc`: AGENTS.md, ADRs, `docs/design/*`, docblocks that describe the
+  behaviour.
+- `schema-doc`: `DB_VERSION` migrations, the rollback text above, and
+  `docs/release/promotion-*` §5.
+- `service-catalog`: `wrangler.jsonc` routes and origins, the native lanes in
+  `.github/workflows/`, store configs. Mostly `N/A`.
+- `mobile-parity`: the PWA against the Android and iOS shells: what each
+  adopts, or the parity issue filed.
+
+This repo's own extra checks (the one string table, the failure log, source
+and CSS pins, accessibility for non-readers) stay in dev4's architecture and
+observability steps, not in the seven.
+
+**PR size.** The gate caps production lines per PR; the number, what is not
+counted, and the `size-exception: <reason>` escape live in
+`scripts/check-pr-body.mjs` and nowhere else, so this file does not repeat
+them. Over the cap, split the PR into slices that each open with their tests,
+or declare the exception with a real reason. A `release/*` head is exempt.
 
 ## Known open items
 
