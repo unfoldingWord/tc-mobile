@@ -4,7 +4,7 @@
 
 This ADR is **Proposed**, not Accepted. The requirements owner has not yet
 confirmed the wording below or said what "the community" means. It moves to
-Accepted when he does, and a later amendment can sharpen the term. Until then
+Accepted when the requirements owner does, and a later amendment can sharpen the term. Until then
 the principle is the team's stated position, written down so that future work
 meets it first.
 
@@ -21,9 +21,9 @@ rather than restating them, so it cannot go stale beside them:
   thing that leaves the phone through the OS share sheet (the failure log).
 
 Nothing in the repo recorded a rule for the _next_ kind of feature: one that
-moves recordings off the phone for a purpose other than the person's own work.
-Without one, such a feature starts from what can be built and adds consent
-afterwards.
+uses recordings beyond the community's own work. Without one, such a feature
+starts from what can be built and adds consent afterwards. How that maps onto
+leaving the phone is only the author's reading, under Consequences.
 
 ## Decision
 
@@ -55,8 +55,7 @@ line.
 - Nothing is opt-out or on by default.
 
 **Relation to ADR 0006.** [ADR 0006](0006-obs-content.md) records OBS-derived
-recordings as CC BY-SA. That licence concerns reuse of the source text. This ADR
-adds a consent step for further use of the recordings and does **not** change
+recordings as CC BY-SA. This ADR adds a consent step for further use of the recordings and does **not** change
 ADR 0006's licence position.
 
 **Not changed by this ADR.** `PRIVACY.md` is untouched. Whether the principle
