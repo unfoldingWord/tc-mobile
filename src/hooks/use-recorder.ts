@@ -728,7 +728,9 @@ export function useRecorder(): UseRecorder {
         // in the same commit as the freeze. Sealing on a mute is a product
         // reading, not only an engineering one: an interruption ends the take
         // (#836), and the translator appends to it afterwards if they wish. An
-        // `unmute` is never waited for.
+        // `unmute` is never waited for. The listeners bind after the resume and
+        // `beforeCapture` awaits, so a track already ended by then is sealed by
+        // a `readyState` check after `startTick()` (#1294), not by an event.
         //
         // The still-active arm (recorder not yet "inactive") is reported once
         // per take so tester phones show whether it is ever reached (#478).
@@ -824,6 +826,17 @@ export function useRecorder(): UseRecorder {
         setState("recording");
 
         startTick();
+        // The listeners above are bound only after the resume and
+        // `beforeCapture` awaits, so a track that ended in that window fired
+        // `ended` at nobody, and one that is already ended never will (#1294).
+        // `readyState` is the state, not the event: seal through the same
+        // handler an interruption uses, after `startTick()` so its
+        // `clearTick()` stops a clock that is already running. `ended` cannot
+        // recover. A track already `muted` at bind is deliberately NOT read
+        // here: whether a live take starts muted is unverified on a phone.
+        if (stream.getTracks().some((track) => track.readyState === "ended")) {
+          onInterrupted(new Event("ended"));
+        }
         return true;
       } catch (cause) {
         releaseMicClaim();
