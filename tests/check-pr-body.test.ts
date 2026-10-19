@@ -341,7 +341,10 @@ describe("checkBody — red, one case per field", () => {
 
   // Bench round 1 (George 1): every free-text answer goes through isAnswer.
   it.each([
-    ["a placeholder delivers and remaining", "Part-of #12 — <x> / remaining: <…>"],
+    [
+      "a placeholder delivers and remaining",
+      "Part-of #12 — <x> / remaining: <…>",
+    ],
     ["remaining: TBD", "Part-of #12 — delivers the gate / remaining: TBD"],
     ["remaining: N/A", "Part-of #12 — delivers the gate / remaining: N/A"],
     ["delivers TBD", "Part-of #12 — TBD / remaining: the skills"],
@@ -354,7 +357,9 @@ describe("checkBody — red, one case per field", () => {
   it.each(["TBD", "N/A", "<how>"])(
     "flags a Done-when Check: value of %j",
     (v) => {
-      const missing = checkBody(body({ doneWhen: `- [x] gate exists — Check: ${v}` }));
+      const missing = checkBody(
+        body({ doneWhen: `- [x] gate exists — Check: ${v}` })
+      );
       expect(missing).toHaveLength(1);
       expect(missing[0]).toMatch(/Done when/);
     }
@@ -362,7 +367,7 @@ describe("checkBody — red, one case per field", () => {
 
   it("does not read a column-0 line as a Done-when item's continuation", () => {
     const missing = checkBody(
-      body({ doneWhen: "- [x] gate exists\nCheck: test \"x\"" })
+      body({ doneWhen: '- [x] gate exists\nCheck: test "x"' })
     );
     expect(missing).toHaveLength(1);
     expect(missing[0]).toMatch(/item 1 has no Check/);
