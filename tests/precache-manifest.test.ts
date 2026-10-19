@@ -436,6 +436,14 @@ describe.skipIf(GATE === "skip")(
       expect(built.length).toBeGreaterThan(0);
       const revisions = parsePrecachedRevisions(readFileSync(SW, "utf8"));
       for (const name of built) {
+        // A revision equal to the md5 of the built file proves the hash was
+        // taken after the fill, not that the fill happened: a file that
+        // still holds a token would hash cleanly. Match the bare prefix so a
+        // spaced `{{version: react}}` is caught too.
+        expect(
+          readFileSync(path.join(dir, name), "utf8").includes("{{version:"),
+          `licenses/${name} still holds an unfilled "{{version:" token`
+        ).toBe(false);
         const md5 = createHash("md5")
           .update(readFileSync(path.join(dir, name)))
           .digest("hex");
