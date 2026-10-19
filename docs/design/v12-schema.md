@@ -100,7 +100,7 @@ export interface StoredPendingTake {
   readonly base: PendingTakeBase;
   readonly recorded: ArrayBuffer; // Int16 PCM, copied through a fresh buffer
   readonly sampleRate: number;
-  readonly offset: number;
+  readonly offset: number; // samples (src/lib/takes/pending-take.ts:74)
   readonly finished: boolean;
   readonly editOnly: boolean;
   readonly createdAt: number;
@@ -108,7 +108,7 @@ export interface StoredPendingTake {
 export type PendingTakeBase =
   | {
       readonly kind: "stored";
-      readonly clipId: ClipId;
+      readonly sourceClipId: ClipId; // the stored clip the splice reads
       readonly generation: number;
       readonly frameCount: number;
     }
@@ -142,9 +142,20 @@ then has nine stores.
   question (which chapter shows a segment that runs from Psalm 17 into 18)
   compares `startChapter` and `endChapter` as numbers. The shape is
   `ParsedScope` from `tests/scope.ts:28-34`, so the grammar's tests keep
-  checking the same thing. A stored span is exactly what `parseScope` returns
-  for a non-empty scope string, so a future `formatScope` round-trips it. The
-  whole-book scope `""` is not representable, on purpose: a segment is never a
+  checking the same thing. A stored span is a value `parseScope` returns for a
+  non-empty scope string **and** one of the allowed states below; a writer
+  rejects anything else rather than storing it. `parseScope` alone is not
+  enough: it accepts `"2-3:4"` as `startVerse: null, endVerse: 4`
+  (`tests/scope.ts:54`, `:70-77`), which `formatScope` writes back as `"2-3"`
+  (`:113-116`), and it accepts chapter or verse `0` (`CV`, `:36`). The allowed
+  states, every number an integer ≥ 1, are three. Whole chapters: both verses
+  `null`, `startChapter <= endChapter` ("2", "2-4"). Verses in one chapter:
+  both verses numbers, `startChapter === endChapter`, `startVerse <= endVerse`
+  ("2:1", "2:1-13"). Verses across chapters: both verses numbers,
+  `startChapter < endChapter` ("17:1-18:3"). Rejected: one verse `null` and
+  the other a number, an end before the start, and `0` in any position; a span
+  that starts at a chapter's first verse is written with verse 1, not `null`.
+  Within these states `formatScope` round-trips the value. The whole-book scope `""` is not representable, on purpose: a segment is never a
   whole book. The Scripture Bundle scope string becomes an output, written
   when the export writes ingredients; nothing in `src/` parses one. No stored
   row needs converting: the only writer of `Segment.reference` writes `null`
@@ -224,7 +235,7 @@ Shape calls inside that decision (tactical, made here):
   clip id and bumps `generation` (`src/lib/storage/transcode.ts:189`). If a
   segment's PCM clip is transcoded between the pending write and the replay,
   `clipData` under that id is an MP3, and splicing it as PCM corrupts the
-  audio. The replay must check that `clipMeta` exists for `clipId`, is
+  audio. The replay must check that `clipMeta` exists for `base.sourceClipId`, is
   `"pcm"`, and matches both numbers. A base that fails the check is never
   spliced; what the recovery screen offers instead is #38's call.
 - **A first take writes `inline` with an empty buffer**, not a third kind:
@@ -438,7 +449,7 @@ body records which test died.
 | M2  | Test a nullable field's absence by value (`row.templateKey == null`) instead of `in`, then restamp the row | "a row carrying every v12 field, nullable ones `null`, is left identical" (seed `createdAt: 5`, `modifiedAt: 7`, `templateKey: null`)           |
 | M3  | Move `createObjectStore("tombstones")` below the first cursor                                              | `refuseStructureChangeAfterYield` (`tests/db-migration.test.ts:630`), extended to assert both new stores on a fresh install and on a v3 upgrade |
 | M4  | Delete the segments walk                                                                                   | the v11 → v12 segment case                                                                                                                      |
-| M5  | Touch `clipMeta` (spread and put)                                                                          | the whole-shelf byte and row identity (below)                                                                                                   |
+| M5  | Write a changed `clipMeta` row (spread, add `modifiedAt: T`, put)                                          | the whole-shelf byte and row identity (below)                                                                                                   |
 | M6  | Remove the #1421 abort                                                                                     | `tests/db-upgrade-throw.test.ts`'s `describe.each` (`:123`), extended with `{ from: 11, step: "v12" }` and a fault on the Nth `segments` put    |
 | M7  | Backfill provenance as `{kind: "template", …}`, or omit it                                                 | the whole-shelf `provenance` assertion                                                                                                          |
 | M8  | `pendingTakes` keyPath `clipId`                                                                            | "two puts for one segment leave one row"                                                                                                        |
@@ -449,13 +460,16 @@ body records which test died.
 | Id  | Mutation                                                    | Killed by                                                                                                           |
 | --- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | M9  | Drop one writer's `modifiedAt` bump (`renameSegment`)       | a table-driven test over every write function, asserting which rows' `modifiedAt` moved and that no other row's did |
-| M10 | Write the tombstone after `tx.done`, in its own transaction | fault injection: fail the `chapters` put inside `deleteSegment`; no tombstone, segment still present                |
+| M10 | Write the tombstone after `tx.done`, in its own transaction | fault injection: fail the `tombstones` add in `deleteSegment`; the segment and `segmentIds` are unchanged           |
 | M11 | Write a tombstone on the already-gone path                  | a repeated delete of a missing id writes no second row (`books.ts:1116-1120`; `deleteBook` with the row gone)       |
 | M12 | Bump `Book.updatedAt` in `moveChapter`                      | the existing pin, `tests/reorder-storage.test.ts:159`                                                               |
 
 (M1–M12 come from the v2 scope crawl; M2 is restated here, because the crawl's
 wording tested `=== undefined`, which already leaves a deliberate `null` alone.
-M13 is new.)
+M13 is new. M5 adds a field because an identical rewrite leaves nothing for
+`toEqual` to see. M10 faults the tombstone write, not the `chapters` put: with
+the chapter write failed, `tx.done` rejects first, so the mutant never reaches
+its late tombstone and passes.)
 
 **Also required:**
 
