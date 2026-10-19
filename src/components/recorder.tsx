@@ -2128,43 +2128,58 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
         // A second tap does not arrive here: `EraseConfirm` latches on the
         // first, synchronously, and the confirm is busy until this settles.
         const run = { cancelled: false };
-        recordAgainRef.current = run;
-        setRecordAgainPending(true);
-        setEraseFailure(null);
-        // The same helper the sheet-open tap uses; a no-op on a running
-        // context.
-        primeAudio?.();
-        // The microphone is asked for HERE, in the tap, by the start the
-        // Record button uses, and the take is cleared only inside it, once
-        // the microphone has been granted (`StartOptions.beforeCapture`). A
-        // refused, failed or superseded request never reaches the clear, so
-        // the old recording is still there and the refusal shows as it does
-        // for Record.
-        void startTake(async () => {
-          // Back answered "keep it" while the microphone was being asked for,
-          // or the page went hidden (#836: nothing starts in the background):
-          // decline, with nothing erased. Past this line the clear runs to its
-          // end; Back is refused across it (`isErasing`, then `closing`).
-          if (run.cancelled || document.visibilityState === "hidden") {
-            return false;
+        // Every exit: granted and started, refused, declined, cancelled, or a
+        // synchronous throw out of `startTake` (`closeSelection`,
+        // `buildCaptureContext`, the floor claim). The ref is cleared only if
+        // it is still this run's, so a later run's arming is never undone by
+        // an earlier one settling. The confirm is closed on every exit; the
+        // refusal, if any, is behind it.
+        const release = () => {
+          if (recordAgainRef.current === run) {
+            recordAgainRef.current = null;
+            setRecordAgainPending(false);
           }
-          const next = await clearSegment();
-          // Only over the empty segment: a take spliced into a buffer that
-          // still holds the old audio would write it back.
-          if (next === null || (next.samples?.length ?? 0) > 0) return false;
-          // The take starts at 0 of nothing; the offset and context the tap
-          // locked were the erased buffer's.
-          insertionOffset.current = 0;
-          setCaptureContext(null);
-          return true;
-        }).finally(() => {
-          // Every exit: granted and started, refused, declined, cancelled.
-          recordAgainRef.current = null;
-          setRecordAgainPending(false);
-          // A start that never reached the clear leaves the confirm up;
-          // the refusal is behind it.
           setConfirmOpen(false);
-        });
+        };
+        let started: Promise<boolean> | null = null;
+        try {
+          recordAgainRef.current = run;
+          setRecordAgainPending(true);
+          setEraseFailure(null);
+          // The same helper the sheet-open tap uses; a no-op on a running
+          // context.
+          primeAudio?.();
+          // The microphone is asked for HERE, in the tap, by the start the
+          // Record button uses, and the take is cleared only inside it, once
+          // the microphone has been granted (`StartOptions.beforeCapture`). A
+          // refused, failed or superseded request never reaches the clear, so
+          // the old recording is still there and the refusal shows as it does
+          // for Record.
+          started = startTake(async () => {
+            // Back answered "keep it" while the microphone was being asked
+            // for, or the page went hidden (#836: nothing starts in the
+            // background): decline, with nothing erased. Past this line the
+            // clear runs to its end; Back is refused across it (`isErasing`,
+            // then `closing`).
+            if (run.cancelled || document.visibilityState === "hidden") {
+              return false;
+            }
+            const next = await clearSegment();
+            // Only over the empty segment: a take spliced into a buffer that
+            // still holds the old audio would write it back.
+            if (next === null || (next.samples?.length ?? 0) > 0) return false;
+            // The take starts at 0 of nothing; the offset and context the tap
+            // locked were the erased buffer's.
+            insertionOffset.current = 0;
+            setCaptureContext(null);
+            return true;
+          });
+        } finally {
+          // A throw above propagates (to the global error funnel) after this
+          // runs; a started take releases when its promise settles.
+          if (started === null) release();
+          else void started.finally(release);
+        }
         return;
       }
       // Clear only when this call will acquire the guard: a "busy" refusal is

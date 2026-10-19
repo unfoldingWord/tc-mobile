@@ -693,6 +693,10 @@ export function useAudioSession(): UseAudioSession {
           return false;
         })
         .catch((cause: unknown) => {
+          // Resolves `false` and does not hand the floor back: no caller is
+          // known to see this rejection (#1421, 1429c), and the two cases it
+          // could be -- a rejection before the claim, or `sealRecording()`
+          // throwing after a live start -- cannot be told apart here.
           console.error("Starting the recorder failed", cause);
           return false;
         });
