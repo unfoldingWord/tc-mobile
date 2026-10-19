@@ -39,30 +39,50 @@ export interface SilenceWindow {
   /**
    * Note one sample: whether the frame was silent, the wall time and the
    * context clock it was read at. True exactly once, on the first sample at
-   * which a run of silent samples has lasted {@link CAPTURE_SILENCE_MS} and
-   * the clock has moved since the run began; false ever after.
+   * which a run of silent samples has lasted {@link CAPTURE_SILENCE_MS} with
+   * no gap or clock stall over {@link CAPTURE_SILENCE_MAX_GAP_MS} and the
+   * clock has moved since the run began; false ever after.
    */
   note(silent: boolean, nowMs: number, clock: number): boolean;
   /** Restart the run, as a context leaving "running" does. */
   reset(): void;
 }
 
+/**
+ * A run is only as long as it was watched. A gap wider than this between two
+ * samples, or a clock that has not moved for this long, ends the run: the
+ * window never bridges a stretch nobody pulled a frame in, and a clock that
+ * moved once and then stood still is #1251's case, not this one. Pulls come
+ * once or twice per display frame, so a second is many frames; it matches
+ * #1251's 1000 ms stall bound.
+ */
+export const CAPTURE_SILENCE_MAX_GAP_MS = 1000;
+
 export function createSilenceWindow(
   windowMs: number = CAPTURE_SILENCE_MS
 ): SilenceWindow {
   let runStartMs: number | null = null;
   let runStartClock = 0;
+  let lastNoteMs: number | null = null;
+  let lastClock = Number.NEGATIVE_INFINITY;
+  let lastClockMoveMs = 0;
   let fired = false;
   return {
     note(silent, nowMs, clock) {
       if (fired) return false;
-      if (!silent) {
-        runStartMs = null;
-        return false;
-      }
+      const gapWide =
+        lastNoteMs !== null && nowMs - lastNoteMs > CAPTURE_SILENCE_MAX_GAP_MS;
+      if (clock > lastClock) lastClockMoveMs = nowMs;
+      const stalled = nowMs - lastClockMoveMs > CAPTURE_SILENCE_MAX_GAP_MS;
+      lastNoteMs = nowMs;
+      lastClock = clock;
+      // A late silent sample may start a run; it never finishes one.
+      if (!silent || gapWide || stalled) runStartMs = null;
+      if (!silent) return false;
       if (runStartMs === null) {
         runStartMs = nowMs;
         runStartClock = clock;
+        lastClockMoveMs = nowMs;
         return false;
       }
       if (nowMs - runStartMs < windowMs) return false;
@@ -72,6 +92,7 @@ export function createSilenceWindow(
     },
     reset() {
       runStartMs = null;
+      lastNoteMs = null;
     },
   };
 }

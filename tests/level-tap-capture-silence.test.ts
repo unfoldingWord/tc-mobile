@@ -70,6 +70,17 @@ async function loadAudioIo() {
   return { ...io, CAPTURE_SILENCE_MS };
 }
 
+/**
+ * Pull every 100 ms of wall time from `from` to `to` inclusive: the window
+ * only counts a run it watched, so a test pulls the way a display frame does.
+ */
+function pullEvery(from: number, to: number, pullOnce: () => unknown): void {
+  for (let t = from; t <= to; t += 100) {
+    vi.setSystemTime(t);
+    pullOnce();
+  }
+}
+
 /** A stream whose clone has no tracks: enough for `createLevelTap`. */
 const fakeStream = {
   clone: () => ({ getTracks: () => [] }),
@@ -94,15 +105,16 @@ describe("createLevelTap — onCaptureSilent (#1294, R13)", () => {
     const onCaptureSilent = vi.fn();
     const tap = createLevelTap(fakeStream, { onCaptureSilent });
 
-    tap.readFrame();
+    pullEvery(0, CAPTURE_SILENCE_MS - 100, () => tap.readFrame());
     vi.setSystemTime(CAPTURE_SILENCE_MS - 1);
     tap.readFrame();
     expect(onCaptureSilent).not.toHaveBeenCalled();
 
     vi.setSystemTime(CAPTURE_SILENCE_MS);
     tap.readFrame();
-    vi.setSystemTime(CAPTURE_SILENCE_MS * 4);
-    tap.readFrame();
+    pullEvery(CAPTURE_SILENCE_MS + 100, CAPTURE_SILENCE_MS * 4, () =>
+      tap.readFrame()
+    );
 
     expect(onCaptureSilent).toHaveBeenCalledOnce();
     // The hook owns the row; the tap only says what it read.
@@ -115,9 +127,7 @@ describe("createLevelTap — onCaptureSilent (#1294, R13)", () => {
     const onCaptureSilent = vi.fn();
     const tap = createLevelTap(fakeStream, { onCaptureSilent });
 
-    tap.read();
-    vi.setSystemTime(CAPTURE_SILENCE_MS);
-    tap.read();
+    pullEvery(0, CAPTURE_SILENCE_MS, () => tap.read());
 
     expect(onCaptureSilent).toHaveBeenCalledOnce();
     tap.close();
@@ -157,7 +167,9 @@ describe("createLevelTap — onCaptureSilent (#1294, R13)", () => {
     expect(onCaptureSilent).not.toHaveBeenCalled();
 
     ctx.state = "running";
-    tap.readFrame();
+    pullEvery(CAPTURE_SILENCE_MS * 3, CAPTURE_SILENCE_MS * 4 - 100, () =>
+      tap.readFrame()
+    );
     expect(onCaptureSilent).not.toHaveBeenCalled();
     vi.setSystemTime(CAPTURE_SILENCE_MS * 4);
     tap.readFrame();
