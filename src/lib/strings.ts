@@ -847,10 +847,11 @@ export const strings = {
   shareBookPreparing: "Preparing the book to share.",
   shareBookNothing: "Record a segment before sharing this book.",
   shareBookFailed: "Could not share this book. Try again.",
-  // The web build's version (#272). Android Chrome refuses a zip inside
-  // `share()`, after the encode, so trying again cannot help there; the app's
-  // native share sheet takes it. Other browsers can still be retried from the
-  // same menu item, so no "try again" is promised.
+  // The web build's version (#272). Chromium source indicates Android Chrome
+  // refuses a zip inside `share()`, after the encode, so trying again would
+  // not help there; the app's native share sheet takes it. Not
+  // device-confirmed. Other browsers can still be retried from the same menu
+  // item, so no "try again" is promised.
   shareBookFailedWeb:
     "Could not share this book. Sharing a book works in the tC Mobile app.",
   // `missing` counts whole chapters left out of the zip — a chapter with no
@@ -1212,8 +1213,9 @@ export const strings = {
   shareAllNothing: "Record a segment before sharing your work.",
   shareAllFailed: "Could not share your work. Try again.",
   // The web build's version (#1333), as `shareBookFailedWeb` is for the book
-  // (#272): the library goes out as a zip too, which Android Chrome refuses
-  // inside `share()`, after the encode, so trying again cannot help there.
+  // (#272): the library goes out as a zip too, which Chromium source
+  // indicates Android Chrome refuses inside `share()`, after the encode, so
+  // trying again would not help there. Not device-confirmed.
   shareAllFailedWeb:
     "Could not share your work. Use the tC Mobile app to share it.",
   // `roomForExport` said the phone has too little free space to build the

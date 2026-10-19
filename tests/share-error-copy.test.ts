@@ -137,6 +137,10 @@ describe("shareErrorText", () => {
       .mockReturnValue(true);
     try {
       expect(shareErrorText("failed", "book")).toBe(strings.shareBookFailed);
+      // The native line must not be the web alias (#272).
+      expect(shareErrorText("failed", "book")).not.toBe(
+        strings.shareBookFailedWeb
+      );
       expect(shareErrorText("failed", "chapter")).toBe(strings.shareFailed);
     } finally {
       native.mockRestore();
