@@ -1394,6 +1394,7 @@ export const strings = {
     "Measures this phone for a tester report. Nothing runs until you tap Start, and it never touches your books or recordings.",
   phoneCheckStart: "Start",
   phoneCheckRunWaiting: "Waiting for a recording to finish converting.",
+  phoneCheckRunStopping: "Stopping the last check.",
   phoneCheckRunDevice: "Reading device info.",
   phoneCheckRunEncode: "Encoding 5 minutes of test audio.",
   phoneCheckRunStorage: "Writing and reading 50 MB of test audio.",
