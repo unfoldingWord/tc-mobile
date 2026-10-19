@@ -390,7 +390,9 @@ use of recordings beyond that community's own work, such as training a
 language model or other data collection, is opt-in and clearly explained to the
 people recording. The wording and the author's reading of its consequences are
 in [ADR 0012](docs/decisions/0012-recordings-belong-to-the-community.md), which
-is Proposed until the requirements owner confirms it; read it before scoping
+is Proposed until the requirements owner confirms its wording. The owner has
+defined "the community" as the team that made the recording and has said the
+principle stays internal for now (the ADR records both); read it before scoping
 such a feature, and do not treat the reading as accepted.
 
 **Idempotency is a property, not a policy.** Every write is safely re-runnable

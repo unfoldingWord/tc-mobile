@@ -1,10 +1,14 @@
 # 0012 — Recordings belong to the community that made them
 
-**Status:** Proposed · **Date:** 2026-10-14 (the debrief; this file written 2026-10-19) · **Source:** the October 2026 training debrief, a principle stated by the team and recorded by role · **Issue:** [#1436](https://github.com/unfoldingWord/tc-mobile/issues/1436)
+**Status:** Proposed (R14 and R15 answered 2026-10-19; wording unconfirmed) · **Date:** 2026-10-14 (the debrief; this file written 2026-10-19) · **Source:** the October 2026 training debrief, a principle stated by the team and recorded by role · **Issue:** [#1436](https://github.com/unfoldingWord/tc-mobile/issues/1436)
 
-This ADR is **Proposed**, not Accepted. The requirements owner has not yet
-confirmed the wording below or said what "the community" means. It moves to
-Accepted when the requirements owner does, and a later amendment can sharpen the term. Until then
+This ADR is **Proposed**, not Accepted. On 2026-10-19 the requirements owner
+answered two questions about it, R14 (who "the community" is) and R15 (whether
+`PRIVACY.md` carries it), both recorded below. What remains open is one thing:
+the requirements owner has not confirmed the quoted wording of the principle
+itself, and has not reviewed the author's reading under Consequences. No
+recorded answer covers either, so this ADR does not move to Accepted on R14 and
+R15 alone. It moves when the requirements owner confirms the wording; until then
 the principle is the team's stated position, written down so that future work
 meets it first.
 
@@ -34,9 +38,31 @@ The principle, quoted verbatim from #1436:
 > or other data collection, must be **opt-in** and clearly explained to the
 > people recording.
 
-"The community" is deliberately **left undefined** here. Whether it means the
-team that recorded or the wider language community is the requirements owner's
-call, and this ADR does not make it in a paraphrase.
+### Who "the community" is (R14)
+
+The requirements owner's answer to R14, recorded 2026-10-19, verbatim:
+
+> The team that made the recording
+
+with the note:
+
+> But give the opportunity to clarify/specify where appropriate
+
+So "the community" means the team that made the recording. **The following is
+inference, not the requirements owner's words:** the note implies that a feature
+which uses this principle should let the team state or refine who the community
+is where that matters, rather than assume it from who holds the phone. What that
+looks like for any one feature is that feature's design, not decided here.
+
+### Whether this is a public promise (R15)
+
+The requirements owner's answer to R15, recorded 2026-10-19, verbatim:
+
+> Not yet: keep it internal until a sharing feature needs it
+
+So `PRIVACY.md` does not carry the principle as a public promise, and this ADR
+and the PR that adds it leave `PRIVACY.md` untouched. The question comes back
+when a sharing feature needs it.
 
 ## Consequences
 
@@ -58,6 +84,5 @@ line.
 recordings as CC BY-SA. This ADR adds a consent step for further use of the recordings and does **not** change
 ADR 0006's licence position.
 
-**Not changed by this ADR.** `PRIVACY.md` is untouched. Whether the principle
-should also appear there as a public promise is a separate policy call for the
-DRI and the requirements owner. No code, flag or storage is added.
+**Not changed by this ADR.** `PRIVACY.md` is untouched, by the requirements
+owner's answer to R15 above. No code, flag or storage is added.
