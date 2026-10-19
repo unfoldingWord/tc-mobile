@@ -134,10 +134,21 @@ and **George** (Grok, deep-tree) — two lenses, never a primary and a fallback.
   requires it), and only on the DRI's say-so; an agent never merges. The
   merge needs both lenses clean at the current head SHA, which the bench shows
   by posting a **GitHub approval** (observed on #1346 and #1351), and green CI.
-  Pin the merge to that head: `gh pr merge --match-head-commit <sha>`, with the
-  full SHA read from `gh` at the time. An approval on an earlier head does not
-  count. Merges into `develop` normally use a **merge commit**; a release bump
-  must, so that its promotion carries the same bump commit (#918).
+  An approval on an earlier head does not count. Pin the merge to that head,
+  with the full SHA read from `gh` at the time
+  (`gh pr view <n> --repo unfoldingWord/tc-mobile --json headRefOid --jq .headRefOid`),
+  and write the whole command, merge method included.
+  - **A feature or fix PR, and a release bump, merge by squash:**
+    `gh pr merge <n> --repo unfoldingWord/tc-mobile --squash --admin --match-head-commit <sha>`.
+    The bump's squash commit is the cut commit the release branch starts from
+    (`.claude/skills/tc-release`).
+  - **A promotion merges by merge commit, with GitHub's subject left as is:**
+    `gh pr merge <n> --repo unfoldingWord/tc-mobile --merge --admin --match-head-commit <sha>`.
+    A squash, a rebase or an edited subject gets no APK or TestFlight build
+    (AGENTS.md, "Branches and deployment").
+  - **Stale-review dismissal stays off on `develop`.** The bench voids a round
+    on every push, and the head pin is what keeps an old approval from
+    merging a new head.
 - **Process artifacts** — `ci.yml`, `AGENTS.md`, `docs/review/**`, deploy
   config — need both reviewers, because they are executed as instructions.
   Exempting them is allowed; the decision is recorded on the PR, never skipped
