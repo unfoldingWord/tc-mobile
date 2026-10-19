@@ -279,7 +279,7 @@ describe("the button runs the library share", () => {
     );
     expect(nameChapter(mark, 3, null)).toBe(strings.shareFilename("Mark", 3));
     // The chapter's own name reaches the MP3, as in Share Book (#1218).
-    expect(nameChapter(mark, 3, "The sower")).toBe("Mark - The sower.mp3");
+    expect(nameChapter(mark, 3, "The sower")).toBe("Mark - 03 The sower.mp3");
     // An unnamed book is labelled by the placeholder its slot renders, the
     // same words its shelf row shows (#169) — never an empty folder name.
     const unnamed = { name: null, number: 4 };

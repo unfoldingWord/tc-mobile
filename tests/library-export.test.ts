@@ -100,9 +100,9 @@ describe("exportLibraryZip", () => {
     // The book loop must reach BOTH books — a loop that stops after the first
     // (or only ever reads one) leaves a folder out and fails here.
     expect(Object.keys(entries).sort()).toEqual([
-      "Luke/Luke - Chapter 1.mp3",
-      "Mark/Mark - Chapter 1.mp3",
-      "Mark/Mark - Chapter 2.mp3",
+      "Luke/Luke - 01 Chapter 1.mp3",
+      "Mark/Mark - 01 Chapter 1.mp3",
+      "Mark/Mark - 02 Chapter 2.mp3",
     ]);
 
     for (const [bookId, name] of [
@@ -170,8 +170,8 @@ describe("exportLibraryZip", () => {
     expect(result!.books).toBe(2);
     expect(result!.missing).toBe(1);
     expect(Object.keys(unzipSync(archive(sink.chunks)))).toEqual([
-      "Later/Later - Chapter 1.mp3",
-      "Earlier/Earlier - Chapter 1.mp3",
+      "Later/Later - 01 Chapter 1.mp3",
+      "Earlier/Earlier - 01 Chapter 1.mp3",
     ]);
   });
 
@@ -274,7 +274,7 @@ describe("exportLibraryZip", () => {
     );
     expect(result!.missing).toBe(1);
     expect(Object.keys(unzipSync(archive(sink.chunks)))).toEqual([
-      "Mark/Mark - Chapter 1.mp3",
+      "Mark/Mark - 01 Chapter 1.mp3",
     ]);
   });
 

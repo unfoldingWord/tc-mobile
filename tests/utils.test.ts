@@ -111,6 +111,19 @@ describe("filenameSafe byte cap", () => {
     expect(name.endsWith(".mp3")).toBe(true);
   });
 
+  it.each([1, 150, 9_999_999])(
+    "takes chapter %i's number out of the chapter label's budget (#1233)",
+    (chapter) => {
+      // 2 x 120 + 7 = 247 whatever the number, which leaves the 8 bytes a
+      // ` (n)` dedupe suffix needs (`src/lib/export/book.ts` uniqueName).
+      const geez = "ሰላም".repeat(27).slice(0, 80);
+      const name = strings.shareFilename(geez, chapter, geez);
+      expect(bytes(name)).toBeLessThanOrEqual(2 * FILENAME_LABEL_MAX_BYTES + 7);
+      expect(name).toContain(` - ${String(chapter).padStart(2, "0")} ሰ`);
+      expect(name.endsWith(".mp3")).toBe(true);
+    }
+  );
+
   it("never cuts between a base letter and its combining marks", () => {
     // Each grapheme is "e" + U+0301 = 3 bytes; 41 of them is 123 bytes, so the
     // cap (120) falls exactly after the 40th grapheme, and a cut at a code-unit
@@ -141,8 +154,8 @@ describe("filenameSafe byte cap", () => {
     const cluster = `e${"\u0301".repeat(70)}`;
     const name = strings.shareFilename("Book", 3, cluster);
     expect(name).not.toBe(strings.shareFilename("Book", 3));
-    expect(name.startsWith("Book - e")).toBe(true);
-    expect(name.endsWith(".mp3")).toBe(true);
+    // "03 " takes 3 of the label's 120 bytes (#1233): "e" + 58 marks = 117.
+    expect(name).toBe(`Book - 03 e${"́".repeat(58)}.mp3`);
     expect(bytes(name)).toBeLessThanOrEqual(255);
   });
 

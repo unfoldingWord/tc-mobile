@@ -217,8 +217,8 @@ describe("the library share follows the shelf order (#338, DRI pick on #1367)", 
       at += chunk.length;
     }
     expect(Object.keys(unzipSync(bytes))).toEqual([
-      "Earlier/Earlier - Chapter 1.mp3",
-      "Later/Later - Chapter 1.mp3",
+      "Earlier/Earlier - 01 Chapter 1.mp3",
+      "Later/Later - 01 Chapter 1.mp3",
     ]);
   });
 });
