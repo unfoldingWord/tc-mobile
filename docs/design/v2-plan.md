@@ -442,8 +442,10 @@ v2 D4-collections are different decisions.
   this file and is not restated here.
 - **Question 4, first half** — which UTN release.
 - **Question 5** — which passage collection is required. D4-collections bundles
-  "the collection" without naming it.
-- **Question 6, second half** — the app-size budget for the starter set.
+  "the collection" without naming it. Round 2's R1 names it; see
+  [Round 2](#round-2-decisions-recorded-2026-10-19).
+- **Question 6, second half** — the app-size budget for the starter set. Round
+  2's R1 and R2 widen the bundle and leave the budget open.
 - **Question 9, in part** — which licences besides CC BY-SA the checklist
   offers, and the file-name tag format; neither D5-licence's option nor its
   note names them. The two also differ on Bible-book templates: the option
@@ -452,16 +454,209 @@ v2 D4-collections are different decisions.
 - **D1-dataset and D6-languages** — D1-dataset puts titles in all 26
   languages in v2, and D6-languages brings the 16 level-3 languages "after".
   Whether level-3 titles ship in v2 ahead of the app text is not recorded.
+  Round 2's R8 puts the level-3 languages after 2.0.0 as v2-desired; the
+  titles question stays open.
 - **Q4-chapters and Q8-chapter-play** — a segment may cross a chapter
   boundary, and chapter play is on the chapter row. Which chapter's play
-  includes such a segment is not recorded.
+  includes such a segment is not recorded. Round 2's R6 answers it: the chapter
+  the segment starts in.
 - **Question 11, restore** — D3-export puts import after v2, and Q11-backup
   puts the backup in Scripture Bundle format. Read together (an inference, not
   a decision), a v2 backup can be written but the app cannot restore it. Whether
   that is what the requirements owner intends is a question for the
   requirements owner;
   [ADR 0011](../decisions/0011-v2-storage-and-export.md) records it as open.
+  Round 2's R4 answers it: backup only in v2, restore v2-desired.
 - **Question 12, second half** — what tC Desktop needs to open the package,
-  beyond the format the D3-export note names.
+  beyond the format the D3-export note names. Round 2's R11 sets the v2 bar at
+  the published spec plus our own read-back test; the fields stay open.
 - **Question 14** — no legal review is recorded. The plan's own line says a
   legal view comes "before shipping them".
+
+## Round 2 decisions recorded 2026-10-19
+
+The requirements owner (Tim) answered a second set of twenty questions, R1 to
+R20, on the project site's review page on 2026-10-19. The question text, the
+option text and **Tim's notes are quoted verbatim**; "free text, no option"
+means the answer was a note alone. "Settles" names the earlier decision or open
+question the answer bears on; "Still open" says what the answer leaves
+undecided. The R ids are this record's own and are not the Round 1 D and Q ids
+above.
+
+### Where Round 2 changes earlier scope
+
+- **R1 adds the whole Bible Passages dataset to what ships in the app.**
+  D4-collections bundled OBS, "the collection" and the New Testament books; R1
+  names the collection (below) and adds the entire dataset.
+- **R2 widens D4's New-Testament-only bundle** to "Whole Bible included", in
+  English at a minimum.
+- **R4 makes restore v2-desired**, not required; archiving the data off the
+  device is the v2 minimum.
+- **R8 makes the 16 level-3 languages v2-desired**; they become v3-required if
+  they miss the v2 launch.
+- **R9 and R10 move to v3-required:** Shema Studio import and export, and audio
+  titles.
+
+### The twenty answers
+
+1. **R1-collection** — "Which collection is bundled in the app (D4)?" Decided
+   (free text, no option). Note: "Minimum collection of pre-defined templates to
+   include: OBS and "35 Stories that Changed the World." The entire "Bible
+   Passages dataset" needs to be included also, for easy population of Bible
+   stories, as selected by the user."
+   - Settles: question 5 (the collection is named) and D4-collections in part.
+   - Still open: the app-size budget (question 6, second half). The note says
+     "minimum", so whether anything beyond these ships is not recorded.
+2. **R2-ot** — "D1 covers all 66 books, but D4 bundles only the New Testament.
+   How do Old Testament templates arrive?" Decided: `bundle-when-ready` —
+   "Bundled too, in an app update once their titles are ready". Note: "Changing
+   this to "Whole Bible included" in English, at a minimum, with localized
+   titles if possible. Note that depending on filesize limitations, we may need
+   to include additional languages as separate downloadable/importable
+   "language packs", TBD."
+   - Settles: D4-collections' New-Testament-only bundle.
+   - Still open: language packs are "TBD", and which languages' titles are
+     bundled depends on file size. The note's "if possible" leaves localized
+     titles undecided.
+3. **R3-android-share** — "On Android, do export and Share Book need to work in
+   the browser, or only in the installed app?" Decided: `app-only` — "The
+   installed app only; the web build shows a message pointing to the app".
+   - Settles: ADR 0011's open line on which share path the export uses on
+     Android. Share Book in an Android browser
+     ([#272](https://github.com/unfoldingWord/tc-mobile/issues/272)) is no
+     longer a prerequisite for the export.
+   - Still open: the web message's wording.
+4. **R4-restore** — "Can a v2 backup be restored on a phone?" Decided:
+   `write-only` — "Backup only in v2; restoring on a phone comes with import".
+   Note: "Restore is v2-desired, not required. At a minimum, we need to be able
+   to archive the data off the device. We'll figure out import after that."
+   - Settles: question 11's restore half and ADR 0011's restore line.
+   - Still open: when import lands is not dated beyond "after".
+5. **R5-app-only-card** — "The microSD card is only reachable from the
+   installed Android app. Is that acceptable?" Decided: `app-only` — "Yes: card
+   recording and backup are Android-app features".
+   - Settles: ADR 0011's expectation that the card path is native-only, which
+     was an inference.
+6. **R6-span-home** — "A segment that crosses a chapter (Q4): which chapter
+   shows it?" Decided: `start-chapter` — "The chapter it starts in; it plays
+   and exports there".
+   - Settles: the open line on Q4-chapters and Q8-chapter-play (which chapter's
+     play includes a crossing segment).
+7. **R7-chapter-number** — "Chapter numbers (#1272): today a chapter's number is
+   its position. What do template books do?" Decided: `always-real` — "Every
+   chapter carries the number someone types or the template gives". Note:
+   "Chapters should have titles/metadata that indicate what they are, as
+   relying on order alone is brittle. In Bible recordings, the order will
+   usually align with the chapter number declared in the metadata; when in
+   doubt, the metadata is the authoritative source."
+   - Settles: #1272's question. No earlier plan question.
+8. **R8-level3** — "D6 says the 16 level-3 languages come "after". After what?"
+   Decided: `after-2` — "After 2.0.0". Note: "the 16 level-3 languages are
+   v2-desired (will become v3-required if they miss the v2 launch)"
+   - Settles: D6-languages' "after".
+   - Still open: D1-dataset puts titles in all 26 languages in v2. Whether
+     level-3 titles ship in v2 ahead of the level-3 app text is still not
+     recorded.
+9. **R9-shema** — "#353 also asked for Shema Studio's format. Is it in v2?"
+   Decided: `bundle-only` — "Scripture Bundle only in v2". Note: "Shema Studio
+   import/export will be v3-required."
+   - Settles: #353's second format.
+10. **R10-audio-titles** — "Audio titles: v2 or v3?" Decided: `v3` — "v3, as
+    the plan says". Note: "this has moved to v3-required."
+    - Settles: the plan's "Moved to v3" line, now v3-required.
+11. **R11-tcd-audio** — "translationCore 4 does not open audio bundles yet.
+    What does "done" mean for v2 project export?" Decided: `valid-and-ask` —
+    "Valid against the published spec and read back by our own test; we ask the
+    translationCore 4 team to add audio". Note: "translationCore 4 Desktop
+    development is on a merger path to support all the above in future
+    releases."
+    - Settles: what "done" means for the export. Question 12, second half, in
+      part: the test bar is the published spec, not a desktop app.
+    - Still open: which manifest fields and flavour the desktop app reads is
+      still not recorded.
+12. **R12-book-language** — "Should a book know its language?" Decided:
+    `at-export` — "Ask only when exporting". Note: "Ask at export, then write
+    it into the metadata for that book; keep the path to getting started as
+    short as possible."
+    - Settles: no earlier question; sets when a book's language is asked.
+13. **R13-alarm-stall** — "If an alarm stops the recording without the phone
+    telling the app, what should the recorder show?" Decided: `stalled-state` —
+    "A visible "recording stopped" state that saves what was captured".
+    - Settles: no earlier question.
+14. **R14-community** — "Consent principle (#1436): who is "the community" that
+    recordings belong to?" Decided: `recording-team` — "The team that made the
+    recording". Note: "But give the opportunity to clarify/specify where
+    appropriate"
+    - Settles: #1436's definition.
+    - Still open: how the app lets a team clarify or specify is not designed.
+15. **R15-privacy-promise** — "Should PRIVACY.md also make the consent
+    principle a public promise?" Decided: `no` — "Not yet: keep it internal
+    until a sharing feature needs it".
+    - Settles: no earlier question.
+16. **R16-card-default** — "On Android phones with a card slot, should new
+    recordings go to the card by default?" Decided: `off` — "Off by default; a
+    facilitator switches it on". Note: "On launch, when the app notes that a
+    micro SD card is available, it should prompt the user if they want to
+    record directly to the card. Default is to record to internal."
+    - Settles: D2-microsd's default.
+    - Still open: **the note adds a launch prompt beyond the option.** The
+      option says a facilitator switches it on; the note says the app prompts
+      when it detects a card. Both are recorded; how they combine (for example,
+      how often the prompt shows) is not decided.
+17. **R17-card-encrypt** — "Should recordings on the card be encrypted?"
+    Decided: `no` — "No: plain audio files the app owns".
+    - Settles: no earlier question.
+18. **R18-ui-words** — "Two wording calls from the rc.2 follow-ups (#1233)"
+    Decided (free text, no option). Note: "Use "Reset recording"; Use the number
+    and name"
+    - Settles: #1233's two wording calls. The note does not say which call each
+      phrase answers.
+19. **R19-digits** — "Languages: which digits each language shows, whether
+    Traditional-Chinese phones get the Simplified text, and whether tester-only
+    screens are translated" Decided (free text, no option). Note: "Use Arabic
+    numerals; default to simplified text on Chinese phones."
+    - Settles: the digits and the Traditional-Chinese calls.
+    - Still open: **the note did not answer whether tester-only screens are
+      translated.**
+20. **R20-new-book-licence** — "A new book that is not made from a template:
+    what licence does it start with?" Decided: `empty-preselect` — "Empty until
+    someone chooses; CC BY-SA 4.0 is pre-selected when they share".
+    - Settles: question 9 in part (a non-template book's starting licence).
+    - Still open: other licences and the file-name tag remain as above.
+
+### DRI pick (verbatim)
+
+Seth, 2026-10-19, on R1 and R2:
+
+> ok great. i think the whole bible changes the scope, but mostly not with us in a sense. we We should be creating a modular system that allows for a book that's New Testament or Old Testament and adding some content. It's just something we can pull in at the time of the build. Let's make sure we're building our code in a way that is modular and capable of adapting to other sources that might be included.
+
+### Coordinator reading
+
+This is the coordinator's reading, not the DRI's words and not Tim's decision.
+Template content is a set of packages in one source-agnostic shape (E2,
+[#1451](https://github.com/unfoldingWord/tc-mobile/issues/1451)). Which
+packages ship (OBS, 35 Stories, the New Testament, the Old Testament, the Bible
+Passages dataset, later language packs or other sources) is chosen at build
+time, not coded into the app. The whole-Bible scope therefore lands mostly on
+the dataset side (E10,
+[#1459](https://github.com/unfoldingWord/tc-mobile/issues/1459)) and the
+build's package list, not on app code.
+
+### Principle: template content is source-agnostic packages chosen at build time
+
+Following the DRI's direction quoted above ("a modular system ... something we
+can pull in at the time of the build ... modular and capable of adapting to
+other sources that might be included"), the app's code does not know which
+template collections exist. It reads packages of one shape, and the build
+decides which are included. This is the DRI's direction, not a decision Tim
+made in Round 2.
+
+### What Round 2 leaves open
+
+- The app-size budget (R1, R2), and whether language packs are downloaded
+  (R2, "TBD").
+- Whether level-3 titles ship in v2 ahead of the level-3 app text (R8).
+- Which manifest fields the desktop app reads (R11).
+- How the launch prompt and the facilitator switch combine (R16).
+- Whether tester-only screens are translated (R19).
+- The web message's wording (R3) and when import lands (R4).
