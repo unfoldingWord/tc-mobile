@@ -824,6 +824,17 @@ export function useRecorder(): UseRecorder {
         setState("recording");
 
         startTick();
+        // The listeners above are bound only after the resume and
+        // `beforeCapture` awaits, so a track that ended in that window fired
+        // `ended` at nobody, and one that is already ended never will (#1294).
+        // `readyState` is the state, not the event: seal through the same
+        // handler an interruption uses, after `startTick()` so its
+        // `clearTick()` stops a clock that is already running. `ended` cannot
+        // recover. A track already `muted` at bind is deliberately NOT read
+        // here: whether a live take starts muted is unverified on a phone.
+        if (stream.getTracks().some((track) => track.readyState === "ended")) {
+          onInterrupted(new Event("ended"));
+        }
         return true;
       } catch (cause) {
         releaseMicClaim();
