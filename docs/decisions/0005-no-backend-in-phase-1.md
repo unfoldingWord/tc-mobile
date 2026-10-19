@@ -2,6 +2,10 @@
 
 **Status:** Accepted · **Date:** 2026-08-22
 
+**Revisited 2026-10-19 by [ADR 0011](0011-v2-storage-and-export.md)** — the
+decision stands; on Android, v2 records straight onto the microSD card
+(decided, not built), so IndexedDB will not be the only system of record.
+
 ## Context
 
 The inception notes say "standalone, mobile (Android + iOS), **offline**, oral."
