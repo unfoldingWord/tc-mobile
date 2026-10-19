@@ -25,8 +25,9 @@ Quoted as recorded; nothing is paraphrased into a wider rule.
 **What the R19 note does not say.** R19 also asked whether the tester-only
 screens are translated. The recorded note does not answer that part. The
 phone-check strings (`src/lib/strings.ts`, `phoneCheck*`) are therefore
-undecided here: a drafting lane leaves them in English and lists them as
-pending until the requirements owner answers. This is an open item, not a
+undecided here: a drafting lane leaves the keys out, so they fall back to
+English, and lists them as pending (section 9, item 6) until the requirements
+owner answers. This is an open item, not a
 default this file invents.
 
 ## 2. The languages this epic ships
@@ -239,6 +240,10 @@ Rows 5 to 8 and 10 to 16 are button and menu captions, so a lane may shorten
 the cell to a single word where the language allows it, and must then use that
 word everywhere the English word recurs. The Source column's "Verify" notes are
 the questions to put to a reader when one is found; none blocks a draft.
+A cell that is the same as another row's cell in that language (`zh-Hans` 录音
+in rows 4 and 5), or the same as the English, is a Verify question too; the
+lane names the other row, or the English, in what it returns (section 9,
+item 7).
 
 ## 6. Placeholders, plurals and numbers
 
@@ -258,6 +263,10 @@ the questions to put to a reader when one is found; none blocks a draft.
   English joins two parts with `>`, the join is not translated; right-to-left
   mirroring of it is the layout lane's question, not a drafting one.
 - No `{`, `}` or `undefined` may remain in any finished value (#1485 check d).
+  "Finished" means the text a screen shows, after the slots are filled, not
+  the catalog value a lane drafts. The catalog value `"{n} chapitres"` keeps
+  `{n}`; rendered with 3 it is "3 chapitres", and a `{`, `}` or `undefined`
+  left in that rendered text means a slot was dropped or misspelt.
 
 **Plural categories per language.** A table must carry every category the
 language selects, plus `other`, and may carry the exact-one arm `"=1"`
@@ -336,10 +345,15 @@ What a lane must have in hand, and where each piece comes from.
 3. **This glossary,** sections 4 to 8, and the language's column in section 5.
 4. **The plural categories** for the language, section 6.
 5. **The quality checks of #1485** a draft has to pass: no value equal to the
-   English one unless allowlisted (the allowlist is in section 4); each value
-   holds at least one letter of the language's script and no stray Latin
-   letters beyond the allowlist; the length stays within the ratio the test
-   records; no `{`, `}` or `undefined`.
+   English one unless allowlisted (the allowlist is in section 4, plus, for
+   one language only, every section 5 cell of that language spelled the same
+   as the English, such as `fr` Menu and Pause, `id` Menu and Edit, `pt`
+   Menu); each value holds at least one letter of the language's script and no
+   stray Latin letters beyond the allowlist, where for a Latin-script language
+   (`es`, `fr`, `id`, `pt`, `sw`) Latin letters are its own script, not stray;
+   the length stays within the ratio the test records; no `{`, `}` or
+   `undefined` in the rendered text, after the slots are filled (section 6:
+   the drafted value keeps `{n}` and every named slot).
 6. **The pending list.** A development build may carry a time-limited list of
    keys still falling back to English; the release gate requires it to be
    empty (#357, 2026-10-19). A lane that leaves a key out puts it on that list
