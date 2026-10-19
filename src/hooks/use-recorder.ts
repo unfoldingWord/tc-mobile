@@ -728,7 +728,9 @@ export function useRecorder(): UseRecorder {
         // in the same commit as the freeze. Sealing on a mute is a product
         // reading, not only an engineering one: an interruption ends the take
         // (#836), and the translator appends to it afterwards if they wish. An
-        // `unmute` is never waited for.
+        // `unmute` is never waited for. The listeners bind after the resume and
+        // `beforeCapture` awaits, so a track already ended by then is sealed by
+        // a `readyState` check after `startTick()` (#1294), not by an event.
         //
         // The still-active arm (recorder not yet "inactive") is reported once
         // per take so tester phones show whether it is ever reached (#478).
