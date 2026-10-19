@@ -322,6 +322,8 @@ export const strings = {
   // `markFinished` says "done" to match (D17).
   tileEdit: "Edit",
   tileFinished: "Done",
+  // The recorder menu's mid-take Stop tile (#369); its name is `stop`.
+  tileStop: "Stop",
   tileRename: "Rename",
   // Clear removes a segment's audio and keeps the segment; Delete below
   // removes the segment. Key names keep "erase" (the code's word for the
