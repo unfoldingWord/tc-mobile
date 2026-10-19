@@ -8,13 +8,17 @@ import { JSDOM } from "jsdom";
  *
  * ## Why this exists
  *
- * A whole class of this repo's contracts is carried by a single JSX attribute
- * and reachable by no test. #197's finding is the type case: the tone the
- * recorder's interrupted branch passes (#154), which lived inline in
- * `recorder.tsx` — a component that mounts the audio hook graph, so reaching
- * it takes a client mount with that graph mocked. The same shape covers `Control`'s `busy` × `disabled` cell
- * (#155 F1), the recovery panels' `role="alert"` and the ⋮-row's absent badge (#1239):
- * each is a prop-to-attribute guarantee with no runner behind it.
+ * A whole class of this repo's contracts is carried by a single JSX attribute,
+ * and when #197 was filed none of them was reachable by a test. #197's finding
+ * is the type case: the tone the recorder's interrupted branch passes (#154),
+ * which lived inline in `recorder.tsx` — a component that mounts the audio hook
+ * graph, so reaching it takes a client mount with that graph mocked. The same
+ * shape covers `Control`'s `busy` × `disabled` cell (#155 F1), the recovery
+ * panels' `role="alert"` and the ⋮-row's absent badge (#1239): each is a
+ * prop-to-attribute guarantee, and none had a test behind it at the time.
+ * Two have one since: the tone is read in `tests/recorder-status.test.ts` and
+ * the `busy` × `disabled` cell in `tests/control-render.test.ts`. This comment
+ * does not say whether the other two are asserted anywhere.
  *
  * ## Why static markup, and not a DOM environment
  *

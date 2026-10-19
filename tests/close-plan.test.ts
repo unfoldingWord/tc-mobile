@@ -17,7 +17,8 @@ import {
  * `close()` in `components/recorder.tsx` is the ONLY commit path in the product
  * — there is no Stop control — and it used to hold this whole decision inline.
  * Inline, the decision is reached only through a client mount of the whole
- * sheet with its hooks mocked (`tests/recorder-stop-commits.test.ts`), and a
+ * sheet with its hooks mocked (`tests/recorder-stop-commits.test.ts` is one
+ * such mount), and a
  * wrong branch there does not produce a wrong pixel, it drops a take — it
  * shipped with `npm run verify` green (#180).
  *
@@ -34,9 +35,10 @@ import {
  * plan exists (see "a superseded capture" below).
  *
  * NOT covered here, and nothing below should be read as covering it: the
- * component wiring that calls these functions. `recorder.tsx` needs a renderer,
- * which this repo does not have, so which effect each action actually runs is
- * review-only (T2, the #361 known gap) and has not been run on a device.
+ * component wiring that calls these functions. That wiring is reached only by a
+ * client mount of `recorder.tsx` (`tests/recorder-stop-commits.test.ts` mounts
+ * it with its hooks mocked), not by this file, and none of it has been run on
+ * a device.
  */
 
 /** A stop that yielded usable audio. */
