@@ -37,3 +37,5 @@ URL that opens on a phone.
   journal _draft_ — read-only,
   and not reusable: one operation, no export, no fold, no merge, no licence
   (docs/research/prior-art.md §1, §3).
+  Amended 2026-10-19: any such revisit starts from the consent principle in
+  [ADR 0012](0012-recordings-belong-to-the-community.md) (Proposed).

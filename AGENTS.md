@@ -385,6 +385,14 @@ by a later one, never edited in place. "Android has still never run" in a
 2026-09-12 entry was true on 2026-09-12; rewriting it would destroy the reason
 that session's next step was the first Android pass.
 
+**Recordings belong to the language community that made them.** A feature that
+moves recordings off the phone, other than through the person's own Share,
+starts from opt-in consent explained to the people recording, not from the
+capability. The wording and its consequences are in
+[ADR 0012](docs/decisions/0012-recordings-belong-to-the-community.md), which is
+Proposed until the requirements owner confirms it; read it before scoping such
+a feature.
+
 **Idempotency is a property, not a policy.** Every write is safely re-runnable
 or documented as to why not. In practice that means: get-or-create in **one**
 transaction, never two; append-only migrations. `ensureObsChapter` is the
