@@ -2,6 +2,11 @@ name: Feature or enhancement
 description: Propose something new, or a change to what exists
 labels: ["enhancement"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        This tracker is public. Identify people by role only, never by name.
+        Do not paste tokens, passwords or other credentials, and do not attach recordings.
   - type: textarea
     id: problem
     attributes:

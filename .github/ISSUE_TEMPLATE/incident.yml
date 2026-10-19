@@ -2,6 +2,11 @@ name: Incident report
 description: Recordings lost, a shipped build broken, or a release that did not deploy
 labels: ["bug"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        This tracker is public. Identify people by role only, never by name.
+        Do not paste tokens, passwords or other credentials, and do not attach recordings.
   - type: textarea
     id: timeline
     attributes:
@@ -13,7 +18,7 @@ body:
     id: impact
     attributes:
       label: Impact
-      description: Who was affected, on which platform and build, and whether any recording or data was lost.
+      description: Who was affected (by role, never by name), on which platform and build, and whether any recording or data was lost.
     validations:
       required: true
   - type: textarea
