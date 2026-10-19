@@ -295,7 +295,7 @@ been measured on a device yet.
   this check. Remove nothing until that chapter's file has been opened and
   checked at the agreed destination. In a browser on Android
   the button can also fail after building with "Could not share your work.
-  Try again." (§4); again, share chapter by chapter. <!-- source: src/hooks/use-library-share.ts (roomForExport checked before the encode; InsufficientStorageError); src/lib/export/book.ts roomForExport and EXPORT_HEADROOM_FACTOR = 2 ("No device reading backs this figure"); src/lib/strings.ts shareAllStorage, shareAllFailed; Share Chapter and Share Book have no roomForExport caller (grep of src/); src/hooks/share-target.ts selectShareRoute ("unsupported" when canShare rejects the file; the native route never consults canShare); not device-verified; George round 1 P2-2 on PR #1297 -->
+  Use the tC Mobile app to share it." (§4); share chapter by chapter there. <!-- source: src/hooks/use-library-share.ts (roomForExport checked before the encode; InsufficientStorageError); src/lib/export/book.ts roomForExport and EXPORT_HEADROOM_FACTOR = 2 ("No device reading backs this figure"); src/lib/strings.ts shareAllStorage, shareAllFailedWeb (PR #1339); Share Chapter and Share Book have no roomForExport caller (grep of src/); src/hooks/share-target.ts selectShareRoute ("unsupported" when canShare rejects the file; the native route never consults canShare); not device-verified; George round 1 P2-2 on PR #1297 -->
 
   The words of the three warnings are:
   - "This phone is running low on space. Mark segments finished to free up
@@ -478,7 +478,7 @@ your other notes (§5).
   the waveform. Do not Reset. Whether tapping Record afterwards continues the
   saved audio has not been confirmed, so keep the take as it is and report
   the build stamp (§5). One tester report, 2026-10-02, with the phone and
-  build not given; not reproduced by us. <!-- source: gh issue #1294, open ("the recording actually ends when the timer went off ... a weird false graphic of time going up"; build, platform and OS version not given; cause inferred, not run); PR #1298 (fix lane, open: the hook never bound the track's mute event, so the on-screen position after an alarm is unreliable until that fix ships); docs/progress_tracker.md 2026-10-02 "Other"; bench George round 3 on PR #1297 -->
+  build not given; not reproduced by us. <!-- source: gh issue #1294, open, device sheet not yet run ("the recording actually ends when the timer went off ... a weird false graphic of time going up"; build, platform and OS version not given; cause inferred, not run); PR #1298 (merged at 38c82e8d: bound the track's mute event; not yet run on a phone, so the on-screen position after an alarm stays unconfirmed); docs/progress_tracker.md 2026-10-02 "Other"; bench George round 3 on PR #1297 -->
 
 - **Finish recording — tap the square — before switching apps or locking the
   phone.** Once it is tapped, the recording is already saved (§3), so this is
@@ -562,11 +562,13 @@ your other notes (§5).
   other language option yet. Names people type can be in any script. <!-- source: gh issue #169, open; PR #1270 (typed names set their own text direction, rc.3) is part of #1267, which stays open, so no further right-to-left claim is made here -->
 - **Share Book and Share your work in the browser version on Android** can
   fail after the file is built: Share Book says "Could not share this book.
-  Try again." and the storage banner's Share your work says "Could not share
-  your work. Try again." Both hand over a zip, which Chrome on Android does
-  not accept for sharing; a chapter is a plain MP3 and is not affected, so
-  share chapter by chapter there. The installed Android app sends a share by
-  a different route, and this failure has not been reported from it. <!-- source: gh issue #272, open (moved to v1.0.0 as the Chrome-on-Android PWA path; the APK routes shares through the Capacitor Share plugin and never reaches the Web Share gate, per the 2026-09-16 comment); src/hooks/share-target.ts selectShareRoute docblock ("Android Chrome's Web Share allowlist rejects application/zip (#272)" — the project's claim, not re-run here); src/hooks/use-library-share.ts and src/hooks/use-book-share.ts (both "application/zip"); src/hooks/use-chapter-share.ts ("audio/mpeg"); src/lib/strings.ts shareBookFailed, shareAllFailed; GitHub release v1.0.1 body lists #272 among the known limits; George round 1 P2-2 on PR #1297 -->
+  Sharing a book works in the tC Mobile app." and the storage banner's Share
+  your work says "Could not share your work. Use the tC Mobile app to share
+  it." Both hand over a zip, which Chrome on Android is read as not
+  accepting for sharing (the project's reading, not re-run on a phone); a
+  chapter is a plain MP3 and is not affected, so share chapter by chapter
+  there. The installed Android app sends a share by
+  a different route, and this failure has not been reported from it. <!-- source: gh issue #272, open (moved to v1.0.0 as the Chrome-on-Android PWA path; the APK routes shares through the Capacitor Share plugin and never reaches the Web Share gate, per the 2026-09-16 comment); src/hooks/share-target.ts selectShareRoute docblock ("Android Chrome's Web Share allowlist rejects application/zip (#272)" — the project's claim, not re-run here); src/hooks/use-library-share.ts and src/hooks/use-book-share.ts (both "application/zip"); src/hooks/use-chapter-share.ts ("audio/mpeg"); src/lib/strings.ts shareBookFailedWeb (PR #1332), shareAllFailedWeb (PR #1339); GitHub release v1.0.1 body lists #272 among the known limits; George round 1 P2-2 on PR #1297 -->
 - **If playback is silent or too quiet, check the phone's media volume
   first.** If it persists, record the build, the screen used for playback,
   and whether it happened before or after marking the segment Done.
