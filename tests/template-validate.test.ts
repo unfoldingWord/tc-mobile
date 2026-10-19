@@ -273,17 +273,13 @@ describe("parseTemplatePackage: each violation names its field", () => {
     expect(pkg.version).toBe(version);
   });
 
-  it.each([
-    "01.0.0",
-    "1.0.0-01",
-    "1.0.0-..",
-    "1.0.0-",
-    "1.0.0+",
-    "1.0.0+a..b",
-  ])("refuses a version SemVer does not allow: %s", (version) => {
-    const err = refusal(broken("obs-min.json", [["version"], version]));
-    expect(err.field).toBe("version");
-  });
+  it.each(["01.0.0", "1.0.0-01", "1.0.0-..", "1.0.0-", "1.0.0+", "1.0.0+a..b"])(
+    "refuses a version SemVer does not allow: %s",
+    (version) => {
+      const err = refusal(broken("obs-min.json", [["version"], version]));
+      expect(err.field).toBe("version");
+    }
+  );
 
   it.each([
     "en-x-local",
