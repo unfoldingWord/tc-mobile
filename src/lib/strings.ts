@@ -847,16 +847,20 @@ export const stringsEn = {
   // The chapter's own name (#264) is free text too and is sanitised the same
   // way (#1218). No name, or one with nothing left once sanitised, falls back
   // to the default through `chapterName`, the one place that spells it.
-  // The chapter's number comes first, zero-padded to two digits ("03 Jonah
-  // runs", the requirements owner's R18 pick on #1233), so a book's files sort
-  // in chapter order; its bytes come out of the chapter label's budget.
+  // The chapter's number comes first ("03 Jonah runs", the requirements
+  // owner's R18 pick on #1233), zero-padded to the digits of the book's
+  // highest chapter number and never fewer than two, so a book's files sort
+  // in chapter order even past 99 (the coordinator's call on #1516); its bytes
+  // come out of the chapter label's budget.
   shareFilename(
     book: string,
     chapter: number,
-    chapterName: string | null = null
+    chapterName: string | null = null,
+    highest: number = chapter
   ): string {
+    const width = Math.max(2, String(Math.max(chapter, highest)).length);
     // ASCII digits and a space, so its length is its UTF-8 byte count.
-    const number = `${String(chapter).padStart(2, "0")} `;
+    const number = `${String(chapter).padStart(width, "0")} `;
     const label = filenameSafe(chapterName ?? "", number.length);
     return `${filenameSafe(book)} - ${number}${
       label === ""

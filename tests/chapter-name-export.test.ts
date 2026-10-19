@@ -114,6 +114,28 @@ describe("strings.shareFilename (#1218, #1233)", () => {
     expect([...files].sort()).toEqual(files);
   });
 
+  it("pads to the width of the book's highest chapter number (#1233)", () => {
+    // Coordinator decision on #1516: a 150-chapter book needs three digits, or
+    // a plain-text sort puts "100" before "11".
+    expect(strings.shareFilename("Psalms", 3, "Aleph", 150)).toBe(
+      "Psalms - 003 Aleph.mp3"
+    );
+    expect(strings.shareFilename("Psalms", 150, null, 150)).toBe(
+      `Psalms - 150 ${strings.chapterName(150)}.mp3`
+    );
+    // Under 100 chapters the width stays two, as in the owner's example.
+    expect(strings.shareFilename("Jonah", 3, "Jonah runs", 4)).toBe(
+      "Jonah - 03 Jonah runs.mp3"
+    );
+  });
+
+  it("sorts a 150-chapter book's files in chapter order (#1233)", () => {
+    const files = Array.from({ length: 150 }, (_, i) =>
+      strings.shareFilename("Psalms", i + 1, i % 3 === 0 ? null : "Song", 150)
+    );
+    expect([...files].sort()).toEqual(files);
+  });
+
   it("makes the chapter name filename-safe", () => {
     // "2:1-4" is a real passage label a tester typed; `:` is illegal in a
     // filename on common filesystems and `/` would open a folder in a zip.
@@ -159,6 +181,26 @@ describe("the chapter name reaches the zip entry (#1218)", () => {
       "Mark - 01 The sower.mp3",
       `Mark - 02 ${strings.chapterName(2)}.mp3`,
       "Mark - 03 99.mp3",
+    ]);
+  });
+
+  it("pads every file in a book to its highest chapter number's width", async () => {
+    const bookId = await bookNamed(
+      "Psalms",
+      ["Aleph", null, "Last"],
+      [1, 2, 100]
+    );
+    const sink = memoryArchiveSink();
+    await exportBookZip(
+      bookId,
+      (n, name, highest) => strings.shareFilename("Psalms", n, name, highest),
+      testCodec(),
+      sink
+    );
+    expect(Object.keys(unzipSync(archive(sink.chunks)))).toEqual([
+      "Psalms - 001 Aleph.mp3",
+      `Psalms - 002 ${strings.chapterName(2)}.mp3`,
+      "Psalms - 100 Last.mp3",
     ]);
   });
 

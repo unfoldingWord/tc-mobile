@@ -880,6 +880,21 @@ export async function resolveBookChapters(
   return { chapters, missing: resolved.length - chapters.length };
 }
 
+/**
+ * The highest chapter number in the book that holds `chapterId`, or 0 when
+ * the chapter or its book is gone. Share Chapter pads its file's number to
+ * this width (#1233), the same width Share Book uses for that book, so one
+ * chapter's file name does not depend on what else is being shared.
+ */
+export async function highestChapterNumber(
+  chapterId: ChapterId
+): Promise<number> {
+  const chapter = await getChapter(chapterId);
+  if (!chapter) return 0;
+  const { chapters } = await resolveBookChapters(chapter.bookId);
+  return Math.max(chapter.number, ...chapters.map((c) => c.number));
+}
+
 // ── Segments ─────────────────────────────────────────────────────────────
 
 /**

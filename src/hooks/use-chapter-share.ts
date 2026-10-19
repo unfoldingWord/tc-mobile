@@ -7,6 +7,7 @@ import {
   useShareFlow,
 } from "./share-flow";
 import { exportChapterMp3, withEncodeSteps } from "@/lib/export/chapter";
+import { highestChapterNumber } from "@/lib/storage/books";
 import type { ChapterId } from "@/types/domain";
 
 export interface UseChapterShare extends ShareSurface {
@@ -25,7 +26,7 @@ export interface UseChapterShare extends ShareSurface {
    */
   prepare: (
     chapterId: ChapterId,
-    filename: string
+    nameFile: (highestChapterNumber: number) => string
   ) => Promise<ShareOutcome | null>;
 }
 
@@ -55,7 +56,10 @@ export function useChapterShare(): UseChapterShare {
   } = useShareFlow();
 
   const prepare = useCallback(
-    (chapterId: ChapterId, filename: string): Promise<ShareOutcome | null> =>
+    (
+      chapterId: ChapterId,
+      nameFile: (highestChapterNumber: number) => string
+    ): Promise<ShareOutcome | null> =>
       run((isCurrent, signal, onStep) =>
         // `withEncodeSteps` (#996) hands the export a codec and an `onStep`
         // that put the encode on the same count as the segments: the count
@@ -76,7 +80,11 @@ export function useChapterShare(): UseChapterShare {
             if (result === null) return isCurrent() ? "nothing" : null;
             // No copy: the worker hands back a right-sized ArrayBuffer-backed view,
             // which `File` accepts directly.
-            const file = new File([result.mp3], filename, {
+            // The width of the chapter's number comes from its whole book
+            // (#1233), so this file is named as Share Book would name it.
+            const highest = await highestChapterNumber(chapterId);
+            if (!isCurrent()) return null;
+            const file = new File([result.mp3], nameFile(highest), {
               type: "audio/mpeg",
             });
             return { file, missing: result.missing };
