@@ -143,6 +143,11 @@ These are for the requirements owner. This ADR does not decide them.
   slot, and some Android phones have none. Where a backup goes on those phones,
   short of the desired cloud sync, is not decided. R4 says only that data must
   be archivable off the device.
+- **Whether a backup of card-resident audio onto the same card is off-device.**
+  R4's minimum is "archive the data off the device". A backup written to the
+  card that also holds the recordings does not leave the device, and a lost or
+  broken card would take both. Which destination meets the minimum is not
+  decided.
 - **How the card prompt and the facilitator's switch combine (R16).** The
   option and the note both stand; how often the launch prompt shows, and
   whether the facilitator's switch remembers a "no", is not decided.

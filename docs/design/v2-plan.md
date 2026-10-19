@@ -405,14 +405,14 @@ v2 D4-collections are different decisions.
 
 ### Product (owner: Tim)
 
-| ID                 | Question                                                     | Decided                                                           | Tim's note (verbatim)                                                                                                                                                                                                                                                                 | Answers                                                                                               |
-| ------------------ | ------------------------------------------------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| **D1-dataset**     | How much of the Bible Passages dataset is in v2?             | "All 66 books, titles in all 26 languages"                        | "The Bible Passages dataset is going to be a work in progress for a long time to come, so we should ship v. 0.1 ASAP and update it over time."                                                                                                                                        | None directly. It sets the dataset's v2 target; question 2 (the chunk count) is what sizes it.        |
-| **D2-microsd**     | What does v2 do with the microSD card on Android?            | "Record straight onto the card, and back up to it"                | "Removing a card mid-recording is highly unlikely, so should be warned against, but not worried about."                                                                                                                                                                               | 10 (replaces pivot-plan D4; see ADR 0011); 11 in part (card removal while recording).                 |
-| **D3-export**      | Does v2 also import a project exported from another phone?   | "Export in v2, import later"                                      | "For v2, we are looking to be able to safeguard data off-device. We need to use Scripture Bundle format (tragically misnamed as "Scripture Burrito" for a long time up until it was corrected, so don't be confused by it). tC Desktop does/will read/write Scripture Bundle format." | 12 (import is later; the format is Scripture Bundle, which tC Desktop reads and writes per the note). |
-| **D4-collections** | Which collection is required, and what comes inside the app? | "Bundle OBS, the collection and the New Testament books"          | None.                                                                                                                                                                                                                                                                                 | 6 in part (the starter set; no app-size budget is set). 5 stays open: the collection is not named.    |
-| **D5-licence**     | How do licences work when someone shares?                    | "Books made from a template are CC BY-SA 4.0; other books choose" | "All OBS recordings are CC BY-SA 4.0 (as per the license); recordings of Scripture propose CC BY-SA 4.0 as the default with the rationale: "You keep your copyright in the work and also allow others to freely and legally share this work with others.""                            | 9 in part. Other licences, the file-name tag and the Bible-template conflict stay open (below).       |
-| **D6-languages**   | How do the 26 languages arrive?                              | "The 10 level-4 languages in v2, the 16 level-3 languages after"  | None.                                                                                                                                                                                                                                                                                 | 1 in part (order). Arabic is level 4, so right-to-left layout is in v2.                               |
+| ID                 | Question                                                     | Decided                                                           | Tim's note (verbatim)                                                                                                                                                                                                                                                                 | Answers                                                                                                                                               |
+| ------------------ | ------------------------------------------------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D1-dataset**     | How much of the Bible Passages dataset is in v2?             | "All 66 books, titles in all 26 languages"                        | "The Bible Passages dataset is going to be a work in progress for a long time to come, so we should ship v. 0.1 ASAP and update it over time."                                                                                                                                        | None directly. It sets the dataset's v2 target; question 2 (the chunk count) is what sizes it.                                                        |
+| **D2-microsd**     | What does v2 do with the microSD card on Android?            | "Record straight onto the card, and back up to it"                | "Removing a card mid-recording is highly unlikely, so should be warned against, but not worried about."                                                                                                                                                                               | 10 (replaces pivot-plan D4; see ADR 0011); 11 in part (card removal while recording).                                                                 |
+| **D3-export**      | Does v2 also import a project exported from another phone?   | "Export in v2, import later"                                      | "For v2, we are looking to be able to safeguard data off-device. We need to use Scripture Bundle format (tragically misnamed as "Scripture Burrito" for a long time up until it was corrected, so don't be confused by it). tC Desktop does/will read/write Scripture Bundle format." | 12 in part (import is later; the format is Scripture Bundle, which tC Desktop reads and writes per the note). The manifest fields it reads stay open. |
+| **D4-collections** | Which collection is required, and what comes inside the app? | "Bundle OBS, the collection and the New Testament books"          | None.                                                                                                                                                                                                                                                                                 | 6 in part (the starter set; no app-size budget is set). Question 5 was open here because the collection was not named; closed by Round 2's R1.        |
+| **D5-licence**     | How do licences work when someone shares?                    | "Books made from a template are CC BY-SA 4.0; other books choose" | "All OBS recordings are CC BY-SA 4.0 (as per the license); recordings of Scripture propose CC BY-SA 4.0 as the default with the rationale: "You keep your copyright in the work and also allow others to freely and legally share this work with others.""                            | 9 in part. Other licences, the file-name tag and the Bible-template conflict stay open (below).                                                       |
+| **D6-languages**   | How do the 26 languages arrive?                              | "The 10 level-4 languages in v2, the 16 level-3 languages after"  | None.                                                                                                                                                                                                                                                                                 | 1 in part (order). Arabic is level 4, so right-to-left layout is in v2.                                                                               |
 
 ### Delivery (owner: Seth)
 
@@ -425,53 +425,59 @@ v2 D4-collections are different decisions.
 
 ### Later questions
 
-| ID                  | Question                                        | Decided or recorded text (verbatim)                                                                                                                              | Answers                                                               |
-| ------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| **Q1-order**        | Language order for titles and app text          | Tim: "We will use AI to draft all of them and revise them as-needed. There is a lot of prior art in 18n/l10n work, so we should be fine."                        | 1 (with D6-languages).                                                |
-| **Q3-reviewers**    | Who reviews titles, and the rule                | Tim: "Use AI to draft, we'll revise as-needed."                                                                                                                  | 3.                                                                    |
-| **Q4-chapters**     | Can a segment cross a chapter boundary?         | "Yes: a segment stores a start and an end chapter:verse"                                                                                                         | 4 in part. The UTN release is not picked.                             |
-| **Q7-blue**         | Which blue is the selection envelope?           | "A new selection colour, so it never reads as the guide ring"                                                                                                    | 7.                                                                    |
-| **Q8-chapter-play** | What does a second tap do?                      | "It pauses, and the row shows how far through the chapter it is"                                                                                                 | 8.                                                                    |
-| **Q11-backup**      | Backup contents and restore                     | Tim: "Default to including everything, all metadata, in a Scripture Bundle format with a robust manifest. We can process it later."                              | 11 in part (contents and format). Restore stays open; see below.      |
-| **Q13-images**      | Header images: source, licence, offline storage | Tim: "Header images are CC0 when generated on the app. Store them wherever, preferably embedded in the MP3 at a low resolution to not consume too much storage." | 13.                                                                   |
-| **Q14-legal**       | Legal view on New Generations sets              | Tim: "They are data, like a phonebook, not subject to copyright restrictions."                                                                                   | 14, as **the product owner's position**. No legal review is recorded. |
+| ID                  | Question                                        | Decided or recorded text (verbatim)                                                                                                                              | Answers                                                                       |
+| ------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| **Q1-order**        | Language order for titles and app text          | Tim: "We will use AI to draft all of them and revise them as-needed. There is a lot of prior art in 18n/l10n work, so we should be fine."                        | 1 (with D6-languages).                                                        |
+| **Q3-reviewers**    | Who reviews titles, and the rule                | Tim: "Use AI to draft, we'll revise as-needed."                                                                                                                  | 3.                                                                            |
+| **Q4-chapters**     | Can a segment cross a chapter boundary?         | "Yes: a segment stores a start and an end chapter:verse"                                                                                                         | 4 in part. The UTN release is not picked.                                     |
+| **Q7-blue**         | Which blue is the selection envelope?           | "A new selection colour, so it never reads as the guide ring"                                                                                                    | 7.                                                                            |
+| **Q8-chapter-play** | What does a second tap do?                      | "It pauses, and the row shows how far through the chapter it is"                                                                                                 | 8.                                                                            |
+| **Q11-backup**      | Backup contents and restore                     | Tim: "Default to including everything, all metadata, in a Scripture Bundle format with a robust manifest. We can process it later."                              | 11 in part (contents and format). Restore: closed by Round 2's R4; see below. |
+| **Q13-images**      | Header images: source, licence, offline storage | Tim: "Header images are CC0 when generated on the app. Store them wherever, preferably embedded in the MP3 at a low resolution to not consume too much storage." | 13.                                                                           |
+| **Q14-legal**       | Legal view on New Generations sets              | Tim: "They are data, like a phonebook, not subject to copyright restrictions."                                                                                   | 14, as **the product owner's position**. No legal review is recorded.         |
 
 ### What is still open
+
+This list was reconciled with Round 2 on 2026-10-19; what Round 2 closed is in
+the next list, not here.
 
 - **Question 2** — the chunk count is not a decision. It is counted outside
   this file and is not restated here.
 - **Question 4, first half** — which UTN release.
-- **Question 5** — which passage collection is required. D4-collections bundles
-  "the collection" without naming it. Round 2's R1 names it; see
-  [Round 2](#round-2-decisions-recorded-2026-10-19).
 - **Question 6, second half** — the app-size budget for the starter set. Round
   2's R1 and R2 widen the bundle and leave the budget open.
 - **Question 9, in part** — which licences besides CC BY-SA the checklist
   offers, and the file-name tag format; neither D5-licence's option nor its
   note names them. The two also differ on Bible-book templates: the option
   makes every template-derived book CC BY-SA 4.0, and the note has recordings
-  of Scripture only propose it as the default. Which one holds is open.
+  of Scripture only propose it as the default. Which one holds is open. Round
+  2's R20 sets only the starting licence of a book not made from a template.
 - **D1-dataset and D6-languages** — D1-dataset puts titles in all 26
   languages in v2, and D6-languages brings the 16 level-3 languages "after".
   Whether level-3 titles ship in v2 ahead of the app text is not recorded.
   Round 2's R8 puts the level-3 languages after 2.0.0 as v2-desired; the
   titles question stays open.
-- **Q4-chapters and Q8-chapter-play** — a segment may cross a chapter
-  boundary, and chapter play is on the chapter row. Which chapter's play
-  includes such a segment is not recorded. Round 2's R6 answers it: the chapter
-  the segment starts in.
-- **Question 11, restore** — D3-export puts import after v2, and Q11-backup
-  puts the backup in Scripture Bundle format. Read together (an inference, not
-  a decision), a v2 backup can be written but the app cannot restore it. Whether
-  that is what the requirements owner intends is a question for the
-  requirements owner;
-  [ADR 0011](../decisions/0011-v2-storage-and-export.md) records it as open.
-  Round 2's R4 answers it: backup only in v2, restore v2-desired.
-- **Question 12, second half** — what tC Desktop needs to open the package,
-  beyond the format the D3-export note names. Round 2's R11 sets the v2 bar at
-  the published spec plus our own read-back test; the fields stay open.
+- **Question 12, second half** — which flavour and manifest fields tC Desktop
+  reads to open the package. Round 2's R11 sets the v2 bar at the published
+  spec plus our own read-back test; the fields stay open.
 - **Question 14** — no legal review is recorded. The plan's own line says a
   legal view comes "before shipping them".
+
+### Closed by Round 2
+
+These were open when the register above was written. Each is closed by the
+Round 2 answer named; the answer is quoted in the next section.
+
+- **Question 5** — which passage collection is required. Closed by R1: OBS and
+  "35 Stories that Changed the World", plus the entire Bible Passages dataset.
+  D4-collections' option text ("the collection") did not name it.
+- **Q4-chapters and Q8-chapter-play** — which chapter's play includes a segment
+  that crosses a chapter boundary. Closed by R6: the chapter it starts in; it
+  plays and exports there.
+- **Question 11, restore** — closed by R4. The app need not restore a v2
+  backup: backup only in v2, restore comes with import and is v2-desired, not
+  required. At a minimum the data must be archivable off the device.
+  [ADR 0011](../decisions/0011-v2-storage-and-export.md) records the same.
 
 ## Round 2 decisions recorded 2026-10-19
 
