@@ -138,7 +138,8 @@ and **George** (Grok, deep-tree) — two lenses, never a primary and a fallback.
   with the full SHA read from `gh` at the time
   (`gh pr view <n> --repo unfoldingWord/tc-mobile --json headRefOid --jq .headRefOid`),
   and write the whole command, merge method included.
-  - **A feature or fix PR, and a release bump, merge by squash:**
+  - **Every PR that is not a promotion (feature, fix, docs, test, chore, a
+    release bump) merges by squash:**
     `gh pr merge <n> --repo unfoldingWord/tc-mobile --squash --admin --match-head-commit <sha>`.
     The bump's squash commit is the cut commit the release branch starts from
     (`.claude/skills/tc-release`).
@@ -146,9 +147,13 @@ and **George** (Grok, deep-tree) — two lenses, never a primary and a fallback.
     `gh pr merge <n> --repo unfoldingWord/tc-mobile --merge --admin --match-head-commit <sha>`.
     A squash, a rebase or an edited subject gets no APK or TestFlight build
     (AGENTS.md, "Branches and deployment").
+  - **The pin is not the review check.** It fails the merge only if the head
+    moved after the SHA was read; it does not look at which head an approval
+    names. `--admin` is required by ruleset 24043869 and also skips GitHub's
+    required checks and reviews (`docs/release/promotion-v1.0.0.md` §3), so
+    the DRI confirms the approval and green CI are on `<sha>` before running it.
   - **Stale-review dismissal stays off on `develop`.** The bench voids a round
-    on every push, and the head pin is what keeps an old approval from
-    merging a new head.
+    on every push.
 - **Process artifacts** — `ci.yml`, `AGENTS.md`, `docs/review/**`, deploy
   config — need both reviewers, because they are executed as instructions.
   Exempting them is allowed; the decision is recorded on the PR, never skipped
