@@ -1450,9 +1450,9 @@ describe("a whole shelf survives the upgrade to the current version (#1421)", ()
     const slots: Record<string, [string | null, number]> = {
       b1: [null, 1],
       b2: ["Mark", 2],
-      b3: ["Book 2", 3],
+      b3: ["Book 2", 4],
       b4: [null, 1000],
-      b5: ["Luke", 4],
+      b5: ["Luke", 5],
       b6: [null, 3],
     };
     const clips = await seedShelf(

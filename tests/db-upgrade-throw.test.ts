@@ -46,6 +46,12 @@ function createStores(db: Awaited<ReturnType<typeof openDB>>): void {
   db.createObjectStore("failures", { autoIncrement: true });
 }
 
+/** A clip that is on the old shelf before the upgrade runs. */
+const CLIP_KEY = "c-old";
+const CLIP_BYTES = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+/** A clip the upgrade itself writes just before it fails. */
+const PARTIAL_CLIP_KEY = "c-written-by-the-failed-upgrade";
+
 const SEED = [
   ["b1", "Book 001", 10],
   ["b2", "Mark", 60],
@@ -81,6 +87,7 @@ async function seed(version: 9 | 10) {
       segmentIds: [],
     });
   }
+  await db.put("clipData", CLIP_BYTES.slice().buffer, CLIP_KEY);
   const books = await db.getAll("books");
   const chapters = await db.getAll("chapters");
   db.close();
@@ -94,6 +101,10 @@ async function readRaw() {
     version: db.version,
     books: await db.getAll("books"),
     chapters: await db.getAll("chapters"),
+    clipKeys: (await db.getAllKeys("clipData")).map(String),
+    clipBytes: Array.from(
+      new Uint8Array((await db.get("clipData", CLIP_KEY)) as ArrayBuffer)
+    ),
   };
   db.close();
   return read;
@@ -108,7 +119,35 @@ function failBooksPutAt(nth: number) {
     ...args
   ) {
     if (this.name === "books" && ++calls === nth) {
+      // A clip byte write lands in the same `versionchange` transaction just
+      // before the failure, so rolling it back is what the abort must do.
+      this.transaction
+        .objectStore("clipData")
+        .put(new Uint8Array([9, 9, 9]).buffer, PARTIAL_CLIP_KEY);
       throw new Error("simulated fault inside the upgrade");
+    }
+    return realPut.apply(this, args);
+  });
+}
+
+/**
+ * Make the Nth `books` write fail as a REQUEST (a duplicate-key `add`, which
+ * fails with a ConstraintError the way a refused write does), not as a thrown
+ * error. IndexedDB aborts the transaction by itself on a failed request.
+ * Simulated on fake-indexeddb; a real engine's quota path is not exercised.
+ */
+function failBooksRequestAt(nth: number) {
+  const realPut = IDBObjectStore.prototype.put;
+  let calls = 0;
+  return vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (
+    this: IDBObjectStore,
+    ...args
+  ) {
+    if (this.name === "books" && ++calls === nth) {
+      this.transaction
+        .objectStore("clipData")
+        .put(new Uint8Array([9, 9, 9]).buffer, PARTIAL_CLIP_KEY);
+      return this.add({ id: "b1" });
     }
     return realPut.apply(this, args);
   });
@@ -131,7 +170,12 @@ describe.each([
     await expect(getDb()).rejects.toThrow("simulated fault inside the upgrade");
 
     vi.restoreAllMocks();
-    expect(await readRaw()).toEqual({ version: from, ...before });
+    expect(await readRaw()).toEqual({
+      version: from,
+      ...before,
+      clipKeys: [CLIP_KEY],
+      clipBytes: Array.from(CLIP_BYTES),
+    });
   });
 
   it("opens and migrates cleanly on the next try, once the fault is gone", async () => {
@@ -161,5 +205,26 @@ describe.each([
       "b1",
     ]);
     expect(await db.getAll("chapters")).toEqual(before.chapters);
+    // The clip that was already there is untouched; the one the failed
+    // attempt wrote never existed.
+    expect((await db.getAllKeys("clipData")).map(String)).toEqual([CLIP_KEY]);
+    expect(
+      Array.from(new Uint8Array((await db.get("clipData", CLIP_KEY as never))!))
+    ).toEqual(Array.from(CLIP_BYTES));
+  });
+
+  it("a FAILED REQUEST inside the upgrade (it aborts the transaction itself) rejects with that error and changes nothing", async () => {
+    const before = await seed(from);
+    failBooksRequestAt(4);
+
+    await expect(getDb()).rejects.toMatchObject({ name: "ConstraintError" });
+
+    vi.restoreAllMocks();
+    expect(await readRaw()).toEqual({
+      version: from,
+      ...before,
+      clipKeys: [CLIP_KEY],
+      clipBytes: Array.from(CLIP_BYTES),
+    });
   });
 });
