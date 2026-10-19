@@ -52,16 +52,20 @@ it before the first render. All translations ship inside the one build.
 ### (a) The old rationale, and what replaces it
 
 Retired: the paragraph at `locale.ts:21-30`, headed "WHY BUILD TIME AND NOT A
-RUNTIME APPLIER", and the "WHAT THIS DOES NOT DO" paragraph at `locale.ts:31-36`, which says nothing about
-the running app changes. The runtime-apply issue replaces that docblock; this
+RUNTIME APPLIER", and the "WHAT THIS DOES NOT DO" paragraph at `locale.ts:31-36`,
+which says "Nothing about the running app changes today: the shipped locale is
+still English, still left-to-right." Together that is `locale.ts:21-36`, the
+one span this ADR retires. The runtime-apply issue replaces that docblock; this
 ADR links forward to it and does not edit the file.
 
 What replaces the argument:
 
 1. The locale is **a fact about the phone**, not a translator's stored choice.
    There is still nothing to store: the app reads the phone's language list at
-   launch and again on return (section e), so it can never disagree with the
-   phone's own setting.
+   launch and again on return (section e). The resolved locale follows the
+   phone's list, and differs from the phone's first language only by the rules
+   in (g) (an incomplete locale is skipped, ending at English) and (h) (every
+   Chinese variant gets Simplified).
 2. The old objection was a reflow after first paint. The inference here is that
    the launch intro is a full-screen, direction-neutral, `aria-hidden` overlay
    that paints before React mounts, so the first frames show no
@@ -73,8 +77,11 @@ What replaces the argument:
 3. To close the earliest gap without a device observation, an inline `<head>`
    script, **generated at build time from the one locale table**, sets `lang`
    and `dir` from `navigator.languages` before the stylesheet paints. It is
-   generated, not hand-written, so the table in `lib/locale.ts` stays the one
-   place either fact is stated (the original #169 reason for the module).
+   generated, not hand-written, from the same table **and the same resolver**
+   as section (b), including the (g) and (h) rules, and it writes only `lang`
+   and `dir` values the table holds. So the table in `lib/locale.ts` stays the
+   one place either fact is stated (the original #169 reason for the module),
+   and there is one resolution algorithm, not two.
 
 ### (b) Where `lang` and `dir` are applied
 
@@ -95,9 +102,9 @@ What replaces the argument:
 
 ### (c) The manifest and native app names stay English
 
-A web manifest and a native app's display name are read by the operating system
-once, at install, and cannot follow the user's language afterwards. They stay
-English. The runtime locale changes what is drawn inside the app, not the
+The web manifest's name is read by the operating system at install. A native
+app could localize its launcher label through platform resources, but this ADR
+does not take that on: both stay English, as a scope decision. The runtime locale changes what is drawn inside the app, not the
 launcher label.
 
 ### (d) Strings are statically imported and precached
@@ -142,9 +149,11 @@ next language in the phone's list, ending at English.
 R19 settles both open questions:
 
 - **Arabic numerals everywhere.** Every language shows `0-9`, including
-  languages whose own convention uses other digits. `Intl.NumberFormat` and
-  `plural.ts` are called with the Latin numbering system explicitly, so a
-  phone's regional setting cannot change the digits.
+  languages whose own convention uses other digits. `Intl.NumberFormat` is
+  called with the Latin numbering system explicitly (`numberingSystem:
+  "latn"`), so a phone's regional setting cannot change the digits.
+  `plural.ts` only picks the plural form; it writes the count as `String(n)`
+  (`plural.ts:125`), which is always `0-9`.
 - **Simplified text on Chinese phones.** A phone whose language is any Chinese
   variant, including Traditional, gets the Simplified translation, until a
   Traditional translation is separately scoped.
@@ -179,8 +188,8 @@ is not decided here and stays open with the requirements owner.
 
 ## Consequences
 
-- The `locale.ts` docblock at lines 21-36 (and the "WHAT THIS DOES NOT DO"
-  paragraph that follows it) is wrong once runtime apply lands and is replaced
+- The `locale.ts` docblock at lines 21-36 (the "WHY BUILD TIME" paragraph,
+  21-30, and the "WHAT THIS DOES NOT DO" paragraph, 31-36) is wrong once runtime apply lands and is replaced
   by that issue.
 - `SHIPPED_LOCALE` is replaced by a table of supported locales and a resolver.
   `plural()` and every other reader of the constant move to the resolved
