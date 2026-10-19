@@ -11,14 +11,17 @@ describe("a book name that sanitises to nothing (#1421 T4)", () => {
   const empties = ["///", "\\:*?", "   ", "\u0000\u0007", ""];
 
   it.each(empties)("shareBookFilename(%j) still names a file", (name) => {
-    const file = strings.shareBookFilename(name);
-    expect(file).not.toBe(".zip");
-    expect(file.endsWith(".zip")).toBe(true);
-    expect(file.length).toBeGreaterThan(".zip".length);
+    expect(strings.shareBookFilename(name)).toBe(
+      `${strings.shareNameFallback}.zip`
+    );
   });
 
   it.each(empties)("shareAllFolder(%j) is not empty", (name) => {
-    expect(strings.shareAllFolder(name)).not.toBe("");
+    expect(strings.shareAllFolder(name)).toBe(strings.shareNameFallback);
+  });
+
+  it("the fallback is a non-empty label", () => {
+    expect(strings.shareNameFallback.length).toBeGreaterThan(0);
   });
 
   it("leaves a name that survives sanitising alone", () => {
