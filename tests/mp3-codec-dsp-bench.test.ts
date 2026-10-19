@@ -272,7 +272,7 @@ describe("mp3.worker — the bench half (#1433 T2)", () => {
     expect(answer.result.chunks).toBe(2);
     expect(Number.isFinite(answer.result.measureMs)).toBe(true);
     expect(Number.isFinite(answer.result.applyMs)).toBe(true);
-    expect(answer.result.checksum).not.toBe(0);
+    expect(answer.result.checksum).toBeGreaterThan(0);
   });
 
   it("answers a length it cannot run with a bench-error, not an error", () => {
