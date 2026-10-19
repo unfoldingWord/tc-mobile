@@ -1,0 +1,53 @@
+name: Feature or enhancement
+description: Propose something new, or a change to what exists
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: Who is stuck, doing what, and what hurts without this?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What done looks like, in behaviour
+      description: What a person can do, or sees, afterwards. Not how it is built.
+  - type: dropdown
+    id: source
+    attributes:
+      label: Who asked
+      description: "A tester or facilitator ask is filed into the Backlog milestone with the source: tester label. Say who by role, never by name."
+      options:
+        - A developer
+        - A tester or facilitator
+        - The requirements owner
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: The maintainer applies the matching `area:` label.
+      options:
+        - editing
+        - recording
+        - library
+        - ui-design
+        - share-export
+        - storage
+        - i18n
+        - native-store
+        - ci-release
+        - engineering
+        - content-attribution
+        - docs-training
+  - type: checkboxes
+    id: a11y
+    attributes:
+      label: Who it affects
+      description: The maintainer applies the matching `a11y:` labels.
+      options:
+        - label: People who may not read (icon-only cues, spoken prompts)
+        - label: Low vision or blind users
+        - label: Motor (touch targets, gestures, one-handed use)
+        - label: Hearing (visual cues for audio state)

@@ -1,0 +1,67 @@
+name: Bug report
+description: Something does not work as it should
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where it happens
+      options:
+        - Browser (PWA)
+        - Android app
+        - iOS app
+        - More than one
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: build
+    attributes:
+      label: Build
+      description: The version shown in the app footer, or the tester-build tag.
+  - type: dropdown
+    id: source
+    attributes:
+      label: Who found it
+      description: "A field tester or facilitator report also gets the source: tester label. Say who by role, never by name."
+      options:
+        - A developer
+        - A tester or facilitator (role, date and build go in the description)
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: The maintainer applies the matching `area:` label.
+      options:
+        - editing
+        - recording
+        - library
+        - ui-design
+        - share-export
+        - storage
+        - i18n
+        - native-store
+        - ci-release
+        - engineering
+        - content-attribution
+        - docs-training
+  - type: checkboxes
+    id: a11y
+    attributes:
+      label: Who it affects
+      description: The maintainer applies the matching `a11y:` labels.
+      options:
+        - label: People who may not read (icon-only cues, spoken prompts)
+        - label: Low vision or blind users
+        - label: Motor (touch targets, gestures, one-handed use)
+        - label: Hearing (visual cues for audio state)
