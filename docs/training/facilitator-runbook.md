@@ -318,14 +318,15 @@ been measured on a device yet.
 
 - **Starting a segment over.** A translator who wants to say the whole
   segment again does not need to edit it: in the recorder, the **eraser** at
-  the left end of the bottom bar ("Clear and record again") clears the
+  the left end of the bottom bar ("Reset and record again") resets the
   recording. A small panel asks once more (the eraser there confirms, the back
   arrow cancels). The recorder stays open with the segment empty, ready for
   Record. The eraser is greyed while recording and when the segment has
-  nothing saved yet. There is no undo for a clear. Clearing keeps the
+  nothing saved yet. There is no undo for a reset. Resetting keeps the
   segment, and so does **Reset** in the segment's **⋮** on the chapter screen
-  (its confirm box reads "Reset segment and start over"). **Delete** (the bin,
-  in the same **⋮**) removes the whole segment. <!-- source: src/components/recorder-toolbars.tsx (rerecord icon="eraser"), src/components/recorder.tsx onRerecord / onConfirmErase (#592), src/components/erase-confirm.tsx (glyph), src/components/segment-row.tsx (Reset and Delete tiles, #1119, #1220); not device-verified -->
+  (its confirm box reads "Reset segment and start over", and its button
+  "Reset recording"). **Delete** (the bin,
+  in the same **⋮**) removes the whole segment. <!-- source: src/components/recorder-toolbars.tsx (rerecord icon="eraser"), src/components/recorder.tsx onRerecord / onConfirmErase (#592), src/components/erase-confirm.tsx (glyph), src/components/segment-row.tsx (Reset and Delete tiles, #1119, #1220); src/lib/strings.ts rerecord and eraseConfirm (one verb, "Reset", #1233); not device-verified -->
 - **Recording a new segment.** On the chapter screen, a segment with no
   recording shows a gray button with a red outline and a red microphone. It
   does **not** start recording: it opens the recorder, and the translator
@@ -431,7 +432,7 @@ your other notes (§5).
    - **Edited the recording:** opened editing with the scissors in the
      bottom bar, then cut a piece out (the scissors under the sound picture)
      or put a cut piece back (paste, the arrow onto a line).
-   - **Said it all again:** the eraser in the recorder ("Clear and record
+   - **Said it all again:** the eraser in the recorder ("Reset and record
      again"), or **Reset** in the segment's ⋮ menu.
 
    Write whether they found it alone or someone showed them. Opening editing
@@ -451,7 +452,7 @@ your other notes (§5).
    background, so run it if you can.
 
 <!-- source and tracking, for maintainers:
-     item 1: gh issue #595 (DRI pick 2026-09-28, "After training observations (Recommended)": facilitators note who used cut/paste and who re-recorded; the editor-optional decision is made from those notes); strings.ts rerecord = "Clear and record again" and tileErase = "Reset"; the bottom-bar scissors open editing, Cut is the scissors under the waveform, Paste is the arrow onto a line (§3 above; icon-recognition-protocol.md rows 6, 8, 9). Split per George round 1 P2-1 on PR #1314.
+     item 1: gh issue #595 (DRI pick 2026-09-28, "After training observations (Recommended)": facilitators note who used cut/paste and who re-recorded; the editor-optional decision is made from those notes); strings.ts rerecord = "Reset and record again" and tileErase = "Reset"; the bottom-bar scissors open editing, Cut is the scissors under the waveform, Paste is the arrow onto a line (§3 above; icon-recognition-protocol.md rows 6, 8, 9). Split per George round 1 P2-1 on PR #1314.
      item 2: gh issue #1284 (long names cut off with "…", no way to read them in full; known limit in §4) and gh issue #1272 (a typed chapter "number" becomes the chapter's name while the badge shows its position — the issue labels this inferred from the code).
      item 3: gh issue #249 and ADR 0010 (docs/decisions/0010-icon-recognition.md); gh issue #461 waits on the #249 check (DRI pick 2026-09-28, "Decide after the #249 icon check (Recommended)": if people find controls by the glyph, the button-disc contrast is accepted; if not, a border or a lighter surface ladder is chosen).
      Observation notes are per participant and by role, per AGENTS.md "Tester feedback is tagged by kind and source". -->

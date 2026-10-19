@@ -2299,7 +2299,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
                 // `clearSegmentTake` and returns false — so nothing reaches
                 // `pendingTake`, `SaveFailed` cannot mount, and the panel cannot
                 // either while this sheet is up. Staying would leave "Could not
-                // clear the audio. Try again." over a call that can never
+                // reset the audio. Try again." over a call that can never
                 // succeed, on a screen whose only exit is the Back that just
                 // failed (George R6 P2). Nothing is lost by leaving: the clear
                 // never committed, so the original take is still on disk.
@@ -3216,12 +3216,12 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // native-disabled, no-reason gap and left the bin's as a named residual —
     // pre-existing, unrelated to #857's `hasTake` change, and nobody had
     // reviewed bar-appropriate erase copy yet. #878 closes it the same way
-    // Edit was closed: `strings.stopToErase` ("Stop recording to clear."),
+    // Edit was closed: `strings.stopToErase` ("Stop recording to reset."),
     // naming the bar's own Stop control, only while the take is LIVE
     // (`recording`) — the same split `editToolbarHint` above uses. The commit
     // window (`committing` half of `"uncommitted-take"`, Stop already
     // pressed) gets no label and stays natively `disabled` with no reason,
-    // same as Edit's commit-window half: "Stop recording to clear." would
+    // same as Edit's commit-window half: "Stop recording to reset." would
     // name a control that is now Record.
     const rerecordHint = barHint(
       eraseReason,
