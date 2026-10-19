@@ -28,8 +28,32 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,63}$/;
 const KIND = /^[a-z][a-z0-9-]{0,31}$/;
 const KEY = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
 const CODE = /^[A-Z0-9_-]{1,16}$/;
-const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
-const LANGUAGE = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
+/** SemVer 2.0.0's grammar (semver.org): no leading zeros, build metadata allowed. */
+const NUM = "(?:0|[1-9]\\d*)";
+const PRE_ID = "(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)";
+const SEMVER = new RegExp(
+  `^${NUM}\\.${NUM}\\.${NUM}` +
+    `(?:-${PRE_ID}(?:\\.${PRE_ID})*)?` +
+    "(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+);
+/**
+ * A well-formed BCP-47 tag (RFC 5646 §2.1 `langtag` or a private-use tag):
+ * language with extlangs, script, region, variants, extensions and private
+ * use. Form only — it does not look subtags up in the registry, and the
+ * irregular grandfathered tags (`i-klingon`, …) are not admitted.
+ */
+const LANGTAG =
+  "(?:[A-Za-z]{2,3}(?:-[A-Za-z]{3}){0,3}|[A-Za-z]{4,8})" +
+  "(?:-[A-Za-z]{4})?" +
+  "(?:-(?:[A-Za-z]{2}|\\d{3}))?" +
+  "(?:-(?:[A-Za-z0-9]{5,8}|\\d[A-Za-z0-9]{3}))*" +
+  "(?:-[0-9A-WY-Za-wy-z](?:-[A-Za-z0-9]{2,8})+)*";
+const PRIVATE_USE = "[Xx](?:-[A-Za-z0-9]{1,8})+";
+const LANGUAGE = new RegExp(
+  `^(?:${LANGTAG}(?:-${PRIVATE_USE})?|${PRIVATE_USE})$`
+);
+/** A relative path to a bundled asset: no scheme, no leading slash, no `..`. */
+const ASSET_PATH = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
 
 /** A refused package or title table. `field` is the path to the offending value. */
 export class TemplateValidationError extends Error {
@@ -137,7 +161,14 @@ function segment(
       ? null
       : span(r["reference"], at(field, "reference"));
   const thumb = r["thumbnail"];
-  const thumbnail = thumb === null ? null : text(thumb, at(field, "thumbnail"));
+  const thumbField = at(field, "thumbnail");
+  const thumbnail =
+    thumb === null
+      ? null
+      : matching(thumb, thumbField, ASSET_PATH, "a relative asset path");
+  if (thumbnail?.split("/").includes("..")) {
+    fail(thumbField, "must not contain a .. segment");
+  }
   return { key, reference, thumbnail };
 }
 
@@ -180,9 +211,11 @@ function languages(value: unknown): readonly string[] {
       LANGUAGE,
       "a BCP-47 language tag"
     );
-    if (seen.has(lang))
+    // BCP-47 tags are case-insensitive, so "en" and "EN" are one language.
+    const folded = lang.toLowerCase();
+    if (seen.has(folded))
       fail(`titleLanguages[${i}]`, `duplicate language "${lang}"`);
-    seen.add(lang);
+    seen.add(folded);
     return lang;
   });
 }

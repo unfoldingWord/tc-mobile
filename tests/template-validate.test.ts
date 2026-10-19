@@ -246,6 +246,83 @@ describe("parseTemplatePackage: each violation names its field", () => {
     const err = refusal(broken("obs-min.json", [[...SEG0, "thumbnail"], ""]));
     expect(err.field).toBe("chapters[0].segments[0].thumbnail");
   });
+
+  it.each([
+    "https://example.org/a.jpg",
+    "javascript:alert(1)",
+    "/obs/01-01.jpg",
+    "../x.jpg",
+    "obs/../../x.jpg",
+    "obs\\01-01.jpg",
+  ])("a thumbnail that is not a relative asset path: %s", (value) => {
+    const err = refusal(
+      broken("obs-min.json", [[...SEG0, "thumbnail"], value])
+    );
+    expect(err.field).toBe("chapters[0].segments[0].thumbnail");
+  });
+
+  it.each([
+    "1.0.0+build.1",
+    "1.0.0-rc.1+sha.5114f85",
+    "0.0.0-alpha-1",
+    "10.20.30",
+  ])("accepts a SemVer 2.0.0 version: %s", (version) => {
+    const pkg = parseTemplatePackage(
+      broken("obs-min.json", [["version"], version])
+    );
+    expect(pkg.version).toBe(version);
+  });
+
+  it.each([
+    "01.0.0",
+    "1.0.0-01",
+    "1.0.0-..",
+    "1.0.0-",
+    "1.0.0+",
+    "1.0.0+a..b",
+  ])("refuses a version SemVer does not allow: %s", (version) => {
+    const err = refusal(broken("obs-min.json", [["version"], version]));
+    expect(err.field).toBe("version");
+  });
+
+  it.each([
+    "en-x-local",
+    "de-DE-u-co-phonebk",
+    "zh-Hant-TW",
+    "es-419",
+    "x-private",
+    "sl-rozaj-biske",
+  ])("accepts a well-formed BCP-47 tag: %s", (tag) => {
+    const pkg = parseTemplatePackage(
+      broken(
+        "obs-min.json",
+        [["titleLanguages"], [tag]],
+        [["title"], { [tag]: "T" }]
+      )
+    );
+    expect(pkg.titleLanguages).toEqual([tag]);
+  });
+
+  it.each([
+    "e",
+    "en-",
+    "en--US",
+    "en-x",
+    "en-u",
+    "en-US-US",
+    "en_US",
+    "toolongtag",
+  ])("refuses a malformed BCP-47 tag: %s", (tag) => {
+    const err = refusal(broken("obs-min.json", [["titleLanguages"], [tag]]));
+    expect(err.field).toBe("titleLanguages[0]");
+  });
+
+  it("refuses one language listed twice in different case", () => {
+    const err = refusal(
+      broken("obs-min.json", [["titleLanguages"], ["en", "EN"]])
+    );
+    expect(err.field).toBe("titleLanguages[1]");
+  });
 });
 
 describe("title tables", () => {
