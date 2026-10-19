@@ -422,7 +422,7 @@ export const strings = {
   // — most often a transient iOS "interrupted" AudioContext (#106), not a
   // corrupt clip. The sheet is a full panel, not a blank: the recording is
   // untouched, "Try again" resumes the context and re-decodes, and Back returns
-  // to the Segments list, where the row's Clear (which does not decode) works.
+  // to the Segments list, where the row's Reset (which does not decode) works.
   loadFailedTitle: "This recording could not be opened",
   loadFailedBody:
     "Your recording is safe. Try again, or go back to clear it from the list.",
