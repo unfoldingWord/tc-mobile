@@ -14,6 +14,7 @@ import {
 import {
   browserAllocationDeps,
   isAbortCause,
+  PHONE_CHECK_CONTEXT,
   readAllocationBreadcrumb,
   readDeviceInfo,
   readSavedChecks,
@@ -25,6 +26,7 @@ import {
   writeSavedChecks,
   type BreadcrumbStore,
 } from "./phone-check-probes";
+import { reportFailure } from "./report-failure";
 import {
   reloadedResult,
   runAllocationSteps,
@@ -267,7 +269,13 @@ export function usePhoneCheck(): {
     return () => {
       for (const [run, restore] of runs) {
         run.abort();
-        restore?.();
+        // Guarded per run: a throwing restore must not leave a later run in
+        // the map un-aborted. The failure goes to the funnel, not up into React.
+        try {
+          restore?.();
+        } catch (cause) {
+          reportFailure(cause, PHONE_CHECK_CONTEXT);
+        }
       }
     };
   }, []);
@@ -290,7 +298,10 @@ export function usePhoneCheck(): {
     };
     let finished = false;
     let saved: SavedChecks = { device: null, encode: null, storage: null };
-    // Idempotent: the unmount and the run's `finally` both call it.
+    // Safe to call twice, on purpose: the unmount and the run's `finally` both
+    // call it. The second call is also the backstop for a `land` that arrives
+    // after the abort and rewrites storage, so do not turn this into a
+    // once-only latch.
     const restore = () => {
       if (!finished) writeSavedChecks(crumbStore, previous);
     };
