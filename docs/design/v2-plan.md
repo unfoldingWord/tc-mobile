@@ -609,8 +609,12 @@ above.
 18. **R18-ui-words** — "Two wording calls from the rc.2 follow-ups (#1233)"
     Decided (free text, no option). Note: "Use "Reset recording"; Use the number
     and name"
-    - Settles: #1233's two wording calls. The note does not say which call each
-      phrase answers.
+    - Settles: #1233's two wording calls. The orchestrator's mapping, from the
+      order the site's question listed them (not Tim's words): (1) #1233 items
+      8, 9 and 12, one verb for removing a recording, "Reset" or "Clear" →
+      "Use "Reset recording""; (2) item 21, shared file names use the chapter
+      name only or its number and name (for example "03 Jonah runs") → "Use the
+      number and name".
 19. **R19-digits** — "Languages: which digits each language shows, whether
     Traditional-Chinese phones get the Simplified text, and whether tester-only
     screens are translated" Decided (free text, no option). Note: "Use Arabic
