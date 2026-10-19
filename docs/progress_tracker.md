@@ -46,7 +46,7 @@ Each is the DRI's answer in the coordinator session, verbatim.
 - **Android APK:** run 38560199022, both jobs succeeded, artifact `android-apk-e3a4313f…`. Signer certificate SHA-256 `eed23e1bccf9fbad8b69f2f9598fd8d97e094d23e544b71b9e91dd21c934baf2`, the same as 1.0.1. Embedded `version.json`: `1.1.0` at `e3a4313f`. APK SHA-256 `74274a4047e549eeccf296abcfcf1ed2e84596e76d3454b5f4afe4e1647ac844`.
 - **iOS TestFlight:** run 38560199102, both jobs succeeded; uploaded as version 1.1, build 1791982821. App Store Connect accepted the 1.1 upload.
 - The DRI approved both `release-signing` deployments and released Play and TestFlight to testers. Publish record: #1430.
-- **Not published:** the `tester-build-v1.1.0` GitHub pre-release. The APK, its QR code and the full tester notes are ready in the coordinator's scratch folder.
+- **Published:** the [`tester-build-v1.1.0`](https://github.com/unfoldingWord/tc-mobile/releases/tag/tester-build-v1.1.0) GitHub pre-release, 2026-10-14 13:08 UTC, with two assets.
 - **Production is not promoted.** The DRI's pick is to wait for tester reports on the upgrade, so `v1.1.0` to `main` moved to Sprint 5; the milestones were renamed to match.
 
 ### Merged to develop
@@ -94,8 +94,7 @@ Develop CI was green at `87f764d4` and at `8e2856b9`.
 
 1. Read tester reports on #974 and any new tester issues; bring the DRI a production go/no-go for `v1.1.0` to `main` when the upgrade has reports from more phones.
 2. Sprint 4 closes Sunday 2026-10-18: write what shipped into the milestone description; move #974 after production.
-3. Publish `tester-build-v1.1.0` only if the DRI asks.
-4. Sprint 5: #1433 step 1 (a DSP benchmark probe in the phone check), #1436, the Record again permission rows.
+3. Sprint 5: #1433 step 1 (a DSP benchmark probe in the phone check), #1436, the Record again permission rows.
 
 ---
 
