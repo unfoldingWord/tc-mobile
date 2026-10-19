@@ -9,8 +9,8 @@ edit the waveform, manage the segments of a chapter, and share a chapter as an
 MP3 or a book as a zip of chapter MP3s through the OS share sheet. It targets
 Android and iOS phones, frequently offline, used by people who may not read.
 
-The driving deadline is the **October 2026 training (the first week of
-October 2026)**, with production readiness targeted for **end of September 2026**.
+The driving deadline is the **training in the first week of October 2026**,
+with production readiness targeted for **end of September 2026**.
 
 ## The pivot — read this before the rest of the file
 
@@ -634,7 +634,7 @@ place. Decided 2026-09-02, when the repo stopped being solo.
   2026-10-05 by the DRI (`docs/progress_tracker.md`, that day's "Sprints").
 - **The sprint-end `staging -> main` promotion ships the minor.** That PR
   bumps the minor and tags `main` (`git tag vX.Y.0`), and it goes to the DRI
-  as a go/no-go. Sprint 4 ships `v1.1.0`. A production hotfix between sprint
+  as a go/no-go. A production hotfix between sprint
   ends is a patch on the shipped minor.
 - **One GitHub milestone per sprint, due on its last day; sprint milestones
   replace version milestones.** Live titles read `Sprint N (MM-DD → MM-DD)`,

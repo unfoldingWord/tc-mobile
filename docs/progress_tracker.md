@@ -11,6 +11,93 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-15 (day) — Sprint 4 days 9-11: v1.1.0 to testers on every channel, a Lows wave, a privacy scrub, the loudness plan
+
+One coordinator session, 2026-10-13 to 2026-10-15.
+
+### Decisions (DRI)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **2026-10-13, red-team item 1 (Record again erased before asking for the microphone):** "Fix it first (Recommended)".
+- **2026-10-13, red-team item 2 (iOS marketing version):** "Raise it to 1.1 (Recommended)".
+- **2026-10-13, merges:** "Same as yesterday (Recommended)", and later "approved to merge on clean and green please." The bump and the promotion stayed the DRI's own merges.
+- **2026-10-13, other work:** "Cut, plus a Lows wave". Lows PRs merge only after the release branch exists.
+- **2026-10-13, promotion #1430:** "Go".
+- **2026-10-14, after the release:** "ok thanks, submotted tjese or testers" (Play and TestFlight).
+- **2026-10-14, first phone run:** "all the iphone test items passed for me", scoped in a picker to "TestFlight short list" and, for Record again, "Permission granted".
+- **2026-10-15, privacy:** "be extra careful, no names no geographies saved anywhere"; then "Scrub PR (Recommended)", and, on staff names, "Leave staff names".
+- **2026-10-15, merge #1432:** "Yes, on clean and green (Recommended)".
+- **2026-10-15, sprint:** new field issues "As recommended (Recommended)"; production "Wait for testers"; Sprint 4 roll-over "As recommended (Recommended)".
+- **2026-10-15, loudness work (#1433):** "we want to have some modularity so lets approach it that way". Reused DSP algorithms are credited to Seth Stoll and released under MIT.
+
+### The v1.1.0 release
+
+| Name          | Commit                                     | What                                                                                                        |
+| ------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `STAGING_SHA` | `3b5e098da6e182ab149ae21cf1b916df046d5fb1` | staging before the promotion (1.0.2)                                                                        |
+| `CUT_SHA`     | `700b5a74e3be7c5bb9c28fff800d0fa51dc3f3a7` | bump #1419's squash commit, merged by the DRI 2026-10-13; differs from `87f764d4` in the version lines only |
+| `PROMO_SHA`   | `e3a4313f2b2a5024612c4600f8c3597f1eea039e` | promotion #1430's merge commit (parents `STAGING_SHA`, `CUT_SHA`), merged by the DRI 2026-10-14             |
+
+- **Two cut PRs before the bump:** #1423 (`d922ceee`), iOS `MARKETING_VERSION` 1.0 to 1.1; #1429 (`87f764d4`), Record again asks for the microphone in the tap and erases only once it is granted (Refs #1028). The red team did not read either; they were covered by both lenses, the coordinator's read of #1429's source diff, and CI. No independent delta pass ran; the go question said so.
+- `release/v1.1.0` created at `CUT_SHA`.
+- **Web:** `npm run check:deploy -- --sha=e3a4313f2b2a5024612c4600f8c3597f1eea039e --version=1.1.0`: "PASS: https://tc-mobile-staging.unfoldingword.workers.dev is serving the expected build." (built 2026-10-14T11:58:00Z).
+- **Google Play:** run 38560199083, both jobs succeeded; a draft on the internal track.
+- **Android APK:** run 38560199022, both jobs succeeded, artifact `android-apk-e3a4313f…`. Signer certificate SHA-256 `eed23e1bccf9fbad8b69f2f9598fd8d97e094d23e544b71b9e91dd21c934baf2`, the same as 1.0.1. Embedded `version.json`: `1.1.0` at `e3a4313f`. APK SHA-256 `74274a4047e549eeccf296abcfcf1ed2e84596e76d3454b5f4afe4e1647ac844`.
+- **iOS TestFlight:** run 38560199102, both jobs succeeded; uploaded as version 1.1, build 1791982821. App Store Connect accepted the 1.1 upload.
+- The DRI approved both `release-signing` deployments and released Play and TestFlight to testers. Publish record: #1430.
+- **Published:** the [`tester-build-v1.1.0`](https://github.com/unfoldingWord/tc-mobile/releases/tag/tester-build-v1.1.0) GitHub pre-release, 2026-10-14 13:08 UTC, with two assets.
+- **Production is not promoted.** The DRI's pick is to wait for tester reports on the upgrade, so `v1.1.0` to `main` moved to Sprint 5; the milestones were renamed to match.
+
+### Merged to develop
+
+| PR    | Merged at  | What                                                                                                                               |
+| ----- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| #1423 | `d922ceee` | iOS marketing version 1.1 (cut)                                                                                                    |
+| #1429 | `87f764d4` | Record again: microphone first, erase after the grant (cut)                                                                        |
+| #1419 | `700b5a74` | v1.1.0 bump (the DRI)                                                                                                              |
+| #1424 | `38684567` | popstate selector pin hardened (closed #1414)                                                                                      |
+| #1425 | `33a74420` | rename-race marker and `createBook` abort tests (closed #1408, #1416)                                                              |
+| #1427 | `6b1aadc1` | Phone check: a screen reopened mid-abort keeps the earlier report (Refs #1379)                                                     |
+| #1426 | `cf5032a7` | Build fails on an unfilled licence notice; precache revision pinned (Refs #1415)                                                   |
+| #1428 | `8e2856b9` | Storage: an upgrade step that throws aborts the upgrade instead of committing half of it; whole-shelf migration tests (Refs #1421) |
+| #1432 | `3ebd6b97` | The training's place names and the training facilitators' names replaced with roles in every current file                          |
+
+Each lane PR merged with a `uwreview` APPROVED review at its head, green CI and the coordinator's combined check against the develop of its moment. #1426 also ran `npm run build` and `test:dist` (61 passed) at its head. The five Lows PRs merged after `release/v1.1.0` existed, so none is in v1.1.0. #1428's upgrade change has run only on `fake-indexeddb`. #1432 edited three old entries in this file for names and places only, under the DRI's decision above; git history keeps the old text.
+
+Develop CI was green at `87f764d4` and at `8e2856b9`.
+
+### Filed and updated
+
+- **Field feedback from the October 2026 training debrief**, written by role only: #1431 (Share Chapter used in a review loop with the BT Servant assistant), #1433 (consistent loudness in shared audio), #1434 (video recording), #1435 (story navigation: a template, or reopen ADR 0004?), #1436 (write down the consent principle for recordings). Evidence comments on #339, #595, #353 and #248.
+- **#1433's plan:** a modular chain of processing stages in `src/lib/audio/` run on Finished in the MP3 worker, streaming in chunks; first the high-pass, loudness and true-peak limiter stages; a compressor as the one user switch; denoise deferred as an opt-in; later a shared, versioned stage package. Algorithms from Seth Stoll's work, MIT.
+- Deferred review Lows on #1421, #1379 and #1415; device rows on #974 and #1028.
+
+### Device runs
+
+- **iPhone, TestFlight 1.1 (1791982821), the DRI:** the five TestFlight checks passed: the upgrade kept books, order and recordings; reordering held after a restart; a new book took its cover colour; Record again with the microphone already allowed; Play after lock and unlock. Phone model and iOS version not recorded. Record on #974.
+
+### Not verified
+
+- **Record again's permission cases** (first use after install, a refused microphone, Back during the permission alert) have not run on any phone. They are what #1429 exists for.
+- Nothing has run on Android or in a browser on a phone. Sharing, the phone check and a long lock were not in the short list.
+- The Play Console and TestFlight group assignment were not checked from here.
+
+### Sprint 4 → Sprint 5
+
+- Rolled to Sprint 5: #1294, #1251, #272, #1333, #1281, #1324, #1295, #1233, #1201, #575, #461, #248, plus #1433 (spike) and #1436.
+- To Backlog: #595, #1210, #1017, #249.
+- #974 stays in Sprint 4 until production.
+- Milestones renamed: "Sprint 4 (10-05 → 10-18)" and "Sprint 5 (10-19 → 11-01) — v1.1.0".
+
+### Next
+
+1. Read tester reports on #974 and any new tester issues; bring the DRI a production go/no-go for `v1.1.0` to `main` when the upgrade has reports from more phones.
+2. Sprint 4 closes Sunday 2026-10-18: write what shipped into the milestone description; move #974 after production.
+3. Sprint 5: #1433 step 1 (a DSP benchmark probe in the phone check), #1436, the Record again permission rows.
+
+---
+
 ## 2026-10-12 (day) — Sprint 4 day 8: four lane waves, 21 PRs merged, the v1.1.0 bump opened and red-teamed
 
 ### Decisions (DRI, 2026-10-12)
