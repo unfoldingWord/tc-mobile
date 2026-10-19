@@ -891,8 +891,9 @@ export function useShareFlow(): UseShareFlow {
           return null;
         }
         const { file } = prepared;
-        // The browser may still refuse this particular File — Android Chrome's
-        // Web Share allowlist has no `application/zip`, which is #272. The native
+        // The browser may still refuse this particular File: Chromium source
+        // indicates Android Chrome refuses `application/zip` inside `share()`
+        // rather than in `canShare()` (#272; not device-confirmed). The native
         // route does not consult that gate at all; see `selectShareRoute`.
         const route = selectShareRoute(readShareEnvironment(), file);
         if (route === "unsupported") {

@@ -153,12 +153,19 @@ describe("libraryShareErrorText", () => {
       .mockReturnValue(true);
     try {
       expect(libraryShareErrorText("failed")).toBe(strings.shareAllFailed);
+      // The native line must not be the web alias (#1333).
+      expect(libraryShareErrorText("failed")).not.toBe(
+        strings.shareAllFailedWeb
+      );
       expect(libraryShareProgressText(outcome("failed"), "failed")).toBe(
         strings.shareAllFailed
       );
       // The outcome-only call (no error code) takes the same fork (#1333).
       expect(libraryShareProgressText(outcome("failed"), null)).toBe(
         strings.shareAllFailed
+      );
+      expect(libraryShareProgressText(outcome("failed"), null)).not.toBe(
+        strings.shareAllFailedWeb
       );
       // A space refusal is not a share-sheet refusal: unchanged either way.
       expect(libraryShareErrorText("storage")).toBe(strings.shareAllStorage);

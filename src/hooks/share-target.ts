@@ -88,9 +88,10 @@ export type ShareRoute = "native" | "web" | "unsupported";
  *
  * `native` wins first and WITHOUT consulting `canShare`. Two reasons, and both
  * are the bugs this exists for: the WebView may have no `navigator.share` to
- * gate on (#336), and Android Chrome's Web Share allowlist rejects
- * `application/zip` (#272) while the native `ACTION_SEND` intent carries any
- * MIME type. Neither web capability says anything about the native path.
+ * gate on (#336), and Chromium source indicates Android Chrome refuses
+ * `application/zip` inside `share()` (#272; not device-confirmed, and not
+ * through `canShare()`) while the native `ACTION_SEND` intent carries any MIME
+ * type. Neither web capability says anything about the native path.
  */
 export function selectShareRoute(
   env: ShareEnvironment,
