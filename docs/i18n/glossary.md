@@ -76,8 +76,8 @@ about church-based Bible translation: `src/i18n/<locale>/{home,about,training,re
 for 16 languages. Each locale folder has a `REVIEW.md` in which the AI
 translation pass lists the choices a native reviewer "should verify". The
 site's own `TRANSLATION-GUIDE.md` says the files were machine-translated and
-then corrected by an AI pass. So the reference is not human-verified wording
-either.
+then corrected by an AI pass. Nothing in the repository says a native reader
+has gone through it, so treat it as one more AI draft.
 
 **Fit with this app.** All ten of this epic's languages are present
 (`ar, en, es, fr, hi, id, pt, ru, sw, zh`). The register fits: the guide asks for
