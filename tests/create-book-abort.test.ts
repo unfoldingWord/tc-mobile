@@ -46,14 +46,14 @@ function failRenumberPut(
     const row: unknown = args[0];
     // A non-object value falls through to the real `put`, which rejects it
     // itself, rather than throwing a TypeError from inside this spy.
-    const isTarget =
+    const isTarget = (value: unknown): value is Book =>
       this.name === "books" &&
-      typeof row === "object" &&
-      row !== null &&
-      (row as Book).id === targetId &&
-      priorPositions.get((row as Book).id) !== (row as Book).shelfPosition;
-    if (!isTarget) return real.apply(this, args);
-    hits.push(row as Book);
+      typeof value === "object" &&
+      value !== null &&
+      (value as Book).id === targetId &&
+      priorPositions.get((value as Book).id) !== (value as Book).shelfPosition;
+    if (!isTarget(row)) return real.apply(this, args);
+    hits.push(row);
     if (mode === "throw") throw new Error("injected put failure");
     return realAdd.apply(this, args);
   });
@@ -115,11 +115,15 @@ describe.each(["throw", "reject"] as const)(
 
 it("failRenumberPut passes a non-object put through to the real put", async () => {
   failRenumberPut("none", new Map(), "throw");
-  const db = await getDb();
-  const store = db.transaction("books", "readwrite").objectStore("books");
-  // The real put rejects a null value with a DataError; a spy that cast first
-  // would throw a TypeError instead.
-  expect(() => store.put(null as never)).toThrow(
-    expect.objectContaining({ name: "DataError" })
-  );
+  try {
+    const db = await getDb();
+    const store = db.transaction("books", "readwrite").objectStore("books");
+    // The real put throws a DataError synchronously for a null value; a spy
+    // that cast first would throw a TypeError instead.
+    expect(() => store.put(null as never)).toThrow(
+      expect.objectContaining({ name: "DataError" })
+    );
+  } finally {
+    vi.restoreAllMocks();
+  }
 });

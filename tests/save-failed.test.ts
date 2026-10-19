@@ -15,7 +15,10 @@ import { region } from "./support";
  * first render produces is checked here — the armed/preparing paint
  * `SendLogControl`'s own hook (`useFailureLogShare`) reaches after a tap
  * takes a client mount with `act()` (`tests/interactive-mount.ts`) and is not
- * exercised in this suite.
+ * exercised in this suite. The other suites that cover `SendLogControl`
+ * (`tests/send-log-control.test.ts`, `tests/send-log-control-view.test.ts`)
+ * say in their own docblocks that they reach only the idle state and the pure
+ * tables, so no suite named here exercises that paint.
  *
  * `DatabasePanel` is explicitly out of scope for #456 (its own screen calls
  * it a design call) and carries no assertion here.
