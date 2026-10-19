@@ -400,6 +400,123 @@ describe("createChapterQueue", () => {
     await flush();
     expect(h.plays.map((p) => p.segmentId)).toEqual(["a"]);
     expect(await run).toBe("superseded");
+    expect(h.releases).toBe(0);
+  });
+
+  it("supersede() while a clip sounds stops it without waiting for onEnded", async () => {
+    const h = harness();
+    const q = createChapterQueue(entries(["a", 4], ["b", 4]), h.deps);
+    const run = q.play();
+    await flush();
+    h.supersede();
+    q.supersede();
+    expect(nth(h.plays, 0).stops).toBe(1);
+    expect(await run).toBe("superseded");
+    expect(q.state()).toBe("idle");
+    // the floor now belongs to someone else: do not release it
+    expect(h.releases).toBe(0);
+    nth(h.plays, 0).end();
+    await flush();
+    expect(h.plays).toHaveLength(1);
+  });
+
+  it("a throwing onFailure settles the run and releases the floor once", async () => {
+    const h = harness({ failLoad: new Set(["a"]) });
+    const boom = new Error("sink");
+    const q = createChapterQueue(entries(["a", 1], ["b", 1]), {
+      ...h.deps,
+      onFailure: () => {
+        throw boom;
+      },
+    });
+    await expect(q.play()).rejects.toBe(boom);
+    expect(h.releases).toBe(1);
+    expect(q.state()).toBe("idle");
+    expect(h.plays).toHaveLength(0);
+  });
+
+  it("a rejecting wait settles the run and releases the floor once", async () => {
+    const h = harness();
+    const boom = new Error("timer");
+    const q = createChapterQueue(entries(["a", 1], ["b", 1]), {
+      ...h.deps,
+      wait: () => Promise.reject(boom),
+    });
+    const run = q.play();
+    const settled = expect(run).rejects.toBe(boom);
+    await endCurrent(h);
+    await settled;
+    expect(h.releases).toBe(1);
+    expect(q.state()).toBe("idle");
+    expect(h.plays.map((p) => p.segmentId)).toEqual(["a"]);
+  });
+
+  it("play() during a run returns that run, not a false 'stopped'", async () => {
+    const h = harness();
+    const q = createChapterQueue(entries(["a", 1]), h.deps);
+    const run = q.play();
+    await flush();
+    const again = q.play();
+    const resumed = q.resume();
+    expect(q.state()).toBe("playing");
+    expect(h.releases).toBe(0);
+    await endCurrent(h);
+    expect(await run).toBe("finished");
+    expect(await again).toBe("finished");
+    expect(await resumed).toBe("finished");
+    expect(h.plays).toHaveLength(1);
+  });
+
+  it("play() while paused resolves 'paused' and keeps the place", async () => {
+    const h = harness();
+    const q = createChapterQueue(entries(["a", 4]), h.deps);
+    void q.play();
+    await flush();
+    nth(h.plays, 0).elapsed = 1;
+    q.pause();
+    expect(await q.play()).toBe("paused");
+    expect(q.state()).toBe("paused");
+    expect(h.releases).toBe(1);
+  });
+
+  it("elapsed is a position in the clip: a pause after a mid-clip resume keeps it", async () => {
+    const h = harness();
+    const q = createChapterQueue(entries(["a", 4]), h.deps);
+    void q.play();
+    await flush();
+    nth(h.plays, 0).elapsed = 2.25;
+    q.pause();
+    void q.resume();
+    await flush();
+    expect(nth(h.plays, 1).offsetSeconds).toBe(2.25);
+    nth(h.plays, 1).elapsed = 3;
+    expect(q.pause()).toEqual({ index: 0, offsetSeconds: 3 });
+  });
+
+  it("a clip that sounded before a pause means the run did not fail", async () => {
+    const h = harness();
+    const q = createChapterQueue(entries(["a", 4], ["b", 1]), {
+      ...h.deps,
+      load: (id) =>
+        h.plays.length > 0
+          ? Promise.reject(new Error(`load ${id}`))
+          : h.deps.load(id),
+    });
+    void q.play();
+    await flush();
+    q.pause();
+    expect(await q.resume()).toBe("finished");
+  });
+
+  it("stop while paused does not release the floor again", async () => {
+    const h = harness();
+    const q = createChapterQueue(entries(["a", 4]), h.deps);
+    void q.play();
+    await flush();
+    q.pause();
+    q.stop();
+    expect(h.releases).toBe(1);
+    expect(q.state()).toBe("idle");
   });
 
   it("stop ends the queue: the sound stops and no clip starts after", async () => {

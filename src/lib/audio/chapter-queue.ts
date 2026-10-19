@@ -19,9 +19,13 @@
  * What this module does NOT do: claim the floor, resume the audio context,
  * decode MP3, write the failure log, or touch React. The hook slice wires
  * `load`/`play` to `audio-io`, reports `onFailure` and `broken` through
- * `reportFailure`, and owns the hidden-page pause. `isCurrent` is read on
- * every step, so the hook can make it read the live floor token; a resume is a
- * fresh claim, which the hook swaps in before calling `resume()`.
+ * `reportFailure`, and owns the hidden-page pause. `isCurrent` is read after
+ * each load, hand-off and gap, NOT while a clip is sounding: when the floor
+ * moves mid-clip the hook must call `supersede()` (or `pause()`/`stop()`),
+ * which stops the sound at once. A resume is a fresh claim, which the hook
+ * swaps in before calling `resume()`. A seam that throws outside `load`/`play`
+ * (`onFailure`, `wait`, `isCurrent`, `release`) rejects the run promise with
+ * that cause after stopping the sound and releasing the floor at most once.
  *
  * Which segments belong to a chapter is the caller's accessor
  * (`chapter.segmentIds` today). `buildChapterPlaylist` is the one place that
@@ -90,7 +94,11 @@ export function buildChapterPlaylist(
 /** What `play` hands back; `playSamples`' handle satisfies it. */
 export interface QueueHandle {
   stop: () => void;
-  /** Seconds since this clip started sounding, clamped to its duration. */
+  /**
+   * Position within the clip, in seconds from the start of the segment —
+   * independent of the offset this start used — clamped to its duration.
+   * `playSamples`' handle returns `offset + (currentTime - startedAt)`.
+   */
   elapsed: () => number;
 }
 
@@ -136,14 +144,25 @@ interface QueuePosition {
 }
 
 export interface ChapterQueue {
-  /** Start from the first clip. A no-op unless idle. */
+  /**
+   * Start from the first clip. While a run is active, returns that run;
+   * while paused, resolves "paused" and keeps the place.
+   */
   play: () => Promise<ChapterQueueOutcome>;
   /** Stop the sound and keep the place; releases the floor. Null if not running. */
   pause: () => QueuePosition | null;
-  /** Continue from the remembered place. A no-op unless paused. */
+  /**
+   * Continue from the remembered place. While a run is active, returns that
+   * run; when idle, resolves "stopped" (nothing to continue).
+   */
   resume: () => Promise<ChapterQueueOutcome>;
   /** End the queue and forget the place; releases the floor if held. */
   stop: () => void;
+  /**
+   * Something else took the floor: stop the sound now, end the run as
+   * "superseded", and do NOT release (the floor is no longer ours).
+   */
+  supersede: () => void;
   state: () => ChapterQueueState;
   /** 0..1 through the chapter, or null when idle. Pulled, never pushed. */
   progress: () => number | null;
@@ -182,6 +201,8 @@ export function createChapterQueue<Samples = Int16Array>(
   let failed = 0;
   const reported = new Set<SegmentId>();
   let haltRun: ((o: ChapterQueueOutcome) => void) | null = null;
+  /** The active run's promise; null when idle or paused. */
+  let run: Promise<ChapterQueueOutcome> | null = null;
   let wake: (() => void) | null = null;
 
   const at = (i: number, within: number) =>
@@ -220,17 +241,53 @@ export function createChapterQueue<Samples = Int16Array>(
     pausedFraction = null;
     haltRun = null;
     wake = null;
+    run = null;
+  }
+
+  /** The floor moved: stop our sound, do not release theirs. */
+  function superseded(): void {
+    handle?.stop();
+    runId++;
+    const halt = haltRun;
+    reset();
+    halt?.("superseded");
   }
 
   function begin(from: QueuePosition): Promise<ChapterQueueOutcome> {
     const id = ++runId;
-    return new Promise<ChapterQueueOutcome>((resolve) => {
+    const p = new Promise<ChapterQueueOutcome>((resolve, reject) => {
       haltRun = resolve;
-      void loop(id, from).then((outcome) => {
-        // A run that was halted from outside has already resolved.
-        if (id === runId && outcome !== null) resolve(outcome);
-      });
+      loop(id, from).then(
+        (outcome) => {
+          // A run that was halted from outside has already resolved.
+          if (id === runId && outcome !== null) resolve(outcome);
+        },
+        (cause: unknown) => {
+          // A seam threw. A run pause/stop/supersede ended has settled already.
+          if (id !== runId) return;
+          runId++;
+          // `reset()` runs before the final release, so a throwing release
+          // is not called twice.
+          const held = phase !== "idle";
+          handle?.stop();
+          reset();
+          let fault = cause;
+          if (held) {
+            try {
+              deps.release();
+            } catch (releaseCause) {
+              fault = new AggregateError(
+                [cause, releaseCause],
+                "chapter queue: a seam threw, then release threw"
+              );
+            }
+          }
+          reject(fault);
+        }
+      );
     });
+    run = p;
+    return p;
   }
 
   /**
@@ -245,12 +302,7 @@ export function createChapterQueue<Samples = Int16Array>(
     const halted = (): boolean => {
       if (id !== runId) return true;
       if (deps.isCurrent()) return false;
-      // Someone else holds the floor: stop our sound, do not release theirs.
-      handle?.stop();
-      runId++;
-      const halt = haltRun;
-      reset();
-      halt?.("superseded");
+      superseded();
       return true;
     };
 
@@ -291,11 +343,12 @@ export function createChapterQueue<Samples = Int16Array>(
       }
       handle = h;
       phase = "playing";
+      // It sounded, even if a pause cuts it short before `onEnded`.
+      anyPlayed = true;
       wake = ended;
       await done;
       wake = null;
       if (halted()) return null;
-      anyPlayed = true;
       handle = null;
       offset = 0;
 
@@ -314,7 +367,8 @@ export function createChapterQueue<Samples = Int16Array>(
 
   return {
     play() {
-      if (phase !== "idle") return Promise.resolve("stopped");
+      if (phase === "paused") return Promise.resolve("paused");
+      if (run) return run;
       if (n === 0) {
         deps.release();
         return Promise.resolve("empty");
@@ -340,6 +394,7 @@ export function createChapterQueue<Samples = Int16Array>(
       handle?.stop();
       handle = null;
       runId++;
+      run = null;
       const halt = haltRun;
       haltRun = null;
       wake?.();
@@ -353,6 +408,7 @@ export function createChapterQueue<Samples = Int16Array>(
     },
 
     resume() {
+      if (run) return run;
       if (phase !== "paused" || !pausedAt) return Promise.resolve("stopped");
       const from = pausedAt;
       pausedAt = null;
@@ -369,6 +425,13 @@ export function createChapterQueue<Samples = Int16Array>(
       reset();
       if (!wasPaused) deps.release();
       halt?.("stopped");
+    },
+
+    supersede() {
+      // Paused or idle, the queue holds no floor and no sound.
+      if (phase === "idle" || phase === "paused") return;
+      wake?.();
+      superseded();
     },
 
     state: () => phase,
