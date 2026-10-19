@@ -85,8 +85,8 @@ export type BookProvenance =
     };
 
 Book    += provenance: BookProvenance; licence: LicenceId | null;
-           language: string | null;  // BCP 47 tag
            modifiedAt: number;
+           (languageCode, already stored, is the language field; see below)
 Chapter += createdAt: number | null; modifiedAt: number;
            templateKey: string | null;
            (number keeps its name; its meaning changes, see below)
@@ -155,15 +155,18 @@ then has nine stores.
   display mapping owned by the share step, not a stored string. A new
   non-template book is written `null` (R20, below); the share step pre-selects
   CC BY-SA 4.0 without storing it.
-- **`Book.language: string | null`** (R12) is a BCP 47 tag, `null` until the
-  export asks. Nothing asks for it at creation, so the path to getting started
-  stays as short as it is today; the export asks, then writes the tag onto the
-  book and into that book's metadata. The write path is the export's, not v12's.
-  The field is in v12 now so that one nullable field does not cost a later v13
-  (a new field on an existing store is a version bump and a second device
-  check). It is backfilled `null`, keyed on absence like the other nullable
-  fields. This is an orchestrator call on top of R12, not the requirements
-  owner's wording.
+- **The book's language is the existing `Book.languageCode: string | null`**
+  (R12), not a new field. `src/types/domain.ts:85` already declares it as a
+  BCP 47 tag, `createBook` already writes it (`src/lib/storage/books.ts:120`,
+  `:133`), and the migration tests already carry a non-null value through
+  earlier upgrades (`tests/db-migration.test.ts:1119`, `"swh"`). A second
+  language field would give export and backup two authorities to disagree.
+  Nothing asks for it at creation, so the path to getting started stays as
+  short as it is today; the export asks, then writes the tag into
+  `languageCode` and into that book's metadata. The write path is the
+  export's, not v12's. Because the field already exists, R12 costs no version
+  bump at all, which is what the orchestrator call on top of R12 was for. v12
+  neither backfills nor rewrites it: a stored value, `null` or not, is kept.
 - **`SegmentRef` as numbers.** This is Q4's wording, and the cross-chapter
   question (which chapter shows a segment that runs from Psalm 17 into 18)
   compares `startChapter` and `endChapter` as numbers. The shape is
@@ -372,7 +375,7 @@ transaction: all of it lands or none of it (the #1421 abort, `db.ts:855-894`).
 | (structure)                         | `tombstones`, `pendingTakes` | `createObjectStore`, beside v6's create, before any await | `oldVersion < 12`             |
 | books                               | `provenance`                 | `{ kind: "blank" }`                                       | `!("provenance" in row)`      |
 | books                               | `licence`                    | `null`                                                    | `!("licence" in row)`         |
-| books                               | `language`                   | `null`                                                    | `!("language" in row)`        |
+| books                               | `languageCode`               | untouched (already stored; a non-null tag is kept)        | n/a                           |
 | books                               | `modifiedAt`                 | `T`                                                       | absent or not a finite number |
 | chapters                            | `createdAt`                  | `null`                                                    | `!("createdAt" in row)`       |
 | chapters                            | `modifiedAt`                 | `T`                                                       | absent or not a finite number |
@@ -408,7 +411,7 @@ Rules the migration holds:
   LOAD-BEARING"); the backfill block goes after v11's.
 - **Creators change in the same PR**, because the fields are required and
   TypeScript forces it: `createBook` writes `provenance: {kind: "blank"}`,
-  `licence: null` (R20), `language: null` and `modifiedAt`;
+  `licence: null` (R20) and `modifiedAt` (`languageCode` it already writes);
   `addChapter` and `addSegment` write `createdAt` and `modifiedAt` as the write
   time and `templateKey: null`.
   Bumping `modifiedAt` and writing tombstones on the other write paths is
@@ -558,9 +561,10 @@ not loosened:
    projection (M5 dies here).
 6. The book rows' `toMatchObject` block (`:1437-1446`) becomes a `toEqual` of
    the whole expected row (seeded fields, the v10/v11 fields, and
-   `provenance: {kind: "blank"}`, `licence: null`, `language: null`,
-   `modifiedAt: T`), because
-   `toMatchObject` passes an unexpected extra field.
+   `provenance: {kind: "blank"}`, `licence: null`, `modifiedAt: T`), because
+   `toMatchObject` passes an unexpected extra field. At least one seeded book
+   carries a non-null `languageCode` (`"swh"`, as `:1119` does) and the
+   expected row keeps it; a `language` key on any row fails the `toEqual`.
 7. `getAll("tombstones")` and `getAll("pendingTakes")` are `[]`.
 
 Not allowed: `toMatchObject`, `expect.objectContaining`, or dropping a store
