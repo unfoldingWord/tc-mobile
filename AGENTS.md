@@ -75,6 +75,7 @@ npm run check:deploy      # confirm a develop -> staging deploy; see "Confirming
 npm run check:deploy:prod # confirm a staging -> main deploy; checks both production origins, each named explicitly
 npm run check:prepush  # review-bench findings on this branch's commits and added lines; runs in pre-push. Checklist: .claude/skills/tc-prepush
 npm run check:pr-body -- --body-file <path>  # check a drafted PR body (and the size cap) before opening; see "Issue pipeline"
+npm run collateral     # pre-fill the seven Collateral surfaces from origin/develop...HEAD; a hint, not a verdict
 ```
 
 ## Architecture — onion layers
@@ -1093,6 +1094,11 @@ is what changed, or `N/A — <reason>`:
   `.github/workflows/`, store configs. Mostly `N/A`.
 - `mobile-parity`: the PWA against the Android and iOS shells: what each
   adopts, or the parity issue filed.
+
+`npm run collateral` reads the diff and pre-fills the seven lines as hints
+(which changed paths touch which surface, and where one may be owed). Every
+line it prints is an unfilled `<…>` on purpose, so pasting it unedited still
+fails the gate: the author writes what changed, or `N/A — <reason>`.
 
 This repo's own extra checks (the one string table, the failure log, source
 and CSS pins, accessibility for non-readers) stay in dev4's architecture and
