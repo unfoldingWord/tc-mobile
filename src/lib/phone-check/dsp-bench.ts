@@ -37,14 +37,13 @@
  *   average of the same length (which keeps every sample at or under the
  *   ceiling), and a one-pole release.
  *
- * Pure arithmetic over typed arrays: no DOM, Web Audio or Worker globals, and
- * no clock of its own — every time comes from the injected `now`, so Node can
- * pin the shape and only a phone can say how fast it is.
+ * Pure arithmetic: no DOM, Web Audio or Worker globals, and no clock of its
+ * own — every time comes from the injected `now`. Only a phone can say how
+ * fast it is.
  */
 
 /** BS.1770's loudness offset, in dB. */
 const LOUDNESS_OFFSET_DB = -0.691;
-
 /** The rumble high-pass corner from the #1433 plan ("about 80 Hz"). */
 const HIGH_PASS_HZ = 80;
 
@@ -53,7 +52,6 @@ const DEFAULT_TARGET_LUFS = -19;
 const DEFAULT_CEILING_DBTP = -1.5;
 /** The most a quiet take is raised, so near-silence is not amplified into hiss. */
 const DEFAULT_MAX_GAIN_DB = 20;
-
 const LIMITER_LOOKAHEAD_SECONDS = 0.005;
 const LIMITER_RELEASE_SECONDS = 0.05;
 
@@ -83,18 +81,14 @@ export interface DspBenchOptions {
   readonly maxGainDb?: number;
 }
 
-interface DspStageMs {
-  /** Both passes' high-pass, including the Int16 to float conversion. */
-  readonly highPass: number;
-  /** K-weighting and the mean-square sum (measuring pass). */
-  readonly kWeight: number;
-  /** The true-peak measurement (measuring pass). */
-  readonly truePeak: number;
-  /** The static gain (apply pass). */
-  readonly gain: number;
-  /** The limiter, its detector and its flush (apply pass). */
-  readonly limiter: number;
-}
+/**
+ * Milliseconds per stage, summed over chunks. `highPass` covers both passes
+ * and the Int16 to float conversion; `kWeight` includes the mean-square sum;
+ * `limiter` includes its detector and its flush.
+ */
+type DspStageMs = Readonly<
+  Record<"highPass" | "kWeight" | "truePeak" | "gain" | "limiter", number>
+>;
 
 export interface DspBenchResult {
   readonly audioSeconds: number;
@@ -122,27 +116,16 @@ export interface DspBenchResult {
 /** Counts the bytes of every typed array the kernel allocates. */
 class Arena {
   bytes = 0;
-  f32(n: number): Float32Array {
-    this.bytes += n * Float32Array.BYTES_PER_ELEMENT;
-    return new Float32Array(n);
-  }
-  f64(n: number): Float64Array {
-    this.bytes += n * Float64Array.BYTES_PER_ELEMENT;
-    return new Float64Array(n);
-  }
-  i32(n: number): Int32Array {
-    this.bytes += n * Int32Array.BYTES_PER_ELEMENT;
-    return new Int32Array(n);
+  f32 = (n: number) => this.count(new Float32Array(n));
+  f64 = (n: number) => this.count(new Float64Array(n));
+  i32 = (n: number) => this.count(new Int32Array(n));
+  private count<T extends ArrayBufferView>(array: T): T {
+    this.bytes += array.byteLength;
+    return array;
   }
 }
 
-interface Coefficients {
-  readonly b0: number;
-  readonly b1: number;
-  readonly b2: number;
-  readonly a1: number;
-  readonly a2: number;
-}
+type Coefficients = Readonly<Record<"b0" | "b1" | "b2" | "a1" | "a2", number>>;
 
 /** A biquad in transposed direct form II; float64 state persists across chunks. */
 class Biquad {
@@ -223,23 +206,19 @@ function interpolatorTaps(arena: Arena): Float64Array {
   for (let k = 0; k < length; k++) {
     const t = (k - centre) / OVERSAMPLE;
     const sinc = t === 0 ? 1 : Math.sin(Math.PI * t) / (Math.PI * t);
-    const window =
+    const taper =
       0.42 -
       0.5 * Math.cos((2 * Math.PI * k) / (length - 1)) +
       0.08 * Math.cos((4 * Math.PI * k) / (length - 1));
     const p = k % OVERSAMPLE;
     const j = (k - p) / OVERSAMPLE;
-    taps[p * TAPS_PER_PHASE + j] = sinc * window;
+    taps[p * TAPS_PER_PHASE + j] = sinc * taper;
   }
   // Each phase sums to 1, so a constant reads as itself at every phase.
   for (let p = 0; p < OVERSAMPLE; p++) {
-    let sum = 0;
-    for (let j = 0; j < TAPS_PER_PHASE; j++)
-      sum += taps[p * TAPS_PER_PHASE + j] ?? 0;
-    for (let j = 0; j < TAPS_PER_PHASE; j++) {
-      const at = p * TAPS_PER_PHASE + j;
-      taps[at] = (taps[at] ?? 0) / sum;
-    }
+    const phase = taps.subarray(p * TAPS_PER_PHASE, (p + 1) * TAPS_PER_PHASE);
+    const sum = phase.reduce((a, b) => a + b, 0);
+    for (let j = 0; j < TAPS_PER_PHASE; j++) phase[j] = (phase[j] ?? 0) / sum;
   }
   return taps;
 }
@@ -284,7 +263,7 @@ class TruePeakDetector {
 /**
  * Lookahead limiter. Every structure is a ring of fixed length, so its memory
  * does not grow with the take. Output lags input by `latency` samples; the
- * caller trims that from the front and `flush` emits the tail.
+ * caller trims that from the front and pushes silence through for the tail.
  */
 class Limiter {
   readonly latency: number;
@@ -336,8 +315,8 @@ class Limiter {
       const v = x[i] ?? 0;
       const level = this.detector.step(v);
       const need = level > this.ceiling ? this.ceiling / level : 1;
-      // Sliding minimum over the last L requirements: drop the one that
-      // left the window first, so the ring never holds more than L.
+      // Sliding minimum over the last L requirements: evict the one that
+      // fell out of range first, so the ring never holds more than L.
       const k = this.index++;
       if (this.dqSize > 0 && (this.dqIndex[this.dqHead] ?? 0) <= k - L) {
         this.dqHead = (this.dqHead + 1) % L;
@@ -382,15 +361,6 @@ function hashInto(hash: number, bits: Uint32Array, n: number): number {
   return h >>> 0;
 }
 
-function toFloat(
-  input: Int16Array,
-  from: number,
-  out: Float32Array,
-  n: number
-): void {
-  for (let i = 0; i < n; i++) out[i] = (input[from + i] ?? 0) / 32768;
-}
-
 const toDb = (ratio: number) => 20 * Math.log10(ratio);
 
 /**
@@ -414,6 +384,9 @@ export function runDspBench(options: DspBenchOptions): DspBenchResult {
   const arena = new Arena();
   const work = arena.f32(chunkLength);
   const bits = new Uint32Array(work.buffer);
+  const load = (from: number, n: number) => {
+    for (let i = 0; i < n; i++) work[i] = (input[from + i] ?? 0) / 32768;
+  };
   const taps = interpolatorTaps(arena);
   const stage = { highPass: 0, kWeight: 0, truePeak: 0, gain: 0, limiter: 0 };
   let slowest = 0;
@@ -431,7 +404,7 @@ export function runDspBench(options: DspBenchOptions): DspBenchResult {
     const from = c * chunkLength;
     const n = Math.min(chunkLength, total - from);
     const t0 = now();
-    toFloat(input, from, work, n);
+    load(from, n);
     hp1.process(work, n);
     const t1 = now();
     weighted.set(work.subarray(0, n));
@@ -442,10 +415,8 @@ export function runDspBench(options: DspBenchOptions): DspBenchResult {
       sumSquares += v * v;
     }
     const t2 = now();
-    for (let i = 0; i < n; i++) {
-      const p = meter.step(work[i] ?? 0);
-      if (p > truePeak) truePeak = p;
-    }
+    for (let i = 0; i < n; i++)
+      truePeak = Math.max(truePeak, meter.step(work[i] ?? 0));
     const t3 = now();
     stage.highPass += t1 - t0;
     stage.kWeight += t2 - t1;
@@ -454,10 +425,8 @@ export function runDspBench(options: DspBenchOptions): DspBenchResult {
     onChunk?.(1, c + 1, chunks);
   }
   // Flush the detector's history so a peak in the last samples is read.
-  for (let i = 0; i < TAPS_PER_PHASE; i++) {
-    const p = meter.step(0);
-    if (p > truePeak) truePeak = p;
-  }
+  for (let i = 0; i < TAPS_PER_PHASE; i++)
+    truePeak = Math.max(truePeak, meter.step(0));
   const loudnessLufs =
     sumSquares > 0
       ? LOUDNESS_OFFSET_DB + 10 * Math.log10(sumSquares / total)
@@ -486,7 +455,7 @@ export function runDspBench(options: DspBenchOptions): DspBenchResult {
     const from = c * chunkLength;
     const n = Math.min(chunkLength, total - from);
     const t0 = now();
-    toFloat(input, from, work, n);
+    load(from, n);
     hp2.process(work, n);
     const t1 = now();
     for (let i = 0; i < n; i++) work[i] = (work[i] ?? 0) * gain;

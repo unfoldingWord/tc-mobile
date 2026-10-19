@@ -288,7 +288,9 @@ describe("(f) the checksum", () => {
     const input = speechLikePcm(5);
     const a = bench(input, { targetLufs: -19 });
     const b = bench(input, { targetLufs: -23 });
-    expect(a.gainDb).not.toBe(b.gainDb);
+    // Same input, so the same measured loudness: the gains differ by the
+    // targets' 4 dB, and the checksum must see that.
+    expect(a.gainDb - b.gainDb).toBeCloseTo(4, 9);
     expect(a.checksum).not.toBe(b.checksum);
   });
 });
