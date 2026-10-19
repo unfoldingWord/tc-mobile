@@ -46,14 +46,22 @@ interface Entry {
 function collect(): Entry[] {
   const entries: Entry[] = [];
   const visit = (node: ts.Node): void => {
+    // An entry is a property (`name: (x) => ...`) or, since #1480 made the ones
+    // that embed another entry reach it through `this`, a method (`name(x) {}`).
     if (
-      ts.isPropertyAssignment(node) &&
+      (ts.isPropertyAssignment(node) || ts.isMethodDeclaration(node)) &&
       ts.isIdentifier(node.name) &&
       node.name.text.startsWith("saveFailed")
     ) {
-      const init = node.initializer;
+      const init: ts.Node = ts.isMethodDeclaration(node)
+        ? node
+        : node.initializer;
       const params = new Set<string>();
-      if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) {
+      if (
+        ts.isArrowFunction(init) ||
+        ts.isFunctionExpression(init) ||
+        ts.isMethodDeclaration(init)
+      ) {
         for (const p of init.parameters) {
           if (ts.isIdentifier(p.name)) params.add(p.name.text);
         }

@@ -22,11 +22,14 @@ import { describe, expect, it } from "vitest";
  * list of the sites that a later entry could outgrow without anyone noticing.
  * The count lives in the assertion below, not here.
  *
- * So this pins the SET, by parsing the file: a new entry that reaches the
- * binding or a helper fails here and is sent to the docblock at the top of
- * `strings.ts`, which says what the per-locale slice has to do with each one.
- * It does not test the per-locale behaviour. There is one locale, so there is
- * no second table to leak into yet.
+ * #1480 made the English table `stringsEn` and had every entry that embeds
+ * another entry reach it through `this`, so an alias resolves within the table
+ * it was read from. This pins the SET, by parsing the file: a new entry that
+ * reaches the live `strings` binding or a helper fails here and is sent to the
+ * docblock at the top of `strings.ts`. A reach through the binding is recorded
+ * as `strings.<name>` and is the defect; `this.<name>` is the sanctioned form.
+ * The behaviour itself (an alias following an installed table) is
+ * `tests/strings-locale-binding.test.ts`.
  */
 
 const FILE = path.resolve(import.meta.dirname, "../src/lib/strings.ts");
@@ -109,7 +112,7 @@ function topLevelNames(source: string): {
 }
 
 /**
- * Every entry of `export const strings = { ... }` that references the binding
+ * Every entry of `export const stringsEn = { ... }` that references the binding
  * or a helper, mapped to what it references, sorted. A bare `strings` that is
  * not the object of a property access (an alias, a spread, an element access)
  * is recorded as `strings` itself, so it cannot hide the name it reads.
@@ -130,7 +133,8 @@ function outwardReferences(source: string): {
   file.forEachChild((node) => {
     if (!ts.isVariableStatement(node)) return;
     for (const decl of node.declarationList.declarations) {
-      if (!ts.isIdentifier(decl.name) || decl.name.text !== "strings") continue;
+      if (!ts.isIdentifier(decl.name) || decl.name.text !== "stringsEn")
+        continue;
       let init = decl.initializer;
       while (
         init &&
@@ -140,7 +144,7 @@ function outwardReferences(source: string): {
       if (init && ts.isObjectLiteralExpression(init)) table = init;
     }
   });
-  if (!table) throw new Error("no `strings` object literal in strings.ts");
+  if (!table) throw new Error("no `stringsEn` object literal in strings.ts");
 
   const refs: Record<string, string[]> = {};
   for (const prop of table.properties) {
@@ -151,6 +155,12 @@ function outwardReferences(source: string): {
     }
     const found = new Set<string>();
     const visit = (node: ts.Node): void => {
+      if (
+        ts.isPropertyAccessExpression(node) &&
+        node.expression.kind === ts.SyntaxKind.ThisKeyword
+      ) {
+        found.add(`this.${node.name.text}`);
+      }
       if (ts.isIdentifier(node)) {
         const parent = node.parent;
         // A name in property position is not a read of the binding: `o.trail`,
@@ -195,27 +205,27 @@ describe("table entries that reach outside their own arguments (#169)", () => {
   it("is exactly the set the per-locale slice has to resolve within its own table", () => {
     expect(refs).toEqual({
       chapterBreadcrumb: ["trail"],
-      chapterHeading: ["strings.chapterName"],
-      chapterReorderMoved: ["strings.chapterName"],
-      chapterReorderStayed: ["strings.chapterName"],
-      editSegment: ["strings.segmentHeading"],
-      editSegmentFinished: ["strings.segmentHeading"],
-      menuOpenWithFailures: ["strings.failuresMarker"],
-      openSegment: ["strings.segmentHeading"],
-      recorderBreadcrumb: ["strings.segmentHeading", "trail"],
+      chapterHeading: ["this.chapterName"],
+      chapterReorderMoved: ["this.chapterName"],
+      chapterReorderStayed: ["this.chapterName"],
+      editSegment: ["this.segmentHeading"],
+      editSegmentFinished: ["this.segmentHeading"],
+      menuOpenWithFailures: ["this.failuresMarker"],
+      openSegment: ["this.segmentHeading"],
+      recorderBreadcrumb: ["this.segmentHeading", "trail"],
       saveFailedDiscard: [
-        "strings.takeRecoverDiscard",
-        "strings.takeRecoverDiscardArmed",
+        "this.takeRecoverDiscard",
+        "this.takeRecoverDiscardArmed",
       ],
-      saveFailedDiscardHint: ["strings.takeRecoverDiscardHint"],
+      saveFailedDiscardHint: ["this.takeRecoverDiscardHint"],
       shareAllMissing: ["couldNotBeIncluded"],
       shareBookMissing: ["couldNotBeIncluded"],
       shareBookMissingAndPartial: [
         "couldNotBeIncluded",
-        "strings.shareBookMissing",
+        "this.shareBookMissing",
       ],
-      shareBookPartial: ["strings.shareMissing"],
-      shareFilename: ["strings.chapterName"],
+      shareBookPartial: ["this.shareMissing"],
+      shareFilename: ["this.chapterName"],
       shareMissing: ["couldNotBeIncluded"],
     });
   });
@@ -224,7 +234,7 @@ describe("table entries that reach outside their own arguments (#169)", () => {
 describe("nothing at top level escapes the walker (#169, PR #1221 review)", () => {
   it("binds no value beyond the table and HELPERS, and imports only IMPORTS", () => {
     expect(topLevelNames(readFileSync(FILE, "utf8"))).toEqual({
-      values: [...HELPERS, "strings"].sort(),
+      values: [...HELPERS, "installStrings", "strings", "stringsEn"].sort(),
       imports: IMPORTS,
     });
   });
@@ -264,7 +274,7 @@ describe("nothing at top level escapes the walker (#169, PR #1221 review)", () =
 
 describe("the reader itself", () => {
   const probe = (body: string) =>
-    outwardReferences(`export const strings = {\n${body}\n} as const;`).refs;
+    outwardReferences(`export const stringsEn = {\n${body}\n} as const;`).refs;
 
   it("sees a call through the binding, and a helper call", () => {
     expect(
@@ -272,6 +282,12 @@ describe("the reader itself", () => {
         "a: (n: number) => `x ${strings.b(n)}`,\nb: (n: number) => trail(`${n}`),"
       )
     ).toEqual({ a: ["strings.b"], b: ["trail"] });
+  });
+
+  it("records a call through this, and does not confuse it with the binding", () => {
+    expect(probe("a(n: number): string { return `x ${this.b(n)}`; },")).toEqual(
+      { a: ["this.b"] }
+    );
   });
 
   it("records a bare alias of the binding rather than missing it", () => {
