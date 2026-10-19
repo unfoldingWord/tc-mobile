@@ -878,11 +878,16 @@ function openDatabase(): Promise<IDBPDatabase<TcMobileDb>> {
           try {
             tx.abort();
           } catch {
-            // Already finished: nothing left to roll back. Reached only if the
-            // transaction committed before the error surfaced. On that branch
-            // the open SUCCEEDS and the error is not reported: `upgradeFault`
-            // is read only when the open rejects. Not reachable from the
-            // current steps, which await IDB requests only.
+            // `abort()` throws `InvalidStateError` on a transaction that has
+            // already finished, which happens two ways. (1) A failed request
+            // (a constraint or quota refusal) aborted it itself before this
+            // ran: the open still REJECTS, and `upgradeFault` is what it
+            // rejects with. Observed on fake-indexeddb with `idb` 8, not on a
+            // real engine. (2) It committed before the error surfaced: the
+            // open SUCCEEDS and the error is not reported, because
+            // `upgradeFault` is read only when the open rejects. Case (2) is
+            // not reachable from the current steps, which await IDB requests
+            // only, and no test reaches it.
           }
         });
         // The abort also rejects the transaction's own `done` promise, which
