@@ -50,7 +50,11 @@ export type ClipId = string & { readonly __brand: "ClipId" };
  * type itself is live — `Segment.reference` is typed on it.
  */
 export interface SegmentRef {
-  /** USFM book code where known, e.g. "RUT", or "OBS" for Open Bible Stories. */
+  /**
+   * USFM book code where known, e.g. "RUT", or "OBS" for Open Bible Stories.
+   * "OBS" is the app's own code, not a Scripture Bundle scope key (the spec's
+   * scope keys are a closed USFM list); the export maps it (ADR 0014).
+   */
   readonly book: string;
   /** Scripture Burrito scope string. Empty string means the whole book. */
   readonly scope: string;
