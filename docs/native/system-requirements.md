@@ -296,12 +296,11 @@ share step writes a file as well: Share Book builds a zip of chapter MP3s
   margin for the share copy above, not a measured figure.
 - Keep the app open while a book is being shared (this is guidance from #1017's
   draft; the tree does not enforce it).
-- A take stops by itself at 20 minutes and then goes through the normal save
-  (`take-cap.ts`, #1005). That save is the full-take decode the RAM item below
-  still waits on, and no low-end phone has run it (#974). The listing adds no
-  separate length warning (#1017 Q4, above). A passage longer than 20 minutes
-  needs more than one recording; splitting it into segments is the normal way
-  to work (facilitator runbook §3).
+- A take stops by itself at 20 minutes and is then saved. A passage longer
+  than 20 minutes needs more than one recording; splitting it into segments is
+  the normal way to work. (Sources, the low-memory caveat on that save, and why
+  the listing carries no separate length warning: "Open question 4" above and
+  the facilitator runbook §3. Neither belongs in the listing text.)
 - RAM and processor class: **not stated.** See the open items.
 
 **Web (PWA)**
