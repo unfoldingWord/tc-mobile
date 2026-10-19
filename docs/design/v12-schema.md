@@ -85,12 +85,12 @@ export type BookProvenance =
     };
 
 Book    += provenance: BookProvenance; licence: LicenceId | null;
-           modifiedAt: number;
+           modifiedAt: number | null;
            (languageCode, already stored, is the language field; see below)
-Chapter += createdAt: number | null; modifiedAt: number;
+Chapter += createdAt: number | null; modifiedAt: number | null;
            templateKey: string | null;
            (number keeps its name; its meaning changes, see below)
-Segment += createdAt: number | null; modifiedAt: number;
+Segment += createdAt: number | null; modifiedAt: number | null;
            templateKey: string | null;
            (reference keeps its name; its type is the reshaped SegmentRef)
 Take    unchanged
@@ -223,17 +223,12 @@ then has nine stores.
 - **`createdAt: number | null`**, backfilled `null`. A pre-v12 chapter's or
   segment's true creation time is unknown; stamping the upgrade time would
   write a false fact into the manifest Q11 asks for.
-- **`modifiedAt: number`** (J6, below), backfilled with the upgrade time `T`.
-  That is an upper bound: a backup or a sync treats every old row as "changed
-  no later than T", which is the safe direction.
-
-### The tombstone store
-
-Each delete writes one row in the **same** transaction as the delete:
-`deleteBook` writes `{entity: "book", entityId, parentId: null}`, which implies
-the book's chapters, segments and takes; `deleteSegment` writes
-`{entity: "segment", entityId, parentId: chapterId}`.
-
+- **`modifiedAt: number | null`** (J6, below), backfilled `null`, like
+  `createdAt`. `null` means "not written since v12". A pre-v12 row's last write
+  time is unknown, and stamping the upgrade time would write a synthetic time
+  that a merger keeping the greater `modifiedAt` would read as a real user put
+  (the same false-fact problem as `createdAt`). Only a real put after v12 sets a
+  number.
 - **A tombstone is written only when the row was there and is removed.**
   `deleteSegment` already returns early when the segment is gone
   (`books.ts:1116-1120`); `deleteBook` deliberately runs its cascade even with
@@ -339,11 +334,11 @@ call or a change to a DRI pick is not.
   The new field means "this row was last written". One name with two meanings
   on adjacent rows is a trap: a backup or sync reader comparing `updatedAt`
   across stores would miss every reorder. A different name makes the
-  difference visible at each call site, and the type checker refuses
-  `book.modifiedAt` written where `book.updatedAt` was meant, and the reverse.
+  difference visible at each call site.
   No DRI pick named the field; #174's body and the 2026-09-03 proposal said
   `updatedAt`, so the write-back says this departs from their wording.
-  - **Meaning, exactly:** every put of a book, chapter or segment row sets
+  - **Meaning, exactly:** `modifiedAt` is `null` on a row no put has touched
+    since v12. Every put of a book, chapter or segment row after v12 sets
     `modifiedAt` to the write's time, in that same put. A write that puts
     nothing (a rename to the same value, a delete of a missing row) does not
     change it. Renumbering on reorder and delete (`moveChapter`,
@@ -355,7 +350,7 @@ call or a change to a DRI pick is not.
     the new timestamp on chapters and segments only; with the J6 meaning, a
     book row moved on the shelf (`moveBook`, which leaves `updatedAt` alone)
     would otherwise be the one metadata row whose last write nobody can see.
-    It has writers on every book put, so it is not a stub. Backfill `T`, like
+    It has writers on every book put, so it is not a stub. Backfill `null`, like
     the others. `Book.updatedAt` keeps its meaning and its writers, unchanged.
 
 - **J7 — a segment that crosses a chapter belongs to its start chapter.
@@ -370,22 +365,22 @@ One `if (oldVersion < 12)` block in the one `upgrade` callback
 (`src/lib/storage/db.ts`). The version-change transaction is the one
 transaction: all of it lands or none of it (the #1421 abort, `db.ts:855-894`).
 
-| Store                               | Field                        | Backfill                                                  | Keyed on                      |
-| ----------------------------------- | ---------------------------- | --------------------------------------------------------- | ----------------------------- |
-| (structure)                         | `tombstones`, `pendingTakes` | `createObjectStore`, beside v6's create, before any await | `oldVersion < 12`             |
-| books                               | `provenance`                 | `{ kind: "blank" }`                                       | `!("provenance" in row)`      |
-| books                               | `licence`                    | `null`                                                    | `!("licence" in row)`         |
-| books                               | `languageCode`               | untouched (already stored; a non-null tag is kept)        | n/a                           |
-| books                               | `modifiedAt`                 | `T`                                                       | absent or not a finite number |
-| chapters                            | `createdAt`                  | `null`                                                    | `!("createdAt" in row)`       |
-| chapters                            | `modifiedAt`                 | `T`                                                       | absent or not a finite number |
-| chapters                            | `templateKey`                | `null`                                                    | `!("templateKey" in row)`     |
-| chapters                            | `number`                     | untouched (already stored, equal to its position)         | n/a                           |
-| segments                            | `createdAt`                  | `null`                                                    | `!("createdAt" in row)`       |
-| segments                            | `modifiedAt`                 | `T`                                                       | absent or not a finite number |
-| segments                            | `templateKey`                | `null`                                                    | `!("templateKey" in row)`     |
-| segments                            | `reference`                  | untouched (every stored value is `null`)                  | n/a                           |
-| takes, clipMeta, clipData, failures | —                            | not read, not written                                     | n/a                           |
+| Store                               | Field                        | Backfill                                                  | Keyed on                  |
+| ----------------------------------- | ---------------------------- | --------------------------------------------------------- | ------------------------- |
+| (structure)                         | `tombstones`, `pendingTakes` | `createObjectStore`, beside v6's create, before any await | `oldVersion < 12`         |
+| books                               | `provenance`                 | `{ kind: "blank" }`                                       | `!("provenance" in row)`  |
+| books                               | `licence`                    | `null`                                                    | `!("licence" in row)`     |
+| books                               | `languageCode`               | untouched (already stored; a non-null tag is kept)        | n/a                       |
+| books                               | `modifiedAt`                 | `null`                                                    | `!("modifiedAt" in row)`  |
+| chapters                            | `createdAt`                  | `null`                                                    | `!("createdAt" in row)`   |
+| chapters                            | `modifiedAt`                 | `null`                                                    | `!("modifiedAt" in row)`  |
+| chapters                            | `templateKey`                | `null`                                                    | `!("templateKey" in row)` |
+| chapters                            | `number`                     | untouched (already stored, equal to its position)         | n/a                       |
+| segments                            | `createdAt`                  | `null`                                                    | `!("createdAt" in row)`   |
+| segments                            | `modifiedAt`                 | `null`                                                    | `!("modifiedAt" in row)`  |
+| segments                            | `templateKey`                | `null`                                                    | `!("templateKey" in row)` |
+| segments                            | `reference`                  | untouched (every stored value is `null`)                  | n/a                       |
+| takes, clipMeta, clipData, failures | —                            | not read, not written                                     | n/a                       |
 
 Rules the migration holds:
 
@@ -393,9 +388,9 @@ Rules the migration holds:
   existing value rewritten.
 - **Idempotent, keyed on absence.** Every field is written only when it is
   missing. For a nullable field, "missing" is `!(key in row)`: a value test
-  (`row.x == null`, `!row.x`) reads a deliberate `null` as missing. The
-  `modifiedAt` test also treats a non-finite value as missing, the v11
-  `shelfPosition` precedent (`db.ts:737-754`).
+  (`row.x == null`, `!row.x`) reads a deliberate `null` as missing. This
+  includes `modifiedAt`: a stored `null` is the legitimate "not written since
+  v12" state, and a later run must not restamp it.
 - **One put per row at most, and none for a row that needs nothing.** The
   fields a row lacks are added in one `cursor.update`; a row that already
   carries every v12 field is not written.
@@ -403,9 +398,9 @@ Rules the migration holds:
   v8 and v9 do. Segments are the largest metadata store on a phone; the
   `getAll` that v10 and v11 use was argued for `books` only (inference on
   memory).
-- **One `T`.** `Date.now()` is read once, before the first walk, so every row
-  of one upgrade carries the same upper bound. `Date.now()` is not a DOM API;
-  `lib/` may use it.
+- **No clock read.** The migration reads no time: every backfilled timestamp
+  is `null`, so no row carries an upgrade time that could be mistaken for a
+  user's put.
 - **Structure first.** Both `createObjectStore` calls sit with v6's
   `failures` create, before any await (`db.ts:556-577`, "ORDER IS
   LOAD-BEARING"); the backfill block goes after v11's.
@@ -499,11 +494,11 @@ body records which test died.
 | M2  | Test a nullable field's absence by value (`row.templateKey == null`) instead of `in`, then restamp the row | "a row carrying every v12 field, nullable ones `null`, is left identical" (seed `createdAt: 5`, `modifiedAt: 7`, `templateKey: null`)           |
 | M3  | Move `createObjectStore("tombstones")` below the first cursor                                              | `refuseStructureChangeAfterYield` (`tests/db-migration.test.ts:630`), extended to assert both new stores on a fresh install and on a v3 upgrade |
 | M4  | Delete the segments walk                                                                                   | the v11 → v12 segment case                                                                                                                      |
-| M5  | Write a changed `clipMeta` row (spread, add `modifiedAt: T`, put)                                          | the whole-shelf byte and row identity (below)                                                                                                   |
+| M5  | Write a changed `clipMeta` row (spread, add `modifiedAt: 1`, put)                                          | the whole-shelf byte and row identity (below)                                                                                                   |
 | M6  | Remove the #1421 abort                                                                                     | `tests/db-upgrade-throw.test.ts`'s `describe.each` (`:123`), extended with `{ from: 11, step: "v12" }` and a fault on the Nth `segments` put    |
 | M7  | Backfill provenance as `{kind: "template", …}`, or omit it                                                 | the whole-shelf `provenance` assertion                                                                                                          |
 | M8  | `pendingTakes` keyPath `clipId`                                                                            | "two puts for one segment leave one row"                                                                                                        |
-| M13 | Read `Date.now()` per row instead of once                                                                  | "every backfilled row carries the same modifiedAt", under a strictly increasing fake clock                                                      |
+| M13 | Backfill `modifiedAt: Date.now()` instead of `null`                                                        | "a backfilled row's modifiedAt is null", under a fake clock that returns a finite number; the same assertion kills a per-row clock read         |
 
 **Write paths (#1463):**
 
@@ -553,7 +548,8 @@ not loosened:
    `createdAt`, `modifiedAt`, `templateKey` for a segment). A missing or extra
    key fails here.
 3. Then assert the v12 values exactly: `createdAt === null`,
-   `modifiedAt === T` (the fake clock's one reading), `templateKey === null`;
+   `modifiedAt === null` (a fake clock reading a finite number makes any
+   stamped value fail), `templateKey === null`;
    a chapter's `number` is not in the removed list, so step 4 asserts it
    unchanged.
 4. Then remove exactly those keys and compare the rest with `toEqual(before)`.
@@ -561,7 +557,7 @@ not loosened:
    projection (M5 dies here).
 6. The book rows' `toMatchObject` block (`:1437-1446`) becomes a `toEqual` of
    the whole expected row (seeded fields, the v10/v11 fields, and
-   `provenance: {kind: "blank"}`, `licence: null`, `modifiedAt: T`), because
+   `provenance: {kind: "blank"}`, `licence: null`, `modifiedAt: null`), because
    `toMatchObject` passes an unexpected extra field. At least one seeded book
    carries a non-null `languageCode` (`"swh"`, as `:1119` does) and the
    expected row keeps it; a `language` key on any row fails the `toEqual`.
