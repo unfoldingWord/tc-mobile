@@ -151,7 +151,7 @@ R19 settles both open questions:
 - **Arabic numerals everywhere.** Every language shows `0-9`, including
   languages whose own convention uses other digits. `Intl.NumberFormat` is
   called with the Latin numbering system explicitly (`numberingSystem:
-  "latn"`), so a phone's regional setting cannot change the digits.
+"latn"`), so a phone's regional setting cannot change the digits.
   `plural.ts` only picks the plural form; it writes the count as `String(n)`
   (`plural.ts:125`), which is always `0-9`.
 - **Simplified text on Chinese phones.** A phone whose language is any Chinese
