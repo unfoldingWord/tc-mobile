@@ -144,6 +144,13 @@ describe("sanitize / parseSections / isAnswer", () => {
     expect(sanitize("a<!-- x -->b\r\n```\nCloses #1\n```\nc")).toBe("ab\nc");
   });
 
+  // Bench round 1 (Frank 2): tilde fences, and a closer of the opener's kind.
+  it("drops tilde fences and closes a fence only on its own kind and length", () => {
+    expect(sanitize("a\n~~~markdown\nCloses #1\n~~~\nb")).toBe("a\nb");
+    expect(sanitize("a\n````\n```\nCloses #1\n````\nb")).toBe("a\nb");
+    expect(sanitize("a\n~~~\n```\nCloses #1\n~~~\nb")).toBe("a\nb");
+  });
+
   it("drops an unclosed fence to the end of the body", () => {
     expect(sanitize("a\n```\nCloses #1\nTier: T1")).toBe("a");
   });
@@ -160,6 +167,10 @@ describe("sanitize / parseSections / isAnswer", () => {
     "N/A: docs only",
     "n/a - none",
     "tests/foo.test.ts, red at abc123",
+    // Bench round 1 (Frank 1): inline code, autolinks and HTML tags are not placeholders.
+    "existing `Map<string, number>` helper",
+    "results at <https://example.com/results>",
+    "<details><summary>run</summary>5511 passed</details>",
   ])("accepts the answer %j", (v) => expect(isAnswer(v)).toBe(true));
 
   it.each([
@@ -226,6 +237,25 @@ describe("checkBody — green", () => {
         })
       )
     ).toEqual([]);
+  });
+
+  it("accepts angle brackets inside inline code and autolinks (bench round 1, Frank 1)", () => {
+    expect(
+      checkBody(
+        body({
+          reuse: "existing `Map<string, number>` helper",
+          testFirst: "red, results at <https://example.com/results>",
+          doneWhen:
+            "- [x] parses `Array<string>` in `scripts/x.mjs` — Check: test `reads <T>` → pass",
+        })
+      )
+    ).toEqual([]);
+  });
+
+  it("does not count a body that is only a tilde-fenced example (bench round 1, Frank 2)", () => {
+    expect(checkBody(`~~~markdown\n${body()}\n~~~\n`).length).toBeGreaterThan(
+      10
+    );
   });
 
   it("ignores template instructions and fenced examples", () => {
@@ -308,6 +338,49 @@ describe("checkBody — red, one case per field", () => {
     expect(missing).toHaveLength(1);
     expect(missing[0]).toMatch(/item 2/);
   });
+
+  // Bench round 1 (George 1): every free-text answer goes through isAnswer.
+  it.each([
+    ["a placeholder delivers and remaining", "Part-of #12 — <x> / remaining: <…>"],
+    ["remaining: TBD", "Part-of #12 — delivers the gate / remaining: TBD"],
+    ["remaining: N/A", "Part-of #12 — delivers the gate / remaining: N/A"],
+    ["delivers TBD", "Part-of #12 — TBD / remaining: the skills"],
+  ])("flags a Part-of with %s", (_l, closer) => {
+    const missing = checkBody(body({ closer }));
+    expect(missing).toHaveLength(1);
+    expect(missing[0]).toMatch(/closer/i);
+  });
+
+  it.each(["TBD", "N/A", "<how>"])(
+    "flags a Done-when Check: value of %j",
+    (v) => {
+      const missing = checkBody(body({ doneWhen: `- [x] gate exists — Check: ${v}` }));
+      expect(missing).toHaveLength(1);
+      expect(missing[0]).toMatch(/Done when/);
+    }
+  );
+
+  it("does not read a column-0 line as a Done-when item's continuation", () => {
+    const missing = checkBody(
+      body({ doneWhen: "- [x] gate exists\nCheck: test \"x\"" })
+    );
+    expect(missing).toHaveLength(1);
+    expect(missing[0]).toMatch(/item 1 has no Check/);
+    expect(
+      checkBody(body({ doneWhen: '- [x] gate exists\n  — Check: test "x"' }))
+    ).toEqual([]);
+  });
+
+  describe.each([["Changes"], ["Review evidence"], ["Device checks"]])(
+    "the %s section",
+    (title) => {
+      it.each(["TBD", "N/A", "<what was run>"])("is flagged when %j", (v) => {
+        const missing = checkBody(body({ sections: { [title]: v } }));
+        expect(missing).toHaveLength(1);
+        expect(missing[0]).toContain(title);
+      });
+    }
+  );
 
   describe.each(COLLATERAL_SURFACES.map((s) => [s]))("Collateral %s", (s) => {
     it.each([
@@ -563,6 +636,17 @@ describe("exemption — which PR kinds the gate lets through", () => {
       /release/i
     );
   });
+
+  // Bench round 1 (George 2): AGENTS.md's release PR is `chore(release): vX.Y.Z`.
+  it.each(["chore(release): v1.1.0-rc.2", "chore(release): v0.2.14 — promote"])(
+    "exempts the release title %j",
+    (title) => expect(exemption({ ...human, title })).toMatch(/release/i)
+  );
+
+  it.each(["chore(release): wip", "chore(release): v9", "chore(release):"])(
+    "does not exempt the release look-alike %j into develop",
+    (title) => expect(exemption({ ...human, title })).toBeNull()
+  );
 
   it("does not exempt a docs-only PR", () => {
     expect(exemption({ ...human, title: "docs: replace names" })).toBeNull();

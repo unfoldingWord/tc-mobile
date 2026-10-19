@@ -71,12 +71,34 @@ export function sanitize(raw) {
     .replace(/\r\n?/g, "\n")
     .replace(/<!--[\s\S]*?-->/g, "");
   const out = [];
-  let fenced = false;
+  let fence = null; // the opening run (``` or ~~~, 3+); closed by the same kind, at least as long
   for (const line of text.split("\n")) {
-    if (/^\s*```/.test(line)) fenced = !fenced;
-    else if (!fenced) out.push(line);
+    const f = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence !== null) {
+      const closes =
+        f !== null &&
+        f[1][0] === fence[0] &&
+        f[1].length >= fence.length &&
+        f[2].trim() === "";
+      if (closes) fence = null;
+    } else if (f !== null && !(f[1][0] === "`" && f[2].includes("`"))) {
+      fence = f[1];
+    } else out.push(line);
   }
   return out.join("\n");
+}
+
+const HTML_TAG =
+  /<\/?(?:a|b|br|code|details|em|i|img|kbd|p|pre|strong|sub|summary|sup)\b[^>]*>/gi;
+
+/** True when `v` holds an unfilled `<…>`; inline code, autolinks and HTML tags are not. */
+function hasPlaceholder(v) {
+  return /<[^>]*>/.test(
+    v
+      .replace(/`[^`\n]*`/g, "")
+      .replace(/<(?:https?:\/\/|mailto:)[^\s<>]+>/gi, "")
+      .replace(HTML_TAG, "")
+  );
 }
 
 /** Level-2 sections of a sanitized body: lowercase heading -> trimmed text. */
@@ -100,7 +122,7 @@ export function parseSections(text) {
 /** True when `value` is a real answer, not blank, a placeholder or a bare N/A. */
 export function isAnswer(value) {
   const v = (value ?? "").trim();
-  if (!/[A-Za-z0-9]/.test(v) || /<[^>]*>/.test(v)) return false;
+  if (!/[A-Za-z0-9]/.test(v) || hasPlaceholder(v)) return false;
   const na = /^n\/?a\b[\s.:—–-]*/i.exec(v);
   const text = na ? v.slice(na[0].length) : v;
   return text !== "" && !PLACEHOLDER_WORD.test(text);
@@ -128,12 +150,21 @@ function fieldValue(text, label) {
 }
 
 const CLOSES = /^\s*closes\s+#\d+(?:\s*(?:,|and|&)\s*#\d+)*\s*\.?\s*$/im;
-const PART_OF = /^\s*part-of\s+#\d+\s+[—–-]\s+\S[^\n]*\/\s*remaining:\s*\S/im;
+const PART_OF_LINE =
+  /^\s*part-of\s+#\d+\s+[—–-]\s+(\S.*?)\s*\/\s*remaining:\s*(.*?)\s*$/i;
 const NEGATED =
   /\b(?:not|never|n['’]t|without)\s+(?:\w+\s+){0,2}?(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*#\d+/i;
 
+/** A Part-of line whose delivers and remaining are both real answers. */
+function hasPartOf(text) {
+  return text.split("\n").some((line) => {
+    const m = PART_OF_LINE.exec(line);
+    return m !== null && isAnswer(m[1]) && isAnswer(m[2]);
+  });
+}
+
 function closerProblem(text) {
-  if (CLOSES.test(text) || PART_OF.test(text)) return null;
+  if (CLOSES.test(text) || hasPartOf(text)) return null;
   const noIssue = fieldValue(text, "no-issue:");
   if (noIssue !== null && isAnswer(noIssue)) return null;
   return NEGATED.test(text)
@@ -141,14 +172,18 @@ function closerProblem(text) {
     : "Closer: needs Closes #N, Part-of #N — <delivers> / remaining: <…>, or no-issue: <reason>";
 }
 
-/** Done-when items: each `- [ ]`/`- [x]` line with its continuation lines. */
+/** Done-when items: each `- [ ]`/`- [x]` line with its indented continuation lines. */
 function doneWhenItems(section) {
   const items = [];
+  let open = false;
   for (const line of section.split("\n")) {
     const m = /^\s*[-*]\s+\[[ xX]\]\s*(.*)$/.exec(line);
-    if (m) items.push(m[1]);
-    else if (items.length && line.trim() !== "")
+    if (m) {
+      items.push(m[1]);
+      open = true;
+    } else if (open && /^\s+\S/.test(line))
       items[items.length - 1] += ` ${line.trim()}`;
+    else open = false;
   }
   return items;
 }
@@ -169,7 +204,7 @@ export function checkBody(raw) {
     const s = sections.get(title.toLowerCase());
     need(s === undefined, `${title}: the section is missing`);
     need(
-      s !== undefined && NON_EMPTY.includes(title) && !/\w/.test(s),
+      s !== undefined && NON_EMPTY.includes(title) && !isAnswer(s),
       `${title}: the section is empty`
     );
   }
@@ -191,12 +226,11 @@ export function checkBody(raw) {
   );
   (items ?? []).forEach((item, i) => {
     const n = i + 1;
+    const filled = /\w/.test(item) && !hasPlaceholder(item);
+    const check = /\bCheck:(.*)$/.exec(item);
+    need(!filled, `Done when: item ${n} is empty or an unfilled placeholder`);
     need(
-      !/\w/.test(item) || /<[^>]*>/.test(item),
-      `Done when: item ${n} is empty or an unfilled placeholder`
-    );
-    need(
-      /\w/.test(item) && !/<[^>]*>/.test(item) && !/\bCheck:\s*\S/.test(item),
+      filled && (check === null || !isAnswer(check[1])),
       `Done when: item ${n} has no Check:`
     );
   });
@@ -274,7 +308,13 @@ export function exemption({ author, baseRef, title }) {
   if (baseRef === "staging" || baseRef === "main") {
     return `promotion PR (base ${baseRef})`;
   }
-  if (baseRef === "develop" && /^chore\(release\):/.test(title ?? "")) {
+  // AGENTS.md "Versions and milestones": the bump PR is `chore(release): vX.Y.Z`.
+  if (
+    baseRef === "develop" &&
+    /^chore\(release\): v\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?(?:\s|$)/.test(
+      title ?? ""
+    )
+  ) {
     return "release version-bump PR (chore(release): into develop)";
   }
   return null;
