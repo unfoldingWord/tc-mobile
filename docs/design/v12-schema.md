@@ -28,6 +28,19 @@ re-decide anything.
   Scripture Bundle format with a robust manifest. We can process it later."
 - **P4-dataset-home:** "Its own Servant.Bible repo and owner; tC Mobile reads a
   published template package".
+- **R20-new-book-licence (2026-10-19):** `empty-preselect`, "Empty until someone
+  chooses; CC BY-SA 4.0 is pre-selected when they share".
+- **R12-book-language (2026-10-19):** `at-export`, "Ask only when exporting".
+  Note: "Ask at export, then write it into the metadata for that book; keep the
+  path to getting started as short as possible."
+- **R7-chapter-number (2026-10-19):** `always-real`, "Every chapter carries the
+  number someone types or the template gives". Note: "Chapters should have
+  titles/metadata that indicate what they are, as relying on order alone is
+  brittle. In Bible recordings, the order will usually align with the chapter
+  number declared in the metadata; when in doubt, the metadata is the
+  authoritative source."
+- **R6-span-home (2026-10-19):** `start-chapter`, "The chapter it starts in; it
+  plays and exports there".
 - **#174, 2026-09-28:** D1 "Include it now (Recommended)"; D2 "Exclude it,
   reference clipData (Recommended)".
 - **#174, 2026-10-19, amending those two for v12:** pending takes "Amend: base =
@@ -72,9 +85,11 @@ export type BookProvenance =
     };
 
 Book    += provenance: BookProvenance; licence: LicenceId | null;
+           language: string | null;  // BCP 47 tag
            modifiedAt: number;
 Chapter += createdAt: number | null; modifiedAt: number;
-           templateKey: string | null; sourceNumber: number | null;
+           templateKey: string | null;
+           (number keeps its name; its meaning changes, see below)
 Segment += createdAt: number | null; modifiedAt: number;
            templateKey: string | null;
            (reference keeps its name; its type is the reshaped SegmentRef)
@@ -137,7 +152,18 @@ then has nine stores.
   #1455's licence setter, which refuses a change on a template book) and
   asserted by their tests. `"all-rights-reserved"` has no SPDX id, so it is a
   plain token; the file-name tag ("Mark - Chapter 1 (CC BY-SA 4.0).mp3") is a
-  display mapping owned by the share step, not a stored string.
+  display mapping owned by the share step, not a stored string. A new
+  non-template book is written `null` (R20, below); the share step pre-selects
+  CC BY-SA 4.0 without storing it.
+- **`Book.language: string | null`** (R12) is a BCP 47 tag, `null` until the
+  export asks. Nothing asks for it at creation, so the path to getting started
+  stays as short as it is today; the export asks, then writes the tag onto the
+  book and into that book's metadata. The write path is the export's, not v12's.
+  The field is in v12 now so that one nullable field does not cost a later v13
+  (a new field on an existing store is a version bump and a second device
+  check). It is backfilled `null`, keyed on absence like the other nullable
+  fields. This is an orchestrator call on top of R12, not the requirements
+  owner's wording.
 - **`SegmentRef` as numbers.** This is Q4's wording, and the cross-chapter
   question (which chapter shows a segment that runs from Psalm 17 into 18)
   compares `startChapter` and `endChapter` as numbers. The shape is
@@ -171,14 +197,26 @@ then has nine stores.
   them" fits with no further schema change. A collection's intro segment has
   `reference: null` and still needs a title, which is why this is a separate
   field.
-- **`Chapter.sourceNumber`** (nullable) is the number the chapter stands for in
-  its source: the Bible chapter, the OBS story, or a number the translator
-  typed. `Chapter.number` stays the position it is today (`books.ts:588-609`),
-  so export file names and reorder do not change. It serves either answer to
-  #1272 (R7): if the typed number is kept, Add-chapter writes it; if not, only
-  template creation does. No v13 either way. It is kept even though
-  `templateKey` could look it up, so an exported book is readable without its
-  package (inference).
+- **`Chapter.number` is the real chapter number; there is no `sourceNumber`**
+  (R7). The earlier draft kept `number` as the position and added a nullable
+  `sourceNumber` for the real one. R7 decided "Every chapter carries the number
+  someone types or the template gives", so every chapter has a real number and a
+  nullable second field would be a duplicate that is `null` or equal to the
+  first (inference). One field is enough: `number` is already stored on every
+  chapter row, and today it equals the chapter's position because `moveChapter`
+  renumbers on every reorder (`books.ts:788-800`). So v12 needs **no backfill
+  write** for it: each existing chapter's stored number is already its current
+  1-based position, which is what a user sees today, and nothing visibly changes
+  on upgrade. What changes is the meaning going forward: the order of chapters
+  is `Book.chapterIds`, not `number`; a reorder does not renumber; a template
+  gives its real number; Add-chapter writes the number typed (default
+  `nextChapterNumber`). The code that reads `number` as the export
+  concatenation position (`nextChapterNumber`'s docblock, the export file
+  names) must read `chapterIds` order instead. Those writer and reader changes,
+  and the reorder UI, are #1272 / E3 scope, not this document and not #1462.
+  This changes books people already have only in meaning, never in a stored
+  value. `templateKey` still carries the package's own key, so the title and the
+  number stay independent of each other.
 - **`createdAt: number | null`**, backfilled `null`. A pre-v12 chapter's or
   segment's true creation time is unknown; stamping the upgrade time would
   write a false fact into the manifest Q11 asks for.
@@ -276,8 +314,8 @@ call or a change to a DRI pick is not.
   leave; the file-name tag reads one value at share time. Whether the share
   step asks every time or once per book is a UI question that does not change
   storage (it stays with the share work). Backfill `null`, "not chosen yet".
-  What a _new_ non-template book is written with is a product question; see
-  "Open for the DRI".
+  What a _new_ non-template book is written with is decided: R20 Option A,
+  `null` until the person chooses; the share step pre-selects CC BY-SA 4.0.
 - **J4 — no new field on `Take`. Decided by the record.** The 2026-10-19
   tombstone pick was recorded as "no take timestamps". The reason holds in the
   code: a take row is written once (`src/lib/storage/takes.ts:144`, the only
@@ -317,26 +355,34 @@ call or a change to a DRI pick is not.
     It has writers on every book put, so it is not a stub. Backfill `T`, like
     the others. `Book.updatedAt` keeps its meaning and its writers, unchanged.
 
+- **J7 — a segment that crosses a chapter belongs to its start chapter.
+  Decided by the record (R6).** The span model above already matches: a
+  segment hangs off one `Chapter`, and `SegmentRef` stores `startChapter` and
+  `endChapter`, so "the chapter it starts in" is the `startChapter` of the
+  reference and the label shows the full span; no schema change.
+
 ## Backfill: what every existing row gets
 
 One `if (oldVersion < 12)` block in the one `upgrade` callback
 (`src/lib/storage/db.ts`). The version-change transaction is the one
 transaction: all of it lands or none of it (the #1421 abort, `db.ts:855-894`).
 
-| Store                               | Field                         | Backfill                                                  | Keyed on                      |
-| ----------------------------------- | ----------------------------- | --------------------------------------------------------- | ----------------------------- |
-| (structure)                         | `tombstones`, `pendingTakes`  | `createObjectStore`, beside v6's create, before any await | `oldVersion < 12`             |
-| books                               | `provenance`                  | `{ kind: "blank" }`                                       | `!("provenance" in row)`      |
-| books                               | `licence`                     | `null`                                                    | `!("licence" in row)`         |
-| books                               | `modifiedAt`                  | `T`                                                       | absent or not a finite number |
-| chapters                            | `createdAt`                   | `null`                                                    | `!("createdAt" in row)`       |
-| chapters                            | `modifiedAt`                  | `T`                                                       | absent or not a finite number |
-| chapters                            | `templateKey`, `sourceNumber` | `null`                                                    | `!(key in row)`               |
-| segments                            | `createdAt`                   | `null`                                                    | `!("createdAt" in row)`       |
-| segments                            | `modifiedAt`                  | `T`                                                       | absent or not a finite number |
-| segments                            | `templateKey`                 | `null`                                                    | `!("templateKey" in row)`     |
-| segments                            | `reference`                   | untouched (every stored value is `null`)                  | n/a                           |
-| takes, clipMeta, clipData, failures | —                             | not read, not written                                     | n/a                           |
+| Store                               | Field                        | Backfill                                                  | Keyed on                      |
+| ----------------------------------- | ---------------------------- | --------------------------------------------------------- | ----------------------------- |
+| (structure)                         | `tombstones`, `pendingTakes` | `createObjectStore`, beside v6's create, before any await | `oldVersion < 12`             |
+| books                               | `provenance`                 | `{ kind: "blank" }`                                       | `!("provenance" in row)`      |
+| books                               | `licence`                    | `null`                                                    | `!("licence" in row)`         |
+| books                               | `language`                   | `null`                                                    | `!("language" in row)`        |
+| books                               | `modifiedAt`                 | `T`                                                       | absent or not a finite number |
+| chapters                            | `createdAt`                  | `null`                                                    | `!("createdAt" in row)`       |
+| chapters                            | `modifiedAt`                 | `T`                                                       | absent or not a finite number |
+| chapters                            | `templateKey`                | `null`                                                    | `!("templateKey" in row)`     |
+| chapters                            | `number`                     | untouched (already stored, equal to its position)         | n/a                           |
+| segments                            | `createdAt`                  | `null`                                                    | `!("createdAt" in row)`       |
+| segments                            | `modifiedAt`                 | `T`                                                       | absent or not a finite number |
+| segments                            | `templateKey`                | `null`                                                    | `!("templateKey" in row)`     |
+| segments                            | `reference`                  | untouched (every stored value is `null`)                  | n/a                           |
+| takes, clipMeta, clipData, failures | —                            | not read, not written                                     | n/a                           |
 
 Rules the migration holds:
 
@@ -362,9 +408,9 @@ Rules the migration holds:
   LOAD-BEARING"); the backfill block goes after v11's.
 - **Creators change in the same PR**, because the fields are required and
   TypeScript forces it: `createBook` writes `provenance: {kind: "blank"}`,
-  `licence` per the open question below (default `null`) and `modifiedAt`;
+  `licence: null` (R20), `language: null` and `modifiedAt`;
   `addChapter` and `addSegment` write `createdAt` and `modifiedAt` as the write
-  time and `templateKey: null` (and `sourceNumber: null` for a chapter).
+  time and `templateKey: null`.
   Bumping `modifiedAt` and writing tombstones on the other write paths is
   #1463, and must ship in the **same release** as #1462, so no promoted build
   stamps `modifiedAt` once and then leaves it stale.
@@ -384,6 +430,7 @@ v13 if a writer appears, and only then.
 - **A history of shares or licence changes** (J2).
 - **A licence on header images.** Q13 says images generated on the app are
   CC0 and preferably embedded in the MP3; that is not a book field.
+- **A `sourceNumber` on chapters** (dropped by R7; `number` is the real number).
 - **Verse parts** ("3a"). See "Risks".
 - **Indexes on the new stores.**
 
@@ -474,6 +521,12 @@ its late tombstone and passes.)
 **Also required:**
 
 - A v9 and a v10 shelf each climb to 12 in one open.
+- **Chapter numbers survive the upgrade (R7):** a seeded v11 book whose chapters
+  are numbered 1..n keeps those numbers byte for byte, and `chapterIds` order is
+  unchanged. Mutation: a backfill that rewrites `number` (for example to a
+  position recomputed from a different order) dies on this case. Killed by the
+  whole-shelf chapter comparison below once `number` is not in the removed-key
+  list.
 - A fresh install opens at 12 with nine stores; both new stores are empty
   after any upgrade.
 - **Downgrade, in both states:** a database at 12 holding a real shelf, opened
@@ -493,18 +546,20 @@ not loosened:
    to 12 and get the same narrowing.
 2. For every chapter and segment row, first assert its key set exactly:
    `Object.keys(after).sort()` equals the before-row's keys plus exactly the v12
-   keys (`createdAt`, `modifiedAt`, `templateKey`, `sourceNumber` for a chapter;
+   keys (`createdAt`, `modifiedAt`, `templateKey` for a chapter;
    `createdAt`, `modifiedAt`, `templateKey` for a segment). A missing or extra
    key fails here.
 3. Then assert the v12 values exactly: `createdAt === null`,
-   `modifiedAt === T` (the fake clock's one reading), `templateKey === null`,
-   `sourceNumber === null`.
+   `modifiedAt === T` (the fake clock's one reading), `templateKey === null`;
+   a chapter's `number` is not in the removed list, so step 4 asserts it
+   unchanged.
 4. Then remove exactly those keys and compare the rest with `toEqual(before)`.
 5. `takes`, `clipMeta` and `clipData` keep the full `toEqual` with no
    projection (M5 dies here).
 6. The book rows' `toMatchObject` block (`:1437-1446`) becomes a `toEqual` of
    the whole expected row (seeded fields, the v10/v11 fields, and
-   `provenance: {kind: "blank"}`, `licence: null`, `modifiedAt: T`), because
+   `provenance: {kind: "blank"}`, `licence: null`, `language: null`,
+   `modifiedAt: T`), because
    `toMatchObject` passes an unexpected extra field.
 7. `getAll("tombstones")` and `getAll("pendingTakes")` are `[]`.
 
@@ -539,23 +594,14 @@ again (recommendation).
 
 ## Open for the DRI
 
-Neither item changes the frozen shape, so neither blocks #1462.
+This item does not change the frozen shape, so it does not block #1462. The
+licence question that stood here is decided (R20, in the record above and in
+J2).
 
-1. **What licence does a new non-template book get when it is created?**
-   (Tim's call: D5 and his note.)
-   - (A) `null` until the person chooses; the share step pre-selects
-     CC BY-SA 4.0 as Tim's proposed default. **Recommended:** D5 says "other
-     books choose", and a stored value nobody chose would read as a choice in
-     a backup.
-   - (B) `"CC-BY-SA-4.0"` at creation, changeable until shared.
-   - Either way, books that exist before v12 are backfilled `null`. Writing a
-     licence onto existing work is a licensing position taken on a
-     facilitator's behalf; ADR 0006 records that such positions are not
-     engineering's to take quietly.
-2. **Who authors the migration.** #174's 2026-10-19 question to
+1. **Who authors the migration.** #174's 2026-10-19 question to
    @deferredreward is still open. This document is shared input; it does not
    take the migration from them.
 
-Not open here, and routed elsewhere: #1272 (R7, chapter numbers) and the title
-strategy (store the words or render them). The schema fits every answer to
-both.
+Not open here, and routed elsewhere: the reorder UI and the writer and reader
+changes for chapter numbers (#1272 / E3, R7 decided), and the title strategy
+(store the words or render them). The schema fits every answer to the second.
