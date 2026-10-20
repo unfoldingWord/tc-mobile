@@ -11,6 +11,51 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-20 (day) — Sprint 5 day 2: v1.1.1 to TestFlight and the APK for the iOS silent switch, the v12 schema and its write paths on develop, 19 PRs merged
+
+One coordinator session in orchestrator mode.
+
+### Decisions (DRI)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **v12 and 1.1.x patches (#1522):** "Release branch for patches". #1522 merges to develop when bench-clean; 1.1.x patches ship from `release/v1.1.1`, cut at v1.1.0 on staging; no develop → staging promotion before the 1.2 cut without the DRI's go.
+- **1.1.1 red team F1:** "Accept + add a test case (Recommended)". A cold Record before any Play is now case 7 of the device check.
+- **1.1.1 red team F2:** "Exempt, reason recorded (Recommended)".
+- **Expo:** "lets definitely have an issue to research where the line is for us to move to expo". Filed as #1520 (Sprint 6).
+
+### Completed
+
+- **v1.1.1, the iOS silent-switch fix (#1518).** Field report on 1.1: recording worked and playback was silent with the ring/silent switch on. #1521 makes Play declare playback inside the iOS shell, and Record reset the session before the mic opens. #1523 cherry-picked it onto `release/v1.1.1` with the version bump (DB_VERSION stays 11), and the DRI merged #1523 and the promotion #1524.
+  - `PROMO_SHA` `a87c2f6f1d44d020f096b9cf1b6028853b1121a6`, parents `e3a4313f` (v1.1.0 on staging) then `99f6b88d` (#1523).
+  - `check:deploy` PASS: staging serves `1.1.1` at `a87c2f6f`.
+  - TestFlight run 39457261751 succeeded: version 1.1.1, build 1792516368.
+  - APK run 39457261742 succeeded. Signer certificate SHA-256 `eed23e1bccf9fbad8b69f2f9598fd8d97e094d23e544b71b9e91dd21c934baf2`, the same as 1.1.0; the embedded `version.json` reads 1.1.1; APK SHA-256 `e928c14342a826189b9603720fea52bf5b85e82d0b523686a3f44b2adfb5ac51`.
+  - Build record: https://github.com/unfoldingWord/tc-mobile/pull/1524
+  - Release red team: no BLOCK items; F1 and F2 settled by the picks above.
+- **Merged to develop (19):** #1490 (v12 freeze, closed #1461), #1499, #1500, #1501, #1502, #1503, #1504, #1507, #1508, #1510 (closed #962), #1511, #1512 (closed #1379), #1514, #1515, #1516, #1517, #1519, #1522 (v12 schema, closed #1462) and #1525 (v12 write stamps and tombstones, closed #1463).
+- **Develop CI** is green at `f2ee059a`, #1525's merge.
+- **#1525's CI catch.** Its first head failed CI in `tests/storage.test.ts`: two whole-row "nothing else changed" tests passed only when setup and write landed in the same millisecond. Both now run under a controlled clock and assert that `modifiedAt` moved. A one-off suite run with every clock read on a new millisecond found no other case.
+- **Filed:** #1518 (iOS silent playback) and #1520 (where the line is for moving from Capacitor to Expo).
+- **Zulip:** the call follow-up with the requirements owner and the PM, an explanation of Expo versus Capacitor, and a reply on Capacitor 9 and silent-mode detection.
+
+### Not run
+
+- **The 1.1.1 device check.** The seven cases (silent switch on and off, speaker or earpiece, Record then Play, Play/Record/Play, lock and unlock then Play, Bluetooth, a cold Record) wait on the DRI's TestFlight run. #1518 stays open until then.
+- **The v12 device check** belongs to #1464, on the v1.2.0 tester build.
+
+### In progress
+
+- **#1521** (the silent-switch fix on develop) is bench-clean and held for the 1.1.1 device check.
+- **Findings open, no fix lane yet:** #1441 (George round 4, at the cap: needs the DRI's call), #1494, #1497, #1498, #1506, #1509.
+
+### Next steps
+
+1. When the 1.1.1 device check passes: merge #1521 into develop, close #1518, and record the results here. Develop needs a version above 1.1.1 before its next promotion.
+2. Start fix lanes for #1494, #1497, #1498, #1506 and #1509. #1468 slice b waits on #1506.
+3. Put #1441 to the DRI at the cap.
+4. Record the requirements owner's Round 3 and Round 4 answers as they arrive.
+
 ## 2026-10-19 (day, ran into 10-20 UTC) — Sprint 5 day 1: v2 Round 2 applied, all open issues triaged, five lane waves, 20 PRs merged, Round 3 to the requirements owner
 
 One coordinator session in orchestrator mode.
