@@ -60,7 +60,7 @@ export interface Locale {
 }
 
 /**
- * The locale this build ships.
+ * The locale this build ships, and the one every resolution falls back to.
  *
  * `dir` is carried as data rather than derived from the tag on purpose. A
  * tag-to-direction function has to encode a script table, and an incomplete
@@ -73,6 +73,32 @@ export interface Locale {
  * `tests/locale.test.ts` pins the two together so they cannot drift.
  */
 export const SHIPPED_LOCALE: Locale = { tag: "en", dir: "ltr" };
+
+/**
+ * The UI languages v2 supports (#1482; decision D6-languages, "The 10 level-4
+ * languages in v2"), each stating its own direction for the reason above.
+ * `SHIPPED_LOCALE` is the English entry itself, not a copy of it.
+ *
+ * Mandarin is `zh-Hans`: the Simplified script is part of the tag, because
+ * every Chinese phone gets the Simplified text (R19, "default to simplified
+ * text on Chinese phones").
+ *
+ * An entry here is a language the resolver can pick, not a translation that
+ * exists: no table but English is in `strings.ts` yet, and nothing calls the
+ * resolver yet (`lib/i18n/resolve.ts`).
+ */
+export const LOCALES: readonly Locale[] = [
+  { tag: "ar", dir: "rtl" },
+  SHIPPED_LOCALE,
+  { tag: "es", dir: "ltr" },
+  { tag: "fr", dir: "ltr" },
+  { tag: "hi", dir: "ltr" },
+  { tag: "id", dir: "ltr" },
+  { tag: "pt", dir: "ltr" },
+  { tag: "ru", dir: "ltr" },
+  { tag: "sw", dir: "ltr" },
+  { tag: "zh-Hans", dir: "ltr" },
+];
 
 /**
  * A language tag that is safe to write into an attribute without escaping.

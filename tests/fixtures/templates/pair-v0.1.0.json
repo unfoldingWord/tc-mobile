@@ -1,0 +1,24 @@
+{
+  "format": "tc-mobile-template",
+  "formatVersion": 0,
+  "id": "collection:pair",
+  "version": "0.1.0",
+  "kind": "collection",
+  "bookCode": null,
+  "title": { "en": "Pair" },
+  "titleLanguages": ["en"],
+  "dataLicence": "CC-BY-SA-4.0",
+  "recordingLicence": "CC-BY-SA-4.0",
+  "attribution": "Fixture pair, CC BY-SA 4.0",
+  "source": { "url": "https://example.org/pair", "revision": "a" },
+  "chapters": [
+    {
+      "key": "c1",
+      "number": 1,
+      "segments": [
+        { "key": "s1", "reference": null, "thumbnail": null },
+        { "key": "s2", "reference": null, "thumbnail": null }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "format": "tc-mobile-template",
+  "formatVersion": 0,
+  "id": "obs",
+  "version": "0.1.0",
+  "kind": "obs",
+  "bookCode": "OBS",
+  "title": { "en": "Open Bible Stories" },
+  "titleLanguages": ["en"],
+  "dataLicence": "CC-BY-SA-4.0",
+  "recordingLicence": "CC-BY-SA-4.0",
+  "attribution": "Open Bible Stories, CC BY-SA 4.0",
+  "source": { "url": "https://example.org/obs", "revision": "fixture-1" },
+  "chapters": [
+    {
+      "key": "01",
+      "number": 1,
+      "segments": [
+        {
+          "key": "01-01",
+          "reference": {
+            "book": "OBS",
+            "startChapter": 1,
+            "startVerse": 1,
+            "endChapter": 1,
+            "endVerse": 1
+          },
+          "thumbnail": "obs/01-01.jpg"
+        },
+        {
+          "key": "01-02",
+          "reference": {
+            "book": "OBS",
+            "startChapter": 1,
+            "startVerse": 2,
+            "endChapter": 1,
+            "endVerse": 2
+          },
+          "thumbnail": "obs/01-02.jpg"
+        }
+      ]
+    },
+    {
+      "key": "02",
+      "number": 2,
+      "segments": [
+        {
+          "key": "02-01",
+          "reference": {
+            "book": "OBS",
+            "startChapter": 2,
+            "startVerse": 1,
+            "endChapter": 2,
+            "endVerse": 1
+          },
+          "thumbnail": "obs/02-01.jpg"
+        }
+      ]
+    }
+  ]
+}
