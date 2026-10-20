@@ -34,6 +34,7 @@ const ALL_RUN: PhoneCheckReportInput = {
     status: "ok",
     value: { audioSeconds: 300, wallMs: 12_000, mp3Bytes: 2.4 * MB },
   },
+  dsp: null,
   storage: {
     status: "ok",
     value: { bytes: 50 * MB, writeMs: 2000, readMs: 500 },
@@ -70,6 +71,7 @@ describe("formatPhoneCheckReport states the MB/MiB gap once (#1014 item 2)", () 
       sha: "abc1234",
       device: null,
       encode: null,
+      dsp: null,
       storage: null,
       allocation: null,
     });
@@ -104,6 +106,9 @@ describe("formatPhoneCheckReport", () => {
         "- Speed: 25.0x realtime",
         "- MP3 size: 2.4 MB",
         "",
+        "DSP chain (1 minute of synthetic speech, in the MP3 worker)",
+        "- not run",
+        "",
         "Storage (throwaway database, deleted afterwards)",
         "- Write: 50.0 MB in 2.0 s (25.0 MB/s)",
         "- Read: 50.0 MB in 0.5 s (100.0 MB/s)",
@@ -121,12 +126,14 @@ describe("formatPhoneCheckReport", () => {
       sha: "abc1234",
       device: null,
       encode: null,
+      dsp: null,
       storage: null,
       allocation: null,
     });
     for (const heading of [
       "Device info",
       "Encode (real MP3 worker)",
+      "DSP chain (1 minute of synthetic speech, in the MP3 worker)",
       "Storage (throwaway database, deleted afterwards)",
       "Memory ceiling",
     ]) {
