@@ -585,25 +585,31 @@ export function useRecorder(): UseRecorder {
       const releaseMicClaim = claimSharedContext();
 
       try {
-        // #1111: declare a record-capable audio session BEFORE the microphone
-        // opens. WebKit's `"playback"` type (`setPlaybackAudioSession`,
-        // `audio-io.ts`) — asserted on every Play so recordings stay audible
-        // through the iPhone silent switch — is documented for playback only;
-        // switching here, ahead of `getUserMedia`, is the "if needed" case
-        // #1111 asks this fix to cover so a session left on `"playback"` by an
-        // earlier Play cannot fight the mic. Feature-checked and a no-op on
-        // every non-WebKit engine, and inside the native iOS shell (#1251),
-        // where the launch-time `.playAndRecord` category is not switched.
-        setRecordAudioSession();
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            // Speech in a noisy room, recorded on a phone held in the hand.
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        });
-        releaseMicClaim();
+        // One release site (#1421): the claim is held from here to the end of
+        // the `getUserMedia` await and let go on every exit from it, a throw
+        // included, so `pendingClaims` cannot stay up and wedge the stall drops.
+        try {
+          // #1111: declare a record-capable audio session BEFORE the microphone
+          // opens. WebKit's `"playback"` type (`setPlaybackAudioSession`,
+          // `audio-io.ts`) — asserted on every Play so recordings stay audible
+          // through the iPhone silent switch — is documented for playback only;
+          // switching here, ahead of `getUserMedia`, is the "if needed" case
+          // #1111 asks this fix to cover so a session left on `"playback"` by an
+          // earlier Play cannot fight the mic. Feature-checked and a no-op on
+          // every non-WebKit engine, and inside the native iOS shell (#1251),
+          // where the launch-time `.playAndRecord` category is not switched.
+          setRecordAudioSession();
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              // Speech in a noisy room, recorded on a phone held in the hand.
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          });
+        } finally {
+          releaseMicClaim();
+        }
 
         if (generation !== generationRef.current) {
           abandonStream(stream);
@@ -839,7 +845,6 @@ export function useRecorder(): UseRecorder {
         }
         return true;
       } catch (cause) {
-        releaseMicClaim();
         if (stream) abandonStream(stream);
         // A `cancel()` or a newer `start()` owns the state and the message now.
         // Reporting this failure over theirs is the stale-message problem
