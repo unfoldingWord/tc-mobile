@@ -205,9 +205,13 @@ describe("Share Chapter's MP3 name (#1218)", () => {
     await mount();
     await click(strings.chapterMenuOpen);
     await click(strings.shareChapter);
-    expect(mocks.prepare).toHaveBeenCalledWith(
-      "chapter",
-      strings.shareFilename("Mark", 3, "The sower")
+    expect(mocks.prepare).toHaveBeenCalledTimes(1);
+    const [chapter, nameFile] = mocks.prepare.mock.calls[0]!;
+    expect(chapter).toBe("chapter");
+    // The hook supplies the book's highest chapter number (#1233).
+    expect(nameFile(3)).toBe(strings.shareFilename("Mark", 3, "The sower"));
+    expect(nameFile(150)).toBe(
+      strings.shareFilename("Mark", 3, "The sower", 150)
     );
   });
 });

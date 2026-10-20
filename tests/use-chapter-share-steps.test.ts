@@ -9,7 +9,12 @@ import { withEncoder } from "@/hooks/mp3-codec";
 import { useChapterShare } from "@/hooks/use-chapter-share";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
 import { ENCODE_STEPS } from "@/lib/export/chapter";
-import { addChapter, addSegment, createBook } from "@/lib/storage/books";
+import {
+  addChapter,
+  addSegment,
+  createBook,
+  getChapter,
+} from "@/lib/storage/books";
 import * as clips from "@/lib/storage/clips";
 import { newClipId } from "@/lib/storage/clips";
 import { saveTake } from "@/lib/storage/takes";
@@ -125,7 +130,7 @@ it("the mounted hook's count moves through the encode and names its items", asyn
   const chapterId = await chapterWith(3);
   let prepared!: Promise<unknown>;
   act(() => {
-    prepared = hook().prepare(chapterId, "c.mp3");
+    prepared = hook().prepare(chapterId, () => "c.mp3");
   });
   await settle();
   const total = 3 + ENCODE_STEPS;
@@ -153,7 +158,7 @@ it("the mounted hook places a vanished segment's hollow dot where it is", async 
     );
   let prepared!: Promise<unknown>;
   act(() => {
-    prepared = hook().prepare(chapterId, "c.mp3");
+    prepared = hook().prepare(chapterId, () => "c.mp3");
   });
   await settle();
   spy.mockRestore();
@@ -162,4 +167,23 @@ it("the mounted hook places a vanished segment's hollow dot where it is", async 
     finish();
     await prepared;
   });
+});
+
+it("names the file with the book's highest chapter number, not the chapter's own (#1233)", async () => {
+  // A book of chapters 1 and 150: chapter 1's file is padded to three digits,
+  // the same width Share Book gives it, whatever else is being shared.
+  const chapterId = await chapterWith(1);
+  const chapter = await getChapter(chapterId);
+  await addChapter(chapter!.bookId, 150);
+  const nameFile = vi.fn((highest: number) => `c${highest}.mp3`);
+  let prepared!: Promise<unknown>;
+  act(() => {
+    prepared = hook().prepare(chapterId, nameFile);
+  });
+  await settle();
+  await act(async () => {
+    finish();
+    await prepared;
+  });
+  expect(nameFile).toHaveBeenCalledWith(150);
 });

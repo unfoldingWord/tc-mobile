@@ -672,9 +672,8 @@ export const SegmentsScreen = forwardRef<
     // superseded run) this resolves `null`, and the guard below leaves the
     // menu exactly as every one of those already did.
     void share
-      .prepare(
-        chapterId,
-        strings.shareFilename(bookName, chapterNumber, chapterName)
+      .prepare(chapterId, (highest) =>
+        strings.shareFilename(bookName, chapterNumber, chapterName, highest)
       )
       .then((outcome) => {
         if (outcome === "sent" || outcome === "dismissed") onCloseChapterMenu();
