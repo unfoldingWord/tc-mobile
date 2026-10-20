@@ -7,7 +7,7 @@ import {
   type ShareSurface,
   useShareFlow,
 } from "./share-flow";
-import { exportBookZip } from "@/lib/export/book";
+import { type ChapterNamer, exportBookZip } from "@/lib/export/book";
 import type { BookId } from "@/types/domain";
 
 export interface UseBookShare extends ShareSurface {
@@ -39,7 +39,7 @@ export interface UseBookShare extends ShareSurface {
   prepare: (
     bookId: BookId,
     zipFilename: string,
-    nameChapter: (chapterNumber: number, chapterName: string | null) => string
+    nameChapter: ChapterNamer
   ) => Promise<ShareOutcome | null>;
 }
 
@@ -73,7 +73,7 @@ export function useBookShare(): UseBookShare {
     (
       bookId: BookId,
       zipFilename: string,
-      nameChapter: (chapterNumber: number, chapterName: string | null) => string
+      nameChapter: ChapterNamer
     ): Promise<ShareOutcome | null> =>
       run((isCurrent, signal, onStep) =>
         withEncoder(signal, async (codec) => {

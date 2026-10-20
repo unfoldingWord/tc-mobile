@@ -238,7 +238,7 @@ async function addChaptersToZip(
   sink: ZipSink,
   chapters: readonly Chapter[],
   folder: string,
-  nameChapter: (chapterNumber: number, chapterName: string | null) => string,
+  nameChapter: ChapterNamer,
   codec: AudioCodec,
   shouldContinue?: () => boolean,
   onStep?: StepReporter
@@ -259,6 +259,10 @@ async function addChaptersToZip(
   // The counted chapters by id (#1044): a dangling id never reached
   // `chapters`, so a count position is not a screen position.
   const keys = chapters.map((c) => c.id);
+  // One width for every file of the book (#1233), from all its chapters, not
+  // only the ones with audio, so a chapter's name does not depend on which
+  // of its siblings were recorded.
+  const highest = Math.max(0, ...chapters.map((c) => c.number));
   if (chapters.length > 0)
     onStep?.(done, chapters.length, skipped, undefined, keys);
   for (const chapter of chapters) {
@@ -280,7 +284,7 @@ async function addChaptersToZip(
     if (shouldContinue && !shouldContinue()) return null;
     const name = uniqueEntryName(
       taken,
-      nameChapter(chapter.number, chapter.name)
+      nameChapter(chapter.number, chapter.name, highest)
     );
     taken.add(folderKey(name));
     // Stored entry: fflate computes the CRC over the MP3 and emits the buffer
@@ -362,7 +366,7 @@ async function finishZip(sink: ZipSink): Promise<void> {
  */
 export async function exportBookZip(
   bookId: BookId,
-  nameChapter: (chapterNumber: number, chapterName: string | null) => string,
+  nameChapter: ChapterNamer,
   codec: AudioCodec,
   sink: ArchiveSink,
   shouldContinue?: () => boolean,
@@ -430,6 +434,17 @@ function folderStem(label: string, position: number): string {
 export type BookLabel = Pick<Book, "name" | "number">;
 
 /**
+ * Names one chapter's MP3 from its number, its own name (`null` when it has
+ * none) and the highest chapter number in its book, which sets how wide the
+ * number is padded so every file of one book sorts in chapter order (#1233).
+ */
+export type ChapterNamer = (
+  chapterNumber: number,
+  chapterName: string | null,
+  highestNumber: number
+) => string;
+
+/**
  * Share your work (#987): every book in one zip, one folder per book, each
  * folder holding exactly the entries Share Book would put in that book's own
  * zip. Books go in the person's shelf order (`listBooks`, #338) — the order
@@ -459,7 +474,8 @@ export async function exportLibraryZip(
   nameChapter: (
     book: BookLabel,
     chapterNumber: number,
-    chapterName: string | null
+    chapterName: string | null,
+    highestNumber: number
   ) => string,
   codec: AudioCodec,
   sink: ArchiveSink,
@@ -487,7 +503,7 @@ export async function exportLibraryZip(
       zip,
       chapters,
       `${folder}/`,
-      (n, name) => nameChapter(book, n, name),
+      (n, name, highest) => nameChapter(book, n, name, highest),
       codec,
       shouldContinue
     );

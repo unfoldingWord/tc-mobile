@@ -1351,7 +1351,8 @@ export function BooksScreen({
       .prepare(
         shareMenuBook.bookId,
         strings.shareBookFilename(shareMenuBookName),
-        (n, name) => strings.shareFilename(shareMenuBookName, n, name)
+        (n, name, highest) =>
+          strings.shareFilename(shareMenuBookName, n, name, highest)
       )
       .then((outcome) => {
         if (outcome === "sent" || outcome === "dismissed") onCloseShareMenu();

@@ -4,16 +4,20 @@
  *
  * The memory ceiling runs last and, on a small phone, ends with the page
  * reloading. Without this, the report the tester copies afterwards holds only
- * the ceiling's breadcrumb and says "not run" for device, encode and storage.
- * So the hook saves these three results as each one lands, and reads them back
- * on the next open.
+ * the ceiling's breadcrumb and says "not run" for device, encode, DSP and
+ * storage. So the hook saves these results as each one lands, and reads them
+ * back on the next open. `dsp` (#1433) came later than the other three: a
+ * payload saved before it existed has no `dsp` key, and reads as `dsp: null`.
  *
  * Pure: the store is `hooks/phone-check-probes.ts`'s. Parsing never throws —
  * it runs on the screen's first render — and a section that is not the shape
  * this version writes is dropped on its own, not with the others.
  */
+import type { DspBenchResult } from "@/types/audio";
+
 import type {
   DeviceInfo,
+  DspResult,
   EncodeResult,
   ProbeOutcome,
   StorageResult,
@@ -22,6 +26,7 @@ import type {
 export interface SavedChecks {
   readonly device: ProbeOutcome<DeviceInfo> | null;
   readonly encode: ProbeOutcome<EncodeResult> | null;
+  readonly dsp: ProbeOutcome<DspResult> | null;
   readonly storage: ProbeOutcome<StorageResult> | null;
 }
 
@@ -64,6 +69,38 @@ function isEncodeResult(v: unknown): v is EncodeResult {
   );
 }
 
+const DSP_STAGES = [
+  "highPass",
+  "kWeight",
+  "truePeak",
+  "gain",
+  "limiter",
+] as const;
+
+function isDspBenchResult(v: unknown): v is DspBenchResult {
+  if (!isFields(v)) return false;
+  const stages = v.stageMs;
+  return (
+    isFiniteNumber(v.audioSeconds) &&
+    isFiniteNumber(v.chunks) &&
+    isFiniteNumber(v.measureMs) &&
+    isFiniteNumber(v.applyMs) &&
+    isFields(stages) &&
+    DSP_STAGES.every((stage) => isFiniteNumber(stages[stage])) &&
+    isFiniteNumber(v.slowestChunkMs) &&
+    isFiniteNumber(v.workingSetBytes) &&
+    isFiniteNumber(v.checksum) &&
+    isNumberOrNull(v.loudnessLufs) &&
+    isNumberOrNull(v.truePeakDbtp) &&
+    isFiniteNumber(v.gainDb) &&
+    isFiniteNumber(v.limiterMaxReductionDb)
+  );
+}
+
+function isDspResult(v: unknown): v is DspResult {
+  return isFields(v) && isDspBenchResult(v.cold) && isDspBenchResult(v.warm);
+}
+
 function isStorageResult(v: unknown): v is StorageResult {
   return (
     isFields(v) &&
@@ -101,6 +138,7 @@ export function parseSavedChecks(raw: string | null): SavedChecks | null {
   return {
     device: parseOutcome(value.device, isDeviceInfo),
     encode: parseOutcome(value.encode, isEncodeResult),
+    dsp: parseOutcome(value.dsp, isDspResult),
     storage: parseOutcome(value.storage, isStorageResult),
   };
 }

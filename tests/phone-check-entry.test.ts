@@ -56,6 +56,7 @@ describe("the build-stamp reveal gesture", () => {
 const IDLE: PhoneCheckState = {
   device: null,
   encode: null,
+  dsp: null,
   storage: null,
   allocation: null,
   activity: null,
@@ -151,9 +152,9 @@ describe("PhoneCheckView", () => {
     );
   });
 
-  // #1014 item 7: "Done" must mean all three of steps 1-3 landed, not that
+  // #1014 item 7: "Done" must mean every step of Start landed, not that
   // the first one did. A reload mid-run restores whichever of `device`,
-  // `encode` and `storage` `readSavedChecks` found, and leaves the rest
+  // `encode`, `dsp` and `storage` `readSavedChecks` found, and leaves the rest
   // `null` — the shape a restore leaves things in, checked directly rather
   // than through `usePhoneCheck` (its own tests own that wiring).
   const FAILED_DEVICE = { status: "failed", errorName: "X" } as const;
@@ -174,12 +175,13 @@ describe("PhoneCheckView", () => {
     expect(status.textContent).toBe("");
   });
 
-  it("says Done once all three have landed, failed or not", () => {
+  it("says Done once all four have landed, failed or not", () => {
     const status = one(
       view({
         ...IDLE,
         device: FAILED_DEVICE,
         encode: FAILED_DEVICE,
+        dsp: FAILED_DEVICE,
         storage: FAILED_DEVICE,
       }),
       '[data-phone-check="status"]'

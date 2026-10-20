@@ -467,7 +467,7 @@ async function readChunkBase64(file: File, at: number): Promise<string> {
  * MIME type off it (`SharePlugin.getMimeType`).
  *
  * **No raw space, either** (George R6 P2). `shareFilename` (strings.ts) always
- * interpolates one — "Genesis - Chapter 1.mp3" — and this segment is what
+ * interpolates one — "Genesis - 01 Chapter 1.mp3" — and this segment is what
  * `Share.share`'s URI ends in. Android's `MimeTypeMap.getFileExtensionFromUrl`
  * reads the MIME type off that same URI string with an allowlist
  * (`[a-zA-Z_0-9.\-()%]+`) that does not include a literal space; if the URI
