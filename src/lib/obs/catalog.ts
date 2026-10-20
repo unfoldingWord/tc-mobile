@@ -57,9 +57,9 @@ export async function listStories(): Promise<
  * docs/research/prior-art.md §4. This addressing is internally consistent and
  * burrito-shaped, but exporting OBS audio as a valid burrito remains unsolved.
  *
- * @pivotpending No caller yet. #253 (Template Library, storage half) names
- * this function directly as the `SegmentRef` writer for an OBS-derived
- * segment's `reference`.
+ * @pivotpending No caller yet. #253 (Template Library, storage half) named
+ * this function as the `SegmentRef` writer; since v12 (#1462) a `SegmentRef`
+ * stores numbers, so a scope string like this one is an export output.
  */
 export function obsFrameScope(story: number, frame: number): string {
   return `${story}:${frame}`;
@@ -96,8 +96,7 @@ export function thumbUrl(story: number, frame: number): string {
 
 /**
  * @pivotpending No caller yet. Inferred companion to {@link obsFrameScope}
- * for an OBS-derived `SegmentRef` ("OBS" the book, `obsFrameScope`'s result
- * the scope) — #253's body names `obsFrameScope` but does not name this
- * constant.
+ * for an OBS-derived `SegmentRef` ("OBS" the book) — #253's body names
+ * `obsFrameScope` but does not name this constant.
  */
 export const OBS_BOOK_CODE = "OBS";
