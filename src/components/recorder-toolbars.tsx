@@ -139,8 +139,9 @@ export function RecorderToolbar({
         // re-records whole passages sees it without opening a menu. The
         // eraser, not the bin: this clears the audio and keeps the segment,
         // and the bin is kept for Delete, which removes the segment (the
-        // DRI's 2026-09-28 pick on #1119: "Clear and record again" with the
-        // same icon as Clear everywhere else). Left end, away from the hero
+        // DRI's 2026-09-28 pick on #1119: the same icon as the erase
+        // everywhere else; the requirements owner's one verb for removing a
+        // recording, "Reset", names it, #1233). Left end, away from the hero
         // Record, so the destructive control is not the one under a thumb
         // reaching to record; the confirm is the second tap either way.
         // Always drawn, so the bar does not re-lay out when a first take

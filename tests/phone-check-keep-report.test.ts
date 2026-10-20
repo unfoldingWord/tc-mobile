@@ -233,6 +233,33 @@ describe("an aborted phone-check run keeps the earlier report", () => {
     expect(savedNow()).toEqual(EARLIER);
   });
 
+  it("shows a screen remounted during the wind-down as busy until the slot is released", async () => {
+    await mountWithEarlier();
+    let open!: () => void;
+    seam.deviceGate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    await act(async () => start?.());
+    await act(async () => root.unmount());
+
+    root = createRoot(container);
+    await act(async () => root.render(createElement(Owner)));
+    try {
+      // The slot is still held by the run winding down, so Start would return
+      // without doing anything: the screen must read as busy, not idle.
+      expect(isPhoneCheckRunning()).toBe(true);
+      expect(latest?.activity).toEqual({ kind: "stopping" });
+    } finally {
+      // Released either way, so a red here cannot hold the module-wide slot
+      // for every later case.
+      open();
+    }
+    await vi.waitFor(() => {
+      expect(latest?.activity).toBeNull();
+    });
+    expect(isPhoneCheckRunning()).toBe(false);
+  });
+
   it("restores the earlier report whole after a partial run, and a released probe cannot undo it", async () => {
     await mountWithEarlier();
     let openEncode!: () => void;
