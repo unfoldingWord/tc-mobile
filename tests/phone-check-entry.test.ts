@@ -116,6 +116,7 @@ describe("PhoneCheckView", () => {
     expect(close(view(IDLE))).toBe(false);
     for (const activity of [
       { kind: "waiting" },
+      { kind: "stopping" },
       { kind: "device" },
       { kind: "encode" },
       { kind: "storage" },
@@ -123,6 +124,21 @@ describe("PhoneCheckView", () => {
     ] as const) {
       expect(close(view({ ...IDLE, activity }))).toBe(true);
     }
+  });
+
+  // #1379: a screen opened while a closed screen's run winds down. Start would
+  // return without doing anything until that run lets go of the slot.
+  it("shows the wind-down of an earlier run as busy, with both Starts disabled", () => {
+    const root = view({ ...IDLE, activity: { kind: "stopping" } });
+    expect(
+      one(root, '[data-phone-check="start"]').hasAttribute("disabled")
+    ).toBe(true);
+    expect(
+      one(root, '[data-phone-check="memory"]').hasAttribute("disabled")
+    ).toBe(true);
+    expect(one(root, '[data-phone-check="status"]').textContent).toBe(
+      strings.phoneCheckRunStopping
+    );
   });
 
   it("shows a reload recovered from the breadcrumb in the report", () => {
