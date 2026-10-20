@@ -88,7 +88,8 @@ export function hasAudioSessionApi(): boolean {
 
 /**
  * Whether this page runs inside the native iOS shell, where the Record
- * setter below leaves `navigator.audioSession` alone (#1251, #1518).
+ * setter below writes `"auto"` rather than `"play-and-record"` (#1251,
+ * #1518).
  *
  * The Capacitor iOS app sets `AVAudioSession` to `.playAndRecord` with
  * `.defaultToSpeaker` and the Bluetooth options once, at launch
@@ -104,8 +105,10 @@ export function hasAudioSessionApi(): boolean {
  * cause, inferred from the code and from #1100 (the same symptom before
  * #1116 added the `"playback"` declaration) and not run on a device, is that
  * WebKit puts a Web-Audio-only page with no declared type on a category that
- * follows the switch. So the Play declaration is back in the shell, and only
- * the Record switch stays off there.
+ * follows the switch. So the Play declaration is back in the shell. Before
+ * each Record there, the type is handed back to WebKit (`"auto"`) so a take
+ * is never captured under `"playback"` — the coordinator's decision on
+ * #1518, not run on a device.
  *
  * Reads the build from `readSharePlatform()` (`share-target.ts`), the
  * repo's one reading of `Capacitor.getPlatform()`. Safari, the installed
@@ -130,13 +133,12 @@ function inNativeIosShell(): boolean {
  * left on `"play-and-record"` (see `setRecordAudioSession`) without this
  * module needing its own "recording just ended" hook.
  *
- * Runs inside the native iOS shell too (#1518). There the write replaces the
- * launch-time `.playAndRecord` category for the rest of the page's life,
- * because the Record setter below does not switch it back, and #1116's
- * review says the web API cannot restore `.defaultToSpeaker` or the
- * Bluetooth options. Whether that keeps Play audible with the silent switch
- * on and on the loudspeaker, and whether a later take still records under
- * it, has not been run on a device (#1518).
+ * Runs inside the native iOS shell too (#1518). There the write may replace
+ * the launch-time `.playAndRecord` category until the next Record hands the
+ * type back to `"auto"` (`setRecordAudioSession` below), and #1116's review
+ * says the web API cannot restore `.defaultToSpeaker` or the Bluetooth
+ * options. Whether that keeps Play audible with the silent switch on and on
+ * the loudspeaker has not been run on a device (#1518).
  *
  * Feature-checked and a no-op wherever `navigator.audioSession` does not
  * exist: every engine besides Safari/WebKit 16.4+, and every already-shipped
@@ -158,19 +160,21 @@ export function setPlaybackAudioSession(): void {
  * can play while this type is live, and the next Play reasserts `"playback"`
  * (`setPlaybackAudioSession` above) before it plays.
  *
- * Does nothing inside the native iOS shell (#1251, kept by #1518,
- * `inNativeIosShell`). There, after any Play, a take starts with the type
- * still `"playback"`, which may have replaced the launch-time
- * `.playAndRecord` category. Whether capture works under that declared type
- * inside WKWebView has not been run on a device (#1518).
+ * Inside the native iOS shell (`inNativeIosShell`) it writes `"auto"`
+ * instead (#1518, the coordinator's decision). A Play there has declared
+ * `"playback"`, so without this a take after any Play would start under a
+ * type documented for playback only. `"auto"` hands the choice back to
+ * WebKit, which is meant to pick a record-capable category for capture,
+ * rather than forcing `"play-and-record"`, which #1251 suspected and which
+ * may drop `.defaultToSpeaker`. That WebKit behaviour is inference; none of
+ * it has been run on a device (#1518).
  *
  * Feature-checked and a no-op wherever `navigator.audioSession` does not
  * exist. Never throws.
  */
 export function setRecordAudioSession(): void {
-  if (inNativeIosShell()) return;
   const session = getAudioSession();
-  if (session) session.type = "play-and-record";
+  if (session) session.type = inNativeIosShell() ? "auto" : "play-and-record";
 }
 
 export function isRecordingSupported(): boolean {
