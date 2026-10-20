@@ -344,7 +344,7 @@ export const stringsEn = {
   // The recorder menu's mid-take Stop tile (#369); its name is `stop`.
   tileStop: "Stop",
   tileRename: "Rename",
-  // Clear removes a segment's audio and keeps the segment; Delete below
+  // Reset removes a segment's audio and keeps the segment; Delete below
   // removes the segment. Key names keep "erase" (the code's word for the
   // operation). The tile's caption is "Reset", one word of `eraseSegment`
   // ("Reset segment and start over", #1220), so the visible caption stays a
@@ -444,7 +444,7 @@ export const stringsEn = {
   // — most often a transient iOS "interrupted" AudioContext (#106), not a
   // corrupt clip. The sheet is a full panel, not a blank: the recording is
   // untouched, "Try again" resumes the context and re-decodes, and Back returns
-  // to the Segments list, where the row's Clear (which does not decode) works.
+  // to the Segments list, where the row's Reset (which does not decode) works.
   loadFailedTitle: "This recording could not be opened",
   loadFailedBody:
     "Your recording is safe. Try again, or go back to clear it from the list.",
@@ -674,12 +674,12 @@ export const stringsEn = {
   // ── Live waveform (#120) ─────────────────────────────────────────────────
   liveWaveform: "Live recording waveform",
 
-  // ── VU meter + Clear (erase) Segment (B6) ────────────────────────────────
+  // ── VU meter + Reset (erase) Segment (B6) ────────────────────────────────
   vuMeterLabel: "Recording level",
   vuMeterUnavailable: "Level meter unavailable on this device",
-  // Clear: removes the recording, keeps the segment (#1119, DRI 2026-09-28).
+  // Reset: removes the recording, keeps the segment (#1119, DRI 2026-09-28).
   eraseSegment: "Reset segment and start over",
-  // The record bar's Clear (#592): the same clear and the same confirm as the
+  // The record bar's row (#592): the same reset and the same confirm as the
   // menu row above, named for what the translator is doing — starting the
   // segment over — because the sheet stays open, ready for the next take.
   rerecord: "Clear and record again",
