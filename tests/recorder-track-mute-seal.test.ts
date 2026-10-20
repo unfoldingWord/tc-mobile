@@ -44,6 +44,14 @@ import { restingErase } from "./support";
  * scope's pull is observable too: a non-null scope while recording, null once
  * the take is frozen.
  *
+ * The same harness carries R13 (requirements owner, 2026-10-19: "A visible
+ * “recording stopped” state that saves what was captured"): when no event
+ * fires at all and the level tap reports exact silence on a running clock
+ * (`onCaptureSilent`, `tests/level-tap-capture-silence.test.ts`), the take
+ * is sealed the way the 20-minute cap seals it, with one
+ * `"recorder-capture-stalled"` row. The faked tap here hands that callback
+ * to the case, which calls it as the real tap would.
+ *
  * What it does NOT observe: that an alarm on any phone fires `mute` (or
  * anything at all) on the capture track, or what a real engine's
  * `MediaRecorder` writes while its track is muted. The report's build and
@@ -53,6 +61,8 @@ import { restingErase } from "./support";
 const mocks = vi.hoisted(() => ({
   reportFailure: vi.fn(),
   decodeToCanonical: vi.fn(),
+  /** The options the hook handed the latest level tap (R13, below). */
+  tapOptions: null as { onCaptureSilent?: () => void } | null | undefined,
 }));
 
 vi.mock("@/hooks/report-failure", () => ({
@@ -63,13 +73,19 @@ vi.mock("@/hooks/report-failure", () => ({
 const liveFrame = new Float32Array([0.2, -0.1, 0.3, -0.25]);
 
 vi.mock("@/hooks/audio-io", () => ({
-  createLevelTap: () => ({
-    read: () => 0.2,
-    readFrame: () => liveFrame,
-    available: () => true,
-    disconnect: () => {},
-    close: () => {},
-  }),
+  createLevelTap: (
+    _stream: unknown,
+    options?: { onCaptureSilent?: () => void }
+  ) => {
+    mocks.tapOptions = options;
+    return {
+      read: () => 0.2,
+      readFrame: () => liveFrame,
+      available: () => true,
+      disconnect: () => {},
+      close: () => {},
+    };
+  },
   decodeToCanonical: mocks.decodeToCanonical,
   decodeMp3ToCanonical: vi.fn(),
   isRecordingSupported: () => true,
@@ -192,6 +208,7 @@ beforeEach(() => {
     value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
   });
   mocks.reportFailure.mockReset();
+  mocks.tapOptions = null;
   mocks.decodeToCanonical.mockReset();
   mocks.decodeToCanonical.mockImplementation(async (blob: Blob) =>
     blob.size > 0 ? captured : new Int16Array(0)
@@ -447,5 +464,177 @@ describe("the sheet: a take whose track goes muted", () => {
     expect(track.stopped).toBe(true);
     expect(ref.current?.audio.recorderState).toBe("idle");
     expect(interruptionRows()).toHaveLength(1);
+  });
+});
+
+/** The rows written under R13's key. */
+function stallRows(): unknown[][] {
+  return mocks.reportFailure.mock.calls.filter(
+    (call) => call[1] === "recorder-capture-stalled"
+  );
+}
+
+/** What the real tap does after five seconds of exact zeros. */
+function tapReadsSilence(): void {
+  const onCaptureSilent = mocks.tapOptions?.onCaptureSilent;
+  if (!onCaptureSilent) {
+    throw new Error("the hook gave the tap no onCaptureSilent");
+  }
+  onCaptureSilent();
+}
+
+describe("the recorder hook: capture goes silent with no event (R13)", () => {
+  type Harness = { recorder: UseRecorder };
+
+  const Probe = forwardRef<Harness>((_props, ref) => {
+    const recorder = useRecorder();
+    useImperativeHandle(ref, () => ({ recorder }), [recorder]);
+    return null;
+  });
+
+  async function startATake() {
+    const ref = createRef<Harness>();
+    await act(async () => {
+      root.render(createElement(Probe, { ref }));
+    });
+    await act(async () => {
+      await ref.current?.recorder.start();
+      await settle();
+    });
+    expect(ref.current?.recorder.state).toBe("recording");
+    return ref;
+  }
+
+  it("with no silence reported, a take keeps recording and logs nothing", async () => {
+    const ref = await startATake();
+    await advance(60_000);
+    expect(ref.current?.recorder.state).toBe("recording");
+    expect(ref.current?.recorder.elapsedMs).toBe(60_000);
+    expect(mocks.reportFailure).not.toHaveBeenCalled();
+  });
+
+  it("freezes at processing with the clock stopped, one row, and the native recorder left for the commit's flush", async () => {
+    const ref = await startATake();
+    const recorder = FakeMediaRecorder.last!;
+    await advance(7_000);
+
+    await act(async () => {
+      tapReadsSilence();
+    });
+
+    expect(ref.current?.recorder.state).toBe("processing");
+    expect(ref.current?.recorder.readScope()).toBeNull();
+    expect(recorder.stopCalls).toBe(0);
+    expect(track.stopped).toBe(false);
+    expect(stallRows()).toHaveLength(1);
+    expect(mocks.reportFailure).toHaveBeenCalledOnce();
+
+    // The timer stops where the seal landed, and a second report is a no-op.
+    await advance(60_000);
+    await act(async () => {
+      tapReadsSilence();
+    });
+    expect(ref.current?.recorder.elapsedMs).toBe(7_000);
+    expect(stallRows()).toHaveLength(1);
+  });
+
+  it("a report from a cancelled take's tap changes nothing", async () => {
+    const ref = await startATake();
+    await act(async () => {
+      ref.current!.recorder.cancel();
+    });
+    await act(async () => {
+      tapReadsSilence();
+    });
+    expect(ref.current?.recorder.state).toBe("idle");
+    expect(stallRows()).toEqual([]);
+  });
+
+  it("an earlier take's tap cannot seal the take that replaced it", async () => {
+    const ref = await startATake();
+    const earlier = mocks.tapOptions?.onCaptureSilent;
+    expect(earlier).toBeDefined();
+    await act(async () => {
+      ref.current!.recorder.cancel();
+    });
+    await act(async () => {
+      await ref.current?.recorder.start();
+      await settle();
+    });
+    expect(ref.current?.recorder.state).toBe("recording");
+
+    await act(async () => {
+      earlier!();
+    });
+
+    expect(ref.current?.recorder.state).toBe("recording");
+    expect(stallRows()).toEqual([]);
+  });
+});
+
+describe("the sheet: a take whose capture goes silent with no event (R13)", () => {
+  type Harness = { audio: UseAudioSession };
+
+  const Screen = forwardRef<Harness>((_props, ref) => {
+    const audio = useAudioSession();
+    useImperativeHandle(ref, () => ({ audio }), [audio]);
+    return createElement(Recorder, {
+      segmentId: "segment" as SegmentId,
+      audio,
+      erase,
+      saveRecording,
+      saveEditedSegment: vi.fn().mockResolvedValue(true),
+      clipboard: null,
+      onClipboardChange: vi.fn(),
+      databaseUnreachable: false,
+      onExit: vi.fn(),
+      onRequestBack: vi.fn(),
+    });
+  });
+
+  it("saves what was captured and leaves the recorder at rest, not recording", async () => {
+    const ref = createRef<Harness>();
+    await act(async () => {
+      root.render(createElement(Screen, { ref }));
+    });
+    const record = [...document.querySelectorAll("button")].find(
+      (b) => b.getAttribute("aria-label") === strings.record
+    );
+    expect(record, "Record").toBeDefined();
+    await act(async () => {
+      record!.click();
+      await settle();
+    });
+    const recorder = FakeMediaRecorder.last!;
+    expect(ref.current?.audio.recorderState).toBe("recording");
+    recorder.slice("one");
+    recorder.slice("two");
+
+    await act(async () => {
+      tapReadsSilence();
+      await settle();
+    });
+    expect(ref.current?.audio.recorderState).toBe("processing");
+    expect(recorder.stopCalls).toBe(1);
+
+    await act(async () => {
+      recorder.deliverFinal();
+      await settle();
+    });
+    await drain();
+
+    expect(saveRecording).toHaveBeenCalledOnce();
+    expect(saveRecording).toHaveBeenCalledWith(
+      "segment",
+      original,
+      captured,
+      original.length,
+      false
+    );
+    const blob = mocks.decodeToCanonical.mock.calls[0]?.[0] as Blob;
+    expect(blob.size).toBe("onetwofinal".length);
+    expect(track.stopped).toBe(true);
+    expect(ref.current?.audio.recorderState).toBe("idle");
+    expect(stallRows()).toHaveLength(1);
   });
 });

@@ -42,6 +42,8 @@ function activityLine(activity: PhoneCheckActivity): string | null {
   switch (activity.kind) {
     case "waiting":
       return strings.phoneCheckRunWaiting;
+    case "stopping":
+      return strings.phoneCheckRunStopping;
     case "device":
       return strings.phoneCheckRunDevice;
     case "encode":
