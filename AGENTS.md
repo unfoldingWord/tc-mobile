@@ -892,12 +892,12 @@ build at that schema or later is served or installed again. On staging
 `use-database-status.ts` maps that to `reloadNeeded`, and `database-panel.tsx`
 shows `dbOutOfDate` and `dbOutOfDateTeach` ("This copy is out of date." and
 "Restart to use the new version."); Restart leads back to the same screen
-(inference). All of this was read from the code, not seen on a device. v1.1.0 is the current instance: it moves the schema from 9 to 11
-(v10 and v11 in #1346 and #1367). **Roll forward with a fix rather than back
-when the build to undo raised the schema, and never uninstall to clear the
-screen: uninstalling deletes the recordings.** The Node run that showed this
-(staging's `db.ts` against a v11 database) is the only run; no device has
-seen it. `docs/release/promotion-v1.0.0.md` §5 has the procedure.
+(inference). All of this was read from the code, not seen on a device.
+v1.1.0 moved the schema from 9 to 11 (v10 and v11 in #1346 and #1367), and
+v1.2.0 moves it from 11 to 12 (#1462). **Roll forward with a fix rather than
+back when the build to undo raised the schema, and never uninstall to clear the
+screen: uninstalling deletes the recordings.**
+`docs/release/promotion-v1.0.0.md` §5 has the procedure.
 
 ## Device testing — the HTTPS caveat
 

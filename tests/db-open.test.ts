@@ -17,7 +17,7 @@ import {
 // the name and the version the app requests. Kept in sync by hand — there is
 // nothing else to key them off. (Mirrors tests/db-migration.test.ts.)
 const DB_NAME = "tc-mobile";
-const APP_VERSION = 11;
+const APP_VERSION = 12;
 
 /**
  * Delete the database outright so each case starts from a true fresh install,
@@ -292,6 +292,121 @@ describe("getDb — version downgrade (stored data is newer than this build)", (
     const db = await getDb();
     expect(db.version).toBe(APP_VERSION);
     await closeDb();
+  });
+});
+
+/**
+ * Every store's rows, the clip bytes as plain arrays and the stored version,
+ * read by a raw `openDB` with no version, so reading upgrades nothing.
+ */
+async function readEverything() {
+  const db = await openDB(DB_NAME);
+  const stores = Array.from(db.objectStoreNames).filter(
+    (s) => s !== "clipData"
+  );
+  const rows = Object.fromEntries(
+    await Promise.all(stores.map(async (s) => [s, await db.getAll(s)] as const))
+  );
+  const clipKeys = (await db.getAllKeys("clipData")).map(String);
+  const clips = Object.fromEntries(
+    await Promise.all(
+      clipKeys.map(
+        async (k) =>
+          [
+            k,
+            Array.from(
+              new Uint8Array((await db.get("clipData", k)) as ArrayBuffer)
+            ),
+          ] as const
+      )
+    )
+  );
+  const read = { version: db.version, rows, clips };
+  db.close();
+  return read;
+}
+
+/** A real shelf, written through the app's own writers at this build's version. */
+async function writeShelf(): Promise<void> {
+  const { createBook, addChapter, addSegment } =
+    await import("@/lib/storage/books");
+  const { saveTake } = await import("@/lib/storage/takes");
+  const book = await createBook("Mark", "swh", 10);
+  const chapter = await addChapter(book.id);
+  for (const n of [1, 2]) {
+    const segment = await addSegment(chapter.id);
+    await saveTake(
+      segment.id,
+      `clip-${n}` as never,
+      Int16Array.from([n, -n, 3, 4]),
+      48_000,
+      { now: 20 + n }
+    );
+  }
+}
+
+describe("roll forward only: the v12 database and an older build (#1462)", () => {
+  it("a v12 database holding a real shelf refuses a v11 open and keeps every row, clip byte and its version", async () => {
+    // State 1. A v11 build cannot be loaded here (`DB_VERSION` is a module
+    // constant), so the v11 build's open is a raw `openDB` at 11 — the request
+    // that build makes — and the app's own mapping of that refusal is pinned
+    // just below, by a newer database meeting this build.
+    await writeShelf();
+    await closeDb();
+    const before = await readEverything();
+    expect(before.version).toBe(APP_VERSION);
+    expect(before.rows.segments).toHaveLength(2);
+    expect(Object.keys(before.clips)).toHaveLength(2);
+
+    await expect(openDB(DB_NAME, APP_VERSION - 1)).rejects.toMatchObject({
+      name: "VersionError",
+    });
+
+    expect(await readEverything()).toEqual(before);
+  });
+
+  it("this build meeting a newer database holding a shelf rejects with DatabaseDowngradeError and writes nothing", async () => {
+    await writeShelf();
+    await closeDb();
+    // A newer build has opened it: the version moves past this build's.
+    (await openNewerThanApp()).close();
+    const before = await readEverything();
+    expect(before.version).toBe(APP_VERSION + 1);
+
+    await expect(getDb()).rejects.toMatchObject({
+      name: "DatabaseDowngradeError",
+    });
+
+    expect(await readEverything()).toEqual(before);
+  });
+
+  it("a v11 database opens cleanly at 12", async () => {
+    // State 2: the harness above, the other way round.
+    const v11 = await openDB(DB_NAME, APP_VERSION - 1, {
+      upgrade(db) {
+        db.createObjectStore("books", { keyPath: "id" });
+        db.createObjectStore("chapters", { keyPath: "id" }).createIndex(
+          "bookId",
+          "bookId"
+        );
+        db.createObjectStore("segments", { keyPath: "id" }).createIndex(
+          "chapterId",
+          "chapterId"
+        );
+        db.createObjectStore("takes", { keyPath: "id" }).createIndex(
+          "segmentId",
+          "segmentId"
+        );
+        db.createObjectStore("clipMeta", { keyPath: "id" });
+        db.createObjectStore("clipData");
+        db.createObjectStore("failures", { autoIncrement: true });
+      },
+    });
+    v11.close();
+
+    const db = await getDb();
+    expect(db.version).toBe(APP_VERSION);
+    expect(Array.from(db.objectStoreNames)).toHaveLength(9);
   });
 });
 

@@ -10,6 +10,7 @@ import type { ShareProgress } from "@/hooks/share-progress";
 import type { Layer } from "@/lib/nav/layer-stack";
 import type { Book, BookId } from "@/types/domain";
 import type { BookCard } from "@/types/view";
+import { BOOK_V12_FIELDS } from "./row-fields";
 
 /**
  * #395 items 1, 2 and 3 — the busy/Notice wiring #384 added, and the three
@@ -37,6 +38,7 @@ const fakeBook = (): Book => ({
   updatedAt: 0,
   coverColourKey: null,
   shelfPosition: 0,
+  ...BOOK_V12_FIELDS,
 });
 
 // What `useBooks().createBook` actually resolves to (`use-books.ts`'s

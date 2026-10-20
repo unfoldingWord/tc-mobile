@@ -1,7 +1,7 @@
 # Design: the v12 schema freeze (#1461)
 
-**Status:** frozen for the migration (#1462) and its write paths (#1463), pending
-merge of this document · **Date:** 2026-10-19 · **Tracking:**
+**Status:** frozen for the migration (#1462) and its write paths (#1463) ·
+**Date:** 2026-10-19 · **Tracking:**
 [#1461](https://github.com/unfoldingWord/tc-mobile/issues/1461), lead issue
 [#174](https://github.com/unfoldingWord/tc-mobile/issues/174)
 

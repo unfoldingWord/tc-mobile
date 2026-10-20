@@ -18,6 +18,7 @@ import {
 } from "@/lib/storage/transcode";
 import type { AudioCodec, Clip } from "@/types/audio";
 import type { ChapterId, ClipId, SegmentId, TakeId } from "@/types/domain";
+import { ROW_V12_FIELDS } from "./row-fields";
 
 /**
  * #1009, Frank R1 P2 on #1013: the background transcode sweep must not run
@@ -50,6 +51,7 @@ function resolvedPcm(segmentId: SegmentId, clipId: ClipId): SegmentAudio<Clip> {
       label: null,
       activeTakeId: "take" as TakeId,
       status: "affirmed",
+      ...ROW_V12_FIELDS,
     },
     take: {
       id: "take" as TakeId,
