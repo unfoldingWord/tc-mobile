@@ -47,11 +47,16 @@ import {
 import {
   MB,
   type DeviceInfo,
+  type DspResult,
   type EncodeResult,
   type ProbeOutcome,
   type StorageResult,
 } from "@/lib/phone-check/report";
-import { ENCODE_PROBE_SECONDS, speechLikePcm } from "@/lib/phone-check/speech";
+import {
+  DSP_PROBE_SECONDS,
+  ENCODE_PROBE_SECONDS,
+  speechLikePcm,
+} from "@/lib/phone-check/speech";
 
 /** The `reportFailure` context for everything the phone check raises. */
 export const PHONE_CHECK_CONTEXT = "phone-check";
@@ -193,6 +198,31 @@ export function runWorkerEncodeProbe(
   );
 }
 
+/** A codec with no `benchDsp` (#1433): only a test fake can be one. */
+class DspBenchUnavailableError extends Error {
+  override name = "DspBenchUnavailableError";
+}
+
+/**
+ * The DSP benchmark (#1433 step 1): one minute of synthetic speech through
+ * the benchmark chain, run twice in the MP3 worker on one turn of the app's
+ * encoder lane — `cold` first, then `warm` straight after, so a tester sees a
+ * first run and a steady one. The worker builds its own speech, so nothing
+ * here is timed but the chain. A benchmark failure never counts towards the
+ * encoder's health (`DspBenchFailedError`, `hooks/mp3-codec.ts`); a worker
+ * that dies or stalls mid-run still does, as any encode would.
+ */
+export function runDspProbe(signal?: AbortSignal): Promise<DspResult> {
+  return withEncoder(signal, async (codec) => {
+    if (codec.benchDsp === undefined) throw new DspBenchUnavailableError();
+    const cold = await codec.benchDsp(DSP_PROBE_SECONDS);
+    // A cancel between the runs starts no second one.
+    signal?.throwIfAborted();
+    const warm = await codec.benchDsp(DSP_PROBE_SECONDS);
+    return { cold, warm };
+  });
+}
+
 /** A read-back that did not return what was written. */
 class StorageReadbackError extends Error {
   override name = "StorageReadbackError";
@@ -329,7 +359,7 @@ export function writeAllocationBreadcrumb(
   }
 }
 
-/** Where steps 1-3 keep their results, so a reload in step 4 cannot lose them. */
+/** Where Start's steps keep their results, so a reload in the memory ceiling cannot lose them. */
 export const SAVED_CHECKS_KEY = "tc-mobile:phone-check:results";
 
 /** Steps 1-3's saved results, if any. Never throws. */

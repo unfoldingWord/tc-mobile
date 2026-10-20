@@ -54,13 +54,19 @@ const FULL: SavedChecks = {
     status: "ok",
     value: { audioSeconds: 300, wallMs: 12_000, mp3Bytes: 2_400_000 },
   },
+  dsp: null,
   storage: { status: "failed", errorName: "QuotaExceededError" },
 };
 
 describe("saved step 1-3 results", () => {
   it("round-trip through their serialized form", () => {
     expect(parseSavedChecks(serializeSavedChecks(FULL))).toEqual(FULL);
-    const none: SavedChecks = { device: null, encode: null, storage: null };
+    const none: SavedChecks = {
+      device: null,
+      encode: null,
+      dsp: null,
+      storage: null,
+    };
     expect(parseSavedChecks(serializeSavedChecks(none))).toEqual(none);
   });
 
@@ -80,6 +86,7 @@ describe("saved step 1-3 results", () => {
     expect(parseSavedChecks(raw)).toEqual({
       device: null,
       encode: FULL.encode,
+      dsp: null,
       storage: null,
     });
   });
@@ -114,6 +121,7 @@ describe("the phone check's first state", () => {
     const empty = {
       device: null,
       encode: null,
+      dsp: null,
       storage: null,
       allocation: null,
       activity: null,

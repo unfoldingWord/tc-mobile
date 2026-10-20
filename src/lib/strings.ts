@@ -1447,6 +1447,7 @@ export const stringsEn = {
   phoneCheckRunStopping: "Stopping the last check.",
   phoneCheckRunDevice: "Reading device info.",
   phoneCheckRunEncode: "Encoding 5 minutes of test audio.",
+  phoneCheckRunDsp: "Processing 1 minute of test audio, twice.",
   phoneCheckRunStorage: "Writing and reading 50 MB of test audio.",
   phoneCheckDone: "Done.",
   phoneCheckMemoryTitle: "Memory ceiling",

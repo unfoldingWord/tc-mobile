@@ -11,6 +11,7 @@ import {
   type PhoneCheckState,
 } from "@/hooks/use-phone-check";
 import type { SavedChecks } from "@/lib/phone-check/saved-results";
+import type { DspBenchResult } from "@/types/audio";
 
 /**
  * #1379 item 4: an aborted run leaves the earlier report in place. The probes
@@ -20,6 +21,7 @@ import type { SavedChecks } from "@/lib/phone-check/saved-results";
 const seam = vi.hoisted(() => ({
   deviceGate: null as Promise<void> | null,
   encodeGate: null as Promise<void> | null,
+  dspGate: null as Promise<void> | null,
   deviceFails: false,
   throwOnWriteCall: 0,
   writeCalls: 0,
@@ -63,9 +65,39 @@ vi.mock("@/hooks/phone-check-probes", async (importOriginal) => {
       await seam.encodeGate;
       return { audioSeconds: 2, wallMs: 2, mp3Bytes: 2 };
     },
+    runDspProbe: async () => {
+      await seam.dspGate;
+      const run = benchResult(2);
+      return { cold: run, warm: run };
+    },
     runStorageProbe: () => Promise.resolve({ bytes: 2, writeMs: 2, readMs: 2 }),
   };
 });
+
+/** A DSP benchmark run whose every figure is `n`, so two runs are told apart. */
+function benchResult(n: number): DspBenchResult {
+  return {
+    audioSeconds: n,
+    chunks: n,
+    measureMs: n,
+    applyMs: n,
+    stageMs: { highPass: n, kWeight: n, truePeak: n, gain: n, limiter: n },
+    slowestChunkMs: n,
+    workingSetBytes: n,
+    checksum: n,
+    loudnessLufs: n,
+    truePeakDbtp: n,
+    gainDb: n,
+    limiterMaxReductionDb: n,
+  };
+}
+
+const BLANK: SavedChecks = {
+  device: null,
+  encode: null,
+  dsp: null,
+  storage: null,
+};
 
 const EARLIER: SavedChecks = {
   device: {
@@ -83,6 +115,7 @@ const EARLIER: SavedChecks = {
     status: "ok",
     value: { audioSeconds: 1, wallMs: 1, mp3Bytes: 1 },
   },
+  dsp: { status: "ok", value: { cold: benchResult(1), warm: benchResult(1) } },
   storage: { status: "ok", value: { bytes: 1, writeMs: 1, readMs: 1 } },
 };
 
@@ -111,6 +144,7 @@ describe("an aborted phone-check run keeps the earlier report", () => {
     window.sessionStorage.clear();
     seam.deviceGate = null;
     seam.encodeGate = null;
+    seam.dspGate = null;
     seam.deviceFails = false;
     seam.throwOnWriteCall = 0;
     seam.writeCalls = 0;
@@ -142,7 +176,7 @@ describe("an aborted phone-check run keeps the earlier report", () => {
     });
     await act(async () => start?.());
     // The opening state has landed: the run replaced the report with blanks.
-    expect(savedNow()).toEqual({ device: null, encode: null, storage: null });
+    expect(savedNow()).toEqual(BLANK);
 
     await act(async () => root.unmount());
     open();
@@ -170,7 +204,7 @@ describe("an aborted phone-check run keeps the earlier report", () => {
     await vi.waitFor(() => {
       expect(isPhoneCheckRunning()).toBe(false);
     });
-    expect(savedNow()).toEqual({ device: null, encode: null, storage: null });
+    expect(savedNow()).toEqual(BLANK);
   });
 
   it("shows the earlier report to a screen remounted before the held probe is released", async () => {
@@ -258,6 +292,33 @@ describe("an aborted phone-check run keeps the earlier report", () => {
     expect(latest?.storage).toEqual(EARLIER.storage);
   });
 
+  it("restores the earlier report, DSP included, after an abort during the DSP step (#1433)", async () => {
+    await mountWithEarlier();
+    let openDsp!: () => void;
+    seam.dspGate = new Promise<void>((resolve) => {
+      openDsp = resolve;
+    });
+    await act(async () => start?.());
+    // Device and encode landed on the new run; the DSP step is held.
+    await vi.waitFor(() => {
+      expect(savedNow()?.encode).toMatchObject({ value: { mp3Bytes: 2 } });
+    });
+    expect(latest?.activity).toEqual({ kind: "dsp" });
+    expect(savedNow()?.dsp).toBeNull();
+
+    await act(async () => root.unmount());
+    expect(savedNow()).toEqual(EARLIER);
+    openDsp();
+    await vi.waitFor(() => {
+      expect(isPhoneCheckRunning()).toBe(false);
+    });
+    // The released step finds the signal aborted and lands nothing; storage never runs.
+    expect(savedNow()).toEqual(EARLIER);
+    root = createRoot(container);
+    await act(async () => root.render(createElement(Owner)));
+    expect(latest?.dsp).toEqual(EARLIER.dsp);
+  });
+
   it("releases the run slot even when writing the earlier report back throws", async () => {
     await mountWithEarlier();
     let open!: () => void;
@@ -339,6 +400,7 @@ describe("an aborted phone-check run keeps the earlier report", () => {
     expect(now?.device).toMatchObject({ status: "ok" });
     expect(now?.device).not.toEqual(EARLIER.device);
     expect(now?.encode).toMatchObject({ value: { mp3Bytes: 2 } });
+    expect(now?.dsp).toMatchObject({ value: { warm: { checksum: 2 } } });
     expect(now?.storage).toMatchObject({ value: { bytes: 2 } });
     expect(latest?.encode).toMatchObject({ value: { mp3Bytes: 2 } });
   });
