@@ -13,6 +13,7 @@ import type { AudioCodec, Clip } from "@/types/audio";
 import type { ChapterId, ClipId, Segment, TakeId } from "@/types/domain";
 import type { SegmentId } from "@/types/domain";
 import { ROW_PEAK_BUCKETS } from "@/lib/view/segment-rows";
+import { ROW_V12_FIELDS } from "./row-fields";
 
 /**
  * Transcode on Finished (B8, D3) — the SWEEP, in Node (#181).
@@ -51,6 +52,7 @@ function segment(): Segment {
     label: null,
     activeTakeId: "take" as TakeId,
     status: "affirmed",
+    ...ROW_V12_FIELDS,
   };
 }
 

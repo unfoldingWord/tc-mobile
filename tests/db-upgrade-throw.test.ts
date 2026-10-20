@@ -12,7 +12,8 @@ import { closeDb, getDb } from "@/lib/storage/db";
  * `idb` does not await the async callback, so before the guard in `db.ts` a
  * throw left the `versionchange` transaction to commit what it had written, at
  * the NEW version: the steps that had not run never ran again. These cases
- * simulate the throw (the fourth `books` write fails) and pin the guard: the
+ * simulate the throw (the fourth `books` write fails; for v12, which writes
+ * through cursors, the fourth `segments` cursor update) and pin the guard: the
  * transaction aborts, the stored version stays where it was, nothing is
  * half-written, and the next open — with the fault gone — upgrades cleanly.
  *
@@ -21,7 +22,7 @@ import { closeDb, getDb } from "@/lib/storage/db";
  */
 
 const DB_NAME = "tc-mobile";
-const APP_VERSION = 11;
+const APP_VERSION = 12;
 
 async function wipe(): Promise<void> {
   await closeDb();
@@ -61,8 +62,14 @@ const SEED = [
   ["b6", "John", 40],
 ] as const;
 
-/** A shelf at `version` (9: placeholder names, no slot; 10: slots, no position). */
-async function seed(version: 9 | 10) {
+/** The shelf order 1.0.x showed SEED in: newest first. */
+const SHELF_ORDER = ["b2", "b4", "b6", "b3", "b5", "b1"];
+
+/**
+ * A shelf at `version` (9: placeholder names, no slot; 10: slots, no position;
+ * 11: slots and positions, none of the v12 fields).
+ */
+async function seed(version: 9 | 10 | 11) {
   const db = await openDB(DB_NAME, version, {
     upgrade(upgrading) {
       createStores(upgrading);
@@ -72,7 +79,8 @@ async function seed(version: 9 | 10) {
     await db.put("books", {
       id,
       name: version === 9 ? name : name.startsWith("Book 0") ? null : name,
-      ...(version === 10 ? { number: Number(id.slice(1)) } : {}),
+      ...(version >= 10 ? { number: Number(id.slice(1)) } : {}),
+      ...(version === 11 ? { shelfPosition: SHELF_ORDER.indexOf(id) } : {}),
       languageCode: null,
       chapterIds: [`${id}-ch1`],
       createdAt,
@@ -84,14 +92,24 @@ async function seed(version: 9 | 10) {
       bookId: id,
       number: 1,
       name: null,
-      segmentIds: [],
+      segmentIds: [`${id}-s1`],
+    });
+    await db.put("segments", {
+      id: `${id}-s1`,
+      chapterId: `${id}-ch1`,
+      index: 1,
+      reference: null,
+      label: null,
+      activeTakeId: null,
+      status: "not-started",
     });
   }
   await db.put("clipData", CLIP_BYTES.slice().buffer, CLIP_KEY);
   const books = await db.getAll("books");
   const chapters = await db.getAll("chapters");
+  const segments = await db.getAll("segments");
   db.close();
-  return { books, chapters };
+  return { books, chapters, segments };
 }
 
 /** The version on disk and the rows, read without upgrading anything. */
@@ -101,6 +119,7 @@ async function readRaw() {
     version: db.version,
     books: await db.getAll("books"),
     chapters: await db.getAll("chapters"),
+    segments: await db.getAll("segments"),
     clipKeys: (await db.getAllKeys("clipData")).map(String),
     clipBytes: Array.from(
       new Uint8Array((await db.get("clipData", CLIP_KEY)) as ArrayBuffer)
@@ -153,6 +172,43 @@ function failBooksRequestAt(nth: number) {
   });
 }
 
+/**
+ * The v12 step writes through cursors, not `put`, so its fault is on the Nth
+ * `segments` cursor update (#1462, M6): the book and chapter rows v12 has
+ * already stamped by then must roll back with it.
+ */
+function failSegmentsUpdateAt(nth: number, asRequest: boolean) {
+  const realUpdate = IDBCursor.prototype.update;
+  let calls = 0;
+  return vi.spyOn(IDBCursor.prototype, "update").mockImplementation(function (
+    this: IDBCursor,
+    ...args
+  ) {
+    const store = this.source as IDBObjectStore;
+    if (store.name === "segments" && ++calls === nth) {
+      store.transaction
+        .objectStore("clipData")
+        .put(new Uint8Array([9, 9, 9]).buffer, PARTIAL_CLIP_KEY);
+      if (asRequest) return store.add({ id: this.primaryKey });
+      throw new Error("simulated fault inside the upgrade");
+    }
+    return realUpdate.apply(this, args);
+  });
+}
+
+/** The fault for the step that `from` runs last before v12, or v12 itself. */
+function failAt(from: 9 | 10 | 11, nth: number) {
+  return from === 11 ? failSegmentsUpdateAt(nth, false) : failBooksPutAt(nth);
+}
+function failRequestAt(from: 9 | 10 | 11, nth: number) {
+  return from === 11
+    ? failSegmentsUpdateAt(nth, true)
+    : failBooksRequestAt(nth);
+}
+
+/** The keys v12 adds to a chapter or segment row, each backfilled null. */
+const V12_ROW_KEYS = ["createdAt", "modifiedAt", "templateKey"];
+
 beforeEach(wipe);
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -162,10 +218,11 @@ afterEach(async () => {
 describe.each([
   { from: 9 as const, step: "v10 (placeholder slots)" },
   { from: 10 as const, step: "v11 (shelf position)" },
+  { from: 11 as const, step: "v12" },
 ])("a throw inside the $step upgrade", ({ from }) => {
   it("rejects the open with the thrown error and leaves the old version and every row as they were", async () => {
     const before = await seed(from);
-    failBooksPutAt(4);
+    failAt(from, 4);
 
     await expect(getDb()).rejects.toThrow("simulated fault inside the upgrade");
 
@@ -180,7 +237,7 @@ describe.each([
 
   it("opens and migrates cleanly on the next try, once the fault is gone", async () => {
     const before = await seed(from);
-    failBooksPutAt(4);
+    failAt(from, 4);
     await expect(getDb()).rejects.toThrow();
     vi.restoreAllMocks();
 
@@ -196,15 +253,21 @@ describe.each([
       0, 1, 2, 3, 4, 5,
     ]);
     // newest first, as 1.0.x showed it
-    expect((await listBooks()).map((b) => b.id)).toEqual([
-      "b2",
-      "b4",
-      "b6",
-      "b3",
-      "b5",
-      "b1",
-    ]);
-    expect(await db.getAll("chapters")).toEqual(before.chapters);
+    expect((await listBooks()).map((b) => b.id)).toEqual(SHELF_ORDER);
+    // Every v12 step ran on the retry: each book got its blank provenance,
+    // and each chapter and segment its three null fields and nothing else.
+    for (const row of rows) {
+      expect(row.provenance).toEqual({ kind: "blank" });
+      expect(row.licence).toBeNull();
+      expect(row.modifiedAt).toBeNull();
+    }
+    const v12Fields = Object.fromEntries(V12_ROW_KEYS.map((k) => [k, null]));
+    expect(await db.getAll("chapters")).toEqual(
+      before.chapters.map((c) => ({ ...c, ...v12Fields }))
+    );
+    expect(await db.getAll("segments")).toEqual(
+      before.segments.map((s) => ({ ...s, ...v12Fields }))
+    );
     // The clip that was already there is untouched; the one the failed
     // attempt wrote never existed.
     expect((await db.getAllKeys("clipData")).map(String)).toEqual([CLIP_KEY]);
@@ -215,7 +278,7 @@ describe.each([
 
   it("a FAILED REQUEST inside the upgrade (it aborts the transaction itself) rejects with that error and changes nothing", async () => {
     const before = await seed(from);
-    failBooksRequestAt(4);
+    failRequestAt(from, 4);
 
     await expect(getDb()).rejects.toMatchObject({ name: "ConstraintError" });
 

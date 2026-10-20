@@ -526,8 +526,8 @@ the rollback target and the served build). If it did, a rollback is not free:
 IndexedDB refuses to open a database at a lower version, so every phone that
 has opened the newer build cannot run the older code against its recordings.
 The recordings are not deleted, but they are unreachable until a build at the
-newer schema or later is served or installed again. v1.1.0 moves the schema
-from 9 to 11. In that case **roll forward with a fix** instead. If a rollback
+newer schema or later is served or installed again. v1.1.0 moved the schema
+from 9 to 11, and v1.2.0 moves it from 11 to 12. In that case **roll forward with a fix** instead. If a rollback
 is unavoidable, know that those phones are locked out until the newer schema
 is served again, and tell facilitators not to uninstall, because uninstalling
 deletes the recordings (AGENTS.md, "What rollback does not do"). This was

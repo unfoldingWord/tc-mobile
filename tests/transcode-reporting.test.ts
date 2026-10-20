@@ -5,6 +5,7 @@ import type { SegmentAudio } from "@/lib/storage/segment-audio";
 import type { AudioCodec, Clip } from "@/types/audio";
 import type { ChapterId, ClipId, Segment, TakeId } from "@/types/domain";
 import type { SegmentId } from "@/types/domain";
+import { ROW_V12_FIELDS } from "./row-fields";
 
 /**
  * The Finished sweep's failure CHANNEL, and its queue order after a stall.
@@ -46,6 +47,7 @@ function segment(id: string): Segment {
     label: null,
     activeTakeId: "take" as TakeId,
     status: "affirmed",
+    ...ROW_V12_FIELDS,
   };
 }
 
