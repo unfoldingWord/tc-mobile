@@ -162,10 +162,13 @@ describe("playSamples — declares playback on every Play (#1111)", () => {
 });
 
 /**
- * #1251: inside the native iOS shell the launch-time `.playAndRecord`
- * category (`ios/App/App/AppDelegate.swift`) is the whole configuration, so
- * neither setter writes `navigator.audioSession.type` there. Safari and the
- * PWA (`"web"`) keep the switching, which the cases above already pin.
+ * Inside the native iOS shell (#1518, building on #1251): a Play declares
+ * `"playback"`, the same as in Safari, so WebKit routes it past the ring/silent
+ * switch. A Record there hands the type back to WebKit (`"auto"`), so capture
+ * never runs under a type documented for playback only; it does not force
+ * `"play-and-record"` the way rc.2 did (the coordinator's decision on #1518,
+ * not run on a device). Safari and the PWA (`"web"`) keep both writes, which
+ * the cases above already pin.
  *
  * The build is faked where the app reads it: `Capacitor.getPlatform()`, the
  * bridge `readSharePlatform()` (`hooks/share-target.ts`) narrows. So these
@@ -178,24 +181,34 @@ async function loadAudioIoOn(platform: string, audioSession: { type: string }) {
   return io;
 }
 
-describe("the native iOS shell leaves navigator.audioSession alone (#1251)", () => {
+describe("the native iOS shell declares playback on Play and auto on Record (#1518)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("setPlaybackAudioSession writes nothing on ios", async () => {
+  it("setPlaybackAudioSession writes playback on ios", async () => {
     const audioSession = { type: "auto" };
     const { setPlaybackAudioSession } = await loadAudioIoOn(
       "ios",
       audioSession
     );
     setPlaybackAudioSession();
+    expect(audioSession.type).toBe("playback");
+  });
+
+  it("setRecordAudioSession writes auto on ios, not play-and-record", async () => {
+    const audioSession = { type: "play-and-record" };
+    const { setRecordAudioSession } = await loadAudioIoOn("ios", audioSession);
+    setRecordAudioSession();
     expect(audioSession.type).toBe("auto");
   });
 
-  it("setRecordAudioSession writes nothing on ios", async () => {
+  it("a Record after a Play on ios hands the type back to auto", async () => {
     const audioSession = { type: "auto" };
-    const { setRecordAudioSession } = await loadAudioIoOn("ios", audioSession);
+    const { setPlaybackAudioSession, setRecordAudioSession } =
+      await loadAudioIoOn("ios", audioSession);
+    setPlaybackAudioSession();
+    expect(audioSession.type).toBe("playback");
     setRecordAudioSession();
     expect(audioSession.type).toBe("auto");
   });
@@ -210,7 +223,7 @@ describe("the native iOS shell leaves navigator.audioSession alone (#1251)", () 
     expect(audioSession.type).toBe("playback");
   });
 
-  it("a Play inside the ios shell leaves the session type as it was", async () => {
+  it("a Play inside the ios shell has declared playback by the time the source starts", async () => {
     vi.resetModules();
     const audioSession = { type: "auto" };
     let typeAtSourceStart: string | undefined;
@@ -230,7 +243,6 @@ describe("the native iOS shell leaves navigator.audioSession alone (#1251)", () 
       isStillCurrent: () => true,
     });
 
-    expect(typeAtSourceStart).toBe("auto");
-    expect(audioSession.type).toBe("auto");
+    expect(typeAtSourceStart).toBe("playback");
   });
 });

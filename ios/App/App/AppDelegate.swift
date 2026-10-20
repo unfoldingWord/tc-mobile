@@ -29,16 +29,22 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // hand, not to their ear. `.allowBluetooth` (classic/HFP) and
         // `.allowBluetoothA2DP` let a paired Bluetooth mic or headset
         // participate rather than being silently excluded by the category.
-        // This is the app's one audio session configuration, and nothing
-        // switches it at run time: since #1251 the web code's
-        // `navigator.audioSession` switch (`"playback"` on each Play,
-        // `"play-and-record"` before each Record, `hooks/audio-io.ts`) does
-        // nothing inside this shell, and still runs in Safari and the
-        // installed PWA, where there is no AppDelegate. A `type` write on
-        // WebKit 16.4+ would replace this category, and the web API cannot
-        // restore `.defaultToSpeaker` or the Bluetooth options. Whether this
-        // category alone keeps Play audible with the silent switch on, inside
-        // WKWebView, has not been run on a device (#1251).
+        // This category is set once, here, and native code never switches
+        // it. The web code does write `navigator.audioSession.type` inside
+        // this shell (#1518): each Play declares `"playback"`
+        // (`setPlaybackAudioSession`, `hooks/audio-io.ts`) so WebKit routes
+        // it past the ring/silent switch. Before each Record, inside this
+        // shell, it writes `"auto"`, handing the choice back to WebKit so a
+        // take is not captured under `"playback"`; Safari and the installed
+        // PWA, where there is no AppDelegate, write `"play-and-record"`
+        // there instead. On WebKit 16.4+ a `type` write may replace this
+        // category, and the web API cannot restore `.defaultToSpeaker` or
+        // the Bluetooth options (#1116's review). So after the first Play,
+        // this category may no longer be the one in force, and whether
+        // `"auto"` brings it back is not known. None of this has been run on
+        // a device: Play with the silent switch on and off, loudspeaker or
+        // earpiece, a take recorded after a Play, and Bluetooth are #1518's
+        // device check.
         //
         // Setting the category alone does NOT activate the audio session or
         // request microphone permission (Apple: `setCategory` configures the
