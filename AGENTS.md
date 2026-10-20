@@ -442,7 +442,11 @@ mic stream is released `"recorder-release-track"` #479, and a take sealed and
 saved at the 20-minute cap `"recorder-take-cap"` #1005 — not a failure, but
 the one durable record that a take was cut, so it goes out with the report
 and does not by itself mark the Books `≡` (`lib/failure-marker.ts`; DRI on
-#1076: "Log it, don't light ≡ (Recommended)")), the level tap's clone
+#1076: "Log it, don't light ≡ (Recommended)"), and a take sealed and saved
+because the level tap read exact silence on a moving clock with no track
+or recorder event `"recorder-capture-stalled"` #1294 — the alarm case,
+requirements owner on R13: "A visible “recording stopped” state that saves
+what was captured"; this one does light ≡), the level tap's clone
 track throwing on its own `stop()` (`hooks/audio-io.ts`,
 `"recorder-tap-clone-stop"`, #479), `stopRecording`'s commit-path backstop
 (`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), a failed

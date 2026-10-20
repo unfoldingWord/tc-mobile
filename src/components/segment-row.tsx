@@ -187,9 +187,9 @@ function playOffsetSeconds(fraction: number, durationMs: number): number {
  * shipped it). Unlike Erase, Delete does NOT require a recorded row — an
  * accidentally added, never-recorded segment is exactly what it needs to
  * remove. In the tile grid the tiles read left to right as Done, Edit,
- * Clear, Delete (the DRI's 2026-09-28 pick on #1119). "Clear" is the visible
- * word for this file's erase (audio only; the segment stays), with the
- * eraser glyph; the bin is Delete's alone.
+ * Reset, Delete (the order is the DRI's 2026-09-28 pick on #1119). "Reset"
+ * is the visible word for this file's erase (audio only; the segment stays;
+ * #1220, #1233), with the eraser glyph; the bin is Delete's alone.
  *
  * The ordinal always shows in the badge; a label, when set, is the typed
  * title over the wave.

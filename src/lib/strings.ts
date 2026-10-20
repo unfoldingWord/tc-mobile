@@ -344,7 +344,7 @@ export const stringsEn = {
   // The recorder menu's mid-take Stop tile (#369); its name is `stop`.
   tileStop: "Stop",
   tileRename: "Rename",
-  // Clear removes a segment's audio and keeps the segment; Delete below
+  // Reset removes a segment's audio and keeps the segment; Delete below
   // removes the segment. Key names keep "erase" (the code's word for the
   // operation). The tile's caption is "Reset", one word of `eraseSegment`
   // ("Reset segment and start over", #1220), so the visible caption stays a
@@ -444,10 +444,10 @@ export const stringsEn = {
   // — most often a transient iOS "interrupted" AudioContext (#106), not a
   // corrupt clip. The sheet is a full panel, not a blank: the recording is
   // untouched, "Try again" resumes the context and re-decodes, and Back returns
-  // to the Segments list, where the row's Clear (which does not decode) works.
+  // to the Segments list, where the row's Reset (which does not decode) works.
   loadFailedTitle: "This recording could not be opened",
   loadFailedBody:
-    "Your recording is safe. Try again, or go back to clear it from the list.",
+    "Your recording is safe. Try again, or go back to reset it from the list.",
   loadRetry: "Try again",
   loadBack: "Go back",
   // Shown BENEATH the panel's two controls (both stay mounted) while a "Try
@@ -604,7 +604,7 @@ export const stringsEn = {
   selectionStartHandle: "Selection start",
   selectionEndHandle: "Selection end",
   editFailed: "That edit could not be applied. Try a shorter selection.",
-  clearFailed: "Could not clear the audio. Try again.",
+  clearFailed: "Could not reset the audio. Try again.",
   // ── Why a capture produced no take (#169) ────────────────────────────────
   // One sentence per `CaptureFailure` code; `capture-failure-copy.ts` picks
   // which. These words used to be minted inside `hooks/use-recorder.ts` and
@@ -669,20 +669,20 @@ export const stringsEn = {
   // not send anyone to a control that would abandon the in-flight start.
   micStarting: "The microphone is still starting.",
   nothingRecorded: "Nothing recorded yet.",
-  nothingStored: "Nothing saved to clear.",
+  nothingStored: "Nothing saved to reset.",
 
   // ── Live waveform (#120) ─────────────────────────────────────────────────
   liveWaveform: "Live recording waveform",
 
-  // ── VU meter + Clear (erase) Segment (B6) ────────────────────────────────
+  // ── VU meter + Reset (erase) Segment (B6) ────────────────────────────────
   vuMeterLabel: "Recording level",
   vuMeterUnavailable: "Level meter unavailable on this device",
-  // Clear: removes the recording, keeps the segment (#1119, DRI 2026-09-28).
+  // Reset: removes the recording, keeps the segment (#1119, DRI 2026-09-28).
   eraseSegment: "Reset segment and start over",
-  // The record bar's Clear (#592): the same clear and the same confirm as the
+  // The record bar's row (#592): the same reset and the same confirm as the
   // menu row above, named for what the translator is doing — starting the
   // segment over — because the sheet stays open, ready for the next take.
-  rerecord: "Clear and record again",
+  rerecord: "Reset and record again",
   segmentMenu: (n: number): string => `More actions for segment ${n}`,
   // Press-and-hold reorder on the Segments list (#953), spoken by
   // the list's live region: the row that was lifted, where it landed, or that
@@ -713,7 +713,7 @@ export const stringsEn = {
   bookReorderStayed: (heading: string): string =>
     `${heading} stayed where it was.`,
   eraseConfirmTitle: "Reset segment and start over",
-  eraseConfirm: "Clear",
+  eraseConfirm: "Reset recording",
   // The safe action of the confirm dialog (`erase-confirm.tsx`). One string
   // for every flow it now serves — segment Clear, book Delete and segment
   // Delete (#590) — because it is the same control on the same surface
@@ -724,7 +724,7 @@ export const stringsEn = {
   // the safe answer. The ⋮ menu's Clear keeps Clear / Cancel above.
   recordAgainConfirm: "Record again",
   recordAgainKeep: "Keep it",
-  eraseFailed: "Could not clear the recording. Try again.",
+  eraseFailed: "Could not reset the recording. Try again.",
   // The confirm's "Play what will be lost" row (#979 remainder, O4 "13"
   // only): the workbench's own copy, word for word, for the Play/Pause
   // transport beside the preview waveform.
@@ -1413,7 +1413,7 @@ export const stringsEn = {
   // (`strings.stop`, "Stop recording"), the same rule `stopToEdit` follows.
   // The wording itself is a coordinator assumption pending the requirements
   // owner's sign-off — see the #878 PR body.
-  stopToErase: "Stop recording to clear.",
+  stopToErase: "Stop recording to reset.",
 
   // ── Phone check (#1009) ──────────────────────────────────────────────────
   // A hidden tester screen, reached by five taps on the build stamp or by
@@ -1426,6 +1426,7 @@ export const stringsEn = {
     "Measures this phone for a tester report. Nothing runs until you tap Start, and it never touches your books or recordings.",
   phoneCheckStart: "Start",
   phoneCheckRunWaiting: "Waiting for a recording to finish converting.",
+  phoneCheckRunStopping: "Stopping the last check.",
   phoneCheckRunDevice: "Reading device info.",
   phoneCheckRunEncode: "Encoding 5 minutes of test audio.",
   phoneCheckRunStorage: "Writing and reading 50 MB of test audio.",
