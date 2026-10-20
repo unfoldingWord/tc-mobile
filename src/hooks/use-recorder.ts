@@ -592,11 +592,11 @@ export function useRecorder(): UseRecorder {
         // switching here, ahead of `getUserMedia`, is the "if needed" case
         // #1111 asks this fix to cover so a session left on `"playback"` by an
         // earlier Play cannot fight the mic. Feature-checked and a no-op on
-        // every non-WebKit engine, and inside the native iOS shell (#1251).
-        // There a Play still declares `"playback"` (#1518), so after any Play
-        // this take starts under that type, which may have replaced the
-        // launch-time `.playAndRecord` category. Whether capture still works
-        // then has not been run on a device (#1518).
+        // every non-WebKit engine. Inside the native iOS shell it writes
+        // `"auto"` instead (#1518, the coordinator's decision): a Play there
+        // declares `"playback"`, and handing the type back to WebKit here,
+        // before the mic opens, keeps a take from starting under it. Not run
+        // on a device (#1518).
         setRecordAudioSession();
         stream = await navigator.mediaDevices.getUserMedia({
           audio: {

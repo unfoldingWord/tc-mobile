@@ -31,18 +31,20 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // participate rather than being silently excluded by the category.
         // This category is set once, here, and native code never switches
         // it. The web code does write `navigator.audioSession.type` inside
-        // this shell, on Play only (#1518): each Play declares `"playback"`
+        // this shell (#1518): each Play declares `"playback"`
         // (`setPlaybackAudioSession`, `hooks/audio-io.ts`) so WebKit routes
-        // it past the ring/silent switch. The `"play-and-record"` write
-        // before each Record stays off inside this shell (#1251) and still
-        // runs in Safari and the installed PWA, where there is no
-        // AppDelegate. On WebKit 16.4+ a `type` write replaces this category
-        // for the rest of the page's life, and the web API cannot restore
-        // `.defaultToSpeaker` or the Bluetooth options (#1116's review). So
-        // after the first Play, this category may no longer be the one in
-        // force. None of this has been run on a device: Play with the silent
-        // switch on and off, loudspeaker or earpiece, a take recorded after
-        // a Play, and Bluetooth are #1518's device check.
+        // it past the ring/silent switch. Before each Record, inside this
+        // shell, it writes `"auto"`, handing the choice back to WebKit so a
+        // take is not captured under `"playback"`; Safari and the installed
+        // PWA, where there is no AppDelegate, write `"play-and-record"`
+        // there instead. On WebKit 16.4+ a `type` write may replace this
+        // category, and the web API cannot restore `.defaultToSpeaker` or
+        // the Bluetooth options (#1116's review). So after the first Play,
+        // this category may no longer be the one in force, and whether
+        // `"auto"` brings it back is not known. None of this has been run on
+        // a device: Play with the silent switch on and off, loudspeaker or
+        // earpiece, a take recorded after a Play, and Bluetooth are #1518's
+        // device check.
         //
         // Setting the category alone does NOT activate the audio session or
         // request microphone permission (Apple: `setCategory` configures the

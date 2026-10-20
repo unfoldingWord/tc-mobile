@@ -164,11 +164,11 @@ describe("playSamples — declares playback on every Play (#1111)", () => {
 /**
  * Inside the native iOS shell (#1518, building on #1251): a Play declares
  * `"playback"`, the same as in Safari, so WebKit routes it past the ring/silent
- * switch. A Record writes nothing there: the launch-time `.playAndRecord`
- * category (`ios/App/App/AppDelegate.swift`) is left to cover capture, and the
- * per-press `"play-and-record"` switch rc.2 also made is not restored.
- * Safari and the PWA (`"web"`) keep both writes, which the cases above
- * already pin.
+ * switch. A Record there hands the type back to WebKit (`"auto"`), so capture
+ * never runs under a type documented for playback only; it does not force
+ * `"play-and-record"` the way rc.2 did (the coordinator's decision on #1518,
+ * not run on a device). Safari and the PWA (`"web"`) keep both writes, which
+ * the cases above already pin.
  *
  * The build is faked where the app reads it: `Capacitor.getPlatform()`, the
  * bridge `readSharePlatform()` (`hooks/share-target.ts`) narrows. So these
@@ -181,7 +181,7 @@ async function loadAudioIoOn(platform: string, audioSession: { type: string }) {
   return io;
 }
 
-describe("the native iOS shell declares playback on Play only (#1518)", () => {
+describe("the native iOS shell declares playback on Play and auto on Record (#1518)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -196,20 +196,21 @@ describe("the native iOS shell declares playback on Play only (#1518)", () => {
     expect(audioSession.type).toBe("playback");
   });
 
-  it("setRecordAudioSession writes nothing on ios", async () => {
-    const audioSession = { type: "auto" };
+  it("setRecordAudioSession writes auto on ios, not play-and-record", async () => {
+    const audioSession = { type: "play-and-record" };
     const { setRecordAudioSession } = await loadAudioIoOn("ios", audioSession);
     setRecordAudioSession();
     expect(audioSession.type).toBe("auto");
   });
 
-  it("a Record after a Play on ios leaves the type at playback", async () => {
+  it("a Record after a Play on ios hands the type back to auto", async () => {
     const audioSession = { type: "auto" };
     const { setPlaybackAudioSession, setRecordAudioSession } =
       await loadAudioIoOn("ios", audioSession);
     setPlaybackAudioSession();
-    setRecordAudioSession();
     expect(audioSession.type).toBe("playback");
+    setRecordAudioSession();
+    expect(audioSession.type).toBe("auto");
   });
 
   it("both setters still write on web (Safari and the PWA)", async () => {
