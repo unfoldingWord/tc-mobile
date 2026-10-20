@@ -11,6 +11,55 @@ replaced. Its batches B0–B8 (#26–#34, umbrella #25) keep that name.
 
 ---
 
+## 2026-10-19 (day, ran into 10-20 UTC) — Sprint 5 day 1: v2 Round 2 applied, all open issues triaged, five lane waves, 20 PRs merged, Round 3 to the requirements owner
+
+One coordinator session in orchestrator mode.
+
+### Decisions (DRI)
+
+Each is the DRI's answer in the coordinator session, verbatim.
+
+- **v2 start:** "Start independent v2 builds now (Recommended)".
+- **Merges:** "Merge on clean and green after bench approves". This is standing authority for the coordinator: both lenses must be clean at the current head and CI green. Promotions and releases stay with the DRI.
+- **Requirements-owner questions:** "One Zulip post to Tim".
+- **Pace:** "my goal is to do 4-6 issues per wave and 5-6 waves a day on tc-mobile".
+- **Modular content:** "We should be creating a modular system that allows for a book that's New Testament or Old Testament and adding some content. It's just something we can pull in at the time of the build."
+- **#1490 at the review cap:** "Fix it and run round 5 (Recommended)".
+- **#1476 MD5:** "@noble/hashes (Recommended)".
+- **#369:** "Add Pause to the menu (Recommended)". This was then corrected, because the recorder has had no pause since #614: "Stop tile is right (Recommended)".
+- **#541:** "Close it, don't build (Recommended)".
+- **#962:** "Write current practice, no dismissal (Recommended)". #1510 records that release bumps squash, which is current practice and differs from the option's wording.
+- **#1511 (seal a silent take):** "Merge when bench-clean". The requirements owner's R13 option said "Built only if the phone check shows no signal". Two device checks move to the T3 sheet: a 6 s pause must not seal, and an alarm must be checked for which row it writes.
+
+### Completed
+
+- **Round 2 applied.** The requirements owner's 20 answers are on the issues and the project site.
+- **Triage.** All 108 open issues were triaged for fit and readiness. 26 moved milestones, #484 was closed as stale, and #1492 was filed.
+- **Merged (20):**
+  - 15 waiting PRs, including #1443, which closed #1436.
+  - #1493, #1495 and #1496, all test-only.
+  - #1505, which closed #1480 (the live strings binding).
+  - #1513, which closed #369 (Stop tile in the ≡ menu during a take).
+- **Develop CI** was green at `429a88b6` after the afternoon merges. It has not been checked after #1505 and #1513.
+- **Round 3.** The coordinator sent 22 product questions to the requirements owner on Zulip and put them on the project site's Review page. An audit of everything on record found none fully answered; 3, 4, 7, 9, 10, 14 and 19 are partly answered, and each card quotes what is on record. Question 10 has two records that disagree: D1 says "titles in all 26 languages", while R8 calls level-3 languages "v2-desired".
+
+### In progress
+
+21 PRs are with the bench.
+
+- **Clean on both lenses at head, only behind develop (14):** #1499, #1500, #1501, #1502, #1503, #1504, #1507, #1508, #1510, #1511, #1512, #1514, #1515, #1516. Each needs an overlap check, then a pinned merge.
+- **Findings open:** #1441 (George round 4, at the cap), #1490 (George round 5 not yet run), #1494, #1497, #1498, #1506, #1509.
+
+### Next steps
+
+1. Overlap-check the 14 clean PRs and merge them one at a time. Check develop CI after each batch.
+2. Lanes waiting on merges:
+   - #1433 T3 waits on #1502.
+   - #1468 slice b waits on #1506.
+   - #1462, the v12 build, waits on #1490.
+3. Record the requirements owner's Round 3 answers on the issues and the site as they arrive.
+4. Eight lower-priority DRI items remain in the coordinator's queue.
+
 ## 2026-10-15 (day) — Sprint 4 days 9-11: v1.1.0 to testers on every channel, a Lows wave, a privacy scrub, the loudness plan
 
 One coordinator session, 2026-10-13 to 2026-10-15.

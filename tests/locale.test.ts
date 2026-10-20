@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  LOCALES,
   SHIPPED_LOCALE,
   withLocaleAttributes,
   type Locale,
@@ -201,5 +202,45 @@ describe("the shipped locale reaches the document and the manifest", () => {
 
   it("ships English, left-to-right — today's behaviour, stated", () => {
     expect(SHIPPED_LOCALE).toEqual({ tag: "en", dir: "ltr" });
+  });
+});
+
+/**
+ * #1482: the ten v2 languages (decision D6-languages), each stating its own
+ * direction. Arabic is the one right-to-left language among them.
+ */
+describe("the locale table", () => {
+  it("holds the ten v2 languages, once each", () => {
+    expect(LOCALES.map((l) => l.tag).sort()).toEqual([
+      "ar",
+      "en",
+      "es",
+      "fr",
+      "hi",
+      "id",
+      "pt",
+      "ru",
+      "sw",
+      "zh-Hans",
+    ]);
+  });
+
+  it("reads right to left for Arabic only", () => {
+    expect(LOCALES.filter((l) => l.dir === "rtl").map((l) => l.tag)).toEqual([
+      "ar",
+    ]);
+    expect(LOCALES.every((l) => l.dir === "rtl" || l.dir === "ltr")).toBe(true);
+  });
+
+  it("every entry passes the attribute allowlists", () => {
+    for (const locale of LOCALES) {
+      expect(withLocaleAttributes("<html>", locale)).toBe(
+        `<html lang="${locale.tag}" dir="${locale.dir}">`
+      );
+    }
+  });
+
+  it("the shipped locale is the table's English entry, not a copy", () => {
+    expect(LOCALES).toContain(SHIPPED_LOCALE);
   });
 });

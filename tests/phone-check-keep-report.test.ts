@@ -3,6 +3,7 @@ import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { subscribeToFailures } from "@/hooks/report-failure";
 import { readSavedChecks, SAVED_CHECKS_KEY } from "@/hooks/phone-check-probes";
 import {
   isPhoneCheckRunning,
@@ -20,6 +21,8 @@ const seam = vi.hoisted(() => ({
   deviceGate: null as Promise<void> | null,
   encodeGate: null as Promise<void> | null,
   deviceFails: false,
+  throwOnWriteCall: 0,
+  writeCalls: 0,
 }));
 
 vi.mock("@/hooks/finish-transcode", () => ({
@@ -33,6 +36,17 @@ vi.mock("@/hooks/phone-check-probes", async (importOriginal) => {
     await importOriginal<typeof import("@/hooks/phone-check-probes")>();
   return {
     ...real,
+    // Counts the saved-report writes, and throws on the numbered one, so a test
+    // can make the restore itself fail at a chosen call.
+    writeSavedChecks: (
+      ...args: Parameters<typeof real.writeSavedChecks>
+    ): void => {
+      seam.writeCalls += 1;
+      if (seam.writeCalls === seam.throwOnWriteCall) {
+        throw new DOMException("quota", "QuotaExceededError");
+      }
+      real.writeSavedChecks(...args);
+    },
     readDeviceInfo: async () => {
       await seam.deviceGate;
       if (seam.deviceFails) throw new TypeError("device read failed");
@@ -98,6 +112,8 @@ describe("an aborted phone-check run keeps the earlier report", () => {
     seam.deviceGate = null;
     seam.encodeGate = null;
     seam.deviceFails = false;
+    seam.throwOnWriteCall = 0;
+    seam.writeCalls = 0;
     latest = undefined;
     start = undefined;
     container = document.createElement("div");
@@ -238,6 +254,52 @@ describe("an aborted phone-check run keeps the earlier report", () => {
       setItem.mockRestore();
     }
     expect(Storage.prototype.setItem).toBe(realSetItem);
+  });
+
+  it("reports a restore that throws at unmount instead of letting it escape the cleanup, and still releases the slot", async () => {
+    await mountWithEarlier();
+    let open!: () => void;
+    seam.deviceGate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    await act(async () => start?.());
+    const seen: unknown[] = [];
+    const off = subscribeToFailures((r) => void seen.push(r));
+    // The writes so far are the run's opening blanks; the next is the unmount's.
+    seam.throwOnWriteCall = seam.writeCalls + 1;
+    try {
+      await act(async () => root.unmount());
+      open();
+      await vi.waitFor(() => {
+        expect(isPhoneCheckRunning()).toBe(false);
+      });
+    } finally {
+      off();
+    }
+    expect(seen.length).toBeGreaterThan(0);
+  });
+
+  it("releases the run slot when the run's own restore throws", async () => {
+    await mountWithEarlier();
+    let open!: () => void;
+    seam.deviceGate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    await act(async () => start?.());
+    const unhandled: unknown[] = [];
+    const onUnhandled = (cause: unknown) => void unhandled.push(cause);
+    process.on("unhandledRejection", onUnhandled);
+    // Skip the unmount's restore; the throw lands on the `finally`'s call.
+    seam.throwOnWriteCall = seam.writeCalls + 2;
+    try {
+      await act(async () => root.unmount());
+      open();
+      await vi.waitFor(() => {
+        expect(isPhoneCheckRunning()).toBe(false);
+      });
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 
   it("still replaces the report whole when the run finishes", async () => {
