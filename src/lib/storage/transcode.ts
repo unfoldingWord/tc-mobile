@@ -182,6 +182,9 @@ export async function commitTranscode(
 
     // The two halves in the same transaction: `put` replaces the PCM bytes
     // under the same key, so the PCM is gone exactly when the MP3 is durable.
+    // No `modifiedAt` (#1463, v12 J6): it marks a put of a book, chapter or
+    // segment row, and this writes only `clipData` and `clipMeta`. The
+    // segment row above is read, never put.
     await tx.objectStore("clipData").put(bytes.buffer, clipId);
     await tx.objectStore("clipMeta").put({
       ...meta,

@@ -107,13 +107,20 @@ describe("moveBook (#338)", () => {
     expect(await shelfIds()).toEqual([b, a, c]);
   });
 
-  it("is not activity on the book: no updatedAt, createdAt or other field moves", async () => {
+  it("is not activity on the book: no updatedAt, createdAt or other field moves but modifiedAt", async () => {
     const [a] = await shelfOfThree();
     const before = await getBook(a);
+    // A move is still a write, so the row's `modifiedAt` is the write's time
+    // (v12 J6, #1463); `updatedAt` stays the activity time.
+    vi.spyOn(Date, "now").mockReturnValue(5_000);
 
     await moveBook(a, 0);
 
-    expect(await getBook(a)).toEqual({ ...before!, shelfPosition: 0 });
+    expect(await getBook(a)).toEqual({
+      ...before!,
+      shelfPosition: 0,
+      modifiedAt: 5_000,
+    });
   });
 
   it("writes only the books whose position changes", async () => {

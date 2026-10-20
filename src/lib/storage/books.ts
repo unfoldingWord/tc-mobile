@@ -152,7 +152,11 @@ export async function createBook(
     await tx.store.put(book);
     for (const [index, row] of byShelfPosition(shelf).entries()) {
       if (row.shelfPosition !== index + 1) {
-        await tx.store.put({ ...row, shelfPosition: index + 1 });
+        await tx.store.put({
+          ...row,
+          shelfPosition: index + 1,
+          modifiedAt: now,
+        });
       }
     }
     await tx.done;
@@ -241,7 +245,12 @@ export async function renameBook(
     return book;
   }
 
-  const updated: Book = { ...book, name: nextName, updatedAt: now };
+  const updated: Book = {
+    ...book,
+    name: nextName,
+    updatedAt: now,
+    modifiedAt: now,
+  };
   await tx.store.put(updated);
   await tx.done;
   return updated;
@@ -290,7 +299,12 @@ export async function setBookCoverColour(
     return book;
   }
 
-  const updated: Book = { ...book, coverColourKey: key, updatedAt: now };
+  const updated: Book = {
+    ...book,
+    coverColourKey: key,
+    updatedAt: now,
+    modifiedAt: now,
+  };
   await tx.store.put(updated);
   await tx.done;
   return updated;
@@ -334,8 +348,8 @@ export function isStaleBookFailure(
 }
 
 /**
- * The stores a book delete touches: the tree, and both halves of every clip
- * that goes with it.
+ * The stores a book delete touches: the tree, both halves of every clip that
+ * goes with it, and the tombstone it leaves (#1463).
  */
 const DELETE_BOOK_STORES = [
   "books",
@@ -344,6 +358,7 @@ const DELETE_BOOK_STORES = [
   "takes",
   "clipMeta",
   "clipData",
+  "tombstones",
 ] as const;
 
 /**
@@ -474,8 +489,21 @@ async function deleteBookInTx(tx: DeleteBookTx, bookId: BookId): Promise<void> {
   for (const segmentId of doomedSegments) await segments.delete(segmentId);
   for (const chapter of ownedChapters) await chapters.delete(chapter.id);
   // `delete` on an absent key is a no-op in IndexedDB, so the orphan case needs
-  // no branch here: the row goes if it is there, and nothing is written if not.
+  // no branch for the delete: the row goes if it is there, and nothing is
+  // written if not. The tombstone (#1463) does branch: it records that THIS
+  // call removed a book, so a book row already gone (an orphaned tree, or a
+  // repeated delete) gets none. One row for the book, not one per segment in
+  // its tree: the book's tombstone covers everything under it.
+  const book = await books.get(bookId);
   await books.delete(bookId);
+  if (book) {
+    await tx.objectStore("tombstones").add({
+      entity: "book",
+      entityId: bookId,
+      parentId: null,
+      deletedAt: Date.now(),
+    });
+  }
 
   // The take rows are gone, so what `getAll` returns now is exactly the set of
   // references that survive this delete. A clip nothing in that set names is
@@ -669,6 +697,7 @@ export async function addChapter(
     ...book,
     chapterIds: [...book.chapterIds, chapter.id],
     updatedAt: now,
+    modifiedAt: now,
   });
   await tx.done;
   return chapter;
@@ -720,13 +749,17 @@ export async function renameChapter(
     return chapter;
   }
 
-  const updated: Chapter = { ...chapter, name: nextName };
+  const updated: Chapter = { ...chapter, name: nextName, modifiedAt: now };
   await tx.objectStore("chapters").put(updated);
   // Bump the parent book's `updatedAt`, in this same transaction. A dangling
   // parent is skipped rather than failing a rename that otherwise succeeded.
   const book = await tx.objectStore("books").get(chapter.bookId);
   if (book) {
-    await tx.objectStore("books").put({ ...book, updatedAt: now });
+    await tx.objectStore("books").put({
+      ...book,
+      updatedAt: now,
+      modifiedAt: now,
+    });
   }
   await tx.done;
   return updated;
@@ -793,8 +826,10 @@ export async function moveChapter(
       return plan.order;
     }
 
-    // No `updatedAt`: a reorder is not activity on the book (scope Q4).
-    await books.put({ ...book, chapterIds: plan.ids });
+    // No `updatedAt`: a reorder is not activity on the book (scope Q4). It
+    // is still a write, so `modifiedAt` moves (J6).
+    const now = Date.now();
+    await books.put({ ...book, chapterIds: plan.ids, modifiedAt: now });
     const renumbered: Chapter[] = [];
     for (const [position, row] of plan.order.entries()) {
       const number = position + 1;
@@ -802,7 +837,7 @@ export async function moveChapter(
         renumbered.push(row);
         continue;
       }
-      const updated: Chapter = { ...row, number };
+      const updated: Chapter = { ...row, number, modifiedAt: now };
       await chapters.put(updated);
       renumbered.push(updated);
     }
@@ -851,14 +886,20 @@ export async function moveBook(
       await tx.done; // idempotent no-op: no write.
       return shelf;
     }
+    const now = Date.now();
     const placed: Book[] = [];
     for (const [position, book] of order.entries()) {
       if (book.shelfPosition === position) {
         placed.push(book);
         continue;
       }
-      // No `updatedAt`: a reorder is not activity on the book.
-      const updated: Book = { ...book, shelfPosition: position };
+      // No `updatedAt`: a reorder is not activity on the book. `modifiedAt`
+      // moves: the row is written (J6).
+      const updated: Book = {
+        ...book,
+        shelfPosition: position,
+        modifiedAt: now,
+      };
       await tx.store.put(updated);
       placed.push(updated);
     }
@@ -924,6 +965,7 @@ export async function addSegment(chapterId: ChapterId): Promise<Segment> {
   await tx.objectStore("chapters").put({
     ...chapter,
     segmentIds: [...chapter.segmentIds, segment.id],
+    modifiedAt: now,
   });
   await tx.done;
   return segment;
@@ -936,9 +978,10 @@ export async function addSegment(chapterId: ChapterId): Promise<Segment> {
  * The chapter-name rules, deliberately ({@link renameChapter}): get-then-put in
  * ONE readwrite transaction, the label trimmed, a blank/whitespace-only rename
  * CLEARS it back to `null` (a segment has a default — its ordinal), and a
- * rename to the current label writes nothing. Only `label` changes: the
- * ordinal, the chapter's order, the take pointer and the status are the audio's
- * identity and progress, and a label is neither.
+ * rename to the current label writes nothing. Only `label` changes, with the
+ * `modifiedAt` every put stamps (#1463): the ordinal, the chapter's order,
+ * the take pointer and the status are the audio's identity and progress, and
+ * a label is neither.
  *
  * Unlike a chapter rename it does not bump the book's `updatedAt`: the store is
  * `segments` alone, matching `addSegment` and `setSegmentFinished`, the other
@@ -960,7 +1003,11 @@ export async function renameSegment(
     return segment;
   }
 
-  const updated: Segment = { ...segment, label: nextLabel };
+  const updated: Segment = {
+    ...segment,
+    label: nextLabel,
+    modifiedAt: Date.now(),
+  };
   await tx.store.put(updated);
   await tx.done;
   return updated;
@@ -1009,8 +1056,9 @@ export async function moveSegment(
       return plan.order;
     }
 
-    await chapters.put({ ...chapter, segmentIds: plan.ids });
-    const renumbered = await renumberSegments(segments, plan.order);
+    const now = Date.now();
+    await chapters.put({ ...chapter, segmentIds: plan.ids, modifiedAt: now });
+    const renumbered = await renumberSegments(segments, plan.order, now);
     await tx.done;
     return renumbered;
   } catch (cause) {
@@ -1028,7 +1076,8 @@ export async function moveSegment(
  */
 async function renumberSegments(
   store: { put(value: Segment): Promise<SegmentId> },
-  order: readonly Segment[]
+  order: readonly Segment[],
+  now: number
 ): Promise<Segment[]> {
   const renumbered: Segment[] = [];
   for (const [position, row] of order.entries()) {
@@ -1037,7 +1086,7 @@ async function renumberSegments(
       renumbered.push(row);
       continue;
     }
-    const updated: Segment = { ...row, index };
+    const updated: Segment = { ...row, index, modifiedAt: now };
     await store.put(updated);
     renumbered.push(updated);
   }
@@ -1046,8 +1095,8 @@ async function renumberSegments(
 
 /**
  * The stores a segment delete touches: the tree link (the chapter it hangs
- * off), the segment itself, its take, both halves of its clip, and the book
- * whose `updatedAt` it bumps (#590).
+ * off), the segment itself, its take, both halves of its clip, the book
+ * whose `updatedAt` it bumps (#590), and the tombstone it leaves (#1463).
  */
 const DELETE_SEGMENT_STORES = [
   "books",
@@ -1056,6 +1105,7 @@ const DELETE_SEGMENT_STORES = [
   "takes",
   "clipMeta",
   "clipData",
+  "tombstones",
 ] as const;
 
 /**
@@ -1155,19 +1205,32 @@ export async function deleteSegment(
       }
     }
 
+    const now = Date.now();
     await segments.delete(segmentId);
+    // The tombstone (#1463), in this transaction: the row was here and is
+    // removed, so the delete and its record land together or not at all.
+    // The already-gone path above returned before this, so a repeated delete
+    // adds no second row.
+    await tx.objectStore("tombstones").add({
+      entity: "segment",
+      entityId: segmentId,
+      parentId: chapter.id,
+      deletedAt: now,
+    });
     const nextIds = chapter.segmentIds.filter((id) => id !== segmentId);
-    await chapters.put({ ...chapter, segmentIds: nextIds });
+    await chapters.put({ ...chapter, segmentIds: nextIds, modifiedAt: now });
 
     const records = await Promise.all(nextIds.map((id) => segments.get(id)));
     const visible = records.filter((r): r is Segment => r !== undefined);
-    const renumbered = await renumberSegments(segments, visible);
+    const renumbered = await renumberSegments(segments, visible, now);
 
     // Deleting a segment discards its recording (or its empty row) — activity
     // on the book, the same bump `clearSegmentTake`/`writeTakeInTx` make.
     const book = await tx.objectStore("books").get(chapter.bookId);
     if (book) {
-      await tx.objectStore("books").put({ ...book, updatedAt: Date.now() });
+      await tx
+        .objectStore("books")
+        .put({ ...book, updatedAt: now, modifiedAt: now });
     }
 
     await tx.done;

@@ -150,6 +150,7 @@ async function writeTakeInTx(
     // take off "not-started", while an explicit mark lands finished atomically
     // with the take (so a retry re-applies it, never a separate lost write).
     status: finished ? FINISHED_STATUS : UNFINISHED_STATUS,
+    modifiedAt: now,
   });
 
   if (priorTake && priorTake.id !== take.id) {
@@ -168,7 +169,11 @@ async function writeTakeInTx(
   const book = chapter
     ? await tx.objectStore("books").get(chapter.bookId)
     : undefined;
-  if (book) await tx.objectStore("books").put({ ...book, updatedAt: now });
+  if (book) {
+    await tx
+      .objectStore("books")
+      .put({ ...book, updatedAt: now, modifiedAt: now });
+  }
 
   return take;
 }
@@ -321,10 +326,12 @@ export async function clearSegmentTake(segmentId: SegmentId): Promise<void> {
     if (priorTake) await deleteClipIfUnreferenced(tx, priorTake.clipId);
   }
 
+  const now = Date.now();
   await tx.objectStore("segments").put({
     ...segment,
     activeTakeId: null,
     status: "not-started",
+    modifiedAt: now,
   });
 
   // Editing is activity: bump the book's `updatedAt` in the same
@@ -333,8 +340,11 @@ export async function clearSegmentTake(segmentId: SegmentId): Promise<void> {
   const book = chapter
     ? await tx.objectStore("books").get(chapter.bookId)
     : undefined;
-  if (book)
-    await tx.objectStore("books").put({ ...book, updatedAt: Date.now() });
+  if (book) {
+    await tx
+      .objectStore("books")
+      .put({ ...book, updatedAt: now, modifiedAt: now });
+  }
 
   await tx.done;
 }
@@ -372,7 +382,11 @@ export async function setSegmentFinished(
         `Segment ${segmentId} has no recording; cannot mark finished`
       );
     }
-    await tx.store.put({ ...segment, status: "not-started" });
+    await tx.store.put({
+      ...segment,
+      status: "not-started",
+      modifiedAt: Date.now(),
+    });
     await tx.done;
     return;
   }
@@ -380,6 +394,7 @@ export async function setSegmentFinished(
   await tx.store.put({
     ...segment,
     status: finished ? FINISHED_STATUS : UNFINISHED_STATUS,
+    modifiedAt: Date.now(),
   });
   await tx.done;
 }

@@ -21,7 +21,7 @@ import { getClip, getClipMeta, newClipId } from "@/lib/storage/clips";
 import { getDb } from "@/lib/storage/db";
 import { commitTranscode } from "@/lib/storage/transcode";
 import type { ChapterId, SegmentId } from "@/types/domain";
-import { clearAllStores } from "./support";
+import { clearAllStores, throwWhenStoreRequested } from "./support";
 
 /**
  * Delete a Segment (#590) — T1.
@@ -65,35 +65,6 @@ async function countAll(): Promise<StoreCounts> {
   ]);
   await tx.done;
   return { chapters, segments, takes, clipMeta, clipData };
-}
-
-/**
- * Make the NEXT transaction opened on this connection throw the moment
- * `deleteSegment` asks it for `storeName`. The same seam
- * `tests/delete-book.test.ts` uses: the native `IDBDatabase.transaction`,
- * reached with `unwrap` past idb's proxy, since `deleteSegment` does not
- * return its transaction for a test to inspect directly.
- */
-function throwWhenStoreRequested(
-  raw: IDBDatabase,
-  storeName: string,
-  error: Error
-) {
-  const open = raw.transaction.bind(raw);
-  return vi
-    .spyOn(raw, "transaction")
-    .mockImplementation((...args: Parameters<IDBDatabase["transaction"]>) => {
-      const tx = open(...args);
-      const objectStore = tx.objectStore.bind(tx);
-      Object.defineProperty(tx, "objectStore", {
-        configurable: true,
-        value: (name: string) => {
-          if (name === storeName) throw error;
-          return objectStore(name);
-        },
-      });
-      return tx;
-    });
 }
 
 async function chapterWithSegments(
