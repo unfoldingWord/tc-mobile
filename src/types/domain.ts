@@ -146,8 +146,9 @@ export interface Book {
   /**
    * When this row was last written, or `null` when no put has touched it
    * since v12 (the backfill reads no clock). Not `updatedAt`, which means
-   * activity and which a reorder leaves alone. The writers beyond creation
-   * are #1463's.
+   * activity and which a reorder leaves alone. Every put of the row stamps
+   * it with the write's time, in that same put (#1463); a write that puts
+   * nothing leaves it.
    */
   readonly modifiedAt: number | null;
 }
@@ -253,7 +254,9 @@ export interface Take {
  * One row of the `tombstones` store (v12, #1462): a book or segment a person
  * deleted, so a backup or a later sync can tell "deleted" from "never here".
  * A log under an out-of-line auto-increment key: insertion order is deletion
- * order, and a second delete of one id is a second row. Written by #1463.
+ * order, and the store itself would keep two rows for one id. Written by
+ * `deleteBook` and `deleteSegment` inside the delete's own transaction, and
+ * only when the row was there, so a repeated delete adds none (#1463).
  */
 export interface Tombstone {
   readonly entity: "book" | "segment";

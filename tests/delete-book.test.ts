@@ -22,7 +22,11 @@ import { getDb } from "@/lib/storage/db";
 import { resolveSegmentAudio } from "@/lib/storage/segment-audio";
 import { commitTranscode } from "@/lib/storage/transcode";
 import type { BookId, ClipId, SegmentId, TakeId } from "@/types/domain";
-import { clearAllStores, storeOrphanClip } from "./support";
+import {
+  clearAllStores,
+  storeOrphanClip,
+  throwWhenStoreRequested,
+} from "./support";
 
 /**
  * Delete a Book (#337) — T1.
@@ -168,43 +172,6 @@ async function expectGone(
   expect(orphaned).toEqual([]);
 }
 
-/**
- * Make the NEXT transaction this database opens throw the moment `deleteBook`
- * asks it for `storeName`.
- *
- * The seam is the native `IDBDatabase.transaction`, reached with `unwrap` past
- * idb's proxy — the same seam `tests/take-durability.test.ts` spies on, because
- * `deleteBook` does not return its transaction and the arguments and the stores
- * it asks for are the only things observable from outside.
- *
- * Throwing on `objectStore("clipMeta")` lands the failure exactly where it
- * matters: the tree deletes (takes, segments, chapters, the book row) have all
- * been issued by then and the clip deletes have not. That is the seam George
- * named — a JS throw there, with no abort, is what would commit a database
- * whose audio is stranded with nothing able to reach or free it.
- */
-function throwWhenStoreRequested(
-  raw: IDBDatabase,
-  storeName: string,
-  error: Error
-) {
-  const open = raw.transaction.bind(raw);
-  return vi
-    .spyOn(raw, "transaction")
-    .mockImplementation((...args: Parameters<IDBDatabase["transaction"]>) => {
-      const tx = open(...args);
-      const objectStore = tx.objectStore.bind(tx);
-      Object.defineProperty(tx, "objectStore", {
-        configurable: true,
-        value: (name: string) => {
-          if (name === storeName) throw error;
-          return objectStore(name);
-        },
-      });
-      return tx;
-    });
-}
-
 beforeEach(clearAllStores);
 afterEach(() => vi.restoreAllMocks());
 
@@ -224,7 +191,8 @@ describe("deleteBook", () => {
       clipMeta: 0,
       clipData: 0,
       failures: 0,
-      tombstones: 0,
+      // The one row this delete leaves: the book's tombstone (#1463).
+      tombstones: 1,
       pendingTakes: 0,
     });
   });
@@ -260,7 +228,7 @@ describe("deleteBook", () => {
       clipMeta: before.clipMeta - 3,
       clipData: before.clipData - 3,
       failures: before.failures,
-      tombstones: before.tombstones,
+      tombstones: before.tombstones + 1,
       pendingTakes: before.pendingTakes,
     });
   });
@@ -388,7 +356,8 @@ describe("deleteBook", () => {
       clipMeta: 0,
       clipData: 0,
       failures: 0,
-      tombstones: 0,
+      // The one row this delete leaves: the book's tombstone (#1463).
+      tombstones: 1,
       pendingTakes: 0,
     });
   });
@@ -470,7 +439,8 @@ describe("deleteBook", () => {
       clipMeta: 0,
       clipData: 0,
       failures: 0,
-      tombstones: 0,
+      // The one row this delete leaves: the book's tombstone (#1463).
+      tombstones: 1,
       pendingTakes: 0,
     });
   });
@@ -487,6 +457,11 @@ describe("deleteBook", () => {
     expect(before.clipData).toBe(3);
 
     const injected = new Error("injected mid-walk failure");
+    // Throwing on `objectStore("clipMeta")` lands the failure exactly where it
+    // matters: the tree deletes (takes, segments, chapters, the book row) have
+    // all been issued by then and the clip deletes have not. That is the seam
+    // George named — a JS throw there, with no abort, is what would commit a
+    // database whose audio is stranded with nothing able to reach or free it.
     const raw = unwrap(await getDb()) as IDBDatabase;
     throwWhenStoreRequested(raw, "clipMeta", injected);
 
@@ -539,6 +514,9 @@ describe("deleteBook", () => {
       clipMeta: 0,
       clipData: 0,
       failures: 0,
+      // No tombstone: the book row was already gone, so this call removed no
+      // book (#1463, v12 doc "A tombstone is written only when the row was
+      // there and is removed").
       tombstones: 0,
       pendingTakes: 0,
     });

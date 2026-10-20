@@ -1,6 +1,14 @@
 import "fake-indexeddb/auto";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  vi,
+} from "vitest";
 
 import {
   deleteClip,
@@ -974,6 +982,8 @@ describe("rename segment (#591)", () => {
   });
 
   it("changes the label and nothing else: ordinal, order, status and audio stay", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    onTestFinished(() => clock.mockRestore());
     const book = await createBook("Mark");
     const chapter = await addChapter(book.id);
     await addSegment(chapter.id);
@@ -983,11 +993,16 @@ describe("rename segment (#591)", () => {
     const before = await getSegment(second.id);
     const chapterBefore = await getChapter(chapter.id);
 
+    clock.mockReturnValue(2_000);
     await renameSegment(second.id, "verses 3–4");
 
+    // The label moves, and `modifiedAt` with it: the row was written at the
+    // rename's time (v12 J6, #1463). Every other field is as it was.
+    expect(before?.modifiedAt).toBe(1_000);
     expect(await getSegment(second.id)).toEqual({
       ...before,
       label: "verses 3–4",
+      modifiedAt: 2_000,
     });
     expect(await getChapter(chapter.id)).toEqual(chapterBefore);
     const audio = await loadSegmentClip(second.id);

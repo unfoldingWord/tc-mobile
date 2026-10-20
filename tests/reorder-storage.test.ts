@@ -300,13 +300,21 @@ describe("moveSegment (#953)", () => {
   });
 
   it("leaves labels, takes and status alone", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000);
     const { segmentIds } = await chapterOf(3);
     await renameSegment(segmentIds[2]!, "verses 3–4");
     const before = await getSegment(segmentIds[2]!);
 
+    clock.mockReturnValue(2_000);
     await moveSegment(segmentIds[2]!, 0);
 
-    expect(await getSegment(segmentIds[2]!)).toEqual({ ...before, index: 1 });
+    // Only the index moves, with the write's `modifiedAt` (v12 J6, #1463).
+    expect(before?.modifiedAt).toBe(1_000);
+    expect(await getSegment(segmentIds[2]!)).toEqual({
+      ...before,
+      index: 1,
+      modifiedAt: 2_000,
+    });
   });
 
   it("does not touch the book (no shelf bump)", async () => {
