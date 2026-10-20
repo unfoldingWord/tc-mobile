@@ -273,6 +273,45 @@ describe("RecorderMenu on the tile grid (#949 G3)", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("puts Stop first while a take is recording, and its tap reaches onStopTake (#369)", () => {
+    // The DRI's 2026-10-19 pick on #369: while recording, the menu's first
+    // tile ends the take, so a menu opened by accident does not stand
+    // between the translator and the transport underneath it. Since #614
+    // that transport control is Stop (it commits the take), so this is too.
+    const onStopTake = vi.fn();
+    act(() =>
+      root.render(
+        createElement(RecorderMenu, {
+          ...base,
+          recording: true,
+          onStopTake,
+          markReason: "uncommitted-take",
+          eraseReason: "uncommitted-take",
+        })
+      )
+    );
+    expect(tiles()).toHaveLength(4);
+    const stop = named(strings.stop);
+    expect(tiles()[0], "Stop is the first tile").toBe(stop);
+    expect(stop?.querySelector(".control-caption")?.textContent).toBe(
+      strings.tileStop
+    );
+    // Erase stays beside it (#1104 kept Erase); Delete does not come back.
+    expect(startingWith(strings.eraseSegment)).toBeDefined();
+    expect(named(strings.deleteSegment)).toBeUndefined();
+    // The open edge lands on it: it is the first actionable tile.
+    expect(document.activeElement).toBe(stop);
+    act(() => stop?.click());
+    expect(onStopTake).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws no Stop tile when no take is recording, in either mode (#369)", () => {
+    show({ recording: false, onStopTake: vi.fn() });
+    expect(named(strings.stop)).toBeUndefined();
+    show({ mode: "edit", recording: false, onStopTake: vi.fn() });
+    expect(named(strings.stop)).toBeUndefined();
+  });
+
   it("lands open-edge focus on the first actionable tile, never the theme tile first", () => {
     show();
     expect(document.activeElement?.getAttribute("aria-label")).toBe(

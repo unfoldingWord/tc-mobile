@@ -134,10 +134,26 @@ and **George** (Grok, deep-tree) — two lenses, never a primary and a fallback.
   requires it), and only on the DRI's say-so; an agent never merges. The
   merge needs both lenses clean at the current head SHA, which the bench shows
   by posting a **GitHub approval** (observed on #1346 and #1351), and green CI.
-  Pin the merge to that head: `gh pr merge --match-head-commit <sha>`, with the
-  full SHA read from `gh` at the time. An approval on an earlier head does not
-  count. Merges into `develop` normally use a **merge commit**; a release bump
-  must, so that its promotion carries the same bump commit (#918).
+  An approval on an earlier head does not count. Pin the merge to that head,
+  with the full SHA read from `gh` at the time
+  (`gh pr view <n> --repo unfoldingWord/tc-mobile --json headRefOid --jq .headRefOid`),
+  and write the whole command, merge method included.
+  - **Every PR that is not a promotion (feature, fix, docs, test, chore, a
+    release bump) merges by squash:**
+    `gh pr merge <n> --repo unfoldingWord/tc-mobile --squash --admin --match-head-commit <sha>`.
+    The bump's squash commit is the cut commit the release branch starts from
+    (`.claude/skills/tc-release`).
+  - **A promotion merges by merge commit, with GitHub's subject left as is:**
+    `gh pr merge <n> --repo unfoldingWord/tc-mobile --merge --admin --match-head-commit <sha>`.
+    A squash, a rebase or an edited subject gets no APK or TestFlight build
+    (AGENTS.md, "Branches and deployment").
+  - **The pin is not the review check.** It fails the merge only if the head
+    moved after the SHA was read; it does not look at which head an approval
+    names. `--admin` is required by ruleset 24043869 and also skips GitHub's
+    required checks and reviews (`docs/release/promotion-v1.0.0.md` §3), so
+    the DRI confirms the approval and green CI are on `<sha>` before running it.
+  - **Stale-review dismissal stays off on `develop`.** The bench voids a round
+    on every push.
 - **Process artifacts** — `ci.yml`, `AGENTS.md`, `docs/review/**`, deploy
   config — need both reviewers, because they are executed as instructions.
   Exempting them is allowed; the decision is recorded on the PR, never skipped

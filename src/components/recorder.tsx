@@ -3540,9 +3540,10 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             That premise is now false mid-take, but the trap is unchanged, so a
             keyboard or Tab-driven switch user still cannot Tab to Stop. Escape
             (or Close menu), then Stop, is their path — one keystroke, not a
-            deadlock. Letting Tab leave the panel mid-take, or putting the
-            transport in the menu, is tracked in #369; it changes a shared
-            component and does not belong in this lane. */}
+            deadlock. #369 adds the other path for both: mid-take, the ⋮
+            menu's first tile is Stop itself (`onStopTake` on `RecorderMenu`
+            below), reachable by touch and by Tab inside the panel. The scrim
+            and the trap are unchanged. */}
         <div
           ref={sheetRef}
           // Green waveform and Play for a Finished segment (#926), on the same
@@ -4188,6 +4189,15 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
             setMenuOpen(false);
             setConfirmFor("erase");
             setConfirmOpen(true);
+          }}
+          // Mid-take Stop (#369): close the drawer, then the transport's own
+          // Stop handler, so there is one way a take ends from a tap. The
+          // tile renders only while `recording`, so the handler it holds is
+          // the one that commits, never the one that starts a take.
+          recording={recording}
+          onStopTake={() => {
+            setMenuOpen(false);
+            onRecordButton();
           }}
           bookName={view?.bookName}
           bookCoverHex={view?.bookCoverHex ?? undefined}

@@ -1,0 +1,51 @@
+{
+  "format": "tc-mobile-template",
+  "formatVersion": 0,
+  "id": "collection:psalm-songs",
+  "version": "0.1.0",
+  "kind": "collection",
+  "bookCode": null,
+  "title": { "en": "Songs of praise", "es": "Cantos de alabanza" },
+  "titleLanguages": ["en", "es"],
+  "dataLicence": "CC-BY-SA-4.0",
+  "recordingLicence": "CC-BY-SA-4.0",
+  "attribution": "Fixture collection, CC BY-SA 4.0",
+  "source": { "url": "https://example.org/songs", "revision": "fixture-1" },
+  "chapters": [
+    {
+      "key": "songs",
+      "number": 1,
+      "segments": [
+        { "key": "intro", "reference": null, "thumbnail": null },
+        {
+          "key": "PSA.17.50-18.1",
+          "reference": {
+            "book": "PSA",
+            "startChapter": 17,
+            "startVerse": 50,
+            "endChapter": 18,
+            "endVerse": 1
+          },
+          "thumbnail": null
+        }
+      ]
+    },
+    {
+      "key": "whole",
+      "number": 2,
+      "segments": [
+        {
+          "key": "PSA.23",
+          "reference": {
+            "book": "PSA",
+            "startChapter": 23,
+            "startVerse": null,
+            "endChapter": 23,
+            "endVerse": null
+          },
+          "thumbnail": null
+        }
+      ]
+    }
+  ]
+}
