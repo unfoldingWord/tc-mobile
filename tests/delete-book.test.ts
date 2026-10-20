@@ -66,6 +66,8 @@ const ALL_STORES = [
   "clipMeta",
   "clipData",
   "failures",
+  "tombstones",
+  "pendingTakes",
 ] as const;
 
 type StoreCounts = Record<(typeof ALL_STORES)[number], number>;
@@ -73,23 +75,44 @@ type StoreCounts = Record<(typeof ALL_STORES)[number], number>;
 async function countAll(): Promise<StoreCounts> {
   const db = await getDb();
   const tx = db.transaction(ALL_STORES, "readonly");
-  const [books, chapters, segments, takes, clipMeta, clipData, failures] =
-    await Promise.all([
-      tx.objectStore("books").count(),
-      tx.objectStore("chapters").count(),
-      tx.objectStore("segments").count(),
-      tx.objectStore("takes").count(),
-      tx.objectStore("clipMeta").count(),
-      tx.objectStore("clipData").count(),
-      tx.objectStore("failures").count(),
-    ]);
+  const [
+    books,
+    chapters,
+    segments,
+    takes,
+    clipMeta,
+    clipData,
+    failures,
+    tombstones,
+    pendingTakes,
+  ] = await Promise.all([
+    tx.objectStore("books").count(),
+    tx.objectStore("chapters").count(),
+    tx.objectStore("segments").count(),
+    tx.objectStore("takes").count(),
+    tx.objectStore("clipMeta").count(),
+    tx.objectStore("clipData").count(),
+    tx.objectStore("failures").count(),
+    tx.objectStore("tombstones").count(),
+    tx.objectStore("pendingTakes").count(),
+  ]);
   await tx.done;
   // Every store the schema declares is covered: a delete that leaked into one
   // this list forgot would be invisible here.
   expect(Array.from(db.objectStoreNames).sort()).toEqual(
     [...ALL_STORES].sort()
   );
-  return { books, chapters, segments, takes, clipMeta, clipData, failures };
+  return {
+    books,
+    chapters,
+    segments,
+    takes,
+    clipMeta,
+    clipData,
+    failures,
+    tombstones,
+    pendingTakes,
+  };
 }
 
 /**
@@ -201,6 +224,8 @@ describe("deleteBook", () => {
       clipMeta: 0,
       clipData: 0,
       failures: 0,
+      tombstones: 0,
+      pendingTakes: 0,
     });
   });
 
@@ -235,6 +260,8 @@ describe("deleteBook", () => {
       clipMeta: before.clipMeta - 3,
       clipData: before.clipData - 3,
       failures: before.failures,
+      tombstones: before.tombstones,
+      pendingTakes: before.pendingTakes,
     });
   });
 
@@ -361,6 +388,8 @@ describe("deleteBook", () => {
       clipMeta: 0,
       clipData: 0,
       failures: 0,
+      tombstones: 0,
+      pendingTakes: 0,
     });
   });
 
@@ -441,6 +470,8 @@ describe("deleteBook", () => {
       clipMeta: 0,
       clipData: 0,
       failures: 0,
+      tombstones: 0,
+      pendingTakes: 0,
     });
   });
 
@@ -508,6 +539,8 @@ describe("deleteBook", () => {
       clipMeta: 0,
       clipData: 0,
       failures: 0,
+      tombstones: 0,
+      pendingTakes: 0,
     });
   });
 });

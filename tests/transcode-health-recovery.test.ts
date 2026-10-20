@@ -9,6 +9,7 @@ import type {
   SegmentId,
   TakeId,
 } from "@/types/domain";
+import { ROW_V12_FIELDS } from "./row-fields";
 
 let healthListener: ((health: "ok" | "failing") => void) | null = null;
 
@@ -42,6 +43,7 @@ function segment(id: SegmentId): Segment {
     label: null,
     activeTakeId: "take" as TakeId,
     status: "affirmed",
+    ...ROW_V12_FIELDS,
   };
 }
 

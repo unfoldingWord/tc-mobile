@@ -4,6 +4,7 @@ import type { SegmentAudio } from "@/lib/storage/segment-audio";
 import type { AudioCodec, Clip } from "@/types/audio";
 import type { ChapterId, ClipId, Segment, TakeId } from "@/types/domain";
 import type { SegmentId } from "@/types/domain";
+import { ROW_V12_FIELDS } from "./row-fields";
 
 /**
  * The Finished sweep and a STALLED encoder (#166, R2 P2-1).
@@ -49,6 +50,7 @@ function segment(): Segment {
     label: null,
     activeTakeId: "take" as TakeId,
     status: "affirmed",
+    ...ROW_V12_FIELDS,
   };
 }
 

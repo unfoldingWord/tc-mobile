@@ -143,6 +143,11 @@ export async function createBook(
       // A new book lands at the TOP of the shelf (#338), as it always has; the
       // books already there move down one, in the order the user left them.
       shelfPosition: 0,
+      // v12 (#1462): made blank, licence not chosen yet (R20: the share step
+      // pre-selects CC BY-SA 4.0 without storing it), written now.
+      provenance: { kind: "blank" },
+      licence: null,
+      modifiedAt: now,
     };
     await tx.store.put(book);
     for (const [index, row] of byShelfPosition(shelf).entries()) {
@@ -644,6 +649,7 @@ export async function addChapter(
   }
 
   const trimmed = name.trim();
+  const now = Date.now();
   const chapter: Chapter = {
     id: uuid() as ChapterId,
     bookId,
@@ -653,12 +659,16 @@ export async function addChapter(
     // Rename (#264).
     name: trimmed === "" ? null : trimmed,
     segmentIds: [],
+    // v12 (#1462): the write time, and no template behind a hand-made chapter.
+    createdAt: now,
+    modifiedAt: now,
+    templateKey: null,
   };
   await tx.objectStore("chapters").put(chapter);
   await tx.objectStore("books").put({
     ...book,
     chapterIds: [...book.chapterIds, chapter.id],
-    updatedAt: Date.now(),
+    updatedAt: now,
   });
   await tx.done;
   return chapter;
@@ -909,6 +919,7 @@ export async function addSegment(chapterId: ChapterId): Promise<Segment> {
   const chapter = await tx.objectStore("chapters").get(chapterId);
   if (!chapter) throw new Error(`No such chapter: ${chapterId}`);
 
+  const now = Date.now();
   const segment: Segment = {
     id: uuid() as SegmentId,
     chapterId,
@@ -919,6 +930,10 @@ export async function addSegment(chapterId: ChapterId): Promise<Segment> {
     label: null,
     activeTakeId: null,
     status: "not-started",
+    // v12 (#1462): as addChapter.
+    createdAt: now,
+    modifiedAt: now,
+    templateKey: null,
   };
   await tx.objectStore("segments").put(segment);
   await tx.objectStore("chapters").put({

@@ -12,6 +12,7 @@ import type {
   SegmentId,
   TakeId,
 } from "@/types/domain";
+import { BOOK_V12_FIELDS, ROW_V12_FIELDS } from "./row-fields";
 import { clearAllStores } from "./support";
 
 vi.mock("@/hooks/mp3-codec", async (importOriginal) => {
@@ -41,6 +42,7 @@ async function seedFinishedPcmSegments(count: number): Promise<void> {
     updatedAt: 0,
     coverColourKey: null,
     shelfPosition: 0,
+    ...BOOK_V12_FIELDS,
   });
   await tx.objectStore("chapters").put({
     id: chid("ch1"),
@@ -48,6 +50,7 @@ async function seedFinishedPcmSegments(count: number): Promise<void> {
     number: 1,
     name: null,
     segmentIds: Array.from({ length: count }, (_, i) => sid(`p0${i}`)),
+    ...ROW_V12_FIELDS,
   });
   for (let i = 0; i < count; i += 1) {
     const segmentId = sid(`p0${i}`);
@@ -62,6 +65,7 @@ async function seedFinishedPcmSegments(count: number): Promise<void> {
       label: null,
       activeTakeId: takeId,
       status: "affirmed",
+      ...ROW_V12_FIELDS,
     });
     await tx.objectStore("takes").put({
       id: takeId,
