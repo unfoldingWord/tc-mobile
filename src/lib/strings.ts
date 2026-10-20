@@ -81,27 +81,42 @@ function trail(...parts: readonly string[]): string {
 }
 
 /**
- * An entry that reuses another entry calls it through this binding:
- * `chapterHeading` falls back to `strings.chapterName`, `shareBookPartial`
- * returns `strings.shareMissing`, and a few more reach `couldNotBeIncluded` or
- * `trail`, whose words are English. `tests/strings-self-reference.test.ts`
- * pins which entries these are, so a new one fails there and is sent back
- * here. With one table, that is correct, and it is the
- * reason the aliases exist. Byte-for-byte copies drifted, and an alias cannot.
+ * An entry that reuses another entry calls it through `this`:
+ * `chapterHeading` falls back to `this.chapterName`, `shareBookPartial`
+ * returns `this.shareMissing`, and a few more reach `couldNotBeIncluded` or
+ * `trail`, whose words are English (#1481 moves those two into the table).
+ * `tests/strings-self-reference.test.ts` pins which entries these are, so a
+ * new one fails there and is sent back here. Byte-for-byte copies drifted, and
+ * an alias cannot.
  *
- * It is also what breaks when `strings[locale]` lands (#169). A second
- * locale's entry that still calls through `strings` formats its embedded part
- * from THIS table. The result is a heading that is half English.
+ * WHY `this` AND NOT `strings.<entry>` (#169, #1480). `strings` below is a
+ * live binding that `installStrings` repoints at the active locale's table.
+ * An entry that called `strings.chapterName` from inside a second locale's
+ * table would format its embedded part from whichever table is installed, or
+ * from this English one: a heading that is half English. A method called as
+ * `strings.chapterHeading(...)` has `this` set to the table it was read from,
+ * so each alias resolves within its own table and a copy of the table that
+ * overrides `chapterName` changes every entry that embeds it.
  *
- * The existing tests cannot see that. `tests/breadcrumb.test.ts`'s
- * `chapterHeading(null, n) === chapterName(n)` stays green while the bug is
- * live, because both sides resolve through the same wrong table and agree.
- * Whoever adds a second table needs each alias to resolve within its own table
- * (through `this`, an explicit table parameter, or a factory that closes over
- * the right one). They also need a test that a locale's entry never reaches the
- * default table, which is a different assertion from the equality ones.
+ * The cost is that these entries are methods, not arrows, and so must be
+ * called through the table: `strings.chapterHeading(null, 3)`, never a
+ * detached `const f = strings.chapterHeading`. The one entry shape that is
+ * safe detached is an arrow that touches only its own arguments, which is
+ * every other entry.
+ *
+ * The existing equality tests cannot see a wrong-table call.
+ * `tests/breadcrumb.test.ts`'s `chapterHeading(null, n) === chapterName(n)`
+ * stays green while the bug is live, because both sides resolve through the
+ * same wrong table and agree. `tests/strings-locale-binding.test.ts` is the
+ * different assertion: it installs a table whose `chapterName` is a sentinel
+ * and requires every entry that embeds it to carry the sentinel.
+ *
+ * The English literal is written as a value, with no type annotation, so the
+ * keys and signatures here are the one source of the shape; `Strings` is
+ * derived from it with string literals widened, so a locale's table may hold
+ * different words.
  */
-export const strings = {
+export const stringsEn = {
   // ── Books screen (B2) ────────────────────────────────────────────────────
   newBook: "New book",
   menuOpen: "Open menu",
@@ -170,8 +185,9 @@ export const strings = {
    * and the pin that it equals `chapterName` does not see that break: see the
    * docblock above `strings`.
    */
-  chapterHeading: (name: string | null, n: number): string =>
-    name ?? strings.chapterName(n),
+  chapterHeading(name: string | null, n: number): string {
+    return name ?? this.chapterName(n);
+  },
   /**
    * The Segments screen's header trail: which book, which chapter. Takes the
    * resolved heading rather than a name-or-number pair, so the one place that
@@ -270,12 +286,15 @@ export const strings = {
   // These three are the row's open control's accessible name, which REPLACES
   // its visible text, so they carry the same heading the row paints — label
   // included (#591, WCAG 2.5.3). Unlabelled, the heading is the bare ordinal.
-  editSegment: (n: number, label: string | null): string =>
-    `Edit segment ${strings.segmentHeading(n, label)}`,
-  editSegmentFinished: (n: number, label: string | null): string =>
-    `Edit segment ${strings.segmentHeading(n, label)}, finished`,
-  openSegment: (n: number, label: string | null): string =>
-    `Open segment ${strings.segmentHeading(n, label)}`,
+  editSegment(n: number, label: string | null): string {
+    return `Edit segment ${this.segmentHeading(n, label)}`;
+  },
+  editSegmentFinished(n: number, label: string | null): string {
+    return `Edit segment ${this.segmentHeading(n, label)}, finished`;
+  },
+  openSegment(n: number, label: string | null): string {
+    return `Open segment ${this.segmentHeading(n, label)}`;
+  },
   scrubSegment: (n: number): string => `Position in segment ${n}`,
   // "done", not "finished" (D17, #949): the O4 tile's caption is the
   // workbench's "Done", and the label must hold the caption (label-in-name).
@@ -322,6 +341,8 @@ export const strings = {
   // `markFinished` says "done" to match (D17).
   tileEdit: "Edit",
   tileFinished: "Done",
+  // The recorder menu's mid-take Stop tile (#369); its name is `stop`.
+  tileStop: "Stop",
   tileRename: "Rename",
   // Clear removes a segment's audio and keeps the segment; Delete below
   // removes the segment. Key names keep "erase" (the code's word for the
@@ -360,13 +381,14 @@ export const strings = {
    * the separator. Neither a chapter's name nor a segment's label is spelled
    * out here.
    */
-  recorderBreadcrumb: (
+  recorderBreadcrumb(
     book: string,
     chapter: string,
     segment: number,
     segmentLabel: string | null
-  ): string =>
-    trail(book, chapter, strings.segmentHeading(segment, segmentLabel)),
+  ): string {
+    return trail(book, chapter, this.segmentHeading(segment, segmentLabel));
+  },
   record: "Record",
   // The second tap on the record control ENDS the take and commits it in place
   // (#614). It was "Pause"/"Resume" while a take could be suspended and
@@ -675,10 +697,12 @@ export const strings = {
   // "Mark 6" stays as it is (the DRI's pick), so it would not say where the
   // chapter landed.
   chapterReorderLifted: (n: number): string => `Moving chapter ${n}.`,
-  chapterReorderMoved: (from: number, to: number): string =>
-    `${strings.chapterName(from)} is now chapter ${to}.`,
-  chapterReorderStayed: (n: number): string =>
-    `${strings.chapterName(n)} stayed where it was.`,
+  chapterReorderMoved(from: number, to: number): string {
+    return `${this.chapterName(from)} is now chapter ${to}.`;
+  },
+  chapterReorderStayed(n: number): string {
+    return `${this.chapterName(n)} stayed where it was.`;
+  },
   // The same three lines for a book on the Books screen (#338). Said by the
   // book's heading (its name, or its placeholder), since a book has no number
   // that follows its place; the landing is its new place on the shelf, from 1.
@@ -825,14 +849,14 @@ export const strings = {
   // The chapter's own name (#264) is free text too and is sanitised the same
   // way (#1218). No name, or one with nothing left once sanitised, falls back
   // to the default through `chapterName`, the one place that spells it.
-  shareFilename: (
+  shareFilename(
     book: string,
     chapter: number,
     chapterName: string | null = null
-  ): string => {
+  ): string {
     const label = filenameSafe(chapterName ?? "");
     return `${filenameSafe(book)} - ${
-      label === "" ? filenameSafe(strings.chapterName(chapter)) : label
+      label === "" ? filenameSafe(this.chapterName(chapter)) : label
     }.mp3`;
   },
 
@@ -877,7 +901,9 @@ export const strings = {
   // round 2 (#423) named the byte-for-byte duplicate as drift-prone — a later
   // edit to one could tighten the segment-grain phrasing and forget the
   // other, and only `shareBookPartial` was pinned. One wording, one function.
-  shareBookPartial: (n: number): string => strings.shareMissing(n),
+  shareBookPartial(n: number): string {
+    return this.shareMissing(n);
+  },
   // Both gaps can occur in the same book (a whole chapter missing AND a
   // segment missing from one that shipped). The screen surfaces ONE Notice for
   // the book grain, so this combines rather than stacking two.
@@ -945,12 +971,12 @@ export const strings = {
   // `partialChapters ?? 0` from an optional field (`share-error-copy.ts`), and
   // a missing count must still read "an included chapter", as the ternary
   // did, rather than claim "0 included chapters" about a gap that exists.
-  shareBookMissingAndPartial: (
+  shareBookMissingAndPartial(
     chapters: number,
     segments: number,
     partialChapters: number
-  ): string =>
-    `${strings.shareBookMissing(chapters)} ${couldNotBeIncluded(
+  ): string {
+    return `${this.shareBookMissing(chapters)} ${couldNotBeIncluded(
       `${plural(segments, { one: "{n} segment", other: "{n} segments" })} of ${plural(
         Math.max(partialChapters, 1),
         {
@@ -959,7 +985,8 @@ export const strings = {
           other: "{n} included chapters",
         }
       )}`
-    )}`,
+    )}`;
+  },
   // The encoder went silent mid-share and was restarted (#166). Chapter and book
   // alike: the cause is the phone, not what was being shared. Try again is still
   // the first thing to do — the encoder was restarted — and the restart hint is
@@ -969,8 +996,9 @@ export const strings = {
     "Could not prepare this to share. Try again — if it keeps happening, restart the app.",
   // Sanitised like shareFilename: the book name is the .zip File name and must
   // not carry a path separator or a reserved character (G3).
-  shareBookFilename: (book: string): string =>
-    `${filenameSafe(book) || strings.shareNameFallback}.zip`,
+  shareBookFilename(book: string): string {
+    return `${filenameSafe(book) || this.shareNameFallback}.zip`;
+  },
   // What a book is called in a share filename or folder when its name
   // sanitises to nothing ("///"), so no file is ".zip" and no folder is "".
   shareNameFallback: "Book",
@@ -1016,16 +1044,20 @@ export const strings = {
   // confirms destroy the only copy of a recording, and `takeRecoverDiscard`'s
   // own comment says the two share one shape. The arrows run only after
   // `strings` is initialised, as `menuOpenWithFailures` already relies on.
-  saveFailedDiscard: (editOnly: boolean, armed: boolean): string =>
-    armed
+  saveFailedDiscard(editOnly: boolean, armed: boolean): string {
+    return armed
       ? editOnly
         ? "Tap again to discard these changes"
-        : strings.takeRecoverDiscardArmed
+        : this.takeRecoverDiscardArmed
       : editOnly
         ? "Discard these changes"
-        : strings.takeRecoverDiscard,
-  saveFailedDiscardHint: (editOnly: boolean): string =>
-    editOnly ? "Tap again to discard them." : strings.takeRecoverDiscardHint,
+        : this.takeRecoverDiscard;
+  },
+  saveFailedDiscardHint(editOnly: boolean): string {
+    return editOnly
+      ? "Tap again to discard them."
+      : this.takeRecoverDiscardHint;
+  },
   // The headline for each failure kind but `quota`, which reads `noRoom`.
   // `recoveryTitle` in `components/recovery-copy.ts` says why each is worded
   // the way it is; a `downgrade` names what is needed, not what went wrong.
@@ -1236,8 +1268,9 @@ export const strings = {
     }),
   shareAllFilename: "My work.zip",
   // Each book's folder inside the zip, sanitised like shareBookFilename.
-  shareAllFolder: (book: string): string =>
-    filenameSafe(book) || strings.shareNameFallback,
+  shareAllFolder(book: string): string {
+    return filenameSafe(book) || this.shareNameFallback;
+  },
 
   // ── The database is unreachable (#221) ───────────────────────────────────
   // Two full-screen states, one in each copy of the app, when a newer copy
@@ -1325,8 +1358,9 @@ export const strings = {
   // the panel and the control it opens saying different things about the same
   // number — and a count phrase is now a plural TABLE, which is a worse thing
   // to keep two copies of than a sentence was.
-  menuOpenWithFailures: (n: number): string =>
-    `Open menu. ${strings.failuresMarker(n)}.`,
+  menuOpenWithFailures(n: number): string {
+    return `Open menu. ${this.failuresMarker(n)}.`;
+  },
   // Said in the menu, above the two actions. Deliberately not "the app
   // crashed": most entries are a single failed write the translator never saw,
   // and alarming a person about work that is still on the phone is its own harm.
@@ -1441,3 +1475,30 @@ export const strings = {
   coverSwatchLabel: (name: string, selected: boolean): string =>
     selected ? `${name}, selected` : name,
 } as const;
+
+/**
+ * The shape of a table: every key of the English one, with a fixed sentence
+ * typed as `string` rather than as its English literal, so another language's
+ * table is assignable. Function entries keep their signatures.
+ */
+export type Strings = {
+  -readonly [K in keyof typeof stringsEn]: (typeof stringsEn)[K] extends string
+    ? string
+    : (typeof stringsEn)[K];
+};
+
+/**
+ * The table the UI reads. A live ES binding: importers see the table that
+ * `installStrings` last installed, not the one that existed when they were
+ * evaluated. English until something installs another (no locale is chosen at
+ * runtime yet), so every existing `strings.<name>` reads the same words.
+ *
+ * Read it at the point of use. A module-scope `const x = strings.name` would
+ * freeze whichever table was installed when that module loaded.
+ */
+export let strings: Strings = stringsEn;
+
+/** Point `strings` at `table`. Takes effect for every later read. */
+export function installStrings(table: Strings): void {
+  strings = table;
+}

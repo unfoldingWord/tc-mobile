@@ -1,0 +1,10 @@
+{
+  "packageId": "collection:psalm-songs",
+  "version": "0.1.0",
+  "language": "es",
+  "chapters": { "songs": "Cantos" },
+  "segments": {
+    "intro": "Introducción",
+    "PSA.17.50-18.1": "Salmo 17 al 18"
+  }
+}

@@ -1080,14 +1080,20 @@ export function createLevelTap(stream: MediaStream): LevelTap {
   // playback and the next recording — unless this tap saw its clock stopped
   // (#1251), in which case the context is dropped once the hold is released,
   // subject to every refusal in `discardSharedContext`. Idempotent.
+  // The release sits in a `finally` so a throw from the teardown above cannot
+  // leave `sharedContextHolds` raised and every later drop refused (#1233
+  // item 2). No such throw is known: `disconnect` swallows its own.
   const disconnectGraph = () => {
     if (disconnected) return;
     disconnected = true;
-    disconnect(source);
-    disconnect(analyser);
-    disconnect(sink);
-    releaseHold();
-    if (clockStalled) dropStalledContext(ctx);
+    try {
+      disconnect(source);
+      disconnect(analyser);
+      disconnect(sink);
+    } finally {
+      releaseHold();
+      if (clockStalled) dropStalledContext(ctx);
+    }
   };
 
   return {
