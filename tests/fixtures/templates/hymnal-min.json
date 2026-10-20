@@ -1,0 +1,44 @@
+{
+  "format": "tc-mobile-template",
+  "formatVersion": 0,
+  "id": "hymnal:fixture",
+  "version": "0.1.0",
+  "kind": "hymnal",
+  "bookCode": null,
+  "title": { "fr": "Recueil de cantiques" },
+  "titleLanguages": ["fr"],
+  "dataLicence": "CC-BY-4.0",
+  "recordingLicence": "CC-BY-SA-4.0",
+  "attribution": "Invented fixture source, not a real dataset",
+  "source": { "url": "https://example.org/hymnal", "revision": "r7" },
+  "chapters": [
+    {
+      "key": "advent",
+      "number": 12,
+      "segments": [
+        {
+          "key": "h-0031",
+          "reference": {
+            "book": "HYM",
+            "startChapter": 31,
+            "startVerse": 1,
+            "endChapter": 31,
+            "endVerse": 4
+          },
+          "thumbnail": "art/h-0031.png"
+        },
+        {
+          "key": "h-0032",
+          "reference": {
+            "book": "HYM",
+            "startChapter": 32,
+            "startVerse": null,
+            "endChapter": 33,
+            "endVerse": null
+          },
+          "thumbnail": null
+        }
+      ]
+    }
+  ]
+}

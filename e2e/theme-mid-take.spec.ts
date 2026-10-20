@@ -186,10 +186,13 @@ test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the 
 
   // Start capturing, and wait until the transport says a take is live.
   await page.getByRole("button", { name: "Record", exact: true }).click();
-  const stop = page.getByRole("button", {
-    name: "Stop recording",
-    exact: true,
-  });
+  // The TRANSPORT's Stop, scoped to the recorder sheet: since #369 the ⋮
+  // menu carries a Stop tile of the same name mid-take, so a page-wide
+  // locator resolves to two buttons once the menu is open.
+  const stop = page
+    .getByRole("dialog", { name: "Recorder", exact: true })
+    .locator(".control--record")
+    .and(page.getByRole("button", { name: "Stop recording", exact: true }));
   await expect(stop).toBeVisible();
 
   // Let the timer leave 0:00, so "advanced" below compares two real readings
@@ -208,6 +211,11 @@ test("a mid-take toggle: Stop stays, the clock advances, the menu reverses, the 
   await page.getByRole("button", { name: "More actions", exact: true }).click();
   const menu = page.getByRole("dialog", { name: "More", exact: true });
   await expect(menu).toBeVisible();
+  // Mid-take the menu's first tile is Stop (#369). Not tapped here: this
+  // test ends the take from the transport below.
+  await expect(menu.locator(".o4-tile").first()).toHaveAccessibleName(
+    "Stop recording"
+  );
 
   // Sampled HERE, with the menu already up and the next action being the tap
   // itself — not before the menu opened (George round 3, #623). Opening the

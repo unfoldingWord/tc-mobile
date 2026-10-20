@@ -64,6 +64,20 @@ export interface RecorderMenuProps {
   /** Close the menu and arm the erase confirm. */
   onErase: () => void;
   /**
+   * A take is recording right now. While it is, the first tile is Stop
+   * (#369, the DRI's 2026-10-19 pick), so a translator who opened this menu
+   * mid-take can end the take without first dismissing the drawer that
+   * covers the transport. Absent means false.
+   */
+  recording?: boolean;
+  /**
+   * Close the menu and end the take, through the same handler the
+   * transport's own Stop runs. Since #614 that tap commits the take rather
+   * than pausing it, so the tile wears the transport's stop glyph and name,
+   * not a pause.
+   */
+  onStopTake?: () => void;
+  /**
    * The book's name, the sheet head's first crumb (workbench G3). Absent,
    * that crumb is left out.
    */
@@ -96,6 +110,8 @@ export function RecorderMenu({
   eraseReason,
   onToggleFinished,
   onErase,
+  recording = false,
+  onStopTake,
   bookName,
   bookCoverHex,
   chapterNumber,
@@ -160,6 +176,8 @@ export function RecorderMenu({
           eraseReason={eraseReason}
           onToggleFinished={onToggleFinished}
           onErase={onErase}
+          recording={recording}
+          onStopTake={onStopTake}
         />
         <TileSpacer />
         <ThemeControl tile />
@@ -191,6 +209,8 @@ function RecorderMenuTiles({
   eraseReason,
   onToggleFinished,
   onErase,
+  recording,
+  onStopTake,
 }: Pick<
   RecorderMenuProps,
   | "mode"
@@ -199,9 +219,24 @@ function RecorderMenuTiles({
   | "eraseReason"
   | "onToggleFinished"
   | "onErase"
-> & { marked: boolean }) {
+  | "onStopTake"
+> & { marked: boolean; recording: boolean }) {
   return (
     <>
+      {/* Stop, first, only while a take is recording (#369). First so the
+          open-edge focus lands on it: mid-take, ending the take is what the
+          translator most likely wants from a drawer that covers the
+          transport. Record mode only, as a take cannot run in edit mode. */}
+      {mode === "record" && recording && onStopTake && (
+        <Tile
+          tone="plain"
+          icon="stop"
+          label={strings.stop}
+          caption={strings.tileStop}
+          className="recorder-menu-tile"
+          onClick={onStopTake}
+        />
+      )}
       {/* Edit mode has no Done tile (#1252, the requirements owner): "Done"
           keeps one meaning, mark finished, and the toolbar's ✕ leaves edit
           mode. */}

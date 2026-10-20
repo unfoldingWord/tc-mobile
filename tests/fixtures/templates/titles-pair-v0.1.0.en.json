@@ -1,0 +1,7 @@
+{
+  "packageId": "collection:pair",
+  "version": "0.1.0",
+  "language": "en",
+  "chapters": { "c1": "First" },
+  "segments": { "s1": "One", "s2": "Two" }
+}

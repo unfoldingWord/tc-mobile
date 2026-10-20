@@ -231,7 +231,10 @@ default, the text there says to keep using it.
        (marks the segment finished) and **Reset** (its confirm box reads
        "Reset segment and start over"). There is **no Edit tile** here — Edit
        is the scissors on the recorder's bottom bar (§3). The drawer closes
-       with the **✕** in its top corner, like every new-look menu.
+       with the **✕** in its top corner, like every new-look menu. From 1.1,
+       if the drawer is opened while recording, a **Stop** tile (the square)
+       comes first: tapping it closes the drawer and ends the take, the same
+       as the Stop button underneath. <!-- source: src/components/recorder-menu.tsx (RecorderMenuTiles: the Stop tile, record mode, only while `recording`); src/components/recorder.tsx (onStopTake → onRecordButton); gh issue #369 (DRI pick 2026-10-19); not device-verified -->
      - **Old look**: rows, not tiles — Edit, "Mark segment N done", and
        "Reset segment and start over" — and the drawer's own close control is
        a **⋮**.
