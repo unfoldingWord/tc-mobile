@@ -87,29 +87,33 @@ export function hasAudioSessionApi(): boolean {
 }
 
 /**
- * Whether the native iOS shell owns this page's audio session (#1251), so
- * the two setters below must leave `navigator.audioSession` alone.
+ * Whether this page runs inside the native iOS shell, where the Record
+ * setter below leaves `navigator.audioSession` alone (#1251, #1518).
  *
  * The Capacitor iOS app sets `AVAudioSession` to `.playAndRecord` with
  * `.defaultToSpeaker` and the Bluetooth options once, at launch
- * (`ios/App/App/AppDelegate.swift`). That one category is meant to cover
- * recording, the silent switch and the speaker. On WebKit 16.4+ a
+ * (`ios/App/App/AppDelegate.swift`). On WebKit 16.4+ a
  * `navigator.audioSession.type` write replaces that category, and the web
  * API cannot put `.defaultToSpeaker` or the Bluetooth options back (#1116's
- * review). The rc.2 stall (#1251: a context reading `"running"` with a
- * stopped clock) reproduced in the TestFlight app and not in Safari on the
- * same phone, so layering the per-press switch on top of the native
- * category is one suspect. Whether it plays any part in the stall is not
- * known; the reproduced trigger was locking and unlocking the phone, and
- * the drop on hide and the stalled-clock checks are what answer that.
+ * review).
+ *
+ * History, so the next reader knows which half is which. #1251's pick
+ * stopped both writes inside the shell, leaving the launch category as the
+ * only protection against the ring/silent switch. #1518 is a field report
+ * from the 1.1 TestFlight build: recording works, Play is silent. The likely
+ * cause, inferred from the code and from #1100 (the same symptom before
+ * #1116 added the `"playback"` declaration) and not run on a device, is that
+ * WebKit puts a Web-Audio-only page with no declared type on a category that
+ * follows the switch. So the Play declaration is back in the shell, and only
+ * the Record switch stays off there.
  *
  * Reads the build from `readSharePlatform()` (`share-target.ts`), the
  * repo's one reading of `Capacitor.getPlatform()`. Safari, the installed
- * PWA and the Android shell read `"web"` or `"android"` and keep the
- * switching; Android's WebView has no `navigator.audioSession`, so there it
- * was already a no-op.
+ * PWA and the Android shell read `"web"` or `"android"` and keep both
+ * writes; Android's WebView has no `navigator.audioSession`, so there they
+ * are no-ops.
  */
-function nativeShellOwnsAudioSession(): boolean {
+function inNativeIosShell(): boolean {
   return readSharePlatform() === "ios";
 }
 
@@ -126,16 +130,19 @@ function nativeShellOwnsAudioSession(): boolean {
  * left on `"play-and-record"` (see `setRecordAudioSession`) without this
  * module needing its own "recording just ended" hook.
  *
- * Does nothing inside the native iOS shell (#1251,
- * `nativeShellOwnsAudioSession`): there the launch-time `.playAndRecord`
- * category is the whole configuration, and it is not switched per Play.
+ * Runs inside the native iOS shell too (#1518). There the write replaces the
+ * launch-time `.playAndRecord` category for the rest of the page's life,
+ * because the Record setter below does not switch it back, and #1116's
+ * review says the web API cannot restore `.defaultToSpeaker` or the
+ * Bluetooth options. Whether that keeps Play audible with the silent switch
+ * on and on the loudspeaker, and whether a later take still records under
+ * it, has not been run on a device (#1518).
  *
  * Feature-checked and a no-op wherever `navigator.audioSession` does not
  * exist: every engine besides Safari/WebKit 16.4+, and every already-shipped
  * page load before this change. Never throws.
  */
 export function setPlaybackAudioSession(): void {
-  if (nativeShellOwnsAudioSession()) return;
   const session = getAudioSession();
   if (session) session.type = "playback";
 }
@@ -151,16 +158,17 @@ export function setPlaybackAudioSession(): void {
  * can play while this type is live, and the next Play reasserts `"playback"`
  * (`setPlaybackAudioSession` above) before it plays.
  *
- * Does nothing inside the native iOS shell (#1251,
- * `nativeShellOwnsAudioSession`): the launch-time `.playAndRecord` category
- * is already record-capable, and since `setPlaybackAudioSession` no longer
- * switches it away there, there is nothing to switch back.
+ * Does nothing inside the native iOS shell (#1251, kept by #1518,
+ * `inNativeIosShell`). There, after any Play, a take starts with the type
+ * still `"playback"`, which may have replaced the launch-time
+ * `.playAndRecord` category. Whether capture works under that declared type
+ * inside WKWebView has not been run on a device (#1518).
  *
  * Feature-checked and a no-op wherever `navigator.audioSession` does not
  * exist. Never throws.
  */
 export function setRecordAudioSession(): void {
-  if (nativeShellOwnsAudioSession()) return;
+  if (inNativeIosShell()) return;
   const session = getAudioSession();
   if (session) session.type = "play-and-record";
 }
@@ -1411,8 +1419,8 @@ export async function playSamples(
   // #1111: declare this claim as playback BEFORE anything else, so a session
   // a previous recording left on "play-and-record" is corrected the instant a
   // Play is pressed, not only on the recorder's own stop path. Synchronous,
-  // feature-checked and a no-op on every non-WebKit engine, and inside the
-  // native iOS shell (#1251) — see the docblock on `setPlaybackAudioSession`.
+  // feature-checked and a no-op on every non-WebKit engine. It runs inside the
+  // native iOS shell too (#1518) — see the docblock on `setPlaybackAudioSession`.
   setPlaybackAudioSession();
 
   // The context this claim resumes. If the bound fails closed, this is the

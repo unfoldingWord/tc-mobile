@@ -162,10 +162,13 @@ describe("playSamples — declares playback on every Play (#1111)", () => {
 });
 
 /**
- * #1251: inside the native iOS shell the launch-time `.playAndRecord`
- * category (`ios/App/App/AppDelegate.swift`) is the whole configuration, so
- * neither setter writes `navigator.audioSession.type` there. Safari and the
- * PWA (`"web"`) keep the switching, which the cases above already pin.
+ * Inside the native iOS shell (#1518, building on #1251): a Play declares
+ * `"playback"`, the same as in Safari, so WebKit routes it past the ring/silent
+ * switch. A Record writes nothing there: the launch-time `.playAndRecord`
+ * category (`ios/App/App/AppDelegate.swift`) is left to cover capture, and the
+ * per-press `"play-and-record"` switch rc.2 also made is not restored.
+ * Safari and the PWA (`"web"`) keep both writes, which the cases above
+ * already pin.
  *
  * The build is faked where the app reads it: `Capacitor.getPlatform()`, the
  * bridge `readSharePlatform()` (`hooks/share-target.ts`) narrows. So these
@@ -178,19 +181,19 @@ async function loadAudioIoOn(platform: string, audioSession: { type: string }) {
   return io;
 }
 
-describe("the native iOS shell leaves navigator.audioSession alone (#1251)", () => {
+describe("the native iOS shell declares playback on Play only (#1518)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("setPlaybackAudioSession writes nothing on ios", async () => {
+  it("setPlaybackAudioSession writes playback on ios", async () => {
     const audioSession = { type: "auto" };
     const { setPlaybackAudioSession } = await loadAudioIoOn(
       "ios",
       audioSession
     );
     setPlaybackAudioSession();
-    expect(audioSession.type).toBe("auto");
+    expect(audioSession.type).toBe("playback");
   });
 
   it("setRecordAudioSession writes nothing on ios", async () => {
@@ -198,6 +201,15 @@ describe("the native iOS shell leaves navigator.audioSession alone (#1251)", () 
     const { setRecordAudioSession } = await loadAudioIoOn("ios", audioSession);
     setRecordAudioSession();
     expect(audioSession.type).toBe("auto");
+  });
+
+  it("a Record after a Play on ios leaves the type at playback", async () => {
+    const audioSession = { type: "auto" };
+    const { setPlaybackAudioSession, setRecordAudioSession } =
+      await loadAudioIoOn("ios", audioSession);
+    setPlaybackAudioSession();
+    setRecordAudioSession();
+    expect(audioSession.type).toBe("playback");
   });
 
   it("both setters still write on web (Safari and the PWA)", async () => {
@@ -210,7 +222,7 @@ describe("the native iOS shell leaves navigator.audioSession alone (#1251)", () 
     expect(audioSession.type).toBe("playback");
   });
 
-  it("a Play inside the ios shell leaves the session type as it was", async () => {
+  it("a Play inside the ios shell has declared playback by the time the source starts", async () => {
     vi.resetModules();
     const audioSession = { type: "auto" };
     let typeAtSourceStart: string | undefined;
@@ -230,7 +242,6 @@ describe("the native iOS shell leaves navigator.audioSession alone (#1251)", () 
       isStillCurrent: () => true,
     });
 
-    expect(typeAtSourceStart).toBe("auto");
-    expect(audioSession.type).toBe("auto");
+    expect(typeAtSourceStart).toBe("playback");
   });
 });
