@@ -4,6 +4,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 
 import {
@@ -45,9 +46,14 @@ import type { SavedChecks } from "@/lib/phone-check/saved-results";
  * What the checks are doing right now. `null` is idle. `waiting` is a run
  * that holds the claim but is still waiting for a transcode turn already in
  * flight to finish: busy, so Close and both Starts stay disabled through it.
+ * `stopping` is a run this screen did not start — one an earlier, closed
+ * screen started and aborted — still holding the slot until its probe in
+ * flight reaches an abort boundary. A Start then would return without doing
+ * anything, so the screen reads busy instead of idle (#1379).
  */
 export type PhoneCheckActivity =
   | { readonly kind: "waiting" }
+  | { readonly kind: "stopping" }
   | { readonly kind: "device" }
   | { readonly kind: "encode" }
   | { readonly kind: "storage" }
@@ -63,6 +69,19 @@ export interface PhoneCheckState {
 }
 
 let runInFlight = false;
+const slotListeners = new Set<() => void>();
+
+function setRunInFlight(next: boolean): void {
+  runInFlight = next;
+  for (const listener of slotListeners) listener();
+}
+
+function subscribeToRunSlot(listener: () => void): () => void {
+  slotListeners.add(listener);
+  return () => {
+    slotListeners.delete(listener);
+  };
+}
 
 /**
  * Claim the one phone-check run slot, or `null` while a run holds it.
@@ -76,12 +95,12 @@ let runInFlight = false;
  */
 export function claimPhoneCheckRun(): (() => void) | null {
   if (runInFlight) return null;
-  runInFlight = true;
+  setRunInFlight(true);
   let released = false;
   return () => {
     if (released) return;
     released = true;
-    runInFlight = false;
+    setRunInFlight(false);
   };
 }
 
@@ -122,6 +141,8 @@ export interface CheckProbes {
 
 /** The pause reason the phone check holds the transcode sweep under. */
 const PHONE_CHECK_SWEEP_PAUSE = "phone-check";
+
+const STOPPING: PhoneCheckActivity = { kind: "stopping" };
 
 /**
  * Run `work` with the background transcode sweep held off it (Frank R1 P2 on
@@ -246,6 +267,14 @@ export function usePhoneCheck(): {
   const [crumbStore] = useState(sessionBreadcrumbStore);
   const [state, setState] = useState<PhoneCheckState>(() =>
     initialPhoneCheckState(crumbStore)
+  );
+  // Read live, so a screen opened while a closed screen's run winds down goes
+  // busy at once and idle the moment that run releases the slot. This screen's
+  // own runs set `activity` themselves, synchronously in the tap.
+  const slotHeld = useSyncExternalStore(
+    subscribeToRunSlot,
+    isPhoneCheckRunning,
+    isPhoneCheckRunning
   );
   // The runs this screen started that have not finished (#1014 item 6), each
   // with what puts its earlier report back, or `null` when it has none.
@@ -384,5 +413,9 @@ export function usePhoneCheck(): {
     })();
   }, [crumbStore]);
 
-  return { state, runChecks, runMemory };
+  const shown =
+    state.activity === null && slotHeld
+      ? { ...state, activity: STOPPING }
+      : state;
+  return { state: shown, runChecks, runMemory };
 }
