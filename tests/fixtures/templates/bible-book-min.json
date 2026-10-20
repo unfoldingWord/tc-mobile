@@ -1,0 +1,44 @@
+{
+  "format": "tc-mobile-template",
+  "formatVersion": 0,
+  "id": "bible:MRK",
+  "version": "0.1.0",
+  "kind": "bible-book",
+  "bookCode": "MRK",
+  "title": { "en": "Mark" },
+  "titleLanguages": ["en"],
+  "dataLicence": "CC-BY-SA-4.0",
+  "recordingLicence": "CC-BY-SA-4.0",
+  "attribution": "Fixture text, CC BY-SA 4.0",
+  "source": { "url": "https://example.org/mrk", "revision": "fixture-1" },
+  "chapters": [
+    {
+      "key": "MRK.1",
+      "number": 1,
+      "segments": [
+        {
+          "key": "MRK.1.1-8",
+          "reference": {
+            "book": "MRK",
+            "startChapter": 1,
+            "startVerse": 1,
+            "endChapter": 1,
+            "endVerse": 8
+          },
+          "thumbnail": null
+        },
+        {
+          "key": "MRK.1.9-13",
+          "reference": {
+            "book": "MRK",
+            "startChapter": 1,
+            "startVerse": 9,
+            "endChapter": 1,
+            "endVerse": 13
+          },
+          "thumbnail": null
+        }
+      ]
+    }
+  ]
+}
