@@ -176,7 +176,7 @@ function uniqueEntryName(taken: Set<string>, name: string): string {
  * export rather than a partial archive: a zip missing its directory is not a
  * share.
  */
-interface ZipSink {
+export interface ZipSink {
   readonly zip: Zip;
   /** A stored (pass-through) entry for `name`, ready for `zip.add`. */
   entry(name: string): ZipPassThrough;
@@ -191,9 +191,10 @@ interface ZipSink {
   drain(): Promise<void>;
 }
 
-async function openZipSink(sink: ArchiveSink): Promise<ZipSink> {
+export async function openZipSink(sink: ArchiveSink): Promise<ZipSink> {
   // Loaded when a zip is first needed, not at startup: fflate is only used by
-  // Share Book and Share your work, so it stays out of the entry chunk (#161).
+  // the zip exports (Share Book, Share your work, the bundle writer in
+  // `bundle/write.ts`), so it stays out of the entry chunk (#161).
   const { Zip, ZipPassThrough } = await import("fflate");
   let pending: Promise<void>[] = [];
   let zipError: Error | null = null;
@@ -328,7 +329,7 @@ async function addChaptersToZip(
  * Close the archive, surfacing any error fflate reported while writing it, once
  * the central directory has reached the sink.
  */
-async function finishZip(sink: ZipSink): Promise<void> {
+export async function finishZip(sink: ZipSink): Promise<void> {
   sink.zip.end();
   await sink.drain();
   const zipError = sink.error();
