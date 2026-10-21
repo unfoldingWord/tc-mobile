@@ -119,7 +119,7 @@ The app is for people who may not read (AGENTS.md, "Purpose"). So:
   names (`MIT`, `LGPL-3.0`, `GPL-3.0`, `CC BY-SA 4.0`, `CC BY-SA 3.0`), the
   product name tC Mobile, and the name unfoldingWord (always camelCase,
   never translated or re-cased). These are the allowlist the check in #1485
-  reads.
+  reads, plus the per-language supplement in section 9, item 5.
 
 **The one word for clearing a recording (R18).** At `origin/develop` the
 English table still spells this three ways: the tile caption `tileErase` is
@@ -346,10 +346,13 @@ What a lane must have in hand, and where each piece comes from.
 4. **The plural categories** for the language, section 6.
 5. **The quality checks of #1485** a draft has to pass: no value equal to the
    English one unless allowlisted (the allowlist is in section 4, plus, for
-   one language only, every section 5 cell of that language spelled the same
+   the language being drafted, and no other, every section 5 cell of that language spelled the same
    as the English, such as `fr` Menu and Pause, `id` Menu and Edit, `pt`
    Menu); each value holds at least one letter of the language's script and no
-   stray Latin letters beyond the allowlist, where for a Latin-script language
+   stray Latin letters beyond the allowlist. The letters inside a kept slot
+   (`{n}` and each named slot such as `{name}`) are the slot, not stray Latin,
+   in every language: an Arabic catalog value `"{n}"` plus Arabic words
+   passes, and removing the `n` fails section 6. For a Latin-script language
    (`es`, `fr`, `id`, `pt`, `sw`) Latin letters are its own script, not stray;
    the length stays within the ratio the test records; no `{`, `}` or
    `undefined` in the rendered text, after the slots are filled (section 6:
@@ -359,7 +362,9 @@ What a lane must have in hand, and where each piece comes from.
    empty (#357, 2026-10-19). A lane that leaves a key out puts it on that list
    rather than copying English in.
 7. **What a lane returns.** The draft values; a list of every term where it
-   departed from section 5, with the reason; and the keys it put on the pending
+   departed from section 5, with the reason; its Verify questions, each cell
+   that matches another row or the English, naming that row or the English
+   (section 5); and the keys it put on the pending
    list, each with a reason. It does not change the English table, the
    glossary, or the check.
 
