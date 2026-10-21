@@ -511,7 +511,8 @@ export interface LoudnessNormalizerOptions {
 
 /**
  * Pass 2. Feed every chunk of the take in order with {@link process}, then
- * call {@link flush} until it returns 0. The output, joined, is exactly as
+ * call {@link flush} until it returns 0, with a buffer of any non-zero
+ * length. The output, joined, is exactly as
  * long as the input and aligned with it: the limiter's latency is trimmed
  * from the front and flushed from the tail here, not by the caller.
  */
@@ -562,15 +563,22 @@ export class LoudnessNormalizer {
 
   /**
    * Writes the next part of the take's tail into `x` and returns how many
-   * samples it wrote; 0 once the tail is out.
+   * samples it wrote. 0 means only that the tail is out: on a take shorter
+   * than the limiter's latency, the start-up trim can swallow a whole
+   * buffer's worth, so this keeps pushing silence until it has output to
+   * return or the tail is done.
    */
   flush(x: Float32Array, lap?: LoudnessLap): number {
-    const n = Math.min(this.tail, x.length);
-    if (n === 0) return 0;
-    this.tail -= n;
-    x.fill(0, 0, n);
-    this.limiter.process(x, n);
-    const kept = this.trim(x, n);
+    if (x.length === 0 && this.tail > 0)
+      throw new RangeError("LoudnessNormalizer: empty flush buffer");
+    let kept = 0;
+    while (kept === 0 && this.tail > 0) {
+      const n = Math.min(this.tail, x.length);
+      this.tail -= n;
+      x.fill(0, 0, n);
+      this.limiter.process(x, n);
+      kept = this.trim(x, n);
+    }
     lap?.("limiter");
     return kept;
   }

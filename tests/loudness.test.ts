@@ -67,7 +67,8 @@ function normalize(
   input: Float32Array,
   gainDb: number,
   chunk = RATE,
-  ceilingDbtp?: number
+  ceilingDbtp?: number,
+  flushSize = chunk
 ) {
   const normalizer = new LoudnessNormalizer({
     sampleRate: RATE,
@@ -84,10 +85,11 @@ function normalize(
     out.set(work.subarray(0, kept), at);
     at += kept;
   }
-  for (let kept = normalizer.flush(work); kept > 0;) {
-    out.set(work.subarray(0, kept), at);
+  const tail = new Float32Array(flushSize);
+  for (let kept = normalizer.flush(tail); kept > 0;) {
+    out.set(tail.subarray(0, kept), at);
     at += kept;
-    kept = normalizer.flush(work);
+    kept = normalizer.flush(tail);
   }
   return { out, written: at, normalizer };
 }
@@ -260,6 +262,32 @@ describe("the normalizer", () => {
     );
   });
 
+  it.each(
+    // The limiter's start-up latency at 44.1 kHz is 226 samples (a 221-sample
+    // lookahead, less one, plus the detector's 6). Inputs and flush buffers
+    // straddle it, because a flush buffer smaller than what the start-up
+    // trim still has to drop is the boundary where "flush until 0" can stop
+    // early.
+    [0, 1, 10, 225, 226, 227, 500].flatMap((length) =>
+      [1, 10, 225, 226, 227, 4096].map((flushSize) => [length, flushSize])
+    )
+  )(
+    "flushes a %d-sample take completely through a %d-sample flush buffer",
+    (length, flushSize) => {
+      const input = fromPcm(speechLikePcm(1)).subarray(0, length);
+      const reference = normalize(input, 6, 4096, undefined, 4096);
+      const small = normalize(input, 6, 64, undefined, flushSize);
+      expect(reference.written).toBe(length);
+      expect(small.written).toBe(length);
+      expect(
+        Buffer.compare(
+          new Uint8Array(small.out.buffer),
+          new Uint8Array(reference.out.buffer)
+        )
+      ).toBe(0);
+    }
+  );
+
   it("emits exactly as many samples as it was given, aligned with the input", () => {
     // A 5 kHz tone: far enough above 80 Hz that the high-pass shifts its
     // phase by a small fraction of a sample, and short enough in period
@@ -295,6 +323,20 @@ describe("the normalizer", () => {
     };
     expect(loss(20)).toBeGreaterThanOrEqual(20);
     expect(Math.abs(loss(1000))).toBeLessThan(0.5);
+  });
+});
+
+describe("the normalizer's contract", () => {
+  it("refuses an empty flush buffer while the tail is pending, and reads 0 once it is out", () => {
+    const normalizer = new LoudnessNormalizer({ sampleRate: RATE, gainDb: 0 });
+    const work = new Float32Array(RATE).fill(0.1);
+    expect(normalizer.process(work, RATE)).toBe(RATE - 226);
+    // Without the guard an empty buffer could only ever answer 0, which a
+    // caller reads as "done" with 226 samples still held.
+    expect(() => normalizer.flush(new Float32Array(0))).toThrow(RangeError);
+    expect(normalizer.flush(work)).toBe(226);
+    expect(normalizer.flush(work)).toBe(0);
+    expect(normalizer.flush(new Float32Array(0))).toBe(0);
   });
 });
 
