@@ -15,9 +15,11 @@ import {
   retrySave,
   startSave,
   succeedSave,
+  type NewTake,
   type PendingTake,
 } from "@/lib/takes/pending-take";
 import { requestTranscodeSweep } from "./finish-transcode";
+import { recoverPendingTakes } from "./recover-pending-takes";
 import { reportFailure } from "./report-failure";
 import { saveFailureKind } from "./save-failure";
 import type { ClipId, SegmentId } from "@/types/domain";
@@ -234,6 +236,32 @@ export async function performSaveTake(
 }
 
 /**
+ * Finish the save of a take the launch replay read back from `pendingTakes`
+ * (#38 slice 3): the DRI's pick, "Finish the save quietly (Recommended)".
+ *
+ * It takes the slot and runs the same `performSaveTake` a Save runs, so a
+ * first attempt shows nothing (the recovery screen waits for a failure, see
+ * `recovery` in `App`) and a failure is the recovery screen a failed Save
+ * shows, Retry and Discard included. The take keeps the row's `clipId`, so
+ * the save's own release deletes that row, and its pending write is a
+ * same-`clipId` keep.
+ *
+ * `"busy"` when the slot already holds a take: one slot, so the replay stops
+ * and leaves its row for the next launch rather than displace a recording.
+ */
+export async function performResumeTake(
+  held: PendingTake | null,
+  take: NewTake,
+  effects: SaveEffects
+): Promise<boolean | "busy"> {
+  const next = startSave(held, take);
+  if (next === held) return "busy";
+  // `h ?? next`: a take that reached the slot since `held` was read keeps it.
+  effects.update((h) => h ?? next);
+  return performSaveTake(next, effects);
+}
+
+/**
  * Give up the held recording, and delete what a failed attempt left behind.
  *
  * The other half of the orchestration, extracted for the same reason:
@@ -351,6 +379,13 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
   useEffect(() => {
     onSavedRef.current = onSaved;
   }, [onSaved]);
+
+  // The slot as of the last render, for the launch replay below: it runs from
+  // an effect, outside any render closure that could read `pending`.
+  const pendingRef = useRef(pending);
+  useEffect(() => {
+    pendingRef.current = pending;
+  }, [pending]);
 
   const commit = useCallback(async (take: PendingTake): Promise<boolean> => {
     // Synchronous, before the first await: this is what a second tap in the
@@ -480,6 +515,32 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
     },
     [saveRecording]
   );
+
+  // Launch: finish any save the app was closed in the middle of (#38 slice 3,
+  // `recover-pending-takes.ts`). After the first render, never before it, and
+  // once per mount: the ref holds across React's development double-run.
+  const recoveryStartedRef = useRef(false);
+  useEffect(() => {
+    if (recoveryStartedRef.current) return;
+    recoveryStartedRef.current = true;
+    void recoverPendingTakes(async (take) => {
+      // The same live guard Retry takes, then the slot.
+      if (savingRef.current) return "busy";
+      savingRef.current = true;
+      try {
+        return await performResumeTake(pendingRef.current, take, {
+          update: (transition) => {
+            pendingRef.current = transition(pendingRef.current);
+            setPending(transition);
+          },
+          onSaved: () => onSavedRef.current?.(),
+          requestSweep: () => void requestTranscodeSweep(),
+        });
+      } finally {
+        savingRef.current = false;
+      }
+    });
+  }, []);
 
   const retryPendingTake = useCallback(() => {
     // The live guard, ahead of the pure one: `pending` here is last render's

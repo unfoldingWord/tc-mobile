@@ -9,7 +9,8 @@
  * shape and reasons in docs/design/v12-schema.md, "The pending-takes store").
  *
  * The save hook writes and deletes rows (`hooks/use-save-take.ts`, slice 2 of
- * #38); the launch replay that reads them back is slice 3.
+ * #38); the launch replay reads them back and finishes each save
+ * (`hooks/recover-pending-takes.ts`, slice 3).
  *
  * **Best-effort, by design.** It protects the kill-and-relaunch case, not the
  * quota case. Nothing orders this write against `saveTake`, so near a full
@@ -40,8 +41,9 @@
  * `"saved"` from `loadPendingRecipe`, never as a recording to offer, and the
  * same holds for a relaxed delete lost to a crash after a save landed. It does
  * NOT hold for a discard: a discarded take never became the active take, so a
- * row whose delete did not land reads back as a recipe to offer. Telling it
- * apart from a take still pending is slice 3's to solve. The
+ * row whose delete did not land reads back as a recipe, and the launch replay
+ * saves it. Nothing on disk tells it apart from a take still pending; the
+ * window is a kill between the confirmed discard and its delete landing. The
  * delete is also conditional on `clipId`, so a late delete for one take never
  * removes a newer take's row.
  */
@@ -54,6 +56,7 @@ import type { NewTake } from "@/lib/takes/pending-take";
 import type { ClipMeta } from "@/types/audio";
 import type {
   ClipId,
+  PendingRefusal,
   PendingTakeBase,
   SegmentId,
   StoredPendingTake,
@@ -93,8 +96,8 @@ type PendingListResult =
  *   - `segment-gone`: another copy deleted the segment.
  *   - `base-missing`, `base-changed`: a `stored` base whose clip is gone, or
  *     is not the PCM clip the row was written against (a transcode since).
- *     Never spliced: splicing an MP3 as PCM corrupts the audio. What the
- *     recovery screen offers instead is slice 3's call.
+ *     Never spliced: splicing an MP3 as PCM corrupts the audio. The launch
+ *     replay keeps the row and reports it once (`markPendingRefusal`).
  *   - `sample-rate`: written under another rate than the caller saves at.
  *   - `failed`: the read itself failed.
  */
@@ -257,6 +260,41 @@ export async function deletePendingTake(
       await tx.store.delete(segmentId);
       await tx.done;
       return { ok: true, outcome: "deleted" };
+    } catch (cause) {
+      settle(() => tx.abort());
+      await tx.done.catch(() => {});
+      throw cause;
+    }
+  } catch (cause) {
+    return { ok: false, cause };
+  }
+}
+
+/**
+ * Record on a row that the launch replay has reported its refusal (#38), so
+ * the next launch does not report it again. Never rejects.
+ *
+ * Conditional on `clipId` in one transaction, like the delete: a mark meant
+ * for an older take never lands on a newer one's row. `"kept"` when there is
+ * no such row, or it already carries this refusal.
+ */
+export async function markPendingRefusal(
+  segmentId: SegmentId,
+  clipId: ClipId,
+  refusal: PendingRefusal
+): Promise<PendingWriteResult> {
+  try {
+    const db = await getDb();
+    const tx = db.transaction("pendingTakes", "readwrite", DURABILITY);
+    try {
+      const held = await tx.store.get(segmentId);
+      if (!held || held.clipId !== clipId || held.refusalReported === refusal) {
+        await tx.done;
+        return { ok: true, outcome: "kept" };
+      }
+      await tx.store.put({ ...held, refusalReported: refusal });
+      await tx.done;
+      return { ok: true, outcome: "written" };
     } catch (cause) {
       settle(() => tx.abort());
       await tx.done.catch(() => {});

@@ -303,4 +303,17 @@ export interface StoredPendingTake {
   readonly finished: boolean;
   readonly editOnly: boolean;
   readonly createdAt: number;
+  /**
+   * The refusal the launch replay has already written to the failure log for
+   * this row (#38), so a row that is kept, not offered, is reported once and
+   * not on every launch. Absent on a row never refused. Optional, so rows
+   * written before it existed read as not yet reported; no schema change.
+   */
+  readonly refusalReported?: PendingRefusal;
 }
+
+/**
+ * Why the launch replay keeps a pending row without saving it (#38): the
+ * refusals that leave the audio in the row rather than drop it.
+ */
+export type PendingRefusal = "sample-rate" | "base-missing" | "base-changed";

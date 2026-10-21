@@ -284,6 +284,10 @@ Shape calls inside that decision (tactical, made here):
   buffer**, the `clipData` precedent: `saveTake` does the same so a trimmed
   view does not serialise its whole backing buffer (`src/lib/storage/takes.ts`,
   `saveTake` docblock).
+- **`refusalReported` is optional** (#38 slice 3): the refusal the launch
+  replay already logged for a row it keeps (`sample-rate`, `base-missing`,
+  `base-changed`), so the log gets it once, not every launch. A row without
+  it reads as never reported; no migration.
 - **Not stored:** `state`, `kind`, `attempts`. They describe the current
   session's save attempt, not the audio.
 - **keyPath `segmentId`:** the app holds one save slot

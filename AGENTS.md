@@ -452,7 +452,10 @@ track throwing on its own `stop()` (`hooks/audio-io.ts`,
 (`hooks/use-audio-session.ts`, `"recorder-stop-backstop"`, #480), a failed
 save (`hooks/use-save-take.ts`, `"save-take"`, #456), a failed write or
 delete of the held take's pending row (same file, `"pending-take-write"`,
-`"pending-take-delete"`, #38), a failed book delete
+`"pending-take-delete"`, #38), a pending row the launch replay could not read
+or would not save (`hooks/recover-pending-takes.ts`, `"pending-take-read"`,
+`"pending-take-refused"`, #38 — a refused row is reported on one launch only),
+a failed book delete
 (`hooks/use-books.ts`, `"book-delete"`, #456), a failed erase
 (`hooks/use-erase-segment.ts`, `"erase-segment"`, #456), a failed
 segment rename (`hooks/use-chapter-segments.ts`, `"segment-rename"`, #591), a
