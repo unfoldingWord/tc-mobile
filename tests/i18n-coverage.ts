@@ -294,6 +294,11 @@ export function pluralProblems(
  * in the locale's output for the same arguments, so a translator cannot drop
  * `{name}` or `${name}`. English is the baseline, so an argument English
  * itself leaves out is not demanded.
+ *
+ * A member of a literal union (`RestartSubject`'s "recording") is a switch
+ * value, not a value the sentence carries. English may happen to print the same
+ * word, and a translation that prints its own word for it is not dropping an
+ * argument, so those are not demanded (#1585).
  */
 export function parityProblems(
   tag: string,
@@ -301,6 +306,9 @@ export function parityProblems(
   own: readonly string[]
 ): string[] {
   const problems = new Set<string>();
+  const switchValues = new Set(
+    Object.values(UNION_DOMAINS).flatMap((members) => [...members])
+  );
   for (const name of own) {
     if (!SIGNATURES.has(name)) continue;
     for (const args of argVectors(name, 4242, true)) {
@@ -308,6 +316,7 @@ export function parityProblems(
       const mine = call(table, name, args);
       for (const arg of args) {
         const text = String(arg);
+        if (typeof arg === "string" && switchValues.has(arg)) continue;
         if (
           (typeof arg === "string" || typeof arg === "number") &&
           english.includes(text) &&

@@ -217,6 +217,29 @@ describe("the argument check, in both states", () => {
   });
 });
 
+describe("the argument check and a literal-union argument (#1585)", () => {
+  const armed = (text: string): Partial<Strings> => ({
+    restartArmed: () => text,
+  });
+  const check = (fixture: Partial<Strings>) =>
+    parityProblems("es", buildTable("es", fixture), ["restartArmed"]);
+
+  it("does not demand that a translation print a switch value", () => {
+    // English prints "recording" and "changes" for two members of the union;
+    // a Spanish sentence that says "grabación" has dropped nothing.
+    expect(check(armed("Toca de nuevo para reiniciar"))).toEqual([]);
+  });
+
+  it("still fails an entry that drops a text argument beside a union one", () => {
+    const fixture: Partial<Strings> = {
+      saveFailedHeld: () => "Tu grabación sigue aquí.",
+    };
+    expect(
+      parityProblems("es", buildTable("es", fixture), ["saveFailedHeld"])
+    ).toEqual(["es: saveFailedHeld drops 4243"]);
+  });
+});
+
 describe("an alias resolves within its own locale table", () => {
   it("follows an overridden chapterName and trail", () => {
     const table = buildTable("fr", {

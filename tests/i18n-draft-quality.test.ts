@@ -30,12 +30,17 @@ import {
  */
 
 /**
- * PROVISIONAL. A draft may be at most this many times the English length
- * (with the floor below). It is a placeholder to be re-checked against the
- * first real draft, not a calibrated value; #1485 says to choose it from that
- * draft.
+ * A draft may be at most this many times the English length (with the floor
+ * below). Calibrated from the first real draft, Spanish (#1585): measured over
+ * every text entry and every rendered count of every function entry, the
+ * longest Spanish text is 2.2 times its English one, and only short captions
+ * reach it ("Reset" to "Restablecer", "Play {heading}" to "Reproducir
+ * {heading}"). 2.5 leaves a little room above that and still catches a
+ * paragraph where a caption belongs. It is calibrated from one language that
+ * runs longer than English, not from all nine: the next draft that measures
+ * above it raises it here, with its own measurement and reason.
  */
-const LENGTH_RATIO_MAX = 3;
+const LENGTH_RATIO_MAX = 2.5;
 
 /** Short English texts get at least this many characters of room. */
 const LENGTH_FLOOR_CHARS = 12;
@@ -47,7 +52,14 @@ const LENGTH_FLOOR_CHARS = 12;
  * placeholders and brand words are removed never needs an entry.
  */
 type Reasons = Readonly<Record<string, string>>;
-const ALLOW_ENGLISH: Readonly<Record<string, Reasons>> = {};
+const ALLOW_ENGLISH: Readonly<Record<string, Reasons>> = {
+  es: {
+    shareFilename:
+      "Builds a file name from the book's own name, the chapter number and the licence tag; with a typed chapter name the whole result is the user's text, so it equals English by design. The default chapter name, the only drafted words, is `chapterName`.",
+    shareBookFilename:
+      "Builds `<book name><licence tag>.zip`; the only words are the book's own name and the extension, which are never translated (glossary section 7).",
+  },
+};
 
 /** Latin words a non-Latin draft may carry beyond the brand words. */
 const ALLOW_LATIN: ReadonlySet<string> = new Set();
@@ -273,6 +285,14 @@ describe("i18n draft quality gates (#1485)", () => {
     expect(
       problems.some((p) => p.startsWith("tryAgain:") && p.includes("budget"))
     ).toBe(true);
+  });
+
+  it("(c) holds the calibrated ratio exactly: 2.5 times English passes, a character more fails", () => {
+    const en = "a".repeat(20);
+    expect(lengthProblems("k", en, "a".repeat(50))).toEqual([]);
+    expect(lengthProblems("k", en, "a".repeat(51))).toEqual([
+      "k: 51 characters over a budget of 50",
+    ]);
   });
 
   it("(d) fails an invented placeholder and null-ish text", () => {
