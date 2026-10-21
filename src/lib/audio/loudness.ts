@@ -363,7 +363,8 @@ export class LoudnessMeter {
 
   /**
    * Measures `x[0..n)`, the next samples of the take, full scale ±1.
-   * High-passes `x` in place; the caller's buffer holds no take after this.
+   * High-passes `x` in place: its raw samples are replaced by the
+   * high-passed ones, so it must not be the caller's only copy of the take.
    */
   push(x: Float32Array, n: number, lap?: LoudnessLap): void {
     if (this.result !== null)
