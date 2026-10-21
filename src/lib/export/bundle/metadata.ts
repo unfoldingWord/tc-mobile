@@ -1,0 +1,224 @@
+/**
+ * The Scripture Bundle `metadata.json` of an exported book (#1567), built to
+ * ADR 0014 points 1 to 6 and pinned to spec v1.0.0. Pure: a book and the
+ * measured size and MD5 of each ingredient go in, a plain object comes out.
+ * No zip, no clock, no storage; the caller serialises it and writes it last.
+ */
+
+import type { SegmentRef } from "@/types/domain";
+import type { LicenceId } from "@/types/template";
+
+import {
+  PROJECT_INGREDIENT_PATH,
+  segmentIngredientPath,
+  type BundleBookInput,
+} from "./input";
+
+/** `meta.version`: the spec tag the test gate validates against (ADR 0014 point 1). */
+const BUNDLE_SPEC_VERSION = "1.0.0";
+
+/** The one measured file that is not audio: `project.json`, built after the audio. */
+export interface BundleFileDigest {
+  readonly size: number;
+  readonly md5: string;
+}
+
+/** A plain JSON object; the schema gate, not a type, says whether it is valid. */
+export type BundleMetadata = Record<string, unknown>;
+
+/**
+ * The USFM book codes the spec's `scope.schema.json` enumerates
+ * (`common.schema.json` `bookId`, v1.0.0). `OBS` is not one, which is why an
+ * Open Bible Stories book takes the custom flavour.
+ */
+const USFM_BOOK_CODES: ReadonlySet<string> = new Set(
+  (
+    "GEN EXO LEV NUM DEU JOS JDG RUT 1SA 2SA 1KI 2KI 1CH 2CH EZR NEH EST JOB PSA PRO " +
+    "ECC SNG ISA JER LAM EZK DAN HOS JOL AMO OBA JON MIC NAM HAB ZEP HAG ZEC MAL MAT " +
+    "MRK LUK JHN ACT ROM 1CO 2CO GAL EPH PHP COL 1TH 2TH 1TI 2TI TIT PHM HEB JAS 1PE " +
+    "2PE 1JN 2JN 3JN JUD REV TOB JDT ESG WIS SIR BAR LJE S3Y SUS BEL 1MA 2MA 3MA 4MA " +
+    "1ES 2ES MAN PS2 ODA PSS JSA JDB TBS SST DNT BLT EZA 5EZ 6EZ DAG PS3 2BA LBA JUB " +
+    "ENO 1MQ 2MQ 3MQ REP 4BA LAO"
+  ).split(" ")
+);
+
+/** A span as the spec's scope grammar writes it: "1", "1-3", "1:9", "1:9-13", "1:9-2:3". */
+export function scopeString(span: SegmentRef): string {
+  const { startChapter, startVerse, endChapter, endVerse } = span;
+  if (startVerse === null || endVerse === null) {
+    return startChapter === endChapter
+      ? `${startChapter}`
+      : `${startChapter}-${endChapter}`;
+  }
+  if (startChapter !== endChapter) {
+    return `${startChapter}:${startVerse}-${endChapter}:${endVerse}`;
+  }
+  return startVerse === endVerse
+    ? `${startChapter}:${startVerse}`
+    : `${startChapter}:${startVerse}-${endVerse}`;
+}
+
+const LICENCE_URLS: Partial<Record<LicenceId, string>> = {
+  "CC-BY-SA-4.0": "https://creativecommons.org/licenses/by-sa/4.0/",
+  "CC-BY-4.0": "https://creativecommons.org/licenses/by/4.0/",
+  "CC0-1.0": "https://creativecommons.org/publicdomain/zero/1.0/",
+};
+
+/**
+ * ADR 0014 point 6. `licenses` and `shortStatements` are a `oneOf`, so exactly
+ * one is ever written.
+ *
+ * OPEN (#1567, for the requirements owner, Round 5): the row for a book whose
+ * licence is `null` ("not chosen yet") or one the app has no URL for. It is
+ * written as all rights reserved, the ADR's fallback, until that answer lands.
+ */
+function copyright(licence: LicenceId | null): Record<string, unknown> {
+  const url = licence === null ? undefined : LICENCE_URLS[licence];
+  if (url !== undefined) return { licenses: [{ url }] };
+  return {
+    shortStatements: [{ statement: "All rights reserved.", lang: "en" }],
+  };
+}
+
+function isoTime(ms: number): string {
+  return new Date(ms).toISOString();
+}
+
+interface Recorded {
+  readonly ingredient: string;
+  readonly scope: SegmentRef | null;
+  readonly entry: Record<string, unknown>;
+}
+
+/**
+ * Build `metadata.json`. `project` is the measured `project.json`, which lists
+ * itself last among the ingredients.
+ */
+export function buildBundleMetadata(
+  input: BundleBookInput,
+  project: BundleFileDigest
+): BundleMetadata {
+  const { book, defaultLocale } = input;
+  const exportedAt = isoTime(input.exportedAt);
+
+  const recorded: Recorded[] = [];
+  input.chapters.forEach((chapterInput, ci) => {
+    chapterInput.segments.forEach((segmentInput, si) => {
+      const audio = segmentInput.audio;
+      if (audio === null) return;
+      recorded.push({
+        ingredient: segmentIngredientPath(ci + 1, si + 1, audio.clip.encoding),
+        scope: segmentInput.segment.reference,
+        entry: {
+          checksum: { md5: audio.md5 },
+          mimeType: audio.clip.encoding === "mp3" ? "audio/mpeg" : "audio/wav",
+          size: audio.size,
+        },
+      });
+    });
+  });
+
+  // ADR 0014 point 2: audioTranslation only when every recorded segment has a
+  // reference, all in one USFM book. No recorded segment at all: custom.
+  const books = new Set(recorded.map((r) => r.scope?.book ?? null));
+  const sole = books.size === 1 ? [...books][0]! : null;
+  const usfm = sole !== null && USFM_BOOK_CODES.has(sole) ? sole : null;
+
+  const ingredients: Record<string, unknown> = {};
+  for (const r of recorded) {
+    ingredients[r.ingredient] =
+      usfm !== null && r.scope !== null
+        ? { ...r.entry, scope: { [usfm]: [scopeString(r.scope)] } }
+        : r.entry;
+  }
+  ingredients[PROJECT_INGREDIENT_PATH] = {
+    checksum: { md5: project.md5 },
+    mimeType: "application/json",
+    size: project.size,
+    role: "x-tcMobileProject",
+  };
+
+  let flavorType: Record<string, unknown>;
+  const extra: Record<string, unknown> = {};
+  if (usfm !== null) {
+    const scopes = [
+      ...new Set(recorded.map((r) => scopeString(r.scope as SegmentRef))),
+    ];
+    const formats: Record<string, unknown> = {};
+    const encodings = new Set(
+      input.chapters.flatMap((c) =>
+        c.segments.flatMap((s) => (s.audio ? [s.audio.clip.encoding] : []))
+      )
+    );
+    if (encodings.has("mp3")) {
+      formats.mp3 = {
+        compression: "mp3",
+        trackConfiguration: "1/0 (Mono)",
+        samplingRate: 44100,
+      };
+    }
+    if (encodings.has("pcm")) {
+      formats.wav = {
+        compression: "wav",
+        trackConfiguration: "1/0 (Mono)",
+        bitDepth: 16,
+        samplingRate: 44100,
+      };
+    }
+    flavorType = {
+      name: "scripture",
+      flavor: {
+        name: "audioTranslation",
+        // Assumption (ADR 0014 point 5): one person records, reading not drama.
+        performance: ["singleVoice", "reading"],
+        formats,
+      },
+      currentScope: { [usfm]: scopes },
+    };
+    extra.localizedNames = {
+      [`book-${usfm.toLowerCase()}`]: {
+        short: { [defaultLocale]: input.bookName },
+      },
+    };
+  } else {
+    flavorType = {
+      name: "parascriptural",
+      flavor: { name: "x-tcMobileAudio" },
+    };
+  }
+
+  const tag = book.languageCode?.trim() || "und";
+  const languageName =
+    input.languageName ?? (tag === "und" ? "Undetermined" : tag);
+
+  return {
+    format: "scripture burrito",
+    meta: {
+      version: BUNDLE_SPEC_VERSION,
+      category: "source",
+      generator: {
+        softwareName: "tC Mobile",
+        softwareVersion: input.appVersion,
+      },
+      defaultLocale,
+      dateCreated: exportedAt,
+      normalization: "NFC",
+    },
+    idAuthorities: {
+      tcmobile: { id: "https://tcmobile.app", name: { en: "tC Mobile" } },
+    },
+    identification: {
+      primary: {
+        // Revision stays "1": nothing stores an export count (ADR 0014 point 5).
+        tcmobile: { [book.id]: { revision: "1", timestamp: exportedAt } },
+      },
+      name: { [defaultLocale]: input.bookName },
+    },
+    confidential: false,
+    type: { flavorType },
+    languages: [{ tag, name: { [defaultLocale]: languageName } }],
+    ...extra,
+    copyright: copyright(book.licence),
+    ingredients,
+  };
+}
