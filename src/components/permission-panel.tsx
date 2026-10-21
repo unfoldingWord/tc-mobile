@@ -104,46 +104,53 @@ export function PermissionPanel({
   // prompt-audio path, no helper action), and a control that does nothing is
   // a stub.
   return (
-    <div className="o4-err flex flex-1 flex-col items-center justify-center px-[22px] text-center">
-      <span className="o4-err-circle o4-err-circle--denied" aria-hidden="true">
-        <Icon name="mic" size={58} />
-      </span>
-      {/* D15 (#948): the title is always "Microphone is off", and the
+    <div className="o4-err o4-err-split flex flex-1 flex-col items-center px-[22px] text-center">
+      <div className="o4-err-body">
+        <span
+          className="o4-err-circle o4-err-circle--denied"
+          aria-hidden="true"
+        >
+          <Icon name="mic" size={58} />
+        </span>
+        {/* D15 (#948): the title is always "Microphone is off", and the
           recorder's refusal sentence, when there is one, is a second line
           under it. The sentence sits INSIDE the alert `<p>` because it is
           the part the async permission refine updates in place, so it must
           stay in the live region; the buttons stay outside it (#276). */}
-      <p role="alert" className="o4-err-title text-ink">
-        {strings.micOffTitle}
-        {message !== null && <span className="o4-err-sub">{message}</span>}
-      </p>
-      {settingsPlatform !== null && (
-        <ol className="o4-err-steps" aria-label={strings.micStepsLabel}>
-          {micSettingsSteps(settingsPlatform).map((step) => (
-            <li key={step.text} className="o4-err-step">
-              <span className="o4-err-step-icon" aria-hidden="true">
-                <Icon name={step.icon} size={30} />
-              </span>
-              <span className="o4-err-step-text">{step.text}</span>
-            </li>
-          ))}
-        </ol>
-      )}
-      <Control
-        icon="restart"
-        label={strings.micRetry}
-        variant="primary"
-        size={34}
-        className="o4-err-wide"
-        autoFocus
-        onClick={onRetry}
-      />
-      <Control
-        icon="back"
-        label={strings.micBack}
-        variant="quiet"
-        onClick={onBack}
-      />
+        <p role="alert" className="o4-err-title text-ink">
+          {strings.micOffTitle}
+          {message !== null && <span className="o4-err-sub">{message}</span>}
+        </p>
+        {settingsPlatform !== null && (
+          <ol className="o4-err-steps" aria-label={strings.micStepsLabel}>
+            {micSettingsSteps(settingsPlatform).map((step) => (
+              <li key={step.text} className="o4-err-step">
+                <span className="o4-err-step-icon" aria-hidden="true">
+                  <Icon name={step.icon} size={30} />
+                </span>
+                <span className="o4-err-step-text">{step.text}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+      <div className="o4-err-footer">
+        <Control
+          icon="restart"
+          label={strings.micRetry}
+          variant="primary"
+          size={34}
+          className="o4-err-wide"
+          autoFocus
+          onClick={onRetry}
+        />
+        <Control
+          icon="back"
+          label={strings.micBack}
+          variant="quiet"
+          onClick={onBack}
+        />
+      </div>
     </div>
   );
 }

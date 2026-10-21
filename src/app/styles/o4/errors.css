@@ -8,6 +8,41 @@
   :root .o4-err {
     gap: 22px; /* #939 token */
   }
+  /* The permission panel (#1569): the circle, message and steps scroll inside
+     the room the sheet leaves, while Retry and Back sit in a footer that never
+     scrolls, so the two recovery controls stay on a short phone screen however
+     many steps show. `min-height: 0` lets the flex child shrink below its
+     content so the body, not the sheet, takes the overflow. */
+  :root .o4-err-split {
+    min-height: 0;
+    width: 100%;
+  }
+  :root .o4-err-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: center;
+    gap: 22px; /* #939 token */
+    min-height: 0;
+    width: 100%;
+    overflow-y: auto;
+  }
+  /* Centred while it fits, top-aligned once it overflows: auto margins, not
+     justify-content, so the first child is never cut off above the scroll. */
+  :root .o4-err-body > :first-child {
+    margin-top: auto;
+  }
+  :root .o4-err-body > :last-child {
+    margin-bottom: auto;
+  }
+  :root .o4-err-footer {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 22px; /* #939 token */
+    padding-top: 22px; /* #939 token */
+  }
   :root .o4-err-circle {
     position: relative;
     display: flex;
