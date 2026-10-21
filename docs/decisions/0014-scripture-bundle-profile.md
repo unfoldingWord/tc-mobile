@@ -11,9 +11,9 @@ answered the two product questions in "Open"; S8 and S19 (2026-10-19) answer
 them, one fully and one in part. The spec's maintainers had not been asked to
 confirm points 1, 2 and 4, and had given no answer by 2026-10-21. The DRI
 accepted it on 2026-10-21 with that second reason standing. The DRI's pick,
-verbatim: "Accept, Open 1 'no answer by 10-21' (Recommended)". Two points of the
-licence mapping stay visibly open (see "Open"); this acceptance does not settle
-them.
+verbatim: "Accept, Open 1 'no answer by 10-21' (Recommended)". One point of the
+licence mapping stays visibly open (see "Open"); this acceptance does not settle
+it.
 
 ## Naming
 
@@ -214,13 +214,23 @@ a valid USFM reference.
 
 Mapped from the book's licence (the v12 field the storage work adds):
 
-| Book's licence                           | `copyright`                                                                            |
-| ---------------------------------------- | -------------------------------------------------------------------------------------- |
-| CC BY-SA 4.0                             | `{"licenses": [{"url": "https://creativecommons.org/licenses/by-sa/4.0/"}]}`           |
-| CC BY 4.0                                | `{"licenses": [{"url": "https://creativecommons.org/licenses/by/4.0/"}]}`              |
-| CC0                                      | `{"licenses": [{"url": "https://creativecommons.org/publicdomain/zero/1.0/"}]}`        |
-| All rights reserved                      | `{"shortStatements": [{"statement": "All rights reserved.", "lang": "en"}]}`           |
-| Not chosen yet (R20: empty until shared) | treated as all rights reserved, until the licence work says otherwise (**assumption**) |
+| Book's licence                                       | `copyright`                                                                     |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------- |
+| CC BY-SA 4.0                                         | `{"licenses": [{"url": "https://creativecommons.org/licenses/by-sa/4.0/"}]}`    |
+| CC BY 4.0                                            | `{"licenses": [{"url": "https://creativecommons.org/licenses/by/4.0/"}]}`       |
+| CC0                                                  | `{"licenses": [{"url": "https://creativecommons.org/publicdomain/zero/1.0/"}]}` |
+| All rights reserved                                  | `{"shortStatements": [{"statement": "All rights reserved.", "lang": "en"}]}`    |
+| "Other", or not chosen yet (R20: empty until shared) | no copyright statement: `{"shortStatements": [{"statement": ""}]}` (see below)  |
+
+**"Other" and "not chosen yet" say nothing.** The DRI decided on 2026-10-21
+(Round 5, U1b: the export copyright for a book whose licence is "Other" or not
+chosen yet), verbatim: "Say nothing". This replaces the earlier assumption that
+such a book is treated as all rights reserved. The schema still requires the
+`copyright` key on a source bundle, and an absent key or `{}` fails it (observed
+by running the pinned schema gate on the audio example). The one shape observed
+to validate with no words in it is a single `shortStatements` entry whose
+`statement` is empty. That carrier is the author's inference from that probe,
+not a decision; the metadata builder confirms it against the gate.
 
 `licenses` and `shortStatements` are **never both**: the schema is a `oneOf`,
 and the two together fail with `passingSchemas [1,2]` (observed). A full
@@ -379,13 +389,14 @@ This is the document the validation run called `custom-x-tcMobileAudio`.
      CC0, CC BY, and CC BY-SA. If the user selects "Other" the filename should
      not show any licensing information." So the licence options are CC0, CC BY
      and CC BY-SA, and "Other" puts no licence in the file name.
-   - **Still open, put to the requirements owner as Round 5:**
-     - What an exported project writes for `copyright` when the licence is
-       "Other" or not chosen yet. Point 6 treats "not chosen yet" as all rights
-       reserved; that stays an **assumption**.
-     - Whether "Other" is the same as `all-rights-reserved`, the value the
-       template contract and point 6 carry. S19 lists CC0, CC BY and CC BY-SA
-       plus "Other" and does not name `all-rights-reserved`.
+   - **Answered by the DRI, 2026-10-21 (Round 5, U1b):** for a book whose
+     licence is "Other" or not chosen yet, the export copyright is "Say
+     nothing". The metadata carries no copyright statement for those books, and
+     point 6's "All rights reserved" fallback is replaced.
+   - **Still open, for the requirements owner (Round 5, U1a):** whether "Other"
+     is the same as `all-rights-reserved`, the value the template contract and
+     point 6's table carry. S19 lists CC0, CC BY and CC BY-SA plus "Other" and
+     does not name `all-rights-reserved`.
    - Who owns the OBS attribution wording is also not answered.
 3. **Which desktop app "tC Desktop" is** and what it needs to open an audio
    bundle: a question for the translationCore 4 team (R11), tracked in the

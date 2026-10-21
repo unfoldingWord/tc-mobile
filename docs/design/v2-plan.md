@@ -786,11 +786,13 @@ names what it leaves undecided where the record shows something.
     user selects "Other" the filename should not show any licensing
     information."
     - Settles: ADR 0014's Open 2b in part (see the ADR).
-    - Still open: D5-licence's option lists "all rights reserved" and S19
-      lists CC0, CC BY and CC BY-SA plus "Other". Whether "Other" is the same
-      as all rights reserved, and what an export writes for copyright when the
-      licence is "Other" or not chosen yet, are not recorded. They go to the
-      requirements owner as Round 5.
+    - Answered later by the DRI, 2026-10-21 (Round 5, U1b): for a book whose
+      licence is "Other" or not chosen yet, the export copyright is "Say
+      nothing" (ADR 0014 point 6).
+    - Still open (Round 5, U1a, for the requirements owner): D5-licence's
+      option lists "all rights reserved" and S19 lists CC0, CC BY and CC BY-SA
+      plus "Other". Whether "Other" is the same as all rights reserved is not
+      recorded.
 20. **S20-video** — "20 · Video (#1434)". Decided `out`: "Not in scope".
 21. **S21-mic-level** — "21 · Mic input level (#359)". Decided `suggest`:
     "Suggest raising it after a quiet first take".
