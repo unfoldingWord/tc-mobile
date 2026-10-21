@@ -1,15 +1,15 @@
 # 0015 — The phone's language is chosen at runtime, not by the build
 
-**Status:** Proposed · **Date:** 2026-10-19 · **DRI:** the dev lead drafts; the requirements owner owns the language scope · **Issue:** [#1479](https://github.com/unfoldingWord/tc-mobile/issues/1479) (part of epic [#1458](https://github.com/unfoldingWord/tc-mobile/issues/1458))
+**Status:** Accepted (2026-10-21, DRI pick on [PR #1494](https://github.com/unfoldingWord/tc-mobile/pull/1494#issuecomment-6316957275)) · **Date:** 2026-10-19 · **DRI:** the dev lead drafts; the requirements owner owns the language scope · **Issue:** [#1479](https://github.com/unfoldingWord/tc-mobile/issues/1479) (part of epic [#1458](https://github.com/unfoldingWord/tc-mobile/issues/1458))
 
-This ADR is **Proposed**: it records the design the runtime-apply and resolver
-issues will build, and nothing in it is running yet. It moves to **Accepted**
-when the DRI accepts it on the PR that carries it (DRI pick, 2026-10-21:
-"Accepted on merge (Recommended)"). The right-to-left device checks do not gate
-that acceptance: the first-frames check in section (a) and the waveform check in
-section (f) are done-when items for the issues that build runtime apply. Claims
-about the first-paint reflow (section a) are inference until those checks
-observe them.
+This ADR is **Accepted**: it records the design the runtime-apply and resolver
+issues will build, and nothing in it is running yet. The DRI accepted it on the
+PR that carries it (DRI pick, 2026-10-21: "Accepted on merge (Recommended)",
+https://github.com/unfoldingWord/tc-mobile/pull/1494#issuecomment-6316957275).
+The right-to-left device checks did not gate that acceptance: the first-frames
+check in section (a) and the waveform check in section (f) are done-when items
+for the issues that build runtime apply. Claims about the first-paint reflow
+(section a) are inference until those checks observe them.
 
 ## Context
 
