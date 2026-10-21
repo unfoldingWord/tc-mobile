@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -173,6 +174,8 @@ describe("sanitize / parseSections / isAnswer", () => {
     "<details><summary>run</summary>5511 passed</details>",
     "``Map<string, number>`` helper",
     "N/A — <b>nothing</b> to test",
+    "test `reads <T>` → pass",
+    "**red** run, then green",
   ])("accepts the answer %j", (v) => expect(isAnswer(v)).toBe(true));
 
   it.each([
@@ -201,6 +204,17 @@ describe("sanitize / parseSections / isAnswer", () => {
     "<details></details>",
     "N/A — <b>TBD</b>",
     "<b>N/A — </b>",
+    // Bench round 3 (George 1): markdown-wrapped placeholders are still placeholders.
+    "`TBD`",
+    "`N/A`",
+    "`later`",
+    "``TBD``",
+    "` `",
+    "**TBD**",
+    "*N/A*",
+    "_later_",
+    "N/A — `TBD`",
+    "N/A — **TBD**",
   ])("rejects the non-answer %j", (v) => expect(isAnswer(v)).toBe(false));
 });
 
@@ -715,6 +729,15 @@ describe("checkBody — placeholders in tags and labels in their own section", (
     ]);
   });
 
+  // Bench round 3 (George 2): Tier is read inside Risk like the other labels.
+  it("does not take a Tier line from another section for the Risk answer", () => {
+    const b = body({
+      tier: null,
+      sections: { "Review evidence": "Tier: T3\nnot yet reviewed" },
+    });
+    expect(checkBody(b)).toEqual([expect.stringMatching(/Tier/)]);
+  });
+
   // Bench round 2 (George 2): a label counts only inside the section that owns it.
   it("does not take a Summary 'Test-first:' line for the Testing answer", () => {
     const b = body({
@@ -1052,6 +1075,17 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
       expect(
         run(["--body-file", ok, "--range", range], dir, cleanGitEnv()).status
       ).toBe(0);
+    }));
+
+  // Bench round 3 (George 3): --range is data, never a git option.
+  it("does not hand a --range that looks like an option to git as one", () =>
+    withTemp((dir) => {
+      scratchRepo(dir, 3);
+      const f = path.join(dir, "b.md");
+      const out = path.join(dir, "leaked.txt");
+      writeFileSync(f, body());
+      run(["--body-file", f, "--range", `--output=${out}`], dir, cleanGitEnv());
+      expect(existsSync(out)).toBe(false);
     }));
 
   it("size at the cap passes even with a large tests-only diff beside it", () =>

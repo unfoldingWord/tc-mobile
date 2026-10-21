@@ -95,21 +95,30 @@ const HTML_TAG =
 const CODE_SPAN = /(`+)(?:(?!\1)[\s\S])*\1/g;
 const AUTOLINK = /<(?:https?:\/\/|mailto:)[^\s<>]+>/gi;
 
-/**
- * What a reader sees: a code span or autolink is content (brackets inside it
- * are not a placeholder) and the allowlisted tags are dropped, so a
- * placeholder word wrapped in a tag is judged as the bare word.
- */
-function visibleText(v) {
-  return v
-    .replace(CODE_SPAN, " x ")
-    .replace(AUTOLINK, " x ")
-    .replace(HTML_TAG, "");
+/** Replace each code span by `mapInner(its text without the backticks)`. */
+function mapSpans(v, mapInner) {
+  return v.replace(CODE_SPAN, (span) => {
+    const ticks = /^`+/.exec(span)[0].length;
+    return mapInner(span.slice(ticks, -ticks));
+  });
 }
 
-/** True when `v` holds an unfilled `<…>`; inline code, autolinks and HTML tags are not. */
+/** The words a reader sees: span text kept, tags and markdown delimiters dropped. */
+function words(v) {
+  return mapSpans(v, (inner) => inner)
+    .replace(AUTOLINK, " ")
+    .replace(HTML_TAG, "")
+    .replace(/[*_~]+/g, "")
+    .trim();
+}
+
+/** True when `v` holds an unfilled `<…>`; code spans, autolinks and HTML tags are not. */
 function hasPlaceholder(v) {
-  return /<[^>]*>/.test(visibleText(v));
+  return /<[^>]*>/.test(
+    mapSpans(v, () => " ")
+      .replace(AUTOLINK, " ")
+      .replace(HTML_TAG, "")
+  );
 }
 
 /** Level-2 sections of a sanitized body: lowercase heading -> trimmed text. */
@@ -133,7 +142,7 @@ export function parseSections(text) {
 /** True when `value` is a real answer, not blank, a placeholder or a bare N/A. */
 export function isAnswer(value) {
   const raw = (value ?? "").trim();
-  const v = visibleText(raw).trim();
+  const v = words(raw);
   if (!/[A-Za-z0-9]/.test(v) || hasPlaceholder(raw)) return false;
   const na = /^n\/?a\b[\s.:—–-]*/i.exec(v);
   const text = (na ? v.slice(na[0].length) : v).trim();
@@ -225,7 +234,7 @@ export function checkBody(raw) {
   }
   need(closerProblem(text), closerProblem(text));
   need(
-    !/^\s*Tier:[ \t]*T[123][ \t]*$/m.test(text),
+    !/^\s*Tier:[ \t]*T[123][ \t]*$/m.test(own("risk")),
     "Tier: needs one token, T1, T2 or T3, alone on the line"
   );
   need(
@@ -309,6 +318,9 @@ export function countProdLines(entries) {
 
 /** Production lines in a `a...b` range, via git. */
 function prodLinesInRange(range) {
+  // `--` cannot guard this: after it git reads the range as a path. A range is
+  // never an option, so one that starts with `-` is refused.
+  if (range.startsWith("-")) throw new Error(`not a revision range: ${range}`);
   const out = execFileSync("git", ["diff", "--numstat", "-z", "-M", range], {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
