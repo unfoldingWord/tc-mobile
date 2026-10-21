@@ -602,7 +602,9 @@ app gives up the safety copy so the save itself has room. <!-- source: gh issue 
 
 Discard asks for confirmation and abandons the pending work. After an ordinary
 save failure, discarding an edit leaves the previously saved recording intact;
-a new unsaved recording is lost. If another open copy of the app deleted the
+a new unsaved recording is lost. One exception: if the app is closed in the
+moment just after Discard, before its safety copy is removed, the next opening
+saves the discarded work after all. <!-- source: src/lib/storage/pending-takes.ts module comment (a kill between the confirmed discard and its delete); gh issue #1548; not run on a phone --> If another open copy of the app deleted the
 book, its saved recordings are gone too. The save screen then offers confirmed
 Discard instead of Try saving again: it cannot save into the deleted book or
 restore it. The problem report contains no audio.
