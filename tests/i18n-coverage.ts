@@ -161,7 +161,7 @@ function isolate(
 }
 
 /** The counts every plural entry is exercised with (#1481). */
-const COUNTS = [0, 1, 2, 3, 5, 11, 21, 100, 1_000_000];
+export const COUNTS = [0, 1, 2, 3, 5, 11, 21, 100, 1_000_000];
 
 /**
  * Plural forms keyed by the categories the locale needs. `recorded` is the

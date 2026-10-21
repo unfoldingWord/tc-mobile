@@ -3,11 +3,12 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { LOCALES } from "@/lib/locale";
+import { LOCALES, activeLocale, setActiveLocale } from "@/lib/locale";
 import { LOCALE_OVERRIDES } from "@/lib/i18n/locales";
+import { plural } from "@/lib/plural";
 import { stringsEn, type Strings } from "@/lib/strings";
 
-import { FUNCTION_ENTRIES, argVectors, call } from "./i18n-coverage";
+import { COUNTS, FUNCTION_ENTRIES, argVectors, call } from "./i18n-coverage";
 
 /**
  * Machine gates for AI-drafted translations (#1485): a draft that left English
@@ -33,11 +34,13 @@ const LENGTH_RATIO_MAX = 3;
 const LENGTH_FLOOR_CHARS = 12;
 
 /**
- * English texts a draft may legitimately repeat verbatim, by key, each with
- * the reason. Empty until a draft needs one. A text with no letters left once
+ * English texts a draft may legitimately repeat verbatim, by locale tag and
+ * then key, each with the reason, so one entry silences one locale only.
+ * Empty until a draft needs one. A text with no letters left once
  * placeholders and brand words are removed never needs an entry.
  */
-const ALLOW_ENGLISH: Readonly<Record<string, string>> = {};
+type Reasons = Readonly<Record<string, string>>;
+const ALLOW_ENGLISH: Readonly<Record<string, Reasons>> = {};
 
 /** Latin words a non-Latin draft may carry beyond the brand words. */
 const ALLOW_LATIN: ReadonlySet<string> = new Set();
@@ -70,10 +73,15 @@ function exempt(text: string): string {
 const letters = (text: string): string[] => text.match(/\p{L}+/gu) ?? [];
 
 /** (a) A draft equal to its English text is an untranslated one. */
-function englishLeak(key: string, en: string, value: string): string[] {
+function englishLeak(
+  tag: string,
+  key: string,
+  en: string,
+  value: string
+): string[] {
   if (value !== en) return [];
   if (letters(exempt(en)).length === 0) return [];
-  if (Object.hasOwn(ALLOW_ENGLISH, key)) return [];
+  if (Object.hasOwn(ALLOW_ENGLISH[tag] ?? {}, key)) return [];
   return [`${key}: equals the English text`];
 }
 
@@ -100,6 +108,8 @@ function scriptProblems(tag: string, key: string, value: string): string[] {
 function lengthProblems(key: string, en: string, value: string): string[] {
   const budget = Math.max(en.length * LENGTH_RATIO_MAX, LENGTH_FLOOR_CHARS);
   if (value.length === 0) return [`${key}: empty`];
+  if (letters(exempt(value)).length === 0 && letters(exempt(en)).length > 0)
+    return [`${key}: no letters outside placeholders and brand words`];
   return value.length > budget
     ? [`${key}: ${value.length} characters over a budget of ${budget}`]
     : [];
@@ -129,7 +139,7 @@ function draftProblems(
   value: string
 ): string[] {
   return [
-    ...englishLeak(key, en, value),
+    ...englishLeak(tag, key, en, value),
     ...scriptProblems(tag, key, value),
     ...lengthProblems(key, en, value),
     ...leakProblems(key, en, value),
@@ -145,21 +155,41 @@ function tableProblems(tag: string, overrides: Partial<Strings>): string[] {
     if (typeof value === "string" && typeof en === "string") {
       problems.push(...draftProblems(tag, key, en, value));
     } else if (typeof value === "function" && typeof en === "function") {
-      for (const n of [1, 5]) {
+      // Every count, rendered under its own locale's plural rule, so a defect
+      // confined to `two`/`few`/`many` is reached.
+      for (const n of COUNTS) {
         for (const args of argVectors(key, n)) {
           problems.push(
             ...draftProblems(
               tag,
               key,
-              call(stringsEn, key, args),
-              call(merged, key, args)
+              renderIn("en", stringsEn, key, args),
+              renderIn(tag, merged, key, args)
             )
           );
         }
       }
-    }
+    } else problems.push(`${key}: type mismatch`);
   }
   return problems;
+}
+
+/** `call` with `tag` as the active locale, restored afterwards. */
+function renderIn(
+  tag: string,
+  table: Strings,
+  key: string,
+  args: unknown[]
+): string {
+  const locale = LOCALES.find((l) => l.tag === tag);
+  if (locale === undefined) throw new Error(`no locale ${tag}`);
+  const before = activeLocale();
+  setActiveLocale(locale);
+  try {
+    return call(table, key, args);
+  } finally {
+    setActiveLocale(before);
+  }
 }
 
 const fixture = <T>(name: string): T =>
@@ -180,9 +210,12 @@ describe("i18n draft quality gates (#1485)", () => {
   });
 
   it("keeps every allowlist entry reasoned and real", () => {
-    for (const [key, why] of Object.entries(ALLOW_ENGLISH)) {
-      expect(Object.keys(stringsEn)).toContain(key);
-      expect(why.trim().length).toBeGreaterThan(0);
+    for (const [tag, entries] of Object.entries(ALLOW_ENGLISH)) {
+      expect(TAGS).toContain(tag);
+      for (const [key, why] of Object.entries(entries)) {
+        expect(Object.keys(stringsEn)).toContain(key);
+        expect(why.trim().length).toBeGreaterThan(0);
+      }
     }
     expect(FUNCTION_ENTRIES.length).toBeGreaterThan(0);
   });
@@ -197,7 +230,15 @@ describe("i18n draft quality gates (#1485)", () => {
   });
 
   it("(a) exempts text with no letters outside placeholders and brand words", () => {
-    expect(englishLeak("k", "MP3 {n}", "MP3 {n}")).toEqual([]);
+    expect(englishLeak("ar", "k", "MP3 {n}", "MP3 {n}")).toEqual([]);
+  });
+
+  it("(c) fails a draft with no letters where English has some", () => {
+    for (const value of ["   ", "???"])
+      expect(lengthProblems("k", "Try again", value)).toEqual([
+        "k: no letters outside placeholders and brand words",
+      ]);
+    expect(lengthProblems("k", "MP3 {n}", "MP3 {n}")).toEqual([]);
   });
 
   it("(b) fails a draft in the wrong script", () => {
@@ -225,7 +266,7 @@ describe("i18n draft quality gates (#1485)", () => {
     ).toBe(true);
   });
 
-  it("(d) fails leaked braces and null-ish text", () => {
+  it("(d) fails an invented placeholder and null-ish text", () => {
     const problems = tableProblems("ar", fixture("ar-leak.json"));
     expect(
       problems.some(
@@ -267,6 +308,27 @@ describe("i18n draft quality gates (#1485)", () => {
         table((n) => `الفصل ${n} undefined`)
       ).some((p) => p.includes("null-ish"))
     ).toBe(true);
+  });
+
+  it("renders plural entries under the draft's own locale and counts", () => {
+    const shareMissing = (few: string): Partial<Strings> =>
+      ({
+        shareMissing: (n: number) =>
+          plural(n, {
+            zero: "لم يتم تضمين أي مقطع.",
+            one: "مقطع {n} لم يتم تضمينه.",
+            two: "مقطعان {n} لم يتم تضمينهما.",
+            few,
+            many: "{n} مقطعًا لم يتم تضمينها.",
+            other: "{n} مقطع لم يتم تضمينه.",
+          }),
+      }) as unknown as Partial<Strings>;
+    const correct = shareMissing("{n} مقاطع لم يتم تضمينها.");
+    expect(tableProblems("ar", correct)).toEqual([]);
+    expect(tableProblems("ar", shareMissing("{n} undefined"))).toContain(
+      "shareMissing: leaked null-ish text"
+    );
+    expect(activeLocale().tag).toBe("en");
   });
 
   describe("real tables (green while a table is empty)", () => {
