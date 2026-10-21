@@ -105,6 +105,15 @@ async function mountAfterPaste() {
       readMeterAvailable: () => true,
       readScope: () => null,
       peekScope: () => null,
+      chapterPlay: {
+        chapterId: null,
+        status: "idle" as const,
+        pausedFraction: null,
+      },
+      playChapter: () => {},
+      pauseChapter: () => {},
+      stopChapter: () => {},
+      readChapterProgress: () => null,
     };
 
   // The clipboard one level up, as App holds it; `clipboard.current` is what

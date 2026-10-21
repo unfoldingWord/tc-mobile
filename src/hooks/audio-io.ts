@@ -460,8 +460,9 @@ function applyPendingIdleDrop(): void {
  * When nothing uses the context it is dropped at once. During a take (the
  * level tap's hold), a decode, or a sounding Play it is only marked, and
  * `applyPendingIdleDrop` drops it once those let go. A Play that is sounding
- * when the page hides keeps playing: a hidden page keeps its playback (#836),
- * so this waits for that Play to stop or end rather than stopping it. A take
+ * when the page hides keeps playing: a hidden page keeps a single take's
+ * playback (#836; chapter play is paused before this runs, #1468), so this
+ * waits for that Play to stop or end rather than stopping it. A take
  * open at hide is sealed first by `use-audio-session.ts`; its level tap
  * releases its hold as the seal's flush disconnects it, and the drop lands
  * then. The stalled-clock checks stay the backstop. No row is written:

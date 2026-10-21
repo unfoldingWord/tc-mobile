@@ -114,6 +114,15 @@ async function setup() {
     readMeterAvailable: () => true,
     readScope: () => null,
     peekScope: () => null,
+    chapterPlay: {
+      chapterId: null,
+      status: "idle" as const,
+      pausedFraction: null,
+    },
+    playChapter: () => {},
+    pauseChapter: () => {},
+    stopChapter: () => {},
+    readChapterProgress: () => null,
   };
   // `erase` is a prop since #160 (L-12): App owns the one instance. A host
   // that calls the REAL hook keeps this test about the sheet's own mapping of

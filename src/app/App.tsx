@@ -506,6 +506,7 @@ export function App() {
              sheet keeps its own, older mechanism for now
              (`overlayBlocksClose`/`overlayDismissal`), which PR5 touches. */
           <BooksScreen
+            audio={audio}
             onOpenChapter={openChapter}
             pushLayer={pushLayer}
             popLayer={popLayer}

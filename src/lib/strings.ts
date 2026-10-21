@@ -1452,7 +1452,10 @@ export const stringsEn = {
   // ── Phone check (#1009) ──────────────────────────────────────────────────
   // A hidden tester screen, reached by five taps on the build stamp or by
   // `?check=phone`. Its words are for a tester filling in #974, not for a
-  // translator, but they are screen copy all the same and so live here. The
+  // translator, but they are screen copy all the same and so live here. They
+  // are English on purpose (S11-tester-screens, #1483): every `phoneCheck*`
+  // key is listed in `lib/i18n/english-only.ts`, which the coverage test pins
+  // to this group, so a new key here must be added there too. The
   // REPORT it produces is engineering data and is worded in
   // `lib/phone-check/report.ts` instead — see that file's docblock.
   phoneCheckTitle: "Phone check",
@@ -1503,6 +1506,20 @@ export const stringsEn = {
   // is never inferred from a glyph alone (`Control`'s own `pressed` doc).
   coverSwatchLabel: (name: string, selected: boolean): string =>
     selected ? `${name}, selected` : name,
+
+  // The chapter row's play control (#1469). The name carries the state
+  // because the control is not a toggle (no `aria-pressed`) and announces
+  // nothing: a screen reader hears the next thing a tap does. Each is a whole
+  // sentence with its slots, so a language that orders them differently
+  // rewrites the entry rather than a call site. `percent` is a whole number.
+  playChapter: (heading: string): string => `Play ${heading}`,
+  pauseChapter: (heading: string): string => `Pause ${heading}`,
+  resumeChapter: (heading: string, percent: number): string =>
+    `Resume ${heading}, paused at ${percent} percent`,
+  // The disabled control's whole name: it stays focusable, so the reason is
+  // what it says.
+  chapterNothingToPlay: (heading: string): string =>
+    `${heading} has nothing recorded to play`,
 } as const;
 
 /**

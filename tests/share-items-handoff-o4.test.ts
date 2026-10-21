@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
+import { idleChapterAudio } from "./chapter-audio";
 import { SegmentsScreen } from "@/components/segments-screen";
 import { bookShareItems, chapterShareItems } from "@/components/share-o4-view";
 import { strings } from "@/lib/strings";
@@ -217,6 +218,7 @@ describe("Books screen's Share Book items hand-off into ShareProgress (O4, #1031
     await act(async () => {
       root.render(
         createElement(BooksScreen, {
+          audio: idleChapterAudio(),
           onOpenChapter: vi.fn(),
           pushLayer: (layer: Layer) => layers.set(layer.id, layer),
           popLayer: (id: string) => {

@@ -7,6 +7,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BooksScreen } from "@/components/books-screen";
+import { idleChapterAudio } from "./chapter-audio";
 import { strings } from "@/lib/strings";
 import type { BookId, ChapterId } from "@/types/domain";
 import type { BookCard, ChapterRow } from "@/types/view";
@@ -165,6 +166,7 @@ async function render() {
   await act(async () =>
     root.render(
       createElement(BooksScreen, {
+        audio: idleChapterAudio(),
         onOpenChapter,
         pushLayer: vi.fn(),
         popLayer: vi.fn(),
@@ -227,6 +229,15 @@ describe("the O4 hold area (#953 PR2b: the chapter row)", () => {
     await act(async () => vi.advanceTimersByTime(1));
     expect(items()[0]!.classList.contains("books-lifted")).toBe(true);
     expect(liveText()).toBe(strings.chapterReorderLifted(1));
+    expect(moveChapter).not.toHaveBeenCalled();
+  });
+
+  it("does not lift a row held on its play control, which is outside the hold area (#1469)", async () => {
+    await mount();
+    const play = items()[0]!.querySelector(".books-play button")!;
+    await hold(play, 34);
+    expect(lifted()).toBeNull();
+    expect(items()[0]!.classList.contains("books-lifted")).toBe(false);
     expect(moveChapter).not.toHaveBeenCalled();
   });
 

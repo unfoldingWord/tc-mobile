@@ -40,7 +40,7 @@
   /* --- timer and recording dot (09) ------------------------------------- */
   :root .recorder-status {
     top: 16px;
-    left: 18px;
+    inset-inline-start: 18px;
     z-index: 3;
   }
   :root .recorder-status .t-timer {
@@ -65,7 +65,7 @@
   :root .recorder-stamp {
     position: absolute;
     top: 20px;
-    right: 18px;
+    inset-inline-end: 18px;
     z-index: 3;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 15px; /* #939 token */
@@ -242,7 +242,7 @@
      voice ink, without the old pill's wash. */
   :root .recorder-editing {
     top: 20px;
-    right: 18px;
+    inset-inline-end: 18px;
     z-index: 3;
     font-size: 17px; /* #939 token */
     font-weight: 800; /* #939 token */

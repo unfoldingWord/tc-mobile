@@ -127,6 +127,15 @@ async function setup(playingBuffer = false) {
     readMeterAvailable: () => true,
     readScope: () => null,
     peekScope: () => null,
+    chapterPlay: {
+      chapterId: null,
+      status: "idle" as const,
+      pausedFraction: null,
+    },
+    playChapter: () => {},
+    pauseChapter: () => {},
+    stopChapter: () => {},
+    readChapterProgress: () => null,
   };
   function Host() {
     return createElement(Recorder, {
