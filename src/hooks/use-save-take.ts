@@ -197,30 +197,15 @@ export async function performSaveTake(
     // Finished mark rides the take, applied atomically here — so a retry
     // re-applies it, and it can never be clobbered by the same write's
     // demote-to-draft the way a separate write after it would be.
-    if (take.replayTarget !== undefined) {
-      const saved = await saveReplayedTake(
-        take.segmentId,
-        take.clipId,
-        merged,
-        CANONICAL_SAMPLE_RATE,
-        {
-          finished: take.finished,
-          ordinal: take.ordinal,
-          target: take.replayTarget,
-          // The first attempt needs its row; a Retry may follow a quota
-          // failure that gave the row up.
-          rowRequired: take.attempts === 0,
-        }
-      );
+    const { segmentId, clipId, finished, ordinal, replayTarget } = take;
+    const into = [segmentId, clipId, merged, CANONICAL_SAMPLE_RATE] as const;
+    if (replayTarget === undefined) await saveTake(...into, { finished });
+    else {
+      // A Retry may follow a quota failure that gave the row up.
+      const rowRequired = take.attempts === 0;
+      const opts = { finished, ordinal, target: replayTarget, rowRequired };
+      const saved = await saveReplayedTake(...into, opts);
       if (saved.kind === "stale") stale = saved.kept;
-    } else {
-      await saveTake(
-        take.segmentId,
-        take.clipId,
-        merged,
-        CANONICAL_SAMPLE_RATE,
-        { finished: take.finished }
-      );
     }
   } catch (cause) {
     // The failure that produces the `SaveFailed` recovery screen — one row
@@ -297,18 +282,11 @@ export async function performSaveTake(
 }
 
 /**
- * Finish the save of a take the launch replay read back from `pendingTakes`
- * (#38 slice 3): the DRI's pick, "Finish the save quietly (Recommended)".
- *
- * It takes the slot and runs the same `performSaveTake` a Save runs, so a
- * first attempt shows nothing (the recovery screen waits for a failure, see
- * `recovery` in `App`) and a failure is the recovery screen a failed Save
- * shows, Retry and Discard included. The take keeps the row's `clipId`, so
- * the save's own release deletes that row, and its pending write is a
- * same-`clipId` keep.
- *
- * `"busy"` when the slot already holds a take: one slot, so the replay stops
- * and leaves its row for the next launch rather than displace a recording.
+ * Finish the save of a take the launch replay read back (#38 slice 3; the
+ * DRI's pick, "Finish the save quietly (Recommended)"): take the slot, then
+ * the same `performSaveTake` a Save runs, so only a failure shows anything
+ * (the recovery screen). `"busy"` when the slot is held: the replay stops and
+ * leaves its row for the next launch rather than displace a recording.
  */
 export async function performResumeTake(
   held: PendingTake | null,
@@ -351,8 +329,8 @@ export async function performDiscardTake(
     releasePendingTake(held);
     pendingGivenUp.delete(held.clipId);
   }
-  // Nothing references the bytes a failed attempt may already have written, so
-  // leaving them would hold exactly the space the save ran out of.
+  // Bytes a failed attempt wrote would hold the space the save ran out of; a
+  // clip another copy has since made active is kept (`deleteClip`).
   if (!orphan) return;
   try {
     await deleteClip(orphan);

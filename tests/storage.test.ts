@@ -50,8 +50,18 @@ import {
   resolveSegmentAudio,
 } from "@/lib/storage/segment-audio";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import type { Book, BookId, RecordingStatus } from "@/types/domain";
+import type { Book, BookId, ClipId, RecordingStatus } from "@/types/domain";
 import { recordTake, samplesOf, storeOrphanClip } from "./support";
+
+/**
+ * A clip lost from under the take that names it. `deleteClip` keeps a named
+ * clip, so the dangling state is made by deleting the two rows directly.
+ */
+async function loseClip(id: ClipId): Promise<void> {
+  const db = await getDb();
+  await db.delete("clipMeta", id);
+  await db.delete("clipData", id);
+}
 
 const samples = (n: number, value = 1000): Int16Array =>
   Int16Array.from({ length: n }, () => value);
@@ -125,11 +135,20 @@ describe("clip storage", () => {
     // The name is deliberately narrow: these two calls both go through
     // `clipMeta`, so they say nothing about the samples. That is the test
     // below.
-    const { segmentId } = await oneSegment();
-    const { clipId: id } = await recordTake(segmentId, { frames: 10 });
+    const id = newClipId();
+    await storeOrphanClip(id, new Int16Array(10).fill(7));
     await deleteClip(id);
     expect(await getClipMeta(id)).toBeUndefined();
     expect(await getClip(id)).toBeUndefined();
+  });
+
+  it("keeps a clip a take still names (Frank, PR #1546 round 4)", async () => {
+    // A discard's orphan may since have become another copy's active take.
+    const { segmentId } = await oneSegment();
+    const { clipId: id } = await recordTake(segmentId, { frames: 10 });
+    await deleteClip(id);
+    expect(await getClipMeta(id)).toBeDefined();
+    expect(await (await getDb()).get("clipData", id)).toBeDefined();
   });
 
   it("deletes the samples too, not just the metadata", async () => {
@@ -139,8 +158,8 @@ describe("clip storage", () => {
     // `clipMeta` so it cannot see the orphan either. Discarding a failed take
     // deletes its clip precisely to give the bytes back on a phone that has
     // just run out of room, so the data store is checked directly.
-    const { segmentId } = await oneSegment();
-    const { clipId: id } = await recordTake(segmentId, { frames: 1000 });
+    const id = newClipId();
+    await storeOrphanClip(id, new Int16Array(1000).fill(7));
     const db = await getDb();
     expect(await db.get("clipData", id)).toBeDefined();
 
@@ -540,7 +559,7 @@ describe("book tree", () => {
     // The take row is fine. The audio it names is gone — deleted from under
     // it, since the commit write stores the clip in the take's own transaction.
     const lost = await recordTake(s2.id);
-    await deleteClip(lost.clipId);
+    await loseClip(lost.clipId);
 
     const { clipIds, missing } = await resolveChapterClipIds(chapter.id);
     expect(clipIds).toEqual([t1.clipId]);
@@ -1237,7 +1256,7 @@ describe("segment audio resolution", () => {
     // Nothing checks on read that a take's clip exists, which is how a chapter
     // can hold takes pointing at no audio at all once a clip is lost.
     const take = await recordTake(segmentId);
-    await deleteClip(take.clipId);
+    await loseClip(take.clipId);
 
     for (const audio of [
       await resolveSegmentAudio(segmentId),
@@ -1284,7 +1303,7 @@ describe("segment audio resolution", () => {
   it("resolves again once the missing clip is stored", async () => {
     const { segmentId } = await oneSegment();
     const { clipId } = await recordTake(segmentId);
-    await deleteClip(clipId);
+    await loseClip(clipId);
     expect((await loadSegmentClip(segmentId)).kind).toBe("clip-missing");
 
     // The resolver reads; it does not repair and it does not latch. Storing

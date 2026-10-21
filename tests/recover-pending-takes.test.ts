@@ -14,7 +14,11 @@ vi.mock("@/lib/storage/takes", async (importOriginal) => {
 });
 
 import { recoverPendingTakes } from "@/hooks/recover-pending-takes";
-import { performResumeTake, performSaveTake } from "@/hooks/use-save-take";
+import {
+  performDiscardTake,
+  performResumeTake,
+  performSaveTake,
+} from "@/hooks/use-save-take";
 import {
   subscribeToFailures,
   type FailureReport,
@@ -430,6 +434,38 @@ describe("recoverPendingTakes — another copy saved first (Frank, PR #1546)", (
     );
     expect(refused(reports)).toHaveLength(1);
     expect(app.held()).toBeNull();
+  });
+});
+
+describe("recoverPendingTakes — two copies, one row (Frank, PR #1546 r4)", () => {
+  it("a Discard in one copy never deletes the clip another copy's replay saved", async () => {
+    const segmentId = await freshSegment();
+    const take = newTake(segmentId);
+    await writeRow(take);
+
+    // Copy A's replay fails (not quota): the take is held, the row kept.
+    vi.mocked(saveReplayedTake).mockRejectedValueOnce(
+      new Error("disk said no")
+    );
+    const a = launch();
+    await a.run();
+    expect(a.held()?.state).toBe("failed");
+
+    // Copy B opens and finishes the same row: the same clip is now active.
+    await launch().run();
+    expect(await activeClip(segmentId)).toBe(take.clipId);
+
+    // Copy A's translator confirms Discard.
+    let slot = a.held();
+    await performDiscardTake(slot, (t) => {
+      slot = t(slot);
+    });
+
+    expect(slot).toBeNull();
+    expect(await activeClip(segmentId)).toBe(take.clipId);
+    const db = await getDb();
+    expect(await db.get("clipMeta", take.clipId)).toBeDefined();
+    expect(await db.get("clipData", take.clipId)).toBeDefined();
   });
 });
 

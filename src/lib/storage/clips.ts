@@ -3,7 +3,9 @@
  */
 
 import { framesToMs } from "@/lib/audio/format";
-import { getDb } from "./db";
+import type { IDBPDatabase, StoreNames } from "idb";
+
+import { getDb, type TcMobileDb } from "./db";
 import type { Clip, ClipMeta } from "@/types/audio";
 import type { ClipId } from "@/types/domain";
 
@@ -84,20 +86,39 @@ export async function getClip(id: ClipId): Promise<Clip | undefined> {
 }
 
 /**
- * Strict durability: the same bar as `saveTake`'s clip write (#179, #163) —
- * the write and the delete of a take's only copy of its audio are held to the
- * same guarantee.
+ * Delete an orphan clip, unless a take names it by the time this transaction
+ * runs: another open copy may have made it active (Frank, PR #1546 r4).
+ * Strict durability, as `saveTake`'s clip write (#179, #163).
  */
 export async function deleteClip(id: ClipId): Promise<void> {
-  const db = await getDb();
-  const tx = db.transaction(["clipMeta", "clipData"], "readwrite", {
-    durability: "strict",
-  });
-  await Promise.all([
-    tx.objectStore("clipMeta").delete(id),
-    tx.objectStore("clipData").delete(id),
-    tx.done,
-  ]);
+  const tx = openStrictTx(await getDb(), ["takes", "clipMeta", "clipData"]);
+  await deleteClipIfUnreferenced(tx, id);
+  await tx.done;
+}
+
+/** A strict readwrite transaction; `takes.ts` opens its take writes here. */
+export function openStrictTx(
+  db: IDBPDatabase<TcMobileDb>,
+  stores: StoreNames<TcMobileDb>[]
+) {
+  return db.transaction(stores, "readwrite", { durability: "strict" });
+}
+
+/**
+ * Delete a clip's metadata and bytes, unless some take still names it: the
+ * one reference check, for every take write, clear and discard (#68). Call it
+ * on the caller's transaction AFTER the take row that let go of the clip is
+ * deleted, so the check and the delete land with the take change. Two copies
+ * replaying one pending row share a clip (#38).
+ */
+export async function deleteClipIfUnreferenced(
+  tx: ReturnType<typeof openStrictTx>,
+  clipId: ClipId
+): Promise<void> {
+  const survivors = await tx.objectStore("takes").getAll();
+  if (survivors.some((t) => t.clipId === clipId)) return;
+  await tx.objectStore("clipMeta").delete(clipId);
+  await tx.objectStore("clipData").delete(clipId);
 }
 
 /**

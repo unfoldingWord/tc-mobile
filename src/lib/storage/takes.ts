@@ -30,7 +30,7 @@
 
 import type { IDBPDatabase, StoreNames } from "idb";
 
-import { buildClipMeta } from "./clips";
+import { buildClipMeta, deleteClipIfUnreferenced, openStrictTx } from "./clips";
 import { getDb, type TcMobileDb } from "./db";
 import type {
   ClipId,
@@ -59,15 +59,11 @@ function openTakeTx(
   const stores: StoreNames<TcMobileDb>[] = ["segments", "takes", "clipMeta"];
   stores.push("clipData", "chapters", "books");
   if (withPending) stores.push("pendingTakes");
-  return db.transaction(
-    stores,
-    "readwrite",
-    // Strict durability: this transaction creates the ONLY copy of a recording,
-    // and under the browser default (relaxed on Chromium) it can report success
-    // before the bytes are flushed — so a crash or a power loss just after Stop
-    // loses the take. Same bar `commitTranscode` holds (#179, ADR 0009).
-    { durability: "strict" }
-  );
+  // Strict durability: this transaction creates the ONLY copy of a recording,
+  // and under the browser default (relaxed on Chromium) it can report success
+  // before the bytes are flushed — so a crash or a power loss just after Stop
+  // loses the take. Same bar `commitTranscode` holds (#179, ADR 0009).
+  return openStrictTx(db, stores);
 }
 
 type TakeTx = ReturnType<typeof openTakeTx>;
@@ -187,30 +183,6 @@ async function writeTakeInTx(
 }
 
 /**
- * Delete a clip's metadata and bytes, unless some take still names it.
- *
- * Every take write and clear that lets go of a clip goes through here, so the
- * reference check is written once. Call it on the caller's transaction AFTER
- * the take row that let go of the clip is deleted, so `getAll` sees only the
- * references that survive; the check and the delete then land in the same
- * transaction as the take change.
- *
- * Nothing shares a clip today (every take mints a fresh `newClipId()`), but
- * nothing in the schema forbids it either, and an unconditional delete would
- * then punch a hole in another segment: unrecoverable audio loss. So this is a
- * defensive invariant, not a fix for a path the app reaches (#68, Frank R4).
- */
-async function deleteClipIfUnreferenced(
-  tx: TakeTx,
-  clipId: ClipId
-): Promise<void> {
-  const survivors = await tx.objectStore("takes").getAll();
-  if (survivors.some((t) => t.clipId === clipId)) return;
-  await tx.objectStore("clipMeta").delete(clipId);
-  await tx.objectStore("clipData").delete(clipId);
-}
-
-/**
  * The generation of the clip behind a segment's current take, or 0 when there is
  * none (never recorded, or a dangling take/clip — an edit of audio the database
  * could not produce is not a lossy pass over anything). Read on the caller's
@@ -273,18 +245,13 @@ export type ReplayedSave =
   | { readonly kind: "stale"; readonly kept: boolean };
 
 /**
- * `saveTake` for a take the launch replay read back (#38), on every attempt,
- * Retry included. In THIS transaction, before any write, it saves only when
- * the segment's active take is still `target` (the row's, persisted as the
- * save began: anything else is a newer save, and replacing it would delete
- * that take's clip; Frank, PR #1546), and the pending row is this take's
- * (required on the first attempt; a Retry also accepts none, since a quota
- * failure gives it up).
- *
- * Otherwise nothing is saved and the audio is KEPT: the row is marked
- * `"superseded"`, or written again whole when it is gone, unless another
- * take's row holds the segment (`kept: false`; the caller keeps the take). A
- * missing segment falls through to `saveTake`'s missing-segment failure.
+ * `saveTake` for a replayed take (#38), every attempt. In THIS transaction it
+ * saves only while the active take is still the row's persisted `target` (else
+ * a newer save would lose its clip; Frank, PR #1546) and the pending row is
+ * this take's (a Retry also accepts none: quota gives it up). Otherwise the
+ * audio is KEPT: the row marked `"superseded"`, or rewritten whole, unless
+ * another take's row holds the segment (`kept: false`). A missing segment
+ * falls through to `saveTake`'s missing-segment failure.
  */
 export async function saveReplayedTake(
   segmentId: SegmentId,

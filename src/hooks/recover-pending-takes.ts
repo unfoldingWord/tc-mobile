@@ -11,32 +11,22 @@ import { reportFailure } from "./report-failure";
 
 /**
  * Finish, on launch, every save the app was closed in the middle of (#38
- * slice 3). The DRI's pick, verbatim: "Finish the save quietly
- * (Recommended)". The person already pressed Stop or Save, so the take is
- * saved into its segment with no prompt and the segment simply reads as
- * recorded; only a save that fails shows anything, and what it shows is the
- * recovery screen a failed Save shows.
+ * slice 3; the DRI's pick, verbatim: "Finish the save quietly
+ * (Recommended)"): no prompt, and only a failed save shows anything, the
+ * recovery screen a failed Save shows. Each row, via `loadPendingRecipe`:
  *
- * Each row is read back through `loadPendingRecipe`:
+ *   - a recipe goes to `resume` (the hook's slot, then `performSaveTake`),
+ *     which saves only over the take the row says it replaces; `"stale"`: a
+ *     newer save won, the row is kept refused, the run goes on;
+ *   - `"saved"` (the row outlived its save): the row is deleted;
+ *   - `"segment-gone"`: reported, then deleted: nowhere left to save it;
+ *   - any other refusal (`PendingRefusal`): reported once and KEPT rather
+ *     than drop field audio (the coordinator's reading, on #38); the row
+ *     carries the refusal, so a later launch stays quiet;
+ *   - `"failed"` (the read failed): reported, row untouched.
  *
- *   - a recipe is handed to `resume`, which is the hook's slot plus the same
- *     `performSaveTake` a Save runs; its own release deletes the row. It saves
- *     only over the take the row says it replaces (`saveReplayedTake`);
- *     `"stale"`: a newer save won, the row is kept refused, the run goes on;
- *   - `"saved"` (the save landed and the row outlived it): the row is deleted;
- *   - `"segment-gone"`: reported, then the row is deleted, since there is
- *     nowhere left to save it;
- *   - any other refusal (`PendingRefusal`): reported and KEPT rather than
- *     drop field audio (the coordinator's reading of the pick, on #38), once:
- *     the row carries the refusal it was reported under, and a later launch
- *     that finds it stays quiet. A lost mark repeats the report, never loses
- *     the row;
- *   - `"failed"` (the read itself failed): reported, row untouched, so the
- *     next launch tries again.
- *
- * One at a time, oldest first. A save that fails stops the run: the recovery
- * screen is up and holds the one slot, so the rest wait for the next launch.
- * `"busy"` (the slot already holds a take) stops it the same way.
+ * One at a time, oldest first. A failed save or `"busy"` stops the run: the
+ * one slot is held, so the rest wait for the next launch.
  *
  * Never rejects: it runs from a mount effect with nobody to catch it.
  */

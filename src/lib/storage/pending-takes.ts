@@ -25,9 +25,8 @@
  *   - Every write and delete asks IndexedDB for `pendingTakes` ONLY. Readwrite
  *     transactions are queued only behind transactions whose store lists
  *     overlap, and `saveTake`'s (`openTakeTx` in `takes.ts`) does not name this
- *     store, so the two run side by side. The one take write that does name
- *     it is the launch replay's `saveReplayedTake`, which reads its own row as
- *     a precondition; that save starts no pending write of its own.
+ *     store, so the two run side by side (bar `saveReplayedTake`, which
+ *     starts no pending write of its own).
  *   - The caller does not await the write before saving: the hook starts the
  *     write before the commit, and the delete once the save lands or the
  *     translator confirms a discard, and awaits neither.
@@ -102,10 +101,8 @@ type PendingListResult =
  *     Never spliced: splicing an MP3 as PCM corrupts the audio. The launch
  *     replay keeps the row and reports it once (`markPendingRefusal`).
  *   - `sample-rate`: written under another rate than the caller saves at.
- *   - `no-target`: written before rows carried `target`, so the replay
- *     cannot tell what the take was meant to replace. Kept, never saved.
- *   - `superseded`: an earlier replay found another copy had saved over
- *     `target`. Kept, never saved again.
+ *   - `no-target` (no `target` on the row), `superseded` (a newer save won
+ *     an earlier replay): kept, never saved.
  *   - `failed`: the read itself failed.
  */
 type PendingRecipeResult =
