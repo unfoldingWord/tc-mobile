@@ -5,12 +5,17 @@ import { strings } from "@/lib/strings";
 
 type Step = { icon: IconName; text: string };
 
-const COME_BACK: Step = { icon: "restart", text: strings.micStepComeBack };
-const MIC_ON: Step = { icon: "mic", text: strings.micStepMicOn };
-const OPEN_SETTINGS: Step = {
+// Built per call, never at module scope: a module-level `Step` would hold the
+// string of whichever locale was running at import, and keep it.
+const comeBack = (): Step => ({
+  icon: "restart",
+  text: strings.micStepComeBack,
+});
+const micOn = (): Step => ({ icon: "mic", text: strings.micStepMicOn });
+const openSettings = (): Step => ({
   icon: "phone",
   text: strings.micStepOpenSettings,
-};
+});
 
 /**
  * The walk-through for each build (#1569): every step leads with an icon, the
@@ -21,29 +26,29 @@ function micSettingsSteps(platform: MicSettingsPlatform): Step[] {
   switch (platform) {
     case "android-app":
       return [
-        OPEN_SETTINGS,
+        openSettings(),
         { icon: "tap-hand", text: strings.micStepAndroidApp },
-        MIC_ON,
-        COME_BACK,
+        micOn(),
+        comeBack(),
       ];
     case "ios-app":
       return [
-        OPEN_SETTINGS,
+        openSettings(),
         { icon: "tap-hand", text: strings.micStepIosApp },
-        MIC_ON,
-        COME_BACK,
+        micOn(),
+        comeBack(),
       ];
     case "android-chrome":
       return [
         { icon: "tap-hand", text: strings.micStepAndroidChrome },
-        MIC_ON,
-        COME_BACK,
+        micOn(),
+        comeBack(),
       ];
     case "ios-safari":
       return [
         { icon: "tap-hand", text: strings.micStepIosSafari },
-        MIC_ON,
-        COME_BACK,
+        micOn(),
+        comeBack(),
       ];
   }
 }

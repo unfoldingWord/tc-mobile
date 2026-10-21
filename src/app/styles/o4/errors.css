@@ -101,6 +101,9 @@
   }
   :root .o4-err-step::before {
     content: counter(o4-step);
+    /* The empty alt keeps the number out of the accessibility tree; the first
+       line is the fallback for an engine that drops the second. */
+    content: counter(o4-step) / "";
     flex-shrink: 0;
     width: 24px;
     font-weight: 800;

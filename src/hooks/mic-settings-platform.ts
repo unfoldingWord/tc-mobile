@@ -46,7 +46,12 @@ export function micSettingsPlatformFrom(
   if (!ios) return null;
   // Chrome, Firefox, Edge and Opera on iOS carry their own markers; they do
   // not have Safari's address-bar menu.
-  return /(CriOS|FxiOS|EdgiOS|OPiOS)\//.test(userAgent) ? null : "ios-safari";
+  if (/(CriOS|FxiOS|EdgiOS|OPiOS)\//.test(userAgent)) return null;
+  // Safari announces itself with both markers; a bare WebView has neither and
+  // does not have Safari's aA menu.
+  return /Version\//.test(userAgent) && /Safari\//.test(userAgent)
+    ? "ios-safari"
+    : null;
 }
 
 /** True when the page runs as an installed PWA rather than in a browser tab. */
