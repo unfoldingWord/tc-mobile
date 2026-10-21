@@ -95,26 +95,53 @@ describe("micSettingsPlatformFrom (#1569)", () => {
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15";
 
   it("names the native shells by Capacitor's id", () => {
-    expect(micSettingsPlatformFrom("android", "", "", 0)).toBe("android-app");
-    expect(micSettingsPlatformFrom("ios", "", "", 0)).toBe("ios-app");
+    expect(micSettingsPlatformFrom("android", "", "", 0, false)).toBe(
+      "android-app"
+    );
+    expect(micSettingsPlatformFrom("ios", "", "", 0, false)).toBe("ios-app");
   });
 
   it("reads Chrome on Android and Safari on iOS from the user agent", () => {
     expect(
-      micSettingsPlatformFrom("web", CHROME_ANDROID, "Linux armv8l", 5)
+      micSettingsPlatformFrom("web", CHROME_ANDROID, "Linux armv8l", 5, false)
     ).toBe("android-chrome");
-    expect(micSettingsPlatformFrom("web", SAFARI_IOS, "iPhone", 5)).toBe(
+    expect(micSettingsPlatformFrom("web", SAFARI_IOS, "iPhone", 5, false)).toBe(
       "ios-safari"
     );
-    expect(micSettingsPlatformFrom("web", DESKTOP, "MacIntel", 5)).toBe(
+    expect(micSettingsPlatformFrom("web", DESKTOP, "MacIntel", 5, false)).toBe(
       "ios-safari"
     );
   });
 
   it("gives no steps for other browsers or a desktop", () => {
-    expect(micSettingsPlatformFrom("web", SAMSUNG, "Linux", 5)).toBeNull();
-    expect(micSettingsPlatformFrom("web", CHROME_IOS, "iPhone", 5)).toBeNull();
-    expect(micSettingsPlatformFrom("web", DESKTOP, "MacIntel", 0)).toBeNull();
-    expect(micSettingsPlatformFrom("web", "", "", 0)).toBeNull();
+    expect(
+      micSettingsPlatformFrom("web", SAMSUNG, "Linux", 5, false)
+    ).toBeNull();
+    expect(
+      micSettingsPlatformFrom("web", CHROME_IOS, "iPhone", 5, false)
+    ).toBeNull();
+    expect(
+      micSettingsPlatformFrom("web", DESKTOP, "MacIntel", 0, false)
+    ).toBeNull();
+    expect(micSettingsPlatformFrom("web", "", "", 0, false)).toBeNull();
+  });
+
+  it("gives an installed PWA no steps, on Android and iOS alike", () => {
+    expect(
+      micSettingsPlatformFrom("web", CHROME_ANDROID, "Linux armv8l", 5, true)
+    ).toBeNull();
+    expect(
+      micSettingsPlatformFrom("web", SAFARI_IOS, "iPhone", 5, true)
+    ).toBeNull();
+    expect(
+      micSettingsPlatformFrom("web", DESKTOP, "MacIntel", 5, true)
+    ).toBeNull();
+  });
+
+  it("keeps the native shells' steps whatever the display mode says", () => {
+    expect(micSettingsPlatformFrom("android", "", "", 0, true)).toBe(
+      "android-app"
+    );
+    expect(micSettingsPlatformFrom("ios", "", "", 0, true)).toBe("ios-app");
   });
 });

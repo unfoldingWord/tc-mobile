@@ -15,6 +15,9 @@ export type MicSettingsPlatform =
  * over the user agent; otherwise Android is read from the user agent, and iOS
  * from it too, plus the iPad that reports itself as a Mac with a touch screen.
  *
+ * `standalone` is true when the page runs as an installed PWA, not in a
+ * browser tab; the native shells are named before it is read.
+ *
  * Browsers other than Chrome on Android and Safari on iOS get no steps: the
  * wording is not known to match their menus.
  */
@@ -22,10 +25,15 @@ export function micSettingsPlatformFrom(
   share: SharePlatform,
   userAgent: string,
   platform: string,
-  maxTouchPoints: number
+  maxTouchPoints: number,
+  standalone: boolean
 ): MicSettingsPlatform | null {
   if (share === "android") return "android-app";
   if (share === "ios") return "ios-app";
+  // An installed PWA has no address bar or browser menu, so the two browser
+  // walk-throughs would point at controls that are not there. No steps for it
+  // until its own wording is checked on a device.
+  if (standalone) return null;
   if (/Android/.test(userAgent)) {
     const chrome =
       /Chrome\//.test(userAgent) &&
@@ -41,6 +49,17 @@ export function micSettingsPlatformFrom(
   return /(CriOS|FxiOS|EdgiOS|OPiOS)\//.test(userAgent) ? null : "ios-safari";
 }
 
+/** True when the page runs as an installed PWA rather than in a browser tab. */
+function readStandalone(): boolean {
+  if (typeof window === "undefined") return false;
+  const iosStandalone =
+    (navigator as Navigator & { standalone?: boolean }).standalone === true;
+  const displayMode =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(display-mode: standalone)").matches;
+  return iosStandalone || displayMode;
+}
+
 /** Read the running build. Browser globals, so this is the hooks layer's. */
 export function readMicSettingsPlatform(): MicSettingsPlatform | null {
   if (typeof navigator === "undefined") return null;
@@ -48,6 +67,7 @@ export function readMicSettingsPlatform(): MicSettingsPlatform | null {
     readSharePlatform(),
     navigator.userAgent,
     navigator.platform,
-    navigator.maxTouchPoints
+    navigator.maxTouchPoints,
+    readStandalone()
   );
 }
