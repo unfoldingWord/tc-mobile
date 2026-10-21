@@ -146,6 +146,13 @@ export const disclosedComponents: readonly DisclosedComponent[] = [
     noticeMarker: "Arjun Barrett",
   },
   {
+    name: "@noble/hashes",
+    spdx: "MIT",
+    role: "MD5 checksums for the Scripture Bundle export",
+    copyright: "© 2022 Paul Miller",
+    noticeMarker: "Paul Miller",
+  },
+  {
     name: "@capacitor/core",
     spdx: "MIT",
     role: "native-shell bridge, imported by the web code (share, storage, Back)",
