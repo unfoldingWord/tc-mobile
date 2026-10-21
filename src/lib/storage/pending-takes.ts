@@ -8,8 +8,8 @@
  * inline base encoding (the DRI's 2026-10-19 pick, "base = stored | inline";
  * shape and reasons in docs/design/v12-schema.md, "The pending-takes store").
  *
- * Slice 1 of #38: nothing in `src/` calls this yet. The save hook will
- * (slice 2), and the launch replay will read it back (slice 3).
+ * The save hook writes and deletes rows (`hooks/use-save-take.ts`, slice 2 of
+ * #38); the launch replay that reads them back is slice 3.
  *
  * **Best-effort, by design.** On a quota failure this write usually fails too,
  * so it protects the kill-and-relaunch case, not the quota case; and it must
@@ -22,19 +22,22 @@
  *     transactions are queued only behind transactions whose store lists
  *     overlap, and `saveTake`'s (`openTakeTx` in `takes.ts`) does not name this
  *     store, so the two run side by side.
- *   - The caller does not await the write before saving. Slice 2's shape:
- *     `void writePendingTake(take, …)` right after the slot is set and before
- *     the commit starts, then `void deletePendingTake(segmentId, clipId)` once
- *     the save lands or the translator confirms a discard.
+ *   - The caller does not await the write before saving: the hook starts the
+ *     write before the commit, and the delete once the save lands or the
+ *     translator confirms a discard, and awaits neither.
  *
- * **Ordering.** Because a write is called before its commit, and the delete
- * only after the commit, a delete always opens its transaction after the
- * write's, and IndexedDB runs overlapping readwrite transactions in the order
- * they were opened: the write cannot land after the delete and bring back a
- * take that was saved. The delete is also conditional on `clipId`, so a late
- * delete for one take never removes a newer take's row. And a stale row that
- * does survive (a relaxed delete lost to a crash) reads back as `"saved"`
- * from `loadPendingRecipe`, never as a recording to offer.
+ * **Ordering, and what is not guaranteed.** The write is called before its
+ * commit and the delete only after it, so in practice the delete opens its
+ * transaction after the write's, and IndexedDB runs overlapping readwrite
+ * transactions in the order they were opened. That is practice, not a lock:
+ * each call opens its transaction only after its own `await getDb()`, so call
+ * order does not by itself fix open order, and a write could in principle land
+ * after its delete and leave a row for a take that was saved. The backstop is
+ * the read: a row whose `clipId` is the segment's active take reads back as
+ * `"saved"` from `loadPendingRecipe`, never as a recording to offer, and the
+ * same holds for a relaxed delete lost to a crash. The delete is also
+ * conditional on `clipId`, so a late delete for one take never removes a newer
+ * take's row.
  */
 
 import type { IDBPDatabase } from "idb";

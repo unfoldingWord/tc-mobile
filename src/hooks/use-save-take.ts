@@ -6,6 +6,10 @@ import { clearSegmentTake, saveTake } from "@/lib/storage/takes";
 import { isMissingSegmentFailure } from "@/lib/storage/stale-target";
 import { deleteClip, newClipId } from "@/lib/storage/clips";
 import {
+  deletePendingTake,
+  writePendingTake,
+} from "@/lib/storage/pending-takes";
+import {
   discardSave,
   failSave,
   retrySave,
@@ -20,6 +24,50 @@ import type { SegmentId } from "@/types/domain";
 
 /** Shared empty base — an edit-only save carries no newly recorded PCM. */
 const NO_SAMPLES = new Int16Array(0);
+
+/**
+ * Report a pending-take store result that came back as a failure (#38).
+ *
+ * The store never rejects; it hands a failure back as a value, because
+ * `lib/` cannot reach the failure log. Losing this row costs only the
+ * kill-and-relaunch safety net, never the save, so it is reported and nothing
+ * else changes.
+ */
+function reportPendingResult(
+  context: "pending-take-write" | "pending-take-delete"
+): (result: { readonly ok: boolean; readonly cause?: unknown }) => void {
+  return (result) => {
+    if (result.ok) return;
+    console.error(`Pending take store failed (${context})`, result.cause);
+    reportFailure(result.cause, context);
+  };
+}
+
+/**
+ * Write the held take down so a kill before its save lands does not lose it
+ * (#38). Started, never awaited: the save must not wait on its safety net. The
+ * write asks IndexedDB for `pendingTakes` only, a store `saveTake` does not
+ * name, so the two transactions are not queued behind each other.
+ *
+ * Every attempt writes, retries included. A retry carries the same `clipId`
+ * and the same buffers, so a row the first attempt wrote is kept as is, and a
+ * row it failed to write gets a second chance. A changed buffer is always a
+ * new `clipId`, because `saveRecording` mints one per take.
+ */
+function holdPendingTake(take: PendingTake): void {
+  void writePendingTake(take).then(reportPendingResult("pending-take-write"));
+}
+
+/**
+ * Remove a take's pending row once it is no longer pending: the save landed,
+ * or the translator confirmed the discard. Conditional on `clipId` in the
+ * store, so it never removes a newer take's row. Not awaited either.
+ */
+function releasePendingTake(take: PendingTake): void {
+  void deletePendingTake(take.segmentId, take.clipId).then(
+    reportPendingResult("pending-take-delete")
+  );
+}
 
 /**
  * How the save orchestration below reaches back out.
@@ -69,6 +117,9 @@ export async function performSaveTake(
   take: PendingTake,
   effects: SaveEffects
 ): Promise<boolean> {
+  // First, before the merge and the commit, and not awaited (see
+  // `holdPendingTake`): the row is the only copy that outlives this page.
+  holdPendingTake(take);
   try {
     // Merge HERE, inside the guarded attempt. `mergeTake` allocates a buffer
     // the size of both inputs and can throw on a low-memory device; the inputs
@@ -116,6 +167,8 @@ export async function performSaveTake(
   //
   // Cleared only here, and only for this attempt. A `finally` would drop
   // the samples on the failure path, which is the one path they exist for.
+  // The pending row goes with it, on the same terms: the take is on disk.
+  releasePendingTake(take);
   try {
     effects.update((held) => succeedSave(held, take.clipId));
   } catch (cause) {
@@ -155,6 +208,8 @@ export async function performDiscardTake(
 ): Promise<void> {
   const { next, orphan } = discardSave(held);
   update(() => next);
+  // The translator chose to lose this take, so a relaunch must not offer it.
+  if (held) releasePendingTake(held);
   // Nothing references the bytes a failed attempt may already have written, so
   // leaving them would hold exactly the space the save ran out of.
   if (!orphan) return;
