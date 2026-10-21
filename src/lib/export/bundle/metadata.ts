@@ -5,6 +5,7 @@
  * No zip, no clock, no storage; the caller serialises it and writes it last.
  */
 
+import type { ClipMeta } from "@/types/audio";
 import type { SegmentRef } from "@/types/domain";
 import type { LicenceId } from "@/types/template";
 
@@ -100,7 +101,10 @@ export function buildBundleMetadata(
   input: BundleBookInput,
   project: BundleFileDigest
 ): BundleMetadata {
-  const { book, defaultLocale } = input;
+  const { book } = input;
+  // meta.normalization declares NFC, so the free-text strings are made NFC.
+  const defaultLocale = input.defaultLocale.normalize("NFC");
+  const bookName = input.bookName.normalize("NFC");
   const exportedAt = isoTime(input.exportedAt);
 
   const recorded: Recorded[] = [];
@@ -108,9 +112,16 @@ export function buildBundleMetadata(
     chapterInput.segments.forEach((segmentInput, si) => {
       const audio = segmentInput.audio;
       if (audio === null) return;
+      const reference = segmentInput.segment.reference;
       recorded.push({
         ingredient: segmentIngredientPath(ci + 1, si + 1, audio.clip.encoding),
-        scope: segmentInput.segment.reference,
+        // A span with one verse null is outside SegmentSpan's three states;
+        // treated as no reference rather than widened to the whole chapter.
+        scope:
+          reference !== null &&
+          (reference.startVerse === null) === (reference.endVerse === null)
+            ? reference
+            : null,
         entry: {
           checksum: { md5: audio.md5 },
           mimeType: audio.clip.encoding === "mp3" ? "audio/mpeg" : "audio/wav",
@@ -120,11 +131,26 @@ export function buildBundleMetadata(
     });
   });
 
+  // `formats` states one sampling rate per codec, so it is read from the clips;
+  // codecs whose clips disagree cannot be described and take the custom flavour.
+  const rates = new Map<ClipMeta["encoding"], Set<number>>();
+  for (const c of input.chapters) {
+    for (const s of c.segments) {
+      if (s.audio === null) continue;
+      const { encoding, sampleRate } = s.audio.clip;
+      const set = rates.get(encoding) ?? new Set<number>();
+      set.add(sampleRate);
+      rates.set(encoding, set);
+    }
+  }
+  const uniformRates = [...rates.values()].every((set) => set.size === 1);
+
   // ADR 0014 point 2: audioTranslation only when every recorded segment has a
   // reference, all in one USFM book. No recorded segment at all: custom.
   const books = new Set(recorded.map((r) => r.scope?.book ?? null));
   const sole = books.size === 1 ? [...books][0]! : null;
-  const usfm = sole !== null && USFM_BOOK_CODES.has(sole) ? sole : null;
+  const usfm =
+    sole !== null && USFM_BOOK_CODES.has(sole) && uniformRates ? sole : null;
 
   const ingredients: Record<string, unknown> = {};
   for (const r of recorded) {
@@ -146,25 +172,24 @@ export function buildBundleMetadata(
     const scopes = [
       ...new Set(recorded.map((r) => scopeString(r.scope as SegmentRef))),
     ];
+    // Mono and 16-bit are invariants, not readings: ClipMeta carries neither,
+    // and every clip is stored as mono Int16 PCM (CANONICAL_CHANNELS).
     const formats: Record<string, unknown> = {};
-    const encodings = new Set(
-      input.chapters.flatMap((c) =>
-        c.segments.flatMap((s) => (s.audio ? [s.audio.clip.encoding] : []))
-      )
-    );
-    if (encodings.has("mp3")) {
+    const mp3Rate = rates.get("mp3");
+    if (mp3Rate !== undefined) {
       formats.mp3 = {
         compression: "mp3",
         trackConfiguration: "1/0 (Mono)",
-        samplingRate: 44100,
+        samplingRate: [...mp3Rate][0]!,
       };
     }
-    if (encodings.has("pcm")) {
+    const pcmRate = rates.get("pcm");
+    if (pcmRate !== undefined) {
       formats.wav = {
         compression: "wav",
         trackConfiguration: "1/0 (Mono)",
         bitDepth: 16,
-        samplingRate: 44100,
+        samplingRate: [...pcmRate][0]!,
       };
     }
     flavorType = {
@@ -179,7 +204,7 @@ export function buildBundleMetadata(
     };
     extra.localizedNames = {
       [`book-${usfm.toLowerCase()}`]: {
-        short: { [defaultLocale]: input.bookName },
+        short: { [defaultLocale]: bookName },
       },
     };
   } else {
@@ -191,7 +216,8 @@ export function buildBundleMetadata(
 
   const tag = book.languageCode?.trim() || "und";
   const languageName =
-    input.languageName ?? (tag === "und" ? "Undetermined" : tag);
+    input.languageName?.normalize("NFC") ??
+    (tag === "und" ? "Undetermined" : tag);
 
   return {
     format: "scripture burrito",
@@ -214,7 +240,7 @@ export function buildBundleMetadata(
         // Revision stays "1": nothing stores an export count (ADR 0014 point 5).
         tcmobile: { [book.id]: { revision: "1", timestamp: exportedAt } },
       },
-      name: { [defaultLocale]: input.bookName },
+      name: { [defaultLocale]: bookName },
     },
     confidential: false,
     type: { flavorType },

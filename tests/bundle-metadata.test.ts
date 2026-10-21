@@ -276,6 +276,80 @@ describe("the flavour rule (ADR 0014 point 2)", () => {
     ) as { type: { flavorType: { currentScope: unknown } } };
     expect(doc.type.flavorType.currentScope).toEqual({ MRK: ["1:1-8"] });
   });
+
+  it("takes the custom flavour, with no scope, for a span with one verse null", () => {
+    const doc = buildBundleMetadata(
+      bookInput([seg(1, { ...MARK_1_1_8, startVerse: 5, endVerse: null }, MP3)]),
+      PROJECT
+    ) as {
+      type: { flavorType: Record<string, unknown> };
+      ingredients: Record<string, Record<string, unknown>>;
+    };
+    expect(doc.type.flavorType.name).toBe("parascriptural");
+    expect(doc.type.flavorType).not.toHaveProperty("currentScope");
+    expect(Object.values(doc.ingredients).some((i) => "scope" in i)).toBe(
+      false
+    );
+    expect(validateBundleMetadata(doc)).toEqual([]);
+  });
+
+  it("writes the clips' own sampling rate in formats", () => {
+    const mp3At16k: BundleAudio = {
+      ...MP3,
+      clip: { ...MP3.clip, sampleRate: 16000 },
+    };
+    const wavAt22k: BundleAudio = {
+      ...WAV,
+      clip: { ...WAV.clip, sampleRate: 22050 },
+    };
+    const doc = buildBundleMetadata(
+      bookInput([seg(1, MARK_1_1_8, mp3At16k), seg(2, MARK_1_9_13, wavAt22k)]),
+      PROJECT
+    ) as {
+      type: {
+        flavorType: {
+          flavor: { formats: Record<string, { samplingRate: number }> };
+        };
+      };
+    };
+    const formats = doc.type.flavorType.flavor.formats;
+    expect(formats.mp3!.samplingRate).toBe(16000);
+    expect(formats.wav!.samplingRate).toBe(22050);
+    expect(validateBundleMetadata(doc)).toEqual([]);
+  });
+
+  it("takes the custom flavour when the clips of one codec disagree on rate", () => {
+    const mp3At16k: BundleAudio = {
+      ...MP3,
+      clip: { ...MP3.clip, sampleRate: 16000 },
+    };
+    const doc = buildBundleMetadata(
+      bookInput([seg(1, MARK_1_1_8, MP3), seg(2, MARK_1_9_13, mp3At16k)]),
+      PROJECT
+    ) as { type: { flavorType: { name: string } } };
+    expect(doc.type.flavorType.name).toBe("parascriptural");
+    expect(validateBundleMetadata(doc)).toEqual([]);
+  });
+});
+
+describe("meta.normalization is NFC, and the strings written are", () => {
+  it("normalises the book and language names", () => {
+    const input = {
+      ...bookInput([seg(1, MARK_1_1_8, MP3)]),
+      bookName: "Café",
+      languageName: "Kiswahilí",
+    };
+    const doc = buildBundleMetadata(input, PROJECT) as {
+      identification: { name: Record<string, string> };
+      languages: { name: Record<string, string> }[];
+      localizedNames: Record<string, { short: Record<string, string> }>;
+    };
+    expect(doc.identification.name.en).toBe("Café");
+    expect(doc.localizedNames["book-mrk"]!.short.en).toBe("Café");
+    expect(doc.languages[0]!.name.en).toBe(
+      "Kiswahilí".normalize("NFC")
+    );
+  });
 });
 
 describe("scopeString writes the spec grammar", () => {
