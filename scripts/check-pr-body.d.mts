@@ -16,10 +16,18 @@ export declare const REQUIRED_SECTIONS: string[];
 export declare const COLLATERAL_SURFACES: string[];
 export declare const FIELD_LABELS: string[];
 
+export declare const FREE_TEXT_SLOTS: Array<{ id: string }>;
+export declare function readSlots(
+  raw: string | null,
+  ctx?: { overCap?: boolean }
+): Array<{ id: string; msg: string; alts: string[][] }>;
 export declare function sanitize(raw: string | null): string;
 export declare function parseSections(text: string): Map<string, string>;
 export declare function isAnswer(value: string | null): boolean;
-export declare function checkBody(raw: string | null): string[];
+export declare function checkBody(
+  raw: string | null,
+  ctx?: { overCap?: boolean }
+): string[];
 export declare function isExcludedFromSize(path: string): boolean;
 export declare function parseNumstat(
   out: string

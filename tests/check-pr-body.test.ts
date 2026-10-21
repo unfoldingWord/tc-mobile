@@ -22,6 +22,8 @@ import {
   countProdLines,
   evaluate,
   exemption,
+  FREE_TEXT_SLOTS,
+  readSlots,
   fetchPr,
   isAnswer,
   isExcludedFromSize,
@@ -152,6 +154,14 @@ describe("sanitize / parseSections / isAnswer", () => {
     expect(sanitize("a\n~~~\n```\nCloses #1\n~~~\nb")).toBe("a\nb");
   });
 
+  // Round 5 (George 3): a comment opener inside a fence is fenced text, not a comment.
+  it("strips comments only outside fences", () => {
+    const out = sanitize(
+      "a\n```\n<!-- example\n```\nTier: T1\n<!-- real -->\nb"
+    );
+    expect(out).toBe("a\nTier: T1\n\nb");
+  });
+
   it("drops an unclosed fence to the end of the body", () => {
     expect(sanitize("a\n```\nCloses #1\nTier: T1")).toBe("a");
   });
@@ -176,6 +186,7 @@ describe("sanitize / parseSections / isAnswer", () => {
     "N/A — <b>nothing</b> to test",
     "test `reads <T>` → pass",
     "**red** run, then green",
+    "fixes the gate (see #12), then more.",
   ])("accepts the answer %j", (v) => expect(isAnswer(v)).toBe(true));
 
   it.each([
@@ -215,6 +226,14 @@ describe("sanitize / parseSections / isAnswer", () => {
     "_later_",
     "N/A — `TBD`",
     "N/A — **TBD**",
+    // Round 4 Low: a placeholder wrapped only in punctuation.
+    "TBD,",
+    "(TBD)",
+    '"TBD"',
+    "TBD...",
+    "[later]",
+    "N/A —",
+    "— TBD —",
   ])("rejects the non-answer %j", (v) => expect(isAnswer(v)).toBe(false));
 });
 
@@ -708,7 +727,7 @@ describe("exemption — which PR kinds the gate lets through", () => {
       exemption({
         ...human,
         baseRef: "feat/other",
-        title: "chore(release): v9",
+        title: "chore(release): v1.2.0",
       })
     ).toBeNull();
   });
@@ -758,6 +777,67 @@ describe("checkBody — placeholders in tags and labels in their own section", (
     });
     expect(checkBody(b)).toEqual([]);
   });
+});
+
+// Round 5 (DRI pick): every free-text slot goes through one validator, and
+// this table is what keeps a newly added slot from skipping it.
+describe("every free-text slot goes through the one validator", () => {
+  const BAD = ["TBD", "<code>TBD,</code>", "(TBD)", "`N/A`", "N/A — later"];
+  const POISON: Record<string, (v: string) => string[]> = {
+    closer: (v) =>
+      checkBody(body({ closer: `Part-of #1 — ${v} / remaining: x` })),
+    "test-first": (v) => checkBody(body({ testFirst: v })),
+    "done-when-stem": (v) =>
+      checkBody(body({ doneWhen: `- [x] ${v} — Check: test \`x\` → pass` })),
+    "done-when-check": (v) =>
+      checkBody(body({ doneWhen: `- [x] the real thing — Check: ${v}` })),
+    collateral: (v) =>
+      COLLATERAL_SURFACES.flatMap((surface) =>
+        checkBody(body({ collateral: { [surface]: v } }))
+      ),
+    taste: (v) => checkBody(body({ taste: `follows pattern (${v})` })),
+    "definition-of-done": (v) => [
+      ...checkBody(body({ reuse: v })),
+      ...checkBody(body({ prodLines: v })),
+      ...checkBody(body({ fileSize: v })),
+    ],
+    "prose-section": (v) =>
+      ["Changes", "Review evidence", "Device checks"].flatMap((t) =>
+        checkBody(body({ sections: { [t]: v } }))
+      ),
+    "size-exception": (v) =>
+      evaluate(
+        {
+          ...{
+            author: "a",
+            baseRef: "develop",
+            headRef: "feat/x",
+            title: "feat: x",
+          },
+          body: body({ extra: `size-exception: ${v}\n` }),
+        },
+        { prodLines: PROD_LINE_CAP + 1 }
+      ).missing,
+  };
+
+  it("has a poison case for exactly the slots the parser declares", () => {
+    expect(Object.keys(POISON).sort()).toEqual(
+      FREE_TEXT_SLOTS.map((s: { id: string }) => s.id).sort()
+    );
+  });
+
+  it("reads every slot from a complete body, so none is vacuous", () => {
+    const seen = new Set(
+      readSlots(body(), { overCap: true }).map((i: { id: string }) => i.id)
+    );
+    expect([...seen].sort()).toEqual(Object.keys(POISON).sort());
+  });
+
+  for (const id of Object.keys(POISON)) {
+    it.each(BAD)(`slot ${id} refuses %j`, (v) => {
+      expect(POISON[id]!(v).length).toBeGreaterThan(0);
+    });
+  }
 });
 
 describe("evaluate — exemption and body together", () => {

@@ -65,25 +65,48 @@ export const FIELD_LABELS = [
 
 const PLACEHOLDER_WORD = /^(?:tbd|later|todo|pending|wip|n\/?a)\.?$/i;
 
-/** Comments and code fences removed, LF line endings. */
+/**
+ * Comments and code fences removed, LF line endings. A comment opener inside
+ * a fence is fenced text, so comments are stripped only outside fences.
+ */
 export function sanitize(raw) {
-  const text = (raw ?? "")
-    .replace(/\r\n?/g, "\n")
-    .replace(/<!--[\s\S]*?-->/g, "");
+  const text = (raw ?? "").replace(/\r\n?/g, "\n");
   const out = [];
   let fence = null; // the opening run (``` or ~~~, 3+); closed by the same kind, at least as long
-  for (const line of text.split("\n")) {
-    const f = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+  let inComment = false;
+  for (const original of text.split("\n")) {
     if (fence !== null) {
+      const f = /^\s*(`{3,}|~{3,})(.*)$/.exec(original);
       const closes =
         f !== null &&
         f[1][0] === fence[0] &&
         f[1].length >= fence.length &&
         f[2].trim() === "";
       if (closes) fence = null;
-    } else if (f !== null && !(f[1][0] === "`" && f[2].includes("`"))) {
-      fence = f[1];
-    } else out.push(line);
+      continue;
+    }
+    let rest = original;
+    let line = "";
+    for (;;) {
+      if (inComment) {
+        const end = rest.indexOf("-->");
+        if (end < 0) break;
+        rest = rest.slice(end + 3);
+        inComment = false;
+      } else {
+        const start = rest.indexOf("<!--");
+        if (start < 0) {
+          line += rest;
+          break;
+        }
+        line += rest.slice(0, start);
+        rest = rest.slice(start + 4);
+        inComment = true;
+      }
+    }
+    const f = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+    if (f !== null && !(f[1][0] === "`" && f[2].includes("`"))) fence = f[1];
+    else out.push(line);
   }
   return out.join("\n");
 }
@@ -145,7 +168,10 @@ export function isAnswer(value) {
   const v = words(raw);
   if (!/[A-Za-z0-9]/.test(v) || hasPlaceholder(raw)) return false;
   const na = /^n\/?a\b[\s.:—–-]*/i.exec(v);
-  const text = (na ? v.slice(na[0].length) : v).trim();
+  // Punctuation around the words is not content: `(TBD)`, `"TBD"`, `TBD...`.
+  const text = (na ? v.slice(na[0].length) : v)
+    .replace(/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/gu, "")
+    .trim();
   return text !== "" && !PLACEHOLDER_WORD.test(text);
 }
 
@@ -176,23 +202,6 @@ const PART_OF_LINE =
 const NEGATED =
   /\b(?:not|never|n['’]t|without)\s+(?:\w+\s+){0,2}?(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*#\d+/i;
 
-/** A Part-of line whose delivers and remaining are both real answers. */
-function hasPartOf(text) {
-  return text.split("\n").some((line) => {
-    const m = PART_OF_LINE.exec(line);
-    return m !== null && isAnswer(m[1]) && isAnswer(m[2]);
-  });
-}
-
-function closerProblem(text) {
-  if (CLOSES.test(text) || hasPartOf(text)) return null;
-  const noIssue = fieldValue(text, "no-issue:");
-  if (noIssue !== null && isAnswer(noIssue)) return null;
-  return NEGATED.test(text)
-    ? 'Closer: a negated closer ("does not close #N") does not count; write Closes #N, Part-of #N — <delivers> / remaining: <…>, or no-issue: <reason>'
-    : "Closer: needs Closes #N, Part-of #N — <delivers> / remaining: <…>, or no-issue: <reason>";
-}
-
 /** Done-when items: each `- [ ]`/`- [x]` line with its indented continuation lines. */
 function doneWhenItems(section) {
   const items = [];
@@ -212,76 +221,174 @@ function doneWhenItems(section) {
 const TASTE =
   /^(?:none|follows pattern\s*\(([^)]*)\)|changes taste\s*\(([^)]*)\))\s*\.?$/i;
 
-/** A Taste impact of none, or a state whose citation is a real answer. */
-function tasteOk(value) {
+/** The Taste value's free text: `none`, its citation, or "" when it has no valid shape. */
+function tasteCitation(value) {
   const m = TASTE.exec((value ?? "").trim());
-  if (m === null) return false;
-  const cite = m[1] ?? m[2];
-  return cite === undefined || isAnswer(cite);
+  return m === null ? "" : (m[1] ?? m[2] ?? "none");
 }
+
 const NON_EMPTY = ["Changes", "Review evidence", "Device checks"];
 
-/** The list of problems with a body; empty when it is complete. */
-export function checkBody(raw) {
+const CLOSER_HELP =
+  "write Closes #N, Part-of #N — <delivers> / remaining: <…>, or no-issue: <reason>";
+
+/**
+ * THE FREE-TEXT SLOTS. Every value the gate reads as free text is declared
+ * here and judged by one rule, `isAnswer`, in `checkBody`; a slot that is not
+ * in this table is not judged, and `tests/check-pr-body.test.ts` pins this
+ * table against a poison case per slot. Each `read(ctx)` returns instances:
+ * `{ msg, alts }`, where the instance holds when ANY alternative has ALL of
+ * its values as answers. A missing field is the alternative `[""]`.
+ */
+export const FREE_TEXT_SLOTS = [
+  {
+    id: "closer",
+    read: ({ text }) => {
+      const alts = [];
+      if (CLOSES.test(text)) alts.push(["Closes"]);
+      for (const line of text.split("\n")) {
+        const m = PART_OF_LINE.exec(line);
+        if (m !== null) alts.push([m[1], m[2]]);
+      }
+      alts.push([fieldValue(text, "no-issue:") ?? ""]);
+      return [
+        {
+          msg: NEGATED.test(text)
+            ? `Closer: a negated closer ("does not close #N") does not count; ${CLOSER_HELP}`
+            : `Closer: needs Closes #N, Part-of #N — <delivers> / remaining: <…>, or no-issue: <reason>`,
+          alts,
+        },
+      ];
+    },
+  },
+  {
+    id: "test-first",
+    read: ({ own }) => [
+      {
+        msg: "Test-first: needs the red proof, or N/A — <reason> (a bare N/A is not an answer)",
+        alts: [[fieldValue(own("testing"), "Test-first:") ?? ""]],
+      },
+    ],
+  },
+  {
+    id: "done-when-stem",
+    read: ({ items }) =>
+      items.map((item, i) => ({
+        msg: `Done when: item ${i + 1} is empty or an unfilled placeholder`,
+        alts: [[item.replace(/\bCheck:.*$/, "")]],
+      })),
+  },
+  {
+    id: "done-when-check",
+    read: ({ items }) =>
+      items.map((item, i) => ({
+        msg: `Done when: item ${i + 1} has no Check:, or its Check is only a placeholder`,
+        alts: [[/\bCheck:(.*)$/.exec(item)?.[1] ?? ""]],
+        after: "done-when-stem", // reported only when the stem itself is fine
+      })),
+  },
+  {
+    id: "collateral",
+    read: ({ own }) =>
+      COLLATERAL_SURFACES.map((surface) => ({
+        msg: `Collateral: ${surface} needs what changed, or N/A — <reason>`,
+        alts: [[fieldValue(own("collateral"), `${surface}:`) ?? ""]],
+      })),
+  },
+  {
+    id: "taste",
+    read: ({ own }) => [
+      {
+        msg: "Taste: `Taste impact:` needs none, follows pattern (citation) or changes taste (link)",
+        alts: [[tasteCitation(fieldValue(own("taste"), "Taste impact:"))]],
+      },
+    ],
+  },
+  {
+    id: "definition-of-done",
+    read: ({ own }) =>
+      ["Reuse", "Production lines", "File size"].map((label) => ({
+        msg: `Definition of done: ${label}: needs an answer`,
+        alts: [[fieldValue(own("definition of done"), `${label}:`) ?? ""]],
+      })),
+  },
+  {
+    id: "prose-section",
+    read: ({ sections }) =>
+      NON_EMPTY.map((title) => ({
+        msg: `${title}: the section is empty, or only a placeholder`,
+        alts: [[sections.get(title.toLowerCase()) ?? ""]],
+        skipMissing: true, // a missing section is reported once, as missing
+        title,
+      })),
+  },
+  {
+    id: "size-exception",
+    applies: (ctx) => ctx.overCap === true,
+    read: ({ text }) => [
+      {
+        msg: "Size: over the cap; split the PR, or add `size-exception: <reason>`",
+        alts: [[fieldValue(text, "size-exception:") ?? ""]],
+      },
+    ],
+  },
+];
+
+function context(raw) {
   const text = sanitize(raw);
   const sections = parseSections(text);
+  const done = sections.get("done when");
+  return {
+    text,
+    sections,
+    items: done === undefined ? [] : doneWhenItems(done),
+    // A label is read inside the section that owns it, never from another one.
+    own: (section) => sections.get(section) ?? "",
+  };
+}
+
+/** Every instance of every applicable slot in a body, tagged with its slot id. */
+export function readSlots(raw, ctx = {}) {
+  const c = context(raw);
+  return FREE_TEXT_SLOTS.filter(
+    (slot) => !slot.applies || slot.applies(ctx)
+  ).flatMap((slot) => slot.read(c).map((i) => ({ id: slot.id, ...i })));
+}
+
+/** The list of problems with a body; empty when it is complete. */
+export function checkBody(raw, ctx = {}) {
+  const c = context(raw);
+  const { sections, items } = c;
   const missing = [];
   const need = (bad, msg) => bad && missing.push(msg);
-  // A label is read inside the section that owns it, never from another one.
-  const own = (section) => sections.get(section) ?? "";
-  const answered = (label, section) =>
-    isAnswer(fieldValue(own(section), label) ?? "");
 
   for (const title of REQUIRED_SECTIONS) {
-    const s = sections.get(title.toLowerCase());
-    need(s === undefined, `${title}: the section is missing`);
     need(
-      s !== undefined && NON_EMPTY.includes(title) && !isAnswer(s),
-      `${title}: the section is empty, or only a placeholder`
+      sections.get(title.toLowerCase()) === undefined,
+      `${title}: the section is missing`
     );
   }
-  need(closerProblem(text), closerProblem(text));
   need(
-    !/^\s*Tier:[ \t]*T[123][ \t]*$/m.test(own("risk")),
+    !/^\s*Tier:[ \t]*T[123][ \t]*$/m.test(c.own("risk")),
     "Tier: needs one token, T1, T2 or T3, alone on the line"
   );
   need(
-    !answered("Test-first:", "testing"),
-    "Test-first: needs the red proof, or N/A — <reason> (a bare N/A is not an answer)"
-  );
-
-  const done = sections.get("done when");
-  const items = done === undefined ? null : doneWhenItems(done);
-  need(
-    items?.length === 0,
+    sections.has("done when") && items.length === 0,
     "Done when: needs at least one `- [ ]` / `- [x]` item"
   );
-  (items ?? []).forEach((item, i) => {
-    const n = i + 1;
-    const filled = /\w/.test(item) && !hasPlaceholder(item);
-    const check = /\bCheck:(.*)$/.exec(item);
-    need(!filled, `Done when: item ${n} is empty or an unfilled placeholder`);
-    need(
-      filled && (check === null || !isAnswer(check[1])),
-      `Done when: item ${n} has no Check:, or its Check is only a placeholder`
-    );
-  });
 
-  for (const surface of COLLATERAL_SURFACES) {
-    need(
-      !answered(`${surface}:`, "collateral"),
-      `Collateral: ${surface} needs what changed, or N/A — <reason>`
-    );
-  }
-  need(
-    !tasteOk(fieldValue(own("taste"), "Taste impact:")),
-    "Taste: `Taste impact:` needs none, follows pattern (citation) or changes taste (link)"
-  );
-  for (const label of ["Reuse", "Production lines", "File size"]) {
-    need(
-      !answered(`${label}:`, "definition of done"),
-      `Definition of done: ${label}: needs an answer`
-    );
+  // The one judge: every free-text value goes through isAnswer.
+  const stemBad = new Set();
+  for (const slot of FREE_TEXT_SLOTS) {
+    if (slot.applies && !slot.applies(ctx)) continue;
+    slot.read(c).forEach((inst, i) => {
+      if (inst.skipMissing && !sections.has(inst.title.toLowerCase())) return;
+      if (inst.after && stemBad.has(i)) return;
+      if (!inst.alts.some((alt) => alt.every((v) => isAnswer(v)))) {
+        missing.push(inst.msg);
+        if (slot.id === "done-when-stem") stemBad.add(i);
+      }
+    });
   }
   return missing;
 }
@@ -362,17 +469,17 @@ export function exemption({ author, baseRef, title }) {
 export function evaluate(pr, { prodLines = null } = {}) {
   const exempt = exemption(pr);
   if (exempt) return { ok: true, exempt, missing: [] };
-  const missing = checkBody(pr.body);
-  if (
+  const overCap =
     prodLines !== null &&
     prodLines > PROD_LINE_CAP &&
-    !(pr.headRef ?? "").startsWith("release/")
-  ) {
-    const reason = fieldValue(sanitize(pr.body), "size-exception:");
-    if (reason === null || !isAnswer(reason)) {
-      missing.push(
-        `Size: ${prodLines} production lines is over the cap of ${PROD_LINE_CAP}; split the PR, or add "size-exception: <reason>"`
-      );
+    !(pr.headRef ?? "").startsWith("release/");
+  const missing = checkBody(pr.body, { overCap });
+  if (overCap) {
+    // The slot table words the reason; here it names the count.
+    const i = missing.findIndex((m) => m.startsWith("Size: over the cap"));
+    if (i >= 0) {
+      missing[i] =
+        `Size: ${prodLines} production lines is over the cap of ${PROD_LINE_CAP}; split the PR, or add "size-exception: <reason>"`;
     }
   }
   return { ok: missing.length === 0, exempt: null, missing };
