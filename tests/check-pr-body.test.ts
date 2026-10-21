@@ -187,6 +187,11 @@ describe("sanitize / parseSections / isAnswer", () => {
     "test `reads <T>` → pass",
     "**red** run, then green",
     "fixes the gate (see #12), then more.",
+    // Round 6 (George 1): a slot with words around it is still an answer.
+    "`reads <T>` → pass",
+    "N/A — <b>nothing</b>",
+    // Round 6 Low 2: a CommonMark email autolink is not a slot.
+    "N/A — ask <someone@unfoldingword.org>",
   ])("accepts the answer %j", (v) => expect(isAnswer(v)).toBe(true));
 
   it.each([
@@ -234,7 +239,20 @@ describe("sanitize / parseSections / isAnswer", () => {
     "[later]",
     "N/A —",
     "— TBD —",
+    // Round 6 (George 1): a code span does not hide a template slot.
+    "`<what changed>`",
+    "`<red proof | N/A — reason>`",
+    "N/A — `<reason>`",
   ])("rejects the non-answer %j", (v) => expect(isAnswer(v)).toBe(false));
+});
+
+describe("checkBody — a backticked template slot (round 6)", () => {
+  it("fails a Test-first line that is only the backticked slot", () => {
+    const missing = checkBody(
+      body({ testFirst: "`<red proof | N/A — reason>`" })
+    );
+    expect(missing.length).toBeGreaterThan(0);
+  });
 });
 
 describe("checkBody — green", () => {
@@ -252,6 +270,8 @@ describe("checkBody — green", () => {
     "Closes #12, #13",
     "Part-of #12 — delivers the gate / remaining: the skills",
     "no-issue: a typo in a comment",
+    // Round 6 Low 3: a wrapped Part-of line.
+    "Part-of #12 — delivers the gate\n  / remaining: the skills",
   ])("accepts the closer %j", (closer) =>
     expect(checkBody(body({ closer }))).toEqual([])
   );

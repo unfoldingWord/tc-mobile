@@ -116,7 +116,7 @@ const HTML_TAG =
 
 /** A code span: a backtick run of any length, closed by a run of the same length. */
 const CODE_SPAN = /(`+)(?:(?!\1)[\s\S])*\1/g;
-const AUTOLINK = /<(?:https?:\/\/|mailto:)[^\s<>]+>/gi;
+const AUTOLINK = /<(?:https?:\/\/|mailto:|[^\s<>@]+@)[^\s<>]+>/gi;
 
 /** Replace each code span by `mapInner(its text without the backticks)`. */
 function mapSpans(v, mapInner) {
@@ -169,7 +169,10 @@ export function isAnswer(value) {
   if (!/[A-Za-z0-9]/.test(v) || hasPlaceholder(raw)) return false;
   const na = /^n\/?a\b[\s.:—–-]*/i.exec(v);
   // Punctuation around the words is not content: `(TBD)`, `"TBD"`, `TBD...`.
+  // A slot kept inside a code span is still a slot: judge what is left of the
+  // text once every `<…>` is gone, so `<reason>` alone is nothing.
   const text = (na ? v.slice(na[0].length) : v)
+    .replace(/<[^>]*>/g, "")
     .replace(/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/gu, "")
     .trim();
   return text !== "" && !PLACEHOLDER_WORD.test(text);
@@ -246,7 +249,14 @@ export const FREE_TEXT_SLOTS = [
     read: ({ text }) => {
       const alts = [];
       if (CLOSES.test(text)) alts.push(["Closes"]);
+      // Indented lines continue the line above, as in `fieldValue`.
+      const logical = [];
       for (const line of text.split("\n")) {
+        if (/^\s+\S/.test(line) && logical.length > 0)
+          logical[logical.length - 1] += ` ${line.trim()}`;
+        else logical.push(line);
+      }
+      for (const line of logical) {
         const m = PART_OF_LINE.exec(line);
         if (m !== null) alts.push([m[1], m[2]]);
       }
