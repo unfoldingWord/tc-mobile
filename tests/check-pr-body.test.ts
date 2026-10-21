@@ -240,6 +240,8 @@ describe("sanitize / parseSections / isAnswer", () => {
     "[later]",
     "N/A —",
     "— TBD —",
+    "[TBD](https://example.com)",
+    "N/A — [later](#x)",
     // Round 6 (George 1): a code span does not hide a template slot.
     "`<what changed>`",
     "`<red proof | N/A — reason>`",
@@ -254,6 +256,20 @@ describe("checkBody — a backticked template slot (round 6)", () => {
     );
     expect(missing.length).toBeGreaterThan(0);
   });
+});
+
+describe("checkBody — an unclosed fence or comment", () => {
+  it.each(["```\nCloses #1", "<!-- never closed"])(
+    "says the tail was ignored, first, for %j",
+    (tail) => {
+      const missing = checkBody(`${body()}\n${tail}\n`);
+      expect(missing).toHaveLength(1);
+      expect(missing[0]).toMatch(/^Unclosed/);
+      const cut = checkBody(body().replace("## Taste", `${tail}\n## Taste`));
+      expect(cut[0]).toMatch(/^Unclosed code fence \(or comment\)/);
+      expect(cut.length).toBeGreaterThan(1);
+    }
+  );
 });
 
 describe("checkBody — green", () => {
@@ -815,7 +831,14 @@ describe("checkBody — placeholders in tags and labels in their own section", (
 // Round 5 (DRI pick): every free-text slot goes through one validator, and
 // this table is what keeps a newly added slot from skipping it.
 describe("every free-text slot goes through the one validator", () => {
-  const BAD = ["TBD", "<code>TBD,</code>", "(TBD)", "`N/A`", "N/A — later"];
+  const BAD = [
+    "[TBD](https://example.com)",
+    "TBD",
+    "<code>TBD,</code>",
+    "(TBD)",
+    "`N/A`",
+    "N/A — later",
+  ];
   const POISON: Record<string, (v: string) => string[]> = {
     closer: (v) =>
       checkBody(body({ closer: `Part-of #1 — ${v} / remaining: x` })),

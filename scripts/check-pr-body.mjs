@@ -70,6 +70,11 @@ const PLACEHOLDER_WORD = /^(?:tbd|later|todo|pending|wip|n\/?a)\.?$/i;
  * a fence is fenced text, so comments are stripped only outside fences.
  */
 export function sanitize(raw) {
+  return scan(raw).text;
+}
+
+/** `sanitize`, plus whether the body ended inside a fence or a comment. */
+function scan(raw) {
   const text = (raw ?? "").replace(/\r\n?/g, "\n");
   const out = [];
   let fence = null; // the opening run (``` or ~~~, 3+); closed by the same kind, at least as long
@@ -108,7 +113,7 @@ export function sanitize(raw) {
     if (f !== null && !(f[1][0] === "`" && f[2].includes("`"))) fence = f[1];
     else out.push(line);
   }
-  return out.join("\n");
+  return { text: out.join("\n"), unclosed: fence !== null || inComment };
 }
 
 const HTML_TAG =
@@ -131,6 +136,7 @@ function words(v) {
   return mapSpans(v, (inner) => inner)
     .replace(AUTOLINK, " ")
     .replace(HTML_TAG, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/[*_~]+/g, "")
     .trim();
 }
@@ -345,11 +351,12 @@ export const FREE_TEXT_SLOTS = [
 ];
 
 function context(raw) {
-  const text = sanitize(raw);
+  const { text, unclosed } = scan(raw);
   const sections = parseSections(text);
   const done = sections.get("done when");
   return {
     text,
+    unclosed,
     sections,
     items: done === undefined ? [] : doneWhenItems(done),
     // A label is read inside the section that owns it, never from another one.
@@ -371,6 +378,11 @@ export function checkBody(raw, ctx = {}) {
   const { sections, items } = c;
   const missing = [];
   const need = (bad, msg) => bad && missing.push(msg);
+
+  need(
+    c.unclosed,
+    "Unclosed code fence (or comment); everything after it was ignored"
+  );
 
   for (const title of REQUIRED_SECTIONS) {
     need(
