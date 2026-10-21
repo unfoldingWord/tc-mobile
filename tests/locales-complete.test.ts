@@ -57,10 +57,18 @@ describe("completeLocales and the English-only keys", () => {
     withEs(es, () => expect(tags()).not.toContain("es"));
   });
 
-  it("resolves a Spanish phone to es, and an unfinished language to English", () => {
+  it("resolves a Spanish phone, and an unfinished language to English", () => {
     expect(resolveLocale(["es-419"], completeLocales()).tag).toBe("es");
     expect(resolveLocale(["es"], completeLocales()).tag).toBe("es");
-    expect(resolveLocale(["fr-FR"], completeLocales()).tag).toBe("en");
-    expect(resolveLocale(["fr-FR", "es-MX"], completeLocales()).tag).toBe("es");
+    expect(resolveLocale(["pt-BR"], completeLocales()).tag).toBe("en");
+    expect(resolveLocale(["pt-BR", "es-MX"], completeLocales()).tag).toBe("es");
+  });
+
+  it("counts fr complete, and resolves a French phone to fr (#1590)", () => {
+    expect(tags()).toContain("fr");
+    const fr = LOCALE_OVERRIDES.fr as Record<string, unknown>;
+    for (const key of ENGLISH_ONLY) expect(Object.hasOwn(fr, key)).toBe(false);
+    expect(resolveLocale(["fr-FR"], completeLocales()).tag).toBe("fr");
+    expect(resolveLocale(["fr-CA", "es"], completeLocales()).tag).toBe("fr");
   });
 });
