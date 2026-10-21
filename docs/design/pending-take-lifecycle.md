@@ -181,6 +181,12 @@ v12's block:
 // Structure, before any await:
 if (oldVersion < 13) {
   db.createObjectStore("takeDispositions", { keyPath: "clipId" });
+  // A row's stored base is a use of its clip (§3). Rows with an inline base
+  // have no such key path, so the index holds only stored bases.
+  tx.objectStore("pendingTakes").createIndex(
+    "bySourceClip",
+    "base.sourceClipId"
+  );
 }
 
 // Backfill, after v12's block. Keyed on absence; no clock; one put per row
@@ -198,8 +204,8 @@ if (oldVersion < 13) {
 
 Rules, the same ones v12 holds (v12-schema.md, "Rules the migration holds"):
 
-- **Append-only.** One store is created; none is dropped. No field is renamed.
-  No existing value is rewritten.
+- **Append-only.** One store and one index are created; none is dropped. No
+  field is renamed. No existing value is rewritten.
 - **Idempotent, keyed on absence** (`in`, not a value test). A rerun after the
   #1421 abort writes nothing a first run already wrote.
 - **No clock read.** `0` is not a time.
@@ -216,6 +222,13 @@ Rules, the same ones v12 holds (v12-schema.md, "Rules the migration holds"):
   "The replay's own reads"): segment gone, cell **DL-P** (the row is
   deleted and reported once); segment present, cell **RP-P**'s `legacy`
   classification (the row is marked, kept and reported once).
+- **A row whose `stored` base clip is already gone before v13** cannot be
+  protected after the fact. Inference from the code: none should exist,
+  because no caller passes the `source` that makes a base `stored`
+  (`src/hooks/use-save-take.ts:64` calls `writePendingTake(take)` with no
+  options; #1545 is the change that would). If one does, the replay reads it
+  as `base-missing`: the row is marked refused, kept with its recorded audio,
+  reported once, never installed and never `free` (§3, cell RP-P).
 - **Creators write `audioRevision: 0`**: `addSegment` (`books.ts:966-973`) and
   the template writer (`src/lib/storage/template-book.ts:124`). The field is
   required on `Segment`, so TypeScript finds every creator.
@@ -234,6 +247,7 @@ exists:
 | R4  | Put a changed `takes`, `clipMeta` or `pendingTakes` row | the whole-shelf identity: those stores keep a full `toEqual`, and a segment row gains exactly one key |
 | R5  | Remove the #1421 abort                                  | `tests/db-upgrade-throw.test.ts`'s `describe.each`, extended with `{ from: 12, step: "v13" }`         |
 | R6  | Create `takeDispositions` after the first await         | `refuseStructureChangeAfterYield`, extended to assert the store on a fresh install and a v3 upgrade   |
+| R7  | Omit the `bySourceClip` index                           | "v13 indexes a stored base's clip and leaves inline rows out of the index"                            |
 
 Also: a v11 and a v9 shelf each climb to 13 in one open; a fresh install
 opens at 13 with an empty `takeDispositions` and `addSegment` writes
@@ -318,6 +332,57 @@ only move a verdict towards keeping: a take whose record has been aged out
 reads as `unexplained` (§4), which keeps the audio and never frees or
 overwrites. The 30 days is tactical, chosen here: far longer than any save
 attempt, and short enough that the store stays small.
+
+### A pending row's base clip is a use of that clip
+
+A `stored` base holds only a clip id (`src/types/domain.ts:277-285`), not
+samples. The row is a complete recipe only while that clip's bytes exist, as
+PCM, at the `generation` and `frameCount` the row names. Frank r3 on this
+note: if the replay loads the base, another copy replaces the active take
+(so `writeTakeInTx` deletes the prior clip as unreferenced,
+`takes.ts:156-162`), and the replay then finds `moved`, marks the row and
+frees the slot, the row names audio that no longer exists.
+
+So **preservation is defined by the whole recipe's dependencies**: the row,
+its `recorded` samples, and its `stored` base clip. The rule, at the store:
+
+- **A clip that a pending row's `stored` base names is in use**, exactly as a
+  clip a take names is. `deleteClipIfUnreferenced` (`takes.ts:195-203`)
+  becomes the one check for both: no take names the clip, **and**
+  `pendingTakes.index("bySourceClip").count(clipId)` is `0`, read in the same
+  transaction as the delete. The index (v13, §2) makes that a key count, not
+  a read of rows that may hold minutes of audio.
+- **Every path that deletes a clip goes through it**: `writeTakeInTx`'s
+  replace, `clearSegmentTake`, `deleteSegment`, `deleteBook` (each of which
+  deletes a clip today, `books.ts:1205-1220` and the book walk), and the
+  Discard settle's orphan delete. Each of those transactions gains
+  `pendingTakes`.
+- **A transcode never replaces the bytes of a clip a row's base names.**
+  `commitTranscode` (`transcode.ts:143-195`) gains `pendingTakes` and returns
+  `"stale"` for such a clip without writing. The Finished sweep does not read
+  that return value (`src/hooks/finish-transcode.ts:568`), so the turn ends
+  with no error and the PCM is kept; a later sweep lists finished PCM
+  segments again (`transcode.ts:84`) and converts it once the row has ended
+  (inference from the code). Without this, the transcode
+  would not delete the base but would make it `base-changed`: the same loss
+  by another road.
+- **The clip is released when the row ends.** Every transaction that deletes
+  a row (the commit, a Discard, a give-up, a segment or book delete) runs the
+  check on that row's `stored` base clip after the row delete, in the same
+  transaction, and deletes the clip if nothing names it any more. Nothing
+  leaks: the last user to let go deletes it.
+
+**Why the reference and not an inline copy.** Rewriting the base inline
+before freeing the slot would also satisfy Frank's exit condition. It is
+rejected because it writes a second copy of the segment's existing audio
+into the row, which is the cost the DRI's 2026-10-19 pick, "base = stored |
+inline", exists to avoid (v12-schema.md, "The pending-takes store"), and it
+would need that extra room on exactly the phone that is short of it. The
+reference rule keeps one copy of the audio.
+
+**Today every row is `inline`** (inference: no caller passes `source`,
+above), so this rule changes nothing a person can see until #1545 lands. It
+still ships in PR 1, because it is a rule a v13 writer must obey (§8).
 
 ### The owning transaction
 
@@ -508,8 +573,14 @@ What each verdict does in a conditional commit:
 **Keep, exactly.** Nothing is saved over the segment, and no copy of the
 audio is let go before another is on disk:
 
-- an own row is present: mark it (`refusal: "superseded"` for `moved`,
-  `"unexplained"` for `unexplained`) and free the slot;
+- an own row is present **and every dependency of its recipe is on disk in
+  this transaction** (for a `stored` base: the clip exists, is PCM, and
+  matches the row's `generation` and `frameCount`; §3, "A pending row's base
+  clip is a use"): mark it (`refusal: "superseded"` for `moved`,
+  `"unexplained"` for `unexplained`) and free the slot. If a dependency is
+  missing (a row written before the rule held), the row is rewritten with an
+  `inline` base from the slot's samples, marked, and only then is the slot
+  freed; if that put fails, the take stays held as below;
 - no own row (given up, or removed without a record): **park** it, in the
   same transaction, by putting a marked row built from the slot's recipe, if
   the segment's row key is free. Then free the slot. If the key holds another
@@ -595,7 +666,15 @@ names where it must be seen red first, and the mutation that must kill it.
   there is no row. Existing pins: `tests/delete-segment.test.ts`.
 - **RC-S.** As NR-S. The prior take goes and its clip is deleted only if
   unreferenced (`deleteClipIfUnreferenced`, `takes.ts:195-203`). Test (PR 1):
-  W1; existing `tests/take-clip-refcount.test.ts`. Red: mutation W1.
+  W1; existing `tests/take-clip-refcount.test.ts`. Red: mutation W1. If a
+  pending row's `stored` base names the prior clip, the clip is kept. Tests
+  (PR 1): "a save keeps the prior clip while a pending row's stored base
+  names it, and deletes it when that row ends"; "erase, segment delete, book
+  delete and a Discard's orphan delete each keep a clip a row's stored base
+  names"; "a transcode leaves a clip a row's stored base names as PCM". Red:
+  develop (`deleteClipIfUnreferenced` reads `takes` only, `takes.ts:199`);
+  then the mutation "clip clean-up does not count `bySourceClip`" must kill
+  them.
 - **RC-E.** The take and its unreferenced clip go; the revision moves. Test
   (PR 1): W2. Red: develop (no field).
 - **RC-D.** As NR-D, with the take and clip deleted as today. Existing pins.
@@ -662,10 +741,22 @@ names where it must be seen red first, and the mutation that must kill it.
     loaded C and before it commits; the row stays C's, the verdict is `free`,
     and C is saved.
 
+  - **Frank r3 on this note**: "a kept row's stored base survives another
+    copy replacing the take, and its recipe rebuilds". The replay loads a row
+    with a `stored` base (the segment's active clip X); another copy saves a
+    new take over the segment, which would delete X as unreferenced; the
+    replay's commit finds `moved`, marks the row and frees the slot. Then X's
+    `clipMeta` and `clipData` still exist and `loadPendingRecipe` on the
+    marked row rebuilds the same samples. A pair: "the base clip is deleted
+    when that kept row ends", so nothing leaks.
+  - "a pre-rule row whose stored base is gone is kept with its recorded
+    audio, reported once and never saved" (`base-missing`).
+
   Red: PR 2's head; then the mutation "the hold replaces a row for another
   clip when its `createdAt` is newer" (develop's rule,
   `pending-takes.ts:213-222`) must kill the mixed-build test (C is not saved,
-  and with the earlier draft's verdict it was freed).
+  and with the earlier draft's verdict it was freed); and the mutation "clip
+  clean-up does not count `bySourceClip`" must kill Frank r3's test.
 
 - **RP-R.** No slot holds the take, so there is no Retry until the replay's
   attempt fails. A failed attempt (not quota) leaves the slot failed with
@@ -808,6 +899,7 @@ row that replayed over `K`.
 | this note, George r1 Low: the revision's definition disagrees with the transcode row     | the definition tracks the active take; transcode is out of band (§1)                             |
 | this note, George r1 Low: "creation order" across copies                                 | "serialization", and nothing depends on which runs first (§3)                                    |
 | this note, George r1 questions: `kept-foreign`'s signal; a `generation` mismatch         | open for the requirements owner (§9); refused, kept, never installed (§3)                        |
+| this note, Frank r3: a kept row's `stored` base clip is deleted by another copy's save   | a row's base clip is a use: clip clean-up and transcode check `bySourceClip` (§3); test in RP-P  |
 | this note, Frank r2: a cross-copy quota delete reads as `claimed` and frees C            | `unexplained` and `free`-on-`given-up` replace `claimed`; paired test (TP-X)                     |
 
 ## 7. The open follow-ups
@@ -852,9 +944,11 @@ row that replayed over `K`.
   recorder would carry the revision it read when it loaded the segment's
   audio, and the ordinary commit would ask §4's verdict too. This note does
   not decide it.
-- **#1545 (the recorder passes a stored-clip `source`): unaffected.** A
-  `stored` base is still guarded by `generation` and `frameCount` at the
-  recipe read (§3), and the revision covers a base replaced by a save.
+- **#1545 (the recorder passes a stored-clip `source`): unblocked by PR 1.**
+  It is the change that makes `stored` bases exist. PR 1's rule that a row's
+  base clip is a use (§3) is what makes them safe to keep; the recipe read
+  still checks `generation` and `frameCount`. #1545 should not land before
+  PR 1.
 
 ## 8. The rebuild, in order
 
@@ -862,16 +956,19 @@ Each PR is cut from develop and cites this note. The line counts are
 estimates, scaled from #1546, whose storage and hook changes measured
 +514 / -134 in `src/` (inference; not measured for this design).
 
-| PR  | Delivers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Tier       | Estimate | Cells                                                                                                           |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | -------- | --------------------------------------------------------------------------------------------------------------- |
-| 1   | v13 and every rule a v13 writer must obey (next heading): `Segment.audioRevision` and the `takeDispositions` store, the migration step, the creators, the moves in `writeTakeInTx` and `clearSegmentTake`; the hold (all six steps, `baseRevision`); the owning transaction for the commit, Discard and give-up, each writing its record; `deleteClip` deletes only an unreferenced clip. Replaces the pins named in §3. The living sentences that name the schema change move from "11 to 12" to "11 to 13": `AGENTS.md` (the rollback paragraph), `docs/release/promotion-v1.0.0.md` §5, and the facilitator runbook if it names 12. | T1, T2     | ~450     | NR-S, NR-E, RC-S, RC-E, DL-S, DL-X, TP-X (PR 1 tests), TP-L; the hold half of RP-S; §2's tests                  |
-| 2   | `deleteSegment` and `deleteBook` drop the rows of the segments they delete. Not a rule the verdict relies on (next heading).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | T1         | ~60      | RP-D                                                                                                            |
-| 3   | The launch replay: classification, `judgePending`, `saveReplayedTake`, park, the bounded record clean-up, the replay loop, the slot guard (`writeSlot`, `installed`), the quiet first attempt, conditional Retry. A replayed take keeps its row on quota. The AGENTS.md failure-log list gains `"pending-take-refused"` and `"pending-take-read"`, and the runbook §5 says what the quiet finish does.                                                                                                                                                                                                                                 | T1, T2     | ~450     | NONE, DL-P, DL-R, RP-S, RP-E, RP-P, RP-R, RP-L, TP-S, TP-E (row kept), TP-D, TP-P, TP-R, TP-X (Frank r2's pair) |
-| 4   | A replayed take gives its row up on quota, and the words for a take that cannot be parked. Waits for §9's decision.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | T1, T2, T3 | ~100     | TP-E (Frank r7), TP-X (residual 2)                                                                              |
+| PR  | Delivers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Tier       | Estimate | Cells                                                                                                           |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | -------- | --------------------------------------------------------------------------------------------------------------- |
+| 1   | v13 and every rule a v13 writer must obey (next heading): `Segment.audioRevision` and the `takeDispositions` store, the migration step, the creators, the moves in `writeTakeInTx` and `clearSegmentTake`; the hold (all six steps, `baseRevision`); the owning transaction for the commit, Discard and give-up, each writing its record; clip clean-up (`deleteClipIfUnreferenced`, `deleteClip`, the segment and book deletes) counts a row's `stored` base as a use, through the v13 `bySourceClip` index, and `commitTranscode` skips such a clip. Replaces the pins named in §3. The living sentences that name the schema change move from "11 to 12" to "11 to 13": `AGENTS.md` (the rollback paragraph), `docs/release/promotion-v1.0.0.md` §5, and the facilitator runbook if it names 12. | T1, T2     | ~510     | NR-S, NR-E, RC-S, RC-E, DL-S, DL-X, TP-X (PR 1 tests), TP-L; the hold half of RP-S; §2's tests                  |
+| 2   | `deleteSegment` and `deleteBook` drop the rows of the segments they delete, and release those rows' base clips by PR 1's check. Not a rule the verdict relies on (next heading).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | T1         | ~60      | RP-D                                                                                                            |
+| 3   | The launch replay: classification, `judgePending`, `saveReplayedTake`, park, the bounded record clean-up, the replay loop, the slot guard (`writeSlot`, `installed`), the quiet first attempt, conditional Retry. A replayed take keeps its row on quota. The AGENTS.md failure-log list gains `"pending-take-refused"` and `"pending-take-read"`, and the runbook §5 says what the quiet finish does.                                                                                                                                                                                                                                                                                                                                                                                              | T1, T2     | ~470     | NONE, DL-P, DL-R, RP-S, RP-E, RP-P, RP-R, RP-L, TP-S, TP-E (row kept), TP-D, TP-P, TP-R, TP-X (Frank r2's pair) |
+| 4   | A replayed take gives its row up on quota, and the words for a take that cannot be parked. Waits for §9's decision.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | T1, T2, T3 | ~100     | TP-E (Frank r7), TP-X (residual 2)                                                                              |
 
 The disposition record moved lines from PR 2 into PR 1 and added some to PR
-1 and PR 3: the estimates were ~300 / ~150 / ~400 / ~120 before it. PR 1 is
-close to the 500-line cap. **It is not split if it runs over**: every item in
+1 and PR 3: the estimates were ~300 / ~150 / ~400 / ~120 before it, and
+~450 / ~60 / ~450 / ~100 before the base-clip rule (Frank r3), which adds the
+index, the check at five clean-up sites and the transcode skip to PR 1, and
+the dependency check in "Keep, exactly" to PR 3. PR 1 is now estimated just
+over the 500-line cap. **It is not split if it runs over**: every item in
 it is a rule the compatibility boundary needs in the build that first opens
 v13, so a split would reopen Frank r1's finding. If it measures over 500, it
 ships with a declared `size-exception` naming that reason.
@@ -898,9 +995,13 @@ every rule §4's verdict relies on.** Those rules are:
 3. every act that ends a take's row (the commit, a Discard, a give-up)
    writes its disposition in the same transaction as the row delete; a row
    is removed in no other way, except with its segment;
-4. a clip is deleted only when no take names it, so a Discard in a copy
-   without the replay cannot delete a clip a replay in another copy has made
-   active (Frank r4 on #1546).
+4. a clip is deleted only when no take names it **and no pending row's
+   `stored` base names it**, checked in the deleting transaction, and a
+   transcode never replaces the bytes of a clip a row's base names (§3, "A
+   pending row's base clip is a use"). So a Discard in a copy without the
+   replay cannot delete a clip a replay in another copy has made active
+   (Frank r4 on #1546), and no copy can delete or convert the base a kept
+   row still needs (Frank r3 on this note).
 
 All four ship in PR 1, with the version step. PRs 2, 3 and 4 change none of
 them, so they need no further version step: any mix of PR-1-or-later builds
@@ -966,3 +1067,6 @@ Each is inferred from the code and this design. None has been seen.
    after its record was written reads `unexplained` and keeps; it can no
    longer learn that another copy saved or discarded it.
 6. **A fresh take's Retry is still unconditional** (#1551).
+7. **A kept row with a `stored` base pins its clip as PCM.** The clip is not
+   deleted or transcoded while the row lives, so a refused row (#1562 item 2)
+   also holds that clip's PCM, about ten times its MP3 size (AGENTS.md, "Known open items" 2: ~660 MB of PCM to ~66 MB of MP3), until the row ends.
