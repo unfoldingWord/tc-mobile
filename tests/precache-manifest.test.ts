@@ -33,9 +33,17 @@ import { stripCodeComments } from "./strip-code-comments";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const CONFIG = path.join(ROOT, "vite.config.ts");
 const SRC = path.join(ROOT, "src");
-// The definition site of `thumbUrl`; excluded so defining it is not read as a
-// reader of it.
-const CATALOG = path.join(SRC, "lib", "obs", "catalog.ts");
+// The definition site of `thumbUrl`, and the template adapter that writes its
+// path into each segment of the OBS package (#1466). Both produce the path and
+// draw nothing, so neither is read as a reader. With the adapter in between, a
+// screen reaches the thumbnails by loading the package, so an import of
+// `loadObsTemplate` counts as a reader exactly as an import of `thumbUrl` does
+// (READER_SYMBOLS below).
+const PRODUCERS = [
+  path.join(SRC, "lib", "obs", "catalog.ts"),
+  path.join(SRC, "lib", "templates", "obs.ts"),
+];
+const READER_SYMBOLS = new Set(["thumbUrl", "loadObsTemplate"]);
 
 // The exact allowlist the app shell needs, and nothing more. `jpg` is absent
 // by #177; restoring it is a deliberate edit here plus in vite.config.ts.
@@ -242,15 +250,17 @@ function readsObsImagery(source: string, fileName: string): boolean {
         for (const specifier of clause.namedBindings.elements) {
           if (
             !specifier.isTypeOnly &&
-            (specifier.propertyName ?? specifier.name).text === "thumbUrl"
+            READER_SYMBOLS.has((specifier.propertyName ?? specifier.name).text)
           )
             return true;
         }
       }
     }
 
-    if (ts.isCallExpression(node) && calleeName(node.expression) === "thumbUrl")
-      return true;
+    if (ts.isCallExpression(node)) {
+      const callee = calleeName(node.expression);
+      if (callee !== undefined && READER_SYMBOLS.has(callee)) return true;
+    }
 
     if (literalPieces(node).some((text) => text.includes("/obs/thumbs/")))
       return true;
@@ -263,7 +273,7 @@ function readsObsImagery(source: string, fileName: string): boolean {
 
 function obsThumbnailReaders(): string[] {
   return tsFiles(SRC)
-    .filter((file) => file !== CATALOG)
+    .filter((file) => !PRODUCERS.includes(file))
     .filter((file) => readsObsImagery(readFileSync(file, "utf8"), file))
     .map((file) => path.relative(ROOT, file));
 }
@@ -544,6 +554,26 @@ describe("readsObsImagery (#280 — AST, not raw text)", () => {
     const source =
       'import * as catalog from "@/lib/obs/catalog";\nconst url = catalog.thumbUrl(1, 2);';
     expect(readsObsImagery(source, FILE)).toBe(true);
+  });
+
+  // #1466: a screen reaches the thumbnails through the OBS template package,
+  // whose segments carry the path, so loading the package is reading them.
+  it("counts an import of loadObsTemplate as a reader", () => {
+    const source =
+      'import { loadObsTemplate } from "@/lib/templates/obs";\nexport const p = loadObsTemplate();';
+    expect(readsObsImagery(source, FILE)).toBe(true);
+  });
+
+  it("counts a namespace call to loadObsTemplate as a reader", () => {
+    const source =
+      'import * as obs from "@/lib/templates/obs";\nexport const p = obs.loadObsTemplate();';
+    expect(readsObsImagery(source, FILE)).toBe(true);
+  });
+
+  it("does not count a type-only import of loadObsTemplate as a reader", () => {
+    const source =
+      'import type { loadObsTemplate } from "@/lib/templates/obs";\nexport type T = typeof loadObsTemplate;';
+    expect(readsObsImagery(source, FILE)).toBe(false);
   });
 
   it("counts a hand-built /obs/thumbs/ string literal as a reader", () => {
