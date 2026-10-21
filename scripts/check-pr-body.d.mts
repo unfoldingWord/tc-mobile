@@ -31,7 +31,11 @@ export declare function checkBody(
 export declare function isExcludedFromSize(path: string): boolean;
 export declare function parseNumstat(
   out: string
-): Array<{ added: number; deleted: number; path: string }>;
+): Array<{ added: number; deleted: number; path: string; oldPath?: string }>;
+export declare function crossesSizeBoundary(e: {
+  path: string;
+  oldPath?: string;
+}): boolean;
 export declare function countProdLines(
   entries: Array<{ added: number; deleted: number; path: string }>
 ): number;

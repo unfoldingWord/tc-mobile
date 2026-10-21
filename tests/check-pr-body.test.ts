@@ -20,6 +20,7 @@ import {
   REQUIRED_SECTIONS,
   checkBody,
   countProdLines,
+  crossesSizeBoundary,
   evaluate,
   exemption,
   FREE_TEXT_SLOTS,
@@ -617,10 +618,22 @@ describe("size — the production-line cap", () => {
       "10\t0\tdocs/x.md\0";
     expect(parseNumstat(out)).toEqual([
       { added: 3, deleted: 1, path: "src/a.ts" },
-      { added: 0, deleted: 0, path: "src/new.ts" },
+      { added: 0, deleted: 0, path: "src/new.ts", oldPath: "src/old.ts" },
       { added: 0, deleted: 0, path: "public/x.png" },
       { added: 10, deleted: 0, path: "docs/x.md" },
     ]);
+  });
+
+  it("flags a rename only when its two paths are on opposite sides of the cap", () => {
+    const cases: Array<[{ path: string; oldPath?: string }, boolean]> = [
+      [{ path: "src/a.ts" }, false],
+      [{ path: "src/b.ts", oldPath: "src/a.ts" }, false],
+      [{ path: "src/a.ts", oldPath: "tests/a.test.ts" }, true],
+      [{ path: "docs/a.md", oldPath: "src/a.ts" }, true],
+    ];
+    for (const [e, want] of cases) {
+      expect(crossesSizeBoundary(e), JSON.stringify(e)).toBe(want);
+    }
   });
 
   it("counts additions plus deletions of production paths only", () => {
@@ -1192,6 +1205,54 @@ describe("CLI entry point (real subprocess, not just the exported functions)", (
       run(["--body-file", f, "--range", `--output=${out}`], dir, cleanGitEnv());
       expect(existsSync(out)).toBe(false);
     }));
+
+  // Bench round 1 (George 1): a rename that crosses the size boundary moves
+  // the whole file into (or out of) the count; a same-class rename stays free.
+  function renameRepo(dir: string, from: string, to: string, lines: number) {
+    const git = (...args: string[]) =>
+      execFileSync("git", args, {
+        cwd: dir,
+        env: cleanGitEnv(),
+        stdio: "pipe",
+      });
+    git("init", "-q", "-b", "develop");
+    git("config", "user.email", "t@example.com");
+    git("config", "user.name", "t");
+    for (const p of [from, to]) {
+      mkdirSync(path.dirname(path.join(dir, p)), { recursive: true });
+    }
+    const content = Array.from({ length: lines }, (_, i) => `line ${i}\n`);
+    writeFileSync(path.join(dir, from), content.join(""));
+    git("add", ".");
+    git("commit", "-q", "-m", "base", "-m", "base body");
+    git("update-ref", "refs/remotes/origin/develop", "HEAD");
+    git("checkout", "-q", "-b", "feat/x");
+    git("mv", from, to);
+    git("commit", "-q", "-m", "move", "-m", "body");
+  }
+
+  for (const [from, to, status] of [
+    ["tests/big.test.ts", "src/big.ts", 1],
+    ["src/big.ts", "tests/big.test.ts", 1],
+    ["src/big.ts", "src/moved.ts", 0],
+    ["tests/big.test.ts", "docs/big.md", 0],
+  ] as const) {
+    it(`a pure rename ${from} -> ${to} over the cap exits ${status}`, () =>
+      withTemp((dir) => {
+        renameRepo(dir, from, to, PROD_LINE_CAP + 1);
+        const f = path.join(dir, "b.md");
+        writeFileSync(f, body());
+        const r = run(
+          ["--body-file", f, "--range", "origin/develop...HEAD"],
+          dir,
+          cleanGitEnv()
+        );
+        expect(r.status, r.stderr).toBe(status);
+        if (status === 1) {
+          expect(r.stderr).toContain(String(PROD_LINE_CAP + 1));
+        }
+      }));
+  }
 
   it("size at the cap passes even with a large tests-only diff beside it", () =>
     withTemp((dir) => {

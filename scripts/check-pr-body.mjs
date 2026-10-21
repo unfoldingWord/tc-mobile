@@ -421,18 +421,27 @@ export function parseNumstat(out) {
   for (let i = 0; i < tokens.length; i++) {
     const m = /^(\d+|-)\t(\d+|-)\t(.*)$/s.exec(tokens[i]);
     if (!m) continue;
-    let path = m[3];
-    if (path === "") {
-      path = tokens[i + 2] ?? "";
+    const entry = { added: Number(m[1]) || 0, deleted: Number(m[2]) || 0 };
+    if (m[3] === "") {
+      entry.path = tokens[i + 2] ?? "";
+      entry.oldPath = tokens[i + 1] ?? "";
       i += 2;
-    }
-    entries.push({
-      added: Number(m[1]) || 0,
-      deleted: Number(m[2]) || 0,
-      path,
-    });
+    } else entry.path = m[3];
+    entries.push(entry);
   }
   return entries;
+}
+
+/**
+ * True for a rename whose two paths fall on opposite sides of the size rule:
+ * its unchanged lines move into, or out of, the count, so its numstat delta
+ * alone says nothing about the production lines it adds or removes.
+ */
+export function crossesSizeBoundary(e) {
+  return (
+    e.oldPath !== undefined &&
+    isExcludedFromSize(e.oldPath) !== isExcludedFromSize(e.path)
+  );
 }
 
 export function countProdLines(entries) {
@@ -446,12 +455,37 @@ function prodLinesInRange(range) {
   // `--` cannot guard this: after it git reads the range as a path. A range is
   // never an option, so one that starts with `-` is refused.
   if (range.startsWith("-")) throw new Error(`not a revision range: ${range}`);
-  const out = execFileSync("git", ["diff", "--numstat", "-z", "-M", range], {
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  return countProdLines(parseNumstat(out));
+  const numstat = (flags, paths = []) =>
+    parseNumstat(
+      execFileSync(
+        "git",
+        [
+          "--literal-pathspecs",
+          "diff",
+          "--numstat",
+          "-z",
+          ...flags,
+          range,
+          ...(paths.length > 0 ? ["--", ...paths] : []),
+        ],
+        {
+          encoding: "utf8",
+          maxBuffer: 64 * 1024 * 1024,
+          stdio: ["ignore", "pipe", "pipe"],
+        }
+      )
+    );
+  const entries = numstat(["-M"]);
+  // A same-class rename stays free. One that crosses the boundary is re-read
+  // without rename detection, as a delete plus an add, so the production
+  // side counts in full and the excluded side is dropped by its own path.
+  const crossing = entries.filter(crossesSizeBoundary);
+  const counted = entries.filter((e) => !crossesSizeBoundary(e));
+  if (crossing.length > 0) {
+    const paths = crossing.flatMap((e) => [e.oldPath, e.path]);
+    counted.push(...numstat(["--no-renames"], paths));
+  }
+  return countProdLines(counted);
 }
 
 /** The reason a PR is exempt from the gate, or null. PR metadata only. */
