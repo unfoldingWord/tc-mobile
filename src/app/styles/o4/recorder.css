@@ -111,7 +111,7 @@
     width: 30px;
     height: 56px;
     border-radius: 15px; /* #939 token */
-    background: var(--s-voice);
+    background: var(--s-select);
     pointer-events: none;
   }
 

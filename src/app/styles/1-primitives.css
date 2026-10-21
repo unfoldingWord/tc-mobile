@@ -70,6 +70,12 @@
     --p-blue-400: #4f93f8;
     --p-blue-600: #1f66d6;
 
+    /* --- Sky: the trim selection (#1471) ----------------------------------- */
+    /* Apart from the guide blue above, so a selection never reads as the guide
+       ring. Light value for light surfaces, pale value for dark ones. */
+    --p-sky-400: #4cc9f0;
+    --p-sky-700: #0369a1;
+
     /* --- Slate: the Edit tile (#937 D1b) ----------------------------------- */
     --p-slate-600: #475569;
 
