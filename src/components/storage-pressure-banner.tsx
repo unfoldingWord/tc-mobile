@@ -87,7 +87,8 @@ export function StoragePressureBanner({
           strings.bookHeading(book.name, book.number),
           n,
           chapterName,
-          highest
+          highest,
+          book.licence ?? null
         )
     );
   };
