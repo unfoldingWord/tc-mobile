@@ -36,11 +36,19 @@ import {
  * longest Spanish text is 2.2 times its English one, and only short captions
  * reach it ("Reset" to "Restablecer", "Play {heading}" to "Reproducir
  * {heading}"). 2.5 leaves a little room above that and still catches a
- * paragraph where a caption belongs. It is calibrated from one language that
- * runs longer than English, not from all nine: the next draft that measures
+ * paragraph where a caption belongs. It is calibrated from languages that
+ * run longer than English, not from all nine: the next draft that measures
  * above it raises it here, with its own measurement and reason.
+ *
+ * Raised from 2.5 to 2.7 for French (#1590). The French draft needs more room
+ * in two places, both short English captions: "Pause {heading}" to "Mettre
+ * {heading} en pause" (16 characters against 6, a ratio of 2.67) and the tile
+ * caption "Reset" to "Réinitialiser" (13 against 5, 2.6; the glossary's term,
+ * row 11). Both keep the glossary word. "Mettre en pause" is the plain French
+ * verb phrase for pausing, and a bare "Pause" would read as a noun on a screen
+ * reader. The longest French text measures 2.67; 2.7 leaves little room above.
  */
-const LENGTH_RATIO_MAX = 2.5;
+const LENGTH_RATIO_MAX = 2.7;
 
 /** Short English texts get at least this many characters of room. */
 const LENGTH_FLOOR_CHARS = 12;
@@ -54,6 +62,20 @@ const LENGTH_FLOOR_CHARS = 12;
 type Reasons = Readonly<Record<string, string>>;
 const ALLOW_ENGLISH: Readonly<Record<string, Reasons>> = {
   es: {
+    shareFilename:
+      "Builds a file name from the book's own name, the chapter number and the licence tag; with a typed chapter name the whole result is the user's text, so it equals English by design. The default chapter name, the only drafted words, is `chapterName`.",
+    shareBookFilename:
+      "Builds `<book name><licence tag>.zip`; the only words are the book's own name and the extension, which are never translated (glossary section 7).",
+  },
+  fr: {
+    menuTitle:
+      "The French word for a menu is spelled the same as the English one (glossary section 5, row 17: `Menu`).",
+    eraseConfirmPreviewPause:
+      "The French caption for pausing is spelled the same as the English one (glossary section 5, row 8: `Pause`).",
+    coverColourRose:
+      "The French colour name is spelled the same as the English one (`Rose`).",
+    coverColourOlive:
+      "The French colour name is spelled the same as the English one (`Olive`).",
     shareFilename:
       "Builds a file name from the book's own name, the chapter number and the licence tag; with a typed chapter name the whole result is the user's text, so it equals English by design. The default chapter name, the only drafted words, is `chapterName`.",
     shareBookFilename:
@@ -287,12 +309,10 @@ describe("i18n draft quality gates (#1485)", () => {
     ).toBe(true);
   });
 
-  it("(c) holds the calibrated ratio exactly: 2.5 times English passes, a character more fails", () => {
+  it("(c) holds the calibrated ratio exactly: 2.7 times English passes, a character more fails", () => {
     const en = "a".repeat(20);
-    expect(lengthProblems("k", en, "a".repeat(50))).toEqual([]);
-    expect(lengthProblems("k", en, "a".repeat(51))).toEqual([
-      "k: 51 characters over a budget of 50",
-    ]);
+    expect(lengthProblems("k", en, "a".repeat(54))).toEqual([]);
+    expect(lengthProblems("k", en, "a".repeat(55))).toHaveLength(1);
   });
 
   it("(d) fails an invented placeholder and null-ish text", () => {
