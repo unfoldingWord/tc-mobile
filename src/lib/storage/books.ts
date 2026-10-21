@@ -178,7 +178,7 @@ export async function createBook(
  * could hold — falls back to the pre-#338 rule, newest created first, and
  * then to key order (`getAll`'s order; the sort is stable).
  */
-function byShelfPosition(books: readonly Book[]): Book[] {
+export function byShelfPosition(books: readonly Book[]): Book[] {
   return books
     .slice()
     .sort(
@@ -602,7 +602,7 @@ function planReorder<Id extends string, R extends { readonly id: Id }>(
  * holds inline above. (A failed *request* already aborts on its own; this
  * covers the thrown case.)
  */
-async function abortQuietly(
+export async function abortQuietly(
   abort: () => void,
   done: Promise<void>
 ): Promise<void> {
