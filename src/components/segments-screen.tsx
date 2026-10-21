@@ -154,6 +154,7 @@ export const SegmentsScreen = forwardRef<
   const {
     bookName,
     bookCoverHex,
+    bookLicence,
     chapterNumber,
     chapterName,
     rows,
@@ -673,7 +674,13 @@ export const SegmentsScreen = forwardRef<
     // menu exactly as every one of those already did.
     void share
       .prepare(chapterId, (highest) =>
-        strings.shareFilename(bookName, chapterNumber, chapterName, highest)
+        strings.shareFilename(
+          bookName,
+          chapterNumber,
+          chapterName,
+          highest,
+          bookLicence
+        )
       )
       .then((outcome) => {
         if (outcome === "sent" || outcome === "dismissed") onCloseChapterMenu();
@@ -685,6 +692,7 @@ export const SegmentsScreen = forwardRef<
     setSavingName,
     chapterId,
     bookName,
+    bookLicence,
     chapterNumber,
     chapterName,
     onCloseChapterMenu,

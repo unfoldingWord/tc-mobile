@@ -431,7 +431,8 @@ function folderStem(label: string, position: number): string {
  * facilitator's name, or `null` with the placeholder slot to render (#169).
  * The words stay the caller's — this layer holds no copy.
  */
-export type BookLabel = Pick<Book, "name" | "number">;
+export type BookLabel = Pick<Book, "name" | "number"> &
+  Partial<Pick<Book, "licence">>;
 
 /**
  * Names one chapter's MP3 from its number, its own name (`null` when it has
