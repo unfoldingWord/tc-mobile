@@ -32,6 +32,11 @@ It does not authorize these, which stay open or assumptions:
   `identification.primary`'s revision `"1"` (a proposal). Nothing else in
   point 5 carries either mark.
 
+Provisional writes while the mark remains, not confirmed decisions:
+`performance` is `["singleVoice", "reading"]` and `identification.primary`
+revision is `"1"`, because point 5 says the schema requires both.
+`meta.normalization` may be omitted, or written `"NFC"` under the same mark.
+
 The licence URLs in point 6 follow from this ADR, not from S19: S19 settles the
 option set and the file-name tag.
 
@@ -252,7 +257,7 @@ Mapped from the book's licence (the v12 field the storage work adds):
 | CC BY-SA 4.0                                         | `{"licenses": [{"url": "https://creativecommons.org/licenses/by-sa/4.0/"}]}`     |
 | CC BY 4.0                                            | `{"licenses": [{"url": "https://creativecommons.org/licenses/by/4.0/"}]}`        |
 | CC0                                                  | `{"licenses": [{"url": "https://creativecommons.org/publicdomain/zero/1.0/"}]}`  |
-| ~~All rights reserved~~ (superseded)                 | ~~`{"shortStatements": [{"statement": "All rights reserved.", "lang": "en"}]}`~~ |
+| ~~All rights reserved~~ (withdrawn)                  | ~~`{"shortStatements": [{"statement": "All rights reserved.", "lang": "en"}]}`~~ |
 | "Other", or not chosen yet (R20: empty until shared) | `{"shortStatements": [{"statement": "No licence chosen."}]}` (see below)         |
 
 **"Other" and "not chosen yet" claim no licence.** The DRI decided on
@@ -269,10 +274,11 @@ position, and only says that none was chosen. Whether the entry carries a
 `lang` is not decided. #1574 writes it with no `lang`, and its test "writes
 exactly one of the two for licence %s, and validates" (`tests/bundle-metadata.test.ts`,
 head 73698f9b) runs that object (the `null` case) through the vendored schema
-gate and expects no errors. The "All rights reserved." row above is superseded:
-#1574 writes "No licence chosen." for `all-rights-reserved` as well (test "writes
-%s as exactly the statement No licence chosen. (DRI, #1567)"), until U1a is
-answered.
+gate and expects no errors. The "All rights reserved." row above is withdrawn
+until U1a is answered. #1574 writes "No licence chosen." for a stored
+`all-rights-reserved` as well (test "writes %s as exactly the statement No
+licence chosen. (DRI, #1567)"); that is that PR's own record, not a decision of
+this ADR.
 
 `licenses` and `shortStatements` are **never both**: the schema is a `oneOf`,
 and the two together fail with `passingSchemas [1,2]` (observed). A full
@@ -437,8 +443,9 @@ This is the document the validation run called `custom-x-tcMobileAudio`.
      licence chosen." (the DRI's pick, verbatim: "\"No licence chosen.\""). Point
      6's "All rights reserved" fallback is replaced.
    - **Still open, for the requirements owner (Round 5, U1a):** whether "Other"
-     is the same as `all-rights-reserved`, the value the template contract and
-     point 6's table carry. S19 lists CC0, CC BY and CC BY-SA plus "Other" and
+     is the same as `all-rights-reserved`, the value the template contract
+     carries. Point 6's "All rights reserved." row is withdrawn until it is
+     answered. S19 lists CC0, CC BY and CC BY-SA plus "Other" and
      does not name `all-rights-reserved`.
    - Who owns the OBS attribution wording is also not answered.
 3. **Which desktop app "tC Desktop" is** and what it needs to open an audio
