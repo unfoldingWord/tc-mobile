@@ -568,6 +568,68 @@ describe("createChapterQueue", () => {
     expect(q.state()).toBe("idle");
   });
 
+  describe("onFailure may call back into the queue", () => {
+    /** A queue whose onFailure runs `then` on the queue it reports for. */
+    function reentrant(
+      spec: Array<[string, number]>,
+      then: (q: ReturnType<typeof createChapterQueue>) => void
+    ) {
+      const h = harness({ failLoad: new Set(["a"]) });
+      const box: { q?: ReturnType<typeof createChapterQueue> } = {};
+      const q = createChapterQueue(entries(...spec), {
+        ...h.deps,
+        onFailure: (segmentId, cause) => {
+          h.deps.onFailure(segmentId, cause);
+          if (box.q) then(box.q);
+        },
+      });
+      box.q = q;
+      return { h, q };
+    }
+
+    it("stop() from onFailure on a one-clip queue releases once", async () => {
+      const { h, q } = reentrant([["a", 1]], (q) => q.stop());
+      expect(await q.play()).toBe("stopped");
+      await flush();
+      expect(h.releases).toBe(1);
+      expect(q.state()).toBe("idle");
+    });
+
+    it("stop() from onFailure on a two-clip queue starts nothing after", async () => {
+      const { h, q } = reentrant(
+        [
+          ["a", 1],
+          ["b", 1],
+        ],
+        (q) => q.stop()
+      );
+      expect(await q.play()).toBe("stopped");
+      await flush();
+      expect(h.releases).toBe(1);
+      expect(q.state()).toBe("idle");
+      expect(h.plays).toHaveLength(0);
+      q.stop();
+      expect(h.releases).toBe(1);
+    });
+
+    it("pause() from onFailure stays paused with its place", async () => {
+      const positions: unknown[] = [];
+      const { h, q } = reentrant(
+        [
+          ["a", 1],
+          ["b", 1],
+        ],
+        (q) => positions.push(q.pause())
+      );
+      expect(await q.play()).toBe("paused");
+      await flush();
+      expect(positions).toEqual([{ index: 0, offsetSeconds: 0 }]);
+      expect(q.state()).toBe("paused");
+      expect(h.releases).toBe(1);
+      expect(h.plays).toHaveLength(0);
+    });
+  });
+
   describe("teardown when a handle or the floor throws", () => {
     /** The harness's deps, with every handle's stop/elapsed made to throw. */
     function throwing(
@@ -693,6 +755,18 @@ describe("createChapterQueue", () => {
       expect(await outcome()).toEqual({ rejected: boom });
       expect(h.releases).toBe(1);
       expect(q.state()).toBe("paused");
+    });
+
+    it("progress() with a throwing elapsed falls back to the clip start", async () => {
+      const h = harness();
+      const q = createChapterQueue(
+        entries(["a", 4], ["b", 1]),
+        throwing(h, { elapsed: new Error("elapsed") })
+      );
+      void q.play();
+      await flush();
+      expect(q.state()).toBe("playing");
+      expect(q.progress()).toBe(0);
     });
 
     it("a non-finite elapsed keeps the clip's start offset, not NaN", async () => {

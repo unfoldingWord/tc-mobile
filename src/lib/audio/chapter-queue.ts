@@ -36,7 +36,12 @@
  * return normally even then; the run's rejection is the error's one channel.
  * The one throw with no run left to reject — the stop of a clip whose hand-off
  * arrived after `pause()`/`stop()` had settled the run — goes to `onFailure`.
- * A throwing or non-finite `elapsed()` falls back to the clip's start offset.
+ * A throwing or non-finite `elapsed()` falls back to the clip's start offset,
+ * in `pause()` and in `progress()` alike.
+ *
+ * Calling back into the queue: `onFailure` may call `pause()`, `stop()` or
+ * `supersede()` from inside it; the loop checks its run id after it and goes
+ * no further on an ended run. `release` and `isCurrent` must not call back.
  *
  * Which segments belong to a chapter is the caller's accessor
  * (`chapter.segmentIds` today). `buildChapterPlaylist` is the one place that
@@ -127,7 +132,7 @@ export interface ChapterQueueDeps<Samples = Int16Array> {
   ) => QueueHandle | Promise<QueueHandle>;
   /** Resolve after `ms`. */
   wait: (ms: number) => Promise<void>;
-  /** False once anything else has taken the floor. */
+  /** False once anything else has taken the floor. Must not call back. */
   isCurrent: () => boolean;
   /**
    * Give the floor back. Called when the queue is done with it. Must not call
@@ -137,6 +142,7 @@ export interface ChapterQueueDeps<Samples = Int16Array> {
   /**
    * One clip could not be loaded or played, and is skipped; or a clip that
    * arrived after its run had ended could not be stopped. Once per clip.
+   * May call `pause()`, `stop()` or `supersede()` on this queue.
    */
   onFailure: (segmentId: SegmentId, cause: unknown) => void;
 }
@@ -232,16 +238,15 @@ export function createChapterQueue<Samples = Int16Array>(
   /**
    * Where the current clip is, clamped to its length. A non-finite
    * `elapsed()` falls back to where the clip started; a throwing one does
-   * too, and its cause goes to `faults` when given (else it propagates).
+   * too, and its cause goes to `faults`.
    */
-  function withinClip(faults: unknown[] | null): number {
+  function withinClip(faults: unknown[]): number {
     let e = clipOffset;
     if (phase === "playing" && handle) {
       try {
         const v = handle.elapsed();
         if (Number.isFinite(v)) e = v;
       } catch (cause) {
-        if (!faults) throw cause;
         faults.push(cause);
       }
     }
@@ -252,7 +257,9 @@ export function createChapterQueue<Samples = Int16Array>(
     if (phase === "idle") return null;
     if (phase === "paused") return pausedFraction;
     if (phase === "gap") return at(index, lenAt(index));
-    return at(index, withinClip(null));
+    // A pull for display: a throwing `elapsed()` falls back here and is not
+    // reported. The same throw reaches the run promise through `pause()`.
+    return at(index, withinClip([]));
   }
 
   async function fetchClip(i: number): Promise<Fetched<Samples>> {
@@ -391,6 +398,8 @@ export function createChapterQueue<Samples = Int16Array>(
     let offset = from.offsetSeconds;
     let pending: Promise<Fetched<Samples>> = fetchClip(from.index);
     for (let i = from.index; i < n; i++) {
+      // `onFailure` (in `skip`) may have ended this run from inside it.
+      if (id !== runId) return;
       index = i;
       clipOffset = offset;
       phase = "loading";
@@ -456,6 +465,8 @@ export function createChapterQueue<Samples = Int16Array>(
       }
     }
 
+    // The same check for a failure on the last clip, which leaves the loop.
+    if (id !== runId) return;
     endRun(n > 0 && !anyPlayed && failed > 0 ? "failed" : "finished", {
       release: true,
     });
