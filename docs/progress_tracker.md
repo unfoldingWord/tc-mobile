@@ -37,7 +37,7 @@ Each is the DRI's answer in the coordinator session, verbatim.
 - **Merged to develop (39):** #1509, #1494, #1497, #1530, #1529, #1535, #1531, #1536 (#38 slice 1), #1534, #1441 (v2 plan), #1533, #1539, #1541, #1540 (#38 slice 2), #1543, #1537, #1544, #1506, #1554, #1555, #1550, #1547, #1561, #1558, #1560, #1563, #1573, #1577, #1553, #1572 (supersedes #1498), #1574, #1576, #1583, #1586, #1570, #1588, #1591, #1571 and #1592.
 - **Translations:**
   - The locale registry, runtime language choice (ADR 0015) and the machine gates for AI drafts (#1553) are in.
-  - Spanish (#1586) and French (#1592) are AI-drafted and complete, so they go live on a phone set to either language. No reader of either language has checked any of the text.
+  - Spanish (#1586) and French (#1592) are AI-drafted and complete on develop. They turn on in the next tester build for a phone set to either language, and production waits for a promotion the DRI approves. No reader of either language has checked any of the text.
   - #1571's 7 new mic-step sentences broke Spanish coverage in CI. Its head carried Spanish for them, and French carried them when it merged.
 - **Scripture Bundle export, built and tested in Node:**
   - streaming MD5 (#1530);
@@ -47,9 +47,9 @@ Each is the DRI's answer in the coordinator session, verbatim.
   - Not run on a phone.
 - **Audio:** the chapter play queue and hook (#1506, #1550), and play a chapter from its row (#1561). The loudness chain is shared with the phone-check bench (#1576). #1591 reports a rejected resume of the in-tap audio context to the failure log.
 - **Templates:** Open Bible Stories as the first template package (#1533), the package contract v0 (#1539), plan a book from a package (#1554), and create a book from that plan in one transaction (#1558).
-- **Closed:** #1465, #1466, #1471, #1476, #1478, #1479, #1482, #1483, #1484, #1556, #1565, #1566, #1567, #1568, #1587 and #1590.
-- **Filed:** #1564 (pending-take lifecycle design note), #1575 (Settings screen), #1578 (installed-web-app mic steps), #1579 (licence follow-ups), #1580, #1582, #1584 (loudness edge cases), #1585, #1587, #1589 (browser mic steps), #1590, #1594 (English zoom labels promise a visible extent) and #1595 (French Lows from review).
-- **Project site:** Round 5 is on the Review page. The questions the DRI answered today are recorded there as final, so the requirements owner does not see them as open.
+- **Closed:** #1465, #1466, #1471, #1476, #1478, #1479, #1482, #1483, #1484, #1556, #1565, #1566, #1567, #1568, #1587 and #1590. #1565–#1568, #1587 and #1590 were filed today and closed today.
+- **Filed and still open:** #1564 (pending-take lifecycle design note), #1575 (Settings screen), #1578 (installed-web-app mic steps), #1579 (licence follow-ups), #1580, #1582, #1584 (loudness edge cases), #1585, #1589 (browser mic steps), #1594 (English zoom labels promise a visible extent) and #1595 (French Lows from review).
+- **Project site:** Round 5 is on the Review page. The questions the DRI answered today (U1b, U2b, U6a, U6c) are recorded there as final, so the requirements owner does not see them as open. U3 is not final: it is a discussion card for the DRI and the requirements owner.
 
 ### Not run
 
