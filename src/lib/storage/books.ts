@@ -19,6 +19,7 @@
 
 import type { IDBPDatabase } from "idb";
 
+import type { PlaylistCandidate } from "@/lib/audio/chapter-queue";
 import type { CoverColourKey } from "@/lib/cover-colour";
 import { getDb, type TcMobileDb } from "./db";
 import { resolveSegmentAudio } from "./segment-audio";
@@ -1343,4 +1344,42 @@ export async function resolveChapterClipIds(
     else missing++;
   }
   return { clipIds, missing };
+}
+
+/**
+ * A chapter's members as chapter-play candidates (#1468): every id in
+ * `chapter.segmentIds`, in that order, each probed with `resolveSegmentAudio`
+ * the way `resolveChapterClipIds` probes it — a key lookup, never the
+ * samples. `buildChapterPlaylist` turns the list into the playlist; this only
+ * reads.
+ *
+ * A member nobody has recorded is `unrecorded`. Every other unresolved walk is
+ * `broken`, so the playlist skips exactly the set the export skips, and a
+ * member with no segment row counts as broken in this chapter (it has no
+ * start chapter of its own to name). `frames` is the clip's original PCM
+ * length whatever it is stored as, so progress is exact for MP3 clips too.
+ */
+export async function chapterPlayCandidates(
+  chapterId: ChapterId
+): Promise<PlaylistCandidate[]> {
+  const db = await getDb();
+  const chapter = await db.get("chapters", chapterId);
+  if (!chapter) return [];
+
+  const candidates: PlaylistCandidate[] = [];
+  for (const segmentId of chapter.segmentIds) {
+    const audio = await resolveSegmentAudio(segmentId);
+    candidates.push({
+      segmentId,
+      startChapterId:
+        audio.kind === "no-segment" ? chapterId : audio.segment.chapterId,
+      audio:
+        audio.kind === "resolved"
+          ? { kind: "playable", frames: audio.clip.frameCount }
+          : audio.kind === "no-active-take"
+            ? { kind: "unrecorded" }
+            : { kind: "broken" },
+    });
+  }
+  return candidates;
 }
