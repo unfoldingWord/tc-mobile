@@ -89,6 +89,13 @@ export const stringsEn = {
   trail(...parts: readonly string[]): string {
     return parts.join(" > ");
   },
+  // Whole sentences set side by side: a notice that says what happened, then
+  // what was left out. The separator is stated here and nowhere else (#1483),
+  // so a locale that writes no spaces between sentences states its own. Parts
+  // are whole sentences, never clauses.
+  sentences(...parts: readonly string[]): string {
+    return parts.join(" ");
+  },
   // ── Books screen (B2) ────────────────────────────────────────────────────
   newBook: "New book",
   menuOpen: "Open menu",
@@ -976,8 +983,7 @@ export const stringsEn = {
   // rather than as two count phrases spliced into one frame: the chapter
   // scope picks the row, the segment count picks the form within it, and
   // `{chapters}` holds the chapter count where a form names it. The two whole
-  // sentences are still joined with a space; that join is the next slice of
-  // #1483.
+  // sentences are joined by `sentences`, which owns the separator (#1483).
   shareBookMissingAndPartial(
     chapters: number,
     segments: number,
@@ -1002,7 +1008,7 @@ export const stringsEn = {
         "{n} segments of {chapters} included chapters could not be included."
       ),
     });
-    return `${this.shareBookMissing(chapters)} ${partial}`;
+    return this.sentences(this.shareBookMissing(chapters), partial);
   },
   // The encoder went silent mid-share and was restarted (#166). Chapter and book
   // alike: the cause is the phone, not what was being shared. Try again is still

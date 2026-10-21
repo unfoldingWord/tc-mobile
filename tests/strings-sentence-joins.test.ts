@@ -4,6 +4,9 @@ import path from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
+import { libraryShareGapText } from "@/components/share-error-copy";
+import { stringsEn } from "@/lib/strings";
+
 /**
  * #1483 slice 2 — code does not join table sentences.
  *
@@ -115,5 +118,18 @@ describe("code never joins table sentences (#1483)", () => {
     ).toEqual([]);
     expect(codeSideJoins('const a = parts.join(" ");')).toEqual([]);
     expect(codeSideJoins("const a = `${b} ${c}`;")).toEqual([]);
+  });
+});
+
+describe("the table join keeps the English output (#1483)", () => {
+  it("joins with one space, as the code did", () => {
+    expect(stringsEn.sentences("One.", "Two.")).toBe("One. Two.");
+    expect(stringsEn.sentences("One.")).toBe("One.");
+  });
+
+  it("reads a former join site as the two sentences and one space", () => {
+    expect(libraryShareGapText(1, 2)).toBe(
+      `${stringsEn.shareAllMissing(1)} ${stringsEn.shareAllIncomplete(2)}`
+    );
   });
 });

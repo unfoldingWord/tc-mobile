@@ -293,7 +293,7 @@ describe("table entries that reach outside their own arguments (#169)", () => {
       saveFailedDiscardHint: ["this.takeRecoverDiscardHint"],
       shareAllFolder: ["this.shareNameFallback"],
       shareBookFilename: ["this.shareNameFallback"],
-      shareBookMissingAndPartial: ["this.shareBookMissing"],
+      shareBookMissingAndPartial: ["this.sentences", "this.shareBookMissing"],
       shareBookPartial: ["this.shareMissing"],
       shareFilename: ["this.chapterName"],
     });
@@ -322,9 +322,10 @@ describe("table entries that reach outside their own arguments (#169)", () => {
  *     entry that paints it. `trail` joins names. The two file names embed a
  *     fallback NAME (R18 on #1233: "Use the number and name").
  *   - ONE SENTENCE JOIN. `shareBookMissingAndPartial` puts two whole
- *     sentences side by side, separated by a space. The separator between
- *     sentences is the next slice of #1483, together with the three joins in
- *     `components/share-error-copy.ts`.
+ *     sentences side by side through `sentences`, which owns the separator
+ *     (#1483 slice 2). The joins in `components/share-error-copy.ts` use the
+ *     same entry; `tests/strings-sentence-joins.test.ts` pins that code never
+ *     joins table sentences itself.
  *
  * WHAT IT CANNOT SEE: a phrase built in a local variable and then placed in a
  * template. The `this.<entry>` rule catches that case, because a variable is
@@ -343,7 +344,7 @@ describe("no table sentence is built from another entry's words (#1483)", () => 
       openSegment: ["this.segmentHeading"],
       recorderBreadcrumb: ["this.segmentHeading", "this.trail"],
       shareBookFilename: ["this.shareNameFallback"],
-      shareBookMissingAndPartial: ["this.shareBookMissing"],
+      shareBookMissingAndPartial: ["this.sentences", "this.shareBookMissing"],
       shareFilename: ["this.chapterName"],
     });
   });

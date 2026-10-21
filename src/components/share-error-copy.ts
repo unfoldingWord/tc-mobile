@@ -58,7 +58,10 @@ export function shareProgressText(
         case "sent":
           return strings.shareSent;
         case "partial":
-          return `${strings.shareSent} ${shareGapText(progress.gap, scope)}`;
+          return strings.sentences(
+            strings.shareSent,
+            shareGapText(progress.gap, scope)
+          );
         case "dismissed":
           return strings.shareDismissed;
         case "unproven":
@@ -184,7 +187,7 @@ export function libraryShareGapText(
   if (missingBooks > 0) parts.push(strings.shareAllMissing(missingBooks));
   if (incompleteChapters > 0)
     parts.push(strings.shareAllIncomplete(incompleteChapters));
-  return parts.length > 0 ? parts.join(" ") : null;
+  return parts.length > 0 ? strings.sentences(...parts) : null;
 }
 
 /**
@@ -221,7 +224,7 @@ export function libraryShareProgressText(
           );
           return gap === null
             ? strings.shareSent
-            : `${strings.shareSent} ${gap}`;
+            : strings.sentences(strings.shareSent, gap);
         }
         case "dismissed":
           return strings.shareDismissed;
