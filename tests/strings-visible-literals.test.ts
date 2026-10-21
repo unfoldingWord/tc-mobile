@@ -347,9 +347,7 @@ describe("the visible-literal reader, in both states (#1483 slice 3)", () => {
     // Deny by default: a visible prop with a name no list knows still fails.
     expect(probe(`<Toast message="Hello" />`)).toEqual(["message: Hello"]);
     // `name` is an enum on `<Icon>` only; `O4BookHead` renders it as text.
-    expect(probe(`<O4BookHead name="Untitled" />`)).toEqual([
-      "name: Untitled",
-    ]);
+    expect(probe(`<O4BookHead name="Untitled" />`)).toEqual(["name: Untitled"]);
     // A component enum with a space in it is words, not a token.
     expect(probe(`<Control icon="Close menu" />`)).toEqual([
       "icon: Close menu",
@@ -360,9 +358,9 @@ describe("the visible-literal reader, in both states (#1483 slice 3)", () => {
     expect(probe(`<p>{["Share"]}</p>`)).toEqual(["child: Share"]);
     expect(probe(`<p>{c ? ["Share"] : null}</p>`)).toEqual(["child: Share"]);
     expect(probe(`<p>{"Share " + n}</p>`)).toEqual(["child: Share"]);
-    expect(probe(`<p dangerouslySetInnerHTML={{ __html: "Share" }} />`)).toEqual(
-      ["__html: Share"]
-    );
+    expect(
+      probe(`<p dangerouslySetInnerHTML={{ __html: "Share" }} />`)
+    ).toEqual(["__html: Share"]);
     expect(probe(`<Menu items={[{ label: "Share", href: "/s" }]} />`)).toEqual([
       "label: Share",
     ]);
