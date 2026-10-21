@@ -1,16 +1,18 @@
 # 0012 — Recordings belong to the community that made them
 
-**Status:** Proposed (R14 and R15 answered 2026-10-19; wording unconfirmed) · **Date:** 2026-10-14 (the debrief; this file written 2026-10-19) · **Source:** the October 2026 training debrief, a principle stated by the team and recorded by role · **Issue:** [#1436](https://github.com/unfoldingWord/tc-mobile/issues/1436)
+**Status:** Accepted 2026-10-19 (S15) · **Date:** 2026-10-14 (the debrief; this file written 2026-10-19) · **Source:** the October 2026 training debrief, a principle stated by the team and recorded by role · **Issue:** [#1436](https://github.com/unfoldingWord/tc-mobile/issues/1436)
 
-This ADR is **Proposed**, not Accepted. On 2026-10-19 the requirements owner
-answered two questions about it, R14 (who "the community" is) and R15 (whether
-`PRIVACY.md` carries it), both recorded below. What remains open is one thing:
-the requirements owner has not confirmed the quoted wording of the principle
-itself, and has not reviewed the author's reading under Consequences. No
-recorded answer covers either, so this ADR does not move to Accepted on R14 and
-R15 alone. It moves when the requirements owner confirms the wording; until then
-the principle is the team's stated position, written down so that future work
-meets it first.
+This ADR is **Accepted**. On 2026-10-19 the requirements owner answered three
+questions about it: R14 (who "the community" is), R15 (whether `PRIVACY.md`
+carries it), both recorded below, and S15 (whether to mark it Accepted).
+S15-consent-wording, option `accept`: "Yes, mark it Accepted". The answer
+carries no note. It was recorded in
+[`v2-plan.md`](../design/v2-plan.md#round-3-decisions-recorded-2026-10-19).
+
+What the acceptance covers is the wording the requirements owner was asked
+about. The author's reading under Consequences is the author's inference, and
+no recorded answer says it was separately reviewed; read it as a reading, not as
+a further decision.
 
 ## Context
 
