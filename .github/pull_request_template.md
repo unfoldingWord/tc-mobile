@@ -30,7 +30,7 @@ Tier:
 
 ## Testing
 
-<!-- Test-first: the red test, its command and failing output (trimmed), then green, and what the mutation run killed. For a change with nothing to test, "N/A — <reason>". The line may continue on the lines below it. -->
+<!-- Test-first: the red test, its command and failing output (trimmed), then green, and what the mutation run killed. For a change with nothing to test, "N/A — <reason>". The line may continue on indented lines below it. -->
 
 Test-first:
 
