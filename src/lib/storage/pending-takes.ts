@@ -25,7 +25,9 @@
  *   - Every write and delete asks IndexedDB for `pendingTakes` ONLY. Readwrite
  *     transactions are queued only behind transactions whose store lists
  *     overlap, and `saveTake`'s (`openTakeTx` in `takes.ts`) does not name this
- *     store, so the two run side by side.
+ *     store, so the two run side by side. The one take write that does name
+ *     it is the launch replay's `saveReplayedTake`, which reads its own row as
+ *     a precondition; that save starts no pending write of its own.
  *   - The caller does not await the write before saving: the hook starts the
  *     write before the commit, and the delete once the save lands or the
  *     translator confirms a discard, and awaits neither.
@@ -60,6 +62,7 @@ import type {
   PendingTakeBase,
   SegmentId,
   StoredPendingTake,
+  TakeId,
 } from "@/types/domain";
 
 /**
@@ -102,7 +105,15 @@ type PendingListResult =
  *   - `failed`: the read itself failed.
  */
 type PendingRecipeResult =
-  | { readonly kind: "recipe"; readonly take: NewTake }
+  | {
+      readonly kind: "recipe";
+      readonly take: NewTake;
+      /**
+       * The segment's active take when the recipe was read. The replay's save
+       * goes ahead only if it is still the active take (`saveReplayedTake`).
+       */
+      readonly against: TakeId | null;
+    }
   | {
       readonly kind:
         | "saved"
@@ -388,6 +399,7 @@ async function readRecipe(
 
   return {
     kind: "recipe",
+    against: segment.activeTakeId,
     take: {
       segmentId: row.segmentId,
       ordinal: row.ordinal,

@@ -2,7 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { mergeTake } from "@/lib/audio/edit";
 import { CANONICAL_SAMPLE_RATE } from "@/lib/audio/format";
-import { clearSegmentTake, saveTake } from "@/lib/storage/takes";
+import {
+  clearSegmentTake,
+  saveReplayedTake,
+  saveTake,
+} from "@/lib/storage/takes";
 import { isMissingSegmentFailure } from "@/lib/storage/stale-target";
 import { deleteClip, newClipId } from "@/lib/storage/clips";
 import {
@@ -22,7 +26,7 @@ import { requestTranscodeSweep } from "./finish-transcode";
 import { recoverPendingTakes } from "./recover-pending-takes";
 import { reportFailure } from "./report-failure";
 import { saveFailureKind } from "./save-failure";
-import type { ClipId, SegmentId } from "@/types/domain";
+import type { ClipId, SegmentId, TakeId } from "@/types/domain";
 
 /** Shared empty base — an edit-only save carries no newly recorded PCM. */
 const NO_SAMPLES = new Int16Array(0);
@@ -150,14 +154,25 @@ interface SaveEffects {
  *
  * The in-flight guard stays in the hook: it is a `useRef`, and it has to be set
  * before this function is even called.
+ *
+ * `replay` is the launch replay's first attempt (`performResumeTake`): the
+ * save is then `saveReplayedTake`, conditional on the take's pending row and
+ * the segment's active take (`against`) being unchanged since the recipe was
+ * read. When they have moved, nothing is saved, the slot is let go and the
+ * result is `"stale"`. Only that path can return it.
  */
 export async function performSaveTake(
   take: PendingTake,
-  effects: SaveEffects
-): Promise<boolean> {
+  effects: SaveEffects,
+  replay?: { readonly against: TakeId | null }
+): Promise<boolean | "stale"> {
   // First, before the merge and the commit, and not awaited (see
   // `holdPendingTake`): the row is the only copy that outlives this page.
-  const written = holdPendingTake(take);
+  // Not on a replay: its row is already on disk (it is what the replay read),
+  // and writing it again could recreate a row another copy has since removed,
+  // which is the very change the replay's precondition looks for.
+  const written = replay ? null : holdPendingTake(take);
+  let stale = false;
   try {
     // Merge HERE, inside the guarded attempt. `mergeTake` allocates a buffer
     // the size of both inputs and can throw on a low-memory device; the inputs
@@ -172,9 +187,24 @@ export async function performSaveTake(
     // Finished mark rides the take, applied atomically here — so a retry
     // re-applies it, and it can never be clobbered by the same write's
     // demote-to-draft the way a separate write after it would be.
-    await saveTake(take.segmentId, take.clipId, merged, CANONICAL_SAMPLE_RATE, {
-      finished: take.finished,
-    });
+    if (replay) {
+      const saved = await saveReplayedTake(
+        take.segmentId,
+        take.clipId,
+        merged,
+        CANONICAL_SAMPLE_RATE,
+        { finished: take.finished, activeTakeId: replay.against }
+      );
+      stale = saved.kind === "stale";
+    } else {
+      await saveTake(
+        take.segmentId,
+        take.clipId,
+        merged,
+        CANONICAL_SAMPLE_RATE,
+        { finished: take.finished }
+      );
+    }
   } catch (cause) {
     // The failure that produces the `SaveFailed` recovery screen — one row
     // per real failure (#456), console.error kept beside it, as
@@ -191,6 +221,17 @@ export async function performSaveTake(
     if (kind === "quota") givePendingUp(take, written);
     effects.update((held) => failSave(held, take.clipId, kind));
     return false;
+  }
+  if (stale) {
+    // Another open copy saved or replaced this segment's take after the
+    // recipe was read, so saving it now would overwrite newer audio. Nothing
+    // was written; the store deleted the row if it was still this take's. One
+    // log row, so the dropped recipe is on record, and the slot is let go.
+    const cause = new Error("Pending take not saved on launch (superseded)");
+    console.error("Pending take recovery failed (pending-take-refused)", cause);
+    reportFailure(cause, "pending-take-refused");
+    effects.update((held) => succeedSave(held, take.clipId));
+    return "stale";
   }
   // The write has committed: only `mergeTake`/`saveTake` above are the save
   // itself. Everything below is post-commit notification, so it is guarded
@@ -248,12 +289,17 @@ export async function performSaveTake(
  *
  * `"busy"` when the slot already holds a take: one slot, so the replay stops
  * and leaves its row for the next launch rather than displace a recording.
+ *
+ * `against` is the segment's active take when the recipe was read
+ * (`loadPendingRecipe`). The save is conditional on it and on the row (see
+ * `saveReplayedTake`), and `"stale"` means another copy got there first.
  */
 export async function performResumeTake(
   held: PendingTake | null,
   take: NewTake,
-  effects: SaveEffects
-): Promise<boolean | "busy"> {
+  effects: SaveEffects,
+  against: TakeId | null
+): Promise<boolean | "busy" | "stale"> {
   const next = startSave(held, take);
   if (next === held) return "busy";
   // A take that reached the slot since `held` was read keeps it, and then this
@@ -267,7 +313,7 @@ export async function performResumeTake(
     return next;
   });
   if (!installed) return "busy";
-  return performSaveTake(next, effects);
+  return performSaveTake(next, effects, { against });
 }
 
 /**
@@ -411,11 +457,13 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
       // await too, so the slot transitions keep their ordering.
       savingRef.current = true;
       try {
-        return await performSaveTake(take, {
+        // No `replay` argument, so `"stale"` cannot come back here.
+        const saved = await performSaveTake(take, {
           update: writeSlot,
           onSaved: () => onSavedRef.current?.(),
           requestSweep: () => void requestTranscodeSweep(),
         });
+        return saved === true;
       } finally {
         // Safe in a `finally` where `setPending(null)` is not: this releases a
         // guard rather than dropping the samples, and a guard left set would lock
@@ -544,16 +592,21 @@ export function useSaveTake(options: { onSaved?: () => void } = {}) {
   useEffect(() => {
     if (recoveryStartedRef.current) return;
     recoveryStartedRef.current = true;
-    void recoverPendingTakes(async (take) => {
+    void recoverPendingTakes(async (take, against) => {
       // The same live guard Retry takes, then the slot.
       if (savingRef.current) return "busy";
       savingRef.current = true;
       try {
-        return await performResumeTake(slotRef.current, take, {
-          update: writeSlot,
-          onSaved: () => onSavedRef.current?.(),
-          requestSweep: () => void requestTranscodeSweep(),
-        });
+        return await performResumeTake(
+          slotRef.current,
+          take,
+          {
+            update: writeSlot,
+            onSaved: () => onSavedRef.current?.(),
+            requestSweep: () => void requestTranscodeSweep(),
+          },
+          against
+        );
       } finally {
         savingRef.current = false;
       }

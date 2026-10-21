@@ -42,6 +42,17 @@ import type {
 
 const uuid = (): string => crypto.randomUUID();
 
+/** The stores every take write's transaction names. */
+const TAKE_STORES = [
+  "segments",
+  "takes",
+  "clipMeta",
+  "clipData",
+  "chapters",
+  "books",
+] as const;
+type TakeStore = (typeof TAKE_STORES)[number];
+
 /**
  * Open the transaction a take write needs: the take row and segment pointer, the
  * clip both `saveTake` writes and a superseded take's clip is deleted from, and
@@ -50,9 +61,17 @@ const uuid = (): string => crypto.randomUUID();
  * on one transaction type. `TakeTx` is derived from this call's return so the
  * helper's parameter type cannot drift from what actually opens.
  */
-function openTakeTx(db: IDBPDatabase<TcMobileDb>) {
+function openTakeTx(
+  db: IDBPDatabase<TcMobileDb>,
+  // `saveReplayedTake` only: its precondition reads the pending row in the
+  // same transaction. Every other take write leaves the store out, so it is
+  // never queued behind a pending-row write (`pending-takes.ts`).
+  withPending = false
+) {
+  const stores: (TakeStore | "pendingTakes")[] = [...TAKE_STORES];
+  if (withPending) stores.push("pendingTakes");
   return db.transaction(
-    ["segments", "takes", "clipMeta", "clipData", "chapters", "books"],
+    stores,
     "readwrite",
     // Strict durability: this transaction creates the ONLY copy of a recording,
     // and under the browser default (relaxed on Chromium) it can report success
@@ -254,33 +273,107 @@ export async function saveTake(
 
   const db = await getDb();
   const tx = openTakeTx(db);
-  try {
-    // The lossy-pass count carries over from the clip this take REPLACES (B8,
-    // Q5). The only way a segment has a prior take at save time is that the
-    // recorder opened it and edited or inserted into its audio — and if that
-    // audio was an MP3 (a finished segment being fixed), the buffer being saved
-    // was decoded from it and has been through that many lossy passes already.
-    // An erase clears the take first, so a genuinely fresh recording starts at
-    // 0. Read inside the transaction so the count and the take it describes
-    // come from the same state.
-    const generation = await priorClipGeneration(tx, segmentId);
-    const meta = { ...base, generation };
-    await tx.objectStore("clipMeta").put(meta);
-    await tx.objectStore("clipData").put(bytes.buffer, clipId);
-    const take = await writeTakeInTx(tx, segmentId, clipId, meta.durationMs, {
-      ...opts,
+  return inTakeTx(tx, () =>
+    writeClipAndTake(tx, segmentId, clipId, base, bytes, { ...opts, now })
+  );
+}
+
+/** What `saveReplayedTake` did: saved, or found its recipe overtaken. */
+export type ReplayedSave =
+  { readonly kind: "saved"; readonly take: Take } | { readonly kind: "stale" };
+
+/**
+ * `saveTake` for a take the launch replay read back from `pendingTakes` (#38
+ * slice 3), conditional on nothing having moved since that read.
+ *
+ * The replay reads its recipe in one transaction and saves in a later one, and
+ * another open copy of the app can save a newer take in between. An
+ * unconditional replace would then delete that newer take and its clip
+ * (Frank, PR #1546 round 1). So, in THIS transaction, before anything is
+ * written, the save goes ahead only when both still hold:
+ *
+ *   - the segment's pending row is still there, with this `clipId`;
+ *   - the segment's active take is still `activeTakeId`, the one the recipe
+ *     was read against (`loadPendingRecipe`).
+ *
+ * Otherwise nothing is saved and `"stale"` comes back. The row is deleted in
+ * the same transaction when it is still this take's: its recipe would now
+ * splice onto audio that is no longer the segment's. A row that now belongs
+ * to another take is left alone. A segment that is gone falls through to the
+ * save, which throws the missing-segment failure `saveTake` throws.
+ */
+export async function saveReplayedTake(
+  segmentId: SegmentId,
+  clipId: ClipId,
+  samples: Int16Array,
+  sampleRate: number,
+  opts: { finished?: boolean; now?: number; activeTakeId: TakeId | null }
+): Promise<ReplayedSave> {
+  const now = opts.now ?? Date.now();
+  const base = buildClipMeta(clipId, samples, sampleRate, now);
+  const bytes = new Int16Array(samples);
+
+  const db = await getDb();
+  const tx = openTakeTx(db, true);
+  return inTakeTx(tx, async (): Promise<ReplayedSave> => {
+    const row = await tx.objectStore("pendingTakes").get(segmentId);
+    const segment = await tx.objectStore("segments").get(segmentId);
+    const moved = segment && segment.activeTakeId !== opts.activeTakeId;
+    if (row?.clipId !== clipId || moved) {
+      if (row?.clipId === clipId) {
+        await tx.objectStore("pendingTakes").delete(segmentId);
+      }
+      return { kind: "stale" };
+    }
+    const take = await writeClipAndTake(tx, segmentId, clipId, base, bytes, {
+      finished: opts.finished,
       now,
     });
+    return { kind: "saved", take };
+  });
+}
+
+/** The clip and the take, on the caller's transaction (`saveTake`'s body). */
+async function writeClipAndTake(
+  tx: TakeTx,
+  segmentId: SegmentId,
+  clipId: ClipId,
+  base: ReturnType<typeof buildClipMeta>,
+  bytes: Int16Array<ArrayBuffer>,
+  opts: { finished?: boolean; now: number }
+): Promise<Take> {
+  // The lossy-pass count carries over from the clip this take REPLACES (B8,
+  // Q5). The only way a segment has a prior take at save time is that the
+  // recorder opened it and edited or inserted into its audio — and if that
+  // audio was an MP3 (a finished segment being fixed), the buffer being saved
+  // was decoded from it and has been through that many lossy passes already.
+  // An erase clears the take first, so a genuinely fresh recording starts at
+  // 0. Read inside the transaction so the count and the take it describes
+  // come from the same state.
+  const generation = await priorClipGeneration(tx, segmentId);
+  const meta = { ...base, generation };
+  await tx.objectStore("clipMeta").put(meta);
+  await tx.objectStore("clipData").put(bytes.buffer, clipId);
+  return writeTakeInTx(tx, segmentId, clipId, meta.durationMs, opts);
+}
+
+/**
+ * Run `body` on a take transaction and wait for it to commit, or abort it.
+ *
+ * A THROWN error mid-transaction (e.g. `writeTakeInTx` finding no such
+ * segment) does not roll the clip write back on its own: IndexedDB
+ * auto-commits an inactive transaction unless it is aborted. Abort so the
+ * clip rolls back WITH the failed take — the single-transaction atomicity
+ * #38 depends on, and without which the clip would be the very orphan this
+ * rewrite exists to prevent. (A failed *request* — quota on the clip write —
+ * already aborts the transaction on its own; this covers the thrown case.)
+ */
+async function inTakeTx<T>(tx: TakeTx, body: () => Promise<T>): Promise<T> {
+  try {
+    const result = await body();
     await tx.done;
-    return take;
+    return result;
   } catch (cause) {
-    // A THROWN error mid-transaction (e.g. `writeTakeInTx` finding no such
-    // segment) does not roll the clip write back on its own: IndexedDB
-    // auto-commits an inactive transaction unless it is aborted. Abort so the
-    // clip rolls back WITH the failed take — the single-transaction atomicity
-    // #38 depends on, and without which the clip would be the very orphan this
-    // rewrite exists to prevent. (A failed *request* — quota on the clip write —
-    // already aborts the transaction on its own; this covers the thrown case.)
     try {
       tx.abort();
     } catch {

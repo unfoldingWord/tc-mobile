@@ -6,7 +6,7 @@ import {
   markPendingRefusal,
 } from "@/lib/storage/pending-takes";
 import type { NewTake } from "@/lib/takes/pending-take";
-import type { StoredPendingTake } from "@/types/domain";
+import type { StoredPendingTake, TakeId } from "@/types/domain";
 import { reportFailure } from "./report-failure";
 
 /**
@@ -20,7 +20,10 @@ import { reportFailure } from "./report-failure";
  * Each row is read back through `loadPendingRecipe`:
  *
  *   - a recipe is handed to `resume`, which is the hook's slot plus the same
- *     `performSaveTake` a Save runs; its own release deletes the row;
+ *     `performSaveTake` a Save runs; its own release deletes the row. The
+ *     save is conditional on the row and the segment's active take being as
+ *     the read found them (`saveReplayedTake`); `"stale"` means another copy
+ *     got there first, the row is dropped and reported, and the run goes on;
  *   - `"saved"` (the save landed and the row outlived it): the row is deleted;
  *   - `"segment-gone"`: reported, then the row is deleted, since there is
  *     nowhere left to save it;
@@ -40,7 +43,10 @@ import { reportFailure } from "./report-failure";
  * Never rejects: it runs from a mount effect with nobody to catch it.
  */
 export async function recoverPendingTakes(
-  resume: (take: NewTake) => Promise<boolean | "busy">
+  resume: (
+    take: NewTake,
+    against: TakeId | null
+  ) => Promise<boolean | "busy" | "stale">
 ): Promise<void> {
   try {
     const listed = await listPendingTakes();
@@ -52,9 +58,13 @@ export async function recoverPendingTakes(
     for (const row of rows) {
       const read = await loadPendingRecipe(row, CANONICAL_SAMPLE_RATE);
       switch (read.kind) {
-        case "recipe":
-          if ((await resume(read.take)) !== true) return;
+        case "recipe": {
+          // `"stale"`: another copy saved this segment since the read, so the
+          // row was dropped and the slot is free again; go on to the next.
+          const done = await resume(read.take, read.against);
+          if (done !== true && done !== "stale") return;
           break;
+        }
         case "saved":
           await release(row);
           break;
@@ -70,7 +80,9 @@ export async function recoverPendingTakes(
           report(refusal(read.kind), "pending-take-refused");
           await settled(
             markPendingRefusal(row.segmentId, row.clipId, read.kind),
-            "pending-take-write"
+            // Not "pending-take-write", which is the held take's safety copy:
+            // a failed mark keeps the audio and only repeats the report.
+            "pending-take-refused"
           );
       }
     }

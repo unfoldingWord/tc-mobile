@@ -6,7 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // rest count how often the save ran.
 vi.mock("@/lib/storage/takes", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/storage/takes")>();
-  return { ...actual, saveTake: vi.fn(actual.saveTake) };
+  return {
+    ...actual,
+    saveTake: vi.fn(actual.saveTake),
+    saveReplayedTake: vi.fn(actual.saveReplayedTake),
+  };
 });
 
 import { recoverPendingTakes } from "@/hooks/recover-pending-takes";
@@ -24,14 +28,15 @@ import {
 } from "@/lib/storage/books";
 import { newClipId } from "@/lib/storage/clips";
 import {
+  deletePendingTake,
   listPendingTakes,
   markPendingRefusal,
   writePendingTake,
 } from "@/lib/storage/pending-takes";
 import { getDb } from "@/lib/storage/db";
-import { saveTake } from "@/lib/storage/takes";
+import { saveReplayedTake, saveTake } from "@/lib/storage/takes";
 import type { NewTake, PendingTake } from "@/lib/takes/pending-take";
-import type { SegmentId, StoredPendingTake } from "@/types/domain";
+import type { SegmentId, StoredPendingTake, TakeId } from "@/types/domain";
 import { clearAllStores } from "./support";
 
 /**
@@ -66,17 +71,34 @@ const newTake = (segmentId: SegmentId): NewTake => ({
   editOnly: false,
 });
 
-const launch = () => {
+const launch = (
+  // Runs before each resume: what another open copy does between the
+  // replay's read of a row and its commit.
+  between: () => Promise<void> = async () => {}
+) => {
   let held: PendingTake | null = null;
-  const resume = vi.fn((take: NewTake) =>
-    performResumeTake(held, take, {
-      update: (t) => {
-        held = t(held);
+  const resume = vi.fn(async (take: NewTake, against: TakeId | null) => {
+    await between();
+    return performResumeTake(
+      held,
+      take,
+      {
+        update: (t) => {
+          held = t(held);
+        },
+        requestSweep: () => {},
       },
-      requestSweep: () => {},
-    })
-  );
+      against
+    );
+  });
   return { resume, held: () => held, run: () => recoverPendingTakes(resume) };
+};
+
+/** The clip id behind a segment's active take, or undefined. */
+const activeClip = async (segmentId: SegmentId) => {
+  const segment = await getSegment(segmentId);
+  if (!segment?.activeTakeId) return undefined;
+  return (await (await getDb()).get("takes", segment.activeTakeId))?.clipId;
 };
 
 const rows = async (): Promise<StoredPendingTake[]> => {
@@ -102,6 +124,7 @@ let off: () => void = () => {};
 beforeEach(async () => {
   await clearAllStores();
   vi.mocked(saveTake).mockClear();
+  vi.mocked(saveReplayedTake).mockClear();
   vi.spyOn(console, "error").mockImplementation(() => {});
   reports = [];
   off = subscribeToFailures((r) => reports.push(r));
@@ -148,6 +171,7 @@ describe("recoverPendingTakes — finishing the save on launch", () => {
 
     expect(app.resume).not.toHaveBeenCalled();
     expect(saveTake).not.toHaveBeenCalled();
+    expect(saveReplayedTake).not.toHaveBeenCalled();
     await vi.waitFor(async () => expect(await rows()).toEqual([]));
   });
 
@@ -158,7 +182,9 @@ describe("recoverPendingTakes — finishing the save on launch", () => {
     const b = newTake(second);
     await writeRow(a, { now: 1 });
     await writeRow(b, { now: 2 });
-    vi.mocked(saveTake).mockRejectedValueOnce(new Error("disk said no"));
+    vi.mocked(saveReplayedTake).mockRejectedValueOnce(
+      new Error("disk said no")
+    );
 
     const app = launch();
     await app.run();
@@ -195,16 +221,22 @@ describe("recoverPendingTakes — finishing the save on launch", () => {
     } as const;
     let slot: PendingTake | null = held;
 
-    const result = await performResumeTake(slot, newTake(segmentId), {
-      update: (t) => {
-        slot = t(slot);
+    const result = await performResumeTake(
+      slot,
+      newTake(segmentId),
+      {
+        update: (t) => {
+          slot = t(slot);
+        },
+        requestSweep: () => {},
       },
-      requestSweep: () => {},
-    });
+      null
+    );
 
     expect(result).toBe("busy");
     expect(slot).toBe(held);
     expect(saveTake).not.toHaveBeenCalled();
+    expect(saveReplayedTake).not.toHaveBeenCalled();
   });
 
   it("does not save when the live slot was filled after `held` was read", async () => {
@@ -218,16 +250,76 @@ describe("recoverPendingTakes — finishing the save on launch", () => {
     // The caller's snapshot says empty; the live slot already holds a take.
     let live: PendingTake | null = occupant;
 
-    const result = await performResumeTake(null, newTake(segmentId), {
-      update: (t) => {
-        live = t(live);
+    const result = await performResumeTake(
+      null,
+      newTake(segmentId),
+      {
+        update: (t) => {
+          live = t(live);
+        },
+        requestSweep: () => {},
       },
-      requestSweep: () => {},
-    });
+      null
+    );
 
     expect(result).toBe("busy");
     expect(live).toBe(occupant);
     expect(saveTake).not.toHaveBeenCalled();
+    expect(saveReplayedTake).not.toHaveBeenCalled();
+  });
+});
+
+describe("recoverPendingTakes — another copy saved first (Frank, PR #1546)", () => {
+  it("keeps a newer take another copy saved between the read and the commit", async () => {
+    const segmentId = await freshSegment();
+    const replayed = newTake(segmentId);
+    await writeRow(replayed);
+    const newer = newClipId();
+
+    // Another open copy saves a newer take on this segment after the replay
+    // has read the row, before its commit. The replayed row is untouched.
+    const app = launch(async () => {
+      await saveTake(segmentId, newer, samples(20, 7), CANONICAL_SAMPLE_RATE);
+    });
+    await app.run();
+
+    expect(await activeClip(segmentId)).toBe(newer);
+    const db = await getDb();
+    expect(await db.get("clipData", newer)).toBeDefined();
+    expect(await db.get("clipData", replayed.clipId)).toBeUndefined();
+    // The overtaken row is dropped, and that is on record once.
+    expect(await rows()).toEqual([]);
+    expect(refused(reports)).toHaveLength(1);
+    expect(app.held()).toBeNull();
+  });
+
+  it("keeps a newer recording when another copy completes the row and replaces it", async () => {
+    const first = await freshSegment();
+    const second = await freshSegment();
+    const a = newTake(first);
+    const b = newTake(second);
+    await writeRow(a, { now: 1 });
+    await writeRow(b, { now: 2 });
+    const newer = newClipId();
+    let done = false;
+
+    // While the replay is on row A, another copy finishes B's save, removes
+    // its row, and then saves a newer recording over B. The replay's row
+    // list was read before all of that.
+    const app = launch(async () => {
+      if (done) return;
+      done = true;
+      await saveTake(second, b.clipId, b.recorded, CANONICAL_SAMPLE_RATE);
+      await deletePendingTake(second, b.clipId);
+      await saveTake(second, newer, samples(20, 7), CANONICAL_SAMPLE_RATE);
+    });
+    await app.run();
+
+    expect(await activeClip(first)).toBe(a.clipId);
+    expect(await activeClip(second)).toBe(newer);
+    const db = await getDb();
+    expect(await db.get("clipData", newer)).toBeDefined();
+    expect(await rows()).toEqual([]);
   });
 });
 
