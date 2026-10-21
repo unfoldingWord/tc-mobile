@@ -101,6 +101,15 @@ async function openMenu(): Promise<Element> {
     readMeterAvailable: () => true,
     readScope: () => null,
     peekScope: () => null,
+    chapterPlay: {
+      chapterId: null,
+      status: "idle" as const,
+      pausedFraction: null,
+    },
+    playChapter: () => {},
+    pauseChapter: () => {},
+    stopChapter: () => {},
+    readChapterProgress: () => null,
   };
   await act(async () =>
     root.render(

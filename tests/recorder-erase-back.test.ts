@@ -115,6 +115,15 @@ async function setup() {
     readMeterAvailable: () => true,
     readScope: () => null,
     peekScope: () => null,
+    chapterPlay: {
+      chapterId: null,
+      status: "idle" as const,
+      pausedFraction: null,
+    },
+    playChapter: () => {},
+    pauseChapter: () => {},
+    stopChapter: () => {},
+    readChapterProgress: () => null,
   };
   // `erase` is a prop now (#160, L-12), so this mounts a host that calls the
   // REAL `useEraseSegment`. A hand-built stub would not do: what this test is
