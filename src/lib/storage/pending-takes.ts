@@ -11,8 +11,11 @@
  * The save hook writes and deletes rows (`hooks/use-save-take.ts`, slice 2 of
  * #38); the launch replay that reads them back is slice 3.
  *
- * **Best-effort, by design.** On a quota failure this write usually fails too,
- * so it protects the kill-and-relaunch case, not the quota case; and it must
+ * **Best-effort, by design.** It protects the kill-and-relaunch case, not the
+ * quota case. Nothing orders this write against `saveTake`, so near a full
+ * disk either can land first, and the row (about one more copy of the take)
+ * can be what makes the save fail. So the save outranks it: on a quota failure
+ * the hook gives the row up and does not write it again on Retry. And it must
  * never delay or gate `saveTake`. So:
  *
  *   - No function here rejects or throws. A failure is returned as a value,
@@ -35,9 +38,12 @@
  * after its delete and leave a row for a take that was saved. The backstop is
  * the read: a row whose `clipId` is the segment's active take reads back as
  * `"saved"` from `loadPendingRecipe`, never as a recording to offer, and the
- * same holds for a relaxed delete lost to a crash. The delete is also
- * conditional on `clipId`, so a late delete for one take never removes a newer
- * take's row.
+ * same holds for a relaxed delete lost to a crash after a save landed. It does
+ * NOT hold for a discard: a discarded take never became the active take, so a
+ * row whose delete did not land reads back as a recipe to offer. Telling it
+ * apart from a take still pending is slice 3's to solve. The
+ * delete is also conditional on `clipId`, so a late delete for one take never
+ * removes a newer take's row.
  */
 
 import type { IDBPDatabase } from "idb";

@@ -20,7 +20,7 @@ import {
 import { requestTranscodeSweep } from "./finish-transcode";
 import { reportFailure } from "./report-failure";
 import { saveFailureKind } from "./save-failure";
-import type { SegmentId } from "@/types/domain";
+import type { ClipId, SegmentId } from "@/types/domain";
 
 /** Shared empty base — an edit-only save carries no newly recorded PCM. */
 const NO_SAMPLES = new Int16Array(0);
@@ -49,13 +49,49 @@ function reportPendingResult(
  * write asks IndexedDB for `pendingTakes` only, a store `saveTake` does not
  * name, so the two transactions are not queued behind each other.
  *
- * Every attempt writes, retries included. A retry carries the same `clipId`
- * and the same buffers, so a row the first attempt wrote is kept as is, and a
- * row it failed to write gets a second chance. A changed buffer is always a
- * new `clipId`, because `saveRecording` mints one per take.
+ * Every attempt writes, except one that follows a quota failure for the same
+ * take (see `pendingGivenUp`). A retry carries the same `clipId` and the same
+ * buffers, so a row an earlier attempt wrote is kept as is, and a row it
+ * failed to write gets a second chance. A changed buffer is always a new
+ * `clipId`, because `saveRecording` mints one per take.
+ *
+ * Returns the write, settled with its result, so a quota failure can give the
+ * row up only after the write has landed (`givePendingUp`). `null` when no
+ * write was started.
  */
-function holdPendingTake(take: PendingTake): void {
-  void writePendingTake(take).then(reportPendingResult("pending-take-write"));
+function holdPendingTake(take: PendingTake): Promise<unknown> | null {
+  if (pendingGivenUp.has(take.clipId)) return null;
+  const written = writePendingTake(take);
+  void written.then(reportPendingResult("pending-take-write"));
+  return written;
+}
+
+/**
+ * Takes whose pending row was given up after a quota failure, by `clipId`.
+ *
+ * The real save outranks the safety copy. The row is about one more copy of
+ * the take, so on a phone with room for one copy and not two, it is the row
+ * that made the save fail; keeping it, or writing it again on Retry, would
+ * fail the Retry the same way. The fact has to outlive `retrySave`, which
+ * clears the failure kind, so it is held here, keyed by the take's `clipId`
+ * (one per take), and cleared when the take leaves the slot: a landed save or
+ * a confirmed discard. The take itself stays in memory throughout, and
+ * nothing on screen changes.
+ */
+const pendingGivenUp = new Set<ClipId>();
+
+/**
+ * Give a take's pending row up after its save failed for quota, and stop later
+ * attempts from writing it again. The delete is chained after the write
+ * settles, because call order alone does not put the delete's transaction
+ * after the write's (see `lib/storage/pending-takes.ts`, "Ordering").
+ */
+function givePendingUp(
+  take: PendingTake,
+  written: Promise<unknown> | null
+): void {
+  pendingGivenUp.add(take.clipId);
+  void (written ?? Promise.resolve()).then(() => releasePendingTake(take));
 }
 
 /**
@@ -119,7 +155,7 @@ export async function performSaveTake(
 ): Promise<boolean> {
   // First, before the merge and the commit, and not awaited (see
   // `holdPendingTake`): the row is the only copy that outlives this page.
-  holdPendingTake(take);
+  const written = holdPendingTake(take);
   try {
     // Merge HERE, inside the guarded attempt. `mergeTake` allocates a buffer
     // the size of both inputs and can throw on a low-memory device; the inputs
@@ -146,9 +182,12 @@ export async function performSaveTake(
     // (George R1 P3-4 — accepted as a trade, not a gap).
     console.error("Saving a take failed", cause);
     reportFailure(cause, "save-take");
-    effects.update((held) =>
-      failSave(held, take.clipId, saveFailureKind(cause))
-    );
+    const kind = saveFailureKind(cause);
+    // Before the failure state is shown: on a quota failure the pending row
+    // may be what used the space, so it goes, and Retry does not rewrite it.
+    // Any other failure keeps the row for a relaunch to find.
+    if (kind === "quota") givePendingUp(take, written);
+    effects.update((held) => failSave(held, take.clipId, kind));
     return false;
   }
   // The write has committed: only `mergeTake`/`saveTake` above are the save
@@ -169,6 +208,7 @@ export async function performSaveTake(
   // the samples on the failure path, which is the one path they exist for.
   // The pending row goes with it, on the same terms: the take is on disk.
   releasePendingTake(take);
+  pendingGivenUp.delete(take.clipId);
   try {
     effects.update((held) => succeedSave(held, take.clipId));
   } catch (cause) {
@@ -209,7 +249,10 @@ export async function performDiscardTake(
   const { next, orphan } = discardSave(held);
   update(() => next);
   // The translator chose to lose this take, so a relaunch must not offer it.
-  if (held) releasePendingTake(held);
+  if (held) {
+    releasePendingTake(held);
+    pendingGivenUp.delete(held.clipId);
+  }
   // Nothing references the bytes a failed attempt may already have written, so
   // leaving them would hold exactly the space the save ran out of.
   if (!orphan) return;

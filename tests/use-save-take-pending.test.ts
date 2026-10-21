@@ -37,7 +37,11 @@ import {
   writePendingTake,
 } from "@/lib/storage/pending-takes";
 import { saveTake } from "@/lib/storage/takes";
-import { startSave, type PendingTake } from "@/lib/takes/pending-take";
+import {
+  retrySave,
+  startSave,
+  type PendingTake,
+} from "@/lib/takes/pending-take";
 import type { ClipId, SegmentId } from "@/types/domain";
 import { clearAllStores } from "./support";
 
@@ -216,6 +220,105 @@ describe("performSaveTake — the pending row", () => {
         expect.objectContaining({ context: "pending-take-delete", cause }),
       ])
     );
+  });
+});
+
+describe("performSaveTake — the pending row after a quota failure", () => {
+  /**
+   * A save that runs out of room only after the pending row has landed: the
+   * shape where one copy of the take fits and two do not. fake-indexeddb has
+   * no quota, so the failure is injected, after the write has settled.
+   */
+  const quotaAfterWrite = () => {
+    const cause = new DOMException("disk full", "QuotaExceededError");
+    vi.mocked(saveTake).mockImplementationOnce(async () => {
+      expect(await write.mock.results[0]?.value).toEqual({
+        ok: true,
+        outcome: "written",
+      });
+      throw cause;
+    });
+    return cause;
+  };
+
+  it("gives the row up, so the real save gets the space, and still reports the save's own quota failure", async () => {
+    const segmentId = await freshSegment();
+    const clipId = newClipId();
+    const take = heldTake(segmentId, clipId);
+    const s = slot(take);
+    const cause = quotaAfterWrite();
+
+    const ok = await performSaveTake(take, {
+      update: s.update,
+      requestSweep: vi.fn(),
+    });
+
+    expect(ok).toBe(false);
+    expect(s.held()).toMatchObject({ state: "failed", kind: "quota" });
+    await vi.waitFor(() =>
+      expect(remove).toHaveBeenCalledWith(segmentId, clipId)
+    );
+    expect(await remove.mock.results[0]?.value).toEqual({
+      ok: true,
+      outcome: "deleted",
+    });
+    expect(await pendingClipIds()).toEqual([]);
+    expect(reports).toEqual([
+      expect.objectContaining({ context: "save-take", cause }),
+    ]);
+  });
+
+  it("does not write the row again on the Retry that follows, and that Retry saves", async () => {
+    const segmentId = await freshSegment();
+    const clipId = newClipId();
+    const take = heldTake(segmentId, clipId);
+    const s = slot(take);
+    quotaAfterWrite();
+    await performSaveTake(take, { update: s.update, requestSweep: vi.fn() });
+    await vi.waitFor(async () => expect(await pendingClipIds()).toEqual([]));
+
+    const retried = retrySave(s.held());
+    expect(retried).toMatchObject({ state: "saving", clipId });
+    s.update(() => retried);
+    const ok = await performSaveTake(retried!, {
+      update: s.update,
+      requestSweep: vi.fn(),
+    });
+
+    expect(ok).toBe(true);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect((await getSegment(segmentId))?.activeTakeId).not.toBeNull();
+    expect(await pendingClipIds()).toEqual([]);
+  });
+
+  it("keeps the row on any other failure, and the Retry keeps it until the save lands", async () => {
+    const segmentId = await freshSegment();
+    const clipId = newClipId();
+    const take = heldTake(segmentId, clipId);
+    const s = slot(take);
+    vi.mocked(saveTake).mockImplementationOnce(async () => {
+      await write.mock.results[0]?.value;
+      throw new Error("a transient write failure");
+    });
+    await performSaveTake(take, { update: s.update, requestSweep: vi.fn() });
+    expect(s.held()).toMatchObject({ state: "failed", kind: "unknown" });
+    expect(await pendingClipIds()).toEqual([clipId]);
+    expect(remove).not.toHaveBeenCalled();
+
+    const retried = retrySave(s.held());
+    s.update(() => retried);
+    const ok = await performSaveTake(retried!, {
+      update: s.update,
+      requestSweep: vi.fn(),
+    });
+
+    expect(ok).toBe(true);
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(await write.mock.results[1]?.value).toEqual({
+      ok: true,
+      outcome: "kept",
+    });
+    await vi.waitFor(async () => expect(await pendingClipIds()).toEqual([]));
   });
 });
 
