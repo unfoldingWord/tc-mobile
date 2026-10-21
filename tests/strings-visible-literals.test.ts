@@ -21,7 +21,7 @@ import { describe, expect, it } from "vitest";
  *   - a JSX child expression (`{"Share"}`, `{busy ? "Saving" : x}`);
  *   - the value of every JSX attribute, unless its name is on `NON_UI_PROPS`
  *     below or starts with `data-`; a component enum (`ENUM_PROPS`) is read
- *     only when its value has a space in it;
+ *     only when its value, as written, has whitespace in it;
  *   - the value of an object-literal property whose key reads as visible
  *     (`label`, `title`, `*Label`, …), the shape a menu item list takes.
  *
@@ -29,7 +29,9 @@ import { describe, expect, it } from "vitest";
  * walk (`resultStrings`): a literal, a template's fixed text AND its
  * interpolations, both arms of `?:`, array elements, both operands of `+`,
  * the operands of `??`, `||` and `&&` that can be its value, parentheses,
- * `as` / `satisfies` / `!` wrappers, and the arguments of a call. It stops
+ * `as` / `satisfies` / `!` wrappers, and the arguments of a call, including
+ * the return expression of an inline arrow or function passed as one
+ * (`rows.map(() => "Share")`). It stops
  * only at a table read (`strings.*`, `plural(...)`) and at the keyword
  * arguments of the helpers on `TOKEN_CALLEES` (`restartLabel("cutAudio")`).
  * A literal that is compared (`x === "line"`) is not a result,
@@ -232,6 +234,29 @@ function isTableRead(node: ts.Expression): boolean {
 }
 
 /**
+ * What an inline callback hands back: an arrow's expression body, or the
+ * operand of each `return` in a block body. A nested function is its own
+ * callback, so a `return` inside one is not this callback's result. Only a
+ * callback written as a call argument is followed (`rows.map(() => "Share")`);
+ * a handler in a JSX attribute (`onClick={() => go("x")}`) is not copy.
+ */
+function returnedExpressions(
+  fn: ts.ArrowFunction | ts.FunctionExpression
+): ts.Expression[] {
+  if (!ts.isBlock(fn.body)) return [fn.body];
+  const out: ts.Expression[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isFunctionLike(node)) return;
+    if (ts.isReturnStatement(node) && node.expression !== undefined) {
+      out.push(node.expression);
+    }
+    ts.forEachChild(node, visit);
+  };
+  fn.body.statements.forEach(visit);
+  return out;
+}
+
+/**
  * The fixed strings an expression can evaluate to — see the docblock. One
  * recursive walk: every sub-expression a rendered value can come from is
  * visited, and it stops only at a table read. There are no per-shape arms
@@ -279,7 +304,9 @@ function resultStrings(node: ts.Expression): string[] {
         : "";
     if (TOKEN_CALLEES.has(callee)) return [];
     return node.arguments.flatMap((arg) =>
-      resultStrings(ts.isSpreadElement(arg) ? arg.expression : arg)
+      ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)
+        ? returnedExpressions(arg).flatMap(resultStrings)
+        : resultStrings(ts.isSpreadElement(arg) ? arg.expression : arg)
     );
   }
   if (ts.isBinaryExpression(node)) {
@@ -327,9 +354,7 @@ function visibleLiterals(source: ts.SourceFile): Finding[] {
           add(
             node,
             name,
-            isEnumProp(tag, name)
-              ? values.filter((v) => /\s/.test(v.trim()))
-              : values
+            isEnumProp(tag, name) ? values.filter((v) => /\s/.test(v)) : values
           );
         }
       }
@@ -415,6 +440,37 @@ describe("the visible-literal reader, in both states (#1483 slice 3)", () => {
     expect(probe(`<Control icon="Close menu" />`)).toEqual([
       "icon: Close menu",
     ]);
+  });
+
+  it("judges an enum value as written, edge whitespace included", () => {
+    expect(probe(`<Control icon=" Close " />`)).toEqual(["icon: Close"]);
+    expect(probe(`<Control tone={"Close "} />`)).toEqual(["tone: Close"]);
+    expect(probe(`<Control icon="book-open" />`)).toEqual([]);
+  });
+
+  it("follows the return of an inline callback passed to a call", () => {
+    expect(probe(`<ul>{rows.map(() => "Share")}</ul>`)).toEqual([
+      "child: Share",
+    ]);
+    expect(
+      probe(
+        `<ul>{rows.map((r) => { if (r) return "Share"; return "Save"; })}</ul>`
+      )
+    ).toEqual(["child: Share", "child: Save"]);
+    expect(
+      probe(
+        `<ul>{rows.map(function () { return busy ? "Saving" : strings.x; })}</ul>`
+      )
+    ).toEqual(["child: Saving"]);
+    // A callback that reads the table, that only holds a nested function's
+    // string, or a plain handler attribute, is not copy.
+    expect(probe(`<ul>{rows.map(() => strings.share)}</ul>`)).toEqual([]);
+    expect(
+      probe(
+        `<ul>{rows.map(() => { const f = () => "Share"; return strings.x; })}</ul>`
+      )
+    ).toEqual([]);
+    expect(probe(`<b onClick={() => go("Share")} />`)).toEqual([]);
   });
 
   it("flags an array element, a `+` operand and inner HTML", () => {
