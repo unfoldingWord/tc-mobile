@@ -1,6 +1,52 @@
 import { Control } from "./control";
-import { Icon } from "./icon";
+import { Icon, type IconName } from "./icon";
+import type { MicSettingsPlatform } from "@/hooks/mic-settings-platform";
 import { strings } from "@/lib/strings";
+
+type Step = { icon: IconName; text: string };
+
+const COME_BACK: Step = { icon: "restart", text: strings.micStepComeBack };
+const MIC_ON: Step = { icon: "mic", text: strings.micStepMicOn };
+const OPEN_SETTINGS: Step = {
+  icon: "phone",
+  text: strings.micStepOpenSettings,
+};
+
+/**
+ * The walk-through for each build (#1569): every step leads with an icon, the
+ * words are beside it. A function and not a module constant so the table is
+ * read when called, after `strings` has settled on the locale.
+ */
+function micSettingsSteps(platform: MicSettingsPlatform): Step[] {
+  switch (platform) {
+    case "android-app":
+      return [
+        OPEN_SETTINGS,
+        { icon: "tap-hand", text: strings.micStepAndroidApp },
+        MIC_ON,
+        COME_BACK,
+      ];
+    case "ios-app":
+      return [
+        OPEN_SETTINGS,
+        { icon: "tap-hand", text: strings.micStepIosApp },
+        MIC_ON,
+        COME_BACK,
+      ];
+    case "android-chrome":
+      return [
+        { icon: "tap-hand", text: strings.micStepAndroidChrome },
+        MIC_ON,
+        COME_BACK,
+      ];
+    case "ios-safari":
+      return [
+        { icon: "tap-hand", text: strings.micStepIosSafari },
+        MIC_ON,
+        COME_BACK,
+      ];
+  }
+}
 
 /**
  * The mic-needed / mic-denied full-panel recovery screen (#203).
@@ -33,12 +79,19 @@ export function PermissionPanel({
   message,
   onRetry,
   onBack,
+  settingsPlatform = null,
 }: {
   /** The actual error when there is one (a denied mic, or a failed decode) — */
   /** honest over the generic mic-needed title. */
   message: string | null;
   onRetry: () => void;
   onBack: () => void;
+  /**
+   * Set once Retry has been refused again (#1569): the build to show the
+   * phone-settings steps for. `null` is the first refusal, or a build with no
+   * known steps, and renders the panel as it always was.
+   */
+  settingsPlatform?: MicSettingsPlatform | null;
 }) {
   // State 16 (#948). The workbench's speaker button and "Ask your helper"
   // pill are not here: neither has a behaviour in this app to wire to (no
@@ -58,6 +111,18 @@ export function PermissionPanel({
         {strings.micOffTitle}
         {message !== null && <span className="o4-err-sub">{message}</span>}
       </p>
+      {settingsPlatform !== null && (
+        <ol className="o4-err-steps" aria-label={strings.micStepsLabel}>
+          {micSettingsSteps(settingsPlatform).map((step) => (
+            <li key={step.text} className="o4-err-step">
+              <span className="o4-err-step-icon" aria-hidden="true">
+                <Icon name={step.icon} size={30} />
+              </span>
+              <span className="o4-err-step-text">{step.text}</span>
+            </li>
+          ))}
+        </ol>
+      )}
       <Control
         icon="restart"
         label={strings.micRetry}

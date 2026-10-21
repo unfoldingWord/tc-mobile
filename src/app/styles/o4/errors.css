@@ -75,4 +75,47 @@
     background: var(--s-live);
     color: var(--s-live-ink);
   }
+  /* The phone-settings steps after a second mic refusal (#1569): a numbered
+     list whose rows lead with an icon, so a person who does not read can
+     follow the pictures. The number is a counter, not text in the markup. */
+  :root .o4-err-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: o4-step;
+    max-width: 320px;
+    text-align: start;
+  }
+  :root .o4-err-step {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    counter-increment: o4-step;
+    font-size: 17px; /* #939 token */
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--s-ink);
+  }
+  :root .o4-err-step::before {
+    content: counter(o4-step);
+    flex-shrink: 0;
+    width: 24px;
+    font-weight: 800;
+    color: var(--s-ink-muted);
+    text-align: center;
+  }
+  :root .o4-err-step-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: var(--s-well);
+    color: var(--s-ink);
+  }
 }

@@ -407,6 +407,18 @@ export const stringsEn = {
   micOffTitle: "Microphone is off",
   micRetry: "Try again",
   micBack: "Go back",
+  // The settings walk-through after the mic is refused a second time
+  // (#1569). Each step leads with an icon in the panel; these are the words
+  // beside it. The wording awaits the requirements owner.
+  micStepsLabel: "Steps to turn the microphone on",
+  micStepOpenSettings: "Open Settings on your phone",
+  micStepAndroidApp: "Tap Apps, then tC Mobile, then Permissions",
+  micStepIosApp: "Scroll down and tap tC Mobile",
+  micStepAndroidChrome:
+    "Tap the icon at the left of the web address, then Permissions",
+  micStepIosSafari: "Tap aA in the address bar, then Website Settings",
+  micStepMicOn: "Turn Microphone on",
+  micStepComeBack: "Come back here and tap Try again",
   finishedWriteFailed: "Could not save the finished mark.",
   // The recorder's commit-window status (#39): a take is committing — stop →
   // decode → the IndexedDB write, spanned by `isClosing`, not just the

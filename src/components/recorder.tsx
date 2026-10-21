@@ -62,6 +62,7 @@ import { VuMeter } from "./vu-meter";
 import { Waveform } from "./waveform";
 import { WaveformScroller } from "./waveform-scroller";
 import { classifyShareError } from "@/hooks/share-flow";
+import { readMicSettingsPlatform } from "@/hooks/mic-settings-platform";
 import {
   nativeShare,
   readShareEnvironment,
@@ -324,6 +325,11 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     }, [loadError, databaseUnreachable, onExit]);
 
     const [menuOpen, setMenuOpen] = useState(false);
+    // Retry has been tapped on the permission panel and the take has not
+    // started since (#1569). While it is set, a panel that is showing again
+    // IS a second refusal, so it shows the phone-settings steps. Cleared the
+    // moment a take is recording, so a later, unrelated refusal starts over.
+    const [micRetried, setMicRetried] = useState(false);
     // The sheet is two modes over one segment (#89): a record mode (the hero
     // Record + Play + Edit trio, #315, and the #592 bin) and an edit mode (the waveform-editing
     // toolbar). The sheet always opens in record; App keys it on `segmentId` so
@@ -1777,6 +1783,7 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // the edit toolbar on screen and no Record/Pause/VU — "Editing" over a live
     // capture (George R3). Any path that starts the mic belongs in record mode.
     const onRetryRecord = useCallback(() => {
+      setMicRetried(true);
       setMode("record");
       // Drop any latched `menuOpen`. The menu is already HIDDEN while `denied`
       // (`menuShown`), but the raw flag survives, so a Retry that succeeds would
@@ -2985,6 +2992,8 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
     // R3). Same principle a decode failure already follows via `stopError`.
     const denied =
       !audio.supported || (micError && !hasAudio && !editor.hasEdits);
+    // Adjusted during render (React's derive-state pattern), not in an effect.
+    if (micRetried && state === "recording") setMicRetried(false);
 
     // The ⋮-menu rows' disabled REASONS (#135). Each row's `disabled` is
     // `reason !== null`, so the cue that explains a grey row and the gate that
@@ -3722,6 +3731,9 @@ export const Recorder = forwardRef<RecorderHandle, RecorderProps>(
           ) : denied ? (
             <PermissionPanel
               message={audio.error}
+              settingsPlatform={
+                micRetried && audio.supported ? readMicSettingsPlatform() : null
+              }
               onRetry={onRetryRecord}
               onBack={onRequestBack}
             />
