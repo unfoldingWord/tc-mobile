@@ -68,10 +68,17 @@ describe("the bundled stories as a template package", () => {
     expect(pkg.source.revision).toBe(
       "75236873a3ac8203117df9e9f781614e62a0a3ec"
     );
-    expect(pkg.source.revision).not.toBe("master");
     expect(pkg.dataLicence).toBe("CC-BY-SA-4.0");
     expect(pkg.recordingLicence).toBe("CC-BY-SA-4.0");
     expect(pkg.attribution).toMatch(/Sweet Publishing/);
+  });
+});
+
+describe("loading", () => {
+  it("builds and validates once, then reuses the result", async () => {
+    const again = await loadObsTemplate();
+    expect(again.pkg).toBe(pkg);
+    expect(again.titles).toBe(titles);
   });
 });
 

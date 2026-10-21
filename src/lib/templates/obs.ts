@@ -55,6 +55,10 @@ function toPackage(catalog: ObsCatalog): TemplatePackage {
     title: { [LANGUAGE]: "Open Bible Stories" },
     titleLanguages: [LANGUAGE],
     dataLicence: "CC-BY-SA-4.0",
+    // Binds the recordings a translator makes from this package, not only the
+    // package: a recorded translation of a story is a derivative work and is
+    // CC BY-SA. Settled in #15 (closed) and recorded in
+    // docs/decisions/0006-obs-content.md; D5 locks it for every template.
     recordingLicence: "CC-BY-SA-4.0",
     attribution: catalog.attribution,
     source: { url: catalog.source, revision: REVISION },
@@ -71,6 +75,9 @@ function toPackage(catalog: ObsCatalog): TemplatePackage {
           endVerse: f.frame,
         },
         // A package asset path is relative; `thumbUrl` is root-relative.
+        // Nothing resolves it yet (the validator checks its form only), so a
+        // screen must resolve it against the app's base, not the current
+        // route, or it will miss the precached `/obs/thumbs/` file (#246).
         thumbnail: thumbUrl(story.story, f.frame).replace(/^\//, ""),
       })),
     })),
@@ -89,21 +96,35 @@ function toTitleTable(catalog: ObsCatalog): TemplateTitleTable {
   };
 }
 
+interface ObsTemplate {
+  readonly pkg: TemplatePackage;
+  readonly titles: readonly TemplateTitleTable[];
+}
+
+let loading: Promise<ObsTemplate> | null = null;
+
+async function build(): Promise<ObsTemplate> {
+  const catalog = await loadObsCatalog();
+  const pkg = parseTemplatePackage(toPackage(catalog));
+  return { pkg, titles: [parseTemplateTitleTable(toTitleTable(catalog), pkg)] };
+}
+
 /**
  * The bundled stories as a validated package and its title tables (English
- * only today). Throws `TemplateValidationError` if the adapted package breaks
- * the contract; the caller routes that to the failure log.
+ * only today), built once and shared. Rejects with `TemplateValidationError`
+ * if the adapted package breaks the contract; the caller routes that to the
+ * failure log. A rejection is not kept, so a later call tries again (a lazy
+ * chunk that failed to load offline can load once the network is back).
  *
  * @pivotpending No caller yet. #246 (Template Library, UI half) reads this to
  * list the stories and seed a book's segments, and restores `jpg` to the
  * precache when it does (`tests/precache-manifest.test.ts` counts an import of
  * this function as the thumbnail reader).
  */
-export async function loadObsTemplate(): Promise<{
-  readonly pkg: TemplatePackage;
-  readonly titles: readonly TemplateTitleTable[];
-}> {
-  const catalog = await loadObsCatalog();
-  const pkg = parseTemplatePackage(toPackage(catalog));
-  return { pkg, titles: [parseTemplateTitleTable(toTitleTable(catalog), pkg)] };
+export function loadObsTemplate(): Promise<ObsTemplate> {
+  loading ??= build().catch((cause: unknown) => {
+    loading = null;
+    throw cause;
+  });
+  return loading;
 }
