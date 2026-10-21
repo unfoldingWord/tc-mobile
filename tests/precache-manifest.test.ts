@@ -262,7 +262,9 @@ function readsObsImagery(source: string, fileName: string): boolean {
       if (callee !== undefined && READER_SYMBOLS.has(callee)) return true;
     }
 
-    if (literalPieces(node).some((text) => text.includes("/obs/thumbs/")))
+    // "obs/thumbs/" without the leading slash: it also matches the relative
+    // path the OBS template package stores (#1466).
+    if (literalPieces(node).some((text) => text.includes("obs/thumbs/")))
       return true;
 
     return ts.forEachChild(node, visit) ?? false;
@@ -578,6 +580,13 @@ describe("readsObsImagery (#280 — AST, not raw text)", () => {
 
   it("counts a hand-built /obs/thumbs/ string literal as a reader", () => {
     const source = 'export const url = "/obs/thumbs/obs-01-01.jpg";';
+    expect(readsObsImagery(source, FILE)).toBe(true);
+  });
+
+  // #1466: a package asset path is relative, so the OBS package stores the
+  // thumbnail without the leading slash; that spelling is a reader too.
+  it("counts a relative obs/thumbs/ package-path literal as a reader", () => {
+    const source = 'export const url = "obs/thumbs/obs-01-07.jpg";';
     expect(readsObsImagery(source, FILE)).toBe(true);
   });
 
