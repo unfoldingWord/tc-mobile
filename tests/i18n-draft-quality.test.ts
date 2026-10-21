@@ -213,7 +213,9 @@ describe("i18n draft quality gates (#1485)", () => {
 
   it("(b) requires the script's letters in a Latin-script locale too", () => {
     expect(scriptProblems("fr", "k", "Réessayer")).toEqual([]);
-    expect(scriptProblems("fr", "k", "Повторить")).not.toEqual([]);
+    expect(scriptProblems("fr", "k", "Повторить")).toEqual([
+      'k: stray "Повторить" outside Latin',
+    ]);
   });
 
   it("(c) fails a draft over the length budget", () => {
@@ -241,7 +243,7 @@ describe("i18n draft quality gates (#1485)", () => {
     for (const p of pairs.correct)
       expect(leakProblems("k", p.en, p.value)).toEqual([]);
     for (const p of pairs.defect)
-      expect(leakProblems("k", p.en, p.value), p.why).not.toEqual([]);
+      expect(leakProblems("k", p.en, p.value), p.why).toHaveLength(1);
   });
 
   it("checks rendered function entries, correct and defective", () => {
