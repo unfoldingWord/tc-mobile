@@ -18,6 +18,11 @@ vi.mock("@/lib/storage/pending-takes", async (importOriginal) => {
     await importOriginal<typeof import("@/lib/storage/pending-takes")>();
   return { ...actual, writePendingTake: vi.fn(actual.writePendingTake) };
 });
+// Pass-through, so a case can stall the hook's read of the active take.
+vi.mock("@/lib/storage/books", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/storage/books")>();
+  return { ...actual, getSegment: vi.fn(actual.getSegment) };
+});
 
 import { recoverPendingTakes } from "@/hooks/recover-pending-takes";
 import {
@@ -558,6 +563,51 @@ describe("recoverPendingTakes — killed right after the first put (George r5)",
 
     expect(await activeClip(segmentId)).toBe(take.clipId);
     expect(refused(reports)).toEqual([]);
+  });
+});
+
+describe("recoverPendingTakes — a Discard while the target read is slow (George r6)", () => {
+  it("a delete that lands before the row's put still wins", async () => {
+    const segmentId = await freshSegment();
+    // The recording the translator keeps.
+    const keptClip = newClipId();
+    await saveTake(segmentId, keptClip, samples(10), CANONICAL_SAMPLE_RATE, {
+      finished: false,
+    });
+    vi.mocked(saveTake).mockClear();
+    const real = await vi.importActual<typeof import("@/lib/storage/books")>(
+      "@/lib/storage/books"
+    );
+    // The hook's read of the active take stalls (another transaction holds
+    // `segments`), so the row's put has not opened yet.
+    let release!: () => void;
+    const stalled = new Promise<void>((r) => (release = r));
+    vi.mocked(getSegment).mockImplementationOnce(async (id) => {
+      await stalled;
+      return real.getSegment(id);
+    });
+    // The edit fails before its own transaction opens (a merge that cannot
+    // allocate), so the recovery screen shows while the read is still stalled.
+    vi.mocked(saveTake).mockRejectedValueOnce(new Error("out of memory"));
+    const take = startSave(null, newTake(segmentId));
+    let held: PendingTake | null = take;
+    const update = (t: (h: PendingTake | null) => PendingTake | null) => {
+      held = t(held);
+    };
+    expect(await performSaveTake(take, { update, requestSweep: () => {} })).toBe(
+      false
+    );
+
+    // The translator confirms Discard; then the read lands.
+    await performDiscardTake(held, update);
+    expect(held).toBeNull();
+    await new Promise((r) => setTimeout(r, 20));
+    release();
+    await vi.mocked(writePendingTake).mock.results.at(-1)!.value;
+
+    await vi.waitFor(async () => expect(await rows()).toEqual([]));
+    await launch().run();
+    expect(await activeClip(segmentId)).toBe(keptClip);
   });
 });
 

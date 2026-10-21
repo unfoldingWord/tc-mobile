@@ -214,6 +214,9 @@ export async function writePendingTake(
 
   // Awaited only when it is a read, so a known value adds no turn before the
   // transaction opens (a delete called after this must still queue behind it).
+  // While a read is awaited, no transaction is open, so a delete called now
+  // commits first: a caller that passes a read chains its deletes after this
+  // write (`use-save-take.ts`, `pendingWrites`).
   let target: TakeId | null | undefined;
   try {
     target = opts.target instanceof Promise ? await opts.target : opts.target;
